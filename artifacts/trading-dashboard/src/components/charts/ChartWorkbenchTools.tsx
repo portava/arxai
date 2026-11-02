@@ -497,6 +497,9 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom in chart" title="Zoom in (+ on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(0.75)}><ZoomIn className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom out chart" title="Zoom out (− on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(4/3)}><ZoomOut className="h-3.5 w-3.5"/></Button>
       </div>
+      <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
+        {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
+      </select></label>
       <Button ref={toggleRef} size="sm" variant="outline" className={compact ? "h-8 text-xs" : "hidden"} aria-label="Chart tools" aria-controls={toolsId} aria-expanded={toolsOpen} onClick={()=>{toggleRef.current?.focus();setToolsOpen(value=>!value);}}>Tools {toolsOpen ? "−" : "+"}</Button>
       <div ref={advancedRef} id={toolsId} data-testid="chart-advanced-tools" className={compact && !toolsOpen ? "hidden" : "contents"}>
       <label className="flex items-center gap-2 text-zinc-400">Scale<select aria-label="Price scale" className={field} value={preferences.scale} onChange={event=>onPreferences(p=>({...p,scale:event.target.value as typeof p.scale}))}>
@@ -504,9 +507,6 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
       </select></label>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={()=>onPreferences(p=>({...p,inverted:!p.inverted}))}>Invert scale</Button>
       <Button size="sm" variant={preferences.priceOnlyScale ? "secondary" : "ghost"} className="h-8 text-xs" aria-pressed={preferences.priceOnlyScale === true} title="Automatically fit the price scale to prices only. Indicator values stay unchanged but may fall outside the visible area. Turning off fits prices and overlay indicators." onClick={()=>onPreferences(p=>({...p,priceOnlyScale:!p.priceOnlyScale}))}>Scale price only</Button>
-      <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
-        {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
-      </select></label>
       <label className="flex items-center gap-2" title={utcClockQualified ? "Display conversion uses qualified original UTC coordinates. Broker server timezone is not guessed." : SOURCE_CLOCK_NOTE}>Time zone <select className={field} aria-label="Display time zone" disabled={!utcClockQualified} value={selectedZone} onChange={e=>{if(!utcClockQualified)return;const value=e.target.value as ChartTimeZone;onPreferences(p=>{const next={...p};if(value==="UTC")delete next.timeZone;else next.timeZone=value;return next;});}}>
         {CHART_TIME_ZONES.map(option=><option key={option} value={option}>{!utcClockQualified && option==="UTC" ? "Source clock (UTC unverified)" : option==="local" ? `Browser local (${resolveTimeZone("local")})` : option}</option>)}
       </select></label>

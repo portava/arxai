@@ -173,6 +173,19 @@ describe("manual text note controls",()=>{
   });
 });
 describe("drawing workspace controls",()=>{
+  it("keeps style selection and its evidence note outside collapsed advanced tools",()=>{
+    function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools utcClockQualified adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
+    render(<View/>);
+    const advanced=screen.getByTestId("chart-advanced-tools"),select=screen.getByLabelText("Chart style");
+    expect(advanced.contains(select)).toBe(false);
+    expect(screen.getByRole("button",{name:"Chart tools",exact:true}).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.change(select,{target:{value:"heikinAshi"}});
+    expect((select as HTMLSelectElement).value).toBe("heikinAshi");
+    const note=screen.getByTestId("chart-style-note");
+    expect(advanced.contains(note)).toBe(false);
+    expect(note.textContent).toContain("Analysis uses original candles");
+  });
+
   it("keeps an in-progress drawing visible and cancellable when tools close",()=>{
     mount();
     const toggle=screen.getByRole("button",{name:"Chart tools",exact:true});
