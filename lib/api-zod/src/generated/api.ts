@@ -5220,6 +5220,8 @@ export const getChartCandlesQueryTimeframeDefault = `M5`;
 export const getChartCandlesQueryLimitDefault = 300;
 export const getChartCandlesQueryLimitMax = 5000;
 
+export const getChartCandlesQueryViewDefault = `display`;
+
 export const GetChartCandlesQueryParams = zod.object({
   symbol: zod.coerce.string().min(1).max(getChartCandlesQuerySymbolMax),
   timeframe: zod
@@ -5252,6 +5254,12 @@ export const GetChartCandlesQueryParams = zod.object({
     .min(1)
     .max(getChartCandlesQueryLimitMax)
     .default(getChartCandlesQueryLimitDefault),
+  view: zod
+    .enum(["display", "analysis"])
+    .default(getChartCandlesQueryViewDefault)
+    .describe(
+      "Display includes forming tips; analysis matches closed-bar assessment inputs.",
+    ),
 });
 
 export const getChartCandlesResponseCandlesItemVolumeEvidenceQuantityMin = 0;

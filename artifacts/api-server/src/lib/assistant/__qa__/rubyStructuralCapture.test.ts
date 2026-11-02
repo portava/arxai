@@ -54,7 +54,7 @@ function fixture(aiUsable: boolean): RubyChartContext {
     gateOutput: { chartTruthScore: 0, chartReadScore: 0 },
     sufficiency: { status: "sufficient", freshnessVerdict: "LIVE", canShowTradeSetup: true, reasonCode: null, humanReason: "Captured history" },
     candles: Array.from({ length: 200 }, (_, i) => ({ time: new Date(Date.UTC(2026, 9, 30, 0, i * 5)).toISOString(), open: 100 + i, high: 102 + i, low: 99 + i, close: 101 + i })),
-    htfCandles: [], marketEvidence: null, htfFeedStatus: null, htfMarketEvidence: null,
+    htfCandles: [], marketEvidence: null, htfFeedStatus: null, htfMarketEvidence: null, htfObservationKey: "captured-htf-observation",
   } as unknown as RubyChartContext;
 }
 
@@ -126,7 +126,9 @@ for (const full of [true,false]) test(`response carries captured evidence, not a
   const evidence={symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z"};
   captured.marketEvidence=evidence;
   const result=await buildRubyStructuralRead({symbol:"EURUSD",timeframe:"5m",userId:7});
-  assert.deepEqual(result.chartRead.assessmentEvidence,{...evidence,userId:7});
+  assert.deepEqual(result.chartRead.assessmentEvidence,{...evidence,userId:7,higherTimeframeObservation:"captured-htf-observation"});
+  captured.htfObservationKey="later-htf-observation";
+  assert.equal((result.chartRead.assessmentEvidence as {higherTimeframeObservation:string}).higherTimeframeObservation,"captured-htf-observation");
   evidence.sourceIdentity="b".repeat(64);
   evidence.closedWindowIdentity="d".repeat(64);
   assert.equal((result.chartRead.assessmentEvidence as typeof evidence).closedWindowIdentity,"c".repeat(64));

@@ -96,8 +96,8 @@ export interface ChartCandlesResult {
   } | null;
 }
 
-export function chartCandlesQueryKey(symbol: string, apiTf: string, limit: number) {
-  return ["chart-candles", symbol, apiTf, limit] as const;
+export function chartCandlesQueryKey(symbol: string, apiTf: string, limit: number, view: "display" | "analysis" = "display") {
+  return view === "analysis" ? ["chart-candles", symbol, apiTf, limit, "analysis"] as const : ["chart-candles", symbol, apiTf, limit] as const;
 }
 
 export async function fetchChartCandles(
@@ -105,9 +105,10 @@ export async function fetchChartCandles(
   apiTf: string,
   limit: number,
   signal?: AbortSignal,
+  view: "display" | "analysis" = "display",
 ): Promise<ChartCandlesResult> {
   const res = await fetch(
-    `${BASE}/api/chart/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&limit=${limit}`,
+    `${BASE}/api/chart/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&limit=${limit}${view === "analysis" ? "&view=analysis" : ""}`,
     { credentials: "include", signal },
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

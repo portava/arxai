@@ -53,7 +53,7 @@ function fixture(aiUsable: boolean): RubyChartContext {
     gateOutput: { chartTruthScore: 0, chartReadScore: 0 },
     sufficiency: { status: "sufficient", freshnessVerdict: "LIVE", canShowTradeSetup: true, reasonCode: null, humanReason: "Captured history" },
     candles: Array.from({ length: 200 }, (_, i) => ({ time: new Date(Date.UTC(2026, 9, 30, 0, i * 5)).toISOString(), open: 100 + i, high: 102 + i, low: 99 + i, close: 101 + i })),
-    htfCandles: [], marketEvidence: null, htfFeedStatus: null, htfMarketEvidence: null,
+    htfCandles: [], marketEvidence: null, htfFeedStatus: null, htfMarketEvidence: null, htfObservationKey: "captured-htf-observation",
   } as unknown as RubyChartContext;
 }
 

@@ -98,7 +98,7 @@ export function RubyChartRead({
   const owner = useRef(Symbol("RubyChartRead plan consumer")).current;
   const marketKey = rubyChartReadKey(symbol, timeframe);
   const draftKey = rubyChartDraftKey(draft);
-  const { truth, feedStatus, assessmentEvidence = null } = useScannerTruth(symbol, timeframe);
+  const { truth, feedStatus, assessmentEvidence = null } = useScannerTruth(symbol, timeframe, { observeAssessmentDependencies: true });
   const evidenceKey = rubyAssessmentEvidenceKey(assessmentEvidence);
   const { registerPlan, unregisterPlan } = store;
   // Layout registration updates the shared header restriction before paint.

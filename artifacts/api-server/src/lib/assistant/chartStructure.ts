@@ -1,3 +1,4 @@
+import { assessmentHigherTimeframe } from "@workspace/domain/truth";
 // Ruby chart-read — deterministic market-structure analysis.
 //
 // SAFETY / DESIGN:
@@ -340,16 +341,5 @@ export function analyzeChartStructure(
 // Map a chart timeframe to a sensible higher timeframe for bias context.
 export function higherTimeframeOf(timeframe: string): ChartTimeframe | null {
   const tf = normalizeChartTimeframe(timeframe);
-  // Keep the established comparison intervals. Canonical request codes must
-  // resolve too; an unsupported mapping must not relabel the same interval HTF.
-  const map: Partial<Record<ChartTimeframe, ChartTimeframe>> = {
-    M1: "M15",
-    M5: "H1",
-    M15: "H1",
-    M30: "H4",
-    H1: "H4",
-    H4: "D1",
-    D1: "W1",
-  };
-  return tf ? map[tf] ?? null : null;
+  return tf ? assessmentHigherTimeframe(tf) as ChartTimeframe | null : null;
 }

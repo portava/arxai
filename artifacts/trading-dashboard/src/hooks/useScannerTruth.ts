@@ -1,3 +1,5 @@
+import { matchesChartDependencyOwner } from "@/lib/chartCandleOwner";
+import { assessmentHigherTimeframe, higherTimeframeObservationKey } from "@workspace/domain/truth";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { RubyAssessmentEvidence } from "@/lib/rubyAssessmentEvidence";
 // useScannerTruth — the single consumed scanner-truth source (Task #391).
@@ -55,7 +57,7 @@ function candleTimeIso(time: number | undefined): string | null {
 export function useScannerTruth(
   symbolDisplay: string,
   timeframe: string,
-  opts?: { limit?: number; refetchInterval?: number },
+  opts?: { limit?: number; refetchInterval?: number; observeAssessmentDependencies?: boolean },
 ): UseScannerTruthResult {
   const symbol = (symbolDisplay || "").trim().toUpperCase();
   const chartTimeframe = normalizeChartTimeframe(timeframe);
@@ -69,6 +71,19 @@ export function useScannerTruth(
     refetchInterval: opts?.refetchInterval ?? 15_000,
     staleTime: 5_000,
   });
+
+  // Only assessment panels observe the separate HTF dependency. Shared query
+  // keys deduplicate matching panels; ordinary scanner cards add no request.
+  const htf = assessmentHigherTimeframe(apiTf);
+  const observeHtf = opts?.observeAssessmentDependencies === true && htf !== null;
+  const higherQ = useQuery<ChartCandlesResult>({
+    queryKey: chartCandlesQueryKey(symbol, htf ?? apiTf, 120, "analysis"),
+    queryFn: ({ signal }) => fetchChartCandles(symbol, htf!, 120, signal, "analysis"),
+    enabled: symbol.length > 0 && observeHtf,
+    refetchInterval: opts?.refetchInterval ?? 15_000,
+    staleTime: 5_000,
+  });
+  const higherObserved = !htf || (observeHtf && !higherQ.isError && matchesChartDependencyOwner(higherQ.data?.originalResponse, symbol, htf));
 
   // Header feed-ok snapshot — resolved INSIDE the one truth source so the header
   // strip, chart, read-gate and cards all share an identical header-ok cap. No
@@ -137,8 +152,8 @@ export function useScannerTruth(
     feedStatus,
     sourceIdentity: candlesQ.data?.marketEvidence?.sourceIdentity ?? null,
     // This is an observation for matching only, never response evidence.
-    assessmentEvidence: !candlesQ.isError && !identity.isError && identity.user && candlesQ.data?.marketEvidence?.lastClosedCandleAt && candlesQ.data.marketEvidence.closedWindowIdentity
-      ? { ...candlesQ.data.marketEvidence, closedWindowIdentity: candlesQ.data.marketEvidence.closedWindowIdentity, lastClosedCandleAt: candlesQ.data.marketEvidence.lastClosedCandleAt, userId: identity.user.id }
+    assessmentEvidence: higherObserved && !candlesQ.isError && !identity.isError && identity.user && candlesQ.data?.marketEvidence?.lastClosedCandleAt && candlesQ.data.marketEvidence.closedWindowIdentity
+      ? { ...candlesQ.data.marketEvidence, closedWindowIdentity: candlesQ.data.marketEvidence.closedWindowIdentity, lastClosedCandleAt: candlesQ.data.marketEvidence.lastClosedCandleAt, userId: identity.user.id, higherTimeframeObservation: higherTimeframeObservationKey(htf, higherQ.data?.originalResponse) }
       : null,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,

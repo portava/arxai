@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GetChartCandlesTimeframe } from "./getChartCandlesTimeframe";
+import type { GetChartCandlesView } from "./getChartCandlesView";
 
 export type GetChartCandlesParams = {
   /**
@@ -19,4 +20,8 @@ export type GetChartCandlesParams = {
    * @maximum 5000
    */
   limit?: number;
+  /**
+   * Display includes forming tips; analysis matches closed-bar assessment inputs.
+   */
+  view?: GetChartCandlesView;
 };

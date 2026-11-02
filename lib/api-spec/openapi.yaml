@@ -2160,6 +2160,13 @@ paths:
             minimum: 1
             maximum: 5000
             default: 300
+        - name: view
+          in: query
+          description: Display includes forming tips; analysis matches closed-bar assessment inputs.
+          schema:
+            type: string
+            enum: [display, analysis]
+            default: display
       responses:
         "200":
           description: Normalized chart candles

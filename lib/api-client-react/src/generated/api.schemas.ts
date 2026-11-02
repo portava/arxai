@@ -16055,6 +16055,10 @@ export type GetChartCandlesParams = {
    * @maximum 5000
    */
   limit?: number;
+  /**
+   * Display includes forming tips; analysis matches closed-bar assessment inputs.
+   */
+  view?: GetChartCandlesView;
 };
 
 export type GetChartCandlesTimeframe =
@@ -16082,6 +16086,14 @@ export const GetChartCandlesTimeframe = {
   D1: "D1",
   W1: "W1",
   MN1: "MN1",
+} as const;
+
+export type GetChartCandlesView =
+  (typeof GetChartCandlesView)[keyof typeof GetChartCandlesView];
+
+export const GetChartCandlesView = {
+  display: "display",
+  analysis: "analysis",
 } as const;
 
 export type GetChartFeedStatusParams = {

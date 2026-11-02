@@ -5,7 +5,7 @@ import { RubyChartRead } from "./RubyChartRead";
 import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
 import { StrictMode } from "react";
 
-const observed = vi.hoisted(() => ({ evidence: { symbol: "EURUSD", timeframe: "M5", source: "deriv_public", sourceIdentity: "a".repeat(64), closedWindowIdentity: "c".repeat(64), lastClosedCandleAt: "2026-01-01T00:00:00.000Z", userId: 7 } }));
+const observed = vi.hoisted(() => ({ evidence: { symbol: "EURUSD", timeframe: "M5", source: "deriv_public", sourceIdentity: "a".repeat(64), higherTimeframeObservation: JSON.stringify(["H1",null,null,false,false,null,null,null,null,null,null,null,null,null,null]),closedWindowIdentity: "c".repeat(64), lastClosedCandleAt: "2026-01-01T00:00:00.000Z", userId: 7 } }));
 vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: { analysis: { level: "full" } }, feedStatus: null, assessmentEvidence: observed.evidence }) }));
 vi.mock("@/components/charts/FeedConfidenceBadge", () => ({ FeedConfidenceBadge: () => null }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
@@ -23,7 +23,7 @@ function panel(draft:Draft,id="primary",timeframe="M5"){return <section data-tes
 function tree(draft:Draft,second?:Draft){return <RubyReadStoreProvider><Summary/>{panel(draft)}{second!==undefined&&panel(second,"secondary","5m")}</RubyReadStoreProvider>;}
 const ask=(id="primary")=>within(screen.getByTestId(id)).getByTestId("ruby-chart-read-ask") as HTMLButtonElement;
 const bias=(id="primary")=>within(screen.getByTestId(id)).queryByTestId("ruby-chart-read-bias");
-afterEach(()=>{cleanup();vi.restoreAllMocks(); observed.evidence = {symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7};});
+afterEach(()=>{cleanup();vi.restoreAllMocks(); observed.evidence = {symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),higherTimeframeObservation: JSON.stringify(["H1",null,null,false,false,null,null,null,null,null,null,null,null,null,null]),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7};});
 
 describe("assessment binding to the current trading plan",()=>{
   it("an unassessed nonnull plan cannot inherit a full shared summary",()=>{
@@ -180,5 +180,21 @@ it("withdraws a completed assessment when observation disappears",async()=>{
   const view=render(tree(plan)); fireEvent.click(ask()); await screen.findByText("OBSERVED READ");
   observed.evidence=null as unknown as typeof observed.evidence; view.rerender(tree(plan));
   expect(screen.queryByText("OBSERVED READ")).toBeNull();
+  expect(screen.getByTestId("summary").textContent).not.toBe("FULL_READ");
+});
+
+for (const phase of ["completed", "pending"]) it(`withdraws ${phase} assessments after only HTF history changes`, async () => {
+  const initial = JSON.stringify(["H1", "provider", "provider", true, true, false, "EURUSD", "H1", "provider", "a".repeat(64), "b".repeat(64), "2026-01-01T00:00:00.000Z", "c".repeat(64),"EURUSD","H1"]);
+  Object.assign(observed.evidence, { higherTimeframeObservation: initial });
+  const pending = deferred(); let signal!: AbortSignal;
+  vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => { signal = init!.signal!; return pending.promise; });
+  const view = render(tree(plan)); fireEvent.click(ask());
+  const oldReply = reply("OLD HTF ASSESSMENT");
+  if (phase === "completed") { await act(async () => pending.resolve(oldReply)); await screen.findByText("OLD HTF ASSESSMENT"); }
+  const tuple = JSON.parse(initial); tuple[12] = "d".repeat(64);
+  Object.assign(observed.evidence, { higherTimeframeObservation: JSON.stringify(tuple) });
+  view.rerender(tree(plan));
+  if (phase === "pending") { expect(signal.aborted).toBe(true); await act(async () => pending.resolve(oldReply)); }
+  expect(screen.queryByText("OLD HTF ASSESSMENT")).toBeNull();
   expect(screen.getByTestId("summary").textContent).not.toBe("FULL_READ");
 });

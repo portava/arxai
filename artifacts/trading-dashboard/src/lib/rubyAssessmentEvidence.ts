@@ -1,3 +1,4 @@
+import { assessmentHigherTimeframe, validHigherTimeframeObservationKey } from "@workspace/domain/truth";
 import { rubyChartReadContext } from "./rubyChartReadContext";
 
 /** Identity of the inputs the server actually analyzed. This is not a
@@ -10,6 +11,7 @@ export interface RubyAssessmentEvidence {
   lastClosedCandleAt: string;
   closedWindowIdentity: string;
   userId: number;
+  higherTimeframeObservation: string | null;
 }
 
 export function rubyAssessmentEvidenceKey(value: unknown, nowMs = Date.now()): string | null {
@@ -23,7 +25,8 @@ export function rubyAssessmentEvidenceKey(value: unknown, nowMs = Date.now()): s
   const at = Date.parse(e.lastClosedCandleAt);
   if (!Number.isFinite(at) || at > nowMs || new Date(at).toISOString() !== e.lastClosedCandleAt) return null;
   const market = rubyChartReadContext(e.symbol, e.timeframe);
-  return JSON.stringify([market.symbol, market.timeframe, e.source, e.sourceIdentity, e.closedWindowIdentity, at, e.userId]);
+  if (!validHigherTimeframeObservationKey(e.higherTimeframeObservation, assessmentHigherTimeframe(market.timeframe))) return null;
+  return JSON.stringify([market.symbol, market.timeframe, e.source, e.sourceIdentity, e.closedWindowIdentity, at, e.userId, e.higherTimeframeObservation]);
 }
 
 export function matchesRubyAssessmentEvidence(actual: unknown, expected: unknown): boolean {

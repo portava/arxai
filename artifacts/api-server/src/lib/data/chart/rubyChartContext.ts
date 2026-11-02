@@ -15,7 +15,7 @@ import { buildChartIntelligenceContext, type ChartIntelligenceState } from "./ch
 import { getChartCandles, type ChartFeedStatus } from "./chartDataService.js";
 import { capturedAnalysisCandles } from "./capturedAnalysisCandles.js";
 import { higherTimeframeMatchesPrimary } from "./higherTimeframeEvidence.js";
-import type { TruthReadEvidence } from "@workspace/domain/truth";
+import { higherTimeframeObservationKey, type TruthReadEvidence } from "@workspace/domain/truth";
 import type { ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import { isChartTimeframe, type ChartTimeframe } from "./timeframes.js";
@@ -115,6 +115,7 @@ export interface RubyChartContext {
   htfTimeframe: ChartTimeframe | null;
   htfFeedStatus: ChartFeedStatus | null;
   htfMarketEvidence: TruthReadEvidence | null;
+  htfObservationKey: string | null;
 }
 
 export function buildTrustLine(
@@ -343,5 +344,6 @@ export async function buildRubyChartContext(
     htfTimeframe: htf,
     htfFeedStatus: higher?.feedStatus ?? null,
     htfMarketEvidence: higher?.marketEvidence ?? null,
+    htfObservationKey: higherTimeframeObservationKey(htf, higher),
   };
 }

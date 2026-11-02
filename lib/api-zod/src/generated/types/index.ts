@@ -803,6 +803,7 @@ export * from "./getBridgeV2Config200Tunables";
 export * from "./getBrokerHealthLogsParams";
 export * from "./getChartCandlesParams";
 export * from "./getChartCandlesTimeframe";
+export * from "./getChartCandlesView";
 export * from "./getChartFeedStatusParams";
 export * from "./getChartFeedStatusTimeframe";
 export * from "./getChartHistoryParams";

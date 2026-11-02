@@ -1,9 +1,11 @@
+import { assessmentHigherTimeframe, higherTimeframeObservationKey } from "@workspace/domain/truth";
+import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { describe, expect, it } from "vitest";
 import { CHART_INTERVALS, chartIntervalDisplayId } from "./chart-engine/chartIntervals";
 import { rubyChartReadContext, rubyChartReadKey, rubyChartReadPlanKey, rubyChartDraftKey } from "./rubyChartReadContext";
 import { validateRubyChartRead } from "./rubyChartReadResponse";
 
-const full = (symbol: unknown, timeframe: unknown) => ({ assessmentEvidence:{symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}, symbol, timeframe, gated: false, readLayer: "FULL", bias: "Bullish", liveSetupWithheld: false, canShowLiveTradeSetup: true });
+const full = (symbol: unknown, timeframe: unknown) => ({ assessmentEvidence:{symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),higherTimeframeObservation: higherTimeframeObservationKey(assessmentHigherTimeframe(toApiTimeframe(normalizeChartTimeframe(String(timeframe)))),null),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}, symbol, timeframe, gated: false, readLayer: "FULL", bias: "Bullish", liveSetupWithheld: false, canShowLiveTradeSetup: true });
 
 describe("chart assessment market identity", () => {
   it("a plan key cannot collide with a chart-only market containing serialized values",()=>{

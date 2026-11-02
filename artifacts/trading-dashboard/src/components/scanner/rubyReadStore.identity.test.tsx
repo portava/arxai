@@ -1,4 +1,6 @@
-function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
+import { assessmentHigherTimeframe, higherTimeframeObservationKey } from "@workspace/domain/truth";
+import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
+function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),higherTimeframeObservation: higherTimeframeObservationKey(assessmentHigherTimeframe(toApiTimeframe(normalizeChartTimeframe(String(timeframe)))),null),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { RubyReadStoreProvider, useRubyReadStore } from "./rubyReadStore";

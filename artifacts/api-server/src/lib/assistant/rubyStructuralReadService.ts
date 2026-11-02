@@ -372,7 +372,7 @@ export async function buildRubyStructuralRead(
   // capture, never a newer lookup or the client's requested identity. The user
   // is the authenticated server input whose account-dependent checks ran.
   const assessmentEvidence = rubyCtx?.marketEvidence && Number.isSafeInteger(params.userId) && (params.userId ?? 0) > 0
-    ? { ...rubyCtx.marketEvidence, userId: params.userId! }
+    ? { ...rubyCtx.marketEvidence, userId: params.userId!, higherTimeframeObservation: rubyCtx.htfObservationKey }
     : null;
 
   // Either the captured server verdict or the client's observation can withhold
