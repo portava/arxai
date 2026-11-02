@@ -5,7 +5,7 @@ import {describeVolumeProfile,readMatchingVolumeProfile} from "./chartVolumeProf
 import {formatSavedVwapAnchor,studyDisplayLabel} from "./chartStudyDisplay";
 import {prepareVwapStudy} from "./chartVwapAnchor";
 import { formatSourceChartTime } from "./chartClockEvidence";
-import { MAX_STUDIES, STUDY_CATALOG, studyVisibleAtInterval, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
+import { MAX_STUDIES, STUDY_CATALOG, studyPaneOwner, studyVisibleAtInterval, studyDefinition, studyLabel, studyId, formatStudyNumber, type ChartStudy, type StudyKind } from "./chartStudies";
 import type { ChartEngineAdapter } from "./types";
 
 // A local display action in the existing assistant, not an AI score or a trade
@@ -128,6 +128,10 @@ function executeAverageComparison(request:AverageComparisonRequest,context:Study
     if(existing)updated[studies.indexOf(existing)]=next;else updated.push(next);
     return next;
   });
+  for(const study of pair){
+    const owner=studyPaneOwner(study,updated);
+    if(owner?.paneCollapsed){const index=updated.findIndex(s=>studyId(s)===studyId(owner));updated[index]={...updated[index]!,paneCollapsed:false};}
+  }
   const failed=applyStudyCollection(context,updated);if(failed)return failed;
   const last=visible.at(-1)!;
   let rendered:ReturnType<NonNullable<ChartEngineAdapter["getStudyValues"]>>=[];
@@ -145,7 +149,7 @@ function executeAverageComparison(request:AverageComparisonRequest,context:Study
     ?`${studyLabel(pair[0]!,updated)} is ${a>b?"above":a<b?"below":"equal to"} ${studyLabel(pair[1]!,updated)}${a===b?"":Number.isFinite(a-b)?` by ${formatStudyNumber(Math.abs(a-b),"Price")} ${linkedInput?"linked input units":"source price units"}`:"; the difference is outside the supported numerical range"}. This is a current-bar comparison, not a crossover or a forecast.`
     :"A numerical comparison is unavailable until both rendered averages have finite values. No missing value was replaced with zero.";
   const inputs=linkedInput ? "Study inputs are preserved and named above; missing parent observations are not replaced with prices." : (pair[0]!.source??"close")===(pair[1]!.source??"close")?"Both use the same applied-price input.":"The existing applied-price inputs differ; this comparison preserves and names them rather than silently changing your settings.";
-  return `Applied the average comparison on ${symbol} · ${timeframe} · ${feedLabel}. Existing calculation/style settings retained; new averages use catalogue defaults apart from the requested periods and distinct colors. The requested averages are both enabled for display; other tools are unchanged.\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Actual renderer observation at bar open ${time(last.time)}: ${observed}. Times identify source bar coordinates; ISO formatting does not independently prove UTC. ${inputs}\nCalculated observation: ${relation} The last visible bar may still be forming. Studies use their selected price or linked-study input, not averaged display candles; loaded bars before this window may supply warmup. Feed status describes this request, not historical liveness. This is not a buy/sell instruction or a confidence score. Edit, hide or remove either average in Studies; manual settings use the same renderer. No order was sent.`;
+  return `Applied the average comparison on ${symbol} · ${timeframe} · ${feedLabel}. Existing calculation/style settings retained; new averages use catalogue defaults apart from the requested periods and distinct colors. The requested averages are both enabled for display, with shared source panes expanded where needed. Source calculations and interval restrictions are preserved; unrelated tools are unchanged.\nVisible window: ${time(visible[0]!.time)} to ${time(last.time)}. Actual renderer observation at bar open ${time(last.time)}: ${observed}. Times identify source bar coordinates; ISO formatting does not independently prove UTC. ${inputs}\nCalculated observation: ${relation} The last visible bar may still be forming. Studies use their selected price or linked-study input, not averaged display candles; loaded bars before this window may supply warmup. Feed status describes this request, not historical liveness. This is not a buy/sell instruction or a confidence score. Edit, hide or remove either average in Studies; manual settings use the same renderer. No order was sent.`;
 }
 export function executeStudyRequest(request:StudyRequest,context:StudyAssistantContext):string {
   const focused=context.adapter?.isAnalysisFocused?.()===true;
@@ -211,8 +215,15 @@ function executeStudyRequestCore(request:StudyRequest,context:StudyAssistantCont
   const preserveVisibility=existing != null && request.preserveVisibility === true;
   if(!preserveVisibility&&request.action==="show"&&!revealCurrentInterval(next,timeframe))return "Chart not changed: the current interval is unrecognized; visibility cannot be verified.";
   if (!preserveVisibility) next.lineStyles=definition.channels.map((_,i)=>({...next.lineStyles?.[i],visible:request.action!=="hide"}));
-  const updated=request.action==="remove" ? studies.filter(s=>s!==existing)
+  let updated=request.action==="remove" ? studies.filter(s=>s!==existing)
     : existing ? studies.map(s=>s===existing ? next : s) : [...studies,next];
+  if(request.action==='show'&&!preserveVisibility){
+    const owner=studyPaneOwner(next,updated);
+    if(owner?.paneCollapsed){
+      if(studyId(owner)===studyId(next))next.paneCollapsed=false;
+      else updated=updated.map(s=>studyId(s)===studyId(owner)?{...s,paneCollapsed:false}:s);
+    }
+  }
   // The same synchronous renderer used by manual settings supplies the receipt.
   // Never substitute a separately calculated or model-generated study value.
   const failed=applyStudyCollection(context,updated);if(failed)return failed;

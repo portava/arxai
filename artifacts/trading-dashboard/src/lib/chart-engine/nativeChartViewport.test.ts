@@ -441,3 +441,12 @@ it('applies saved pane weights to actual viewport geometry without changing cano
  expect(after.panes[0]!.height).toBeGreaterThan(before.panes[0]!.height);expect(after.panes[1]!.height).toBeGreaterThanOrEqual(40);expect(after.price.height).toBeGreaterThanOrEqual(100);
  expect(viewport.getCandles()).toBe(data);expect(viewport.getState().status).toBe('ready');
 });
+
+it('collapses complete panes, preserves observations and restores the previous geometry',()=>{
+ create();const rsi={id:'rsi',kind:'rsi' as const,period:14,color:'#ffffff',paneWeight:3},macd={kind:'macd' as const,period:12,slow:26,signal:9,color:'#ff0000'};
+ viewport.setStudies([rsi,macd]);flush();const before=viewport.getPaneLayout()!,data=viewport.getCandles(),range=viewport.getRange();
+ viewport.setStudies([{...rsi,paneCollapsed:true},macd]);flush();
+ expect(viewport.getPaneLayout()!.panes[0]!.height).toBe(24);expect(viewport.getPaneLayout()!.price.height).toBeGreaterThan(before.price.height);
+ expect(viewport.getCandles()).toBe(data);expect(viewport.getRange()).toEqual(range);expect(viewport.getState().status).toBe('ready');
+ viewport.setStudies([{...rsi,paneCollapsed:false},macd]);flush();expect(viewport.getPaneLayout()).toEqual(before);
+});

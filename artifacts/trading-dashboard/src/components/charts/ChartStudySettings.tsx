@@ -145,6 +145,7 @@ export function ChartStudySettings({ preferences, onPreferences, adapter, anchor
               <span className="text-[11px] text-zinc-400">Inclusive original bar-open endpoints. Frozen until explicitly changed; panning does not move the profile. Defaults exclude only a forming tail. Every selected closed bar needs qualified trade units and original UTC evidence. Loaded observations only; no filled gaps or complete-session claim. Up to 100 matching visible bars are listed; search reaches other exact bars.</span>
             </div>}
             <input type="color" aria-label={`${label} Color`} className="h-8 w-9 bg-transparent" value={config.color} onChange={event => update(id, { color: event.target.value })} />
+            {definition.pane && <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${label} ${config.paneCollapsed?'Expand':'Collapse'} pane`} aria-pressed={config.paneCollapsed===true} onClick={()=>update(id,{paneCollapsed:config.paneCollapsed!==true})}>{config.paneCollapsed?'Expand pane':'Collapse pane'}</Button>}
             {([-1,1] as const).map(direction=><Button key={direction} size="sm" variant="ghost" className="h-8 text-xs" disabled={index+direction<0||index+direction>=preferences.studies.length} aria-label={`Move study ${index+1} ${direction<0?"up":"down"}`} onClick={()=>onPreferences(previous=>{
               const from=previous.studies.findIndex(study=>studyId(study)===id),to=from+direction;
               if(from<0||to<0||to>=previous.studies.length)return previous;

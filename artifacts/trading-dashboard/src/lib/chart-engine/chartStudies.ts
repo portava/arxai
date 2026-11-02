@@ -43,6 +43,8 @@ export interface ChartStudy {
   paneScale?: StudyPaneScale;
   /** Relative display height of this oscillator pane; never a calculation input. */
   paneWeight?: number;
+  /** Collapse the entire owned pane, including linked overlays; math is retained. */
+  paneCollapsed?: boolean;
   /** Display only; omitted means all intervals, [] means hidden on every interval. */
   visibleIntervals?: ChartInterval[];
   /** Readout display only. Omitted means shown; calculations stay available. */
@@ -103,6 +105,22 @@ export function studySourceIssue(config:ChartStudy,configs:readonly ChartStudy[]
     const ref=current.studySource,parent=byId.get(ref.studyId);
     if(!acceptsStudySource(current.kind)||!parent||parent.kind==='volume_profile'||!Number.isInteger(ref.channel)||ref.channel<0||ref.channel>=studyDefinition(parent.kind).channels.length)
       return "Linked study is unavailable: its source study or channel is missing or unsupported.";
+    current=parent;
+  }
+  return null;
+}
+/** Resolve display ownership, never calculation inputs. Broken/circular overlay links have no owner. */
+export function studyPaneOwner(study:Readonly<ChartStudy>,studies:readonly Readonly<ChartStudy>[]):Readonly<ChartStudy>|null {
+  if(!studyDefinition(study.kind).pane&&studySourceIssue(study,studies))return null;
+  const seen=new Set<string>();let current:Readonly<ChartStudy>|undefined=study;
+  while(current){
+    if(studyDefinition(current.kind).pane)return current;
+    const id=studyId(current);if(seen.has(id))return null;seen.add(id);
+    if(!current.studySource)return null;
+    const ref:NonNullable<ChartStudy["studySource"]>=current.studySource;
+    if(!acceptsStudySource(current.kind))return null;
+    const parent:Readonly<ChartStudy>|undefined=studies.find(s=>studyId(s)===ref.studyId);
+    if(!parent||parent.kind==='volume_profile'||!Number.isInteger(ref.channel)||ref.channel<0||ref.channel>=studyDefinition(parent.kind).channels.length)return null;
     current=parent;
   }
   return null;
@@ -171,7 +189,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, paneWeight: _weight, visibleIntervals: _intervals, showInDataWindow: _dataWindow, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, paneWeight: _weight, paneCollapsed: _collapsed, visibleIntervals: _intervals, showInDataWindow: _dataWindow, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;

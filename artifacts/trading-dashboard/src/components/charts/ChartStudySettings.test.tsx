@@ -212,3 +212,13 @@ it('resizes and reorders studies without changing linked-source identities',()=>
  expect(settings().studies[1].paneWeight).toBe(3);expect(screen.getByRole('alert').textContent).toContain('0.25 to 8');
  fireEvent.click(screen.getByRole('button',{name:'RSI 2 Reset pane height'}));expect(settings().studies[1].paneWeight).toBeUndefined();
 });
+
+it('collapses a pane without deleting its study and restores its saved height',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index',exact:true}));
+ fireEvent.blur(screen.getByLabelText('RSI 1 Relative pane height'),{target:{value:'3'}});
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Collapse pane'}));
+ expect(settings().studies[0]).toMatchObject({paneCollapsed:true,paneWeight:3});
+ expect(screen.getByRole('button',{name:'RSI 1 Expand pane'}).getAttribute('aria-pressed')).toBe('true');
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));expect(settings().studies[1].paneCollapsed).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Expand pane'}));expect(settings().studies[0]).toMatchObject({paneCollapsed:false,paneWeight:3});expect(settings().studies[1].paneCollapsed).toBe(true);
+});

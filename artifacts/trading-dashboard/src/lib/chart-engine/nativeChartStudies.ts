@@ -60,6 +60,10 @@ export class NativeChartStudies {
     const displayed=this.getDisplayStudies();
     return Array.from({length:Math.max(0,...displayed.map(s=>s.paneIndex))},(_,i)=>displayed.find(s=>s.paneIndex===i+1&&studyDefinition(s.config.kind).pane)?.config.paneWeight??1);
   }
+  getPaneCollapsed():boolean[] {
+    const displayed=this.getDisplayStudies();
+    return Array.from({length:Math.max(0,...displayed.map(s=>s.paneIndex))},(_,i)=>displayed.some(s=>s.paneIndex===i+1&&studyDefinition(s.config.kind).pane&&s.config.paneCollapsed===true));
+  }
   setStudies(configs:readonly ChartStudy[],candles:readonly ChartEngineCandle[]):void {
     const valid=validatePreferences({studies:configs}).studies.map(freezeConfig);
     const prior=new Map(this.calculators.map(calculator=>[studyId(calculator.config),calculator]));
@@ -147,14 +151,15 @@ export class NativeChartStudies {
   getValues(time:number) {
     return Object.freeze(this.snapshots.map(study=>{
       const config=study.config,intervalHidden=!studyVisibleAtInterval(config,this.timeframe);
-      const displayLabel=studyLabel(config,this.getStudies())+studyIntervalSuffix(config,this.timeframe);
-      if(config.kind==='volume_profile')return Object.freeze({...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden?{displayLabel}:{}),color:config.color,
+      const collapsed=study.paneIndex>0&&this.snapshots.some(s=>s.paneIndex===study.paneIndex&&studyDefinition(s.config.kind).pane&&s.config.paneCollapsed===true);
+      const displayLabel=studyLabel(config,this.getStudies())+studyIntervalSuffix(config,this.timeframe)+(collapsed?' (pane collapsed)':'');
+      if(config.kind==='volume_profile')return Object.freeze({...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden||collapsed?{displayLabel}:{}),color:config.color,
         ...(study.profile?.status==='held'?{reason:study.profile.reason}:{}),values:Object.freeze([Object.freeze({
           name:intervalHidden||config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',
           value:study.profile?.status==='ready'?study.profile.totalTradeUnits:null})])});
       let lo=0,hi=study.points.length-1,point:NativeStudyPoint|undefined;
       if(finite(time))while(lo<=hi){const mid=(lo+hi)>>>1,candidate=study.points[mid]!;if(candidate.time===time){point=candidate;break;}if(candidate.time<time)lo=mid+1;else hi=mid-1;}
-      return Object.freeze({...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden?{displayLabel}:{}),color:config.color,...(point?.reason?{reason:point.reason}:{}),
+      return Object.freeze({...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden||collapsed?{displayLabel}:{}),color:config.color,...(point?.reason?{reason:point.reason}:{}),
         values:Object.freeze(studyDefinition(config.kind).channels.map((name,index)=>Object.freeze({
           name:intervalHidden||config.lineStyles?.[index]?.visible===false?`${name} (hidden)`:name,value:finite(point?.values[index])?point!.values[index]!:null})))});
     }));
@@ -180,16 +185,18 @@ export class NativeChartStudies {
 
 /** Preserve every configured pane. Caller must report unavailable space and
  * may resize; silently dropping an oscillator would misrepresent preferences. */
-export function layoutNativeStudyPanes(fullPlot:NativePlot,count:number,paneWeights?:readonly number[]):{price:NativePlot;panes:NativePlot[]}|null {
+export function layoutNativeStudyPanes(fullPlot:NativePlot,count:number,paneWeights?:readonly number[],paneCollapsed?:readonly boolean[]):{price:NativePlot;panes:NativePlot[]}|null {
   if(!Number.isInteger(count)||count<0||count>12||![fullPlot.left,fullPlot.top,fullPlot.width,fullPlot.height].every(finite)
     ||fullPlot.width<=0||fullPlot.height<=0||!finite(fullPlot.left+fullPlot.width)||!finite(fullPlot.top+fullPlot.height))return null;
   if(paneWeights!==undefined&&(paneWeights.length!==count||Array.from(paneWeights).some(w=>!finite(w)||w<.25||w>8)))return null;
+  if(paneCollapsed!==undefined&&(paneCollapsed.length!==count||Array.from(paneCollapsed).some(v=>typeof v!=="boolean")))return null;
   if(count===0)return {price:Object.freeze({...fullPlot}),panes:[]};
   // Retain existing minimum-space acceptance. Redistribution must not make an
   // already unavailable stack appear complete by squeezing away a pane.
-  if(fullPlot.height/(count+3)<40)return null;
+  const collapsed=[false,...(paneCollapsed??Array(count).fill(false))],collapsedCount=collapsed.filter(Boolean).length;
+  if(collapsedCount?fullPlot.height<100+(count-collapsedCount)*40+collapsedCount*24:fullPlot.height/(count+3)<40)return null;
   const weights=[3,...(paneWeights??Array(count).fill(1))],minimum=[100,...Array(count).fill(40)];
-  const heights=Array(count+1).fill(0),remaining=new Set(weights.map((_,i)=>i));let available=fullPlot.height;
+  const heights:number[]=collapsed.map(value=>value?24:0),remaining=new Set(weights.map((_,i)=>i).filter(i=>!collapsed[i]));let available=fullPlot.height-collapsedCount*24;
   // Water-fill constrained panes before redistributing the remaining space.
   while(remaining.size){
     const total=[...remaining].reduce((sum,i)=>sum+weights[i]!,0);
@@ -203,11 +210,11 @@ export function layoutNativeStudyPanes(fullPlot:NativePlot,count:number,paneWeig
     // Preserve the readable minimum when subtraction rounds a fractional final
     // pane just below 40px. At the largest finite extent, recombining a rounded
     // difference can overflow; use the adjacent representable height instead.
-    let height=index===count-1?Math.max(40,bottom-top):requested;
+    let height=collapsed[index+1]?24:index===count-1?Math.max(40,bottom-top):requested;
     if(!finite(top+height))height=adjacentFloat(height,-1);
     const pane=Object.freeze({...fullPlot,top,height});top+=height;return pane;
   });
-  if(!finite(heights[0])||heights[0]<100||panes.some(p=>![p.top,p.height,p.top+p.height].every(finite)||p.height<40))return null;
+  if(!finite(heights[0])||heights[0]<100||panes.some((p,i)=>![p.top,p.height,p.top+p.height].every(finite)||p.height<(collapsed[i+1]?24:40)))return null;
   return {price:Object.freeze({...fullPlot,height:heights[0]}),panes};
 }
 
@@ -321,13 +328,14 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
     const group=displayed.filter(s=>s.paneIndex===study.paneIndex);
     const first=group[0]===study;
     const groupVisible=group.some(s=>!s.intervalHidden&&studyDefinition(s.config.kind).channels.some((_,i)=>s.config.lineStyles?.[i]?.visible!==false));
-    const mapping=study.paneIndex?paneMapping(group,frame,plot):null;
+    const collapsed=study.paneIndex>0&&group.some(s=>studyDefinition(s.config.kind).pane&&s.config.paneCollapsed===true);
+    const mapping=study.paneIndex&&!collapsed?paneMapping(group,frame,plot):null;
     const y=study.paneIndex?mapping?.y:(value:number)=>frame.priceToY(value);
     clipped(ctx,plot,()=>{
       const definition=studyDefinition(study.config.kind),anyVisible=!study.intervalHidden&&definition.channels.some((_,i)=>study.config.lineStyles?.[i]?.visible!==false);
       if(study.paneIndex&&first){
         ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(plot.left,plot.top);ctx.lineTo(plot.left+plot.width,plot.top);ctx.stroke();
-        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-10));
+        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(collapsed?' · collapsed — restore in Studies':groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-10));
       }
       if(study.paneIndex&&first&&mapping?.note){ctx.fillStyle='#fbbf24';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(mapping.note,plot.left+5,plot.top+plot.height-3,Math.max(1,plot.width-10));}
       if(!y||!anyVisible)return;

@@ -24,6 +24,7 @@ export function ChartStudyPaneSettings({config,label,onChange}:Props){
   <summary className="cursor-pointer text-zinc-300">Pane scale and reference levels</summary>
   <p className="my-2 text-[11px] text-zinc-400">Display only. Guides do not change indicator calculations, AI rules or trade thresholds. Linked overlays share this pane’s scale. Uncheck either boundary to fit that side to visible values and guides. Fixed limits can hide values; the data window retains them.</p>
   <div className="mb-3 flex flex-wrap items-center gap-2">
+   {config.paneCollapsed&&<p className="w-full text-[11px] text-zinc-400">Pane collapsed, including linked overlays. Calculations and Data Window values remain available.</p>}
    <label className="text-xs">Relative pane height <input className={`${field} w-24`} aria-label={`${label} Relative pane height`} type="number" min="0.25" max="8" step="0.25" key={`weight-${config.paneWeight??1}`} defaultValue={config.paneWeight??1} onBlur={e=>{
     const value=Number(e.target.value);
     if(!e.target.value.trim()||!e.target.validity.valid||!change({paneWeight:value})){e.target.value=String(config.paneWeight??1);setError('Use a pane height from 0.25 to 8. Existing settings are unchanged.');}

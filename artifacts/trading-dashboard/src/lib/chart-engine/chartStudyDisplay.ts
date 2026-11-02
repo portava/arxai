@@ -1,6 +1,6 @@
 import {formatSourceChartTime} from './chartClockEvidence';
 import {selectVwapAnchor} from './chartVwapAnchor';
-import {studyIntervalSuffix,studyLabel,type ChartStudy,type VwapAnchor} from './chartStudies';
+import {studyPaneOwner,studyIntervalSuffix,studyLabel,type ChartStudy,type VwapAnchor} from './chartStudies';
 import type {ChartEngineAdapter,ChartEngineCandle} from './types';
 
 export function formatSavedVwapAnchor(anchor:VwapAnchor,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined):string {
@@ -21,7 +21,7 @@ function baseStudyDisplayLabel(study:ChartStudy,adapter:Pick<ChartEngineAdapter,
  return studyLabel(study,studies);
 }
 export function studyDisplayLabel(study:ChartStudy,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined,detailedProfile=false,studies?:readonly ChartStudy[],timeframe?:string):string {
- return baseStudyDisplayLabel(study,adapter,detailedProfile,studies)+(timeframe?studyIntervalSuffix(study,timeframe):'');
+ return baseStudyDisplayLabel(study,adapter,detailedProfile,studies)+(timeframe?studyIntervalSuffix(study,timeframe):'')+(studyPaneOwner(study,studies??[study])?.paneCollapsed?' · pane collapsed':'');
 }
 export function formatObservedBarChoice(bar:ChartEngineCandle,adapter:Pick<ChartEngineAdapter,'getVwapAnchorEvidence'>|null|undefined):string {
  const selection=selectVwapAnchor([bar],bar.time);
