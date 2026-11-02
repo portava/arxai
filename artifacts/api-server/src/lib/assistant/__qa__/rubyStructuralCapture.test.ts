@@ -123,11 +123,13 @@ for (const full of [true, false]) {
 
 for (const full of [true,false]) test(`response carries captured evidence, not a later observation (${full})`,async()=>{
   captured=fixture(full);
-  const evidence={symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z"};
+  const evidence={symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z"};
   captured.marketEvidence=evidence;
   const result=await buildRubyStructuralRead({symbol:"EURUSD",timeframe:"5m",userId:7});
   assert.deepEqual(result.chartRead.assessmentEvidence,{...evidence,userId:7});
   evidence.sourceIdentity="b".repeat(64);
+  evidence.closedWindowIdentity="d".repeat(64);
+  assert.equal((result.chartRead.assessmentEvidence as typeof evidence).closedWindowIdentity,"c".repeat(64));
   assert.equal((result.chartRead.assessmentEvidence as typeof evidence).sourceIdentity,"a".repeat(64));
   assert.equal(contextCalls,1);assert.equal(independentProbeCalls,0);
 });

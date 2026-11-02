@@ -89,3 +89,11 @@ describe("original candle evidence retention", () => {
     expect((result.originalResponse as typeof original).candles[0]).not.toHaveProperty("closeTime");
   });
 });
+
+it("preserves a server closed-window digest and never invents one for older responses",async()=>{
+  for(const digest of ["c".repeat(64),undefined,"bad",42]){
+    vi.stubGlobal("fetch",vi.fn(async()=>({ok:true,json:async()=>({symbol:"EURUSD",timeframe:"M5",candles:[],feedStatus:{symbol:"EURUSD",source:"mt5_broker"},marketEvidence:{symbol:"EURUSD",timeframe:"M5",source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",closedWindowIdentity:digest}})})));
+    const result=await fetchChartCandles("EURUSD","M5",200);
+    expect(result.marketEvidence?.closedWindowIdentity).toBe(typeof digest==="string"&&digest.length===64?digest:undefined);
+  }
+});

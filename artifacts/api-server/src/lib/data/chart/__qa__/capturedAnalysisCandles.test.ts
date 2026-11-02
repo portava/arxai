@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capturedAnalysisCandles } from "../capturedAnalysisCandles.js";
+import { capturedAnalysisCandles, closedAnalysisWindowIdentity } from "../capturedAnalysisCandles.js";
 import type { NormalizedChartCandle } from "../candleNormalization.js";
 import { higherTimeframeOf } from "../../../assistant/chartStructure.js";
 import { analyzeChartStructure } from "../../../assistant/chartStructure.js";
@@ -118,4 +118,29 @@ test("time/price/volume limitations remain separate copied metadata, not new pro
   assert.equal(input.volumeEvidence!.quantity, 3);
   assert.equal(input.close, 101);
   assert.equal(Object.hasOwn(out!, "originalVolumeSeriesIdentity"), false);
+});
+
+test("closed window identity changes for any historical OHLC correction",()=>{
+  const bars=[candle(),candle({openTime:"2026-11-01T10:05:00.000Z",closeTime:"2026-11-01T10:10:00.000Z"})];
+  const original=closedAnalysisWindowIdentity(bars);assert.match(original!,/^[a-f0-9]{64}$/);
+  for(const field of ["open","high","low","close"] as const){
+    const changed=structuredClone(bars);changed[0]![field]+=field==="low"?-0.1:0.1;
+    assert.notEqual(closedAnalysisWindowIdentity(changed),original,field);
+  }
+  assert.notEqual(closedAnalysisWindowIdentity(bars.slice(1)),original);
+});
+test("routine receipt updates and forming ticks do not alter closed analysis identity",()=>{
+  const closed=candle(), forming=candle({isComplete:false,isFinal:false,isForming:true});
+  assert.equal(closedAnalysisWindowIdentity([closed]),closedAnalysisWindowIdentity([{...closed,receivedAt:"2026-11-01T10:07:00.000Z"},{...forming,close:999}]));
+});
+test("metadata semantics change the identity but object key ordering does not",()=>{
+  const original=candle({volumeEvidence:{kind:"tick_count",quantity:3,unit:"ticks",reason:null}});
+  assert.equal(closedAnalysisWindowIdentity([original]),closedAnalysisWindowIdentity([{...original,volumeEvidence:{reason:null,unit:"ticks",quantity:3,kind:"tick_count"}}]));
+  assert.notEqual(closedAnalysisWindowIdentity([original]),closedAnalysisWindowIdentity([{...original,volumeEvidence:{...original.volumeEvidence!,quantity:4}}]));
+  assert.notEqual(closedAnalysisWindowIdentity([original]),closedAnalysisWindowIdentity([{...original,timeBasisEvidence:{kind:"unavailable",basis:"BROKER_SERVER",authority:null,reason:"Unverified"}}]));
+});
+test("empty, malformed and reordered analysis inputs do not earn an identity",()=>{
+  for(const input of [[],[candle({close:NaN})],[candle({high:98})],[candle({openTime:"bad"})],[candle(),candle()],[candle({volumeEvidence:{kind:"tick_count",quantity:Infinity,unit:"ticks",reason:null}})]]){
+    assert.equal(closedAnalysisWindowIdentity(input),null);
+  }
 });

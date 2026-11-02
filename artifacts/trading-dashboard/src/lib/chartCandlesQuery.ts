@@ -92,6 +92,7 @@ export interface ChartCandlesResult {
     source: string;
     sourceIdentity: string;
     lastClosedCandleAt: string | null;
+    closedWindowIdentity?: string;
   } | null;
 }
 
@@ -121,7 +122,9 @@ export async function fetchChartCandles(
     && evidence.source === feedStatus?.source && typeof evidence.sourceIdentity === "string"
     && evidence.sourceIdentity.length > 0
     ? { symbol, timeframe: apiTf, source: evidence.source, sourceIdentity: evidence.sourceIdentity,
-        lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null }
+        lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null,
+        ...(typeof evidence.closedWindowIdentity === "string" && /^[a-f0-9]{64}$/.test(evidence.closedWindowIdentity)
+          ? {closedWindowIdentity:evidence.closedWindowIdentity} : {}) }
     : null;
   return { candles, feedStatus, sourceClockQualified: ownerMatches && chartUtcClockQualified(arr as {timeBasisEvidence?:unknown}[]), originalResponse: data, ...(marketEvidence ? { marketEvidence } : {}) };
 }

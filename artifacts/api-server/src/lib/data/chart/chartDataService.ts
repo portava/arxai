@@ -1,3 +1,4 @@
+import { closedAnalysisWindowIdentity } from "./capturedAnalysisCandles.js";
 import { unavailableCandleTimeBasis } from "../candleTimeBasisEvidence.js";
 import { unavailableCandlePriceBasis } from "../candlePriceBasisEvidence.js";
 import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
@@ -395,8 +396,10 @@ async function buildChartFeed(
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
+  const evidence = prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null;
+  const closedWindowIdentity = evidence ? closedAnalysisWindowIdentity(candles) : null;
   return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
-    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
+    marketEvidence: evidence && closedWindowIdentity ? { ...evidence, closedWindowIdentity } : null };
 }
 
 /**

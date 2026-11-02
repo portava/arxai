@@ -137,8 +137,8 @@ export function useScannerTruth(
     feedStatus,
     sourceIdentity: candlesQ.data?.marketEvidence?.sourceIdentity ?? null,
     // This is an observation for matching only, never response evidence.
-    assessmentEvidence: !candlesQ.isError && !identity.isError && identity.user && candlesQ.data?.marketEvidence?.lastClosedCandleAt
-      ? { ...candlesQ.data.marketEvidence, lastClosedCandleAt: candlesQ.data.marketEvidence.lastClosedCandleAt, userId: identity.user.id }
+    assessmentEvidence: !candlesQ.isError && !identity.isError && identity.user && candlesQ.data?.marketEvidence?.lastClosedCandleAt && candlesQ.data.marketEvidence.closedWindowIdentity
+      ? { ...candlesQ.data.marketEvidence, closedWindowIdentity: candlesQ.data.marketEvidence.closedWindowIdentity, lastClosedCandleAt: candlesQ.data.marketEvidence.lastClosedCandleAt, userId: identity.user.id }
       : null,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,

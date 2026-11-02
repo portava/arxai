@@ -1,4 +1,4 @@
-function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
+function evidence(symbol="EURUSD",timeframe="M5") { return {symbol,timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7}; }
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
 import { render as renderBase, screen, cleanup, fireEvent } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";

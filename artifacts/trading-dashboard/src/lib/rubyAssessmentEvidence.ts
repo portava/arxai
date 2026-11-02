@@ -8,6 +8,7 @@ export interface RubyAssessmentEvidence {
   source: string;
   sourceIdentity: string;
   lastClosedCandleAt: string;
+  closedWindowIdentity: string;
   userId: number;
 }
 
@@ -17,11 +18,12 @@ export function rubyAssessmentEvidenceKey(value: unknown, nowMs = Date.now()): s
   if (typeof e.symbol !== "string" || !e.symbol.trim() || typeof e.timeframe !== "string" || !e.timeframe.trim()
     || typeof e.source !== "string" || !e.source.trim()
     || typeof e.sourceIdentity !== "string" || !/^[a-f0-9]{64}$/.test(e.sourceIdentity)
+    || typeof e.closedWindowIdentity !== "string" || !/^[a-f0-9]{64}$/.test(e.closedWindowIdentity)
     || typeof e.lastClosedCandleAt !== "string" || !Number.isSafeInteger(e.userId) || (e.userId as number) <= 0) return null;
   const at = Date.parse(e.lastClosedCandleAt);
   if (!Number.isFinite(at) || at > nowMs || new Date(at).toISOString() !== e.lastClosedCandleAt) return null;
   const market = rubyChartReadContext(e.symbol, e.timeframe);
-  return JSON.stringify([market.symbol, market.timeframe, e.source, e.sourceIdentity, at, e.userId]);
+  return JSON.stringify([market.symbol, market.timeframe, e.source, e.sourceIdentity, e.closedWindowIdentity, at, e.userId]);
 }
 
 export function matchesRubyAssessmentEvidence(actual: unknown, expected: unknown): boolean {

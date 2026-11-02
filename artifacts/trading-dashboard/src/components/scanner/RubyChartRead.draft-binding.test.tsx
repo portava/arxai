@@ -5,7 +5,7 @@ import { RubyChartRead } from "./RubyChartRead";
 import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
 import { StrictMode } from "react";
 
-const observed = vi.hoisted(() => ({ evidence: { symbol: "EURUSD", timeframe: "M5", source: "deriv_public", sourceIdentity: "a".repeat(64), lastClosedCandleAt: "2026-01-01T00:00:00.000Z", userId: 7 } }));
+const observed = vi.hoisted(() => ({ evidence: { symbol: "EURUSD", timeframe: "M5", source: "deriv_public", sourceIdentity: "a".repeat(64), closedWindowIdentity: "c".repeat(64), lastClosedCandleAt: "2026-01-01T00:00:00.000Z", userId: 7 } }));
 vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: { analysis: { level: "full" } }, feedStatus: null, assessmentEvidence: observed.evidence }) }));
 vi.mock("@/components/charts/FeedConfidenceBadge", () => ({ FeedConfidenceBadge: () => null }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
@@ -23,7 +23,7 @@ function panel(draft:Draft,id="primary",timeframe="M5"){return <section data-tes
 function tree(draft:Draft,second?:Draft){return <RubyReadStoreProvider><Summary/>{panel(draft)}{second!==undefined&&panel(second,"secondary","5m")}</RubyReadStoreProvider>;}
 const ask=(id="primary")=>within(screen.getByTestId(id)).getByTestId("ruby-chart-read-ask") as HTMLButtonElement;
 const bias=(id="primary")=>within(screen.getByTestId(id)).queryByTestId("ruby-chart-read-bias");
-afterEach(()=>{cleanup();vi.restoreAllMocks(); observed.evidence = {symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7};});
+afterEach(()=>{cleanup();vi.restoreAllMocks(); observed.evidence = {symbol:"EURUSD",timeframe:"M5",source:"deriv_public",sourceIdentity:"a".repeat(64),closedWindowIdentity:"c".repeat(64),lastClosedCandleAt:"2026-01-01T00:00:00.000Z",userId:7};});
 
 describe("assessment binding to the current trading plan",()=>{
   it("an unassessed nonnull plan cannot inherit a full shared summary",()=>{
@@ -142,7 +142,7 @@ describe("assessment binding to the current trading plan",()=>{
   });
 });
 
-for (const [field, value] of [["sourceIdentity", "b".repeat(64)], ["source", "mt5_broker"], ["lastClosedCandleAt", "2026-01-01T00:05:00.000Z"], ["userId", 8]] as const) {
+for (const [field, value] of [["closedWindowIdentity", "d".repeat(64)], ["sourceIdentity", "b".repeat(64)], ["source", "mt5_broker"], ["lastClosedCandleAt", "2026-01-01T00:05:00.000Z"], ["userId", 8]] as const) {
   it(`withdraws completed assessment when observed ${field} changes`, async () => {
     vi.spyOn(globalThis,"fetch").mockResolvedValue(reply("OLD EVIDENCE"));
     const view=render(tree(plan)); fireEvent.click(ask()); await screen.findByText("OLD EVIDENCE");

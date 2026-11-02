@@ -1,7 +1,7 @@
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { marketFixture, NOW } from "./marketEvidenceFixtures.js";
-import { bindScannerSource } from "../../scannerInputIntegrity.js";
+import { bindScannerSource, scannerVenueIdentity } from "../../scannerInputIntegrity.js";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -54,7 +54,7 @@ beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); wrongR
 
 test("real Ruby service keeps closed-bar and user evidence, drops forming-price shocks", async () => {
   const before = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
-  assert.deepEqual(before.marketEvidence, { ...f.evidence, userId: 1 }); assert.equal(before.stopLoss, 1.097);
+  assert.deepEqual(before.marketEvidence, { ...f.evidence, venueIdentity: scannerVenueIdentity(f.result), userId: 1 }); assert.equal(before.stopLoss, 1.097);
   const tip = f.result.candles.at(-1)!; tip.high = 50; tip.low = 0.01; tip.close = 0.02;
   const after = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   for (const key of ["direction", "bias", "stopLoss", "takeProfitZones", "scores", "regime", "marketEvidence"] as const) assert.deepEqual(after[key], before[key], key);
@@ -71,7 +71,7 @@ for (const kind of ["source", "bar", "quote"] as const) test(`real Ruby service 
 
 test("real scalp focus uses one bound market window and records actual M5 user context", async () => {
   const result = await evaluateScalpForSymbol(1, { symbol: "EURUSD", mode: "ANY" });
-  assert.deepEqual(result.marketEvidence, { ...f.evidence, userId: 1 });
+  assert.deepEqual(result.marketEvidence, { ...f.evidence, venueIdentity: scannerVenueIdentity(f.result), userId: 1 });
   assert.equal(captured!.candles.length, 80); assert.equal(captured!.currentPrice, 1.098); assert.ok(captured!.scanner);
   assert.equal(captured!.patternImpact.status, "failed");
   assert.equal(candleCalls, 1); assert.equal(quoteCalls, 1);
@@ -116,7 +116,11 @@ test("real Ruby producer ignores unbound legacy memory and failed writes never c
 test("actual chart producer emits same opaque source and preceding closed bar despite a future scheduled tip close", async () => {
   // EURUSD session profile reads are mocked via the local empty DB adapter above.
   const chart = await getChartCandles("EURUSD", "M5", 80, false);
-  assert.deepEqual(chart.marketEvidence, f.evidence); assert.ok(Date.parse(chart.feedStatus.lastCandleTime!) > NOW);
+  assert.ok(chart.marketEvidence);
+  const { closedWindowIdentity, ...identity } = chart.marketEvidence;
+  assert.match(closedWindowIdentity ?? "", /^[a-f0-9]{64}$/);
+  assert.deepEqual(identity, { ...f.evidence, venueIdentity: scannerVenueIdentity(f.result) });
+  assert.ok(Date.parse(chart.feedStatus.lastCandleTime!) > NOW);
   assert.equal(chart.candles.at(-1)!.isFinal, false);
 });
 
