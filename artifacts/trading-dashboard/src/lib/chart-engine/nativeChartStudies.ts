@@ -335,7 +335,7 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
       const definition=studyDefinition(study.config.kind),anyVisible=!study.intervalHidden&&definition.channels.some((_,i)=>study.config.lineStyles?.[i]?.visible!==false);
       if(study.paneIndex&&first){
         ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(plot.left,plot.top);ctx.lineTo(plot.left+plot.width,plot.top);ctx.stroke();
-        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(collapsed?' · collapsed — restore in Studies':groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-10));
+        ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(collapsed?' · collapsed — restore in Studies':groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-(group.some(s=>studyDefinition(s.config.kind).pane)?36:10)));
       }
       if(study.paneIndex&&first&&mapping?.note){ctx.fillStyle='#fbbf24';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(mapping.note,plot.left+5,plot.top+plot.height-3,Math.max(1,plot.width-10));}
       if(!y||!anyVisible)return;

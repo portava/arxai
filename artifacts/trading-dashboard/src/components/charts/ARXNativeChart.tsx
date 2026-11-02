@@ -1774,7 +1774,7 @@ export function ARXNativeChart({
             if (event.key === "-" || event.key === "_") { event.preventDefault(); adapterRef.current?.zoomBy?.(4/3); }
           }}
           data-testid="arx-native-canvas"
-          className="w-full overflow-hidden"
+          className="relative w-full overflow-hidden"
           style={{ height: effectiveHeight }}
         />
 

@@ -1,3 +1,6 @@
+import { createElement } from 'react';
+import { act, cleanup, render, screen } from '@testing-library/react';
+import { ChartPaneControls } from '../../components/charts/ChartPaneControls';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {NativeChartsAdapter} from './nativeChartsAdapter';
 import {NativeChartViewport} from './nativeChartViewport';
@@ -10,7 +13,7 @@ function flush(){for(let i=0;i<8&&queue.size;i++){const callbacks=[...queue.valu
 function setup(){const adapter=new NativeChartsAdapter(),container=document.createElement('div');document.body.append(container);containers.push(container);adapters.push(adapter);adapter.init({container,height:400,visibleDesktop:40,visibleMobile:20});return{adapter,container,viewport:()=>((adapter as any).viewport as NativeChartViewport),canvas:()=>container.querySelector('canvas')!};}
 function pointer(canvas:HTMLCanvasElement,x:number,y:number){const e=new MouseEvent('pointermove',{bubbles:true,cancelable:true,clientX:x,clientY:y});Object.defineProperties(e,{pointerId:{value:1},pointerType:{value:'mouse'}});canvas.dispatchEvent(e);}
 beforeEach(()=>{queue=new Map();next=1;adapters=[];containers=[];ctx=new Proxy({measureText:vi.fn((text:string)=>({width:text.length*6}))}as any,{get:(target,key)=>{if(!(key in target))target[key]=vi.fn();return target[key];},set:(target,key,value)=>{target[key]=value;return true;}});vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(ctx);vi.spyOn(HTMLCanvasElement.prototype,'toDataURL').mockReturnValue('data:image/png;base64,fixture');vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){const width=this instanceof HTMLCanvasElement?parseFloat(this.style.width):800,height=this instanceof HTMLCanvasElement?parseFloat(this.style.height):400;return{x:0,y:0,left:0,top:0,right:width,bottom:height,width,height,toJSON(){}};});vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{const id=next++;queue.set(id,cb);return id;});vi.stubGlobal('cancelAnimationFrame',(id:number)=>queue.delete(id));vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('matchMedia',()=>({addEventListener(){},removeEventListener(){}}));vi.stubGlobal('devicePixelRatio',1);vi.stubGlobal('innerWidth',1200);});
-afterEach(()=>{adapters.forEach(a=>a.destroy());containers.forEach(c=>c.remove());vi.restoreAllMocks();vi.unstubAllGlobals();});
+afterEach(()=>{cleanup();adapters.forEach(a=>a.destroy());containers.forEach(c=>c.remove());vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('native ChartEngineAdapter contract',()=>{
  it('keeps source clock qualification independent per chart and revokes it on context reset',()=>{
   const a=setup(),b=setup();a.adapter.setCandles(bars());b.adapter.setCandles(bars());
@@ -131,4 +134,28 @@ it('publishes pinned corrected evidence through the adapter and clears it on con
  expect(handler.mock.calls.at(-1)![0]).toMatchObject({time:selected.time,close:selected.close+.5});
  a.adapter.resetDataContext();flush();expect(a.adapter.isCandleInspectionPinned()).toBe(false);expect(handler).toHaveBeenLastCalledWith(null);
  a.adapter.setCandles(bars(400));flush();expect(handler.mock.calls.at(-1)![0].time).not.toBe(selected.time);
+});
+
+it('publishes pane controls only for current painted native owners and withdraws on reset',()=>{
+ const f=setup();f.adapter.setCandles(bars());const rsi={id:'rsi',kind:'rsi' as const,period:14,color:'#ffffff',paneCollapsed:true,visibleIntervals:[]};
+ f.adapter.setStudies([{id:'linked',kind:'sma',period:3,color:'#00ff00',studySource:{studyId:'rsi',channel:0}},rsi]);
+ expect(f.adapter.getStudyPaneControls()).toBeNull();flush();
+ const controls=f.adapter.getStudyPaneControls()!;expect(controls).toHaveLength(1);expect(controls[0]).toMatchObject({id:'rsi',paneIndex:1,collapsed:true,height:24});
+ const layout=f.viewport().getPaneLayout()!.panes[0]!;expect(controls[0]!.top).toBe(layout.top);expect(controls[0]!.left).toBe(layout.left);expect(controls[0]!.width).toBe(layout.width);
+ controls[0]!.top=999;expect(f.adapter.getStudyPaneControls()![0]!.top).toBe(layout.top);
+ f.adapter.setAnalysisFocus(true);expect(f.adapter.getStudyPaneControls()).toEqual([]);flush();expect(f.adapter.getStudyPaneControls()).toEqual([]);
+ f.adapter.setAnalysisFocus(false);flush();expect(f.adapter.getStudyPaneControls()).toHaveLength(1);
+ f.adapter.resetDataContext();expect(f.adapter.getStudyPaneControls()).toEqual([]);flush();expect(f.adapter.getStudyPaneControls()).toEqual([]);
+ f.adapter.destroy();expect(f.adapter.getStudyPaneControls()).toEqual([]);
+});
+
+it('retains focused direct pane controls across real pre-paint hover notifications',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff'}]);flush();
+ render(createElement(ChartPaneControls,{adapter:f.adapter,chartTarget:{current:f.container as HTMLDivElement},enabled:true,onPreferences:vi.fn()}));
+ const button=screen.getByRole('button',{name:/Collapse pane 1:/});button.focus();
+ pointer(f.canvas(),300,100);
+ // Real adapter crosshair notification runs before the pending canvas paint.
+ const first=[...queue.entries()][0]!;queue.delete(first[0]);act(()=>first[1](1));
+ expect(document.activeElement).toBe(button);expect(screen.getByRole('button',{name:/Collapse pane 1:/})).toBe(button);
+ act(()=>flush());expect(document.activeElement).toBe(button);
 });

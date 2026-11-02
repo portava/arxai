@@ -9,7 +9,7 @@ import type { ChartOverlay } from "../chart-overlays";
 import type { SmartChartAnnotation } from "./smartChartAnnotationCanvas";
 import { NativeScannerOverlays, paintScannerPriceLines } from "./nativeScannerOverlays";
 import { NativeChartOverlayLayers } from "./nativeChartOverlayLayers";
-import type { ChartStudy } from "./chartStudies";
+import { studyDefinition, studyId, studyLabel, type ChartStudy } from "./chartStudies";
 import { NativeChartStudies, layoutNativeStudyPanes, paintNativeStudies } from "./nativeChartStudies";
 
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
@@ -483,6 +483,17 @@ export class NativeChartViewport {
     this.studies.setStudies(valid, this.series.candles);this.invalidate();
   }
   getStudies(): readonly Readonly<ChartStudy>[] { return this.studies.getStudies(); }
+  getStudyPaneControls() {
+    if(this.analysisFocused || !this.getFrame())return [];
+    if(!this.isAnalysisFocusVerified())return null;
+    const layout=this.getPaneLayout();if(!layout)return [];
+    return this.studies.getDisplayStudies().flatMap(study=>{
+      if(!study.paneIndex || !studyDefinition(study.config.kind).pane)return [];
+      const pane=layout.panes[study.paneIndex-1];if(!pane)return [];
+      return [{id:studyId(study.config),paneIndex:study.paneIndex,label:studyLabel(study.config,this.studies.getStudies()),
+        collapsed:study.config.paneCollapsed===true,left:pane.left,top:pane.top,width:pane.width,height:pane.height}];
+    });
+  }
   getStudyValues(time: number) { return this.analysisFocused ? [] : this.studies.getValues(time); }
   getVolumeProfiles() { return this.analysisFocused ? [] : this.studies.getProfiles(); }
   setPriceOnlyScale(enabled: boolean): void {

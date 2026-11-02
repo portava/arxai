@@ -1,3 +1,4 @@
+import { ChartPaneControls } from "./ChartPaneControls";
 import {registerChartLevelAssistant,explainLevelProposal,explainKeptLevel} from "@/lib/chart-engine/chartLevelAssistant";
 import {levelProposalDrawings,type ChartSupportResistanceRead,type ChartSupportResistanceProposal} from "@/lib/chart-engine/chartSupportResistance";
 import {studyDisplayLabel} from "@/lib/chart-engine/chartStudyDisplay";
@@ -491,6 +492,7 @@ export function ChartWorkbenchTools({analysisFocused=false,onRestoreAnalysis,ada
       event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);setChannelEnd(null);
     }
   }}>
+    <ChartPaneControls key={`${epoch}:${symbol}:${timeframe}`} adapter={adapter} chartTarget={chartTarget} enabled={hasCandles && !analysisFocused} onPreferences={onPreferences} />
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Zoom and pan">
         <Button ref={panRef} size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setChannelEnd(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>

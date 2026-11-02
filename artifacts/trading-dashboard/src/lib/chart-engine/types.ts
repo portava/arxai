@@ -197,6 +197,8 @@ export interface ChartEngineAdapter {
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getVolumeProfiles?(): VolumeProfileInspection[];
   getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
+  /** Current painted pane owners and CSS geometry. Null means pending paint; empty means unavailable/reset. */
+  getStudyPaneControls?(): ChartStudyPaneControl[] | null;
   getStudyValues?(time: number): { dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
@@ -234,4 +236,10 @@ export interface ChartEngineAdapter {
    * guard against concurrent loads. View-only — fetching history places no trade.
    */
   setReachStartHandler?(handler: (() => void) | null, thresholdBars?: number): void;
+}
+
+/** View-only controls for actual separately scaled study panes. */
+export interface ChartStudyPaneControl {
+  id:string; paneIndex:number; label:string; collapsed:boolean;
+  left:number; top:number; width:number; height:number;
 }
