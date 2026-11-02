@@ -710,3 +710,14 @@ it('retires an unfinished price drawing when an indicator pane is maximized',()=
  expect(click).toBeNull();expect((screen.getByLabelText('Drawing tool') as HTMLSelectElement).value).toBe('');
  view.rerender(<ChartWorkbenchTools {...props} maximizedPane={null}/>);expect(click).toBeNull();
 });
+it('refreshes the visible study caption on completed paint and does not rerender for unchanged viewport notifications',()=>{
+ let verified=false;const listeners=new Set<()=>void>(),retained:Array<()=>void>=[],commits=vi.fn();
+ const engine={...adapter,isAnalysisFocusVerified:()=>verified,subscribeViewport:(fn:()=>void)=>{listeners.add(fn);retained.push(fn);return()=>listeners.delete(fn);}} as ChartEngineAdapter;
+ const props={adapter:engine,epoch:1,symbol:'EURUSD',timeframe:'M15',preferences:{...DEFAULT_PREFERENCES,studies:[STUDY_DEFAULTS[0]!]},onPreferences:vi.fn(),hasCandles:true,feedLabel:'Offline'};
+ const view=render(<Profiler id="proof-caption" onRender={commits}><ChartWorkbenchTools {...props}/></Profiler>);
+ expect(screen.getByLabelText('Saved studies (visibility unverified)')).toBeTruthy();
+ act(()=>{verified=true;listeners.forEach(fn=>fn());});expect(screen.getByLabelText('Active studies')).toBeTruthy();expect(screen.queryByText('Visibility unverified ·')).toBeNull();
+ commits.mockClear();act(()=>{for(let i=0;i<100;i++)listeners.forEach(fn=>fn());});expect(commits).not.toHaveBeenCalled();
+ act(()=>{verified=false;listeners.forEach(fn=>fn());});expect(screen.getByLabelText('Saved studies (visibility unverified)')).toBeTruthy();
+ view.unmount();expect(listeners.size).toBe(0);act(()=>{verified=true;retained.forEach(fn=>fn());});expect(screen.queryByLabelText('Active studies')).toBeNull();
+});

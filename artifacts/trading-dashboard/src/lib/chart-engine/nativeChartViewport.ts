@@ -194,7 +194,7 @@ export class NativeChartViewport {
         return point && plot ? {x: point.x - plot.left, y: point.y - plot.top} : null;
       },
       render: drawings => { if (!this.destroyed) { this.drawings = this.cloneDrawings(drawings); this.schedule(); } },
-      select: id => { if (!this.destroyed) { this.selectedDrawing = id; this.schedule(); } },
+      select: id => { if (!this.destroyed && this.selectedDrawing !== id) { this.selectedDrawing = id; this.schedule(); } },
       freeze: active => {
         if (active) {
           this.cancelGesture(); this.frozenDrawingFrame = this.getFrame();

@@ -1,5 +1,7 @@
 import { createElement } from 'react';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import {ChartWorkbenchTools} from '../../components/charts/ChartWorkbenchTools';
+import {DEFAULT_PREFERENCES} from './chartWorkspace';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ChartPaneControls } from '../../components/charts/ChartPaneControls';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {NativeChartsAdapter} from './nativeChartsAdapter';
@@ -206,4 +208,20 @@ it.each(['placement','navigation'])('retiring preview through %s restores frame 
  const original=f.viewport().getFrame()!.plot,token=f.adapter.beginStudyPaneResize('rsi')!;f.adapter.previewStudyPaneResize(token,20);flush();expect(f.viewport().getFrame()!.plot.height).toBeCloseTo(original.height+20,8);
  if(kind==='placement')f.adapter.setDrawingHandler(()=>{});else f.adapter.setNavigationMode('pan');
  expect(f.adapter.isAnalysisFocusVerified()).toBe(false);flush();expect(f.viewport().getFrame()!.plot).toEqual(original);expect(f.adapter.isAnalysisFocusVerified()).toBe(true);expect(f.adapter.endStudyPaneResize(token,true)).toBeNull();
+});
+
+it.each(['maximized','simplified','pan','hidden'] as const)('settles real native paint and toolbar verification in %s mode',mode=>{
+ const f=setup();const studies=[{id:'rsi',kind:'rsi' as const,period:14,color:'#ffffff'}];f.adapter.setCandles(bars());f.adapter.setStudies(studies);flush();
+ if(mode==='maximized')f.adapter.setMaximizedStudyPane('rsi');
+ if(mode==='simplified')f.adapter.setAnalysisFocus(true);
+ flush();render(createElement(ChartWorkbenchTools,{adapter:f.adapter,epoch:1,symbol:'EURUSD',timeframe:'M15',preferences:{...DEFAULT_PREFERENCES,studies},onPreferences:vi.fn(),hasCandles:true,feedLabel:'Offline',analysisFocused:mode==='simplified',maximizedPane:mode==='maximized'?'rsi':null}));
+ if(mode==='pan'){fireEvent.click(screen.getByRole('button',{name:'Pan',exact:true}));expect(f.container.dataset.chartNavigation).toBe('pan');}
+ if(mode==='hidden'){fireEvent.click(screen.getByRole('button',{name:'Objects (0)',exact:true}));fireEvent.click(screen.getByRole('button',{name:'Hide drawings',exact:true}));expect(screen.getByRole('button',{name:'Show drawings',exact:true})).toBeTruthy();}
+ for(let i=0;i<20;i++)act(()=>{const batch=[...queue.values()];queue.clear();batch.forEach(cb=>cb(i));});
+ expect(queue.size).toBe(0);expect(f.adapter.isAnalysisFocusVerified()).toBe(true);expect(screen.queryByLabelText('Saved studies (visibility unverified)')).toBeNull();
+ const count=f.viewport().getState().paintCount;for(let i=0;i<5;i++)act(()=>{const batch=[...queue.values()];queue.clear();batch.forEach(cb=>cb(i));});expect(f.viewport().getState().paintCount).toBe(count);
+});
+it('does not request another paint when disabled drawing interaction clears an already empty selection',()=>{
+ const f=setup();f.adapter.setCandles(bars());flush();f.adapter.setAnalysisFocus(true);flush();
+ f.adapter.setDrawingInteraction(null);expect(queue.size).toBe(0);
 });

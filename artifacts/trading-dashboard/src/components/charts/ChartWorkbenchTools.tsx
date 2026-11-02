@@ -6,7 +6,7 @@ import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonac
 import { explainFibonacciProposal, explainSelectedFibonacci } from "@/lib/chart-engine/chartFibonacciExplanation";
 import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { fibonacciProposalDrawing, type ChartFibonacciRead, type ChartFibonacciProposal } from "@/lib/chart-engine/chartAutoFibonacci";
-import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
+import { useCallback, useSyncExternalStore, useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel, studyVisibleAtInterval, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
@@ -107,6 +107,17 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const isFocused=()=>adapter?.isAnalysisFocused?.()??analysisFocused;
   const isPresentationHidden=()=>isFocused()||adapter?.getMaximizedStudyPane?.()!=null;
   const presentationVerified=()=>adapter?.isAnalysisFocusVerified?.()!==false;
+  // A render can occur while native paint is pending. Subscribe to the boolean
+  // proof so its completion repairs visible captions even without a prop change.
+  // Stable true/false snapshots do not rerender tools on every pan or cursor tick.
+  const subscribePaintProof=useCallback((notify:()=>void)=>{
+    if(!adapter?.isAnalysisFocusVerified)return ()=>{};
+    let active=true;
+    const unsubscribe=adapter.subscribeViewport?.(()=>{if(active)notify();});
+    return ()=>{active=false;unsubscribe?.();};
+  },[adapter,epoch]);
+  const readPaintProof=useCallback(()=>adapter?.isAnalysisFocusVerified?.()!==false,[adapter,epoch]);
+  const paintVerified=useSyncExternalStore(subscribePaintProof,readPaintProof,readPaintProof);
   const restoreForAction=()=>{
     if(!presentationVerified()){setMessage("Chart visibility is unverified. Reload the chart before changing tools.");return false;}
     if(!isPresentationHidden())return true;
@@ -541,7 +552,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
         <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">{`Go to ${zoneText}`}</Button>
       </form>
     </div>
-    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label={!presentationVerified()?"Saved studies (visibility unverified)":analysisFocused||maximizedPane?"Saved studies (temporarily hidden)":preferences.studies.some(study=>!studyVisibleAtInterval(study,timeframe))?"Saved studies (interval visibility)":"Active studies"}>{!presentationVerified()?<span>Visibility unverified · </span>:(analysisFocused||maximizedPane)&&<span>Some or all plots temporarily hidden · </span>}{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter,false,preferences.studies,timeframe)}</span>)}</div>}
+    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label={!paintVerified?"Saved studies (visibility unverified)":analysisFocused||maximizedPane?"Saved studies (temporarily hidden)":preferences.studies.some(study=>!studyVisibleAtInterval(study,timeframe))?"Saved studies (interval visibility)":"Active studies"}>{!paintVerified?<span>Visibility unverified · </span>:(analysisFocused||maximizedPane)&&<span>Some or all plots temporarily hidden · </span>}{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter,false,preferences.studies,timeframe)}</span>)}</div>}
     {panel === "studies" && <div className="basis-full"><ChartStudySettings timeframe={timeframe} preferences={preferences} onPreferences={onPreferences} adapter={adapter} anchorDisplayAdapter={studyDisplayAdapter} /></div>}
     {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>{if(isPresentationHidden()){restoreForAction();return;}setHidden(h=>!h);}}>{analysisFocused||maximizedPane ? "Restore tools" : hidden ? "Show drawings" : "Hide drawings"}</Button></div>
@@ -577,12 +588,12 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       </div>
     </div>
     {visibleLevels&&<div className="mt-2 space-y-2 rounded border border-sky-800/60 p-2" role="region" aria-label="Support and resistance preview">
-      <p className="font-medium">Unaccepted support/resistance candidates · {!presentationVerified()?"visibility unverified":hidden||analysisFocused||maximizedPane?"hidden":"display requested"}</p>
+      <p className="font-medium">Unaccepted support/resistance candidates · {!paintVerified?"visibility unverified":hidden||analysisFocused||maximizedPane?"hidden":"display requested"}</p>
       {visibleLevels.levels.map(level=><p key={level.side}>{level.side}: {level.price} · pivot {chartTime(level.pivotTime,zone,{seconds:true})} · confirmed {chartTime(level.confirmedAt,zone,{seconds:true})} · {level.laterCloseCrossings} later observed closes beyond the level.</p>)}
       <p>{visibleLevels.note}</p><Button size="sm" variant="outline" className="mr-2 h-8 text-xs" onClick={keepLevels}>Keep levels and edit</Button><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{setLevelPreview(null);setMessage("Level preview dismissed; saved drawings unchanged.");}}>Dismiss level preview</Button>
     </div>}
     {visiblePreview&&<div className="mt-2 space-y-1 rounded border border-amber-800/60 p-2" role="region" aria-label="Automatic Fibonacci preview">
-      <p className="font-medium text-amber-200">Unaccepted Fibonacci preview · {!presentationVerified()?"visibility unverified":hidden||analysisFocused||maximizedPane?"hidden":"display requested"}</p>
+      <p className="font-medium text-amber-200">Unaccepted Fibonacci preview · {!paintVerified?"visibility unverified":hidden||analysisFocused||maximizedPane?"hidden":"display requested"}</p>
       <p>0% at {visiblePreview.origin.start.price} ({chartTime(visiblePreview.origin.start.time,zone,{seconds:true})}) → 100% at {visiblePreview.origin.end.price} ({chartTime(visiblePreview.origin.end.time,zone,{seconds:true})}). Percentages interpolate from the first anchor to the second; they are not reversal probabilities.</p>
       <p>Confirmed {chartTime(visiblePreview.origin.confirmedAt,zone,{seconds:true})}. {visiblePreview.note}</p>
       <Button size="sm" variant="outline" className="mr-2 h-8 text-xs" onClick={keepFibonacci}>Keep and edit Fibonacci</Button><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{setFibonacciPreview(null);setMessage("Preview dismissed. Your drawings were not changed.");}}>Dismiss preview</Button>
