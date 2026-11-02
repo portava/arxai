@@ -153,13 +153,13 @@ export class NativeChartStudies {
       const config=study.config,intervalHidden=!studyVisibleAtInterval(config,this.timeframe);
       const collapsed=study.paneIndex>0&&this.snapshots.some(s=>s.paneIndex===study.paneIndex&&studyDefinition(s.config.kind).pane&&s.config.paneCollapsed===true);
       const displayLabel=studyLabel(config,this.getStudies())+studyIntervalSuffix(config,this.timeframe)+(collapsed?' (pane collapsed)':'');
-      if(config.kind==='volume_profile')return Object.freeze({...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden||collapsed?{displayLabel}:{}),color:config.color,
+      if(config.kind==='volume_profile')return Object.freeze({...(config.showInStatusLine===true?{statusLineVisible:true}:{}),...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden||collapsed?{displayLabel}:{}),color:config.color,
         ...(study.profile?.status==='held'?{reason:study.profile.reason}:{}),values:Object.freeze([Object.freeze({
           name:intervalHidden||config.lineStyles?.[0]?.visible===false?'Frozen-range total trade units (hidden)':'Frozen-range total trade units',
           value:study.profile?.status==='ready'?study.profile.totalTradeUnits:null})])});
       let lo=0,hi=study.points.length-1,point:NativeStudyPoint|undefined;
       if(finite(time))while(lo<=hi){const mid=(lo+hi)>>>1,candidate=study.points[mid]!;if(candidate.time===time){point=candidate;break;}if(candidate.time<time)lo=mid+1;else hi=mid-1;}
-      return Object.freeze({...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden||collapsed?{displayLabel}:{}),color:config.color,...(point?.reason?{reason:point.reason}:{}),
+      return Object.freeze({...(config.showInStatusLine===true?{statusLineVisible:true}:{}),...(config.showInDataWindow===false?{dataWindowVisible:false}:{}),label:studyLabel(config,this.getStudies()),...(intervalHidden||collapsed?{displayLabel}:{}),color:config.color,...(point?.reason?{reason:point.reason}:{}),
         values:Object.freeze(studyDefinition(config.kind).channels.map((name,index)=>Object.freeze({
           name:intervalHidden||config.lineStyles?.[index]?.visible===false?`${name} (hidden)`:name,value:finite(point?.values[index])?point!.values[index]!:null})))});
     }));

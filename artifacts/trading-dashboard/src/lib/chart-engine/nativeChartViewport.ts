@@ -537,7 +537,7 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     const valid=validatePreferences({studies:configs}).studies;
     if(JSON.stringify(valid)!==JSON.stringify(this.studies.getStudies()))this.retirePaneResize();
-    const plotInputs=(studies:readonly ChartStudy[])=>JSON.stringify(studies.map(({showInDataWindow:_readout,...plot})=>plot));
+    const plotInputs=(studies:readonly ChartStudy[])=>JSON.stringify(studies.map(({showInDataWindow:_readout,showInStatusLine:_statusLine,...plot})=>plot));
     const readoutOnly=plotInputs(valid)===plotInputs(this.studies.getStudies());
     const revision = ++this.mutationRevision;
     if(!readoutOnly){

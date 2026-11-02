@@ -222,3 +222,12 @@ it('collapses a pane without deleting its study and restores its saved height',(
  fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));expect(settings().studies[1].paneCollapsed).toBe(true);
  fireEvent.click(screen.getByRole('button',{name:'RSI 1 Expand pane'}));expect(settings().studies[0]).toMatchObject({paneCollapsed:false,paneWeight:3});expect(settings().studies[1].paneCollapsed).toBe(true);
 });
+
+it('status-line values are opt-in, independent of Data Window and survive duplication',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index',exact:true}));
+ expect((screen.getByLabelText('RSI 1 Show values in status line') as HTMLInputElement).checked).toBe(false);
+ fireEvent.click(screen.getByLabelText('RSI 1 Show values in status line'));fireEvent.click(screen.getByLabelText('RSI 1 Show in Data Window'));
+ expect(settings().studies[0]).toMatchObject({showInStatusLine:true,showInDataWindow:false});
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));expect(settings().studies[1].showInStatusLine).toBe(true);
+ fireEvent.click(screen.getByLabelText('RSI 2 Show values in status line'));expect(settings().studies.map((s:any)=>s.showInStatusLine)).toEqual([true,false]);
+});

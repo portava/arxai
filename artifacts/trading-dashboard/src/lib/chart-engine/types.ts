@@ -206,7 +206,7 @@ export interface ChartEngineAdapter {
   previewStudyPaneResize?(token:number,delta:number):boolean;
   endStudyPaneResize?(token:number,commit:boolean):StudyPaneResizeCommit|null;
   isStudyPaneResizeContextCurrent?(key:string):boolean;
-  getStudyValues?(time: number): { dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
+  getStudyValues?(time: number): { statusLineVisible?:boolean; dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
   getDisplayCandle?(time: number): ChartEngineCandle | null;

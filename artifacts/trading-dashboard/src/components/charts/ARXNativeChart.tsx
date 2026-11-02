@@ -376,6 +376,8 @@ export function ARXNativeChart({
 
   useEffect(()=>{setPreferencesSaved(writeChartStorage(preferencesKey,preferences));},[preferences,preferencesKey]);
   const legendRef = useRef<HTMLOutputElement | null>(null);
+  const studyStatusRef = useRef<HTMLOutputElement | null>(null);
+  const statusLineEnabledRef = useRef(false);
   const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
   const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
   const [inspectionPinned,setInspectionPinned]=useState(false);
@@ -403,8 +405,24 @@ export function ARXNativeChart({
       const announcement=pinned?`Pinned candle · ${legendRef.current.textContent}`:"Pointer inspection. No candle pinned.";
       if(inspectionAnnouncementRef.current.textContent!==announcement)inspectionAnnouncementRef.current.textContent=announcement;
     }
+    const allRows = (statusLineEnabledRef.current || dataWindowRef.current?.open) && !analysisFocusRef.current && adapterRef.current?.isAnalysisFocusVerified?.()!==false && bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
+    if(studyStatusRef.current){
+      const fragment=document.createDocumentFragment();
+      if(statusLineEnabledRef.current){
+        const rows=allRows.filter(row=>row.statusLineVisible===true);
+        if(rows.length){
+          const caption=document.createElement("span");caption.className="text-zinc-400";
+          caption.textContent=`Selected candle · ${formatSourceChartTime(bar!.time,utcClockRef.current,timeZoneRef.current)} · `;fragment.append(caption);
+          for(const row of rows){
+            const line=document.createElement("span");line.style.color=row.color;
+            line.textContent=`${row.displayLabel??row.label}: ${row.values.map(item=>`${item.name} ${item.value==null?"— ("+(row.reason??"warm-up / unavailable")+")":formatStudyNumber(item.value,item.name)}`).join(" · ")}`;
+            fragment.append(line);
+          }
+        }else fragment.append(document.createTextNode(adapterRef.current?.isAnalysisFocusVerified?.()===false?"Study status values withheld until chart visibility is verified.":analysisFocusRef.current?"Study status values hidden in simplified view.":!bar?"Inspect or pin a candle to show its study status values.":"Selected study observations are unavailable."));
+      }
+      studyStatusRef.current.replaceChildren(fragment);
+    }
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
-      const allRows = !analysisFocusRef.current && adapterRef.current?.isAnalysisFocusVerified?.()!==false && bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
       const rows=allRows.filter(row=>row.dataWindowVisible!==false);
       const fragment = document.createDocumentFragment();
       for (const row of rows) {
@@ -871,6 +889,7 @@ export function ARXNativeChart({
 
   useLayoutEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
   useEffect(() => {
+    statusLineEnabledRef.current=preferences.studies.some(study=>study.showInStatusLine===true);
     adapterRef.current?.setStudies?.(preferences.studies);
     updateLegend(inspectedCandleRef.current);
   }, [preferences.studies, chartEpoch, updateLegend]);
@@ -1489,6 +1508,7 @@ export function ARXNativeChart({
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
+      <output ref={studyStatusRef} aria-label="Study status line at selected candle" aria-live="off" className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 font-mono text-[11px] text-zinc-300 empty:hidden" />
       {adapterRef.current?.inspectCandle&&<div className="flex flex-wrap items-center gap-2 px-3 py-2" role="group" aria-label="Candle inspection">
         <Button size="sm" variant="outline" aria-pressed={inspectionPinned} onClick={()=>adapterRef.current?.inspectCandle?.(inspectionPinned?"clear":"pin")}>{inspectionPinned?"Release candle":"Inspect latest visible candle"}</Button>
         <Button size="sm" variant="outline" onClick={()=>adapterRef.current?.inspectCandle?.("previous")}>Previous candle</Button>

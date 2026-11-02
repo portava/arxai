@@ -450,3 +450,9 @@ it('collapses complete panes, preserves observations and restores the previous g
  expect(viewport.getCandles()).toBe(data);expect(viewport.getRange()).toEqual(range);expect(viewport.getState().status).toBe('ready');
  viewport.setStudies([{...rsi,paneCollapsed:false},macd]);flush();expect(viewport.getPaneLayout()).toEqual(before);
 });
+
+it('preserves a pinned historical candle across independent status-line preference changes',()=>{
+ create();const study={kind:'rsi' as const,id:'r',period:2,color:'#ffffff'};viewport.setStudies([study]);flush();
+ viewport.inspectCandle('first');viewport.inspectCandle('next');flush();const before=viewport.getState(),layout=viewport.getPaneLayout();
+ for(const showInStatusLine of [true,false]){viewport.setStudies([{...study,showInStatusLine}]);flush();expect(viewport.getState().inspectionPinned).toBe(true);expect(viewport.getState().inspectionTime).toBe(before.inspectionTime);expect(viewport.getPaneLayout()).toEqual(layout);}
+});

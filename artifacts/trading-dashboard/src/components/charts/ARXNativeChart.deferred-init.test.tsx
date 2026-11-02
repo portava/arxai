@@ -1249,3 +1249,23 @@ it('filters only Data Window readouts and distinguishes hidden values from missi
  act(()=>inspect(null));expect(output.textContent).toContain('Move the crosshair');expect(output.textContent).not.toContain('Add a study');
  rows=[];act(()=>inspect(bar));expect(output.textContent).toContain('Add a study');
 });
+
+it('shows exact selected status values with Data Window closed and withdraws them on missing selection, proof loss and source change',()=>{
+ localStorage.setItem('arx.chart.preferences.v1',JSON.stringify({studies:[{kind:'rsi',id:'r',period:2,color:'#ffffff',showInStatusLine:true,showInDataWindow:false}]}));
+ candleResponse=liveResponse('EURUSD','H1');const view=render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+ const engine=created[0]!;let value:number|null=63.25;
+ engine.getStudyValues=vi.fn(()=>[{label:'RSI',displayLabel:'RSI (pane collapsed)',statusLineVisible:true,dataWindowVisible:false,color:'#fff',values:[{name:'RSI',value}]},{label:'Other SMA',color:'#fff',values:[{name:'SMA',value:999}]}]);
+ const output=screen.getByLabelText('Study status line at selected candle'),details=screen.getByLabelText('Study values at selected candle').closest('details')!;
+ expect(details.open).toBe(false);expect(output.getAttribute('aria-live')).toBe('off');const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
+ const bar={time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102};
+ act(()=>inspect(bar));expect(output.textContent).toContain('Selected candle');expect(output.textContent).toContain('RSI (pane collapsed): RSI 63.25');expect(output.textContent).not.toContain('Other SMA');expect(engine.getStudyValues).toHaveBeenLastCalledWith(bar.time);
+ value=null;act(()=>inspect(bar));expect(output.textContent).toContain('warm-up / unavailable');expect(output.textContent).not.toContain('63.25');
+ value=63.25;act(()=>inspect(bar));engine.isAnalysisFocusVerified=vi.fn(()=>false);act(()=>inspect(bar));expect(output.textContent).toContain('withheld');expect(output.textContent).not.toContain('63.25');
+ engine.isAnalysisFocusVerified=vi.fn(()=>true);act(()=>inspect(null));expect(output.textContent).toContain('Inspect or pin');expect(output.textContent).not.toContain('63.25');
+ act(()=>inspect(bar));candleResponse=liveResponse('GBPUSD','H1');view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);expect(output.textContent).not.toContain('63.25');
+});
+it('does not query study observations when both readout surfaces are unused',()=>{
+ candleResponse=liveResponse('EURUSD','H1');render(<ARXNativeChart symbol="EURUSD" timeframe="H1" showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+ const engine=created[0]!;engine.getStudyValues=vi.fn(()=>[]);const inspect=engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar:unknown)=>void;
+ act(()=>inspect({time:OPEN_MS/1000,open:1.101,high:1.103,low:1.1,close:1.102}));expect(engine.getStudyValues).not.toHaveBeenCalled();expect(screen.getByLabelText('Study status line at selected candle').textContent).toBe('');
+});

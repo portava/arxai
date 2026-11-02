@@ -49,6 +49,8 @@ export interface ChartStudy {
   visibleIntervals?: ChartInterval[];
   /** Readout display only. Omitted means shown; calculations stay available. */
   showInDataWindow?: boolean;
+  /** Opt-in compact values at the selected candle; independent of plots and Data Window. */
+  showInStatusLine?: boolean;
 }
 export interface StudyPoint { time: number; values: (number | null)[]; reason?:string }
 export interface StudyDefinition {
@@ -189,7 +191,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, paneWeight: _weight, paneCollapsed: _collapsed, visibleIntervals: _intervals, showInDataWindow: _dataWindow, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, paneWeight: _weight, paneCollapsed: _collapsed, visibleIntervals: _intervals, showInDataWindow: _dataWindow, showInStatusLine: _statusLine, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;
