@@ -6,6 +6,7 @@ let captured: RubyChartContext | null;
 let independentProbeCalls = 0;
 let contextCalls = 0;
 const consumers: unknown[] = [];
+const patternContexts: { source?: string | null; timestampConvention?: string }[] = [];
 // feedTruthCopy imports this label from the large scanner module. Keep the real
 // copy rules while avoiding scanner/provider/background initialization.
 mock.module("../../marketScanner.js", { namedExports: { ANALYSIS_ONLY_LABEL: "ANALYSIS ONLY — SIMULATED DATA" } });
@@ -22,10 +23,10 @@ mock.module("../../data/dataManager.js", { namedExports: {
   getMarketData: async () => { throw Error("No independent primary fetch permitted"); },
 } });
 mock.module("../../data/chart/patternTruthService.js", { namedExports: {
-  buildPatternTruthVerdict: (input: { rawCandles: unknown }) => { consumers.push(input.rawCandles); return null; },
+  buildPatternTruthVerdict: (input: { rawCandles: unknown; source?: string | null; timestampConvention?: string }) => { consumers.push(input.rawCandles); patternContexts.push(input); return null; },
 } });
 mock.module("../../data/chart/trendlineTruthService.js", { namedExports: {
-  buildTrendlineTruthVerdict: (input: { rawCandles: unknown }) => { consumers.push(input.rawCandles); return null; },
+  buildTrendlineTruthVerdict: (input: { rawCandles: unknown; source?: string | null; timestampConvention?: string }) => { consumers.push(input.rawCandles); patternContexts.push(input); return null; },
 } });
 mock.module("../patternLearningRuntime.js", { namedExports: { applyPatternLearning: async () => { throw Error("No learning DB in this test"); } } });
 mock.module("../trendlineLearningRuntime.js", { namedExports: { applyTrendlineLearning: async () => { throw Error("No learning DB in this test"); } } });
@@ -44,7 +45,7 @@ mock.module("../fvgStrategyRead.js", { namedExports: {
 const { buildRubyStructuralRead } = await import("../rubyStructuralReadService.js");
 
 function fixture(aiUsable: boolean): RubyChartContext {
-  consumers.length = 0; contextCalls = 0; independentProbeCalls = 0;
+  consumers.length = 0; patternContexts.length = 0; contextCalls = 0; independentProbeCalls = 0;
   return {
     symbol: "EURUSD", timeframe: "M5", basis: "VERIFIED", closedBarsCount: 200,
     hasFormingCandle: false, liveDelayed: false, trustLine: "Captured feed", blockReason: null,
@@ -103,3 +104,19 @@ test("capture failure yields insufficient evidence without consulting another fe
   assert.equal(independentProbeCalls, 0);
   assert.equal(consumers.length, 0);
 });
+
+for (const full of [true, false]) {
+  for (const source of ["mt5_broker", "deriv_public", "assistant_real:legacy", null]) {
+    test(`pattern children preserve captured source and normalized-open convention (${full ? "full" : "restricted"}, ${source})`, async () => {
+      captured = fixture(full);
+      captured.feedStatus.source = source;
+      // A different state label must not replace the primary captured feed.
+      captured.state.truthState = { ...captured.feedStatus, source: "unrelated-state-provider" };
+      await buildRubyStructuralRead({ symbol: "EURUSD", timeframe: "M5" });
+      assert.equal(patternContexts.length, 2);
+      assert.ok(patternContexts.every(input => input.source === source));
+      assert.ok(patternContexts.every(input => input.timestampConvention === "open"));
+      assert.equal(independentProbeCalls, 0);
+    });
+  }
+}

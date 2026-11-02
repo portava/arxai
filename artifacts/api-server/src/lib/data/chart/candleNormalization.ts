@@ -367,6 +367,9 @@ export interface NormalizeOptions {
   displaySymbol: string;
   timeframe: ChartTimeframe;
   source: string | null;
+  /** Internal captured inputs can already be open-based; never infer this from provider alone.
+   * A coordinate convention does not establish original UTC clock authority. */
+  timestampConvention?: "open" | "close";
   now?: number;
   receivedAt?: string;
   priceBasisOverride?: PriceBasis;
@@ -416,7 +419,7 @@ export function normalizeCandles(
   const now = opts.now ?? Date.now();
   const receivedAt = opts.receivedAt ?? new Date(now).toISOString();
   const intervalMs = timeframeMs(timeframe);
-  const basis = candleTimestampConvention(source);
+  const basis = opts.timestampConvention ?? candleTimestampConvention(source);
   const sourceLabel = source ?? "unknown";
 
   const sourceMode = sourceModeFromProvider(source);

@@ -29,10 +29,12 @@ export interface TrendlineTruthServiceInput {
   symbol: string;
   displaySymbol?: string;
   timeframe: string;
-  /** Raw routed candles (bar-open based); normalized + closed-bar filtered here. */
+  /** Routed or captured candles; normalized + closed-bar filtered here. */
   rawCandles: Candle[];
-  /** Source tag for normalization (provider name) — affects price-basis only. */
+  /** Captured provider name; its timestamp convention applies only to raw provider inputs. */
   source?: string | null;
+  /** Set open for already-normalized captured candles; does not qualify UTC authority. */
+  timestampConvention?: "open" | "close";
   // ── Caller's ALREADY-DECIDED display facts (the trendline NEVER recomputes them).
   /** True only when the feed is genuinely live-confirmed (LIVE + FULL read). */
   feedConfirmed: boolean;

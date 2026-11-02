@@ -12,6 +12,7 @@ const OBSERVATION_TIME = z.iso.datetime({ offset: true });
 export function currentClosedPatternWindow(input: {
   symbol: string; displaySymbol?: string; timeframe: string;
   rawCandles: Candle[]; source?: string | null;
+  timestampConvention?: "open" | "close";
 }): NormalizedChartCandle[] | null {
   if (!isChartTimeframe(input.timeframe) || input.timeframe === "W1" || input.timeframe === "MN1"
     || !Array.isArray(input.rawCandles) || input.rawCandles.length === 0) return null;
@@ -19,6 +20,7 @@ export function currentClosedPatternWindow(input: {
   const { candles, anomalies } = normalizeCandles(input.rawCandles, {
     symbol: input.symbol, displaySymbol: input.displaySymbol ?? input.symbol,
     timeframe: input.timeframe, source: input.source ?? null,
+    timestampConvention: input.timestampConvention,
   });
   if (anomalies.invalidOhlcCount || anomalies.duplicateCount || anomalies.outOfOrderCount) return null;
   for (const [index, candle] of candles.entries()) {

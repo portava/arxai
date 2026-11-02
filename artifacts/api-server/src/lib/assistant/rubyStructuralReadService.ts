@@ -64,6 +64,7 @@ async function buildRubyPatternNote(args: {
   symbol: string;
   timeframe: ChartTimeframe;
   candles: Candle[];
+  source: string | null;
   feedConfirmed: boolean;
   feedStale: boolean;
   sufficiencyAllowsSetup: boolean;
@@ -86,6 +87,8 @@ async function buildRubyPatternNote(args: {
     symbol: args.symbol,
     timeframe: args.timeframe,
     rawCandles: args.candles,
+    source: args.source,
+    timestampConvention: "open",
     feedConfirmed: args.feedConfirmed,
     feedStale: args.feedStale,
     sufficiencyAllowsSetup: args.sufficiencyAllowsSetup,
@@ -143,6 +146,7 @@ async function buildRubyTrendlineNote(args: {
   symbol: string;
   timeframe: ChartTimeframe;
   candles: Candle[];
+  source: string | null;
   feedConfirmed: boolean;
   feedStale: boolean;
   sufficiencyAllowsSetup: boolean;
@@ -165,6 +169,8 @@ async function buildRubyTrendlineNote(args: {
     symbol: args.symbol,
     timeframe: args.timeframe,
     rawCandles: args.candles,
+    source: args.source,
+    timestampConvention: "open",
     feedConfirmed: args.feedConfirmed,
     feedStale: args.feedStale,
     sufficiencyAllowsSetup: args.sufficiencyAllowsSetup,
@@ -494,6 +500,7 @@ export async function buildRubyStructuralRead(
       symbol,
       timeframe: tf,
       candles,
+      source: rubyCtx.feedStatus?.source ?? null,
       feedConfirmed: true,
       feedStale: false,
       sufficiencyAllowsSetup: true,
@@ -503,6 +510,7 @@ export async function buildRubyStructuralRead(
       symbol,
       timeframe: tf,
       candles,
+      source: rubyCtx.feedStatus?.source ?? null,
       feedConfirmed: true,
       feedStale: false,
       sufficiencyAllowsSetup: true,
@@ -573,6 +581,7 @@ export async function buildRubyStructuralRead(
     symbol,
     timeframe: tf,
     candles,
+    source: rubyCtx.feedStatus?.source ?? null,
     feedConfirmed: false,
     feedStale: rubyCtx.basis !== "VERIFIED",
     sufficiencyAllowsSetup: false,
@@ -582,6 +591,7 @@ export async function buildRubyStructuralRead(
     symbol,
     timeframe: tf,
     candles,
+    source: rubyCtx.feedStatus?.source ?? null,
     feedConfirmed: false,
     feedStale: rubyCtx.basis !== "VERIFIED",
     sufficiencyAllowsSetup: false,
