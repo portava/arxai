@@ -38,6 +38,24 @@ async page => {
     await shot('placed');
     await panel.getByRole('button',{name:'Undo',exact:true}).click();await frames();check((await config()).drawings.length===0,'Undo removes the object');
     await panel.getByRole('button',{name:'Redo',exact:true}).click();await frames();check(JSON.stringify((await config()).drawings)===JSON.stringify(placed),'Redo restores all three anchors');
+    await panel.getByTestId('arx-native-canvas').scrollIntoViewIfNeeded();
+    const handle=await page.evaluate(anchor=>window.__arxChartQa.anchorCoordinates(anchor.time,anchor.price),placed[0].offset);
+    // Undo clears selection. The first click selects the object; only a
+    // selected object's handles can be dragged independently of its body.
+    await page.mouse.click(handle.x,handle.y);await frames();
+    check(JSON.stringify((await config()).drawings)===JSON.stringify(placed),'Selecting the restored drawing does not edit it');
+    await page.mouse.move(handle.x,handle.y);await page.mouse.down();
+    try{await page.mouse.move(handle.x,handle.y+20,{steps:5});}finally{await page.mouse.up();}
+    await frames();const dragged=(await config()).drawings;
+    check(dragged[0].offset.time===placed[0].offset.time&&dragged[0].offset.price!==placed[0].offset.price&&JSON.stringify(dragged[0].start)===JSON.stringify(placed[0].start)&&JSON.stringify(dragged[0].end)===JSON.stringify(placed[0].end),'Native pointer drag changes only the third handle');
+    await panel.getByRole('button',{name:'Undo',exact:true}).click();await frames();
+    check(JSON.stringify((await config()).drawings)===JSON.stringify(placed),'One undo restores the completed handle drag');
+    await panel.getByLabel('Price scale',{exact:true}).selectOption('log');
+    await panel.getByRole('button',{name:'Invert scale',exact:true}).click();await frames();
+    check((await config()).scale.mode==='log'&&(await config()).scale.inverted,'Logarithmic inverted mode reaches native viewport');
+    await panel.getByTestId('arx-native-canvas').scrollIntoViewIfNeeded();await frames();await shot('log-inverted');
+    check(JSON.stringify((await config()).drawings)===JSON.stringify(placed),'Scale changes preserve original drawing anchors');
+    await panel.getByRole('button',{name:'Invert scale',exact:true}).click();await panel.getByLabel('Price scale',{exact:true}).selectOption('linear');
     await panel.getByRole('button',{name:'Objects (1)',exact:true}).click();
     await panel.getByLabel('Drawing 1 extend left',{exact:true}).check();
     await panel.getByLabel('Drawing 1 extend right',{exact:true}).uncheck();await frames();
