@@ -42,6 +42,8 @@ export interface SmartChartFinding {
   /** Related geometry variants share one summary slot; basic anatomy stays in details. */
   family?: string;
   summaryEligible?: boolean;
+  /** A later time gap prevents this historical segment from proving current status. */
+  segmentEndedBeforeGap?: boolean;
   explanation: string;
   status: "developing" | "confirmed" | "invalidated" | "observed";
   /** Actual observation/confirmation close times, Unix seconds. */
@@ -66,6 +68,7 @@ export interface SmartChartAnalysisResult {
   /** At most three summary chips; render geometry only for the focused finding. */
   findings: SmartChartFinding[];
   allFindings: SmartChartFinding[];
+  continuityNote?: string;
   catalogue?: { criteriaVersion:string; definedVariants:number; geometryFamilies:number; note:string };
 }
 
@@ -166,17 +169,23 @@ export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChart
   const interval = smartChartIntervalSeconds(input.timeframe)!;
   const selected: SmartChartAnalysisBar[] = [];
   let prior = -Infinity;
+  let priorClose = -Infinity;
+  let unfinished = false;
   for (const bar of input.bars) {
     if (!finite(bar.time)) return unavailable("A candle has an invalid observation time.");
     if (input.replayCutoff == null && (!range || bar.time <= range.to)
       && bar.isComplete === true && finite(bar.closeTime) && bar.closeTime > observation)
       return unavailable("A future candle close cannot be confirmed.");
     if (bar.time >= cutoff || (range && bar.time > range.to)) continue;
+    if (unfinished) return unavailable("An unfinished candle precedes a later observation; analysis is withheld.");
     if (bar.time <= prior) return unavailable("Candles are not in a unique chronological sequence.");
     prior = bar.time;
     if (!validBar(bar, interval)) return unavailable("Candle prices, timeframe or completion evidence disagree.");
+    if (bar.time < priorClose - 0.001) return unavailable("Overlapping candle intervals; analysis is withheld.");
+    priorClose = bar.closeTime;
     if (bar.isComplete && bar.closeTime > observation) return unavailable("A future candle close cannot be confirmed.");
-    if (!bar.isComplete || bar.isForming || bar.closeTime > cutoff || (range && bar.time < range.from)) continue;
+    if (!bar.isComplete || bar.isForming) { unfinished = true; continue; }
+    if (bar.closeTime > cutoff || (range && bar.time < range.from)) continue;
     selected.push(bar);
   }
   if (selected.length === 0) return unavailable("No confirmed closed candles are available in this chart window.");
@@ -191,18 +200,68 @@ export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChart
 export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAnalysisResult {
   const window=selectSmartChartWindow(input),key=window.contextKey;
   if(window.status!=="ready")return {status:"unavailable",reason:window.reason,contextKey:key,asOf:null,closedBarsUsed:0,coverage:window.coverage,findings:[],allFindings:[]};
-  const bars=window.bars,interval=smartChartIntervalSeconds(input.timeframe)!;
+  const bars = window.bars, last = bars.at(-1)!;
+  const interval = smartChartIntervalSeconds(input.timeframe)!;
+  // An elapsed interval is not proof of a scheduled market closure. Without
+  // calendar evidence, detectors must not call separated observations adjacent.
+  // Preserve each segment's history rather than fabricate missing candles.
+  const segments: SmartChartAnalysisBar[][] = [];
+  for (const bar of bars) {
+    const segment = segments.at(-1);
+    if (!segment || Math.abs(bar.time - segment.at(-1)!.closeTime) >= 0.001) segments.push([bar]);
+    else segment.push(bar);
+  }
+  const eventSince = bars[Math.max(0, bars.length - EVENT_LOOKBACK)]!.time;
+  const shapeSince = bars[Math.max(0, bars.length - SHAPE_LOOKBACK)]!.time;
+  const entries = segments.flatMap((segment, i) => {
+    if (segment.at(-1)!.time < shapeSince) return [];
+    const isLatestSegment = i === segments.length - 1;
+    const gapNote = segments.length > 1
+      ? " Analysis uses uninterrupted candle segments; no pattern or confirmation is inferred across a time gap."
+        + (!isLatestSegment ? " This finding ends before a gap; later candles do not establish its current status." : "")
+      : "";
+    return analyzeContinuousSegment(input, segment, interval, caveat(input) + gapNote, eventSince, shapeSince, isLatestSegment);
+  });
+  const ranked = entries.sort((a, b) => b.observedAt - a.observedAt
+    || statusRank[b.finding.status] - statusRank[a.finding.status] || b.scale - a.scale || a.finding.id.localeCompare(b.finding.id));
+  const allFindings = ranked.map(r => r.finding);
+  const summaryFamilies = new Set<string>();
+  const findings = allFindings.filter(f => {
+    if(f.summaryEligible===false)return false;
+    const family = f.family ?? f.id.split(":")[0]!;
+    if (summaryFamilies.has(family)) return false;
+    summaryFamilies.add(family);
+    return true;
+  }).slice(0, 3);
+  return { status: "ready", reason: allFindings.length ? null : "No supported pattern is confirmed in this window.", contextKey: key,
+    asOf: last.closeTime, closedBarsUsed: bars.length,
+    coverage: window.coverage,
+    ...(segments.length > 1 ? { continuityNote: "Time gaps are present. Patterns use uninterrupted candle segments; findings before a gap are historical and their current status is unknown." } : {}),
+    findings, allFindings,
+    catalogue: {criteriaVersion:CANDLE_CRITERIA_VERSION,definedVariants:CANDLE_DEFINITIONS.length,
+      geometryFamilies:new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,
+      note:"Explicit ARX candle-shape conventions; related variants are not independent confirmations. The complete owner catalogue remains in progress."} };
+}
+
+/** Existing detectors share one uninterrupted observed segment. The selected
+ * chart window and descriptive metrics still retain all observed candles. */
+function analyzeContinuousSegment(
+  input: SmartChartAnalysisInput, bars: SmartChartAnalysisBar[], interval: number,
+  note: string, eventSince: number, shapeSince: number, isLatestSegment: boolean,
+): Ranked[] {
   const last = bars[bars.length - 1]!;
-  const note = caveat(input);
   const rows = new Map<string, Ranked>();
   const add = (finding: SmartChartFinding, observedAt: number, scale: number) => {
     if (!finding.anchors.every(a => positive(a.price) && finite(a.time)) || !finding.levels.every(l => positive(l.price))) return;
     const prev = rows.get(finding.id);
-    if (!prev || finding.asOf >= prev.finding.asOf) rows.set(finding.id, { finding, observedAt, scale });
+    if (!prev || finding.asOf >= prev.finding.asOf) rows.set(finding.id, {
+      finding: isLatestSegment ? finding : { ...finding, segmentEndedBeforeGap: true }, observedAt, scale,
+    });
   };
   // The shared API detector is reused. H&S is checked at causal
   // prefixes so a later swing cannot move its first knowable confirmation back.
   for (let end = Math.max(20, bars.length - SHAPE_LOOKBACK + 1); end <= bars.length; end++) {
+    if (bars[end - 1]!.time < shapeSince) continue;
     const prefix = bars.slice(0, end);
     // Earlier prefixes only contribute H&S evidence. Run the other families
     // once at the selected endpoint, preserving their complete final result.
@@ -221,6 +280,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
   for (let end = Math.max(1, bars.length - EVENT_LOOKBACK + 1); end <= bars.length; end++) {
     const prefix = bars.slice(Math.max(0, end - 60), end);
     const candle = prefix[prefix.length - 1]!;
+    if (candle.time < eventSince) continue;
     const body = Math.abs(candle.close - candle.open), span = candle.high - candle.low;
     // Explicit geometric convention, not a reliability probability.
     if (isObservedDoji(candle)) {
@@ -267,7 +327,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
   // was fitted to the whole loaded history.
   const structureBars = bars.slice(-30);
   const structure = resolveStructureBreakTruth({ candles: structureBars, feedConfirmed: false, feedStale: input.dataState === "stale" });
-  if (structure.type === "trendline_break" && structure.level != null && positive(structure.level)) {
+  if (isLatestSegment && structure.type === "trendline_break" && structure.level != null && positive(structure.level)) {
     const confirmed = structure.brokeOnClose && structure.status === "confirmed";
     add({ id: `trendline_break:${last.time}`, title: confirmed ? "Trendline break" : "Unconfirmed trendline test", status: confirmed ? "confirmed" : "observed",
       ...(confirmed ? { confirmedAt: last.closeTime } : {}), asOf: last.closeTime,
@@ -282,6 +342,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
     // useful in details for the latest bar, not repeated as historical signals.
     if(def.id==="doji"||(!def.summaryEligible&&observed.endIndex!==bars.length-1))continue;
     const event=bars[observed.endIndex]!;
+    if (event.time < eventSince || (!isLatestSegment && !def.summaryEligible)) continue;
     add({id:`${def.id}:${event.time}`,title:def.name,family:def.family,summaryEligible:def.summaryEligible,
       status:"observed",asOf:observed.observedAt,
       explanation:observed.explanation,
@@ -290,24 +351,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
       invalidation:null,caveat:`${note} Criteria (${CANDLE_CRITERIA_VERSION}): ${def.criteria} This is a completed shape, not confirmed future movement.`
     },event.time,def.summaryEligible?1:-1);
   }
-  const ranked = [...rows.values()].sort((a, b) => b.observedAt - a.observedAt
-    || statusRank[b.finding.status] - statusRank[a.finding.status] || b.scale - a.scale || a.finding.id.localeCompare(b.finding.id));
-  const allFindings = ranked.map(r => r.finding);
-  const summaryFamilies = new Set<string>();
-  const findings = allFindings.filter(f => {
-    if(f.summaryEligible===false)return false;
-    const family = f.family ?? f.id.split(":")[0]!;
-    if (summaryFamilies.has(family)) return false;
-    summaryFamilies.add(family);
-    return true;
-  }).slice(0, 3);
-  return { status: "ready", reason: allFindings.length ? null : "No supported pattern is confirmed in this window.", contextKey: key,
-    asOf: last.closeTime, closedBarsUsed: bars.length,
-    coverage: window.coverage,
-    findings, allFindings,
-    catalogue: {criteriaVersion:CANDLE_CRITERIA_VERSION,definedVariants:CANDLE_DEFINITIONS.length,
-      geometryFamilies:new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,
-      note:"Explicit ARX candle-shape conventions; related variants are not independent confirmations. The complete owner catalogue remains in progress."} };
+  return [...rows.values()];
 }
 
 function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], note: string, discoveryIndex: number): SmartChartFinding | null {

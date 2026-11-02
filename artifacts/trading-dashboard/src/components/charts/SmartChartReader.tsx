@@ -126,6 +126,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
     {(findingDeliveryNotice||deliveryNotice)&&<p role="status">{findingDeliveryNotice||deliveryNotice}</p>}
     {result?.findings.length? <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Relevant chart patterns">{result.findings.map(finding=><button type="button" key={finding.id} className={`rounded border px-2 py-1 text-[11px] ${chosen?.id===finding.id?"border-sky-500/50 bg-sky-500/10 text-sky-200":"border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`} aria-pressed={chosen?.id===finding.id} onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}</button>)}</div>:null}
     <p className="mt-2 max-w-[110ch] leading-relaxed text-zinc-200" data-testid="chart-reader-explanation">{narrative}</p>
+    {result?.status==="ready"&&result.continuityNote&&<p className="mt-1 text-xs text-amber-300" data-testid="chart-reader-continuity">{result.continuityNote}</p>}
     {description&&<p className="mt-1 text-[11px] leading-relaxed text-sky-200/80" data-testid="chart-reader-context">{description.summary}</p>}
     {feedCaveat&&<p className="text-[10px] text-amber-200/80" data-testid="chart-reader-feed-evidence">{feedCaveat.trim()}</p>}
     <details className="mt-2 text-zinc-400">

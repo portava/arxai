@@ -87,12 +87,16 @@ describe("source-bound descriptive window",()=>{
   const r=describeSmartChartWindow(input([...Array(21).fill(100),200]));
   expect(r.unusualMove.status).toBe("unavailable");expect(r.unusualMove.reason).toContain("IQR is zero");
  });
- it("withholds cadence metrics across either missing or overlapping intervals",()=>{
-  for(const offset of [300,-150]){
-   const data=bars(series([...prior,10]));for(let i=10;i<data.length;i++){data[i]!.time+=offset;data[i]!.closeTime+=offset;}
+ it("retains descriptive observations but withholds cadence metrics across missing intervals",()=>{
+   const data=bars(series([...prior,10]));for(let i=10;i<data.length;i++){data[i]!.time+=300;data[i]!.closeTime+=300;}
    const r=describeSmartChartWindow(input(data));expect(r.status).toBe("ready");expect(r.trend.status).toBe("available");expect(r.distribution.status).toBe("available");
    for(const name of ["rsi14","roc14Percent","atr14","atr14PercentOfClose","returnStdDevPercent","unusualMove"] as const)expect(r[name].status).toBe("unavailable");
-  }
+ });
+ it("withholds the entire read when fixed-duration candle intervals overlap",()=>{
+   const data=bars(series([...prior,10]));for(let i=10;i<data.length;i++){data[i]!.time-=150;data[i]!.closeTime-=150;}
+   const r=describeSmartChartWindow(input(data));expect(r.status).toBe("unavailable");expect(r.reason).toMatch(/overlap/i);
+   expect(r.trend.status).toBe("unavailable");expect(r.distribution.status).toBe("unavailable");
+   for(const name of ["rsi14","roc14Percent","atr14","atr14PercentOfClose","returnStdDevPercent","unusualMove"] as const)expect(r[name].status).toBe("unavailable");
  });
  it("population return deviation uses actual adjacent return count without annualization",()=>{
   const r=describeSmartChartWindow(input(series([1,-1,1,-1])));expect(r.returnStdDevPercent.value).toBeCloseTo(1,10);

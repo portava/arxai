@@ -35,6 +35,26 @@ function fixture(timeframe="M5",start=START,step=300_000){
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("embedded chart reader follows applied candles",()=>{
+  it.each([false,true])("preserves gap context in annotation, narrative and assistant (observed doji=%s)",observed=>{
+    const f=fixture(),onFindingExplanation=vi.fn();
+    const rows=[...[1,1.01,1.02,1.03,1.04].map(close=>({open:close-.001,high:close+.001,low:close-.002,close})),
+      observed?{open:1.04,high:1.06,low:1.02,close:1.04}:{open:1.04,high:1.06,low:1.0395,close:1.041},
+      {open:1.041,high:1.042,low:1.03,close:1.035}];
+    const candles=f.data.candles!.slice(0,7).map((bar,i)=>({...bar,...rows[i]!,
+      ...(i===6?{openTime:new Date(Date.parse(bar.openTime)+300000).toISOString(),closeTime:new Date(Date.parse(bar.closeTime!)+300000).toISOString()}:{}),
+    }));
+    const data={...f.data,candles,marketEvidence:{...f.data.marketEvidence,lastClosedCandleAt:candles.at(-1)!.closeTime},
+      feedStatus:{...f.data.feedStatus,lastCandleTime:candles.at(-1)!.closeTime}} as ChartCandlesResponse;
+    f.show(candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));
+    render(<SmartChartReader {...f.props} data={data} onFindingExplanation={onFindingExplanation}/>);
+    fireEvent.click(screen.getByRole("button",{name:observed?/^Doji · observed/:/^Shooting Star · developing/,hidden:true}));
+    expect(screen.getByTestId("chart-reader-continuity").closest("details")).toBeNull();
+    expect(screen.getByTestId("chart-reader-explanation").textContent).toMatch(/^Before a time gap:/);
+    expect(f.setSmartAnnotation.mock.lastCall![0].dashed).toBe(true);
+    const reply=onFindingExplanation.mock.lastCall![0]();
+    expect(reply).toContain(observed?"Observed shape":"Still developing");expect(reply).toContain("later candles do not establish its current status");
+    expect(reply).not.toContain("confirming the rejection");
+  });
   it("keeps rendered star explanation, annotation and assistant bound to the same actual candle",()=>{
     const f=fixture(),onFindingExplanation=vi.fn();
     const rows=[...[1,1.01,1.02,1.03,1.04].map(close=>({open:close-.001,high:close+.001,low:close-.002,close})),

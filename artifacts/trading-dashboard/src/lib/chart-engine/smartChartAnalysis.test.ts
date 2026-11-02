@@ -34,6 +34,53 @@ const uptrend = [1, 1.01, 1.02, 1.03, 1.04].map(close => ({ open: close - 0.001,
 const star = { open: 1.04, high: 1.06, low: 1.0395, close: 1.041 };
 const find = (data: SmartChartAnalysisInput, prefix: string) => analyzeSmartChart(data).allFindings.find(f => f.id.startsWith(prefix));
 
+describe("pattern continuity", () => {
+  const gapAfter = (source: SmartChartAnalysisBar[], index: number) => source.map((bar, i) => i > index ? { ...bar, time: bar.time + 300, closeTime: bar.closeTime + 300 } : bar);
+  it("cannot confirm a shooting star with a candle after an unobserved interval", () => {
+    const source = bars([...uptrend, star, { open: 1.041, high: 1.042, low: 1.03, close: 1.035 }]);
+    const finding = find(input(gapAfter(source, 5)), "shooting_star:");
+    expect(finding?.status).toBe("developing");
+    expect(finding?.confirmedAt).toBeUndefined();
+    expect(finding?.caveat).toMatch(/gap|uninterrupted/i);
+  });
+  it.each([false, true])("does not join engulfing bodies across an absent bar (bearish=%s)", bearish => {
+    const fall = [1.04, 1.03, 1.02, 1.01, 1].map(close => ({ open: close + 0.001, high: close + 0.002, low: close - 0.001, close }));
+    const source = bars([...fall, { open: 0.999, high: 1.004, low: 0.998, close: 1.003 }]);
+    expect(find(input(gapAfter(bearish ? inverted(source) : source, 4)), bearish ? "bearish_engulfing:" : "bullish_engulfing:")).toBeUndefined();
+  });
+  it("does not fit and confirm a trendline across an unobserved interval", () => {
+    const source = flat(30); Object.assign(source[29]!, { open:100, high:101.2, low:99.9, close:101 });
+    expect(find(input(gapAfter(source, 28)), "trendline_break:")).toBeUndefined();
+  });
+  it("does not silently remove an unfinished interior candle", () => {
+    const source = hs(); Object.assign(source[20]!, {isComplete:false,isFinal:false,isForming:true});
+    expect(analyzeSmartChart(input(source)).status).toBe("unavailable");
+  });
+  it("rejects overlapping time intervals rather than treating them as a gap", () => {
+    const source = flat(5); source[4]!.time -= 150; source[4]!.closeTime -= 150;
+    expect(analyzeSmartChart(input(source)).status).toBe("unavailable");
+  });
+  it.each([false, true])("does not assemble a head and shoulders across a gap (inverse=%s)", inverse => {
+    expect(find(input(gapAfter(inverse ? inverted(hs()) : hs(), 20)), inverse ? "inverse_head_and_shoulders:" : "head_and_shoulders:")).toBeUndefined();
+  });
+  it("retains genuine patterns wholly after a gap and keeps full observed coverage", () => {
+    const source = bars([...rows([0.9,0.91]), ...uptrend, star, {open:1.041,high:1.042,low:1.03,close:1.035}]);
+    const result = analyzeSmartChart(input(gapAfter(source, 1)));
+    const finding = result.allFindings.find(f => f.id.startsWith("shooting_star:"));
+    expect(finding?.status).toBe("confirmed");
+    expect(finding?.confirmedAt).toBe(source.at(-1)!.closeTime + 300);
+    expect(result.closedBarsUsed).toBe(source.length);
+    expect(result.continuityNote).toContain("current status is unknown");
+  });
+  it("keeps pre-gap confirmation historical, without using later candles to invalidate it", () => {
+    const source = bars([...uptrend,star,{open:1.041,high:1.042,low:1.03,close:1.035},{open:1.035,high:1.08,low:1.03,close:1.07}]);
+    const finding = find(input(gapAfter(source,6)),"shooting_star:");
+    expect(finding?.status).toBe("confirmed"); expect(finding?.confirmedAt).toBe(source[6]!.closeTime);
+    expect(finding?.segmentEndedBeforeGap).toBe(true);
+    expect(finding?.caveat).toContain("later candles do not establish its current status");
+  });
+});
+
 describe("bounded head-and-shoulders discovery scope", () => {
   it("matches full-catalogue H&S evidence at every prefix without returning other families", () => {
     let seed = 307;

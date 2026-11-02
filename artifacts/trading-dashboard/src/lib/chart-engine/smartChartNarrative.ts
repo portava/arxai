@@ -87,5 +87,6 @@ const catalogueIds=new Set(CANDLE_DEFINITIONS.map(def=>def.id));
 export function smartChartNarrative(finding:SmartChartFinding):{summary:string;detail:string|null}{
  const id=finding.id.split(":")[0]!;
  const meaning=finding.status==="observed"&&catalogueIds.has(id)?CANDLE_MEANINGS[id]:null;
- return meaning?{summary:meaning,detail:finding.explanation}:{summary:finding.explanation,detail:null};
+ const prefix=finding.segmentEndedBeforeGap?"Before a time gap: ":"";
+ return meaning?{summary:prefix+meaning,detail:finding.explanation}:{summary:prefix+finding.explanation,detail:null};
 }
