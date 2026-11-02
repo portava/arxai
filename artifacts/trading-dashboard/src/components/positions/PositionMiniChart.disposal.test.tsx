@@ -19,6 +19,6 @@ describe('PositionMiniChart ResizeObserver disposal race',()=>{
   const view=render(<PositionMiniChart {...props}/>),e=state.engines[0]!,late=state.callbacks[0]!;view.unmount();const count=e.resize.mock.calls.length;
   expect(e.destroy).toHaveBeenCalledOnce();expect(()=>late([],{} as ResizeObserver)).not.toThrow();expect(e.resize).toHaveBeenCalledTimes(count);
  });
- it('still sizes the mounted renderer',()=>{render(<PositionMiniChart {...props}/>);state.callbacks[0]!([],{} as ResizeObserver);expect(state.engines[0].resize).toHaveBeenLastCalledWith(expect.any(Number));});
+ it('still sizes the mounted renderer',()=>{render(<PositionMiniChart {...props}/>);state.callbacks[0]!([],{} as ResizeObserver);expect(state.engines[0].resize).toHaveBeenLastCalledWith();});
  it('contains a disposed-renderer error during the resize callback',()=>{render(<PositionMiniChart {...props}/>);state.engines[0].removed=true;expect(()=>state.callbacks[0]!([],{} as ResizeObserver)).not.toThrow();});
 });

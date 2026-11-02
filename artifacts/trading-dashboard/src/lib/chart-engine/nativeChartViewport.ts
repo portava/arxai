@@ -197,7 +197,14 @@ export class NativeChartViewport {
     if (this.destroyed) return;
     const revision = ++this.mutationRevision;
     const bounds = this.container.getBoundingClientRect();
-    const w = width ?? bounds.width, h = height ?? this.requestedHeight ?? bounds.height;
+    // The canvas occupies the content box. Feeding the bordered host's full
+    // width back into its child grows auto-sized grid tracks on every observer
+    // delivery. Explicit dimensions remain drawing CSS dimensions.
+    const computed = this.container.ownerDocument.defaultView?.getComputedStyle(this.container);
+    const cssPixels = (value: string | undefined) => { const number = Number.parseFloat(value ?? ""); return Number.isFinite(number) ? number : 0; };
+    const insetX = cssPixels(computed?.borderLeftWidth) + cssPixels(computed?.borderRightWidth) + cssPixels(computed?.paddingLeft) + cssPixels(computed?.paddingRight);
+    const insetY = cssPixels(computed?.borderTopWidth) + cssPixels(computed?.borderBottomWidth) + cssPixels(computed?.paddingTop) + cssPixels(computed?.paddingBottom);
+    const w = width ?? Math.max(0, bounds.width - insetX), h = height ?? this.requestedHeight ?? Math.max(0, bounds.height - insetY);
     const requestedRatio = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
     const valid = Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && w <= MAX_CSS_SIDE && h <= MAX_CSS_SIDE;
     const nextWidth = valid ? w : 0, nextHeight = valid ? h : 0;

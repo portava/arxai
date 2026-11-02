@@ -149,7 +149,7 @@ export default function LiveChartPage() {
             : <>Read-only chart. The trade ticket on this page still requires your confirmation, and in {mode.cleanModeLabel} no real broker order is placed.</>}
         </p>
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0 space-y-4">
             <SmartChartLayout symbol={chartSymbol} primaryTimeframe={timeframe}>
               <ARXNativeChart
@@ -176,7 +176,7 @@ export default function LiveChartPage() {
             />
             <ChartModes state={chartIntelligence} />
           </div>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Trade entry is the single gated order surface. Hidden from view-only
               (investor) roles and while identity resolves; placement itself still
               routes through the server-side instant-trade router + 16-gate. */}

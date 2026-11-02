@@ -58,3 +58,11 @@ describe('position preview shared renderer',()=>{
  });
 
 });
+
+it('lets the shared engine measure its content box on observer notifications instead of supplying padding-box clientWidth',()=>{
+ render(<PositionMiniChart {...base}/>);
+ const host=screen.getByTestId('position-mini-chart');Object.defineProperty(host,'clientWidth',{configurable:true,value:398});
+ const engine=state.engines[0]!;engine.resize.mockClear();
+ act(()=>ro[0]!.callback([],{} as ResizeObserver));
+ expect(engine.resize).toHaveBeenCalledExactlyOnceWith();
+});

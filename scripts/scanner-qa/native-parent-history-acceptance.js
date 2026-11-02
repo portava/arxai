@@ -37,6 +37,13 @@ async page => {
     const gbpExpected=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(r=>r.symbol==='GBPUSD'&&new URLSearchParams(r.requestQuery).get('limit')==='100').at(-1);
     check(JSON.stringify(await page.evaluate(i=>window.__arxChartQa.data(i).canonical,index))===JSON.stringify(gbpExpected.canonical),'Switching position uses exact GBPUSD source, no EURUSD carryover');
     await page.setViewportSize({width:390,height:844});await ready(2);
+    out.mobileSizes=[];
+    for(let i=0;i<6;i++){
+      out.mobileSizes.push(await snapshot());
+      await page.waitForTimeout(150);
+    }
+    check(out.mobileSizes.every(views=>views.every(s=>s.bounds.width>0&&s.bounds.x>=-1&&s.bounds.x+s.bounds.width<=391)),'Both actual-parent charts remain inside mobile viewport across resize observations');
+    check(out.mobileSizes.every(views=>views.every((s,i)=>Math.abs(s.bounds.width-out.mobileSizes.at(-1)[i].bounds.width)<1)),'Position selection causes no progressive canvas/parent width growth');
     const mini=page.getByTestId('position-mini-chart');await mini.scrollIntoViewIfNeeded();await frame();
     const bounds=await mini.boundingBox();check(bounds&&bounds.width>0&&bounds.x>=-1&&bounds.x+bounds.width<=391,'Actual parent position preview fits mobile viewport');
     await page.getByTestId('btn-close-side-card').click();await ready(1);

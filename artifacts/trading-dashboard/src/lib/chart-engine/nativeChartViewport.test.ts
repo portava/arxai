@@ -326,3 +326,43 @@ describe('native viewport retained caller height',()=>{
   observers[0]!.callback([],{} as ResizeObserver);expect(viewport.getState().height).toBe(280);
  });
 });
+
+it('sizes automatic canvas geometry to the host content box, not its border and padding',()=>{
+  container.style.border='1px solid black';container.style.padding='8px 12px';
+  create();
+  expect(viewport.getState()).toMatchObject({width:774,height:382});
+  expect(canvas.style.width).toBe('774px');expect(canvas.style.height).toBe('382px');
+  // Repeated observation of unchanged layout must not republish a new paint.
+  const paints=viewport.getState().paintCount;
+  for(let i=0;i<8;i++){observers[0]!.callback([],{} as ResizeObserver);flush();}
+  expect(viewport.getState().paintCount).toBe(paints);
+});
+it('border-box min-content observation cannot grow the canvas on every observer delivery',()=>{
+  container.style.border='1px solid black';create();
+  const original=viewport.getState().width;
+  // Layout feedback model: auto grid min-content is canvas width plus the
+  // host's actual two border pixels. Real browser acceptance owns CSS layout.
+  for(let i=0;i<24;i++){
+    width=parseFloat(canvas.style.width)+2;
+    observers[0]!.callback([],{} as ResizeObserver);flush();
+  }
+  expect(viewport.getState().width).toBe(original);
+  expect(width).toBe(800);
+});
+it('automatic dimensions retain fractional content space while explicit plot dimensions stay exact',()=>{
+  width=390.5;height=260.5;container.style.border='1px solid black';create({height:260});
+  expect(viewport.getState()).toMatchObject({width:388.5,height:260});
+  viewport.resize(300,240);expect(viewport.getState()).toMatchObject({width:300,height:240});
+  width=250.25;observers[0]!.callback([],{} as ResizeObserver);
+  expect(viewport.getState()).toMatchObject({width:248.25,height:240});
+});
+
+it('uses the canvas content origin for pointer evidence in a bordered padded host',()=>{
+  container.style.border='1px solid black';container.style.padding='8px 12px';
+  const onCrosshair=vi.fn();create({onCrosshair});const state=viewport.getState();
+  vi.spyOn(canvas,'getBoundingClientRect').mockReturnValue({x:23,y:29,left:23,top:29,right:23+state.width,bottom:29+state.height,width:state.width,height:state.height,toJSON(){}});
+  const frame=viewport.getFrame()!,x=frame.plot.left+frame.plot.width/2,y=frame.plot.top+frame.plot.height/2;
+  const event=new MouseEvent('pointermove',{bubbles:true,clientX:23+x,clientY:29+y});
+  Object.defineProperties(event,{pointerId:{value:1},pointerType:{value:'mouse'}});canvas.dispatchEvent(event);
+  expect(onCrosshair).toHaveBeenLastCalledWith(expect.objectContaining({candle:frame.barAtX(x),price:frame.yToPrice(y)}));
+});

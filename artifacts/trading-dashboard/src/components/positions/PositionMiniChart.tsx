@@ -59,7 +59,7 @@ export function PositionMiniChart({
       readPaintProof();
       observer = new ResizeObserver(() => {
         if (disposed || adapterRef.current !== engine) return;
-        try { engine?.resize(el.clientWidth); } catch { /* a disposed renderer must not break the page */ }
+        try { engine?.resize(); } catch { /* a disposed renderer must not break the page */ }
       });
       observer.observe(el);
     } catch {
