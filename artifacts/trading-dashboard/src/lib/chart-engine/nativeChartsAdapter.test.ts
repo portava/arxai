@@ -112,4 +112,13 @@ describe('native ChartEngineAdapter contract',()=>{
   offA();offB();
  });
 
+ it('time-axis drag publishes real loaded time range once and programmatic prepend does not echo a new user range',()=>{
+  const f=setup(),events=vi.fn();f.adapter.setCandles(bars(100,200));f.adapter.panBy(-.5);flush();f.adapter.setViewLinkHandler(events);f.adapter.panBy(-.1);flush();events.mockClear();
+  const frame=f.viewport().getFrame()!,layout=f.viewport().getPaneLayout()!,last=layout.panes.at(-1)??layout.price,x=frame.plot.left+frame.plot.width*.4,y=last.top+last.height+14,source=f.viewport().getCandles();
+  const send=(kind:string,xx:number)=>{const e=new MouseEvent(kind,{bubbles:true,cancelable:true,clientX:xx,clientY:y,button:0});Object.defineProperties(e,{pointerId:{value:1},pointerType:{value:'mouse'}});f.canvas().dispatchEvent(e);};
+  const span=frame.range.to-frame.range.from;send('pointerdown',x);send('pointermove',x+100);send('pointerup',x+100);flush();expect(f.viewport().getRange()!.to-f.viewport().getRange()!.from).toBeLessThan(span);expect(f.viewport().getCandles()).toBe(source);
+  const ranges=events.mock.calls.map(([e])=>e).filter(e=>e.kind==='range');expect(ranges).toHaveLength(1);expect(source.some(b=>b.time===ranges[0]!.range.from)).toBe(true);expect(source.some(b=>b.time===ranges[0]!.range.to)).toBe(true);
+  events.mockClear();f.adapter.setCandles(bars(0,300));flush();expect(events).not.toHaveBeenCalled();
+ });
+
 });

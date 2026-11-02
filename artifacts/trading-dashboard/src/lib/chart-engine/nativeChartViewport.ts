@@ -98,6 +98,7 @@ export class NativeChartViewport {
   private pointers = new Map<number, Point>();
   private gesture: Gesture | null = null;
   private manualPriceRange: NativePriceRange | null = null;
+  private timeAxisGesture: {pointerId:number; x:number; lastX:number; width:number; fraction:number; span:number; anchorTime:number; offset:number} | null = null;
   private priceAxisGesture: {pointerId:number; y:number; height:number; range:NativePriceRange; scale:ChartScaleMode} | null = null;
   private observer: ResizeObserver | null = null;
   private media: MediaQueryList | null = null;
@@ -115,7 +116,7 @@ export class NativeChartViewport {
     this.canvas.dataset.arxNativeViewport = "true";
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute("role", "region");
-    this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan, plus and minus zoom, Home fits history, End returns to latest. Drag the price axis vertically to scale prices; double-click it to restore automatic price scale.");
+    this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan, plus and minus zoom, Home fits history, End returns to latest. Drag the price axis vertically to scale prices; double-click it to restore automatic price scale. Drag the bottom time axis right to increase candle spacing, left to decrease it; double-click to restore the default time span.");
     this.canvas.style.touchAction = "none";
     this.canvas.style.display = "block";
     this.canvas.width = 0;this.canvas.height = 0;
@@ -241,11 +242,15 @@ export class NativeChartViewport {
     // A refresh, append, prepend or rolling window retains the CSS pointer
     // baseline: historyRangeShift rebases its logical observation below. Empty
     // or disjoint history has no shared anchor and explicitly ends the gesture.
-    if (!next.candles.length || (previous.length && !overlap)) this.cancelGesture();
+    if (!next.candles.length || (previous.length && !overlap) || (this.timeAxisGesture && !times.has(this.timeAxisGesture.anchorTime))) this.cancelGesture();
     if (!next.candles.length) this.range = null;
-    else if ((this.followingLatest && !this.frozenDrawingFrame) || !this.range || !overlap) this.range = this.latestRange(this.range ? this.range.to - this.range.from : undefined);
+    else if ((this.followingLatest && !this.frozenDrawingFrame && !this.timeAxisGesture) || !this.range || !overlap) this.range = this.latestRange(this.range ? this.range.to - this.range.from : undefined);
     else {
-      const shift = historyRangeShift(previous, next.candles);
+      // A time-axis gesture owns one observed timestamp, including when a
+      // provider inserts a real missing bar inside previously loaded history.
+      const axis = this.timeAxisGesture;
+      const shift = axis ? candleIndex(next.candles as ChartEngineCandle[],axis.anchorTime) - candleIndex(previous as ChartEngineCandle[],axis.anchorTime)
+        : historyRangeShift(previous, next.candles);
       const desired = {from:this.range.from+shift,to:this.range.to+shift};
       const bounded = panChartWindow(desired,0,next.candles.length);
       // A bounded history trim can move X even when selected anchors survive.
@@ -309,7 +314,7 @@ export class NativeChartViewport {
     if(!this.referenceSet&&next.candles.length){this.referencePrice=next.candles[0]!.close;this.referenceSet=true;}
     this.priceDigits=Number.isInteger(this.options.priceDigits)&&this.options.priceDigits!>=0&&this.options.priceDigits!<=16
       ?this.options.priceDigits!:candleDisplayPrecision(next.candles,this.symbol);
-    if(!this.range||(this.followingLatest&&!this.frozenDrawingFrame))this.range=this.latestRange(this.range?this.range.to-this.range.from:undefined);
+    if(!this.range||(this.followingLatest&&!this.frozenDrawingFrame&&!this.timeAxisGesture))this.range=this.latestRange(this.range?this.range.to-this.range.from:undefined);
     this.invalidate();
     this.remapHover(previousHover);
     return !this.destroyed&&revision===this.mutationRevision;
@@ -496,7 +501,7 @@ export class NativeChartViewport {
       error: this.paintError ?? this.frameIssue, callbackError: this.callbackError, referencePrice: this.referencePrice, style: this.style, scale: this.scale, inverted: this.inverted,
       timeZone: this.timeZone, utcClockQualified: this.utcClockQualified, effectiveTimeZone: this.utcClockQualified ? effectiveDisplayZone(this.timeZone, this.timeframe) : "UTC", timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
-      manualPriceRange: this.manualPriceRange ? Object.freeze({...this.manualPriceRange}) : null, priceAxisDragging: this.priceAxisGesture !== null,
+      manualPriceRange: this.manualPriceRange ? Object.freeze({...this.manualPriceRange}) : null, priceAxisDragging: this.priceAxisGesture !== null, timeAxisDragging: this.timeAxisGesture !== null,
       livePriceAffordance: this.livePriceAffordance, linkedCrosshairTime: this.linkedCrosshairTime,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
       analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
@@ -658,12 +663,25 @@ export class NativeChartViewport {
     return { center: { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 }, distance: Math.hypot(a!.x - b!.x, a!.y - b!.y) };
   }
   private cancelGesture() {
-    const ids = [...this.pointers.keys()]; this.pointers.clear(); this.gesture = null; this.priceAxisGesture=null;
+    const ids = [...this.pointers.keys()]; this.pointers.clear(); this.gesture = null; this.priceAxisGesture=null;this.timeAxisGesture=null;
     for (const id of ids) { try { this.canvas.releasePointerCapture(id); } catch { /* unavailable or already lost */ } }
   }
   private insidePriceAxis(point: Point, frame = this.getFrame()): boolean {
     return !!frame && point.x > frame.plot.left + frame.plot.width && point.x <= this.width
       && point.y >= frame.plot.top && point.y <= frame.plot.top + frame.plot.height;
+  }
+  private insideTimeAxis(point: Point, frame = this.getFrame()): boolean {
+    const layout=frame?this.getPaneLayout():null,last=layout?.panes.at(-1)??layout?.price;
+    return !!frame && !!last && point.x>=frame.plot.left && point.x<=frame.plot.left+frame.plot.width
+      && point.y>last.top+last.height && point.y<=this.height;
+  }
+  /** Horizontal default span about the current midpoint; price bounds unchanged. */
+  resetTimeScale(): void {
+    if(this.destroyed||!this.range)return;
+    const requested=this.options.visibleBars,span=Number.isFinite(requested)&&requested!>0?requested!:100;
+    const center=this.range.from/2+this.range.to/2;
+    const next=panChartWindow({from:center-span/2,to:center+span/2},0,this.series.candles.length);
+    if(next)this.setRange(next);
   }
   /** Restore vertical auto-fit only; horizontal observation window is retained. */
   resetPriceScale(): void {
@@ -675,19 +693,35 @@ export class NativeChartViewport {
   }
   private onAxisDoubleClick = (event: MouseEvent) => {
     if(this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.button!==0)return;
-    const point=this.point(event);if(!point || !this.insidePriceAxis(point))return;
-    event.preventDefault();this.resetPriceScale();
+    const point=this.point(event);if(!point)return;
+    if(this.insidePriceAxis(point)){event.preventDefault();this.resetPriceScale();return;}
+    if(!this.insideTimeAxis(point))return;
+    const before=this.range,revision=this.mutationRevision,generation=this.generation;
+    event.preventDefault();this.resetTimeScale();
+    if(!this.destroyed&&generation===this.generation&&this.mutationRevision===revision+1)this.emitUserRange(before);
   };
   private onAxisPointerConflict = (event: PointerEvent) => {
     if(this.destroyed)return;
     const point=this.point(event);
-    if(this.priceAxisGesture || (this.frozenDrawingFrame && point && this.insidePriceAxis(point))){
+    if(this.priceAxisGesture || this.timeAxisGesture || (this.frozenDrawingFrame && point && (this.insidePriceAxis(point)||this.insideTimeAxis(point)))){
       event.preventDefault();event.stopImmediatePropagation();
     }
   };
   private onPointerDown = (event: PointerEvent) => {
-    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.priceAxisGesture || event.defaultPrevented || event.button !== 0 || this.pointers.size >= 2) return;
+    if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || this.priceAxisGesture || this.timeAxisGesture || event.defaultPrevented || event.button !== 0 || this.pointers.size >= 2) return;
     const point = this.point(event),frame=this.getFrame(); if (!point || !frame) return;
+    if (this.insideTimeAxis(point,frame)) {
+      if(this.pointers.size||!this.range)return;
+      const logical=frame.xToLogical(point.x);if(logical===null)return;
+      const index=Math.max(0,Math.min(this.series.candles.length-1,Math.round(logical))),bar=this.series.candles[index];if(!bar)return;
+      const revision=++this.mutationRevision;
+      const gesture={pointerId:event.pointerId,x:point.x,lastX:point.x,width:frame.plot.width,fraction:(point.x-frame.plot.left)/frame.plot.width,span:this.range.to-this.range.from,anchorTime:bar.time,offset:logical-index};
+      event.preventDefault();this.canvas.focus({preventScroll:true});this.clearHover();
+      if(this.destroyed||revision!==this.mutationRevision)return;
+      this.timeAxisGesture=gesture;this.pointers.set(event.pointerId,point);
+      try{this.canvas.setPointerCapture(event.pointerId);}catch{/* existing owned window fallback */}
+      return;
+    }
     if (this.insidePriceAxis(point,frame)) {
       if(this.pointers.size)return;
       const a=frame.yToPrice(frame.plot.top),b=frame.yToPrice(frame.plot.top+frame.plot.height);
@@ -728,6 +762,26 @@ export class NativeChartViewport {
   private onPointerMove = (event: PointerEvent) => {
     if (this.destroyed) return;
     const point = this.point(event); if (!point) return;
+    const timeAxis=this.timeAxisGesture;
+    if(timeAxis){
+      if(event.pointerId!==timeAxis.pointerId)return;
+      event.preventDefault();this.pointers.set(event.pointerId,point);
+      if(point.x===timeAxis.lastX)return;
+      timeAxis.lastX=point.x;
+      const index=candleIndex(this.series.candles as ChartEngineCandle[],timeAxis.anchorTime);
+      if(index<0){this.cancelGesture();return;}
+      // ARX policy: right increases spacing about the starting pointer. This
+      // bounded logical view never creates observations or converted times.
+      const factor=Math.exp(clamp(-(point.x-timeAxis.x)/timeAxis.width*2,-Math.log(4),Math.log(4)));
+      const zoomed=zoomChartWindow({from:0,to:timeAxis.span},factor,this.series.candles.length);
+      if(!zoomed)return;
+      const span=zoomed.to-zoomed.from,from=index+timeAxis.offset-timeAxis.fraction*span;
+      const next=panChartWindow({from,to:from+span},0,this.series.candles.length),previous=this.range;
+      if(next&&(!previous||next.from!==previous.from||next.to!==previous.to)){
+        this.range=next;this.followingLatest=false;this.invalidate();this.emitUserRange(previous);
+      }
+      return;
+    }
     const axis=this.priceAxisGesture;
     if(axis){
       if(event.pointerId!==axis.pointerId)return;
@@ -763,6 +817,7 @@ export class NativeChartViewport {
     if (this.destroyed || !this.pointers.has(event.pointerId)) return;
     this.pointers.delete(event.pointerId);this.gesture = this.gestureState();
     if(this.priceAxisGesture?.pointerId===event.pointerId)this.priceAxisGesture=null;
+    if(this.timeAxisGesture?.pointerId===event.pointerId)this.timeAxisGesture=null;
     try { this.canvas.releasePointerCapture(event.pointerId); } catch { /* already released */ }
   };
   private onPointerCancel = () => { if (!this.destroyed) { this.cancelGesture();this.clearHover(); } };

@@ -1740,7 +1740,7 @@ export function ARXNativeChart({
           ref={containerRef}
           tabIndex={0}
           role="region"
-          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Drag the price axis to scale vertically; double-click it to restore automatic scaling. Home fits history; End returns to latest candles. Delete or Backspace removes the selected unlocked drawing; Control or Command Z undoes a drawing edit; add Shift to redo.`}
+          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Drag the price axis to scale vertically; double-click it to restore automatic scaling.${adapterRef.current?.capabilities.id === "arx-native" ? " Drag the bottom time axis to adjust candle spacing; double-click it to restore the default time span." : ""} Home fits history; End returns to latest candles. Delete or Backspace removes the selected unlocked drawing; Control or Command Z undoes a drawing edit; add Shift to redo.`}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
             if (event.key === "End") { event.preventDefault(); adapterRef.current?.goToLatest?.(); }
