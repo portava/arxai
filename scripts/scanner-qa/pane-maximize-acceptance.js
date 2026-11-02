@@ -20,6 +20,8 @@ async page=>{
   const maximize=panel.getByRole('button',{name:/^Maximize pane 1:/});await maximize.scrollIntoViewIfNeeded();
   const b=await maximize.boundingBox();await page.mouse.click(b.x+b.width/2,b.y+2);let current=await state();
   check(current.snapshot.state.maximizedStudyPane===current.config.studies[0].id,'Upper edge click maximizes instead of grabbing the divider');
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('select[aria-label="Drawing tool"]')).some(select=>select.value===''));
+  await state();
   check(await panel.getByLabel('Drawing tool',{exact:true}).inputValue()==='', 'Unfinished price drawing is retired on maximization');
   check(await panel.getByRole('separator').count()===0,'Divider controls are unavailable in maximized view');
   check(await panel.getByRole('button',{name:/^Restore layout from pane 1:/}).isVisible(),'Restore button remains reachable');
