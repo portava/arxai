@@ -6,9 +6,9 @@ import {prepareNativePriceSeries,createNativePriceFrame} from './nativePriceRend
 const bars=Array.from({length:30},(_,i)=>({time:60+i*60,open:100+i,high:102+i,low:99+i,close:101+i}));
 const rsi:ChartStudy={id:'rsi',kind:'rsi',period:2,color:'#ff0000'};
 const pane={left:0,top:300,width:700,height:120};
-function paint(configs:ChartStudy[]){
- const model=new NativeChartStudies();model.setStudies(configs,bars);
- const result=createNativePriceFrame(prepareNativePriceSeries(bars),{plot:{left:0,top:0,width:700,height:300},range:{from:0,to:29},style:'candles',scale:'linear'});if(!result.ok)throw Error(result.reason);
+function paint(configs:ChartStudy[],range={from:0,to:29},input=bars){
+ const model=new NativeChartStudies();model.setStudies(configs,input);
+ const result=createNativePriceFrame(prepareNativePriceSeries(input),{plot:{left:0,top:0,width:700,height:300},range,style:'candles',scale:'linear'});if(!result.ok)throw Error(result.reason);
  const ops:{op:string;args:any[];color:string;dash:number[]}[]=[];
  const ctx:any={strokeStyle:'',fillStyle:'',dash:[],save(){},restore(){},setLineDash(v:number[]){this.dash=v;}};
  for(const op of ['beginPath','rect','clip','moveTo','lineTo','stroke','fillRect','strokeRect','fillText'])ctx[op]=(...args:any[])=>ops.push({op,args,color:ctx.strokeStyle,dash:[...ctx.dash]});
@@ -48,4 +48,49 @@ describe('indicator pane display settings',()=>{
   for(const referenceLevels of [[{value:NaN}],[{value:1,label:'x'.repeat(81)}],Array.from({length:13},()=>({value:1}))])expect(validatePreferences({studies:[{...rsi,referenceLevels}]}).studies).toEqual([]);
   expect(validatePreferences({studies:[{...rsi,kind:'sma',paneScale:{mode:'fixed',min:0,max:100}}]}).studies).toEqual([]);
  });
+});
+
+
+describe('independent pane boundaries',()=>{
+ it.each([{mode:'fixed',min:20},{mode:'fixed',max:80}])('preserves a single bound in saved preferences: %j',paneScale=>{
+  expect(validatePreferences({studies:[{...rsi,paneScale}]}).studies[0]).toMatchObject({paneScale});
+ });
+ it('keeps the fixed minimum exact while extending the automatic maximum to include observations',()=>{
+  const {ops,model}=paint([{...rsi,referenceLevels:[],paneScale:{mode:'fixed',min:20}}]);
+  expect(ops.some(o=>o.op==='fillText'&&o.args[0]==='20'&&o.args[2]===420)).toBe(true);
+  expect(ops.some(o=>o.op==='fillText'&&o.args[0]==='106.4'&&o.args[2]===300)).toBe(true);
+  expect(model.getValues(bars.at(-1)!.time)[0]!.values[0]!.value).toBe(100);
+ });
+ it('keeps an upper cap with a usable automatic lower side when every observation exceeds it',()=>{
+  const {ops,model}=paint([{...rsi,referenceLevels:[],paneScale:{mode:'fixed',max:80}}]);
+  expect(ops.some(o=>o.op==='fillText'&&o.args[0]==='80'&&o.args[2]===300)).toBe(true);
+  expect(ops.some(o=>o.op==='fillText'&&String(o.args[0]).includes('Fixed maximum'))).toBe(true);
+  expect(model.getValues(bars.at(-1)!.time)[0]!.values[0]!.value).toBe(100);
+ });
+ it('rejects no fixed boundary and unrepresentable single-sided ranges',()=>{
+  for(const paneScale of [{mode:'fixed'},{mode:'fixed',min:Number.MAX_VALUE},{mode:'fixed',max:-Number.MAX_VALUE},{mode:'fixed',min:null},{mode:'fixed',max:'10'}])expect(validatePreferences({studies:[{...rsi,paneScale}]}).studies).toEqual([]);
+ });
+});
+
+
+it('adapts the free boundary when the visible window changes while holding the fixed edge',()=>{
+ const config:ChartStudy={kind:'momentum',id:'momentum',period:1,color:'#ffffff',referenceLevels:[],paneScale:{mode:'fixed',min:100}};
+ const early=paint([config],{from:1,to:5}),late=paint([config],{from:20,to:29});
+ const axis=(ops:ReturnType<typeof paint>['ops'])=>ops.filter(o=>o.op==='fillText'&&o.args[1]===706);
+ expect(axis(early.ops).find(o=>o.args[2]===420)?.args[0]).toBe('100');
+ expect(axis(late.ops).find(o=>o.args[2]===420)?.args[0]).toBe('100');
+ expect(axis(early.ops).find(o=>o.args[2]===300)?.args[0]).not.toBe(axis(late.ops).find(o=>o.args[2]===300)?.args[0]);
+});
+it.each([{mode:'fixed' as const,min:-1e308},{mode:'fixed' as const,max:1e308},{mode:'fixed' as const,min:0},{mode:'fixed' as const,max:0}])('draws finite geometry for extreme/zero one-sided bounds %j',paneScale=>{
+ const {ops}=paint([{...rsi,referenceLevels:[],paneScale}]);
+ expect(ops.some(o=>o.op==='fillText'&&o.args[1]===706)).toBe(true);
+ for(const op of ops)for(const v of op.args)if(typeof v==='number')expect(Number.isFinite(v)).toBe(true);
+});
+
+it.each([{mode:'fixed' as const,min:Number.MIN_VALUE},{mode:'fixed' as const,max:-Number.MIN_VALUE}])('retains an axis and warning for an accepted subnormal boundary %j',paneScale=>{
+ const input=bars.map(bar=>({...bar,open:100,high:100,low:100,close:100}));
+ const {ops,model}=paint([{kind:'atr',period:1,method:'sma',color:'#ffffff',referenceLevels:[],paneScale}],{from:0,to:29},input);
+ expect(ops.filter(o=>o.op==='fillText'&&o.args[1]===706)).toHaveLength(2);
+ expect(ops.some(o=>o.op==='fillText'&&String(o.args[0]).includes('clipped'))).toBe(true);
+ expect(model.getValues(input.at(-1)!.time)[0]!.values[0]!.value).toBe(0);
 });

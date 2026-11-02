@@ -7,8 +7,13 @@ interface Props {config:ChartStudy;label:string;onChange:(change:Partial<ChartSt
 /** Draft numeric fields commit together; invalid limits never remove a study. */
 export function ChartStudyPaneSettings({config,label,onChange}:Props){
  const [minimum,setMinimum]=useState(''),[maximum,setMaximum]=useState(''),[error,setError]=useState('');
+ const [fixMinimum,setFixMinimum]=useState(true),[fixMaximum,setFixMaximum]=useState(true);
  const scaleKey=JSON.stringify(config.paneScale);
- useEffect(()=>{setMinimum(config.paneScale?.mode==='fixed'?String(config.paneScale.min):'');setMaximum(config.paneScale?.mode==='fixed'?String(config.paneScale.max):'');setError('');},[scaleKey]);
+ useEffect(()=>{
+  const scale=config.paneScale?.mode==='fixed'?config.paneScale:undefined;
+  setMinimum(scale?.min!==undefined?String(scale.min):'');setMaximum(scale?.max!==undefined?String(scale.max):'');
+  setFixMinimum(!scale||scale.min!==undefined);setFixMaximum(!scale||scale.max!==undefined);setError('');
+ },[scaleKey]);
  const levels:StudyReferenceLevel[]=config.referenceLevels??(studyDefinition(config.kind).levels??[]).map(value=>({value}));
  const change=(patch:Partial<ChartStudy>)=>{
   if(validatePreferences({studies:[{...config,...patch}]}).studies.length!==1){setError('Use finite values, with the maximum greater than the minimum. Existing settings are unchanged.');return false;}
@@ -17,16 +22,19 @@ export function ChartStudyPaneSettings({config,label,onChange}:Props){
  const edit=(index:number,patch:Partial<StudyReferenceLevel>)=>change({referenceLevels:levels.map((level,i)=>i===index?{...level,...patch}:level)});
  return <details className="mt-3" aria-label={`${label} Pane controls`}>
   <summary className="cursor-pointer text-zinc-300">Pane scale and reference levels</summary>
-  <p className="my-2 text-[11px] text-zinc-400">Display only. Guides do not change indicator calculations, AI rules or trade thresholds. Linked overlays share this pane’s scale. Fixed limits can hide values; the data window retains them.</p>
+  <p className="my-2 text-[11px] text-zinc-400">Display only. Guides do not change indicator calculations, AI rules or trade thresholds. Linked overlays share this pane’s scale. Uncheck either boundary to fit that side to visible values and guides. Fixed limits can hide values; the data window retains them.</p>
   <div className="flex flex-wrap items-center gap-2">
-   <span className="text-xs">{config.paneScale?.mode==='fixed'?`Fixed: ${config.paneScale.min} to ${config.paneScale.max}`:config.paneScale?.mode==='auto'?'Auto scale':'Study default scale'}</span>
+   <span className="text-xs">{config.paneScale?.mode==='fixed'?`Limits: ${config.paneScale.min??"Auto"} to ${config.paneScale.max??"Auto"}`:config.paneScale?.mode==='auto'?'Auto scale':'Study default scale'}</span>
    <button type="button" className={button} aria-label={`${label} Auto scale`} onClick={()=>change({paneScale:{mode:'auto'}})}>Auto scale</button>
    <button type="button" className={button} aria-label={`${label} Default scale`} onClick={()=>change({paneScale:undefined})}>Study default</button>
-   <label className="flex items-center gap-1">Min<input className={`${field} w-24`} aria-label={`${label} Scale minimum`} type="number" step="any" value={minimum} onChange={e=>setMinimum(e.target.value)}/></label>
-   <label className="flex items-center gap-1">Max<input className={`${field} w-24`} aria-label={`${label} Scale maximum`} type="number" step="any" value={maximum} onChange={e=>setMaximum(e.target.value)}/></label>
+   <label className="flex items-center gap-1"><input type="checkbox" aria-label={`${label} Fix minimum`} checked={fixMinimum} onChange={e=>setFixMinimum(e.target.checked)}/>Fix min</label>
+   <label className="flex items-center gap-1">Min<input disabled={!fixMinimum} className={`${field} w-24`} aria-label={`${label} Scale minimum`} type="number" step="any" value={minimum} onChange={e=>setMinimum(e.target.value)}/></label>
+   <label className="flex items-center gap-1"><input type="checkbox" aria-label={`${label} Fix maximum`} checked={fixMaximum} onChange={e=>setFixMaximum(e.target.checked)}/>Fix max</label>
+   <label className="flex items-center gap-1">Max<input disabled={!fixMaximum} className={`${field} w-24`} aria-label={`${label} Scale maximum`} type="number" step="any" value={maximum} onChange={e=>setMaximum(e.target.value)}/></label>
    <button type="button" className={button} aria-label={`${label} Apply fixed scale`} onClick={()=>{
-    if(!minimum.trim()||!maximum.trim()){setError('Enter both limits. Existing settings are unchanged.');return;}
-    change({paneScale:{mode:'fixed',min:Number(minimum),max:Number(maximum)}});
+    if(!fixMinimum&&!fixMaximum){setError('Select at least one boundary or choose Auto scale. Existing settings are unchanged.');return;}
+    if(fixMinimum&&!minimum.trim()||fixMaximum&&!maximum.trim()){setError('Enter every selected limit. Existing settings are unchanged.');return;}
+    change({paneScale:{mode:'fixed',...(fixMinimum?{min:Number(minimum)}:{}),...(fixMaximum?{max:Number(maximum)}:{})}});
    }}>Apply fixed scale</button>
   </div>
   {error&&<p role="alert" className="mt-2 text-xs text-amber-300">{error}</p>}

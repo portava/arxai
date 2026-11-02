@@ -194,12 +194,22 @@ function visiblePoints(study:NativeStudySnapshot,frame:NativePriceFrame):readonl
 function referenceLevels(config:Readonly<ChartStudy>):readonly StudyReferenceLevel[] {
   return config.referenceLevels??(studyDefinition(config.kind).levels??[]).map(value=>({value}));
 }
+/** One representable step, used only if an automatic padded edge rounds back
+ * onto the fixed boundary. It changes display bounds, never observations. */
+function adjacentFloat(value:number,direction:1|-1):number {
+  if(value===0)return direction*Number.MIN_VALUE;
+  const view=new DataView(new ArrayBuffer(8));view.setFloat64(0,value);
+  const bits=view.getBigUint64(0);
+  view.setBigUint64(0,(value>0)===(direction>0)?bits+1n:bits-1n);
+  return view.getFloat64(0);
+}
 function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame,plot:NativePlot) {
   // A linked overlay may be listed before its oscillator; display order cannot
   // transfer ownership of the shared pane's scale.
   const owner=group.find(s=>studyDefinition(s.config.kind).pane)??group[0]!;
   const scale=owner.config.paneScale;
-  const fixed=scale?.mode==='fixed'?[scale.min,scale.max]:!scale&&group.length===1?studyDefinition(owner.config.kind).range:undefined;
+  const manual=scale?.mode==='fixed'?scale:undefined;
+  const fixed=manual?.min!==undefined&&manual.max!==undefined?[manual.min,manual.max]:!scale&&group.length===1?studyDefinition(owner.config.kind).range:undefined;
   const values:number[]=[];
   for(const study of group){
     const definition=studyDefinition(study.config.kind);
@@ -216,13 +226,33 @@ function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame
     if(!fixed&&(study.config.kind==='trade_volume'||study.config.kind==='tick_volume'||study.config.kind==='macd'))values.push(0);
   }
   if(fixed)values.push(...fixed);
+  if(manual?.min!==undefined)values.push(manual.min);
+  if(manual?.max!==undefined)values.push(manual.max);
   if(!values.length)return null;
   let low=Infinity,high=-Infinity;for(const value of values){low=Math.min(low,value);high=Math.max(high,value);}
   const magnitude=Math.max(Math.abs(low),Math.abs(high))||1;
   const a=low/magnitude,b=high/magnitude,padding=fixed?0:b>a?(b-a)*.08:.01;
-  const bottom=a-padding,extent=b+padding-bottom;
+  let bottom=a-padding,top=b+padding;
+  if(manual&&!fixed){
+    // Work in normalized units to avoid overflowing opposite-sign/extreme
+    // values. Pad only the automatic side, never move the user's boundary.
+    bottom=manual.min!==undefined?manual.min/magnitude:a;
+    top=manual.max!==undefined?manual.max/magnitude:b;
+    if(!(top>bottom)){if(manual.min!==undefined)top=bottom+.02;else bottom=top-.02;}
+    const pad=(top-bottom)*.08;
+    if(manual.min===undefined)bottom-=pad;
+    if(manual.max===undefined)top+=pad;
+    low=manual.min??Math.max(-Number.MAX_VALUE,bottom*magnitude);
+    high=manual.max??Math.min(Number.MAX_VALUE,top*magnitude);
+    if(!(high>low)){
+      if(manual.min!==undefined)high=adjacentFloat(low,1);
+      else low=adjacentFloat(high,-1);
+    }
+    bottom=low/magnitude;top=high/magnitude;
+  }
+  const extent=top-bottom;
   if(!finite(extent)||extent<=0)return null;
-  const note=scale?.mode==='fixed'?'Fixed scale · values outside limits are clipped':scale?.mode==='auto'?'Auto scale':'';
+  const note=manual?(fixed?'Fixed scale · values outside limits are clipped':manual.min!==undefined?'Fixed minimum · lower values are clipped':'Fixed maximum · higher values are clipped'):scale?.mode==='auto'?'Auto scale':'';
   return {low,high,note,y:(value:number):number|null=>{if(!finite(value))return null;const y=plot.top+plot.height*(1-(value/magnitude-bottom)/extent);return finite(y)?y:null;}};
 }
 function clipped(ctx:CanvasRenderingContext2D,plot:NativePlot,draw:()=>void){ctx.save();try{ctx.beginPath();ctx.rect(plot.left,plot.top,plot.width,plot.height);ctx.clip();ctx.globalAlpha=1;draw();}finally{ctx.restore();}}

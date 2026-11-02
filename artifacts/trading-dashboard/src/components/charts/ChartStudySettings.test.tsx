@@ -169,3 +169,20 @@ it('edits pane guides and applies fixed limits atomically, keeping invalid draft
  fireEvent.click(screen.getByRole('button',{name:'RSI 1 Auto scale'}));expect(settings().studies[0].paneScale).toEqual({mode:'auto'});
  fireEvent.click(screen.getByRole('button',{name:'RSI 1 Default scale'}));expect(settings().studies[0].paneScale).toBeUndefined();
 });
+
+
+it('fixes either pane boundary independently without committing unchecked drafts',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index'}));
+ fireEvent.change(screen.getByLabelText('RSI 1 Scale minimum'),{target:{value:'20'}});
+ fireEvent.click(screen.getByLabelText('RSI 1 Fix maximum'));
+ expect((screen.getByLabelText('RSI 1 Scale maximum') as HTMLInputElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply fixed scale'}));expect(settings().studies[0].paneScale).toEqual({mode:'fixed',min:20});
+ fireEvent.click(screen.getByLabelText('RSI 1 Fix minimum'));fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply fixed scale'}));
+ expect(screen.getByRole('alert')).toBeTruthy();expect(settings().studies[0].paneScale).toEqual({mode:'fixed',min:20});
+ fireEvent.click(screen.getByLabelText('RSI 1 Fix maximum'));fireEvent.change(screen.getByLabelText('RSI 1 Scale maximum'),{target:{value:'80'}});
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply fixed scale'}));expect(settings().studies[0].paneScale).toEqual({mode:'fixed',max:80});
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));expect(settings().studies[1].paneScale).toEqual({mode:'fixed',max:80});
+ expect((screen.getByLabelText('RSI 2 Fix minimum') as HTMLInputElement).checked).toBe(false);
+ expect((screen.getByLabelText('RSI 2 Scale minimum') as HTMLInputElement).value).toBe('');
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Auto scale'}));expect(settings().studies[0].paneScale).toEqual({mode:'auto'});expect(settings().studies[1].paneScale).toEqual({mode:'fixed',max:80});
+});

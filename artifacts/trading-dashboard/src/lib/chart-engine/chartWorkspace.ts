@@ -75,9 +75,13 @@ export function validatePreferences(value: unknown): ChartPreferences {
       const scale=s.paneScale;
       if (!scale || typeof scale!=="object" || Array.isArray(scale) || !["auto","fixed"].includes(scale.mode)) continue;
       if (scale.mode==="fixed") {
-        if (!Number.isFinite(scale.min) || !Number.isFinite(scale.max) || scale.min>=scale.max) continue;
-        const magnitude=Math.max(Math.abs(scale.min),Math.abs(scale.max))||1;
-        if (!(scale.max/magnitude-scale.min/magnitude>0)) continue;
+        if (scale.min===undefined && scale.max===undefined) continue;
+        if (scale.min!==undefined && (!Number.isFinite(scale.min) || scale.min>=Number.MAX_VALUE)) continue;
+        if (scale.max!==undefined && (!Number.isFinite(scale.max) || scale.max<=-Number.MAX_VALUE)) continue;
+        if (scale.min!==undefined && scale.max!==undefined) {
+          const magnitude=Math.max(Math.abs(scale.min),Math.abs(scale.max))||1;
+          if (!(scale.max/magnitude-scale.min/magnitude>0)) continue;
+        }
       }
     }
     if (s.referenceLevels !== undefined && (!Array.isArray(s.referenceLevels) || s.referenceLevels.length>12 || Array.from(s.referenceLevels).some((level:any)=>
@@ -106,7 +110,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
     seen.add(id);
     studies.push({
       ...(lineStyles?.length ? {lineStyles} : {}),
-      ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:{mode:"fixed" as const,min:s.paneScale.min,max:s.paneScale.max}} : {}),
+      ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:{mode:"fixed" as const,...(s.paneScale.min!==undefined?{min:s.paneScale.min}:{}),...(s.paneScale.max!==undefined?{max:s.paneScale.max}:{})}} : {}),
       ...(s.referenceLevels!==undefined ? {referenceLevels:s.referenceLevels.map((level:any)=>({value:level.value,...(level.label!==undefined?{label:level.label}:{}),...(level.color!==undefined?{color:level.color}:{}),...(level.width!==undefined?{width:level.width}:{}),...(level.style!==undefined?{style:level.style}:{}),...(level.visible!==undefined?{visible:level.visible}:{})}))} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),
