@@ -26,9 +26,10 @@ export function describeChartStyle(style: ChartStyle): { name: string; note: str
   const known: ChartStyle = (CHART_STYLES as readonly string[]).includes(style) ? style : "candles";
   return { name: CHART_STYLE_NAMES[known], note: STYLE_NOTES[known] };
 }
-export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text" | "channel" | "measure";
-export const DRAWING_NAMES: Record<DrawingKind, string> = { measure: "Price and time ruler", channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
+export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text" | "channel" | "pitchfork" | "measure";
+export const DRAWING_NAMES: Record<DrawingKind, string> = { pitchfork: "Andrews’ Pitchfork", measure: "Price and time ruler", channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
+export function threeAnchorDrawing(kind: DrawingKind): boolean { return kind === "channel" || kind === "pitchfork"; }
 export interface ChartAnchor { time: number; price: number }
 export interface FibonacciOrigin { method:"confirmed-swings-v1"; span:2; symbol:string; timeframe:string; source:string; sourceIdentity:string; start:ChartAnchor; end:ChartAnchor; confirmedAt:number; windowFrom:number; windowTo:number; closedBars:number }
 export interface PivotLevelOrigin {method:"latest-confirmed-pivots-v1";span:2;symbol:string;timeframe:string;source:string;sourceIdentity:string;windowFrom:number;windowTo:number;closedBars:number;referenceClose:ChartAnchor;level:ChartPivotLevel}
@@ -123,8 +124,9 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
   return (Array.isArray(value) ? value.slice(0, MAX_DRAWINGS) : []).flatMap((d: any) => {
     if (!d || typeof d.id !== "string" || d.id.length > 80 || seen.has(d.id) || !Object.hasOwn(DRAWING_NAMES, d.kind) || !anchor(d.start) || !color(d.color)) return [];
     if (!singleAnchorDrawing(d.kind) && (!anchor(d.end) || (d.kind !== "measure" && d.end.time === d.start.time))) return [];
-    if (d.kind === "channel" && !anchor(d.offset)) return [];
-    if (d.kind === "channel" && [d.extendLeft,d.extendRight,d.middleLine].some(v=>v != null && typeof v !== "boolean")) return [];
+    if (threeAnchorDrawing(d.kind) && !anchor(d.offset)) return [];
+    if (threeAnchorDrawing(d.kind) && [d.extendLeft,d.extendRight,...(d.kind === "channel" ? [d.middleLine] : [])].some(v=>v != null && typeof v !== "boolean")) return [];
+    if (d.kind === "pitchfork" && (d.end.time <= d.start.time || d.offset.time <= d.start.time || d.offset.time === d.end.time)) return [];
     const text = d.kind === "text" ? normalizeNoteText(d.text) : null;
     if (d.kind === "text" && text == null) return [];
     if (d.width != null && ![1, 2, 3].includes(d.width)) return [];
@@ -133,7 +135,7 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
     const fibonacciOrigin=d.kind==="fibonacci"?validateFibonacciOrigin(d.fibonacciOrigin):null;
     const pivotLevelOrigin=d.kind==="horizontal"?validatePivotLevelOrigin(d.pivotLevelOrigin):null;
     seen.add(d.id);
-    return [{ ...(pivotLevelOrigin?{pivotLevelOrigin}:{}),...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
+    return [{ ...(pivotLevelOrigin?{pivotLevelOrigin}:{}),...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(threeAnchorDrawing(d.kind) ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.kind === "channel" && d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
   });
 }
 /** Local device preferences only. No account, positions or credentials are stored. Kept auto drawings retain their original source hash

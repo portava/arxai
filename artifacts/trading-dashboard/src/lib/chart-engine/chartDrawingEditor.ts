@@ -1,5 +1,5 @@
 import { hitTestDrawings, type PixelPoint, type ProjectAnchor } from "./chartDrawingCanvas";
-import { validateDrawings, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
+import { threeAnchorDrawing, validateDrawings, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
 
 export interface DrawingInteraction {
@@ -57,7 +57,7 @@ export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "offs
   if (!startPoint) return null;
   const index = (time: number) => candleIndex(candles, time);
   let delta = index(target.time) - index(startPoint.time);
-  const anchors = [drawing.start, ...(drawing.end ? [drawing.end] : []), ...(drawing.kind === "channel" && drawing.offset ? [drawing.offset] : [])];
+  const anchors = [drawing.start, ...(drawing.end ? [drawing.end] : []), ...(threeAnchorDrawing(drawing.kind) && drawing.offset ? [drawing.offset] : [])];
   const indexes = anchors.map(anchor => index(anchor.time));
   if (drawing.kind !== "horizontal") {
     if (indexes.some(i => i < 0)) return null;
@@ -71,7 +71,7 @@ export function moveDrawing(drawing: ChartDrawing, part: "start" | "end" | "offs
     return { time: drawing.kind === "horizontal" ? anchor.time : candles[indexes[i]! + delta]!.time, price };
   });
   if (moved.some(anchor => !anchor)) return null;
-  return validateDrawings([{ ...drawing, start: moved[0], ...(drawing.end ? { end: moved[1] } : {}), ...(drawing.kind === "channel" ? {offset:moved[2]} : {}) }])[0] ?? null;
+  return validateDrawings([{ ...drawing, start: moved[0], ...(drawing.end ? { end: moved[1] } : {}), ...(threeAnchorDrawing(drawing.kind) ? {offset:moved[2]} : {}) }])[0] ?? null;
 }
 
 interface EditorContext extends DrawingProjection {

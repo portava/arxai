@@ -1,4 +1,4 @@
-import { drawingSegments, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
+import { threeAnchorDrawing, drawingSegments, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
 import { measurementLabels } from "./chartRangeMeasurement";
 import { layoutTextNote, NOTE_FONT, NOTE_HEADER_HEIGHT, NOTE_LINE_HEIGHT, NOTE_PADDING, type MeasureNoteText, type NoteLayout } from "./chartTextNote";
 
@@ -58,6 +58,23 @@ export function drawingStrokes(drawings: readonly ChartDrawing[], project: Proje
         {...style,dashed:true,start,end:corner},{...style,dashed:true,start:corner,end});
       continue;
     }
+    if (drawing.kind === "pitchfork") {
+      const a = project(drawing.start), b = drawing.end && project(drawing.end), c = drawing.offset && project(drawing.offset);
+      if (!a || !b || !c || ![a.x,a.y,b.x,b.y,c.x,c.y].every(Number.isFinite)) continue;
+      // The midpoint belongs to displayed bar/price coordinates, not a made-up
+      // candle timestamp. Log/inverted scales preserve visible parallelism.
+      const midpoint = {x:(b.x+c.x)/2,y:(b.y+c.y)/2};
+      const dx = midpoint.x-a.x;
+      if (dx <= .001 || b.x <= a.x || c.x <= a.x) continue;
+      const slope = (midpoint.y-a.y)/dx;
+      const lines = [a,b,c].map(origin => {
+        const x1 = drawing.extendLeft ? Math.min(0,origin.x) : origin.x;
+        const x2 = drawing.extendRight ? Math.max(width,origin.x+dx) : origin.x+dx;
+        return {...style,start:{x:x1,y:origin.y+slope*(x1-origin.x)},end:{x:x2,y:origin.y+slope*(x2-origin.x)}};
+      });
+      if (lines.every(line=>Number.isFinite(line.start.y)&&Number.isFinite(line.end.y))) strokes.push(...lines);
+      continue;
+    }
     if (drawing.kind === "channel") {
       const start = project(drawing.start), end = drawing.end && project(drawing.end), offset = drawing.offset && project(drawing.offset);
       if (!start || !end || !offset || Math.abs(end.x - start.x) < .001) continue;
@@ -106,7 +123,7 @@ export function drawingHandles(drawing: ChartDrawing, project: ProjectAnchor, wi
   if (drawing.kind === "text") return [{ part: "start", point: start }];
   const end = drawing.end && project(drawing.end);
   if (!end) return [];
-  if (drawing.kind === "channel") {
+  if (threeAnchorDrawing(drawing.kind)) {
     const offset = drawing.offset && project(drawing.offset);
     return offset ? [{part:"start",point:start},{part:"end",point:end},{part:"offset",point:offset}] : [];
   }

@@ -441,6 +441,32 @@ it("offers a reversible price-only scale control without altering other preferen
 });
 
 
+it("places and edits a classic pitchfork with three distinct candles, undo, locking, hiding and reload",()=>{
+ const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"pitchfork"}});
+ const key=drawingStorageKey("EURUSD","M15");const saved=()=>JSON.parse(localStorage.getItem(key)!);
+ act(()=>click?.({time:100,price:10}));act(()=>click?.({time:200,price:30}));
+ expect(localStorage.getItem(key)).toBeNull();
+ act(()=>click?.({time:50,price:20}));expect(localStorage.getItem(key)).toBeNull();
+ expect(screen.getByText(/Choose both tine anchors after/)).toBeTruthy();
+ act(()=>click?.({time:200,price:20}));expect(localStorage.getItem(key)).toBeNull();
+ act(()=>click?.({time:300,price:20}));
+ expect(saved()[0]).toMatchObject({kind:"pitchfork",start:{time:100,price:10},end:{time:200,price:30},offset:{time:300,price:20},extendRight:true});
+ fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
+ expect(screen.getByText(/Classic pitchfork:/)).toBeTruthy();
+ expect(screen.queryByLabelText("Drawing 1 middle line")).toBeNull();
+ fireEvent.click(screen.getByLabelText("Drawing 1 extend left"));expect(saved()[0].extendLeft).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));expect(saved()[0].extendLeft).toBeUndefined();
+ fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));expect(saved()[0].extendLeft).toBe(true);
+ fireEvent.blur(screen.getByLabelText("Drawing 1 offset price"),{target:{value:"25"}});expect(saved()[0].offset.price).toBe(25);
+ fireEvent.click(screen.getByLabelText("Lock drawing 1"));expect(screen.getByLabelText("Drawing 1 extend right").hasAttribute("disabled")).toBe(true);
+ fireEvent.click(screen.getByLabelText("Hide drawing 1"));expect(saved()[0].hidden).toBe(true);
+ view.unmount();mount();expect(drawings.mock.calls.at(-1)![0][0]).toMatchObject({kind:"pitchfork",hidden:true});
+ fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));fireEvent.click(screen.getByLabelText("Show drawing 1"));
+ expect(drawings.mock.calls.at(-1)![0][0]).toMatchObject({kind:"pitchfork",offset:{time:300,price:25},locked:true});
+ fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"pitchfork"}});act(()=>click?.({time:400,price:10}));act(()=>click?.({time:500,price:20}));
+ fireEvent.keyDown(window,{key:"Escape"});expect(saved()).toHaveLength(1);
+});
+
 it("places a channel in three steps, cancels partial placement and preserves its third anchor through undo and reload",()=>{
  const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});
  act(()=>click?.({time:100,price:10}));act(()=>click?.({time:200,price:20}));
