@@ -15,8 +15,7 @@
 // confidence / trade-health / risk gate, or touch live execution. Fail closed:
 // any error or insufficient window returns `null` (no trendline impact at all).
 import type { Candle } from "../types.js";
-import { normalizeCandles } from "./candleNormalization.js";
-import { isChartTimeframe, type ChartTimeframe } from "./timeframes.js";
+import { currentClosedPatternWindow } from "./closedPatternWindow.js";
 import { detectTrendlines } from "./engines/trendlineEngine.js";
 import {
   resolveTrendlineTruth,
@@ -66,17 +65,8 @@ export function buildTrendlineTruthVerdict(
   input: TrendlineTruthServiceInput,
 ): TrendlineTruthVerdict | null {
   try {
-    if (!isChartTimeframe(input.timeframe)) return null;
-    const tf = input.timeframe as ChartTimeframe;
-    if (!Array.isArray(input.rawCandles) || input.rawCandles.length === 0) {
-      return null;
-    }
-    const { candles } = normalizeCandles(input.rawCandles, {
-      symbol: input.symbol,
-      displaySymbol: input.displaySymbol ?? input.symbol,
-      timeframe: tf,
-      source: input.source ?? null,
-    });
+    const candles = currentClosedPatternWindow(input);
+    if (!candles) return null;
     const detection = detectTrendlines(candles);
     if (detection.insufficient) return null;
     if (

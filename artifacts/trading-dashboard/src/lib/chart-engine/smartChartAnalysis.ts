@@ -1,4 +1,4 @@
-import { detectChartPatterns, findSwings, round, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
+import { partitionCandleContinuity, detectChartPatterns, findSwings, round, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
 import { smartChartFlagFinding } from "./smartChartFlagFinding";
 import { resolveShootingStarTruth, detectEngulfing, resolveStructureBreakTruth, type DetectedPattern } from "@workspace/domain/market";
 import { chartIntervalSeconds, chartIntervalLimitation } from "./chartIntervals";
@@ -205,12 +205,8 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
   // An elapsed interval is not proof of a scheduled market closure. Without
   // calendar evidence, detectors must not call separated observations adjacent.
   // Preserve each segment's history rather than fabricate missing candles.
-  const segments: SmartChartAnalysisBar[][] = [];
-  for (const bar of bars) {
-    const segment = segments.at(-1);
-    if (!segment || Math.abs(bar.time - segment.at(-1)!.closeTime) >= 0.001) segments.push([bar]);
-    else segment.push(bar);
-  }
+  const segments = partitionCandleContinuity(bars, bar => ({open:bar.time,close:bar.closeTime}));
+  if (!segments) return {status:"unavailable",reason:"Candle intervals overlap or are invalid.",contextKey:key,asOf:null,closedBarsUsed:0,coverage:window.coverage,findings:[],allFindings:[]};
   const eventSince = bars[Math.max(0, bars.length - EVENT_LOOKBACK)]!.time;
   const shapeSince = bars[Math.max(0, bars.length - SHAPE_LOOKBACK)]!.time;
   const entries = segments.flatMap((segment, i) => {

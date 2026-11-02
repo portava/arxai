@@ -14,8 +14,7 @@
 // confidence / trade-health / risk gate, or touch live execution. Fail closed:
 // any error or insufficient window returns `null` (no pattern impact at all).
 import type { Candle } from "../types.js";
-import { normalizeCandles } from "./candleNormalization.js";
-import { isChartTimeframe, type ChartTimeframe } from "./timeframes.js";
+import { currentClosedPatternWindow } from "./closedPatternWindow.js";
 import { detectChartPatterns } from "./engines/patternEngine.js";
 import {
   resolvePatternTruth,
@@ -90,17 +89,8 @@ export function buildPatternTruthVerdict(
   input: PatternTruthServiceInput,
 ): PatternTruthVerdict | null {
   try {
-    if (!isChartTimeframe(input.timeframe)) return null;
-    const tf = input.timeframe as ChartTimeframe;
-    if (!Array.isArray(input.rawCandles) || input.rawCandles.length === 0) {
-      return null;
-    }
-    const { candles } = normalizeCandles(input.rawCandles, {
-      symbol: input.symbol,
-      displaySymbol: input.displaySymbol ?? input.symbol,
-      timeframe: tf,
-      source: input.source ?? null,
-    });
+    const candles = currentClosedPatternWindow(input);
+    if (!candles) return null;
     const detection = detectChartPatterns(candles);
     if (detection.insufficient || detection.patterns.length === 0) return null;
 
@@ -424,17 +414,8 @@ export function buildPatternLibraryRead(
   input: PatternLibraryReadInput,
 ): PatternLibraryRead | null {
   try {
-    if (!isChartTimeframe(input.timeframe)) return null;
-    const tf = input.timeframe as ChartTimeframe;
-    if (!Array.isArray(input.rawCandles) || input.rawCandles.length === 0) {
-      return null;
-    }
-    const { candles } = normalizeCandles(input.rawCandles, {
-      symbol: input.symbol,
-      displaySymbol: input.displaySymbol ?? input.symbol,
-      timeframe: tf,
-      source: input.source ?? null,
-    });
+    const candles = currentClosedPatternWindow(input);
+    if (!candles) return null;
 
     const ohlc = candles.map((c) => ({
       open: c.open,
