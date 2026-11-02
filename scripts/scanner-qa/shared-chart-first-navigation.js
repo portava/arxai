@@ -27,11 +27,16 @@ async page => {
     const bar=p=>({time:p.time,open:p.open,high:p.high,low:p.low,close:p.close});
     const eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
     if(state.symbol!==authority.symbol||state.intervalSeconds!==authority.intervalSeconds||state.style!=='candles'||state.feed?.source!==authority.source||state.feed?.livePriceAffordance!==false)return {source:false,visible:false,reason:'context/source/style mismatch'};
-    if(!state.adapterId||!state.chartId||!state.seriesId||!state.canvasIds?.length||state.barCount!==authority.canonical.length||!state.range||!(state.range.to>state.range.from))return {source:false,visible:false,reason:'actual chart/series/range not ready'};
+    // Native has no vendor series object: its immutable prepared candle array
+    // is the actual price-layer identity. Queued inputs alone are not paint.
+    const native=state.engineId==='arx-native';
+    if(native&&(state.renderVerified!==true||state.state?.status!=='ready'||state.state.pendingPaint!==false))return {source:false,visible:false,reason:'native rendering proof incomplete'};
+    const seriesIdentity=native?state.candlesId:state.seriesId;
+    if(!state.adapterId||!state.chartId||!seriesIdentity||!state.canvasIds?.length||state.barCount!==authority.canonical.length||!state.range||!(state.range.to>state.range.from))return {source:false,visible:false,reason:'actual chart/series/range not ready'};
     if(!eq(data.canonical,authority.canonical)||!eq(data.display.map(bar),authority.canonical))return {source:false,visible:false,reason:'canonical/displayed OHLC mismatch'};
     const b=state.bounds;
     const visible=!!b&&Math.min(b.x+b.width,viewport.width)-Math.max(b.x,0)>=100&&Math.min(b.y+b.height,viewport.height)-Math.max(b.y,0)>=100&&unobscured;
-    return {source:true,visible,reason:visible?null:'plot offscreen or obscured',identity:[state.adapterId,state.chartId,state.seriesId,...state.canvasIds].join(':')};
+    return {source:true,visible,reason:visible?null:'plot offscreen or obscured',identity:[state.adapterId,state.chartId,seriesIdentity,...state.canvasIds].join(':')};
   }
   function plotVisible(bounds,viewport,hit) {
     const left=Math.max(0,bounds.x),right=Math.min(viewport.width,bounds.x+bounds.width);

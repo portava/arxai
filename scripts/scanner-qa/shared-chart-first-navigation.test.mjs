@@ -72,3 +72,29 @@ test('idle scenario is explicit and cannot pass as an immediate first click',()=
  assert.equal(accept({...sample(),readyToClickMs:20},idle).valid,false);
  for(const value of [undefined,null,'1500',-1,NaN,Infinity,2001,1.5])assert.throws(()=>navigationBudget(value));
 });
+
+function nativeCurrent(){
+ const value=current();delete value.state.seriesId;
+ Object.assign(value.state,{engineId:'arx-native',candlesId:9,renderVerified:true,state:{status:'ready',pendingPaint:false}});
+ return value;
+}
+test('native navigation requires actual stable candle identity and completed renderer proof',()=>{
+ const value=nativeCurrent();const result=assess(value,authority,viewport,true);
+ assert.equal(result.source,true);assert.equal(result.visible,true);
+ assert.equal(result.identity,'1:2:9:4');
+ for(const patch of [{candlesId:null},{candlesId:undefined,seriesId:77},{renderVerified:false},{renderVerified:undefined},{state:{status:'ready',pendingPaint:true}},{state:{status:'error',pendingPaint:false}},{state:{status:'ready'}},{state:null}]){
+  const changed=nativeCurrent();Object.assign(changed.state,patch);
+  assert.equal(assess(changed,authority,viewport,true).source,false,JSON.stringify(patch));
+ }
+});
+test('native proof cannot conceal wrong canonical/displayed data or source; visibility still independently gates',()=>{
+ for(const part of ['canonical','display'])for(const field of ['time','open','high','low','close']){
+  const value=nativeCurrent();value.data[part][0][field]+=1;
+  assert.equal(assess(value,authority,viewport,true).source,false,part+'.'+field);
+ }
+ const value=nativeCurrent();value.state.feed.source='other';assert.equal(assess(value,authority,viewport,true).source,false);
+ assert.equal(assess(nativeCurrent(),authority,viewport,false).source,true);
+ assert.equal(assess(nativeCurrent(),authority,viewport,false).visible,false);
+ const changed=nativeCurrent();changed.state.candlesId=10;
+ assert.notEqual(assess(changed,authority,viewport,true).identity,assess(nativeCurrent(),authority,viewport,true).identity);
+});
