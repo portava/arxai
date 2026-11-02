@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Candle identity and resistance evidence — 2 November 2026
+
+Application `ae251596` fixes a false shooting-star confirmation caused by matching candles on equal high/low rather than detector-selected identity. It also removes an unmeasured resistance-location claim from shared pattern reasoning. Exact-source frontend4,714pass/12skipped,61backend pattern checks and11actual-Scanner browser assertions pass; two baseline guards remain failing. This is bounded correctness evidence, not broad engine accuracy or competitor parity. See [source, reproductions and limits](SMART_CHART_STAR_IDENTITY_2026_11_02.md).
+
 ## Native-only application bundle — 2 November 2026
 
 Final application `98962747` removes the legacy chart engine from the actual production bundle while preserving an explicit offline comparison entry. Total JavaScript decreases 232,686 bytes (gzip 72,370); this is a byte reduction, not a proven navigation speedup. Full frontend 4,683 pass / 0 fail / 12 skipped, typecheck/build pass; guards 85/87 retain prior failures. Eighty ABBA navigation samples remain source-correct but all 40 throttled attempts miss 100 ms. No deployment or competitor parity. See [exact source, browser checks, failed runs and retained timings](NATIVE_CHART_BUNDLE_2026_11_02.md). Earlier dated checkpoints below remain historical.
