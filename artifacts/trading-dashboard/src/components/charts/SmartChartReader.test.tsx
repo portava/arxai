@@ -35,6 +35,29 @@ function fixture(timeframe="M5",start=START,step=300_000){
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("embedded chart reader follows applied candles",()=>{
+  it("keeps rendered star explanation, annotation and assistant bound to the same actual candle",()=>{
+    const f=fixture(),onFindingExplanation=vi.fn();
+    const rows=[...[1,1.01,1.02,1.03,1.04].map(close=>({open:close-.001,high:close+.001,low:close-.002,close})),
+      {open:1.04,high:1.06,low:1.0395,close:1.041},
+      {open:1.04,high:1.06,low:1.0395,close:1.055},
+      {open:1.055,high:1.056,low:1.03,close:1.035}];
+    const candles=f.data.candles!.slice(0,8).map((bar,i)=>({...bar,...rows[i]!}));
+    const data={...f.data,candles,marketEvidence:{...f.data.marketEvidence,lastClosedCandleAt:candles.at(-1)!.closeTime},
+      feedStatus:{...f.data.feedStatus,lastCandleTime:candles.at(-1)!.closeTime}} as ChartCandlesResponse;
+    f.show(candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));
+    render(<SmartChartReader {...f.props} data={data} onFindingExplanation={onFindingExplanation}/>);
+    const buttons=screen.getAllByRole("button",{name:/^Shooting Star · observed/,hidden:true});
+    expect(buttons).toHaveLength(1);fireEvent.click(buttons[0]!);
+    const annotation=f.setSmartAnnotation.mock.lastCall![0];
+    expect(annotation.id).toBe(`shooting_star:${Date.parse(candles[5]!.openTime)/1000}`);
+    expect(annotation.anchors).toEqual([{time:Date.parse(candles[5]!.openTime)/1000,price:1.06,label:"shooting star"}]);
+    expect(annotation.dashed).toBe(true);
+    const explanation=onFindingExplanation.mock.lastCall![0]();
+    expect(explanation).toContain("next close did not confirm");
+    expect(explanation).not.toContain("confirming the rejection");
+    expect(screen.getByTestId("smart-chart-reader").textContent).toContain("next close did not confirm");
+  });
+
   it("publishes the displayed finding's source, observed geometry and caveats for the local assistant",()=>{
     const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
     const getter=onFindingExplanation.mock.lastCall?.[0];expect(typeof getter).toBe("function");

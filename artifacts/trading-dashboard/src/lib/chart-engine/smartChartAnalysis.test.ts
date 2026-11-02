@@ -202,6 +202,21 @@ describe("existing geometry, causal confirmation and plain English", () => {
     expect(f.status).toBe("observed"); expect(f.confirmedAt).toBeUndefined();
     expect(f.explanation).toContain("next close did not confirm");
   });
+  it.each([0, 61])("keeps shooting-star identity with repeated extrema and %i earlier bars", offset => {
+    const earlier = rows(Array.from({length:offset}, () => 0.98));
+    const b = bars([...earlier, ...uptrend, star,
+      { open: 1.04, high: 1.06, low: 1.0395, close: 1.055 },
+      { open: 1.055, high: 1.056, low: 1.03, close: 1.035 }]);
+    for (const end of [offset + 7, offset + 8]) {
+      const findings = analyzeSmartChart(input(b.slice(0, end))).allFindings.filter(f => f.id.startsWith("shooting_star:"));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.id).toBe(`shooting_star:${b[offset + 5]!.time}`);
+      expect(findings[0]!.anchors).toEqual([{time:b[offset + 5]!.time,price:star.high,role:"shooting_star"}]);
+      expect(findings[0]!.status).toBe("observed");
+      expect(findings[0]!.confirmedAt).toBeUndefined();
+      expect(findings[0]!.explanation).toContain("next close did not confirm");
+    }
+  });
   it("timestamps a later shooting-star invalidation at the observed endpoint", () => {
     const b = bars([...uptrend, star,
       { open: 1.041, high: 1.042, low: 1.03, close: 1.035 },

@@ -123,12 +123,8 @@ test("4: shooting star fails when price closes back above the wick high", () => 
   assert.equal(r.direction, "neutral");
 });
 
-// 5. The shooting-star read carries its LOCATION (a rejection at resistance) and
-//    a STRONGER rejection scores higher. The dedicated detector models a valid
-//    shooting star as inherently a resistance rejection (a long upper wick after
-//    an advance IS the rejection), so location is fixed by definition and the
-//    rejection STRENGTH is what varies the confidence.
-test("5: stronger shooting-star rejection at resistance scores higher", () => {
+// Geometry strength is a rule weight, not evidence of a separately measured resistance level.
+test("5: shooting-star geometry strength does not establish resistance location", () => {
   const next = bar(1.039, 1.04, 1.037, 1.038); // closes below both stars' lows
   const strong = resolveShootingStarTruth({
     candles: [...UPTREND_5, STRONG_STAR, next],
@@ -141,8 +137,8 @@ test("5: stronger shooting-star rejection at resistance scores higher", () => {
   });
   assert.equal(strong.status, "confirmed");
   assert.equal(weak.status, "confirmed");
-  assert.equal(strong.locationQuality, "at_resistance");
-  assert.equal(weak.locationQuality, "at_resistance");
+  assert.equal(strong.locationQuality, "unknown");
+  assert.equal(weak.locationQuality, "unknown");
   assert.ok(
     strong.confidence > weak.confidence,
     `strong ${strong.confidence} should beat weak ${weak.confidence}`,
@@ -906,4 +902,30 @@ test("33: composed candidate ranking is deterministic and stably ordered", () =>
     );
   }
   assertNoPermissionField(a);
+});
+
+// Repeated price extrema do not identify the same candle.
+test("shooting-star read carries its source index, including absence", () => {
+  const candles = [...UPTREND_5, STRONG_STAR, bar(1.04, 1.06, 1.0395, 1.055)];
+  const selected = resolveShootingStarTruth({candles,...LIVE});
+  assert.equal(selected.detected,true);
+  assert.equal(selected.starIndex,5);
+  assert.equal(selected.status,"forming");
+  assert.equal(resolveShootingStarTruth({candles:UPTREND_5,...LIVE}).starIndex,null);
+  const last = resolveShootingStarTruth({candles:[...UPTREND_5,STRONG_STAR],...LIVE});
+  assert.equal(last.starIndex,5);
+});
+
+test("shooting-star server reasoning does not invent a resistance location", () => {
+  const read=buildPatternLibraryRead({symbol:"EURUSD",timeframe:"M15",
+    rawCandles:toCandles([...UPTREND_5,STRONG_STAR,bar(1.039,1.04,1.037,1.038)]),
+    feedConfirmed:true,feedStale:false,sufficiencyAllowsSetup:true});
+  assert.ok(read);
+  const star=read.candidates.find(d=>d.name==="Shooting Star");
+  assert.ok(star);
+  assert.equal(star.locationQuality,"unknown");
+  const explanation=buildPatternReasoningBlock({symbol:"EURUSD",read:read.read,detection:star});
+  assert.ok(!explanation.evidence.some(line=>line.startsWith("Location:")));
+  assert.ok(!JSON.stringify(explanation).includes("at resistance"));
+  assertNoPermissionField(read);
 });

@@ -244,9 +244,11 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
     }
     const star = resolveShootingStarTruth(feed);
     if (star.detected && star.confirmationLevel != null && star.invalidationLevel != null) {
-      const index = prefix.findLastIndex(b => b.low === star.confirmationLevel && b.high === star.invalidationLevel);
-      const at = prefix[index];
-      if (at) {
+      // The detector owns candle identity. Equal extrema on another candle
+      // are not evidence that it has the same shape or confirmation window.
+      const index = star.starIndex;
+      const at = index != null && Number.isInteger(index) && index >= 0 ? prefix[index] : undefined;
+      if (at && index != null && at.low === star.confirmationLevel && at.high === star.invalidationLevel) {
         const absoluteIndex = end - prefix.length + index;
         const next = bars[absoluteIndex + 1];
         const failed = bars.slice(absoluteIndex + 1).some(b => b.close > at.high);
