@@ -262,11 +262,12 @@ function adjacentFloat(value:number,direction:1|-1):number {
   view.setBigUint64(0,(value>0)===(direction>0)?bits+1n:bits-1n);
   return view.getFloat64(0);
 }
-function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame,plot:NativePlot) {
+export interface NativePaneScalePreview {id:string;value:number;percent:number}
+function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame,plot:NativePlot,preview?:NativePaneScalePreview|null) {
   // A linked overlay may be listed before its oscillator; display order cannot
   // transfer ownership of the shared pane's scale.
   const owner=group.find(s=>studyDefinition(s.config.kind).pane)??group[0]!;
-  const scale=owner.config.paneScale;
+  const scale=preview?.id===studyId(owner.config)?{mode:"line" as const,value:preview.value,percent:preview.percent}:owner.config.paneScale;
   const manual=scale?.mode==='fixed'?scale:undefined;
   const fixed=manual?.min!==undefined&&manual.max!==undefined?[manual.min,manual.max]:!scale&&group.length===1?studyDefinition(owner.config.kind).range:undefined;
   const values:number[]=[];
@@ -322,6 +323,13 @@ function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame
   const note=manual?(fixed?'Fixed scale · values outside limits are clipped':manual.min!==undefined?'Fixed minimum · lower values are clipped':'Fixed maximum · higher values are clipped'):scale?.mode==='auto'?'Auto scale':'';
   return {low,high,note,y:(value:number):number|null=>{if(!finite(value))return null;const y=plot.top+plot.height*(1-(value/magnitude-bottom)/extent);return finite(y)?y:null;}};
 }
+/** Uses exactly the same validated map as the plot, never a guessed handle position. */
+export function nativeStudyPaneAnchor(group:readonly NativeStudySnapshot[],frame:NativePriceFrame,plot:NativePlot,preview?:NativePaneScalePreview|null){
+ const owner=group.find(s=>studyDefinition(s.config.kind).pane);if(!owner||owner.config.paneCollapsed||owner.config.paneScale?.mode!=='line')return undefined;
+ const scale=preview?.id===studyId(owner.config)?preview:owner.config.paneScale;
+ const mapping=paneMapping(group,frame,plot,preview);if(!mapping)return undefined;
+ const y=mapping.y(scale.value);return y===null?undefined:{value:scale.value,percent:scale.percent,y};
+}
 export interface NativeStudyScaleLabel {
   readonly time:number; readonly value:number; readonly channel:string; readonly title:string;
   readonly paneIndex:number; readonly color:string; readonly anchorY:number; readonly top:number;
@@ -330,7 +338,7 @@ export interface NativeStudyScaleLabel {
 /** Latest loaded observations only. Never backfill missing values or clamp an
  * off-scale value to an edge. Displaced labels keep a connector to the true Y.
  * Trade labels get priority; unreadable/crowded labels are omitted. */
-export function planNativeStudyScaleLabels(frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,reserved:readonly {top:number;bottom:number}[]=[]):NativeStudyScaleLabel[] {
+export function planNativeStudyScaleLabels(frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,reserved:readonly {top:number;bottom:number}[]=[],preview?:NativePaneScalePreview|null):NativeStudyScaleLabel[] {
   const displayed=studies.getDisplayStudies();
   if(!displayed.some(s=>s.config.showOnScale===true))return [];
   const latest=frame.series.candles.at(-1);if(!latest)return [];
@@ -343,7 +351,7 @@ export function planNativeStudyScaleLabels(frame:NativePriceFrame,panes:NativePl
     const group=displayed.filter(s=>s.paneIndex===study.paneIndex);
     if(study.paneIndex&&group.some(s=>studyDefinition(s.config.kind).pane&&s.config.paneCollapsed))continue;
     const plot=study.paneIndex?panes[study.paneIndex-1]:frame.plot;if(!plot||plot.height<52)continue;
-    const mapping=study.paneIndex?paneMapping(group,frame,plot):null;
+    const mapping=study.paneIndex?paneMapping(group,frame,plot,preview):null;
     const point=study.points.at(-1);if(!point||point.time!==latest.time||point.reason)continue;
     const definition=studyDefinition(study.config.kind);
     definition.channels.forEach((channel,index)=>{
@@ -363,8 +371,8 @@ export function planNativeStudyScaleLabels(frame:NativePriceFrame,panes:NativePl
   }
   return result;
 }
-export function paintNativeStudyScaleLabels(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,reserved:readonly {top:number;bottom:number}[]=[]):void {
-  for(const label of planNativeStudyScaleLabels(frame,panes,studies,onlyPane,reserved)){
+export function paintNativeStudyScaleLabels(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,reserved:readonly {top:number;bottom:number}[]=[],preview?:NativePaneScalePreview|null):void {
+  for(const label of planNativeStudyScaleLabels(frame,panes,studies,onlyPane,reserved,preview)){
     const left=label.plot.left+label.plot.width;
     ctx.save();try{
       ctx.beginPath();ctx.rect(left,label.plot.top,88,label.plot.height);ctx.clip();ctx.globalAlpha=1;
@@ -390,7 +398,7 @@ export function paintNativeStudyScaleLabels(ctx:CanvasRenderingContext2D,frame:N
 function clipped(ctx:CanvasRenderingContext2D,plot:NativePlot,draw:()=>void){ctx.save();try{ctx.beginPath();ctx.rect(plot.left,plot.top,plot.width,plot.height);ctx.clip();ctx.globalAlpha=1;draw();}finally{ctx.restore();}}
 /** Exact observed timestamps on the shared X scale, independent linear units
  * for each auxiliary pane. Null values lift the pen; no gap interpolation. */
-export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null):void {
+export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePriceFrame,panes:NativePlot[],studies:NativeChartStudies,onlyPane:number|null=null,preview?:NativePaneScalePreview|null):void {
   if(panes.length!==studies.paneCount)throw new Error('Native study pane layout is incomplete');
   const displayed=studies.getDisplayStudies();
   for(const study of displayed){
@@ -400,7 +408,7 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
     const first=group[0]===study;
     const groupVisible=group.some(s=>!s.intervalHidden&&studyDefinition(s.config.kind).channels.some((_,i)=>s.config.lineStyles?.[i]?.visible!==false));
     const collapsed=study.paneIndex>0&&group.some(s=>studyDefinition(s.config.kind).pane&&s.config.paneCollapsed===true);
-    const mapping=study.paneIndex&&!collapsed?paneMapping(group,frame,plot):null;
+    const mapping=study.paneIndex&&!collapsed?paneMapping(group,frame,plot,preview):null;
     const y=study.paneIndex?mapping?.y:(value:number)=>frame.priceToY(value);
     clipped(ctx,plot,()=>{
       const definition=studyDefinition(study.config.kind),anyVisible=!study.intervalHidden&&definition.channels.some((_,i)=>study.config.lineStyles?.[i]?.visible!==false);

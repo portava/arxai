@@ -22,6 +22,8 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
  private viewport:NativeChartViewport|null=null;
  private container:HTMLElement|null=null;
  private mount=0;
+ private paneScaleSequence=0;
+ private paneScaleLease:{token:number;nativeToken:number;viewport:NativeChartViewport;epoch:number}|null=null;
  private paneResizeSequence=0;
  private paneResizeLease:{token:number;nativeToken:number;viewport:NativeChartViewport;epoch:number}|null=null;
  private epoch=0;
@@ -197,6 +199,17 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
   });
  }
 
+ beginStudyPaneScale(id:string){
+  const viewport=this.viewport,nativeToken=viewport?.beginStudyPaneScale(id);if(!viewport||nativeToken==null)return null;
+  const token=++this.paneScaleSequence;this.paneScaleLease={token,nativeToken,viewport,epoch:this.epoch};return token;
+ }
+ previewStudyPaneScale(token:number,delta:number){const lease=this.paneScaleLease;return !!lease&&lease.token===token&&this.current(lease.viewport,lease.epoch)&&lease.viewport.previewStudyPaneScale(lease.nativeToken,delta);}
+ endStudyPaneScale(token:number,commit:boolean){
+  const lease=this.paneScaleLease;if(!lease||lease.token!==token||!this.current(lease.viewport,lease.epoch))return null;
+  this.paneScaleLease=null;const result=lease.viewport.endStudyPaneScale(lease.nativeToken,commit);
+  return result?{...result,contextKey:`${this.mount}:${this.epoch}:${result.contextKey}`}:null;
+ }
+ isStudyPaneScaleContextCurrent(key:string){const prefix=`${this.mount}:${this.epoch}:`;return key.startsWith(prefix)&&(this.viewport?.isStudyPaneScaleContextCurrent(key.slice(prefix.length))??false);}
  beginStudyPaneResize(id:string){
   const viewport=this.viewport,nativeToken=viewport?.beginStudyPaneResize(id);if(!viewport||nativeToken==null)return null;
   const token=++this.paneResizeSequence;this.paneResizeLease={token,nativeToken,viewport,epoch:this.epoch};return token;

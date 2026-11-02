@@ -56,7 +56,7 @@ export function ChartStudyPaneSettings({config,label,onChange}:Props){
     if(!anchorValue.trim()||!anchorPercent.trim()||!Number.isFinite(value)||!Number.isFinite(percent)||percent<0||percent>100){setError('Enter a finite anchor value and a position from 0 to 100. Existing settings are unchanged.');return;}
     change({paneScale:{mode:'line',value,percent}});
    }}>Anchor scale</button>
-   <p className="w-full text-[11px] text-zinc-400">Pins this value at the chosen height. The visible observations and guides determine the scale span. Values outside the shifted range are clipped; calculations stay unchanged. Use Auto scale to release the anchor.</p>
+   <p className="w-full text-[11px] text-zinc-400">Pins this value at the chosen height. The visible observations and guides determine the scale span. Values outside the shifted range are clipped; calculations stay unchanged. Drag the gold line to reposition it, or focus it and use Up/Down. Escape cancels dragging. Use Auto scale to release the anchor.</p>
   </div>
   {error&&<p role="alert" className="mt-2 text-xs text-amber-300">{error}</p>}
   <div className="mt-3 space-y-2">

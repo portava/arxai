@@ -202,6 +202,10 @@ export interface ChartEngineAdapter {
   getStudyPaneControls?(): ChartStudyPaneControl[] | null;
   getMaximizedStudyPane?():string|null;
   setMaximizedStudyPane?(id:string|null):boolean;
+  beginStudyPaneScale?(id:string):number|null;
+  previewStudyPaneScale?(token:number,delta:number):boolean;
+  endStudyPaneScale?(token:number,commit:boolean):StudyPaneScaleCommit|null;
+  isStudyPaneScaleContextCurrent?(key:string):boolean;
   beginStudyPaneResize?(id:string):number|null;
   previewStudyPaneResize?(token:number,delta:number):boolean;
   endStudyPaneResize?(token:number,commit:boolean):StudyPaneResizeCommit|null;
@@ -250,7 +254,9 @@ export interface ChartEngineAdapter {
 }
 
 /** View-only controls for actual separately scaled study panes. */
+export interface StudyPaneScaleCommit {contextKey:string;studiesKey:string;id:string;scale:{mode:'line';value:number;percent:number}}
 export interface ChartStudyPaneControl {
+  scaleAnchor?:{value:number;percent:number;y:number};
   id:string; paneIndex:number; label:string; collapsed:boolean; maximized?:boolean; resizable?:boolean; sizePercent?:number;
   left:number; top:number; width:number; height:number;
 }

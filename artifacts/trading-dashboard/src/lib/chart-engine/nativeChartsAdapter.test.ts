@@ -246,3 +246,53 @@ it('global scale visibility hides paint without changing studies, pins or geomet
  ctx.fillText.mockClear();f.adapter.setStudyScaleLabelsVisible(true);flush();expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(true);
  f.adapter.setStudyScaleLabelsVisible(false);f.adapter.resetDataContext();f.adapter.setCandles(bars());ctx.fillText.mockClear();flush();expect(ctx.fillText.mock.calls.some((a:any[])=>a[0]==='300.5')).toBe(false);
 });
+
+it('previews an anchor without saving or changing market geometry and commits only the final position',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff',paneScale:{mode:'line',value:50,percent:50}}]);flush();
+ const config=f.viewport().getStudies(),values=f.adapter.getStudyValues(bars().at(-1)!.time),layout=f.viewport().getPaneLayout(),pane=f.adapter.getStudyPaneControls()![0]!;
+ const token=f.adapter.beginStudyPaneScale('rsi')!;expect(token).not.toBeNull();expect(f.adapter.previewStudyPaneScale(token,pane.height/4)).toBe(true);flush();
+ expect(f.adapter.getStudyPaneControls()![0]!.scaleAnchor!.percent).toBe(25);
+ expect(f.viewport().getStudies()).toEqual(config);expect(f.adapter.getStudyValues(bars().at(-1)!.time)).toEqual(values);expect(f.viewport().getPaneLayout()).toEqual(layout);
+ const result=f.adapter.endStudyPaneScale(token,true)!;expect(result).toMatchObject({id:'rsi',scale:{mode:'line',value:50,percent:25}});expect(f.adapter.isStudyPaneScaleContextCurrent(result.contextKey)).toBe(true);flush();
+ expect(f.adapter.getStudyPaneControls()![0]!.scaleAnchor!.percent).toBe(50);
+});
+it('cancels the scale preview and clamps dragging at the pane boundaries',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff',paneScale:{mode:'line',value:50,percent:50}}]);flush();
+ const token=f.adapter.beginStudyPaneScale('rsi')!;expect(f.adapter.previewStudyPaneScale(token,1e6)).toBe(true);flush();expect(f.adapter.getStudyPaneControls()![0]!.scaleAnchor!.percent).toBe(0);
+ expect(f.adapter.previewStudyPaneScale(token,-1e6)).toBe(true);flush();expect(f.adapter.getStudyPaneControls()![0]!.scaleAnchor!.percent).toBe(100);
+ expect(f.adapter.endStudyPaneScale(token,false)).toBeNull();flush();expect(f.adapter.getStudyPaneControls()![0]!.scaleAnchor!.percent).toBe(50);
+});
+it.each(['source','resize','timeframe','settings','maximize','blur'] as const)('retires anchor gestures on %s changes, including a return to prior state',kind=>{
+ const f=setup();const config=[{id:'rsi',kind:'rsi' as const,period:14,color:'#ffffff',paneScale:{mode:'line' as const,value:50,percent:50}}];
+ f.adapter.setCandles(bars());f.adapter.setStudies(config);flush();const token=f.adapter.beginStudyPaneScale('rsi')!;f.adapter.previewStudyPaneScale(token,10);flush();
+ if(kind==='source'){f.adapter.resetDataContext();f.adapter.setCandles(bars());}
+ if(kind==='resize'){f.adapter.resize(800,450);f.adapter.resize(800,400);}
+ if(kind==='timeframe'){f.adapter.setTimeframe('M30');f.adapter.setTimeframe('M1');}
+ if(kind==='settings'){f.adapter.setStudies([{...config[0]!,period:21}]);f.adapter.setStudies(config);}
+ if(kind==='maximize'){f.adapter.setMaximizedStudyPane('rsi');f.adapter.setMaximizedStudyPane(null);}
+ if(kind==='blur')window.dispatchEvent(new Event('blur'));
+ expect(f.adapter.endStudyPaneScale(token,true)).toBeNull();flush();expect(f.adapter.getStudyPaneControls()![0]!.scaleAnchor!.percent).toBe(50);
+});
+it('keeps anchor and divider gestures exclusive and rejects retired adapter tokens',()=>{
+ const f=setup();const install=()=>{f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff',paneScale:{mode:'line',value:50,percent:50}}]);flush();};install();
+ const token=f.adapter.beginStudyPaneScale('rsi')!;expect(f.adapter.beginStudyPaneResize('rsi')).toBeNull();f.adapter.endStudyPaneScale(token,false);flush();
+ const resize=f.adapter.beginStudyPaneResize('rsi')!;expect(f.adapter.beginStudyPaneScale('rsi')).toBeNull();f.adapter.endStudyPaneResize(resize,false);flush();
+ const old=f.adapter.beginStudyPaneScale('rsi')!;f.adapter.init({container:f.container,height:400});install();const fresh=f.adapter.beginStudyPaneScale('rsi')!;
+ expect(fresh).not.toBe(old);expect(f.adapter.previewStudyPaneScale(old,10)).toBe(false);expect(f.adapter.previewStudyPaneScale(fresh,10)).toBe(true);f.adapter.endStudyPaneScale(fresh,false);
+});
+it('revokes a queued scale commit when a new scale or divider gesture starts',()=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff',paneScale:{mode:'line',value:50,percent:50}}]);flush();
+ for(const other of ['scale','divider']){
+  const token=f.adapter.beginStudyPaneScale('rsi')!;f.adapter.previewStudyPaneScale(token,10);const result=f.adapter.endStudyPaneScale(token,true)!;flush();
+  expect(f.adapter.isStudyPaneScaleContextCurrent(result.contextKey)).toBe(true);
+  if(other==='scale'){const next=f.adapter.beginStudyPaneScale('rsi')!;expect(next).not.toBeNull();expect(f.adapter.isStudyPaneScaleContextCurrent(result.contextKey)).toBe(false);f.adapter.endStudyPaneScale(next,false);}
+  else {const next=f.adapter.beginStudyPaneResize('rsi')!;expect(next).not.toBeNull();expect(f.adapter.isStudyPaneScaleContextCurrent(result.contextKey)).toBe(false);f.adapter.endStudyPaneResize(next,false);}flush();
+ }
+});
+it.each(['refresh','stream'] as const)('does not revive a scale gesture after %s append and restoration of original overlapping history',mode=>{
+ const f=setup();f.adapter.setCandles(bars());f.adapter.setStudies([{id:'rsi',kind:'rsi',period:14,color:'#ffffff',paneScale:{mode:'line',value:50,percent:50}}]);flush();
+ const original=f.viewport().getRange(),token=f.adapter.beginStudyPaneScale('rsi')!;f.adapter.previewStudyPaneScale(token,10);
+ if(mode==='refresh')f.viewport().setCandles(bars(0,201));else f.viewport().updateActiveCandle(bars(200,1)[0]!);
+ f.viewport().setCandles(bars());expect(f.viewport().getRange()).toEqual(original);
+ expect(f.adapter.endStudyPaneScale(token,true)).toBeNull();flush();
+});

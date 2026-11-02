@@ -1,3 +1,4 @@
+import { ChartPaneScaleHandle } from './ChartPaneScaleHandle';
 import { ChartPaneResizeHandle } from './ChartPaneResizeHandle';
 import { Fragment, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
@@ -58,6 +59,7 @@ export function ChartPaneControls({adapter,chartTarget,enabled,onPreferences}:Pr
         onClick={event=>{event.stopPropagation();if(active.current&&adapter.getStudyPaneControls?.()?.some(current=>current.id===pane.id&&!current.collapsed&&current.maximized===pane.maximized))adapter.setMaximizedStudyPane?.(pane.maximized?null:pane.id);}}>
         <span aria-hidden="true">{pane.maximized?'⤢':'□'}</span>
       </button>}
+      {pane.scaleAnchor && !pane.collapsed && adapter.beginStudyPaneScale && adapter.previewStudyPaneScale && adapter.endStudyPaneScale && adapter.isStudyPaneScaleContextCurrent && <ChartPaneScaleHandle adapter={adapter} pane={pane} onPreferences={onPreferences}/>}
       {pane.resizable && adapter.beginStudyPaneResize && adapter.previewStudyPaneResize && adapter.endStudyPaneResize && adapter.isStudyPaneResizeContextCurrent && <ChartPaneResizeHandle adapter={adapter} pane={pane} onPreferences={onPreferences}/>}
       <button type="button"
       className="pointer-events-auto absolute rounded border border-slate-600 bg-slate-950 text-slate-200 hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
