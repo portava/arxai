@@ -34,8 +34,10 @@ arrays or identify a fresh reply by a stable count of all DOM children.
 repeatedly stopped browser probes before their intended acceptance cases.
 
 **How to apply:** Await exposed readers inside browser predicates; synchronize
-replies by stable message identity or role-qualified freshness, not a phrase
-anywhere in old history. Preserve assertion counts separately from failed
+replies by stable message identity or role-qualified fresh DOM nodes, not a phrase
+anywhere in old history or text absent from previous replies. Repeating a valid
+local chart request can legitimately produce identical reply text, so text
+novelty cannot prove freshness. Preserve assertion counts separately from failed
 steps and unstarted cases, and capture full error messages incrementally.
 
 Preflight generated probes against the existing observer contract and rendered

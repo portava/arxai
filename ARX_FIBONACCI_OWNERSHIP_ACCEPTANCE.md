@@ -250,3 +250,122 @@ fixture demonstrating the omitted observation through the existing observer.
 Old navigation/first-click, composer-focus, partial phone visibility and
 zoom/touch failures remain open. No performance, physical-paint timing,
 competitor-parity, production-readiness or real-provider acceptance is inferred.
+
+## Source/window withdrawal continuation (2026-11-01)
+
+**Scoped frozen-build acceptance complete: 75 recorded checks / 0 failures on
+desktop and 75 / 0 on phone.** These totals include the original ownership flow,
+source/asset and offline preflights, and 35 added checks; they are not 75 distinct
+browser behaviors. This continuation still uses the same saved actual-App build
+`28ccd598d091581c` and source `e4bbba1e2bdccda166566892d0e7600a4bea8cf4`.
+It does not establish acceptance of the current checkout or the running API.
+No application source, observer, bundle or runtime settings were changed.
+
+### New actual-Scanner coverage
+
+Both viewports exercise both explicitly selected panes, with their saved,
+editable Fibonacci annotations already present:
+
+1. Request another positive automatic preview. Require all seven ratios/prices
+   from its installed preview drawing, distinguished by the existing observer's
+   drawing/stroke IDs from the kept drawing.
+2. Use the real Zoom in control after Fit history. Require the visible window to
+   change, the preview region and preview drawing to disappear, and a fresh
+   "Explain Fibonacci preview" reply to report no current preview.
+3. Fit history and request another positive preview. Hold a real Keep send at
+   the DOM boundary before React receives it. Replace only the selected
+   response's synthetic source identity (`a…a → c…c` for M1, `b…b → d…d` for H1).
+   Identical timestamps/OHLC isolate this from a candle-price or window change.
+   Normal query refresh must actually fulfill the new-identity response.
+4. Require the preview region/drawing and selected assistant ownership to
+   withdraw. Release the held Keep text through the normal local send path.
+   Require the no-ready-selected-chart refusal, with no primary fallback and
+   no new drawing. Reselect the replaced source and require a fresh explanation
+   to report no current preview, without the old identity.
+5. After each withdrawal, delayed Keep and reselected explanation, compare all
+   kept drawing fields and every drawing-storage string byte-for-byte; compare
+   the other pane's complete drawings/canonical candles as well. Selected-pane
+   canonical candles also stay exactly unchanged.
+
+The held command is an explicitly synthetic DOM-delivery delay, not a model or
+network response: local Fibonacci dispatch is synchronous. Historical assistant
+messages are not deleted or rewritten. The check concerns fresh current-preview
+answers. A kept manual drawing, its seven visible lines and archived provenance
+remain valid user annotations, not stale automatic-preview geometry.
+
+### Completed evidence
+
+All directories below are relative to
+`generated-artifacts/arx-historical-fibonacci-validation/fibonacci-ownership-acceptance/`.
+Each successful run includes raw replies, observer snapshots, request/response
+receipts, program hashes, terminal cleanup status and eight screenshots.
+
+| Attempt | Viewport | Passed | Failed | Incomplete | Exit |
+|---|---|---:|---:|---|---:|
+| `withdrawal-desktop-fresh-reply` | 1440 × 1100 | 75 | 0 | No | 0 |
+| `withdrawal-phone` | 390 × 844 | 75 | 0 | No | 0 |
+
+Desktop/phone withdrawal screenshots were inspected. They do not establish
+whole-plot viewport fit. Browser contexts and each runner's static-only
+loopback server closed. All 295 frozen assets matched. Child execution used
+a stripped environment, with no credentials passed into the browser runner.
+No original workflow was started or restarted.
+
+| Evidence | SHA-256 |
+|---|---|
+| Desktop `journey-result.json` | `737f16018b183ee2e9c6a81167b7eb70f729722156803b3be64400d1ad7937d9` |
+| Phone `journey-result.json` | `d459d30f2e7fa0160bb69716463a64a21841220b2b7f7705be1fcc3a8a3599ae` |
+| Tested `fibonacci-ownership.mjs` | `e70f1a2ab873476326fb2a78b5c46d0d91ec0e06bc9d263985d6aad4942c1b34` |
+| Tested `fibonacci-withdrawal.mjs` | `a79844e9c624fb98f7bb224be87cfbfbed0eb3302d25bb18e6c5805951dc2743` |
+| Tested `run-fibonacci-ownership.mjs` | `a6afbfcabfe756c64ade6c41d76d8d4449899cab83abc4184b29145789ac024f` |
+
+The standalone read-only `scripts/qa/audit-fibonacci-withdrawal.mjs` passed for
+both completed receipts. Its six negative mutations per receipt reject stale
+preview objects, moved saved anchors, stale current explanations, a successful
+delayed Keep, changed other-pane candles and missing fulfilled new identities.
+These are offline audit self-checks, not additional browser runs.
+
+| Offline boundary | Desktop | Phone |
+|---|---:|---:|
+| API requests | 150 | 148 |
+| Blocked writes (all 503) | 20 | 20 |
+| Blocked conversation POSTs (subset of writes) | 16 | 16 |
+| External / WebSocket attempts | 0 / 0 | 0 / 0 |
+| Strict known-background allowlist | Failed | Failed |
+
+The previously documented conversation-creation issue remains blocked, not
+whitelisted or relabeled as a passing strict allowlist. Its existing follow-up
+covers it. No providers, broker, model, database or trading operations ran.
+The shared `bash scripts/check-arx-preview.sh` validation remains intentionally
+unrun because it activates the shared preview/API, outside this isolated scope.
+
+### Retained incomplete harness attempts
+
+- `withdrawal-desktop`: 10 passing preflights, no failed assertion; navigation
+  stopped because the new static runner lacked `/market-scanner` in its SPA
+  route list. Its failure receipt/screenshot remain unchanged.
+- `withdrawal-desktop-route-corrected`: 39 passing checks, no failed assertion;
+  the repeated positive preview replied successfully, but text-based freshness
+  detection timed out because the identical reply already existed in history.
+  Retained DOM records the new reply. The harness now tracks fresh
+  role-qualified DOM nodes, accepting repeated identical replies and refusals.
+
+Neither incomplete attempt is counted toward successful feature coverage.
+
+### Reproduction
+
+The saved scratch build, source manifest and Playwright dependency must exist;
+the runner fails closed if pinned assets/source are missing or changed. It does
+not rebuild or activate the application. Port 4199 must be free.
+
+```sh
+node scripts/qa/fibonacci-ownership.mjs
+node --input-type=module -e "import {withdrawalSelftest} from './scripts/qa/fibonacci-withdrawal.mjs'; console.log(withdrawalSelftest())"
+env -i PATH="$PATH" HOME="$HOME" node scripts/qa/run-fibonacci-ownership.mjs desktop withdrawal-desktop-new
+env -i PATH="$PATH" HOME="$HOME" node scripts/qa/run-fibonacci-ownership.mjs phone withdrawal-phone-new
+node scripts/qa/audit-fibonacci-withdrawal.mjs withdrawal-desktop-new withdrawal-phone-new
+```
+
+Use new attempt names: existing evidence is never overwritten. Missing interior
+observations, real providers, performance, production and physical-device
+acceptance remain outside this continuation.

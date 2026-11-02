@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
+import { runWithdrawal, withdrawalSelftest } from "./fibonacci-withdrawal.mjs";
 
 export const ROOT = path.resolve(import.meta.dirname, "../..");
 export const EVIDENCE = path.join(ROOT, "generated-artifacts/arx-historical-fibonacci-validation");
@@ -102,7 +103,7 @@ export function projectionMatches(projection) {
       Math.abs(s.start.y + bounds.y - s.a.y) <= 1.5 && Math.abs(s.end.y + bounds.y - s.b.y) <= 1.5);
 }
 
-export async function run(page, output) {
+export async function run(page, output, { withdrawal = false } = {}) {
   const checks = [], receipts = [], screenshots = [], errors = [];
   let stage = "offline preflight", network, build, sourceHashes;
   const check = (pass, label, details) => { checks.push({ pass: !!pass, label, details }); assert(pass, label); };
@@ -113,14 +114,18 @@ export async function run(page, output) {
   async function send(text) {
     const panel = page.getByTestId("arx-assistant-panel"), bubbles = panel.locator("div.flex.justify-start > div");
     if (!await panel.isVisible()) await page.getByTestId("arx-assistant-trigger").click();
-    const old = await bubbles.allInnerTexts();
+    await page.evaluate(() => {
+      window.__fibPriorReplies = new WeakSet(document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div'));
+    });
     await page.getByTestId("arx-input").fill(text);
     await page.getByTestId("arx-send").click();
-    await page.waitForFunction(old => [...document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div')]
-      .some(b => b.innerText.length > 20 && !old.includes(b.innerText) && !b.querySelector('[data-testid="ruby-tool-indicator"]') &&
-        !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(b.innerText)), old, { timeout: 15000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div')]
+      .some(b => b.innerText.length > 20 && !window.__fibPriorReplies.has(b) && !b.querySelector('[data-testid="ruby-tool-indicator"]') &&
+        !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(b.innerText)), null, { timeout: 15000 });
     await frames();
-    const reply = (await bubbles.allInnerTexts()).findLast(t => t.length > 20 && !old.includes(t) && !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(t));
+    const reply = await page.evaluate(() => [...document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div')]
+      .filter(b => !window.__fibPriorReplies.has(b)).map(b => b.innerText)
+      .findLast(t => t.length > 20 && !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(t)));
     receipts.push({ stage, text, reply }); return reply;
   }
   await fs.mkdir(output, { recursive: true });
@@ -229,6 +234,11 @@ export async function run(page, output) {
         JSON.stringify(otherAfter.data.canonical) === JSON.stringify(otherBefore.data.canonical), `${role} commands leave other pane drawings and candles unchanged`);
       await capture(`${role}-kept-manual`);
       receipts.push({ role, identity, context, before, preview, kept, after, projection, otherBefore, otherAfter });
+    }
+    if (withdrawal) {
+      check(withdrawalSelftest().passed === 3, "Withdrawal observer partition selftests");
+      await runWithdrawal({ page, check, read, frames, close, send, capture, receipts, fixtures,
+        setStage: next => { stage = next; } });
     }
     stage = "completed ownership; offline boundary";
     network = await page.evaluate(() => window.__readFixtureLog());
