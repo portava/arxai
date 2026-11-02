@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Native-only application bundle — 2 November 2026
+
+Final application `98962747` removes the legacy chart engine from the actual production bundle while preserving an explicit offline comparison entry. Total JavaScript decreases 232,686 bytes (gzip 72,370); this is a byte reduction, not a proven navigation speedup. Full frontend 4,683 pass / 0 fail / 12 skipped, typecheck/build pass; guards 85/87 retain prior failures. Eighty ABBA navigation samples remain source-correct but all 40 throttled attempts miss 100 ms. No deployment or competitor parity. See [exact source, browser checks, failed runs and retained timings](NATIVE_CHART_BUNDLE_2026_11_02.md). Earlier dated checkpoints below remain historical.
+
 ## Native product default — 2 November 2026
 
 Application `19ac1b21` selects ARX native in the actual factory, with no QA override. Scoped functional checks pass across Scanner, comparison layouts, replay, secondary pages and the actual position picker, including a repaired mobile resize loop. Full frontend retains one role-gate failure (isolated rerun passes), and two baseline guards fail. Scanner first-navigation completion passes ten normal-CPU attempts but misses 100 ms on all ten 4x-CPU attempts (max 358.8 ms). Nothing was deployed. See [exact default/consumer evidence and failures](NATIVE_DEFAULT_ACCEPTANCE_2026_11_02.md). Earlier dated checkpoints below describe their then-current defaults; they are not current-default claims.
