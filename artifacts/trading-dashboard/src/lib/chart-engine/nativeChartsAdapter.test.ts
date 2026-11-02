@@ -122,3 +122,13 @@ describe('native ChartEngineAdapter contract',()=>{
  });
 
 });
+
+it('publishes pinned corrected evidence through the adapter and clears it on context replacement',()=>{
+ const a=setup(),handler=vi.fn();a.adapter.setCrosshairHandler(handler);a.adapter.setCandles(bars());flush();
+ expect(a.adapter.inspectCandle('previous')).toBe(true);flush();const selected=handler.mock.calls.at(-1)![0];
+ expect(a.adapter.isCandleInspectionPinned()).toBe(true);
+ const data=bars();data.find(c=>c.time===selected.time)!.close+=.5;a.adapter.setCandles(data);flush();
+ expect(handler.mock.calls.at(-1)![0]).toMatchObject({time:selected.time,close:selected.close+.5});
+ a.adapter.resetDataContext();flush();expect(a.adapter.isCandleInspectionPinned()).toBe(false);expect(handler).toHaveBeenLastCalledWith(null);
+ a.adapter.setCandles(bars(400));flush();expect(handler.mock.calls.at(-1)![0].time).not.toBe(selected.time);
+});

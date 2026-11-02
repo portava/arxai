@@ -156,6 +156,8 @@ export class NativeChartsAdapter implements ChartEngineAdapter {
  showRecentRange(seconds:number):{complete:boolean}|null {const bars=this.candles(),first=bars[0],last=bars.at(-1);if(!first||!last||!Number.isFinite(seconds)||seconds<=0)return null;const start=last.time-seconds,index=this.lower(start);return this.navigate(v=>v.setRange({from:index,to:bars.length+2}))?{complete:first.time<=start}:null;}
  getVisibleCandles(){return this.viewport?.getVisibleCandles()??[];}
  subscribeViewport(listener:()=>void){this.listeners.add(listener);return()=>{this.listeners.delete(listener);};}
+ inspectCandle(action:"pin"|"previous"|"next"|"first"|"last"|"clear"){return this.viewport?.inspectCandle(action)??false;}
+ isCandleInspectionPinned(){return this.viewport?.getState().inspectionPinned??false;}
  setCrosshairHandler(handler:((candle:ChartEngineCandle|null)=>void)|null){this.crosshair=handler;}
  setViewLinkHandler(handler:((event:ChartViewEvent)=>void)|null){this.viewLink=handler;this.lastRangeKey='';}
  setViewLinkStatusHandler(handler:((message:string)=>void)|null){this.linkStatus=handler;}

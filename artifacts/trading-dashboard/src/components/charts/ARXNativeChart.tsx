@@ -377,6 +377,8 @@ export function ARXNativeChart({
   const legendRef = useRef<HTMLOutputElement | null>(null);
   const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
   const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
+  const [inspectionPinned,setInspectionPinned]=useState(false);
+  const inspectionAnnouncementRef=useRef<HTMLOutputElement|null>(null);
   const inspectedCandleRef = useRef<ChartEngineCandle | null>(null);
   // The display zone the legend formats in. Assigned only by the zone layout
   // effect below, immediately before it relabels the engine and the legend.
@@ -385,6 +387,8 @@ export function ARXNativeChart({
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
     inspectedCandleRef.current = bar;
+    const pinned=!!bar&&adapterRef.current?.isCandleInspectionPinned?.()===true;
+    setInspectionPinned(pinned);
     if (!legendRef.current) return;
     const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
     // Canonical OHLC always comes first. In Heikin Ashi style the averaged
@@ -394,6 +398,10 @@ export function ARXNativeChart({
     legendRef.current.textContent = bar
       ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
+    if(inspectionAnnouncementRef.current){
+      const announcement=pinned?`Pinned candle · ${legendRef.current.textContent}`:"Pointer inspection. No candle pinned.";
+      if(inspectionAnnouncementRef.current.textContent!==announcement)inspectionAnnouncementRef.current.textContent=announcement;
+    }
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const allRows = !analysisFocusRef.current && adapterRef.current?.isAnalysisFocusVerified?.()!==false && bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
       const rows=allRows.filter(row=>row.dataWindowVisible!==false);
@@ -1476,6 +1484,17 @@ export function ARXNativeChart({
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
+      {adapterRef.current?.inspectCandle&&<div className="flex flex-wrap items-center gap-2 px-3 py-2" role="group" aria-label="Candle inspection">
+        <Button size="sm" variant="outline" aria-pressed={inspectionPinned} onClick={()=>adapterRef.current?.inspectCandle?.(inspectionPinned?"clear":"pin")}>{inspectionPinned?"Release candle":"Inspect latest visible candle"}</Button>
+        <Button size="sm" variant="outline" onClick={()=>adapterRef.current?.inspectCandle?.("previous")}>Previous candle</Button>
+        <Button size="sm" variant="outline" onClick={()=>adapterRef.current?.inspectCandle?.("next")}>Next candle</Button>
+        <span className="text-xs text-zinc-400">Shift + ←/→ on chart to inspect; Esc to release. Context or view changes clear the pin.</span>
+      </div>}
+      <output ref={inspectionAnnouncementRef} aria-live="polite" aria-atomic="true" className="sr-only">Pointer inspection. No candle pinned.</output>
+      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
+        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
+        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
+      </details>
       <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
   </Fragment>;
 
@@ -1832,10 +1851,7 @@ export function ARXNativeChart({
       {comparisonOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening percentage comparison…</p>}><ChartPerformanceComparison key={`${workspaceId}:${chartContext}`} workspaceId={workspaceId} symbol={resolvedSymbol} timeframe={timeframe} data={data} readFailed={query.isError} adapter={adapterRef.current} epoch={chartEpoch} limit={limit} onClose={()=>setComparisonOpen(false)}/></Suspense>}
       {researchOpen&&<Suspense fallback={<p role="status" className="p-3 text-xs">Opening historical research tools…</p>}><ChartResearchWorkbench key={chartContext} data={data} symbol={resolvedSymbol} timeframe={timeframe} canonicalBars={mergedEngineCandles} getVisibleBars={researchVisibleBars} request={researchRequest?.context===chartContext?researchRequest:null} onOverlays={acceptResearchOverlays} onExplanation={acceptResearchExplanation} onClose={()=>setResearchOpen(false)}/></Suspense>}
       <SmartChartReader findingDeliveryNotice={assistantPane.findingDeliveryNotice} onFindingExplanation={acceptFindingExplanation} onExplainFinding={()=>assistantPane.explainFinding(explainCurrentFinding)} presentationUnverified={!analysisVerified} presentationHidden={analysisFocused} key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
-      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
-        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
-        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
-      </details>
+
       <ChartEngineCredit engineId={adapterRef.current?.capabilities?.id} />
     </Card>
   );

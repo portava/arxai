@@ -201,6 +201,8 @@ export interface ChartEngineAdapter {
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
   getDisplayCandle?(time: number): ChartEngineCandle | null;
+  inspectCandle?(action:"pin"|"previous"|"next"|"first"|"last"|"clear"):boolean;
+  isCandleInspectionPinned?():boolean;
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
   /** Linked workspace inspection only. Never changes instrument/order context. */
   setViewLinkHandler?(handler: ((event: ChartViewEvent) => void) | null): void;

@@ -93,6 +93,7 @@ export class NativeChartViewport {
   private frameIssue: string | null = null;
   private callbackError: string | null = null;
   private hover: NativeCrosshair | null = null;
+  private inspectionPinned = false;
   private linkedCrosshairTime: number | null = null;
   private livePriceAffordance = false;
   private pointers = new Map<number, Point>();
@@ -116,7 +117,7 @@ export class NativeChartViewport {
     this.canvas.dataset.arxNativeViewport = "true";
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute("role", "region");
-    this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan, plus and minus zoom, Home fits history, End returns to latest. Drag the price axis vertically to scale prices; double-click it to restore automatic price scale. Drag the bottom time axis right to increase candle spacing, left to decrease it; double-click to restore the default time span.");
+    this.canvas.setAttribute("aria-label", "ARX price chart. Drag to pan, scroll or pinch to zoom. Arrow keys pan. Shift plus Left/Right inspects adjacent loaded candles, Shift plus Home/End inspects first/last loaded candle, Enter pins inspection, Escape releases it. Plus and minus zoom, Home fits history, End returns to latest. Drag the price axis vertically to scale prices; double-click it to restore automatic price scale. Drag the bottom time axis right to increase candle spacing, left to decrease it; double-click to restore the default time span.");
     this.canvas.style.touchAction = "none";
     this.canvas.style.display = "block";
     this.canvas.width = 0;this.canvas.height = 0;
@@ -163,7 +164,7 @@ export class NativeChartViewport {
     listen("pointerup", this.onPointerUp as EventListener);
     listen("pointercancel", this.onPointerCancel as EventListener);
     listen("lostpointercapture", this.onLostCapture as EventListener);
-    listen("pointerleave", (() => { if (!this.pointers.size) this.clearHover(); }) as EventListener);
+    listen("pointerleave", (() => { if (!this.pointers.size && !this.inspectionPinned) this.clearHover(); }) as EventListener);
     listen("wheel", this.onWheel as EventListener, { passive: false });
     listen("keydown", this.onKeyDown as EventListener);
     // Pointer capture can be unavailable (embedded contexts, detached capture,
@@ -298,7 +299,7 @@ export class NativeChartViewport {
     const next=typeof time==="number" && Number.isFinite(time) && time>0 ? time : null;
     if(this.linkedCrosshairTime===next && this.hover===null)return;
     // Programmatic inspection owns this display but never emits a user event.
-    this.hover=null;this.linkedCrosshairTime=next;this.schedule();
+    this.hover=null;this.inspectionPinned=false;this.linkedCrosshairTime=next;this.schedule();
   }
   private linkedCrosshair(frame: NativePriceFrame): NativeCrosshair | null {
     if(this.linkedCrosshairTime===null)return null;
@@ -334,7 +335,10 @@ export class NativeChartViewport {
     const frame = this.getFrame(), index = candleIndex(this.series.candles as ChartEngineCandle[], previousHover.candle.time);
     const candle = index < 0 ? null : this.series.candles[index]!, x = candle && frame ? frame.timeToX(candle.time) : null;
     if (frame && candle && x !== null && x >= frame.plot.left && x <= frame.plot.left + frame.plot.width) {
-      this.hover = Object.freeze({candle, x, y: previousHover.y, price: previousHover.y >= frame.plot.top && previousHover.y <= frame.plot.top + frame.plot.height ? frame.yToPrice(previousHover.y) : null});
+      const projectedY=this.inspectionPinned?frame.priceToY(candle.close):previousHover.y;
+      if(projectedY==null){this.clearHover();return;}
+      const y=this.inspectionPinned?clamp(projectedY,frame.plot.top,frame.plot.top+frame.plot.height):previousHover.y;
+      this.hover = Object.freeze({candle, x, y, price: this.inspectionPinned?candle.close:y >= frame.plot.top && y <= frame.plot.top + frame.plot.height ? frame.yToPrice(y) : null});
       // Full source snapshots clone rows. Reference inequality alone must not
       // broadcast a new user inspection when the canonical evidence is equal.
       if (!sameCandle(candle, previousHover.candle)) this.notify("crosshair", () => this.options.onCrosshair?.(this.hover));
@@ -515,6 +519,7 @@ export class NativeChartViewport {
       timeZone: this.timeZone, utcClockQualified: this.utcClockQualified, effectiveTimeZone: this.utcClockQualified ? effectiveDisplayZone(this.timeZone, this.timeframe) : "UTC", timeframe: this.timeframe,
       barCount: this.series.candles.length, discarded: this.series.discarded, range: this.getRange(), followingLatest: this.followingLatest,
       manualPriceRange: this.manualPriceRange ? Object.freeze({...this.manualPriceRange}) : null, priceAxisDragging: this.priceAxisGesture !== null, timeAxisDragging: this.timeAxisGesture !== null,
+      inspectionPinned:this.inspectionPinned,inspectionTime:this.hover?.candle.time??null,
       livePriceAffordance: this.livePriceAffordance, linkedCrosshairTime: this.linkedCrosshairTime,
       drawingCount: this.drawings.length, selectedDrawing: this.selectedDrawing, editingDrawing: this.frozenDrawingFrame !== null,
       analysisFocused: this.analysisFocused, overlayLayers: this.overlayLayers.getState(), scannerOverlays: this.scannerOverlays.getState(),
@@ -659,8 +664,9 @@ export class NativeChartViewport {
     return !!layout && [layout.price,...layout.panes].some(plot=>point.x >= plot.left && point.x <= plot.left + plot.width
       && point.y >= plot.top && point.y <= plot.top + plot.height);
   }
-  private clearHover() { if (this.hover) { this.hover = null; this.notify("crosshair", () => this.options.onCrosshair?.(null)); this.schedule(); } }
+  private clearHover() { this.inspectionPinned=false; if (this.hover) { this.hover = null; this.notify("crosshair", () => this.options.onCrosshair?.(null)); this.schedule(); } }
   private updateHover(point: Point) {
+    if(this.inspectionPinned)return;
     // User inspection takes ownership; a previous remote cursor must not
     // reappear after this local pointer subsequently leaves the chart.
     if(this.linkedCrosshairTime!==null){this.linkedCrosshairTime=null;this.schedule();}
@@ -855,10 +861,48 @@ export class NativeChartViewport {
     } else this.zoomAt(Math.exp(clamp(pixels * .002, -.65, .65)), point.x);
     this.emitUserRange(previousRange);
   };
+  /** Explicit, temporary inspection of actual loaded bars. Never requests orders or fabricates gaps. */
+  inspectCandle(action: "pin"|"previous"|"next"|"first"|"last"|"clear"): boolean {
+    if(this.destroyed)return false;
+    if(action==="clear"){this.clearHover();return true;}
+    if(this.frozenDrawingFrame||this.activeDrawingPlacement()||this.pointers.size)return false;
+    const frame=this.getFrame(),bars=this.series.candles;
+    if(!frame||!bars.length||!this.range)return false;
+    const current=this.hover?candleIndex(bars as ChartEngineCandle[],this.hover.candle.time):-1;
+    const visibleLast=Math.max(0,Math.min(bars.length-1,Math.floor(this.range.to)));
+    let index=current>=0?current:visibleLast;
+    if(action==="first")index=0;
+    else if(action==="last")index=bars.length-1;
+    else if(action==="previous")index--;
+    else if(action==="next")index++;
+    if(index<0||index>=bars.length)return false;
+    const previousRange=this.range,revision=++this.mutationRevision;
+    // Keep the existing zoom while bringing an offscreen selected bar into view.
+    const span=this.range.to-this.range.from;
+    if(index<this.range.from||index>this.range.to){
+      const from=index<this.range.from?index:index-span;
+      const next=panChartWindow({from,to:from+span},0,bars.length);
+      if(!next)return false;
+      this.range=next;this.followingLatest=false;this.invalidate();
+    }
+    const nextFrame=this.getFrame(),candle=bars[index]!;
+    const x=nextFrame?.timeToX(candle.time);
+    if(!nextFrame||x==null)return false;
+    const projectedY=nextFrame.priceToY(candle.close);
+    if(projectedY==null)return false;
+    this.followingLatest=false;this.linkedCrosshairTime=null;this.inspectionPinned=true;
+    const y=clamp(projectedY,nextFrame.plot.top,nextFrame.plot.top+nextFrame.plot.height);
+    this.hover=Object.freeze({candle,x,y,price:candle.close});
+    this.notify("crosshair",()=>this.options.onCrosshair?.(this.hover));
+    if(this.destroyed||revision!==this.mutationRevision)return false;
+    this.schedule();this.emitUserRange(previousRange);return true;
+  }
   private onKeyDown = (event: KeyboardEvent) => {
     if (this.destroyed || this.frozenDrawingFrame || this.activeDrawingPlacement() || event.defaultPrevented || event.target !== this.canvas || this.canvas.ownerDocument.activeElement !== this.canvas
       || this.canvas.isContentEditable || this.canvas.getAttribute("contenteditable") === "true"
       || event.ctrlKey || event.metaKey || event.altKey || !this.range) return;
+    const inspectionAction=event.key==="Escape"&&this.inspectionPinned?"clear":event.key==="Enter"?"pin":event.shiftKey?({ArrowLeft:"previous",ArrowRight:"next",Home:"first",End:"last"} as const)[event.key as "ArrowLeft"|"ArrowRight"|"Home"|"End"]:undefined;
+    if(inspectionAction){event.preventDefault();this.inspectCandle(inspectionAction);return;}
     const previousRange=this.range,generation=this.generation,revision=this.mutationRevision;
     if (event.key === "Home") this.fit();
     else if (event.key === "End") this.goLatest();

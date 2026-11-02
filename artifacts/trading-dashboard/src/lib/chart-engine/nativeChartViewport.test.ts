@@ -385,3 +385,51 @@ it('retains selected candle and geometry when only the Data Window preference ch
  expect(viewport.getPaneLayout()).toEqual(layout);expect(viewport.getRange()).toEqual(range);
  expect(viewport.getStudyValues(hover.candle.time)[0]!.dataWindowVisible).toBe(false);
 });
+
+describe('explicit pinned candle inspection',()=>{
+ it('keeps the selected timestamp across pointer leave and refresh, updates corrected values, and withdraws removed bars',()=>{
+  const onCrosshair=vi.fn();create({onCrosshair});pointer('pointermove',250,120);
+  const time=onCrosshair.mock.calls.at(-1)![0].candle.time;
+  expect(viewport.inspectCandle('pin')).toBe(true);pointer('pointerleave',250,120);pointer('pointermove',500,160);flush();
+  expect(viewport.getState()).toMatchObject({inspectionPinned:true,inspectionTime:time});
+  const data=candles();data.find(c=>c.time===time)!.close+=.5;viewport.setCandles(data);flush();
+  expect(onCrosshair.mock.calls.at(-1)![0].candle.close).toBe(data.find(c=>c.time===time)!.close);
+  expect(viewport.getState().inspectionPinned).toBe(true);
+  viewport.setCandles(data.filter(c=>c.time!==time));flush();
+  expect(onCrosshair).toHaveBeenLastCalledWith(null);expect(viewport.getState().inspectionPinned).toBe(false);
+ });
+ it('navigates actual loaded bars with gaps and scrolls them into view without changing OHLC',()=>{
+  create();const data=candles().filter((_,i)=>i%3!==0);viewport.setCandles(data);viewport.setRange({from:50,to:70});flush();
+  const original=structuredClone(viewport.getCandles());
+  expect(viewport.inspectCandle('first')).toBe(true);flush();expect(viewport.getState().inspectionTime).toBe(data[0]!.time);
+  expect(viewport.inspectCandle('previous')).toBe(false);expect(viewport.inspectCandle('next')).toBe(true);flush();
+  expect(viewport.getState().inspectionTime).toBe(data[1]!.time);
+  expect(viewport.inspectCandle('last')).toBe(true);flush();expect(viewport.getState().inspectionTime).toBe(data.at(-1)!.time);
+  expect(viewport.getFrame()!.timeToX(data.at(-1)!.time)).toBeLessThanOrEqual(viewport.getFrame()!.plot.left+viewport.getFrame()!.plot.width);
+  expect(viewport.getCandles()).toEqual(original);expect(viewport.inspectCandle('next')).toBe(false);
+ });
+ it('uses focused Shift+arrows for inspection, keeps plain arrows for panning, and Escape releases',()=>{
+  create();canvas.focus();expect(key('ArrowLeft',canvas,{shiftKey:true}).defaultPrevented).toBe(true);flush();
+  const time=viewport.getState().inspectionTime!;expect(viewport.getState().inspectionPinned).toBe(true);
+  key('ArrowLeft',canvas,{shiftKey:true});flush();expect(viewport.getState().inspectionTime).toBe(time-60);
+  key('Escape');flush();expect(viewport.getState().inspectionPinned).toBe(false);
+  const range=viewport.getRange();key('ArrowLeft');flush();expect(viewport.getRange()).not.toEqual(range);
+  const input=document.createElement('input');container.append(input);input.focus();key('ArrowRight',input,{shiftKey:true});expect(viewport.getState().inspectionPinned).toBe(false);
+ });
+ it('withdraws pins on context reset, timeframe change and linked inspection takeover',()=>{
+  create();viewport.inspectCandle('pin');viewport.resetContext();flush();expect(viewport.getState().inspectionPinned).toBe(false);
+  viewport.setCandles(candles());viewport.inspectCandle('pin');viewport.setDisplayTimeZone('UTC','M15');flush();expect(viewport.getState().inspectionPinned).toBe(false);
+  viewport.inspectCandle('pin');viewport.setLinkedCrosshair(candles()[30]!.time);flush();expect(viewport.getState().inspectionPinned).toBe(false);
+ });
+});
+
+it('a reentrant context reset during pin publication supersedes the old selection and range event',()=>{
+ const range=vi.fn();create({onCrosshair:value=>{if(value)viewport.resetContext();},onUserRangeChange:range});
+ expect(viewport.inspectCandle('first')).toBe(false);flush();
+ expect(viewport.getState()).toMatchObject({inspectionPinned:false,inspectionTime:null,barCount:0});expect(range).not.toHaveBeenCalled();
+});
+it('pinned bars stay anchored when newer bars arrive and ordinary Escape is not consumed',()=>{
+ create();canvas.focus();expect(key('Escape').defaultPrevented).toBe(false);
+ viewport.inspectCandle('previous');flush();const before=viewport.getRange(),time=viewport.getState().inspectionTime;
+ viewport.setCandles(candles(0,220));flush();expect(viewport.getRange()).toEqual(before);expect(viewport.getState().inspectionTime).toBe(time);
+});
