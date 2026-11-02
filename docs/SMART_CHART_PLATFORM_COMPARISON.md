@@ -5,6 +5,10 @@ ARX Smart Chart development branch / draft PR #103, not a deployment. **Full pla
 The checklist below drives implementation; it is not a weighted completion score.
 A feature count alone cannot establish professional quality.
 
+## Secondary-panel mounting experiment withheld — 2 November 2026
+
+Candidate `efa84f83` delayed secondary panel mounting to prioritize the chart; ordinary A/B/B/A retained 80 source-correct visible attempts. All 40 normal attempts met100ms, all40throttled attempts failed. Some chart timings improved, but throttled mobile was inconsistent and secondary controls mounted substantially later. Candidate is held, reverted by `f45bb9d8`, and not accepted as a product gain. See [complete results and scope](SCANNER_PANEL_MOUNT_EXPERIMENT_2026_11_02.md).
+
 ## Native Scanner profiling — 2 November 2026
 
 Tooling `df0adbcb` repairs native-default diagnostic profiling and ties paint records to the actual viewport revision. All 34 focused tooling checks and 12 source-matched browser diagnostic attempts pass. Throttled traces point to substantial route-mount/update work before a 2.5–3.6 ms draw method; these are profiling observations, not speed acceptance. No application optimization was installed, and prior 4x first-navigation failures remain open. See [exact source, excluded builds, independent review and limits](NATIVE_SCANNER_PROFILE_2026_11_02.md).
