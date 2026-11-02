@@ -6,13 +6,13 @@ import {prepareNativePriceSeries,createNativePriceFrame} from './nativePriceRend
 const bars=Array.from({length:30},(_,i)=>({time:60+i*60,open:100+i,high:102+i,low:99+i,close:101+i}));
 const rsi:ChartStudy={id:'rsi',kind:'rsi',period:2,color:'#ff0000'};
 const pane={left:0,top:300,width:700,height:120};
-function paint(configs:ChartStudy[],range={from:0,to:29},input=bars){
+function paint(configs:ChartStudy[],range={from:0,to:29},input=bars,onlyPane:number|null=null){
  const model=new NativeChartStudies();model.setStudies(configs,input);
  const result=createNativePriceFrame(prepareNativePriceSeries(input),{plot:{left:0,top:0,width:700,height:300},range,style:'candles',scale:'linear'});if(!result.ok)throw Error(result.reason);
  const ops:{op:string;args:any[];color:string;dash:number[]}[]=[];
  const ctx:any={strokeStyle:'',fillStyle:'',dash:[],save(){},restore(){},setLineDash(v:number[]){this.dash=v;}};
  for(const op of ['beginPath','rect','clip','moveTo','lineTo','stroke','fillRect','strokeRect','fillText'])ctx[op]=(...args:any[])=>ops.push({op,args,color:ctx.strokeStyle,dash:[...ctx.dash]});
- paintNativeStudies(ctx,result.frame,[pane],model);return{model,ops};
+ paintNativeStudies(ctx,result.frame,[pane],model,onlyPane);return{model,ops};
 }
 describe('indicator pane display settings',()=>{
  it('persists explicit empty levels and fixed limits without changing calculated observations',()=>{
@@ -47,6 +47,31 @@ describe('indicator pane display settings',()=>{
   for(const paneScale of [{mode:'fixed',min:1,max:1},{mode:'fixed',min:5,max:1},{mode:'fixed',min:NaN,max:2},{mode:'fixed',min:0,max:Infinity},{mode:'invented'}])expect(validatePreferences({studies:[{...rsi,paneScale}]}).studies).toEqual([]);
   for(const referenceLevels of [[{value:NaN}],[{value:1,label:'x'.repeat(81)}],Array.from({length:13},()=>({value:1}))])expect(validatePreferences({studies:[{...rsi,referenceLevels}]}).studies).toEqual([]);
   expect(validatePreferences({studies:[{...rsi,kind:'sma',paneScale:{mode:'fixed',min:0,max:100}}]}).studies).toEqual([]);
+ });
+});
+
+describe('anchored pane painter',()=>{
+ it.each([0,25,50,100])('paints the anchor at %s percent from bottom with a linked overlay listed first',percent=>{
+  const child:ChartStudy={kind:'sma',id:'child',period:2,color:'#ffffff',studySource:{studyId:'rsi',channel:0}};
+  const {ops,model}=paint([child,{...rsi,paneScale:{mode:'line',value:50,percent}}]);
+  const lines=ops.filter(o=>o.op==='lineTo'&&o.color==='#fbbf24'&&o.dash.join(',')==='2,3');
+  expect(lines).toHaveLength(1);expect(lines[0]!.args).toEqual([700,300+120*(1-percent/100)]);
+  expect(ops.some(o=>o.op==='fillText'&&String(o.args[0]).includes('outside values clipped'))).toBe(true);
+  expect(model.getValues(bars.at(-1)!.time)[1]!.values[0]!.value).toBe(100);
+ });
+ it('withholds an unrepresentable scale with an explicit warning while retaining raw observations',()=>{
+  const {ops,model}=paint([{...rsi,paneScale:{mode:'line',value:1e200,percent:50}}]);
+  expect(ops.some(o=>o.op==='fillText'&&o.args[0]==='Scale unavailable — no finite display range')).toBe(true);
+  expect(ops.some(o=>o.op==='lineTo'&&o.color==='#ff0000')).toBe(false);
+  expect(model.getValues(bars.at(-1)!.time)[0]!.values[0]!.value).toBe(100);
+  for(const op of ops)for(const value of op.args)if(typeof value==='number')expect(Number.isFinite(value)).toBe(true);
+ });
+ it('does not draw anchor geometry in collapsed or excluded panes',()=>{
+  const config:ChartStudy={...rsi,paneScale:{mode:'line',value:50,percent:50}};
+  for(const result of [paint([{...config,paneCollapsed:true}]),paint([config],undefined,undefined,2)]){
+   expect(result.ops.some(o=>o.op==='lineTo'&&o.color==='#fbbf24')).toBe(false);
+   expect(result.ops.some(o=>o.op==='fillText'&&String(o.args[0]).startsWith('Scale anchor'))).toBe(false);
+  }
  });
 });
 

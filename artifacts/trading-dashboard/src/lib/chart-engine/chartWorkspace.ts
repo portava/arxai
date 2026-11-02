@@ -79,7 +79,8 @@ export function validatePreferences(value: unknown): ChartPreferences {
     if(s.paneWeight!==undefined && (typeof s.paneWeight!=="number" || !Number.isFinite(s.paneWeight) || s.paneWeight<.25 || s.paneWeight>8))continue;
     if (s.paneScale !== undefined) {
       const scale=s.paneScale;
-      if (!scale || typeof scale!=="object" || Array.isArray(scale) || !["auto","fixed"].includes(scale.mode)) continue;
+      if (!scale || typeof scale!=="object" || Array.isArray(scale) || !["auto","fixed","line"].includes(scale.mode)) continue;
+      if(scale.mode==="line" && (!Number.isFinite(scale.value)||!Number.isFinite(scale.percent)||scale.percent<0||scale.percent>100))continue;
       if (scale.mode==="fixed") {
         if (scale.min===undefined && scale.max===undefined) continue;
         if (scale.min!==undefined && (!Number.isFinite(scale.min) || scale.min>=Number.MAX_VALUE)) continue;
@@ -122,7 +123,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(s.showInStatusLine!==undefined?{showInStatusLine:s.showInStatusLine}:{}),
       ...(s.showInDataWindow!==undefined?{showInDataWindow:s.showInDataWindow}:{}),
       ...(s.visibleIntervals!==undefined?{visibleIntervals:[...s.visibleIntervals]}:{}),
-      ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:{mode:"fixed" as const,...(s.paneScale.min!==undefined?{min:s.paneScale.min}:{}),...(s.paneScale.max!==undefined?{max:s.paneScale.max}:{})}} : {}),
+      ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:s.paneScale.mode==="line"?{mode:"line" as const,value:s.paneScale.value,percent:s.paneScale.percent}:{mode:"fixed" as const,...(s.paneScale.min!==undefined?{min:s.paneScale.min}:{}),...(s.paneScale.max!==undefined?{max:s.paneScale.max}:{})}} : {}),
       ...(s.referenceLevels!==undefined ? {referenceLevels:s.referenceLevels.map((level:any)=>({value:level.value,...(level.label!==undefined?{label:level.label}:{}),...(level.color!==undefined?{color:level.color}:{}),...(level.width!==undefined?{width:level.width}:{}),...(level.style!==undefined?{style:level.style}:{}),...(level.visible!==undefined?{visible:level.visible}:{})}))} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),

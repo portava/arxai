@@ -7,11 +7,13 @@ interface Props {config:ChartStudy;label:string;onChange:(change:Partial<ChartSt
 /** Draft numeric fields commit together; invalid limits never remove a study. */
 export function ChartStudyPaneSettings({config,label,onChange}:Props){
  const [minimum,setMinimum]=useState(''),[maximum,setMaximum]=useState(''),[error,setError]=useState('');
+ const [anchorValue,setAnchorValue]=useState('0'),[anchorPercent,setAnchorPercent]=useState('50');
  const [fixMinimum,setFixMinimum]=useState(true),[fixMaximum,setFixMaximum]=useState(true);
  const scaleKey=JSON.stringify(config.paneScale);
  useEffect(()=>{
   const scale=config.paneScale?.mode==='fixed'?config.paneScale:undefined;
   setMinimum(scale?.min!==undefined?String(scale.min):'');setMaximum(scale?.max!==undefined?String(scale.max):'');
+  const line=config.paneScale?.mode==='line'?config.paneScale:undefined;setAnchorValue(String(line?.value??0));setAnchorPercent(String(line?.percent??50));
   setFixMinimum(!scale||scale.min!==undefined);setFixMaximum(!scale||scale.max!==undefined);setError('');
  },[scaleKey]);
  const levels:StudyReferenceLevel[]=config.referenceLevels??(studyDefinition(config.kind).levels??[]).map(value=>({value}));
@@ -33,7 +35,7 @@ export function ChartStudyPaneSettings({config,label,onChange}:Props){
    <p className="w-full text-[11px] text-zinc-400">Larger weights allocate more of the available chart height. Minimum readable sizes are retained. Linked overlays move and resize with their source pane.</p>
   </div>
   <div className="flex flex-wrap items-center gap-2">
-   <span className="text-xs">{config.paneScale?.mode==='fixed'?`Limits: ${config.paneScale.min??"Auto"} to ${config.paneScale.max??"Auto"}`:config.paneScale?.mode==='auto'?'Auto scale':'Study default scale'}</span>
+   <span className="text-xs">{config.paneScale?.mode==='fixed'?`Limits: ${config.paneScale.min??"Auto"} to ${config.paneScale.max??"Auto"}`:config.paneScale?.mode==='auto'?'Auto scale':config.paneScale?.mode==='line'?`Anchor: ${config.paneScale.value} at ${config.paneScale.percent}% from bottom`:'Study default scale'}</span>
    <button type="button" className={button} aria-label={`${label} Auto scale`} onClick={()=>change({paneScale:{mode:'auto'}})}>Auto scale</button>
    <button type="button" className={button} aria-label={`${label} Default scale`} onClick={()=>change({paneScale:undefined})}>Study default</button>
    <label className="flex items-center gap-1"><input type="checkbox" aria-label={`${label} Fix minimum`} checked={fixMinimum} onChange={e=>setFixMinimum(e.target.checked)}/>Fix min</label>
@@ -45,6 +47,16 @@ export function ChartStudyPaneSettings({config,label,onChange}:Props){
     if(fixMinimum&&!minimum.trim()||fixMaximum&&!maximum.trim()){setError('Enter every selected limit. Existing settings are unchanged.');return;}
     change({paneScale:{mode:'fixed',...(fixMinimum?{min:Number(minimum)}:{}),...(fixMaximum?{max:Number(maximum)}:{})}});
    }}>Apply fixed scale</button>
+  </div>
+  <div className="mt-3 flex flex-wrap items-center gap-2">
+   <label className="text-xs">Anchor value <input className={`${field} w-24`} aria-label={`${label} Scale anchor value`} type="number" step="any" value={anchorValue} onChange={e=>setAnchorValue(e.target.value)}/></label>
+   <label className="text-xs">Position from bottom (%) <input className={`${field} w-24`} aria-label={`${label} Scale anchor percent`} type="number" min="0" max="100" step="any" value={anchorPercent} onChange={e=>setAnchorPercent(e.target.value)}/></label>
+   <button type="button" className={button} aria-label={`${label} Apply anchored scale`} onClick={()=>{
+    const value=Number(anchorValue),percent=Number(anchorPercent);
+    if(!anchorValue.trim()||!anchorPercent.trim()||!Number.isFinite(value)||!Number.isFinite(percent)||percent<0||percent>100){setError('Enter a finite anchor value and a position from 0 to 100. Existing settings are unchanged.');return;}
+    change({paneScale:{mode:'line',value,percent}});
+   }}>Anchor scale</button>
+   <p className="w-full text-[11px] text-zinc-400">Pins this value at the chosen height. The visible observations and guides determine the scale span. Values outside the shifted range are clipped; calculations stay unchanged. Use Auto scale to release the anchor.</p>
   </div>
   {error&&<p role="alert" className="mt-2 text-xs text-amber-300">{error}</p>}
   <div className="mt-3 space-y-2">

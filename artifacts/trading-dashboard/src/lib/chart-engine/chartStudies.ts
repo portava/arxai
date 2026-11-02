@@ -14,7 +14,7 @@ export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | 
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface StudyLineStyle { color?: string; width?: 1 | 2 | 3; style?: "solid" | "dashed" | "dotted"; visible?: boolean }
 export interface StudyReferenceLevel extends StudyLineStyle { value:number; label?:string }
-export type StudyPaneScale = {mode:"auto"} | {mode:"fixed";min?:number;max?:number};
+export type StudyPaneScale = {mode:"auto"} | {mode:"fixed";min?:number;max?:number} | {mode:"line";value:number;percent:number};
 export interface VwapAnchor { kind:"observed_bar"; time:number; seriesIdentity:string }
 export interface ChartStudy {
   /** Exact local study instance/channel, never a replacement OHLC series. */

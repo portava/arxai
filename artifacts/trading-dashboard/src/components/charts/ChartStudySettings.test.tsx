@@ -10,6 +10,22 @@ function Workspace() {
 }
 const settings = () => JSON.parse(screen.getByTestId("preferences").textContent!);
 afterEach(cleanup);
+it('commits scale anchor fields together, preserves them on invalid input, and releases to Auto',()=>{
+ render(<Workspace/>);fireEvent.click(screen.getByRole('button',{name:'Add Relative strength index'}));
+ const value=screen.getByLabelText('RSI 1 Scale anchor value'),percent=screen.getByLabelText('RSI 1 Scale anchor percent');
+ fireEvent.change(value,{target:{value:'50'}});fireEvent.change(percent,{target:{value:'25'}});
+ expect(settings().studies[0].paneScale).toBeUndefined();
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply anchored scale'}));
+ expect(settings().studies[0].paneScale).toEqual({mode:'line',value:50,percent:25});
+ fireEvent.change(percent,{target:{value:'101'}});fireEvent.click(screen.getByRole('button',{name:'RSI 1 Apply anchored scale'}));
+ expect(settings().studies[0].paneScale).toEqual({mode:'line',value:50,percent:25});
+ expect(screen.getByRole('alert').textContent).toContain('Existing settings are unchanged');
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate study 1'}));
+ expect(settings().studies[1].paneScale).toEqual({mode:'line',value:50,percent:25});
+ fireEvent.click(screen.getByRole('button',{name:'RSI 1 Auto scale'}));
+ expect(settings().studies[0].paneScale).toEqual({mode:'auto'});
+ expect(settings().studies[1].paneScale).toEqual({mode:'line',value:50,percent:25});
+});
 describe("independent study configuration", () => {
   it("searches the catalog and independently edits two copies of one study", () => {
     render(<Workspace />);

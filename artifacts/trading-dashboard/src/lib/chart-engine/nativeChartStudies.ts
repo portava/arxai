@@ -1,3 +1,4 @@
+import {anchoredPaneScale} from './anchoredPaneScale';
 import { StudyCalculator, studyVisibleAtInterval, studyIntervalSuffix, studySourceIssue, studyDefinition, studyChannelColor, studyId, studyLabel, formatStudyNumber, type ChartStudy, type StudyReferenceLevel } from './chartStudies';
 import { validatePreferences, type ChartScaleMode } from './chartWorkspace';
 import { unchangedCandlePrefix } from './candleReconciliation';
@@ -291,6 +292,11 @@ function paneMapping(group:readonly NativeStudySnapshot[],frame:NativePriceFrame
   if(manual?.max!==undefined)values.push(manual.max);
   if(!values.length)return null;
   let low=Infinity,high=-Infinity;for(const value of values){low=Math.min(low,value);high=Math.max(high,value);}
+  if(scale?.mode==='line'){
+    const anchored=anchoredPaneScale(low,high,scale.value,scale.percent);if(!anchored)return null;
+    return {low:anchored.low,high:anchored.high,note:`Scale anchor ${formatStudyNumber(scale.value,studyDefinition(owner.config.kind).channels[0]!)} at ${scale.percent}% from bottom · outside values clipped`,anchor:scale.value,
+      y:(value:number):number|null=>{const fraction=anchored.fraction(value);if(fraction===null)return null;const y=plot.top+plot.height*(1-fraction);return finite(y)?y:null;}};
+  }
   const magnitude=Math.max(Math.abs(low),Math.abs(high))||1;
   const a=low/magnitude,b=high/magnitude,padding=fixed?0:b>a?(b-a)*.08:.01;
   let bottom=a-padding,top=b+padding;
@@ -402,7 +408,12 @@ export function paintNativeStudies(ctx:CanvasRenderingContext2D,frame:NativePric
         ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(plot.left,plot.top);ctx.lineTo(plot.left+plot.width,plot.top);ctx.stroke();
         ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#94a3b8';ctx.fillText(group.map(s=>studyLabel(s.config,studies.getStudies())+(s.intervalHidden?' (hidden by interval)':'')).join(' · ')+(collapsed?' · collapsed — restore in Studies':groupVisible?'':' · hidden'),plot.left+5,plot.top+4,Math.max(1,plot.width-(group.some(s=>studyDefinition(s.config.kind).pane)?66:10)));
       }
+      if(study.paneIndex&&first&&!mapping&&!collapsed&&group.some(s=>s.config.paneScale?.mode==='line')){ctx.fillStyle='#fbbf24';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText('Scale unavailable — no finite display range',plot.left+5,plot.top+plot.height-3,Math.max(1,plot.width-10));}
       if(study.paneIndex&&first&&mapping?.note){ctx.fillStyle='#fbbf24';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(mapping.note,plot.left+5,plot.top+plot.height-3,Math.max(1,plot.width-10));}
+      if(study.paneIndex&&first&&mapping&&'anchor' in mapping&&mapping.anchor!==undefined){
+        const anchorY=mapping.y(mapping.anchor);
+        if(anchorY!==null){ctx.strokeStyle='#fbbf24';ctx.lineWidth=1;ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(plot.left,anchorY);ctx.lineTo(plot.left+plot.width,anchorY);ctx.stroke();}
+      }
       if(!y||!anyVisible)return;
       for(const level of referenceLevels(study.config)){
         if(level.visible===false)continue;
