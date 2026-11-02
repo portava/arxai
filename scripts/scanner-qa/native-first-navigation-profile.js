@@ -10,6 +10,11 @@ async page => {
   if(metadata.nativeEngine!==true||metadata.productDefaultEngineId!=='arx-native'||metadata.qaOnlyDefaultEngineOverride!==false)throw Error('Actual native product default required');
   if(!metadata.sourceUnchanged||metadata.source?.status!==''||!expectedHead||metadata.source.head!==expectedHead||runtime!==metadata.buildId)throw Error('Exact clean diagnostic source required');
  }
+ function verifyTrace(profile,timeline,click) {
+  if(click?.trusted!==true||!Number.isFinite(click.at)||profile?.diagnosticOnly!==true||timeline?.diagnosticOnly!==true)throw Error('Diagnostic runtime trace missing');
+  if(!profile.commits?.some(row=>row.at>=click.at&&row.path==='/market-scanner'))throw Error('Post-click React commit missing');
+  if(!timeline.events?.some(row=>row.at>=click.at&&row.stage==='native.paint.end'&&row.detail.currentPaintComplete===true&&row.detail.count===200))throw Error('Completed native paint missing');
+ }
  const build=await page.evaluate(async()=>({metadata:await (await fetch('/arx-scanner-qa-build-info.json')).json(),runtime:window.__arxScannerQaBuildId}));
  verifyBuild(build.metadata,build.runtime,expectedHead);
  const report={diagnosticOnly:true,acceptance:false,build:build.metadata,cpuRate:rate,samples:[],
@@ -31,15 +36,18 @@ async page => {
     try {
      await page.goto(origin+'/',{waitUntil:'commit',timeout:15000});
      await page.locator(viewport.name==='mobile'?'[data-testid="bottomnav--market-scanner"]':'aside a[href="/market-scanner"]').click({timeout:8000});
-     await page.waitForFunction(()=>{const s=window.__arxChartQa?.snapshot();return s?.renderVerified===true&&s.barCount===200&&s.state.pendingPaint===false;},null,{timeout:8000});
+     // Poll the passive trace, not viewport getters: getFrame/getState can
+     // construct cached frames and move real work outside the paint method.
+     await page.waitForFunction(()=>window.__arxProfileClick?.trusted===true&&window.__arxCandleTimeline?.events.some(row=>row.at>=window.__arxProfileClick.at&&row.stage==='native.paint.end'&&row.detail.currentPaintComplete===true&&row.detail.count===200),null,{timeout:8000});
      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
      const evidence=await page.evaluate(async()=>({click:window.__arxProfileClick,runtime:window.__arxScannerQaBuildId,executedEngine:window.__arxExecutedDefaultEngineId,
       profile:window.__arxReactProfile,timeline:window.__arxCandleTimeline,snapshot:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data(),log:await window.__readFixtureLog(),timeOrigin:performance.timeOrigin,readbackAt:performance.now()}));
      Object.assign(sample,evidence);
+     verifyTrace(evidence.profile,evidence.timeline,evidence.click);
      const response=evidence.log.candleResponses.filter(r=>r.requestStarted>=evidence.timeOrigin&&r.symbol==='EURUSD'&&r.timeframe==='M15').at(-1);
      const state=evidence.snapshot;
      sample.sourceMatches=!!response&&response.source==='offline_fixture'&&state.feed.source===response.source&&state.feed.livePriceAffordance===false&&state.symbol==='EURUSD'&&state.intervalSeconds===900&&state.style==='candles'&&JSON.stringify(evidence.data.canonical)===JSON.stringify(response.canonical)&&JSON.stringify(evidence.data.display)===JSON.stringify(response.canonical);
-     if(!sample.sourceMatches||!evidence.click?.trusted||evidence.runtime!==build.metadata.buildId||evidence.executedEngine!=='arx-native'||!state.renderVerified||state.state.pendingPaint||!evidence.timeline.events.some(r=>r.at>=evidence.click.at&&r.stage==='native.paint.end'&&r.detail.currentPaintComplete))throw Error('Diagnostic native execution/source/paint evidence incomplete');
+     if(!sample.sourceMatches||evidence.runtime!==build.metadata.buildId||evidence.executedEngine!=='arx-native'||!state.renderVerified||state.state.pendingPaint)throw Error('Diagnostic native execution/source/paint evidence incomplete');
      if(evidence.log.errors.length)throw Error('Browser page errors');
     }catch(error){sample.failure=String(error?.message??error);}
    }

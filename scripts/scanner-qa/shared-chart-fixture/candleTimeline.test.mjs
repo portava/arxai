@@ -108,3 +108,12 @@ test('native diagnostic driver rejects production, legacy, dirty, overridden or 
  for(const patch of [{diagnosticOnly:false},{reactProfiling:false},{productionRuntimeChecked:true},{nativePaintTimeline:false},{candleTimelineEngine:'lightweight-charts'},{nativeEngine:false},{productDefaultEngineId:'lightweight-charts'},{qaOnlyDefaultEngineOverride:true},{sourceUnchanged:false},{source:{status:'M file',head:'abc'}}])assert.throws(()=>verify({...clean,...patch},'fixture','abc'));
  for(const [runtime,head]of [['other','abc'],['fixture',null],['fixture','other']])assert.throws(()=>verify(clean,runtime,head));
 });
+test('diagnostic completeness requires post-click React and completed native paint evidence',()=>{
+ const source=readFileSync(new URL('../native-first-navigation-profile.js',import.meta.url),'utf8');
+ const helper=source.match(/ function verifyTrace\(profile,timeline,click\) \{[^]*?\n \}/)[0];const verify=vm.runInNewContext('('+helper+')');
+ const profile={diagnosticOnly:true,commits:[{at:3,path:'/market-scanner'}]},timeline={diagnosticOnly:true,events:[{at:4,stage:'native.paint.end',detail:{currentPaintComplete:true,count:200}}]},click={trusted:true,at:2};
+ verify(profile,timeline,click);
+ for(const p of [null,{}, {...profile,diagnosticOnly:false},{...profile,commits:[]},{...profile,commits:[{at:1,path:'/market-scanner'}]},{...profile,commits:[{at:3,path:'/'}]}])assert.throws(()=>verify(p,timeline,click));
+ for(const t of [null,{}, {...timeline,diagnosticOnly:false},{...timeline,events:[]},{...timeline,events:[{at:4,stage:'native.paint.end',detail:{currentPaintComplete:false,count:200}}]},{...timeline,events:[{at:1,stage:'native.paint.end',detail:{currentPaintComplete:true,count:200}}]}])assert.throws(()=>verify(profile,t,click));
+ for(const c of [null,{trusted:false,at:2},{trusted:true,at:NaN}])assert.throws(()=>verify(profile,timeline,c));
+});
