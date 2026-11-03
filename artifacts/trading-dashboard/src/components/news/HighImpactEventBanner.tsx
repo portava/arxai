@@ -125,7 +125,7 @@ export function HighImpactEventBanner() {
       return (
         <div data-testid="high-impact-banner-date-only-unavailable" className="rounded-md border border-slate-600 bg-slate-900/60 p-2 text-xs text-slate-300">
           Releases listed by date only (FRED, no published time) could not be loaded for {todayUtc} (UTC date), so one
-          dated today cannot be ruled out. No banner here is not an all-clear.
+          dated {todayUtc} cannot be ruled out. No banner here is not an all-clear.
         </div>
       );
     }

@@ -457,9 +457,9 @@ export function toSelectedMarketEvent(r: {
 /**
  * The news-risk line for a date-only release. The scorer measures minutes to
  * the event's midnight date marker, which is not a release time, so the line
- * names the date instead of a countdown; and a release dated today whose
- * marker has passed (listed, but not timeable) is named rather than silently
- * dropped. Risk level and blockTrading are left exactly as scored.
+ * names the date instead of a countdown; and a release dated today (UTC) whose
+ * marker has passed (listed, but not timeable) is named, by its date, rather
+ * than silently dropped. Risk level and blockTrading are left exactly as scored.
  */
 function dateOnlyAwareNewsReason(
   news: { reason: string; blockTrading: boolean; upcomingEvent: EconomicEvent | null },
@@ -470,11 +470,15 @@ function dateOnlyAwareNewsReason(
     const tail = news.blockTrading ? `trading blocked for ${symbol}` : "proceed with caution";
     return `${ev.impact.toUpperCase()} impact ${ev.title} dated ${ev.eventTime.slice(0, 10)} (release time not published) — ${tail}.`;
   }
-  const untimed = listed.filter((e) => e.timePublished === false && Date.parse(e.eventTime) < nowMs).length;
+  const untimedRows = listed.filter((e) => e.timePublished === false && Date.parse(e.eventTime) < nowMs);
+  const untimed = untimedRows.length;
   if (untimed === 0) return news.reason;
+  // Name the date (the UTC date these rows were selected by), never "today":
+  // a viewer's local "today" can be a different date.
+  const dates = Array.from(new Set(untimedRows.map((e) => e.eventTime.slice(0, 10)))).join(", ");
   return untimed === 1
-    ? `${news.reason} A listed release is dated today with no published release time, so its timing was not scored.`
-    : `${news.reason} ${untimed} listed releases are dated today with no published release time, so their timing was not scored.`;
+    ? `${news.reason} A listed release dated ${dates} has no published release time, so its timing was not scored.`
+    : `${news.reason} ${untimed} listed releases dated ${dates} have no published release time, so their timing was not scored.`;
 }
 
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{

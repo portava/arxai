@@ -771,5 +771,8 @@ test("a FRED release dated today that the scorer cannot time is named in the new
   assert.ok(env.ok);
   if (!env.ok) return;
   assert.equal(env.upcomingEvents.length, 1);
-  assert.match(env.newsRisk.summary, /dated today with no published release time/);
+  // The sentence names the UTC date it counted by, never "today": the
+  // viewer's local "today" can be another date (review finding).
+  assert.match(env.newsRisk.summary, new RegExp(`A listed release dated ${todayMarker.slice(0, 10)} has no published release time, so its timing was not scored\\.`));
+  assert.doesNotMatch(env.newsRisk.summary, /dated today/);
 });
