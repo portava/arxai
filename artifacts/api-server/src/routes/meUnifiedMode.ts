@@ -87,10 +87,13 @@ export interface UnifiedAccountModeResponse {
 
   userAllocation: {
     hasAllocation: boolean;
-    currentBalance: number;
+    // null = not available / not measured, as in /me/account-shell's
+    // allocation: no allocation row or virtual account means no balance,
+    // and nothing records margin for this view. Never a placeholder $0.
+    currentBalance: number | null;
     assignedStartingBalance: number | null;
-    equity: number;
-    marginUsed: number;
+    equity: number | null;
+    marginUsed: number | null;
   };
 
   userRiskCaps: {

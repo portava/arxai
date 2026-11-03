@@ -36,10 +36,11 @@ export interface UnifiedAccountModeEnvelope {
   };
   userAllocation: {
     hasAllocation: boolean;
-    currentBalance: number;
+    // null = not available / not measured (the server never sends a placeholder 0).
+    currentBalance: number | null;
     assignedStartingBalance: number | null;
-    equity: number;
-    marginUsed: number;
+    equity: number | null;
+    marginUsed: number | null;
   };
   userRiskCaps: {
     maxLotSize: number | null;
