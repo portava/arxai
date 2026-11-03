@@ -147,6 +147,26 @@ export function formatUtcClock(time: number | string | null | undefined): string
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
 }
 
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/**
+ * A candle close time that says which day it was: "HH:MM UTC" when it is
+ * today (UTC), otherwise "Fri 30 Oct 22:00 UTC" (with the year when it is not
+ * this year). A bare clock for a close days ago reads as today. Null when the
+ * time cannot be parsed.
+ */
+export function formatUtcCandleClose(time: number | string | null | undefined, nowMs: number): string | null {
+  const clock = formatUtcClock(time);
+  if (clock == null) return null;
+  const d = new Date(typeof time === "number" ? time : Date.parse(time as string));
+  const n = new Date(nowMs);
+  const sameYear = Number.isFinite(nowMs) && d.getUTCFullYear() === n.getUTCFullYear();
+  if (sameYear && d.getUTCMonth() === n.getUTCMonth() && d.getUTCDate() === n.getUTCDate()) return clock;
+  const day = `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_SHORT[d.getUTCMonth()]}`;
+  return `${day}${sameYear ? "" : ` ${d.getUTCFullYear()}`} ${clock}`;
+}
+
 /** A closed bar cannot close later than now beyond this clock-skew allowance. */
 const CLOSED_BAR_SKEW_MS = 5_000;
 
