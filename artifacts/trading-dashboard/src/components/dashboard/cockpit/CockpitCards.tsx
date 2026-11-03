@@ -397,9 +397,15 @@ export function TradingPermissionSummaryCard() {
   // blocker were not read, so none of them is described (not "Not paused",
   // not "Waiting for approval").
   const modeUnknown = mode.isModeUnknown === true;
+  // No envelope and no failure: nothing has been read yet. That is still
+  // loading, or a pending query whose fetch is paused (offline at mount),
+  // where React Query's isLoading is false. Keyed on the envelope itself, as
+  // the Trade Command Room and the Bridge row below are.
+  const modeRead = mode.envelope != null;
+  const notReadYet = !modeRead && !modeUnknown;
   const blocked = Boolean(mode.cleanBlockedReason);
   const frozen = mode.isFrozen;
-  const waitingApproval = !modeUnknown && !mode.canManualTrade && !blocked && !frozen;
+  const waitingApproval = modeRead && !modeUnknown && !mode.canManualTrade && !blocked && !frozen;
 
   // Bridge connectivity comes from the shared master pool's heartbeat-derived
   // availability (same query the account snapshot card uses), never from the
@@ -424,6 +430,8 @@ export function TradingPermissionSummaryCard() {
   const bridgeNotOnline = onSharedRoute && bridge.state !== "online";
   const status = modeUnknown
     ? { label: "Could not be checked", tone: "warning" as const }
+    : notReadYet
+    ? { label: "Checking", tone: "warning" as const }
     : frozen
     ? { label: "Paused", tone: "warning" as const }
     : blocked
@@ -439,6 +447,8 @@ export function TradingPermissionSummaryCard() {
 
   const headline = modeUnknown
     ? mode.cleanUserMessage || "Your account mode could not be checked just now."
+    : notReadYet
+    ? "Your account mode has not been read yet. Approval, pause and blockers are shown once it is."
     : blocked
     ? mode.cleanBlockedReason
     : mode.canManualTrade && bridgeNotOnline
@@ -465,7 +475,7 @@ export function TradingPermissionSummaryCard() {
         <Row label="Risk caps" value={riskCaps.label} valueClass={BRIDGE_TEXT[riskCaps.tone]} title={riskCaps.detail} data-testid="permission-risk-caps" />
         <Row label="Bridge" value={bridge.label} valueClass={BRIDGE_TEXT[bridge.tone]} title={bridge.detail} data-testid="permission-bridge" />
         {/* Only the operator pause flag is known here; no session or system health is measured. */}
-        <Row label="Account pause" value={modeUnknown ? "Could not be checked" : mode.isLoading ? "Checking" : frozen ? "Paused" : "Not paused"} valueClass={frozen ? "text-warning" : "text-txt-secondary"} data-testid="permission-pause" />
+        <Row label="Account pause" value={modeUnknown ? "Could not be checked" : !modeRead ? "Checking" : frozen ? "Paused" : "Not paused"} valueClass={frozen ? "text-warning" : "text-txt-secondary"} data-testid="permission-pause" />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
 

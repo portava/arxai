@@ -189,3 +189,33 @@ describe("Trading Permission Bridge row — account-mode check failed", () => {
     expect(describeBridgeObservation({ onSharedRoute: false, allocationView: null }).label).toBe("Not checked here");
   });
 });
+
+// React Query v5 sets isLoading = isPending && isFetching. Offline at mount,
+// the account-mode query is pending with its fetch paused: isLoading false,
+// isError false, envelope null. The card keyed "Waiting for approval" and
+// "Not paused" on isModeUnknown / isLoading, so it claimed an approval state
+// and a pause state that were never read, next to a Bridge row saying
+// "Checking" and a Trade Command Room saying "Checking" (18ecf5d2).
+describe("Trading Permission card — account-mode query paused (offline), no envelope", () => {
+  beforeEach(() => {
+    h.mode = unknownMode({ isLoading: false, isError: false, isModeUnknown: false, cleanModeLabel: "Loading…", cleanUserMessage: "" });
+  });
+
+  it("says it is checking instead of 'Waiting for approval'", () => {
+    render(<TradingPermissionSummaryCard />);
+    const status = screen.getByTestId("permission-status").textContent ?? "";
+    expect(status).not.toBe("Waiting for approval");
+    expect(status).toBe("Checking");
+    const card = screen.getByTestId("cockpit-trading-permission").textContent ?? "";
+    expect(card).not.toContain("Your account is approved for trading.");
+    expect(card).toContain("Your account mode has not been read yet.");
+  });
+
+  it("the Account pause row says 'Checking', not 'Not paused'", () => {
+    render(<TradingPermissionSummaryCard />);
+    expect(rowValue("permission-pause")).not.toBe("Not paused");
+    expect(rowValue("permission-pause")).toBe("Checking");
+    // The Bridge row in the same card says the same thing.
+    expect(rowValue("permission-bridge")).toBe("Checking");
+  });
+});
