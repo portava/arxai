@@ -43,12 +43,24 @@ const SAMPLE_LOW    = 5;
 const SAMPLE_MEDIUM = 20;
 
 
+/**
+ * Stored with a learning event whose P&L is not known. learning_events.pnl is
+ * NOT NULL, so such a row holds 0 there with pnlKnown false and this note in
+ * its adjustments; the 0 is not a result.
+ */
+export const PNL_NOT_SIZED_NOTE =
+  "P&L not sized: the trade could not be sized for the instrument (no contract size or currency conversion), so its P&L is not known. The 0 stored in pnl is not a result, and no strategy edge added it to its P&L.";
+
 // ── Types ──────────────────────────────────────────────────────────────────
 export interface LearningPayload {
   trade_id: number;
   decision_id: number | null;
   result: string;                      // WIN | LOSS | BREAKEVEN | CANCELLED
-  pnl: number;
+  /**
+   * null = not known: the debrief's close could not be sized for the
+   * instrument (no contract size or currency conversion). Never read as 0.
+   */
+  pnl: number | null;
   pnl_percent?: number;
   symbol?: string;
   action?: string;                     // BUY | SELL | HOLD
@@ -160,7 +172,10 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
   if (!pnlPercent) pnlPercent = (meta.pnl_percent as number) ?? 0;
 
   const result = String(payload.result || "BREAKEVEN").toUpperCase();
-  const pnl = Number(payload.pnl ?? 0);
+  // Unknown P&L stays unknown (null): it used to become a measured 0 here, in
+  // the event row, its summary and every strategy edge's P&L.
+  const rawPnl = payload.pnl == null ? null : Number(payload.pnl);
+  const pnl: number | null = rawPnl != null && Number.isFinite(rawPnl) ? rawPnl : null;
   const signals = Array.isArray(payload.signals_used) ? payload.signals_used : [];
   const mistakeTags = Array.isArray(payload.mistake_tags) ? payload.mistake_tags : [];
 
@@ -197,14 +212,15 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
       tradeId: payload.trade_id,
       decisionId: payload.decision_id,
       debriefId,
-      symbol, action, result, pnl, pnlPercent,
+      // NOT NULL column: 0 when the P&L is not known, flagged in adjustments.
+      symbol, action, result, pnl: pnl ?? 0, pnlPercent,
       confidenceBeforeTrade: payload.confidence_before_trade ?? null,
       riskScoreBeforeTrade:  payload.risk_score_before_trade ?? null,
       signalsUsed: signals as unknown as object,
       mistakeTags: mistakeTags as unknown as object,
       lesson: payload.lesson ?? "",
       learningSummary: "PENDING",
-      adjustments: { pending: true } as unknown as object,
+      adjustments: { pending: true, pnlKnown: pnl != null } as unknown as object,
     }).returning({ id: learningEventsTable.id });
     eventId = ins[0]?.id ?? null;
   } catch (err) {
@@ -253,10 +269,15 @@ export async function processLearningPayload(payload: LearningPayload, opts: Lea
   // 8. Finalize the claimed event row with summary + adjustments JSON.
   const sampleBucket = totalSamples(edgeAdjustments) < SAMPLE_LOW ? "LOW"
                      : totalSamples(edgeAdjustments) < SAMPLE_MEDIUM ? "MEDIUM" : "HIGH";
-  const summary = `${result} on ${symbol} ${action} (pnl=${pnl.toFixed(2)}). ${edgeAdjustments.length} signal edge(s) updated, ${mistakeAdjustments.length} mistake pattern(s). Sample bucket=${sampleBucket}.`;
+  const pnlText = pnl == null ? "P&L not sized" : `pnl=${pnl.toFixed(2)}`;
+  const summary = `${result} on ${symbol} ${action} (${pnlText}). ${edgeAdjustments.length} signal edge(s) updated, ${mistakeAdjustments.length} mistake pattern(s). Sample bucket=${sampleBucket}.`;
   await db.update(learningEventsTable).set({
     learningSummary: summary,
-    adjustments: { edgeAdjustments, mistakeAdjustments, sampleBucket } as unknown as object,
+    adjustments: {
+      edgeAdjustments, mistakeAdjustments, sampleBucket,
+      pnlKnown: pnl != null,
+      ...(pnl == null ? { pnlNote: PNL_NOT_SIZED_NOTE } : {}),
+    } as unknown as object,
   }).where(eq(learningEventsTable.id, eventId!));
 
   // 8. Vault audit (append-only, best-effort).

@@ -55,7 +55,10 @@ function cleanScopes(scopes: OwnedScope[] | undefined, owner: number): ScopeRef[
 // ── Writes ────────────────────────────────────────────────────────────────
 
 export interface EdgeOutcome {
-  symbol: string; signalName: string; action: string; result: string; pnl: number; tradeId: number;
+  symbol: string; signalName: string; action: string; result: string;
+  /** null = the trade's P&L could not be sized: it is not added to netPnl or avgPnl. */
+  pnl: number | null;
+  tradeId: number;
   deltaEdge: number; deltaConf: number; deltaRisk: number;
 }
 
@@ -79,7 +82,9 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
       contributors: platform ? 1 : null,
       symbol: o.symbol, strategyName: o.signalName, signalName: o.signalName, action: o.action,
       sampleCount: 1, winCount: isWin ? 1 : 0, lossCount: isLoss ? 1 : 0, breakEvenCount: isBE ? 1 : 0,
-      netPnl: o.pnl, avgPnl: o.pnl,
+      // NOT NULL columns with no count of unsized samples: an edge first seen
+      // on a trade whose P&L is not known starts at 0.
+      netPnl: o.pnl ?? 0, avgPnl: o.pnl ?? 0,
       confidenceAdjustment: clamp(o.deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX),
       riskAdjustment: clamp(o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
       edgeScore: clamp(o.deltaEdge, EDGE_MIN, EDGE_MAX),
@@ -88,13 +93,16 @@ async function applyEdge(ref: ScopeRef, o: EdgeOutcome, contributorJoined: boole
     return { row: row!, created: true };
   }
   const sampleCount = existing.sampleCount + 1;
-  const netPnl = existing.netPnl + o.pnl;
+  // A trade whose P&L is not known adds nothing to netPnl and leaves avgPnl
+  // as it was (it used to add a measured 0 and pull the average toward 0).
+  const netPnl = o.pnl == null ? existing.netPnl : existing.netPnl + o.pnl;
+  const avgPnl = o.pnl == null ? existing.avgPnl : netPnl / sampleCount;
   const [row] = await db.update(strategyEdgesTable).set({
     sampleCount,
     winCount: existing.winCount + (isWin ? 1 : 0),
     lossCount: existing.lossCount + (isLoss ? 1 : 0),
     breakEvenCount: existing.breakEvenCount + (isBE ? 1 : 0),
-    netPnl, avgPnl: netPnl / sampleCount,
+    netPnl, avgPnl,
     confidenceAdjustment: clamp(existing.confidenceAdjustment + o.deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX),
     riskAdjustment: clamp(existing.riskAdjustment + o.deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX),
     edgeScore: clamp(existing.edgeScore + o.deltaEdge, EDGE_MIN, EDGE_MAX),
