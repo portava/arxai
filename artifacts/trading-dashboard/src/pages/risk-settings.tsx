@@ -1394,16 +1394,19 @@ export default function RiskSettings() {
                 {(() => {
                   // A row nobody read is grey "could not be loaded", never a green "NO".
                   const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
-                  const rows: { label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
+                  // The bot rows are the saved Bot Control preference, which no
+                  // engine reads: "start requested", never "is running".
+                  // `key` keeps the existing data-testid.
+                  const rows: { key?: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
                     botStatus
                       ? { label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
                       : { label: "Bot Mode", value: botUnread, tone: "unread" },
                     botStatus
-                      ? { label: "Is Running", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
-                      : { label: "Is Running", value: botUnread, tone: "unread" },
+                      ? { key: "Is Running", label: "Start requested (saved)", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
+                      : { key: "Is Running", label: "Start requested (saved)", value: botUnread, tone: "unread" },
                     botStatus
-                      ? { label: "Is Paused", value: botStatus.isPaused ? "YES" : "NO", tone: botStatus.isPaused ? "warn" : "neutral" }
-                      : { label: "Is Paused", value: botUnread, tone: "unread" },
+                      ? { key: "Is Paused", label: "Pause requested (saved)", value: botStatus.isPaused ? "YES" : "NO", tone: botStatus.isPaused ? "warn" : "neutral" }
+                      : { key: "Is Paused", label: "Pause requested (saved)", value: botUnread, tone: "unread" },
                     !settings
                       ? { label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
                       : { label: "Live Locked", value: settings.liveLocked ? "LOCKED" : "OPEN", tone: settings.liveLocked ? "ok" : "warn" },
@@ -1416,7 +1419,7 @@ export default function RiskSettings() {
                         },
                   ];
                   return rows.map((row) => (
-                    <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
+                    <div key={row.key ?? row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.key ?? row.label}`}>
                       <span className="text-muted-foreground">{row.label}</span>
                       <span className={cn("font-mono font-semibold",
                         row.tone === "ok" ? "text-success"

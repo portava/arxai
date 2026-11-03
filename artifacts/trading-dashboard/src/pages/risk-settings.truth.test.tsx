@@ -264,6 +264,19 @@ describe("System Status never colours an unread bot status green", () => {
     expect(running.querySelector(".text-success")).toBeNull();
     expect(screen.getByTestId("system-status-bot-scope").textContent).toMatch(/saved Bot Control settings/);
   });
+
+  it("the saved start / pause flags are labelled as saved requests, not 'Is Running'", () => {
+    renderPage({
+      tab: "emergency", settings: { data: BALANCED_APPLIED },
+      bot: { data: { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null } },
+    });
+    const running = screen.getByTestId("system-status-Is Running");
+    expect(running.textContent).toMatch(/Start requested \(saved\)/);
+    expect(running.textContent).not.toMatch(/Is Running/);
+    const paused = screen.getByTestId("system-status-Is Paused");
+    expect(paused.textContent).toMatch(/Pause requested \(saved\)/);
+    expect(paused.textContent).not.toMatch(/Is Paused/);
+  });
 });
 
 describe("the page re-reads what its own actions changed", () => {
