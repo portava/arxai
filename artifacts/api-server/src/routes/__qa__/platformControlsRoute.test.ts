@@ -28,6 +28,7 @@ import {
 import { attachAuthUser } from "../../lib/auth/middleware.js";
 import { createUserSession } from "../../lib/auth/userSessions.js";
 import { loadTradingHalt } from "../../lib/safety/tradingHalt.js";
+import { ensureSafetyCoreInitialized } from "../../lib/safetyCore.js";
 import botRouter from "../bot.js";
 import systemRouter from "../system.js";
 
@@ -74,13 +75,21 @@ async function safetyCore() {
 
 async function setSafetyCore(on: boolean, reason: string | null): Promise<void> {
   const row = await safetyCore();
-  if (!row) return;
+  // Fail loudly: a silent no-op here once made "a trader cannot release an
+  // operator's stop" read an absent row (undefined) instead of the stop it set.
+  assert.ok(row, "the safety_core singleton row exists (before() initialises it)");
   await db.update(safetyCoreTable).set({ killSwitchEngaged: on, killSwitchReason: reason })
     .where(eq(safetyCoreTable.id, row.id));
 }
 
 before(async () => {
   await deleteFixtures();
+  // The server creates the safety_core singleton row at boot (index.ts calls
+  // ensureSafetyCoreInitialized before accepting requests). This test mounts the
+  // routers without that boot step, so on a fresh database no row existed until
+  // the operator's stop created one: the trader test then set an operator stop
+  // on no row and read undefined. Do the same boot step here.
+  await ensureSafetyCoreInitialized();
   const row = await safetyCore();
   safetyCoreBefore = row ? { id: row.id, on: row.killSwitchEngaged, reason: row.killSwitchReason } : null;
   await setSafetyCore(false, null);
