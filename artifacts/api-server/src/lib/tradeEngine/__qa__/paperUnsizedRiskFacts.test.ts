@@ -81,11 +81,34 @@ test("realizedOf: an unsized stop-out counts as a loss at the governor's paper m
   assert.equal(r, (17950 - 18000) * 0.5 * PAPER_LEDGER_INSTRUMENT.contractSize!);
 });
 
-test("realizedOf: an unsized target hit counts as a win; a stored figure and a flat exit are kept as they are", async () => {
+test("realizedOf: an unsized target hit adds nothing (a win of unknown size never counts as money); a stored figure and a flat exit are kept as they are", async () => {
   const tp = await settleThroughMonitor(openOrder({ id: 52 }), 18110);
-  assert.ok(realizedOf(tp) > 0);
+  // Was +5,000 ((18100 − 18000) × 0.5 × 100): an estimated win added to the risk total.
+  assert.equal(realizedOf(tp), 0);
   assert.equal(realizedOf({ ...tp, profitLoss: 12.5 }), 12.5, "a sized amount is the stored amount");
   assert.equal(realizedOf({ ...tp, exitPrice: 18000, profitLoss: 0 }), 0, "a flat exit is a real breakeven");
+});
+
+test("sumPaperRealizedSince: an unsized target hit cannot cancel measured losses in the daily total (governor daily_loss_limit, autopilot maxDailyPaperLoss)", async () => {
+  // Sized losses of −800 today, then an ownerless NAS100 0.5-lot target hit 200 points above entry whose amount was not sized.
+  const tp = await settleThroughMonitor(openOrder({ id: 55, takeProfit: 18200 }), 18210);
+  assert.equal(tp.status, "CLOSED_TP");
+  assert.equal(tp.profitLoss, 0, "stored as the not-sized placeholder");
+  fake = createFakeDb({ paper_orders: [tp, { ...tp, id: 56, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -500 }, { ...tp, id: 57, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -300 }] });
+  const total = await sumPaperRealizedSince({ owner: null, strategyId: "build_ee_paper_execution" }, minsAgo(60));
+  // Was −800 + 10,000 = +9,200: neither daily-loss stop could trip.
+  assert.equal(total, -800);
+});
+
+test("readPaperCloses → summarizeActivity: an unsized target hit ends a losing streak by its sign but adds no money to the week's P/L", async () => {
+  const tp = await settleThroughMonitor(openOrder({ id: 58 }), 18110);
+  fake = createFakeDb({ paper_orders: [tp, { ...tp, id: 59, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -5, closedAt: minsAgo(10) }] });
+  const closes = await readPaperCloses({ account: 1 }, { limit: 20 });
+  assert.deepEqual(closes.map((c) => c.pnl), [0, -5]);
+  const act = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })), 0, NOW, "paper_orders:account:1");
+  assert.equal(act.consecutiveLosses, 0, "the newest close was a win");
+  assert.equal(act.lastClosedWasLoss, false);
+  assert.equal(act.weekRealizedPnl, -5, "was +4,995: the estimated win offset the measured loss");
 });
 
 test("sumPaperRealizedSince: the daily total includes the unsized stop-out", async () => {

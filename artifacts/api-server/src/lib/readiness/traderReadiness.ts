@@ -38,6 +38,7 @@ import {
   readActivePaperAccount, readOpenPaperOrders, readPaperCloses, readPaperOrders, sumPaperRealizedSince,
   isSettledPaperStatus, realizedOf, type PaperBookScope,
 } from "../tradeEngine/paperBookReader.js";
+import { isUnsizedPaperClose } from "../paperExecution/paperPnl.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -50,11 +51,20 @@ export interface RiskFlag { code: string; message: string; }
 export interface Cooldown { symbol: string; reason: string | null; until: string | null; }
 
 export interface GovernorMetrics {
+  /**
+   * dailyPnl, weeklyPnl, maxDrawdown and winRate30d are the paper book's risk
+   * count (paperBookReader.realizedOf): each sized close at its booked amount;
+   * a close whose amount could not be sized counts only if it lost (at the
+   * paper risk model, price move × lots × 100) and a win of unknown size
+   * counts 0. unsizedPaperCloses30d says how many closes that covers.
+   */
   dailyPnl: number;
   /** Enforced daily loss cap in money (Risk Governor); null = none enforced. */
   dailyLossLimit: number | null;
   weeklyPnl: number;
   maxDrawdown: number;
+  /** Closes in the last 30 days whose P&L could not be sized (counted as above, not measured). */
+  unsizedPaperCloses30d: number;
   openPaperTrades: number;
   /** Enforced max open trades (Risk Governor); null = none enforced. */
   maxOpenPaperTrades: number | null;
@@ -161,7 +171,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   const thirtyAgo = new Date(Date.now() - 30 * 86_400_000);
 
   // --- EE: paper_orders ---
-  let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0;
+  let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0, unsizedPaperCloses30d = 0;
   const sameSymbolExposure: Record<string, number> = {};
   // Owner decision 7: paper_orders through the paper book's read side. A
   // settled order is CLOSED_SL / CLOSED_TP / CLOSED_MANUAL (the venue never
@@ -177,6 +187,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
 
     const closed30 = await readPaperCloses(book, { since: thirtyAgo });
     sampleSize = closed30.length;
+    unsizedPaperCloses30d = closed30.filter((t) => isUnsizedPaperClose(t)).length;
     if (sampleSize > 0) {
       const wins = closed30.filter(t => t.pnl > 0).length;
       winRate30d = Math.round((wins / sampleSize) * 10000) / 100;
@@ -302,6 +313,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
       dailyLossLimit,
       weeklyPnl: Number(weeklyPnl.toFixed(2)),
       maxDrawdown,
+      unsizedPaperCloses30d,
       openPaperTrades: openCount,
       maxOpenPaperTrades,
       sameSymbolExposure,
