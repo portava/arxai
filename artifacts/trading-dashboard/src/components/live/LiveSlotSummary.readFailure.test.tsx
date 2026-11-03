@@ -51,6 +51,9 @@ describe("slot summary read failure", () => {
     expect(screen.queryByText(/none received/)).toBeNull();
     expect(screen.queryByText(/Disconnected/)).toBeNull();
     expect(screen.getByTestId("open-trades-badge-read-failed")).toBeTruthy();
+    // The header count was never measured: no "(0)" next to "Open Trades".
+    expect(screen.getByTestId("live-open-trades-panel").textContent).not.toMatch(/Open Trades\s*\(0\)/);
+    expect(screen.queryByTestId("open-trades-count")).toBeNull();
     await screen.findByTestId("slot-summary-error");
     expect(screen.getByTestId("slot-summary-error").textContent).toMatch(/could not be loaded/i);
     expect(screen.queryByTestId("slot-summary-card")).toBeNull();
@@ -63,7 +66,25 @@ describe("slot summary read failure", () => {
     mount();
     await screen.findByTestId("open-trades-load-error");
     expect(screen.queryByTestId("open-trades-empty")).toBeNull();
+    expect(screen.getByTestId("live-open-trades-panel").textContent).not.toMatch(/Open Trades\s*\(0\)/);
+    expect(screen.queryByTestId("open-trades-count")).toBeNull();
     await screen.findByTestId("slot-summary-error");
+  });
+
+  it("while the first read is in flight the header shows no trade count", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    mount();
+    expect(screen.getByTestId("live-open-trades-panel").textContent).not.toMatch(/Open Trades\s*\(0\)/);
+    expect(screen.queryByTestId("open-trades-count")).toBeNull();
+  });
+
+  it("after a good read the header counts the trades the server reported", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(goodSummary()), {
+      status: 200, headers: { "content-type": "application/json" },
+    })));
+    mount();
+    await screen.findByTestId("open-trades-badge-live");
+    expect(screen.getByTestId("open-trades-count").textContent).toBe("(1)");
   });
 
   it("a refetch that fails after a good read drops 'Live' and says the data is from the last successful read", async () => {
