@@ -1196,6 +1196,9 @@ export async function getPropFirmModeStatus(userId: number) {
     const orders = await db.select().from(paperOrdersTable).where(orderWhere);
     const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt);
     const openCount = orders.filter((o) => o.status === "OPEN").length;
+    // The page's own wording for what these figures measure, so Ruby and the
+    // Prop Challenge page describe the same numbers the same way.
+    const { closedTradeDrawdownNote, RISK_PER_TRADE_NOTE } = await import("../../routes/propChallenges.js");
 
     // Bucket P&L + trade count per UTC day.
     const byDayPnl = new Map<string, number>();
@@ -1260,10 +1263,12 @@ export async function getPropFirmModeStatus(userId: number) {
     // Compliance status (no fabrication: WARNING at 80% of any limit).
     const warnings: string[] = [];
     const violations: string[] = [];
-    if (todayLossPct > ch.maxDailyLoss) violations.push(`Daily loss ${(todayLossPct*100).toFixed(2)}% exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
-    else if (todayLossPct > ch.maxDailyLoss * 0.8) warnings.push(`Daily loss ${(todayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
-    if (maxDrawdownPct > ch.maxTotalDrawdown) violations.push(`Drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
-    else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) warnings.push(`Drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
+    // Drawdown and daily loss are a running balance of realised P&L from
+    // closed trades (open positions are not marked to market), as on the page.
+    if (todayLossPct > ch.maxDailyLoss) violations.push(`Closed-trade daily loss ${(todayLossPct*100).toFixed(2)}% exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
+    else if (todayLossPct > ch.maxDailyLoss * 0.8) warnings.push(`Closed-trade daily loss ${(todayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
+    if (maxDrawdownPct > ch.maxTotalDrawdown) violations.push(`Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
+    else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) warnings.push(`Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
     if (daysSinceStart > ch.maxTradingDays) violations.push(`Day ${daysSinceStart} > maxTradingDays ${ch.maxTradingDays}`);
     // Consistency rule (mirrors routes/propChallenges.ts evaluateChallenge):
     // HARD when profit target already reached and rule exceeded; WARN otherwise.
@@ -1290,21 +1295,23 @@ export async function getPropFirmModeStatus(userId: number) {
         warnings.push(`Trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
       }
     }
-    // Max risk per trade + max position size (per-trade scan).
-    let largestTradeRiskPct = 0;
+    // Max risk per trade + max position size (per-trade scan). The rule is
+    // checked on each closed trade's REALISED loss; risk at entry (stop-loss
+    // distance) is not measured (RISK_PER_TRADE_NOTE).
+    let largestRealisedTradeLossPct = 0;
     let largestPositionSizeLots = 0;
     for (const o of closed) {
       const dayKey = (o.closedAt as Date).toISOString().slice(0, 10);
-      // Mirror route evaluator: per-trade risk uses that day's start balance
-      // as the denominator (NOT challenge startingBalance), so the AI and
-      // /evaluate endpoint produce identical risk percentages.
+      // Mirror route evaluator: the realised loss uses that day's start
+      // balance as the denominator (NOT challenge startingBalance), so the AI
+      // and /evaluate endpoint produce identical percentages.
       const dayStart = dayStartBalMap.get(dayKey) ?? ch.startingBalance;
-      const tradeRiskPct = o.profitLoss < 0 && dayStart > 0 ? Math.abs(o.profitLoss) / dayStart : 0;
-      if (tradeRiskPct > largestTradeRiskPct) largestTradeRiskPct = tradeRiskPct;
+      const tradeLossPct = o.profitLoss < 0 && dayStart > 0 ? Math.abs(o.profitLoss) / dayStart : 0;
+      if (tradeLossPct > largestRealisedTradeLossPct) largestRealisedTradeLossPct = tradeLossPct;
       if (o.lotSize > largestPositionSizeLots) largestPositionSizeLots = o.lotSize;
-      if (tradeRiskPct > ch.maxRiskPerTrade) {
+      if (tradeLossPct > ch.maxRiskPerTrade) {
         // Mirrors route severity: WARN (not HARD) — does NOT trigger BLOCKED.
-        warnings.push(`Trade #${o.id} loss ${(tradeRiskPct*100).toFixed(2)}% exceeds max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}%`);
+        warnings.push(`Trade #${o.id} realised loss ${(tradeLossPct*100).toFixed(2)}% of the day's starting balance exceeds the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% (checked after close; risk at entry is not measured)`);
       }
       if (o.lotSize > ch.maxPositionSize) {
         warnings.push(`Trade #${o.id} size ${o.lotSize} lots exceeds max position size ${ch.maxPositionSize}`);
@@ -1392,7 +1399,11 @@ export async function getPropFirmModeStatus(userId: number) {
       },
       extendedRuleSignals: {
         trailingDrawdownPct: trailingDdPct,
-        largestTradeRiskPct,
+        // The largest realised loss of one closed trade, as a share of that
+        // day's starting balance — not the risk the trade carried at entry.
+        largestRealisedTradeLossPct,
+        riskPerTradeBasis: "REALISED_LOSS_AFTER_CLOSE" as const,
+        riskPerTradeNote: RISK_PER_TRADE_NOTE,
         largestPositionSizeLots,
         openTradeCount: openCount,
         insufficientDataRules,
@@ -1408,6 +1419,11 @@ export async function getPropFirmModeStatus(userId: number) {
         dailyLossUsedPct: todayLossPct,
         dailyLossRemainingPct,
         totalDrawdownRemainingPct,
+        // What maxDrawdownPct / dailyLossUsedPct (and the headroom above) are
+        // built from: closed trades only, with the open positions left out.
+        drawdownBasis: "CLOSED_TRADES_ONLY" as const,
+        openPositionsNotCounted: openCount,
+        drawdownNote: closedTradeDrawdownNote(openCount),
         daysWorked,
         daysSinceStart,
         openTradeCount: openCount,
@@ -1759,7 +1775,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getCurrentPageContext", description: "Returns the page the user is currently looking at (pathname + matched feature). Use for 'what page am I on' or 'explain this page'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getPaperSafetyStatus", description: "Returns the paper-only / liveLocked / readOnlyMode safety status with the reason. Use when the user asks why the app is paper-only, whether you can place a live trade, or what live execution requires.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMarketDataProviderStatus", description: "Returns whether a real market data provider is wired (Finnhub, Alpha Vantage, Polygon, NewsAPI). Use when the user asks 'do I have live market data'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestTradeRiskPct, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, daysWorked, daysSinceStart, openTradeCount, closedTradeCount), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestRealisedTradeLossPct — the largest realised loss of one closed trade, not risk at entry; riskPerTradeBasis + riskPerTradeNote, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, daysWorked, daysSinceStart, openTradeCount, closedTradeCount, drawdownBasis + openPositionsNotCounted + drawdownNote), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. Drawdown and daily loss are closed-trade figures: open positions' floating P&L is not counted — say so and quote progress.drawdownNote when you give them. Max risk per trade is checked on realised losses after close — quote extendedRuleSignals.riskPerTradeNote, never call it risk at entry. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "createSupportDiagnosticReport", description: "Builds a diagnostic snapshot (MT5, account, risk, notifications, activity, market provider) for the current user. Use when the user asks for a support summary.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "evaluatePaperTradePlan", description: "Transparent plan-quality scorecard for the user's stored paper trade or an inline draft. Returns plan_completeness, risk_quality, reward_quality, timing_readiness, discipline_alignment, overall score, and a label (incomplete | needs_review | watchlist_ready | paper_trade_ready | blocked_by_risk). NOT a profit prediction. Use when the user asks 'is this trade ready', 'what's missing', 'why was this blocked', 'what's my setup score'.", parameters: { type: "object", properties: { paperTradeId: { type: "integer" }, plan: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, entry: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, lotSize: { type: "number" }, reasonForEntry: { type: "string" }, setupType: { type: "string" } }, additionalProperties: false } }, additionalProperties: false } },
   { name: "getTradingStyleProfile", description: "Returns the user's saved trading style: preferred symbol/market, account mode, risk rules. Returns configured:false for fresh users — never invents preferences.", parameters: { type: "object", properties: {}, additionalProperties: false } },

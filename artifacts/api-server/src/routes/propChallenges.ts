@@ -130,7 +130,7 @@ function isFinishedChallenge(status: string): boolean {
   return FINISHED_STATUSES.has(status);
 }
 
-const RISK_PER_TRADE_NOTE =
+export const RISK_PER_TRADE_NOTE =
   "Max risk per trade is checked on each closed trade's realised loss against that day's starting balance. " +
   "Risk at entry (stop-loss distance) is not measured, so a trade that risked more but closed at a small loss or a profit is not flagged.";
 
@@ -138,7 +138,7 @@ const RISK_PER_TRADE_NOTE =
  *  closed paper orders; open positions are not marked to market. A finished
  *  challenge is judged on closed trades up to its end, so it does not count
  *  (or claim the absence of) positions open now. */
-function closedTradeDrawdownNote(openPositions: number, final = false): string {
+export function closedTradeDrawdownNote(openPositions: number, final = false): string {
   const base = "Drawdown and daily loss are measured from closed demo trades only.";
   if (final) return `${base} This challenge is finished, so only trades closed by its end count; open positions are not counted.`;
   if (openPositions <= 0) return `${base} No positions were open when this was evaluated.`;
