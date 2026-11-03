@@ -6,7 +6,8 @@
 // uses and keeps the result shapes its callers read:
 //   - calculatePositionSize       instrument-class model (risk calculator,
 //                                 missions, paper intelligence)
-//   - calculatePaperPositionSize  paper execution (100 per point per lot)
+//   - calculatePaperPositionSize  paper execution (100 per point per lot, or
+//                                 the governor's contract pricing when larger)
 // It replaces lib/positionSizing.ts and lib/paperExecution/positionSizing.ts,
 // which each carried their own copy of the formula.
 
@@ -176,26 +177,47 @@ export const PAPER_DEFAULTS = {
   pointValuePerLot: 100,        // matches existing paperTrading pnlFor()
 } as const;
 
-/** Conservative bounded paper sizing. Never asks a broker for margin or leverage. */
+/**
+ * Conservative bounded paper sizing. Never asks a broker for margin or leverage.
+ *
+ * With no value given it sizes at the paper risk model, 100 per 1.0 price move
+ * per lot, rounded to the nearest step. Paper execution passes the money per
+ * price move per lot the Risk Governor prices the symbol at (the contract
+ * size the paper venue books it at); a value below the paper risk model is
+ * ignored, so a given value can only make the lot smaller.
+ */
 export function calculatePaperPositionSize(args: {
   accountEquity: number;
   entryPrice: number;
   stopLoss: number;
   riskPercentOverride?: number;
   maxLotSizeOverride?: number;
+  /** Money per 1.0 price move per 1.0 lot; never below PAPER_DEFAULTS.pointValuePerLot. */
+  valuePerUnitPerLot?: number;
+  /** Step rounding: "nearest" (default) or "floor", which keeps the loss at stop inside the risk amount. */
+  rounding?: "floor" | "nearest";
+  /** The per-trade money limit, when one is set: the risk amount never exceeds it. */
+  maxRiskAmount?: number | null;
 }): PositionSizingResult {
   const equity = Math.max(0, args.accountEquity || 0);
   const riskPct = args.riskPercentOverride ?? PAPER_DEFAULTS.riskPercent;
   const maxLot = args.maxLotSizeOverride ?? PAPER_DEFAULTS.maxLotSize;
-  const riskAmount = equity * riskPct;
+  const pctRisk = equity * riskPct;
+  const amountCap = args.maxRiskAmount != null && Number.isFinite(args.maxRiskAmount) ? Math.max(0, args.maxRiskAmount) : null;
+  const riskAmount = amountCap != null ? Math.min(pctRisk, amountCap) : pctRisk;
   const stopDistance = Math.abs(args.entryPrice - args.stopLoss);
+  const value = args.valuePerUnitPerLot != null && Number.isFinite(args.valuePerUnitPerLot)
+    && args.valuePerUnitPerLot > PAPER_DEFAULTS.pointValuePerLot
+    ? args.valuePerUnitPerLot
+    : PAPER_DEFAULTS.pointValuePerLot;
 
   const sized = lotForRisk({
-    riskAmount, stopDistance, valuePerUnitPerLot: PAPER_DEFAULTS.pointValuePerLot,
-    minLot: PAPER_DEFAULTS.minLotSize, maxLot, lotStep: 0.01, rounding: "nearest",
+    riskAmount, stopDistance, valuePerUnitPerLot: value,
+    minLot: PAPER_DEFAULTS.minLotSize, maxLot, lotStep: 0.01, rounding: args.rounding ?? "nearest",
   });
   let reason = "ok";
   if (!Number.isFinite(stopDistance) || stopDistance <= 0) reason = "stop distance is zero or invalid — cannot size";
+  else if (riskAmount <= 0 && pctRisk > 0) reason = "risk amount is zero — the per-trade money limit is zero";
   else if (riskAmount <= 0) reason = "risk amount is zero — equity is zero or risk percent is zero";
   else if (sized.clampedToMax) reason = `capped at maxLotSize=${maxLot}`;
   else if (sized.rawLot < PAPER_DEFAULTS.minLotSize) reason = `floored at minLotSize=${PAPER_DEFAULTS.minLotSize}`;
