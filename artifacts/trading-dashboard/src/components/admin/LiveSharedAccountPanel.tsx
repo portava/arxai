@@ -36,6 +36,11 @@ import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/hear
 
 type Readiness = {
   ok: boolean;
+  // The route's catch branch answers ok:true, degraded:true with fail-closed
+  // stand-ins and readable:false on each section; `message` says what failed.
+  degraded?: boolean;
+  message?: string;
+  error?: string;
   architecture: { model: string; summary: string; brokerCredentialsOnServer: boolean };
   globalSwitches: {
     serverMasterSwitchEnabled: boolean;
@@ -112,6 +117,15 @@ type FirstTestStatus = {
     maxExposurePerSymbolLots: number | string | null;
   };
 };
+
+// True when the readiness body is not a reading: the server flagged it
+// degraded, or any section says it could not be read.
+function readinessDegraded(d: Readiness | undefined): boolean {
+  if (!d) return true;
+  if (d.degraded === true) return true;
+  const sections = [d.globalSwitches, d.liveAccount, d.approvedUsers, d.openExposure] as Array<unknown>;
+  return sections.some((s) => !s || (s as { readable?: unknown }).readable === false);
+}
 
 async function jget<T>(url: string): Promise<T> {
   const r = await fetch(url, { credentials: "include" });
@@ -285,12 +299,23 @@ export function LiveSharedAccountPanel() {
   });
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading live shared readiness…</div>;
-  if (error || !data?.ok)
+  // A degraded body (ok:true, degraded:true, readable:false sections) carries
+  // fail-closed stand-ins — kill switch "engaged", 0 users, 0 exposure, 0
+  // pending commands — not readings. Treat it like a failed load: show the
+  // server's message and render no switch, count or release toggle from it.
+  if (error || !data?.ok || readinessDegraded(data))
     return (
-      <Alert variant="destructive" className="m-6">
+      <Alert variant="destructive" className="m-6" data-testid="live-shared-readiness-not-loaded">
         <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Failed to load</AlertTitle>
-        <AlertDescription>{String((error as Error)?.message ?? "unknown")}</AlertDescription>
+        <AlertTitle>Live Shared readiness could not be loaded</AlertTitle>
+        <AlertDescription>
+          {error
+            ? `The request failed: ${(error as Error).message}. The kill switch, switches, approved users and open exposure are unknown.`
+            : data?.message
+              ?? (data?.error
+                ? `The server did not answer ok (${data.error}). The kill switch, switches, approved users and open exposure are unknown.`
+                : "The server did not return a complete reading. The kill switch, switches, approved users and open exposure are unknown, not zero.")}
+        </AlertDescription>
       </Alert>
     );
 
