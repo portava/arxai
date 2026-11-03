@@ -457,6 +457,14 @@ export interface GetAddOnCheckResult {
   /** False when the open positions could not be read; hasOpenBasket false is then not a measured "none". */
   positionsMeasured: boolean;
   positionsNote: string | null;
+  /** Same as GetScalpBasketsResult.positionsAsOf: when the bridge last reported the positions read. */
+  positionsAsOf: string | null;
+  /**
+   * Same rule as GetScalpBasketsResult.positionsStale: positions were read but
+   * their reading is older than SCALP_POSITIONS_FRESH_MS or has no recorded
+   * time, so the basket and add-on verdict describe that reading, not now.
+   */
+  positionsStale: boolean;
   basket: ScalpBasket | null;
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
@@ -475,7 +483,8 @@ export async function getAddOnCheck(
   opts: { isAdmin?: boolean } = {},
 ): Promise<GetAddOnCheckResult> {
   const personality = args.riskPersonality ?? "BALANCED";
-  const { positions, positionsMeasured, positionsNote } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, positionsMeasured, positionsNote, readingAtMs, readingTimeMissing } =
+    await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const symU = args.symbol.trim().toUpperCase();
   const group = groups.find(
@@ -538,6 +547,11 @@ export async function getAddOnCheck(
     direction: args.direction,
     hasOpenBasket: group != null,
     positionsMeasured,
+    // Computed exactly as getScalpBaskets does, so both boards agree on one reading.
+    positionsAsOf: readingAtMs != null ? new Date(readingAtMs).toISOString() : null,
+    positionsStale: groups.length > 0 && (
+      readingTimeMissing || readingAtMs == null || now - readingAtMs > SCALP_POSITIONS_FRESH_MS
+    ),
     positionsNote,
     basket,
     addOn,

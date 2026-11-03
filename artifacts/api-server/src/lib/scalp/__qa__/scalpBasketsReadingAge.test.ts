@@ -167,3 +167,46 @@ test("live: a read, empty book is a measured none", async () => {
   assert.equal(r.positionsMeasured, true);
   assert.equal(r.positionsNote, null);
 });
+
+// Round 3 review: the add-on check on the live ticket read the same positions
+// but dropped their reading time, so a 3-hour-old basket the Position Manager
+// flags as stale was the basis of an add-on verdict shown as current.
+test("add-on check: a 3-hour-old reading is flagged stale with its time, as on the Position Manager", async () => {
+  mode = "LIVE_SHARED";
+  const threeHoursAgo = new Date(Date.now() - 3 * 3_600_000);
+  ledgerRows = [liveRow("1", threeHoursAgo), liveRow("2", threeHoursAgo)];
+  const a = await getAddOnCheck(41, { symbol: "EURUSD", direction: "BUY" });
+  const b = await getScalpBaskets(41, {});
+  assert.equal(a.hasOpenBasket, true);
+  assert.equal(a.positionsStale, true, "the add-on verdict was built from a 3-hour-old reading shown as current");
+  assert.equal(a.positionsAsOf, threeHoursAgo.toISOString());
+  assert.equal(a.positionsStale, b.positionsStale, "the two boards agree on the same reading");
+  assert.equal(a.positionsAsOf, b.positionsAsOf);
+});
+
+test("add-on check: a just-reported basket is current and carries its reading time", async () => {
+  mode = "LIVE_SHARED";
+  const justNow = new Date(Date.now() - 2_000);
+  ledgerRows = [liveRow("1", justNow)];
+  const a = await getAddOnCheck(41, { symbol: "EURUSD", direction: "BUY" });
+  assert.equal(a.positionsStale, false);
+  assert.equal(a.positionsAsOf, justNow.toISOString());
+});
+
+test("add-on check: a leg with no recorded reading time is not current", async () => {
+  mode = "LIVE_SHARED";
+  ledgerRows = [liveRow("1", null)];
+  const a = await getAddOnCheck(41, { symbol: "EURUSD", direction: "BUY" });
+  assert.equal(a.hasOpenBasket, true);
+  assert.equal(a.positionsStale, true);
+  assert.equal(a.positionsAsOf, null);
+});
+
+test("add-on check: no positions shown, nothing flagged stale", async () => {
+  mode = "LIVE_SHARED";
+  ledgerRows = [];
+  const a = await getAddOnCheck(41, { symbol: "EURUSD", direction: "BUY" });
+  assert.equal(a.hasOpenBasket, false);
+  assert.equal(a.positionsStale, false);
+  assert.equal(a.positionsAsOf, null);
+});
