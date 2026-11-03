@@ -598,7 +598,7 @@ export default function MyPaperTradesPage() {
           {loadErrors.summary && <LoadFailed k="summary" error={loadErrors.summary}/>}
           {loadErrors.calendar && <LoadFailed k="calendar" error={loadErrors.calendar}/>}
           {loading && perfSource === "unknown" ? (
-            <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading performance…</CardContent></Card>
+            <Card data-testid="section-loading-calendar"><CardContent className="p-6 text-sm text-muted-foreground">Loading performance…</CardContent></Card>
           ) : perfSource !== "paper_trades" ? (
             <Card data-testid="performance-not-demo"><CardContent className="p-6 text-sm text-muted-foreground">
               <p className="text-base font-semibold text-foreground mb-1">
