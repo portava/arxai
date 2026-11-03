@@ -5,6 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { SessionHeatmap } from "./SessionHeatmap";
 import { ConsistencyTrendCard } from "./ConsistencyTrendCard";
 import { RiskExposureGraph } from "./RiskExposureGraph";
+import { StrategyAnalyticsTable } from "./StrategyAnalyticsTable";
 import type { AnalyticsFigures } from "./types";
 
 afterEach(() => { cleanup(); });
@@ -79,5 +80,32 @@ describe("ConsistencyTrendCard and Trader Skill", () => {
     render(<ConsistencyTrendCard snapshot={{ ...NOTHING_MEASURED, emotionalScoreAvg: 100, behaviorAsOf: "2026-10-27T09:00:00.000Z" }} />);
     expect(screen.getByTestId("consistency-Emotional control").textContent).toBe("Emotional control100/100");
     expect(screen.getByTestId("consistency-asof").textContent).toContain("The same scores as your Trader Skill profile");
+  });
+});
+
+describe("StrategyAnalyticsTable empty states", () => {
+  const empty = () => screen.getByTestId("strategy-table-empty").textContent ?? "";
+
+  it("closed trades none of which could be sized say so, not 'No closed trades'", () => {
+    render(<StrategyAnalyticsTable rows={[]} coverage={{ closedTrades: 3, sizedTrades: 0, unsizedTrades: 3, unsizedSymbols: ["US30", "XAUUSD"] }} />);
+    expect(empty()).not.toContain("No closed trades");
+    expect(empty()).toContain("None of your 3 closed trades could be sized in USD (US30, XAUUSD)");
+    expect(empty()).toContain("no results by symbol");
+  });
+
+  it("only a server-confirmed zero says there are no closed trades", () => {
+    render(<StrategyAnalyticsTable rows={[]} coverage={{ closedTrades: 0, sizedTrades: 0, unsizedTrades: 0, unsizedSymbols: [] }} />);
+    expect(empty()).toBe("No closed trades to group by symbol.");
+  });
+
+  it("without coverage it does not claim there are no closed trades", () => {
+    render(<StrategyAnalyticsTable rows={[]} />);
+    expect(empty()).not.toContain("No closed trades");
+    expect(empty()).toContain("No closed trade sized in USD");
+  });
+
+  it("while loading it says it is loading", () => {
+    render(<StrategyAnalyticsTable rows={[]} loading />);
+    expect(empty()).toMatch(/Loading results by symbol/);
   });
 });

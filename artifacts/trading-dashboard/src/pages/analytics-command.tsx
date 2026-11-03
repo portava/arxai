@@ -224,7 +224,7 @@ export default function AnalyticsCommandCenter() {
               ? <LoadError what="Strategy analytics" error={strat.error} />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={coverage.note} />
-                : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />}
+                : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} coverage={strat.data?.pnlCoverage ?? null} loading={strat.isPending} />}
           </section>
 
           <section className="grid gap-3 sm:grid-cols-2">
