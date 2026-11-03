@@ -104,6 +104,10 @@ export function toInput(
     // No calendar looked at scheduled events (display only — the category is
     // unchanged): the map says "news not checked" instead of showing nothing.
     ...(opp.newsContext?.scheduledEventRisk === "not_checked" ? { newsRiskNotChecked: true } : {}),
+    // The check failed (lookup threw, or a configured calendar did not answer)
+    // rather than no calendar being connected: display only, so the map names
+    // the real cause. Readiness is withheld above via newsUnchecked as before.
+    ...(opp.newsContext?.eventRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
     // Honest live-data flag: a row tagged LIVE_FEED but with too few closed bars
     // to analyse has its dataStatus forced to "no_data" upstream. Key off the
     // resolved dataStatus (not the raw feed tag) so an unanalysable row never

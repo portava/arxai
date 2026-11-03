@@ -272,3 +272,36 @@ test("news lookup throws: the row says scheduled risk was not checked (and stays
   assert.equal(row.newsContext?.eventRiskUnchecked, true);
   assert.equal(row.newsContext?.scheduledEventRisk, "not_checked");
 });
+
+// Review pass 2: newsRiskNotChecked is set for every "not_checked" row, which
+// includes a failed check (lookup threw, or a configured calendar did not
+// answer). The map's tooltip blamed "no economic calendar is connected" for
+// all of them. The map row now also carries newsRiskUnchecked for a failed
+// check, so the UI can name the real cause. Display only.
+for (const m of ["throw", "fetch_error"] as const) {
+  test(`${m}: the map row carries newsRiskUnchecked so the cause is a failed check, not 'no calendar'`, async () => {
+    const row = await decorated(m, "NZDJPY");
+    const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+    assert.equal(input.newsRiskUnchecked, true);
+    const mapRow = categorizeOpportunities([input]).rows[0];
+    assert.equal(mapRow?.newsRiskUnchecked, true);
+  });
+}
+
+test("no calendar configured / connected quiet: the map row does not carry newsRiskUnchecked", async () => {
+  for (const m of ["not_configured", "connected_quiet"] as const) {
+    const row = await decorated(m, "CADJPY");
+    const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+    assert.equal(input.newsRiskUnchecked, undefined, m);
+  }
+});
+
+test("newsRiskUnchecked on the map row is display only: the category is the same with or without it", async () => {
+  const row = await decorated("fetch_error", "CHFJPY");
+  const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+  const { newsRiskUnchecked: _flag, ...without } = input;
+  assert.equal(
+    categorizeOpportunities([input]).rows[0]?.category,
+    categorizeOpportunities([without]).rows[0]?.category,
+  );
+});

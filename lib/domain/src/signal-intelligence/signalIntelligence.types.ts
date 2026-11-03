@@ -574,11 +574,20 @@ export interface OpportunityInput {
   executionQuality: number;
   newsRisk: NewsRiskLevel;
   /**
-   * True when no economic calendar looked at scheduled events for this market
-   * (none is connected), so a `newsRisk` of "none" is a default, not an
-   * observation. Display only — categorization does not read it.
+   * True when no economic calendar looked at scheduled events for this market:
+   * none is connected, or the news lookup / a configured calendar did not
+   * answer (then `newsRiskUnchecked` is also true). A `newsRisk` of "none" is
+   * then a default, not an observation. Display only — categorization does
+   * not read it.
    */
   newsRiskNotChecked?: boolean;
+  /**
+   * True when scheduled news for this market could not be checked: the news
+   * lookup failed or a configured economic calendar did not answer. Tells the
+   * UI the cause is a failed check, not a missing calendar. Display only —
+   * categorization does not read it.
+   */
+  newsRiskUnchecked?: boolean;
   /** True only when the row was read from a live feed (never simulator). */
   hasLiveData: boolean;
   isLate: boolean;
