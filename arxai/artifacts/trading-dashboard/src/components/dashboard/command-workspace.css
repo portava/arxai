@@ -457,9 +457,11 @@
   .arx-workspace, .arx-workspace-main { height: auto; min-height: calc(100dvh - 24px); }
 }
 @media (max-height: 740px) and (min-width: 1201px) {
-  #main-content.arx-root-main { overflow-y: auto; }
-  .arx-workspace { min-height: 700px; }
+  #main-content.arx-root-main { overflow: hidden; }
+  .arx-workspace { min-height: 0; }
   .arx-dock { position: sticky; top: 6px; height: calc(100dvh - 12px); }
+  .arx-col-center { grid-template-rows: minmax(0,1fr) auto; gap: 5px; }
+  .arx-col-center > #workspace-intelligence .arx-panel-body { max-height: 72px; overflow: auto; }
 }
 @media (max-width: 767px) {
   .arx-dashboard-root { height: auto; min-height: 0; padding-bottom: 0; }

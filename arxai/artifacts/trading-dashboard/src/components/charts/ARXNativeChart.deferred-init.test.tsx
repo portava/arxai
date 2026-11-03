@@ -168,18 +168,21 @@ afterEach(() => {
   delete (document as unknown as { hidden?: boolean }).hidden;
 });
 
-describe("initial mobile chart height", () => {
+describe("initial responsive chart height", () => {
   it.each([
     {width:390,height:520,mobileHeight:360,expected:360},
     {width:767,height:520,mobileHeight:360,expected:360},
     {width:768,height:520,mobileHeight:360,expected:520},
     {width:390,height:280,mobileHeight:undefined,expected:320},
     {width:390,height:520,mobileHeight:undefined,expected:380},
+    {width:1280,height:320,viewportHeight:720,mobileHeight:undefined,compactWorkspace:true,expected:180},
+    {width:1440,height:320,viewportHeight:900,mobileHeight:undefined,compactWorkspace:true,expected:320},
     {width:1440,height:640,mobileHeight:undefined,expected:640},
-  ])("initializes cached candles at $expected px for width $width and height $height", ({width,height,mobileHeight,expected}) => {
+  ])("initializes cached candles at $expected px for width $width and viewport height $viewportHeight", ({width,height,viewportHeight=height,mobileHeight,compactWorkspace=false,expected}) => {
     vi.stubGlobal("innerWidth",width);
+    vi.stubGlobal("innerHeight",viewportHeight);
     candleResponse=liveResponse("EURUSD","H1");
-    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={height} mobileHeight={mobileHeight} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+    render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={height} mobileHeight={mobileHeight} compactWorkspace={compactWorkspace} showFeedStatus={false} overlays={NO_OVERLAYS}/>);
     expect(created).toHaveLength(1);
     const engine=created[0]!;
     expect(engine.init).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({height:expected}));

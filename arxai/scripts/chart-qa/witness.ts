@@ -59,6 +59,19 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
       };
     },
+    layoutGeometry(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const {container,adapter} = found;
+      const bounds = container.getBoundingClientRect();
+      const plotWidth = adapter.chart.timeScale().width();
+      const plotHeight = adapter.chart.panes()[0]?.getHeight() ?? 0;
+      return {
+        container:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
+        plot:{x:bounds.x,y:bounds.y,width:plotWidth,height:plotHeight},
+        priceScale:{x:bounds.x+plotWidth,y:bounds.y,width:bounds.width-plotWidth,height:plotHeight},
+        timeAxis:{x:bounds.x,y:bounds.y+plotHeight,width:plotWidth,height:bounds.height-plotHeight},
+      };
+    },
     anchorCoordinates(time: number, price: number, index = 0) {
       const found = adapterFor(index); if (!found) return null;
       const x = found.adapter.chart.timeScale().timeToCoordinate(time), y = found.adapter.series.priceToCoordinate(price);

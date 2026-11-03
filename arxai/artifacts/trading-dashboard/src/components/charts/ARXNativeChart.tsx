@@ -330,6 +330,7 @@ function viewportChartHeight(height:number,mobileHeight:number|undefined,expande
   if(expanded)return Math.max(240,window.innerHeight-240);
   if(window.innerWidth<768)return mobileHeight??Math.max(320,Math.min(height,380));
   if(compactWorkspace && window.innerWidth >= 1024 && window.innerWidth <= 1200)return Math.min(height,240);
+  if(compactWorkspace && window.innerWidth > 1200 && window.innerHeight <= 740)return Math.min(height,180);
   return height;
 }
 

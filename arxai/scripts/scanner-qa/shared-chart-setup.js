@@ -7,6 +7,8 @@ async page => {
  const fixtureRole=resolveFixtureRole(typeof SCANNER_QA_ROLE==='undefined'?undefined:SCANNER_QA_ROLE);
  const preserveStorageOnReload=typeof SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD==='undefined'?false:SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD;
  if(typeof preserveStorageOnReload!=='boolean')throw Error('Offline storage preservation must be boolean');
+ const startPath=typeof SCANNER_QA_START_PATH==='undefined'?'/market-scanner':SCANNER_QA_START_PATH;
+ if(startPath!=='/market-scanner'&&startPath!=='/')throw Error('Offline fixture start path must be / or /market-scanner');
  function initializeOfflineStorage(preserve) {
   const marker='arx.offline.qa.storage.initialized.v1';
   if(!preserve||sessionStorage.getItem(marker)!=='yes') {
@@ -82,10 +84,11 @@ async page => {
   try{await route.fulfill({status,contentType:'application/json',body:JSON.stringify(payload)});item.fulfilledAt=Date.now();}catch{item.cancelled=true;}
  });
  await page.setViewportSize({width:1440,height:1100});
- await page.goto(origin+'/market-scanner');
- await page.getByTestId('scanner-chart-panel').waitFor({timeout:15000});
+ await page.goto(origin+startPath);
+ if(startPath==='/')await page.locator('#workspace-chart').waitFor({timeout:15000});
+ else await page.getByTestId('scanner-chart-panel').waitFor({timeout:15000});
  await page.getByTestId('arx-native-canvas').waitFor({timeout:15000});
- await page.getByTestId('badge-active-symbol').waitFor({timeout:15000});
+ if(startPath!=='/')await page.getByTestId('badge-active-symbol').waitFor({timeout:15000});
  await page.waitForFunction(()=>window.__arxChartQa?.snapshot()?.barCount>0);
  return{url:page.url(),fixtureRole,fixture:'real dashboard route and providers; synthetic history; no broker',canvasCount:await page.locator('canvas').count(),errors,unknown:[...new Set(unknown.map(x=>x.path))],requests:requests.length,blocked};
 }
