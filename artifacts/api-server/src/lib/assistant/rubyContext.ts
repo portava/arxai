@@ -653,6 +653,12 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
         lines.push(`Live data for ${sym} is clean right now — I can read it confidently.`);
       } else if (mf.freshness === "REALTIME") {
         lines.push(`Market data for ${sym} is arriving in real time but isn't clean enough for a confident read — I'll read it cautiously.`);
+      } else if (mf.quality === "partial") {
+        // An incomplete sequence (missing, duplicate or out-of-order bars; the
+        // chart's "incomplete candle sequence") is graded DELAYED by freshness,
+        // but it is neither a delayed feed nor readable history — on an open
+        // market, a weekend close or a stored series alike.
+        lines.push(`The candles for ${sym} have gaps (missing, duplicate or out-of-order bars), so I won't read them as a complete or current chart.`);
       } else if (mf.freshness === "DELAYED") {
         lines.push(`Market data for ${sym} is delayed right now — I'll read it cautiously.`);
       } else if (mf.freshness === "STALE") {

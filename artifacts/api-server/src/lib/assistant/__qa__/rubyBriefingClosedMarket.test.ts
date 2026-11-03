@@ -176,3 +176,38 @@ test("Stored MT5 mirror with invalid OHLC bars: no stored-history reason", async
   const snap = await withNow(TUE, () => getSymbolSnapshot("EURUSD", "H1"));
   assert.doesNotMatch(briefingFeedLine(marketFeedFromSnapshot(snap)), /history/i);
 });
+
+// An incomplete series (a missing, duplicate or out-of-order bar) is graded
+// "partial": the chart says "returned an incomplete candle sequence". On a
+// closed market or a stored series that is neither a "delayed" live feed nor
+// readable history — the briefing says the candles have gaps.
+// (With no session profile a forex gap is not counted as missing, so the
+// Saturday case uses a duplicated Friday bar — the same "partial" grade.)
+test("Saturday with a duplicated Friday bar: the briefing says the candles have gaps, not 'delayed' or 'history'", async () => {
+  mt5Bars(M15, FRI + 21 * HOUR + 45 * MIN, SAT_NOON);
+  route.candles.splice(route.candles.length - 5, 0, { ...route.candles[route.candles.length - 5]! });
+  const chart = await withNow(SAT_NOON, () => getChartCandles("EURUSD", "M15", 200));
+  assert.equal(chart.feedStatus.quality, "partial");
+  assert.match(chart.feedStatus.message, /incomplete candle sequence/);
+  const snap = await withNow(SAT_NOON, () => getSymbolSnapshot("EURUSD"));
+  assert.equal(snap.quality, "partial");
+  const line = briefingFeedLine(marketFeedFromSnapshot(snap));
+  assert.doesNotMatch(line, /delayed|history|cautiously/i, line);
+  assert.equal(line,
+    "The candles for EURUSD have gaps (missing, duplicate or out-of-order bars), so I won't read them as a complete or current chart.");
+});
+
+test("Stored MT5 mirror with an out-of-order bar: not 'delayed', not readable history", async () => {
+  const TUE = Date.UTC(2026, 9, 27, 14, 2, 30);
+  mt5Bars(H1, Math.floor(TUE / H1) * H1 - H1, TUE, "durable_mirror");
+  const n = route.candles.length;
+  const a = route.candles[n - 4]!;
+  route.candles[n - 4] = route.candles[n - 3]!;
+  route.candles[n - 3] = a;
+  const chart = await withNow(TUE, () => getChartCandles("EURUSD", "H1", 200));
+  assert.equal(chart.feedStatus.quality, "partial");
+  const snap = await withNow(TUE, () => getSymbolSnapshot("EURUSD", "H1"));
+  const line = briefingFeedLine(marketFeedFromSnapshot(snap));
+  assert.doesNotMatch(line, /delayed|history|cautiously/i, line);
+  assert.match(line, /have gaps/, line);
+});
