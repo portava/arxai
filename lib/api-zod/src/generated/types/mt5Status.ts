@@ -6,15 +6,30 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Mt5Position } from "./mt5Position";
+import type { Mt5SharedMasterBridge } from "./mt5SharedMasterBridge";
 import type { Mt5StatusAccountSnapshot } from "./mt5StatusAccountSnapshot";
 import type { Mt5StatusAccountType } from "./mt5StatusAccountType";
 import type { Mt5StatusExecutionMode } from "./mt5StatusExecutionMode";
 import type { Mt5StatusMode } from "./mt5StatusMode";
 import type { Mt5StatusPlacementLayer } from "./mt5StatusPlacementLayer";
+import type { Mt5StatusRoute } from "./mt5StatusRoute";
 
 export interface Mt5Status {
+  /** The user's OWN MT5 connection heartbeated recently. False for a user routed through the shared master bridge; see route and sharedMasterBridge. */
   connected: boolean;
+  /** The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old. */
   mode: Mt5StatusMode;
+  /** How this user reaches MT5. NONE with routeReadFailed true means the routing could not be read, not a confirmed absence of a bridge. */
+  route?: Mt5StatusRoute;
+  /** True when the user's routing could not be read; route NONE is then not a confirmed absence of a bridge. Absent when the routing was read. */
+  routeReadFailed?: boolean;
+  /** For a user routed through the shared master bridge (route SHARED_MASTER), that bridge as read now; null otherwise. */
+  sharedMasterBridge?: Mt5SharedMasterBridge | null;
+  /**
+   * Plain-English summary of the user's bridge state; null when there is nothing to add.
+   * @nullable
+   */
+  userSafeMessage?: string | null;
   /** @nullable */
   lastHeartbeatAt: string | null;
   /** @nullable */

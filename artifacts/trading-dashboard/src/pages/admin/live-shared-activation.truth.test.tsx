@@ -383,6 +383,53 @@ describe("live shared activation — an install-wide stop that could not be read
     expect(arm.textContent).not.toMatch(/Release it \(Wizard step 9\)/);
   });
 
+  // The same state as the server really sends it: with the settings row not
+  // read, every settings-derived field is a fail-closed stand-in (mode OFF,
+  // routing USER_OWNED_MT5 from the route's default, live flags false, operator
+  // arm false). Only the stop rows said "could not be read"; the Platform card,
+  // the operator-arm row and the Arm card's DB flag showed the stand-ins as
+  // observed values.
+  for (const detail of ["settings missing", "state unreadable"] as const) {
+    it(`(${detail}) every settings-derived row says it could not be read, not OFF / USER_OWNED_MT5 / false`, async () => {
+      await renderWith(readiness({
+        globalSwitches: {
+          platformMode: "OFF", liveEnabled: false, accountRoutingMode: "USER_OWNED_MT5",
+          sharedLiveTradingEnabled: false, masterBridgeLiveEnabled: false, liveBrokerExecutionArmedDb: false,
+          emergencyKillSwitch: true, killSwitchReason: detail,
+          platformStopEngaged: true, platformStopSources: ["platform_emergency_stop"],
+          platformStopReason: `The platform emergency stop is engaged by an operator. (${detail})`,
+          platformStopReadable: false, platformStopDetail: { platform_emergency_stop: detail },
+        },
+      }));
+      const platform = screen.getByTestId("readiness-platform-card");
+      expect(platform.textContent).not.toMatch(/USER_OWNED_MT5/);
+      expect(platform.textContent).not.toMatch(/\bOFF\b/);
+      expect(platform.textContent).not.toMatch(/\bfalse\b/);
+      for (const label of ["Platform mode", "Routing", "Live enabled", "Shared live trading", "Master bridge live"]) {
+        expect(platform.textContent).toMatch(new RegExp(`${label}could not be read \\(${detail}\\)`));
+      }
+      const armRow = screen.getByTestId("safety-master-switch-armed");
+      expect(armRow.textContent).not.toMatch(/false/);
+      expect(armRow.textContent).toMatch(/could not be read/);
+      const card = screen.getByTestId("arm-execution-card");
+      expect(card.textContent).not.toMatch(/liveBrokerExecutionArmed = false/);
+      // The settings checklist rows still fail (fail-closed) and say why.
+      for (const id of ["routing_shared", "master_bridge_mode_live", "shared_live_enabled", "platform_mode_live", "live_enabled"]) {
+        expect(checkRow(id).getAttribute("data-state")).toBe("fail");
+        expect(checkRow(id).textContent).toMatch(/settings could not be read/);
+      }
+    });
+  }
+
+  it("settings that were read still show their values", async () => {
+    await renderWith(readiness());
+    const platform = screen.getByTestId("readiness-platform-card");
+    expect(platform.textContent).toMatch(/SHARED_MASTER_MT5/);
+    expect(platform.textContent).not.toMatch(/could not be read/);
+    expect(screen.getByTestId("safety-master-switch-armed").textContent).toMatch(/false/);
+    expect(checkRow("routing_shared").textContent).not.toMatch(/could not be read/);
+  });
+
   it("a read, engaged safety-core switch still says engaged and where to release it", async () => {
     await renderWith(readiness({
       globalSwitches: {
@@ -531,6 +578,39 @@ describe("live shared activation — env AND operator arm", () => {
     }));
     const banner = screen.getByTestId("banner-ready-to-arm");
     expect(banner.textContent).not.toMatch(/is not set/);
+  });
+
+  // The arm endpoint does not read the env var: it sets the operator arm and
+  // answers {ok:true, armed:true}. With the env unset, effective execution
+  // stays off, yet the card said "ARMED — server live broker execution
+  // enabled." under the banner saying live execution stays off.
+  async function pressArm(envOn: boolean) {
+    let armed = false;
+    const after = () => ({ serverMasterSwitchEnvOnly: envOn, liveBrokerExecutionArmedDb: armed, serverMasterSwitchEnabled: envOn && armed });
+    stubApi({
+      "/api/admin/live-shared/readiness": () => response(readiness({ globalSwitches: after() })),
+      "/api/admin/live-shared/arm-live-execution": () => { armed = true; return response({ ok: true, armed: true }); },
+    });
+    render(<AdminLiveSharedActivationPage />);
+    await settle();
+    fireEvent.click(screen.getByTestId("arm-button"));
+    await settle();
+  }
+
+  it("arming with the env var not set does not say live execution is enabled", async () => {
+    await pressArm(false);
+    await waitFor(() => expect(screen.getByTestId("banner-armed-env-off")).toBeTruthy());
+    const msg = screen.getByTestId("arm-msg").textContent ?? "";
+    expect(msg).not.toMatch(/execution enabled/i);
+    expect(msg).toMatch(/operator arm set/);
+    expect(msg).toMatch(/stays off/);
+    expect(msg).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED/);
+  });
+
+  it("arming with the env var set reports execution enabled only once readiness says so", async () => {
+    await pressArm(true);
+    await waitFor(() => expect(screen.getByTestId("banner-armed")).toBeTruthy());
+    expect(screen.getByTestId("arm-msg").textContent).toMatch(/live broker execution is enabled/);
   });
 });
 

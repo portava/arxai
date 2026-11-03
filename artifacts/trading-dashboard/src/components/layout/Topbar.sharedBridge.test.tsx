@@ -20,7 +20,8 @@ vi.mock("@/components/alerts/NotificationBell", () => ({ NotificationBell: () =>
 let unlocks = { mt5: true, simulator: false };
 vi.mock("@/hooks/useFeatureUnlock", () => ({ useAllUnlocks: () => unlocks }));
 vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: null }), useLogout: () => ({ mutate: () => {}, isPending: false }) }));
-vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false, viewMode: "user", setViewMode: () => {} }) }));
+let viewerIsAdmin = false;
+vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false, viewMode: "user", setViewMode: () => {}, effectiveIsAdmin: viewerIsAdmin }) }));
 
 import { Topbar } from "./Topbar";
 
@@ -30,7 +31,7 @@ const SHARED_HEALTHY = {
   lastHeartbeatAt: null,
 };
 
-afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; unlocks = { mt5: true, simulator: false }; });
+afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; unlocks = { mt5: true, simulator: false }; viewerIsAdmin = false; });
 
 const pill = (id: string) => screen.getByTestId(`status-pill-${id}`).textContent ?? "";
 function drawerText() {
@@ -154,5 +155,99 @@ describe("Topbar status drawer — MT5 status not requested", () => {
     mt5Reply = { data: undefined, isError: false };
     render(<Topbar />);
     expect(drawerText()).toMatch(/MT5 connected\s*checking/);
+  });
+});
+
+// Only the admin-only Getting Started checklist turns MT5 on in this header
+// (dashboard.tsx renders it inside "System Health · Admin"). A regular trader
+// was told to press "Connect MT5" on a dashboard checklist they never see; the
+// "Connect MT5" buttons they do see open My MT5 and do not change the header.
+describe("Topbar status drawer — what turns MT5 status on, per viewer", () => {
+  it("a regular trader is not sent to a checklist they cannot see", () => {
+    unlocks = { mt5: false, simulator: false };
+    viewerIsAdmin = false;
+    render(<Topbar />);
+    const drawer = drawerText();
+    expect(drawer).toMatch(/MT5 status\s*not checked/);
+    expect(drawer).not.toMatch(/checklist/i);
+    expect(drawer).toMatch(/My MT5/);
+    expect(screen.getByTestId("topbar-mt5-not-checked").querySelector('a[href="/my-mt5"]')).not.toBeNull();
+  });
+
+  it("an admin is told where the checklist is", () => {
+    unlocks = { mt5: false, simulator: false };
+    viewerIsAdmin = true;
+    render(<Topbar />);
+    expect(drawerText()).toMatch(/"Connect MT5" in the welcome checklist.*System Health · Admin/);
+  });
+});
+
+// With MT5 off in the header its status query is disabled, but another page
+// (MT5 Bridge polls the same query key) can fill the shared cache. A disabled
+// observer still returns that cached answer and never refreshes it, so the
+// drawer showed Account, Broker and a plain "Last heartbeat" — frozen at
+// whenever that page last read it — right under "MT5 status: not checked".
+describe("Topbar status drawer — cached status while the header does not read it", () => {
+  const CACHED = {
+    connected: true, mode: "LIVE_LOCKED", route: "OWN_CONNECTION",
+    lastHeartbeatAt: "2026-11-03T09:15:00Z",
+    accountSnapshot: { account: "5550123", broker: "QA Broker", server: "QA-Demo", balance: 1000, equity: 1000, currency: "USD" },
+  };
+
+  it("shows no account, broker or heartbeat from a cache the header does not refresh", () => {
+    unlocks = { mt5: false, simulator: false };
+    mt5Reply = { data: CACHED, isError: false, dataUpdatedAt: Date.now() - 3_600_000 };
+    render(<Topbar />);
+    const drawer = drawerText();
+    expect(drawer).toMatch(/MT5 status\s*not checked/);
+    expect(drawer).not.toMatch(/Account/);
+    expect(drawer).not.toContain("5550123");
+    expect(drawer).not.toMatch(/Broker/);
+    expect(drawer).not.toMatch(/Last heartbeat/);
+  });
+
+  it("shows no saved bot setting from a cache the header does not refresh", () => {
+    unlocks = { mt5: false, simulator: false };
+    botReply = { data: { isRunning: true, isPaused: false, lastScanAt: "2026-11-03T09:15:00Z" }, isError: false };
+    render(<Topbar />);
+    expect(screen.queryByTestId("status-pill-bot")).toBeNull();
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/Saved bot setting/);
+    expect(drawer).not.toMatch(/Last scan recorded/);
+  });
+
+  it("with MT5 on, the polled account and heartbeat still show", () => {
+    mt5Reply = { data: CACHED, isError: false, dataUpdatedAt: Date.now() };
+    render(<Topbar />);
+    const drawer = drawerText();
+    expect(drawer).toContain("5550123");
+    expect(drawer).toMatch(/Last heartbeat/);
+  });
+});
+
+// The server answers availability UNKNOWN when the shared bridge's allocation
+// view could not be read. The pill said Unknown, but the screen-reader marker
+// said "disconnected", a state nobody observed.
+describe("Topbar MT5 marker — shared bridge that could not be read", () => {
+  it("availability UNKNOWN reads unknown, not disconnected", () => {
+    mt5Reply = { data: { ...SHARED_HEALTHY, sharedMasterBridge: { availability: "UNKNOWN", connected: false, message: "Shared MT5 bridge status could not be read.", snapshotAgeSeconds: null } } };
+    render(<Topbar />);
+    expect(pill("mt5")).toMatch(/unknown/i);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("unknown");
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/MT5 connected\s*no\b/);
+    expect(drawer).toMatch(/could not be read/);
+  });
+
+  it("a shared-master answer with no bridge object reads unknown, not disconnected", () => {
+    mt5Reply = { data: { ...SHARED_HEALTHY, sharedMasterBridge: null } };
+    render(<Topbar />);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("unknown");
+  });
+
+  it("a bridge read as unavailable still reads disconnected", () => {
+    mt5Reply = { data: { ...SHARED_HEALTHY, sharedMasterBridge: { availability: "UNAVAILABLE", connected: false, message: "Shared bridge unavailable.", snapshotAgeSeconds: 2 } } };
+    render(<Topbar />);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("disconnected");
   });
 });

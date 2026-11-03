@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old.
+ */
 export type Mt5StatusMode = (typeof Mt5StatusMode)[keyof typeof Mt5StatusMode];
 
 export const Mt5StatusMode = {
@@ -13,4 +16,6 @@ export const Mt5StatusMode = {
   DEMO: "DEMO",
   LIVE_LOCKED: "LIVE_LOCKED",
   LIVE: "LIVE",
+  NOT_CONNECTED: "NOT_CONNECTED",
+  STALE: "STALE",
 } as const;

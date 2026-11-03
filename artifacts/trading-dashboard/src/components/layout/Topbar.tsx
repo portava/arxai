@@ -69,6 +69,11 @@ function mt5BridgeView(mt5: any, loadFailed: boolean, refreshFailed = false, rea
     if (shared?.connected === true) return { pill: "ON", tone: "success", connectedText: "yes (shared MT5 bridge)", up: true };
     const a = shared?.availability;
     const word = a === "STALE" ? "Stale" : a === "RECONCILING" ? "Reconciling" : !a || a === "UNKNOWN" ? "Unknown" : "Unavailable";
+    // UNKNOWN (or no availability at all): the shared bridge was not read, so
+    // it is neither "no" nor "disconnected".
+    if (word === "Unknown") {
+      return { pill: word, tone: "warning", connectedText: "unknown — the shared MT5 bridge status could not be read", up: false, unknown: true };
+    }
     return { pill: word, tone: "warning", connectedText: `no — shared MT5 bridge ${word.toLowerCase()}`, up: false };
   }
   // No own connection, and the server could not read whether the user routes
@@ -81,6 +86,7 @@ function mt5BridgeView(mt5: any, loadFailed: boolean, refreshFailed = false, rea
 
 export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const unlocks = useAllUnlocks();
+  const { effectiveIsAdmin: viewerIsAdmin } = useViewMode();
   // Only poll MT5 / bot status once the user has unlocked those surfaces.
   // Fresh browser sessions get no leak of the global single-tenant state
   // (account, broker, mode, running flag) into the global header.
@@ -107,8 +113,8 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const modeMeta =
     !mt5 ? (mt5LoadFailed ? UNKNOWN_MODE_META : CHECKING_MODE_META)
     : mt5RefreshFailed ? UNKNOWN_MODE_META
-    : (mt5 as { route?: string }).route === "SHARED_MASTER" && !mt5.connected ? SHARED_MODE_META
-    : (mt5 as { routeReadFailed?: boolean }).routeReadFailed === true && !mt5.connected ? UNKNOWN_MODE_META
+    : mt5.route === "SHARED_MASTER" && !mt5.connected ? SHARED_MODE_META
+    : mt5.routeReadFailed === true && !mt5.connected ? UNKNOWN_MODE_META
     : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
   const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;
@@ -141,6 +147,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
           botRefreshFailed={botRefreshFailed}
           botReadAt={botReadAt}
           unlocks={unlocks}
+          viewerIsAdmin={viewerIsAdmin === true}
           sessionLabel={sessionMeta.label}
           sessionTone={sessionMeta.tone}
           modeLabel={modeMeta.label}
@@ -217,6 +224,8 @@ type CompactStatusRowProps = {
   botRefreshFailed?: boolean;
   botReadAt?: number;
   unlocks: ReturnType<typeof useAllUnlocks>;
+  /** The viewer sees the admin dashboard (and so the welcome checklist that turns MT5 on here). */
+  viewerIsAdmin?: boolean;
   sessionLabel: string;
   sessionTone: "info" | "warning" | "bullish" | "neutral";
   modeLabel: string;
@@ -243,8 +252,13 @@ function CompactStatusRow(p: CompactStatusRowProps) {
   // scanner, trading loop or execution path reads it, so it is shown as a
   // saved request in a neutral tone — never as a running or stopped engine.
   // When the latest poll failed, the cached request is not shown as current.
-  const savedBot = p.bot ? savedBotRequest(p.bot) : null;
-  if ((p.unlocks.simulator || p.unlocks.mt5) && savedBot) {
+  // A query this header has disabled can still hand back an answer another
+  // page (MT5 Bridge, Bot Control) left in the shared cache. Nothing here
+  // refreshes it, so it is not shown at all while the header does not read it.
+  const botPolled = p.unlocks.simulator || p.unlocks.mt5;
+  const savedBot = botPolled && p.bot ? savedBotRequest(p.bot) : null;
+  const mt5Read = p.unlocks.mt5 ? p.mt5 : null;
+  if (savedBot) {
     pills.push({ id: "bot", label: "Bot (saved)",
       value: p.botRefreshFailed ? "Not refreshed" : savedBot,
       tone: p.botRefreshFailed ? "warning" : "neutral" });
@@ -260,19 +274,31 @@ function CompactStatusRow(p: CompactStatusRowProps) {
           <DetailRow label="MT5 connected" value={bridge.connectedText} />
         </>
       ) : (
-        // The status query is disabled until MT5 is turned on, so nothing is being checked.
-        <DetailRow label="MT5 status" value={'not checked (press "Connect MT5" on the dashboard checklist to show it)'} />
+        // The status query is disabled until MT5 is turned on for this header,
+        // so nothing is being checked. Only the admin-only welcome checklist on
+        // the dashboard turns it on; the "Connect MT5" buttons traders see open
+        // My MT5 and do not change this header.
+        <>
+          <DetailRow label="MT5 status" value="not checked here" />
+          <p className="text-[10px] text-muted-foreground" data-testid="topbar-mt5-not-checked">
+            MT5 status is turned off in this header for your account in this browser, so nothing is read here.{" "}
+            <a className="text-primary underline" href="/my-mt5">Open My MT5</a> for your bridge status.
+            {p.viewerIsAdmin
+              ? ' To show it here, press "Connect MT5" in the welcome checklist (Dashboard → System Health · Admin → Setup & readiness).'
+              : null}
+          </p>
+        </>
       )}
-      {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
-        <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
+      {(mt5Read?.accountSnapshot?.account ?? mt5Read?.account) != null && (
+        <DetailRow label="Account" value={String(mt5Read?.accountSnapshot?.account ?? mt5Read?.account)} />
       )}
-      {(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker) && (
-        <DetailRow label="Broker" value={String(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker)} />
+      {(mt5Read?.accountSnapshot?.broker ?? mt5Read?.broker) && (
+        <DetailRow label="Broker" value={String(mt5Read?.accountSnapshot?.broker ?? mt5Read?.broker)} />
       )}
-      {p.mt5?.lastHeartbeatAt && (
+      {mt5Read?.lastHeartbeatAt && (
         <DetailRow
           label={p.mt5RefreshFailed ? "Last heartbeat (as of last read)" : "Last heartbeat"}
-          value={new Date(p.mt5.lastHeartbeatAt as string).toLocaleTimeString()}
+          value={new Date(mt5Read.lastHeartbeatAt as string).toLocaleTimeString()}
         />
       )}
       {savedBot && (

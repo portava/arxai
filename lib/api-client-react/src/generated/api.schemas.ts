@@ -10096,6 +10096,9 @@ export interface Mt5State {
   liveAllowedNote?: string;
 }
 
+/**
+ * The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old.
+ */
 export type Mt5StatusMode = (typeof Mt5StatusMode)[keyof typeof Mt5StatusMode];
 
 export const Mt5StatusMode = {
@@ -10103,6 +10106,20 @@ export const Mt5StatusMode = {
   DEMO: "DEMO",
   LIVE_LOCKED: "LIVE_LOCKED",
   LIVE: "LIVE",
+  NOT_CONNECTED: "NOT_CONNECTED",
+  STALE: "STALE",
+} as const;
+
+/**
+ * How this user reaches MT5. NONE with routeReadFailed true means the routing could not be read, not a confirmed absence of a bridge.
+ */
+export type Mt5StatusRoute =
+  (typeof Mt5StatusRoute)[keyof typeof Mt5StatusRoute];
+
+export const Mt5StatusRoute = {
+  OWN_CONNECTION: "OWN_CONNECTION",
+  SHARED_MASTER: "SHARED_MASTER",
+  NONE: "NONE",
 } as const;
 
 export type Mt5StatusExecutionMode =
@@ -10155,9 +10172,59 @@ export type Mt5StatusAccountSnapshot = {
   syncedAt?: string | null;
 };
 
-export interface Mt5Status {
+/**
+ * HEALTHY only when the allocation view says so AND the master snapshot is fresh now. UNKNOWN when the allocation view could not be read.
+ */
+export type Mt5SharedMasterBridgeAvailability =
+  (typeof Mt5SharedMasterBridgeAvailability)[keyof typeof Mt5SharedMasterBridgeAvailability];
+
+export const Mt5SharedMasterBridgeAvailability = {
+  HEALTHY: "HEALTHY",
+  RECONCILING: "RECONCILING",
+  UNAVAILABLE: "UNAVAILABLE",
+  STALE: "STALE",
+  UNKNOWN: "UNKNOWN",
+} as const;
+
+export type Mt5SharedMasterBridgeSource =
+  (typeof Mt5SharedMasterBridgeSource)[keyof typeof Mt5SharedMasterBridgeSource];
+
+export const Mt5SharedMasterBridgeSource = {
+  shared_master_bridge_pool: "shared_master_bridge_pool",
+} as const;
+
+export interface Mt5SharedMasterBridge {
+  /** HEALTHY only when the allocation view says so AND the master snapshot is fresh now. UNKNOWN when the allocation view could not be read. */
+  availability: Mt5SharedMasterBridgeAvailability;
+  /** True only when availability is HEALTHY. */
   connected: boolean;
+  message: string;
+  /**
+   * When the master bridge last reported a snapshot (ISO); null when never or unread.
+   * @nullable
+   */
+  lastSnapshotAt: string | null;
+  /** @nullable */
+  snapshotAgeSeconds: number | null;
+  source: Mt5SharedMasterBridgeSource;
+}
+
+export interface Mt5Status {
+  /** The user's OWN MT5 connection heartbeated recently. False for a user routed through the shared master bridge; see route and sharedMasterBridge. */
+  connected: boolean;
+  /** The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old. */
   mode: Mt5StatusMode;
+  /** How this user reaches MT5. NONE with routeReadFailed true means the routing could not be read, not a confirmed absence of a bridge. */
+  route?: Mt5StatusRoute;
+  /** True when the user's routing could not be read; route NONE is then not a confirmed absence of a bridge. Absent when the routing was read. */
+  routeReadFailed?: boolean;
+  /** For a user routed through the shared master bridge (route SHARED_MASTER), that bridge as read now; null otherwise. */
+  sharedMasterBridge?: Mt5SharedMasterBridge | null;
+  /**
+   * Plain-English summary of the user's bridge state; null when there is nothing to add.
+   * @nullable
+   */
+  userSafeMessage?: string | null;
   /** @nullable */
   lastHeartbeatAt: string | null;
   /** @nullable */

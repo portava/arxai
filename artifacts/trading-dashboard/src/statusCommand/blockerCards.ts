@@ -117,7 +117,23 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
     });
   }
 
-  if (ctx.mt5Deferred) {
+  // bridgeMode "unknown": the diagnostic summary could not read your EA
+  // connection. mt5Deferred stays set (fail-closed), but nobody observed a
+  // deferred bridge, so the card names an unknown state, not a deferred one.
+  if (ctx.mt5Deferred && ctx.bridge?.bridgeMode === "unknown") {
+    out.push({
+      kind: "mt5-deferred",
+      title: "MT5 bridge state unknown",
+      severity: "info", nature: "protective",
+      blocks: "Calls through your own MT5 EA bridge, until your EA connection can be read. Which mode your account trades in is shown by the Mode row, not by this bridge.",
+      why: "Your EA connection could not be read, so the bridge state is unknown; it is treated as deferred for safety.",
+      howToCheck: "Refresh this page, then open MT5 Bridge to see your EA connection and heartbeat.",
+      safeNextStep: "Wait for a successful read before relying on the bridge. Nothing here says the bridge is connected, deferred or disconnected.",
+      doNotDo: "Do not assume MT5 is connected — heartbeat is the source of truth.",
+      relatedRoute: withRoute("Open MT5 Bridge", "/mt5-bridge"),
+      evidence: ["bridgeMode=unknown"],
+    });
+  } else if (ctx.mt5Deferred) {
     out.push({
       kind: "mt5-deferred",
       title: "MT5 Deferred",
@@ -127,7 +143,9 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       blocks: ctx.executionPostureUnmeasured
         ? "Calls through your own MT5 EA bridge. Which mode your account trades in is shown by the Mode row, not by this bridge."
         : "MT5 EA bridge calls. ARX runs in simulator/demo mode.",
-      why: "MT5 bridge is intentionally deferred (no token configured or unknown bridge state).",
+      // The server reports "deferred" when no bridge token is active and no
+      // fresh EA heartbeat was received.
+      why: "No MT5 bridge token is active and no fresh EA heartbeat was received, so the MT5 bridge is deferred.",
       howToCheck: "Open MT5 Bridge to read the EA setup steps.",
       safeNextStep: "If you intend to connect MT5, configure the bridge server-side. Otherwise, simulator is the safe default.",
       doNotDo: "Do not assume MT5 is connected — heartbeat is the source of truth.",

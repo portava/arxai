@@ -111,3 +111,60 @@ describe("LiveSharedAccountPanel — degraded readiness", () => {
     expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 });
+
+// Only the global_trading_settings read failed (no row, more rows than the
+// reader accepts, schema drift). loadPlatformSettings() fails closed — stop
+// "engaged" with reason "settings missing" / "state unreadable", mode OFF,
+// routing defaulted to USER_OWNED_MT5 — and the route still answers 200 with
+// no `degraded` flag, but with platformStopReadable:false and the detail. The
+// panel rendered those stand-ins as readings: "Kill switch: engaged" with an
+// enabled release toggle, "Trading mode: Demo", "Routing: User-owned".
+function settingsUnreadBody(detail: "settings missing" | "state unreadable") {
+  const b = healthyBody();
+  return {
+    ...b,
+    globalSwitches: {
+      ...b.globalSwitches,
+      platformMode: "OFF", liveEnabled: false, accountRoutingMode: "USER_OWNED_MT5",
+      sharedLiveTradingEnabled: false, masterBridgeLiveEnabled: false, liveBrokerExecutionArmedDb: false,
+      emergencyKillSwitch: true, killSwitchEngagedAt: null, killSwitchReason: detail,
+      platformStopEngaged: true, platformStopSources: ["platform_emergency_stop"], platformStopReason: detail,
+      platformStopReadable: false, platformStopDetail: { platform_emergency_stop: detail },
+    },
+  };
+}
+
+describe("LiveSharedAccountPanel — platform settings that could not be read", () => {
+  for (const detail of ["settings missing", "state unreadable"] as const) {
+    it(`(${detail}) shows no fail-closed stand-in as a reading and offers no release`, async () => {
+      stub(settingsUnreadBody(detail));
+      renderPanel();
+      await waitFor(() => expect(screen.getByTestId("live-shared-settings-unread")).toBeTruthy());
+      expect(screen.getByTestId("live-shared-settings-unread").textContent).toContain(detail);
+      expect(screen.queryByText(/Kill switch: engaged/)).toBeNull();
+      expect(screen.getByText(new RegExp(`Kill switch: could not be read \\(${detail}\\) — treated as engaged`))).toBeTruthy();
+      for (const stand of [/Trading mode: Demo/, /Trading mode: Live/, /Routing: User-owned/, /Routing: Shared master/,
+        /Shared live trading: Off/, /Master bridge: Off/, /Operator broker execution: Off/]) {
+        expect(screen.queryByText(stand)).toBeNull();
+      }
+      expect(screen.getByText(/Trading mode: could not be read/)).toBeTruthy();
+      expect(screen.getByText(/Routing: could not be read/)).toBeTruthy();
+      // No toggle positioned from unread settings can be flipped.
+      for (const id of ["switch-release-kill", "switch-routing-shared", "switch-master-bridge-live",
+        "switch-shared-live-trading", "switch-platform-mode-live"]) {
+        expect((screen.getByTestId(id) as HTMLButtonElement).disabled).toBe(true);
+      }
+      // The server-side checks are still reported as they were read.
+      expect(screen.getByText(/Pending commands: 4/)).toBeTruthy();
+    });
+  }
+
+  it("a read stop with the same stored reason text is still a reading", async () => {
+    const b = settingsUnreadBody("settings missing");
+    stub({ ...b, globalSwitches: { ...b.globalSwitches, platformStopReadable: true, platformMode: "DEMO" } });
+    renderPanel();
+    await waitFor(() => expect(screen.getByText(/Kill switch: engaged/)).toBeTruthy());
+    expect(screen.queryByTestId("live-shared-settings-unread")).toBeNull();
+    expect((screen.getByTestId("switch-release-kill") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
