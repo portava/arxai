@@ -608,6 +608,7 @@ export async function buildRubyStructuralRead(
             stale: rubyCtx?.state.stale ?? false,
             aiUsable: rubyCtx?.state.aiUsable ?? false,
             basis: rubyCtx?.basis ?? "INSUFFICIENT",
+            quality: rubyCtx?.state.truthState?.quality ?? null,
           }),
           blockedReason,
           disclaimer: DISCLAIMER,

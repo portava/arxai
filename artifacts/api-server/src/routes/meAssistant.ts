@@ -750,6 +750,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
         stale: rubyCtx?.state.stale ?? false,
         aiUsable: rubyCtx?.state.aiUsable ?? false,
         basis,
+        quality: rubyCtx?.state.truthState?.quality ?? null,
       });
   // Name what is actually not confirmed (feed, candles, or the specific chart
   // check) so the refusal never says "the feed isn't confirmed" when it is.
@@ -972,6 +973,7 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
       stale: rubyCtx?.state.stale ?? state.stale,
       aiUsable: rubyCtx?.state.aiUsable ?? state.aiUsable,
       basis: rubyCtx?.basis ?? "INSUFFICIENT",
+      quality: (rubyCtx?.state ?? state).truthState?.quality ?? null,
     });
   }
   // Chart Brain v2 (Task 5): record an immutable Decision Receipt + the implied

@@ -187,7 +187,11 @@ export function buildTrustLine(
  */
 export function buildGatedTrustLine(
   timeframe: string,
-  feed: { available: boolean; stale: boolean; aiUsable: boolean; basis: RubyChartReadBasis },
+  feed: {
+    available: boolean; stale: boolean; aiUsable: boolean; basis: RubyChartReadBasis;
+    /** The served feed's quality grade; names why a non-stale feed is not usable. */
+    quality?: string | null;
+  },
 ): string {
   let feedPart: string;
   if (!feed.available) {
@@ -195,7 +199,7 @@ export function buildGatedTrustLine(
   } else if (feed.stale) {
     feedPart = "feed stale";
   } else if (!feed.aiUsable) {
-    feedPart = "feed delayed";
+    feedPart = unusableFeedPart(feed.quality);
   } else {
     // The feed itself is clean and current, so nothing is "syncing": the read
     // is gated by another check — Chart Truth below the 75 bar (SYNCING), or
@@ -210,6 +214,61 @@ export function buildGatedTrustLine(
     return `${timeframe} candles clean${reason} · read gated`;
   }
   return `${timeframe} candles syncing · ${feedPart} · read gated`;
+}
+
+/**
+ * Trust-line words for a feed that is not stale but not usable, from its own
+ * quality grade: only a "delayed" grade is a delayed feed. Candles with gaps,
+ * duplicates or out-of-order bars ("partial"), or that failed their integrity
+ * checks ("invalid"), are named as such; an unknown grade is "not confirmed".
+ */
+function unusableFeedPart(quality: string | null | undefined): string {
+  switch (quality) {
+    case "delayed": return "feed delayed";
+    case "partial": return "candle sequence incomplete";
+    case "invalid": return "candles failed integrity checks";
+    case "empty":
+    case "unavailable": return "no candles";
+    default: return "feed not confirmed";
+  }
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * Refusal reason for a feed that is not stale but not usable, naming what its
+ * own quality grade observed (never "delayed" unless the grade is delayed).
+ */
+function unusableFeedReason(state: ChartIntelligenceState): string {
+  const feed = state.truthState;
+  const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
+  switch (feed?.quality) {
+    case "delayed":
+      return "The chart feed is delayed, not live, so I won't draw a tradeable setup. I'll mark levels once it is live.";
+    case "partial": {
+      const seen = [
+        count(feed.missingCandleCount) ? `${plural(count(feed.missingCandleCount), "missing bar")}` : null,
+        count(feed.duplicateCount) ? `${plural(count(feed.duplicateCount), "duplicate bar")}` : null,
+        count(feed.outOfOrderCount) ? `${plural(count(feed.outOfOrderCount), "out-of-order bar")}` : null,
+      ].filter(Boolean);
+      return `The chart's candle sequence is incomplete${seen.length ? ` (${seen.join(", ")})` : ""}, so I won't draw a tradeable setup. I'll mark levels once the candles are complete.`;
+    }
+    case "invalid": {
+      const detail = count(feed.invalidOhlcCount)
+        ? ` (${plural(count(feed.invalidOhlcCount), "bar")} with invalid OHLC)`
+        : state.truthResult?.mockDataDetected
+          ? " (the data looks simulated, not real market data)"
+          : typeof feed.warning === "string" && /timestamps could not be confirmed/i.test(feed.warning)
+            ? " (candle timestamps could not be confirmed)"
+            : "";
+      return `The chart's candles failed their integrity checks${detail}, so I won't draw a tradeable setup.`;
+    }
+    case "empty":
+    case "unavailable":
+      return "The chart has no candles to read right now, so I won't draw a tradeable setup.";
+    default:
+      return "The chart feed has not passed its checks, so I won't draw a tradeable setup.";
+  }
 }
 
 // Candle-data handshake checks a gated read can name, in plain English.
@@ -245,7 +304,7 @@ export function gatedReadReason(
   if (ctx.basis === "VERIFIED") return null;
   const { state, gateOutput: gate } = ctx;
   if (state.stale) return "The chart feed is stale, so I won't draw a tradeable setup. I'll mark levels once it is live again.";
-  if (!state.aiUsable) return "The chart feed is delayed, not live, so I won't draw a tradeable setup. I'll mark levels once it is live.";
+  if (!state.aiUsable) return unusableFeedReason(state);
   if (!gate.confidentReadAllowed) {
     return `The candles have not passed their checks yet (chart truth ${Math.round(gate.chartTruthScore)} of 100), so I won't draw a tradeable setup.`;
   }
