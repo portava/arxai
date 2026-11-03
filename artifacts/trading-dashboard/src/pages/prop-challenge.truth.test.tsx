@@ -191,3 +191,63 @@ describe("Prop Challenge page — the final evaluation after a challenge ends", 
     await waitFor(() => expect(screen.getByTestId("progress").textContent).toMatch(/final=true/));
   });
 });
+
+// Regression: the list queryFn never checked r.ok, so a 401/500 body was read
+// as data with no challenges and the page offered "Start a practice
+// challenge" as if none existed; a network failure left the page blank; and a
+// finished challenge whose one evaluation failed showed the "results below"
+// note over nothing.
+describe("Prop Challenge page — failed reads", () => {
+  it("a failed challenge-list read says the challenges could not be loaded, not the start form", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 })));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("prop-list-error").textContent).toMatch(/could not be loaded/));
+    expect(screen.getByTestId("prop-list-error").textContent).toMatch(/Unauthorized \(HTTP 401\)/);
+    expect(screen.queryByText("Start a practice challenge")).toBeNull();
+    expect(screen.getByText("Retry")).toBeTruthy();
+  });
+
+  it("a network failure on the list read says it could not be loaded instead of a blank page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("prop-list-error").textContent).toMatch(/could not be loaded/));
+    expect(screen.queryByText("Start a practice challenge")).toBeNull();
+  });
+
+  it("a finished challenge whose evaluation fails says the final result could not be loaded", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/prop-challenges") {
+        return new Response(JSON.stringify({ challenges: [challenge({ status: "CANCELED", completedAt: "2026-09-10T00:00:00Z" })] }), { status: 200 });
+      }
+      if (url.endsWith("/evaluate")) return new Response(JSON.stringify({ error: "Failed to evaluate" }), { status: 500 });
+      return new Response("{}", { status: 404 });
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("prop-eval-error").textContent).toMatch(/final result of this challenge could not be loaded/));
+    expect(screen.getByTestId("prop-eval-error").textContent).toMatch(/Failed to evaluate \(HTTP 500\)/);
+    expect(screen.getByTestId("prop-finished-note").textContent).not.toMatch(/results below/);
+    expect(screen.queryByTestId("prop-final-result-state")).toBeNull();
+    expect(screen.getByText("Retry")).toBeTruthy();
+  });
+
+  it("a failed list refresh after a good read keeps the current challenge and says the list was not refreshed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let listCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/prop-challenges") {
+        listCalls += 1;
+        return listCalls === 1
+          ? new Response(JSON.stringify({ challenges: [challenge({ status: "ACTIVE" })] }), { status: 200 })
+          : new Response(JSON.stringify({ error: "boom" }), { status: 500 });
+      }
+      if (url.endsWith("/evaluate")) return new Response(JSON.stringify(evalBody(false)), { status: 200 });
+      return new Response("{}", { status: 404 });
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("banner").textContent).toBe("ACTIVE"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_500); });
+    await waitFor(() => expect(screen.getByTestId("prop-list-stale").textContent).toMatch(/could not be refreshed/));
+    expect(screen.getByTestId("banner").textContent).toBe("ACTIVE");
+    expect(screen.queryByText("Start a practice challenge")).toBeNull();
+  });
+});
