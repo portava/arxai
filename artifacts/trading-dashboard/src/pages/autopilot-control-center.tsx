@@ -175,8 +175,13 @@ export default function AutopilotControlCenter() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold">AI Autopilot Control Center</h1>
           <p className="text-sm text-muted-foreground">Coordinate scanner + risk + OMS into supervised AI runs. MT5 live execution is locked until the bridge is connected.</p>
+          <p data-testid="autopilot-engine-scope" className="text-xs text-muted-foreground mt-1">
+            This board reports the simulator autopilot: an in-memory engine that places simulator (OMS)
+            orders, and whose state resets when the server restarts. The paper autopilot, whose cycles
+            are counted on the Command Center&apos;s Memory tab, is a separate engine and is not shown here.
+          </p>
         </div>
-        <Badge variant="outline">SIMULATOR</Badge>
+        <Badge variant="outline">SIMULATOR AUTOPILOT</Badge>
         {s && <Badge className={MODE_COLOR[s.mode] ?? ""}>{s.mode}</Badge>}
         {s && <Badge variant="outline">state {s.state}</Badge>}
       </div>

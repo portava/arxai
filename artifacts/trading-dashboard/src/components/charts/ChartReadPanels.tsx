@@ -8,6 +8,9 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toneClasses } from "@/lib/chart-sentence-tone";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { useStatePricePrecision } from "./chartPricePrecisionStore";
+import { chartReadVerification } from "./chartReadVerification";
 
 // ChartReadPanels — Chart Brain v2 (Task 4) decision panels.
 //
@@ -20,11 +23,28 @@ import { toneClasses } from "@/lib/chart-sentence-tone";
 
 type ChartState = ChartIntelligenceResponse["state"];
 
-function fmt(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const d = abs < 10 ? 5 : abs < 1000 ? 3 : 2;
-  return n.toFixed(d);
+// Prices print at the instrument's precision (the chart's published digits,
+// else the digits the state's own quotes carry) — the shared rule, never a
+// private magnitude guess that drops a V10/XAGUSD digit.
+function usePriceFormatter(state: ChartState | null): (n: number | null | undefined) => string {
+  const precision = useStatePricePrecision(state);
+  return (n) => formatInstrumentPrice(n, precision);
+}
+
+// Level personality in plain words — never the raw engine token.
+function personalityWords(p: string): string {
+  switch (p) {
+    case "fresh":
+      return "fresh (not yet tested)";
+    case "retest_pending":
+      return "waiting for a retest";
+    case "trap_zone":
+      return "possible trap zone";
+    case "scalp_only":
+      return "scalp-only";
+    default:
+      return p.replace(/_/g, " ");
+  }
 }
 
 function PanelShell({
@@ -173,6 +193,7 @@ export function ChartScalpPanel({ state }: { state: ChartState | null }) {
 
 // ── Entry timing ────────────────────────────────────────────────────────────
 export function ChartEntryPanel({ state }: { state: ChartState | null }) {
+  const fmt = usePriceFormatter(state);
   if (!state) return <Waiting testid="chart-entry-empty" />;
   const entry = state.marketSentences.entryTiming;
   const next = state.marketSentences.bestNextAction;
@@ -214,6 +235,7 @@ export function ChartEntryPanel({ state }: { state: ChartState | null }) {
 
 // ── Exit / TP ───────────────────────────────────────────────────────────────
 export function ChartExitPanel({ state }: { state: ChartState | null }) {
+  const fmt = usePriceFormatter(state);
   if (!state) return <Waiting testid="chart-exit-empty" />;
   const inval = state.marketSentences.whatInvalidates;
   const reasoning = state.decisionReasoning;
@@ -241,7 +263,7 @@ export function ChartExitPanel({ state }: { state: ChartState | null }) {
         <Line label="Resistance" tone="text-zinc-300">
           {fmt(levels.nearestResistance.price)} ·{" "}
           <span className="text-zinc-500">
-            {levels.nearestResistance.personality}
+            {personalityWords(levels.nearestResistance.personality)}
           </span>
         </Line>
       )}
@@ -249,7 +271,7 @@ export function ChartExitPanel({ state }: { state: ChartState | null }) {
         <Line label="Support" tone="text-zinc-300">
           {fmt(levels.nearestSupport.price)} ·{" "}
           <span className="text-zinc-500">
-            {levels.nearestSupport.personality}
+            {personalityWords(levels.nearestSupport.personality)}
           </span>
         </Line>
       )}
@@ -285,6 +307,26 @@ export function ChartAgentConsensusPanel({
         testid="chart-consensus-panel"
       >
         <Line tone="text-zinc-400">{c.note}</Line>
+      </PanelShell>
+    );
+  }
+  // An unverified chart read withholds the consensus stance — the same answer
+  // Ruby gives on this board ("agent consensus withheld"); never a stance and
+  // agent votes on unverified data.
+  const verification = chartReadVerification(state);
+  if (!verification.verified) {
+    return (
+      <PanelShell
+        icon={Users}
+        title="Agent consensus"
+        accent="text-violet-400"
+        badge="withheld"
+        testid="chart-consensus-panel"
+      >
+        <Line tone="text-zinc-400">Chart data not verified — agent consensus withheld.</Line>
+        <Line tone="text-zinc-500" label="Why">
+          {verification.reasons.join("; ")}
+        </Line>
       </PanelShell>
     );
   }

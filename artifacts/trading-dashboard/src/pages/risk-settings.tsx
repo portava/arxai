@@ -12,6 +12,7 @@ import {
   getGetRiskSettingsQueryKey,
   getGetRiskAuditQueryKey,
   getGetPositionSizeQueryKey,
+  getGetBotStatusQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -48,6 +49,55 @@ import { RiskLimitLayersPanel, RISK_LIMIT_LAYERS_QUERY_KEY } from "@/components/
 
 // ── Risk mode config ─────────────────────────────────────────────────────────
 
+type PresetMode = "Conservative" | "Balanced" | "Aggressive";
+interface PresetLimits {
+  riskPerTradePct: number; maxDailyLossPct: number; maxWeeklyLossPct: number;
+  maxTradesPerDay: number; stopAfterLosingStreak: number; minConfidenceScore: number;
+  maxOpenTrades: number; cooldownAfterLossMinutes: number; maxLotSize: number;
+}
+
+// The values POST /risk/mode writes for each preset (RISK_PRESETS in the
+// api-server's routes/risk.ts). The saved risk-mode label and the limits are
+// stored separately, so a label is "Active" only while the stored limits
+// still equal these values.
+const PRESET_LIMITS: Record<PresetMode, PresetLimits> = {
+  Conservative: { riskPerTradePct: 0.25, maxDailyLossPct: 1, maxWeeklyLossPct: 3, maxTradesPerDay: 3, stopAfterLosingStreak: 2,
+    minConfidenceScore: 80, maxOpenTrades: 1, cooldownAfterLossMinutes: 60, maxLotSize: 0.05 },
+  Balanced: { riskPerTradePct: 0.5, maxDailyLossPct: 2, maxWeeklyLossPct: 5, maxTradesPerDay: 5, stopAfterLosingStreak: 3,
+    minConfidenceScore: 75, maxOpenTrades: 2, cooldownAfterLossMinutes: 30, maxLotSize: 0.1 },
+  Aggressive: { riskPerTradePct: 1, maxDailyLossPct: 3, maxWeeklyLossPct: 7, maxTradesPerDay: 8, stopAfterLosingStreak: 3,
+    minConfidenceScore: 70, maxOpenTrades: 3, cooldownAfterLossMinutes: 15, maxLotSize: 0.2 },
+};
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+const PRESET_FIELDS: { key: keyof PresetLimits; label: string; fmt: (v: number) => string }[] = [
+  { key: "riskPerTradePct", label: "Risk/Trade", fmt: (v) => `${v}%` },
+  { key: "maxDailyLossPct", label: "Daily Limit", fmt: (v) => `${v}%` },
+  // The settings API reports a missing weekly cap as 0.
+  { key: "maxWeeklyLossPct", label: "Weekly Limit", fmt: (v) => (v > 0 ? `${v}%` : "no weekly cap") },
+  { key: "maxTradesPerDay", label: "Max Trades", fmt: (v) => `${v}/day` },
+  { key: "stopAfterLosingStreak", label: "Loss Streak", fmt: (v) => plural(v, "trade") },
+  { key: "minConfidenceScore", label: "Min Confidence", fmt: (v) => `${v}%` },
+  { key: "maxOpenTrades", label: "Max Open", fmt: (v) => plural(v, "trade") },
+  { key: "cooldownAfterLossMinutes", label: "Cooldown", fmt: (v) => `${v} min` },
+  { key: "maxLotSize", label: "Max Lot", fmt: (v) => plural(v, "lot") },
+];
+
+function isPresetMode(mode: string | null | undefined): mode is PresetMode {
+  return mode === "Conservative" || mode === "Balanced" || mode === "Aggressive";
+}
+
+/** Stored limits that are not the preset's value, worded "stored, preset". */
+function presetDiffs(mode: PresetMode, stored: Partial<Record<keyof PresetLimits, unknown>>) {
+  const preset = PRESET_LIMITS[mode];
+  return PRESET_FIELDS.flatMap((f) => {
+    const v = stored[f.key];
+    if (typeof v === "number" && Math.abs(v - preset[f.key]) < 1e-6) return [];
+    const shown = typeof v === "number" && Number.isFinite(v) ? f.fmt(v) : "not reported";
+    return [`${f.label}: ${shown} stored, preset ${f.fmt(preset[f.key])}`];
+  });
+}
+
 const MODES = {
   Conservative: {
     icon: ShieldCheck,
@@ -56,15 +106,7 @@ const MODES = {
     bg: "bg-success/10",
     activeBg: "bg-success/15",
     badge: "bg-success/20 text-success border-success/30",
-    stats: [
-      { label: "Risk/Trade", value: "0.25%" },
-      { label: "Daily Limit", value: "1%" },
-      { label: "Weekly Limit", value: "3%" },
-      { label: "Max Trades", value: "3/day" },
-      { label: "Loss Streak", value: "2 trades" },
-      { label: "Min Confidence", value: "80%" },
-      { label: "Max Open", value: "1 trade" },
-    ],
+    stats: PRESET_FIELDS.map((f) => ({ label: f.label, value: f.fmt(PRESET_LIMITS.Conservative[f.key]) })),
     description: "Capital preservation first. Tight limits, high confidence bar. Ideal for volatile market conditions.",
   },
   Balanced: {
@@ -74,15 +116,7 @@ const MODES = {
     bg: "bg-blue-500/5",
     activeBg: "bg-blue-500/15",
     badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-    stats: [
-      { label: "Risk/Trade", value: "0.5%" },
-      { label: "Daily Limit", value: "2%" },
-      { label: "Weekly Limit", value: "5%" },
-      { label: "Max Trades", value: "5/day" },
-      { label: "Loss Streak", value: "3 trades" },
-      { label: "Min Confidence", value: "75%" },
-      { label: "Max Open", value: "2 trades" },
-    ],
+    stats: PRESET_FIELDS.map((f) => ({ label: f.label, value: f.fmt(PRESET_LIMITS.Balanced[f.key]) })),
     description: "Optimized for consistent growth. Balanced exposure across all market conditions.",
   },
   Aggressive: {
@@ -92,15 +126,7 @@ const MODES = {
     bg: "bg-orange-500/5",
     activeBg: "bg-orange-500/15",
     badge: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-    stats: [
-      { label: "Risk/Trade", value: "1%" },
-      { label: "Daily Limit", value: "3%" },
-      { label: "Weekly Limit", value: "7%" },
-      { label: "Max Trades", value: "8/day" },
-      { label: "Loss Streak", value: "3 trades" },
-      { label: "Min Confidence", value: "70%" },
-      { label: "Max Open", value: "3 trades" },
-    ],
+    stats: PRESET_FIELDS.map((f) => ({ label: f.label, value: f.fmt(PRESET_LIMITS.Aggressive[f.key]) })),
     description: "Maximum opportunity capture. Higher drawdown tolerance. Use only in favorable conditions.",
   },
   Custom: {
@@ -110,10 +136,15 @@ const MODES = {
     bg: "bg-violet-500/5",
     activeBg: "bg-violet-500/15",
     badge: "bg-violet-500/20 text-violet-300 border-violet-500/30",
-    stats: [],
+    stats: [] as { label: string; value: string }[],
     description: "Full manual control. Every parameter editable. Your rules, your risk.",
   },
 };
+
+const MISMATCH_BADGE = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
+// Nothing read means nothing to show: no mode, limit, rule or lock state is
+// assumed while GET /risk/settings has failed.
+const SETTINGS_UNREAD = "could not be loaded";
 
 // ── Custom limits form schema ────────────────────────────────────────────────
 
@@ -164,7 +195,23 @@ function AuditBanner({ symbol }: { symbol?: string }) {
   );
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
-  if (!audit) return null;
+  // No audit read is no verdict: say so where the verdict normally sits.
+  if (!audit) {
+    return (
+      <div
+        className="flex items-center gap-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-3"
+        data-testid="risk-audit-banner-unavailable"
+      >
+        <AlertTriangle className="h-6 w-6 shrink-0 text-yellow-400" />
+        <div className="min-w-0">
+          <p className="font-semibold text-sm text-yellow-300">Risk audit could not be loaded</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            No risk verdict is shown, because none was read. It is retried every 30 seconds.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -250,7 +297,10 @@ export default function RiskSettings() {
   };
 
   const { data: settings, isLoading } = useGetRiskSettings();
-  const { data: botStatus } = useGetBotStatus();
+  // Bot Control and the kill switch elsewhere change this row too, so it is re-read.
+  const { data: botStatus, isError: botStatusFailed } = useGetBotStatus(
+    { query: { queryKey: getGetBotStatusQueryKey(), refetchInterval: 30_000 } },
+  );
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -337,6 +387,9 @@ export default function RiskSettings() {
       {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
+          // The preset rewrote the governor's limits: re-read every view of them.
+          queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
+          queryClient.invalidateQueries({ queryKey: RISK_LIMIT_LAYERS_QUERY_KEY });
           toast({ title: `${mode} mode applied`, description: "All risk limits updated." });
         },
         onError: () => toast({ title: "Failed to apply mode", variant: "destructive" }),
@@ -369,6 +422,7 @@ export default function RiskSettings() {
       {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
+          queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
           toast({ title: "Special rules saved" });
         },
         onError: () => toast({ title: "Save failed", variant: "destructive" }),
@@ -400,6 +454,9 @@ export default function RiskSettings() {
       onSuccess: (res) => {
         setConfirmKill(false);
         queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
+        // The stop set the bot OFF and engaged a kill switch: re-read both.
+        queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
+        queryClient.invalidateQueries({ queryKey: RISK_LIMIT_LAYERS_QUERY_KEY });
         toast({
           title: "⛔ Emergency Stop Executed",
           description: res.message,
@@ -414,7 +471,10 @@ export default function RiskSettings() {
     updateBotStatus.mutate(
       { data: { isPaused: true } },
       {
-        onSuccess: () => toast({ title: "Trading paused", description: "Bot will not open new positions." }),
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
+          toast({ title: "Trading paused", description: "Bot will not open new positions." });
+        },
         onError: () => toast({ title: "Failed to pause", variant: "destructive" }),
       }
     );
@@ -424,7 +484,10 @@ export default function RiskSettings() {
     updateBotStatus.mutate(
       { data: { isPaused: false } },
       {
-        onSuccess: () => toast({ title: "Trading resumed" }),
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
+          toast({ title: "Trading resumed" });
+        },
         onError: () => toast({ title: "Failed to resume", variant: "destructive" }),
       }
     );
@@ -444,9 +507,14 @@ export default function RiskSettings() {
     );
   }
 
-  const currentMode = settings?.riskMode ?? "Balanced";
+  const currentMode: string | null = settings?.riskMode ?? null;
   const modeConfig = MODES[currentMode as keyof typeof MODES] ?? MODES.Custom;
   const ModeIcon = modeConfig.icon;
+  // The label is stored apart from the limits (a fresh trader, or a Risk
+  // Command Center preset, leaves it unchanged), so it only names the
+  // limits in force while they still equal that preset.
+  const labelDiffs = settings && isPresetMode(currentMode) ? presetDiffs(currentMode, settings) : [];
+  const labelMismatch = labelDiffs.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 p-4 md:p-6 pb-32 md:pb-6 animate-in fade-in duration-500">
@@ -463,12 +531,19 @@ export default function RiskSettings() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 max-w-full min-w-0">
-          <Badge
-            className={cn("px-3 py-1 font-semibold border", modeConfig.badge)}
-          >
-            <ModeIcon size={13} className="mr-1.5" />
-            {currentMode} Mode
-          </Badge>
+          {settings ? (
+            <Badge
+              className={cn("px-3 py-1 font-semibold border", labelMismatch ? MISMATCH_BADGE : modeConfig.badge)}
+              data-testid="risk-mode-badge"
+            >
+              <ModeIcon size={13} className="mr-1.5" />
+              {labelMismatch ? `${currentMode} label · limits differ` : `${currentMode} Mode`}
+            </Badge>
+          ) : (
+            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border" data-testid="risk-mode-badge">
+              <AlertTriangle size={12} className="mr-1.5" /> Risk settings {SETTINGS_UNREAD}
+            </Badge>
+          )}
           {settings?.liveLocked && (
             <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
               <Lock size={12} className="mr-1.5" /> Live Locked
@@ -515,14 +590,44 @@ export default function RiskSettings() {
             TAB 1 — RISK MODE
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="mode" className="space-y-4">
+          {!settings && (
+            <Alert className="border-red-500/30 bg-red-500/5" data-testid="risk-settings-load-error">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertTitle className="text-red-300 text-sm">Your risk settings {SETTINGS_UNREAD}</AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                No mode is marked active and no limits, rules or lock state are shown, because none were read.
+                Applying a preset still writes that preset's values.
+              </AlertDescription>
+            </Alert>
+          )}
+          {labelMismatch && (
+            <Alert className="border-yellow-500/30 bg-yellow-500/5" data-testid="risk-mode-mismatch">
+              <AlertTriangle className="h-4 w-4 text-yellow-400" />
+              <AlertTitle className="text-yellow-300 text-sm">
+                Saved label is {currentMode}, but your stored limits are not the {currentMode} preset
+              </AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground space-y-1">
+                <ul className="list-disc list-inside">
+                  {labelDiffs.map((d) => <li key={d}>{d}</li>)}
+                </ul>
+                <p>
+                  Orders are checked against your stored limits, or a stricter operator or platform limit,
+                  as listed under Limits in force on the Limits tab. Re-apply the preset to write its values.
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {(["Conservative", "Balanced", "Aggressive", "Custom"] as const).map((mode) => {
               const cfg = MODES[mode];
               const Icon = cfg.icon;
-              const isActive = currentMode === mode;
+              const labelled = currentMode === mode;
+              const isActive = labelled && !labelMismatch;
+              const labelOnly = labelled && labelMismatch;
               return (
                 <Card
                   key={mode}
+                  data-testid={`risk-mode-card-${mode}`}
                   className={cn(
                     "cursor-pointer border-2 transition-all duration-200",
                     isActive ? `${cfg.border} ${cfg.activeBg}` : "border-border/40 hover:border-border"
@@ -536,6 +641,9 @@ export default function RiskSettings() {
                       {isActive && (
                         <Badge className={cn("ml-auto text-xs border", cfg.badge)}>Active</Badge>
                       )}
+                      {labelOnly && (
+                        <Badge className={cn("ml-auto text-xs border", MISMATCH_BADGE)}>Saved label · limits differ</Badge>
+                      )}
                       {mode === "Custom" && !isActive && (
                         <Badge className="ml-auto text-xs bg-muted/50 text-muted-foreground border border-border">
                           Manual
@@ -546,6 +654,7 @@ export default function RiskSettings() {
                   </CardHeader>
                   {cfg.stats.length > 0 && (
                     <CardContent className="pt-0">
+                      <p className="text-[11px] text-muted-foreground mb-1">Applying this preset sets:</p>
                       <div className="grid grid-cols-2 gap-x-4">
                         {cfg.stats.map((s) => (
                           <div key={s.label} className="flex justify-between py-1 border-b border-border/20 last:border-0">
@@ -582,7 +691,7 @@ export default function RiskSettings() {
                           handleApplyMode(mode as "Conservative" | "Balanced" | "Aggressive");
                         }}
                       >
-                        {isActive ? "Currently Active" : `Apply ${mode} Preset`}
+                        {isActive ? "Currently Active" : labelOnly ? `Re-apply ${mode} Preset` : `Apply ${mode} Preset`}
                         {!isActive && <ChevronRight size={12} />}
                       </Button>
                     </CardFooter>
@@ -600,17 +709,19 @@ export default function RiskSettings() {
             <CardContent>
               <div className="relative pt-2 pb-4">
                 <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 via-blue-500 via-orange-400 to-red-500" />
-                <div
+                {settings && <div
                   className="absolute top-0 w-4 h-4 rounded-full border-2 border-background shadow-lg transition-all duration-500"
                   style={{
-                    left: currentMode === "Conservative" ? "2%" :
+                    left: labelMismatch ? "90%" :
+                          currentMode === "Conservative" ? "2%" :
                           currentMode === "Balanced" ? "33%" :
                           currentMode === "Aggressive" ? "65%" : "90%",
-                    backgroundColor: currentMode === "Conservative" ? "#10b981" :
+                    backgroundColor: labelMismatch ? "#8b5cf6" :
+                                     currentMode === "Conservative" ? "#10b981" :
                                      currentMode === "Balanced" ? "#3b82f6" :
                                      currentMode === "Aggressive" ? "#f97316" : "#8b5cf6",
                   }}
-                />
+                />}
                 <div className="flex justify-between text-xs text-muted-foreground mt-3">
                   <span>Safe</span>
                   <span>Balanced</span>
@@ -627,15 +738,28 @@ export default function RiskSettings() {
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="limits">
           <RiskLimitLayersPanel />
-          {currentMode !== "Custom" && (
+          {settings && currentMode !== "Custom" && (
             <Alert className="mb-4 border-blue-500/30 bg-blue-500/5">
               <ShieldAlert className="h-4 w-4 text-blue-400" />
-              <AlertTitle className="text-blue-300 text-sm">Preset Active — {currentMode}</AlertTitle>
+              <AlertTitle className="text-blue-300 text-sm">
+                {labelMismatch
+                  ? `Saved label ${currentMode} — your stored limits are not that preset`
+                  : `Preset Active — ${currentMode}`}
+              </AlertTitle>
               <AlertDescription className="text-xs text-muted-foreground">
                 Editing any limit below will switch you to <strong className="text-violet-400">Custom</strong> mode automatically.
               </AlertDescription>
             </Alert>
           )}
+          {!settings ? (
+            <Alert className="border-red-500/30 bg-red-500/5" data-testid="risk-limits-load-error">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertTitle className="text-red-300 text-sm">Your saved limits {SETTINGS_UNREAD}</AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                The limit editor is hidden so placeholder values cannot be saved over your real limits. Reload the page to try again.
+              </AlertDescription>
+            </Alert>
+          ) : (
           <Form {...limitsForm}>
             <form onSubmit={limitsForm.handleSubmit(handleSaveLimits)}>
               <Card className="border-border/50">
@@ -789,7 +913,9 @@ export default function RiskSettings() {
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/50 p-4 bg-muted/10">
                         <div>
                           <FormLabel className="text-sm font-medium">Spike Protection</FormLabel>
-                          <FormDescription className="text-xs">Pause during abnormal tick volatility to avoid slippage</FormDescription>
+                          <FormDescription className="text-xs" data-testid="spike-protection-desc">
+                            Saved preference only. No risk check or trading loop reads it yet, so nothing pauses on abnormal tick volatility.
+                          </FormDescription>
                         </div>
                         <FormControl>
                           <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -806,6 +932,7 @@ export default function RiskSettings() {
               </Card>
             </form>
           </Form>
+          )}
         </TabsContent>
 
         {/* ══════════════════════════════════════════════════════════════════
@@ -822,13 +949,13 @@ export default function RiskSettings() {
                 {
                   key: "vol75ExtraConfidence" as const,
                   label: "Volatility 75 (1s) — Extra Confidence",
-                  desc: "Adds +10% to the minimum confidence threshold when trading V75 1s. Extreme tick speed requires higher certainty.",
+                  desc: "Adds 10 points to the minimum confidence when a symbol named \"(1s)\" is risk-checked with a confidence score (MT5 order requests and the risk audit).",
                   accent: "text-orange-400",
                 },
                 {
                   key: "vol75SmallLot" as const,
                   label: "Volatility 75 — Reduced Lot Size",
-                  desc: "Automatically halves the calculated lot size for V75 instruments to account for higher pip volatility.",
+                  desc: "Saved preference only. The position sizer and risk checks do not read it yet, so it changes no lot size. Separately, the sizer always halves the lot for symbols whose name contains \"1s\", whether this is on or off.",
                   accent: "text-orange-400",
                 },
               ].map(({ key, label, desc, accent }) => (
@@ -838,9 +965,9 @@ export default function RiskSettings() {
                     <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">{desc}</p>
                   </div>
                   <Switch
-                    checked={settings?.[key] ?? true}
+                    checked={settings?.[key] ?? false}
                     onCheckedChange={(v) => handleSaveSpecialRules({ [key]: v })}
-                    disabled={updateSettings.isPending}
+                    disabled={updateSettings.isPending || !settings}
                     className="shrink-0 mt-0.5"
                   />
                 </div>
@@ -850,27 +977,29 @@ export default function RiskSettings() {
 
           <Card className="border-border/50">
             <CardHeader className="bg-muted/20 border-b border-border/50">
-              <CardTitle className="text-base">News & Event Blocks</CardTitle>
-              <CardDescription className="text-xs">Prevent trading around high-impact economic events</CardDescription>
+              <CardTitle className="text-base">News & Event Reminders</CardTitle>
+              <CardDescription className="text-xs">
+                Reminder warnings added to the risk check for matching symbols. They do not read an economic or earnings calendar and never block a trade.
+              </CardDescription>
             </CardHeader>
             <CardContent className="divide-y divide-border/30 px-0">
               {[
                 {
                   key: "us30BlockNews" as const,
-                  label: "US30 — Block During Major U.S. News",
-                  desc: "Warns when US30 trades are detected near NFP, FOMC, CPI and other tier-1 U.S. economic releases.",
+                  label: "US30 — Major U.S. News Reminder",
+                  desc: "Adds a reminder to check NFP, FOMC, CPI and other major U.S. releases when a US30 or DJ30 symbol is risk-checked. It does not check whether news is near.",
                   accent: "text-blue-400",
                 },
                 {
                   key: "stocksBlockEarnings" as const,
-                  label: "Stocks — Block Around Earnings",
-                  desc: "Flags stock trades during earnings season. Can be overridden manually if you have a directional view.",
+                  label: "Stocks — Earnings Reminder",
+                  desc: "Adds a reminder to check for an earnings release when a stock ticker is risk-checked. It does not read an earnings calendar.",
                   accent: "text-blue-400",
                 },
                 {
                   key: "forexBlockEvents" as const,
-                  label: "Forex — Block Around Central Bank Events",
-                  desc: "Generates warnings for forex pairs during ECB, Fed, BoE, BoJ decisions and high-impact news.",
+                  label: "Forex — Central Bank Reminder",
+                  desc: "Adds a reminder to check central bank decisions and high-impact news when a major forex pair is risk-checked. It does not check whether an event is near.",
                   accent: "text-blue-400",
                 },
               ].map(({ key, label, desc, accent }) => (
@@ -880,9 +1009,9 @@ export default function RiskSettings() {
                     <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">{desc}</p>
                   </div>
                   <Switch
-                    checked={settings?.[key] ?? true}
+                    checked={settings?.[key] ?? false}
                     onCheckedChange={(v) => handleSaveSpecialRules({ [key]: v })}
-                    disabled={updateSettings.isPending}
+                    disabled={updateSettings.isPending || !settings}
                     className="shrink-0 mt-0.5"
                   />
                 </div>
@@ -897,20 +1026,36 @@ export default function RiskSettings() {
                 <Activity size={14} /> Current Rule Summary
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1">
-              {settings && [
-                settings.vol75ExtraConfidence && "V75 (1s): +10 confidence required above global minimum",
-                settings.vol75SmallLot && "V75: Position size capped at 50% of calculated lot",
-                settings.us30BlockNews && "US30: News proximity warnings active",
-                settings.stocksBlockEarnings && "Stocks: Earnings block warnings active",
-                settings.forexBlockEvents && "Forex: Central bank event warnings active",
-                !settings.vol75ExtraConfidence && !settings.vol75SmallLot && !settings.us30BlockNews && !settings.stocksBlockEarnings && !settings.forexBlockEvents && "No special rules active",
-              ].filter(Boolean).map((rule, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <div className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
-                  {rule}
-                </div>
-              ))}
+            <CardContent className="space-y-1" data-testid="rule-summary">
+              {!settings && <p className="text-xs text-red-300">Special rules {SETTINGS_UNREAD}</p>}
+              {settings && (() => {
+                // "applied": a risk check reads it. "reminder": adds warning text
+                // only. "saved": stored, but nothing reads it yet.
+                const rules: { text: string; kind: "applied" | "reminder" | "saved" }[] = [
+                  ...(settings.vol75ExtraConfidence ? [{ kind: "applied" as const,
+                    text: "V75 (1s): +10 confidence required when a \"(1s)\" symbol is risk-checked with a confidence score" }] : []),
+                  ...(settings.vol75SmallLot ? [{ kind: "saved" as const,
+                    text: "V75 reduced lot: saved, not applied. No lot is reduced by this setting" }] : []),
+                  ...(settings.disableDuringAbnormalVolatility ? [{ kind: "saved" as const,
+                    text: "Spike protection: saved, not applied. Nothing pauses on abnormal volatility" }] : []),
+                  ...(settings.us30BlockNews ? [{ kind: "reminder" as const,
+                    text: "US30: news reminder added to its risk check. Does not block" }] : []),
+                  ...(settings.stocksBlockEarnings ? [{ kind: "reminder" as const,
+                    text: "Stocks: earnings reminder added to their risk check. Does not block" }] : []),
+                  ...(settings.forexBlockEvents ? [{ kind: "reminder" as const,
+                    text: "Forex: central bank reminder added to its risk check. Does not block" }] : []),
+                ];
+                if (rules.length === 0) {
+                  return <p className="text-xs text-muted-foreground">No special rules switched on</p>;
+                }
+                return rules.map((rule) => (
+                  <div key={rule.text} className="flex items-center gap-2 text-xs text-muted-foreground" data-rule-kind={rule.kind}>
+                    <div className={cn("w-1.5 h-1.5 rounded-full shrink-0",
+                      rule.kind === "applied" ? "bg-success" : rule.kind === "reminder" ? "bg-yellow-400" : "bg-muted-foreground/50")} />
+                    {rule.text}
+                  </div>
+                ));
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1072,10 +1217,10 @@ export default function RiskSettings() {
                       { sym: "V75 Index (30pt SL)", v: [0.08, 0.17, 0.33] },
                       { sym: "V75 1s (50pt SL)", v: [0.03, 0.05, 0.10] },
                       { sym: "V25 Index (20pt SL)", v: [0.13, 0.25, 0.50] },
-                      { sym: "EURUSD (30pip SL)", v: [0.08, 0.17, 0.33] },
+                      { sym: "EURUSD (30pip SL)", v: [0.01, 0.02, 0.03] },
                       { sym: "US30 (50pt SL)", v: [0.05, 0.10, 0.20] },
                     ].map((row) => (
-                      <tr key={row.sym}>
+                      <tr key={row.sym} data-testid={`lot-ref-row-${row.sym}`}>
                         <td className="py-2 font-medium">{row.sym}</td>
                         {row.v.map((v, i) => (
                           <td key={i} className="py-2 text-right font-mono text-primary">{v.toFixed(2)}</td>
@@ -1085,6 +1230,10 @@ export default function RiskSettings() {
                   </tbody>
                 </table>
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Lots from the sizer above, rounded to the nearest 0.01, so the money at risk can differ from the
+                percentage (EURUSD at 0.25%: 0.01 lot risks $3.00, not $2.50).
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1242,40 +1391,46 @@ export default function RiskSettings() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {[
-                  {
-                    label: "Bot Mode",
-                    value: botStatus?.mode ?? "—",
-                    ok: botStatus?.mode === "OFF" || !botStatus?.isRunning,
-                  },
-                  {
-                    label: "Is Running",
-                    value: botStatus?.isRunning ? "YES" : "NO",
-                    ok: !botStatus?.isRunning,
-                  },
-                  {
-                    label: "Is Paused",
-                    value: botStatus?.isPaused ? "YES" : "NO",
-                    ok: true,
-                  },
-                  {
-                    label: "Live Locked",
-                    value: settings?.liveLocked ? "LOCKED" : "OPEN",
-                    ok: settings?.liveLocked,
-                  },
-                  {
-                    label: "Risk Mode",
-                    value: currentMode,
-                    ok: currentMode !== "Aggressive",
-                  },
-                ].map((row) => (
-                  <div key={row.label} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{row.label}</span>
-                    <span className={cn("font-mono font-semibold", row.ok ? "text-success" : "text-yellow-400")}>
-                      {row.value}
-                    </span>
-                  </div>
-                ))}
+                {(() => {
+                  // A row nobody read is grey "could not be loaded", never a green "NO".
+                  const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
+                  const rows: { label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
+                    botStatus
+                      ? { label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
+                      : { label: "Bot Mode", value: botUnread, tone: "unread" },
+                    botStatus
+                      ? { label: "Is Running", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
+                      : { label: "Is Running", value: botUnread, tone: "unread" },
+                    botStatus
+                      ? { label: "Is Paused", value: botStatus.isPaused ? "YES" : "NO", tone: botStatus.isPaused ? "warn" : "neutral" }
+                      : { label: "Is Paused", value: botUnread, tone: "unread" },
+                    !settings
+                      ? { label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
+                      : { label: "Live Locked", value: settings.liveLocked ? "LOCKED" : "OPEN", tone: settings.liveLocked ? "ok" : "warn" },
+                    !settings
+                      ? { label: "Risk Mode", value: SETTINGS_UNREAD, tone: "unread" }
+                      : {
+                          label: "Risk Mode",
+                          value: labelMismatch ? `${currentMode} label · limits differ` : currentMode,
+                          tone: currentMode !== "Aggressive" && !labelMismatch ? "ok" : "warn",
+                        },
+                  ];
+                  return rows.map((row) => (
+                    <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
+                      <span className="text-muted-foreground">{row.label}</span>
+                      <span className={cn("font-mono font-semibold",
+                        row.tone === "ok" ? "text-success"
+                          : row.tone === "warn" ? "text-yellow-400"
+                          : row.tone === "neutral" ? "text-foreground"
+                          : "text-muted-foreground")}>
+                        {row.value}
+                      </span>
+                    </div>
+                  ));
+                })()}
+                <p className="pt-1 text-[11px] text-muted-foreground" data-testid="system-status-bot-scope">
+                  Bot rows are the saved Bot Control settings; no scanner or trading loop reads them.
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -1294,7 +1449,26 @@ function RiskAuditDetail() {
   const { data: audit, isLoading, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (!audit) return null;
+  if (!audit) {
+    return (
+      <Card className="border-yellow-500/30" data-testid="risk-audit-detail-unavailable">
+        <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity size={16} /> Live Risk Audit
+            </CardTitle>
+            <CardDescription className="text-xs">The risk audit could not be loaded</CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
+        </CardHeader>
+        <CardContent className="p-6">
+          <p className="text-sm text-yellow-300">
+            No metrics, blocked conditions or warnings are shown, because the audit could not be checked.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-border/50">

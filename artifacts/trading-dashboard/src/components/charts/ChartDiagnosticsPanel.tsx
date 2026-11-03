@@ -2,7 +2,7 @@ import type { ChartIntelligenceResponse } from "@workspace/api-client-react";
 import { Gauge, CheckCircle2, XCircle, AlertTriangle, Info } from "lucide-react";
 import { isFutureTime, relativeTime } from "@/lib/feed-confidence";
 import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
-import { useChartPricePrecision } from "./chartPricePrecisionStore";
+import { useStatePricePrecision } from "./chartPricePrecisionStore";
 
 // ChartDiagnosticsPanel — Chart Brain v2 Admin Diagnostics mode body.
 //
@@ -22,10 +22,12 @@ function ms(n: number | null | undefined): string {
 }
 
 
+// candleStats.changePct is already a percent on the server
+// ((changeAbs / prev.close) * 100), so it prints as-is — never ×100 again.
 function pct(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   const sign = n > 0 ? "+" : "";
-  return `${sign}${(n * 100).toFixed(2)}%`;
+  return `${sign}${n.toFixed(2)}%`;
 }
 
 // Quality → human-readable failure category. Never exposes internal gate names,
@@ -53,7 +55,7 @@ function qualityLabel(quality: string | null | undefined): { text: string; cls: 
 
 export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
   // Same digits as the chart's price axis for this symbol (shared rule).
-  const pricePrecision = useChartPricePrecision(state?.symbol ?? null);
+  const pricePrecision = useStatePricePrecision(state);
   if (!state) {
     return (
       <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] text-zinc-500">

@@ -74,7 +74,9 @@ export interface ChartGateOutput {
   note: string;
 }
 
-const TRUTH_THRESHOLD = 75;
+/** Chart Truth score a read needs before it may be called verified. */
+export const CHART_TRUTH_THRESHOLD = 75;
+const TRUTH_THRESHOLD = CHART_TRUTH_THRESHOLD;
 
 /**
  * The feed fields the stale gate reads. A bare boolean is the stale flag

@@ -13,8 +13,13 @@ interface SelectedMarketEvent {
   title: string;
   currency: string;
   impactLevel: ImpactLevel;
+  /** A midnight-UTC date marker when `source` publishes only dates (FRED). */
   eventTime: string;
   minutesUntil: number;
+  /** Calendar source (e.g. "FRED"); absent from older servers. */
+  source?: string | null;
+  /** false when the source publishes only the release date. */
+  timePublished?: boolean;
 }
 
 type DataState = "LIVE_CONFIRMED" | "SYNCING" | "STALE" | "UNAVAILABLE";

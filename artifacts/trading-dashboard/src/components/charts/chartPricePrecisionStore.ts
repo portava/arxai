@@ -12,6 +12,7 @@
 
 import { useSyncExternalStore } from "react";
 import { bareSymbol } from "@/lib/use-chart-symbol";
+import { resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
 
 interface Entry {
   precision: number;
@@ -76,6 +77,40 @@ export function useChartPricePrecision(symbol: string | null | undefined): numbe
     () => readChartPricePrecision(symbol),
     () => null,
   );
+}
+
+type Ohlc = { open?: number | null; high?: number | null; low?: number | null; close?: number | null };
+
+/** The subset of a Chart Intelligence state the precision fallback reads. */
+export interface PriceDigitsSource {
+  symbol?: string | null;
+  latestClosedCandle?: Ohlc | null;
+  currentCandle?: Ohlc | null;
+  marketUnderstanding?: {
+    levels?: {
+      nearestSupport?: { price?: number | null } | null;
+      nearestResistance?: { price?: number | null } | null;
+    } | null;
+  } | null;
+}
+
+/**
+ * Display precision for prices printed from a Chart Intelligence state: the
+ * chart's published precision for the symbol when it has one, otherwise the
+ * digits the state's own quotes carry (latest bars and the server's level
+ * prices, which it rounds at the instrument's precision) — the shared rule,
+ * never the bare magnitude guess while digits are observable.
+ */
+export function useStatePricePrecision(state: PriceDigitsSource | null | undefined): number | null {
+  const published = useChartPricePrecision(state?.symbol ?? null);
+  if (published != null || !state) return published;
+  const observed: Array<number | null | undefined> = [];
+  for (const c of [state.latestClosedCandle, state.currentCandle]) {
+    if (c) observed.push(c.open, c.high, c.low, c.close);
+  }
+  const lv = state.marketUnderstanding?.levels;
+  observed.push(lv?.nearestSupport?.price, lv?.nearestResistance?.price);
+  return resolveDisplayPricePrecision(null, observed);
 }
 
 /** Test-only: clear every published precision. */

@@ -1951,8 +1951,17 @@ export function scannerSnapshot(limit = 50): ScannerSnapshot | null {
 }
 
 // ── Session plan ───────────────────────────────────────────────────────────
+// The plan reuses the last published scan when there is one, so it carries
+// that scan's own time: a plan built now from an hours-old sweep must not
+// read as generated now.
 export async function sessionPlan() {
-  const results = scannerState.lastResults.length ? scannerState.lastResults : await scanOnce();
+  const cached = scannerState.lastResults.length ? scannerState.lastSnapshot : null;
+  return sessionPlanFromSnapshot(cached ?? await scanOnceSnapshot());
+}
+
+/** The session plan for one scan. `generatedAt` is the scan's generatedAt. */
+export function sessionPlanFromSnapshot(snapshot: Pick<ScannerSnapshot, "opportunities" | "generatedAt">) {
+  const results = snapshot.opportunities;
   const bestSyms = Array.from(new Set(
     results.filter((o) => o.statusBadge === "HOT_SETUP").map((o) => o.symbol),
   )).slice(0, 3);
@@ -1992,7 +2001,7 @@ export async function sessionPlan() {
       + (avoidSyms.length ? ` Avoid ${avoidSyms.join(", ")}.` : "")
       + ` Max ${3} trades. Reject any setup below 60 confidence.`,
     dataSource: "SIMULATOR",
-    generatedAt: new Date().toISOString(),
+    generatedAt: snapshot.generatedAt,
   };
 }
 

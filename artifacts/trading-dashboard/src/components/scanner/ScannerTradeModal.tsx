@@ -102,8 +102,10 @@ function seedPriceStr(n: number, precision: number | null | undefined): string {
 
 // Where the editable "Current price" value came from. The field is filled once
 // per open and never follows the market, so the ticket says what it holds: the
-// feed's last candle close (with its candle time, source and feed state), the
-// signal's entry level when no feed price exists, or the user's own edit.
+// feed's last candle close (with its candle time, source and the feed state it
+// was filled under), the signal's entry level when no feed price exists, or
+// the user's own edit. The note's present-tense feed clause reads the feed as
+// it is now, never the state frozen at fill time.
 type CurrentPriceBasis =
   | { kind: "signal" }
   | { kind: "user" }
@@ -113,8 +115,19 @@ type CurrentPriceBasis =
       candleAt: string | null;
       sourceLabel: string | null;
       displayStatus: string;
+      headerCapReason: string | null;
       isLive: boolean;
     };
+
+// The feed as it reads now (the shared scanner truth), for the note's
+// present-tense clause. null = no feed read is available.
+type FeedNow = {
+  displayStatus: string;
+  headerCapReason: string | null;
+  isLive: boolean;
+  lastClose: number | null;
+  lastTime: string | null;
+} | null;
 
 const FEED_STATE_WORD: Record<string, string> = {
   LIVE: "live",
@@ -130,27 +143,49 @@ function utcClock(iso: string | null): string | null {
   return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(11, 19)} UTC` : null;
 }
 
-function currentPriceBasisText(
+// A live read capped only because the scanner's market analysis has not
+// answered yet is still being confirmed — not a measured historical-only feed.
+function feedStateWord(displayStatus: string, headerCapReason: string | null): string {
+  if (displayStatus === "ANALYSIS_ONLY" && headerCapReason === "analysis_pending") return "still being confirmed";
+  return FEED_STATE_WORD[displayStatus] ?? "not live";
+}
+
+function currentPriceBasisNote(
   basis: CurrentPriceBasis,
   hasValue: boolean,
-  latestClose: number | null,
+  now: FeedNow,
   precision: number | null | undefined,
-): string {
-  if (basis.kind === "user") return "Entered by you.";
+): { text: string; live: boolean } {
+  if (basis.kind === "user") return { text: "Entered by you.", live: false };
   if (basis.kind === "signal") {
-    return hasValue
-      ? "No feed price is available yet — this is the signal's entry level, not a current price."
-      : "No feed price is available yet.";
+    return {
+      text: hasValue
+        ? "No feed price is available yet — this is the signal's entry level, not a current price."
+        : "No feed price is available yet.",
+      live: false,
+    };
   }
   const at = utcClock(basis.candleAt);
   const from = `from ${basis.sourceLabel ?? "the chart feed"}${at ? `, candle at ${at}` : ""}`;
-  const head = basis.isLive
+  // The filled value is still the live feed's latest close of the same candle.
+  const stillCurrentLiveClose =
+    now?.isLive === true && now.lastClose === basis.value && now.lastTime === basis.candleAt;
+  const live = basis.isLive || stillCurrentLiveClose;
+  const nowPending = now != null && !now.isLive && now.displayStatus === "ANALYSIS_ONLY" && now.headerCapReason === "analysis_pending";
+  const head = live
     ? `Last candle close ${from}.`
-    : `Not a live price — last candle close ${from}, while the feed is ${FEED_STATE_WORD[basis.displayStatus] ?? "not live"}.`;
+    : now?.isLive
+      ? `Not a live price — last candle close ${from}, filled while the feed was ${feedStateWord(basis.displayStatus, basis.headerCapReason)}; the feed is live now.`
+      : nowPending
+        ? `Not yet confirmed as a live price — last candle close ${from}, while the feed is still being confirmed.`
+        : now
+          ? `Not a live price — last candle close ${from}, while the feed is ${feedStateWord(now.displayStatus, now.headerCapReason)}.`
+          : `Not confirmed as a live price — last candle close ${from}; the feed's current state is not available.`;
+  const latestClose = now?.lastClose ?? null;
   const moved = latestClose != null && latestClose !== basis.value
     ? ` Latest close is now ${formatInstrumentPrice(latestClose, precision)}.`
     : "";
-  return `${head} Filled once when this ticket opened; it does not update while the ticket stays open.${moved}`;
+  return { text: `${head} Filled once when this ticket opened; it does not update while the ticket stays open.${moved}`, live };
 }
 
 type DemoCommand = {
@@ -177,8 +212,12 @@ const POLL_FAILURES_BEFORE_UNKNOWN = 3;
 // USER_NOT_CONFIRMED is always listed and is cleared by this form's own
 // confirm step. Every other blocker means the server will refuse the order.
 const CONFIRM_STEP_BLOCKER = "USER_NOT_CONFIRMED";
+const NOT_ARMED_WORDS = "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)";
 const GATE_BLOCKER_WORDS: Record<string, string> = {
-  WRONG_EXECUTION_MODE: "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)",
+  // The debug endpoint renames the gate's WRONG_EXECUTION_MODE to
+  // DEMO_EXECUTION_NOT_ARMED; older servers still send the gate's own code.
+  DEMO_EXECUTION_NOT_ARMED: NOT_ARMED_WORDS,
+  WRONG_EXECUTION_MODE: NOT_ARMED_WORDS,
   NOT_VERIFIED_DEMO: "the demo account has not passed demo verification",
   ACCOUNT_TYPE_NOT_EXPLICIT_DEMO: "the bridge account is not confirmed as a demo account",
   NO_BRIDGE_CONNECTION: "no demo bridge is connected",
@@ -197,6 +236,10 @@ function gateBlockerWords(code: string): string {
 type DemoExecutionState =
   | { kind: "checking" }
   | { kind: "unchecked" }
+  // The request answered but the server could not evaluate its dispatch gate
+  // for this read (gateEvaluated:false / bridgeReady:null): its empty blocker
+  // list was never measured and is not a pass.
+  | { kind: "gateNotEvaluated" }
   | { kind: "unreported" }
   | { kind: "blocked"; reasons: string[] }
   | { kind: "enabled" };
@@ -285,6 +328,20 @@ export function ScannerTradeModal({
   // stays signal.entry — that is the intended limit/stop level, not the current
   // market price.
   const sharedLastClose = feedTruth?.candles.lastClose ?? null;
+  const priceBasisNote = currentPriceBasisNote(
+    priceBasis,
+    currentPrice.trim() !== "",
+    feedTruth
+      ? {
+          displayStatus: feedTruth.displayStatus,
+          headerCapReason: feedTruth.candles.headerCapReason ?? null,
+          isLive: feedTruth.isLivePrice === true,
+          lastClose: sharedLastClose,
+          lastTime: feedTruth.candles.lastTime ?? null,
+        }
+      : null,
+    feedTruth?.candles.pricePrecision,
+  );
 
   // The broker's reported spec for this symbol (arx_symbol_specs via the
   // resolve endpoint, which maps aliases such as "V75" to the broker string).
@@ -388,6 +445,7 @@ export function ScannerTradeModal({
   const demoExecution: DemoExecutionState = (() => {
     if (bridgeCheck === "checking") return { kind: "checking" };
     if (bridgeCheck === "failed" || !bridge) return { kind: "unchecked" };
+    if (bridge.gateEvaluated === false || bridge.bridgeReady === null) return { kind: "gateNotEvaluated" };
     if (!Array.isArray(bridge.gateBlockers)) return { kind: "unreported" };
     const blocking = bridge.gateBlockers.filter((b) => b !== CONFIRM_STEP_BLOCKER);
     if (blocking.length > 0) return { kind: "blocked", reasons: blocking.map(gateBlockerWords) };
@@ -435,6 +493,7 @@ export function ScannerTradeModal({
       candleAt: feedTruth?.candles.lastTime ?? null,
       sourceLabel: feedTruth?.candles.sourceLabel ?? null,
       displayStatus: feedTruth?.displayStatus ?? "UNAVAILABLE",
+      headerCapReason: feedTruth?.candles.headerCapReason ?? null,
       isLive: feedTruth?.isLivePrice === true,
     });
     currentPriceSeededRef.current = true;
@@ -793,6 +852,7 @@ export function ScannerTradeModal({
               {demoExecution.kind === "enabled" && "Demo execution enabled for this account (server dispatch gate)."}
               {demoExecution.kind === "checking" && "Checking demo execution for this account…"}
               {demoExecution.kind === "unchecked" && "Demo execution for this account could not be checked — the server's dispatch gate did not respond."}
+              {demoExecution.kind === "gateNotEvaluated" && "Demo execution for this account could not be checked — the server could not evaluate its dispatch gate just now, so arming, verification, heartbeat and EA version are unknown. Demo orders stay blocked until it can be checked."}
               {demoExecution.kind === "unreported" && "The server did not report whether demo execution is allowed for this account."}
               {demoExecution.kind === "blocked" &&
                 `Demo execution is not available for this account: ${demoExecution.reasons.join("; ")}. The server will refuse orders from this form until that is fixed.`}
@@ -876,11 +936,11 @@ export function ScannerTradeModal({
                   />
                 </div>
                 <div
-                  className={`col-span-2 -mt-1 text-[10px] ${priceBasis.kind === "feed" && priceBasis.isLive ? "text-muted-foreground" : "text-warning"}`}
+                  className={`col-span-2 -mt-1 text-[10px] ${priceBasisNote.live ? "text-muted-foreground" : "text-warning"}`}
                   data-testid="scanner-trade-current-price-basis"
                   data-basis={priceBasis.kind}
                 >
-                  {currentPriceBasisText(priceBasis, currentPrice.trim() !== "", sharedLastClose, feedTruth?.candles.pricePrecision)}
+                  {priceBasisNote.text}
                 </div>
                 {!market && !stopLimit && (
                   <div className="col-span-2">

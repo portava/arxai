@@ -11,6 +11,8 @@
 import type { NormalizedChartCandle } from "../candleNormalization.js";
 import type { ChartTimeframe } from "../timeframes.js";
 import { atr, clamp, decimalsFor, findSwings, mean, round } from "./chartMath.js";
+import { resolveChartPriceDecimals } from "@workspace/domain/chart-patterns";
+import { knownPricePrecision } from "../symbolProfile.js";
 import type {
   ChartEventInput,
   ChartEventType,
@@ -264,6 +266,9 @@ export function computeLevelPersonality(
   remembered: RememberedEvent[],
   symbol: string,
   timeframe: ChartTimeframe,
+  /** The instrument's declared display precision (chart truth result); when
+   *  omitted, the symbol profile's known precision. Null = not declared. */
+  declaredPricePrecision?: number | null,
 ): LevelPersonalityResult {
   const n = closed.length;
   if (n < MIN_BARS) {
@@ -283,7 +288,16 @@ export function computeLevelPersonality(
   const atrVal = atr(closed, Math.min(14, n - 1)) ?? 0;
   const band = Math.max(atrVal * 0.6, (closed[n - 1]!.close || 1) * 1e-4);
   const lastClose = closed[n - 1]!.close;
-  const decimals = decimalsFor(lastClose);
+  // Levels are rounded at the instrument's precision (declared, widened by the
+  // digits the bars carry) — the magnitude rule turned XAUUSD 2400.55 into
+  // 2400.6 and EURUSD 1.08523 into 1.0852, which displays then padded out to a
+  // precision that had been rounded away.
+  const declared = declaredPricePrecision === undefined ? knownPricePrecision(symbol) : declaredPricePrecision;
+  const decimals = resolveChartPriceDecimals(
+    declared,
+    closed.slice(-60).flatMap((c) => [c.open, c.high, c.low, c.close]),
+    lastClose,
+  );
 
   const raw = clusterLevels(closed, atrVal)
     // Drop single-touch fresh levels that are far away and never interacted.

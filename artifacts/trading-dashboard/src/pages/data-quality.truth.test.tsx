@@ -62,6 +62,40 @@ describe("Data Quality truth", () => {
     expect(q.textContent).toMatch(/not recorded/i);
   });
 
+  it("an unmeasured quote age is not a green 'Quote stale: no'", async () => {
+    stubFetch(200, LEGACY_PAYLOAD);
+    render(<DataQualityPage />);
+    await screen.findByTestId("dq-scope");
+    const stale = card("Quote stale");
+    expect(stale.innerHTML).not.toMatch(/emerald/);
+    expect(stale.textContent).toMatch(/not measured/i);
+  });
+
+  it("with no candle reported, 'Candle stale' is not a green 'no'", async () => {
+    stubFetch(200, LEGACY_PAYLOAD);
+    render(<DataQualityPage />);
+    await screen.findByTestId("dq-scope");
+    const stale = card("Candle stale");
+    expect(stale.innerHTML).not.toMatch(/emerald/);
+    expect(stale.textContent).toMatch(/not measured/i);
+  });
+
+  it("a missing simulator quote is still shown as stale", async () => {
+    stubFetch(200, { ...LEGACY_PAYLOAD, quoteIsStale: true });
+    render(<DataQualityPage />);
+    await screen.findByTestId("dq-scope");
+    const stale = card("Quote stale");
+    expect(stale.innerHTML).toMatch(/rose/);
+    expect(stale.textContent).toMatch(/yes/);
+  });
+
+  it("a measured candle age keeps its colour", async () => {
+    stubFetch(200, { ...LEGACY_PAYLOAD, lastCandleTime: new Date().toISOString(), candleIsStale: false });
+    render(<DataQualityPage />);
+    await screen.findByTestId("dq-scope");
+    expect(card("Candle stale").innerHTML).toMatch(/emerald/);
+  });
+
   it("a failed request is an error, not a permanent 'Loading…'", async () => {
     stubFetch(500, { error: "boom" });
     render(<DataQualityPage />);

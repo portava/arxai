@@ -132,8 +132,16 @@ export interface SelectedMarketEvent {
   title: string;
   currency: string;
   impactLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  /** For a date-only source (timePublished false) this is a midnight-UTC date
+   *  marker, not a release time. */
   eventTime: string;
+  /** Minutes from build time to eventTime (to the date marker for a date-only
+   *  source — never a release countdown). */
   minutesUntil: number;
+  /** Calendar source that supplied the row (e.g. "FRED"). */
+  source?: string | null;
+  /** false when the source publishes only the release date (FRED). */
+  timePublished?: boolean;
 }
 
 export interface SelectedMarketExplanation {
@@ -403,6 +411,72 @@ export function filterEventRowsForSymbol<R extends EventRowLike>(
   });
 }
 
+/** Calendar sources that publish only a release DATE: their eventTime is a
+ *  midnight-UTC date marker (fredCalendarProvider), not a release time. */
+export function isDateOnlyEventSource(source: string | null | undefined): boolean {
+  return typeof source === "string" && source.trim().toLowerCase() === "fred";
+}
+
+function utcDayStartMs(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * The rows the next-24h list may show: every row still ahead, plus a
+ * date-only release dated today whose midnight marker has passed — its release
+ * time is unknown, so it is not known to be over.
+ */
+export function selectListedEventRows<R extends { eventTime: Date | string; source?: string | null }>(
+  rows: R[], nowMs: number,
+): R[] {
+  const dayStart = utcDayStartMs(nowMs);
+  return rows.filter((r) => {
+    const t = +new Date(r.eventTime);
+    if (!Number.isFinite(t)) return false;
+    return t >= nowMs || (isDateOnlyEventSource(r.source) && t >= dayStart);
+  });
+}
+
+export function toSelectedMarketEvent(r: {
+  externalId: string; eventName: string; currency: string; impactLevel: string;
+  eventTime: Date | string; source?: string | null;
+}, nowMs: number): SelectedMarketEvent {
+  return {
+    externalId: r.externalId,
+    title: r.eventName,
+    currency: r.currency,
+    impactLevel: r.impactLevel as SelectedMarketEvent["impactLevel"],
+    eventTime: new Date(r.eventTime).toISOString(),
+    minutesUntil: Math.round((+new Date(r.eventTime) - nowMs) / 60000),
+    source: r.source ?? null,
+    timePublished: !isDateOnlyEventSource(r.source),
+  };
+}
+
+/**
+ * The news-risk line for a date-only release. The scorer measures minutes to
+ * the event's midnight date marker, which is not a release time, so the line
+ * names the date instead of a countdown; and a release dated today whose
+ * marker has passed (listed, but not timeable) is named rather than silently
+ * dropped. Risk level and blockTrading are left exactly as scored.
+ */
+function dateOnlyAwareNewsReason(
+  news: { reason: string; blockTrading: boolean; upcomingEvent: EconomicEvent | null },
+  listed: SelectedMarketEvent[], symbol: string, nowMs: number,
+): string {
+  const ev = news.upcomingEvent;
+  if (ev && isDateOnlyEventSource(ev.source)) {
+    const tail = news.blockTrading ? `trading blocked for ${symbol}` : "proceed with caution";
+    return `${ev.impact.toUpperCase()} impact ${ev.title} dated ${ev.eventTime.slice(0, 10)} (release time not published) — ${tail}.`;
+  }
+  const untimed = listed.filter((e) => e.timePublished === false && Date.parse(e.eventTime) < nowMs).length;
+  if (untimed === 0) return news.reason;
+  return untimed === 1
+    ? `${news.reason} A listed release is dated today with no published release time, so its timing was not scored.`
+    : `${news.reason} ${untimed} listed releases are dated today with no published release time, so their timing was not scored.`;
+}
+
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   events: SelectedMarketEvent[];
   scorerInput: EconomicEvent[];
@@ -416,12 +490,14 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   }
   const now = new Date();
   const until = new Date(now.getTime() + 24 * 3600 * 1000);
+  // From the start of today (UTC) so a date-only release dated today, whose
+  // midnight marker has passed, is still listed (selectListedEventRows).
   const rows = await db.select().from(economicEventsTable)
     .where(and(
-      gte(economicEventsTable.eventTime, now),
+      gte(economicEventsTable.eventTime, new Date(utcDayStartMs(now.getTime()))),
       lte(economicEventsTable.eventTime, until),
     ));
-  const realRows = rows.filter((r) => r.source !== "mock");
+  const realRows = selectListedEventRows(rows.filter((r) => r.source !== "mock"), now.getTime());
   // The table is filled only by a manual sync. Rows inside the window do not
   // show that it reaches the window's end; the shared coverage rule does.
   const coverage = await readStoredCalendarCoverage(until);
@@ -437,17 +513,13 @@ async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   const sorted = matching
     .filter((r) => ["MEDIUM", "HIGH", "CRITICAL"].includes(String(r.impactLevel)))
     .sort((a, b) => +new Date(a.eventTime) - +new Date(b.eventTime));
-  const events: SelectedMarketEvent[] = sorted.slice(0, 8).map((r) => ({
-    externalId: r.externalId,
-    title: r.eventName,
-    currency: r.currency,
-    impactLevel: r.impactLevel as SelectedMarketEvent["impactLevel"],
-    eventTime: new Date(r.eventTime).toISOString(),
-    minutesUntil: Math.round((+new Date(r.eventTime) - Date.now()) / 60000),
-  }));
-  // The scorer reasons over exactly the events listed for this symbol, so the
-  // risk line and the list can never disagree about which events apply.
-  const scorerInput: EconomicEvent[] = sorted.map((r) => ({
+  const events: SelectedMarketEvent[] = sorted.slice(0, 8).map((r) => toSelectedMarketEvent(r, Date.now()));
+  // The scorer reasons over the events listed for this symbol, so the risk
+  // line and the list never disagree about which events apply. A date-only
+  // release dated today whose marker has passed has no time to score against;
+  // it is left out of the scorer exactly as before and named in the risk line
+  // instead (dateOnlyAwareNewsReason).
+  const scorerInput: EconomicEvent[] = sorted.filter((r) => +new Date(r.eventTime) >= now.getTime()).map((r) => ({
     id: r.externalId,
     title: r.eventName,
     country: r.country,
@@ -729,6 +801,9 @@ async function buildSelectedMarketSnapshot(
     : calendar.checked
       ? scoreNewsRisk(symbol, loaded.scorerInput)
       : newsRiskUnavailable(symbol, calendar.note ?? CALENDAR_NOT_CONFIGURED_NOTE);
+  const newsReason = !synthetic && calendar.checked
+    ? dateOnlyAwareNewsReason(news, events, symbol, Date.now())
+    : news.reason;
   const volatility = volatilityLabel(closed, a.marketBias);
   const highlights: SelectedMarketHighlights = {
     bias: readShown ? biasFromAction(a.recommendedAction) : "WAIT",
@@ -740,11 +815,11 @@ async function buildSelectedMarketSnapshot(
     suggestedStop: levelsShown ? a.stopLoss : null,
     suggestedTakeProfit: levelsShown ? a.takeProfit : null,
     riskRewardRatio: levelsShown ? a.riskRewardRatio : 0,
-    riskWarnings: news.blockTrading ? [news.reason] : [],
+    riskWarnings: news.blockTrading ? [newsReason] : [],
   };
   const explanation = readWithheldReason === null
-    ? buildExplanation(a, news.blockTrading, news.reason, volatility)
-    : withheldExplanation(readWithheldReason, news.reason);
+    ? buildExplanation(a, news.blockTrading, newsReason, volatility)
+    : withheldExplanation(readWithheldReason, newsReason);
   const result: SelectedMarketResult = {
     ok: true,
     symbolRaw,
@@ -754,7 +829,7 @@ async function buildSelectedMarketSnapshot(
     explanation,
     upcomingEvents: events,
     newsRisk: {
-      riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: news.reason,
+      riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: newsReason,
       calendarChecked: synthetic || calendar.checked,
       calendarNote: synthetic ? SYNTHETIC_EVENT_RISK_LABEL : calendar.note,
     },

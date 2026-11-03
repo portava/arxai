@@ -36,6 +36,24 @@ describe("Timing Intelligence — pending shared truth", () => {
     expect(body).toContain("Confirming market data");
   });
 
+  it("a failed truth request says it could not be loaded, with no endless 'confirming' spinner", () => {
+    // The chart-candles request behind useScannerTruth failed with no cached
+    // data: truth is null because the check failed, not because it is pending.
+    gateState = {
+      truth: null, level: null, isFull: false, downgraded: true, loadFailed: true,
+      reason: "The live-feed check for this market could not be loaded — directional reads and trade ideas are withheld.",
+    };
+    render(<TimingIntelligenceCard symbol="EURUSD" />);
+    const compact = screen.getByTestId("scanner-read-gate-compact").textContent ?? "";
+    expect(compact).not.toContain("Confirming market data");
+    expect(compact).toContain("could not be loaded");
+    const block = screen.getByTestId("timing-intelligence-downgraded");
+    expect(block.textContent).not.toContain("Confirming market data");
+    expect(block.textContent).not.toContain("hasn't returned yet");
+    expect(block.textContent).toContain("could not be loaded");
+    expect(block.querySelector(".animate-spin")).toBeNull();
+  });
+
   it("a resolved historical-only truth still says historical", () => {
     gateState = {
       truth: { analysis: { level: "historical_only" } }, level: "historical_only", isFull: false, downgraded: true,

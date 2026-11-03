@@ -364,6 +364,22 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
                   "Not enough live data to produce a meaningful timing read right now."}
               </p>
             </div>
+          ) : gate.downgraded && gate.truth == null && gate.loadFailed ? (
+            // The shared truth's candles request failed: the check returned,
+            // unsuccessfully. Say so — never an endless "confirming" spinner.
+            <div
+              className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-3"
+              data-testid="timing-intelligence-downgraded"
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-warning">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Market data could not be loaded
+              </div>
+              <p className="mt-1 text-xs text-txt-secondary">
+                The live-feed check for {symbol} could not be loaded, so the timing
+                grade, entry permission, and scores are held back until it loads.
+              </p>
+            </div>
           ) : gate.downgraded && gate.truth == null ? (
             // Shared truth not landed yet: nothing has been measured, so this is
             // the same pending state the compact gate above calls "Confirming

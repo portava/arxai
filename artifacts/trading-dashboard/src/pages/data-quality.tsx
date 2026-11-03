@@ -73,8 +73,18 @@ export default function DataQualityPage() {
               ? "Not recorded — simulator quotes are stamped with the request time"
               : safeDate(d.lastQuoteTime, "time", "Not reported")} />
             <Row label="Last candle time" value={safeDate(d.lastCandleTime, "datetime", "Not reported")} />
-            <Boolean label="Quote stale" value={d.quoteIsStale} bad />
-            <Boolean label="Candle stale" value={d.candleIsStale} bad />
+            {/* A simulator quote is stamped with the request time (ageMs 0), so
+                its isStale only says whether a simulator quote exists — age is
+                never measured. With no candle, candleIsStale is false by
+                default, not by measurement. Neither may read as a pass. */}
+            {simulatorQuote
+              ? (d.quoteIsStale
+                  ? <Boolean label="Quote stale" value bad />
+                  : <Unmeasured label="Quote stale" text="Not measured — simulator quotes carry the request time, so their age is unknown" />)
+              : <Boolean label="Quote stale" value={d.quoteIsStale} bad />}
+            {d.lastCandleTime
+              ? <Boolean label="Candle stale" value={d.candleIsStale} bad />
+              : <Unmeasured label="Candle stale" text="Not measured — no candle was reported to age" />}
             <Boolean label="Simulator active" value={d.simulatorActive} neutral />
             <Boolean label="Chart active" value={d.chartActive} neutral />
             <NotMeasured label="MT5 connected" value={d.mt5Connected} />
@@ -99,6 +109,13 @@ function Boolean({ label, value, bad, neutral }: { label: string; value: boolean
     <Badge className={cls}>
       {value ? "yes" : "no"}
     </Badge>
+  </CardContent></Card>;
+}
+// A check this layer did not actually perform. Shown neutrally, never as a pass.
+function Unmeasured({ label, text }: { label: string; text: string }) {
+  return <Card data-testid="dq-card"><CardContent className="p-4">
+    <p className="text-xs text-muted-foreground uppercase">{label}</p>
+    <Badge className="bg-slate-500/20 text-slate-300 mt-1 whitespace-normal">{text}</Badge>
   </CardContent></Card>;
 }
 // A field the legacy layer hard-codes. It is shown neutrally with its constant
