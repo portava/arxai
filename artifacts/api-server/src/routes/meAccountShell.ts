@@ -26,7 +26,13 @@ import {
   userSlotAllocationTable,
 } from "@workspace/db/schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import {
+  loadPlatformSettings,
+  platformStopWith,
+  platformStopForVenue,
+  type PlatformStop,
+  type PlatformStopSource,
+} from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
@@ -59,9 +65,11 @@ export type AccountShellResponse = {
   // allocation freeze, so it is not what the user-facing badge shows.
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   // What the My Account badge shows: tradingStatus, overridden by this
-  // user's own trading mode (DISABLED → RESTRICTED) and an operator
-  // allocation freeze (→ PAUSED). Display only; the order paths enforce
-  // these themselves. The reason names what was checked.
+  // user's own trading mode (DISABLED → RESTRICTED), the platform emergency
+  // stop when it halts this user's orders (demo / live → PAUSED), an
+  // operator allocation freeze (→ PAUSED) and, for a live shared-master
+  // user, no allocation assigned (→ PAUSED). Display only; the order paths
+  // enforce these themselves. The reason names only the checks that ran.
   accountTradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   accountTradingStatusReason: string;
   // Money view — user's own slice only.
@@ -97,7 +105,11 @@ export type AccountShellResponse = {
     aiAutoTradingEnabled: boolean;
     aiStrategyMode: string | null;
     currency: string;
+    // Always null: capacity is the allocation less margin, and margin is not
+    // measured (see availableCapacityNote).
     availableCapacity: number | null;
+    /** Plain English: why availableCapacity is not shown. */
+    availableCapacityNote: string;
     allocationPending: boolean;
     frozen: boolean;
     freezeMessage: string | null;
@@ -264,7 +276,6 @@ export async function computeAccountShell(
       .where(eq(virtualTradingAccountsTable.userId, userId));
 
     const shellBalance = vAccounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0);
-    const allocatedMargin = vAccounts.reduce((s, a) => s + Number(a.virtualMarginUsed || 0), 0);
     // virtualPnl is realized P/L booked from closed trades (virtualPnlSync).
     const allocatedRealizedPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
     const sharedMasterAssigned = vAccounts.some(
@@ -325,9 +336,14 @@ export async function computeAccountShell(
         ? "From your shared-master virtual account ledger."
         : "Not available: no shared-account allocation or virtual account is recorded for you, so this card has no balance to show.";
     const marginNote = "Not measured: no margin figure is recorded for your account in this view.";
-    const availableCapacity = hasAlloc
-      ? Math.max(0, round2(totalAlloc - allocatedMargin))
-      : null;
+    // Capacity would be the allocation less the margin in use. Margin is not
+    // measured (virtual_margin_used is only ever seeded at 0), so capacity
+    // cannot be worked out: null, never the allocation shown as if no margin
+    // were in use.
+    const availableCapacity: number | null = null;
+    const availableCapacityNote = hasAlloc
+      ? "Not measured: no margin figure is recorded for your account, so the capacity left after margin cannot be worked out."
+      : "Not available: no allocation is assigned to you.";
 
     // 3) Master live access (hard limits + approval).
     const [mla] = await db
@@ -476,20 +492,83 @@ export async function computeAccountShell(
     // order guards (USER_TRADING_DISABLED) and an allocation freeze by the
     // live pipeline, so ACTIVE must not be shown over either.
     const fullFreeze = allocRow?.allocationStatus === "frozen" || Boolean(allocRow?.tradingFrozen);
+    // Both install-wide stops, read once through the platform-stop authority
+    // (platformStopWith, never throws; unreadable = engaged). The platform
+    // emergency stop halts new demo and live orders on every account but not
+    // the paper simulator; the safety-core kill switch halts every venue
+    // (platformStopForVenue). The Risk Governor enforces both on every order;
+    // here they are only reported, so ACTIVE is not shown while one halts this
+    // user's orders. tradingStatus (the mode resolver's input) is unchanged.
+    const stop = await platformStopWith(platform.switches);
+    const userStop = platformStopForVenue(stop,
+      perUserTradingMode === "SIMULATED" ? "PAPER" : perUserTradingMode === "DEMO" ? "DEMO" : "LIVE");
+    const stopHaltsUser = userStop.engaged;
+    const STOP_NAMES: Record<PlatformStopSource, string> = {
+      platform_emergency_stop: "The platform emergency stop",
+      safety_core_kill_switch: "The safety-core kill switch",
+    };
+    const describeStop = (st: PlatformStop, src: PlatformStopSource): string => {
+      const detail = st.detail[src] ?? null;
+      if (detail === "state unreadable" || detail === "settings missing") {
+        return `${STOP_NAMES[src]} could not be read, so it is treated as engaged`;
+      }
+      const at = st.engagedAt?.[src] ?? null;
+      return `${STOP_NAMES[src]} is engaged` + (detail ? ` (${detail})` : "") +
+        (at ? ` since ${new Date(at).toISOString()}` : "");
+    };
+    // An allocation is an operator's row assigning more than 0. The live
+    // pipeline refuses every entry without one (allocationGate:
+    // USER_ALLOCATION_NOT_ASSIGNED), so a shared-master user in LIVE mode with
+    // none is not shown ACTIVE. Demo and paper orders have no allocation gate.
+    const allocationAssigned = hasAlloc && totalAlloc > 0;
+    const sharedMaster = accountMode === "SHARED_MASTER_MT5";
+    const liveAllocationMissing = sharedMaster && perUserTradingMode === "LIVE" && !allocationAssigned;
     const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
       tradingStatus !== "ACTIVE" ? tradingStatus
         : perUserTradingMode === "DISABLED" ? "RESTRICTED"
+        : stopHaltsUser ? "PAUSED"
         : fullFreeze ? "PAUSED"
+        : liveAllocationMissing ? "PAUSED"
         : "ACTIVE";
     const accountTradingStatusReason = (() => {
+      // Unreadable settings fail closed to platform mode OFF: say they were
+      // not read, not that an operator switched trading off.
+      if (tradingMode === "DISABLED" && platform.switches.readable === false) {
+        return "The platform trading settings could not be read, so trading is treated as switched off until they can be.";
+      }
       if (tradingMode === "DISABLED") return "Trading is switched off for the whole platform.";
       if (tradingStatus === "WAITING_APPROVAL") return "Your shared-master access is waiting for operator approval.";
       if (tradingStatus === "PAUSED") return `Your shared-master access is ${String(approvalStatus).toLowerCase()}.`;
       if (tradingStatus === "RESTRICTED") return "Your shared-master access is risk-locked.";
       if (perUserTradingMode === "DISABLED") return "Your operator has not enabled trading on your account.";
+      if (stopHaltsUser) {
+        const what = userStop.sources.includes("safety_core_kill_switch")
+          ? "no new orders are accepted on any account, paper included, until it is released."
+          : "new demo and live orders are halted on every account until an operator releases it.";
+        return `${userStop.sources.map((src) => describeStop(userStop, src)).join("; ")}: ${what}`;
+      }
       if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
-      return "The platform mode, your trading mode, your approval and your allocation allow trading. " +
-        "Your kill switch and risk limits are checked on every order and are not part of this status.";
+      const noAllocationLine = "No allocation is assigned to you yet: live orders on the shared master account are refused until an operator assigns one.";
+      if (liveAllocationMissing) return noAllocationLine;
+      // Name only the checks that ran: shared-master approval applies to
+      // shared-master accounts, an allocation only when one is assigned.
+      const checked = ["the platform mode", "your trading mode"];
+      if (sharedMaster) checked.push("your shared-master approval");
+      if (allocationAssigned) checked.push("your allocation");
+      const checkedList = checked.length > 1
+        ? `${checked.slice(0, -1).join(", ")} and ${checked[checked.length - 1]}`
+        : checked[0]!;
+      const allowLine = `${checkedList.charAt(0).toUpperCase()}${checkedList.slice(1)} allow trading.`;
+      // Not halting this user: released, or the emergency stop on a paper account.
+      const stopLine = stop.sources.includes("platform_emergency_stop")
+        ? `${describeStop(stop, "platform_emergency_stop")}: it halts new demo and live orders, not paper (simulated) trades. The safety-core kill switch is released.`
+        : "The platform emergency stop and the safety-core kill switch are released.";
+      return [
+        allowLine,
+        ...(sharedMaster && !allocationAssigned ? [noAllocationLine] : []),
+        stopLine,
+        "Your own kill switch and risk limits are checked on every order and are not part of this status.",
+      ].join(" ");
     })();
     const tradingModeLabel = (() => {
       switch (perUserTradingMode) {
@@ -573,6 +652,7 @@ export async function computeAccountShell(
         aiStrategyMode: allocRow?.aiStrategyMode ?? null,
         currency: allocCurrency,
         availableCapacity,
+        availableCapacityNote,
         allocationPending: sharedMasterAssigned && (!hasAlloc || totalAlloc === 0),
         frozen: allocFrozen,
         freezeMessage: allocFreezeMessage,

@@ -89,7 +89,7 @@ const REFUSAL_STATUSES = new Set<string>([
   "LIVE_LOCKED", "BLOCKED_BY_PAPER_LOCK", "TRADING_DISABLED",
 ]);
 
-function resolveRoutePendingStatus(
+export function resolveRoutePendingStatus(
   conn: BridgeConnRow | null,
   needsStopLimit: boolean,
   nowMs: number,

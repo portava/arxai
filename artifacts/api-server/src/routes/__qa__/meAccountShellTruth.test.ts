@@ -13,6 +13,13 @@
 //     the user's own mode was DISABLED or their allocation was frozen.
 //   * "My Equity" equalled My Balance for allocated users: floating P/L of
 //     open positions was never included.
+//   * The badge read ACTIVE, "the platform ... allow[s] trading", while the
+//     platform emergency stop halted every new demo and live order.
+//   * The ACTIVE reason said "your allocation allow[s] trading" when no
+//     allocation was assigned (live shared-master entries are refused then)
+//     and named an approval check for accounts where none runs.
+//   * Available Capacity was the allocation less virtual_margin_used, a
+//     column only ever seeded at 0, next to "Margin Used: Not measured".
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -28,6 +35,10 @@ mock.module("@workspace/db", { namedExports: { ...database, db: fake.db } });
 
 let platformMode = "SIMULATED";
 let accountRoutingMode = "USER_OWNED_MT5";
+type Stop = { engaged: boolean; reason: string | null; engagedAt: Date | null };
+const RELEASED: Stop = { engaged: false, reason: null, engagedAt: null };
+let emergencyStop: Stop = RELEASED;
+let switchesReadable = true;
 let connections: Row[] = [];
 let investor: Row | null = null;
 
@@ -39,7 +50,10 @@ const switchesMod = await import("../../lib/safety/platformSwitches.js");
 mock.module("../../lib/safety/platformSwitches.js", {
   namedExports: {
     ...switchesMod,
-    loadPlatformSettings: async () => ({ switches: { platformMode }, config: { accountRoutingMode } }),
+    loadPlatformSettings: async () => ({
+      switches: { platformMode, emergencyStop, readable: switchesReadable },
+      config: { accountRoutingMode },
+    }),
   },
 });
 const governanceMod = await import("../../lib/governance/effectiveGovernance.js");
@@ -75,6 +89,8 @@ beforeEach(() => {
   for (const k of Object.keys(tables)) delete tables[k];
   platformMode = "SIMULATED";
   accountRoutingMode = "USER_OWNED_MT5";
+  emergencyStop = RELEASED;
+  switchesReadable = true;
   connections = [];
   investor = null;
 });
@@ -249,4 +265,137 @@ test("allocated user's equity is balance plus live floating P/L, or not shown �
   const demo = await computeAccountShell(USER);
   assert.equal(demo.allocation.equity, null);
   assert.match(demo.allocation.equityNote, /Not marked to market/);
+});
+
+test("the platform emergency stop is not hidden behind ACTIVE: demo and live users read PAUSED, paper users are told it does not halt them", async () => {
+  platformMode = "LIVE";
+  emergencyStop = { engaged: true, reason: "broker outage", engagedAt: new Date("2026-11-03T09:00:00.000Z") };
+
+  for (const mode of ["DEMO", "LIVE"]) {
+    tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: mode }];
+    const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+    // The platform/approval status the mode resolver reads is unchanged.
+    assert.equal(shell.tradingStatus, "ACTIVE");
+    assert.equal(shell.accountTradingStatus, "PAUSED", `${mode}: new ${mode.toLowerCase()} orders are halted by the stop`);
+    assert.match(shell.accountTradingStatusReason, /platform emergency stop is engaged/);
+    assert.match(shell.accountTradingStatusReason, /broker outage/);
+    assert.match(shell.accountTradingStatusReason, /2026-11-03T09:00:00\.000Z/);
+    assert.match(shell.accountTradingStatusReason, /new demo and live orders are halted/);
+    assert.doesNotMatch(shell.accountTradingStatusReason, /allow trading/);
+  }
+
+  // The stop does not halt the paper simulator (platformStopForVenue), so a
+  // paper user is not shown PAUSED — but the reason names the stop.
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "SIMULATED" }];
+  const paper = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(paper.accountTradingStatus, "ACTIVE");
+  assert.match(paper.accountTradingStatusReason, /platform emergency stop is engaged/);
+  assert.match(paper.accountTradingStatusReason, /not paper \(simulated\) trades/);
+
+  // Released: the reason says the stop was checked and is released.
+  emergencyStop = RELEASED;
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  const released = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(released.accountTradingStatus, "ACTIVE");
+  assert.match(released.accountTradingStatusReason, /platform emergency stop and the safety-core kill switch are released/);
+});
+
+test("unreadable platform settings are reported as not read, not as trading switched off by an operator", async () => {
+  platformMode = "OFF";
+  switchesReadable = false;
+  emergencyStop = { engaged: true, reason: "state unreadable", engagedAt: null };
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(shell.accountTradingStatus, "RESTRICTED");
+  assert.match(shell.accountTradingStatusReason, /could not be read/);
+  assert.doesNotMatch(shell.accountTradingStatusReason, /switched off for the whole platform/);
+});
+
+test("no allocation assigned: the reason never says the allocation allows trading, and live shared-master users read PAUSED", async () => {
+  platformMode = "LIVE";
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_master_live_access = [{ masterLiveStatus: "APPROVED" }];
+  // Attached to the shared master, no allocation row: allocationPending.
+  tables.virtual_trading_accounts = [{ virtualBalance: 0, virtualEquity: 0, virtualMarginUsed: 0, virtualPnl: 0, status: "active", sharedMasterAccountId: 3 }];
+  tables.user_slot_allocation = [];
+
+  // LIVE: the live pipeline refuses every entry (USER_ALLOCATION_NOT_ASSIGNED).
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  const live = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(live.allocation.allocationPending, true);
+  assert.equal(live.tradingStatus, "ACTIVE", "the mode resolver's input is unchanged");
+  assert.equal(live.accountTradingStatus, "PAUSED");
+  assert.match(live.accountTradingStatusReason, /No allocation is assigned to you yet/);
+  assert.match(live.accountTradingStatusReason, /live orders on the shared master account are refused/);
+  assert.doesNotMatch(live.accountTradingStatusReason, /allocation allow/);
+
+  // An allocation row of 0 is not an assignment either.
+  tables.user_slot_allocation = [{ allocatedFunds: "0", allocationStatus: "active" }];
+  const zero = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(zero.accountTradingStatus, "PAUSED");
+
+  // DEMO: no allocation gate on demo orders, so not PAUSED — but no claim that
+  // an allocation was checked, and the reason says live orders need one.
+  tables.user_slot_allocation = [];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  const demo = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(demo.accountTradingStatus, "ACTIVE");
+  assert.doesNotMatch(demo.accountTradingStatusReason, /your allocation/);
+  assert.match(demo.accountTradingStatusReason, /No allocation is assigned to you yet/);
+
+  // A demo user with no shared-master routing: no allocation applies, none is claimed.
+  accountRoutingMode = "USER_OWNED_MT5";
+  tables.virtual_trading_accounts = [];
+  const plain = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(plain.accountTradingStatus, "ACTIVE");
+  assert.doesNotMatch(plain.accountTradingStatusReason, /allocation/);
+  assert.doesNotMatch(plain.accountTradingStatusReason, /approval/, "no approval check runs for a demo account");
+
+  // Allocated and approved shared-master user: both are named as checked.
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  const allocated = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(allocated.accountTradingStatus, "ACTIVE");
+  assert.match(allocated.accountTradingStatusReason, /your shared-master approval and your allocation allow trading/);
+});
+
+test("available capacity is not the allocation with an unmeasured margin of 0 subtracted", async () => {
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  // virtual_margin_used is only ever seeded at 0 (no writer measures it).
+  tables.virtual_trading_accounts = [{ virtualBalance: 1000, virtualEquity: 1000, virtualMarginUsed: 0, virtualPnl: 0, status: "active", sharedMasterAccountId: 3 }];
+
+  const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(shell.allocation.marginUsed, null);
+  assert.notEqual(shell.allocation.availableCapacity, 1000, "the allocation is not capacity left after margin");
+  assert.equal(shell.allocation.availableCapacity, null);
+  assert.match(String(shell.allocation.availableCapacityNote), /not measured/i);
+  assert.match(String(shell.allocation.availableCapacityNote), /margin/);
+
+  // No allocation: nothing to report, and the note says so.
+  tables.user_slot_allocation = [];
+  tables.virtual_trading_accounts = [];
+  const none = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(none.allocation.availableCapacity, null);
+  assert.match(String(none.allocation.availableCapacityNote), /no allocation/i);
+});
+
+test("the safety-core kill switch halts every venue, paper included: the badge reads PAUSED and names it", async () => {
+  platformMode = "LIVE";
+  // safety_core row as readSafetyCoreSwitch() selects it.
+  tables.safety_core = [{ on: true, why: "drill", at: new Date("2026-11-03T08:00:00.000Z"), mode: null, state: null }];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "SIMULATED" }];
+  const paper = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(paper.tradingStatus, "ACTIVE", "the mode resolver's input is unchanged");
+  assert.equal(paper.accountTradingStatus, "PAUSED");
+  assert.match(paper.accountTradingStatusReason, /safety-core kill switch is engaged \(drill\) since 2026-11-03T08:00:00\.000Z/);
+  assert.match(paper.accountTradingStatusReason, /paper included/);
+
+  // Released: both stops are named as checked.
+  tables.safety_core = [{ on: false, why: null, at: null, mode: null, state: null }];
+  const released = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(released.accountTradingStatus, "ACTIVE");
+  assert.match(released.accountTradingStatusReason, /platform emergency stop and the safety-core kill switch are released/);
 });

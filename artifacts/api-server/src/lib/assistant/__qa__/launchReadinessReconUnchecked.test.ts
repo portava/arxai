@@ -1,7 +1,9 @@
 // Truth regression: Ruby's admin launch-readiness verdict must not read a
 // reconciliation pass whose detectors could not run as "0 critical issues /
 // READY_FOR_MANUAL_LIVE_TEST". An unchecked critical check is a blocker, like a
-// found one. Reporting only — no execution gate reads this verdict.
+// found one. Nor may it report the env flag alone as the master switch: dispatch
+// gate 1 reads env AND the operator arm. Reporting only — no execution gate
+// reads this verdict.
 //
 // Run with --experimental-test-module-mocks (test:truth-component-evidence).
 import { test, mock } from "node:test";
@@ -25,11 +27,15 @@ mock.module("../../mt5/currentConnectedBridgeDetector.js", {
   namedExports: { detectCurrentConnectedBridge: async () => ({ ok: true, primaryReason: null }) },
 });
 const realSwitches = await import("../../safety/platformSwitches.js");
+// The master switch as platformSwitches reports it: enabled = env AND operator arm.
+const ARMED = { envEnabled: true, operatorArmed: true, enabled: true };
+let liveBrokerExecution: { envEnabled: boolean; operatorArmed: boolean; enabled: boolean } = ARMED;
+let switchesReadable = true;
 mock.module("../../safety/platformSwitches.js", {
   namedExports: {
     ...realSwitches,
     loadPlatformSettings: async () => ({
-      switches: { liveBrokerExecution: { envEnabled: true }, platformMode: "LIVE" },
+      switches: { liveBrokerExecution, platformMode: "LIVE", readable: switchesReadable },
       config: { sharedLiveTradingEnabled: true },
     }),
     platformStopWith: async () => ({ engaged: false, sources: [], reason: null }),
@@ -100,4 +106,43 @@ test("an unchecked lower-severity detector is a needs-action item, not 'all clea
   });
   const r = (await summarizeLaunchReadinessForAdminTool(1)) as { verdict: string; needsAction: string[] };
   assert.ok(r.needsAction.includes("RECONCILIATION_UNCHECKED=BLOCKED_REJECTED_COMMAND"), JSON.stringify(r.needsAction));
+});
+
+test("env flag on but no operator arm: the master switch is reported off, as gate 1 reads it", async () => {
+  agg = aggOf({});
+  liveBrokerExecution = { envEnabled: true, operatorArmed: false, enabled: false };
+  try {
+    const r = (await summarizeLaunchReadinessForAdminTool(1)) as {
+      verdict: string; blockers: string[]; safeToManuallyTest: boolean;
+      tradingMode: { liveBrokerExecutionEnabled: boolean; liveBrokerExecutionEnvFlag: boolean; liveBrokerExecutionOperatorArmed: boolean };
+    };
+    assert.equal(r.tradingMode.liveBrokerExecutionEnabled, false, "not enabled while no operator has armed it");
+    assert.equal(r.tradingMode.liveBrokerExecutionEnvFlag, true);
+    assert.equal(r.tradingMode.liveBrokerExecutionOperatorArmed, false);
+    assert.notEqual(r.verdict, "READY_FOR_MANUAL_LIVE_TEST");
+    assert.equal(r.safeToManuallyTest, false);
+    assert.ok(r.blockers.some((b) => b.startsWith("LIVE_BROKER_EXECUTION_NOT_ARMED")), JSON.stringify(r.blockers));
+    assert.ok(!r.blockers.some((b) => b.startsWith("ARX_LIVE_BROKER_EXECUTION_ENABLED=false")), "the env flag is set; the arm is what is missing");
+
+    // Settings unreadable: the switch is unknown and treated as off, not "not armed".
+    switchesReadable = false;
+    const u = (await summarizeLaunchReadinessForAdminTool(1)) as { blockers: string[] };
+    assert.ok(u.blockers.some((b) => b.startsWith("LIVE_BROKER_EXECUTION_UNKNOWN")), JSON.stringify(u.blockers));
+    assert.ok(!u.blockers.some((b) => b.startsWith("LIVE_BROKER_EXECUTION_NOT_ARMED")));
+  } finally {
+    liveBrokerExecution = ARMED;
+    switchesReadable = true;
+  }
+});
+
+test("env flag off: the existing master-switch blocker names the env flag", async () => {
+  agg = aggOf({});
+  liveBrokerExecution = { envEnabled: false, operatorArmed: true, enabled: false };
+  try {
+    const r = (await summarizeLaunchReadinessForAdminTool(1)) as { blockers: string[]; tradingMode: { liveBrokerExecutionEnabled: boolean } };
+    assert.equal(r.tradingMode.liveBrokerExecutionEnabled, false);
+    assert.ok(r.blockers.includes("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)"), JSON.stringify(r.blockers));
+  } finally {
+    liveBrokerExecution = ARMED;
+  }
 });

@@ -65,3 +65,15 @@ describe("PropExtendedRulesPanel — per-trade rule label", () => {
     expect(basis).toMatch(/Risk at entry \(stop-loss distance\) is not measured/);
   });
 });
+
+// Truth: trailing drawdown uses the same closed-trade running balance as total
+// drawdown, so open positions' floating P&L is not in it. The control must say so.
+describe("PropExtendedRulesPanel — trailing drawdown basis", () => {
+  it("says trailing drawdown is measured from closed trades only", () => {
+    const qc = new QueryClient();
+    render(<QueryClientProvider client={qc}><PropExtendedRulesPanel challengeId={5} rules={{ ...perTradeRules, trailingDrawdownEnabled: true }} /></QueryClientProvider>);
+    const basis = screen.getByTestId("prop-trailing-drawdown-basis").textContent ?? "";
+    expect(basis).toMatch(/closed trades only/i);
+    expect(basis).toMatch(/open positions.*not counted/i);
+  });
+});

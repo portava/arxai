@@ -44,7 +44,10 @@ type ShellResponse = {
     aiAutoTradingEnabled?: boolean;
     aiStrategyMode?: string | null;
     currency?: string;
+    // null = not measured: capacity is the allocation less margin, and margin
+    // is not recorded (availableCapacityNote says why).
     availableCapacity?: number | null;
+    availableCapacityNote?: string;
     allocationPending?: boolean;
     frozen?: boolean;
     freezeMessage?: string | null;
@@ -285,16 +288,22 @@ export default function MyAccountPage() {
               }
               testid="my-ai-sleeve-state"
             />
-            {s.allocation.availableCapacity != null && (
-              <Stat
-                label="Available Capacity"
-                value={fmtMoney(s.allocation.availableCapacity)}
-                testid="my-available-capacity"
-              />
-            )}
+            <Stat
+              label="Available Capacity"
+              value={s.allocation.availableCapacity == null ? NOT_MEASURED : fmtMoney(s.allocation.availableCapacity)}
+              testid="my-available-capacity"
+            />
           </CardContent>
         )}
-        {/* Attached to shared master but admin has not allocated yet. */}
+        {(s.allocation.totalAllocation ?? 0) > 0 && s.allocation.availableCapacity == null && s.allocation.availableCapacityNote && (
+          <CardContent className="pt-0 text-xs text-txt-secondary" data-testid="my-available-capacity-note">
+            Available Capacity: {s.allocation.availableCapacityNote}
+          </CardContent>
+        )}
+        {/* Attached to shared master but admin has not allocated yet. The
+            live pipeline refuses entries without an allocation
+            (USER_ALLOCATION_NOT_ASSIGNED); demo and paper orders have no
+            allocation gate, so this does not say all trading is paused. */}
         {s.allocation.allocationPending && (
           <CardContent className="pt-0">
             <div
@@ -303,7 +312,7 @@ export default function MyAccountPage() {
             >
               <Info className="h-3.5 w-3.5 mt-[2px] shrink-0" />
               <span>
-                Your shared bridge is attached, but an operator has not allocated capital to your account yet. Trading is paused until an allocation is assigned.
+                Your shared bridge is attached, but an operator has not allocated capital to your account yet. Live orders on the shared master account are refused until an allocation is assigned.
               </span>
             </div>
           </CardContent>

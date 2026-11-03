@@ -130,16 +130,18 @@ function isFinishedChallenge(status: string): boolean {
   return FINISHED_STATUSES.has(status);
 }
 
-const RISK_PER_TRADE_NOTE =
+export const RISK_PER_TRADE_NOTE =
   "Max risk per trade is checked on each closed trade's realised loss against that day's starting balance. " +
   "Risk at entry (stop-loss distance) is not measured, so a trade that risked more but closed at a small loss or a profit is not flagged.";
 
-/** Drawdown and daily loss are a running balance of realised P&L from
- *  closed paper orders; open positions are not marked to market. A finished
- *  challenge is judged on closed trades up to its end, so it does not count
- *  (or claim the absence of) positions open now. */
-function closedTradeDrawdownNote(openPositions: number, final = false): string {
-  const base = "Drawdown and daily loss are measured from closed demo trades only.";
+/** Drawdown, trailing drawdown and daily loss are a running balance of
+ *  realised P&L from closed paper orders; open positions are not marked to
+ *  market. A finished challenge is judged on closed trades up to its end, so
+ *  it does not count (or claim the absence of) positions open now. */
+export function closedTradeDrawdownNote(openPositions: number, final = false, trailing = false): string {
+  const base = trailing
+    ? "Drawdown, trailing drawdown and daily loss are measured from closed demo trades only."
+    : "Drawdown and daily loss are measured from closed demo trades only.";
   if (final) return `${base} This challenge is finished, so only trades closed by its end count; open positions are not counted.`;
   if (openPositions <= 0) return `${base} No positions were open when this was evaluated.`;
   const n = openPositions === 1 ? "1 open position is" : `${openPositions} open positions are`;
@@ -309,6 +311,8 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
 
   // ── Phase 27-B: Trailing drawdown rule ─────────────────────────────
   // STATIC = drawdown from starting balance; TRAILING = drawdown from peak.
+  // Same closed-trade running balance as total drawdown: open positions are
+  // not marked to market, so the messages say "Closed-trade".
   if (ch.trailingDrawdownEnabled === 1) {
     const tdRef = ch.trailingDrawdownType === "TRAILING" ? peakBalance : ch.startingBalance;
     const tdPct = tdRef > 0 ? (tdRef - runningBalance) / tdRef : 0;
@@ -316,12 +320,12 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       if (!hardFail) hardFail = "Trailing drawdown exceeded";
       violations.push({
         type: "TRAILING_DRAWDOWN", severity: "HARD",
-        message: `Trailing drawdown ${(tdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`,
+        message: `Closed-trade trailing drawdown ${(tdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`,
       });
     } else if (tdPct > ch.trailingDrawdownAmount * 0.8) {
       violations.push({
         type: "TRAILING_DRAWDOWN", severity: "WARN",
-        message: `Trailing drawdown ${(tdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`,
+        message: `Closed-trade trailing drawdown ${(tdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`,
       });
     }
   }
@@ -575,7 +579,7 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
         // What the drawdown / daily-loss figures above are built from.
         drawdownBasis: "CLOSED_TRADES_ONLY",
         openPositionsNotCounted: ev.openPositionsNotCounted,
-        drawdownNote: closedTradeDrawdownNote(ev.openPositionsNotCounted, ev.final),
+        drawdownNote: closedTradeDrawdownNote(ev.openPositionsNotCounted, ev.final, ch.trailingDrawdownEnabled === 1),
         // What the max-risk-per-trade rule actually checks.
         maxRiskPerTrade: ch.maxRiskPerTrade,
         riskPerTradeBasis: "REALISED_LOSS_AFTER_CLOSE",
