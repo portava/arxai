@@ -108,6 +108,15 @@ export interface GovernorMetrics {
    */
   paperRiskCountUnreadable: Array<"paper_book" | "risk_count_equity">;
   /**
+   * The paper book could not be read (in any scope, the operator's
+   * install-wide view too): dailyPnl, weeklyPnl, openPaperTrades,
+   * sameSymbolExposure, sampleSize, winRate30d, maxDrawdown and the unsized
+   * counts are placeholder 0s, not measurements. Readiness then states that
+   * the 30-day closes could not be loaded (PAPER_CLOSES_UNREADABLE) and
+   * scores no edge points from them.
+   */
+  paperBookUnreadable: boolean;
+  /**
    * The trader's risk limits (loadEffectiveLimits) could not be read, so
    * dailyLossLimit, maxOpenPaperTrades and the percent fields are null
    * because they are unknown, not because no limit is set. Readiness
@@ -234,6 +243,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   // --- EE: paper_orders ---
   let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0, unsizedPaperCloses30d = 0, unsizedWinningPaperCloses30d = 0;
   const sameSymbolExposure: Record<string, number> = {};
+  let paperBookUnreadable = false;
   // Owner decision 7: paper_orders through the paper book's read side. A
   // settled order is CLOSED_SL / CLOSED_TP / CLOSED_MANUAL (the venue never
   // writes "CLOSED"; filtering on it read every P/L as 0).
@@ -266,7 +276,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
       maxDrawdown = Math.round(Math.max(drawdownOf(paperBookedRealized), drawdownOf(paperModelRealized)) * 100) / 100;
     }
     dataSourcesRead.push("paper_orders");
-  } catch (e) { missingDataSources.push("paper_orders"); }
+  } catch (e) { missingDataSources.push("paper_orders"); paperBookUnreadable = true; }
 
   // --- AA: trade_decision_logs ---
   let avgConfidence = 0, avgRiskScore = 0, decisionToWinRate = 0, decisionsTotal = 0;
@@ -438,6 +448,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
       paperBookedEquity,
       paperOpenValuedAtStop,
       paperRiskCountUnreadable,
+      paperBookUnreadable,
       riskLimitsUnreadable,
       weeklyPnl: Number(weeklyPnl.toFixed(2)),
       maxDrawdown,
@@ -590,8 +601,11 @@ function evaluateStatus(
 
   // ── CAUTION conditions (informational, do not pause) ────────────────────
   let cautionReasons = 0;
-  if (m.sampleSize < 30) { riskFlags.push({ code: "SMALL_SAMPLE_SIZE", message: `Only ${m.sampleSize} closed paper trades in last 30d.` }); cautionReasons += 1; }
-  if (m.winRate30d > 0 && m.winRate30d < 50) {
+  // An unread paper book leaves the closes figures at placeholder 0s: say
+  // they could not be loaded, never "Only 0 closed paper trades".
+  if (m.paperBookUnreadable) { riskFlags.push({ code: "PAPER_CLOSES_UNREADABLE", message: "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known." }); cautionReasons += 1; }
+  else if (m.sampleSize < 30) { riskFlags.push({ code: "SMALL_SAMPLE_SIZE", message: `Only ${m.sampleSize} closed paper trades in last 30d.` }); cautionReasons += 1; }
+  if (!m.paperBookUnreadable && m.winRate30d > 0 && m.winRate30d < 50) {
     // winRate30d is the stricter risk count: a close of unknown size that won
     // on price counts as not won. Say so rather than state it as measured.
     const u = m.unsizedWinningPaperCloses30d;
@@ -625,17 +639,19 @@ function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGr
   if (m.avgRiskScore >= 80) a -= 5;
   a = Math.max(0, a);
 
-  // B. Strategy edge maturity (25)
+  // B. Strategy edge maturity (25): no points from closes that were not read.
   let b = 0;
-  if (m.sampleSize >= 100) b += 12;
-  else if (m.sampleSize >= 50) b += 9;
-  else if (m.sampleSize >= 20) b += 6;
-  else if (m.sampleSize >= 5) b += 3;
-  if (m.winRate30d >= 60) b += 8;
-  else if (m.winRate30d >= 50) b += 5;
-  else if (m.winRate30d >= 40) b += 2;
-  if (m.maxDrawdown < 50) b += 5;
-  else if (m.maxDrawdown < 100) b += 2;
+  if (!m.paperBookUnreadable) {
+    if (m.sampleSize >= 100) b += 12;
+    else if (m.sampleSize >= 50) b += 9;
+    else if (m.sampleSize >= 20) b += 6;
+    else if (m.sampleSize >= 5) b += 3;
+    if (m.winRate30d >= 60) b += 8;
+    else if (m.winRate30d >= 50) b += 5;
+    else if (m.winRate30d >= 40) b += 2;
+    if (m.maxDrawdown < 50) b += 5;
+    else if (m.maxDrawdown < 100) b += 2;
+  }
 
   // C. AI decision quality (20)
   let c = 0;
@@ -721,7 +737,7 @@ function buildNextBestActions(status: OverallStatus, m: GovernorMetrics, hardBlo
     out.push("Wait out the revenge-trade cooldown before opening any new paper trade.");
   }
   // The sample size is a placeholder 0 when the paper book was not read.
-  if (m.sampleSize < 30 && !m.paperRiskCountUnreadable.includes("paper_book")) {
+  if (m.sampleSize < 30 && !m.paperBookUnreadable) {
     out.push("Continue paper trading to grow the sample size before changing strategies.");
   }
   if (m.repeatedMistakeCount >= 3) {

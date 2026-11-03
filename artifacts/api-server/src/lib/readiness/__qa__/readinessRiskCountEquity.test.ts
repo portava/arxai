@@ -232,10 +232,12 @@ test("a failed read of today's paper loss count hard-blocks too: the daily loss 
     assert.match(block.message, /^Today's paper loss count and your open paper positions could not be loaded, so your daily loss limit and open-trade limits cannot be checked\./);
     assert.equal(e.paperTradingAllowed, false);
     assert.deepEqual(e.metrics.paperRiskCountUnreadable, ["paper_book"]);
-    // The 25 risk-discipline points are not earned from unread risk facts.
+    // The 25 risk-discipline points are not earned from unread risk facts,
+    // nor the 5 edge points for a drawdown under 50 from the placeholder 0
+    // (round-3 safety review, s3-views: the unread score kept those 5).
     state.failBookRead = false;
     const read = await evaluate();
-    assert.equal(read.readinessScore - e.readinessScore, 25, `score unread ${e.readinessScore}, read ${read.readinessScore}`);
+    assert.equal(read.readinessScore - e.readinessScore, 25 + 5, `score unread ${e.readinessScore}, read ${read.readinessScore}`);
     assert.ok(e.nextBestActions.some((a) => /paper account can be read/.test(a)));
     assert.ok(!e.nextBestActions.some((a) => /grow the sample size/.test(a)), "the sample size was not read");
   } finally {
@@ -290,5 +292,40 @@ test("a failed risk-limits read hard-blocks (RISK_LIMITS_UNREADABLE) and earns n
     assert.ok(e.nextBestActions.some((a) => /risk limits can be read/.test(a)));
   } finally {
     limitsRead.fail = false;
+  }
+});
+
+// Round-3 safety review (s3-views): with the paper book unread, sampleSize,
+// winRate30d and maxDrawdown keep their placeholder 0s. Readiness still
+// flagged "Only 0 closed paper trades in last 30d." as a measured fact (it
+// reaches the API and the Trader Coach) and scored 5 edge points for a
+// drawdown under 50 from the placeholder 0. It now says the closes could not
+// be loaded and scores no edge points from them.
+test("an unread paper book never states 'Only 0 closed paper trades' and earns no edge points from placeholder figures", async () => {
+  state.account = account(10_000);
+  state.closes = [];
+  state.open = [];
+  for (const userId of [7, null]) {
+    const run = () => evaluateReadiness({ persist: false, userId, log: quiet as never });
+    const read = await run();
+    assert.ok(read.riskFlags.some((f) => f.code === "SMALL_SAMPLE_SIZE" && f.message === "Only 0 closed paper trades in last 30d."));
+    try {
+      state.failBookRead = true;
+      const e = await run();
+      assert.ok(e.missingDataSources.includes("paper_orders"));
+      assert.equal(e.metrics.paperBookUnreadable, true);
+      assert.ok(!e.riskFlags.some((f) => f.code === "SMALL_SAMPLE_SIZE"), `scope ${userId}: flags ${JSON.stringify(e.riskFlags)}`);
+      assert.ok(!e.riskFlags.some((f) => /Only 0 closed/.test(f.message)));
+      const flag = e.riskFlags.find((f) => f.code === "PAPER_CLOSES_UNREADABLE");
+      assert.ok(flag, `scope ${userId}: flags ${e.riskFlags.map((f) => f.code).join(", ")}`);
+      assert.equal(flag.message, "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known.");
+      assert.ok(!e.nextBestActions.some((a) => /grow the sample size/.test(a)), `scope ${userId}: the sample size was not read`);
+      // Section A: 25 points off on the trader's unread risk count (that
+      // block is trader-scoped); section B: the 5 placeholder points off.
+      const gap = read.readinessScore - e.readinessScore;
+      assert.equal(gap, userId == null ? 5 : 25 + 5, `scope ${userId}: score unread ${e.readinessScore}, read ${read.readinessScore}`);
+    } finally {
+      state.failBookRead = false;
+    }
   }
 });
