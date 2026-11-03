@@ -184,7 +184,9 @@ router.patch("/trade-plans/:id", requireUser, async (req, res): Promise<void> =>
       .limit(1);
     if (!cur[0]) { res.status(404).json({ error: "Not found" }); return; }
     if (cur[0].status === "EXECUTED" || cur[0].status === "CANCELED") {
-      res.status(409).json({ error: `Plan is ${cur[0].status} and cannot be edited.` }); return;
+      res.status(409).json({ error: cur[0].status === "EXECUTED"
+        ? "Plan was already sent to the Pre-Trade Confirmation flow and cannot be edited."
+        : "Plan is CANCELED and cannot be edited." }); return;
     }
     // Editing a READY plan demotes it to DRAFT — must re-validate.
     const nextStatus = cur[0].status === "READY" ? "DRAFT" : cur[0].status;
@@ -405,7 +407,7 @@ router.post("/trade-plans/:id/cancel", requireUser, async (req, res): Promise<vo
       .where(and(eq(tradePlansTable.id, id), eq(tradePlansTable.userId, userId)))
       .limit(1);
     if (!cur[0]) { res.status(404).json({ error: "Not found" }); return; }
-    if (cur[0].status === "EXECUTED") { res.status(409).json({ error: "Cannot cancel an executed plan." }); return; }
+    if (cur[0].status === "EXECUTED") { res.status(409).json({ error: "Cannot cancel a plan that was already sent to the Pre-Trade Confirmation flow." }); return; }
     if (cur[0].status === "CANCELED") { res.json(serializePlan(cur[0])); return; }
     const updated = await db.update(tradePlansTable)
       .set({ status: "CANCELED", updatedAt: new Date() })
@@ -422,6 +424,10 @@ router.post("/trade-plans/:id/cancel", requireUser, async (req, res): Promise<vo
 // Plan transitions to EXECUTED (= "submitted to confirmation flow"); the
 // confirmation row is what safetyCore continues to gate. Idempotent:
 // re-converting returns the existing confirmation id.
+// EXECUTED here never means an order was placed: the request is a practice
+// confirmation (practiceMode, LIVE_TRADING_DISABLED) that expires in 5 minutes
+// unless confirmed. The dashboard labels it "Sent to confirmation" and reads
+// the confirmation's own status (GET /execution-confirmations/:id).
 router.post("/trade-plans/:id/convert", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);

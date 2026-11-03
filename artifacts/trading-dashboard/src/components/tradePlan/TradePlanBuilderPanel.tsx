@@ -4,7 +4,7 @@ import { TradePlanChecklist } from "./TradePlanChecklist";
 import { AIPlanReviewCard } from "./AIPlanReviewCard";
 import { RiskPreviewCard } from "./RiskPreviewCard";
 import { StrategyFitPreview } from "./StrategyFitPreview";
-import { ConvertToLiveExecutionButton } from "./ConvertToLiveExecutionButton";
+import { ConvertToLiveExecutionButton, SentToConfirmationStatus } from "./ConvertToLiveExecutionButton";
 import { MultiTimeframeAlignmentCard } from "../multiTimeframe";
 import { NewsRiskCard } from "../news";
 
@@ -41,8 +41,19 @@ const STATUS_COLORS: Record<Status, string> = {
   DRAFT: "bg-slate-700 text-slate-200",
   READY: "bg-green-600 text-white",
   INVALIDATED: "bg-amber-600 text-white",
-  EXECUTED: "bg-indigo-600 text-white",
+  EXECUTED: "bg-indigo-900 text-indigo-100",
   CANCELED: "bg-slate-800 text-slate-400",
+};
+
+// The server's EXECUTED means "sent to the Pre-Trade Confirmation flow": convert
+// creates a practice confirmation request and places no order. The badge says
+// what happened, never "EXECUTED".
+const STATUS_LABEL: Record<Status, string> = {
+  DRAFT: "DRAFT",
+  READY: "READY",
+  INVALIDATED: "INVALIDATED",
+  EXECUTED: "SENT TO CONFIRMATION",
+  CANCELED: "CANCELED",
 };
 
 function asNum(v: string): number | null {
@@ -142,7 +153,7 @@ export function TradePlanBuilderPanel() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium text-slate-100">{p.symbol ?? "Untitled"}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[p.status]}`}>{p.status}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[p.status]}`}>{STATUS_LABEL[p.status] ?? p.status}</span>
               </div>
               <div className="text-xs text-slate-400">
                 {p.directionBias ?? "—"} · {p.strategyId ?? "no strategy"}
@@ -162,7 +173,7 @@ export function TradePlanBuilderPanel() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-100">Plan #{active.id}</h2>
-            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[active.status]}`}>{active.status}</span>
+            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[active.status]}`}>{STATUS_LABEL[active.status] ?? active.status}</span>
           </div>
 
           {/* form */}
@@ -248,9 +259,7 @@ export function TradePlanBuilderPanel() {
 
           {active.executionConfirmationId == null
             ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY"} />
-            : <div className="rounded-md border border-indigo-700 bg-indigo-950/40 p-3 text-sm text-indigo-200">
-                Converted to execution confirmation #{active.executionConfirmationId}. Open the Pre-Trade Confirmation flow to review and confirm.
-              </div>
+            : <SentToConfirmationStatus confirmationId={active.executionConfirmationId} />
           }
         </section>
       )}
