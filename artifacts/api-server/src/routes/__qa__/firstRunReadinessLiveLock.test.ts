@@ -70,7 +70,7 @@ mock.module("../../lib/notifications/service.js", { namedExports: { getPreferenc
 
 const { default: router } = await import("../meFirstRunReadiness.js");
 
-interface Item { key: string; status: string; detail: string }
+interface Item { key: string; label: string; status: string; detail: string }
 
 async function call(): Promise<{ status: number; body: Record<string, unknown> }> {
   return await new Promise((resolve, reject) => {
@@ -137,4 +137,28 @@ test("an unread envelope (fail-closed default or a throw) keeps liveLocked=true 
     assert.match(lock.detail, /could not be read/);
     assert.notEqual(item(body, "paper_mode").status, "PASS");
   }
+});
+
+// The row headline must match the reading: the admin "Setup & readiness" panel
+// prints the label in bold above the detail, so a constant "Live trading
+// locked" sat over "Not locked: ... permits live order execution" (LIVE) and
+// over "could not be read" (unread). Same for "Paper mode enabled" over
+// "your account is not paper-only".
+test("row labels follow the envelope: no 'locked' headline for a LIVE or unread envelope", async () => {
+  state.env = LIVE;
+  let { body } = await call();
+  assert.notEqual(item(body, "live_locked").label, "Live trading locked");
+  assert.match(item(body, "live_locked").label, /not locked/i);
+  assert.doesNotMatch(item(body, "paper_mode").label, /Paper mode enabled/);
+  for (const env of [FAIL_CLOSED_ENVELOPE, new Error("db down")]) {
+    state.env = env;
+    ({ body } = await call());
+    const lock = item(body, "live_locked");
+    assert.doesNotMatch(lock.label, /^Live trading locked$/);
+    assert.match(lock.label, /could not be read/i);
+    assert.doesNotMatch(item(body, "paper_mode").label, /Paper mode enabled/);
+  }
+  state.env = DEMO;
+  ({ body } = await call());
+  assert.equal(item(body, "live_locked").label, "Live trading locked");
 });
