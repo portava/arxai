@@ -301,6 +301,10 @@ interface ScalpSummary {
   decided: number;
   /** Decided results graded from an estimate rather than a broker-realised P/L. */
   estimatedDecided: number;
+  /** Per outcome: results graded from an estimate (not a KNOWN P/L). */
+  estimatedWins: number;
+  estimatedLosses: number;
+  estimatedBreakeven: number;
   winRatePct: number | null;
   stillLearning: number;
   cautious: number;
@@ -316,17 +320,24 @@ function buildSummary(
   let open = 0;
   let unknown = 0;
   let estimatedDecided = 0;
+  let estimatedWins = 0;
+  let estimatedLosses = 0;
+  let estimatedBreakeven = 0;
   for (const e of entries) {
-    if ((e.result === "WIN" || e.result === "LOSS") && e.plQuality !== "KNOWN") estimatedDecided += 1;
+    const estimated = e.plQuality !== "KNOWN";
+    if ((e.result === "WIN" || e.result === "LOSS") && estimated) estimatedDecided += 1;
     switch (e.result) {
       case "WIN":
         wins += 1;
+        if (estimated) estimatedWins += 1;
         break;
       case "LOSS":
         losses += 1;
+        if (estimated) estimatedLosses += 1;
         break;
       case "BREAKEVEN":
         breakeven += 1;
+        if (estimated) estimatedBreakeven += 1;
         break;
       case "OPEN":
         open += 1;
@@ -360,10 +371,48 @@ function buildSummary(
     unknown,
     decided,
     estimatedDecided,
+    estimatedWins,
+    estimatedLosses,
+    estimatedBreakeven,
     winRatePct,
     stillLearning,
     cautious,
   };
+}
+
+// A count of results graded from the last floating reading is a count of
+// likely outcomes, worded as the row badges are ("Likely win (estimated)").
+// Only a count made entirely of KNOWN (broker-realised) results is plain.
+type OutcomeKind = "WIN" | "LOSS" | "BREAKEVEN";
+const OUTCOME_WORDS: Record<OutcomeKind, { plain: string; likely: string }> = {
+  WIN: { plain: "wins", likely: "likely wins (estimated)" },
+  LOSS: { plain: "losses", likely: "likely losses (estimated)" },
+  BREAKEVEN: { plain: "break-even", likely: "roughly flat (estimated)" },
+};
+function outcomeCountLabel(kind: OutcomeKind, total: number, estimated: number): string {
+  const w = OUTCOME_WORDS[kind];
+  if (estimated <= 0) return w.plain;
+  if (estimated >= total) return w.likely;
+  return `${w.plain} (${estimated} estimated)`;
+}
+
+type OutcomeCounts = Pick<ScalpSummary, "wins" | "losses" | "breakeven" | "estimatedWins" | "estimatedLosses" | "estimatedBreakeven">;
+
+/** The outcome filter's options, named as the counts and row badges are. */
+export function resultFilterOptions(c: OutcomeCounts): ReadonlyArray<{ value: string; label: string }> {
+  const label = (kind: OutcomeKind, total: number, estimated: number) => {
+    const w = OUTCOME_WORDS[kind];
+    const plain = w.plain.charAt(0).toUpperCase() + w.plain.slice(1);
+    if (estimated <= 0) return plain;
+    if (estimated >= total) return w.likely.charAt(0).toUpperCase() + w.likely.slice(1);
+    return `${plain} (some estimated)`;
+  };
+  return RESULT_FILTERS.map((f) =>
+    f.value === "WIN" ? { ...f, label: label("WIN", c.wins, c.estimatedWins) }
+    : f.value === "LOSS" ? { ...f, label: label("LOSS", c.losses, c.estimatedLosses) }
+    : f.value === "BREAKEVEN" ? { ...f, label: label("BREAKEVEN", c.breakeven, c.estimatedBreakeven) }
+    : f,
+  );
 }
 
 function SummaryStat({
@@ -430,19 +479,19 @@ function ScalpSummaryStrip({ summary, capped }: { summary: ScalpSummary; capped:
         </div>
         <div className="h-8 w-px bg-border/60" aria-hidden />
         <SummaryStat
-          label="wins"
+          label={outcomeCountLabel("WIN", summary.wins, summary.estimatedWins)}
           value={String(summary.wins)}
           tone="text-emerald-300"
           testid="scalp-summary-wins"
         />
         <SummaryStat
-          label="losses"
+          label={outcomeCountLabel("LOSS", summary.losses, summary.estimatedLosses)}
           value={String(summary.losses)}
           tone="text-rose-300"
           testid="scalp-summary-losses"
         />
         <SummaryStat
-          label="break-even"
+          label={outcomeCountLabel("BREAKEVEN", summary.breakeven, summary.estimatedBreakeven)}
           value={String(summary.breakeven)}
           testid="scalp-summary-breakeven"
         />
@@ -718,7 +767,7 @@ export default function ScalpJournalPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {RESULT_FILTERS.map((f) => (
+                  {resultFilterOptions(summary).map((f) => (
                     <SelectItem key={f.value} value={f.value}>
                       {f.label}
                     </SelectItem>

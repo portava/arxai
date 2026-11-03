@@ -13,7 +13,7 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => ({
   useGetMeScalpPersonality: () => ({ data: { symbols: [], generatedAt: "2026-10-28T12:00:00Z" }, isFetching: false, isLoading: false, isError: false, refetch: () => {} }),
 }));
 
-const { default: ScalpJournalPage } = await import("./scalp-journal");
+const { default: ScalpJournalPage, resultFilterOptions } = await import("./scalp-journal");
 
 function entry(id: number) {
   return {
@@ -85,5 +85,50 @@ describe("Scalp Journal results graded from an estimate", () => {
     const row = screen.getByTestId("scalp-journal-row");
     expect(row.textContent).toMatch(/Win/);
     expect(row.textContent).not.toMatch(/estimated\)/);
+  });
+});
+
+// Every WIN / LOSS the server sends was graded from the last floating reading
+// (toListItem turns even a legacy KNOWN row into ESTIMATED). The row badges and
+// the win rate say "estimated"; the count tiles beside them read a bare green
+// "wins" / red "losses", and the filter said "Wins" / "Losses". A leg last read
+// at +$3 that closed at -$4 was counted as a win, stated as fact.
+describe("Scalp Journal outcome counts graded from an estimate", () => {
+  it("count tiles say likely / estimated when every counted result was graded from an estimate", () => {
+    h.entries = [
+      { ...entry(1), result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 3 },
+      { ...entry(3), result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 2 },
+      { ...entry(2), result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -1 },
+      { ...entry(4), result: "BREAKEVEN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 0 },
+    ];
+    render(<ScalpJournalPage />);
+    expect(screen.getByTestId("scalp-summary-wins").textContent).toBe("2likely wins (estimated)");
+    expect(screen.getByTestId("scalp-summary-losses").textContent).toBe("1likely losses (estimated)");
+    expect(screen.getByTestId("scalp-summary-breakeven").textContent).toBe("1roughly flat (estimated)");
+  });
+
+  it("a mix of KNOWN and estimated results says how many are estimated; all KNOWN keeps the plain label", () => {
+    h.entries = [
+      { ...entry(1), result: "WIN", plQuality: "KNOWN", realizedPl: 5 },
+      { ...entry(3), result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 2 },
+      { ...entry(2), result: "LOSS", plQuality: "KNOWN", realizedPl: -2 },
+    ];
+    render(<ScalpJournalPage />);
+    expect(screen.getByTestId("scalp-summary-wins").textContent).toBe("2wins (1 estimated)");
+    expect(screen.getByTestId("scalp-summary-losses").textContent).toBe("1losses");
+  });
+
+  it("the outcome filter names estimated results as likely outcomes", () => {
+    const est = { wins: 3, losses: 2, breakeven: 1, estimatedWins: 3, estimatedLosses: 2, estimatedBreakeven: 1 };
+    const labels = Object.fromEntries(resultFilterOptions(est).map((f) => [f.value, f.label]));
+    expect(labels.WIN).toBe("Likely wins (estimated)");
+    expect(labels.LOSS).toBe("Likely losses (estimated)");
+    expect(labels.BREAKEVEN).toBe("Roughly flat (estimated)");
+    const known = { wins: 3, losses: 2, breakeven: 1, estimatedWins: 0, estimatedLosses: 0, estimatedBreakeven: 0 };
+    const plain = Object.fromEntries(resultFilterOptions(known).map((f) => [f.value, f.label]));
+    expect(plain.WIN).toBe("Wins");
+    expect(plain.LOSS).toBe("Losses");
+    const mixed = Object.fromEntries(resultFilterOptions({ ...known, estimatedWins: 1 }).map((f) => [f.value, f.label]));
+    expect(mixed.WIN).toBe("Wins (some estimated)");
   });
 });
