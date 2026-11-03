@@ -80,4 +80,39 @@ describe("Risk Command Center null money values", () => {
     expect(statValue("Daily limit")).toMatch(/not reported/i);
     expect(statValue("Equity")).toMatch(/unknown/i);
   });
+
+  // Truth: the reason said weekly risk used was unknown, yet the page showed
+  // "Weekly used $0" and the full cap as "Weekly risk left $500" right under
+  // it (the server sends placeholders 0 / full cap for older clients).
+  it("weekly used that was not measured is not shown as $0 or the full cap left", async () => {
+    const why = "this week's trading activity could not be read";
+    const weekly = {
+      weeklyRiskLimit: 500, weeklyRiskUsed: 0, weeklyRiskRemaining: 500, weeklyRiskLimitUnvalued: false,
+      weeklyRiskUsedKnown: false, weeklyRiskUsedUnknownReason: why, dailyRiskUsedKnown: true, dailyRiskUsedUnknownReason: null,
+    };
+    stub({ ...budget, ...weekly }, { ...cards, ...weekly });
+    render(<RiskCommandCenter />);
+    await screen.findByText("Weekly risk left");
+    expect(statValue("Weekly risk left")).not.toBe("$500");
+    expect(statValue("Weekly risk left")).toMatch(/unknown/i);
+    expect(statValue("Weekly risk left")).toContain(why);
+    cleanup();
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "limits");
+    stub({ ...budget, ...weekly }, { ...cards, ...weekly });
+    render(<RiskCommandCenter />);
+    await screen.findByText("Weekly used");
+    expect(statValue("Weekly used")).not.toBe("$0");
+    expect(statValue("Weekly used")).toBe(`unknown (${why})`);
+  });
+
+  it("with no active paper account daily and weekly used say so, not $0", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "limits");
+    const why = "there is no active paper account";
+    const flags = { dailyRiskUsedKnown: false, dailyRiskUsedUnknownReason: why, weeklyRiskUsedKnown: false, weeklyRiskUsedUnknownReason: why };
+    stub({ ...budget, ...flags }, { ...cards, ...flags });
+    render(<RiskCommandCenter />);
+    await screen.findByText("Daily used");
+    expect(statValue("Daily used")).toBe(`unknown (${why})`);
+    expect(statValue("Weekly used")).toBe(`unknown (${why})`);
+  });
 });

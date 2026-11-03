@@ -128,11 +128,21 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const weeklyCapSet = L.discipline.maxWeeklyLossAmount != null || L.discipline.maxWeeklyLossPercent != null;
   const dailyRiskLimitUnvalued = L.maxDailyLossPercent != null && equity == null;
   const weeklyRiskLimitUnvalued = L.discipline.maxWeeklyLossPercent != null && equity == null;
+  // Whether the "used" figures were measured. With no active paper account the
+  // fact loader reads no book: realized P/L stays a placeholder 0 and there is
+  // no activity, so nothing was measured (and nothing failed to load). The
+  // numeric dailyRiskUsed / weeklyRiskUsed stay for older clients; these flags
+  // say when they are placeholders.
+  const noPaperAccount = venue === "PAPER" && ctx.account == null;
+  const dailyRiskUsedUnknownReason = noPaperAccount ? "there is no active paper account"
+    : ctx.daily.realizedPnl == null ? "today's realized P/L could not be computed" : null;
+  const weeklyRiskUsedUnknownReason = noPaperAccount ? "there is no active paper account"
+    : ctx.activity == null ? "this week's trading activity could not be read" : null;
   const unknowns: string[] = [];
   if (dailyRiskLimitUnvalued) unknowns.push(`your ${L.maxDailyLossPercent}% daily loss cap cannot be valued because account equity is unknown`);
   if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
-  if (dailyCapSet && ctx.daily.realizedPnl == null) unknowns.push("today's realized P/L could not be computed, so daily risk used is unknown");
-  if (weeklyCapSet && ctx.activity == null) unknowns.push("this week's trading activity could not be read, so weekly risk used is unknown");
+  if (dailyCapSet && dailyRiskUsedUnknownReason) unknowns.push(`${dailyRiskUsedUnknownReason}, so daily risk used is unknown`);
+  if (weeklyCapSet && weeklyRiskUsedUnknownReason) unknowns.push(`${weeklyRiskUsedUnknownReason}, so weekly risk used is unknown`);
   const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   const status = halt.engaged || (dailyLimit != null && dailyUsed >= dailyLimit) || (weeklyLimit != null && weekUsed >= weeklyLimit)
     ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
@@ -150,6 +160,10 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
       // an *Unvalued cap is configured as a percent but cannot be valued, so
       // a null (or amount-only) limit is not "no cap".
       equityKnown: equity != null, dailyRiskLimitUnvalued, weeklyRiskLimitUnvalued, riskStatusReason,
+      // Additive: false when the *RiskUsed figure (and so *RiskRemaining) is a
+      // placeholder, with the plain reason; never read the placeholder as $0.
+      dailyRiskUsedKnown: dailyRiskUsedUnknownReason == null, dailyRiskUsedUnknownReason,
+      weeklyRiskUsedKnown: weeklyRiskUsedUnknownReason == null, weeklyRiskUsedUnknownReason,
     },
     activity: ctx.activity ?? null,
     halt,

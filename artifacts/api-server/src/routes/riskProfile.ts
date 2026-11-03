@@ -57,6 +57,11 @@ router.get("/risk/dashboard-cards", requireUser, async (req, res) => {
     dailyRiskLimitUnvalued: ov.budget.dailyRiskLimitUnvalued,
     weeklyRiskLimitUnvalued: ov.budget.weeklyRiskLimitUnvalued,
     equityKnown: ov.budget.equityKnown,
+    // Additive: whether the risk used behind *RiskRemaining was measured.
+    dailyRiskUsedKnown: ov.budget.dailyRiskUsedKnown,
+    dailyRiskUsedUnknownReason: ov.budget.dailyRiskUsedUnknownReason,
+    weeklyRiskUsedKnown: ov.budget.weeklyRiskUsedKnown,
+    weeklyRiskUsedUnknownReason: ov.budget.weeklyRiskUsedUnknownReason,
     openRisk: ov.budget.openRisk,
     openPositions: ov.budget.openPositions,
     tradesToday: ov.activity?.tradesToday ?? null,

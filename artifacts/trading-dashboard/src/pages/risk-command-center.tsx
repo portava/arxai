@@ -14,7 +14,10 @@ type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
 // The *Unvalued flags: a percent cap is configured but equity is unknown, so
 // the cap cannot be valued in money. Absent on an older server.
-type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null };
+type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null }
+  // false when the server's *RiskUsed (and so *RiskRemaining) is a placeholder,
+  // with the plain reason. Absent on an older server.
+  & { dailyRiskUsedKnown?: boolean; dailyRiskUsedUnknownReason?: string | null; weeklyRiskUsedKnown?: boolean; weeklyRiskUsedUnknownReason?: string | null };
 type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
 type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
 
@@ -33,6 +36,15 @@ function capText(v: Money, unvalued: boolean | undefined, kind: "limit" | "left"
 }
 
 const equityText = (v: Money) => (v == null ? "unknown (no account equity read)" : `$${v}`);
+
+// "Used" and "left" when the server says the used figure was not measured: the
+// placeholder $0 used / full cap left is never shown. Left is at most the cap.
+const usedText = (v: number, known: boolean | undefined, why: string | null | undefined) =>
+  (known === false ? `unknown (${why ?? "not measured"})` : `$${v}`);
+function leftText(v: Money, unvalued: boolean | undefined, known: boolean | undefined, why: string | null | undefined, pct?: number | null): string {
+  if (known === false && v != null) return `unknown, at most $${v} (${why ?? "risk used not measured"})`;
+  return capText(v, unvalued, "left", pct);
+}
 
 const STATUS_COLOR: Record<string, string> = {
   OK: "bg-success/20 text-success",
@@ -144,8 +156,8 @@ export default function RiskCommandCenter() {
 
       {cards && (
         <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
-          <Stat label="Daily risk left" value={capText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, "left", profile?.effectiveLimits.maxDailyLossPercent)} />
-          <Stat label="Weekly risk left" value={capText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, "left")} />
+          <Stat label="Daily risk left" value={leftText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, cards.dailyRiskUsedKnown, cards.dailyRiskUsedUnknownReason, profile?.effectiveLimits.maxDailyLossPercent)} />
+          <Stat label="Weekly risk left" value={leftText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, cards.weeklyRiskUsedKnown, cards.weeklyRiskUsedUnknownReason)} />
           <Stat label="Open risk" value={`$${cards.openRisk}`} />
           <Stat label="Open positions" value={String(cards.openPositions)} />
           <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
@@ -193,9 +205,9 @@ export default function RiskCommandCenter() {
           <CardHeader className="pb-2"><CardTitle className="text-base">Risk Budget</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
             <Stat label="Daily limit" value={capText(budget.dailyRiskLimit, budget.dailyRiskLimitUnvalued, "limit", profile?.effectiveLimits.maxDailyLossPercent)} />
-            <Stat label="Daily used" value={`$${budget.dailyRiskUsed}`} />
+            <Stat label="Daily used" value={usedText(budget.dailyRiskUsed, budget.dailyRiskUsedKnown, budget.dailyRiskUsedUnknownReason)} />
             <Stat label="Weekly limit" value={capText(budget.weeklyRiskLimit, budget.weeklyRiskLimitUnvalued, "limit")} />
-            <Stat label="Weekly used" value={`$${budget.weeklyRiskUsed}`} />
+            <Stat label="Weekly used" value={usedText(budget.weeklyRiskUsed, budget.weeklyRiskUsedKnown, budget.weeklyRiskUsedUnknownReason)} />
             <Stat label="Open risk" value={`$${budget.openRisk}`} />
             <Stat label="Equity" value={equityText(budget.equity)} />
             <Stat label="Venue" value={budget.venue} />
