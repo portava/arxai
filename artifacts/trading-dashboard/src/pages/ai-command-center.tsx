@@ -90,6 +90,28 @@ interface CCResp {
   commandCenter: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   autopilot: any;
+  /** The account mode the server scoped this read to. LIVE_SHARED = the
+   *  paper book was withheld (commandCenter/autopilot are null). */
+  currentAccountMode?: string | null;
+  liveAggregation?: string;
+  modeNote?: string;
+  /** Which book the figures were built from ("paper_orders"). */
+  dataSource?: string;
+}
+
+interface EquityResp {
+  /** null for a LIVE_SHARED session (the paper curve is withheld). */
+  equityCurve?: { points?: Array<{ trade_id: number; cumulative: number }> } | null;
+  currentAccountMode?: string | null;
+}
+
+/** Read a JSON body, or throw so the tab says "could not be loaded" rather
+ *  than treating a failed request as an empty memory. */
+async function readJsonOrThrow<T>(r: Response, key: string): Promise<T> {
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const body = await r.json();
+  if (!body || typeof body !== "object" || !(key in body)) throw new Error("Unexpected response");
+  return body as T;
 }
 
 /** Newest mentor sessions fetched for the history groups (server caps at 100). */
@@ -466,20 +488,18 @@ function CommandsTab({ onOpenChat }: { onOpenChat: () => void }) {
 /*                                 MEMORY                                   */
 /* ──────────────────────────────────────────────────────────────────────── */
 
-function MemoryTab() {
+export function MemoryTab() {
   const { name } = useAssistantName();
   const qc = useQueryClient();
   const cc = useQuery<CCResp>({
     queryKey: ["ai-cc"],
     queryFn: async () =>
-      (await fetch("/api/performance/ai-command-center")).json(),
+      readJsonOrThrow<CCResp>(await fetch("/api/performance/ai-command-center"), "commandCenter"),
   });
-  const eq = useQuery<{
-    equityCurve?: { points?: Array<{ trade_id: number; cumulative: number }> };
-  }>({
+  const eq = useQuery<EquityResp>({
     queryKey: ["ai-cc-equity"],
     queryFn: async () =>
-      (await fetch("/api/performance/equity-curve?range=30d")).json(),
+      readJsonOrThrow<EquityResp>(await fetch("/api/performance/equity-curve?range=30d"), "equityCurve"),
   });
   const dq = useQuery<{
     decisionQuality?: { sample_size_label?: string };
@@ -506,6 +526,34 @@ function MemoryTab() {
   }, []);
 
   if (cc.isLoading) return <Skeleton className="h-96 w-full" />;
+  if (cc.isError) {
+    return (
+      <Card className="rounded-2xl border-border bg-card">
+        <CardContent className="p-5 text-sm text-danger" data-testid="memory-load-error">
+          {name}&rsquo;s memory could not be loaded, so no win rate, P&amp;L,
+          trade count or equity curve is shown. They are not zero.
+          <div className="mt-3">
+            <Button variant="outline" size="sm" onClick={() => void cc.refetch()} data-testid="button-retry-memory">
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Try again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  // The server withheld the paper book for a live account (the same rule as
+  // the Trading Calendar): show its note, not demo figures under a LIVE strip.
+  if (cc.data?.currentAccountMode === "LIVE_SHARED") {
+    return (
+      <Card className="rounded-2xl border-border bg-card">
+        <CardContent className="p-5 text-sm text-txt-secondary" data-testid="memory-mode-note">
+          {cc.data.modeNote ??
+            `This is a live account. ${name}'s memory is built from demo trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.`}
+        </CardContent>
+      </Card>
+    );
+  }
   const c = cc.data?.commandCenter;
   const a = cc.data?.autopilot;
   if (!c) {
@@ -518,6 +566,7 @@ function MemoryTab() {
       </Card>
     );
   }
+  const hasClosed = typeof c.totalClosedTrades === "number" && c.totalClosedTrades > 0;
 
   return (
     <>
@@ -539,23 +588,33 @@ function MemoryTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Win Rate</CardTitle>
+            <CardTitle className="text-xs">Demo Win Rate</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">{c.winRate.toFixed(1)}%</div>
+            {/* No closed trade = no win rate measured, not 0%. */}
+            <div className="text-xl font-bold" data-testid="memory-win-rate">
+              {hasClosed ? `${c.winRate.toFixed(1)}%` : "—"}
+            </div>
+            <div className="text-[11px] text-txt-secondary mt-1">
+              {hasClosed ? "All closed demo trades" : "No closed demo trades yet"}
+            </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Net P&amp;L</CardTitle>
+            <CardTitle className="text-xs">Net Demo P&amp;L</CardTitle>
           </CardHeader>
           <CardContent>
             <div
               className={`text-xl font-bold ${
-                c.netPnl >= 0 ? "text-success" : "text-danger"
+                !hasClosed ? "" : c.netPnl >= 0 ? "text-success" : "text-danger"
               }`}
+              data-testid="memory-net-pnl"
             >
-              {c.netPnl.toFixed(2)}
+              {hasClosed ? c.netPnl.toFixed(2) : "—"}
+            </div>
+            <div className="text-[11px] text-txt-secondary mt-1" data-testid="memory-net-pnl-scope">
+              All closed demo trades, in demo account units
             </div>
           </CardContent>
         </Card>
@@ -583,12 +642,20 @@ function MemoryTab() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-4 w-4" /> Equity Curve (30d)
+              <Activity className="h-4 w-4" /> Demo Equity Curve (last 30 days)
             </CardTitle>
+            <div className="text-[11px] text-txt-secondary">
+              Cumulative P&amp;L of demo trades closed in the last 30 days. The
+              tiles above cover all closed demo trades.
+            </div>
           </CardHeader>
           <CardContent>
             {eq.isLoading ? (
               <Skeleton className="h-48 w-full" />
+            ) : eq.isError ? (
+              <div className="text-danger text-sm" data-testid="memory-equity-error">
+                The equity curve could not be loaded.
+              </div>
             ) : eq.data?.equityCurve?.points?.length ? (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={eq.data.equityCurve.points}>

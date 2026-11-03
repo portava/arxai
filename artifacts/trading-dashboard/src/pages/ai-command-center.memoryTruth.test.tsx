@@ -1,0 +1,91 @@
+// Truth: Ruby's Memory tab is built from the paper book. For a LIVE_SHARED
+// account the server withholds it (commandCenter null + modeNote); the tab must
+// show that note, not demo win rate / P&L under a LIVE account strip. A failed
+// load is "could not be loaded", never "No memory snapshot yet". The figures
+// say which book and which window they cover.
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby", isLoading: false, isDefault: true }) }));
+vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
+vi.mock("@/components/ruby/RubyAccountHealthStrip", () => ({ RubyAccountHealthStrip: () => null }));
+vi.mock("recharts", () => {
+  const Stub = ({ children }: { children?: unknown }) => <div>{children as never}</div>;
+  return { LineChart: Stub, Line: () => null, XAxis: () => null, YAxis: () => null, ResponsiveContainer: Stub, Tooltip: () => null };
+});
+
+const { MemoryTab } = await import("./ai-command-center");
+
+const LIVE_NOTE = "This is a live account. Ruby's memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.";
+
+function json(body: unknown, status = 200) {
+  return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
+}
+
+function renderTab(handler: (url: string) => Promise<Response>) {
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => handler(String(input))));
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}><MemoryTab /></QueryClientProvider>);
+}
+
+const paperCc = {
+  winRate: 60, netPnl: 12.5, totalClosedTrades: 5,
+  learningStats: { improvementScore: 1, learningEvents: 0, strategyEdgesUpdated: 0, mistakePatternsTracked: 0, learningConfidence: 0 },
+  aiDecisionStats: { decisionsCreated: 0, buyCount: 0, sellCount: 0, holdCount: 0, blockedCount: 0, decisionToTradeRate: 0, decisionToWinRate: 0, avgConfidence: 0, avgRiskScore: 0, avgEdgeScore: 0 },
+  insights: [], nextBestActions: [], warnings: [],
+};
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe("Ruby Memory tab — truth", () => {
+  it("LIVE_SHARED: shows the server's live note, not paper win rate or P&L", async () => {
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: null, autopilot: null, currentAccountMode: "LIVE_SHARED", modeScopeApplied: true, liveAggregation: "NOT_AVAILABLE", modeNote: LIVE_NOTE });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) {
+        return json({ ok: true, equityCurve: null, currentAccountMode: "LIVE_SHARED", modeNote: LIVE_NOTE });
+      }
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-mode-note")).textContent).toBe(LIVE_NOTE);
+    expect(screen.queryByText(/No memory snapshot yet/)).toBeNull();
+    expect(screen.queryByTestId("memory-net-pnl")).toBeNull();
+    expect(screen.queryByTestId("button-rebuild-memory")).toBeNull();
+  });
+
+  it("a 500 is 'could not be loaded', not 'No memory snapshot yet'", async () => {
+    renderTab(() => json({ ok: false, error: "boom" }, 500));
+    expect((await screen.findByTestId("memory-load-error")).textContent).toMatch(/could not be loaded/i);
+    expect(screen.queryByText(/No memory snapshot yet/)).toBeNull();
+  });
+
+  it("PAPER: tiles say demo + all closed trades; the curve says last 30 days; a failed curve is not 'no trades'", async () => {
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: paperCc, autopilot: {}, currentAccountMode: "PAPER", modeScopeApplied: true, dataSource: "paper_orders" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: false, error: "x" }, 500);
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-net-pnl")).textContent).toBe("12.50");
+    expect(screen.getByText("Net Demo P&L")).toBeTruthy();
+    expect(screen.getByTestId("memory-net-pnl-scope").textContent).toMatch(/all closed demo trades/i);
+    expect(screen.getByText(/Demo Equity Curve \(last 30 days\)/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("memory-equity-error").textContent).toMatch(/could not be loaded/i));
+    expect(screen.queryByText(/No closed demo trades in this range yet/)).toBeNull();
+  });
+
+  it("PAPER with no closed trades: win rate is not measured, not 0.0%", async () => {
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: { ...paperCc, winRate: 0, netPnl: 0, totalClosedTrades: 0 }, autopilot: {}, currentAccountMode: "PAPER" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [] } });
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-win-rate")).textContent).toBe("—");
+    expect(screen.getByTestId("memory-net-pnl").textContent).toBe("—");
+  });
+});
