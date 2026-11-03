@@ -224,3 +224,30 @@ describe("Topbar status drawer — cached status while the header does not read 
     expect(drawer).toMatch(/Last heartbeat/);
   });
 });
+
+// The server answers availability UNKNOWN when the shared bridge's allocation
+// view could not be read. The pill said Unknown, but the screen-reader marker
+// said "disconnected", a state nobody observed.
+describe("Topbar MT5 marker — shared bridge that could not be read", () => {
+  it("availability UNKNOWN reads unknown, not disconnected", () => {
+    mt5Reply = { data: { ...SHARED_HEALTHY, sharedMasterBridge: { availability: "UNKNOWN", connected: false, message: "Shared MT5 bridge status could not be read.", snapshotAgeSeconds: null } } };
+    render(<Topbar />);
+    expect(pill("mt5")).toMatch(/unknown/i);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("unknown");
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/MT5 connected\s*no\b/);
+    expect(drawer).toMatch(/could not be read/);
+  });
+
+  it("a shared-master answer with no bridge object reads unknown, not disconnected", () => {
+    mt5Reply = { data: { ...SHARED_HEALTHY, sharedMasterBridge: null } };
+    render(<Topbar />);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("unknown");
+  });
+
+  it("a bridge read as unavailable still reads disconnected", () => {
+    mt5Reply = { data: { ...SHARED_HEALTHY, sharedMasterBridge: { availability: "UNAVAILABLE", connected: false, message: "Shared bridge unavailable.", snapshotAgeSeconds: 2 } } };
+    render(<Topbar />);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("disconnected");
+  });
+});

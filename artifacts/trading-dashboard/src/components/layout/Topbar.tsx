@@ -69,6 +69,11 @@ function mt5BridgeView(mt5: any, loadFailed: boolean, refreshFailed = false, rea
     if (shared?.connected === true) return { pill: "ON", tone: "success", connectedText: "yes (shared MT5 bridge)", up: true };
     const a = shared?.availability;
     const word = a === "STALE" ? "Stale" : a === "RECONCILING" ? "Reconciling" : !a || a === "UNKNOWN" ? "Unknown" : "Unavailable";
+    // UNKNOWN (or no availability at all): the shared bridge was not read, so
+    // it is neither "no" nor "disconnected".
+    if (word === "Unknown") {
+      return { pill: word, tone: "warning", connectedText: "unknown — the shared MT5 bridge status could not be read", up: false, unknown: true };
+    }
     return { pill: word, tone: "warning", connectedText: `no — shared MT5 bridge ${word.toLowerCase()}`, up: false };
   }
   // No own connection, and the server could not read whether the user routes
