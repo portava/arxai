@@ -4257,7 +4257,7 @@ export const SetLiveLockResponse = zod.object({
 });
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 export const GetRiskAuditQueryParams = zod.object({
   symbol: zod.coerce.string().optional(),
@@ -4278,6 +4278,40 @@ export const GetRiskAuditResponse = zod.object({
   openTradesCount: zod.number(),
   losingStreak: zod.number(),
   cooldownActive: zod.boolean(),
+  balanceSource: zod
+    .string()
+    .optional()
+    .describe(
+      "Where the balance the loss percentages are measured against came from. PLACEHOLDER_1000 = a fixed $1,000, not the trader's account.",
+    ),
+  accountBalanceUsed: zod
+    .number()
+    .optional()
+    .describe(
+      "The balance (USD) the loss percentages and projectedLoss were computed against.",
+    ),
+  tradeSource: zod
+    .string()
+    .optional()
+    .describe(
+      "The trade book the counts were read from. LEGACY_TRADES_TABLE = the retired legacy trades log, which takes no new trades; it is not the book the Risk Governor enforces.",
+    ),
+  tradeScope: zod
+    .string()
+    .optional()
+    .describe(
+      "ALL_ACCOUNTS = the trade read is not limited to the signed-in trader.",
+    ),
+  notMeasured: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured.",
+    ),
+  evaluatedAt: zod.coerce
+    .date()
+    .optional()
+    .describe("When the server computed this audit."),
 });
 
 /**

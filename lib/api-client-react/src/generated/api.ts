@@ -5153,7 +5153,7 @@ export const useSetLiveLock = <
 };
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 export const getGetRiskAuditUrl = (params?: GetRiskAuditParams) => {
   const normalizedParams = new URLSearchParams();
@@ -5220,7 +5220,7 @@ export type GetRiskAuditQueryResult = NonNullable<
 export type GetRiskAuditQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 
 export function useGetRiskAudit<

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { GetRiskSettingsResponse, UpdateRiskSettingsBody } from "@workspace/api-zod";
 import { z } from "zod/v4";
-import { computeRiskAudit } from "../lib/riskAudit.js";
+import { computeRiskAudit, RISK_AUDIT_BASIS } from "../lib/riskAudit.js";
 import { calculatePositionSize } from "../lib/riskGovernor/positionSizer.js";
 import {
   evaluateDrawdownGuard, evaluateExposureGuard, evaluateMaxLossGuard,
@@ -138,8 +138,9 @@ router.get("/risk/audit", requireUser, async (req, res) => {
     const query = RiskAuditQuery.parse(req.query);
     const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
     // Placeholder account balance (1000 USD) — no MT5 sync feeds this yet.
-    // balanceSource below marks the figure so no consumer can mistake it for
-    // a real account balance.
+    // The response says so (balanceSource, accountBalanceUsed) along with
+    // what the audit read (RISK_AUDIT_BASIS), so no consumer can mistake it
+    // for the trader's live balance or current book.
     const accountBalance = 1000;
     const audit = await computeRiskAudit(accountBalance, {
       riskPerTradePct:       settings.riskPerTradePct,
@@ -157,7 +158,15 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       forexBlockEvents:    settings.forexBlockEvents,
       vol75ExtraConfidence: settings.vol75ExtraConfidence,
     });
-    return res.json({ ...audit, balanceSource: "PLACEHOLDER_1000" });
+    return res.json({
+      ...audit,
+      balanceSource: "PLACEHOLDER_1000",
+      accountBalanceUsed: accountBalance,
+      tradeSource: RISK_AUDIT_BASIS.tradeSource,
+      tradeScope: RISK_AUDIT_BASIS.tradeScope,
+      notMeasured: [...RISK_AUDIT_BASIS.notMeasured],
+      evaluatedAt: new Date().toISOString(),
+    });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to compute risk audit" });

@@ -1,0 +1,91 @@
+// Regression: the older Risk Control Center (/risk-settings) routes.
+//
+// GET /risk/audit — the "Live Risk Audit" sized loss % against a hard-coded
+// $1,000 balance and read the retired legacy trades table (every account's
+// rows, closed to new trades, and its closed rows never match the "CLOSED"
+// filter, so loss and streak always read 0). The response said only
+// balanceSource, which the RiskAudit schema did not carry. It now states
+// what the audit read so the page can say it is not the trader's account.
+//
+// The route runs for real; requireUser, computeRiskAudit and the settings
+// reader are mocked. No database, no network.
+//
+// Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
+//        src/routes/__qa__/riskSettingsRoutesTruth.test.ts
+
+import { after, before, test, mock } from "node:test";
+import assert from "node:assert/strict";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import express from "express";
+
+const SETTINGS = {
+  id: 1, riskMode: "Balanced", riskPerTradePct: 0.5, maxDailyLossPct: 2, maxWeeklyLossPct: 5, maxOpenTrades: 2,
+  maxTradesPerDay: 5, maxLotSize: 5, stopAfterLosingStreak: 3, cooldownAfterLossMinutes: 30, minConfidenceScore: 75,
+  disableDuringAbnormalVolatility: true, liveLocked: true, vol75ExtraConfidence: true, vol75SmallLot: true,
+  us30BlockNews: true, stocksBlockEarnings: true, forexBlockEvents: true,
+};
+const auditBalances: number[] = [];
+
+mock.module("../../lib/auth/middleware.js", {
+  namedExports: {
+    requireUser: (req: { authUser?: unknown }, _res: unknown, next: () => void) => {
+      req.authUser = { id: 7, role: "USER" };
+      next();
+    },
+  },
+});
+mock.module("../../lib/auditVault.js", { namedExports: { shadowCapture: async () => undefined } });
+mock.module("../../lib/risk/userRiskSettings.js", {
+  namedExports: {
+    getOrCreateUserRiskSettings: async () => ({ ...SETTINGS }),
+    updateUserRiskSettings: async (_u: number, patch: Record<string, unknown>) => ({ ...SETTINGS, ...patch }),
+  },
+});
+const realAudit = await import("../../lib/riskAudit.js");
+mock.module("../../lib/riskAudit.js", {
+  namedExports: {
+    ...realAudit,
+    computeRiskAudit: async (balance: number) => {
+      auditBalances.push(balance);
+      return {
+        passed: true, reasonsBlocked: [], warnings: [], riskPercent: 0.5, projectedLoss: 5, riskReward: 2,
+        dailyLossUsed: 0, weeklyLossUsed: 0, tradesRemaining: 5, openTradesCount: 0, losingStreak: 0, cooldownActive: false,
+      };
+    },
+  },
+});
+
+const { default: router } = await import("../risk.js");
+
+let server: Server;
+let base = "";
+before(async () => {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => { (req as unknown as { log: unknown }).log = { error() {}, warn() {}, info() {} }; next(); });
+  app.use(router);
+  server = app.listen(0);
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+after(() => { server?.close(); });
+
+test("GET /risk/audit says it used a $1,000 placeholder and the legacy trades log", async () => {
+  const r = await fetch(`${base}/risk/audit`);
+  assert.equal(r.status, 200);
+  const body = await r.json() as Record<string, unknown>;
+  assert.equal(body["balanceSource"], "PLACEHOLDER_1000");
+  assert.equal(body["accountBalanceUsed"], auditBalances.at(-1), "the balance reported is the one the audit was sized against");
+  assert.equal(body["accountBalanceUsed"], 1000);
+  assert.equal(body["tradeSource"], "LEGACY_TRADES_TABLE");
+  assert.equal(body["tradeScope"], "ALL_ACCOUNTS", "the legacy read has no user filter");
+  assert.deepEqual(
+    [...(body["notMeasured"] as string[])].sort(),
+    ["cooldownActive", "dailyLossUsed", "losingStreak", "weeklyLossUsed"],
+    "loss and streak figures count no legacy close, so they are not measurements",
+  );
+  assert.ok(!Number.isNaN(Date.parse(String(body["evaluatedAt"]))), "the audit says when it ran");
+  // The audit result itself is passed through unchanged.
+  assert.equal(body["passed"], true);
+  assert.equal(body["tradesRemaining"], 5);
+});

@@ -12,6 +12,7 @@ import {
   getGetRiskSettingsQueryKey,
   getGetRiskAuditQueryKey,
   getGetPositionSizeQueryKey,
+  type RiskAudit,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -154,7 +155,34 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
   );
 }
 
-// ── Live Audit Banner ────────────────────────────────────────────────────────
+// ── What the risk audit read ─────────────────────────────────────────────────
+// GET /risk/audit is the legacy audit: it measures loss % against a $1,000
+// placeholder balance (balanceSource) and counts trades in the retired legacy
+// trades log (tradeSource), every account's rows (tradeScope). Fields listed
+// in notMeasured are defaults, not observations. A server that does not say
+// what it read is treated the same way: the page only ever downgrades.
+
+const LEGACY_AUDIT_NOT_MEASURED = ["dailyLossUsed", "weeklyLossUsed", "losingStreak", "cooldownActive"];
+
+function auditBasis(a: RiskAudit) {
+  const placeholder = !a.balanceSource || a.balanceSource.startsWith("PLACEHOLDER");
+  const legacyLog = !a.tradeSource || a.tradeSource === "LEGACY_TRADES_TABLE";
+  const allAccounts = !a.tradeScope || a.tradeScope === "ALL_ACCOUNTS";
+  const notMeasured = new Set(a.notMeasured ?? (legacyLog ? LEGACY_AUDIT_NOT_MEASURED : []));
+  const balance = a.accountBalanceUsed ?? 1000;
+  const notes: string[] = [];
+  if (placeholder) notes.push(`Loss % is measured against a $${balance.toLocaleString("en-US")} placeholder balance, not your live balance.`);
+  if (legacyLog) notes.push(`Trade counts come from the legacy trades log${allAccounts ? " (every account's rows, not only yours)" : ""}, which takes no new trades.`);
+  if (notMeasured.has("dailyLossUsed") || notMeasured.has("losingStreak")) {
+    notes.push("Daily loss, weekly loss and losing streak are not measured: no closed trade in that log is counted.");
+  }
+  if (placeholder || legacyLog) notes.push("The Risk Governor checks your orders against your own book; see Risk Command Center.");
+  const evaluated = a.evaluatedAt ? new Date(a.evaluatedAt) : null;
+  const asOf = evaluated && !Number.isNaN(evaluated.getTime()) ? evaluated.toLocaleTimeString() : null;
+  return { legacy: placeholder || legacyLog, placeholder, legacyLog, allAccounts, notMeasured, balance, notes, asOf };
+}
+
+// ── Risk Audit Banner ────────────────────────────────────────────────────────
 
 function AuditBanner({ symbol }: { symbol?: string }) {
   const auditParams = symbol ? { symbol } : {};
@@ -164,25 +192,42 @@ function AuditBanner({ symbol }: { symbol?: string }) {
   );
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
-  if (!audit) return null;
+  if (!audit) {
+    return (
+      <div className="rounded-lg border border-border/50 bg-muted/20 px-5 py-3 text-sm text-muted-foreground" data-testid="risk-audit-banner-error">
+        Risk audit could not be loaded.
+      </div>
+    );
+  }
+  const basis = auditBasis(audit);
+  // A pass on a placeholder balance / legacy log is not a verified pass: it is
+  // shown neutral, never green.
+  const verifiedPass = audit.passed && !basis.legacy;
 
   return (
     <div
       className={cn(
         "flex items-center gap-4 rounded-lg border px-5 py-3",
-        audit.passed
-          ? "border-success/30 bg-success/10"
-          : "border-red-500/30 bg-red-500/5"
+        !audit.passed
+          ? "border-red-500/30 bg-red-500/5"
+          : verifiedPass
+            ? "border-success/30 bg-success/10"
+            : "border-border/50 bg-muted/20"
       )}
+      data-testid="risk-audit-banner"
     >
       <div className="shrink-0">
-        {audit.passed
-          ? <ShieldCheck className="h-8 w-8 text-success" />
-          : <ShieldX className="h-8 w-8 text-red-400" />}
+        {!audit.passed
+          ? <ShieldX className="h-8 w-8 text-red-400" />
+          : verifiedPass
+            ? <ShieldCheck className="h-8 w-8 text-success" />
+            : <ShieldAlert className="h-8 w-8 text-muted-foreground" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={cn("font-semibold text-sm", audit.passed ? "text-success" : "text-red-300")}>
-          {audit.passed ? "Trading conditions GREEN — all risk checks passed" : "Trading BLOCKED — risk rule violation"}
+        <p className={cn("font-semibold text-sm", !audit.passed ? "text-red-300" : verifiedPass ? "text-success" : "text-foreground")} data-testid="risk-audit-headline">
+          {basis.legacy
+            ? (audit.passed ? "Legacy risk audit: no rule tripped — not a check of your live account" : "Legacy risk audit: a rule is tripped")
+            : (audit.passed ? "Risk audit: no rule tripped" : "Risk audit: a rule is tripped")}
         </p>
         {!audit.passed && (
           <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -195,21 +240,28 @@ function AuditBanner({ symbol }: { symbol?: string }) {
             ⚠ {audit.warnings[0]}
           </p>
         )}
+        {basis.notes.length > 0 && (
+          <p className="text-xs text-muted-foreground mt-0.5" data-testid="risk-audit-basis">
+            {basis.notes.join(" ")}
+          </p>
+        )}
       </div>
       <div className="hidden md:flex gap-6 shrink-0 text-center">
         <div>
-          <div className="text-xs text-muted-foreground">Daily Loss</div>
-          <div className="font-mono font-bold text-sm">{audit.dailyLossUsed.toFixed(1)}%</div>
+          <div className="text-xs text-muted-foreground">{basis.placeholder ? `Daily loss (vs $${basis.balance.toLocaleString("en-US")})` : "Daily Loss"}</div>
+          <div className="font-mono font-bold text-sm" data-testid="risk-audit-banner-daily-loss">
+            {basis.notMeasured.has("dailyLossUsed") ? "Not measured" : `${audit.dailyLossUsed.toFixed(1)}%`}
+          </div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Trades Left</div>
+          <div className="text-xs text-muted-foreground">{basis.legacyLog ? "Trades left (legacy log)" : "Trades Left"}</div>
           <div className="font-mono font-bold text-sm">{audit.tradesRemaining}</div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Open</div>
+          <div className="text-xs text-muted-foreground">{basis.legacyLog ? "Open (legacy log)" : "Open"}</div>
           <div className="font-mono font-bold text-sm">{audit.openTradesCount}</div>
         </div>
-        {audit.cooldownActive && (
+        {audit.cooldownActive && !basis.notMeasured.has("cooldownActive") && (
           <div>
             <div className="text-xs text-red-400">Cooldown</div>
             <div className="font-mono font-bold text-sm text-red-400">ACTIVE</div>
@@ -485,12 +537,13 @@ export default function RiskSettings() {
         </div>
       </div>
 
-      {/* Canonical balance (Task #430) — risk caps are evaluated against this
-          same live equity, so the panel matches the Dashboard, account,
-          Open Trades, wallet and admin. */}
+      {/* Canonical balance (Task #430) — the same live equity as the
+          Dashboard, account, Open Trades, wallet and admin. The legacy risk
+          audit below is NOT measured against it (it uses a placeholder
+          balance and says so). */}
       <CanonicalBalancePanel live={liveAcct.live} title="Live balance" />
 
-      {/* ── Compliance + Live Audit Banner ── */}
+      {/* ── Compliance + Risk Audit Banner ── */}
       <DisclaimerBanner kind="riskCenter" />
       <AuditBanner />
 
@@ -1302,16 +1355,33 @@ function RiskAuditDetail() {
   const { data: audit, isLoading, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (!audit) return null;
+  if (!audit) {
+    return (
+      <Card className="border-border/50" data-testid="risk-audit-detail-error">
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          Risk audit could not be loaded.{" "}
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => refetch()}>Try again</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  const basis = auditBasis(audit);
+  const unmeasured = (field: string) => basis.notMeasured.has(field);
+  const NOT_MEASURED = <span className="text-muted-foreground">Not measured</span>;
 
   return (
     <Card className="border-border/50">
       <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
         <div>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Activity size={16} /> Live Risk Audit
+          <CardTitle className="text-base flex items-center gap-2" data-testid="risk-audit-detail-title">
+            <Activity size={16} /> {basis.legacy ? "Legacy Risk Audit" : "Risk Audit"}
           </CardTitle>
-          <CardDescription className="text-xs">Real-time evaluation of all risk rules — refreshes every 30s</CardDescription>
+          <CardDescription className="text-xs" data-testid="risk-audit-detail-asof">
+            Re-run on the server every 30s{basis.asOf ? ` · last run ${basis.asOf}` : ""}
+          </CardDescription>
+          {basis.notes.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1" data-testid="risk-audit-detail-basis">{basis.notes.join(" ")}</p>
+          )}
         </div>
         <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Refresh</Button>
       </CardHeader>
@@ -1322,16 +1392,27 @@ function RiskAuditDetail() {
           </h4>
           <div className="space-y-1">
             <StatRow label="Risk Per Trade" value={`${audit.riskPercent}%`} />
-            <StatRow label="Daily Loss Used" value={`${audit.dailyLossUsed.toFixed(2)}%`} />
-            <StatRow label="Weekly Loss Used" value={`${audit.weeklyLossUsed.toFixed(2)}%`} />
-            <StatRow label="Trades Remaining Today" value={audit.tradesRemaining} />
-            <StatRow label="Open Trades" value={audit.openTradesCount} />
-            <StatRow label="Current Losing Streak" value={audit.losingStreak} />
+            <StatRow
+              label={basis.placeholder ? `Daily Loss Used (vs $${basis.balance.toLocaleString("en-US")})` : "Daily Loss Used"}
+              value={unmeasured("dailyLossUsed") ? NOT_MEASURED : `${audit.dailyLossUsed.toFixed(2)}%`}
+            />
+            <StatRow
+              label={basis.placeholder ? `Weekly Loss Used (vs $${basis.balance.toLocaleString("en-US")})` : "Weekly Loss Used"}
+              value={unmeasured("weeklyLossUsed") ? NOT_MEASURED : `${audit.weeklyLossUsed.toFixed(2)}%`}
+            />
+            <StatRow label={basis.legacyLog ? "Trades Remaining Today (legacy log)" : "Trades Remaining Today"} value={audit.tradesRemaining} />
+            <StatRow
+              label={basis.legacyLog ? `Open Trades (legacy log${basis.allAccounts ? ", all accounts" : ""})` : "Open Trades"}
+              value={audit.openTradesCount}
+            />
+            <StatRow label="Current Losing Streak" value={unmeasured("losingStreak") ? NOT_MEASURED : audit.losingStreak} />
             <StatRow
               label="Cooldown"
-              value={audit.cooldownActive
-                ? <span className="text-red-400">ACTIVE</span>
-                : <span className="text-success">Clear</span>}
+              value={unmeasured("cooldownActive")
+                ? NOT_MEASURED
+                : audit.cooldownActive
+                  ? <span className="text-red-400">ACTIVE</span>
+                  : <span className="text-success">Clear</span>}
             />
           </div>
         </div>
@@ -1369,13 +1450,19 @@ function RiskAuditDetail() {
             </div>
           )}
 
-          {audit.passed && audit.warnings.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full gap-2 py-6">
+          {audit.passed && audit.warnings.length === 0 && (basis.legacy ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-detail-clear">
+              <ShieldAlert size={32} className="text-muted-foreground" />
+              <p className="text-sm font-semibold">No legacy rule tripped</p>
+              <p className="text-xs text-muted-foreground text-center">This does not check your live account or your current trades.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-detail-clear">
               <ShieldCheck size={32} className="text-success" />
-              <p className="text-sm text-success font-semibold">All clear</p>
+              <p className="text-sm text-success font-semibold">No rule tripped</p>
               <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings</p>
             </div>
-          )}
+          ))}
         </div>
       </CardContent>
     </Card>

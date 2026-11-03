@@ -19,4 +19,16 @@ export interface RiskAudit {
   openTradesCount: number;
   losingStreak: number;
   cooldownActive: boolean;
+  /** Where the balance the loss percentages are measured against came from. PLACEHOLDER_1000 = a fixed $1,000, not the trader's account. */
+  balanceSource?: string;
+  /** The balance (USD) the loss percentages and projectedLoss were computed against. */
+  accountBalanceUsed?: number;
+  /** The trade book the counts were read from. LEGACY_TRADES_TABLE = the retired legacy trades log, which takes no new trades; it is not the book the Risk Governor enforces. */
+  tradeSource?: string;
+  /** ALL_ACCOUNTS = the trade read is not limited to the signed-in trader. */
+  tradeScope?: string;
+  /** Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. */
+  notMeasured?: string[];
+  /** When the server computed this audit. */
+  evaluatedAt?: Date;
 }

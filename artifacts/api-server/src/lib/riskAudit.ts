@@ -39,6 +39,23 @@ export interface RiskAuditResult {
   cooldownActive: boolean;
 }
 
+/**
+ * What computeRiskAudit actually reads, reported by GET /risk/audit so the
+ * page can say plainly that the audit is not the trader's account:
+ *  - the legacy trades table, which takes no new rows (/execute-trade was
+ *    retired) and is read for every account (no user filter);
+ *  - its closed rows are CLOSED_WIN / CLOSED_LOSS, which the "CLOSED" status
+ *    filter below never matches, so daily / weekly loss and the losing streak
+ *    (and so the cooldown) always come out 0 — they are not measurements.
+ * The computation is left as is: the legacy /mt5/execute pre-check reads the
+ * same result, and legacy trades vs paper_orders is an owner decision.
+ */
+export const RISK_AUDIT_BASIS = {
+  tradeSource: "LEGACY_TRADES_TABLE",
+  tradeScope: "ALL_ACCOUNTS",
+  notMeasured: ["dailyLossUsed", "weeklyLossUsed", "losingStreak", "cooldownActive"],
+} as const;
+
 export async function computeRiskAudit(
   accountBalance: number,
   input: RiskAuditInput
