@@ -95,6 +95,13 @@ export function PositionPickerPanel() {
   // That is not "not in live mode" and not "no positions": the account may be
   // live and hold positions, so the count and the empty copy are withheld.
   const modeUnread = data?.modeResolved === false;
+  // The count comes only from an answer that was read: before the first
+  // answer, after a failed first load, or with the mode unread and nothing
+  // listed, there is no count (never a 0 nobody counted).
+  const openCount: number | null =
+    !data || (modeUnread && all.length === 0) || !Number.isFinite(data.liveCount) || !Number.isFinite(data.demoCount)
+      ? null
+      : data.liveCount + data.demoCount;
 
   const submitClose = async (pos: UnifiedPosition) => {
     if (!pos.brokerTicket) return;
@@ -147,8 +154,15 @@ export function PositionPickerPanel() {
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             My open positions
-            <Badge variant="outline" className="text-[10px]" data-testid="badge-open-positions-count">
-              {modeUnread && all.length === 0 ? "—" : (data?.liveCount ?? 0) + (data?.demoCount ?? 0)}
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              data-testid="badge-open-positions-count"
+              title={openCount == null
+                ? (err ? "Positions could not be loaded, so they were not counted." : modeUnread ? "Your account's trading mode could not be read, so positions were not counted." : "Positions have not loaded yet.")
+                : err && loadedAt != null ? `Count from the last successful load at ${new Date(loadedAt).toLocaleTimeString()}.` : undefined}
+            >
+              {openCount ?? "—"}
             </Badge>
           </CardTitle>
         </CardHeader>
