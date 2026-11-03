@@ -141,14 +141,23 @@ export function feedTrustSegment(
   return "Feed not confirmed live";
 }
 
-/** The gate's mirror reasons, read back from its own blocked reasons (also for cached gates). */
-export function gateMirrorBlockCause(gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">): {
-  seamFailed: boolean; notChecked: boolean;
+/**
+ * The gate's mirror reasons, read back from its own blocked reasons (also for
+ * cached gates). Pass the series' truth result (null when there is none) to
+ * also report whether the merge seam went unobserved: an open gate can rest on
+ * the broker comparison alone, which does not confirm the symbol mirror.
+ */
+export function gateMirrorBlockCause(
+  gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">,
+  truthResult?: TimeframeTruthResult | null,
+): {
+  seamFailed: boolean; notChecked: boolean; seamUnchecked: boolean;
 } {
   const reasons = Array.isArray(gate.blockedReasons) ? gate.blockedReasons : [];
   return {
     seamFailed: reasons.includes(MERGE_SEAM_FAILED_REASON),
     notChecked: !gate.tradeConfirmationAllowed && reasons.includes(MIRROR_NOT_CHECKED_REASON),
+    seamUnchecked: truthResult !== undefined && !isMergeSeamMeasured(truthResult),
   };
 }
 

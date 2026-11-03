@@ -14,6 +14,7 @@
 import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
 import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
+import { isMergeSeamMeasured } from "./chartTruthScore.js";
 import type { ChartTimeframe } from "./timeframes.js";
 import { buildChartHandshake, type ChartHandshakeVerdict } from "./chartHandshake.js";
 import { getMarketData } from "../../data/dataManager.js";
@@ -125,6 +126,11 @@ export function buildTrustLine(
     feed?: { quality?: string | null; isLive?: boolean | null } | null;
     /** Candle-data rollup (every handshake check except renderer telemetry). */
     aaciSourceOverall?: ChartHandshakeVerdict;
+    /**
+     * Whether the merge seam was observed (isMergeSeamMeasured). false: the
+     * mirror is "not confirmed" even when a bound broker quote is aligned.
+     */
+    mergeSeamChecked?: boolean;
   } = {},
 ): string {
   const parts: string[] = [];
@@ -139,7 +145,8 @@ export function buildTrustLine(
   // → synced, wide → drifting, unknown → no claim, seam/alignment-failed →
   // degraded) instead of the binary tradeConfirmationAllowed gate, so the line
   // never claims "Mirror synced" while the price is drifting or unverifiable.
-  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment, gateMirrorBlockCause(gate));
+  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment,
+    { ...gateMirrorBlockCause(gate), seamUnchecked: opts.mergeSeamChecked === false });
   if (mirror) {
     parts.push(mirror);
   }
@@ -347,7 +354,8 @@ export async function buildRubyChartContext(
   // overall so it never says "AACI verified" while a check is unmeasured.
   let basis = toBasis(gate, state, aaciHandshake.sourceOverall);
   const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall,
-    { feed: state.truthState, aaciSourceOverall: aaciHandshake.sourceOverall });
+    { feed: state.truthState, aaciSourceOverall: aaciHandshake.sourceOverall,
+      mergeSeamChecked: isMergeSeamMeasured(state.truthResult) });
   let blockReason = gate.primaryBlockReason;
 
   // ── ONE DATA-SUFFICIENCY TRUTH ─────────────────────────────────────────────
