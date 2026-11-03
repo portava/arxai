@@ -188,3 +188,28 @@ test("trust lines say Verified only in the Verified band, Live feed only for a c
     assert.doesNotMatch(draft, /Live feed|Verified/, draft); assert.match(draft, new RegExp(expected), draft);
   }
 });
+
+test("a measured deduction scoring 90-99 is named, never 'No measured check found a problem'", () => {
+  // Seam observed, no broker comparison (mirror unmeasured), 10 of 200 bars
+  // off the expected precision: the only measured deduction is Price
+  // Precision 95, and it is what puts the score under 75.
+  const truth = fixture({ precisionViolationCount: 10 });
+  const score = computeChartTruthScore(truth, feed);
+  const precision = metric(score, "price_precision");
+  assert.equal(precision.evidenceStatus, "measured"); assert.equal(precision.rawScore, 95);
+  assert.ok(score.score < 75, String(score.score));
+  for (const m of score.subMetrics.filter(m => m.evidenceStatus === "measured" && m.key !== "price_precision")) {
+    assert.equal(m.rawScore, 100, m.key);
+  }
+  const reason = computeChartGateOutput(score, read, noBrokerAlignment(1.1, "MID"), truth, false).blockedReasons[0];
+  assert.doesNotMatch(reason, /No measured check found a problem/, reason);
+  assert.match(reason, new RegExp(`^Chart Truth Score ${score.score} < 75 — chart-based confirmation blocked\\. No measured check scored below 90\\.`), reason);
+  assert.match(reason, /Minor measured deductions: Price Precision 95\/100 \(10 precision violation\(s\) out of 200 bars/, reason);
+  assert.match(reason, /Could not be checked \(earn no points\): Symbol Mirror Accuracy, Render Accuracy, Scale Quality, Interaction Stability\.$/, reason);
+  // A concern under 90 still leads, and a 90-99 deduction is listed after it.
+  const both = fixture({ precisionViolationCount: 10, mockDataDetected: true });
+  const bothScore = computeChartTruthScore(both, feed);
+  const bothReason = computeChartGateOutput(bothScore, read, noBrokerAlignment(1.1, "MID"), both, false).blockedReasons[0];
+  assert.match(bothReason, /Measured concerns: Source Authenticity 0\/100\. Minor measured deductions: Price Precision 95\/100 \(/, bothReason);
+  assert.doesNotMatch(bothReason, /No measured check/, bothReason);
+});
