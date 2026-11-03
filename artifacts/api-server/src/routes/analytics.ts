@@ -142,21 +142,30 @@ export async function computeSnapshot(userId: number) {
   const losses = pnls.filter((p) => p < 0);
   const grossWin = wins.reduce((s, p) => s + p, 0);
   const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
-  const netProfitLoss = pnls.reduce((s, p) => s + p, 0);
+  // Nothing measured is null, never 0: with no closed trade there is no win
+  // rate, and with no sized trade there is no P&L, expectancy or drawdown (a
+  // 0 read as a measured break-even, a 0% win rate or a $0 drawdown).
+  const sized = pnls.length > 0;
+  const netProfitLoss: number | null = sized ? pnls.reduce((s, p) => s + p, 0) : null;
   // A win is a favourable price move, so unsized trades still count here.
   const winCount = closed.filter((o) => outcomeSign(o) > 0).length;
-  const winRate = totalTrades ? winCount / totalTrades : 0;
-  const expectancy = pnls.length ? netProfitLoss / pnls.length : 0;
-  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 999 : 0);
-  // Average reward/risk per trade (R-multiple).
-  const rrs = closed.map((o) => {
+  const winRate: number | null = totalTrades ? winCount / totalTrades : null;
+  const expectancy: number | null = sized ? netProfitLoss! / pnls.length : null;
+  // Profit factor is gross win / gross loss: undefined with no losing trade
+  // (it was stored as the 999 marker and shown as "∞") or no sized trade.
+  const profitFactorBasis: "MEASURED" | "NO_LOSING_TRADE" | "NO_WIN_OR_LOSS" | "NO_SIZED_TRADES" =
+    !sized ? "NO_SIZED_TRADES" : grossLoss > 0 ? "MEASURED" : grossWin > 0 ? "NO_LOSING_TRADE" : "NO_WIN_OR_LOSS";
+  const profitFactor: number | null = profitFactorBasis === "MEASURED" ? grossWin / grossLoss : null;
+  // Average reward/risk per trade (R-multiple). A trade with no stop distance
+  // has no R; it is left out (it used to count as 0R).
+  const rrs = closed.flatMap((o) => {
     const risk = Math.abs(o.entryPrice - o.stopLoss);
-    if (risk <= 0 || o.exitPrice == null) return 0;
+    if (risk <= 0 || o.exitPrice == null) return [];
     const dir = o.direction === "BUY" ? 1 : -1;
-    return ((o.exitPrice - o.entryPrice) * dir) / risk;
+    return [((o.exitPrice - o.entryPrice) * dir) / risk];
   }).filter((r) => Number.isFinite(r));
-  const averageRr = rrs.length ? rrs.reduce((s, r) => s + r, 0) / rrs.length : 0;
-  const mdd = maxDrawdown(pnls.map((p) => ({ pnl: p })));
+  const averageRr: number | null = rrs.length ? rrs.reduce((s, r) => s + r, 0) / rrs.length : null;
+  const mdd: number | null = sized ? maxDrawdown(pnls.map((p) => ({ pnl: p }))) : null;
 
   // Best / worst SYMBOL by the net P&L of its sized trades. These were called
   // "strategy", but they group by symbol: paper_orders.strategy_id holds the
@@ -196,23 +205,51 @@ export async function computeSnapshot(userId: number) {
   const strongestMarketCondition = strongestEdgeSlice?.edgeName ?? null;
   const weakestMarketCondition = weakestEdgeSlice?.edgeName ?? null;
 
-  // Behavioral averages.
+  // Behavioral averages. Discipline, execution and consistency come from the
+  // Trader Skill profile, which is null when none has been computed (they
+  // read 0/100, a failing score, for a user nothing was measured on). The
+  // profile's discipline and execution pillars are measured only from
+  // post-trade debriefs (traderSkill computeSubScores), and consistency only
+  // from edge reports, so with none of those the stored 0 is a placeholder.
   const sk = skill[0] ?? null;
+  const hasDebriefs = debriefs.length > 0;
+  const hasEdgeReports = edges.length > 0;
   const calmCount = debriefs.filter((d) => d.traderEmotionAfter === "CALM").length;
-  const emotionalScoreAvg = debriefs.length ? (calmCount / debriefs.length) * 100 : 0;
+  const emotionalScoreAvg: number | null = hasDebriefs ? (calmCount / debriefs.length) * 100 : null;
+  const disciplineScoreAvg: number | null = sk && hasDebriefs ? sk.disciplineScore : null;
+  const executionScoreAvg: number | null = sk && hasDebriefs ? sk.executionScore : null;
+  const consistencyScoreAvg: number | null = sk && hasEdgeReports ? sk.consistencyScore : null;
+  const noProfile = "No Trader Skill profile has been computed yet.";
+  const noDebriefs = "No post-trade debriefs yet.";
+  const unmeasured: Record<string, string> = {};
+  if (winRate == null) unmeasured["winRate"] = "No closed paper trades yet.";
+  if (!sized) {
+    const why = totalTrades ? "None of your closed trades could be sized in USD." : "No closed paper trades yet.";
+    for (const k of ["netProfitLoss", "expectancy", "profitFactor", "maxDrawdown"]) unmeasured[k] = why;
+  } else if (profitFactor == null) {
+    unmeasured["profitFactor"] = profitFactorBasis === "NO_LOSING_TRADE"
+      ? "No losing trade yet, so gross win ÷ gross loss is undefined."
+      : "No winning or losing trade yet (every sized trade broke even).";
+  }
+  if (averageRr == null) unmeasured["averageRr"] = totalTrades ? "No closed trade has a stop distance to measure R from." : "No closed paper trades yet.";
+  if (disciplineScoreAvg == null) unmeasured["disciplineScoreAvg"] = !sk ? noProfile : noDebriefs;
+  if (executionScoreAvg == null) unmeasured["executionScoreAvg"] = !sk ? noProfile : noDebriefs;
+  if (emotionalScoreAvg == null) unmeasured["emotionalScoreAvg"] = noDebriefs;
+  if (consistencyScoreAvg == null) unmeasured["consistencyScoreAvg"] = !sk ? noProfile : "No edge reports yet.";
 
   return {
     totalTrades, netProfitLoss, winRate, averageRr, expectancy, profitFactor,
     maxDrawdown: mdd,
-    disciplineScoreAvg: sk?.disciplineScore ?? 0,
-    executionScoreAvg:  sk?.executionScore  ?? 0,
-    emotionalScoreAvg,
-    consistencyScoreAvg:sk?.consistencyScore ?? 0,
+    disciplineScoreAvg, executionScoreAvg, emotionalScoreAvg, consistencyScoreAvg,
     strongestStrategy, weakestStrategy,
     strongestMarketCondition, weakestMarketCondition,
     // Not snapshot columns: what the highlights really are, and their basis.
     strongestSymbol, weakestSymbol, strongestEdgeSlice, weakestEdgeSlice,
     highlightBasis: HIGHLIGHT_BASIS,
+    // Not snapshot columns: why each null figure was not measured, the
+    // profit-factor basis, and when the Trader Skill profile was computed.
+    unmeasured, profitFactorBasis,
+    behaviorAsOf: sk?.updatedAt instanceof Date ? sk.updatedAt.toISOString() : (sk?.updatedAt ? String(sk.updatedAt) : null),
     // Not a snapshot column: what the money figures above cover.
     pnlCoverage: pnlCoverageOf(closed),
   };
@@ -221,14 +258,18 @@ export async function computeSnapshot(userId: number) {
 /**
  * The analytics_snapshots columns of a computed snapshot. The extra fields
  * (coverage, highlight details, basis) are not columns and are not stored.
+ * The columns are NOT NULL, so an unmeasured figure is stored as the column
+ * default 0 (and a profit factor with no losing trade as the 999 marker) —
+ * exactly what was stored before; only the live figures carry the null.
  */
 export function toSnapshotRow(c: Awaited<ReturnType<typeof computeSnapshot>>) {
   return {
-    totalTrades: c.totalTrades, netProfitLoss: c.netProfitLoss, winRate: c.winRate,
-    averageRr: c.averageRr, expectancy: c.expectancy, profitFactor: c.profitFactor,
-    maxDrawdown: c.maxDrawdown,
-    disciplineScoreAvg: c.disciplineScoreAvg, executionScoreAvg: c.executionScoreAvg,
-    emotionalScoreAvg: c.emotionalScoreAvg, consistencyScoreAvg: c.consistencyScoreAvg,
+    totalTrades: c.totalTrades, netProfitLoss: c.netProfitLoss ?? 0, winRate: c.winRate ?? 0,
+    averageRr: c.averageRr ?? 0, expectancy: c.expectancy ?? 0,
+    profitFactor: c.profitFactor ?? (c.profitFactorBasis === "NO_LOSING_TRADE" ? 999 : 0),
+    maxDrawdown: c.maxDrawdown ?? 0,
+    disciplineScoreAvg: c.disciplineScoreAvg ?? 0, executionScoreAvg: c.executionScoreAvg ?? 0,
+    emotionalScoreAvg: c.emotionalScoreAvg ?? 0, consistencyScoreAvg: c.consistencyScoreAvg ?? 0,
     strongestStrategy: c.strongestStrategy, weakestStrategy: c.weakestStrategy,
     strongestMarketCondition: c.strongestMarketCondition, weakestMarketCondition: c.weakestMarketCondition,
   };

@@ -1,9 +1,18 @@
 /** The analytics figures: computed now (GET .current) or as saved in a snapshot. */
+/**
+ * The analytics figures: computed now (GET .current) or as saved in a snapshot.
+ * null = not measured (the live figures say why in `unmeasured`); a saved
+ * snapshot's NOT NULL columns hold 0 instead, so the page downgrades those.
+ */
 export interface AnalyticsFigures {
-  totalTrades: number; netProfitLoss: number; winRate: number;
-  averageRr: number; expectancy: number; profitFactor: number; maxDrawdown: number;
-  disciplineScoreAvg: number; executionScoreAvg: number;
-  emotionalScoreAvg: number; consistencyScoreAvg: number;
+  totalTrades: number; netProfitLoss: number | null; winRate: number | null;
+  averageRr: number | null; expectancy: number | null; profitFactor: number | null; maxDrawdown: number | null;
+  disciplineScoreAvg: number | null; executionScoreAvg: number | null;
+  emotionalScoreAvg: number | null; consistencyScoreAvg: number | null;
+  /** Live figures only: why each null figure was not measured. */
+  unmeasured?: Record<string, string>;
+  /** Live figures only: when the Trader Skill profile behind the behaviour scores was computed. */
+  behaviorAsOf?: string | null;
   strongestStrategy: string | null; weakestStrategy: string | null;
   strongestMarketCondition: string | null; weakestMarketCondition: string | null;
   // Live figures only (not snapshot columns): what the highlights really are.

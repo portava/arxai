@@ -79,3 +79,54 @@ describe("Analytics Command Center highlights", () => {
     expect(document.body.textContent).not.toMatch(/Strongest strategy|Weakest strategy|Strongest market condition|Weakest market condition/);
   });
 });
+
+describe("Analytics Command Center unmeasured figures", () => {
+  it("a new user's tiles read — with the reason, not 0 / 0% / $0 in red", async () => {
+    serve({
+      snapshot: null,
+      current: {
+        ...FIGURES, asOf: "2026-10-28T12:00:00.000Z", totalTrades: 0,
+        netProfitLoss: null, winRate: null, averageRr: null, expectancy: null, profitFactor: null, maxDrawdown: null,
+        disciplineScoreAvg: null, executionScoreAvg: null, emotionalScoreAvg: null, consistencyScoreAvg: null,
+        unmeasured: {
+          winRate: "No closed paper trades yet.", netProfitLoss: "No closed paper trades yet.",
+          expectancy: "No closed paper trades yet.", profitFactor: "No closed paper trades yet.",
+          maxDrawdown: "No closed paper trades yet.", averageRr: "No closed paper trades yet.",
+          disciplineScoreAvg: "No Trader Skill profile has been computed yet.",
+          executionScoreAvg: "No Trader Skill profile has been computed yet.",
+          emotionalScoreAvg: "No post-trade debriefs yet.",
+          consistencyScoreAvg: "No Trader Skill profile has been computed yet.",
+        },
+      },
+    });
+    renderPage();
+    const winRate = await screen.findByTestId("analytics-stat-win-rate");
+    expect(winRate.textContent).toBe("Win rate—");
+    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toBe("Net P&L—");
+    expect(screen.getByTestId("analytics-stat-avg-rr").textContent).toBe("Avg RR—");
+    expect(screen.getByTestId("analytics-stat-expectancy").textContent).toBe("Expectancy—");
+    expect(screen.getByTestId("analytics-stat-profit-factor").textContent).toBe("Profit factor—");
+    const dd = screen.getByTestId("analytics-stat-max-dd");
+    expect(dd.textContent).toBe("Max DD—");
+    expect(dd.querySelector(".text-red-300")).toBeNull();
+    expect(screen.getByTestId("analytics-unmeasured").textContent).toContain("Win rate (No closed paper trades yet)");
+    expect(screen.getByTestId("consistency-Discipline").textContent).toContain("—");
+  });
+
+  it("an older server's saved snapshot with no trades is downgraded, not shown as 0%", async () => {
+    serve({ snapshot: { ...SAVED, totalTrades: 0, netProfitLoss: 0, winRate: 0, averageRr: 0, expectancy: 0, profitFactor: 0, maxDrawdown: 0 } });
+    renderPage();
+    const winRate = await screen.findByTestId("analytics-stat-win-rate");
+    expect(winRate.textContent).toBe("Win rate—");
+    expect(screen.getByTestId("analytics-stat-max-dd").textContent).toBe("Max DD—");
+    expect(screen.getByTestId("analytics-unmeasured").textContent).toContain("No closed paper trades when this snapshot was saved");
+  });
+
+  it("a saved profit factor of 999 (no losing trade) is not shown as ∞ or 999.00", async () => {
+    serve({ snapshot: SAVED });
+    renderPage();
+    const pf = await screen.findByTestId("analytics-stat-profit-factor");
+    expect(pf.textContent).toBe("Profit factor—");
+    expect(screen.getByTestId("analytics-unmeasured").textContent).toContain("No losing trade");
+  });
+});

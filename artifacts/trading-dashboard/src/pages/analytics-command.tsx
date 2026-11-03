@@ -4,7 +4,7 @@ import {
   EquityCurveChart, DrawdownChart, StrategyAnalyticsTable,
   SessionHeatmap, EmotionalTrendGraph, RiskExposureGraph, ConsistencyTrendCard,
 } from "@/components/analytics";
-import type { AnalyticsSnapshot, AnalyticsCurrent, StrategyRow, EquityPoint } from "@/components/analytics";
+import type { AnalyticsFigures, AnalyticsSnapshot, AnalyticsCurrent, StrategyRow, EquityPoint } from "@/components/analytics";
 import type { EdgeSliceHighlight } from "@/components/analytics/types";
 
 interface DrawdownResponse { equityCurve: EquityPoint[]; maxDrawdown: number }
@@ -65,7 +65,7 @@ export default function AnalyticsCommandCenter() {
   // trades closed after it was computed, and the page says so.
   const saved = snap.data?.snapshot ?? null;
   const live = snap.data?.current ?? null;
-  const s = live ?? saved;
+  const s = live ?? (saved ? downgradeSaved(saved) : null);
   const savedAt = when(saved?.createdAt);
   const asOfLine = live
     ? `Computed from all your paper orders at ${when(live.asOf) ?? "an unknown time"}.${savedAt ? ` Last saved snapshot: ${savedAt}.` : ""}`
@@ -98,13 +98,17 @@ export default function AnalyticsCommandCenter() {
 
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
             <Stat id="trades"        label="Trades"        v={s.totalTrades.toString()} />
-            <Stat label="Net P&L"       v={`$${s.netProfitLoss.toFixed(0)}`} tone={s.netProfitLoss >= 0 ? "emerald" : "red"} />
-            <Stat label="Win rate"      v={`${(s.winRate*100).toFixed(1)}%`} />
-            <Stat label="Avg RR"        v={`${s.averageRr.toFixed(2)}R`} />
-            <Stat label="Expectancy"    v={`$${s.expectancy.toFixed(2)}`} tone={s.expectancy >= 0 ? "emerald" : "red"} />
-            <Stat label="Profit factor" v={s.profitFactor === 999 ? "∞" : s.profitFactor.toFixed(2)} />
-            <Stat label="Max DD"        v={`$${s.maxDrawdown.toFixed(0)}`} tone="red" />
+            {/* null = not measured: "—", no colour, and the reason below. */}
+            <Stat id="net-pnl"       label="Net P&L"       v={s.netProfitLoss == null ? "—" : `$${s.netProfitLoss.toFixed(0)}`} tone={s.netProfitLoss == null ? undefined : s.netProfitLoss >= 0 ? "emerald" : "red"} />
+            <Stat id="win-rate"      label="Win rate"      v={s.winRate == null ? "—" : `${(s.winRate*100).toFixed(1)}%`} />
+            <Stat id="avg-rr"        label="Avg RR"        v={s.averageRr == null ? "—" : `${s.averageRr.toFixed(2)}R`} />
+            <Stat id="expectancy"    label="Expectancy"    v={s.expectancy == null ? "—" : `$${s.expectancy.toFixed(2)}`} tone={s.expectancy == null ? undefined : s.expectancy >= 0 ? "emerald" : "red"} />
+            <Stat id="profit-factor" label="Profit factor" v={s.profitFactor == null ? "—" : s.profitFactor.toFixed(2)} />
+            <Stat id="max-dd"        label="Max DD"        v={s.maxDrawdown == null ? "—" : `$${s.maxDrawdown.toFixed(0)}`} tone={s.maxDrawdown != null && s.maxDrawdown > 0 ? "red" : undefined} />
           </section>
+          {notMeasuredLine(s) ? (
+            <p className="text-[11px] text-slate-400" data-testid="analytics-unmeasured">{notMeasuredLine(s)}</p>
+          ) : null}
 
           <div className="grid gap-3 lg:grid-cols-2">
             <EquityCurveChart points={dd.data?.equityCurve ?? []} />
@@ -155,6 +159,43 @@ function Stat({ id, label, v, tone }: { id?: string; label: string; v: string; t
     </div>
   );
 }
+const FIGURE_LABELS: Record<string, string> = {
+  netProfitLoss: "Net P&L", winRate: "Win rate", averageRr: "Avg RR", expectancy: "Expectancy",
+  profitFactor: "Profit factor", maxDrawdown: "Max DD",
+};
+/** "Not measured: Win rate (No closed paper trades yet); ..." for the tiles above. */
+function notMeasuredLine(f: AnalyticsFigures): string | null {
+  const parts = Object.entries(FIGURE_LABELS)
+    .filter(([k]) => f[k as keyof AnalyticsFigures] == null)
+    .map(([k, label]) => {
+      const why = f.unmeasured?.[k];
+      return why ? `${label} (${why.endsWith(".") ? why.slice(0, -1) : why})` : label;
+    });
+  return parts.length ? `Not measured: ${parts.join("; ")}.` : null;
+}
+
+/**
+ * A saved snapshot's columns are NOT NULL, so "not measured" was stored as 0
+ * (and a profit factor with no losing trade as 999). Downgrade what the row
+ * itself shows was not measured; its behaviour scores cannot be told apart.
+ */
+function downgradeSaved(r: AnalyticsSnapshot): AnalyticsFigures {
+  const noTrades = r.totalTrades === 0;
+  const why = "No closed paper trades when this snapshot was saved.";
+  return {
+    ...r,
+    netProfitLoss: noTrades ? null : r.netProfitLoss,
+    winRate: noTrades ? null : r.winRate,
+    averageRr: noTrades ? null : r.averageRr,
+    expectancy: noTrades ? null : r.expectancy,
+    profitFactor: noTrades || r.profitFactor === 999 ? null : r.profitFactor,
+    maxDrawdown: noTrades ? null : r.maxDrawdown,
+    unmeasured: noTrades
+      ? Object.fromEntries(Object.keys(FIGURE_LABELS).map((k) => [k, why]))
+      : r.profitFactor === 999 ? { profitFactor: "No losing trade, so gross win ÷ gross loss is undefined." } : {},
+  };
+}
+
 function edgeSliceText(e: EdgeSliceHighlight | null | undefined): string | null {
   return e ? `${e.label} — ${e.statusWords}, confidence ${e.confidenceScore}/100 (${e.sampleSize} trades)` : null;
 }

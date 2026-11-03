@@ -195,3 +195,60 @@ test("highlights: edge slices come from the edge board's current, re-derived rep
   assert.equal(s.weakestEdgeSlice?.status, "NO_EDGE");
   assert.match(s.highlightBasis.edgeSlices, /not by your results in a market condition/);
 });
+
+// ── Nothing measured is null, not 0 ─────────────────────────────────────────
+test("unmeasured: a new user's figures are null with a reason, not 0 or failing scores", async () => {
+  setRows({ paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.totalTrades, 0);
+  for (const k of ["winRate", "netProfitLoss", "expectancy", "profitFactor", "averageRr", "maxDrawdown",
+    "disciplineScoreAvg", "executionScoreAvg", "emotionalScoreAvg", "consistencyScoreAvg"] as const) {
+    assert.equal(s[k], null, `${k} is not measured`);
+    assert.ok(s.unmeasured[k], `${k} says why`);
+  }
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /No Trader Skill profile/);
+  // The NOT NULL columns still get the column default, as before.
+  const row = mod.toSnapshotRow(s);
+  assert.equal(row.winRate, 0);
+  assert.equal(row.disciplineScoreAvg, 0);
+});
+
+test("unmeasured: a skill profile with no debriefs does not score discipline, execution or emotion", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [{ id: 1, userId: 7, disciplineScore: 0, executionScore: 0, consistencyScore: 0, emotionalControlScore: 0, updatedAt: new Date("2026-10-27T09:00:00Z") }],
+    post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, null);
+  assert.equal(s.executionScoreAvg, null);
+  assert.equal(s.emotionalScoreAvg, null);
+  assert.equal(s.consistencyScoreAvg, null);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /No post-trade debriefs/);
+  assert.equal(s.behaviorAsOf, "2026-10-27T09:00:00.000Z");
+  // One winning trade: measured win rate and P&L, but no profit factor.
+  assert.equal(s.winRate, 1);
+  assert.equal(s.netProfitLoss, 1000);
+  assert.equal(s.profitFactor, null);
+  assert.equal(s.profitFactorBasis, "NO_LOSING_TRADE");
+  assert.match(s.unmeasured["profitFactor"]!, /No losing trade/);
+  assert.equal(mod.toSnapshotRow(s).profitFactor, 999, "stored exactly as before");
+});
+
+test("unmeasured: a trade with no stop distance has no R and is not counted as 0R", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 }), order({ id: 2, stopLoss: 1.085 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(Math.round((s.averageRr as number) * 100) / 100, 2);
+});
+
+test("unmeasured: GET /analytics/snapshot sends the nulls in current", async () => {
+  setRows({ analytics_snapshots: [], paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const body = await getJson("/analytics/snapshot");
+  const current = body["current"] as Record<string, unknown>;
+  assert.equal(current["winRate"], null);
+  assert.equal(current["disciplineScoreAvg"], null);
+  assert.equal(current["emotionalScoreAvg"], null);
+});
