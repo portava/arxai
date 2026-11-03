@@ -22358,6 +22358,11 @@ components:
         status: { type: string }
         reason: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the draft row was last written (saved, or its pendingStatus and reason rewritten by submit). pendingStatus and reason are as of this time.
         currentPendingStatus:
           type: string
           nullable: true

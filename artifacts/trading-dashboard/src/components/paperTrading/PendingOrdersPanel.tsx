@@ -20,6 +20,8 @@ interface DraftRow {
   status: string;
   reason: string | null;
   createdAt: string;
+  /** When the row was last written (saved, or status and reason rewritten by submit). */
+  updatedAt?: string | null;
   /** What a submit would answer for the bridge at bridgeCheckedAt (server-measured). */
   currentPendingStatus?: string | null;
   currentPendingReason?: string | null;
@@ -81,6 +83,9 @@ export function PendingOrdersPanel() {
             // time it was read) and the stored one is labelled as recorded.
             const now = d.currentPendingStatus && checkedAt ? d.currentPendingStatus : null;
             const savedAt = utcMinute(d.createdAt);
+            // The stored status and reason are as of the row's last write.
+            const recordedAt = utcMinute(d.updatedAt);
+            const recordedWhen = recordedAt ? ` (as of ${recordedAt})` : "";
             return (
             <li key={d.id} className="rounded border border-slate-700 bg-slate-950/40 p-2 text-[11px] text-slate-200" data-testid={`pending-order-${d.id}`}>
               <div className="flex items-center justify-between">
@@ -93,10 +98,10 @@ export function PendingOrdersPanel() {
                 {now ? (
                   <>
                     Bridge checked {checkedAt}.
-                    {d.pendingStatus && d.pendingStatus !== now && <> Recorded when saved or last submitted: {d.pendingStatus}.</>}
+                    {d.pendingStatus && d.pendingStatus !== now && <> Recorded when saved or last submitted{recordedWhen}: {d.pendingStatus}.</>}
                   </>
                 ) : (
-                  <>Recorded when saved or last submitted{d.pendingStatus ? `: ${d.pendingStatus}` : ""}.</>
+                  <>Recorded when saved or last submitted{recordedWhen}{d.pendingStatus ? `: ${d.pendingStatus}` : ""}.</>
                 )}
                 {savedAt && <> Draft saved {savedAt}.</>}
               </div>
@@ -109,7 +114,13 @@ export function PendingOrdersPanel() {
                 {d.takeProfit != null && <span>TP: <span className="text-emerald-300">{d.takeProfit}</span></span>}
                 {d.expiration && <span>Exp: {new Date(d.expiration).toLocaleString()}</span>}
               </div>
-              {d.reason && <p className="mt-1 text-[10px] text-slate-400">{d.reason}</p>}
+              {/* The stored reason is the answer from when the draft was saved
+                  or last submitted, not the bridge now; it is labelled so. */}
+              {d.reason && (
+                <p className="mt-1 text-[10px] text-slate-400" data-testid={`pending-order-recorded-reason-${d.id}`}>
+                  Recorded reason (when saved or last submitted{recordedWhen}): {d.reason}
+                </p>
+              )}
               <div className="mt-2 flex gap-2">
                 <button
                   onClick={() => cancel.mutate(d.id)}

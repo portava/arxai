@@ -384,6 +384,9 @@ router.get("/me/pending-order-drafts", async (req, res): Promise<void> => {
         status: r.status,
         reason: r.reason,
         createdAt: r.createdAt.toISOString(),
+        // When the row was last written (saved, or its status and reason
+        // rewritten by /submit), so the recorded status carries its own time.
+        updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,
         ...currentFor(r),
       })),
       ...SAFETY,

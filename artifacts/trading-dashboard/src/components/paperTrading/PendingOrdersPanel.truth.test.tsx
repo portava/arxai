@@ -65,6 +65,25 @@ describe("PendingOrdersPanel", () => {
     expect(footer).toMatch(/never sent/i);
   });
 
+  it("the stored submit-time reason is labelled as recorded, with its time, under the current answer", async () => {
+    renderWith(200, {
+      ok: true, bridgeCheckedAt: "2026-10-28T11:40:00.000Z", bridgeCheckError: null,
+      drafts: [row({
+        reason: "Your MT5 bridge has not sent a heartbeat in the last minute, so whether its EA can execute pending orders could not be checked.",
+        updatedAt: "2026-10-28T10:15:00.000Z",
+        currentPendingStatus: "READ_ONLY",
+        currentPendingReason: "Your connected EA (EA v1.50) reports pending-order support, but ARX is paper-only.",
+      })],
+    });
+    await screen.findByTestId("pending-order-9");
+    const recorded = screen.getByTestId("pending-order-recorded-reason-9").textContent ?? "";
+    expect(recorded).toMatch(/^Recorded reason \(when saved or last submitted \(as of 2026-10-28 10:15 UTC\)\): Your MT5 bridge has not sent a heartbeat/);
+    expect(screen.getByTestId("pending-order-asof-9").textContent).toMatch(/Recorded when saved or last submitted \(as of 2026-10-28 10:15 UTC\): BRIDGE_DISCONNECTED/);
+    // No unlabelled present-tense copy of the old reason.
+    const paragraphs = Array.from(screen.getByTestId("pending-order-9").querySelectorAll("p")).map((p) => p.textContent ?? "");
+    expect(paragraphs.filter((t) => t.startsWith("Your MT5 bridge has not sent a heartbeat"))).toHaveLength(0);
+  });
+
   it("a failed list says it could not be loaded, not that there are no drafts", async () => {
     renderWith(500, { ok: false, error: "drafts_list_failed" });
     await waitFor(() => expect(screen.getByTestId("pending-orders-load-error").textContent).toMatch(/could not be loaded/));
