@@ -65,6 +65,20 @@ function mapNewsRisk(raw: unknown): AaciNewsRiskLevel | undefined {
 }
 
 /**
+ * Whether today's paper loss has reached the daily cap trader readiness
+ * reports (GovernorMetrics.dailyLossLimit). A cap of 0 is used up: readiness
+ * reports 0 for a percent cap on a paper risk-count equity at or below 0,
+ * where the Risk Governor refuses every new trade. It is never read as "no
+ * cap". undefined = no daily cap is enforced (null).
+ */
+export function dailyLossHitOf(m: { dailyLossLimit: number | null; dailyPnl: number }): boolean | undefined {
+  const cap = m.dailyLossLimit;
+  if (cap == null) return undefined;
+  if (cap <= 0) return true;
+  return m.dailyPnl <= -Math.abs(cap);
+}
+
+/**
  * Build the AACI Shared Truth Snapshot for a user + symbol context. Fail-open
  * per source. Pure-ish: the only side effects are read-only source reads.
  */
@@ -93,11 +107,7 @@ export async function buildAaciSnapshot(
   // ── Risk Governor (R + risk gate inputs) ──────────────────────────────────
   try {
     const gov = await evaluateReadiness({ persist: false, userId });
-    const lossCap = gov.metrics.dailyLossLimit;
-    const dailyLossHit =
-      lossCap != null && lossCap > 0
-        ? gov.metrics.dailyPnl <= -Math.abs(lossCap)
-        : undefined;
+    const dailyLossHit = dailyLossHitOf(gov.metrics);
     snapshot.risk = {
       hardPass: gov.hardBlocks.length === 0,
       riskMode: gov.overallStatus,
