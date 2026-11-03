@@ -46,22 +46,27 @@ mock.module("../../riskGovernor/limitSettings.js", {
 });
 
 type Row = Record<string, unknown>;
-const state: { account: Row | null; closes: Row[]; open: Row[]; failAccountRead: boolean } = {
-  account: null, closes: [], open: [], failAccountRead: false,
+const state: { account: Row | null; closes: Row[]; open: Row[]; failAccountRead: boolean; failBookRead: boolean } = {
+  account: null, closes: [], open: [], failAccountRead: false, failBookRead: false,
 };
+// failAccountRead: the active paper account's risk-count reads throw;
+// failBookRead: the trader's paper book reads (today's loss count, open
+// positions, closes) throw.
 const realBook = await import("../../tradeEngine/paperBookReader.js");
 mock.module("../../tradeEngine/paperBookReader.js", {
   namedExports: {
     ...realBook,
-    sumPaperRealizedSince: async () => 0,
+    sumPaperRealizedSince: async () => { if (state.failBookRead) throw new Error("paper_orders read failed"); return 0; },
     readPaperOrders: async () => [],
     readActivePaperAccount: async () => state.account,
     readOpenPaperOrders: async (scope: { account?: number }) => {
       if (scope.account != null && state.failAccountRead) throw new Error("paper_orders read failed");
+      if (scope.account == null && state.failBookRead) throw new Error("paper_orders read failed");
       return state.open;
     },
     readPaperCloses: async (scope: { account?: number }) => {
       if (scope.account != null && state.failAccountRead) throw new Error("paper_orders read failed");
+      if (scope.account == null && state.failBookRead) throw new Error("paper_orders read failed");
       return state.closes.map((o) => ({ ...o, pnl: realBook.realizedOf(o as never) }));
     },
   },
@@ -171,4 +176,73 @@ test("a booked equity at or below 0 that the risk count does not lower is named 
   const block = e.hardBlocks.find((b) => b.code === "PAPER_RISK_COUNT_EQUITY_EXHAUSTED");
   assert.ok(block);
   assert.match(block.message, /^The paper account's equity is -50, at or below zero \(booked; the paper risk count gives the same figure\), so your \d+(\.\d+)?% per-trade limit leaves no risk for a new trade and the 5% daily loss cap is used up\./);
+});
+
+// Round-3 review (r2-views): the catch above only moved "paper_orders" into
+// missingDataSources. paperRiskCountEquity stayed null, so the exhausted
+// block never fired; with a percent-only daily cap dailyLossLimit stayed null
+// too, and nothing read missingDataSources, so the status could be
+// PAPER_ALLOWED / PAPER_CAUTION with paperTradingAllowed and autopilotAllowed
+// true, while the Risk Governor refuses every order when it cannot load its
+// facts ("Risk context could not be loaded ... Trade blocked for safety").
+// A failed paper risk-count read now hard-blocks, naming what was not read.
+test("a failed paper account read hard-blocks (PAPER_RISK_COUNT_UNREADABLE): never allowed on an unread risk count", async () => {
+  try {
+    state.failAccountRead = true;
+    state.account = account(395);
+    state.closes = [US30_LOSS];
+    state.open = [];
+    const e = await evaluate();
+    assert.equal(e.metrics.paperRiskCountEquity, null);
+    assert.equal(e.metrics.dailyLossLimit, null, "a percent-only cap cannot be valued without the equity");
+    const block = e.hardBlocks.find((b) => b.code === "PAPER_RISK_COUNT_UNREADABLE");
+    assert.ok(block, `hard blocks: ${e.hardBlocks.map((b) => b.code).join(", ") || "none"}`);
+    assert.equal(block.severity, "BLOCK");
+    assert.match(block.message, /^The paper account's risk-count equity could not be loaded, so your percent risk limits \(per-trade and daily loss\) cannot be checked\./);
+    assert.match(block.message, /The Risk Governor refuses new trades while it cannot load these facts/);
+    assert.equal(e.paperTradingAllowed, false);
+    assert.equal(e.autopilotAllowed, false);
+    assert.equal(e.allowedActions.canOpenPaperTrade, false);
+    assert.notEqual(e.overallStatus, "PAPER_ALLOWED");
+    assert.notEqual(e.overallStatus, "PAPER_CAUTION");
+    assert.equal(e.allowedActions.canManualClosePaperTrade, true);
+    assert.deepEqual(e.metrics.paperRiskCountUnreadable, ["risk_count_equity"]);
+  } finally {
+    state.failAccountRead = false;
+  }
+});
+
+test("a failed read of today's paper loss count hard-blocks too: the daily loss check is never run against a placeholder 0", async () => {
+  LIMITS.maxDailyLossAmount = 250;
+  try {
+    state.failBookRead = true;
+    state.account = account(10_000);
+    state.closes = [];
+    state.open = [];
+    const e = await evaluate();
+    assert.ok(e.missingDataSources.includes("paper_orders"));
+    const block = e.hardBlocks.find((b) => b.code === "PAPER_RISK_COUNT_UNREADABLE");
+    assert.ok(block, `hard blocks: ${e.hardBlocks.map((b) => b.code).join(", ") || "none"}`);
+    assert.match(block.message, /^Today's paper loss count and your open paper positions could not be loaded, so your daily loss limit and open-trade limits cannot be checked\./);
+    assert.equal(e.paperTradingAllowed, false);
+    assert.deepEqual(e.metrics.paperRiskCountUnreadable, ["paper_book"]);
+    // The 25 risk-discipline points are not earned from unread risk facts.
+    state.failBookRead = false;
+    const read = await evaluate();
+    assert.equal(read.readinessScore - e.readinessScore, 25, `score unread ${e.readinessScore}, read ${read.readinessScore}`);
+    assert.ok(e.nextBestActions.some((a) => /paper account can be read/.test(a)));
+    assert.ok(!e.nextBestActions.some((a) => /grow the sample size/.test(a)), "the sample size was not read");
+  } finally {
+    LIMITS.maxDailyLossAmount = null;
+    state.failBookRead = false;
+  }
+});
+
+test("everything read: no unreadable block", async () => {
+  state.account = account(10_000);
+  state.closes = [];
+  state.open = [];
+  const e = await evaluate();
+  assert.ok(!e.hardBlocks.some((b) => b.code === "PAPER_RISK_COUNT_UNREADABLE"));
+  assert.deepEqual(e.metrics.paperRiskCountUnreadable, []);
 });
