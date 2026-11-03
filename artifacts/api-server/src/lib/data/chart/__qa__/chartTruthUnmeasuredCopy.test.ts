@@ -165,10 +165,11 @@ test("trust lines say Verified only in the Verified band, Live feed only for a c
   const bare = buildTrustLine(gate, tight, "M5", false, "WARN");
   assert.doesNotMatch(bare, /Verified|Live feed|^AACI warning$/);
   assert.match(bare, /Feed not confirmed live/); assert.match(bare, /AACI warning: some checks not confirmed/);
-  for (const [status, expected] of [
+  const feedCases: Array<[ChartFeedStatus, string]> = [
     [{ ...feed, quality: "delayed", aiUsable: false }, "Feed delayed"],
     [{ ...feed, isLive: false }, "Feed not live"],
-  ] as const) {
+  ];
+  for (const [status, expected] of feedCases) {
     const s = computeChartTruthScore(truth, status, tight);
     const g = computeChartGateOutput(s, read, tight, truth, status.stale);
     assert.equal(g.autonomousChartActionAllowed, true);

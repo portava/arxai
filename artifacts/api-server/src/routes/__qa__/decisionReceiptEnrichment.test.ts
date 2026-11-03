@@ -79,7 +79,7 @@ test("POST /me/chart/decision-receipt records the read built from the user's enr
       body: JSON.stringify({ symbol: "EURUSD", timeframe: "M5", intent: "analyze", source: "chart_read" }),
     });
     assert.equal(r.status, 200, await r.clone().text());
-    assert.equal((await r.json()).created, true);
+    assert.equal(((await r.json()) as { created?: unknown }).created, true);
   });
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0]!.state, ENRICHED, "the receipt state carries the user's broker-quote enrichment");
