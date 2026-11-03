@@ -7,10 +7,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-let mt5Reply: { data?: unknown; isError?: boolean } = {};
+let mt5Reply: { data?: unknown; isError?: boolean; dataUpdatedAt?: number } = {};
+let botReply: { data?: unknown; isError?: boolean; dataUpdatedAt?: number } = {};
 vi.mock("@workspace/api-client-react", () => ({
   useGetMt5Status: () => mt5Reply,
-  useGetBotStatus: () => ({ data: undefined }),
+  useGetBotStatus: () => botReply,
   getGetMt5StatusQueryKey: () => ["mt5-status"],
   getGetBotStatusQueryKey: () => ["bot-status"],
 }));
@@ -28,7 +29,7 @@ const SHARED_HEALTHY = {
   lastHeartbeatAt: null,
 };
 
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; });
 
 const pill = (id: string) => screen.getByTestId(`status-pill-${id}`).textContent ?? "";
 function drawerText() {
@@ -82,5 +83,51 @@ describe("Topbar MT5 pill — shared master bridge", () => {
     expect(pill("mt5")).not.toContain("OFF");
     expect(pill("mt5")).toMatch(/unknown/i);
     expect(drawerText()).toMatch(/could not be loaded/i);
+  });
+});
+
+// React Query keeps the last data when a refetch fails (isError true, data
+// still cached). The 5 s polls used to keep showing that cached "ON" /
+// "yes (shared MT5 bridge)" with no sign it could not be refreshed.
+describe("Topbar MT5 pill — status polls that start failing", () => {
+  const READ_AT = new Date("2026-11-03T12:00:01Z").getTime();
+
+  it("cached ON after a failed refresh is not shown as ON; the drawer says when it was last read", () => {
+    mt5Reply = { data: SHARED_HEALTHY, isError: true, dataUpdatedAt: READ_AT };
+    render(<Topbar />);
+    expect(pill("mt5")).not.toContain("ON");
+    expect(pill("mt5")).toMatch(/not refreshed/i);
+    expect(pill("mode")).not.toMatch(/Shared bridge/);
+    expect(pill("mode")).toMatch(/unknown/i);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("unknown");
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/yes \(shared MT5 bridge\)/);
+    expect(drawer).toMatch(/could not be refreshed/i);
+    expect(drawer).toContain(new Date(READ_AT).toLocaleTimeString());
+  });
+
+  it("a cached own-EA heartbeat is labelled as of the last read, not current", () => {
+    const hb = "2026-11-03T11:59:58Z";
+    mt5Reply = { data: { connected: true, mode: "LIVE_LOCKED", route: "OWN_CONNECTION", lastHeartbeatAt: hb }, isError: true, dataUpdatedAt: READ_AT };
+    render(<Topbar />);
+    expect(pill("mt5")).not.toContain("ON");
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/yes \(your own EA\)/);
+    expect(drawer).toMatch(/Last heartbeat \(as of last read\)/);
+  });
+
+  it("a cached bot state after a failed refresh is not shown as current", () => {
+    mt5Reply = { data: SHARED_HEALTHY };
+    botReply = { data: { isRunning: true, isPaused: false }, isError: true, dataUpdatedAt: READ_AT };
+    render(<Topbar />);
+    expect(pill("bot")).not.toMatch(/Running/);
+    expect(pill("bot")).toMatch(/not refreshed/i);
+    expect(drawerText()).toMatch(/Bot state.*could not be refreshed/i);
+  });
+
+  it("a successful poll still reads ON", () => {
+    mt5Reply = { data: SHARED_HEALTHY, isError: false, dataUpdatedAt: READ_AT };
+    render(<Topbar />);
+    expect(pill("mt5")).toContain("ON");
   });
 });

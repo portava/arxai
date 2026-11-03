@@ -37,13 +37,20 @@ const UNKNOWN_MODE_META = { tone: "neutral" as const, icon: WifiOff, label: "Unk
 const CHECKING_MODE_META = { tone: "neutral" as const, icon: WifiOff, label: "Checking" };
 
 type SharedBridgeView = { availability?: string; connected?: boolean; message?: string } | null;
+
+/** " — last read HH:MM:SS" for a cached value whose latest poll failed ("" when the read time is unknown). */
+function lastReadText(at: number | undefined): string {
+  return at && at > 0 ? ` — last read ${new Date(at).toLocaleTimeString()}` : "";
+}
+
 /**
  * What the MT5 pill may say. `connected` on /mt5/status is the user's OWN
  * connection; a SHARED_MASTER user is routed through the master bridge,
  * reported separately as sharedMasterBridge (re-aged by the server). A failed
- * status request is unknown, never "OFF".
+ * status request is unknown, never "OFF". When the latest poll failed, the
+ * cached answer is not shown as current (React Query keeps it on error).
  */
-function mt5BridgeView(mt5: any, loadFailed: boolean): {
+function mt5BridgeView(mt5: any, loadFailed: boolean, refreshFailed = false, readAt?: number): {
   /** unknown: nothing current was read, so the legacy marker says "unknown", not "disconnected". */
   pill: string; tone: "success" | "warning" | "neutral"; connectedText: string; up: boolean; unknown?: boolean;
 } {
@@ -51,6 +58,9 @@ function mt5BridgeView(mt5: any, loadFailed: boolean): {
     return loadFailed
       ? { pill: "Unknown", tone: "warning", connectedText: "could not be loaded", up: false }
       : { pill: "…", tone: "neutral", connectedText: "checking", up: false };
+  }
+  if (refreshFailed) {
+    return { pill: "Not refreshed", tone: "warning", connectedText: `could not be refreshed${lastReadText(readAt)}`, up: false, unknown: true };
   }
   if (mt5.connected === true) return { pill: "ON", tone: "success", connectedText: "yes (your own EA)", up: true };
   if (mt5.route === "SHARED_MASTER") {
@@ -73,14 +83,14 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   // Only poll MT5 / bot status once the user has unlocked those surfaces.
   // Fresh browser sessions get no leak of the global single-tenant state
   // (account, broker, mode, running flag) into the global header.
-  const { data: mt5, isError: mt5Error } = useGetMt5Status({
+  const { data: mt5, isError: mt5Error, dataUpdatedAt: mt5ReadAt } = useGetMt5Status({
     query: {
       queryKey: getGetMt5StatusQueryKey(),
       refetchInterval: 5000,
       enabled: unlocks.mt5,
     },
   });
-  const { data: bot } = useGetBotStatus({
+  const { data: bot, isError: botError, dataUpdatedAt: botReadAt } = useGetBotStatus({
     query: {
       queryKey: getGetBotStatusQueryKey(),
       refetchInterval: 5000,
@@ -90,13 +100,15 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const session = getCurrentSession();
   const sessionMeta = SESSION_META[session];
   const mt5LoadFailed = mt5Error === true && mt5 == null;
-  const modeMeta = !mt5
-    ? (mt5LoadFailed ? UNKNOWN_MODE_META : CHECKING_MODE_META)
-    : (mt5 as { route?: string }).route === "SHARED_MASTER" && !mt5.connected
-      ? SHARED_MODE_META
-      : (mt5 as { routeReadFailed?: boolean }).routeReadFailed === true && !mt5.connected
-        ? UNKNOWN_MODE_META
-        : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
+  // The latest poll failed but an older answer is cached: not current.
+  const mt5RefreshFailed = mt5Error === true && mt5 != null;
+  const botRefreshFailed = botError === true && bot != null;
+  const modeMeta =
+    !mt5 ? (mt5LoadFailed ? UNKNOWN_MODE_META : CHECKING_MODE_META)
+    : mt5RefreshFailed ? UNKNOWN_MODE_META
+    : (mt5 as { route?: string }).route === "SHARED_MASTER" && !mt5.connected ? SHARED_MODE_META
+    : (mt5 as { routeReadFailed?: boolean }).routeReadFailed === true && !mt5.connected ? UNKNOWN_MODE_META
+    : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
   const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;
 
@@ -122,7 +134,11 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
         <CompactStatusRow
           mt5={mt5}
           mt5LoadFailed={mt5LoadFailed}
+          mt5RefreshFailed={mt5RefreshFailed}
+          mt5ReadAt={mt5ReadAt}
           bot={bot}
+          botRefreshFailed={botRefreshFailed}
+          botReadAt={botReadAt}
           unlocks={unlocks}
           sessionLabel={sessionMeta.label}
           sessionTone={sessionMeta.tone}
@@ -192,7 +208,13 @@ function UserMenu() {
 type CompactStatusRowProps = {
   mt5: any;
   mt5LoadFailed: boolean;
+  /** The latest MT5 poll failed; p.mt5 is the last answer read, at mt5ReadAt. */
+  mt5RefreshFailed?: boolean;
+  mt5ReadAt?: number;
   bot: any;
+  /** The latest bot-status poll failed; p.bot is the last answer read, at botReadAt. */
+  botRefreshFailed?: boolean;
+  botReadAt?: number;
   unlocks: ReturnType<typeof useAllUnlocks>;
   sessionLabel: string;
   sessionTone: "info" | "warning" | "bullish" | "neutral";
@@ -207,7 +229,8 @@ function CompactStatusRow(p: CompactStatusRowProps) {
     { id: "session", label: "Sess", value: p.sessionLabel, legacyTestId: "badge-session",
       tone: p.sessionTone === "bullish" ? "success" : p.sessionTone === "warning" ? "warning" : p.sessionTone === "info" ? "neutral" : "neutral" },
   ];
-  const bridge = mt5BridgeView(p.mt5, p.mt5LoadFailed);
+  const bridge = mt5BridgeView(p.mt5, p.mt5LoadFailed, p.mt5RefreshFailed === true, p.mt5ReadAt);
+  const botStateText = p.bot ? (p.bot.isRunning ? (p.bot.isPaused ? "Paused" : "Running") : "Stopped") : "";
   if (p.unlocks.mt5) {
     pills.push({ id: "mt5", label: "MT5", value: bridge.pill,
       legacyTestId: "badge-mt5-connection",
@@ -218,8 +241,8 @@ function CompactStatusRow(p: CompactStatusRowProps) {
   }
   if ((p.unlocks.simulator || p.unlocks.mt5) && p.bot) {
     pills.push({ id: "bot", label: "Bot",
-      value: p.bot.isRunning ? (p.bot.isPaused ? "Paused" : "Running") : "Stopped",
-      tone: p.bot.isRunning ? (p.bot.isPaused ? "warning" : "success") : "neutral" });
+      value: p.botRefreshFailed ? "Not refreshed" : botStateText,
+      tone: p.botRefreshFailed ? "warning" : p.bot.isRunning ? (p.bot.isPaused ? "warning" : "success") : "neutral" });
   }
 
   const drawer = (
@@ -234,11 +257,24 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       {(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker) && (
         <DetailRow label="Broker" value={String(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker)} />
       )}
-      {p.mt5?.lastHeartbeatAt && <DetailRow label="Last heartbeat" value={new Date(p.mt5.lastHeartbeatAt as string).toLocaleTimeString()} />}
+      {p.mt5?.lastHeartbeatAt && (
+        <DetailRow
+          label={p.mt5RefreshFailed ? "Last heartbeat (as of last read)" : "Last heartbeat"}
+          value={new Date(p.mt5.lastHeartbeatAt as string).toLocaleTimeString()}
+        />
+      )}
       {p.bot && (
         <>
-          <DetailRow label="Bot state" value={p.bot.isRunning ? (p.bot.isPaused ? "Paused" : "Running") : "Stopped"} />
-          {(p.bot as any).lastScanAt && <DetailRow label="Last scan" value={new Date((p.bot as any).lastScanAt).toLocaleTimeString()} />}
+          <DetailRow
+            label="Bot state"
+            value={p.botRefreshFailed ? `could not be refreshed${lastReadText(p.botReadAt)} (then: ${botStateText})` : botStateText}
+          />
+          {(p.bot as any).lastScanAt && (
+            <DetailRow
+              label={p.botRefreshFailed ? "Last scan (as of last read)" : "Last scan"}
+              value={new Date((p.bot as any).lastScanAt).toLocaleTimeString()}
+            />
+          )}
         </>
       )}
       <div className="pt-2 border-t space-y-1">
