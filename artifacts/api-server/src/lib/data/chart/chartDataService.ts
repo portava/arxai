@@ -104,7 +104,9 @@ export interface ChartFeedStatus {
    * Why the series is not live although its bars may be clean: the market is
    * in its scheduled weekend close ("market_closed"), or the bars are the
    * stored MT5 mirror with no bridge pushing them ("stored_history"). null
-   * when neither applies. Lets consumers that bucket freshness (e.g. the
+   * when neither applies, or when the bars failed their checks (quality
+   * partial / invalid / empty; stale too for stored bars) — the message then
+   * names that failure, so the series is not "history" to read. Lets consumers that bucket freshness (e.g. the
    * symbol snapshot's DELAYED) say what the chart says instead of "delayed".
    */
   notLiveReason?: "market_closed" | "stored_history" | null;
@@ -458,7 +460,7 @@ async function buildChartFeed(
     feedReadinessState: derivSymbolStatus?.feedReadinessState ?? null,
     message,
     completenessReason: verdict.completenessReason,
-    notLiveReason: marketClosedAtMs != null ? "market_closed" : durableMirror ? "stored_history" : null,
+    notLiveReason: notLiveReasonFor(quality, messageCtx),
   };
 
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.
@@ -535,6 +537,18 @@ function utcStamp(iso: string | null): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "an unknown time";
   return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/**
+ * The not-live reason the chart's own message states, or null. Given only
+ * under the same quality conditions buildMessage uses for the closed-market /
+ * stored-candles wording: bars that failed their checks (partial, invalid,
+ * empty) are described as that failure, never as readable history.
+ */
+function notLiveReasonFor(quality: ChartQuality, ctx: MessageContext): "market_closed" | "stored_history" | null {
+  if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) return "market_closed";
+  if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) return "stored_history";
+  return null;
 }
 
 function buildMessage(
