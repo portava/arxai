@@ -111,7 +111,15 @@ export interface CandleResult {
   symbol: string;
   timeframe: string;
   candles: Candle[];
-  freshness: "REALTIME" | "DELAYED" | "UNAVAILABLE";
+  /**
+   * REALTIME: the newest bar is stamped within the real-time window (or, for
+   * Alpha Vantage, its own interval check passed). STALE: the shared candle
+   * rule calls the series stale, or its timestamps cannot be checked.
+   * UNCONFIRMED: not stale, but no real-time price was confirmed. The router
+   * maps only DELAYED to the provenance fact `delayed: true` and only
+   * REALTIME to `delayed: false`; STALE and UNCONFIRMED stay unknown (null).
+   */
+  freshness: "REALTIME" | "DELAYED" | "STALE" | "UNCONFIRMED" | "UNAVAILABLE";
   asOf: string | null;
   notes?: string;
 }
@@ -1038,6 +1046,30 @@ function withCandleCache(p: MarketProvider): MarketProvider {
   };
 }
 
+// Twelve Data, Polygon and Finnhub stamp every candle result "REALTIME"
+// without looking at the bars. Age-check that claim from the newest bar on
+// every serve (cache hits included, never mutating the cached payload):
+// REALTIME only when the bar is stamped within the real-time window, STALE
+// when the shared rule says stale or the bars cannot be checked, otherwise
+// UNCONFIRMED. Only ever a downgrade; DELAYED / UNAVAILABLE pass through.
+const AGE_UNCHECKED_CANDLE_SOURCES = new Set(["twelve_data", "polygon", "finnhub"]);
+function candleResultFreshness(r: CandleResult, nowMs = Date.now()): CandleResult["freshness"] {
+  if (r.freshness !== "REALTIME" || r.candles.length === 0 || !AGE_UNCHECKED_CANDLE_SOURCES.has(r.source)) return r.freshness;
+  const observed = candleObservationFreshness(r.candles, r.timeframe, nowMs);
+  return observed === "REALTIME" ? "REALTIME" : observed === "STALE" ? "STALE" : "UNCONFIRMED";
+}
+function withCandleResultFreshness(p: MarketProvider): MarketProvider {
+  const inner = p.getCandles.bind(p);
+  return {
+    ...p,
+    async getCandles(symbol, timeframe, limit) {
+      const r = await inner(symbol, timeframe, limit);
+      const freshness = candleResultFreshness(r);
+      return freshness === r.freshness ? r : { ...r, freshness };
+    },
+  };
+}
+
 // Phase 22O — Hybrid composition. When both TwelveData (candles) and Finnhub
 // (quotes/news) keys are present, route per-feature: candles → TwelveData,
 // quotes/news → Finnhub. Status reports the composite as "twelve_data" since
@@ -1221,7 +1253,7 @@ export function getMarketProvider(): MarketProvider {
     chosen = compositeProvider(observedChain);
   }
 
-  const base = chosen.features.candles ? withCandleCache(chosen) : chosen;
+  const base = chosen.features.candles ? withCandleResultFreshness(withCandleCache(chosen)) : chosen;
   _provider = withTradingEconomicsCalendar(base);
   return _provider;
 }

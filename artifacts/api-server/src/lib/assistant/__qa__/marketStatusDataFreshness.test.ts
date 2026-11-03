@@ -221,3 +221,66 @@ test("a Twelve Data M15 series one bar overdue under the shared rule is still DE
   const s = await observedAt(WED_1400 + 7 * 60_000, "M15", tdValues(WED_1400 - 900_000, 900_000));
   assert.equal(s.dataFreshness, "DELAYED");
 });
+
+// Truth: only the Market Health observation was age-checked. The CandleResult
+// that Twelve Data, Polygon and Finnhub return from getCandles still said
+// freshness "REALTIME" without looking at the bars — Friday's bars at the
+// weekend, yesterday's daily bar. The router turns that into the provenance
+// fact "delayed: false" (known real-time) and the release probe prints it.
+// A "REALTIME" CandleResult from those adapters is now age-checked from its
+// newest bar (cache hits included): STALE when the shared rule says stale,
+// UNCONFIRMED when the series is not stale but no real-time price was
+// confirmed. Neither maps to "delayed: true", so the scanner's quote binding
+// and market-read evidence (which act only on delayed === true / truthy)
+// behave exactly as before.
+async function candlesAt(nowMs: number, tf: string, env: Record<string, string>, body: (url: string) => unknown) {
+  mock.timers.enable({ apis: ["Date"], now: nowMs });
+  const restore = withOnlyKeys(env, body);
+  try {
+    return await getMarketProvider().getCandles("EURUSD", tf, 12);
+  } finally { restore(); mock.timers.reset(); }
+}
+const SAT_NOON = Date.UTC(2026, 9, 31, 12, 0);
+const FRI_2145 = Date.UTC(2026, 9, 30, 21, 45);
+
+test("Friday's Twelve Data bars read at the weekend are not returned as REALTIME", async () => {
+  const r = await candlesAt(SAT_NOON, "M15", { TWELVEDATA_API_KEY: "offline-fixture" }, () => ({ status: "ok", values: tdValues(FRI_2145, 900_000) }));
+  assert.ok(r.candles.length > 0);
+  assert.notEqual(r.freshness, "REALTIME");
+  assert.equal(r.freshness, "STALE");
+});
+
+test("yesterday's Polygon daily bar is not returned as REALTIME", async () => {
+  const dayMs = 24 * H;
+  const now = WED_1400;
+  const yesterdayOpen = Math.floor(now / dayMs) * dayMs - dayMs;
+  const r = await candlesAt(now, "D1", { POLYGON_API_KEY: "offline-fixture" }, () => ({
+    status: "OK", results: Array.from({ length: 12 }, (_, i) => ({ t: yesterdayOpen - i * dayMs, o: 1.08, h: 1.09, l: 1.07, c: 1.085 })),
+  }));
+  assert.ok(r.candles.length > 0);
+  assert.notEqual(r.freshness, "REALTIME");
+});
+
+test("a clean Twelve Data series not stamped within the real-time window is UNCONFIRMED, not REALTIME or DELAYED", async () => {
+  const r = await candlesAt(WED_1400 + 7 * 60_000, "M15", { TWELVEDATA_API_KEY: "offline-fixture" }, () => ({ status: "ok", values: tdValues(WED_1400, 900_000) }));
+  assert.equal(r.freshness, "UNCONFIRMED");
+});
+
+test("a Twelve Data series whose newest bar is stamped seconds ago stays REALTIME", async () => {
+  const r = await candlesAt(WED_1400 + 2_000, "M1", { TWELVEDATA_API_KEY: "offline-fixture" }, () => ({ status: "ok", values: tdValues(WED_1400, 60_000) }));
+  assert.equal(r.freshness, "REALTIME");
+});
+
+test("a cached REALTIME candle result is re-checked when served again later", async () => {
+  mock.timers.enable({ apis: ["Date"], now: WED_1400 + 2_000 });
+  let calls = 0;
+  const restore = withOnlyKeys({ TWELVEDATA_API_KEY: "offline-fixture" }, () => { calls++; return { status: "ok", values: tdValues(WED_1400, 60_000) }; });
+  try {
+    const p = getMarketProvider();
+    assert.equal((await p.getCandles("EURUSD", "M1", 12)).freshness, "REALTIME");
+    mock.timers.setTime(WED_1400 + 40_000);
+    const again = await p.getCandles("EURUSD", "M1", 12);
+    assert.equal(calls, 1, "served from the candle cache");
+    assert.equal(again.freshness, "UNCONFIRMED");
+  } finally { restore(); mock.timers.reset(); }
+});
