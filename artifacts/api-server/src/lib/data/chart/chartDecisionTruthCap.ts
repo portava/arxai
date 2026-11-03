@@ -3,8 +3,9 @@
 // The decision summary (readiness quality → "ready"/"prepare") is built from
 // the candle engines, which only know whether the feed is AI-usable and not
 // stale. The chart-truth gate is a separate, stricter verdict: Chart Truth
-// below 75, a stale feed, a failed broker mirror or a feed that is not live
-// means the read has NOT been verified. Ruby already answers "Chart data is
+// below 75, a stale feed, a failed broker mirror, a candle-data check that is
+// unmeasured or failing (Ruby's handshake) or a feed that is not live means
+// the read has NOT been verified. Ruby already answers "Chart data is
 // syncing…" in that state; without this cap Chart Pulse said "A · Ready" and
 // the best-action sentence said "act with a defined stop" on the same board.
 //
@@ -15,6 +16,8 @@
 import { CHART_TRUTH_THRESHOLD, type ChartGateOutput } from "./chartGateOutput.js";
 import type { ChartFeedStatus } from "./chartDataService.js";
 import type { ChartDecisionState } from "./chartIntelligence.js";
+import { buildChartHandshake } from "./chartHandshake.js";
+import type { ChartTruthScore } from "./chartTruthScore.js";
 
 export interface ChartReadVerification {
   /** True only when every chart-truth check behind a confident read passes. */
@@ -23,20 +26,43 @@ export interface ChartReadVerification {
   reasons: string[];
 }
 
-type GateFacts = Pick<
-  ChartGateOutput,
-  "chartTruthScore" | "confidentReadAllowed" | "autonomousChartActionAllowed" | "tradeConfirmationAllowed"
->;
+/**
+ * The candle-data checks Ruby's handshake requires to PASS (measured and
+ * scoring at least 75), in plain words. Same keys `buildChartHandshake` reads.
+ */
+const HANDSHAKE_CHECKS: ReadonlyArray<{ key: string; words: string }> = [
+  { key: "ohlc_integrity", words: "the candle integrity check" },
+  { key: "timeframe_accuracy", words: "the timeframe and history check" },
+  { key: "feed_freshness", words: "the feed freshness check" },
+  { key: "historical_live_merge", words: "the history-to-live join check" },
+  { key: "symbol_mirror_accuracy", words: "the broker price comparison" },
+];
+const HANDSHAKE_PASS = 75;
+const RENDER_FAIL_BELOW = 50;
+
+const FEED_QUALITY_WORDS: Record<string, string> = {
+  delayed: "the candle feed is delayed",
+  partial: "the candle feed is missing bars",
+  invalid: "the candle feed has invalid bars",
+  empty: "the candle feed returned no bars",
+  unavailable: "the candle feed is unavailable",
+};
+
+type FeedFacts = Pick<ChartFeedStatus, "isLive"> & Partial<Pick<ChartFeedStatus, "stale" | "aiUsable" | "quality">>;
 
 /**
- * Whether the chart read is verified enough to invite action. Same conditions
- * Ruby's chart read requires (truth ≥ 75, feed not stale, mirror not failed),
- * plus a live feed: a closed market or stored bars cannot back "act now".
- * A missing gate or feed status is treated as not verified.
+ * Whether the chart read is verified enough to invite action. It is Ruby's
+ * chart-read predicate (truth ≥ 75, real OHLC, feed AI-usable and not stale,
+ * mirror not failed, and every candle-data handshake check measured and
+ * passing — `buildChartHandshake(...).sourceOverall === "PASS"`), plus a live
+ * feed: a closed market or stored bars cannot back "act now". So the board can
+ * never say "Ready" while Ruby answers "syncing" on the same read. A missing
+ * gate, feed status or truth score is treated as not verified.
  */
 export function chartReadVerification(
-  gate: GateFacts | null | undefined,
-  feed: Pick<ChartFeedStatus, "isLive"> | null | undefined,
+  gate: ChartGateOutput | null | undefined,
+  feed: FeedFacts | null | undefined,
+  truthScore: ChartTruthScore | null | undefined,
 ): ChartReadVerification {
   const reasons: string[] = [];
   if (!gate) {
@@ -47,12 +73,41 @@ export function chartReadVerification(
         `Chart Truth is ${gate.chartTruthScore}/100, below the ${CHART_TRUTH_THRESHOLD} needed for a verified read`,
       );
     }
+    if (gate.candlestickModeAllowed !== true) reasons.push("the provider does not deliver real OHLC candles");
     if (!gate.autonomousChartActionAllowed) reasons.push("the feed is stale");
     if (!gate.tradeConfirmationAllowed) {
       reasons.push("the chart's prices failed the broker-mirror check");
     }
+    const subMetrics = Array.isArray(truthScore?.subMetrics) ? truthScore!.subMetrics : null;
+    if (!subMetrics) {
+      reasons.push("the chart truth checks could not be loaded");
+    } else {
+      for (const check of HANDSHAKE_CHECKS) {
+        // A stale feed already fails freshness; do not say it twice.
+        if (check.key === "feed_freshness" && !gate.autonomousChartActionAllowed) continue;
+        const m = subMetrics.find((x) => x.key === check.key);
+        if (!m || m.evidenceStatus !== "measured" || m.rawScore == null || !Number.isFinite(m.rawScore)) {
+          reasons.push(`${check.words} was not measured`);
+        } else if (m.rawScore < HANDSHAKE_PASS) {
+          reasons.push(`${check.words} scored ${Math.round(m.rawScore)}/100 (needs ${HANDSHAKE_PASS})`);
+        }
+      }
+      const render = subMetrics.find((x) => x.key === "render_accuracy");
+      if (render?.evidenceStatus === "measured" && render.rawScore != null && render.rawScore < RENDER_FAIL_BELOW) {
+        reasons.push("the chart renderer reported a failure");
+      }
+      // The handshake itself is the authority: if it does not PASS for a
+      // reason not named above, the read is still not verified.
+      if (reasons.length === 0 && buildChartHandshake(gate, truthScore!).sourceOverall !== "PASS") {
+        reasons.push("a chart truth check Ruby's read requires did not pass");
+      }
+    }
   }
   if (!feed || feed.isLive !== true) reasons.push("the feed is not live right now");
+  if (feed && feed.stale === true && !reasons.includes("the feed is stale")) reasons.push("the feed is stale");
+  if (feed && feed.aiUsable !== true && feed.stale !== true && feed.quality !== "stale") {
+    reasons.push(FEED_QUALITY_WORDS[feed.quality ?? ""] ?? "the candle feed is not confirmed clean");
+  }
   return { verified: reasons.length === 0, reasons };
 }
 

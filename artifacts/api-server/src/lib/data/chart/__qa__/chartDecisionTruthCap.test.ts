@@ -38,6 +38,21 @@ const feed: ChartFeedStatus = { symbol: "TESTFX_FIXTURE", displaySymbol: "Offlin
   completenessReason: null };
 const read = { score: 100, label: "Highly Readable" as const, subMetrics: [], primaryConcern: null, note: "Offline fixture" };
 
+/** Alignment from a bound, matching broker quote (every candle-data check measured). */
+function boundAlignment() {
+  const quoteBinding = bindBrokerQuote({
+    series: { providerId: "mt5_broker", subProviderId: null, bridgeConnectionId: 7, userId: 70, environment: "unknown", brokerSymbol: null },
+    quote: { source: "mt5_live_quote", providerId: "mt5_broker", bridgeConnectionId: 7, userId: 70, environment: null, brokerSymbol: null,
+      tickAt: new Date(epoch).toISOString(), bid: 1.09999, ask: 1.10001, spreadPoints: 2 },
+    requestingUserId: 70, now: epoch + 1_000,
+  });
+  return computeBrokerPriceAlignment({ chartPrice: 1.1, chartPriceBasis: "MID", assetClass: "forex" as const,
+    brokerBid: 1.09999, brokerAsk: 1.10001, spreadPoints: 2, quoteBinding });
+}
+function boundScore(truth: TimeframeTruthResult = truthFixture()) {
+  return computeChartTruthScore(truth, feed, boundAlignment());
+}
+
 function gate(truthScore: number, over: Partial<ChartGateOutput> = {}): ChartGateOutput {
   const allowed = truthScore >= 75;
   return {
@@ -87,7 +102,9 @@ function aGradeState(g: ChartGateOutput, feedOver: Partial<ChartFeedStatus> = {}
     trendlineOverlay: { visible: false },
     speedState: {},
     lastUpdated: new Date(epoch).toISOString(),
-    chartTruthScore: { score: g.chartTruthScore },
+    // Every candle-data check measured (bound broker quote); the headline
+    // score follows the gate under test.
+    chartTruthScore: { ...boundScore(), score: g.chartTruthScore },
     chartReadScore: { score: 90, label: "Readable", subMetrics: [], primaryConcern: null, note: "" },
     gateOutput: g,
     brokerAlignment: noBrokerAlignment(1.1, "LAST"),
@@ -101,7 +118,7 @@ function sentencesFor(s: ChartIntelligenceState) {
 
 test("verified A-grade read keeps 'ready' and the act-with-a-stop sentence", () => {
   const s = aGradeState(gate(87));
-  const v = chartReadVerification(s.gateOutput, s.truthState);
+  const v = chartReadVerification(s.gateOutput, s.truthState, s.chartTruthScore);
   assert.deepEqual(v, { verified: true, reasons: [] });
   assert.equal(capDecisionStateByChartTruth(s.decisionState, v).actionability, "ready");
   assert.match(sentencesFor(s).bestNextAction.text, /act with a defined stop/);
@@ -109,7 +126,7 @@ test("verified A-grade read keeps 'ready' and the act-with-a-stop sentence", () 
 
 test("Chart Truth 70 (< 75): decision is capped at watch and best action does not invite action", () => {
   const s = aGradeState(gate(70));
-  const v = chartReadVerification(s.gateOutput, s.truthState);
+  const v = chartReadVerification(s.gateOutput, s.truthState, s.chartTruthScore);
   assert.equal(v.verified, false);
   assert.match(v.reasons[0]!, /Chart Truth is 70\/100, below the 75 needed for a verified read/);
   const capped = capDecisionStateByChartTruth(s.decisionState, v);
@@ -143,7 +160,7 @@ test("the sentence engine alone never says 'act with a defined stop' on an unver
 
 test("a feed that is not live (weekend closure / stored bars) cannot back 'ready'", () => {
   const s = aGradeState(gate(87), { isLive: false });
-  const v = chartReadVerification(s.gateOutput, s.truthState);
+  const v = chartReadVerification(s.gateOutput, s.truthState, s.chartTruthScore);
   assert.equal(v.verified, false);
   assert.ok(v.reasons.includes("the feed is not live right now"));
   assert.equal(capDecisionStateByChartTruth(s.decisionState, v).actionability, "watch");
@@ -151,17 +168,18 @@ test("a feed that is not live (weekend closure / stored bars) cannot back 'ready
 });
 
 test("a failed broker mirror or stale feed also blocks 'ready'; missing gate is not verified", () => {
-  const mirror = chartReadVerification(gate(87, { tradeConfirmationAllowed: false }), feed);
+  const mirror = chartReadVerification(gate(87, { tradeConfirmationAllowed: false }), feed, boundScore());
   assert.equal(mirror.verified, false);
   assert.match(mirror.reasons.join(" "), /broker-mirror check/);
-  const stale = chartReadVerification(gate(87, { autonomousChartActionAllowed: false }), feed);
+  const stale = chartReadVerification(gate(87, { autonomousChartActionAllowed: false }), feed, boundScore());
   assert.match(stale.reasons.join(" "), /stale/);
-  assert.equal(chartReadVerification(null, feed).verified, false);
-  assert.equal(chartReadVerification(gate(87), null).verified, false);
+  assert.equal(chartReadVerification(null, feed, boundScore()).verified, false);
+  assert.equal(chartReadVerification(gate(87), null, boundScore()).verified, false);
+  assert.equal(chartReadVerification(gate(87), feed, null).verified, false);
 });
 
 test("the cap only lowers: prepare → watch, watch / stand_aside / unpopulated unchanged", () => {
-  const v = chartReadVerification(gate(60), feed);
+  const v = chartReadVerification(gate(60), feed, boundScore());
   const base = aGradeState(gate(60)).decisionState;
   assert.equal(capDecisionStateByChartTruth({ ...base, actionability: "prepare" }, v).actionability, "watch");
   for (const a of ["watch", "stand_aside", "unknown"] as const) {
@@ -178,7 +196,7 @@ test("route enrichment re-derives the summary from the per-user gate (both direc
 
   // A state built under a closed gate (placeholder alignment) carries a capped summary…
   const built = aGradeState(gate(70));
-  built.decisionState = capDecisionStateByChartTruth(built.decisionState, chartReadVerification(built.gateOutput, feed));
+  built.decisionState = capDecisionStateByChartTruth(built.decisionState, chartReadVerification(built.gateOutput, feed, built.chartTruthScore));
   built.marketSentences = sentencesFor(built);
   assert.equal(built.decisionState.actionability, "watch");
 
@@ -211,4 +229,54 @@ test("route enrichment re-derives the summary from the per-user gate (both direc
   assert.equal(blocked.gateOutput.confidentReadAllowed, false);
   assert.equal(blocked.decisionState.actionability, "watch");
   assert.doesNotMatch(blocked.marketSentences.bestNextAction.text, /act with a defined stop/);
+});
+
+// Truth: the verification claimed "Same conditions Ruby's chart read requires"
+// but left out Ruby's handshake check (every candle-data check measured and
+// passing, real OHLC). With no bound broker quote the broker comparison is
+// unmeasured, so a clean feed scores exactly 75: the gate opened, the board
+// said "A · Ready" / "act with a defined stop", and Ruby on the same tab
+// answered "syncing" because BrokerPriceAlignment was WARN.
+test("Chart Truth exactly 75 with no broker comparison is not verified, matching Ruby's handshake", async () => {
+  const { buildChartHandshake } = await import("../chartHandshake.js");
+  const truth = truthFixture();
+  const alignment = noBrokerAlignment(1.1, "LAST");
+  const score = computeChartTruthScore(truth, feed, alignment);
+  assert.equal(score.score, 75, "fixture: every measured check is perfect, the broker comparison is unmeasured");
+  const g = computeChartGateOutput(score, read as never, alignment, truth, feed);
+  assert.equal(g.confidentReadAllowed, true);
+  assert.notEqual(buildChartHandshake(g, score).sourceOverall, "PASS", "Ruby's read is syncing");
+
+  const v = chartReadVerification(g, feed, score);
+  assert.equal(v.verified, false);
+  assert.ok(v.reasons.includes("the broker price comparison was not measured"), v.reasons.join("; "));
+
+  const s = aGradeState(g);
+  s.chartTruthScore = score;
+  assert.equal(capDecisionStateByChartTruth(s.decisionState, v).actionability, "watch");
+  const text = sentencesFor(s).bestNextAction.text;
+  assert.doesNotMatch(text, /act with a defined stop|cleanest it gets/);
+  assert.match(text, /broker price comparison was not measured/);
+});
+
+test("candles that are not real OHLC are not a verified read", async () => {
+  const truth = truthFixture({ providerDeliversRealOhlc: false });
+  const s = boundScore(truth);
+  const g = computeChartGateOutput(s, read as never, boundAlignment(), truth, feed);
+  assert.equal(g.candlestickModeAllowed, false);
+  const v = chartReadVerification(g, feed, s);
+  assert.equal(v.verified, false);
+  assert.ok(v.reasons.includes("the provider does not deliver real OHLC candles"), v.reasons.join("; "));
+});
+
+test("a verified read is exactly one Ruby's handshake also passes", async () => {
+  const { buildChartHandshake } = await import("../chartHandshake.js");
+  const truth = truthFixture();
+  const s = boundScore(truth);
+  const g = computeChartGateOutput(s, read as never, boundAlignment(), truth, feed);
+  const v = chartReadVerification(g, feed, s);
+  assert.deepEqual(v, { verified: true, reasons: [] });
+  assert.equal(buildChartHandshake(g, s).sourceOverall, "PASS");
+  // A feed the candle engines do not call clean is not verified either.
+  assert.equal(chartReadVerification(g, { ...feed, aiUsable: false, quality: "delayed" }, s).verified, false);
 });

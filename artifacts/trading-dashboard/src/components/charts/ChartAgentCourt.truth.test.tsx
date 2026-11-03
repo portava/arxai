@@ -48,7 +48,14 @@ function state(opts: { populated: boolean; truth: number }): ChartState {
           note: "Specialist agents are in shadow — no consensus influenced this read.",
         },
     gateOutput: {
-      chartTruthScore: opts.truth, confidentReadAllowed: ok, autonomousChartActionAllowed: true, tradeConfirmationAllowed: true,
+      chartTruthScore: opts.truth, confidentReadAllowed: ok, candlestickModeAllowed: true,
+      autonomousChartActionAllowed: true, tradeConfirmationAllowed: true,
+    },
+    // Every candle-data check Ruby's handshake reads, measured and passing.
+    chartTruthScore: {
+      score: opts.truth,
+      subMetrics: ["ohlc_integrity", "timeframe_accuracy", "feed_freshness", "historical_live_merge", "symbol_mirror_accuracy"]
+        .map((key) => ({ key, rawScore: 100, evidenceStatus: "measured" })),
     },
   } as unknown as ChartState;
 }
