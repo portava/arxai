@@ -325,13 +325,15 @@ describe("ScalpSignalCard — unchecked news risk", () => {
       />,
     );
     expect(container.querySelector('[data-testid="scalp-news-unchecked"]')?.textContent).toBe("Unchecked");
-    expect(textOf(container)).not.toMatch(/News\s*LOW/);
+    expect(textOf(container)).not.toMatch(/news\s*LOW/i);
   });
 });
 
 // No economic calendar configured: scheduled news was never checked. The read
 // stays technicals-only (the scalp is still offered), but the chip must not
-// show "News LOW" as if the calendar had been read.
+// show "News LOW" as if the calendar had been read. The match is
+// case-insensitive so it also covers the card's Ruby Reasoning Block, which
+// wrote "Risk read — ..., news LOW." beside the chip (round 3 review).
 describe("ScalpSignalCard — no calendar configured", () => {
   it("renders 'Not checked (no calendar)' and never 'LOW' for news", () => {
     const { container } = render(
@@ -344,6 +346,6 @@ describe("ScalpSignalCard — no calendar configured", () => {
     );
     expect(container.querySelector('[data-testid="scalp-news-not-configured"]')?.textContent)
       .toBe("Not checked (no calendar)");
-    expect(textOf(container)).not.toMatch(/News\s*LOW/);
+    expect(textOf(container)).not.toMatch(/news\s*LOW/i);
   });
 });

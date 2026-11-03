@@ -3,11 +3,12 @@
 // V75 1m: [F] "News/calendar unavailable — event risk not assessed." beside
 // [H] "Event risk is loading…" for one truth read).
 import { describe, expect, it } from "vitest";
-import type { RubyMarketEdgeSignal, RubyMarketReadExplanation } from "@workspace/api-client-react";
+import type { RubyMarketEdgeSignal, RubyMarketReadExplanation, ScalpResult } from "@workspace/api-client-react";
 import {
   buildReasoningFromAIInsight,
   buildReasoningFromChartRead,
   buildReasoningFromMarketRead,
+  buildReasoningFromScalp,
   NEWS_UNAVAILABLE_NOTE,
 } from "./rubyReasoningBlock";
 import type { ChartRead } from "./rubyReadPanelState";
@@ -64,5 +65,40 @@ describe("bot-review Risk row", () => {
   it("says the read carries no calendar check instead of asserting a provider outage", () => {
     const risk = buildReasoningFromAIInsight({ warning: "Size down." }).evidence.risk;
     expect(risk).toBe(`Size down. ${EVENT_RISK_NOT_ASSESSED_IN_READ}`);
+  });
+});
+
+// Round 3 review: the scalp engine passes newsRisk "LOW" together with
+// newsRiskNotConfigured (no calendar) or newsRiskUnchecked (the calendar did
+// not answer). The scalp card's chip says news was not checked, but its Ruby
+// Reasoning Block still wrote "Risk read — spread LOW, slippage LOW, news LOW."
+describe("scalp Risk row", () => {
+  const scalp = (extra: Partial<ScalpResult>) => buildReasoningFromScalp({
+    result: {
+      symbol: "EURUSD", direction: "BUY", status: "READY", spreadRisk: "LOW", slippageRisk: "LOW",
+      newsRisk: "LOW", canBuildTrade: true, noTradeReason: null, plainEnglishReason: "Clean move.",
+      ...extra,
+    } as unknown as ScalpResult,
+  }).evidence.risk;
+
+  it("no calendar configured: news is 'not checked', never 'news LOW'", () => {
+    const risk = scalp({ newsRiskNotConfigured: true });
+    expect(risk).not.toMatch(/news\s*LOW/i);
+    expect(risk).toMatch(/news not checked \(no economic calendar configured\)/);
+    expect(risk).toContain(NEWS_UNAVAILABLE_NOTE);
+    expect(risk).toMatch(/spread LOW, slippage LOW/);
+  });
+
+  it("calendar could not be checked: news 'could not be checked', never 'news LOW'", () => {
+    const risk = scalp({ newsRiskUnchecked: true });
+    expect(risk).not.toMatch(/news\s*LOW/i);
+    expect(risk).toMatch(/news could not be checked/);
+    expect(risk).toContain(NEWS_UNAVAILABLE_NOTE);
+  });
+
+  it("a checked calendar's LOW is reported as read", () => {
+    const risk = scalp({});
+    expect(risk).toMatch(/news LOW/);
+    expect(risk).not.toContain(NEWS_UNAVAILABLE_NOTE);
   });
 });

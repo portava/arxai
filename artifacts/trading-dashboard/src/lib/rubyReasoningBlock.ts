@@ -537,15 +537,22 @@ export function buildReasoningFromScalp(
           : "Scanner-level (blind) read — limited candle visibility on this symbol.";
 
   const newsLabel = clean(r.newsRisk);
+  // The engine sends newsRisk "LOW" alongside these flags: that LOW was never
+  // read from a calendar, so it is reported as not checked (same as the chip).
+  const newsNotChecked = r.newsRiskUnchecked === true
+    ? "news could not be checked"
+    : r.newsRiskNotConfigured === true
+      ? "news not checked (no economic calendar configured)"
+      : "";
   const riskBits = [
     clean(r.spreadRisk) ? `spread ${r.spreadRisk}` : "",
     clean(r.slippageRisk) ? `slippage ${r.slippageRisk}` : "",
-    newsLabel ? `news ${newsLabel}` : "",
+    newsNotChecked || (newsLabel ? `news ${newsLabel}` : ""),
   ].filter(Boolean);
   let evidenceRisk = riskBits.length
     ? `Risk read — ${riskBits.join(", ")}.`
     : "Manage risk to your plan.";
-  if (!newsLabel) evidenceRisk = `${evidenceRisk} ${NEWS_UNAVAILABLE_NOTE}`;
+  if (!newsLabel || newsNotChecked) evidenceRisk = `${evidenceRisk} ${NEWS_UNAVAILABLE_NOTE}`;
   const rWarn = clean(r.riskWarning);
   if (rWarn) evidenceRisk = `${evidenceRisk} ${rWarn}`;
 
