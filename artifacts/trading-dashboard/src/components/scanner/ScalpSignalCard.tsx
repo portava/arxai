@@ -428,13 +428,25 @@ export function ScalpSignalCard({
             News{" "}
             {r.newsRiskUnchecked ? (
               <span className="text-warning" data-testid="scalp-news-unchecked">Unchecked</span>
-            ) : r.newsRiskNotConfigured ? (
+            ) : r.newsRiskNotConfigured && r.newsRisk === "LOW" ? (
+              // No calendar configured: LOW is a default, not an observation.
+              // An observed MEDIUM/HIGH band still shows (never hidden).
               <span
                 className="text-warning"
                 data-testid="scalp-news-not-configured"
                 title="No economic calendar is configured, so scheduled news was not checked. This scalp is read from technicals only."
               >
                 Not checked (no calendar)
+              </span>
+            ) : r.newsRiskNotChecked && r.newsRisk === "LOW" ? (
+              // No economic calendar looked at scheduled events: LOW is the
+              // engine's default here, not an observation.
+              <span
+                className="text-txt-muted"
+                data-testid="scalp-news-not-checked"
+                title="No economic calendar is connected, so scheduled news for this market was not checked."
+              >
+                Not checked
               </span>
             ) : (
               <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>

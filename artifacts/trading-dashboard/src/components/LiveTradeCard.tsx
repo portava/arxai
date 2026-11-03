@@ -327,6 +327,11 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
   const floatingPnl = snap?.floatingPnl ?? null;
   const rMultiple = snap?.rMultiple ?? null;
   const quoteAt = snap?.quoteAt ?? null;
+  // Only a quote the server confirmed "fresh" is the current price. "delayed"
+  // (a receive-time stamp, or a tick past the fresh window) — or a snapshot
+  // that does not say — is a last price, not confirmed current.
+  const confirmedCurrent = snap?.quoteFreshness === "fresh";
+  const quoteNote = snap?.quoteNote ?? null;
 
   return (
     <Card data-testid={`live-trade-card-${trade.id}`}>
@@ -370,7 +375,7 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
           <>
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">Current</div><div data-testid={`snap-current-${trade.id}`}>{currentPrice != null ? currentPrice.toFixed(5) : <span className="text-muted-foreground">Unavailable</span>}</div></div>
+              <div><div className="text-muted-foreground" data-testid={`snap-price-label-${trade.id}`}>{currentPrice == null || confirmedCurrent ? "Current" : "Last price"}</div><div data-testid={`snap-current-${trade.id}`}>{currentPrice != null ? currentPrice.toFixed(5) : <span className="text-muted-foreground">Unavailable</span>}</div></div>
               <div><div className="text-muted-foreground">P&L</div>{floatingPnl != null
                 ? <div data-testid={`snap-pnl-${trade.id}`} className={floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>{floatingPnl < 0 ? "-" : ""}${Math.abs(floatingPnl).toFixed(2)}</div>
                 : <div data-testid={`snap-pnl-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
@@ -380,8 +385,13 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
                 ? <div data-testid={`snap-r-${trade.id}`} className={rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{rMultiple.toFixed(2)}R</div>
                 : <div data-testid={`snap-r-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
             </div>
-            {currentPrice != null && quoteAt ? (
+            {currentPrice != null && confirmedCurrent && quoteAt ? (
               <div className="text-[10px] text-muted-foreground" data-testid={`snap-quote-at-${trade.id}`}>Quote as of {new Date(quoteAt).toLocaleTimeString()}</div>
+            ) : null}
+            {currentPrice != null && !confirmedCurrent ? (
+              <div className="text-[10px] text-amber-300" data-testid={`snap-quote-unconfirmed-${trade.id}`}>
+                Last price · not confirmed current. {quoteNote ?? (quoteAt ? `Quote as of ${new Date(quoteAt).toLocaleTimeString()}.` : "")} P&L, R and health are measured from this last price.
+              </div>
             ) : null}
             {currentPrice != null && floatingPnl == null && snap.pnlUnavailableReason ? (
               <div className="text-[10px] text-amber-300" data-testid={`snap-pnl-unavailable-${trade.id}`}>{snap.pnlUnavailableReason}</div>

@@ -78,3 +78,44 @@ test("the plan review says the levels are on the wrong side, not that they are m
   assert.doesNotMatch(text, /entry, stop, and take-profit are required/);
   assert.match(text, /wrong side of entry/);
 });
+
+// A stop exactly at entry is a zero stop distance, not a same-side pair. With
+// no BUY/SELL direction the checklist said "Stop loss and take profit are on
+// the same side of entry" and "Stop loss 1.1 is at the 1.1 entry, on the same
+// side as the take profit" — neither is true.
+for (const directionBias of [null, "NEUTRAL"]) {
+  test(`no direction (${directionBias}): a stop at entry is described as no stop distance, not same side`, async () => {
+    const r = evaluateChecklist(inputs({ directionBias, entryPrice: 1.1, stopLoss: 1.1, takeProfit: 1.12 }));
+    assert.equal(item(r, "RR_OK").status, "FAIL");
+    assert.equal(item(r, "SL_DEFINED").status, "FAIL");
+    assert.equal(item(r, "TP_DEFINED").status, "PASS");
+    for (const key of ["RR_OK", "SL_DEFINED"]) {
+      assert.doesNotMatch(item(r, key).detail, /same side/i, `${key}: ${item(r, key).detail}`);
+      assert.match(item(r, key).detail, /no stop distance/i, `${key}: ${item(r, key).detail}`);
+    }
+    assert.match(item(r, "SL_DEFINED").detail, /1\.1 is at the 1\.1 entry/);
+    const { summarizePlan } = await import("../index.js");
+    const text = summarizePlan({
+      symbol: "EURUSD", directionBias, strategyId: null,
+      rewardToRisk: r.rewardToRisk, rewardToRiskTarget: null, confidenceLevel: null,
+    }, r, "2026-10-28T12:00:00.000Z");
+    assert.doesNotMatch(text, /wrong side/i, text);
+    assert.match(text, /at the entry price/i, text);
+  });
+}
+
+test("no direction: a take profit at entry is described as no target distance", () => {
+  const r = evaluateChecklist(inputs({ directionBias: null, entryPrice: 1.1, stopLoss: 1.09, takeProfit: 1.1 }));
+  assert.equal(item(r, "TP_DEFINED").status, "FAIL");
+  assert.equal(item(r, "SL_DEFINED").status, "PASS");
+  for (const key of ["RR_OK", "TP_DEFINED"]) {
+    assert.doesNotMatch(item(r, key).detail, /same side/i, `${key}: ${item(r, key).detail}`);
+    assert.match(item(r, key).detail, /no target distance/i, `${key}: ${item(r, key).detail}`);
+  }
+});
+
+test("no direction: a real same-side pair keeps the same-side wording", () => {
+  const r = evaluateChecklist(inputs({ directionBias: null, entryPrice: 1.1, stopLoss: 1.11, takeProfit: 1.12 }));
+  assert.match(item(r, "RR_OK").detail, /same side/i);
+  assert.match(item(r, "SL_DEFINED").detail, /same side as the take profit/i);
+});

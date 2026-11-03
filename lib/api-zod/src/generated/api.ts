@@ -10249,6 +10249,24 @@ export const GetTradeSnapshotResponse = zod.object({
     .describe(
       "Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.",
     ),
+  quoteFreshness: zod
+    .enum(["fresh", "delayed", "stale", "unknown", "unavailable"])
+    .optional()
+    .describe(
+      "The quote's own freshness verdict. Only fresh (a producer tick inside the fresh window) confirms currentPrice is current. A priced snapshot can also be delayed (stamped with the time ARX received it, or a tick older than the fresh window): a last price, not confirmed current. stale, unknown and unavailable come with currentPrice null.",
+    ),
+  quoteTimeBasis: zod
+    .enum(["producer_tick", "provider_as_of", "server_receive", "none"])
+    .optional()
+    .describe(
+      "What the quote's time means (producer tick time, provider time, the time ARX received it, or none).",
+    ),
+  quoteNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "One plain-English sentence on the quote - source, age, time basis and whether it is current; null when there was no quote.",
+    ),
   rMultiple: zod.number().nullable(),
   floatingPnl: zod
     .number()
@@ -17840,6 +17858,12 @@ export const CreateMeScalpFocusResponse = zod.object({
     .describe(
       "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
     ),
+  newsRiskNotChecked: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+    ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
   expiresAt: zod.string(),
@@ -18048,6 +18072,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .describe(
           "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -18246,6 +18276,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .optional()
         .describe(
           "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18446,6 +18482,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .describe(
           "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -18644,6 +18686,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .optional()
         .describe(
           "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18865,6 +18913,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         .describe(
           "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -19063,6 +19117,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         .optional()
         .describe(
           "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -20150,6 +20210,12 @@ export const GetMeOpportunityMapResponse = zod.object({
         entryQuality: zod.number(),
         executionQuality: zod.number(),
         newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+        newsRiskNotChecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+          ),
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
         reason: zod.string().nullable(),
@@ -20189,6 +20255,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20227,6 +20299,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20265,6 +20343,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20303,6 +20387,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20341,6 +20431,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20379,6 +20475,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20419,6 +20521,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20457,6 +20565,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20495,6 +20609,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20533,6 +20653,12 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
@@ -20579,6 +20705,12 @@ export const GetMeOpportunityMapResponse = zod.object({
         entryQuality: zod.number(),
         executionQuality: zod.number(),
         newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+        newsRiskNotChecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+          ),
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
         reason: zod.string().nullable(),

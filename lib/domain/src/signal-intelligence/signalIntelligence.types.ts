@@ -573,6 +573,12 @@ export interface OpportunityInput {
   /** 0–100 execution-conditions quality (feed freshness etc.). */
   executionQuality: number;
   newsRisk: NewsRiskLevel;
+  /**
+   * True when no economic calendar looked at scheduled events for this market
+   * (none is connected), so a `newsRisk` of "none" is a default, not an
+   * observation. Display only — categorization does not read it.
+   */
+  newsRiskNotChecked?: boolean;
   /** True only when the row was read from a live feed (never simulator). */
   hasLiveData: boolean;
   isLate: boolean;

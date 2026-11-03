@@ -10,7 +10,7 @@
 // Advisory / read-only: nothing here places, modifies, or gates a trade.
 
 import { readOpenPositions } from "../positions/openPositions.js";
-import { getUserPrimaryConnection } from "../brokerHub/connections.js";
+import { getUserConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { virtualTradingAccountsTable } from "@workspace/db/schema";
@@ -104,13 +104,21 @@ export async function buildExecutionPreviewForUser(
   } catch { /* null balance — account impact degrades honestly */ }
 
   let leverage: number | null = null;
-  // The MT5 account's deposit currency: broker tick values are quoted in it.
+  // The deposit currency of the account whose EA reported this symbol's spec:
+  // MT5 tick values are quoted in it. The (user, symbol) row is overwritten by
+  // whichever connection synced last, so the currency (and the leverage the
+  // broker-figure margin uses) come from that connection — never from another
+  // of the user's accounts. A row that does not name its reporting connection,
+  // or names one that no longer exists, has no known currency: the estimator
+  // then falls back to the contract-size path or withholds money.
   let accountCurrency: string | null = null;
   try {
-    const conn = await getUserPrimaryConnection(userId);
+    const conn = brokerSpec.bridgeConnectionId != null
+      ? await getUserConnection(userId, brokerSpec.bridgeConnectionId)
+      : await getUserPrimaryConnection(userId);
     const lev = conn?.leverage;
     if (lev != null && lev > 0) leverage = lev;
-    const ccy = conn?.accountCurrency;
+    const ccy = brokerSpec.bridgeConnectionId != null ? conn?.accountCurrency : null;
     if (typeof ccy === "string" && ccy.trim()) accountCurrency = ccy.trim().toUpperCase();
   } catch { /* null leverage / currency — margin and tick-value money omitted honestly */ }
 

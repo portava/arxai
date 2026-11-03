@@ -195,6 +195,7 @@ function rejectResult(
     newsRisk: input.scanner?.newsRisk ?? "LOW",
     ...(input.scanner?.newsRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
     ...(input.scanner?.newsRiskNotConfigured === true ? { newsRiskNotConfigured: true } : {}),
+    ...(input.scanner?.newsRiskNotChecked === true ? { newsRiskNotChecked: true } : {}),
     timingStatus: "WAIT_FOR_ENTRY",
     validForSeconds: 0,
     expiresAt: new Date(now).toISOString(),
@@ -747,6 +748,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     newsRisk,
     // No calendar configured: newsRisk was not observed (technicals-only).
     ...(scanner.newsRiskNotConfigured === true ? { newsRiskNotConfigured: true } : {}),
+    ...(scanner.newsRiskNotChecked === true ? { newsRiskNotChecked: true } : {}),
     timingStatus,
     validForSeconds,
     expiresAt,

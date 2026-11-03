@@ -111,12 +111,45 @@ function wrongSideDetail(kind: "stop" | "target", level: number, entry: number, 
   const where = level > entry ? "above" : level < entry ? "below" : "at";
   const name = kind === "stop" ? "Stop loss" : "Take profit";
   if (dir == null) {
+    // With no direction a level fails either because it sits exactly at entry
+    // (zero distance) or because it shares a side with the other level.
+    if (where === "at") {
+      return `${name} ${level} is at the ${entry} entry — there is no ${kind === "stop" ? "stop" : "target"} distance.`;
+    }
     return `${name} ${level} is ${where} the ${entry} entry, on the same side as the ${kind === "stop" ? "take profit" : "stop loss"} — the plan has no direction to tell which is wrong.`;
   }
   const should = kind === "stop"
     ? (dir === "BUY" ? "below" : "above")
     : (dir === "BUY" ? "above" : "below");
   return `${name} ${level} is ${where} the ${entry} entry — for a ${dir.toLowerCase()} it must be ${should} entry.`;
+}
+
+const RR_UNMEASURABLE = " — R:R can't be measured.";
+
+/**
+ * Why reward-to-risk can't be measured when a level failed the geometry rule.
+ * A level exactly at entry is a zero distance, not a wrong side or a
+ * same-side pair, and is described as such.
+ */
+function rrGeometryDetail(geo: PlanGeometry, entry: number | null, sl: number | null, tp: number | null): string {
+  const at = (x: number | null) => x != null && entry != null && x === entry;
+  const stopAt = geo.stopSide === "WRONG" && at(sl);
+  const targetAt = geo.targetSide === "WRONG" && at(tp);
+  if (stopAt || targetAt) {
+    let clause = stopAt && targetAt
+      ? "The stop loss and take profit are at the entry price, so there is no stop or target distance"
+      : stopAt
+        ? "The stop loss is at the entry price, so there is no stop distance"
+        : "The take profit is at the entry price, so there is no target distance";
+    const otherWrong = stopAt !== targetAt && (stopAt ? geo.targetSide : geo.stopSide) === "WRONG";
+    if (otherWrong && geo.direction) {
+      clause += `, and the ${stopAt ? "take profit" : "stop loss"} is on the wrong side of entry for a ${geo.direction.toLowerCase()}`;
+    }
+    return clause + RR_UNMEASURABLE;
+  }
+  return geo.direction
+    ? `Stop loss or take profit is on the wrong side of entry for a ${geo.direction.toLowerCase()} — R:R can't be measured.`
+    : "Stop loss and take profit are on the same side of entry (wrong side) — R:R can't be measured.";
 }
 
 export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
@@ -160,9 +193,7 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   if (geo.stopSide === "WRONG" || geo.targetSide === "WRONG") {
     items.push({
       key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL",
-      detail: geo.direction
-        ? `Stop loss or take profit is on the wrong side of entry for a ${geo.direction.toLowerCase()} — R:R can't be measured.`
-        : "Stop loss and take profit are on the same side of entry (wrong side) — R:R can't be measured.",
+      detail: rrGeometryDetail(geo, input.entryPrice, input.stopLoss, input.takeProfit),
     });
   } else if (rr == null) {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL", detail: "Entry / SL / TP missing." });
@@ -254,15 +285,23 @@ export function summarizePlan(plan: PlanForReview, checklist: ChecklistResult, _
       : `Reward-to-risk ${plan.rewardToRisk.toFixed(2)} is below your ${target.toFixed(2)} target — consider tighter stop or wider target.`);
   } else if (checklist.items.some((i) =>
     (i.key === "SL_DEFINED" || i.key === "TP_DEFINED") && i.status === "FAIL" && i.detail !== "Missing.")) {
-    parts.push("Reward-to-risk cannot be measured — the stop loss or take profit is on the wrong side of entry.");
+    const rrDetail = checklist.items.find((i) => i.key === "RR_OK")?.detail ?? "";
+    if (rrDetail.includes("at the entry price") && rrDetail.endsWith(RR_UNMEASURABLE)) {
+      const why = rrDetail.slice(0, -RR_UNMEASURABLE.length);
+      parts.push(`Reward-to-risk cannot be measured — ${why.charAt(0).toLowerCase()}${why.slice(1)}.`);
+    } else {
+      parts.push("Reward-to-risk cannot be measured — the stop loss or take profit is on the wrong side of entry.");
+    }
   } else {
     parts.push("Reward-to-risk cannot be computed — entry, stop, and take-profit are required.");
   }
 
+  // confidenceLevel is the number the user typed: restate it as their input,
+  // never as ARX's assessment of the setup.
   if (plan.confidenceLevel != null) {
-    parts.push(plan.confidenceLevel >= 75 ? "Confidence is strong."
-      : plan.confidenceLevel >= 60 ? "Confidence is acceptable."
-      : "Confidence is low — wait for a cleaner setup.");
+    const typed = `You set confidence to ${plan.confidenceLevel}% (your input, not checked by ARX)`;
+    parts.push(plan.confidenceLevel >= 60 ? `${typed}.`
+      : `${typed} — that is low; wait for a cleaner setup.`);
   }
 
   const fails = checklist.items.filter((i) => i.status === "FAIL");

@@ -116,7 +116,12 @@ function coerceAction(a: string): ScalpScannerInput["recommendedAction"] {
 }
 
 type DecoratedOpportunity = ScannerOpportunity & {
-  newsContext?: { riskLevel?: string | null; eventRiskUnchecked?: boolean; eventRiskNotConfigured?: boolean };
+  newsContext?: {
+    riskLevel?: string | null;
+    eventRiskUnchecked?: boolean;
+    eventRiskNotConfigured?: boolean;
+    scheduledEventRisk?: string | null;
+  };
 };
 
 /**
@@ -179,6 +184,10 @@ export function oppToScannerInput(opp: DecoratedOpportunity): ScalpScannerInput 
     // (the engine does not fail closed), but the card must not show LOW.
     ...(opp.newsContext?.eventRiskUnchecked !== true && opp.newsContext?.eventRiskNotConfigured === true
       ? { newsRiskNotConfigured: true } : {}),
+    // No calendar looked at scheduled events (not a failed check, so the engine
+    // does not fail closed on it): display only, so the card never shows the
+    // default LOW band as an observed reading.
+    ...(opp.newsContext?.scheduledEventRisk === "not_checked" ? { newsRiskNotChecked: true } : {}),
     generatedAt: opp.generatedAt,
   };
 }

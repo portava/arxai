@@ -1631,3 +1631,22 @@ describe("comparison selected baseline containment", () => {
     expect(screen.getByTestId("opportunity-map-best-picks")).toBeTruthy();
   });
 });
+
+// No economic calendar is connected: newsRisk "none" was never observed, so
+// the row must say scheduled news was not checked rather than show nothing
+// (which reads as "no news risk").
+describe("news risk that was not checked", () => {
+  it("says 'news not checked' when no calendar looked at scheduled events", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([
+      row({ newsRisk: "none", newsRiskNotChecked: true }),
+    ]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-row-stats-EURUSD").textContent).toMatch(/news not checked/i);
+  });
+
+  it("a checked quiet row still shows no news chip", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([row({ newsRisk: "none" })]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-row-stats-EURUSD").textContent).not.toMatch(/news/i);
+  });
+});
