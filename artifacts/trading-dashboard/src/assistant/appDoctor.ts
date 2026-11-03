@@ -5,11 +5,13 @@ import { resolveRoute } from "@/knowledge/routeKnowledge";
 import type { DoctorDiagnosis, RuntimeContext } from "./runtimeContextTypes";
 
 const SAFE_NEXT_DEFAULT = "Continue in simulator/demo mode and verify the relevant diagnostic page below.";
-// When the bridge summary did not read the execution posture, this view
+// When the bridge summary did not read the execution posture, this advice
 // cannot tell which mode the account trades in (an armed Live Shared account
-// is not in simulator mode), so the fallback names no mode.
+// is not in simulator mode), so the fallback names no mode. It names the
+// source that does not read the mode (the bridge diagnostic summary): the
+// page showing it may read and show the account mode itself.
 const SAFE_NEXT_POSTURE_UNMEASURED =
-  "Your account mode decides where orders go; this view does not read it, and every order is still checked server-side. Verify the relevant diagnostic page below.";
+  "Your account mode decides where orders go. The bridge diagnostic summary behind this advice does not read it, and every order is still checked server-side. Verify the relevant diagnostic page below.";
 
 function safeRoute(route: string | undefined): string | undefined {
   if (!route) return undefined;
