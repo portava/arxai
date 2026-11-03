@@ -15,13 +15,23 @@ interface CalendarDay {
   win_rate: number;
   /** "—" = not rated (the live route computes no day rating). */
   day_rating: "A" | "B" | "C" | "D" | "F" | "—";
-  day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
+  /**
+   * PNL_NOT_RECORDED_DAY: some closed trades that day have no recorded P&L
+   * yet, so the day is neither a measured win, loss nor break-even.
+   */
+  day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY" | "PNL_NOT_RECORDED_DAY";
+  /** Closed trades that day with no recorded P&L (live route's pnlNotRecorded). */
+  pnl_not_recorded?: number;
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
 }
 interface CalendarResp {
-  calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number };
+  calendar: {
+    month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number;
+    /** Closed trades this month with no recorded P&L (counted as 0 in total_pnl). */
+    pnl_not_recorded?: number;
+  };
   /**
    * The server answered for a LIVE_SHARED account without reading any trades
    * (an empty, mode-tagged reply). Nothing was looked up, so the page must not
@@ -30,6 +40,18 @@ interface CalendarResp {
   notShownHere?: boolean;
 }
 interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
+
+/** A recorded P&L, or null when the trade has none yet. */
+function recordedPnl(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** "1 closed trade has" / "2 closed trades have". */
+function tradesHave(n: number): string {
+  return n === 1 ? "1 closed trade has" : `${n} closed trades have`;
+}
 
 function dayColor(d: CalendarDay) {
   switch (d.day_status) {
@@ -61,8 +83,12 @@ function mapLiveToCalendarResp(
     const d = byDate.get(date) ?? {};
     const pnl = Number(d.totalPnl ?? 0);
     const trades = Number(d.tradesCount ?? 0);
+    // The route counts a closed trade with no recorded P&L as 0, so such a
+    // day is not a measured win, loss or break-even.
+    const notRecorded = Math.min(trades, Math.max(0, Number(d.pnlNotRecorded ?? 0) || 0));
     const status: CalendarDay["day_status"] =
-      trades === 0 ? "NO_TRADE_DAY" : pnl > 0 ? "WINNING_DAY" : pnl < 0 ? "LOSING_DAY" : "BREAK_EVEN_DAY";
+      trades === 0 ? "NO_TRADE_DAY" : notRecorded > 0 ? "PNL_NOT_RECORDED_DAY"
+      : pnl > 0 ? "WINNING_DAY" : pnl < 0 ? "LOSING_DAY" : "BREAK_EVEN_DAY";
     return {
       date,
       net_pnl: pnl,
@@ -72,6 +98,7 @@ function mapLiveToCalendarResp(
       win_rate: Number(d.winRate ?? 0),
       day_rating: "—" as const,
       day_status: status,
+      pnl_not_recorded: notRecorded,
       debriefs_created: 0,
       learning_events_created: 0,
       symbols_traded: [],
@@ -87,6 +114,7 @@ function mapLiveToCalendarResp(
       winning_days: days.filter((d) => d.day_status === "WINNING_DAY").length,
       losing_days: days.filter((d) => d.day_status === "LOSING_DAY").length,
       no_trade_days: days.filter((d) => d.day_status === "NO_TRADE_DAY").length,
+      pnl_not_recorded: days.reduce((s, d) => s + (d.pnl_not_recorded ?? 0), 0),
     },
   };
 }
@@ -152,24 +180,30 @@ export default function TradingCalendarPage() {
       if (isLive) {
         const d = await readJson(`/api/me/performance-calendar/${selectedDate}`, { credentials: "include" });
         if (!Array.isArray(d?.trades)) throw new Error("/api/me/performance-calendar/:date returned no trades");
-        // Map live day-agg → DayDetailResp shape the UI renders.
+        // Map live day-agg → DayDetailResp shape the UI renders. A trade
+        // whose P&L is not recorded yet stays null (never a measured 0.00).
+        const trades = d.trades.map((t: any) => ({
+          trade_id: t.id, symbol: t.symbol, action: t.side, status: "CLOSED",
+          pnl: recordedPnl(t.pnl), decision_id: null,
+          entry_price: t.entryPrice, exit_price: t.exitPrice,
+          stop_loss: "—", take_profit: "—",
+        }));
+        const notRecorded = trades.filter((t: { pnl: number | null }) => t.pnl == null).length;
         return {
           day: {
             date: selectedDate!,
             stats: {
               net_pnl: Number(d.totalPnl ?? 0),
               total_trades: Number(d.tradesCount ?? 0),
-              win_rate: Number(d.winRate ?? 0),
+              // The route counts an unrecorded P&L as break-even, so its win
+              // rate is not a measured one while any P&L is missing.
+              win_rate: notRecorded > 0 ? null : Number(d.winRate ?? 0),
+              pnl_not_recorded: notRecorded,
               profit_factor: "—",
               day_rating: "—",
               top_lesson: null,
             },
-            trades: Array.isArray(d.trades) ? d.trades.map((t: any) => ({
-              trade_id: t.id, symbol: t.symbol, action: t.side, status: "CLOSED",
-              pnl: Number(t.pnl ?? 0), decision_id: null,
-              entry_price: t.entryPrice, exit_price: t.exitPrice,
-              stop_loss: "—", take_profit: "—",
-            })) : [],
+            trades,
           },
         } as DayDetailResp;
       }
@@ -267,10 +301,26 @@ export default function TradingCalendarPage() {
         </Card>
       )}
 
-      {calData && !notShownHere && (
+      {calData && !notShownHere && (() => {
+        const monthNotRecorded = calData.calendar.pnl_not_recorded ?? 0;
+        const allNotRecorded = monthNotRecorded > 0 && monthNotRecorded >= calData.calendar.total_trades;
+        return (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
-            <CardContent><div className={`text-xl font-bold ${calData.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{calData.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
+            <CardContent data-testid="month-net-pnl">
+              {monthNotRecorded > 0 ? (
+                <>
+                  <div className="text-xl font-bold text-muted-foreground">
+                    {allNotRecorded ? "Not recorded" : `${calData.calendar.total_pnl.toFixed(2)} (partial)`}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    {tradesHave(monthNotRecorded)} no recorded P&amp;L yet; those days are not counted as winning or losing days.
+                  </div>
+                </>
+              ) : (
+                <div className={`text-xl font-bold ${calData.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{calData.calendar.total_pnl.toFixed(2)}</div>
+              )}
+            </CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Total Trades</CardTitle></CardHeader>
             <CardContent><div className="text-xl font-bold">{calData.calendar.total_trades}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Winning Days</CardTitle></CardHeader>
@@ -278,7 +328,8 @@ export default function TradingCalendarPage() {
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Losing Days</CardTitle></CardHeader>
             <CardContent><div className="text-xl font-bold text-rose-400">{calData.calendar.losing_days}</div></CardContent></Card>
         </div>
-      )}
+        );
+      })()}
 
       {isLive && calData && !notShownHere && calData.calendar.total_trades === 0 && (
         <Card className="border-border">
@@ -319,10 +370,14 @@ export default function TradingCalendarPage() {
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
                       {d.day_status === "LOSING_DAY" && <TrendingDown className="h-3 w-3" />}
                       {d.day_status === "BREAK_EVEN_DAY" && <Minus className="h-3 w-3" />}
-                      {d.total_trades > 0 ? d.net_pnl.toFixed(2) : "—"}
+                      {d.total_trades === 0 ? "—"
+                        : (d.pnl_not_recorded ?? 0) >= d.total_trades ? "not recorded"
+                        : d.net_pnl.toFixed(2)}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-1">
-                      {d.total_trades > 0 ? `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w` : "no trades"}
+                      {d.total_trades === 0 ? "no trades"
+                        : (d.pnl_not_recorded ?? 0) > 0 ? `${d.total_trades}t · ${d.pnl_not_recorded} P&L not recorded`
+                        : `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w`}
                     </div>
                     {(d.debriefs_created > 0 || d.learning_events_created > 0) && (
                       <div className="text-[10px] text-muted-foreground">
@@ -349,12 +404,26 @@ export default function TradingCalendarPage() {
             ) : day.data ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-                  <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>
+                  <div data-testid="day-net-pnl"><div className="text-muted-foreground text-xs">Net P&L</div>{(day.data.day.stats.pnl_not_recorded ?? 0) > 0 ? (
+                    <div className="font-bold text-muted-foreground">
+                      {day.data.day.stats.pnl_not_recorded >= day.data.day.trades.length ? "Not recorded" : `${day.data.day.stats.net_pnl.toFixed(2)} (partial)`}
+                    </div>
+                  ) : (
+                    <div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div>
+                  )}</div>
                   <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{day.data.day.stats.total_trades}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{day.data.day.stats.win_rate.toFixed(1)}%</div></div>
+                  <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{typeof day.data.day.stats.win_rate === "number" ? `${day.data.day.stats.win_rate.toFixed(1)}%` : "—"}</div></div>
                   <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor}</div></div>
                   <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold">{day.data.day.stats.day_rating}</div></div>
                 </div>
+                {(day.data.day.stats.pnl_not_recorded ?? 0) > 0 && (
+                  <div className="text-xs text-muted-foreground" data-testid="day-pnl-not-recorded">
+                    {day.data.day.stats.pnl_not_recorded} of {day.data.day.trades.length} closed trades on this day have no recorded P&amp;L yet,
+                    {day.data.day.stats.pnl_not_recorded >= day.data.day.trades.length
+                      ? " so there is no day total or win rate to show."
+                      : " so the day total covers only the trades that do and no win rate is shown."}
+                  </div>
+                )}
                 {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}
                 <div className="space-y-2">
                   {day.data.day.trades.length === 0 && <div className="text-muted-foreground text-sm">No trades on this day.</div>}
@@ -362,7 +431,11 @@ export default function TradingCalendarPage() {
                     <div key={t.trade_id} className="border border-slate-700 rounded p-3 text-sm" data-testid={`trade-row-${t.trade_id}`}>
                       <div className="flex items-center justify-between">
                         <div className="font-semibold">#{t.trade_id} {t.symbol} <Badge variant="outline">{t.action}</Badge> <Badge>{t.status}</Badge></div>
-                        <div className={`font-bold ${t.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{t.pnl.toFixed(2)}</div>
+                        {typeof t.pnl === "number" ? (
+                          <div className={`font-bold ${t.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{t.pnl.toFixed(2)}</div>
+                        ) : (
+                          <div className="font-bold text-muted-foreground" data-testid={`trade-pnl-not-recorded-${t.trade_id}`}>P&amp;L not recorded</div>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         decision_id: {t.decision_id ?? "—"} · entry: {t.entry_price} · exit: {t.exit_price ?? "—"} · SL: {t.stop_loss} · TP: {t.take_profit}
