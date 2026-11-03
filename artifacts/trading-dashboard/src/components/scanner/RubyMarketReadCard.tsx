@@ -10,7 +10,12 @@ import { TruthEvidenceClasses } from "@/components/scanner/TruthEvidenceClasses"
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromMarketRead, STALE_READ_PREFIX } from "@/lib/rubyReasoningBlock";
+import {
+  buildReasoningFromMarketRead,
+  INVALIDATED_SETUP_PREFIX,
+  SETUP_INVALIDATED_REASON,
+  STALE_READ_PREFIX,
+} from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventRiskLine } from "@/lib/eventRiskCopy";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
@@ -326,14 +331,24 @@ export function RubyMarketReadCard({
     : [];
 
   // The read is fetched once (no polling). A live chart cannot keep an expired
-  // read current: past/missing/malformed expiresAt, or an expired/invalid
-  // lifecycle, withholds the directional content exactly like a downgraded feed.
+  // read current: past/missing/malformed expiresAt, STALE/EXPIRED freshness or
+  // an EXPIRED lifecycle withholds the directional content exactly like a
+  // downgraded feed. An INVALID lifecycle (price broke the setup's
+  // invalidation level) withholds it too, but that read is not expired: it is
+  // named as an invalidated setup, never told to refresh.
   const expiresAtMs = typeof signal?.expiresAt === "string" ? Date.parse(signal.expiresAt) : NaN;
   const readNowMs = useEvidenceDeadline(Number.isFinite(expiresAtMs) ? expiresAtMs : null);
+  const lifecycleStage = String(signal?.lifecycleStage ?? "").toUpperCase();
   const readExpired = signal != null && (!(Number.isFinite(expiresAtMs) && readNowMs < expiresAtMs) ||
     ["EXPIRED", "STALE"].includes(String(signal.freshness ?? "").toUpperCase()) ||
-    ["EXPIRED", "INVALID"].includes(String(signal.lifecycleStage ?? "").toUpperCase()));
-  const downgraded = gate.downgraded || readExpired;
+    lifecycleStage === "EXPIRED");
+  const setupInvalidated = signal != null && lifecycleStage === "INVALID";
+  const downgraded = gate.downgraded || readExpired || setupInvalidated;
+  // Why the read withholds itself while the shared gate confirms the feed
+  // (null when the gate is downgraded — the feed is then the stated cause).
+  const withheldCause: "expired" | "invalidated" | null = gate.downgraded
+    ? null
+    : readExpired ? "expired" : setupInvalidated ? "invalidated" : null;
   // The header's feed word is the SIGNAL's build-time dataSource (fetched once,
   // never polled); it may only be shown as live when the market-truth snapshot
   // on this page confirms a current data time. Ordered, downgrade-only.
@@ -347,15 +362,23 @@ export function RubyMarketReadCard({
     nowTs,
   });
   const level = gate.level;
-  const reason = readExpired && !gate.downgraded
+  const reason = withheldCause === "expired"
     ? `This ${name} read has expired — refresh for a current read.`
-    : gate.reason;
+    : withheldCause === "invalidated"
+      ? SETUP_INVALIDATED_REASON
+      : gate.reason;
   // Why the read's own content is withheld, in one plain clause shared by the
   // headline and the evidence block.
-  const withheldWhy = readExpired && !gate.downgraded
+  const withheldWhy = withheldCause === "expired"
     ? "this read has expired"
-    : "the live feed isn't confirmed";
-  const stale = (text: string): string => (downgraded ? `${STALE_READ_PREFIX} ${text}` : text);
+    : withheldCause === "invalidated"
+      ? "price broke this setup's invalidation level"
+      : "the live feed isn't confirmed";
+  const evidenceWithheldTail = withheldCause === "invalidated"
+    ? "so its for/against points no longer support a trade"
+    : "so its for/against points are not current";
+  const stalePrefix = withheldCause === "invalidated" ? INVALIDATED_SETUP_PREFIX : STALE_READ_PREFIX;
+  const stale = (text: string): string => (downgraded ? `${stalePrefix} ${text}` : text);
 
   const chosen: RubyExplanationMode | null = explanation
     ? mode === "ADVANCED"
@@ -377,13 +400,14 @@ export function RubyMarketReadCard({
             downgraded,
             level,
             reason,
-            readExpired: readExpired && !gate.downgraded,
+            readExpired: withheldCause === "expired",
+            withheldCause,
             newsRiskLabel: eventRisk,
             feedUnconfirmedReason: feedRow.feedDataNote,
             pricePrecision,
           }, name)
         : null,
-    [explanation, signal, downgraded, readExpired, gate.downgraded, level, reason, eventRisk, feedRow.feedDataNote, name, pricePrecision],
+    [explanation, signal, downgraded, withheldCause, level, reason, eventRisk, feedRow.feedDataNote, name, pricePrecision],
   );
 
   return (
@@ -505,7 +529,7 @@ export function RubyMarketReadCard({
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-evidence">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Evidence</div>
                   <p className="mt-0.5 text-xs text-txt-muted">
-                    Evidence withheld — {withheldWhy}, so its for/against points are not current.
+                    Evidence withheld — {withheldWhy}, {evidenceWithheldTail}.
                   </p>
                 </div>
               )}
@@ -558,8 +582,12 @@ export function RubyMarketReadCard({
                   confident action over stale/insufficient/blocked data). */}
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Best action</div>
-                {readExpired && !gate.downgraded ? (
+                {withheldCause === "expired" ? (
                   <p className="mt-0.5 text-sm text-txt-muted" data-testid="ruby-market-read-best-action-expired">
+                    Not actionable — {reason}
+                  </p>
+                ) : withheldCause === "invalidated" ? (
+                  <p className="mt-0.5 text-sm text-txt-muted" data-testid="ruby-market-read-best-action-invalidated">
                     Not actionable — {reason}
                   </p>
                 ) : downgraded ? (

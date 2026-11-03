@@ -209,3 +209,58 @@ describe("truth audit: an expired read on a confirmed feed names the expiry, not
     expect(screen.getByTestId("ruby-market-read-freshness").textContent).toContain("Feed not confirmed");
   });
 });
+
+// Review finding: lifecycleStage INVALID (lifecycleEngine: "Price broke the
+// invalidation level.") was folded into readExpired, so a read that is still
+// current (expiresAt in the future) on a confirmed feed was called expired in
+// every reasoning row and the feed chip, with "refresh for a current read" —
+// advice that returns the same invalidated read.
+describe("truth audit: an invalidated setup is named as invalidated, not as an expired read", () => {
+  const INVALIDATED = { lifecycleStage: "INVALID", expiresAt: new Date(Date.now() + 600_000).toISOString() };
+  const t = (id: string) => screen.getByTestId(`ruby-market-read-reasoning-${id}`).textContent ?? "";
+  const ROW_IDS = [
+    "decision", "why", "evidence-structure", "evidence-momentum", "evidence-feedData",
+    "evidence-supportResistance", "confirmation", "invalidation", "trader-test", "risk-note",
+  ];
+
+  it("no reasoning row, chip, headline or best action calls it expired or says to refresh", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(INVALIDATED)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    for (const id of ROW_IDS) {
+      expect(t(id), id).not.toMatch(/expired|refresh/i);
+      expect(t(id), id).not.toMatch(/historical|feed not (fully )?confirmed|unconfirmed feed|until the live feed confirms/i);
+    }
+    expect(t("decision")).toBe("NO TRADE — setup invalidated");
+    expect(t("why")).toMatch(/invalidation level/);
+    expect(t("evidence-supportResistance")).toMatch(/invalidation level/);
+    expect(t("risk-note")).toMatch(/invalidated/);
+    expect(screen.getByTestId("ruby-market-read-freshness").textContent).not.toMatch(/Read expired|Feed not confirmed/);
+    expect(screen.getByTestId("ruby-market-read-headline").textContent).toMatch(/invalidation level/);
+    expect(screen.getByTestId("ruby-market-read-best-action-invalidated").textContent).toMatch(/invalidation level/);
+    expect(screen.getByTestId("ruby-market-read-body").textContent).not.toMatch(/expired/i);
+  });
+
+  it("still withholds the directional content (best action, levels, bias, timing)", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(INVALIDATED)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    expect(screen.queryByTestId("ruby-market-read-best-action")).toBeNull();
+    expect(screen.queryByText("Levels")).toBeNull();
+    expect(screen.getByTestId("ruby-market-read-bias").textContent).not.toContain("Bullish");
+    expect(screen.queryByTestId("ruby-market-read-late")).toBeNull();
+    expect(screen.getByTestId("ruby-market-read-body").textContent).not.toMatch(/entry window is open now/);
+  });
+
+  it("an invalidated read that has also expired is named as expired", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse({ lifecycleStage: "INVALID", expiresAt: new Date(Date.now() - 1000).toISOString() })));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    expect(t("decision")).toMatch(/expired/i);
+    expect(screen.getByTestId("ruby-market-read-freshness").textContent).toMatch(/Read expired/);
+  });
+
+  it("a gate-downgraded invalidated read still names the feed", () => {
+    mockUseScannerReadGate.mockReturnValue({ truth: null, level: "limited", isFull: false, downgraded: true, reason: "Delayed market data." });
+    mockUseGetMeMarketEdge.mockReturnValue(state(directionalResponse(INVALIDATED)));
+    render(<RubyMarketReadCard symbol="EURUSD" timeframe="15m" />);
+    expect(t("decision")).toBe("WAIT — live feed not confirmed");
+  });
+});
