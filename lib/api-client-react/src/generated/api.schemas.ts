@@ -10315,6 +10315,20 @@ export interface MentorActionItem {
   updatedAt: string;
 }
 
+export type TraderSkillPillar =
+  (typeof TraderSkillPillar)[keyof typeof TraderSkillPillar];
+
+export const TraderSkillPillar = {
+  discipline: "discipline",
+  execution: "execution",
+  risk: "risk",
+  emotional: "emotional",
+  consistency: "consistency",
+  planning: "planning",
+  review: "review",
+  practice: "practice",
+} as const;
+
 export type TraderSkillProfileSkillLevel =
   (typeof TraderSkillProfileSkillLevel)[keyof typeof TraderSkillProfileSkillLevel];
 
@@ -17957,6 +17971,8 @@ export type GetEdgeWarnings200 = {
 
 export type GetTraderSkillProfile200 = {
   profile?: TraderSkillProfile | null;
+  /** Pillars of this profile with no evidence (no debriefs, edge reports ...) and a stored 0: not measured. They still count as 0 in totalScore. null when the evidence could not be read. */
+  unmeasuredPillars?: TraderSkillPillar[] | null;
 };
 
 export type CalculateTraderSkillProfile200Signals = { [key: string]: number };
@@ -17964,6 +17980,8 @@ export type CalculateTraderSkillProfile200Signals = { [key: string]: number };
 export type CalculateTraderSkillProfile200 = {
   profile?: TraderSkillProfile;
   signals?: CalculateTraderSkillProfile200Signals;
+  /** Pillars with no evidence in this computation (each counted as 0 in totalScore). */
+  unmeasuredPillars?: TraderSkillPillar[];
 };
 
 export type GetSkillLevelHistory200 = {

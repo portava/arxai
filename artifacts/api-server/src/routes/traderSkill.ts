@@ -75,12 +75,20 @@ function sampleCap(n: number): number {
   return 100;
 }
 
+type Pillar = "discipline" | "execution" | "risk" | "emotional" | "consistency" | "planning" | "review" | "practice";
+
 interface Subs {
   discipline: number; execution: number; risk: number;
   emotional: number; consistency: number; planning: number;
   review: number; practice: number;
   // Diagnostic (not stored on the profile; surfaced only in suggestions)
   signals: Record<string, number>;
+  // Pillars with no evidence at all: their 0 was not measured. They still
+  // count as 0 in the total (no points without evidence), but the API names
+  // them so the UI says "no data" instead of a measured-looking 0. Review
+  // and practice are counts (0 reviews / 0 closed paper trades is observed),
+  // so they are always measured.
+  unmeasured: Pillar[];
 }
 
 async function computeSubScores(userId: number): Promise<Subs> {
@@ -96,7 +104,10 @@ async function computeSubScores(userId: number): Promise<Subs> {
 
   const journalCount = journals.length;
   const debriefCount = debriefs.length;
-  const closedPapers = papers.filter((p) => p.status !== "OPEN").length;
+  // Practice = paper trades that actually closed (CLOSED_TP / CLOSED_SL /
+  // CLOSED_MANUAL). A CANCELLED order was voided or never filled: it is not
+  // a practice trade and must not raise Practice or the sample cap.
+  const closedPapers = papers.filter((p) => p.status.startsWith("CLOSED")).length;
   const totalActivity = journalCount + closedPapers;
 
   // ── Discipline: % of debriefs where the plan was followed ───────────────
@@ -155,6 +166,14 @@ async function computeSubScores(userId: number): Promise<Subs> {
   const cap = sampleCap(totalActivity);
   const cap2 = (x: number) => Math.min(cap, Math.round(x));
 
+  const unmeasured: Pillar[] = [];
+  if (debriefCount === 0) unmeasured.push("discipline");
+  if (exN === 0) unmeasured.push("execution");
+  if (totalActivity === 0) unmeasured.push("risk");
+  if (debriefCount === 0) unmeasured.push("emotional");
+  if (edges.length === 0) unmeasured.push("consistency");
+  if (debriefCount === 0 && plans.length === 0) unmeasured.push("planning");
+
   return {
     discipline: cap2(disciplineRaw),
     execution:  cap2(executionRaw),
@@ -169,7 +188,36 @@ async function computeSubScores(userId: number): Promise<Subs> {
       closedPapers, violations: violations.length, plans: plans.length,
       goodEdges, totalEdges: edges.length, sampleCap: cap,
     },
+    unmeasured,
   };
+}
+
+type ProfileRow = typeof traderSkillProfilesTable.$inferSelect;
+
+const PILLAR_SCORE: Record<Pillar, (p: ProfileRow) => number> = {
+  discipline: (p) => p.disciplineScore,
+  execution: (p) => p.executionScore,
+  risk: (p) => p.riskScore,
+  emotional: (p) => p.emotionalControlScore,
+  consistency: (p) => p.consistencyScore,
+  planning: (p) => p.planningScore,
+  review: (p) => p.reviewScore,
+  practice: (p) => p.practiceScore,
+};
+
+/**
+ * Pillars of a stored profile that were not measured: no evidence for them
+ * now and a stored 0. (A pillar that scored above 0 was measured when the
+ * snapshot was taken.) null when the evidence could not be read — the caller
+ * then cannot tell a measured 0 from no data, and says so.
+ */
+async function unmeasuredPillarsOf(userId: number, profile: ProfileRow): Promise<Pillar[] | null> {
+  try {
+    const now = await computeSubScores(userId);
+    return now.unmeasured.filter((k) => PILLAR_SCORE[k](profile) === 0);
+  } catch {
+    return null;
+  }
 }
 
 function totalFromSubs(s: Subs): number {
@@ -220,7 +268,7 @@ router.post("/skill/calculate", requireUser, async (req, res): Promise<void> => 
       await vaultSkill("SKILL_RECOMPUTED", "INFO", { level: newLevel, total });
     }
 
-    ok(res, { profile, signals: subs.signals });
+    ok(res, { profile, signals: subs.signals, unmeasuredPillars: subs.unmeasured });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /skill/calculate failed");
     fail(res, 500, "Failed to compute skill profile");
@@ -230,7 +278,8 @@ router.post("/skill/calculate", requireUser, async (req, res): Promise<void> => 
 // ── GET /skill/profile — most recent profile ───────────────────────────────
 router.get("/skill/profile", requireUser, async (req, res): Promise<void> => {
   const profile = (await latestProfile(req.authUser!.id)) ?? null;
-  ok(res, { profile });
+  const unmeasuredPillars = profile ? await unmeasuredPillarsOf(req.authUser!.id, profile) : [];
+  ok(res, { profile, unmeasuredPillars });
 });
 
 // ── GET /skill/history ─────────────────────────────────────────────────────
@@ -250,26 +299,30 @@ router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> =>
     return;
   }
 
-  const subs: Array<{ area: string; score: number; tip: string }> = [
-    { area: "Discipline",        score: profile.disciplineScore,
+  const subs: Array<{ key: Pillar; area: string; score: number; tip: string }> = [
+    { key: "discipline", area: "Discipline",        score: profile.disciplineScore,
       tip: "After every trade, write a debrief and mark whether you actually followed your written plan." },
-    { area: "Execution",         score: profile.executionScore,
+    { key: "execution", area: "Execution",         score: profile.executionScore,
       tip: "Use the debrief checklist (entry rules, stop placement, position size) — every box you tick raises this score." },
-    { area: "Risk control",      score: profile.riskScore,
+    { key: "risk", area: "Risk control",      score: profile.riskScore,
       tip: "Each rule violation lowers this. Re-read your active rule contracts before trading." },
-    { area: "Emotional control", score: profile.emotionalControlScore,
+    { key: "emotional", area: "Emotional control", score: profile.emotionalControlScore,
       tip: "Tag emotional state honestly. Revenge / overtrading / FOMO tags are the biggest detractors." },
-    { area: "Consistency",       score: profile.consistencyScore,
+    { key: "consistency", area: "Consistency",       score: profile.consistencyScore,
       tip: "Run more edge reports. STRONG_EDGE and DEVELOPING_EDGE slices are what build this score." },
-    { area: "Planning",          score: profile.planningScore,
+    { key: "planning", area: "Planning",          score: profile.planningScore,
       tip: "Create a written trade plan for every setup before placing the trade." },
-    { area: "Review cadence",    score: profile.reviewScore,
+    { key: "review", area: "Review cadence",    score: profile.reviewScore,
       tip: "Complete one weekly review every week — even if the week was boring." },
-    { area: "Practice",          score: profile.practiceScore,
+    { key: "practice", area: "Practice",          score: profile.practiceScore,
       tip: "Closed paper trades and replay sessions count here. Aim for 50+ closed paper trades." },
   ];
   // Lowest two pillars first — biggest leverage points.
   subs.sort((a, b) => a.score - b.score);
+  // A pillar with no evidence has no score to show: it is "no data yet",
+  // never a measured 0/100. (null = evidence unreadable: scores are shown
+  // as stored.)
+  const unmeasured = new Set(await unmeasuredPillarsOf(req.authUser!.id, profile) ?? []);
 
   const next = nextLevel(profile.skillLevel as Level);
   const need = nextLevelThreshold(profile.skillLevel as Level);
@@ -280,9 +333,9 @@ router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> =>
         message: "You're at Elite Trader on process quality. Maintain the discipline that got you here — past process does not guarantee future outcomes." };
 
   ok(res, {
-    suggestions: [header, ...subs.slice(0, 3).map((s) => ({
-      area: s.area, score: Math.round(s.score), message: s.tip,
-    }))],
+    suggestions: [header, ...subs.slice(0, 3).map((s) => (unmeasured.has(s.key)
+      ? { area: s.area, message: `No data yet — this pillar has no evidence and counts as 0 in your total. ${s.tip}` }
+      : { area: s.area, score: Math.round(s.score), message: s.tip }))],
   });
 });
 

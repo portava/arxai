@@ -1723,6 +1723,7 @@ export * from "./tradePlanStatus";
 export * from "./tradePnlStatus";
 export * from "./tradePoolAllocation";
 export * from "./tradeResult";
+export * from "./traderSkillPillar";
 export * from "./traderSkillProfile";
 export * from "./traderSkillProfileSkillLevel";
 export * from "./tradeSnapshot";

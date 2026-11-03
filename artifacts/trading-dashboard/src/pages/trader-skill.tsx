@@ -5,13 +5,15 @@ import {
   NextLevelRequirementsCard,
 } from "@/components/traderSkill";
 import type {
-  TraderSkillProfile, SkillLevelHistory, SkillSuggestion,
+  TraderSkillProfile, SkillLevelHistory, SkillSuggestion, SkillPillar,
 } from "@/components/traderSkill";
 
 export default function TraderSkillPage() {
   const qc = useQueryClient();
 
-  const profile = useQuery<{ profile: TraderSkillProfile | null }>({
+  // unmeasuredPillars: pillars with no evidence (their 0 was not measured);
+  // null when the server could not check.
+  const profile = useQuery<{ profile: TraderSkillProfile | null; unmeasuredPillars?: SkillPillar[] | null }>({
     queryKey: ["skill-profile"],
     queryFn: async () => (await fetch("/api/skill/profile")).json(),
   });
@@ -74,7 +76,7 @@ export default function TraderSkillPage() {
           <LevelProgressMeter total={p.totalScore} level={p.skillLevel} />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="lg:col-span-2"><SkillBreakdownCard profile={p} /></div>
+            <div className="lg:col-span-2"><SkillBreakdownCard profile={p} unmeasured={profile.data?.unmeasuredPillars} /></div>
             <div>
               <NextLevelRequirementsCard suggestions={suggestions.data?.suggestions ?? []} />
             </div>

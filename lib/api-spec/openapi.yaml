@@ -4943,6 +4943,14 @@ paths:
                     oneOf:
                       - { $ref: "#/components/schemas/TraderSkillProfile" }
                       - { type: "null" }
+                  unmeasuredPillars:
+                    type: array
+                    nullable: true
+                    description: >-
+                      Pillars of this profile with no evidence (no debriefs, edge
+                      reports ...) and a stored 0: not measured. They still count
+                      as 0 in totalScore. null when the evidence could not be read.
+                    items: { $ref: "#/components/schemas/TraderSkillPillar" }
 
   /skill/calculate:
     post:
@@ -4960,6 +4968,10 @@ paths:
                   signals:
                     type: object
                     additionalProperties: { type: integer }
+                  unmeasuredPillars:
+                    type: array
+                    description: Pillars with no evidence in this computation (each counted as 0 in totalScore).
+                    items: { $ref: "#/components/schemas/TraderSkillPillar" }
 
   /skill/history:
     get:
@@ -19423,6 +19435,10 @@ components:
         dueDate:           { type: ["string","null"] }
         createdAt:         { type: string }
         updatedAt:         { type: string }
+
+    TraderSkillPillar:
+      type: string
+      enum: [discipline, execution, risk, emotional, consistency, planning, review, practice]
 
     TraderSkillProfile:
       type: object

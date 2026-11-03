@@ -12996,6 +12996,23 @@ export const GetTraderSkillProfileResponse = zod.object({
       zod.null(),
     ])
     .optional(),
+  unmeasuredPillars: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .nullish()
+    .describe(
+      "Pillars of this profile with no evidence (no debriefs, edge reports ...) and a stored 0: not measured. They still count as 0 in totalScore. null when the evidence could not be read.",
+    ),
 });
 
 export const CalculateTraderSkillProfileResponse = zod.object({
@@ -13025,6 +13042,23 @@ export const CalculateTraderSkillProfileResponse = zod.object({
     })
     .optional(),
   signals: zod.record(zod.string(), zod.number()).optional(),
+  unmeasuredPillars: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .optional()
+    .describe(
+      "Pillars with no evidence in this computation (each counted as 0 in totalScore).",
+    ),
 });
 
 export const GetSkillLevelHistoryResponse = zod.object({
