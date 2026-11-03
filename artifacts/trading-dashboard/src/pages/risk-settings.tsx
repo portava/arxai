@@ -401,15 +401,20 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
 /**
  * What the bot settings flags do. Bot mode, "is running" and the paused flag
  * are stored in your bot settings and echoed back here; no order path (the
- * Risk Governor, the paper autopilot, the live pipeline) reads them. Only a
- * stop switch halts new trades.
+ * Risk Governor, the paper autopilot, the live pipeline) reads them, so they
+ * do not halt new trades. The Kill switches row shows only the kill switches
+ * /risk/audit reads; the governor's other halts on demo and live orders (the
+ * broker's operator controls, a frozen shared-account allocation) are not
+ * read there, and the note says so.
  */
 export const BOT_PAUSE_FLAG_NOTE =
   "Stores a paused flag in your bot settings. No order path reads this flag, so it does not stop new trades. " +
   "To halt new trades on your account, use \"Pause my trading\" on Risk Command Center (Audit tab), which engages your kill switch.";
 
 export const BOT_FLAGS_NOTE =
-  "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. The Stop switch row is what halts new trades.";
+  "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. " +
+  "The Kill switches row shows the platform emergency stop, the safety-core switch and your own kill switch. " +
+  "The Risk Governor also refuses new demo and live orders when the broker's operator controls disable execution or a shared-account allocation is frozen; those are not read here.";
 
 // ── Emergency stop scope ─────────────────────────────────────────────────────
 
@@ -1604,14 +1609,17 @@ export default function RiskSettings() {
                   const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
                   // id keeps each row's stable test id; label is what the row says.
                   const rows: { id: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread"; testId?: string }[] = [
+                    // Only the kill switches are read here (BOT_FLAGS_NOTE says
+                    // what is not), so released switches are neutral, not a
+                    // green "nothing halts new trades".
                     halt
                       ? {
-                          id: "Stop switch", label: "Stop switch",
+                          id: "Stop switch", label: "Kill switches", testId: "risk-status-row-Stop switch",
                           value: halt.engaged ? `ENGAGED (${halt.venues.join(", ")})` : "none engaged",
-                          tone: halt.engaged ? "warn" : "ok",
+                          tone: halt.engaged ? "warn" : "neutral",
                         }
                       : {
-                          id: "Stop switch", label: "Stop switch",
+                          id: "Stop switch", label: "Kill switches", testId: "risk-status-row-Stop switch",
                           value: auditHaltError ? "could not be loaded" : auditHaltLoading ? "loading" : "not read",
                           tone: "unread",
                         },

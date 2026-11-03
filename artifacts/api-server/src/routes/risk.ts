@@ -150,9 +150,13 @@ router.get("/risk/audit", requireUser, async (req, res) => {
     // what the audit read (riskAuditBasis), so no consumer can mistake it
     // for the trader's live balance or current book.
     const accountBalance = 1000;
-    // The trader's stop switches, read as the pre-trade Risk Governor reads
-    // them (fail closed: an unreadable switch counts as engaged). Read only
-    // for this view; nothing here changes what any order path blocks.
+    // The trader's kill switches (platform emergency stop, safety core, their
+    // own kill switch), from the same reader the pre-trade Risk Governor uses
+    // (fail closed: an unreadable switch counts as engaged). Not read here:
+    // the broker's operator controls and a frozen shared-account allocation,
+    // which the governor also applies to DEMO / LIVE orders; the page says
+    // so. Read only for this view; nothing here changes what any order path
+    // blocks.
     const userId = req.authUser!.id;
     const [paperHalt, liveHalt] = await Promise.all([
       loadTradingHalt({ userId, venue: "PAPER" }),

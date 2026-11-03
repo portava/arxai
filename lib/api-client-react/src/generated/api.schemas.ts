@@ -9554,7 +9554,7 @@ export interface RiskAudit {
   notMeasured?: string[];
   /** When the server computed this audit. */
   evaluatedAt?: string;
-  /** The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
+  /** The trader's kill switches (platform emergency stop, safety-core switch, the trader's own kill switch), from the reader the pre-trade Risk Governor uses (an unreadable switch counts as engaged). Not included, so "none engaged" does not mean nothing halts new trades - the broker's operator controls and a frozen shared-account allocation, which the governor also applies to DEMO / LIVE orders. An engaged switch also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
   tradingHalt?: RiskAuditHalt | null;
 }
 

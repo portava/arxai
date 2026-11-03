@@ -48,8 +48,10 @@ export interface RiskAuditOptions {
    */
   userId?: number;
   /**
-   * The trader's stop switches as the pre-trade Risk Governor reads them
-   * (lib/safety/tradingHalt.ts). An engaged one halts new trades whatever the
+   * The trader's kill switches, from the reader the pre-trade Risk Governor
+   * uses (lib/safety/tradingHalt.ts loadTradingHalt, without a shared-account
+   * id and without the broker operator controls the governor adds for DEMO /
+   * LIVE, so neither of those is in it). An engaged one halts new trades whatever the
    * legacy rows say, so the audit cannot pass over it. The /risk/audit view
    * passes it. The legacy /mt5/execute check does not: adding it there would
    * change what that gate blocks, an execution decision left as it was.
