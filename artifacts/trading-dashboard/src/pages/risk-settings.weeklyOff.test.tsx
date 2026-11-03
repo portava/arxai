@@ -24,6 +24,7 @@ vi.mock("@workspace/api-client-react", () => {
     getGetRiskSettingsQueryKey: () => ["risk-settings"],
     getGetRiskAuditQueryKey: () => ["risk-audit"],
     getGetPositionSizeQueryKey: () => ["position-size"],
+    getGetBotStatusQueryKey: () => ["bot-status"],
   };
 });
 vi.mock("@/hooks/useLiveAccountSnapshot", () => ({ useLiveAccountSnapshot: () => ({ live: null }) }));
