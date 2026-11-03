@@ -402,9 +402,11 @@ function buildSummary(
       return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${who} cleared by an operator.`;
     }
     // Readiness-only blockers (news, a broker health verdict, a risk lock):
-    // this check changes no stop, lock or gate. The one thing a stored LOCKED
-    // does is make tradeDecision.orchestrate() hold, so say that too.
-    return `LOCKED — ${blockers.join("; ")}. This pre-session check is advisory: it recommends not trading until these are resolved, and it does not engage or release any stop, lock or order gate — order execution is decided by the safety layer. While it is your latest check, the AI trade decision counts it as a blocker and recommends HOLD.`;
+    // this check engages or releases no stop or risk lock, and manual orders
+    // do not read it. A stored LOCKED is a blocker in
+    // tradeDecision.orchestrate() (shouldTrade=false), so the paper autopilot
+    // (AA_HOLD) and paper execution from a decision open nothing: say so.
+    return `LOCKED — ${blockers.join("; ")}. This pre-session check does not engage or release any stop or risk lock. For your manual orders it is advisory: they do not read it and are decided by the safety layer. While it is your latest check, the AI trade decision counts it as a blocker and returns HOLD, so the paper autopilot opens no trades and no paper trade can be executed from an AI trade decision.`;
   }
   if (status === "NOT_READY") {
     // Name the checks that actually failed. Broker / news / risk-lock failures
