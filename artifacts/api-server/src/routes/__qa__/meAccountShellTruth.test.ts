@@ -18,6 +18,8 @@
 //   * The ACTIVE reason said "your allocation allow[s] trading" when no
 //     allocation was assigned (live shared-master entries are refused then)
 //     and named an approval check for accounts where none runs.
+//   * Available Capacity was the allocation less virtual_margin_used, a
+//     column only ever seeded at 0, next to "Margin Used: Not measured".
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -356,4 +358,26 @@ test("no allocation assigned: the reason never says the allocation allows tradin
   const allocated = await computeAccountShell(USER, { skipInvestorSnapshot: true });
   assert.equal(allocated.accountTradingStatus, "ACTIVE");
   assert.match(allocated.accountTradingStatusReason, /your shared-master approval and your allocation allow trading/);
+});
+
+test("available capacity is not the allocation with an unmeasured margin of 0 subtracted", async () => {
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  // virtual_margin_used is only ever seeded at 0 (no writer measures it).
+  tables.virtual_trading_accounts = [{ virtualBalance: 1000, virtualEquity: 1000, virtualMarginUsed: 0, virtualPnl: 0, status: "active", sharedMasterAccountId: 3 }];
+
+  const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(shell.allocation.marginUsed, null);
+  assert.notEqual(shell.allocation.availableCapacity, 1000, "the allocation is not capacity left after margin");
+  assert.equal(shell.allocation.availableCapacity, null);
+  assert.match(String(shell.allocation.availableCapacityNote), /not measured/i);
+  assert.match(String(shell.allocation.availableCapacityNote), /margin/);
+
+  // No allocation: nothing to report, and the note says so.
+  tables.user_slot_allocation = [];
+  tables.virtual_trading_accounts = [];
+  const none = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(none.allocation.availableCapacity, null);
+  assert.match(String(none.allocation.availableCapacityNote), /no allocation/i);
 });

@@ -99,7 +99,11 @@ export type AccountShellResponse = {
     aiAutoTradingEnabled: boolean;
     aiStrategyMode: string | null;
     currency: string;
+    // Always null: capacity is the allocation less margin, and margin is not
+    // measured (see availableCapacityNote).
     availableCapacity: number | null;
+    /** Plain English: why availableCapacity is not shown. */
+    availableCapacityNote: string;
     allocationPending: boolean;
     frozen: boolean;
     freezeMessage: string | null;
@@ -266,7 +270,6 @@ export async function computeAccountShell(
       .where(eq(virtualTradingAccountsTable.userId, userId));
 
     const shellBalance = vAccounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0);
-    const allocatedMargin = vAccounts.reduce((s, a) => s + Number(a.virtualMarginUsed || 0), 0);
     // virtualPnl is realized P/L booked from closed trades (virtualPnlSync).
     const allocatedRealizedPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
     const sharedMasterAssigned = vAccounts.some(
@@ -327,9 +330,14 @@ export async function computeAccountShell(
         ? "From your shared-master virtual account ledger."
         : "Not available: no shared-account allocation or virtual account is recorded for you, so this card has no balance to show.";
     const marginNote = "Not measured: no margin figure is recorded for your account in this view.";
-    const availableCapacity = hasAlloc
-      ? Math.max(0, round2(totalAlloc - allocatedMargin))
-      : null;
+    // Capacity would be the allocation less the margin in use. Margin is not
+    // measured (virtual_margin_used is only ever seeded at 0), so capacity
+    // cannot be worked out: null, never the allocation shown as if no margin
+    // were in use.
+    const availableCapacity: number | null = null;
+    const availableCapacityNote = hasAlloc
+      ? "Not measured: no margin figure is recorded for your account, so the capacity left after margin cannot be worked out."
+      : "Not available: no allocation is assigned to you.";
 
     // 3) Master live access (hard limits + approval).
     const [mla] = await db
@@ -620,6 +628,7 @@ export async function computeAccountShell(
         aiStrategyMode: allocRow?.aiStrategyMode ?? null,
         currency: allocCurrency,
         availableCapacity,
+        availableCapacityNote,
         allocationPending: sharedMasterAssigned && (!hasAlloc || totalAlloc === 0),
         frozen: allocFrozen,
         freezeMessage: allocFreezeMessage,

@@ -44,7 +44,10 @@ type ShellResponse = {
     aiAutoTradingEnabled?: boolean;
     aiStrategyMode?: string | null;
     currency?: string;
+    // null = not measured: capacity is the allocation less margin, and margin
+    // is not recorded (availableCapacityNote says why).
     availableCapacity?: number | null;
+    availableCapacityNote?: string;
     allocationPending?: boolean;
     frozen?: boolean;
     freezeMessage?: string | null;
@@ -285,13 +288,16 @@ export default function MyAccountPage() {
               }
               testid="my-ai-sleeve-state"
             />
-            {s.allocation.availableCapacity != null && (
-              <Stat
-                label="Available Capacity"
-                value={fmtMoney(s.allocation.availableCapacity)}
-                testid="my-available-capacity"
-              />
-            )}
+            <Stat
+              label="Available Capacity"
+              value={s.allocation.availableCapacity == null ? NOT_MEASURED : fmtMoney(s.allocation.availableCapacity)}
+              testid="my-available-capacity"
+            />
+          </CardContent>
+        )}
+        {(s.allocation.totalAllocation ?? 0) > 0 && s.allocation.availableCapacity == null && s.allocation.availableCapacityNote && (
+          <CardContent className="pt-0 text-xs text-txt-secondary" data-testid="my-available-capacity-note">
+            Available Capacity: {s.allocation.availableCapacityNote}
           </CardContent>
         )}
         {/* Attached to shared master but admin has not allocated yet. The

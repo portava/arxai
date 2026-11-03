@@ -163,3 +163,17 @@ describe("My Account — allocation pending", () => {
     expect(screen.getByTestId("trading-status-badge").textContent).toBe("ACTIVE");
   });
 });
+
+describe("My Account — available capacity", () => {
+  it("unmeasured capacity reads 'Not measured' with the reason, never the allocation as capacity", async () => {
+    stub(shell((s) => {
+      s.allocation.availableCapacity = null;
+      s.allocation.availableCapacityNote =
+        "Not measured: no margin figure is recorded for your account, so the capacity left after margin cannot be worked out.";
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-available-capacity")).toBeTruthy());
+    expect(screen.getByTestId("my-available-capacity").textContent).toBe("Not measured");
+    expect(screen.getByTestId("my-available-capacity-note").textContent).toMatch(/capacity left after margin cannot be worked out/);
+  });
+});
