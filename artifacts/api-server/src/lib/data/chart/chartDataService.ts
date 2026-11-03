@@ -220,6 +220,21 @@ async function buildChartFeed(
     sessionProfile = await getSessionProfile(symbol, timeframe, now);
   }
 
+  // Tick evidence for this series' source, read once and shared by the truth
+  // engine's STALE reason and the feed status below, so the two never
+  // disagree on whether the market is closed. The MT5 broker tick also backs
+  // "Last tick". A quote that observably moved in the last two minutes means
+  // the market is trading, whatever the static weekend schedule says.
+  const mt5TickFreshness = source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker") : null;
+  const tickSource = isFormingTickSource(source) ? source : null;
+  const tickFreshness = tickSource === "mt5_broker"
+    ? mt5TickFreshness
+    : tickSource
+      ? getFeedFreshness(symbol, now, tickSource)
+      : null;
+  const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
+  const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+
   if (result.candles.length > 0) {
     const tr = runCandleTruth(result.candles, {
       symbol,
@@ -230,6 +245,7 @@ async function buildChartFeed(
       limit,
       now,
       sessionProfile,
+      tradingObserved,
     });
     candles = tr.verifiedCandles;
     truthResult = tr.truthResult;
@@ -289,7 +305,6 @@ async function buildChartFeed(
   // broker tick the server last RECEIVED for this symbol (receive time — the
   // broker clock is not zone-verified). A quote the broker is only replaying
   // (market frozen) is not a new tick, so it reports unknown, never "just now".
-  const mt5TickFreshness = source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker") : null;
   const lastTickTime = derivBacked
     ? derivSymbolStatus?.lastTickAt ?? null
     : mt5TickFreshness && !mt5TickFreshness.marketFrozen
@@ -393,14 +408,8 @@ async function buildChartFeed(
   // series' source has observably MOVED in the last two minutes (the EA keeps
   // replaying a frozen quote on weekends), nothing shows a trading market —
   // the series is not live. Observed trading always beats the static schedule.
-  const tickSource = isFormingTickSource(source) ? source : null;
-  const tickFreshness = tickSource === "mt5_broker"
-    ? mt5TickFreshness
-    : tickSource
-      ? getFeedFreshness(symbol, now, tickSource)
-      : null;
-  const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
-  const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+  // (`tradingObserved` is read before the truth engine runs, so its STALE
+  // reason applies the same rule.)
   const session = getSymbolProfile(symbol, assetClass).session;
   const closure = lastCandle && !tradingObserved
     ? scheduledWeekendClosure(session, now)

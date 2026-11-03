@@ -22,19 +22,19 @@ import type { ChartFeedStatus } from "../chartDataService.js";
 import type { AssetClass } from "../../marketDataRouter.js";
 
 const M5 = 300_000;
-function truthAt(symbol: string, assetClass: AssetClass, newestOpenMs: number, now: number) {
+function truthAt(symbol: string, assetClass: AssetClass, newestOpenMs: number, now: number, tradingObserved?: boolean) {
   const candles = Array.from({ length: 200 }, (_, i) => ({
     time: new Date(newestOpenMs - (199 - i) * M5).toISOString(), open: 1.1, high: 1.101, low: 1.099, close: 1.1,
   }));
   return runCandleTruth(candles, { symbol, displaySymbol: symbol, timeframe: "M5", source: "mt5_broker",
-    assetClass, limit: 200, now }).truthResult;
+    assetClass, limit: 200, now, ...(tradingObserved === undefined ? {} : { tradingObserved }) }).truthResult;
 }
 
 const SAT_NOON = Date.UTC(2026, 9, 31, 12, 0);
 const FRI_2155 = Date.UTC(2026, 9, 30, 21, 55);
 
 test("a forex series in its scheduled weekend close is STALE, but the reason says the market is closed", () => {
-  const truth = truthAt("EURUSD", "forex", FRI_2155, SAT_NOON);
+  const truth = truthAt("EURUSD", "forex", FRI_2155, SAT_NOON, false);
   assert.equal(truth.assessment, "STALE");
   const reason = truth.assessmentReasons[0] ?? "";
   assert.doesNotMatch(reason, /Feed is stale/);
@@ -43,7 +43,7 @@ test("a forex series in its scheduled weekend close is STALE, but the reason say
 });
 
 test("the Chart Truth timeframe detail carries the closed-market reason, not 'Feed is stale'", () => {
-  const truth = truthAt("EURUSD", "forex", FRI_2155, SAT_NOON);
+  const truth = truthAt("EURUSD", "forex", FRI_2155, SAT_NOON, false);
   const feed = { symbol: "EURUSD", displaySymbol: "EURUSD", assetClass: "forex", source: "mt5_broker", isLive: false,
     lastTickTime: null, lastCandleTime: new Date(FRI_2155 + M5).toISOString(), latencyMs: null,
     missingCandleCount: 0, duplicateCount: 0, outOfOrderCount: 0, invalidOhlcCount: 0, trailingIntervals: 170,
@@ -70,4 +70,38 @@ test("a 24/7 market's lag is a stale feed", () => {
   const truth = truthAt("BTCUSD", "crypto", FRI_2155, SAT_NOON);
   assert.equal(truth.assessment, "STALE");
   assert.match(truth.assessmentReasons[0] ?? "", /^Feed is stale — newest bar trails the current bar by \d+ intervals/);
+});
+
+// The static weekend window runs past the real reopen (FOREX_SESSION ends
+// Monday 00:00 UTC; forex reopens Sunday ~21:00-22:00 UTC; STOCK_US_SESSION
+// ends Monday 13:00 UTC while index CFDs trade from Sunday night). The chart
+// feed status only calls the market closed when no tick has moved in the last
+// two minutes; the truth engine said "scheduled weekend close … no new bars
+// are expected" from the schedule alone, so a real bar-feed fault on an open
+// market read as an expected closure and contradicted the feed status.
+const SUN_2230 = Date.UTC(2026, 10, 1, 22, 30);
+
+test("ticks moving on Sunday night: a missing bar is not called a scheduled weekend close", () => {
+  const truth = truthAt("EURUSD", "forex", FRI_2155, SUN_2230, true);
+  assert.equal(truth.assessment, "STALE", "the assessment is unchanged");
+  const reason = truth.assessmentReasons[0] ?? "";
+  assert.doesNotMatch(reason, /scheduled weekend close|no new bars are expected/, reason);
+  assert.match(reason, /may be closed or the feed delayed/);
+});
+
+test("index CFD trading Monday morning inside the static stock window is not called closed", () => {
+  // US30 uses the US-equity session: closes Fri 20:00 UTC, "reopens" Mon 13:00.
+  const fri1955 = Date.UTC(2026, 9, 30, 19, 55);
+  const monNine = Date.UTC(2026, 10, 2, 9, 0);
+  assert.match(truthAt("US30", "indices", fri1955, monNine, false).assessmentReasons[0] ?? "", /scheduled weekend close/,
+    "control: with no trading observed the schedule is stated");
+  const truth = truthAt("US30", "indices", fri1955, monNine, true);
+  assert.doesNotMatch(truth.assessmentReasons[0] ?? "", /scheduled weekend close/);
+});
+
+test("without trading evidence from the caller the reason stays hedged", () => {
+  const truth = truthAt("EURUSD", "forex", FRI_2155, SAT_NOON);
+  const reason = truth.assessmentReasons[0] ?? "";
+  assert.doesNotMatch(reason, /scheduled weekend close/, reason);
+  assert.match(reason, /may be closed or the feed delayed/);
 });
