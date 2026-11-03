@@ -119,4 +119,28 @@ describe("Market Sessions — weekend countdown keeps time when polls fail", () 
     expect(text).not.toMatch(/in -|in 0h 0m/);
     expect(text).toMatch(/not confirmed/i);
   });
+
+  // Review pass 2: minutes were rounded before the "has passed" check, so a
+  // fresh read 25 s before the open said the time had passed and the reopen
+  // was not confirmed until the clock was read again — both false.
+  it("a fresh read 25 s before the open says it opens in under a minute, not that it has passed", () => {
+    const text = nextOpenText("2026-11-08T21:59:35.000Z", 1, 0) ?? "";
+    expect(text).toBe("Sun 22:00 UTC (in under a minute)");
+    expect(text).not.toMatch(/passed|not confirmed/i);
+  });
+
+  it("an elapsed-time tick 20 s before the open (failed polls) says under a minute", () => {
+    const text = nextOpenText("2026-11-08T21:30:00.000Z", 1, 29 * 60_000 + 40_000) ?? "";
+    expect(text).toBe("Sun 22:00 UTC (in under a minute)");
+  });
+
+  it("exactly at the open time with no fresh read, the time has passed", () => {
+    const text = nextOpenText("2026-11-08T21:30:00.000Z", 1, 30 * 60_000) ?? "";
+    expect(text).toMatch(/that time has passed/);
+  });
+
+  it("a minute or more away still shows hours and minutes", () => {
+    expect(nextOpenText("2026-11-08T21:58:30.000Z", 1, 0)).toBe("Sun 22:00 UTC (in 0h 2m)");
+    expect(nextOpenText("2026-11-08T21:59:00.000Z", 1, 0)).toBe("Sun 22:00 UTC (in 0h 1m)");
+  });
 });
