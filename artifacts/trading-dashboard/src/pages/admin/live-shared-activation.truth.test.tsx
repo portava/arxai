@@ -487,6 +487,53 @@ describe("live shared activation — master switch labels", () => {
   });
 });
 
+// Effective live broker execution = env ARX_LIVE_BROKER_EXECUTION_ENABLED AND
+// the operator arm (platformSwitches; an unset env is false). The Arm card
+// must not advise leaving the env unset, and an operator arm with the env off
+// is not "ready to arm": arming again changes nothing.
+describe("live shared activation — env AND operator arm", () => {
+  it("the Arm card describes the env var as required (AND), not as a hard-kill override to leave unset", async () => {
+    await renderWith(readiness());
+    const card = screen.getByTestId("arm-execution-card");
+    expect(card.textContent).not.toMatch(/leave unset in normal operation/);
+    expect(card.textContent).not.toMatch(/hard-kill override/);
+    expect(screen.getByTestId("arm-env-line").textContent).toMatch(/must be true for live execution/);
+    expect(screen.getByTestId("arm-env-line").textContent).toMatch(/env AND operator arm/);
+  });
+
+  it("operator armed but env not set: not READY TO ARM; says the env var keeps live execution off", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: false, liveBrokerExecutionArmedDb: true },
+    }));
+    expect(screen.queryByTestId("banner-ready-to-arm")).toBeNull();
+    expect(screen.queryByTestId("banner-armed")).toBeNull();
+    const banner = screen.getByTestId("banner-armed-env-off");
+    expect(banner.textContent).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED/);
+    expect(banner.textContent).toMatch(/live execution stays off/i);
+    expect(banner.textContent).not.toMatch(/Arm live execution below/);
+    expect(screen.queryByTestId("mode-chip-ready-to-arm")).toBeNull();
+    expect(screen.getByTestId("mode-chip-armed-env-off")).toBeTruthy();
+    expect(screen.getByTestId("arm-env-off").textContent).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED/);
+  });
+
+  it("neither armed nor env set: ready to arm, and says arming alone will not enable live execution", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: false, liveBrokerExecutionArmedDb: false },
+    }));
+    const banner = screen.getByTestId("banner-ready-to-arm");
+    expect(banner.textContent).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED is not set/);
+    expect(banner.textContent).toMatch(/arming alone will not enable live execution/i);
+  });
+
+  it("env set, not armed: ready to arm without the env warning", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: true, liveBrokerExecutionArmedDb: false },
+    }));
+    const banner = screen.getByTestId("banner-ready-to-arm");
+    expect(banner.textContent).not.toMatch(/is not set/);
+  });
+});
+
 describe("live shared activation — identity confirmation copy", () => {
   async function openWizard() {
     await act(async () => {

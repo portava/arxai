@@ -313,11 +313,14 @@ function ReadinessPending({ loadError }: { loadError: string | null }) {
     : <div className="text-xs text-muted-foreground italic">loading…</div>;
 }
 
-// Compute the four mutually-exclusive arm states from readiness.
+// Compute the mutually-exclusive arm states from readiness.
 // IMPORTANT: serverMasterSwitchEnabled (env AND db-armed) is NOT itself a
 // pre-arm safety gate. It IS the arm state. Pre-arm gates are independent
 // of the arm flag — that's how the operator can reach READY TO ARM.
-type ArmState = "LOCKED" | "READY_TO_ARM" | "LIVE_BROKER_EXECUTION_ENABLED" | "KILL_SWITCH_ACTIVE";
+// ARMED_ENV_OFF: the operator arm (DB flag) is on but the server env
+// ARX_LIVE_BROKER_EXECUTION_ENABLED is not true, so effective execution
+// (env AND operator arm) stays off and arming again changes nothing.
+type ArmState = "LOCKED" | "READY_TO_ARM" | "ARMED_ENV_OFF" | "LIVE_BROKER_EXECUTION_ENABLED" | "KILL_SWITCH_ACTIVE";
 function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFailures: string[] } {
   if (!r) return { state: "LOCKED", preArmFailures: ["loading"] };
   const g = r.globalSwitches;
@@ -340,11 +343,14 @@ function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFail
   if (!stops.reported) failures.push("install-wide stop state not reported (safety-core kill switch unknown)");
   // Pre-arm pass; arm state depends on flag.
   if (failures.length === 0 && g.serverMasterSwitchEnabled) return { state: "LIVE_BROKER_EXECUTION_ENABLED", preArmFailures: [] };
+  if (failures.length === 0 && g.liveBrokerExecutionArmedDb === true && g.serverMasterSwitchEnvOnly !== true) {
+    return { state: "ARMED_ENV_OFF", preArmFailures: [] };
+  }
   if (failures.length === 0) return { state: "READY_TO_ARM", preArmFailures: [] };
   return { state: "LOCKED", preArmFailures: failures };
 }
 
-// 4-state activation banner. LOCKED (red), READY_TO_ARM (amber),
+// Activation banner. LOCKED (red), READY_TO_ARM / ARMED_ENV_OFF (amber),
 // LIVE_BROKER_EXECUTION_ENABLED (emerald), KILL_SWITCH_ACTIVE (rose).
 function ActivationStateBanner({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
   if (!readiness && loadError) {
@@ -406,7 +412,21 @@ function ActivationStateBanner({ readiness, loadError }: { readiness: ReadinessR
       </Alert>
     );
   }
+  if (state === "ARMED_ENV_OFF") {
+    return (
+      <Alert className="py-3 border-amber-500/60 bg-amber-500/10" data-testid="banner-armed-env-off">
+        <AlertCircle className="h-4 w-4 text-amber-400" />
+        <AlertTitle className="text-sm text-amber-200">OPERATOR ARMED — ENV NOT SET, LIVE EXECUTION STAYS OFF</AlertTitle>
+        <AlertDescription className="text-xs text-amber-200/80">
+          The operator arm is on, but the server env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code> is
+          not true, so live broker execution stays off (effective = env AND operator arm).
+          Arming again changes nothing; the env var is set on the server, not on this page.
+        </AlertDescription>
+      </Alert>
+    );
+  }
   if (state === "READY_TO_ARM") {
+    const envOff = readiness.globalSwitches.serverMasterSwitchEnvOnly !== true;
     return (
       <Alert className="py-3 border-amber-500/60 bg-amber-500/10" data-testid="banner-ready-to-arm">
         <AlertCircle className="h-4 w-4 text-amber-400" />
@@ -417,6 +437,7 @@ function ActivationStateBanner({ readiness, loadError }: { readiness: ReadinessR
           detected account / broker / server and the activation phrase for you
           (nothing is typed); the server compares them with the bridge it detects
           at that moment and re-validates the pre-arm checks.
+          {envOff && <> The server env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code> is not set, so arming alone will not enable live execution (effective = env AND operator arm).</>}
         </AlertDescription>
       </Alert>
     );
@@ -445,6 +466,9 @@ function ModeChip({ readiness, loadError }: { readiness: ReadinessResp | null; l
   }
   if (state === "LIVE_BROKER_EXECUTION_ENABLED") {
     return <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/40" data-testid="mode-chip-armed">LIVE BROKER EXECUTION ENABLED</Badge>;
+  }
+  if (state === "ARMED_ENV_OFF") {
+    return <Badge className="bg-amber-500/15 text-amber-200 border border-amber-500/40" data-testid="mode-chip-armed-env-off">ARMED · ENV OFF — EXECUTION OFF</Badge>;
   }
   if (state === "READY_TO_ARM") {
     return <Badge className="bg-amber-500/15 text-amber-200 border border-amber-500/40" data-testid="mode-chip-ready-to-arm">EA READY / SERVER DISPATCH OFF</Badge>;
@@ -662,8 +686,8 @@ function ArmExecutionCard({
             {g.liveBrokerExecutionArmedAt && <> · armed at <code className="font-mono">{g.liveBrokerExecutionArmedAt}</code></>}
             {g.liveBrokerExecutionArmedBy != null && <> · by admin #{g.liveBrokerExecutionArmedBy}</>}
           </div>
-          <div>
-            Env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code>: {String(g.serverMasterSwitchEnvOnly)} (hard-kill override; leave unset in normal operation)
+          <div data-testid="arm-env-line">
+            Env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code>: {String(g.serverMasterSwitchEnvOnly)} (must be true for live execution: effective = env AND operator arm; unset = off. Set on the server, not on this page.)
           </div>
         </div>
         {state === "LOCKED" && (
@@ -717,6 +741,15 @@ function ArmExecutionCard({
           <Alert className="py-2 border-emerald-500/60 bg-emerald-500/10">
             <AlertTitle className="text-xs text-emerald-200">Currently ARMED.</AlertTitle>
             <AlertDescription className="text-[11px] text-emerald-200/80">Use Disarm below to fail-closed immediately. Audit row is written.</AlertDescription>
+          </Alert>
+        )}
+        {state === "ARMED_ENV_OFF" && (
+          <Alert className="py-2 border-amber-500/60 bg-amber-500/10" data-testid="arm-env-off">
+            <AlertTitle className="text-xs text-amber-200">Operator armed, but ARX_LIVE_BROKER_EXECUTION_ENABLED is not set — live execution stays off.</AlertTitle>
+            <AlertDescription className="text-[11px] text-amber-200/80">
+              Effective live broker execution = env AND operator arm. Arming again changes nothing;
+              set the env var on the server to enable it, or Disarm below.
+            </AlertDescription>
           </Alert>
         )}
         {state === "READY_TO_ARM" && (
