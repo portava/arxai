@@ -160,6 +160,13 @@ const MISMATCH_BADGE = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
 // assumed while GET /risk/settings has failed.
 const SETTINGS_UNREAD = "could not be loaded";
 
+// React Query keeps the last good `data` when a later read fails. While the
+// latest read has failed (or is being retried after a failure) that data is
+// not current, so no verdict or state is shown from it.
+const latestReadFailed = (q: { isError: boolean; failureCount: number }) => q.isError || q.failureCount > 0;
+const lastReadText = (dataUpdatedAt: number | undefined) =>
+  dataUpdatedAt && dataUpdatedAt > 0 ? `the last successful read was at ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "";
+
 // ── Custom limits form schema ────────────────────────────────────────────────
 
 const limitsSchema = z.object({
@@ -203,14 +210,17 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
 
 function AuditBanner({ symbol }: { symbol?: string }) {
   const auditParams = symbol ? { symbol } : {};
-  const { data: audit, isLoading } = useGetRiskAudit(
+  const auditQ = useGetRiskAudit(
     auditParams,
     { query: { queryKey: getGetRiskAuditQueryKey(auditParams), refetchInterval: 30_000 } }
   );
+  const { data: audit, isLoading } = auditQ;
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
-  // No audit read is no verdict: say so where the verdict normally sits.
-  if (!audit) {
+  // No audit read is no verdict: say so where the verdict normally sits. A
+  // later read that failed leaves the old verdict unproven, so it is not shown.
+  if (!audit || latestReadFailed(auditQ)) {
+    const last = audit ? lastReadText(auditQ.dataUpdatedAt) : "";
     return (
       <div
         className="flex items-center gap-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-3"
@@ -220,7 +230,9 @@ function AuditBanner({ symbol }: { symbol?: string }) {
         <div className="min-w-0">
           <p className="font-semibold text-sm text-yellow-300">Risk audit could not be loaded</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            No risk verdict is shown, because none was read. It is retried every 30 seconds.
+            {audit
+              ? `The latest read failed, so no risk verdict is shown${last ? `; ${last}` : ""}. It is retried every 30 seconds.`
+              : "No risk verdict is shown, because none was read. It is retried every 30 seconds."}
           </p>
         </div>
       </div>
@@ -312,9 +324,14 @@ export default function RiskSettings() {
 
   const { data: settings, isLoading } = useGetRiskSettings();
   // Bot Control and the kill switch elsewhere change this row too, so it is re-read.
-  const { data: botStatus, isError: botStatusFailed } = useGetBotStatus(
+  const botQ = useGetBotStatus(
     { query: { queryKey: getGetBotStatusQueryKey(), refetchInterval: 30_000 } },
   );
+  const { data: botStatus } = botQ;
+  // A failed poll leaves the previous row in `data`; System Status does not
+  // show it as current.
+  const botStatusFailed = latestReadFailed(botQ);
+  const botStatusCurrent = botStatusFailed ? undefined : botStatus;
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -563,7 +580,7 @@ export default function RiskSettings() {
               <Lock size={12} className="mr-1.5" /> Live Locked
             </Badge>
           )}
-          {botStatus?.isPaused && (
+          {botStatusCurrent?.isPaused && (
             <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border">
               <PauseCircle size={12} className="mr-1.5" /> Paused
             </Badge>
@@ -1408,18 +1425,19 @@ export default function RiskSettings() {
                 {(() => {
                   // A row nobody read is grey "could not be loaded", never a green "NO".
                   const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
+                  const bot = botStatusCurrent;
                   // The bot rows are the saved Bot Control preference, which no
                   // engine reads: "start requested", never "is running".
                   // `key` keeps the existing data-testid.
                   const rows: { key?: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
-                    botStatus
-                      ? { label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
+                    bot
+                      ? { label: "Bot Mode", value: bot.mode, tone: bot.mode === "OFF" || !bot.isRunning ? "ok" : "warn" }
                       : { label: "Bot Mode", value: botUnread, tone: "unread" },
-                    botStatus
-                      ? { key: "Is Running", label: "Start requested (saved)", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
+                    bot
+                      ? { key: "Is Running", label: "Start requested (saved)", value: bot.isRunning ? "YES" : "NO", tone: bot.isRunning ? "warn" : "ok" }
                       : { key: "Is Running", label: "Start requested (saved)", value: botUnread, tone: "unread" },
-                    botStatus
-                      ? { key: "Is Paused", label: "Pause requested (saved)", value: botStatus.isPaused ? "YES" : "NO", tone: botStatus.isPaused ? "warn" : "neutral" }
+                    bot
+                      ? { key: "Is Paused", label: "Pause requested (saved)", value: bot.isPaused ? "YES" : "NO", tone: bot.isPaused ? "warn" : "neutral" }
                       : { key: "Is Paused", label: "Pause requested (saved)", value: botUnread, tone: "unread" },
                     !settings
                       ? { label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
@@ -1463,10 +1481,12 @@ export default function RiskSettings() {
 // ── Detailed Risk Audit Component ────────────────────────────────────────────
 
 function RiskAuditDetail() {
-  const { data: audit, isLoading, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
+  const auditQ = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
+  const { data: audit, isLoading, refetch } = auditQ;
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (!audit) {
+  if (!audit || latestReadFailed(auditQ)) {
+    const last = audit ? lastReadText(auditQ.dataUpdatedAt) : "";
     return (
       <Card className="border-yellow-500/30" data-testid="risk-audit-detail-unavailable">
         <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
@@ -1474,7 +1494,9 @@ function RiskAuditDetail() {
             <CardTitle className="text-base flex items-center gap-2">
               <Activity size={16} /> Live Risk Audit
             </CardTitle>
-            <CardDescription className="text-xs">The risk audit could not be loaded</CardDescription>
+            <CardDescription className="text-xs">
+              The risk audit could not be loaded{audit ? ` (latest read failed${last ? `; ${last}` : ""})` : ""}
+            </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
         </CardHeader>
