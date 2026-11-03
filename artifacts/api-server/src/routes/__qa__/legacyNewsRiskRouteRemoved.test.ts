@@ -10,9 +10,12 @@
 //                     calendar, so its only possible output was invented.
 //                     DELETED.
 //
-//   /news/calendar  — has TWO live consumers through useGetEconomicCalendar:
-//                     pages/calendar.tsx (the Economic Calendar page) and
-//                     CockpitCards.tsx (the critical-events card). Theme H5
+//   /news/calendar  — has TWO live consumers: pages/calendar.tsx (the
+//                     Economic Calendar page) and CockpitCards.tsx (the
+//                     critical-events card). Both now read it through its
+//                     /news/calendar/envelope form (useGetEconomicCalendarEnvelope:
+//                     the same events plus the calendar read state, so a failed
+//                     read is never shown as "no events"). Theme H5
 //                     additionally names the Economic Calendar as the calendar
 //                     surface to KEEP. Cutting it would have broken the very
 //                     page the consolidation preserves. KEPT.
@@ -70,19 +73,38 @@ describe("G-CUT — /news/calendar is deliberately kept", () => {
     assert.ok(/operationId: getEconomicCalendar\b/.test(spec));
   });
 
+  // Both surfaces read the calendar through its envelope form (same events,
+  // plus the read state), so the envelope route and contract are pinned too.
+  it("the envelope form both surfaces read is served and published", () => {
+    assert.ok(/router\.get\(\s*["']\/news\/calendar\/envelope["']/.test(route));
+    assert.ok(/^ {2}\/news\/calendar\/envelope:/m.test(spec));
+    assert.ok(/operationId: getEconomicCalendarEnvelope\b/.test(spec));
+  });
+
   it("the Economic Calendar page still consumes it", () => {
     const page = read("artifacts/trading-dashboard/src/pages/calendar.tsx");
-    assert.ok(/useGetEconomicCalendar/.test(page));
+    assert.ok(/useGetEconomicCalendar(?:Envelope)?\(/.test(page));
   });
 
   it("the cockpit critical-events card still consumes it", () => {
     const cockpit = read("artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitCards.tsx");
-    assert.ok(/useGetEconomicCalendar\(/.test(cockpit));
+    assert.ok(/useGetEconomicCalendar(?:Envelope)?\(/.test(cockpit));
   });
 
-  it("the generated client still exposes the hook both pages import", () => {
+  it("neither surface calls the removed /news/risk route", () => {
+    for (const rel of [
+      "artifacts/trading-dashboard/src/pages/calendar.tsx",
+      "artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitCards.tsx",
+    ]) {
+      const src = read(rel);
+      assert.ok(!/getNewsRisk|useGetNewsRisk|\/news\/risk\b/.test(src), rel);
+    }
+  });
+
+  it("the generated client still exposes the hooks both pages import", () => {
     const client = read("lib/api-client-react/src/generated/api.ts");
-    assert.ok(/useGetEconomicCalendar/.test(client));
+    assert.ok(/export function useGetEconomicCalendar\b/.test(client));
+    assert.ok(/export function useGetEconomicCalendarEnvelope\b/.test(client));
   });
 });
 
