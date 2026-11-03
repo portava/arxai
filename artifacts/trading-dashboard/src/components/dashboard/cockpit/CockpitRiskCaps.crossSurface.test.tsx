@@ -31,6 +31,7 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 
 import { TradingPermissionSummaryCard } from "./CockpitCards";
+import { describeOnboardingTradingStatus } from "@/components/onboarding/OnboardingProvider";
 
 const NO_CAPS = { maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: null, allowedSymbols: null, requireStopLoss: false };
 
@@ -113,6 +114,29 @@ describe("cockpit and trade room give the same Risk caps verdict for the same en
     const some = cockpitVerdict();
     expect(some).toEqual(tradeRoomVerdict());
     expect(some.detail).toBe("Account caps: max lot 0.1, daily loss limit $50.");
+  });
+
+  it("check failed: onboarding's Risk Controls chip says the same as the cockpit, not 'Checking'", () => {
+    setMode(null, { isModeUnknown: true });
+    const c = cockpitVerdict();
+    const onboarding = describeOnboardingTradingStatus(h.mode as never);
+    expect(onboarding.riskChip.label).toBe(c.label);
+    expect(onboarding.riskChip.label).toBe("Could not be loaded");
+    // The other onboarding chips read the same failed envelope.
+    expect(onboarding.approvalChip.label).toBe("Could not be loaded");
+    expect(onboarding.bridgeChip.label).toBe("Could not be loaded");
+    expect(onboarding.platform.title).not.toMatch(/Checking/);
+    expect(onboarding.platform.title).toMatch(/could not be loaded/i);
+  });
+
+  it("onboarding agrees with the cockpit for a loaded envelope and while loading", () => {
+    setMode(envelope({ allowedSymbols: ["EURUSD"] }));
+    expect(describeOnboardingTradingStatus(h.mode as never).riskChip.label).toBe(cockpitVerdict().label);
+    setMode(null, { isLoading: true });
+    const loading = describeOnboardingTradingStatus(h.mode as never);
+    expect(loading.riskChip.label).toBe("Checking");
+    expect(loading.approvalChip.label).toBe("Checking");
+    expect(loading.platform.title).toBe("Checking trading status");
   });
 
   it("still loading: the shared helper says 'Checking', never 'could not be read'", () => {

@@ -28,17 +28,25 @@ function ChipRow({ icon, label, chip }: { icon: ReactNode; label: string; chip: 
 // ── State-driven Trading Platform Status (no hardcoded "paused") ───────────
 // Exported (pure) so the copy can be pinned by tests without opening the modal.
 export function describeOnboardingTradingStatus(
-  tradingMode: Pick<UseTradingModeResult, "envelope" | "isFrozen" | "isDemo" | "isLiveShared" | "canManualTrade" | "cleanBlockedReason">,
+  tradingMode: Pick<UseTradingModeResult, "envelope" | "isFrozen" | "isDemo" | "isLiveShared" | "canManualTrade" | "cleanBlockedReason">
+    & Partial<Pick<UseTradingModeResult, "isModeUnknown">>,
 ): {
   platform: { tone: "muted" | "danger" | "primary" | "warning" | "success"; title: string; note: string };
   approvalChip: { label: string; tone: ChipTone };
   bridgeChip: { label: string; tone: ChipTone };
+  riskChip: { label: string; tone: ChipTone };
 } {
   // Derives a single user-facing status + supporting line from the real
-  // trading-mode envelope. Falls back to "Checking" when state isn't known.
+  // trading-mode envelope. "Checking" while it loads; "Could not be loaded"
+  // once the account-mode check has failed (never "still checking").
   const env = tradingMode.envelope;
+  const failed = !env && tradingMode.isModeUnknown === true;
+  const notLoadedChip = failed
+    ? { label: "Could not be loaded", tone: "warning" as const }
+    : { label: "Checking", tone: "muted" as const };
   const approvalRaw = (env?.userApprovalStatus ?? env?.accountShellStatus?.approvalStatus ?? "").toUpperCase();
   const platform = (() => {
+    if (failed) return { tone: "warning" as const, title: "Trading status could not be loaded", note: "Your account permissions could not be checked just now. ARX will check again." };
     if (!env) return { tone: "muted" as const, title: "Checking trading status", note: "ARX AI is reading your account permissions." };
     if (tradingMode.isFrozen) return { tone: "danger" as const, title: "Risk lock active", note: "Trading is paused by your account safety controls." };
     if (tradingMode.isDemo) return { tone: "primary" as const, title: "Demo mode active", note: "You can explore ARX AI without placing live broker orders." };
@@ -57,16 +65,21 @@ export function describeOnboardingTradingStatus(
   // isLiveShared is a mode), so the chip says it was not checked here instead
   // of inferring Connected / Unavailable.
   const approvalChip = !env
-    ? { label: "Checking", tone: "muted" as const }
+    ? notLoadedChip
     : (approvalRaw === "APPROVED" || approvalRaw === "ACTIVE")
       ? { label: "Approved", tone: "success" as const }
       : approvalRaw
         ? { label: "Pending", tone: "warning" as const }
         : { label: "Checking", tone: "muted" as const };
   const bridgeChip = !env
-    ? { label: "Checking", tone: "muted" as const }
+    ? notLoadedChip
     : { label: "Not checked here", tone: "muted" as const };
-  return { platform, approvalChip, bridgeChip };
+  // Freeze state + whether per-account caps are assigned — the same
+  // riskCapsStatus verdict (and failed state) as the cockpit and trade room.
+  // Not-frozen alone is not "Active" risk controls.
+  const caps = riskCapsStatus(env, { failed: tradingMode.isModeUnknown === true });
+  const riskChip = { label: caps.label, tone: caps.tone };
+  return { platform, approvalChip, bridgeChip, riskChip };
 }
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -232,13 +245,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   }
 
   // ── State-driven Trading Platform Status (no hardcoded "paused") ───────────
-  const { platform, approvalChip, bridgeChip } = describeOnboardingTradingStatus(tradingMode);
-  // Freeze state + whether per-account caps are assigned; "Checking" until the
-  // envelope loads. Not-frozen alone is not "Active" risk controls.
-  const riskChip = (() => {
-    const r = riskCapsStatus(tradingMode.envelope);
-    return { label: r.label, tone: r.tone };
-  })();
+  const { platform, approvalChip, bridgeChip, riskChip } = describeOnboardingTradingStatus(tradingMode);
   const tourStatusLabel = (() => {
     const s = (status?.status ?? "").toUpperCase();
     if (s === "COMPLETED") return { label: "Completed", tone: "success" as const };
