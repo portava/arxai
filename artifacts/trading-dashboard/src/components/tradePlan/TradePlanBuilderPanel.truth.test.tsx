@@ -16,6 +16,10 @@
 //    shown, and an earlier READY must not keep presenting the plan as ready
 //    to send.
 //
+//  - Validate returns whether Chart Truth was checked and, when it limited
+//    the plan, a note and the confidence capped at the Chart Truth score.
+//    The panel showed none of it: "Confidence 80% · Strong" stayed green.
+//
 // Real QueryClient and the real panel. fetch is stubbed per URL; the news and
 // multi-timeframe cards (their own fetches, their own tests) are stubbed out.
 
@@ -203,5 +207,44 @@ describe("Trade Plan Builder — a refused validate is shown, not swallowed", ()
     await screen.findByText("Plan #11");
     fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
     expect(await screen.findByText(/could not be completed/i)).toBeTruthy();
+  });
+});
+
+describe("Trade Plan Builder — validate's chart check is shown", () => {
+  it("a Chart Truth limit shows the note and the capped confidence, not 'Strong'", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({ status: 200, body: { plans: [plan({ status: "DRAFT", confidenceLevel: 80 })] } });
+    routes["POST /api/trade-plans/11/validate"] = () => ({
+      status: 200,
+      body: {
+        ...plan({ status: "READY", confidenceLevel: 80 }),
+        chartTruthStatus: "LIMITED", chartTruthScore: 52, effectiveConfidenceLevel: 52,
+        chartQualityNote: "Chart Truth has not passed the verification threshold. Your plan is saved, but chart-based confidence is limited until the chart verifies.",
+      },
+    });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    expect(screen.getByText(/80%/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    expect(await screen.findByText(/Chart Truth has not passed the verification threshold/)).toBeTruthy();
+    expect(screen.getByText(/usable 52%/)).toBeTruthy();
+    expect(screen.queryByText(/Strong/)).toBeNull();
+  });
+
+  it("a validate with no chart read says Chart Truth was not checked", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({ status: 200, body: { plans: [plan({ status: "DRAFT" })] } });
+    routes["POST /api/trade-plans/11/validate"] = () => ({
+      status: 200, body: { ...plan({ status: "READY" }), chartTruthStatus: "NOT_CHECKED" },
+    });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    expect(await screen.findByText(/Chart Truth was not checked/i)).toBeTruthy();
+  });
+
+  it("the stored confidence is labelled as the trader's own estimate", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({ status: 200, body: { plans: [plan({ status: "DRAFT", confidenceLevel: 80 })] } });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    expect(screen.getByText(/your confidence/i)).toBeTruthy();
   });
 });

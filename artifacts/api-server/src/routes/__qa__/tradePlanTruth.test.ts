@@ -17,6 +17,10 @@
 //    which check it was and when, and that it is the platform bridge, not
 //    the trader's own broker account.
 //
+//  - Validate's chart check: the response always says whether Chart Truth
+//    was checked for the plan's symbol (PASSED / LIMITED / NOT_CHECKED), so
+//    "no note" can no longer be read as "the chart verified".
+//
 // Stubbed: the database handle, the permission verdict, the broker health
 // cache, news / portfolio risk, the chart cache and alerts. The real route
 // and the real checklist domain run. No network, no broker.
@@ -259,4 +263,46 @@ test("a stale DISCONNECTED verdict still fails", async () => {
   const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
   assert.equal(brokerItem(body).status, "FAIL");
   assert.equal(body.status, "INVALIDATED");
+});
+
+function gate(patch: Record<string, unknown>) {
+  return {
+    state: {
+      gateOutput: {
+        chartTruthScore: 82, confidentReadAllowed: true, tradeConfirmationAllowed: true,
+        autonomousChartActionAllowed: true, primaryBlockReason: null, ...patch,
+      },
+    },
+  };
+}
+
+test("validate with Chart Truth below threshold: LIMITED, note, and confidence capped at the score", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null, confidenceLevel: 80 });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  chartCache = gate({ chartTruthScore: 52, confidentReadAllowed: false, primaryBlockReason: null });
+  try {
+    const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(body.chartTruthStatus, "LIMITED");
+    assert.equal(body.chartTruthScore, 52);
+    assert.equal(body.effectiveConfidenceLevel, 52);
+    assert.match(body.chartQualityNote, /Chart Truth has not passed/);
+  } finally { chartCache = null; }
+});
+
+test("validate with no cached chart read says Chart Truth was not checked", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  chartCache = null;
+  const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  assert.equal(body.chartTruthStatus, "NOT_CHECKED");
+  assert.equal(body.chartQualityNote, undefined);
+});
+
+test("validate with a passing chart says PASSED with its score", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  chartCache = gate({});
+  try {
+    const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(body.chartTruthStatus, "PASSED");
+    assert.equal(body.chartTruthScore, 82);
+  } finally { chartCache = null; }
 });

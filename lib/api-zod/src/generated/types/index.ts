@@ -1710,6 +1710,7 @@ export * from "./tradeInput";
 export * from "./tradeInputDirection";
 export * from "./tradeMode";
 export * from "./tradePlan";
+export * from "./tradePlanChartTruthStatus";
 export * from "./tradePlanChecklist";
 export * from "./tradePlanChecklistItem";
 export * from "./tradePlanChecklistItemStatus";

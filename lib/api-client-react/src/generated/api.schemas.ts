@@ -13109,6 +13109,18 @@ export const TradePlanStatus = {
   CANCELED: "CANCELED",
 } as const;
 
+/**
+ * Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).
+ */
+export type TradePlanChartTruthStatus =
+  (typeof TradePlanChartTruthStatus)[keyof typeof TradePlanChartTruthStatus];
+
+export const TradePlanChartTruthStatus = {
+  PASSED: "PASSED",
+  LIMITED: "LIMITED",
+  NOT_CHECKED: "NOT_CHECKED",
+} as const;
+
 export interface TradePlan {
   id: number;
   symbol?: string | null;
@@ -13135,6 +13147,14 @@ export interface TradePlan {
   executionConfirmationId?: number | null;
   createdAtIso: string;
   updatedAtIso: string;
+  /** Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed). */
+  chartTruthStatus?: TradePlanChartTruthStatus;
+  /** Validate response only. Chart Truth score of the cached chart read used at validation. */
+  chartTruthScore?: number | null;
+  /** Validate response only. Present when Chart Truth limited the plan's chart basis. */
+  chartQualityNote?: string | null;
+  /** Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged. */
+  effectiveConfidenceLevel?: number | null;
 }
 
 export interface TradePlanList {

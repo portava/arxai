@@ -447,8 +447,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // Planning confidence is limited — the plan may still be prepared and the
     // status stands, but the note communicates that the chart basis is unverified.
     // Fail-open: absent cache → no note (honest unknown, not a false degradation).
+    // chartTruthStatus always says which it was, so a missing note is never
+    // read as "the chart verified": PASSED (cached read passed every chart
+    // gate), LIMITED (a note explains what did not), NOT_CHECKED (no symbol,
+    // no recent cached read, or the read failed).
     let chartQualityNote: string | null = null;
     let chartTruthScore: number | null = null;
+    let chartTruthStatus: "PASSED" | "LIMITED" | "NOT_CHECKED" = "NOT_CHECKED";
     if (plan.symbol) {
       try {
         const PLAN_TF: ChartTimeframe = "M15";
@@ -474,9 +479,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
               "Chart data is partially degraded (mirror or freshness issue). " +
               "Your plan is saved; review the chart feed before trading.";
           }
+          chartTruthStatus = chartQualityNote != null ? "LIMITED" : "PASSED";
         }
       } catch {
         // fail-open: chart quality is advisory, never blocks plan save
+        chartQualityNote = null;
+        chartTruthScore = null;
+        chartTruthStatus = "NOT_CHECKED";
       }
     }
 
@@ -495,6 +504,8 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     }
     res.json({
       ...planResponse,
+      chartTruthStatus,
+      ...(chartTruthScore != null ? { chartTruthScore } : {}),
       ...(chartQualityNote != null
         ? { chartQualityNote, chartTruthScore, effectiveConfidenceLevel }
         : {}),

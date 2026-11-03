@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { TradePlanChecklist } from "./TradePlanChecklist";
 import { AIPlanReviewCard } from "./AIPlanReviewCard";
 import { RiskPreviewCard } from "./RiskPreviewCard";
-import { StrategyFitPreview } from "./StrategyFitPreview";
+import { StrategyFitPreview, type PlanChartCheck } from "./StrategyFitPreview";
 import { ConvertToLiveExecutionButton, SentToConfirmationStatus } from "./ConvertToLiveExecutionButton";
 import { MultiTimeframeAlignmentCard } from "../multiTimeframe";
 import { NewsRiskCard } from "../news";
@@ -100,6 +100,16 @@ export function TradePlanBuilderPanel() {
   const [form, setForm] = useState<Partial<TradePlan>>({});
   useEffect(() => { setForm(active ?? {}); }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The latest validate attempt that did not produce a result, per plan. A
+  // refusal (409) leaves the stored status as it was, so an earlier READY is
+  // still on the row: it is labelled as from an earlier check and cannot be
+  // sent from here until a validate passes again.
+  const [validateFailure, setValidateFailure] = useState<{ planId: number; refused: boolean; message: string } | null>(null);
+  // What the latest successful validate said about Chart Truth, per plan. GET
+  // does not carry it (it is a reading of the chart at that moment), so it is
+  // kept from the validate response and dropped when the plan is saved again.
+  const [chartCheck, setChartCheck] = useState<(PlanChartCheck & { planId: number }) | null>(null);
+
   const create = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/trade-plans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
@@ -123,14 +133,11 @@ export function TradePlanBuilderPanel() {
       if (!r.ok) throw new Error("save failed");
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    onSuccess: () => {
+      if (active && chartCheck?.planId === active.id) setChartCheck(null);
+      qc.invalidateQueries({ queryKey: ["trade-plans"] });
+    },
   });
-
-  // The latest validate attempt that did not produce a result, per plan. A
-  // refusal (409) leaves the stored status as it was, so an earlier READY is
-  // still on the row: it is labelled as from an earlier check and cannot be
-  // sent from here until a validate passes again.
-  const [validateFailure, setValidateFailure] = useState<{ planId: number; refused: boolean; message: string } | null>(null);
 
   const validate = useMutation({
     mutationFn: async () => {
@@ -147,8 +154,26 @@ export function TradePlanBuilderPanel() {
       }
       return r.json();
     },
-    onMutate: () => setValidateFailure(null),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    onMutate: () => { setValidateFailure(null); setChartCheck(null); },
+    onSuccess: (data: {
+      id?: number;
+      chartTruthStatus?: PlanChartCheck["status"];
+      chartTruthScore?: number | null;
+      chartQualityNote?: string | null;
+      effectiveConfidenceLevel?: number | null;
+    } | undefined) => {
+      if (data && typeof data.id === "number") {
+        setChartCheck({
+          planId: data.id,
+          status: data.chartTruthStatus ?? null,
+          chartTruthScore: data.chartTruthScore ?? null,
+          chartQualityNote: data.chartQualityNote ?? null,
+          effectiveConfidenceLevel: data.effectiveConfidenceLevel ?? null,
+          checkedAtIso: new Date().toISOString(),
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["trade-plans"] });
+    },
     onError: (e: Error) => {
       if (active) setValidateFailure({ planId: active.id, refused: e instanceof ValidateError && e.refused, message: e.message });
     },
@@ -295,7 +320,7 @@ export function TradePlanBuilderPanel() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <RiskPreviewCard plan={active} />
-            <StrategyFitPreview plan={active} />
+            <StrategyFitPreview plan={active} chartCheck={chartCheck?.planId === active.id ? chartCheck : null} />
             <AIPlanReviewCard summary={active.aiSummary} stale={checklistStale} />
           </div>
 

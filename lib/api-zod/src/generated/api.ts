@@ -15677,6 +15677,30 @@ export const ListTradePlansResponse = zod.object({
       executionConfirmationId: zod.number().nullish(),
       createdAtIso: zod.string(),
       updatedAtIso: zod.string(),
+      chartTruthStatus: zod
+        .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+        .optional()
+        .describe(
+          "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+        ),
+      chartTruthScore: zod
+        .number()
+        .nullish()
+        .describe(
+          "Validate response only. Chart Truth score of the cached chart read used at validation.",
+        ),
+      chartQualityNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+        ),
+      effectiveConfidenceLevel: zod
+        .number()
+        .nullish()
+        .describe(
+          "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+        ),
     }),
   ),
 });
@@ -15757,6 +15781,30 @@ export const CreateTradePlanResponse = zod.object({
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const GetTradePlanParams = zod.object({
@@ -15818,6 +15866,30 @@ export const GetTradePlanResponse = zod.object({
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const UpdateTradePlanParams = zod.object({
@@ -15900,6 +15972,30 @@ export const UpdateTradePlanResponse = zod.object({
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const ValidateTradePlanParams = zod.object({
@@ -15961,6 +16057,30 @@ export const ValidateTradePlanResponse = zod.object({
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const CancelTradePlanParams = zod.object({
@@ -16022,6 +16142,30 @@ export const CancelTradePlanResponse = zod.object({
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const ConvertTradePlanParams = zod.object({
@@ -16084,6 +16228,30 @@ export const ConvertTradePlanResponse = zod.object({
     executionConfirmationId: zod.number().nullish(),
     createdAtIso: zod.string(),
     updatedAtIso: zod.string(),
+    chartTruthStatus: zod
+      .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+      .optional()
+      .describe(
+        "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+      ),
+    chartTruthScore: zod
+      .number()
+      .nullish()
+      .describe(
+        "Validate response only. Chart Truth score of the cached chart read used at validation.",
+      ),
+    chartQualityNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+      ),
+    effectiveConfidenceLevel: zod
+      .number()
+      .nullish()
+      .describe(
+        "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+      ),
   }),
   executionConfirmationId: zod.number().nullish(),
 });
