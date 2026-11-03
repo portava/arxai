@@ -15,6 +15,32 @@ async function api(path: string, init?: RequestInit) {
 
 const PAGE_ICON = <Swords className="h-6 w-6 text-primary" />;
 
+function utcMinute(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC` : null;
+}
+
+// What an empty table means depends on why it is empty. The server leaves out
+// "No Trade Filter" placeholder scans (every strategy said WAIT), so a running
+// tournament whose scans found nothing actionable has no rows at all — that
+// is not "start shadow mode and tournament".
+function emptyTableText(r: Result): string {
+  if ((r.unranked?.length ?? 0) > 0) return "No strategy has a tracked win or loss yet, so none is ranked.";
+  if (r.running) {
+    const since = utcMinute(r.startedAt);
+    return `${since ? `Running since ${since}. ` : "Running. "}No strategy has proposed a trade since it started: ` +
+      "the scans so far found no actionable signal, or no scan has run yet.";
+  }
+  if (r.idleReason === "SHADOW_STOPPED") {
+    return "No data yet — the tournament is started, but shadow mode is stopped, so no decisions are being made. Start shadow mode to collect them.";
+  }
+  if (r.idleReason === "NOT_STARTED") {
+    return "No data yet — the tournament has not been started. Press Start tournament; it collects decisions while shadow mode runs.";
+  }
+  return "No data yet — the tournament is not running. It collects decisions while the tournament and shadow mode both run.";
+}
+
 export default function StrategyTournament() {
   // Admin/OWNER-only endpoint (/api/strategy-tournament/results). Non-admins get
   // the denied state immediately and fire ZERO gated calls.
@@ -97,7 +123,7 @@ export default function StrategyTournament() {
                       <td>{row.tradeGradeAvg}</td>
                     </tr>
                   ))}
-                  {r.ranked.length === 0 && <tr><td colSpan={10} className="text-muted-foreground py-2">{(r.unranked?.length ?? 0) > 0 ? "No strategy has a tracked win or loss yet, so none is ranked." : "No data yet — start shadow mode and tournament."}</td></tr>}
+                  {r.ranked.length === 0 && <tr><td colSpan={10} className="text-muted-foreground py-2" data-testid="tournament-empty">{emptyTableText(r)}</td></tr>}
                 </tbody>
               </table>
             </div>

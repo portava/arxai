@@ -80,6 +80,36 @@ describe("Strategy Tournament", () => {
     expect(screen.getByTestId("tournament-unranked").textContent).toMatch(/Session Breakout \(3 decisions\)/);
   });
 
+  it("running with only placeholder scans does not tell the admin to start what is already running", async () => {
+    bodies["/api/strategy-tournament/results"] = {
+      running: true, idleReason: null, startedAt: "2026-11-03T09:30:00.000Z", ranked: [], unranked: [],
+      leaderboard: { bestOverall: null, worst: null },
+    };
+    await show(<StrategyTournament />);
+    expect(screen.getByText("RUNNING")).toBeTruthy();
+    const empty = screen.getByTestId("tournament-empty").textContent ?? "";
+    expect(empty).not.toMatch(/start shadow mode/i);
+    expect(empty).not.toMatch(/No data yet/);
+    expect(empty).toMatch(/^Running since 2026-11-03 09:30 UTC\. No strategy has proposed a trade since it started/);
+    expect(empty).toMatch(/found no actionable signal, or no scan has run yet/);
+  });
+
+  it("an empty table names the specific reason the tournament is idle", async () => {
+    bodies["/api/strategy-tournament/results"] = {
+      running: false, idleReason: "NOT_STARTED", startedAt: null, ranked: [], unranked: [], leaderboard: {},
+    };
+    await show(<StrategyTournament />);
+    expect(screen.getByTestId("tournament-empty").textContent).toMatch(/the tournament has not been started/);
+    cleanup();
+    bodies["/api/strategy-tournament/results"] = {
+      running: false, idleReason: "SHADOW_STOPPED", startedAt: "2026-11-03T09:30:00.000Z", ranked: [], unranked: [], leaderboard: {},
+    };
+    await show(<StrategyTournament />);
+    const empty = screen.getByTestId("tournament-empty").textContent ?? "";
+    expect(empty).toMatch(/the tournament is started, but shadow mode is stopped/);
+    expect(empty).not.toMatch(/start .*tournament/i);
+  });
+
   it("the Grade column says it is confidence ÷ 10, not an independent trade grade", async () => {
     bodies["/api/strategy-tournament/results"] = { running: true, startedAt: null, ranked: [ROW], leaderboard: {} };
     await show(<StrategyTournament />);
