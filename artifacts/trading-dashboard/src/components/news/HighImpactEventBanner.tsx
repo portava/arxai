@@ -11,7 +11,9 @@
 //   - A date-only source (FRED: release date, midnight-UTC sentinel time) has
 //     no observed release time, so it gets no countdown, no "released Xm ago",
 //     no "within 1 hour"/post-release heading and no pulse — only its date and
-//     "release time not published".
+//     "release time not published". With timed rows on screen, only they set
+//     the heading's severity, count and colour; date-only rows are named in a
+//     separate "also dated …" clause.
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -81,27 +83,35 @@ export function HighImpactEventBanner() {
   // Only events with a published release time can be "within 1 hour" or
   // "released Xm ago"; date-only rows are listed by date.
   const timed = events.filter((e) => !isDateOnlyCalendarSource(e.source));
-  const hasCritical = events.some((e) => e.impactLevel === "CRITICAL");
-  const hasTimedCritical = timed.some((e) => e.impactLevel === "CRITICAL");
+  const dateOnly = events.filter((e) => isDateOnlyCalendarSource(e.source));
+  // The heading's severity word, count and colour describe the rows its time
+  // phrase is about: the timed rows when there are any. An untimed CRITICAL
+  // row is not known to be within the hour, so it never makes a "within 1
+  // hour" heading critical; it is named separately, by its date.
+  const headed = timed.length > 0 ? timed : dateOnly;
+  const headedCritical = headed.some((e) => e.impactLevel === "CRITICAL");
   const anyReleased = timed.some((e) => new Date(e.eventTime).getTime() <= nowMs);
   const anyUpcoming = timed.some((e) => new Date(e.eventTime).getTime() > nowMs);
-  const cls = hasCritical
-    ? `border-red-700 bg-red-950/60 text-red-100${hasTimedCritical ? " animate-pulse" : ""}`
+  const cls = headedCritical
+    ? `border-red-700 bg-red-950/60 text-red-100${timed.length > 0 ? " animate-pulse" : ""}`
     : "border-orange-700 bg-orange-950/40 text-orange-100";
-  const plural = events.length > 1 ? "s" : "";
-  const dateOnlyDates = Array.from(new Set(
-    events.filter((e) => isDateOnlyCalendarSource(e.source)).map((e) => e.eventTime.slice(0, 10)),
-  ));
+  const plural = headed.length > 1 ? "s" : "";
+  const dateOnlyDates = Array.from(new Set(dateOnly.map((e) => e.eventTime.slice(0, 10)))).join(", ");
   const when = timed.length === 0
-    ? `dated ${dateOnlyDates.join(", ")} — release time not published`
+    ? `dated ${dateOnlyDates} — release time not published`
     : anyReleased && anyUpcoming
       ? `released in the last ${HIGH_IMPACT_POST_RELEASE_WINDOW_MIN} min or due within 1 hour`
       : anyReleased
         ? `released in the last ${HIGH_IMPACT_POST_RELEASE_WINDOW_MIN} min — post-release volatility window`
         : "within 1 hour";
+  const alsoDated = timed.length > 0 && dateOnly.length > 0
+    ? ` · also dated ${dateOnlyDates}, release time not published: ${dateOnly
+      .map((e) => `${e.eventName} (${String(e.impactLevel).toLowerCase()})`)
+      .join(", ")}`
+    : "";
   return (
     <div className={`rounded-md border p-3 text-sm ${cls}`} data-testid="high-impact-banner">
-      <div className="font-semibold">⚠ {hasCritical ? "Critical" : "High-impact"} economic event{plural} {when}</div>
+      <div className="font-semibold">⚠ {headedCritical ? "Critical" : "High-impact"} economic event{plural} {when}{alsoDated}</div>
       <ul className="mt-1 space-y-0.5 text-xs">
         {events.slice(0, 4).map((e) => {
           const eventMs = new Date(e.eventTime).getTime();

@@ -49,4 +49,23 @@ describe("HighImpactEventBanner date-only events", () => {
     expect(screen.getByTestId("high-impact-event-1").textContent).toMatch(/release time not published/);
     expect(screen.getByTestId("high-impact-banner").textContent).toMatch(/within 1 hour/);
   });
+
+  // Review finding: the heading's severity, count and colour came from every
+  // row, so a HIGH timed CPI next to an untimed CRITICAL FOMC read "Critical
+  // economic events within 1 hour" in red. Nothing critical is known to be
+  // within the hour; the untimed row is named on its own, by date.
+  it("an untimed critical row does not make the 'within 1 hour' heading critical", async () => {
+    vi.setSystemTime(new Date("2026-10-27T23:40:00.000Z"));
+    mount([FOMC, { id: 2, eventName: "CPI y/y", currency: "USD", impactLevel: "HIGH", eventTime: "2026-10-28T00:00:00.000Z", source: "tradingeconomics" }]);
+    await screen.findByTestId("high-impact-event-2");
+    const banner = screen.getByTestId("high-impact-banner");
+    const heading = banner.firstElementChild?.textContent ?? "";
+    expect(heading).toMatch(/^⚠ High-impact economic event within 1 hour/);
+    expect(heading).not.toMatch(/Critical economic/);
+    expect(heading).not.toMatch(/events within 1 hour/);
+    expect(heading).toMatch(/also dated 2026-10-28, release time not published: FOMC \(critical\)/);
+    expect(banner.className).not.toContain("border-red-700");
+    expect(banner.className).not.toContain("animate-pulse");
+    expect(screen.getByTestId("high-impact-event-1").textContent).toMatch(/2026-10-28 \(release time not published\) · CRITICAL/);
+  });
 });
