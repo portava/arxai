@@ -129,11 +129,14 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
       : pinnedId != null ? `pinned connection #${pinnedId} was not found`
       : "no platformMasterBridgeConnectionId set");
 
-  // C3 — heartbeat fresh (shared policy: < 15 s) on pinned bridge
+  // C3 — heartbeat fresh (shared policy: < 15 s) on pinned bridge. With no
+  // pinned bridge loaded there was no heartbeat to read: say so (and fail
+  // closed), never "no heartbeat recorded", which is a claim about a bridge.
   const hbAge = pinned?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(pinned.lastHeartbeat).getTime()) / 1000) : null;
   push("C3_heartbeat", "Bridge heartbeat fresh (<15s)", isHeartbeatAgeSecondsFresh(hbAge) ? "pass" : "fail",
-    hbAge == null ? "no heartbeat recorded"
+    pinned == null ? "could not be checked: no pinned bridge was loaded (see C2)"
+      : hbAge == null ? "no heartbeat recorded"
       : hbAge < 0 ? `heartbeat is dated ${-hbAge}s in the future, so its age cannot be verified`
       : `${hbAge}s old`);
 
