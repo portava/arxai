@@ -31,11 +31,12 @@ mock.module("@workspace/db", { namedExports: { ...database, db: { select: () => 
 
 const actualSwitches = await import("../platformSwitches.js");
 let emergencyStop: { engaged: boolean; reason: string | null } = { engaged: true, reason: "news spike" };
+let switchesReadable = true;
 mock.module("../platformSwitches.js", {
   namedExports: {
     ...actualSwitches,
     platformStop: async () => actualSwitches.platformStopFrom(
-      { readable: true, emergencyStop: { ...emergencyStop, engagedAt: null } },
+      { readable: switchesReadable, emergencyStop: { ...emergencyStop, engagedAt: null } },
       { readable: true, engaged: false, reason: null },
     ),
   },
@@ -43,15 +44,40 @@ mock.module("../platformSwitches.js", {
 
 const { loadTradingHalt, loadTradingHaltReport, loadPlatformHaltReport } = await import("../tradingHalt.js");
 
-test("a second stop that could not be read keeps '(state unreadable)'", async () => {
+// A switch nobody could read was still worded as a fact ("Your kill switch is
+// engaged. Release it to trade again. (state unreadable)"), with an
+// instruction that cannot clear a failed read. The status sentence now says
+// it could not be read and is treated as engaged (fail closed).
+test("a second stop that could not be read says so, not that it is engaged or how to release it", async () => {
   emergencyStop = { engaged: true, reason: "news spike" };
   traderRead = () => { throw new Error("db down"); };
   const report = await loadTradingHaltReport({ userId: 7, venue: "LIVE" });
   assert.deepEqual(report.halt.sources, ["platform_emergency_stop", "trader_kill_switch"]);
   assert.deepEqual(report.reasons, [
     "The platform emergency stop is engaged by an operator. (news spike)",
-    "Your kill switch is engaged. Release it to trade again. (state unreadable)",
+    "Your kill switch could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
   ]);
+  assert.doesNotMatch(report.reasons[1]!, /Release it to trade again|is engaged\./);
+});
+
+test("an unreadable platform stop is worded as unread in the status view; the gates' halt.reason is unchanged", async () => {
+  switchesReadable = false;
+  emergencyStop = { engaged: true, reason: "state unreadable" };
+  traderRead = () => { throw new Error("db down"); };
+  try {
+    const halt = await loadTradingHalt({ userId: 7, venue: "LIVE" });
+    const report = await loadTradingHaltReport({ userId: 7, venue: "LIVE" });
+    assert.deepEqual(report.halt, halt, "what the gates read is unchanged");
+    assert.equal(halt.reason, "The platform emergency stop is engaged by an operator. (state unreadable)");
+    assert.deepEqual(report.reasons, [
+      "The platform emergency stop could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
+      "Your kill switch could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
+    ]);
+    const platform = await loadPlatformHaltReport();
+    assert.deepEqual(platform.reasons, [
+      "The platform emergency stop could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
+    ]);
+  } finally { switchesReadable = true; }
 });
 
 test("a trader's own stored kill-switch reason is kept when it is not the first stop", async () => {
@@ -72,6 +98,13 @@ test("the halt the gates read is unchanged: same sources, same first reason", as
   assert.deepEqual(report.halt, halt);
   assert.deepEqual(Object.keys(halt).sort(), ["engaged", "reason", "sources"]);
   assert.equal(halt.reason, report.reasons[0]);
+});
+
+test("a trader's stored reason that happens to read 'state unreadable' is still their reason", async () => {
+  emergencyStop = { engaged: false, reason: null };
+  traderRead = () => [{ on: true, why: "state unreadable" }];
+  const report = await loadTradingHaltReport({ userId: 7, venue: "LIVE" });
+  assert.deepEqual(report.reasons, ["Your kill switch is engaged. Release it to trade again. (state unreadable)"]);
 });
 
 test("the install-wide report lists one reason per stop", async () => {

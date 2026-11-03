@@ -46,7 +46,16 @@ type Halt = { engaged: boolean; sources: string[]; reason: string | null };
 // The stub reader's facts: the engaged sources and each one's stored detail
 // (a bare string is the first source's detail, as before).
 type Facts = { sources: string[]; detail: Record<string, string | undefined> };
-const sentence = (s: string, d?: string) => (d ? `${REASONS[s]} (${d})` : REASONS[s]!);
+// As the real reader words them (lib/safety/tradingHalt statusReason): a
+// stop that could not be read is not stated as engaged and has no release step.
+const UNREAD_NAMES: Record<string, string> = {
+  platform_emergency_stop: "The platform emergency stop",
+  safety_core_kill_switch: "The safety-core kill switch",
+  trader_kill_switch: "Your kill switch",
+};
+const sentence = (s: string, d?: string) => (d === "state unreadable"
+  ? `${UNREAD_NAMES[s]} could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.`
+  : d ? `${REASONS[s]} (${d})` : REASONS[s]!);
 const haltOf = (sources: string[], detail?: string | Record<string, string>): Facts => ({
   sources,
   detail: typeof detail === "string" ? { [sources[0]!]: detail } : detail ?? {},
@@ -117,8 +126,9 @@ test("every stop keeps its own detail, not only the first ('state unreadable' is
   const s = await status();
   assert.deepEqual(s.activeHaltReasons, [
     "The platform emergency stop is engaged by an operator. (news spike)",
-    "Your kill switch is engaged. Release it to trade again. (state unreadable)",
+    "Your kill switch could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
   ]);
+  assert.doesNotMatch((s.activeHaltReasons as string[])[1]!, /Release it to trade again/);
 });
 
 test("no stop engaged is an empty list, not missing", async () => {
