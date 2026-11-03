@@ -16,13 +16,17 @@ import { scannerResultActionChip } from "@/components/scanner/scannerResultActio
 
 /* ── 1 · Top status bar ─────────────────────────────────────────────── */
 export function TradeStatusBar({
-  modeLabel, isLive, gatesLabel, intentCount, intentError = false,
+  modeLabel, isLive, gatesLabel, intentCount, intentError = false, intentAtLeast = false, intentScopeNote = null,
 }: {
   modeLabel: string; isLive: boolean; gatesLabel: string;
   /** null while the queue has not answered yet. */
   intentCount: number | null;
   /** The intent queue read failed: the count is unknown, never 0. */
   intentError?: boolean;
+  /** The count covers only the queue's newest window; older intents exist. */
+  intentAtLeast?: boolean;
+  /** The queue is not shown to this user (admin-only): no count, never 0. */
+  intentScopeNote?: string | null;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
@@ -35,7 +39,13 @@ export function TradeStatusBar({
       </span>
       <Link href="/live-intent-queue" className="ml-auto" data-testid="trade-intent-badge">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 px-3 py-1 text-sm font-semibold text-primary hover:bg-primary/10">
-          {intentError ? "Intents: could not be loaded" : intentCount == null ? "Intents: loading…" : `${intentCount} intents`}
+          {intentError
+            ? "Intents: could not be loaded"
+            : intentScopeNote
+              ? "Intents: admin only"
+              : intentCount == null
+                ? "Intents: loading…"
+                : `${intentCount}${intentAtLeast ? "+" : ""} intents`}
         </span>
       </Link>
     </div>
@@ -209,7 +219,7 @@ function ordersPanelRowRead(o: Opp, now: number): { usable: true; chip: ReturnTy
 }
 
 export function OrdersPanel({
-  opps, intentCount, picked, onPick, oppsError = false, intentError = false,
+  opps, intentCount, picked, onPick, oppsError = false, intentError = false, intentAtLeast = false, intentScopeNote = null,
 }: {
   opps: Opp[];
   /** null while the queue has not answered yet. */
@@ -220,6 +230,10 @@ export function OrdersPanel({
   oppsError?: boolean;
   /** The intent queue read failed: never shown as 0 / "No live intents queued". */
   intentError?: boolean;
+  /** The count covers only the queue's newest window; older intents exist. */
+  intentAtLeast?: boolean;
+  /** The queue is not shown to this user (admin-only): no count, never 0. */
+  intentScopeNote?: string | null;
 }) {
   return (
     <div className="space-y-4" data-testid="orders-tab">
@@ -258,11 +272,15 @@ export function OrdersPanel({
 
       <CockpitCard title="Live Intent Queue" icon={<ListChecks className="h-[18px] w-[18px]" />} accent="blue">
         <div className="flex items-baseline justify-between">
-          <span className="font-mono text-3xl font-bold" data-testid="orders-intent-count">{intentError || intentCount == null ? "—" : intentCount}</span>
+          <span className="font-mono text-3xl font-bold" data-testid="orders-intent-count">{intentError || intentScopeNote || intentCount == null ? "—" : `${intentCount}${intentAtLeast ? "+" : ""}`}</span>
           <ActionButton href="/live-intent-queue" subtle data-testid="orders-open-queue">Open Queue</ActionButton>
         </div>
         {intentError ? (
           <p className="mt-2 text-xs text-warning" role="alert" data-testid="orders-intent-error">The live intent queue could not be loaded. Retrying every 5 seconds.</p>
+        ) : intentScopeNote ? (
+          <p className="mt-2 text-xs text-txt-muted" data-testid="orders-intent-scope">{intentScopeNote} Its intents are not counted here.</p>
+        ) : intentAtLeast && intentCount != null ? (
+          <p className="mt-2 text-xs text-txt-muted" data-testid="orders-intent-window">Only the newest {intentCount} intents were counted; older intents exist.</p>
         ) : intentCount === 0 ? (
           <p className="mt-2 text-xs text-txt-muted">No live intents queued.</p>
         ) : null}

@@ -1089,7 +1089,22 @@ function ReportView({
 }
 
 // ─── Doctor view ───────────────────────────────────────────────────────────
-function DoctorView({
+/**
+ * explainAppStatus() lists an action as unavailable when its flag is unread
+ * (fail closed). Unread is not "cannot": say so when the bridge summary did
+ * not read the execution gates, is still loading, or could not be loaded.
+ */
+function doctorCannotDoLabel(ctx: import("@/assistant/runtimeContextTypes").RuntimeContext): string {
+  if (ctx.executionPostureUnmeasured) return "Not confirmed by this view (it does not read the execution gates):";
+  if (ctx.bridge === null) {
+    return ctx.bridgeStatus === "loading"
+      ? "Not confirmed yet (the bridge summary is still loading):"
+      : "Not confirmed by this view (the bridge summary could not be loaded):";
+  }
+  return "Cannot do:";
+}
+
+export function DoctorView({
   runtimeCtx, onBack, onNavigate,
 }: {
   runtimeCtx: import("@/assistant/runtimeContextTypes").RuntimeContext;
@@ -1108,9 +1123,11 @@ function DoctorView({
         <div className="text-xs mt-1" data-testid="doctor-mode">Mode: <span className="font-semibold">{status.mode}</span></div>
         <div className="text-[11px] mt-2"><span className="text-emerald-300">Can do:</span> {status.canDo.join(" · ")}</div>
         {status.cannotDo.length > 0 && (
-          <div className="text-[11px] mt-1"><span className="text-amber-300">Cannot do:</span> {status.cannotDo.join(" · ")}</div>
+          <div className="text-[11px] mt-1"><span className="text-amber-300">{doctorCannotDoLabel(runtimeCtx)}</span> {status.cannotDo.join(" · ")}</div>
         )}
-        <div className="text-[11px] mt-1"><span className="text-amber-300">Why live trading is unavailable:</span> {status.whyLiveUnavailable}</div>
+        {/* The reason text may be "cannot say" (posture not read), so the label
+            does not presume that live trading is unavailable. */}
+        <div className="text-[11px] mt-1"><span className="text-amber-300">Live trading availability:</span> {status.whyLiveUnavailable}</div>
       </section>
 
       <section className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5" data-testid="doctor-fix-first">
@@ -1118,7 +1135,10 @@ function DoctorView({
         {primary ? (
           <DiagnosisRow d={primary} onNavigate={onNavigate} testId="doctor-primary" />
         ) : (
-          <div className="text-xs text-muted-foreground">No issues detected — everything is operating in the expected safe mode.</div>
+          <div className="text-xs text-muted-foreground" data-testid="doctor-no-issues">
+            No issues found in what this view reads (the bridge summary, recent requests and this page).
+            {runtimeCtx.executionPostureUnmeasured ? " It does not read the execution gates or your account mode." : ""}
+          </div>
         )}
       </section>
 

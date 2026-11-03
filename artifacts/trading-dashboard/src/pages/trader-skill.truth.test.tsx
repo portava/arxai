@@ -93,3 +93,27 @@ describe("Trader Skill failure states", () => {
     expect(screen.getAllByText(/could not be loaded/i).length).toBe(2);
   });
 });
+
+// Regression: React Query keeps the last good profile when a reload fails.
+// After a successful Recalculate the profile reload returned 500, and the page
+// showed the previous profile with no notice that the reload failed.
+describe("Trader Skill when a profile reload fails", () => {
+  it("a successful recalculation whose profile reload fails says the profile shown is the earlier one", async () => {
+    routes.profile = { status: 200, body: { profile: { ...PROFILE, id: 7 } } };
+    routes.post = { status: 200, body: { profile: { ...PROFILE, id: 8, updatedAt: "2026-11-03T09:00:00.000Z" } } };
+    renderPage();
+    await flush();
+    expect(screen.queryByTestId("skill-profile-reload-failed")).toBeNull();
+
+    routes.profile = { status: 500, body: { error: "Failed to load skill profile" } };
+    await act(async () => { screen.getByText("Recalculate").click(); });
+    await flush();
+    expect(postCalls).toBe(1);
+    const notice = screen.getByTestId("skill-profile-reload-failed");
+    expect(notice.getAttribute("role")).toBe("alert");
+    expect(notice.textContent).toMatch(/could not be loaded/i);
+    expect(notice.textContent).toContain("Failed to load skill profile");
+    expect(notice.textContent).toContain(new Date(PROFILE.updatedAt).toLocaleString());
+    expect(notice.textContent).toMatch(/not the one just calculated/);
+  });
+});

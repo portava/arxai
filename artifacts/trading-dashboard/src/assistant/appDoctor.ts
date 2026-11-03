@@ -5,6 +5,11 @@ import { resolveRoute } from "@/knowledge/routeKnowledge";
 import type { DoctorDiagnosis, RuntimeContext } from "./runtimeContextTypes";
 
 const SAFE_NEXT_DEFAULT = "Continue in simulator/demo mode and verify the relevant diagnostic page below.";
+// When the bridge summary did not read the execution posture, this view
+// cannot tell which mode the account trades in (an armed Live Shared account
+// is not in simulator mode), so the fallback names no mode.
+const SAFE_NEXT_POSTURE_UNMEASURED =
+  "Your account mode decides where orders go; this view does not read it, and every order is still checked server-side. Verify the relevant diagnostic page below.";
 
 function safeRoute(route: string | undefined): string | undefined {
   if (!route) return undefined;
@@ -253,7 +258,7 @@ export function explainAppStatus(ctx: RuntimeContext): {
     canDo,
     cannotDo,
     whyLiveUnavailable,
-    safestNextStep: first?.safeNextStep ?? SAFE_NEXT_DEFAULT,
+    safestNextStep: first?.safeNextStep ?? (ctx.executionPostureUnmeasured ? SAFE_NEXT_POSTURE_UNMEASURED : SAFE_NEXT_DEFAULT),
     ...(first?.relatedRoute ? { nextRoute: first.relatedRoute } : {}),
   };
 }

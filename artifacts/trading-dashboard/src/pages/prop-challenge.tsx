@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PropChallengeProgressCard, PropProfitTargetMeter, PropDrawdownMeter,
   PropDailyLossLimitCard, PropRuleViolationFeed, PropChallengeCalendar, PropPassFailBanner,
@@ -42,6 +42,21 @@ interface EvalResp {
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
 }
 
+// Reads a JSON response and throws with the server's reason (or the HTTP
+// status) on a non-2xx, so a failed read is an error state, never data.
+async function jsonOrThrow<T>(r: Response): Promise<T> {
+  let body: unknown = null;
+  try { body = await r.json(); } catch { body = null; }
+  if (!r.ok) {
+    const reason = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string" ? (body as { error: string }).error : null;
+    throw new Error(reason ? `${reason} (HTTP ${r.status})` : `HTTP ${r.status}`);
+  }
+  if (body == null) throw new Error("empty response");
+  return body as T;
+}
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
+const timeOf = (ms: number): string => new Date(ms).toLocaleTimeString();
+
 export default function PropChallengePage() {
   const qc = useQueryClient();
   const [paperAccountId, setPaperAccountId] = useState(1);
@@ -49,7 +64,11 @@ export default function PropChallengePage() {
 
   const list = useQuery<{ challenges: Challenge[] }>({
     queryKey: ["prop-list"],
-    queryFn: async () => (await fetch("/api/prop-challenges")).json(),
+    queryFn: async () => {
+      const body = await jsonOrThrow<{ challenges?: unknown }>(await fetch("/api/prop-challenges"));
+      if (!Array.isArray(body.challenges)) throw new Error("unexpected response");
+      return body as { challenges: Challenge[] };
+    },
     refetchInterval: 8000,
   });
   const challenges = list.data?.challenges ?? [];
@@ -64,12 +83,25 @@ export default function PropChallengePage() {
     queryKey: ["prop-eval", active?.id],
     queryFn: async () => {
       const r = await fetch(`/api/prop-challenges/${active!.id}/evaluate`, { method: "POST" });
-      if (!r.ok) throw new Error("failed");
-      return r.json();
+      return jsonOrThrow<EvalResp>(r);
     },
     enabled: active != null,
     refetchInterval: finished ? false : 8000,
   });
+  // A finished challenge is judged only up to its end (summary.final). When a
+  // challenge ends while this page is open (Cancel, or an evaluate poll that
+  // resolved it to PASSED/FAILED) the cached evaluation is the last ACTIVE
+  // one, so the final evaluation is requested once, and only a final one is
+  // shown for a finished challenge.
+  const evalIsFinal = evalQ.data?.summary.final === true;
+  const finalRequestedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!finished || active == null || evalQ.data == null || evalIsFinal || evalQ.isFetching) return;
+    if (finalRequestedFor.current === active.id) return;
+    finalRequestedFor.current = active.id;
+    void evalQ.refetch();
+  }, [finished, active?.id, evalQ.data, evalIsFinal, evalQ.isFetching]);
+  const showResults = evalQ.data != null && (!finished || evalIsFinal);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -108,6 +140,19 @@ export default function PropChallengePage() {
         <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>
 
+      {list.isError && !list.data && (
+        <div role="alert" className="rounded-lg border border-rose-700 p-3 text-xs text-rose-300" data-testid="prop-list-error">
+          Your challenges could not be loaded ({errorText(list.error)}). Nothing is shown because nothing was read.
+          <button onClick={() => void list.refetch()} className="ml-2 underline">Retry</button>
+        </div>
+      )}
+      {list.isError && list.data && (
+        <p role="status" className="text-xs text-amber-300" data-testid="prop-list-stale">
+          Your challenges could not be refreshed ({errorText(list.error)}). What is shown is from the last successful read at {timeOf(list.dataUpdatedAt)}.
+        </p>
+      )}
+      {list.isPending && <p className="text-xs text-slate-400">Loading your challenges…</p>}
+
       {!current && list.data && (
         <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <h3 className="text-sm font-semibold text-slate-100">Start a practice challenge</h3>
@@ -131,7 +176,28 @@ export default function PropChallengePage() {
           {finished && (
             <p className="text-xs text-slate-400" data-testid="prop-finished-note">
               Your last challenge, {active.challengeName}, ended{active.completedAt ? ` on ${new Date(active.completedAt).toLocaleString()}` : ""} ({active.status}).
-              The results below cover only trades closed up to that time. Later paper trades are not part of it.
+              {showResults && " The results below cover only trades closed up to that time. Later paper trades are not part of it."}
+            </p>
+          )}
+          {evalQ.isError && !showResults && (
+            <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300" data-testid="prop-eval-error">
+              {finished ? "The final result of this challenge could not be loaded" : "This challenge's evaluation could not be loaded"} ({errorText(evalQ.error)}).
+              <button onClick={() => void evalQ.refetch()} className="ml-2 underline">Retry</button>
+            </p>
+          )}
+          {evalQ.isError && showResults && (
+            <p role="status" className="text-xs text-amber-300" data-testid="prop-eval-stale">
+              The latest evaluation could not be loaded ({errorText(evalQ.error)}). The results below are from the evaluation loaded at {timeOf(evalQ.dataUpdatedAt)}.
+            </p>
+          )}
+          {finished && !showResults && !evalQ.isError && (
+            <p className="text-xs text-slate-400" data-testid="prop-final-result-state">
+              {evalQ.isFetching || evalQ.isPending
+                ? "Loading the final result of this challenge…"
+                : "The final result of this challenge was not returned."}
+              {!(evalQ.isFetching || evalQ.isPending) && (
+                <button onClick={() => void evalQ.refetch()} className="ml-2 underline">Retry</button>
+              )}
             </p>
           )}
           <PropPassFailBanner status={active.status} reason={active.failureReason} />
@@ -149,7 +215,7 @@ export default function PropChallengePage() {
               <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
             )}
           </div>
-          {evalQ.data && (
+          {showResults && evalQ.data && (
             <>
               <PropChallengeProgressCard summary={evalQ.data.summary} />
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">

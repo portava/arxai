@@ -33,6 +33,7 @@ import {
   AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
 } from "@/components/dashboard/trade/TradePanels";
 import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
+import { readIntentQueueCount } from "@/lib/intentQueueCount";
 import { describeBridgeObservation, sharedMasterRouteObserved } from "@/components/dashboard/cockpit/bridgeObservation";
 
 type Opp = {
@@ -100,8 +101,12 @@ export default function TradeCommandRoom() {
   // loaded" rather than "no quote for this symbol".
   const [quoteLoadFailed, setQuoteLoadFailed] = useState(false);
   // null until the queue answers; intentError when it could not be loaded.
+  // The queue counts only its newest window (intentAtLeast: older intents
+  // exist), and answers non-admins with an admin-only note instead of counts.
   const [intentCount, setIntentCount] = useState<number | null>(null);
   const [intentError, setIntentError] = useState(false);
+  const [intentAtLeast, setIntentAtLeast] = useState(false);
+  const [intentScopeNote, setIntentScopeNote] = useState<string | null>(null);
   const [, setAlertCount] = useState(0);
 
   // Connection card data — existing shared master summary (no fake data).
@@ -139,10 +144,12 @@ export default function TradeCommandRoom() {
     setDecisionsError(!decisionsOk);
     setQuote(q.quote);
     setQuoteLoadFailed(q.failed);
-    const total = ic?.counts?.total;
-    const intentOk = typeof total === "number" && Number.isFinite(total);
-    setIntentCount(intentOk ? total : null);
-    setIntentError(!intentOk);
+    const iq = readIntentQueueCount(ic);
+    const counted = iq.kind === "exact" || iq.kind === "at_least";
+    setIntentCount(counted ? iq.total : null);
+    setIntentError(iq.kind === "error");
+    setIntentAtLeast(iq.kind === "at_least");
+    setIntentScopeNote(iq.kind === "not_shown" ? iq.note : null);
     setAlertCount(ac.count ?? 0);
   }
 
@@ -222,7 +229,7 @@ export default function TradeCommandRoom() {
   );
 
   const ordersTab = (
-    <OrdersPanel opps={opps} oppsError={oppsError} intentCount={intentCount} intentError={intentError} picked={picked} onPick={(o) => pickAndAnalyze(o as Opp)} />
+    <OrdersPanel opps={opps} oppsError={oppsError} intentCount={intentCount} intentError={intentError} intentAtLeast={intentAtLeast} intentScopeNote={intentScopeNote} picked={picked} onPick={(o) => pickAndAnalyze(o as Opp)} />
   );
 
   const advancedTab = (
@@ -247,7 +254,7 @@ export default function TradeCommandRoom() {
           </MobileMenuTrigger>
         }
       />
-      <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} intentError={intentError} />
+      <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} intentError={intentError} intentAtLeast={intentAtLeast} intentScopeNote={intentScopeNote} />
       <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} routeHeading={route.heading} broker={broker} account={account} />
 
       <PageTabs

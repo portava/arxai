@@ -45,9 +45,29 @@ export function overallLabel(r: Pick<Report, "overallStatus" | "subsystemStatus"
   };
 }
 
-/** A scan that did not run is "not checked", never "true". Downgrade-only. */
+/** Whether one half of the secret scan ran (per-half flag, or the summary flag on an older report). */
+function halfChecked(s: Report["secretSafetyStatus"], half: "frontend" | "logs"): boolean {
+  const perHalf = half === "frontend" ? s.frontendScanChecked : s.logScanChecked;
+  return typeof perHalf === "boolean" ? perHalf : s.scanChecked === true;
+}
+
+const HALF_NAME = { frontend: "frontend", logs: "log" } as const;
+
+/**
+ * A scan that did not run is "not checked", never "true". Downgrade-only.
+ * A half that ran and found secret-shaped strings is reported as found even
+ * when the other half could not run.
+ */
 export function redactionLabel(s: Report["secretSafetyStatus"]): string {
-  if (s.scanChecked !== true) return "not checked (scan could not run)";
+  if (s.scanChecked !== true) {
+    const fe = halfChecked(s, "frontend");
+    const lg = halfChecked(s, "logs");
+    const found = (fe && s.secretsDetectedInFrontend > 0) || (lg && s.secretsDetectedInLogs > 0);
+    // Exactly one half ran: name the other one.
+    const unrun = fe && !lg ? HALF_NAME.logs : lg && !fe ? HALF_NAME.frontend : null;
+    if (found) return unrun ? `secret-shaped strings found (${unrun} scan not checked)` : "secret-shaped strings found";
+    return unrun ? `not checked (${unrun} scan could not run)` : "not checked (scan could not run)";
+  }
   return s.redactionWorking ? "no secret-shaped strings found" : "secret-shaped strings found";
 }
 
@@ -57,9 +77,7 @@ export function redactionLabel(s: Report["secretSafetyStatus"]): string {
  * or the summary flag on an older report).
  */
 export function leakCountLabel(s: Report["secretSafetyStatus"], half: "frontend" | "logs"): string {
-  const perHalf = half === "frontend" ? s.frontendScanChecked : s.logScanChecked;
-  const checked = typeof perHalf === "boolean" ? perHalf : s.scanChecked === true;
-  if (!checked) return "not checked (scan query failed)";
+  if (!halfChecked(s, half)) return "not checked (scan query failed)";
   return String(half === "frontend" ? s.secretsDetectedInFrontend : s.secretsDetectedInLogs);
 }
 

@@ -19,6 +19,12 @@ async function getSkillJson<T>(url: string, action: string, init?: RequestInit):
 
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
 
+// "updated <date, time>" from the profile's timestamp, or says it was not reported.
+const updatedAtText = (iso: unknown): string => {
+  const ms = typeof iso === "string" ? Date.parse(iso) : NaN;
+  return Number.isFinite(ms) ? `updated ${new Date(ms).toLocaleString()}` : "whose update time was not reported";
+};
+
 export default function TraderSkillPage() {
   const qc = useQueryClient();
 
@@ -69,6 +75,10 @@ export default function TraderSkillPage() {
           ? `Your skill profile could not be calculated. ${errorMessage(calc.error)}. Nothing is being built; use Recalculate to try again.`
           : "No skill profile yet. Use Recalculate to build one.";
   const profileFailed = profile.isError || calc.isError;
+  // A failed reload keeps the last profile on screen (React Query keeps the
+  // last good data). Say so, and whether a newer one was just calculated.
+  const calculatedId = (calc.data as { profile?: { id?: unknown } } | undefined)?.profile?.id;
+  const newerCalculated = calc.isSuccess && calculatedId != null && p != null && calculatedId !== p.id;
 
   return (
     <div className="space-y-4 p-4">
@@ -88,6 +98,14 @@ export default function TraderSkillPage() {
       {calc.isError && p && (
         <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
           Your profile could not be recalculated. {errorMessage(calc.error)}. The profile below is the previous one.
+        </p>
+      )}
+
+      {profile.isError && p && (
+        <p role="alert" data-testid="skill-profile-reload-failed" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
+          {newerCalculated
+            ? `A new profile was calculated, but it could not be loaded. ${errorMessage(profile.error)}. The profile below is the earlier one ${updatedAtText(p.updatedAt)}, not the one just calculated.`
+            : `Your skill profile could not be reloaded. ${errorMessage(profile.error)}. The profile below is the one ${updatedAtText(p.updatedAt)}; a newer one may exist.`}
         </p>
       )}
 

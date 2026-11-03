@@ -109,7 +109,7 @@ describe("Trade Command Room failed reads", () => {
   });
 
   it("an opportunities read that throws does not take the queue count down with it", async () => {
-    serve({ opps: "throw", queue: { status: 200, body: { counts: { total: 3 } } } });
+    serve({ opps: "throw", queue: { status: 200, body: { counts: { total: 3 }, limit: 100, hasMore: false, adminScope: true } } });
     render(<TradeCommandRoom />);
     await waitFor(() => expect(screen.getByTestId("orders-intent-count").textContent).toBe("3"));
     expect(screen.getByTestId("orders-opps-error")).toBeTruthy();

@@ -4,6 +4,7 @@ import { SymbolPicker } from "./SymbolPicker";
 import { NotificationBell } from "@/components/alerts/NotificationBell";
 import { WifiOff, Lock, Zap, Plug, Globe2, Sun, Moon, CloudMoon } from "lucide-react";
 import { getCurrentSession } from "@/lib/symbol-context";
+import { safeDate } from "@/lib/safeFormat";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { StatusBadgeRow, type StatusPill } from "@/components/ui/StatusBadgeRow";
@@ -208,10 +209,12 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       legacyTestId: "badge-mode",
       tone: p.modeTone === "danger" ? "danger" : p.modeTone === "warning" ? "warning" : "neutral" });
   }
-  if ((p.unlocks.simulator || p.unlocks.mt5) && p.bot) {
-    pills.push({ id: "bot", label: "Bot",
-      value: p.bot.isRunning ? (p.bot.isPaused ? "Paused" : "Running") : "Stopped",
-      tone: p.bot.isRunning ? (p.bot.isPaused ? "warning" : "success") : "neutral" });
+  // GET /bot/status is the saved Bot Control preference (bot_settings). No
+  // scanner, trading loop or execution path reads it, so it is shown as a
+  // saved request in a neutral tone — never as a running or stopped engine.
+  const savedBot = p.bot ? savedBotRequest(p.bot) : null;
+  if ((p.unlocks.simulator || p.unlocks.mt5) && savedBot) {
+    pills.push({ id: "bot", label: "Bot (saved)", value: savedBot, tone: "neutral" });
   }
 
   const drawer = (
@@ -227,10 +230,15 @@ function CompactStatusRow(p: CompactStatusRowProps) {
         <DetailRow label="Broker" value={String(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker)} />
       )}
       {p.mt5?.lastHeartbeatAt && <DetailRow label="Last heartbeat" value={new Date(p.mt5.lastHeartbeatAt as string).toLocaleTimeString()} />}
-      {p.bot && (
+      {savedBot && (
         <>
-          <DetailRow label="Bot state" value={p.bot.isRunning ? (p.bot.isPaused ? "Paused" : "Running") : "Stopped"} />
-          {(p.bot as any).lastScanAt && <DetailRow label="Last scan" value={new Date((p.bot as any).lastScanAt).toLocaleTimeString()} />}
+          <DetailRow label="Saved bot setting" value={savedBot} />
+          {(p.bot as any).lastScanAt && (
+            <DetailRow label="Last scan recorded on this setting" value={safeDate((p.bot as any).lastScanAt, "datetime", "unreadable time")} />
+          )}
+          <p className="text-[10px] text-muted-foreground" data-testid="topbar-bot-scope">
+            A saved Bot Control preference: no scanner, trading loop or execution path reads it, so it does not show whether anything is running.
+          </p>
         </>
       )}
       <div className="pt-2 border-t space-y-1">
@@ -261,6 +269,11 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       )}
     </div>
   );
+}
+
+/** The saved Bot Control start / pause / stop request, worded as a request. */
+function savedBotRequest(bot: { isRunning?: unknown; isPaused?: unknown }): string {
+  return bot.isRunning === true ? (bot.isPaused === true ? "Pause requested" : "Start requested") : "Stop requested";
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {

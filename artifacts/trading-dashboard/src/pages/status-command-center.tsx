@@ -104,7 +104,7 @@ export default function StatusCommandCenter() {
       )}
 
       {/* Fix-first */}
-      <FixFirstBlock primary={ff.primary} alternates={ff.alternates} />
+      <FixFirstBlock primary={ff.primary} alternates={ff.alternates} postureUnmeasured={ctx.executionPostureUnmeasured === true} />
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -219,12 +219,21 @@ function LiveSharedReadinessBanner({
   );
 }
 
-function FixFirstBlock({ primary, alternates }: { primary: ReturnType<typeof fixFirst>["primary"]; alternates: ReturnType<typeof fixFirst>["alternates"] }) {
+function FixFirstBlock({ primary, alternates, postureUnmeasured }: {
+  primary: ReturnType<typeof fixFirst>["primary"];
+  alternates: ReturnType<typeof fixFirst>["alternates"];
+  /** The bridge summary did not read the execution posture, so no mode is assumed. */
+  postureUnmeasured: boolean;
+}) {
   if (!primary) {
     return (
       <div className="rounded-md border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100" data-testid="scc-fix-first-empty">
         <div className="font-semibold">What to fix first</div>
-        <div>No diagnoses to address right now. Stay in simulator/paper while server gates remain in place.</div>
+        <div>
+          {postureUnmeasured
+            ? "No diagnoses from the bridge state this page reads. It does not read your account mode or the execution gates: the Mode row shows your account mode, and every order is still checked server-side."
+            : "No diagnoses to address right now. Stay in simulator/paper while server gates remain in place."}
+        </div>
       </div>
     );
   }

@@ -58,9 +58,24 @@ export default function PropFirmMode() {
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<{ at: number; message: string } | null>(null);
   const [actionResult, setActionResult] = useState<{ ok: boolean; text: string } | null>(null);
-  async function load() {
+  // The Risk Governor uses the saved daily loss cap only while the trader's
+  // own "Block after daily loss" setting is on (resolveEffectiveLimits), so
+  // the page reads that setting and says whether the cap is enforced.
+  const [dailyBlock, setDailyBlock] = useState<{ on: boolean } | { error: string } | null>(null);
+  async function loadDailyBlock() {
     try {
-      const st = await api("/api/prop-firm/status");
+      const rs = await api("/api/me/risk-settings");
+      const v = rs && typeof rs === "object" ? (rs as { blockAfterDailyLossHit?: unknown }).blockAfterDailyLossHit : undefined;
+      setDailyBlock(typeof v === "boolean" ? { on: v } : { error: "the setting was not reported" });
+    } catch (e) {
+      setDailyBlock({ error: (e as Error).message });
+    }
+  }
+  async function load() {
+    const statusRead = api("/api/prop-firm/status");
+    void loadDailyBlock();
+    try {
+      const st = await statusRead;
       if (!isStatus(st)) throw new Error("unexpected response");
       setS(st); setLoadedAt(Date.now()); setLoadError(null);
     } catch (e) {
@@ -79,9 +94,12 @@ export default function PropFirmMode() {
     void load();
   }
   const save = () => run("Save & enable", "/api/prop-firm/configure", { enabled: true, ...edit });
-  // POST /prop-firm/reset turns the mode on with the values already saved and
+  // POST /prop-firm/reset turns the mode on with the prop-firm values already
+  // saved (configurePropFirm({ enabled: true }, { restart: true })) and
   // restarts the challenge (progress is measured again from the paper
-  // account's equity now); no saved value is changed. The button says so.
+  // account's equity now). That writes the prop daily loss, drawdown, lot and
+  // position caps over the trader's current risk limits, so the button and its
+  // title say so.
   const enableSaved = () => run("Turn on with saved values", "/api/prop-firm/reset");
   const disable = () => run("Disable mode", "/api/prop-firm/configure", { enabled: false });
   // A cleared field is "no change", never 0 (Number("") is 0, which the server rejects).
@@ -129,14 +147,24 @@ export default function PropFirmMode() {
           <h1 className="text-2xl font-bold">Prop Firm Risk Mode</h1>
           {/* Progress is read from the paper ledger, but saving writes the caps
               into user_risk_settings, which the venue-agnostic Risk Governor
-              applies to paper, demo and live orders alike. */}
-          <p className="text-sm text-muted-foreground" data-testid="prop-firm-scope">Practise a prop-firm challenge. Progress is measured on your paper account only. Saving also writes the daily loss, total drawdown, lot size and open-position caps into your own risk limits. The Risk Governor applies those limits to every order you place on every venue, including demo and live broker orders. Turning the mode off keeps those limits until you change them.</p>
+              applies to paper, demo and live orders alike. The daily loss cap
+              only counts while blockAfterDailyLossHit is on. */}
+          <p className="text-sm text-muted-foreground" data-testid="prop-firm-scope">Practise a prop-firm challenge. Progress is measured on your paper account only. Saving also writes the daily loss, total drawdown, lot size and open-position caps into your own risk limits. The Risk Governor applies the total drawdown, lot size and open-position caps to every order you place on every venue, including demo and live broker orders. It applies the daily loss cap the same way only while "Block after daily loss" is on in your risk settings. Turning the mode off keeps those limits until you change them.</p>
+          {dailyBlock && (
+            <p className={`text-xs ${"on" in dailyBlock && dailyBlock.on ? "text-muted-foreground" : "text-amber-500"}`} data-testid="prop-firm-daily-loss-enforcement">
+              {"error" in dailyBlock
+                ? `Whether "Block after daily loss" is on could not be checked (${dailyBlock.error}), so it is not known whether the daily loss cap is enforced.`
+                : dailyBlock.on
+                  ? `"Block after daily loss" is on in your risk settings, so the daily loss cap is enforced as well.`
+                  : `"Block after daily loss" is off in your risk settings, so the daily loss cap is not enforced on any order (a daily loss limit set by an operator, if any, still applies). The total drawdown, lot size and open-position caps still apply.`}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground" data-testid="prop-firm-separate">
             This is separate from <a href="/prop-challenge" className="underline">Prop Challenge Practice</a>, which tracks its own challenges with their own balance, rules and status. A status on one page says nothing about the other.
           </p>
         </div>
         <Badge variant="outline" title="Profit, drawdown and rule progress are read from your paper account.">Progress: PAPER</Badge>
-        <Badge variant="outline" className="border-amber-500/50 text-amber-500" title="Saved caps apply to paper, demo and live orders.">Limits: ALL VENUES</Badge>
+        <Badge variant="outline" className="border-amber-500/50 text-amber-500" title={'Saved caps apply to paper, demo and live orders; the daily loss cap only while "Block after daily loss" is on.'}>Limits: ALL VENUES</Badge>
         {s && <Badge className={STATUS_COLOR[statusCode]} data-testid="prop-status-badge" title={statusUnmeasured ? "The mode is on, but no paper equity was measured, so the challenge has no measured status." : undefined}>{statusLabel}</Badge>}
       </div>
 
@@ -209,7 +237,7 @@ export default function PropFirmMode() {
             <Input type="number" placeholder={`Consistency rule % (${s.config.consistencyRulePctOfTotal})`} onChange={(e) => setNum("consistencyRulePctOfTotal", e.target.value)} />
             <div className="md:col-span-3 flex gap-2">
               <Button onClick={save}>Save & enable</Button>
-              <Button variant="outline" onClick={enableSaved} title="Turns the mode on with the values already saved and restarts the challenge: progress is measured again from your paper account's equity now. No saved value is changed.">Turn on with saved values</Button>
+              <Button variant="outline" onClick={enableSaved} title="Turns the mode on with the prop-firm values already saved here and restarts the challenge: progress is measured again from your paper account's equity now. It writes their daily loss, total drawdown, lot size and open-position caps over your current risk limits, replacing any limit you changed since, even a stricter one.">Turn on with saved values</Button>
               <Button variant="ghost" onClick={disable}>Disable mode</Button>
             </div>
           </CardContent>

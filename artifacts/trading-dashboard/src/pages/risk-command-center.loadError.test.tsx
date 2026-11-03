@@ -70,6 +70,45 @@ describe("Risk Command Center failed reads", () => {
     expect(screen.getByTestId("risk-status-badge").textContent).toMatch(/OK.*as of/);
   });
 
+  it("with the risk summary never read, the Rules tab says so instead of 'no prop-firm challenge' or an empty Permissions card", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    window.localStorage.setItem("arx.collapsible.risk.propFirm", "1");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/api/risk/dashboard-cards")) return { ok: false, status: 500, json: async () => ({ error: "db unreadable" }) };
+      return { ok: true, status: 200, json: async () => okBody(u) };
+    }));
+    render(<RiskCommandCenter />);
+    await screen.findByTestId("risk-load-error");
+    const rules = screen.getByTestId("risk-rules-tab");
+    expect(rules.textContent).not.toMatch(/No active prop-firm challenge/i);
+    expect(screen.getByTestId("risk-perm-unread").textContent).toMatch(/Risk summary could not be loaded \(db unreadable\)/);
+    expect(screen.getByTestId("risk-propfirm-section").textContent).toMatch(/Risk summary could not be loaded \(db unreadable\)/);
+  });
+
+  it("with the risk profile never read, the Limits card says it could not be loaded instead of blank and '—' limits", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "limits");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/api/risk-profile")) return { ok: false, status: 503, json: async () => ({ error: "profile store down" }) };
+      return { ok: true, status: 200, json: async () => okBody(u) };
+    }));
+    render(<RiskCommandCenter />);
+    await screen.findByTestId("risk-load-error");
+    const limits = screen.getByTestId("risk-limits-tab");
+    expect(limits.textContent).not.toMatch(/In force/);
+    expect(limits.textContent).not.toMatch(/max lot/);
+    expect(screen.getByTestId("risk-profile-limits").textContent).toMatch(/Risk profile could not be loaded \(profile store down\)/);
+  });
+
+  it("once the profile is read, the in-force line shows the real limits", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "limits");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => okBody(String(url)) })));
+    render(<RiskCommandCenter />);
+    await screen.findByText(/In force/);
+    expect(screen.getByTestId("risk-profile-limits").textContent).toMatch(/max lot 1 · risk\/trade 1%/);
+  });
+
   it("a failed pause is reported, not silently ignored", async () => {
     window.localStorage.setItem("arx.pageTab.risk-command-center", "audit");
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {

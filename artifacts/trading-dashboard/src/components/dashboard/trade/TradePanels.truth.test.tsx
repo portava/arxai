@@ -75,3 +75,63 @@ describe("OrdersPanel scanner rows", () => {
     expect(screen.getByTestId("order-opp-score-EURUSD-M15").textContent).toBe("82");
   });
 });
+
+// The live intent queue counts only its newest `limit` intents (hasMore says
+// older ones exist) and answers non-admins with an admin-only note and zero
+// counts. The trade room took counts.total as the whole queue and showed the
+// admin-only answer as "0 intents / No live intents queued".
+import { TradeStatusBar } from "./TradePanels";
+import { readIntentQueueCount } from "@/lib/intentQueueCount";
+
+describe("Trade Command Room intent count", () => {
+  function propsFor(body: unknown) {
+    const iq = readIntentQueueCount(body);
+    const counted = iq.kind === "exact" || iq.kind === "at_least";
+    return {
+      intentCount: counted ? iq.total : null,
+      intentError: iq.kind === "error",
+      intentAtLeast: iq.kind === "at_least",
+      intentScopeNote: iq.kind === "not_shown" ? iq.note : null,
+    };
+  }
+  const capped = { intents: [], counts: { total: 100 }, limit: 100, hasMore: true, adminScope: true };
+  const nonAdmin = { intents: [], counts: { total: 0 }, scopeNote: "Live Intent Queue is admin-only operator data." };
+
+  it("a capped window reads '100+', with a note that older intents exist", () => {
+    const p = propsFor(capped);
+    render(<OrdersPanel opps={[]} picked={null} onPick={() => {}} {...p} />);
+    expect(screen.getByTestId("orders-intent-count").textContent).toBe("100+");
+    expect(screen.getByTestId("orders-intent-window").textContent).toMatch(/newest 100/);
+    cleanup();
+    render(<TradeStatusBar modeLabel="Demo" isLive={false} gatesLabel="x" {...p} />);
+    expect(screen.getByTestId("trade-intent-badge").textContent).toBe("100+ intents");
+  });
+
+  it("a non-admin's admin-only answer is not '0' / 'No live intents queued'", () => {
+    const p = propsFor(nonAdmin);
+    render(<OrdersPanel opps={[]} picked={null} onPick={() => {}} {...p} />);
+    expect(screen.getByTestId("orders-intent-count").textContent).toBe("—");
+    expect(screen.queryByText(/No live intents queued/)).toBeNull();
+    expect(screen.getByTestId("orders-intent-scope").textContent).toMatch(/admin-only/);
+    cleanup();
+    render(<TradeStatusBar modeLabel="Demo" isLive={false} gatesLabel="x" {...p} />);
+    expect(screen.getByTestId("trade-intent-badge").textContent).toBe("Intents: admin only");
+  });
+
+  it("a failed read stays 'could not be loaded' and an uncapped window stays exact", () => {
+    render(<TradeStatusBar modeLabel="Demo" isLive={false} gatesLabel="x" {...propsFor(null)} />);
+    expect(screen.getByTestId("trade-intent-badge").textContent).toBe("Intents: could not be loaded");
+    cleanup();
+    render(<TradeStatusBar modeLabel="Demo" isLive={false} gatesLabel="x" {...propsFor({ ...capped, counts: { total: 0 }, hasMore: false })} />);
+    expect(screen.getByTestId("trade-intent-badge").textContent).toBe("0 intents");
+  });
+
+  it("the page reads the queue through the window-aware helper", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const page = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../pages/trade-command-room.tsx"), "utf8");
+    expect(page).toMatch(/readIntentQueueCount\(ic\)/);
+    expect(page).not.toMatch(/ic\?\.counts\?\.total/);
+  });
+});

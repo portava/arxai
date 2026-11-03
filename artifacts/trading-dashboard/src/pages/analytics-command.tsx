@@ -156,6 +156,23 @@ export default function AnalyticsCommandCenter() {
           ? `Your analytics snapshot could not be computed. ${errorMessage(generate.error)}. Nothing is computing; use Recompute snapshot to try again.`
           : "No analytics snapshot yet. Use Recompute snapshot to compute one.";
   const snapshotFailed = snap.isError || generate.isError;
+  // A failed reload keeps the last snapshot on screen (React Query keeps the
+  // last good data). Say so, and whether a newer one was just computed.
+  // The comparison is against the saved snapshot row (the figures computed
+  // now carry no snapshot id).
+  const computedId = (generate.data as { snapshot?: { id?: unknown } } | undefined)?.snapshot?.id;
+  const newerComputed = generate.isSuccess && computedId != null && saved != null && computedId !== saved.id;
+  // "saved <date, time>" from the stored row's timestamp, or says it was not reported.
+  const savedPhrase = savedAt ? `saved ${savedAt}` : "whose save time was not reported";
+  const reloadFailedText = !snap.isError
+    ? null
+    : live
+      ? newerComputed
+        ? `A new snapshot was computed, but it could not be loaded. ${errorMessage(snap.error)}. The figures below are from the last successful read, computed ${when(live.asOf) ?? "at an unknown time"}, not the snapshot just computed.`
+        : `Your analytics could not be reloaded. ${errorMessage(snap.error)}. The figures below are from the last successful read, computed ${when(live.asOf) ?? "at an unknown time"}; trades closed since are not included.`
+      : newerComputed
+        ? `A new snapshot was computed, but it could not be loaded. ${errorMessage(snap.error)}. The figures below are from the earlier snapshot ${savedPhrase}, not the one just computed.`
+        : `Your analytics snapshot could not be reloaded. ${errorMessage(snap.error)}. The figures below are from the snapshot ${savedPhrase}; a newer one may exist.`;
 
   // What the money figures cover: the live figures' own coverage (computed with
   // the tiles), else the drawdown or strategy response's. A saved snapshot's
@@ -202,6 +219,12 @@ export default function AnalyticsCommandCenter() {
           The snapshot could not be recomputed. {errorMessage(generate.error)}. {live
             ? `The figures below are computed now from your paper orders; the saved snapshot${savedTaken ? ` (taken ${savedTaken})` : ""} was not updated.`
             : `The figures below are from the${savedTaken ? ` snapshot taken ${savedTaken}` : " previous snapshot"}.`}
+        </p>
+      )}
+
+      {reloadFailedText && s && (
+        <p role="alert" data-testid="analytics-snapshot-reload-failed" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
+          {reloadFailedText}
         </p>
       )}
 
@@ -265,7 +288,7 @@ export default function AnalyticsCommandCenter() {
           {dd.isError ? (
             <LoadError what="The equity curve and drawdown" error={dd.error} />
           ) : dd.isPending ? (
-            <p className="p-3 text-center text-[11px] text-slate-500">Loading the equity curve…</p>
+            <Loading text="Loading the equity curve…" />
           ) : pnlNotMeasured && coverage ? (
             <Unavailable text={coverage.note} />
           ) : (
@@ -284,6 +307,8 @@ export default function AnalyticsCommandCenter() {
             <ConsistencyTrendCard snapshot={s} />
             {sess.isError
               ? <LoadError what="Session performance" error={sess.error} />
+              : sess.isPending
+                ? <Loading text="Loading session performance…" />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
                 : <SessionHeatmap data={sess.data?.session ?? {}} basis={sess.data?.sessionBasis} />}
@@ -291,12 +316,16 @@ export default function AnalyticsCommandCenter() {
 
           {emo.isError
             ? <LoadError what="The emotional trend" error={emo.error} />
+            : emo.isPending
+              ? <Loading text="Loading the emotional trend…" />
             : <EmotionalTrendGraph trend={emo.data?.trend ?? []} />}
 
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Results by symbol</h3>
             {strat.isError
               ? <LoadError what="Strategy analytics" error={strat.error} />
+              : strat.isPending
+                ? <Loading text="Loading strategy analytics…" />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={coverage.note} />
                 : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />}
@@ -333,6 +362,10 @@ function LoadError({ what, error }: { what: string; error: unknown }) {
       {what} could not be loaded. {errorMessage(error)}
     </p>
   );
+}
+// A section whose read has not answered yet: never an empty or zero state.
+function Loading({ text }: { text: string }) {
+  return <p className="p-3 text-center text-[11px] text-slate-500">{text}</p>;
 }
 function Stat({ id, label, v, tone }: { id?: string; label: string; v: string; tone?: "emerald"|"red" }) {
   const t = tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";

@@ -115,7 +115,7 @@ export default function ActionCenterPage() {
             <ShieldCheck className="h-6 w-6 text-primary" /> Trade Action Center
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl" data-testid="text-action-center-scope">
-            Review, confirm, and audit trade actions. Actions drafted for you here — AI suggestions and your own requests — are never sent until you confirm them. Other automation does not wait for that: autopilot sessions place simulator and paper trades on their own and do not appear on this page, and Protective Auto-Close, when its policy allows, confirms its own close actions. Decision support only — not guaranteed.
+            Review, confirm, and audit trade actions. Actions drafted for you here — AI suggestions and your own requests — are never sent until you confirm them. Other automation does not wait for that, and its orders are not listed on this page: autopilot sessions place simulator and paper trades on their own; Self-Trade AI agents, once an operator starts them, can open trades and move stops on or close MT5 positions; and the post-fill protection check restores a missing or widened stop loss by itself. Protective Auto-Close does appear here: when its policy allows, it confirms its own close actions. Decision support only — not guaranteed.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={reload} disabled={loading} data-testid="button-refresh-actions">

@@ -47,6 +47,7 @@ import {
   type MentorSession,
 } from "@/components/aiMentor";
 import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "@/lib/mentorApi";
+import { safeDate } from "@/lib/safeFormat";
 
 // Ruby Command Center — 4-tab, user-facing surface.
 //
@@ -868,13 +869,20 @@ export function MemoryTab() {
  *  Center reports. Each surface names the engine it reports. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function PaperAutopilotSummaryCard({ a }: { a: any }) {
-  // "Today" is the UTC day. A missing summary is "could not be loaded", never
-  // a row of zeros. When the server counted "today" from a read window
-  // (today_counts_capped) the counts are lower bounds.
+  // A missing summary is "could not be loaded", never a row of zeros. When the
+  // server counted "today" from a read window (today_counts_capped) the counts
+  // are lower bounds.
   const loaded = a != null && typeof a.cycles_today === "number";
   const capped = loaded && a.today_counts_capped === true;
+  // A count the summary did not return is unknown ("—"), never 0.
   const n = (v: unknown) =>
-    loaded && typeof v === "number" ? `${v}${capped ? "+" : ""}` : "—";
+    loaded && typeof v === "number" && Number.isFinite(v)
+      ? `${v}${capped ? "+" : ""}`
+      : "—";
+  // "Today" is the server's UTC calendar day — not the reader's local day.
+  // The tiles say "(UTC)" only when the summary reports that basis.
+  const utc = loaded && a.today_basis === "UTC";
+  const today = (label: string) => (utc ? `${label} today (UTC)` : `${label} today`);
   return (
     <Card className="rounded-2xl border-border bg-card">
       <CardHeader>
@@ -893,24 +901,24 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
       </CardHeader>
       <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
-          <div className="text-txt-secondary text-xs">Cycles today (UTC)</div>
+          <div className="text-txt-secondary text-xs">{today("Cycles")}</div>
           <div className="font-bold" data-testid="autopilot-cycles-today">{n(a?.cycles_today)}</div>
         </div>
         <div>
-          <div className="text-txt-secondary text-xs">Opened today (UTC)</div>
+          <div className="text-txt-secondary text-xs">{today("Opened")}</div>
           <div className="font-bold">
             {n(a?.paper_trades_opened_today)}
           </div>
         </div>
         <div>
-          <div className="text-txt-secondary text-xs">Closed today (UTC)</div>
+          <div className="text-txt-secondary text-xs">{today("Closed")}</div>
           <div className="font-bold">
             {n(a?.paper_trades_closed_today)}
           </div>
         </div>
         <div>
           <div className="text-txt-secondary text-xs">
-            Safety blocks today (UTC)
+            {today("Safety blocks")}
           </div>
           <div className="font-bold">{n(a?.safety_blocks_today)}</div>
         </div>
@@ -924,11 +932,23 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
               cycles and trades are unknown.
             </span>
           </div>
-        ) : a.cycles_today === 0 ? (
-          <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
-            No autopilot cycle has run today (UTC), so it has opened, closed and blocked nothing today.
-          </div>
-        ) : null}
+        ) : (
+          <>
+            <div
+              className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
+              data-testid="paper-autopilot-day-basis"
+            >
+              {utc
+                ? "Today = the UTC calendar day (from 00:00 UTC), not your local day."
+                : "The day boundary \u201ctoday\u201d uses was not reported by the summary."}
+            </div>
+            {a.cycles_today === 0 && (
+              <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
+                No autopilot cycle has run today{utc ? " (UTC)" : ""}, so it has opened, closed and blocked nothing today.
+              </div>
+            )}
+          </>
+        )}
         {capped && (
           <div
             className="col-span-2 sm:col-span-4 text-xs text-warning"
@@ -940,8 +960,14 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         )}
         {loaded && a.last_cycle && (
-          <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
-            Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2"
+            data-testid="paper-autopilot-last-cycle"
+          >
+            {/* Latest cycle overall — not necessarily one of today's. */}
+            Last cycle (started{" "}
+            {safeDate(a.last_cycle.started_at, "datetime", "time not reported")}):{" "}
+            {a.last_cycle.autopilot_cycle_id} —{" "}
             {a.last_cycle.status} · opened{" "}
             {a.last_cycle.paper_trades_opened} · rejected{" "}
             {a.last_cycle.paper_trades_rejected}

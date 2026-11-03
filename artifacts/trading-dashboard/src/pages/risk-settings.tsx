@@ -88,14 +88,28 @@ function isPresetMode(mode: string | null | undefined): mode is PresetMode {
   return mode === "Conservative" || mode === "Balanced" || mode === "Aggressive";
 }
 
+// PLATFORM_RISK_CEILINGS.maxLotSize in the api-server's riskGovernor/preTrade.ts.
+// GET /risk/settings reports a trader with no lot cap of their own as this
+// value, so at or above it the number is not (only) a stored cap.
+const PLATFORM_LOT_CEILING = 5;
+
+/** What the settings read says about one limit, and where the number comes from. */
+function storedText(key: keyof PresetLimits, v: unknown, fmt: (v: number) => string): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "not reported";
+  if (key === "maxLotSize") {
+    if (Math.abs(v - PLATFORM_LOT_CEILING) < 1e-6) return `no lot cap of your own below the platform ceiling (${fmt(v)})`;
+    if (v > PLATFORM_LOT_CEILING) return `${fmt(v)} stored, above the platform ceiling of ${fmt(PLATFORM_LOT_CEILING)}`;
+  }
+  return `${fmt(v)} stored`;
+}
+
 /** Stored limits that are not the preset's value, worded "stored, preset". */
 function presetDiffs(mode: PresetMode, stored: Partial<Record<keyof PresetLimits, unknown>>) {
   const preset = PRESET_LIMITS[mode];
   return PRESET_FIELDS.flatMap((f) => {
     const v = stored[f.key];
     if (typeof v === "number" && Math.abs(v - preset[f.key]) < 1e-6) return [];
-    const shown = typeof v === "number" && Number.isFinite(v) ? f.fmt(v) : "not reported";
-    return [`${f.label}: ${shown} stored, preset ${f.fmt(preset[f.key])}`];
+    return [`${f.label}: ${storedText(f.key, v, f.fmt)}, preset ${f.fmt(preset[f.key])}`];
   });
 }
 
@@ -146,6 +160,13 @@ const MISMATCH_BADGE = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
 // Nothing read means nothing to show: no mode, limit, rule or lock state is
 // assumed while GET /risk/settings has failed.
 const SETTINGS_UNREAD = "could not be loaded";
+
+// React Query keeps the last good `data` when a later read fails. While the
+// latest read has failed (or is being retried after a failure) that data is
+// not current, so no verdict or state is shown from it.
+const latestReadFailed = (q: { isError: boolean; failureCount: number }) => q.isError || q.failureCount > 0;
+const lastReadText = (dataUpdatedAt: number | undefined) =>
+  dataUpdatedAt && dataUpdatedAt > 0 ? `the last successful read was at ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "";
 
 // ── Custom limits form schema ────────────────────────────────────────────────
 
@@ -287,15 +308,18 @@ function riskAuditVerdict(audit: { passed: boolean; tradingHalt?: HaltRead }, ba
 
 export function AuditBanner({ symbol }: { symbol?: string }) {
   const auditParams = symbol ? { symbol } : {};
-  const { data: audit, isLoading, isError } = useGetRiskAudit(
+  const auditQ = useGetRiskAudit(
     auditParams,
     { query: { queryKey: getGetRiskAuditQueryKey(auditParams), refetchInterval: 30_000 } }
   );
+  const { data: audit, isLoading } = auditQ;
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
   // No audit read is no verdict: say so where the verdict normally sits. A
-  // failed refresh does not keep showing the last verdict as current.
-  if (isError || !audit) {
+  // later read that failed (or is being retried) leaves the old verdict
+  // unproven, so it is not shown as current.
+  if (!audit || latestReadFailed(auditQ)) {
+    const last = audit ? lastReadText(auditQ.dataUpdatedAt) : "";
     return (
       <div
         className="flex items-center gap-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-3"
@@ -305,7 +329,9 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
         <div className="min-w-0" data-testid="risk-audit-banner-unavailable">
           <p className="font-semibold text-sm text-yellow-300" data-testid="risk-audit-banner-error">Risk audit could not be loaded</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            No risk verdict is shown, because no current one was read. It is retried every 30 seconds.
+            {audit
+              ? `The latest read failed, so no risk verdict is shown${last ? `; ${last}` : ""}. It is retried every 30 seconds.`
+              : "No risk verdict is shown, because none was read. It is retried every 30 seconds."}
           </p>
         </div>
       </div>
@@ -462,15 +488,23 @@ export default function RiskSettings() {
 
   const { data: settings, isLoading } = useGetRiskSettings();
   // Bot Control and the kill switch elsewhere change this row too, so it is re-read.
-  const { data: botStatus, isError: botStatusFailed } = useGetBotStatus(
+  const botQ = useGetBotStatus(
     { query: { queryKey: getGetBotStatusQueryKey(), refetchInterval: 30_000 } },
   );
-  // Same query as the audit banner: it also carries the stop-switch read.
-  const { data: auditForHalt, isError: auditHaltError, isLoading: auditHaltLoading } = useGetRiskAudit(
+  const { data: botStatus } = botQ;
+  // A failed poll leaves the previous row in `data`; System Status does not
+  // show it as current.
+  const botStatusFailed = latestReadFailed(botQ);
+  const botStatusCurrent = botStatusFailed ? undefined : botStatus;
+  // Same query as the audit banner: it also carries the stop-switch read. A
+  // read whose latest refetch failed is not a current stop-switch state.
+  const auditHaltQ = useGetRiskAudit(
     {},
     { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } }
   );
-  const halt = auditForHalt?.tradingHalt;
+  const auditHaltFailed = latestReadFailed(auditHaltQ);
+  const auditHaltLoading = auditHaltQ.isLoading;
+  const halt = auditHaltFailed ? undefined : auditHaltQ.data?.tradingHalt;
   const stopScope = botStatus?.emergencyStopScope;
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
@@ -729,7 +763,7 @@ export default function RiskSettings() {
               <XCircle size={12} className="mr-1.5" /> New trades halted
             </Badge>
           )}
-          {botStatus?.isPaused && (
+          {botStatusCurrent?.isPaused && (
             <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border" data-testid="bot-paused-flag-badge">
               <PauseCircle size={12} className="mr-1.5" /> Bot paused flag set
             </Badge>
@@ -1515,7 +1549,7 @@ export default function RiskSettings() {
           {/* Quick Actions Grid */}
           <div className="grid md:grid-cols-3 gap-4">
             {/* Pause / Resume */}
-            <Card className="border-yellow-500/30">
+            <Card className="border-yellow-500/30" data-testid="pause-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2 text-yellow-400">
                   <PauseCircle size={16} /> Bot Paused Flag
@@ -1525,7 +1559,14 @@ export default function RiskSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {botStatus?.isPaused ? (
+                {/* No current bot status read: no paused / not-paused state is
+                    shown, and only the stricter pause request is offered. */}
+                {!botStatusCurrent ? (
+                  <p className="text-xs text-muted-foreground" data-testid="pause-state-unread">
+                    Pause state {botStatusFailed ? "could not be loaded" : "is not loaded yet"}: it is not shown as
+                    paused or running, because the bot status was not read.
+                  </p>
+                ) : botStatusCurrent.isPaused ? (
                   <Alert className="border-yellow-500/30 bg-yellow-500/5 py-2">
                     <PauseCircle className="h-3 w-3 text-yellow-400" />
                     <AlertDescription className="text-xs text-yellow-300 ml-1">The bot paused flag is set. New trades are not stopped by it.</AlertDescription>
@@ -1535,17 +1576,19 @@ export default function RiskSettings() {
                   variant="outline"
                   className={cn(
                     "w-full gap-2 border",
-                    botStatus?.isPaused
+                    botStatusCurrent?.isPaused
                       ? "border-success/40 text-success hover:bg-success/10"
                       : "border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
                   )}
-                  onClick={botStatus?.isPaused ? handleResumeTrading : handlePauseTrading}
+                  onClick={botStatusCurrent?.isPaused ? handleResumeTrading : handlePauseTrading}
                   disabled={updateBotStatus.isPending}
                 >
-                  {botStatus?.isPaused ? (
+                  {botStatusCurrent?.isPaused ? (
                     <><Activity size={14} /> Clear Paused Flag</>
-                  ) : (
+                  ) : botStatusCurrent ? (
                     <><PauseCircle size={14} /> Set Paused Flag</>
+                  ) : (
+                    <><PauseCircle size={14} /> Set Paused Flag (current state not read)</>
                   )}
                 </Button>
               </CardContent>
@@ -1555,10 +1598,12 @@ export default function RiskSettings() {
                 The permission status and checklists list it as a blocker; no
                 order path reads it, so the card never claims it stops or
                 permits live trading. */}
-            <Card className="border border-border/50">
+            <Card className="border border-border/50" data-testid="live-lock-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  {settings?.liveLocked
+                  {!settings
+                    ? <><AlertTriangle size={16} className="text-muted-foreground" /> <span>Live Mode Lock</span></>
+                    : settings.liveLocked
                     ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: on</span></>
                     : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: off</span></>}
                 </CardTitle>
@@ -1569,6 +1614,14 @@ export default function RiskSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
+                {/* Settings unread: the lock is neither on nor off on this
+                    page, and only the stricter "on" request is offered. */}
+                {!settings && (
+                  <p className="text-xs text-muted-foreground" data-testid="live-lock-unread">
+                    Live lock state {SETTINGS_UNREAD}: it is not shown as on or off, because your risk
+                    settings were not read.
+                  </p>
+                )}
                 <Button
                   variant="outline"
                   className="w-full gap-2 border"
@@ -1577,8 +1630,10 @@ export default function RiskSettings() {
                 >
                   {settings?.liveLocked ? (
                     <><Unlock size={14} /> Turn live mode lock off</>
-                  ) : (
+                  ) : settings ? (
                     <><Lock size={14} /> Turn live mode lock on</>
+                  ) : (
+                    <><Lock size={14} /> Turn live mode lock on (current state not read)</>
                   )}
                 </Button>
               </CardContent>
@@ -1596,7 +1651,10 @@ export default function RiskSettings() {
                 {(() => {
                   // A row nobody read is grey "could not be loaded", never a green "NO".
                   const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
+                  const bot = botStatusCurrent;
                   // id keeps each row's stable test id; label is what the row says.
+                  // The bot rows are the saved Bot Control preference, which no
+                  // engine reads: "start requested", never "is running".
                   const rows: { id: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread"; testId?: string }[] = [
                     halt
                       ? {
@@ -1606,18 +1664,18 @@ export default function RiskSettings() {
                         }
                       : {
                           id: "Stop switch", label: "Stop switch",
-                          value: auditHaltError ? "could not be loaded" : auditHaltLoading ? "loading" : "not read",
+                          value: auditHaltFailed ? "could not be loaded" : auditHaltLoading ? "loading" : "not read",
                           tone: "unread",
                         },
-                    botStatus
-                      ? { id: "Bot Mode", label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
+                    bot
+                      ? { id: "Bot Mode", label: "Bot Mode", value: bot.mode, tone: bot.mode === "OFF" || !bot.isRunning ? "ok" : "warn" }
                       : { id: "Bot Mode", label: "Bot Mode", value: botUnread, tone: "unread" },
-                    botStatus
-                      ? { id: "Is Running", label: "Is Running", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
-                      : { id: "Is Running", label: "Is Running", value: botUnread, tone: "unread" },
+                    bot
+                      ? { id: "Is Running", label: "Start requested (saved)", value: bot.isRunning ? "YES" : "NO", tone: bot.isRunning ? "warn" : "ok" }
+                      : { id: "Is Running", label: "Start requested (saved)", value: botUnread, tone: "unread" },
                     // The paused flag is not a stop: no order path reads it, so it is never green.
-                    botStatus
-                      ? { id: "Is Paused", label: "Paused flag", value: botStatus.isPaused ? "SET" : "NOT SET", tone: botStatus.isPaused ? "warn" : "neutral" }
+                    bot
+                      ? { id: "Is Paused", label: "Paused flag", value: bot.isPaused ? "SET" : "NOT SET", tone: bot.isPaused ? "warn" : "neutral" }
                       : { id: "Is Paused", label: "Paused flag", value: botUnread, tone: "unread" },
                     // The live mode lock is a preference, not a gate: shown neutral, never green/amber.
                     !settings
@@ -1666,10 +1724,13 @@ export default function RiskSettings() {
 // ── Detailed Risk Audit Component ────────────────────────────────────────────
 
 export function RiskAuditDetail() {
-  const { data: audit, isLoading, isError, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
+  const auditQ = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
+  const { data: audit, isLoading, refetch } = auditQ;
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (isError || !audit) {
+  // A later read that failed leaves the old audit unproven: not shown as current.
+  if (!audit || latestReadFailed(auditQ)) {
+    const last = audit ? lastReadText(auditQ.dataUpdatedAt) : "";
     return (
       <Card className="border-yellow-500/30" data-testid="risk-audit-detail">
         <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
@@ -1677,13 +1738,17 @@ export function RiskAuditDetail() {
             <CardTitle className="text-base flex items-center gap-2">
               <Activity size={16} /> Legacy Risk Audit
             </CardTitle>
-            <CardDescription className="text-xs" data-testid="risk-audit-detail-error">The risk audit could not be loaded</CardDescription>
+            <CardDescription className="text-xs" data-testid="risk-audit-detail-error">
+              The risk audit could not be loaded{audit ? ` (latest read failed${last ? `; ${last}` : ""})` : ""}
+            </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
         </CardHeader>
         <CardContent className="p-6" data-testid="risk-audit-detail-unavailable">
           <p className="text-sm text-yellow-300">
-            No metrics, blocked conditions or warnings are shown, because the audit could not be checked.
+            {audit
+              ? `No metrics, blocked conditions or warnings are shown, because the latest read of the audit could not be loaded${last ? `; ${last}` : ""}.`
+              : "No metrics, blocked conditions or warnings are shown, because the audit could not be checked."}
           </p>
         </CardContent>
       </Card>

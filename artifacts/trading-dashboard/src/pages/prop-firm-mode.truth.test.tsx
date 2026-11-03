@@ -82,6 +82,20 @@ describe("Prop Firm Mode — labels", () => {
     expect(calls.some((c) => c.url.endsWith("/prop-firm/reset") && c.method === "POST")).toBe(true);
   });
 
+  // Regression: the title said "It does not reset any value", but
+  // /prop-firm/reset calls configurePropFirm({ enabled: true }), which writes
+  // the prop daily loss, drawdown, lot and position caps over the trader's
+  // current risk limits, replacing any they tightened since.
+  it("the 'Turn on with saved values' title says it writes the prop caps over the current risk limits", async () => {
+    stubFetch(() => json(status({ status: "OFF", config: { ...status().config, enabled: false } })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Turn on with saved values")).toBeTruthy());
+    const title = screen.getByText("Turn on with saved values").getAttribute("title") ?? "";
+    expect(title).not.toMatch(/does not reset any value/);
+    expect(title).toMatch(/writes their daily loss, total drawdown, lot size and open-position caps over your current risk limits/);
+    expect(title).toMatch(/even a stricter one/);
+  });
+
   it("while the mode is OFF no rule shows a tick, even if an older server lists them as passed", async () => {
     stubFetch(() => json(status({ status: "OFF", rulesEvaluated: undefined, config: { ...status().config, enabled: false } })));
     render(<PropFirmMode />);
@@ -143,6 +157,47 @@ describe("Prop Firm Mode — scope of the saved limits", () => {
     expect(screen.queryByText("PAPER")).toBeNull();
     expect(screen.getByText("Progress: PAPER")).toBeTruthy();
     expect(screen.getByText("Limits: ALL VENUES")).toBeTruthy();
+  });
+});
+
+// Regression: the header said the Risk Governor applies the saved daily loss
+// cap to every order on every venue, but resolveEffectiveLimits uses the
+// trader's maxDailyLossAmount only while blockAfterDailyLossHit is on. With
+// "Block after daily loss" off the cap is saved and enforced nowhere.
+describe("Prop Firm Mode — the daily loss cap depends on Block after daily loss", () => {
+  const withSettings = (settings: Response | (() => Response)) => (c: Call) =>
+    c.url === "/api/me/risk-settings" ? (typeof settings === "function" ? settings() : settings) : json(status());
+
+  it("the header says the daily loss cap applies only while Block after daily loss is on", async () => {
+    stubFetch(withSettings(json({ blockAfterDailyLossHit: true })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    const scope = screen.getByTestId("prop-firm-scope").textContent ?? "";
+    expect(scope).toMatch(/daily loss cap the same way only while "Block after daily loss" is on/);
+    expect(scope).not.toMatch(/applies those limits to every order/);
+  });
+
+  it("with Block after daily loss off, the page says the daily loss cap is not enforced", async () => {
+    stubFetch(withSettings(json({ blockAfterDailyLossHit: false })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/is off/));
+    const line = screen.getByTestId("prop-firm-daily-loss-enforcement").textContent ?? "";
+    expect(line).toMatch(/daily loss cap is not enforced on any order/);
+    expect(line).toMatch(/total drawdown, lot size and open-position caps still apply/);
+  });
+
+  it("with Block after daily loss on, the page says the daily loss cap is enforced", async () => {
+    stubFetch(withSettings(json({ blockAfterDailyLossHit: true })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/is on/));
+    expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).not.toMatch(/not enforced/);
+  });
+
+  it("a failed settings read says whether the cap is enforced could not be checked", async () => {
+    stubFetch(withSettings(() => json({ error: "boom" }, 500)));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/could not be checked \(boom \(HTTP 500\)\)/));
+    expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/not known whether the daily loss cap is enforced/);
   });
 });
 

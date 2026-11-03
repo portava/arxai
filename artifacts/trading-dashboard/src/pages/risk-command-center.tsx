@@ -189,6 +189,11 @@ export default function RiskCommandCenter() {
 
   const failed = (Object.keys(loadErrors) as Source[]);
   const stale = (src: Source) => loadErrors[src] != null && lastRead[src] != null;
+  // A section whose source has no successful read says so: a failed read is
+  // never shown as "none", an empty list or blank limits.
+  const unreadText = (src: Source) => (loadErrors[src] != null
+    ? `${SOURCE_LABEL[src]} could not be loaded (${loadErrors[src]}).`
+    : `Loading ${SOURCE_LABEL[src].toLowerCase()}…`);
 
   // ---- Tab contents -----------------------------------------------------
 
@@ -232,9 +237,11 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-limits-tab">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Your risk profile · {profile?.preset}</CardTitle>
-          <CardDescription>
-            In force (strictest of yours, admin and platform): max lot {profile?.effectiveLimits.maxLotSize} · risk/trade {profile?.effectiveLimits.maxRiskPerTradePercent}%{profile?.effectiveLimits.maxRiskPerTradeAmount != null ? ` or $${profile.effectiveLimits.maxRiskPerTradeAmount}` : ""} · daily loss {profile?.effectiveLimits.maxDailyLossPercent ?? "—"}%{profile?.effectiveLimits.maxDailyLossAmount != null ? ` or $${profile.effectiveLimits.maxDailyLossAmount}` : ""} · trades/day {profile?.effectiveLimits.discipline.maxTradesPerDay ?? "—"} · open trades {profile?.effectiveLimits.discipline.maxOpenTrades ?? "—"} · min R:R {profile?.settings.minRewardRiskRatio}
+          <CardTitle className="text-base">Your risk profile{profile ? ` · ${profile.preset}` : ""}</CardTitle>
+          <CardDescription data-testid="risk-profile-limits">
+            {profile ? (
+              <>In force (strictest of yours, admin and platform): max lot {profile.effectiveLimits.maxLotSize} · risk/trade {profile.effectiveLimits.maxRiskPerTradePercent}%{profile.effectiveLimits.maxRiskPerTradeAmount != null ? ` or $${profile.effectiveLimits.maxRiskPerTradeAmount}` : ""} · daily loss {profile.effectiveLimits.maxDailyLossPercent ?? "—"}%{profile.effectiveLimits.maxDailyLossAmount != null ? ` or $${profile.effectiveLimits.maxDailyLossAmount}` : ""} · trades/day {profile.effectiveLimits.discipline.maxTradesPerDay ?? "—"} · open trades {profile.effectiveLimits.discipline.maxOpenTrades ?? "—"} · min R:R {profile.settings.minRewardRiskRatio}</>
+            ) : unreadText("profile")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
@@ -275,7 +282,7 @@ export default function RiskCommandCenter() {
           <CardDescription>What stops new trades on your account right now: your stop switches and your daily and weekly loss limits. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1">
-          {cards && (() => {
+          {cards ? (() => {
             const v = newTradesVerdict(cards);
             return v.blocked ? (
               <div data-testid="risk-perm-new-trades">
@@ -295,17 +302,19 @@ export default function RiskCommandCenter() {
                 <p className="mt-1 text-xs text-muted-foreground">This is not an approval: each order is still checked by the Risk Governor when you place it.</p>
               </div>
             );
-          })()}
+          })() : <p className="text-xs text-muted-foreground" data-testid="risk-perm-unread">{unreadText("cards")}</p>}
         </CardContent>
       </Card>
 
       <CollapsibleSection
         title="Prop-firm rules"
-        description={cards?.propFirm ? `Status ${propFirmStatusText(cards.propFirm)}` : "Open only when a prop-firm challenge is active."}
+        description={!cards ? unreadText("cards") : cards.propFirm ? `Status ${propFirmStatusText(cards.propFirm)}` : "Open only when a prop-firm challenge is active."}
         storageKey="risk.propFirm"
         testId="risk-propfirm-section"
       >
-        {cards?.propFirm ? (
+        {!cards ? (
+          <p className="text-xs text-muted-foreground">{unreadText("cards")}</p>
+        ) : cards.propFirm ? (
           <div className="text-xs space-y-1">
             <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{propFirmStatusText(cards.propFirm)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{propFirmProgressText(cards.propFirm)}</span></div>

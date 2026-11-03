@@ -1,6 +1,6 @@
 // System Health truth: a check that did not run is never reported as passed.
 //
-// Locks four inaccuracies on the admin System Health page:
+// Locks five inaccuracies on the admin System Health page:
 //   (a) the secret-redaction scan swallowed a failed DB query into zero
 //       findings, so the page said "Working: true" with the database down;
 //   (b) overallStatus was computed BEFORE the persist step pushed
@@ -10,7 +10,9 @@
 //       with constant claims nobody measured ("critical alerts work",
 //       "secrets redacted", "paper-only enforced", ...);
 //   (d) with every subsystem OK on reachability alone, the report still said
-//       "System healthy — no admin action required".
+//       "System healthy — no admin action required";
+//   (e, f) secret-shaped strings found by the half of the scan that ran were
+//       dropped when the other half could not run.
 //
 // Runs the REAL runHealthCheck with its I/O seams replaced by module mocks:
 // no database, no broker, no network (fetch is stubbed).
@@ -18,7 +20,13 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-const state = { dbDown: false, insertFails: false };
+const state = { dbDown: false, insertFails: false, logScanFails: false, frontendLeaks: 0 };
+
+// The SQL text of a drizzle `sql` template, to route the two secret-scan queries.
+function sqlText(q: unknown): string {
+  const chunks = (q as { queryChunks?: Array<{ value?: unknown }> })?.queryChunks ?? [];
+  return chunks.map((c) => (Array.isArray(c?.value) ? c.value.join("") : "")).join("");
+}
 
 const EXPECTED_TABLES = [
   "trades", "signals", "alerts", "safety_core",
@@ -45,8 +53,11 @@ function chain(resolve: () => Promise<unknown>): unknown {
 }
 
 const fakeDb = {
-  execute: async () => {
+  execute: async (q: unknown) => {
     if (state.dbDown) throw new Error("connect ECONNREFUSED (fixture)");
+    const text = sqlText(q);
+    if (/from notification_logs where message/.test(text) && state.logScanFails) throw new Error("notification_logs scan failed (fixture)");
+    if (/from notifications where message/.test(text)) return { rows: [{ c: state.frontendLeaks }] };
     return { rows: ROWS };
   },
   select: () => chain(async () => {
@@ -173,4 +184,35 @@ test("(d) reachability-only OKs: no 'System healthy' claim, and the report names
   assert.ok(action, r.recommendedAdminActions.join(" | "));
   assert.match(action!, new RegExp(`${r.reachabilityOnlySubsystems.length} of 12 subsystems`));
   assert.match(action!, /service health was not checked/);
+});
+
+test("(e) secret-shaped strings found by the half of the scan that ran fail the check, even when the other half could not run", async (t) => {
+  state.dbDown = false; state.insertFails = false; state.logScanFails = true; state.frontendLeaks = 3;
+  try {
+    stubFetch(t);
+    const r = await runHealthCheck();
+    assert.equal(r.secretSafetyStatus.frontendScanChecked, true);
+    assert.equal(r.secretSafetyStatus.logScanChecked, false);
+    assert.equal(r.secretSafetyStatus.secretsDetectedInFrontend, 3);
+    assert.ok(r.errors.includes("secret redaction warnings — investigate"), r.errors.join(" | "));
+    assert.equal(r.overallStatus, "FAILED");
+    // The unrun half is still reported, and names which half it was.
+    assert.ok(r.warnings.some((w) => /notification log/.test(w) && /could not run/.test(w)), r.warnings.join(" | "));
+  } finally {
+    state.logScanFails = false; state.frontendLeaks = 0;
+  }
+});
+
+test("(f) the half that ran found nothing and the other could not run: a warning, not a pass and not an error", async (t) => {
+  state.dbDown = false; state.insertFails = false; state.logScanFails = true; state.frontendLeaks = 0;
+  try {
+    stubFetch(t);
+    const r = await runHealthCheck();
+    assert.equal(r.secretSafetyStatus.redactionWorking, false);
+    assert.ok(!r.errors.includes("secret redaction warnings — investigate"), r.errors.join(" | "));
+    assert.ok(r.warnings.some((w) => /could not run/.test(w)), r.warnings.join(" | "));
+    assert.notEqual(r.overallStatus, "HEALTHY");
+  } finally {
+    state.logScanFails = false; state.frontendLeaks = 0;
+  }
 });

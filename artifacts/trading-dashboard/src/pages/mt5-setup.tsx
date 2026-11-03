@@ -62,12 +62,15 @@ export type BridgeHeartbeatView = {
  * heartbeat.
  *
  * The age is the server's own measurement (`heartbeatAgeSeconds`, server
- * clock) plus the time this browser has waited since the response arrived
- * (`receivedAtMs`, browser clock), so a browser clock that runs ahead of or
- * behind the server neither hides a fresh heartbeat nor freezes the age. Only
- * an older server that sends no age falls back to `nowMs - lastHeartbeatAt`.
+ * clock) plus the time this browser has waited since it sent the request
+ * (`sentAtMs`, browser clock), so a browser clock that runs ahead of or
+ * behind the server neither hides a fresh heartbeat nor freezes the age.
+ * Counting from the send time means the request's transit, the server's own
+ * work after it measured the age and any wait for other reads can only
+ * overstate the age, never make the heartbeat look fresher. Only an older
+ * server that sends no age falls back to `nowMs - lastHeartbeatAt`.
  */
-export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: number, receivedAtMs: number = nowMs): BridgeHeartbeatView {
+export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: number, sentAtMs: number = nowMs): BridgeHeartbeatView {
   if (!conn) return { state: "waiting", label: "Waiting for heartbeat", lastHeartbeat: "—" };
   if (conn.lastHeartbeatAt === undefined) {
     // Server did not report a heartbeat time: it cannot be shown or banded.
@@ -82,7 +85,7 @@ export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: num
   }
   const serverAgeS = conn.heartbeatAgeSeconds;
   const ageMs = typeof serverAgeS === "number" && Number.isFinite(serverAgeS) && serverAgeS >= 0
-    ? serverAgeS * 1000 + Math.max(0, nowMs - receivedAtMs)
+    ? serverAgeS * 1000 + Math.max(0, nowMs - sentAtMs)
     : heartbeatAgeMsFrom(conn.lastHeartbeatAt, nowMs);
   const local = classifyHeartbeatAgeMs(ageMs);
   const server = conn.heartbeatFreshness ?? local;
@@ -1842,9 +1845,9 @@ function PlatformMasterBridgeCard() {
 export default function MT5SetupWizardPage() {
   const [secrets, setSecrets] = useState<SecretsStatus | null>(null);
   const [conn, setConn] = useState<ConnectionCheck | null>(null);
-  // Browser time the connection check arrived, and a 1 s clock, so the
+  // Browser time the connection check was sent, and a 1 s clock, so the
   // heartbeat age keeps counting (and the label decays) between refreshes.
-  const [connReceivedAt, setConnReceivedAt] = useState<number>(() => Date.now());
+  const [connSentAt, setConnSentAt] = useState<number>(() => Date.now());
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [bstat, setBstat] = useState<BrokerStatus | null>(null);
   const [acct, setAcct] = useState<BrokerAccount | null>(null);
@@ -1854,6 +1857,9 @@ export default function MT5SetupWizardPage() {
 
   async function refreshAll() {
     setRefreshing(true);
+    // Taken before the connection check is sent, not after all six reads
+    // finish: the shown heartbeat age may then run a little high, never low.
+    const sentAt = Date.now();
     const [s, c, b, a, p, o] = await Promise.all([
       jget<{ requiredSecrets: SecretsStatus["requiredSecrets"]; missingSecrets: string[]; readOnlyReady: boolean; liveTradingAllowedFlag: SecretsStatus["liveTradingAllowedFlag"]; provider: string }>("/api/broker/secrets-status"),
       jget<ConnectionCheck>("/api/broker/connection-check"),
@@ -1864,7 +1870,7 @@ export default function MT5SetupWizardPage() {
     ]);
     setSecrets(s as SecretsStatus | null);
     setConn(c);
-    setConnReceivedAt(Date.now());
+    setConnSentAt(sentAt);
     setNowMs(Date.now());
     setBstat(b);
     setAcct(a);
@@ -1879,7 +1885,7 @@ export default function MT5SetupWizardPage() {
   }, []);
 
   const heartbeatWaiting = !conn?.connected;
-  const hb = describeBridgeHeartbeat(conn, nowMs, connReceivedAt);
+  const hb = describeBridgeHeartbeat(conn, nowMs, connSentAt);
   const accountWaiting = !conn?.checks?.accountReadable;
   const liveLocked = true; // server-enforced; this page never unlocks it
 

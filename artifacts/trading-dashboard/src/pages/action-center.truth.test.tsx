@@ -108,4 +108,17 @@ describe("Trade Action Center subtitle", () => {
     expect(subtitle).toMatch(/autopilot sessions place simulator and paper trades on their own/i);
     expect(subtitle).toMatch(/Protective Auto-Close/);
   });
+
+  it("does not read as a complete list: names the automation that changes MT5 positions without a confirmation here", async () => {
+    // Position Guardian ACTING rules outside this page: Self-Trade agents
+    // (entries, stop moves and closes through the instant router) and the
+    // post-fill protection check (restores a missing or widened stop).
+    render(<ActionCenterPage />);
+    await flush();
+    const subtitle = screen.getByTestId("text-action-center-scope").textContent ?? "";
+    expect(subtitle).toMatch(/Self-Trade AI agents/);
+    expect(subtitle).toMatch(/move stops on or close MT5 positions/i);
+    expect(subtitle).toMatch(/restores a missing or widened stop/i);
+    expect(subtitle).toMatch(/not listed on this page/i);
+  });
 });

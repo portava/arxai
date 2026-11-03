@@ -109,6 +109,26 @@ describe("mode cards: the saved label is not proof of the limits in force", () =
     expect(mismatch.textContent).toMatch(/Max Open: 3 trades stored, preset 2 trades/);
   });
 
+  it("a trader with no lot cap of their own is shown the platform ceiling, not a stored 5 lots", () => {
+    // GET /risk/settings reports a missing user_risk_settings.max_position_size
+    // as the platform ceiling (5 lots).
+    renderPage({ settings: { data: FRESH_USER } });
+    const mismatch = screen.getByTestId("risk-mode-mismatch");
+    expect(mismatch.textContent).not.toMatch(/Max Lot: 5 lots stored/);
+    expect(mismatch.textContent).toMatch(/Max Lot: no lot cap of your own below the platform ceiling \(5 lots\), preset 0\.1 lots/);
+  });
+
+  it("a stored lot cap above the platform ceiling says the ceiling is what applies", () => {
+    renderPage({ settings: { data: { ...FRESH_USER, maxLotSize: 8 } } });
+    expect(screen.getByTestId("risk-mode-mismatch").textContent)
+      .toMatch(/Max Lot: 8 lots stored, above the platform ceiling of 5 lots, preset 0\.1 lots/);
+  });
+
+  it("a stored lot cap below the ceiling is still called stored", () => {
+    renderPage({ settings: { data: { ...FRESH_USER, maxLotSize: 0.5 } } });
+    expect(screen.getByTestId("risk-mode-mismatch").textContent).toMatch(/Max Lot: 0\.5 lots stored, preset 0\.1 lots/);
+  });
+
   it("the preset numbers on every card are labelled as what the preset sets", () => {
     renderPage({ settings: { data: FRESH_USER } });
     for (const mode of ["Conservative", "Balanced", "Aggressive"]) {
@@ -263,6 +283,70 @@ describe("System Status never colours an unread bot status green", () => {
     const running = screen.getByTestId("system-status-Is Running");
     expect(running.querySelector(".text-success")).toBeNull();
     expect(screen.getByTestId("system-status-bot-scope").textContent).toMatch(/saved Bot Control settings/);
+  });
+
+  it("the saved start flag is labelled as a saved request and the pause flag as a flag, not 'Is Running' / 'Is Paused'", () => {
+    renderPage({
+      tab: "emergency", settings: { data: BALANCED_APPLIED },
+      bot: { data: { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null } },
+    });
+    const running = screen.getByTestId("system-status-Is Running");
+    expect(running.textContent).toMatch(/Start requested \(saved\)/);
+    expect(running.textContent).not.toMatch(/Is Running/);
+    const paused = screen.getByTestId("system-status-Is Paused");
+    // The paused row keeps the merged "Paused flag" wording (no order path reads the flag).
+    expect(paused.textContent).toMatch(/Paused flag/);
+    expect(paused.textContent).not.toMatch(/Is Paused/);
+  });
+});
+
+describe("the Emergency tab controls do not show a lock or pause state that was not read", () => {
+  const FAILED = { data: undefined, isLoading: false, isError: true };
+  const BOT = { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null };
+  const openIcon = (el: HTMLElement) => el.querySelector('[class*="lucide-unlock"], [class*="lucide-lock-open"]');
+
+  it("with settings unread, the Live Mode Lock card says the lock state could not be loaded, not off", () => {
+    renderPage({ tab: "emergency", settings: FAILED, bot: { data: BOT } });
+    const card = screen.getByTestId("live-lock-card");
+    expect(within(card).getByTestId("live-lock-unread").textContent).toMatch(/Live lock state could not be loaded/);
+    expect(openIcon(card)).toBeNull();
+    // Only the stricter action is offered, and it does not imply the current state.
+    expect(within(card).queryByRole("button", { name: /Turn live mode lock off/ })).toBeNull();
+    expect(within(card).queryByRole("button", { name: /^Turn live mode lock on$/ })).toBeNull();
+    expect(within(card).getByRole("button", { name: /Turn live mode lock on \(current state not read\)/ })).toBeTruthy();
+  });
+
+  it("with settings read, the Live Mode Lock card shows the read state as before", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT } });
+    const card = screen.getByTestId("live-lock-card");
+    expect(within(card).queryByTestId("live-lock-unread")).toBeNull();
+    expect(within(card).getByRole("button", { name: /^Turn live mode lock on$/ })).toBeTruthy();
+    cleanup();
+    renderPage({ tab: "emergency", settings: { data: { ...BALANCED_APPLIED, liveLocked: true } }, bot: { data: BOT } });
+    expect(within(screen.getByTestId("live-lock-card")).getByRole("button", { name: /Turn live mode lock off/ })).toBeTruthy();
+  });
+
+  it("with the bot status unread, the Pause card says the pause state could not be loaded instead of offering 'Set Paused Flag'", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: FAILED });
+    const card = screen.getByTestId("pause-card");
+    expect(within(card).getByTestId("pause-state-unread").textContent).toMatch(/Pause state could not be loaded/);
+    expect(within(card).queryByRole("button", { name: /^Set Paused Flag$/ })).toBeNull();
+    expect(within(card).queryByRole("button", { name: /Clear Paused Flag/ })).toBeNull();
+    expect(within(card).getByRole("button", { name: /Set Paused Flag \(current state not read\)/ })).toBeTruthy();
+  });
+
+  it("a bot status whose latest poll failed is not used as the pause state either", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT, isError: true } });
+    const card = screen.getByTestId("pause-card");
+    expect(within(card).getByTestId("pause-state-unread").textContent).toMatch(/could not be loaded/);
+    expect(within(card).queryByRole("button", { name: /^Set Paused Flag$/ })).toBeNull();
+  });
+
+  it("the unknown-state buttons send the stricter request: lock, and pause", () => {
+    renderPage({ tab: "emergency", settings: FAILED, bot: FAILED });
+    fireEvent.click(within(screen.getByTestId("pause-card")).getByRole("button", { name: /Set Paused Flag \(current state not read\)/ }));
+    expect(h.botMutate).toHaveBeenCalledTimes(1);
+    expect(h.botMutate.mock.calls[0]![0]).toEqual({ data: { isPaused: true } });
   });
 });
 
