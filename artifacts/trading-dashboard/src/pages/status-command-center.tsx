@@ -233,7 +233,7 @@ function FixFirstBlock({ primary, alternates, postureUnmeasured }: {
         <div className="font-semibold">What to fix first</div>
         <div>
           {postureUnmeasured
-            ? "No diagnoses from the bridge state this page reads. It does not read your account mode or the execution gates: the Mode row shows your account mode, and every order is still checked server-side."
+            ? "No diagnoses from the bridge diagnostic summary. That summary does not read your account mode or the execution gates; the Mode row shows your account mode, and every order is still checked server-side."
             : "No diagnoses to address right now. Stay in simulator/paper while server gates remain in place."}
         </div>
       </div>

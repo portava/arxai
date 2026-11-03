@@ -7,7 +7,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MultiTimeframeAlignmentCard, type MultiTimeframeReport } from "./MultiTimeframeAlignmentCard";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 function snap(trend: "UP" | "DOWN" | "SIDEWAYS" | "INSUFFICIENT_DATA", candlesUsed: number, strength = 0) {
   return { trend, strength, slope: 0, fastSma: 0, slowSma: 0, candlesUsed };
@@ -25,8 +25,10 @@ function report(over: Partial<MultiTimeframeReport>): MultiTimeframeReport {
   };
 }
 
+// Served the way the API does: with a Date header carrying the server's clock.
 function renderWith(r: MultiTimeframeReport) {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(r), { status: 200 })));
+  vi.stubGlobal("fetch", vi.fn(async () =>
+    new Response(JSON.stringify(r), { status: 200, headers: { date: new Date().toUTCString() } })));
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
@@ -61,6 +63,10 @@ describe("MultiTimeframeAlignmentCard truth", () => {
   });
 
   it("a fully observed report shows trends and how many candles each was read from", async () => {
+    // Opened two minutes after it was generated (this report predates bar
+    // times, so a days-old copy is not shown as a current alignment).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-28T06:02:00.000Z"));
     renderWith(report({
       lowerTrend: snap("UP", 120, 60), middleTrend: snap("UP", 120, 60), higherTrend: snap("UP", 120, 60),
       alignmentScore: 60, alignmentLabel: "STRONG_BULLISH_ALIGNMENT", bestBias: "BUY",

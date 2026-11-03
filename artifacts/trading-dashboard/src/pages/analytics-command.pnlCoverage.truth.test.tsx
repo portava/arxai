@@ -155,6 +155,27 @@ describe("Analytics Command Center — P&L coverage", () => {
     expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toMatch(/out of date/);
   });
 
+  it("no trade sized and the snapshot differs: the as-of line describes the 'not measured' tiles, not an out-of-date figure a recompute would fix", async () => {
+    // Stored snapshot: 3 trades. Computed now: 4 closed trades, none sizable
+    // in USD (XAUUSD / US30 with no contract spec).
+    const NONE_SIZED_4 = { ...NONE_SIZED, closedTrades: 4, unsizedTrades: 4,
+      note: "P&L not measured: none of your 4 closed trades could be sized in USD (US30, XAUUSD — no contract size or no USD conversion). Money figures here are not results." };
+    stub(routes({
+      "GET /api/analytics/drawdown": { status: 200, body: { equityCurve: [], maxDrawdown: 0, pnlCoverage: NONE_SIZED_4 } },
+      "GET /api/analytics/strategy": { status: 200, body: { strategies: [], pnlCoverage: NONE_SIZED_4 } },
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("analytics-snapshot-asof").textContent).toMatch(/no longer match.*4 closed trades/));
+    const asof = screen.getByTestId("analytics-snapshot-asof").textContent ?? "";
+    // The tiles read "not measured", so the line does not call them out of date.
+    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toMatch(/not measured/);
+    expect(asof).not.toMatch(/out of date/);
+    expect(asof).toMatch(/no money figure is shown because none of your closed trades could be sized in USD/i);
+    // Recomputing does not turn them into figures; the line says what it does update.
+    expect(asof).not.toMatch(/Use Recompute snapshot to update them/);
+    expect(asof).toMatch(/Recompute snapshot updates the trade count, win rate and other non-money figures; it does not produce money figures/);
+  });
+
   it("the live figures could not be loaded: the tiles say they could not be checked", async () => {
     stub(routes({
       "GET /api/analytics/drawdown": { status: 500, body: { error: "Failed to load drawdown" } },

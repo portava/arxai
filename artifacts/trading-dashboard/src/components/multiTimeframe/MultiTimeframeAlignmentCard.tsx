@@ -85,6 +85,28 @@ function useNow(): number {
   return now;
 }
 
+/**
+ * The server's clock as of a GET /multi-timeframe/latest answer: the
+ * response's Date header, and this browser's time when it arrived. The bar
+ * times and the freshness verdict are on the server's clock; this browser's
+ * clock can be minutes off, and an M5 bar is current for only 10 minutes, so
+ * a stored report's age is measured on the server's clock: its time at the
+ * answer plus the time elapsed here since.
+ */
+type ServerClock = { serverNowMs: number; receivedAtMs: number };
+type LatestRead = { report: MultiTimeframeReport; clock: ServerClock | null };
+
+function serverClockOf(res: Response, receivedAtMs: number): ServerClock | null {
+  const header = res.headers.get("date");
+  const serverNowMs = header ? Date.parse(header) : NaN;
+  return Number.isFinite(serverNowMs) ? { serverNowMs, receivedAtMs } : null;
+}
+
+/** The server's time now, or null when the answer carried no server time. */
+function serverNow(clock: ServerClock | null, nowMs: number): number | null {
+  return clock ? clock.serverNowMs + Math.max(0, nowMs - clock.receivedAtMs) : null;
+}
+
 /** True when the report predates bar-time recording (no freshness on the snapshot). */
 function freshnessUnrecorded(s: Snap): boolean {
   return s.freshness === undefined && s.newestBarTime === undefined;
@@ -98,13 +120,30 @@ function snapNotCurrent(s: Snap): boolean {
 /**
  * The report stores freshness once, when it was generated, and GET
  * /multi-timeframe/latest returns it unchanged however old the report is. A
- * timeframe recorded CURRENT is re-checked against the clock with the same
- * rule the server used (newest bar opened within two bars of now).
+ * timeframe recorded CURRENT is re-checked on the server's clock with the
+ * same rule the server used (newest bar opened within two bars of now):
+ * "aged" when it is no longer current, "unchecked" when the answer carried no
+ * server time (this browser's clock is not used for it).
  */
-function agedSinceScan(timeframe: string, s: Snap, nowMs: number): boolean {
-  if (s.freshness !== "CURRENT" || !s.newestBarTime) return false;
+function recheckSinceScan(timeframe: string, s: Snap, serverNowMs: number | null): "current" | "aged" | "unchecked" | null {
+  if (s.freshness !== "CURRENT" || !s.newestBarTime) return null;
+  if (serverNowMs == null) return "unchecked";
   const newest = { open: 0, high: 0, low: 0, close: 0, time: s.newestBarTime };
-  return assessTimeframeFreshness(timeframe, newest, nowMs).freshness !== "CURRENT";
+  return assessTimeframeFreshness(timeframe, newest, serverNowMs).freshness === "CURRENT" ? "current" : "aged";
+}
+
+/**
+ * A report stored before bar times were recorded has no freshness to re-check.
+ * Its newest bar opened no later than the scan (createdAt), so the report's own
+ * age on the server's clock is a lower bound on the bar's age: "old" once the
+ * report is older than two bars of this timeframe, "recent" when that does not
+ * prove it (the bars may still have been old), "unchecked" with no server time.
+ */
+function legacySinceScan(timeframe: string, s: Snap, createdAt: string, serverNowMs: number | null): "old" | "recent" | "unchecked" | null {
+  if (!freshnessUnrecorded(s)) return null;
+  if (serverNowMs == null) return "unchecked";
+  const scan = { open: 0, high: 0, low: 0, close: 0, time: createdAt };
+  return assessTimeframeFreshness(timeframe, scan, serverNowMs).freshness === "STALE" ? "old" : "recent";
 }
 
 /**
@@ -113,12 +152,14 @@ function agedSinceScan(timeframe: string, s: Snap, nowMs: number): boolean {
  * still is), or that the bars carried no time, or (older reports) that it was
  * never recorded.
  */
-function barTimeText(s: Snap, aged = false): string {
+function barTimeText(s: Snap, recheck: "current" | "aged" | "unchecked" | null = null): string {
   if (freshnessUnrecorded(s)) return "bar time not recorded";
   const stamp = s.newestBarTime ? utcStamp(s.newestBarTime) : null;
   if (!stamp) return "bars carried no time · age not checked";
   const word = s.freshness === "CURRENT"
-    ? aged ? "current when scanned, not current now" : "current when scanned"
+    ? recheck === "aged" ? "current when scanned, not current now"
+      : recheck === "unchecked" ? "current when scanned, not re-checked now"
+      : "current when scanned"
     : s.freshness === "STALE" ? "stale" : "age not checked";
   return `newest bar ${stamp} · ${word}`;
 }
@@ -127,13 +168,14 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
   const qc = useQueryClient();
   const nowMs = useNow();
   const enabled = !!symbol;
-  const latest = useQuery<MultiTimeframeReport>({
+  const latest = useQuery<LatestRead>({
     queryKey: ["mtf-latest", symbol],
     queryFn: async () => {
       const r = await fetch(`/api/multi-timeframe/latest?symbol=${encodeURIComponent(symbol!)}`);
       if (r.status === 404) throw new Error("no-report");
       if (!r.ok) throw new Error("Failed to load report");
-      return r.json();
+      const clock = serverClockOf(r, Date.now());
+      return { report: (await r.json()) as MultiTimeframeReport, clock };
     },
     enabled,
     retry: false,
@@ -159,7 +201,9 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
     );
   }
 
-  const r = latest.data;
+  const r = latest.data?.report;
+  const clock = latest.data?.clock ?? null;
+  const serverNowMs = serverNow(clock, nowMs);
   const tiles = r
     ? [
         { label: r.lowerTimeframe,  s: r.lowerTrend,  tag: "Lower" },
@@ -174,13 +218,46 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
   // a current label but a recorded stale/unknown timeframe is treated the same.
   const staleTiles = tiles.filter((tf) => snapNotCurrent(tf.s));
   // Current when scanned, but no longer current now: an old report is not a
-  // current alignment either.
-  const agedTiles = tiles.filter((tf) => agedSinceScan(tf.label, tf.s, nowMs));
+  // current alignment either. One whose age could not be re-checked (no
+  // server time) is not shown as current, nor called not current.
+  const recheck = (tf: (typeof tiles)[number]) => recheckSinceScan(tf.label, tf.s, serverNowMs);
+  const agedTiles = tiles.filter((tf) => recheck(tf) === "aged");
+  const uncheckedTiles = tiles.filter((tf) => recheck(tf) === "unchecked");
   const isAged = (tf: (typeof tiles)[number]) => agedTiles.includes(tf);
-  const notCurrent = observed && (r!.alignmentLabel === "DATA_NOT_CURRENT" || staleTiles.length > 0 || agedTiles.length > 0);
+  // Stored before bar times were recorded: old when the report itself is
+  // older than two bars of the timeframe (on the server's clock).
+  const legacyAge = (tf: (typeof tiles)[number]) => legacySinceScan(tf.label, tf.s, r!.createdAt, serverNowMs);
+  const legacyOldTiles = tiles.filter((tf) => legacyAge(tf) === "old");
+  const legacyUncheckedTiles = tiles.filter((tf) => legacyAge(tf) === "unchecked");
+  const provenNotCurrent = observed &&
+    (r!.alignmentLabel === "DATA_NOT_CURRENT" || staleTiles.length > 0 || agedTiles.length > 0 || legacyOldTiles.length > 0);
+  const notCurrent = provenNotCurrent || (observed && (uncheckedTiles.length > 0 || legacyUncheckedTiles.length > 0));
+  const tileNotCurrentNow = (tf: (typeof tiles)[number]) =>
+    snapNotCurrent(tf.s) || isAged(tf) || uncheckedTiles.includes(tf) || legacyOldTiles.includes(tf) || legacyUncheckedTiles.includes(tf);
+  const labelsOf = (list: (typeof tiles)) => list.map((tf) => tf.label).join(", ");
+  // Why each kept timeframe is not a current read (or was not re-checked).
+  const notCurrentReasons = (keep: (tf: (typeof tiles)[number]) => boolean): string[] => {
+    const legacyOld = legacyOldTiles.filter(keep);
+    const legacyUnchecked = legacyUncheckedTiles.filter(keep);
+    return [
+      ...staleTiles.filter(keep).map((tf) => `${tf.label} newest bar is not current (${barTimeText(tf.s)})`),
+      ...agedTiles.filter(keep).map((tf) => `${tf.label} newest bar is no longer current (${barTimeText(tf.s, "aged")})`),
+      ...uncheckedTiles.filter(keep).map((tf) => `${tf.label} newest bar was current when scanned; whether it still is was not checked`),
+      ...(legacyOld.length > 0
+        ? [`${labelsOf(legacyOld)} bar times were not recorded, and this report is older than two ${legacyOld[legacyOld.length - 1]!.label} bars`]
+        : []),
+      ...(legacyUnchecked.length > 0
+        ? [`${labelsOf(legacyUnchecked)} bar times were not recorded, and this report's age was not checked`]
+        : []),
+    ];
+  };
+  // Trends the not-enough-data block still shows whose bars are not a current read.
+  const shownNotCurrent = tiles.filter((tf) => snapObserved(tf.s) && tileNotCurrentNow(tf));
+  const shownNotCurrentReasons = notCurrentReasons((tf) => shownNotCurrent.includes(tf));
+  const NO_SERVER_TIME = " No server time came with this report, and this device's clock is not used to judge its age.";
   const scanStamp = r ? utcStamp(r.createdAt) : null;
   const measured = observed && !notCurrent;
-  const legacyFreshness = measured && tiles.some((tf) => freshnessUnrecorded(tf.s));
+  const legacyFreshness = (measured || notCurrent) && tiles.some((tf) => freshnessUnrecorded(tf.s));
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
@@ -216,25 +293,40 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
             <span className="text-sm text-slate-300">Alignment not measured</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
+            {/* A trend read from enough candles is shown, but in a neutral
+                tone ("on these bars") when its bars are not a current read,
+                and every tile says when its newest bar opened. */}
             {tiles.map((tf) => (
-              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
+              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2" data-testid="mtf-tile">
                 <div className="text-[10px] uppercase tracking-wide text-slate-500">{tf.tag} · {tf.label}</div>
-                {snapObserved(tf.s) ? (
-                  <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
-                ) : (
+                {!snapObserved(tf.s) ? (
                   <div className={`text-sm font-semibold ${TREND_STYLES.INSUFFICIENT_DATA}`}>No read</div>
+                ) : tileNotCurrentNow(tf) ? (
+                  <div className="text-sm font-semibold text-slate-400">{tf.s.trend} on these bars</div>
+                ) : (
+                  <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
                 )}
                 <div className="text-xs text-slate-400" data-testid="mtf-candles-used">
                   {tf.s.candlesUsed} of {MIN_CANDLES_FOR_TREND}+ candles
                 </div>
+                <div
+                  className={`text-[10px] ${tileNotCurrentNow(tf) ? "text-amber-400/90" : "text-slate-500"}`}
+                  data-testid="mtf-bar-time"
+                >
+                  {barTimeText(tf.s, recheck(tf))}
+                </div>
               </div>
             ))}
           </div>
-          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300" data-testid="mtf-insufficient-reason">
             Not enough candles were received for{" "}
             {unobserved.map((tf) => `${tf.label} (${tf.s.candlesUsed})`).join(", ") || "one or more timeframes"}
-            {" "}when this report was generated, so no trend, alignment or bias is shown. Run the scan again once
-            market data is available.
+            {" "}when this report was generated, so{" "}
+            {unobserved.length > 0 ? `no trend is shown for ${unobserved.length === 1 ? "it" : "them"}, and ` : ""}
+            no alignment or bias is shown.
+            {shownNotCurrent.length > 0 && ` For the trends shown: ${shownNotCurrentReasons.join("; ")}.`}
+            {shownNotCurrent.some((tf) => uncheckedTiles.includes(tf) || legacyUncheckedTiles.includes(tf)) && clock == null && NO_SERVER_TIME}
+            {" "}Run the scan again once market data is available.
           </p>
         </>
       )}
@@ -243,12 +335,14 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
         <>
           <div className="flex flex-wrap items-center gap-3" data-testid="mtf-not-current">
             <span
-              className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES.DATA_NOT_CURRENT}`}
+              className={`rounded px-2 py-0.5 text-xs font-semibold ${provenNotCurrent ? LABEL_STYLES.DATA_NOT_CURRENT : LABEL_STYLES.NO_CLEAR_BIAS}`}
               data-testid="mtf-label"
             >
-              DATA NOT CURRENT
+              {provenNotCurrent ? "DATA NOT CURRENT" : "NOT RE-CHECKED"}
             </span>
-            <span className="text-sm text-slate-300">Alignment not current · no bias given</span>
+            <span className="text-sm text-slate-300">
+              {provenNotCurrent ? "Alignment not current · no bias given" : "Alignment not shown as current · no bias given"}
+            </span>
           </div>
           <div className="grid grid-cols-3 gap-2">
             {tiles.map((tf) => (
@@ -259,10 +353,10 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
                   from {tf.s.candlesUsed} candles
                 </div>
                 <div
-                  className={`text-[10px] ${snapNotCurrent(tf.s) || isAged(tf) ? "text-amber-400/90" : "text-slate-500"}`}
+                  className={`text-[10px] ${tileNotCurrentNow(tf) ? "text-amber-400/90" : "text-slate-500"}`}
                   data-testid="mtf-bar-time"
                 >
-                  {barTimeText(tf.s, isAged(tf))}
+                  {barTimeText(tf.s, recheck(tf))}
                 </div>
               </div>
             ))}
@@ -271,14 +365,19 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
             <TimeframeConflictWarning warning={r.conflictWarning} label={r.alignmentLabel} />
           ) : (
             <p className="rounded-md border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-200" data-testid="mtf-not-current-reason">
-              {agedTiles.length > 0 && `This scan is from ${scanStamp ?? "a time that was not recorded"}. `}
-              Not a current read:{" "}
-              {[
-                ...staleTiles.map((tf) => `${tf.label} newest bar is not current (${barTimeText(tf.s)})`),
-                ...agedTiles.map((tf) => `${tf.label} newest bar is no longer current (${barTimeText(tf.s, true)})`),
-              ].join("; ")}.
-              No alignment score or bias is shown.{" "}
+              {(agedTiles.length > 0 || uncheckedTiles.length > 0 || legacyOldTiles.length > 0 || legacyUncheckedTiles.length > 0) &&
+                `This scan is from ${scanStamp ?? "a time that was not recorded"}. `}
+              {provenNotCurrent ? "Not a current read" : "Not shown as a current read"}:{" "}
+              {notCurrentReasons(() => true).join("; ")}.
+              {(uncheckedTiles.length > 0 || legacyUncheckedTiles.length > 0) && clock == null && NO_SERVER_TIME}
+              {" "}No alignment score or bias is shown.{" "}
               {staleTiles.length > 0 ? "Run the scan again once market data is current." : "Run the scan again for a current read."}
+            </p>
+          )}
+          {legacyFreshness && (
+            <p className="text-[11px] text-slate-500" data-testid="mtf-legacy-freshness">
+              This report was stored before bar times were recorded, so whether its candles were current
+              when it was generated was not checked.
             </p>
           )}
           {r.alignmentLabel === "DATA_NOT_CURRENT" && (

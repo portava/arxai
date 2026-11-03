@@ -558,7 +558,13 @@ export default function RiskSettings() {
     window.history.replaceState({}, "", url.toString());
   };
 
-  const { data: settings, isLoading } = useGetRiskSettings();
+  const settingsQ = useGetRiskSettings();
+  const { data: settings, isLoading } = settingsQ;
+  // The live lock is shown only from a current read. A refetch that failed
+  // (or is being retried) leaves the last value in `data`, which may no
+  // longer be the stored lock (e.g. the re-read after a lock change failed).
+  const settingsReadFailed = latestReadFailed(settingsQ);
+  const lockSettings = settingsReadFailed ? undefined : settings;
   // Bot Control and the kill switch elsewhere change this row too, so it is re-read.
   const botQ = useGetBotStatus(
     { query: { queryKey: getGetBotStatusQueryKey(), refetchInterval: 30_000 } },
@@ -716,7 +722,7 @@ export default function RiskSettings() {
   function handleToggleLiveLock() {
     // Never toggle a value that was not read (that would write locked =
     // !undefined): with the lock unread, only the stricter "on" is requested.
-    const next = settings ? !settings.liveLocked : true;
+    const next = lockSettings ? !lockSettings.liveLocked : true;
     setLiveLock.mutate(
       { data: { locked: next } },
       {
@@ -830,7 +836,7 @@ export default function RiskSettings() {
               <AlertTriangle size={12} className="mr-1.5" /> Risk settings {SETTINGS_UNREAD}
             </Badge>
           )}
-          {settings?.liveLocked && (
+          {lockSettings?.liveLocked && (
             <Badge className="bg-muted/40 text-muted-foreground border-border/50 px-3 py-1 border" data-testid="live-lock-badge">
               <Lock size={12} className="mr-1.5" /> Live lock on (preference)
             </Badge>
@@ -1681,10 +1687,10 @@ export default function RiskSettings() {
             <Card className="border border-border/50" data-testid="live-lock-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2" data-testid="live-lock-title">
-                  {/* on / off only once the stored value was read. */}
-                  {!settings
+                  {/* on / off only from a current read of the stored value. */}
+                  {!lockSettings
                     ? <><AlertTriangle size={16} className="text-muted-foreground" /> <span>Live Mode Lock: {SETTINGS_UNREAD}</span></>
-                    : settings.liveLocked
+                    : lockSettings.liveLocked
                       ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: on</span></>
                       : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: off</span></>}
                 </CardTitle>
@@ -1695,12 +1701,14 @@ export default function RiskSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {/* Settings unread: the lock is neither on nor off on this
-                    page, and only the stricter "on" request is offered. */}
-                {!settings && (
+                {/* Settings unread, or the latest read failed: the lock is
+                    neither on nor off on this page, and only the stricter
+                    "on" request is offered. */}
+                {!lockSettings && (
                   <p className="text-xs text-muted-foreground" data-testid="live-lock-unread">
-                    Live lock state {SETTINGS_UNREAD}: it is not shown as on or off, because your risk
-                    settings were not read.
+                    {settings
+                      ? `Live lock state ${SETTINGS_UNREAD}: the latest read of your risk settings failed, so the value from an earlier read is not shown as on or off${lastReadText(settingsQ.dataUpdatedAt) ? ` (${lastReadText(settingsQ.dataUpdatedAt)})` : ""}.`
+                      : `Live lock state ${SETTINGS_UNREAD}: it is not shown as on or off, because your risk settings were not read.`}
                   </p>
                 )}
                 <Button
@@ -1712,9 +1720,9 @@ export default function RiskSettings() {
                   disabled={setLiveLock.isPending}
                   data-testid="live-lock-toggle"
                 >
-                  {!settings ? (
+                  {!lockSettings ? (
                     <><Lock size={14} /> Turn live mode lock on (current state not read)</>
-                  ) : settings.liveLocked ? (
+                  ) : lockSettings.liveLocked ? (
                     <><Unlock size={14} /> Turn live mode lock off</>
                   ) : (
                     <><Lock size={14} /> Turn live mode lock on</>
@@ -1766,9 +1774,9 @@ export default function RiskSettings() {
                       ? { id: "Is Paused", label: "Paused flag", value: bot.isPaused ? "SET" : "NOT SET", tone: bot.isPaused ? "warn" : "neutral" }
                       : { id: "Is Paused", label: "Paused flag", value: botUnread, tone: "unread" },
                     // The live mode lock is a preference, not a gate: shown neutral, never green/amber.
-                    !settings
+                    !lockSettings
                       ? { id: "Live Locked", label: "Live lock (preference)", value: SETTINGS_UNREAD, tone: "unread", testId: "live-lock-status" }
-                      : { id: "Live Locked", label: "Live lock (preference)", value: settings.liveLocked ? "ON" : "OFF", tone: "neutral", testId: "live-lock-status" },
+                      : { id: "Live Locked", label: "Live lock (preference)", value: lockSettings.liveLocked ? "ON" : "OFF", tone: "neutral", testId: "live-lock-status" },
                     !settings
                       ? { id: "Risk Mode", label: "Risk Mode", value: SETTINGS_UNREAD, tone: "unread" }
                       : {

@@ -137,12 +137,20 @@ describe("fixed diagnostic-summary posture is not shown as a reading", () => {
     const st = explainAppStatus(ctx);
     expect(st.safestNextStep).not.toMatch(/simulator|demo mode|paper/i);
     expect(st.safestNextStep).toMatch(/account mode/i);
+    // The page shows the account mode (header and Mode row): the copy names
+    // the source that does not read it, the bridge diagnostic summary.
+    expect(st.safestNextStep).not.toMatch(/this (view|page) does not read/i);
+    expect(st.safestNextStep).toMatch(/bridge diagnostic summary behind this advice does not read it/i);
 
     holder.ctx = ctx;
     render(<StatusCommandCenter />);
     const empty = screen.getByTestId("scc-fix-first-empty");
     expect(empty.textContent).not.toMatch(/simulator|paper/i);
-    expect(empty.textContent).toMatch(/does not read your account mode/i);
+    expect(empty.textContent).toMatch(/That summary does not read your account mode/i);
+    expect(empty.textContent).toMatch(/No diagnoses from the bridge diagnostic summary/i);
+    expect(empty.textContent).not.toMatch(/\bIt does not read your account mode/);
+    // The Mode row on the same page does show the account mode.
+    expect(screen.getByTestId("scc-runtime-mode").textContent).toMatch(/LIVE/);
     expect(screen.getByTestId("scc-safest-next").textContent).not.toMatch(/simulator|demo mode/i);
     expect(screen.getByTestId("status-command-center").textContent).not.toMatch(/simulator\/paper|simulator\/demo mode/i);
   });
