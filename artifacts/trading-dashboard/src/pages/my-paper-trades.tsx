@@ -32,6 +32,8 @@ type Day = {
   date: string; tradesCount: number; wins: number; losses: number;
   breakeven: number; totalPnl: number; winRate: number;
   bestTrade: number | null; worstTrade: number | null;
+  /** Closed trades that day with no recorded P/L; the server counts them as 0 (absent on older servers). */
+  pnlNotRecorded?: number;
 };
 type Review = {
   id: number; paperTradeId: number; reviewStatus: string;
@@ -156,6 +158,21 @@ function formatPriceMovePnl(v: number | null | undefined): string {
 function pnlTone(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
   return v > 0 ? "text-emerald-500" : v < 0 ? "text-red-500" : "text-muted-foreground";
+}
+/** How many of `trades` closed trades have no recorded P/L (server pnlNotRecorded; 0 when not sent). */
+function notRecordedOf(pnlNotRecorded: unknown, trades: number): number {
+  const n = Number(pnlNotRecorded ?? 0);
+  return Number.isFinite(n) ? Math.min(Math.max(0, trades), Math.max(0, Math.floor(n))) : 0;
+}
+/**
+ * A P/L total the server summed with unrecorded trades counted as 0: "not
+ * recorded" when none was recorded, the recorded sum marked "(partial)" when
+ * some were not, and never a profit/loss colour unless every trade was recorded.
+ */
+function pnlTotalView(total: number, trades: number, notRecorded: number): { text: string; tone: string } {
+  if (trades > 0 && notRecorded >= trades) return { text: "not recorded", tone: "text-muted-foreground" };
+  if (notRecorded > 0) return { text: `${formatPriceMovePnl(total)} (partial)`, tone: "text-muted-foreground" };
+  return { text: formatPriceMovePnl(total), tone: pnlTone(total) };
 }
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -624,7 +641,13 @@ export default function MyPaperTradesPage() {
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
-              <div><div className="text-muted-foreground">P/L ({PNL_UNIT_SHORT})</div><div className={`text-xl font-semibold ${pnlTone(summary.totalPnl)}`}>{formatPriceMovePnl(summary.totalPnl)}</div></div>
+              {(() => {
+                // The summary sends no unrecorded count; the calendar (same
+                // book, every closed day) does.
+                const notRecorded = notRecordedOf(days.reduce((n, d) => n + notRecordedOf(d.pnlNotRecorded, d.tradesCount), 0), summary.totalTrades);
+                const v = pnlTotalView(summary.totalPnl, summary.totalTrades, notRecorded);
+                return <div><div className="text-muted-foreground">P/L ({PNL_UNIT_SHORT})</div><div className={`text-xl font-semibold ${v.tone}`} data-testid="paper-summary-pnl">{v.text}</div></div>;
+              })()}
               <div><div className="text-muted-foreground">Wins</div><div className="text-xl font-semibold text-emerald-500">{summary.wins}</div></div>
               <div><div className="text-muted-foreground">Losses</div><div className="text-xl font-semibold text-red-500">{summary.losses}</div></div>
               <div><div className="text-muted-foreground">Win rate</div><div className="text-xl font-semibold">{summary.winRate}%</div></div>
@@ -636,7 +659,8 @@ export default function MyPaperTradesPage() {
             const unrecorded = trades.filter((t) => t.status === "closed" && t.pnl == null).length;
             return unrecorded > 0 ? (
               <p className="text-xs text-muted-foreground" data-testid="paper-pnl-unrecorded-note">
-                {unrecorded} closed demo trade{unrecorded === 1 ? " has" : "s have"} no recorded P/L; the totals and calendar below count {unrecorded === 1 ? "it" : "them"} as 0.
+                {unrecorded} closed demo trade{unrecorded === 1 ? " has" : "s have"} no recorded P/L. The server counts {unrecorded === 1 ? "it" : "them"} as 0 and as break-even;
+                {" "}a P/L total that includes {unrecorded === 1 ? "it" : "them"} reads "not recorded" or "(partial)" below.
               </p>
             ) : null;
           })()}
@@ -649,14 +673,25 @@ export default function MyPaperTradesPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {days.map((d) => {
-                const tone = d.totalPnl > 0 ? "border-emerald-500/60 bg-emerald-500/5"
+                // A trade with no recorded P/L is summed as 0 and counted as
+                // break-even by the server: such a day is not a measured
+                // result, so it gets no win/loss colour.
+                const notRecorded = notRecordedOf(d.pnlNotRecorded, d.tradesCount);
+                const allUnrecorded = d.tradesCount > 0 && notRecorded >= d.tradesCount;
+                const v = pnlTotalView(d.totalPnl, d.tradesCount, notRecorded);
+                const tone = notRecorded > 0 ? "border-slate-500/40"
+                  : d.totalPnl > 0 ? "border-emerald-500/60 bg-emerald-500/5"
                   : d.totalPnl < 0 ? "border-red-500/60 bg-red-500/5" : "border-slate-500/40";
                 return (
-                  <Card key={d.date} className={`border ${tone}`}>
+                  <Card key={d.date} className={`border ${tone}`} data-testid={`paper-day-${d.date}`}>
                     <CardContent className="p-3">
                       <div className="text-xs text-muted-foreground">{d.date}</div>
-                      <div className={`text-lg font-semibold ${pnlTone(d.totalPnl)}`} data-testid={`paper-day-pnl-${d.date}`}>{formatPriceMovePnl(d.totalPnl)}</div>
-                      <div className="text-xs">{d.wins}W / {d.losses}L · {d.tradesCount} trades</div>
+                      <div className={`text-lg font-semibold ${v.tone}`} data-testid={`paper-day-pnl-${d.date}`}>{v.text}</div>
+                      <div className="text-xs">
+                        {allUnrecorded
+                          ? `${d.tradesCount} trade${d.tradesCount === 1 ? "" : "s"} · ${notRecorded} P/L not recorded`
+                          : `${d.wins}W / ${d.losses}L · ${d.tradesCount} trades${notRecorded > 0 ? ` · ${notRecorded} P/L not recorded` : ""}`}
+                      </div>
                     </CardContent>
                   </Card>
                 );
