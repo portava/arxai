@@ -12,8 +12,28 @@ import { formatMoneyEstimate, type MoneyEstimate } from "@/lib/fxRiskEstimate";
 // (routes/liveIntent.ts TESTER_CAPS). The max-loss cap compares only the Max
 // Loss figure typed here (maxLossUsd); the server never computes the loss at
 // the stop from lot, stop and price. It does not run the pre-trade Risk
-// Governor, does not read the kill switch and executes nothing anywhere.
+// Governor, does not read any stop (kill switches, emergency stop) and executes
+// nothing anywhere.
 const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, and the Max Loss you enter ≤ $5 (the loss at your stop is not computed)";
+
+type StopState = "checking" | "engaged" | "off" | "unknown";
+
+function stopLabel(state: StopState): string {
+  return state === "engaged" ? "ENGAGED" : state === "off" ? "off" : state === "checking" ? "checking…" : "not checked";
+}
+
+interface StatusHalts { sources: string[]; reasons: string[]; checkedAt: string | null }
+
+/** The halt fields of a GET /api/system/status answer; null when they were not checked. */
+function statusHaltsOf(body: unknown): StatusHalts | null {
+  const b = body as { activeHalts?: unknown; activeHaltReasons?: unknown; activeHaltsCheckedAt?: unknown } | null;
+  if (!b || typeof b !== "object" || !Array.isArray(b.activeHalts)) return null;
+  return {
+    sources: b.activeHalts.filter((x): x is string => typeof x === "string"),
+    reasons: Array.isArray(b.activeHaltReasons) ? b.activeHaltReasons.map((x) => (typeof x === "string" ? x : "")) : [],
+    checkedAt: typeof b.activeHaltsCheckedAt === "string" ? b.activeHaltsCheckedAt : null,
+  };
+}
 
 type SubmitResp = {
   accepted: boolean; riskCheckPassed?: boolean; testerAccess: boolean; brokerExecution: boolean;
@@ -44,6 +64,10 @@ export default function LiveManualPage() {
   const [resp, setResp] = useState<SubmitResp | null>(null);
   // undefined while loading; null when the read failed or did not answer.
   const [perm, setPerm] = useState<{ reasons?: unknown } | null | undefined>(undefined);
+  // Every stop that halts this trader's broker orders, from GET /api/system/status
+  // (activeHalts, read by the pre-trade Risk Governor's own reader). undefined
+  // while loading; null when the read failed or the halts could not be checked.
+  const [halts, setHalts] = useState<StatusHalts | null | undefined>(undefined);
   const [masterBridge, setMasterBridge] = useState<any>(null);
   const [quote, setQuote] = useState<any>(null);
 
@@ -51,6 +75,9 @@ export default function LiveManualPage() {
     void jget("/api/permission/status")
       .then(r => setPerm(r.ok && r.body && typeof r.body === "object" ? r.body : null))
       .catch(() => setPerm(null));
+    void jget("/api/system/status")
+      .then(r => setHalts(r.ok ? statusHaltsOf(r.body) : null))
+      .catch(() => setHalts(null));
     // Real master shared-bridge health — the bridge that actually carries
     // live-shared dispatch. The per-user permission flag is NOT the bridge.
     void jget("/api/me/master-bridge/status").then(r => setMasterBridge(r.body));
@@ -77,19 +104,35 @@ export default function LiveManualPage() {
   // show "checking…" rather than asserting a state.
   const bridgeLoaded = masterBridge != null;
   const bridgeConnected = masterBridge?.detected === true;
-  // Kill switch state comes only from the permission status (the safety-core
-  // kill switch). GET /api/permission/status returns the PermissionVerdict,
+  // The safety-core kill switch row comes from the permission status (that
+  // verdict covers the safety-core switch only; the emergency stop and the
+  // trader's own kill switch come from activeHalts above). GET
+  // /api/permission/status returns the PermissionVerdict,
   // which has no killSwitchEngaged field: an engaged switch is a reason with
   // code KILL_SWITCH. A verdict without a reasons list was not read.
   // /api/system/mt5-deferred-status `simulator.enforcesKillSwitch` is a
   // constant capability description, never the engaged state.
   const permReasons: Array<{ code?: unknown }> | null =
     perm && Array.isArray(perm.reasons) ? (perm.reasons as Array<{ code?: unknown }>) : null;
-  const killSwitch: "checking" | "engaged" | "off" | "unknown" =
-    perm === undefined ? "checking"
+  // The client only downgrades: a safety-core switch the halt reader lists as
+  // engaged is shown engaged whatever the permission verdict says.
+  const killSwitch: StopState =
+    halts?.sources.includes("safety_core_kill_switch") ? "engaged"
+      : perm === undefined ? "checking"
       : permReasons === null ? "unknown"
       : permReasons.some((r) => r?.code === "KILL_SWITCH") ? "engaged"
       : "off";
+  const haltState = (source: string): StopState =>
+    halts === undefined ? "checking" : halts === null ? "unknown" : halts.sources.includes(source) ? "engaged" : "off";
+  const haltTitle = (source: string, what: string): string => {
+    if (halts === undefined) return `Checking ${what}.`;
+    if (halts === null) return `The system status could not be read, so ${what} was not checked.`;
+    const at = halts.checkedAt ? ` Checked at ${new Date(halts.checkedAt).toLocaleTimeString()}.` : "";
+    const i = halts.sources.indexOf(source);
+    return i >= 0
+      ? `${halts.reasons[i] || `${what[0]!.toUpperCase()}${what.slice(1)} is engaged.`}${at}`
+      : `From the system status (the pre-trade Risk Governor's halt reader): ${what} is released.${at}`;
+  };
   // The only quote this page loads is the ARX market simulator's
   // (/api/market/quote, executionEnvironment SIMULATOR): a random walk from a
   // fixed base price, not the market. A stop or target set off the real chart
@@ -131,7 +174,7 @@ export default function LiveManualPage() {
         <ShieldAlert className="mt-0.5 h-4 w-4 text-danger" />
         <div>
           <p className="font-semibold text-danger">Review required before any order</p>
-          <p className="text-xs text-txt-muted">This ticket only captures an intent for review — nothing is sent to a broker or the simulator. On submit the server checks the tester caps only ({TESTER_CAPS_TEXT}); the Risk Governor and kill switch are not run on this capture.</p>
+          <p className="text-xs text-txt-muted">This ticket only captures an intent for review — nothing is sent to a broker or the simulator. On submit the server checks the tester caps only ({TESTER_CAPS_TEXT}); the Risk Governor is not run and no stop (the kill switches or the emergency stop) is checked on this capture.</p>
         </div>
       </div>
 
@@ -188,7 +231,10 @@ export default function LiveManualPage() {
               <div className="flex justify-between"><span>Execution environment</span><Badge className="bg-warning/20 text-warning text-[10px]">none — capture only</Badge></div>
               <div className="flex justify-between"><span>Risk governor</span><Badge variant="outline" className="text-[10px] text-txt-muted">not run — tester caps only</Badge></div>
               <div className="flex justify-between"><span>Checks on submit</span><span className="text-[10px] text-txt-muted">{TESTER_CAPS_TEXT}</span></div>
-              <div className="flex justify-between"><span>Kill switch</span><Badge variant={killSwitch === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={killSwitch === "unknown" ? "The permission status could not be read." : "From your permission status (safety-core kill switch)."}>{killSwitch === "engaged" ? "ENGAGED" : killSwitch === "off" ? "off" : killSwitch === "checking" ? "checking…" : "not checked"}</Badge></div>
+              <div className="flex justify-between"><span>Safety-core kill switch</span><Badge variant={killSwitch === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={killSwitch === "unknown" ? "The permission status could not be read." : "From your permission status. It covers the safety-core kill switch only; the emergency stop and your own kill switch have their own rows."}>{stopLabel(killSwitch)}</Badge></div>
+              <div className="flex justify-between"><span>Emergency stop</span><Badge variant={haltState("platform_emergency_stop") === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={haltTitle("platform_emergency_stop", "the platform emergency stop")}>{stopLabel(haltState("platform_emergency_stop"))}</Badge></div>
+              <div className="flex justify-between"><span>Your kill switch</span><Badge variant={haltState("trader_kill_switch") === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={haltTitle("trader_kill_switch", "your kill switch")}>{stopLabel(haltState("trader_kill_switch"))}</Badge></div>
+              <p className="text-[10px] text-txt-muted" data-testid="ticket-stops-note">These stops are shown for information. They are not checked when you submit this intent (only the tester caps are), and they do not stop it from being captured.</p>
               <div className="flex justify-between"><span>Master bridge</span><Badge className={!bridgeLoaded ? "bg-muted text-txt-muted text-[10px]" : bridgeConnected ? "bg-success/20 text-success text-[10px]" : "bg-warning/20 text-warning text-[10px]"}>{!bridgeLoaded ? "checking…" : bridgeConnected ? "connected" : "not connected"}</Badge></div>
             </div>
 
@@ -220,7 +266,7 @@ export default function LiveManualPage() {
                       <h2 id="ticket-confirm-title" className="font-semibold text-warning">Confirm live-intent submission</h2>
                       <p className="text-txt-muted text-xs mt-1">
                         Review the order before submitting. The server checks the tester caps only
-                        ({TESTER_CAPS_TEXT}); the Risk Governor and kill switch are not run, and no
+                        ({TESTER_CAPS_TEXT}); the Risk Governor is not run, no stop (kill switch or emergency stop) is checked, and no
                         order is sent anywhere. Once captured, the intent is permanently logged.
                       </p>
                     </div>
