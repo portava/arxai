@@ -38,7 +38,7 @@ import {
   readActivePaperAccount, readOpenPaperOrders, readPaperCloses, readPaperOrders, sumPaperRealizedSince,
   isSettledPaperStatus, realizedOf, type PaperBookScope,
 } from "../tradeEngine/paperBookReader.js";
-import { isUnsizedPaperClose, paperRiskShortfall } from "../paperExecution/paperPnl.js";
+import { isUnsizedPaperClose, paperMoveSign, paperRiskShortfall } from "../paperExecution/paperPnl.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -68,6 +68,12 @@ export interface GovernorMetrics {
   maxDrawdown: number;
   /** Closes in the last 30 days whose P&L could not be sized (counted as above, not measured). */
   unsizedPaperCloses30d: number;
+  /**
+   * Of those, the closes that won on price (the exit moved in the trade's
+   * favour). winRate30d counts them as not won (a win of unknown size counts
+   * 0), and the WIN_RATE_UNSTABLE flag says so.
+   */
+  unsizedWinningPaperCloses30d: number;
   openPaperTrades: number;
   /** Enforced max open trades (Risk Governor); null = none enforced. */
   maxOpenPaperTrades: number | null;
@@ -174,7 +180,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   const thirtyAgo = new Date(Date.now() - 30 * 86_400_000);
 
   // --- EE: paper_orders ---
-  let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0, unsizedPaperCloses30d = 0;
+  let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0, unsizedPaperCloses30d = 0, unsizedWinningPaperCloses30d = 0;
   const sameSymbolExposure: Record<string, number> = {};
   // Owner decision 7: paper_orders through the paper book's read side. A
   // settled order is CLOSED_SL / CLOSED_TP / CLOSED_MANUAL (the venue never
@@ -190,7 +196,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
 
     const closed30 = await readPaperCloses(book, { since: thirtyAgo });
     sampleSize = closed30.length;
-    unsizedPaperCloses30d = closed30.filter((t) => isUnsizedPaperClose(t)).length;
+    const unsized30 = closed30.filter((t) => isUnsizedPaperClose(t));
+    unsizedPaperCloses30d = unsized30.length;
+    unsizedWinningPaperCloses30d = unsized30.filter((t) => paperMoveSign(t.direction, t.entryPrice, t.exitPrice!) > 0).length;
     if (sampleSize > 0) {
       const wins = closed30.filter(t => t.pnl > 0).length;
       winRate30d = Math.round((wins / sampleSize) * 10000) / 100;
@@ -321,6 +329,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
       weeklyPnl: Number(weeklyPnl.toFixed(2)),
       maxDrawdown,
       unsizedPaperCloses30d,
+      unsizedWinningPaperCloses30d,
       openPaperTrades: openCount,
       maxOpenPaperTrades,
       sameSymbolExposure,
@@ -416,7 +425,13 @@ function evaluateStatus(
   // ── CAUTION conditions (informational, do not pause) ────────────────────
   let cautionReasons = 0;
   if (m.sampleSize < 30) { riskFlags.push({ code: "SMALL_SAMPLE_SIZE", message: `Only ${m.sampleSize} closed paper trades in last 30d.` }); cautionReasons += 1; }
-  if (m.winRate30d > 0 && m.winRate30d < 50) { riskFlags.push({ code: "WIN_RATE_UNSTABLE", message: `30d win rate ${m.winRate30d}% < 50%.` }); cautionReasons += 1; }
+  if (m.winRate30d > 0 && m.winRate30d < 50) {
+    // winRate30d is the stricter risk count: a close of unknown size that won
+    // on price counts as not won. Say so rather than state it as measured.
+    const u = m.unsizedWinningPaperCloses30d;
+    const left = u > 0 ? ` (${u} close${u === 1 ? "" : "s"} of unknown size that won on price ${u === 1 ? "is" : "are"} not counted as ${u === 1 ? "a win" : "wins"})` : "";
+    riskFlags.push({ code: "WIN_RATE_UNSTABLE", message: `30d win rate ${m.winRate30d}% < 50%${left}.` }); cautionReasons += 1;
+  }
   if (m.learningConfidence < 30) { riskFlags.push({ code: "LEARNING_CONFIDENCE_LOW", message: `Learning confidence ${m.learningConfidence} is low.` }); cautionReasons += 1; }
   if (m.marketDataQuality === "FALLBACK_ONLY") { riskFlags.push({ code: "MARKET_DATA_FALLBACK_ONLY", message: "Market data is fallback-only." }); cautionReasons += 1; }
   if (m.repeatedMistakeCount > 0 && m.repeatedMistakeCount < 5) { riskFlags.push({ code: "MISTAKES_PRESENT", message: `${m.repeatedMistakeCount} repeated mistake pattern(s).` }); cautionReasons += 1; }
