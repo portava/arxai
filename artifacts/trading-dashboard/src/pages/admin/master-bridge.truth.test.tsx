@@ -6,7 +6,7 @@ vi.mock("@/components/admin/MasterLiveUserAccessTable", () => ({ MasterLiveUserA
 vi.mock("@/components/admin/LiveGatesDiagnosticPanel", () => ({ LiveGatesDiagnosticPanel: () => null }));
 vi.mock("@/pages/admin/one-click-controls", () => ({ OneClickControlsContent: () => null }));
 
-import AdminMasterBridgePage from "./master-bridge";
+import AdminMasterBridgePage, { liveDispatchBlockers } from "./master-bridge";
 
 type Reply = { status?: number; body?: unknown; reject?: boolean };
 type Routes = Record<string, Reply>;
@@ -254,5 +254,68 @@ describe("A blocked detector's hint bridge is labelled as not the master bridge"
     });
     expect(screen.queryByTestId("text-bridge-hint-label")).toBeNull();
     expect(screen.getByTestId("grid-bridge-selected")).toBeTruthy();
+  });
+});
+
+// A stop this report could not read fails closed as engaged, but nothing was
+// observed engaged (and for a missing settings row the gates treat the stop as
+// released). The blocker line says "could not be read", never "engaged".
+describe("liveDispatchBlockers — stops that could not be read", () => {
+  const base = {
+    readable: false, envEnabled: true, operatorArmed: null, effectiveEnabled: false,
+    platformStopEngaged: true, platformStopSources: ["platform_emergency_stop"],
+  };
+
+  it("unreadable settings: the emergency stop reads 'could not be read', not engaged", () => {
+    const out = liveDispatchBlockers({ liveExecution: {
+      ...base,
+      platformStopReason: "The platform emergency stop is engaged by an operator. (state unreadable)",
+      platformStopDetail: { platform_emergency_stop: "state unreadable" },
+    } });
+    const text = out.join("; ");
+    expect(text).toContain("the live execution switches could not be read");
+    expect(text).toMatch(/platform emergency stop could not be read \(state unreadable\)/);
+    expect(text).not.toMatch(/platform emergency stop engaged/);
+  });
+
+  it("missing settings row: says 'settings missing', and that only this report treats it as engaged", () => {
+    const out = liveDispatchBlockers({ liveExecution: {
+      ...base,
+      platformStopReason: "The platform emergency stop is engaged by an operator. (settings missing)",
+      platformStopDetail: { platform_emergency_stop: "settings missing" },
+    } });
+    const text = out.join("; ");
+    expect(text).toMatch(/platform emergency stop could not be read \(settings missing\); this report treats it as engaged/);
+    expect(text).not.toMatch(/platform emergency stop engaged/);
+  });
+
+  it("an unread safety core next to an engaged, read emergency stop names each correctly", () => {
+    const out = liveDispatchBlockers({ liveExecution: {
+      ...base, operatorArmed: true,
+      platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+      platformStopReason: "The platform emergency stop is engaged by an operator. (drill)",
+      platformStopDetail: { platform_emergency_stop: "drill", safety_core_kill_switch: "state unreadable" },
+    } });
+    const text = out.join("; ");
+    expect(text).toContain("platform emergency stop engaged");
+    expect(text).toMatch(/safety-core kill switch could not be read \(state unreadable\)/);
+    expect(text).not.toContain("the live execution switches could not be read");
+  });
+
+  it("an older server without per-source detail and unreadable stops does not claim an observed engaged stop", () => {
+    const out = liveDispatchBlockers({ liveExecution: { ...base, platformStopReason: null } });
+    const text = out.join("; ");
+    expect(text).not.toMatch(/platform emergency stop engaged$/);
+    expect(text).toMatch(/platform emergency stop engaged or could not be read/);
+  });
+
+  it("a readable engaged stop still reads engaged", () => {
+    const out = liveDispatchBlockers({ liveExecution: {
+      readable: true, envEnabled: true, operatorArmed: true, effectiveEnabled: true,
+      platformStopEngaged: true, platformStopSources: ["safety_core_kill_switch"],
+      platformStopReason: "The safety-core kill switch is engaged. (halt)",
+      platformStopDetail: { safety_core_kill_switch: "halt" },
+    } });
+    expect(out).toEqual(["safety-core kill switch engaged"]);
   });
 });
