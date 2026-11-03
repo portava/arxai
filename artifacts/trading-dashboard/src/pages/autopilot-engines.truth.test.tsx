@@ -112,10 +112,10 @@ describe("Autopilot boards name their engine", () => {
   });
 
   // autopilot_cycles.paper_trades_rejected (summed into safety_blocks_today)
-  // counts every symbol a cycle did not open a trade for: AI HOLD, the daily
-  // paper loss limit, any sniper skip and any paper-execution refusal. A day
-  // of ordinary HOLDs is not "safety blocks".
-  it("the not-opened count is not called safety blocks and says AI holds are included", () => {
+  // counts each symbol/timeframe check ended by an AI HOLD, the daily paper
+  // loss limit, a sniper skip or a paper-execution refusal (not checks that
+  // threw). A day of ordinary HOLDs is not "safety blocks".
+  it("the held/skipped/refused count is not called safety blocks and says AI holds are included", () => {
     render(<PaperAutopilotSummaryCard a={{
       cycles_today: 1440, paper_trades_opened_today: 2, paper_trades_closed_today: 1,
       safety_blocks_today: 7198, last_cycle: { autopilot_cycle_id: "c9", status: "COMPLETED", paper_trades_opened: 0, paper_trades_rejected: 5 },

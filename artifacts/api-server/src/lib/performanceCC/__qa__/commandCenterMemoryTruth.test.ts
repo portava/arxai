@@ -174,11 +174,12 @@ test("an unsized manual V75 loss (stored 0) counts as a loss, adds nothing to Ne
   assert.doesNotMatch(cc.insights.join("\n"), /positive net P&L/, "the unsized loss could take the net below zero");
 });
 
-// autopilot_cycles.paper_trades_rejected counts every symbol a cycle did not
-// open a trade for: AI HOLD, the daily paper loss limit, any sniper skip and
-// any paper-execution refusal. riskStats.highRiskBlocks sums it, so the field
-// says it is not a count of high-risk (safety) blocks.
-test("riskStats.highRiskBlocks says it counts every not-opened symbol, AI holds included, not high-risk blocks", async () => {
+// autopilot_cycles.paper_trades_rejected counts each symbol/timeframe check
+// that ended without a trade because of an AI HOLD, the daily paper loss
+// limit, a sniper skip or a paper-execution refusal (not checks that threw).
+// riskStats.highRiskBlocks sums it, so the field says it is not a count of
+// high-risk (safety) blocks.
+test("riskStats.highRiskBlocks says it counts held/skipped/refused checks, AI holds included, not high-risk blocks", async () => {
   rows.set(database.autopilotCyclesTable, [
     { id: 2, autopilotCycleId: "c2", userId: 7, status: "COMPLETED", startedAt: new Date(), finishedAt: new Date(),
       paperTradesOpened: 0, paperTradesRejected: 5, paperTradesClosed: 0, debriefsTriggered: 0, learningEventsTriggered: 0 },
