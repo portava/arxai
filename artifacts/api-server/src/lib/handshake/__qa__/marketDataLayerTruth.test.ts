@@ -113,3 +113,23 @@ test("feed freshness that could not be checked is not PASS", async () => {
   set(providers, probes, []);
   assert.equal((await adapter()).status, "WARN");
 });
+
+// A closed market is not a stale feed. The row's staleReason carries the
+// feed's own words (the chart's lag warning: "Market closed ... Not a feed
+// fault"), so the detail names the class with that reason, not the bare grade.
+test("a closed-market class is described with the feed's own reason, not as a 'stale' feed", async () => {
+  const providers = [...keysOnly.slice(0, 2), { id: "twelve_data", category: "market_data", status: "healthy" }];
+  const probes = [probe("EURUSD", true, true), probe("AAPL", true, true)];
+  const friday = "2026-10-30T20:55:00.000Z";
+  set(providers, probes, [
+    { ...activity("forex", "EURUSD", "stale", friday),
+      staleReason: "Market closed for EURUSD since the scheduled weekend close (2026-10-30 21:00 UTC); newest bar opened 2026-10-30 20:55 UTC. Not a feed fault, and not live data." },
+    { ...activity("stocks", "AAPL", "stale", friday),
+      staleReason: "No new AAPL bar since one opened 2026-10-30 20:55 UTC (40 bars behind the current bar). The market may be closed or the feed delayed; this is not live data." },
+  ]);
+  const r = await adapter();
+  assert.equal(r.status, "WARN");
+  assert.doesNotMatch(r.detail, /\(EURUSD\) stale|\(AAPL\) stale/, r.detail);
+  assert.match(r.detail, /forex \(EURUSD\): Market closed for EURUSD since the scheduled weekend close .*Not a feed fault, and not live data \(last candle 2026-10-30 20:55 UTC\)/, r.detail);
+  assert.match(r.detail, /stocks \(AAPL\): No new AAPL bar since .*The market may be closed or the feed delayed; this is not live data \(last candle 2026-10-30 20:55 UTC\)/, r.detail);
+});
