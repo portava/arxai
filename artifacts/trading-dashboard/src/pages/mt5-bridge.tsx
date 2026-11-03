@@ -216,14 +216,35 @@ export default function MT5BridgePage() {
   // This page reads only the bridge heartbeat. It does not measure the price
   // feed, result reporting or position/account refresh, so it does not claim them.
   const NOT_CHECKED = "Not checked here";
+  // The freeze message and the risk caps live on the account-mode envelope,
+  // not on the hook's top-level result (reading them there always gave
+  // undefined, so "Stop Loss Required: No" and "All approved symbols" showed
+  // whatever the server said).
+  const modeEnvelope = mode.envelope ?? null;
   const bridgeCopy = frozen
-    ? ((mode as any).freezeMessage ?? "Your account is currently frozen. Contact support or wait for review.")
+    ? (modeEnvelope?.userFrozenStatus?.freezeMessage ?? "Your account is currently frozen. Contact support or wait for review.")
     : statusUnreadable
       ? "MT5 bridge status could not be loaded, so whether your route is connected is not known right now. The last value read is not shown as current."
     : bridgeHealthy
       ? (onShared ? "Your account routes through the ARX shared MT5 bridge, which is reporting." : "Your own MT5 EA connection is reporting.")
       : (s?.userSafeMessage ?? (onShared ? shared?.message : null) ?? "MT5 bridge status could not be read.");
-  const allocation = (mode as any).userAllocation ?? (mode as any).assignedStartingBalance ?? null;
+  // Allocation: the canonical per-user allocation view on the shared-account
+  // summary — the same source the live dispatch gate reads. (The hook's result
+  // has no userAllocation field, so this always read as missing; and the
+  // envelope's assignedStartingBalance falls back to the running balance, so
+  // it is not an assignment.) A failed or missing read is said so.
+  const allocView = (acctSummary?.data as { allocationView?: { assignedAllocation?: number; hasAllocation?: boolean } | null } | null | undefined)?.allocationView;
+  const allocationAmount = allocView?.hasAllocation === true && typeof allocView.assignedAllocation === "number" && Number.isFinite(allocView.assignedAllocation)
+    ? allocView.assignedAllocation : null;
+  const allocationText = allocationAmount != null ? fmtMoney(allocationAmount)
+    : acctSummary?.isError ? "Could not be loaded"
+    : acctSummary?.isLoading ? "Checking…"
+    : acctSummary?.data == null ? "Not available"
+    : allocView == null ? "Could not be loaded"
+    : allocView.hasAllocation === false ? "Not assigned"
+    : "Could not be loaded";
+  const caps = modeEnvelope?.userRiskCaps ?? null;
+  const CAPS_UNKNOWN = "Could not be checked";
   const openPnl = acct?.pnl ?? null;
   // The status endpoint says whether it read the broker's positions at all
   // (openPositionsMeasured). An unread list is not "0 open trades".
@@ -312,8 +333,8 @@ export default function MT5BridgePage() {
         <span className="flex items-center gap-2 font-medium"><RadioTower className={cn("h-4 w-4", TONE_TEXT[bridgeState.tone])} /> {routeLabel}</span>
         <span className="flex items-center gap-2 font-medium"><UserCheck className={cn("h-4 w-4", TONE_TEXT[approvalTone])} /> {approvalLabel}</span>
         <span className="flex items-center gap-2 font-medium"><Activity className={cn("h-4 w-4", TONE_TEXT[bridgeHealthy ? "success" : "warning"])} /> {bridgeHealthy ? "Bridge Healthy" : `Bridge ${bridgeState.label}`}</span>
-        {allocation != null && (
-          <span className="flex items-center gap-2 font-medium"><Landmark className="h-4 w-4 text-primary" /> Allocation <span className="text-primary">{fmtMoney(allocation)}</span></span>
+        {allocationAmount != null && (
+          <span className="flex items-center gap-2 font-medium"><Landmark className="h-4 w-4 text-primary" /> Allocation <span className="text-primary">{fmtMoney(allocationAmount)}</span></span>
         )}
       </div>
 
@@ -339,7 +360,7 @@ export default function MT5BridgePage() {
           </div>
 
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <MetricTile label="Allocation" value={fmtMoney(allocation)} />
+            <MetricTile label="Allocation" value={allocationText} />
             <MetricTile label="Open P/L" value={openPnl == null ? "—" : fmtMoney(openPnl)} tone={openPnl == null ? "muted" : openPnl >= 0 ? "success" : "danger"} />
             <MetricTile label="Open Trades" value={openTrades == null ? "—" : String(openTrades)} />
           </div>
@@ -406,12 +427,13 @@ export default function MT5BridgePage() {
           <div className="divide-y divide-border/60">
             <Row label="Approval" value={approvalLabel} tone={approvalTone} />
             <Row label="Live Access" value={liveAccessLabel} tone={liveArmed ? "success" : mode.isLiveShared ? "warning" : "muted"} />
-            <Row label="Allocation" value={fmtMoney(allocation)} />
-            <Row label="Allowed Markets" value={Array.isArray((mode as any).allowedSymbols) && (mode as any).allowedSymbols.length ? `${(mode as any).allowedSymbols.length} approved` : "All approved symbols"} />
-            <Row label="Max Lot Size" value={(mode as any).maxLotSize != null ? String((mode as any).maxLotSize) : "Not available"} />
-            <Row label="Max Open Trades" value={(mode as any).maxOpenTrades != null ? String((mode as any).maxOpenTrades) : "Not available"} />
-            <Row label="Stop Loss Required" value={(mode as any).requireStopLoss ? "Yes" : "No"} tone={(mode as any).requireStopLoss ? "success" : "muted"} />
-            <Row label="Risk Controls" value={(mode as any).hasRiskCaps ? "Active" : "Standard"} tone={(mode as any).hasRiskCaps ? "success" : "muted"} />
+            <Row label="Allocation" value={allocationText} />
+            {/* allowedSymbols null = no restriction list; a null cap = none set. */}
+            <Row label="Allowed Markets" value={!caps ? CAPS_UNKNOWN : Array.isArray(caps.allowedSymbols) && caps.allowedSymbols.length ? `${caps.allowedSymbols.length} approved` : "All approved symbols"} />
+            <Row label="Max Lot Size" value={!caps ? CAPS_UNKNOWN : caps.maxLotSize != null ? String(caps.maxLotSize) : "Not set"} />
+            <Row label="Max Open Trades" value={!caps ? CAPS_UNKNOWN : caps.maxOpenTrades != null ? String(caps.maxOpenTrades) : "Not set"} />
+            <Row label="Stop Loss Required" value={!caps ? CAPS_UNKNOWN : caps.requireStopLoss ? "Yes" : "No"} tone={caps?.requireStopLoss ? "success" : "muted"} />
+            <Row label="Risk Controls" value={!caps ? CAPS_UNKNOWN : mode.hasRiskCaps ? "Active" : "Standard"} tone={caps && mode.hasRiskCaps ? "success" : "muted"} />
             <Row label="Account Freeze" value={frozen ? "Yes" : "No"} tone={frozen ? "danger" : "success"} />
           </div>
           <Link href="/risk-settings" className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-primary hover:border-primary/40">
@@ -467,7 +489,7 @@ export default function MT5BridgePage() {
               <Row label="Free Margin" value={fmtMoney(snapshot?.freeMargin, snapshot?.currency)} />
               <Row label="Margin Level" value={snapshot?.marginLevel != null ? `${Number(snapshot.marginLevel).toFixed(2)}%` : "—"} />
               <Row label="Open Positions" value={openTrades == null ? "—" : String(openTrades)} />
-              <Row label="Allocation" value={fmtMoney(allocation)} />
+              <Row label="Allocation" value={allocationText} />
             </div>
           ) : (
             <p className="py-8 text-center text-sm text-txt-muted">Account snapshot will appear once bridge data is available.</p>

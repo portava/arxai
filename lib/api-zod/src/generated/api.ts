@@ -17927,7 +17927,7 @@ export const CreateMeScalpFocusResponse = zod.object({
     .boolean()
     .optional()
     .describe(
-      "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+      "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
     ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
@@ -18141,7 +18141,7 @@ export const CreateMeScalpRankResponse = zod.object({
         .boolean()
         .optional()
         .describe(
-          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18346,7 +18346,7 @@ export const CreateMeScalpRankResponse = zod.object({
         .boolean()
         .optional()
         .describe(
-          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18551,7 +18551,7 @@ export const CreateMeScalpRankResponse = zod.object({
         .boolean()
         .optional()
         .describe(
-          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18756,7 +18756,7 @@ export const CreateMeScalpRankResponse = zod.object({
         .boolean()
         .optional()
         .describe(
-          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18982,7 +18982,7 @@ export const CreateMeScalpBuildResponse = zod.object({
         .boolean()
         .optional()
         .describe(
-          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -19187,7 +19187,7 @@ export const CreateMeScalpBuildResponse = zod.object({
         .boolean()
         .optional()
         .describe(
-          "True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -20291,7 +20291,13 @@ export const GetMeOpportunityMapResponse = zod.object({
           .boolean()
           .optional()
           .describe(
-            "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+          ),
+        newsRiskUnchecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
           ),
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
@@ -20336,7 +20342,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20380,7 +20392,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20424,7 +20442,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20468,7 +20492,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20512,7 +20542,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20556,7 +20592,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20602,7 +20644,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20646,7 +20694,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20690,7 +20744,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20734,7 +20794,13 @@ export const GetMeOpportunityMapResponse = zod.object({
             .boolean()
             .optional()
             .describe(
-              "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
             ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
@@ -20786,7 +20852,13 @@ export const GetMeOpportunityMapResponse = zod.object({
           .boolean()
           .optional()
           .describe(
-            "True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it.",
+            "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+          ),
+        newsRiskUnchecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
           ),
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),

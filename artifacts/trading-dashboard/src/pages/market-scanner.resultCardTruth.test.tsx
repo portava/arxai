@@ -157,7 +157,11 @@ vi.mock("@/components/scanner/RubySetupReason", () => ({
   RubySetupReason: ({ signal }: { signal: Record<string, unknown> }) => { rubySignals.push(signal); return null; },
 }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
-vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => null }));
+// Records the props the Trade Setup / BUY / SELL buttons open the ticket with.
+const modalProps: Array<Record<string, unknown>> = [];
+vi.mock("@/components/scanner/ScannerTradeModal", () => ({
+  ScannerTradeModal: (props: Record<string, unknown>) => { modalProps.push(props); return null; },
+}));
 vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({ MasterLiveAccessBanner: () => null }));
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
@@ -188,7 +192,7 @@ beforeEach(() => {
   globalFeed = envelope("all", ["EURUSD"]);
   pendingRead = null;
   mockRealIsAdmin = false;
-  fetchMock.mockReset(); safeJsonMock.mockClear(); pickCallbacks.length = 0; mapGroups.length = 0; rubySignals.length = 0;
+  fetchMock.mockReset(); safeJsonMock.mockClear(); pickCallbacks.length = 0; mapGroups.length = 0; rubySignals.length = 0; modalProps.length = 0;
   vi.stubGlobal("fetch", fetchMock);
   Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
 });
@@ -237,6 +241,45 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     expect(sent.length).toBeGreaterThan(0);
     expect(sent[sent.length - 1].recommendedAction).toBe("BUY");
     expect(sent[sent.length - 1].statusBadge).toBe("HOT_SETUP");
+  });
+});
+
+// Review pass 2: the card now says "No trade", but its Trade Setup / BUY /
+// SELL buttons still open the ticket, whose Summary asked Ruby to explain the
+// raw BUY + HOT_SETUP signal ("This looks like a possible buy setup."). The
+// ticket is told the final read withheld the setup reason, so it shows the
+// same note as the card. The signal itself (what an order records) is unchanged.
+describe("legacy scanner result card — the trade ticket under a withheld final read", () => {
+  const lastModal = () => modalProps[modalProps.length - 1];
+
+  for (const button of ["Trade Setup", "BUY", "SELL"] as const) {
+    it(`${button} on a NO_TRADE row opens the ticket with the setup reason withheld`, async () => {
+      rowOverrides = { finalRead: { label: "NO_TRADE", headline: "No trade", reasons: ["Major event nearby. Volatility may spike."] } };
+      globalFeed = envelope("all", ["EURUSD"]);
+      render(<MarketScanner />); await settle();
+      const target = button === "Trade Setup" ? screen.getByText("Trade Setup") : screen.getByTestId(`scanner-${button.toLowerCase()}-EURUSD`);
+      fireEvent.click(target); await settle();
+      expect(modalProps.length).toBeGreaterThan(0);
+      expect(lastModal().setupReasonWithheld).toEqual({ label: "No trade", reasons: ["Major event nearby. Volatility may spike."] });
+      // The order-side signal is not rewritten: only the display is told.
+      expect((lastModal().signal as Record<string, unknown>).recommendedAction).toBe("BUY");
+    });
+  }
+
+  it("an AVOID_FOR_NOW row with no reasons still withholds the setup reason in the ticket", async () => {
+    rowOverrides = { finalRead: { label: "AVOID_FOR_NOW" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Trade Setup")); await settle();
+    expect(lastModal().setupReasonWithheld).toEqual({ label: "Avoid for now", reasons: [] });
+  });
+
+  it("a row the final read allows opens the ticket without a withheld note", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Trade Setup")); await settle();
+    expect(lastModal().setupReasonWithheld ?? null).toBeNull();
   });
 });
 

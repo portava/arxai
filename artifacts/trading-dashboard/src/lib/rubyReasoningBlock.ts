@@ -598,12 +598,16 @@ export function buildReasoningFromScalp(
 
   const newsLabel = clean(r.newsRisk);
   // The engine sends newsRisk "LOW" alongside these flags: that LOW was never
-  // read from a calendar, so it is reported as not checked (same as the chip).
+  // read from a calendar, so it is reported as not checked (same as the chip,
+  // in the chip's order: a failed check first, then no calendar configured,
+  // then no calendar connected — where only a LOW band is the default).
   const newsNotChecked = r.newsRiskUnchecked === true
     ? "news could not be checked"
     : r.newsRiskNotConfigured === true
       ? "news not checked (no economic calendar configured)"
-      : "";
+      : r.newsRiskNotChecked === true && r.newsRisk === "LOW"
+        ? "news not checked (no economic calendar connected)"
+        : "";
   const riskBits = [
     clean(r.spreadRisk) ? `spread ${r.spreadRisk}` : "",
     clean(r.slippageRisk) ? `slippage ${r.slippageRisk}` : "",

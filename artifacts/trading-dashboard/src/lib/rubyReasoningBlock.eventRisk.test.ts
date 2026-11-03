@@ -101,4 +101,26 @@ describe("scalp Risk row", () => {
     expect(risk).toMatch(/news LOW/);
     expect(risk).not.toContain(NEWS_UNAVAILABLE_NOTE);
   });
+
+  // Review pass 2: the scalp card's News chip reads "Not checked" on
+  // newsRiskNotChecked + LOW (no calendar looked at scheduled events). The
+  // Ruby Reasoning Block on the same card must not say "news LOW" beside it.
+  it("no calendar looked at scheduled events (newsRiskNotChecked): never 'news LOW'", () => {
+    const risk = scalp({ newsRiskNotChecked: true });
+    expect(risk).not.toMatch(/news\s*LOW/i);
+    expect(risk).toMatch(/news not checked \(no economic calendar connected\)/);
+    expect(risk).toContain(NEWS_UNAVAILABLE_NOTE);
+    expect(risk).toMatch(/spread LOW, slippage LOW/);
+  });
+
+  it("newsRiskNotChecked with a MEDIUM band keeps the band, as the chip does", () => {
+    const risk = scalp({ newsRiskNotChecked: true, newsRisk: "MEDIUM" });
+    expect(risk).toMatch(/news MEDIUM/);
+  });
+
+  it("a failed check wins over newsRiskNotChecked (same order as the chip)", () => {
+    const risk = scalp({ newsRiskNotChecked: true, newsRiskUnchecked: true });
+    expect(risk).toMatch(/news could not be checked/);
+    expect(risk).not.toMatch(/no economic calendar connected/);
+  });
 });

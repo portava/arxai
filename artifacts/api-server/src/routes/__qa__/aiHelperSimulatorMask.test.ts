@@ -226,3 +226,35 @@ test("/ai/session-plan withheld text states the operator-only rule, not an unche
     assert.match(t, /session plans are shown only to platform operators/i, t);
   }
 });
+
+// Review pass 2: the market analysis and trade card are also masked by the
+// viewer's role alone (analyzeMarket / generateTradeCard always run on
+// simulator prices), so no verified feed will ever un-hide them. Their text
+// said "hidden until a verified feed is available" / "Read withheld until a
+// verified live feed is available" — it must name the role mask instead.
+function assertRoleMaskCopy(texts: string[], what: string) {
+  for (const t of texts) {
+    assert.doesNotMatch(t, /verified (live )?feed|isn't confirmed yet/i, `a feed will not un-hide a role-masked ${what}: ${t}`);
+  }
+  const joined = texts.join(" ");
+  assert.match(joined, /simulator/i, `the ${what} text says it is built from simulator prices`);
+  assert.match(joined, /operator/i, `the ${what} text says who may see simulator-based detail`);
+}
+
+test("/ai/market-analysis withheld text names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/market-analysis", "TESTER", SYMBOL);
+  assertRoleMaskCopy([String(masked.reasonForTrade), String(masked.reasonToAvoid)], "market analysis");
+});
+
+test("/ai/generate-trade-card withheld text names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/generate-trade-card", "TESTER", SYMBOL);
+  assertRoleMaskCopy([String(masked.reasonForTrade), String(masked.reasonToAvoid), String(masked.notes)], "trade card");
+});
+
+test("/ai/setup-analysis nested analysis and card name the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/setup-analysis", "TESTER", SYMBOL);
+  const analysis = masked.analysis as Record<string, unknown>;
+  const card = masked.card as Record<string, unknown>;
+  assertRoleMaskCopy([String(analysis.reasonForTrade), String(analysis.reasonToAvoid)], "setup analysis");
+  assertRoleMaskCopy([String(card.reasonForTrade), String(card.notes)], "setup trade card");
+});

@@ -58,16 +58,21 @@ function utcDayTime(d: Date): string {
  * time is that hour start plus `hours`. `elapsedMs` is how long ago, on the
  * client clock, that server time was received: the wait is measured from the
  * server time plus that, so it keeps counting down when later reads fail.
- * Once the open time has passed with no fresh read, no wait is shown. Null
- * when the inputs are unusable.
+ * Once the open time has passed with no fresh read, no wait is shown; under a
+ * minute away it says so (never rounded down to "passed"). Null when the
+ * inputs are unusable.
  */
 export function nextOpenText(nowUtcIso: string, hours: number, elapsedMs = 0): string | null {
   const now = Date.parse(nowUtcIso);
   if (!Number.isFinite(now) || !Number.isFinite(hours) || hours <= 0) return null;
   const at = new Date(Math.floor(now / HOUR_MS) * HOUR_MS + hours * HOUR_MS);
   const current = now + (Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0);
-  const mins = Math.round((at.getTime() - current) / 60_000);
-  if (mins <= 0) return `${utcDayTime(at)} (that time has passed; the reopen is not confirmed until the session clock is read again)`;
+  // Decide "passed" on the raw milliseconds: rounding first turned a wait of
+  // under 30 s into 0 and claimed a time that had not arrived had passed.
+  const remainingMs = at.getTime() - current;
+  if (remainingMs <= 0) return `${utcDayTime(at)} (that time has passed; the reopen is not confirmed until the session clock is read again)`;
+  if (remainingMs < 60_000) return `${utcDayTime(at)} (in under a minute)`;
+  const mins = Math.round(remainingMs / 60_000);
   return `${utcDayTime(at)} (in ${Math.floor(mins / 60)}h ${mins % 60}m)`;
 }
 

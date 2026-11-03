@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scannerResultActionChip, scannerResultCardClaims } from "./scannerResultAction";
+import { scannerResultActionChip, scannerResultCardClaims, scannerSetupReasonWithheld } from "./scannerResultAction";
 
 describe("scanner result card direction chip", () => {
   it("never shows BUY beside a server final read of NO_TRADE", () => {
@@ -31,5 +31,17 @@ describe("scanner result card claims beside a withheld action", () => {
     expect(scannerResultCardClaims(scannerResultActionChip("BUY", "TRADE_WATCH"), "ELITE", "HOT_SETUP"))
       .toEqual({ showGrade: true, showStatusBadge: true, borderTone: "positive" });
     expect(scannerResultCardClaims(scannerResultActionChip("BUY", undefined), "ACCEPTABLE", "WATCHLIST").borderTone).toBe("info");
+  });
+});
+
+describe("setup reason withheld for the trade ticket", () => {
+  it("a withheld action carries its chip words and the final read's string reasons", () => {
+    expect(scannerSetupReasonWithheld(scannerResultActionChip("BUY", "NO_TRADE"), { reasons: ["Event nearby.", "", 3, "  "] }))
+      .toEqual({ label: "No trade", reasons: ["Event nearby."] });
+    expect(scannerSetupReasonWithheld(scannerResultActionChip("SELL", "AVOID_FOR_NOW"), null))
+      .toEqual({ label: "Avoid for now", reasons: [] });
+  });
+  it("an allowed action withholds nothing", () => {
+    expect(scannerSetupReasonWithheld(scannerResultActionChip("BUY", "TRADE_WATCH"), { reasons: ["x"] })).toBeNull();
   });
 });

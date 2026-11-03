@@ -795,11 +795,21 @@ function OpportunityRowCardBase({
               per-trade execution quality. */}
           {validHeuristic(row.executionQuality) && <span>· Feed {Math.round(row.executionQuality)}</span>}
           {row.newsRisk !== "none" && <span className="text-warning">· news {row.newsRisk}</span>}
-          {row.newsRisk === "none" && row.newsRiskNotChecked === true && (
+          {/* A failed check (lookup failed / calendar did not answer) also
+              arrives as newsRiskNotChecked: name the failure, never blame a
+              missing calendar for it. */}
+          {row.newsRisk === "none" && row.newsRiskUnchecked === true ? (
+            <span
+              className="text-warning"
+              title="The news lookup failed or the economic calendar did not answer, so scheduled news for this market could not be checked."
+            >
+              · news could not be checked
+            </span>
+          ) : row.newsRisk === "none" && row.newsRiskNotChecked === true ? (
             <span title="No economic calendar is connected, so scheduled news for this market was not checked.">
               · news not checked
             </span>
-          )}
+          ) : null}
         </div>
       )}
       {/* Reason can echo the simulator read for a no-data row, so only show it
@@ -831,7 +841,7 @@ function OpportunityRowCardBase({
 // a field read there but missing here would render stale.
 const ROW_CARD_FIELDS = [
   "symbol", "displayName", "direction", "category", "hasLiveData",
-  "edgeScore", "entryQuality", "executionQuality", "newsRisk", "newsRiskNotChecked", "reason",
+  "edgeScore", "entryQuality", "executionQuality", "newsRisk", "newsRiskNotChecked", "newsRiskUnchecked", "reason",
 ] as const satisfies readonly (keyof OpportunityMapRow)[];
 function sameOpportunityRowCardProps(
   prev: Parameters<typeof OpportunityRowCardBase>[0],
