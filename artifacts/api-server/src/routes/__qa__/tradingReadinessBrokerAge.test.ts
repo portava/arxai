@@ -106,12 +106,18 @@ for (const status of ["EXECUTION_DISABLED", "DEGRADED"]) {
   });
 }
 
-test("EXECUTION_DISABLED says the operator turned broker execution off and what that blocks", () => {
+// executionEnabled starts false (the schema default) and may never have been
+// switched on, so EXECUTION_DISABLED is the observed state of the switch, not
+// an operator action anyone observed.
+test("EXECUTION_DISABLED says broker execution was not enabled (switch off) and what that blocks, not that an operator turned it off", () => {
   const out = evaluateReadiness(signals(log("EXECUTION_DISABLED", 20_000)), INPUT);
   const item = out.checklist.find((c) => c.id === "broker")!;
-  assert.match(item.detail, /execution was turned off by the operator/i);
+  for (const text of [item.detail, ...out.blockers, ...out.warnings, out.aiSummary]) {
+    assert.doesNotMatch(text, /turned off by the operator|operator (turned|switched|disabled)/i);
+  }
+  assert.match(item.detail, /broker execution was not enabled \(the operator execution switch was off\)/i);
   assert.match(item.detail, /DEMO or LIVE/);
-  assert.ok(out.blockers.some((w) => /execution (was )?turned off/i.test(w)), "the blocker names the operator switch");
+  assert.ok(out.blockers.some((w) => /execution not enabled \(operator execution switch off\)/i.test(w)), "the blocker names the switch state");
 });
 
 test("PRICE_FEED_DELAYED still blocks but says the feed was delayed, not that the broker was disconnected", () => {

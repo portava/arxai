@@ -88,8 +88,11 @@ const BROKER_STATUS_MEANING: Record<string, BrokerStatusMeaning> = {
   },
   EXECUTION_DISABLED: {
     kind: "block",
-    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was turned off by the operator: no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
-    short: "execution was turned off by the operator; the link was up",
+    // The observed state of broker_health_state.executionEnabled, which starts
+    // false (schema default) and may never have been switched on: never
+    // worded as an operator action nobody observed.
+    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was not enabled (the operator execution switch was off): no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
+    short: "execution not enabled (operator execution switch off); the link was up",
   },
   PRICE_FEED_DELAYED: {
     kind: "block",
