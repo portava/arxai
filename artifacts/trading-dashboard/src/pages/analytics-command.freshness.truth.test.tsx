@@ -98,6 +98,23 @@ describe("Analytics Command Center saved symbol highlights", () => {
   });
 });
 
+describe("Analytics Command Center saved symbol highlights with nothing ranked", () => {
+  // Review pass 3: the stored columns are null only when no closed trade was
+  // sized in USD (nothing ranked). The cards still read the live, sign-based
+  // "No symbol is net profitable" / "No symbol is net losing" above a sub-line
+  // saying the saved row does not record profitability.
+  it("a saved snapshot that ranked no symbol makes no profit or loss claim", async () => {
+    serve({ snapshot: { ...SAVED, totalTrades: 0, strongestStrategy: null, weakestStrategy: null } });
+    renderPage();
+    const best = (await screen.findByTestId("analytics-highlight-best-symbol")).textContent ?? "";
+    const worst = screen.getByTestId("analytics-highlight-worst-symbol").textContent ?? "";
+    expect(best).not.toContain("No symbol is net profitable");
+    expect(worst).not.toContain("No symbol is net losing");
+    expect(best).toContain("No symbol had a closed trade sized in USD when this snapshot was saved");
+    expect(worst).toContain("No symbol had a closed trade sized in USD when this snapshot was saved");
+  });
+});
+
 describe("Analytics Command Center unmeasured figures", () => {
   it("a new user's tiles read — with the reason, not 0 / 0% / $0 in red", async () => {
     serve({

@@ -83,6 +83,8 @@ const SAVED_BEST_SYMBOL_BASIS =
 // not record which, so the card names the slice without claiming a ranking.
 const SAVED_EDGE_SLICE_BASIS =
   "The edge slice named in the saved snapshot. The saved snapshot does not record how it was ranked, and it is not your results in a market condition.";
+/** A saved row's best / worst symbol is null only when no closed trade was sized in USD. */
+const SAVED_NO_SYMBOL_RANKED = "No symbol had a closed trade sized in USD when this snapshot was saved";
 const SAVED_WORST_SYMBOL_BASIS =
   "The symbol with the lowest net P&L when the snapshot was saved. The saved snapshot does not record whether it was net losing, and with one traded symbol it is also the best.";
 
@@ -354,9 +356,14 @@ export default function AnalyticsCommandCenter() {
                 Best / worst symbol rank by money, so they are "not measured"
                 when no closed trade could be sized, and "out of date" when the
                 saved snapshot no longer matches the figures computed now. */}
-            <Highlight id="best-symbol"  label="Best symbol (net P&L)"  v={!moneyKnown ? money("") : live ? live.strongestSymbol ?? null : s.strongestStrategy} tone="emerald" empty="No symbol is net profitable"
+            {/* The sign-based empty text is true only of the live, sign-gated
+                ranking. A saved row stores the plain top / bottom symbol, null
+                only when no closed trade was sized in USD (nothing ranked). */}
+            <Highlight id="best-symbol"  label="Best symbol (net P&L)"  v={!moneyKnown ? money("") : live ? live.strongestSymbol ?? null : s.strongestStrategy} tone="emerald"
+              empty={live ? "No symbol is net profitable" : SAVED_NO_SYMBOL_RANKED}
               sub={live?.highlightBasis?.symbols ?? SAVED_BEST_SYMBOL_BASIS} />
-            <Highlight id="worst-symbol" label="Worst symbol (net P&L)" v={!moneyKnown ? money("") : live ? live.weakestSymbol ?? null : s.weakestStrategy} tone="red" empty="No symbol is net losing"
+            <Highlight id="worst-symbol" label="Worst symbol (net P&L)" v={!moneyKnown ? money("") : live ? live.weakestSymbol ?? null : s.weakestStrategy} tone="red"
+              empty={live ? "No symbol is net losing" : SAVED_NO_SYMBOL_RANKED}
               sub={live?.highlightBasis?.symbols ?? SAVED_WORST_SYMBOL_BASIS} />
             <Highlight id="strongest-edge" label="Strongest edge slice" v={live ? edgeSliceText(live.strongestEdgeSlice) : s.strongestMarketCondition} tone="emerald" empty="No slice is rated a strong or developing edge"
               sub={live?.highlightBasis?.edgeSlices ?? SAVED_EDGE_SLICE_BASIS} />
