@@ -149,6 +149,51 @@ describe("Analytics Command Center unmeasured figures", () => {
   });
 });
 
+describe("Analytics Command Center saved-snapshot fallback", () => {
+  // The saved row's columns are NOT NULL: a figure or score it could not
+  // measure was stored as 0, the same as a measured 0.
+  const SAVED_ZEROS = {
+    ...SAVED, totalTrades: 3, winRate: 0, netProfitLoss: 0, expectancy: 0, averageRr: 0, profitFactor: 0, maxDrawdown: 0,
+    disciplineScoreAvg: 0, executionScoreAvg: 0, emotionalScoreAvg: 0, consistencyScoreAvg: 55,
+    strongestMarketCondition: "symbol=EURUSD", weakestMarketCondition: "symbol=GBPUSD",
+  };
+
+  it("a stored 0 money figure is not shown as $0 — the saved row cannot tell measured from not", async () => {
+    serve({ snapshot: SAVED_ZEROS });
+    renderPage();
+    const pnl = await screen.findByTestId("analytics-stat-net-pnl");
+    expect(pnl.textContent).toBe("Net P&L (USD)—");
+    expect(screen.getByTestId("analytics-stat-expectancy").textContent).toBe("Expectancy—");
+    expect(screen.getByTestId("analytics-stat-max-dd").textContent).toBe("Max DD—");
+    expect(screen.getByTestId("analytics-stat-avg-rr").textContent).toBe("Avg RR—");
+    expect(screen.getByTestId("analytics-stat-profit-factor").textContent).toBe("Profit factor—");
+    // A win rate needs no sizing: 0% of 3 closed trades is a result.
+    expect(screen.getByTestId("analytics-stat-win-rate").textContent).toBe("Win rate0.0%");
+    expect(screen.getByTestId("analytics-unmeasured").textContent).toMatch(/saved snapshot stores 0 both for a measured 0 and for a figure it could not measure/);
+  });
+
+  it("a stored 0 behaviour score is — with the reason, not a red 0/100", async () => {
+    serve({ snapshot: SAVED_ZEROS });
+    renderPage();
+    const disc = await screen.findByTestId("consistency-Discipline");
+    expect(disc.textContent).toContain("—");
+    expect(disc.textContent).toMatch(/saved snapshot stores 0/);
+    expect(disc.querySelector(".text-red-300")).toBeNull();
+    expect(screen.getByTestId("consistency-Consistency").textContent).toContain("55");
+  });
+
+  it("the saved edge-slice cards do not claim a ranking the row does not record", async () => {
+    serve({ snapshot: SAVED_ZEROS });
+    renderPage();
+    const strongest = (await screen.findByTestId("analytics-highlight-strongest-edge")).textContent ?? "";
+    expect(strongest).toContain("symbol=EURUSD");
+    expect(strongest).not.toMatch(/highest confidence score/);
+    expect(strongest).toMatch(/does not record how it was ranked/);
+    const weakest = screen.getByTestId("analytics-highlight-weakest-edge").textContent ?? "";
+    expect(weakest).not.toMatch(/lowest confidence score/);
+  });
+});
+
 describe("Analytics Command Center P&L basis", () => {
   it("labels Net P&L as USD and says it differs from the booked demo P&L in Ruby Memory", async () => {
     const note = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close: older closes may have been booked as price move × lots × 100, and a close it could not size is booked as a placeholder (0 in Ruby Memory, the paper risk model in your demo balance), so their Net P&L can differ from this one.";
