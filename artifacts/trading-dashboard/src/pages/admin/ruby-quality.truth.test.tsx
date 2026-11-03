@@ -92,8 +92,23 @@ describe("Ruby Quality metrics — pending vs unresolved, best vs worst", () => 
     render(<AdminRubyQualityPage />);
     const worst = screen.getByTestId("rank-worst-symbols");
     expect(worst.textContent).not.toMatch(/No graded signals yet/);
-    expect(worst.textContent).toMatch(/one graded symbol/i);
+    expect(worst.textContent).toMatch(/no graded symbol has a lower win rate/i);
     const worstSessions = screen.getByTestId("rank-worst-sessions");
-    expect(worstSessions.textContent).toMatch(/one graded session/i);
+    expect(worstSessions.textContent).toMatch(/no graded session has a lower win rate/i);
+  });
+
+  // Two symbols tied at 100% leave Worst empty with one key under Best. The
+  // page cannot tell that apart from "only one graded symbol", so it must not
+  // claim there is only one — it says what is true in both cases.
+  it("an empty Worst list never claims there is only one graded symbol or session", () => {
+    const stat = { key: "AAA", graded: 1, wins: 1, winRate: 1, avgPnlR: 1.5 };
+    state.metrics = emptyMetrics({
+      totals: { tracked: 2, resolved: 2, pending: 0, unresolved: 0, graded: 2 },
+      rates: { winRate: 1, tpRate: null, slRate: null, lateRate: null },
+      bestSymbols: [stat], bestSessions: [{ ...stat, key: "london" }],
+    });
+    render(<AdminRubyQualityPage />);
+    expect(screen.getByTestId("rank-worst-symbols").textContent).not.toMatch(/only one graded/i);
+    expect(screen.getByTestId("rank-worst-sessions").textContent).not.toMatch(/only one graded/i);
   });
 });

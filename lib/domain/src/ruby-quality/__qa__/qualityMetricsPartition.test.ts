@@ -58,6 +58,54 @@ test("with few graded symbols, Best and Worst never list the same one", () => {
   assert.deepEqual(two.worstSymbols.map((s) => s.key), ["BBB"]);
 });
 
+// Best/Worst is a split of a win-rate ranking. A tie is not a ranking: two
+// symbols that both won every trade must not be split into Best and Worst by
+// the order their rows arrived in.
+test("a symbol tied with Best on win rate is never listed as Worst", () => {
+  const tied = computeRubyQualityMetrics([
+    sample({ symbol: "AAA" }),
+    sample({ symbol: "BBB" }),
+  ]);
+  assert.equal(tied.bestSymbols.length, 1);
+  assert.deepEqual(tied.worstSymbols, [], "BBB at 100% is not a worst symbol");
+
+  const three = computeRubyQualityMetrics([
+    sample({ symbol: "AAA" }), sample({ symbol: "AAA", outcomeStatus: "LOSS", pnlR: -1 }),
+    sample({ symbol: "BBB" }), sample({ symbol: "BBB", outcomeStatus: "LOSS", pnlR: -1 }),
+    sample({ symbol: "CCC" }), sample({ symbol: "CCC", outcomeStatus: "LOSS", pnlR: -1 }),
+  ]);
+  assert.deepEqual(three.worstSymbols, [], "three symbols all at 50%: none ranks lower");
+
+  const sessions = computeRubyQualityMetrics([
+    sample({ symbol: "AAA", session: "london" }),
+    sample({ symbol: "BBB", session: "new_york" }),
+  ]);
+  assert.deepEqual(sessions.worstSessions, []);
+});
+
+test("Worst lists only keys whose win rate is strictly below every Best key", () => {
+  const m = computeRubyQualityMetrics([
+    sample({ symbol: "AAA" }),
+    sample({ symbol: "BBB" }),
+    sample({ symbol: "CCC" }),
+    sample({ symbol: "DDD", outcomeStatus: "LOSS", pnlR: -1 }),
+  ]);
+  const floor = Math.min(...m.bestSymbols.map((s) => s.winRate));
+  assert.ok(m.worstSymbols.every((s) => s.winRate < floor), JSON.stringify(m.worstSymbols));
+  assert.deepEqual(m.worstSymbols.map((s) => s.key), ["DDD"]);
+});
+
+test("ties are ranked by a stable rule, not by the order the rows arrived in", () => {
+  const rowsA = [
+    sample({ symbol: "AAA" }),
+    sample({ symbol: "BBB" }), sample({ symbol: "BBB" }),
+  ];
+  const a = computeRubyQualityMetrics(rowsA);
+  const b = computeRubyQualityMetrics([...rowsA].reverse());
+  assert.deepEqual(a.bestSymbols.map((s) => s.key), b.bestSymbols.map((s) => s.key));
+  assert.deepEqual(a.bestSymbols.map((s) => s.key), ["BBB"], "more graded trades at the same rate ranks first");
+});
+
 test("sessions follow the same rule", () => {
   const m = computeRubyQualityMetrics([sample({ session: "london" })]);
   assert.equal(m.bestSessions.length, 1);

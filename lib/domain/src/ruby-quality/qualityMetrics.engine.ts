@@ -149,13 +149,30 @@ function groupStats(rows: QualitySampleRow[], keyOf: (r: QualitySampleRow) => st
 
 /**
  * Best = the top half of the ranking (at most 5), worst = the bottom of what
- * is left (at most 5), so no key is listed as both best and worst. With one
- * ranked key it is only "best"; with two, one each.
+ * is left (at most 5), so no key is listed as both best and worst. A key is
+ * "worst" only when its win rate is strictly below every key under Best: a
+ * key tied with Best did exactly as well and is not called worst. With one
+ * ranked key, or when every key shares the top win rate, Worst is empty.
  */
 function bestAndWorst(ranked: SymbolSessionStat[]): { best: SymbolSessionStat[]; worst: SymbolSessionStat[] } {
   const best = ranked.slice(0, Math.min(5, Math.ceil(ranked.length / 2)));
-  const worst = ranked.slice(best.length).slice(-5).reverse();
+  const floor = best.length ? Math.min(...best.map((s) => s.winRate)) : Infinity;
+  const worst = ranked.slice(best.length).filter((s) => s.winRate < floor).slice(-5).reverse();
   return { best, worst };
+}
+
+/**
+ * Win rate first; ties broken by a fixed rule (more graded trades, then the
+ * higher average R, then the key) so the order never depends on the order the
+ * rows arrived in.
+ */
+function byWinRate(a: SymbolSessionStat, b: SymbolSessionStat): number {
+  if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+  if (b.graded !== a.graded) return b.graded - a.graded;
+  const ar = a.avgPnlR ?? -Infinity;
+  const br = b.avgPnlR ?? -Infinity;
+  if (br !== ar) return br > ar ? 1 : -1;
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
 export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQualityMetrics {
@@ -178,7 +195,6 @@ export function computeRubyQualityMetrics(rows: QualitySampleRow[]): RubyQuality
 
   const symbolStats = groupStats(resolved, (r) => r.symbol);
   const sessionStats = groupStats(resolved, (r) => r.session ?? "unknown");
-  const byWinRate = (a: SymbolSessionStat, b: SymbolSessionStat) => b.winRate - a.winRate;
   const rankedSymbols = [...symbolStats].filter((s) => s.graded > 0).sort(byWinRate);
   const rankedSessions = [...sessionStats].filter((s) => s.graded > 0).sort(byWinRate);
   const symbols = bestAndWorst(rankedSymbols);

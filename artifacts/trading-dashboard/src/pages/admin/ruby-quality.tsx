@@ -168,13 +168,13 @@ function MetricsTab() {
             <RankTable
               title="Worst symbols"
               rows={m.worstSymbols}
-              emptyText={m.bestSymbols.length > 0 ? "Only one graded symbol so far — it is listed under Best, not ranked both ways." : undefined}
+              emptyText={m.bestSymbols.length > 0 ? "No graded symbol has a lower win rate than those under Best, so none is listed as worst." : undefined}
             />
             <RankTable title="Best sessions" rows={m.bestSessions} />
             <RankTable
               title="Worst sessions"
               rows={m.worstSessions}
-              emptyText={m.bestSessions.length > 0 ? "Only one graded session so far — it is listed under Best, not ranked both ways." : undefined}
+              emptyText={m.bestSessions.length > 0 ? "No graded session has a lower win rate than those under Best, so none is listed as worst." : undefined}
             />
           </div>
 
