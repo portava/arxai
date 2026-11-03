@@ -1208,7 +1208,7 @@ export async function getPropFirmModeStatus(userId: number) {
     // The page's own wording for what these figures measure, so Ruby and the
     // Prop Challenge page describe the same numbers the same way, and the
     // page's own rule checks.
-    const { closedTradeDrawdownNote, RISK_PER_TRADE_NOTE, evaluateChallengeRules } = await import("../../routes/propChallenges.js");
+    const { closedTradeDrawdownNote, RISK_PER_TRADE_NOTE, evaluateChallengeRules, BOOKED_CLAUSE, MODEL_CLAUSE, BOTH_CLAUSE } = await import("../../routes/propChallenges.js");
     // What /evaluate would compute now. The pass and fail rules are checked on
     // two complete running balances: each closed trade at its booked P&L (the
     // figures shown) and each at the paper risk model (price move × lots ×
@@ -1272,17 +1272,39 @@ export async function getPropFirmModeStatus(userId: number) {
     // date is not when the breach happened. Each basis's current maximum is
     // given dated to the day it was reached, and the day the limit was first
     // exceeded on that basis when that is earlier, in /evaluate's own words.
+    // While both bases are at the same drawdown /evaluate gives one message
+    // with the "both" clause, and one per basis, each with its own clause,
+    // once they differ; with no clause both bases count every trade the same.
+    // So a message speaks for a basis when it carries that basis's clause,
+    // the "both" clause or none, and each basis is followed through all of
+    // them (a breach first reported for both bases belongs to each).
     const ddHard = ev.violations
       .map((v, i) => ({ v, day: ev.violationDates[i] ?? null }))
       .filter(({ v }) => v.type === "TOTAL_DRAWDOWN" && v.severity === "HARD");
     const undated = (m: string) => m.replace(/ on \d{4}-\d{2}-\d{2}/, "");
     const basisOfDrawdown = (m: string) => undated(m).replace(/^Closed-trade drawdown [\d.]+% exceeds limit [\d.]+%/, "");
-    const drawdownBreaches: string[] = [];
-    for (const cur of ddHard.filter((x) => x.day === lastWalkDay)) {
-      const first = ddHard.find((x) => basisOfDrawdown(x.v.message) === basisOfDrawdown(cur.v.message)) ?? cur;
-      const reached = ddHard.find((x) => undated(x.v.message) === undated(cur.v.message)) ?? cur;
-      for (const m of [first.v.message, reached.v.message]) if (!drawdownBreaches.includes(m)) drawdownBreaches.push(m);
+    const drawdownPctOf = (m: string) => /^Closed-trade drawdown ([\d.]+)%/.exec(m)?.[1] ?? null;
+    const speaksFor = (m: string, clause: string) => {
+      const c = basisOfDrawdown(m);
+      return c === "" || c === ` (${clause})` || c === ` (${BOTH_CLAUSE})`;
+    };
+    const breachEntries: Array<{ message: string; day: string | null }> = [];
+    for (const clause of [BOOKED_CLAUSE, MODEL_CLAUSE]) {
+      const mine = ddHard.filter((x) => speaksFor(x.v.message, clause));
+      const cur = mine.find((x) => x.day === lastWalkDay);
+      if (!cur) continue;
+      // The first message for this basis is the day its limit was first exceeded;
+      // the first giving its current maximum is the day that maximum was reached.
+      const first = mine[0] ?? cur;
+      const reached = mine.find((x) => drawdownPctOf(x.v.message) === drawdownPctOf(cur.v.message)) ?? cur;
+      for (const x of [first, reached]) {
+        if (!breachEntries.some((e) => e.message === x.v.message)) breachEntries.push({ message: x.v.message, day: x.day });
+      }
     }
+    // Oldest first (a stable sort keeps the booked basis before the model on one day).
+    const drawdownBreaches = breachEntries
+      .sort((p, q) => (p.day ?? "").localeCompare(q.day ?? ""))
+      .map((e) => e.message);
     ev.violations.forEach((v, i) => {
       if (!PROP_TWO_BASIS_RULES.has(v.type) || v.severity === "INFO") return;
       const day = ev.violationDates[i] ?? null;

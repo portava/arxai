@@ -210,9 +210,11 @@ const bookedFigure = (o: ChallengeOrder): number => o.profitLoss;
 const modelFigure = (o: ChallengeOrder): number => o.exitPrice == null
   ? o.profitLoss
   : paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
-const BOOKED_CLAUSE = "each closed trade counted at its booked P&L";
-const MODEL_CLAUSE = "each closed trade counted at the paper risk model, price move × lots × 100";
-const BOTH_CLAUSE = "both with each closed trade counted at its booked P&L and with each counted at the paper risk model, price move × lots × 100";
+// The basis clauses the rule messages end with (exported so Ruby can tell
+// which basis an /evaluate message speaks for: its own clause, or both).
+export const BOOKED_CLAUSE = "each closed trade counted at its booked P&L";
+export const MODEL_CLAUSE = "each closed trade counted at the paper risk model, price move × lots × 100";
+export const BOTH_CLAUSE = "both with each closed trade counted at its booked P&L and with each counted at the paper risk model, price move × lots × 100";
 
 /** One complete running balance the pass and fail rules are checked on. */
 interface RuleBasisWalk {

@@ -207,6 +207,45 @@ test("a drawdown that deepened after the first breach: Ruby gives the day the li
   for (const m of dd) assert.ok(pageMessages.has(m), m);
 });
 
+// Fourth safety review (s4-views): when both bases are at the same drawdown,
+// /evaluate reports it once, with the "both" clause; once they diverge it
+// reports each basis with its own clause. Ruby matched earlier messages only
+// on an identical clause, so a breach first reported for both bases was never
+// found: it dated the model's maximum to the last trading day (a day the
+// model drawdown was falling) and never said when the booked breach began.
+const BOOKED_CLAUSE = "each closed trade counted at its booked P&L";
+const BOTH_CLAUSE = "both with each closed trade counted at its booked P&L and with each counted at the paper risk model, price move × lots × 100";
+
+test("a drawdown breach first reported for both bases, then diverging: Ruby dates each basis's breach and maximum to when they happened", async () => {
+  setBook(challenge({ maxDailyLoss: 0.5 }), [
+    // XAUUSD 1 lot, 12 points down: -1,200 booked and at the model (contract size 100), 12% on both.
+    close(8, { symbol: "XAUUSD", lotSize: 1, entryPrice: 2_400, exitPrice: 2_388, profitLoss: -1_200, status: "CLOSED_SL" }),
+    // Last trading day: XAUUSD +1 point (+100 on both), and EURUSD 1 lot 40
+    // pips down (booked -400, model -0.4). Booked balance 8,500 (15%); the
+    // model balance rises to 8,899.60, so its maximum stays the 12% of day 8.
+    close(1, { symbol: "XAUUSD", lotSize: 1, entryPrice: 2_400, exitPrice: 2_401, profitLoss: 100 }),
+    close(1, { symbol: "EURUSD", lotSize: 1, entryPrice: 1.1, exitPrice: 1.096, profitLoss: -400, status: "CLOSED_SL" }),
+  ]);
+  const ruby = await getPropFirmModeStatus(7) as Record<string, any>;
+  const page = await evaluateNow();
+  assert.equal(page.summary.status, "FAILED");
+  const pageMessages = new Set((page.violations as Array<{ message: string }>).map((v) => v.message));
+  const bothDay8 = `Closed-trade drawdown 12.00% exceeds limit 10.00% on ${dayKey(8)} (${BOTH_CLAUSE})`;
+  const bookedDay1 = `Closed-trade drawdown 15.00% exceeds limit 10.00% on ${dayKey(1)} (${BOOKED_CLAUSE})`;
+  const modelDay1 = `Closed-trade drawdown 12.00% exceeds limit 10.00% on ${dayKey(1)} (${MODEL_CLAUSE})`;
+  // /evaluate's own messages for this book.
+  for (const m of [bothDay8, bookedDay1, modelDay1]) assert.ok(pageMessages.has(m), m);
+
+  const dd = (ruby.violations as string[]).filter((m) => m.startsWith("Closed-trade drawdown "));
+  assert.deepEqual(dd, [bothDay8, bookedDay1],
+    "the limit was first exceeded on day 8 on both bases; the booked 15% was reached on day 1; the model's 12% on day 8");
+  assert.ok(!dd.includes(modelDay1), `dated the model's 12% maximum to ${dayKey(1)}, a day its drawdown fell to 11.00%`);
+  assert.ok(!(ruby.canTakeNewTradeReasons as string[]).includes(modelDay1));
+  for (const m of dd) assert.ok(pageMessages.has(m), "still /evaluate's own words");
+  assert.equal(ruby.ruleStatus, "VIOLATION");
+  assert.equal(ruby.canTakeNewTrade, false);
+});
+
 // Deterministic PRNG so a failure reproduces.
 function rng(seed: number): () => number {
   let s = seed >>> 0;
