@@ -27,7 +27,7 @@ import {
   unattributedMasterTradesTable,
   adminActionAuditLogTable,
 } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { isUnsizedPaperClose, paperMoveSign } from "../paperExecution/paperPnl.js";
 import {
   getAppFeatureMap,
@@ -1161,6 +1161,12 @@ export function getMarketDataProviderStatusTool() {
 }
 
 // ── 18. getPropFirmModeStatus ───────────────────────────────────────────
+// The prop-challenge rules checked on both bases (booked and paper risk
+// model) whose messages Ruby gives in /evaluate's own words.
+const PROP_TWO_BASIS_RULES: ReadonlySet<string> = new Set([
+  "DAILY_LOSS", "TOTAL_DRAWDOWN", "TRAILING_DRAWDOWN", "CONSISTENCY", "MAX_RISK_PER_TRADE",
+]);
+
 // Phase 18A — per-user. Reads the user's own ACTIVE prop_challenge row
 // (Build R, paper-only). Does NOT read the global riskGovernor2 module
 // state, which is a system-wide simulator and would leak the same numbers
@@ -1187,103 +1193,89 @@ export async function getPropFirmModeStatus(userId: number) {
       };
     }
 
-    // Phase 27 — per-user paper-only progress evaluator. Mirrors the math
-    // in /prop-challenges/:id/evaluate (routes/propChallenges.ts) but is
-    // read-only and per-user-scoped (defense-in-depth filter on userId).
-    // Uses ONLY this user's paper_orders. Never live. Never fabricated.
+    // Phase 27 — per-user paper-only progress evaluator. Runs the rules of
+    // /prop-challenges/:id/evaluate itself (evaluateChallengeRules in
+    // routes/propChallenges.ts, the pure function /evaluate runs) on this
+    // challenge and its paper orders, read only and per-user-scoped
+    // (defense-in-depth filter on userId). Uses ONLY this user's paper_orders.
+    // Never live. Never fabricated. Writes nothing.
     const orderWhere = ch.userId == null
       ? and(eq(paperOrdersTable.paperAccountId, ch.paperAccountId), sql`${paperOrdersTable.userId} IS NULL`)
       : and(eq(paperOrdersTable.paperAccountId, ch.paperAccountId), eq(paperOrdersTable.userId, ch.userId));
-    const orders = await db.select().from(paperOrdersTable).where(orderWhere);
+    // Oldest first, as /evaluate reads them.
+    const orders = await db.select().from(paperOrdersTable).where(orderWhere).orderBy(asc(paperOrdersTable.openedAt));
+    const now = new Date();
+    // The page's own wording for what these figures measure, so Ruby and the
+    // Prop Challenge page describe the same numbers the same way, and the
+    // page's own rule checks.
+    const { closedTradeDrawdownNote, RISK_PER_TRADE_NOTE, evaluateChallengeRules } = await import("../../routes/propChallenges.js");
+    // What /evaluate would compute now. The pass and fail rules are checked on
+    // two complete running balances: each closed trade at its booked P&L (the
+    // figures shown) and each at the paper risk model (price move × lots ×
+    // 100). A breach on either fails the challenge; a pass needs both.
+    const ev = evaluateChallengeRules(ch, orders, now);
     const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt);
     const openCount = orders.filter((o) => o.status === "OPEN").length;
-    // The page's own wording for what these figures measure, so Ruby and the
-    // Prop Challenge page describe the same numbers the same way.
-    const { closedTradeDrawdownNote, RISK_PER_TRADE_NOTE } = await import("../../routes/propChallenges.js");
     // A close the paper venue could not size for the instrument (no contract
     // size or currency conversion) holds a 0 placeholder in profit_loss. Its
-    // P&L is not known: it adds nothing to the sums below, and the result
-    // says so instead of reading it as a break-even.
+    // P&L is not known: it adds nothing to the booked figures below, and the
+    // result says so instead of reading it as a break-even.
     const unsizedCloses = closed.filter((o) => o.status !== "CANCELLED" && isUnsizedPaperClose(o));
     const unsizedLosses = unsizedCloses.filter((o) => o.exitPrice != null && paperMoveSign(o.direction, o.entryPrice, o.exitPrice) < 0).length;
     const unsizedSymbols = [...new Set(unsizedCloses.map((o) => o.symbol))].sort();
 
-    // Bucket P&L + trade count per UTC day.
-    const byDayPnl = new Map<string, number>();
+    // Trade count per UTC day.
     const byDayCount = new Map<string, number>();
     for (const o of closed) {
       const d = (o.closedAt as Date).toISOString().slice(0, 10);
-      byDayPnl.set(d, (byDayPnl.get(d) ?? 0) + o.profitLoss);
       byDayCount.set(d, (byDayCount.get(d) ?? 0) + 1);
     }
-    const sortedDates = [...byDayPnl.keys()].sort();
-    const totalPnl = closed.reduce((s, o) => s + o.profitLoss, 0);
-    const totalPct = totalPnl / ch.startingBalance;
+    const sortedDates = [...byDayCount.keys()].sort();
+
+    // The booked figures (each closed trade at its stored P&L), as the page
+    // shows them. Daily loss is a share of the DAY-START balance.
+    const totalPnl = ev.totalPnl;
+    const totalPct = ev.totalPct;
     const currentBalance = ch.startingBalance + totalPnl;
-    const daysWorked = sortedDates.length;
-    const daysSinceStart = Math.max(1, Math.ceil((Date.now() - ch.startedAt.getTime()) / 86_400_000));
-
-    // Sequential walk — same math as evaluateChallenge() in
-    // routes/propChallenges.ts so the AI never reports numbers that
-    // disagree with the UI / /evaluate endpoint. Daily-loss percentage
-    // uses the DAY-START balance as denominator (not startingBalance).
-    let runBal = ch.startingBalance;
-    let peakBal = ch.startingBalance;
-    let maxDrawdownPct = 0;
-    let todayLossPct = 0; // today's loss as % of today's start balance
-    const todayKey = new Date().toISOString().slice(0, 10);
-    // Per-day start balance — mirrors routes/propChallenges.ts evaluator so
-    // per-trade risk uses the SAME denominator as the authoritative path.
-    const dayStartBalMap = new Map<string, number>();
-    for (const date of sortedDates) {
-      const dayPnl = byDayPnl.get(date) ?? 0;
-      const startBal = runBal;
-      dayStartBalMap.set(date, startBal);
-      runBal = startBal + dayPnl;
-      const dayLossPct = dayPnl < 0 && startBal > 0 ? Math.abs(dayPnl) / startBal : 0;
-      if (date === todayKey) todayLossPct = dayLossPct;
-      peakBal = Math.max(peakBal, runBal);
-      const dd = peakBal > 0 ? (peakBal - runBal) / peakBal : 0;
-      if (dd > maxDrawdownPct) maxDrawdownPct = dd;
-    }
-
-    // Consistency: largest single positive-day P&L share of total profit.
-    let consistencyTopShare = 0;
-    let totalPositive = 0;
-    let topPositiveDay = 0;
-    for (const date of sortedDates) {
-      const dayPnl = byDayPnl.get(date) ?? 0;
-      if (dayPnl > 0) {
-        totalPositive += dayPnl;
-        if (dayPnl > topPositiveDay) topPositiveDay = dayPnl;
-      }
-    }
-    if (totalPositive > 0) consistencyTopShare = topPositiveDay / totalPositive;
+    const daysWorked = ev.daysWorked;
+    const daysSinceStart = ev.daysSinceStart;
+    const maxDrawdownPct = ev.maxDrawdownPct;
+    const todayKey = now.toISOString().slice(0, 10);
+    const [bookedBasis, modelBasis] = ev.ruleBases as [typeof ev.ruleBases[number], typeof ev.ruleBases[number]];
+    // A basis's closed-trade loss today, as a share of today's starting balance.
+    const todayLossOf = (b: typeof bookedBasis): number => (b.lastDayDate === todayKey ? b.lastDayLossPct : 0);
+    const todayLossPct = todayLossOf(bookedBasis);
 
     // Honest INSUFFICIENT_DATA: brand-new challenge with zero closed trades.
     const hasData = closed.length > 0;
 
-    // Remaining headroom (clamped at 0).
-    const dailyLossRemainingPct = Math.max(0, ch.maxDailyLoss - todayLossPct);
-    const totalDrawdownRemainingPct = Math.max(0, ch.maxTotalDrawdown - maxDrawdownPct);
-    const profitTargetProgressPct = ch.profitTarget > 0 ? Math.max(0, totalPct) / ch.profitTarget : 0;
+    // Remaining headroom (clamped at 0) and target progress, on whichever
+    // basis is closer to failing or further from the target: /evaluate fails
+    // on a breach on either basis and passes only when both reach the target.
+    const dailyLossRemainingPct = Math.max(0, ch.maxDailyLoss - Math.max(...ev.ruleBases.map(todayLossOf)));
+    const totalDrawdownRemainingPct = Math.max(0, ch.maxTotalDrawdown - Math.max(...ev.ruleBases.map((b) => b.maxDrawdownPct)));
+    const profitTargetProgressPct = ch.profitTarget > 0 ? Math.min(...ev.ruleBases.map((b) => Math.max(0, b.totalPct))) / ch.profitTarget : 0;
 
     // Compliance status (no fabrication: WARNING at 80% of any limit).
     const warnings: string[] = [];
     const violations: string[] = [];
-    // Drawdown and daily loss are a running balance of realised P&L from
-    // closed trades (open positions are not marked to market), as on the page.
-    if (todayLossPct > ch.maxDailyLoss) violations.push(`Closed-trade daily loss ${(todayLossPct*100).toFixed(2)}% exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
-    else if (todayLossPct > ch.maxDailyLoss * 0.8) warnings.push(`Closed-trade daily loss ${(todayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
-    if (maxDrawdownPct > ch.maxTotalDrawdown) violations.push(`Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
-    else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) warnings.push(`Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
+    // Daily loss, drawdown, trailing drawdown, consistency and max risk per
+    // trade are checked on both bases, in /evaluate's own words: each names
+    // the basis it holds on when the two count some trade differently, and
+    // drawdown and daily loss are closed-trade figures (open positions are
+    // not marked to market), as on the page. A breach is a violation; nearing
+    // a limit, or a realised per-trade loss over the limit, is a warning.
+    const lastWalkDay = ev.days.length > 0 ? ev.days[ev.days.length - 1]!.tradeDate : null;
+    ev.violations.forEach((v, i) => {
+      if (!PROP_TWO_BASIS_RULES.has(v.type) || v.severity === "INFO") return;
+      const day = ev.violationDates[i] ?? null;
+      // Drawdown is checked on the running maximum, so the last day's check is the current one.
+      if (v.type === "TOTAL_DRAWDOWN" && day !== lastWalkDay) return;
+      // A daily-loss breach on any day fails the challenge; nearing the limit matters only today.
+      if (v.type === "DAILY_LOSS" && v.severity !== "HARD" && day !== todayKey) return;
+      (v.severity === "HARD" ? violations : warnings).push(v.message);
+    });
     if (daysSinceStart > ch.maxTradingDays) violations.push(`Day ${daysSinceStart} > maxTradingDays ${ch.maxTradingDays}`);
-    // Consistency rule (mirrors routes/propChallenges.ts evaluateChallenge):
-    // HARD when profit target already reached and rule exceeded; WARN otherwise.
-    if (totalPositive > 0 && consistencyTopShare > ch.consistencyRulePercent) {
-      const msg = `Single best day = ${(consistencyTopShare*100).toFixed(1)}% of profit, exceeds consistency rule ${(ch.consistencyRulePercent*100).toFixed(0)}%`;
-      if (totalPct >= ch.profitTarget) violations.push(msg); else warnings.push(msg);
-    }
     // Unknown P&L: the balance, profit, daily loss and drawdown leave these
     // closes out, so compliance with the loss limits cannot be confirmed.
     if (unsizedCloses.length > 0) {
@@ -1297,35 +1289,21 @@ export async function getPropFirmModeStatus(userId: number) {
 
     // ── Phase 27-B extended rule evaluation (mirrors routes/propChallenges.ts) ──
     const insufficientDataRules: string[] = [];
-    // Trailing drawdown.
-    let trailingDdPct = 0;
-    if (ch.trailingDrawdownEnabled === 1) {
-      const tdRef = ch.trailingDrawdownType === "TRAILING" ? peakBal : ch.startingBalance;
-      trailingDdPct = tdRef > 0 ? (tdRef - runBal) / tdRef : 0;
-      if (trailingDdPct > ch.trailingDrawdownAmount) {
-        violations.push(`Closed-trade trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
-      } else if (trailingDdPct > ch.trailingDrawdownAmount * 0.8) {
-        warnings.push(`Closed-trade trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
-      }
-    }
-    // Max risk per trade + max position size (per-trade scan). The rule is
-    // checked on each closed trade's REALISED loss; risk at entry (stop-loss
-    // distance) is not measured (RISK_PER_TRADE_NOTE).
+    // Trailing drawdown on the booked figures (both bases are checked above).
+    const trailingDdPct = bookedBasis.trailingDrawdownPct ?? 0;
+    // Largest realised trade loss + max position size (per-trade scan). The
+    // rule is checked on each closed trade's REALISED loss against that day's
+    // start balance (booked); risk at entry (stop-loss distance) is not
+    // measured (RISK_PER_TRADE_NOTE).
+    const dayStartBalMap = new Map(ev.days.map((d) => [d.tradeDate, d.startingBalance] as const));
     let largestRealisedTradeLossPct = 0;
     let largestPositionSizeLots = 0;
     for (const o of closed) {
       const dayKey = (o.closedAt as Date).toISOString().slice(0, 10);
-      // Mirror route evaluator: the realised loss uses that day's start
-      // balance as the denominator (NOT challenge startingBalance), so the AI
-      // and /evaluate endpoint produce identical percentages.
       const dayStart = dayStartBalMap.get(dayKey) ?? ch.startingBalance;
       const tradeLossPct = o.profitLoss < 0 && dayStart > 0 ? Math.abs(o.profitLoss) / dayStart : 0;
       if (tradeLossPct > largestRealisedTradeLossPct) largestRealisedTradeLossPct = tradeLossPct;
       if (o.lotSize > largestPositionSizeLots) largestPositionSizeLots = o.lotSize;
-      if (tradeLossPct > ch.maxRiskPerTrade) {
-        // Mirrors route severity: WARN (not HARD) — does NOT trigger BLOCKED.
-        warnings.push(`Trade #${o.id} realised loss ${(tradeLossPct*100).toFixed(2)}% of the day's starting balance exceeds the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% (checked after close; risk at entry is not measured)`);
-      }
       if (o.lotSize > ch.maxPositionSize) {
         warnings.push(`Trade #${o.id} size ${o.lotSize} lots exceeds max position size ${ch.maxPositionSize}`);
       }
@@ -1340,7 +1318,7 @@ export async function getPropFirmModeStatus(userId: number) {
     // Max pending orders — INSUFFICIENT_DATA (no PENDING status in paper schema).
     insufficientDataRules.push("MAX_PENDING_ORDERS");
     // Weekend / overnight holding.
-    const nowUtc = new Date();
+    const nowUtc = now;
     const isWeekendUtc = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
     const openOrdersAll = orders.filter((o) => o.status === "OPEN");
     if (ch.weekendHoldingAllowed === 0 && isWeekendUtc && openOrdersAll.length > 0) {
@@ -1358,24 +1336,36 @@ export async function getPropFirmModeStatus(userId: number) {
     // News restriction — INSUFFICIENT_DATA.
     if (ch.newsTradingAllowed === 0) insufficientDataRules.push("NEWS_RESTRICTION");
 
+    // Every breach /evaluate fails on is listed above. Should one ever be
+    // missed, its failure reason still makes this a violation, never COMPLIANT.
+    const evaluateWouldFail = ev.resolvedStatus === "FAILED";
+    if (evaluateWouldFail && violations.length === 0) {
+      violations.push(`/evaluate would end this challenge as FAILED: ${ev.failureReason ?? "a rule is breached"}`);
+    }
+
     let ruleStatus: "COMPLIANT" | "WARNING" | "VIOLATION" | "INSUFFICIENT_DATA" | "BLOCKED" = "COMPLIANT";
-    if (!hasData) ruleStatus = "INSUFFICIENT_DATA";
+    // No closed trades yet is INSUFFICIENT_DATA, unless /evaluate would fail
+    // the challenge anyway (past its day limit).
+    if (!hasData && !evaluateWouldFail) ruleStatus = "INSUFFICIENT_DATA";
     else if (violations.length > 0) ruleStatus = "VIOLATION";
     else if (warnings.length > 0) ruleStatus = "WARNING";
     // BLOCKED status only when strictGuardrails is enabled AND a HARD-severity
     // violation exists. In this tool, violations[] is reserved for HARD-equivalent
-    // failures only (DAILY_LOSS exceed, TOTAL_DRAWDOWN exceed, TIME_LIMIT,
-    // TRAILING_DRAWDOWN exceed, CONSISTENCY when profit target reached,
-    // MAX_OPEN_TRADES strictly exceeded). WARN-level signals (per-trade risk,
-    // position size, near-limit, overtrading, weekend/overnight holding) live
-    // in warnings[] and never trigger BLOCKED — mirroring routes/propChallenges.ts.
+    // failures only (DAILY_LOSS exceed on any day, TOTAL_DRAWDOWN exceed,
+    // TIME_LIMIT, TRAILING_DRAWDOWN exceed, CONSISTENCY when profit target
+    // reached — each on either basis — and MAX_OPEN_TRADES strictly exceeded).
+    // WARN-level signals (per-trade risk, position size, near-limit,
+    // overtrading, weekend/overnight holding) live in warnings[] and never
+    // trigger BLOCKED — mirroring routes/propChallenges.ts.
     if (ch.strictGuardrailsEnabled === 1 && violations.length > 0) ruleStatus = "BLOCKED";
 
     // Profit-target reached signal (informational; route /evaluate is the
-    // authoritative pass/fail writer — we never mutate state here).
+    // authoritative pass/fail writer — we never mutate state here). The
+    // target counts as reached only on both bases, as /evaluate requires.
     // An unsized losing close could take the profit below the target, so the
     // target is not confirmed while one is left out.
-    const profitTargetReached = hasData && totalPct >= ch.profitTarget && daysWorked >= ch.minTradingDays && unsizedLosses === 0;
+    const profitTargetReached = hasData && bookedBasis.profitTargetReached && modelBasis.profitTargetReached
+      && daysWorked >= ch.minTradingDays && unsizedLosses === 0;
 
     // Read-only advisory: would a new trade still be allowed under hard rules?
     const canTakeNewTradeReasons: string[] = [];
@@ -1413,6 +1403,7 @@ export async function getPropFirmModeStatus(userId: number) {
         strictGuardrailsEnabled: ch.strictGuardrailsEnabled === 1,
       },
       extendedRuleSignals: {
+        // Booked figures, as on the page; ruleBasis.bases gives each basis's.
         trailingDrawdownPct: trailingDdPct,
         // The largest realised loss of one closed trade, as a share of that
         // day's starting balance — not the risk the trade carried at entry.
@@ -1428,12 +1419,18 @@ export async function getPropFirmModeStatus(userId: number) {
         currentBalance,
         totalPnl,
         totalPct,
+        // On the basis further from the target (both must reach it).
         profitTargetProgressPct,
+        // Reached on both bases (and the minimum days met, no unsized loss left out).
         profitTargetReached,
         maxDrawdownPct,
         dailyLossUsedPct: todayLossPct,
+        // On the basis closer to the limit (a breach on either fails).
         dailyLossRemainingPct,
         totalDrawdownRemainingPct,
+        headroomNote: ev.basisDiffers
+          ? "The daily-loss and drawdown headroom and the profit-target progress are on whichever basis is closer to failing or further from the target, because /evaluate fails the challenge on a breach on either basis and passes it only when both reach the target. The balance, P&L, drawdown and daily loss figures are the booked ones; ruleBasis gives both."
+          : null,
         // What maxDrawdownPct / dailyLossUsedPct (and the headroom above) are
         // built from: closed trades only, with the open positions left out.
         drawdownBasis: "CLOSED_TRADES_ONLY" as const,
@@ -1447,6 +1444,34 @@ export async function getPropFirmModeStatus(userId: number) {
         unsizedClosedTradeCount: unsizedCloses.length,
         unsizedSymbols,
       },
+      // The two bases the pass and fail rules are checked on, each with its own figures.
+      ruleBasis: {
+        basesDiffer: ev.basisDiffers,
+        note: ev.ruleBasisNote,
+        bases: ev.ruleBases.map((b) => ({
+          basis: b.basis,
+          description: b.basis === "BOOKED"
+            ? "each closed trade counted at its booked P&L (the figures in progress)"
+            : "each closed trade counted at the paper risk model, price move × lots × 100",
+          totalPnl: b.totalPnl,
+          totalPct: b.totalPct,
+          maxDrawdownPct: b.maxDrawdownPct,
+          dailyLossUsedPct: todayLossOf(b),
+          trailingDrawdownPct: b.trailingDrawdownPct,
+          consistencyTopShare: b.consistencyTopShare,
+          profitTargetReached: b.profitTargetReached,
+        })),
+      },
+      // What /evaluate would decide if it ran now, from the same rules on the
+      // same closed trades. Nothing is stored: the challenge stays as it is
+      // until /evaluate runs.
+      evaluationPreview: {
+        resolvedStatus: ev.resolvedStatus,
+        failureReason: ev.failureReason,
+        passBlockedReason: ev.passBlockedReason,
+        computedAt: now.toISOString(),
+        note: "What /prop-challenges/:id/evaluate would decide if it ran now, from the same rules on the same closed trades. Not stored: the challenge stays ACTIVE until /evaluate runs.",
+      },
       warnings,
       violations,
       canTakeNewTrade,
@@ -1454,7 +1479,9 @@ export async function getPropFirmModeStatus(userId: number) {
       hasSufficientData: hasData,
       note: hasData
         ? "Prop firm tracking is paper/simulator only. Numbers reflect simulated paper P&L, not a real funded account. Run /prop-challenges/:id/evaluate for the authoritative pass/fail and to persist day-bucket history."
-        : "Prop firm challenge is configured but has no closed paper trades yet — INSUFFICIENT_DATA. Take some paper trades to start tracking rule progress.",
+        : evaluateWouldFail
+          ? `Prop firm challenge has no closed paper trades, but /evaluate would end it as FAILED now (${ev.failureReason ?? "a rule is breached"}). Prop firm tracking is paper/simulator only.`
+          : "Prop firm challenge is configured but has no closed paper trades yet — INSUFFICIENT_DATA. Take some paper trades to start tracking rule progress.",
       honestyDisclaimer: "Prop firm tracking is paper/simulator only. We do not claim to be connected to any real prop firm or funded account. Rules shown are user-entered; not official prop firm rules unless explicitly verified.",
       dataSource: "USER_PROP_CHALLENGE",
       perUserScoped: true as const,
@@ -1793,7 +1820,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getCurrentPageContext", description: "Returns the page the user is currently looking at (pathname + matched feature). Use for 'what page am I on' or 'explain this page'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getPaperSafetyStatus", description: "Returns the paper-only / liveLocked / readOnlyMode safety status with the reason. Use when the user asks why the app is paper-only, whether you can place a live trade, or what live execution requires.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMarketDataProviderStatus", description: "Returns whether a real market data provider is wired (Finnhub, Alpha Vantage, Polygon, NewsAPI). Use when the user asks 'do I have live market data'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestRealisedTradeLossPct — the largest realised loss of one closed trade, not risk at entry; riskPerTradeBasis + riskPerTradeNote, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, daysWorked, daysSinceStart, openTradeCount, closedTradeCount, drawdownBasis + openPositionsNotCounted + drawdownNote, unsizedClosedTradeCount, unsizedSymbols — closes whose P&L could not be sized are left out of every money figure and named in warnings[], so the loss limits are not confirmed), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. Drawdown and daily loss are closed-trade figures: open positions' floating P&L is not counted — say so and quote progress.drawdownNote when you give them. Max risk per trade is checked on realised losses after close — quote extendedRuleSignals.riskPerTradeNote, never call it risk at entry. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestRealisedTradeLossPct — the largest realised loss of one closed trade, not risk at entry; riskPerTradeBasis + riskPerTradeNote, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, headroomNote, daysWorked, daysSinceStart, openTradeCount, closedTradeCount, drawdownBasis + openPositionsNotCounted + drawdownNote, unsizedClosedTradeCount, unsizedSymbols — closes whose P&L could not be sized are left out of every money figure and named in warnings[], so the loss limits are not confirmed), ruleBasis (bases[]: BOOKED and PAPER_RISK_MODEL, each with totalPnl, totalPct, maxDrawdownPct, dailyLossUsedPct, trailingDrawdownPct, profitTargetReached; note), evaluationPreview (resolvedStatus, failureReason, passBlockedReason: what /prop-challenges/:id/evaluate would decide if it ran now; not stored), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. The tool runs the same rules as /evaluate: every rule is checked with each closed trade counted at its booked P&L and again at the paper risk model (price move × lots × 100); a breach on either fails the challenge and a pass needs both. Quote violations and warnings as given — they name the basis when the two differ. currentBalance, totalPnl, totalPct, maxDrawdownPct, dailyLossUsedPct and extendedRuleSignals.trailingDrawdownPct / largestRealisedTradeLossPct are the booked figures (ruleBasis.bases gives each basis's own); dailyLossRemainingPct, totalDrawdownRemainingPct and profitTargetProgressPct are on the basis closer to failing or further from the target (say so, quoting headroomNote when set); profitTargetReached is true only when both bases reach the target — when evaluationPreview.passBlockedReason is set, quote it. If evaluationPreview.resolvedStatus is FAILED, say the next evaluation would end the challenge as FAILED and give failureReason. Drawdown and daily loss are closed-trade figures: open positions' floating P&L is not counted — say so and quote progress.drawdownNote when you give them. Max risk per trade is checked on realised losses after close — quote extendedRuleSignals.riskPerTradeNote, never call it risk at entry. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "createSupportDiagnosticReport", description: "Builds a diagnostic snapshot (MT5, account, risk, notifications, activity, market provider) for the current user. Use when the user asks for a support summary.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "evaluatePaperTradePlan", description: "Transparent plan-quality scorecard for the user's stored paper trade or an inline draft. Returns plan_completeness, risk_quality, reward_quality, timing_readiness, discipline_alignment, overall score, and a label (incomplete | needs_review | watchlist_ready | paper_trade_ready | blocked_by_risk). NOT a profit prediction. Use when the user asks 'is this trade ready', 'what's missing', 'why was this blocked', 'what's my setup score'.", parameters: { type: "object", properties: { paperTradeId: { type: "integer" }, plan: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, entry: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, lotSize: { type: "number" }, reasonForEntry: { type: "string" }, setupType: { type: "string" } }, additionalProperties: false } }, additionalProperties: false } },
   { name: "getTradingStyleProfile", description: "Returns the user's saved trading style: preferred symbol/market, account mode, risk rules. Returns configured:false for fresh users — never invents preferences.", parameters: { type: "object", properties: {}, additionalProperties: false } },

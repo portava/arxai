@@ -142,6 +142,24 @@ interface Eval {
   ruleBasisNote: string | null;
   /** Why an ACTIVE challenge whose booked figures meet every pass rule is not PASSED; null otherwise. */
   passBlockedReason: string | null;
+  // The fields below are for callers that report per basis (Ruby's
+  // getPropFirmModeStatus); the /evaluate response does not carry them.
+  /** True when the two bases count some closed trade differently (the messages then name a basis). */
+  basisDiffers: boolean;
+  /** The walk day each entry of violations was raised on; null for a check on the whole challenge. */
+  violationDates: Array<string | null>;
+  /** Each basis's own figures: BOOKED first, then PAPER_RISK_MODEL. */
+  ruleBases: Array<{
+    basis: "BOOKED" | "PAPER_RISK_MODEL";
+    totalPnl: number; totalPct: number; maxDrawdownPct: number;
+    /** The latest day with a closed trade, and that day's loss as a share of its starting balance (0 for a gain). */
+    lastDayDate: string | null; lastDayLossPct: number;
+    /** Against the trailing rule's reference (peak or start); null when the rule is off. */
+    trailingDrawdownPct: number | null;
+    consistencyTopShare: number;
+    /** This basis's profit is at or above the target (a pass needs both, plus the other rules). */
+    profitTargetReached: boolean;
+  }>;
 }
 
 // A challenge in one of these states is over. It is judged on what happened
@@ -275,11 +293,24 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   const orders = await db.select().from(paperOrdersTable)
     .where(orderWhere)
     .orderBy(asc(paperOrdersTable.openedAt));
+  return evaluateChallengeRules(ch, orders, new Date());
+}
+
+type ChallengeRow = typeof propChallengesTable.$inferSelect;
+
+/**
+ * The prop-challenge rules, checked on one challenge and its paper account's
+ * orders (oldest first, as /evaluate reads them) at the instant `now`. Pure:
+ * it reads and writes nothing. /evaluate runs it and stores the result; Ruby's
+ * getPropFirmModeStatus runs it on the same rows so it reports the breaches,
+ * basis clauses and verdict /evaluate would give, never a looser one.
+ */
+export function evaluateChallengeRules(ch: ChallengeRow, orders: readonly ChallengeOrder[], now: Date = new Date()): Eval {
   // A finished challenge ends at completedAt (updatedAt for an older row that
   // has none: status changes stamp it, and a finished challenge's rules cannot
   // be edited). Trades closed after the end are not part of the challenge.
   const final = isFinishedChallenge(ch.status);
-  const endAt: Date = final ? (ch.completedAt ?? ch.updatedAt ?? new Date()) : new Date();
+  const endAt: Date = final ? (ch.completedAt ?? ch.updatedAt ?? now) : now;
   const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt
     && (!final || o.closedAt <= endAt));
 
@@ -309,6 +340,11 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   const bases = [booked, model];
   const days: Eval["days"] = [];
   const violations: Eval["violations"] = [];
+  // The walk day each violation was raised on; null for a check on the whole challenge.
+  const violationDates: Array<string | null> = [];
+  const tagViolations = (date: string | null) => {
+    while (violationDates.length < violations.length) violationDates.push(date);
+  };
   // When the two bases count some trade differently, every rule message and
   // the failure reason name the basis they hold on.
   const basisDiffers = closed.some((o) => modelFigure(o) !== bookedFigure(o));
@@ -427,6 +463,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       dailyProfitLoss: dayPnl, dailyLossPercent: dayLossPct,
       tradesTaken: dayOrders.length, rulesViolated: dayRules,
     });
+    tagViolations(date);
   }
 
   const totalPnl = runningBalance - ch.startingBalance;
@@ -453,6 +490,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   // STATIC = drawdown from starting balance; TRAILING = drawdown from peak.
   // Same closed-trade running balances as total drawdown: open positions are
   // not marked to market, so the messages say "Closed-trade".
+  let trailingByBasis: number[] | null = null;
   if (ch.trailingDrawdownEnabled === 1) {
     // Checked on each basis, against its own peak.
     const trailing: BasisCheck[] = bases.map((b) => {
@@ -460,6 +498,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       const value = tdRef > 0 ? (tdRef - b.balance) / tdRef : 0;
       return { b, value, level: levelOf(value, ch.trailingDrawdownAmount, "HARD", "WARN") };
     });
+    trailingByBasis = trailing.map((c) => c.value);
     failOn("Trailing drawdown exceeded", trailing);
     onBases(trailing, basisDiffers, (pct, level, clause) => violations.push({
       type: "TRAILING_DRAWDOWN", severity: level,
@@ -495,7 +534,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   });
 
   // ── Phase 27-B: Weekend / Overnight holding (clock-based, no fabrication) ──
-  const nowUtc = new Date();
+  const nowUtc = now;
   const isWeekendUtc = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
   if (ch.weekendHoldingAllowed === 0 && isWeekendUtc && openOrders.length > 0) {
     violations.push({
@@ -579,6 +618,17 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     ? `The pass and fail rules are checked twice: with each closed trade counted at its booked P&L (the figures shown) and with each counted at the paper risk model (price move × lots × 100). A breach on either fails the challenge, and a pass needs both. At the paper risk model: profit ${pct(modelTotalPct)} (booked ${pct(totalPct)}), drawdown ${pct(model.maxDrawdownPct)} (booked ${pct(maxDrawdownPct)}), worst day ${pct(model.worstDayPct)} (booked ${pct(worstDayPct)}).`
     : null;
 
+  tagViolations(null);
+  const lastDayDate = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1]! : null;
+  const ruleBases: Eval["ruleBases"] = bases.map((b, i) => ({
+    basis: b.key,
+    totalPnl: b.balance - ch.startingBalance, totalPct: totalPctOf(b), maxDrawdownPct: b.maxDrawdownPct,
+    lastDayDate, lastDayLossPct: b.dayLossPct,
+    trailingDrawdownPct: trailingByBasis ? trailingByBasis[i]! : null,
+    consistencyTopShare: consistencyByBasis[i]!.share,
+    profitTargetReached: totalPctOf(b) >= ch.profitTarget,
+  }));
+
   return {
     daysWorked, totalPnl, totalPct, peakBalance, maxDrawdownPct,
     worstDayPct, worstDayDate, bestDayPnl: bestDayPnl === -Infinity ? 0 : bestDayPnl,
@@ -587,6 +637,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     final, evaluatedThrough: endAt.toISOString(),
     openPositionsNotCounted: openOrders.length,
     unsizedCloses: unsized.length, unsizedClosesNote, ruleBasis, ruleBasisNote, passBlockedReason,
+    basisDiffers, violationDates, ruleBases,
   };
 }
 
