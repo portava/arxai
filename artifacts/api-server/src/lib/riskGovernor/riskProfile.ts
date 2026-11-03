@@ -235,8 +235,8 @@ function uncheckedChallengeRules(
   drawdown: { earlierDays: boolean; lowestEquity: boolean },
 ): PropFirmRuleNotChecked[] {
   const out: PropFirmRuleNotChecked[] = [];
-  if (drawdown.earlierDays) out.push({ rule: "DAILY_DD_EARLIER_DAYS", reason: "Only today's loss is checked. Daily losses on earlier days of the challenge are not." });
-  if (drawdown.lowestEquity) out.push({ rule: "TOTAL_DD_LOWEST_EQUITY", reason: "Only current equity is checked. A deeper dip earlier in the challenge is not recorded." });
+  if (drawdown.earlierDays) out.push({ rule: "DAILY_DD_EARLIER_DAYS", reason: "Only today's loss is checked (DAILY_DD_TODAY). Daily losses on earlier days of the challenge are not, so DAILY_DD is not confirmed." });
+  if (drawdown.lowestEquity) out.push({ rule: "TOTAL_DD_LOWEST_EQUITY", reason: "Only current equity is checked (TOTAL_DD_CURRENT). A deeper dip earlier in the challenge is not recorded, so TOTAL_DD is not confirmed." });
   out.push({ rule: "MIN_TRADING_DAYS", reason: `Trading days are not counted, so the minimum of ${cfg.minTradingDays} days is not checked.` });
   out.push({ rule: "CONSISTENCY", reason: `The ${cfg.consistencyRulePctOfTotal}% consistency rule (best day against total profit) is not checked.` });
   if (!cfg.newsTradingAllowed) out.push({ rule: "NEWS_TRADING", reason: "Trades opened around news are not checked against the no-news-trading rule." });
@@ -328,14 +328,20 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
     notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `
       + `Profit, target and drawdown are measured in dollars from $${r2(start.equity)} and are not scaled.`);
   }
+  const earlierDays = !(Date.parse(start.at) >= dayStart);
   // Rules are checked only while the mode is on: while it is off nothing is
-  // listed as passed or failed.
+  // listed as passed or failed. A rule is passed only when all of it was
+  // measured: today's loss is all of DAILY_DD only for a challenge that
+  // started today, and current equity is never all of TOTAL_DD (a deeper dip
+  // earlier is not recorded). The measured part then passes under its own
+  // name (DAILY_DD_TODAY, TOTAL_DD_CURRENT) and the rule's caveat stays in
+  // notChecked; a breach of the measured part fails the rule itself.
   if (cfg.enabled) {
     if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
-    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
-    if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
+    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push(earlierDays ? "DAILY_DD_TODAY" : "DAILY_DD");
+    if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD_CURRENT");
   }
-  notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays: !(Date.parse(start.at) >= dayStart), lowestEquity: true }));
+  notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays, lowestEquity: true }));
   // A reached target is not a passed challenge while any rule is unchecked.
   const status: PropFirmStatusCode = !cfg.enabled ? "OFF" : failed.length ? "FAILED"
     : profit >= cfg.profitTarget ? (notChecked.length ? "TARGET_REACHED" : "PASSED")

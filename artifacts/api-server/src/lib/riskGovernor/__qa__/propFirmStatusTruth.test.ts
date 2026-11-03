@@ -238,3 +238,47 @@ test("allowed news / weekend trading is not listed; unreadable limits are said t
   assert.match(s.notChecked.find((r) => r.rule === "MAX_LOT_SIZE")!.reason, /could not be read/);
   state.limitsReadable = true;
 });
+
+// DAILY_DD was pushed to passed ("✓ DAILY_DD", counted in "Passed rules")
+// from today's loss alone, and TOTAL_DD from current equity alone, so a
+// $6,000 loss on an earlier day of a $5,000-cap challenge, or a deeper dip
+// earlier, still read as a passed rule. A rule partly measured is not passed:
+// the part that was measured passes under its own name, the rule itself stays
+// unconfirmed (its caveat in notChecked), and a breach of the measured part
+// still fails the rule.
+test("a challenge that spans earlier days never lists DAILY_DD or TOTAL_DD as passed", async () => {
+  state.limitsReadable = true;
+  state.acct = paper();
+  state.realized = 0;
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000,
+    challengeStart: { at: "2026-10-25T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-25T07:59:00.000Z" } } };
+  const s = await propFirmStatus(1, NOW);
+  assert.ok(!s.passed.includes("DAILY_DD"), "only today's loss was measured");
+  assert.ok(!s.passed.includes("TOTAL_DD"), "only current equity was measured");
+  assert.deepEqual(s.passed, ["DAILY_DD_TODAY", "TOTAL_DD_CURRENT"]);
+  const rules = s.notChecked.map((r) => r.rule);
+  assert.ok(rules.includes("DAILY_DD_EARLIER_DAYS"));
+  assert.ok(rules.includes("TOTAL_DD_LOWEST_EQUITY"));
+  assert.match(s.notChecked.find((r) => r.rule === "DAILY_DD_EARLIER_DAYS")!.reason, /DAILY_DD is not confirmed/);
+  assert.match(s.notChecked.find((r) => r.rule === "TOTAL_DD_LOWEST_EQUITY")!.reason, /TOTAL_DD is not confirmed/);
+});
+
+test("a breach of the measured part still fails the rule itself", async () => {
+  state.acct = paper({ equity: 3_000, currentBalance: 3_000 });
+  state.realized = -6_000;
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 6_000,
+    challengeStart: { at: "2026-10-25T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-25T07:59:00.000Z" } } };
+  const s = await propFirmStatus(1, NOW);
+  assert.deepEqual(s.failed, ["DAILY_DD", "TOTAL_DD"]);
+  assert.deepEqual(s.passed, []);
+  assert.equal(s.status, "FAILED");
+});
+
+test("a challenge started today: today's loss is all of DAILY_DD, so DAILY_DD can pass; TOTAL_DD still cannot", async () => {
+  state.acct = paper();
+  state.realized = 0;
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000,
+    challengeStart: { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-28T07:59:00.000Z" } } };
+  const s = await propFirmStatus(1, NOW);
+  assert.deepEqual(s.passed, ["DAILY_DD", "TOTAL_DD_CURRENT"]);
+});

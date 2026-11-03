@@ -97,7 +97,9 @@ test("while the mode is on with equity, the drawdown rules are checked as before
   equity = 101_000;
   const s = await propFirmStatus(1, NOW);
   assert.equal(s.status, "ACTIVE");
-  assert.deepEqual(s.passed, ["DAILY_DD", "TOTAL_DD"]);
+  // The challenge started yesterday: only today's loss and the current equity
+  // were measured, so the passed ticks name exactly that (not the whole-challenge rules).
+  assert.deepEqual(s.passed, ["DAILY_DD_TODAY", "TOTAL_DD_CURRENT"]);
   assert.deepEqual(s.failed, []);
   assert.deepEqual(s.notEvaluated, []);
   assert.equal(s.rulesEvaluated, true);

@@ -159,7 +159,8 @@ export default function PropFirmMode() {
           <Stat label="Target progress" value={unmeasured || s.profitTargetProgress == null ? NOT_MEASURED : `${s.profitTargetProgress}%`} />
           <Stat label="Daily DD left" value={s.measured === false ? NOT_MEASURED : money(s.dailyDrawdownRemainingUsd)} />
           <Stat label="Total DD left" value={unmeasured ? NOT_MEASURED : money(s.totalDrawdownRemainingUsd)} />
-          <Stat label="Passed rules" value={String(s.passed.length)} />
+          {/* Passed CHECKS: DAILY_DD_TODAY / TOTAL_DD_CURRENT are the measured parts of a rule, not the whole rule. */}
+          <Stat label="Passed checks" value={String(s.passed.length)} />
           <Stat label="Failed rules" value={String(s.failed.length)} />
           <Stat label="Not checked" value={String(s.notChecked?.length ?? s.notEvaluated?.length ?? 0)} />
           <Stat label="Account status" value={STATUS_LABEL[s.status] ?? s.status} />
