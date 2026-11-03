@@ -128,6 +128,40 @@ test("today's trade count covers every close today, not only the newest 50", asy
   assert.equal(ctx.activity?.tradesToday, 60, `today's trades read only the newest 50 closes (${ctx.activity?.tradesToday})`);
 });
 
+test("the paper weekly cap never counts less loss than the newest 50 closes: 10 older +100 wins and 50 newer closes netting −1,000 read −1,000, not the whole week's 0", async () => {
+  // Third safety review: the whole week's risk count alone read LESS loss
+  // than the newest closes (the figure before) when the older closes won.
+  // Oldest first: ten +100 wins six days ago, then 50 closes over the last
+  // five days: 25 × +60 and 25 × −100 (net −1,000), the newest a win.
+  state.closes = [
+    ...Array.from({ length: 10 }, (_v, i) => close(10, hoursAgo(6 * 24 - i))),
+    ...Array.from({ length: 50 }, (_v, i) => close(i % 2 ? 6 : -10, hoursAgo(1 + 2 * (49 - i)))),
+  ];
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_000 };
+  state.open = [];
+  const act = await loadTradingActivity(7, "PAPER", { paperAccountId: 3, now: NOW });
+  assert.ok(act);
+  assert.equal(act.weekRealizedPnl, -1_000, `the week's P/L counted less loss than the newest 50 closes (${act.weekRealizedPnl})`);
+  assert.equal(act.allWeekRealizedPnl, 0, "the whole week's figure is carried beside it");
+  assert.equal(act.weekNewestCloses?.counted, 50);
+  assert.equal(act.weekNewestCloses?.ofTotal, 60);
+  LIMITS.discipline.maxWeeklyLossAmount = 500;
+  try {
+    const res = await enforcePreTradeRisk(intent, { paperAccountId: 3, facts: { quote: fxQuote, now: NOW }, preview: true });
+    const d = rule(res, "trading_discipline");
+    assert.equal(d.outcome, "BLOCK", "a $500 weekly cap passed although the newest 50 closes lost 1,000");
+    assert.match(d.reason!, /this week's loss 1000 \(counted from your newest 50 of this week's 60 closes, since [^;]+; all of this week's closes net 0\) reached your weekly cap of 500/);
+  } finally {
+    LIMITS.discipline.maxWeeklyLossAmount = null;
+  }
+  // The risk overview's note (riskCountNote) says which figure it counts.
+  const { riskCountNoteFor } = await import("../riskProfile.js");
+  const ctx = await buildRiskContext(intent, { paperAccountId: 3, facts: { quote: fxQuote, now: NOW } });
+  assert.equal(ctx.activity?.weekRealizedPnl, -1_000);
+  assert.match(riskCountNoteFor(ctx) ?? "",
+    /this week's realized P&L is counted as -\$1,000\.00, from your newest 50 of this week's 60 closes \(since [^)]+\), because they lost more than all of this week's closes, which net \$0\.00/);
+});
+
 // ── Finding 1: the drawdown rule reads each basis against its own peak ──────
 /** A settled EURUSD order (100,000 units per lot): `pips` × 10 × lots booked, pips × 0.01 × lots at the model. */
 const fxClose = (pips: number, lots: number, closedAt: Date): Row => close(0, closedAt, {

@@ -345,18 +345,36 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
       // The losing streak, the cooldown and the last-hour checks read the
       // newest closes' signs (pnl). Today's trade count and the week's P/L
       // cover every close in their window, from the full close list read
-      // above (never only the newest ACTIVITY_CLOSES): the week's P/L is the
-      // lower of the week's booked and model totals.
+      // above: the week's P/L is the lower of the week's booked and model
+      // totals. As on DEMO and LIVE (loadBrokerFacts), the week's P/L counted
+      // is the lower of that whole-week risk count and the risk count of the
+      // newest ACTIVITY_CLOSES closes within the week (they differ only when
+      // more than ACTIVITY_CLOSES closed in the week and the older ones net
+      // positive), so the weekly cap never counts less loss than the newest
+      // closes show; both figures are carried so the refusal can name them.
       const summary = summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
         openedToday, now, `paper_orders:account:${acct.id}`);
       const dayStart = startOfTodayUtc(now).getTime();
       const weekStart = now.getTime() - 7 * 86_400_000;
-      const week = paperRiskTotals(allCloses.filter((c) => c.closedAt.getTime() >= weekStart));
+      const weekCloses = allCloses.filter((c) => c.closedAt.getTime() >= weekStart);
+      const week = paperRiskTotals(weekCloses);
+      const newestInWeek = recentCloses.filter((c) => c.closedAt.getTime() >= weekStart);
+      const newest = paperRiskTotals(newestInWeek);
+      const newestLower = newestInWeek.length > 0 && newest.risk < week.risk - 0.005;
+      const counted = newestLower ? newest : week;
       activity = {
         ...summary,
         tradesToday: openedToday + allCloses.filter((c) => c.closedAt.getTime() >= dayStart).length,
-        weekRealizedPnl: Number(week.risk.toFixed(2)),
-        ...(week.risk < week.booked - DISCLOSE_DIFFERENCE ? { bookedWeekRealizedPnl: Number(week.booked.toFixed(2)) } : {}),
+        weekRealizedPnl: Number(counted.risk.toFixed(2)),
+        ...(counted.risk < counted.booked - DISCLOSE_DIFFERENCE ? { bookedWeekRealizedPnl: Number(counted.booked.toFixed(2)) } : {}),
+        ...(newestLower ? {
+          allWeekRealizedPnl: Number(week.risk.toFixed(2)),
+          weekNewestCloses: {
+            counted: newestInWeek.length,
+            since: new Date(Math.min(...newestInWeek.map((c) => c.closedAt.getTime()))),
+            ofTotal: Math.max(weekCloses.length, newestInWeek.length),
+          },
+        } : {}),
       };
     } catch { activity = null; }
   }

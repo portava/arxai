@@ -576,10 +576,11 @@ export interface TradingActivity {
    */
   bookedWeekRealizedPnl?: number;
   /**
-   * DEMO/LIVE, only when it differs: the realized P/L of every close of the
-   * last 7 days. weekRealizedPnl is then the lower figure of the newest
-   * closes within the week (weekNewestCloses), the closes the streak and the
-   * cooldown read, so the weekly cap never counts less loss than they show.
+   * Only when it differs: the realized P/L of every close of the last 7 days
+   * (on PAPER, their paper risk count). weekRealizedPnl is then the lower
+   * figure of the newest closes within the week (weekNewestCloses), the
+   * closes the streak and the cooldown read, so the weekly cap never counts
+   * less loss than they show.
    */
   allWeekRealizedPnl?: number;
   /** With allWeekRealizedPnl: how many of the week's closes weekRealizedPnl counts, the oldest of them, and the week's total. */
@@ -1388,7 +1389,7 @@ function evaluateDiscipline(
       hard.push(`you have reached your ${D.maxTradesPerDay} trades for today`);
     }
     // PAPER: the week's figure is the paper risk count; name the booked one when they differ.
-    // DEMO/LIVE: when the newest closes lost more than the whole week, the
+    // Every venue: when the newest closes lost more than the whole week, the
     // figure counted is theirs; name it and the whole week's figure.
     const newest = act.allWeekRealizedPnl != null ? act.weekNewestCloses ?? null : null;
     const weekBooked = (act.bookedWeekRealizedPnl != null
