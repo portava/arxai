@@ -20,7 +20,8 @@ vi.mock("@/components/alerts/NotificationBell", () => ({ NotificationBell: () =>
 let unlocks = { mt5: true, simulator: false };
 vi.mock("@/hooks/useFeatureUnlock", () => ({ useAllUnlocks: () => unlocks }));
 vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: null }), useLogout: () => ({ mutate: () => {}, isPending: false }) }));
-vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false, viewMode: "user", setViewMode: () => {} }) }));
+let viewerIsAdmin = false;
+vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false, viewMode: "user", setViewMode: () => {}, effectiveIsAdmin: viewerIsAdmin }) }));
 
 import { Topbar } from "./Topbar";
 
@@ -30,7 +31,7 @@ const SHARED_HEALTHY = {
   lastHeartbeatAt: null,
 };
 
-afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; unlocks = { mt5: true, simulator: false }; });
+afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; unlocks = { mt5: true, simulator: false }; viewerIsAdmin = false; });
 
 const pill = (id: string) => screen.getByTestId(`status-pill-${id}`).textContent ?? "";
 function drawerText() {
@@ -154,5 +155,29 @@ describe("Topbar status drawer — MT5 status not requested", () => {
     mt5Reply = { data: undefined, isError: false };
     render(<Topbar />);
     expect(drawerText()).toMatch(/MT5 connected\s*checking/);
+  });
+});
+
+// Only the admin-only Getting Started checklist turns MT5 on in this header
+// (dashboard.tsx renders it inside "System Health · Admin"). A regular trader
+// was told to press "Connect MT5" on a dashboard checklist they never see; the
+// "Connect MT5" buttons they do see open My MT5 and do not change the header.
+describe("Topbar status drawer — what turns MT5 status on, per viewer", () => {
+  it("a regular trader is not sent to a checklist they cannot see", () => {
+    unlocks = { mt5: false, simulator: false };
+    viewerIsAdmin = false;
+    render(<Topbar />);
+    const drawer = drawerText();
+    expect(drawer).toMatch(/MT5 status\s*not checked/);
+    expect(drawer).not.toMatch(/checklist/i);
+    expect(drawer).toMatch(/My MT5/);
+    expect(screen.getByTestId("topbar-mt5-not-checked").querySelector('a[href="/my-mt5"]')).not.toBeNull();
+  });
+
+  it("an admin is told where the checklist is", () => {
+    unlocks = { mt5: false, simulator: false };
+    viewerIsAdmin = true;
+    render(<Topbar />);
+    expect(drawerText()).toMatch(/"Connect MT5" in the welcome checklist.*System Health · Admin/);
   });
 });

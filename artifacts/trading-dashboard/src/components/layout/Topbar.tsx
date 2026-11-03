@@ -81,6 +81,7 @@ function mt5BridgeView(mt5: any, loadFailed: boolean, refreshFailed = false, rea
 
 export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const unlocks = useAllUnlocks();
+  const { effectiveIsAdmin: viewerIsAdmin } = useViewMode();
   // Only poll MT5 / bot status once the user has unlocked those surfaces.
   // Fresh browser sessions get no leak of the global single-tenant state
   // (account, broker, mode, running flag) into the global header.
@@ -141,6 +142,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
           botRefreshFailed={botRefreshFailed}
           botReadAt={botReadAt}
           unlocks={unlocks}
+          viewerIsAdmin={viewerIsAdmin === true}
           sessionLabel={sessionMeta.label}
           sessionTone={sessionMeta.tone}
           modeLabel={modeMeta.label}
@@ -217,6 +219,8 @@ type CompactStatusRowProps = {
   botRefreshFailed?: boolean;
   botReadAt?: number;
   unlocks: ReturnType<typeof useAllUnlocks>;
+  /** The viewer sees the admin dashboard (and so the welcome checklist that turns MT5 on here). */
+  viewerIsAdmin?: boolean;
   sessionLabel: string;
   sessionTone: "info" | "warning" | "bullish" | "neutral";
   modeLabel: string;
@@ -260,8 +264,20 @@ function CompactStatusRow(p: CompactStatusRowProps) {
           <DetailRow label="MT5 connected" value={bridge.connectedText} />
         </>
       ) : (
-        // The status query is disabled until MT5 is turned on, so nothing is being checked.
-        <DetailRow label="MT5 status" value={'not checked (press "Connect MT5" on the dashboard checklist to show it)'} />
+        // The status query is disabled until MT5 is turned on for this header,
+        // so nothing is being checked. Only the admin-only welcome checklist on
+        // the dashboard turns it on; the "Connect MT5" buttons traders see open
+        // My MT5 and do not change this header.
+        <>
+          <DetailRow label="MT5 status" value="not checked here" />
+          <p className="text-[10px] text-muted-foreground" data-testid="topbar-mt5-not-checked">
+            MT5 status is turned off in this header for your account in this browser, so nothing is read here.{" "}
+            <a className="text-primary underline" href="/my-mt5">Open My MT5</a> for your bridge status.
+            {p.viewerIsAdmin
+              ? ' To show it here, press "Connect MT5" in the welcome checklist (Dashboard → System Health · Admin → Setup & readiness).'
+              : null}
+          </p>
+        </>
       )}
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
         <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
