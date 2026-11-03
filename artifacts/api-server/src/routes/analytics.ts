@@ -15,11 +15,12 @@ import {
   db, analyticsSnapshotsTable, analyticsHeatmapsTable,
   paperOrdersTable, postTradeDebriefsTable, tradeJournalEntriesTable,
   traderSkillProfilesTable, weeklyPerformanceReviewsTable,
-  edgeDiscoveryReportsTable, vaultEventsTable,
+  vaultEventsTable,
 } from "@workspace/db";
 import { asc, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { paperMoveSign, paperPnl } from "../lib/paperExecution/paperPnl.js";
+import { loadLatestSlices } from "./edgeDiscovery.js";
 
 const router = Router();
 const ANALYTICS_DISCLAIMER =
@@ -129,7 +130,9 @@ export async function computeSnapshot(userId: number) {
       .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
       .orderBy(desc(postTradeDebriefsTable.id)).limit(200),
-    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
+    // The edge board's current picture (newest generation of each slice,
+    // legacy no-losses-marker rows re-derived), not the raw report rows.
+    loadLatestSlices(userId),
   ]);
   const closed = orders.filter((o) => isClosed(o));
   // Money figures use only trades whose P&L could be sized (see pnlOf).
@@ -155,25 +158,43 @@ export async function computeSnapshot(userId: number) {
   const averageRr = rrs.length ? rrs.reduce((s, r) => s + r, 0) / rrs.length : 0;
   const mdd = maxDrawdown(pnls.map((p) => ({ pnl: p })));
 
-  // Strongest/weakest strategy by edge confidence.
-  const byStrategy = new Map<string, { wins: number; total: number; pnl: number }>();
+  // Best / worst SYMBOL by the net P&L of its sized trades. These were called
+  // "strategy", but they group by symbol: paper_orders.strategy_id holds the
+  // execution path (e.g. build_ee_paper_execution) or nothing, not a strategy.
+  // The best must be net profitable and the worst net losing, so one symbol
+  // is never both and a losing symbol is never "strongest".
+  const bySymbol = new Map<string, number>();
   for (const o of closed) {
-    const key = o.symbol;  // proxy for strategy when no strategy field on paper orders
     const p = pnlOf(o);
     if (p == null) continue; // ranked by P&L, so only sized trades rank
-    const cur = byStrategy.get(key) ?? { wins: 0, total: 0, pnl: 0 };
-    cur.wins += p > 0 ? 1 : 0; cur.total += 1; cur.pnl += p;
-    byStrategy.set(key, cur);
+    bySymbol.set(o.symbol, (bySymbol.get(o.symbol) ?? 0) + p);
   }
-  const stratEntries = [...byStrategy.entries()];
-  stratEntries.sort((a, b) => b[1].pnl - a[1].pnl);
-  const strongestStrategy = stratEntries[0]?.[0] ?? null;
-  const weakestStrategy   = stratEntries.at(-1)?.[0] ?? null;
+  const symbolsByPnl = [...bySymbol.entries()].sort((a, b) => b[1] - a[1]);
+  const top = symbolsByPnl[0];
+  const bottom = symbolsByPnl.at(-1);
+  const strongestSymbol = top && top[1] > 0 ? top[0] : null;
+  const weakestSymbol = bottom && bottom[1] < 0 ? bottom[0] : null;
 
-  // Strongest/weakest market condition from edge reports.
-  const sortedEdges = [...edges].sort((a, b) => b.confidenceScore - a.confidenceScore);
-  const strongestMarketCondition = sortedEdges[0]?.marketCondition ?? sortedEdges[0]?.edgeName ?? null;
-  const weakestMarketCondition   = sortedEdges.at(-1)?.marketCondition ?? sortedEdges.at(-1)?.edgeName ?? null;
+  // Strongest / weakest EDGE SLICE from Edge Discovery's current reports.
+  // These were called "market condition", but no report records one (the
+  // column is always null), so the card showed a slice name such as
+  // "symbol=EURUSD", ranked by report confidence alone. Now: the strongest is
+  // a STRONG/DEVELOPING slice (strong first, then confidence), the weakest a
+  // NO/WEAK slice (no edge first, then confidence); a slice with too little
+  // data is neither.
+  const statusRank: Record<string, number> = { STRONG_EDGE: 2, DEVELOPING_EDGE: 1, NO_EDGE: 2, WEAK_EDGE: 1 };
+  const byStatusThenConfidence = (a: typeof edges[number], b: typeof edges[number]) =>
+    ((statusRank[b.status] ?? 0) - (statusRank[a.status] ?? 0)) || (b.confidenceScore - a.confidenceScore);
+  const positive = edges.filter((e) => e.status === "STRONG_EDGE" || e.status === "DEVELOPING_EDGE").sort(byStatusThenConfidence);
+  const negative = edges.filter((e) => e.status === "NO_EDGE" || e.status === "WEAK_EDGE").sort(byStatusThenConfidence);
+  const strongestEdgeSlice = positive[0] ? describeEdgeSlice(positive[0]) : null;
+  const weakestEdgeSlice = negative[0] ? describeEdgeSlice(negative[0]) : null;
+  // Stored columns keep their names (no schema change): the "strategy"
+  // columns have always held a symbol, the "market condition" columns a slice.
+  const strongestStrategy = strongestSymbol;
+  const weakestStrategy = weakestSymbol;
+  const strongestMarketCondition = strongestEdgeSlice?.edgeName ?? null;
+  const weakestMarketCondition = weakestEdgeSlice?.edgeName ?? null;
 
   // Behavioral averages.
   const sk = skill[0] ?? null;
@@ -189,8 +210,49 @@ export async function computeSnapshot(userId: number) {
     consistencyScoreAvg:sk?.consistencyScore ?? 0,
     strongestStrategy, weakestStrategy,
     strongestMarketCondition, weakestMarketCondition,
+    // Not snapshot columns: what the highlights really are, and their basis.
+    strongestSymbol, weakestSymbol, strongestEdgeSlice, weakestEdgeSlice,
+    highlightBasis: HIGHLIGHT_BASIS,
     // Not a snapshot column: what the money figures above cover.
     pnlCoverage: pnlCoverageOf(closed),
+  };
+}
+
+/**
+ * The analytics_snapshots columns of a computed snapshot. The extra fields
+ * (coverage, highlight details, basis) are not columns and are not stored.
+ */
+export function toSnapshotRow(c: Awaited<ReturnType<typeof computeSnapshot>>) {
+  return {
+    totalTrades: c.totalTrades, netProfitLoss: c.netProfitLoss, winRate: c.winRate,
+    averageRr: c.averageRr, expectancy: c.expectancy, profitFactor: c.profitFactor,
+    maxDrawdown: c.maxDrawdown,
+    disciplineScoreAvg: c.disciplineScoreAvg, executionScoreAvg: c.executionScoreAvg,
+    emotionalScoreAvg: c.emotionalScoreAvg, consistencyScoreAvg: c.consistencyScoreAvg,
+    strongestStrategy: c.strongestStrategy, weakestStrategy: c.weakestStrategy,
+    strongestMarketCondition: c.strongestMarketCondition, weakestMarketCondition: c.weakestMarketCondition,
+  };
+}
+
+export const HIGHLIGHT_BASIS = {
+  symbols: "Best and worst symbol by the net P&L of their closed paper trades sized in USD. The best must be net profitable and the worst net losing.",
+  edgeSlices: "From Edge Discovery's current reports, ranked by edge status and then by the report's confidence score — not by your results in a market condition. A slice with too little data is not ranked.",
+};
+
+const EDGE_STATUS_WORDS: Record<string, string> = {
+  STRONG_EDGE: "strong edge", DEVELOPING_EDGE: "developing edge",
+  WEAK_EDGE: "weak edge", NO_EDGE: "no edge", INSUFFICIENT_DATA: "not enough data",
+};
+type EdgeSliceRow = Awaited<ReturnType<typeof loadLatestSlices>>[number];
+/** "symbol=EURUSD" → "EURUSD (by symbol)", with the board's status and confidence. */
+function describeEdgeSlice(e: EdgeSliceRow) {
+  const sep = e.edgeName.indexOf("=");
+  const label = sep >= 0 ? `${e.edgeName.slice(sep + 1)} (by ${e.edgeName.slice(0, sep)})` : e.edgeName;
+  const at = e.createdAt instanceof Date ? e.createdAt.toISOString() : (e.createdAt ? String(e.createdAt) : null);
+  return {
+    edgeName: e.edgeName, label, status: e.status,
+    statusWords: EDGE_STATUS_WORDS[e.status] ?? e.status,
+    confidenceScore: Math.round(e.confidenceScore), sampleSize: e.sampleSize, reportedAt: at,
   };
 }
 
@@ -198,7 +260,9 @@ export async function computeSnapshot(userId: number) {
 router.post("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
     const userId = req.authUser!.id;
-    const { pnlCoverage, ...computed } = await computeSnapshot(userId);
+    const figures = await computeSnapshot(userId);
+    const computed = toSnapshotRow(figures);
+    const { pnlCoverage } = figures;
     const ins = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId }).returning();
     await vaultAnalytics("ANALYTICS_SNAPSHOT_GENERATED",
       { snapshotId: ins[0]!.id, totalTrades: computed.totalTrades });

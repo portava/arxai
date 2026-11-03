@@ -5,6 +5,7 @@ import {
   SessionHeatmap, EmotionalTrendGraph, RiskExposureGraph, ConsistencyTrendCard,
 } from "@/components/analytics";
 import type { AnalyticsSnapshot, AnalyticsCurrent, StrategyRow, EquityPoint } from "@/components/analytics";
+import type { EdgeSliceHighlight } from "@/components/analytics/types";
 
 interface DrawdownResponse { equityCurve: EquityPoint[]; maxDrawdown: number }
 interface SessionBucket { trades: number; pnl: number; wins: number; sizedTrades?: number }
@@ -119,15 +120,21 @@ export default function AnalyticsCommandCenter() {
           <EmotionalTrendGraph trend={emo.data?.trend ?? []} />
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-200">Strategy Analytics</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-200">Results by symbol</h3>
             <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />
           </section>
 
           <section className="grid gap-3 sm:grid-cols-2">
-            <Highlight label="Strongest strategy"         v={s.strongestStrategy} tone="emerald" />
-            <Highlight label="Weakest strategy"           v={s.weakestStrategy} tone="red" />
-            <Highlight label="Strongest market condition" v={s.strongestMarketCondition} tone="emerald" />
-            <Highlight label="Weakest market condition"   v={s.weakestMarketCondition} tone="red" />
+            {/* These group by SYMBOL and by Edge Discovery slice: paper orders
+                carry no strategy, and no edge report records a market condition. */}
+            <Highlight id="best-symbol"  label="Best symbol (net P&L)"  v={live ? live.strongestSymbol ?? null : s.strongestStrategy} tone="emerald" empty="No symbol is net profitable"
+              sub={live?.highlightBasis?.symbols ?? "Highest net P&L among symbols when the snapshot was saved."} />
+            <Highlight id="worst-symbol" label="Worst symbol (net P&L)" v={live ? live.weakestSymbol ?? null : s.weakestStrategy} tone="red" empty="No symbol is net losing"
+              sub={live?.highlightBasis?.symbols ?? "Lowest net P&L among symbols when the snapshot was saved."} />
+            <Highlight id="strongest-edge" label="Strongest edge slice" v={live ? edgeSliceText(live.strongestEdgeSlice) : s.strongestMarketCondition} tone="emerald" empty="No slice is rated a strong or developing edge"
+              sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the highest confidence score when the snapshot was saved — not your results in a market condition."} />
+            <Highlight id="weakest-edge" label="Weakest edge slice" v={live ? edgeSliceText(live.weakestEdgeSlice) : s.weakestMarketCondition} tone="red" empty="No slice is rated a weak or no edge"
+              sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the lowest confidence score when the snapshot was saved — not your results in a market condition."} />
           </section>
 
           <p className="text-[10px] italic text-slate-500">
@@ -148,12 +155,16 @@ function Stat({ id, label, v, tone }: { id?: string; label: string; v: string; t
     </div>
   );
 }
-function Highlight({ label, v, tone }: { label: string; v: string | null; tone: "emerald"|"red" }) {
+function edgeSliceText(e: EdgeSliceHighlight | null | undefined): string | null {
+  return e ? `${e.label} — ${e.statusWords}, confidence ${e.confidenceScore}/100 (${e.sampleSize} trades)` : null;
+}
+function Highlight({ id, label, v, tone, sub, empty }: { id: string; label: string; v: string | null; tone: "emerald"|"red"; sub?: string; empty: string }) {
   const t = tone === "emerald" ? "border-emerald-700 bg-emerald-950/30 text-emerald-100" : "border-red-700 bg-red-950/30 text-red-100";
   return (
-    <div className={`rounded border p-3 ${t}`}>
+    <div className={`rounded border p-3 ${t}`} data-testid={`analytics-highlight-${id}`}>
       <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>
-      <div className="text-base font-semibold">{v ?? "—"}</div>
+      <div className="text-base font-semibold">{v ?? empty}</div>
+      {sub ? <div className="mt-1 text-[10px] opacity-70">{sub}</div> : null}
     </div>
   );
 }

@@ -52,3 +52,30 @@ describe("Analytics Command Center freshness", () => {
     expect(screen.getByTestId("analytics-stat-trades").textContent).toBe("Trades3");
   });
 });
+
+describe("Analytics Command Center highlights", () => {
+  it("names symbols and edge slices for what they are, with their basis", async () => {
+    serve({
+      snapshot: SAVED,
+      current: {
+        ...FIGURES, asOf: "2026-10-28T12:00:00.000Z",
+        strongestSymbol: "EURUSD", weakestSymbol: null,
+        strongestEdgeSlice: { edgeName: "symbol=EURUSD", label: "EURUSD (by symbol)", status: "DEVELOPING_EDGE", statusWords: "developing edge", confidenceScore: 45, sampleSize: 12, reportedAt: null },
+        weakestEdgeSlice: null,
+        highlightBasis: {
+          symbols: "Best and worst symbol by the net P&L of their closed paper trades sized in USD. The best must be net profitable and the worst net losing.",
+          edgeSlices: "From Edge Discovery's current reports, ranked by edge status and then by the report's confidence score — not by your results in a market condition. A slice with too little data is not ranked.",
+        },
+      },
+    });
+    renderPage();
+    const best = await screen.findByTestId("analytics-highlight-best-symbol");
+    expect(best.textContent).toContain("Best symbol (net P&L)");
+    expect(best.textContent).toContain("EURUSD");
+    expect(screen.getByTestId("analytics-highlight-worst-symbol").textContent).toContain("No symbol is net losing");
+    const edge = screen.getByTestId("analytics-highlight-strongest-edge").textContent ?? "";
+    expect(edge).toContain("EURUSD (by symbol) — developing edge, confidence 45/100 (12 trades)");
+    expect(edge).toContain("not by your results in a market condition");
+    expect(document.body.textContent).not.toMatch(/Strongest strategy|Weakest strategy|Strongest market condition|Weakest market condition/);
+  });
+});

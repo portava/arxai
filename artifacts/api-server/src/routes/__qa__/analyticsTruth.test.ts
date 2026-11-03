@@ -138,3 +138,60 @@ test("GET /analytics/snapshot: the saved snapshot keeps its time; current figure
   assert.ok(Number.isFinite(asOf) && asOf >= before - 1000, `asOf ${String(current["asOf"])} is the time of this read`);
   assert.equal(body["currentError"], null);
 });
+
+// ── Highlights: what "strongest" names ──────────────────────────────────────
+function edgeRow(over: Record<string, unknown>) {
+  return {
+    id: 1, userId: 7, edgeName: "symbol=EURUSD", symbol: "EURUSD", strategyId: null, timeframe: null,
+    sessionName: null, marketCondition: null, sampleSize: 12, winRate: 0.75, averageRr: 1.5,
+    expectancy: 40, profitFactor: 2, disciplineScoreAvg: 0, executionScoreAvg: 0, emotionalScoreAvg: 0,
+    confidenceScore: 50, status: "DEVELOPING_EDGE", aiSummary: "", createdAt: new Date("2026-10-20T10:00:00Z"),
+    ...over,
+  };
+}
+
+test("highlights: the 'strategy' cards rank symbols; best is net profitable, worst net losing", async () => {
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD", strategyId: "A" }),
+      order({ id: 2, symbol: "GBPUSD", strategyId: "B", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.32, exitPrice: 1.29, status: "CLOSED_SL" }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, "GBPUSD");
+  assert.match(s.highlightBasis.symbols, /net P&L/);
+  // The stored "strategy" columns have always held a symbol.
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal("strongestSymbol" in mod.toSnapshotRow(s), false, "not a snapshot column");
+});
+
+test("highlights: one profitable symbol is the best and not also the worst", async () => {
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, null);
+});
+
+test("highlights: edge slices come from the edge board's current, re-derived reports", async () => {
+  setRows({
+    paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [],
+    edge_discovery_reports: [
+      // Legacy no-losses marker row: the board re-derives it to DEVELOPING_EDGE.
+      edgeRow({ id: 1, edgeName: "symbol=EURUSD", profitFactor: 999, status: "STRONG_EDGE", confidenceScore: 100 }),
+      // GBPUSD: an old STRONG generation, but the current run is NO_EDGE.
+      edgeRow({ id: 2, edgeName: "symbol=GBPUSD", status: "STRONG_EDGE", confidenceScore: 90, createdAt: new Date("2026-10-01T10:00:00Z") }),
+      edgeRow({ id: 3, edgeName: "symbol=GBPUSD", status: "NO_EDGE", expectancy: -50, confidenceScore: 40, createdAt: new Date("2026-10-21T10:00:00Z") }),
+      // Too little data: neither strongest nor weakest.
+      edgeRow({ id: 4, edgeName: "emotion=CALM", status: "INSUFFICIENT_DATA", sampleSize: 3, confidenceScore: 95 }),
+    ],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.strongestEdgeSlice?.label, "EURUSD (by symbol)");
+  assert.equal(s.strongestEdgeSlice?.status, "DEVELOPING_EDGE");
+  assert.notEqual(s.strongestEdgeSlice?.confidenceScore, 100);
+  assert.equal(s.weakestEdgeSlice?.label, "GBPUSD (by symbol)");
+  assert.equal(s.weakestEdgeSlice?.status, "NO_EDGE");
+  assert.match(s.highlightBasis.edgeSlices, /not by your results in a market condition/);
+});

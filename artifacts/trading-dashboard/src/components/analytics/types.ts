@@ -6,6 +6,19 @@ export interface AnalyticsFigures {
   emotionalScoreAvg: number; consistencyScoreAvg: number;
   strongestStrategy: string | null; weakestStrategy: string | null;
   strongestMarketCondition: string | null; weakestMarketCondition: string | null;
+  // Live figures only (not snapshot columns): what the highlights really are.
+  /** Net-profitable symbol with the highest net P&L (the stored "strategy" column holds a symbol). */
+  strongestSymbol?: string | null;
+  /** Net-losing symbol with the lowest net P&L. */
+  weakestSymbol?: string | null;
+  strongestEdgeSlice?: EdgeSliceHighlight | null;
+  weakestEdgeSlice?: EdgeSliceHighlight | null;
+  highlightBasis?: { symbols: string; edgeSlices: string };
+}
+/** A slice from Edge Discovery's current reports, as the edge board rates it. */
+export interface EdgeSliceHighlight {
+  edgeName: string; label: string; status: string; statusWords: string;
+  confidenceScore: number; sampleSize: number; reportedAt: string | null;
 }
 /** A saved snapshot row; createdAt is when it was computed. */
 export interface AnalyticsSnapshot extends AnalyticsFigures {

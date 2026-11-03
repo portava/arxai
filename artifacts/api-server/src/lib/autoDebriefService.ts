@@ -19,7 +19,7 @@ import {
   heatSnapshots,
 } from "@workspace/db";
 import { asc, eq, gte, lte, and, isNull } from "drizzle-orm";
-import { computeSnapshot } from "../routes/analytics.js";
+import { computeSnapshot, toSnapshotRow } from "../routes/analytics.js";
 import { logger } from "./logger.js";
 
 // ── Heat tag lookup — find the closest heat snapshot at trade entry time ──────
@@ -434,7 +434,7 @@ export async function runAutoDebrief(
     if (trade.userId == null) {
       warnings.push("Paper order has no owner — analytics snapshot skipped");
     } else {
-      const { pnlCoverage: _pnlCoverage, ...computed } = await computeSnapshot(trade.userId);
+      const computed = toSnapshotRow(await computeSnapshot(trade.userId));
       const snapIns = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId: trade.userId })
         .returning({ id: analyticsSnapshotsTable.id });
       snapshotId = snapIns[0]?.id ?? null;
