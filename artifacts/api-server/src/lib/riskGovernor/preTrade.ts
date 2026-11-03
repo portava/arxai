@@ -830,10 +830,16 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
             .reduce((a, b) => Math.min(a, b), Number.POSITIVE_INFINITY);
           const loss = perUnit != null ? Math.abs(pos.entryPrice - sl) * perUnit : null;
           const nonPos = nonPositiveEquity(ctx);
-          if (loss == null || !Number.isFinite(cap)) {
-            set("per_trade_loss_limit", "BLOCK", loss != null && nonPos
-              ? `A widened stop cannot be checked against your per-trade limit: ${nonPos}.`
-              : "A widened stop cannot be checked against your per-trade limit (position size or equity unknown).", measured);
+          if (nonPos) {
+            // A percent of an equity at or below 0 allows no risk at all, the
+            // same as for a new trade (rule 8 on OPEN): the percent cap is
+            // used up, whatever amount cap is also set.
+            set("per_trade_loss_limit", "BLOCK",
+              `${sentenceCase(nonPos)}, so your ${L.maxRiskPerTradePercent}% per-trade limit leaves no room to widen the stop. Closing or tightening is allowed.`,
+              { ...measured, ...(loss != null ? { lossAtStop: round(loss) } : {}) });
+          } else if (loss == null || !Number.isFinite(cap)) {
+            set("per_trade_loss_limit", "BLOCK",
+              "A widened stop cannot be checked against your per-trade limit (position size or equity unknown).", measured);
           } else if (loss > cap + 1e-9) {
             set("per_trade_loss_limit", "BLOCK",
               `Moving the stop to ${sl} puts ${round(loss)} at risk, above your per-trade limit of ${round(cap)}.`,
