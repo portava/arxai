@@ -50,7 +50,7 @@ function ctxWith(over: Record<string, unknown>): Record<string, unknown> {
 mock.module("../enforce.js", { namedExports: { buildRiskContext: async () => state.ctx } });
 mock.module("../riskEvents.js", { namedExports: { getOrCreateRiskSettings: async () => ({ riskPreset: null, propFirm: null }) } });
 
-const { riskOverview, paperRiskCountNote } = await import("../riskProfile.js");
+const { riskOverview, paperRiskCountNote, riskCountNoteFor } = await import("../riskProfile.js");
 
 test("the week's risk count used against the weekly cap is named beside the week's booked P&L", async () => {
   state.ctx = ctxWith({});
@@ -86,4 +86,26 @@ test("callers that pass no activity are unchanged", () => {
     account: { equity: 10_000, freeMargin: 10_000, leverage: 100, currency: "USD", source: "paper_account:3" },
   } as never);
   assert.equal(note, null);
+});
+
+// Fourth safety review (s4-governor): when the newest closes within the week
+// lost more than the whole week (activity.weekNewestCloses), the figure
+// counted and its booked figure are the newest closes' own, not the last 7
+// days'. The note says so for each figure.
+test("when the newest closes are counted, the note labels both figures as theirs, never as the last 7 days'", () => {
+  // 60 closes this week: the whole week booked +100 (risk count +50); the
+  // newest 50 booked −900 and count −1,200 at the paper risk model.
+  const activity = {
+    ...ACTIVITY, weekRealizedPnl: -1_200, bookedWeekRealizedPnl: -900, allWeekRealizedPnl: 50,
+    weekNewestCloses: { counted: 50, since: new Date("2026-10-23T08:00:00Z"), ofTotal: 60 },
+  };
+  const note = riskCountNoteFor({
+    daily: { realizedPnl: 0, floatingPnl: 0 },
+    account: { equity: 10_000, freeMargin: 10_000, leverage: 100, currency: "USD", source: "paper_account:3" },
+    activity,
+  } as never);
+  assert.doesNotMatch(String(note), /the last 7 days'\) realized paper P&L is counted as -\$1,200\.00 \(booked -\$900\.00\)/,
+    "the newest closes' booked −900 read as the last 7 days' booked P&L");
+  assert.match(String(note), /your newest 50 of this week's 60 closes are counted as -\$1,200\.00 \(those closes booked -\$900\.00\)/);
+  assert.match(String(note), /For your weekly loss caps this week's realized P&L is counted as -\$1,200\.00, from your newest 50 of this week's 60 closes \(since 2026-10-23T08:00:00\.000Z\), because they lost more than all of this week's closes, which net \$50\.00\./);
 });

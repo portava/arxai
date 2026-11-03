@@ -315,13 +315,31 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     // (markToMarket), and nothing revalues it before the governor runs. It
     // takes the lower of the stored floating P&L and the open positions'
     // sized P&L at the mark, so it is never above the stored equity.
+    // The stored balance is just as old: the Build EE monitor, the
+    // autopilot's opens and closes and the EE manual close settle orders
+    // without a revaluation. So the booked equity is the lower of that figure
+    // and the balance read from the closes (the starting balance plus every
+    // settled close's booked P&L, the account owner's orders only, as
+    // markToMarket derives the stored balance) plus the open positions' sized
+    // P&L at the mark. Each figure is whole on its own basis (a close settled
+    // since the revaluation is in the second only, its stored floating P&L in
+    // the first only), so nothing is counted twice, and the lower one is
+    // never above the stored equity. A difference within the stored
+    // column's float precision is not a close the account has not stored.
     const model = paperModelEquity(acct, closes, openValue, now);
     const storedFloating = acct.equity - acct.currentBalance;
     const openAtMarkLower = openValue.sized < storedFloating;
+    const storedBasis = acct.currentBalance + Math.min(storedFloating, openValue.sized);
+    const ownCloses = closes.filter((c) => (acct.userId == null ? c.userId == null : c.userId === acct.userId));
+    const closesBalance = acct.startingBalance + paperRiskTotals(ownCloses).booked;
+    const closesBasis = closesBalance + openValue.sized;
+    const fromCloses = closesBasis < storedBasis - DISCLOSE_DIFFERENCE - Math.abs(acct.currentBalance) * 2 ** -23;
     paperEquityBases = {
-      bookedEquity: acct.currentBalance + Math.min(storedFloating, openValue.sized),
-      storedEquity: acct.equity, storedAt: acct.updatedAt ?? null, bookedBalance: acct.currentBalance,
-      bookedOpenValuedAtStop: openAtMarkLower ? [...openValue.valuedAtStop] : [],
+      bookedEquity: fromCloses ? closesBasis : storedBasis,
+      storedEquity: acct.equity, storedAt: acct.updatedAt ?? null,
+      bookedBalance: fromCloses ? closesBalance : acct.currentBalance,
+      ...(fromCloses ? { storedBalance: acct.currentBalance } : {}),
+      bookedOpenValuedAtStop: fromCloses || openAtMarkLower ? [...openValue.valuedAtStop] : [],
       modelEquity: model.equity, modelPeakEquity: model.peakEquity, modelPeakAt: model.peakAt,
       modelOpenValuedAtStop: model.openValuedAtStop,
       source: `paper_account:${acct.id}`,

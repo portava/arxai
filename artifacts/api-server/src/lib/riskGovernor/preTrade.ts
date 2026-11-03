@@ -515,12 +515,16 @@ export interface RiskContext {
 export interface PaperEquityBases {
   /**
    * The booked equity with open positions at the paper venue's mark now: the
-   * booked balance plus the lower of the floating P&L the account stores and
-   * the open positions' sized P&L at the mark (a crossed stop at its stop, a
-   * position that cannot be sized at min(0, model); paperOpenRisk.ts). Never
-   * above the stored equity (paper_accounts.equity), which is only as new as
-   * the account's last revaluation (markToMarket), and nothing revalues it
-   * before the governor runs. Its peak is RiskContext.equityPeak, which the
+   * lower of (a) the stored balance plus the lower of the floating P&L the
+   * account stores and the open positions' sized P&L at the mark, and (b) the
+   * balance read from the closes (the starting balance plus every settled
+   * close's booked P&L) plus the open positions' sized P&L at the mark (a
+   * crossed stop at its stop, a position that cannot be sized at
+   * min(0, model); paperOpenRisk.ts). Never above the stored equity
+   * (paper_accounts.equity) or the stored balance, which are only as new as
+   * the account's last revaluation (markToMarket); nothing revalues them
+   * before the governor runs, and the Build EE monitor and the autopilot
+   * settle closes without one. Its peak is RiskContext.equityPeak, which the
    * governor records from the stored equity.
    */
   bookedEquity: number;
@@ -533,8 +537,19 @@ export interface PaperEquityBases {
   storedEquity?: number;
   /** When the stored equity was written (paper_accounts.updated_at, its last revaluation), when known. */
   storedAt?: Date | null;
-  /** The booked balance (the starting balance plus every settled close's booked P&L) bookedEquity starts from. */
+  /**
+   * The balance bookedEquity starts from: the stored balance
+   * (paper_accounts.current_balance, as of the last revaluation), or, when
+   * storedBalance is set, the starting balance plus every settled close's
+   * booked P&L read from the closes, which is lower.
+   */
   bookedBalance?: number;
+  /**
+   * Set only when bookedBalance was read from the closes: the balance the
+   * account stores from its last revaluation, which does not have every
+   * settled close in it.
+   */
+  storedBalance?: number;
   /** Open positions counted at their stop in bookedEquity because no market quote for them was read. */
   bookedOpenValuedAtStop?: string[];
   /**
@@ -570,9 +585,11 @@ export interface TradingActivity {
   tradesToday: number;
   weekRealizedPnl: number;
   /**
-   * PAPER only, and only when it differs: the week's realized P/L as booked.
-   * weekRealizedPnl is then the paper risk count (the lower of the week's
-   * booked total and its total at the paper risk model).
+   * PAPER only, and only when it differs: the realized P/L as booked of the
+   * closes weekRealizedPnl counts (the last 7 days', or the newest closes
+   * within the week when weekNewestCloses is set). weekRealizedPnl is then
+   * the paper risk count (the lower of those closes' booked total and their
+   * total at the paper risk model).
    */
   bookedWeekRealizedPnl?: number;
   /**
@@ -1227,11 +1244,15 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
  * each full basis against a peak on the same basis, blocking when either
  * reaches the limit and naming the basis that did.
  *   - booked: the booked equity with open positions at the paper venue's
- *     current price (never above the stored equity) against the higher of
+ *     current price and every settled close counted (never above the stored
+ *     equity or the stored balance) against the higher of
  *     the peak the governor recorded from the stored equity
  *     (user_equity_peaks) and the stored equity itself. When the stored
  *     equity is higher (its last revaluation is older than the price), the
- *     refusal shows both;
+ *     refusal shows both, and it names the peak it measured from: the
+ *     recorded peak, or the stored equity when that is above the recorded
+ *     peak or none is recorded (measured.bookedPeakSource; peakSince is that
+ *     figure's time);
  *   - paper risk model: the equity at price move × lots × 100 against the
  *     highest equity at that model (starting balance, after each settled
  *     close, now).
@@ -1268,6 +1289,28 @@ function paperDrawdown(
     drawdownBasis: bookedBreach && modelBreach ? "booked_and_paper_risk_model" : bookedBreach ? "booked" : modelBreach ? "paper_risk_model" : null,
     equityBasesSource: b.source,
   });
+  // Which figure the booked peak is: the recorded peak (user_equity_peaks)
+  // when it is the highest; else the stored equity, when a revaluation after
+  // the last governor run that recorded a peak stored a higher equity (the
+  // peak is recorded only after a decision, never in preview) or no peak is
+  // recorded yet; else the booked equity now. peakSince is that figure's
+  // time: the recorded peak's, the stored equity's, or none.
+  const bookedPeakSource = peakFact != null && peakFact.peakEquity >= bookedPeak ? "recorded_peak"
+    : b.storedEquity != null && b.storedEquity >= bookedPeak ? "stored_equity" : "booked_equity";
+  m["bookedPeakSource"] = bookedPeakSource;
+  if (bookedPeakSource === "stored_equity") m["peakSince"] = b.storedAt?.toISOString() ?? null;
+  else if (bookedPeakSource === "booked_equity") m["peakSince"] = null;
+  const recordedNote = peakFact != null
+    ? `, which is above its recorded peak of ${round(peakFact.peakEquity)}`
+    : "; no equity peak has been recorded for this account yet";
+  // The peak the booked drawdown is measured from, named for what it is.
+  // `storedNamed`: the sentence already gave the stored equity and its time.
+  const bookedPeakText = (storedNamed: boolean): string =>
+    bookedPeakSource === "recorded_peak" ? `its recorded peak of ${round(bookedPeak)}`
+    : bookedPeakSource === "stored_equity"
+      ? (storedNamed ? `that stored equity${recordedNote}`
+        : `the equity the account stored at its last revaluation, ${round(bookedPeak)}${b.storedAt ? ` at ${b.storedAt.toISOString()}` : ""}${recordedNote}`)
+    : `its booked equity now${recordedNote}`;
   // The stored equity is disclosed when it is at least half a cent above the
   // booked equity at the current price (the figures are float sums).
   const stored = b.storedEquity != null && b.storedEquity - b.bookedEquity >= 0.005 ? b.storedEquity : null;
@@ -1275,24 +1318,31 @@ function paperDrawdown(
     Object.assign(m, {
       storedEquity: round(stored), storedAt: b.storedAt?.toISOString() ?? null,
       ...(b.bookedBalance != null ? { bookedBalance: round(b.bookedBalance), bookedOpenAtCurrentPrice: round(b.bookedEquity - b.bookedBalance) } : {}),
+      ...(b.storedBalance != null ? { storedBalance: round(b.storedBalance) } : {}),
     });
   }
+  // The booked balance read from the closes, beside the balance the account
+  // stores (only when it is lower: a close settled after the revaluation).
+  const storedBalanceNote = b.storedBalance != null
+    ? ` with a balance of ${round(b.storedBalance)}` : "";
+  const closesNote = b.storedBalance != null
+    ? ", and the booked balance here adds up every settled close, so it counts closes settled since that revaluation" : "";
   if (!bookedBreach && !modelBreach) { set("daily_loss_limit", "PASS", null, m); return; }
   const parts: string[] = [];
   if (bookedBreach) {
     if (stored == null) {
       parts.push(b.bookedEquity <= 0
         ? `The paper account's booked equity is ${round(b.bookedEquity)}, at or below zero, so your ${limit}% drawdown limit is used up.`
-        : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`);
+        : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below ${bookedPeakText(false)} (drawdown limit ${limit}%).`);
     } else {
       const counted = b.bookedBalance != null
         ? ` (booked balance ${round(b.bookedBalance)}, open positions ${round(b.bookedEquity - b.bookedBalance)}${stopValuedList(b.bookedOpenValuedAtStop ?? [])})`
         : stopValuedList(b.bookedOpenValuedAtStop ?? []);
       parts.push(`The paper account's booked equity is ${round(b.bookedEquity)} with its open positions valued at the paper venue's current price${counted}; `
-        + `the account stores ${round(stored)} from its last revaluation${b.storedAt ? ` at ${b.storedAt.toISOString()}` : ""}. `
+        + `the account stores ${round(stored)}${storedBalanceNote} from its last revaluation${b.storedAt ? ` at ${b.storedAt.toISOString()}` : ""}${closesNote}. `
         + (b.bookedEquity <= 0
           ? `That is at or below zero, so your ${limit}% drawdown limit is used up.`
-          : `That is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`));
+          : `That is ${round(bookedDd!)}% below ${bookedPeakText(true)} (drawdown limit ${limit}%).`));
     }
   }
   if (modelBreach) {
@@ -1301,7 +1351,7 @@ function paperDrawdown(
       : `the account's equity ${round(b.modelEquity)} is ${round(modelDd!)}% below its peak of ${round(modelPeak)} on the same basis (drawdown limit ${limit}%)`;
     const bookedNote = bookedBreach ? ""
       : stored == null ? `; the paper account shows ${round(b.bookedEquity)} booked`
-      : `; the paper account's booked equity is ${round(b.bookedEquity)} with its open positions at the current price (it stores ${round(stored)})`;
+      : `; the paper account's booked equity is ${round(b.bookedEquity)} with ${b.storedBalance != null ? "every settled close counted and " : ""}its open positions at the current price (it stores ${round(stored)}${storedBalanceNote})`;
     parts.push(`At the paper risk model (price move × lots × 100), ${what}${bookedNote}. `
       + `That equity is the starting balance plus every closed paper trade and each open position at that model${stopValuedList(b.modelOpenValuedAtStop)}; `
       + `its peak is the highest of the starting balance, the equity after each closed trade, and now.`);
@@ -1392,8 +1442,10 @@ function evaluateDiscipline(
     // Every venue: when the newest closes lost more than the whole week, the
     // figure counted is theirs; name it and the whole week's figure.
     const newest = act.allWeekRealizedPnl != null ? act.weekNewestCloses ?? null : null;
+    // The booked figure covers the closes counted: the newest closes' own
+    // when only they are counted, never the whole week's.
     const weekBooked = (act.bookedWeekRealizedPnl != null
-      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "")
+      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; ${newest ? `your newest ${newest.counted} closes booked` : "booked"} ${round(act.bookedWeekRealizedPnl)})` : "")
       + (newest
         ? ` (counted from your newest ${newest.counted} of this week's ${newest.ofTotal} closes, since ${newest.since.toISOString()}; all of this week's closes net ${round(act.allWeekRealizedPnl!)})`
         : "");
