@@ -116,7 +116,51 @@ interface CandleSeries {
 // symbol|timeframe → (bridgeKey → series). Partitions are hard walls: no read
 // or write path may merge candles across two partition entries.
 const candleStore = new Map<string, Map<string, CandleSeries>>();
-const quoteStore = new Map<string, { quote: MarketQuote; updatedAt: number }>();
+
+/**
+ * How a bridge's partition came to hold its current tick. The Universal Agent
+ * re-posts `SymbolInfoTick`'s LAST tick on every sweep whether or not it
+ * changed, stamping each post with its then-current UTC clock, so the post
+ * time of a tick says nothing about when the tick occurred. The store therefore
+ * stamps a tick at the EA time it was FIRST seen in the partition and keeps
+ * that stamp across identical re-posts; the previous post's EA time bounds
+ * when the tick can have occurred (it was not the last tick then).
+ */
+export interface Mt5TickProvenance {
+  /** EA UTC ms at which THIS tick (broker clock + bid + ask) was first seen here. */
+  firstSeenEaMs: number;
+  /** EA UTC ms of the most recent post of this tick, identical re-posts included. */
+  lastPostedEaMs: number;
+  /** Identical re-posts of this tick since it was first seen. */
+  reposts: number;
+  /**
+   * EA UTC ms of the partition's last post BEFORE this tick was first seen: the
+   * latest moment the feed is known not to have had it yet. null when this is
+   * the first tick the partition ever held (its age cannot be bounded).
+   */
+  priorPostEaMs: number | null;
+}
+
+interface TickProvenanceState extends Mt5TickProvenance {
+  /** Identity of the tick: broker clock + bid + ask. */
+  key: string;
+}
+
+interface QuoteEntry {
+  quote: MarketQuote;
+  updatedAt: number;
+  /** Monotonic write ordinal — the recency ranking for the unscoped read. */
+  writeSeq: number;
+  /** null = unattributed partition (writer identity unknown — never guessed). */
+  bridgeConnectionId: number | null;
+  userId: number | null;
+  /** Set by `recordMt5Tick`; null for a legacy latest-wins `updateQuoteFromMT5` write. */
+  tick: TickProvenanceState | null;
+}
+// symbol → (bridgeKey → latest quote). Same partition wall as the candle store:
+// a bridge-scoped read serves ONLY that bridge's quote; the unscoped legacy read
+// serves the most recent writer (single-writer behaviour unchanged).
+const quoteStore = new Map<string, Map<string, QuoteEntry>>();
 let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
@@ -239,9 +283,157 @@ export function mergeCandleFromMT5(
   lastUpdate = Date.now();
 }
 
-export function updateQuoteFromMT5(symbol: string, quote: MarketQuote): void {
-  quoteStore.set(normalizeSymbolKey(symbol), { quote, updatedAt: Date.now() });
+/**
+ * Store the latest quote for a symbol in the pushing bridge's partition. The
+ * legacy 2-arg form (no bridge identity) still works and writes the
+ * unattributed partition, which a bridge-scoped read never serves.
+ */
+export function updateQuoteFromMT5(
+  symbol: string,
+  quote: MarketQuote,
+  bridge?: Mt5BridgeIdentity | null,
+): void {
+  const key = normalizeSymbolKey(symbol);
+  const partitions = quoteStore.get(key) ?? new Map<string, QuoteEntry>();
+  partitions.set(bridgeKeyOf(bridge), {
+    quote,
+    updatedAt: Date.now(),
+    writeSeq: ++writeCounter,
+    bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+    userId: bridge?.userId ?? null,
+    tick: null,
+  });
+  quoteStore.set(key, partitions);
   lastUpdate = Date.now();
+}
+
+/** One EA tick post as the bridge v2 ingest hands it over. */
+export interface Mt5TickInput {
+  bid: number;
+  ask: number;
+  /** Payload `brokerTimeEpochMs` (MQL5 `MqlTick.time_msc`): the trade server's
+   *  wall clock, NOT UTC. null when the payload carried none. */
+  brokerTimeMs: number | null;
+  /** Envelope `eaCreatedAtEpochMs`: the EA's UTC clock when it posted the tick. */
+  eaUtcMs: number;
+}
+
+/**
+ * Record an EA tick post in the pushing bridge's partition, stamping the quote
+ * at the EA UTC time the tick was FIRST seen there.
+ *
+ * - A post identical to the partition's current tick (same broker clock, bid
+ *   and ask) is a re-post: the quote and its `timestamp` are left untouched,
+ *   the re-post is counted and the store TTL is refreshed (the feed is alive
+ *   even when the market is not).
+ * - A different tick replaces the quote with `timestamp = eaUtcMs` and records
+ *   the previous post's EA time as the bound on when it can have occurred.
+ *
+ * Nothing here estimates the broker's UTC offset or falls back to the server
+ * clock; the broker clock and its offset at first sight are kept as diagnostics.
+ */
+export function recordMt5Tick(
+  symbol: string,
+  tick: Mt5TickInput,
+  bridge: Mt5BridgeIdentity | null,
+): Mt5TickProvenance {
+  const key = normalizeSymbolKey(symbol);
+  const partitions = quoteStore.get(key) ?? new Map<string, QuoteEntry>();
+  const bKey = bridgeKeyOf(bridge);
+  const existing = partitions.get(bKey);
+  const tickKey = `${tick.brokerTimeMs ?? "-"}|${tick.bid}|${tick.ask}`;
+  const now = Date.now();
+  let entry: QuoteEntry;
+  if (existing?.tick && existing.tick.key === tickKey) {
+    entry = {
+      ...existing,
+      updatedAt: now,
+      writeSeq: ++writeCounter,
+      tick: {
+        ...existing.tick,
+        lastPostedEaMs: tick.eaUtcMs,
+        reposts: existing.tick.reposts + 1,
+      },
+    };
+  } else {
+    entry = {
+      quote: {
+        symbol,
+        bid: tick.bid,
+        ask: tick.ask,
+        spread: tick.ask - tick.bid,
+        timestamp: new Date(tick.eaUtcMs).toISOString(),
+        brokerClockMs: tick.brokerTimeMs,
+        brokerClockOffsetMs: tick.brokerTimeMs == null ? null : tick.brokerTimeMs - tick.eaUtcMs,
+      },
+      updatedAt: now,
+      writeSeq: ++writeCounter,
+      bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+      userId: bridge?.userId ?? null,
+      tick: {
+        key: tickKey,
+        firstSeenEaMs: tick.eaUtcMs,
+        lastPostedEaMs: tick.eaUtcMs,
+        reposts: 0,
+        priorPostEaMs: existing?.tick ? existing.tick.lastPostedEaMs : null,
+      },
+    };
+  }
+  partitions.set(bKey, entry);
+  quoteStore.set(key, partitions);
+  lastUpdate = now;
+  return publicProvenance(entry.tick!);
+}
+
+function publicProvenance(t: TickProvenanceState): Mt5TickProvenance {
+  return {
+    firstSeenEaMs: t.firstSeenEaMs,
+    lastPostedEaMs: t.lastPostedEaMs,
+    reposts: t.reposts,
+    priorPostEaMs: t.priorPostEaMs,
+  };
+}
+
+function servingQuote(partitions: Map<string, QuoteEntry> | undefined): QuoteEntry | null {
+  if (!partitions || partitions.size === 0) return null;
+  let best: QuoteEntry | null = null;
+  for (const q of partitions.values()) {
+    if (!best || q.writeSeq > best.writeSeq) best = q;
+  }
+  return best;
+}
+
+export interface Mt5QuoteRead {
+  /** The bridge's own latest quote; null when that bridge never pushed the
+   *  symbol or its push exceeded the store TTL. Never another bridge's. */
+  quote: MarketQuote | null;
+  bridgeConnectionId: number | null;
+  userId: number | null;
+  /** First-sight provenance of the quote's tick (`recordMt5Tick`); null when
+   *  the quote is absent or was written without it. */
+  tick: Mt5TickProvenance | null;
+}
+
+/**
+ * Bridge-scoped quote read: serve ONLY the named bridge's partition (miss or
+ * stale → honest null; no fallback to another bridge or to the unattributed
+ * partition). This is the read the self-trade entry claim uses, so one user's
+ * EA can never supply the quote fact for another user's command.
+ */
+export function readMt5Quote(
+  symbol: string,
+  opts: { bridgeConnectionId: number; now?: number },
+): Mt5QuoteRead {
+  const now = opts.now ?? Date.now();
+  const q = quoteStore.get(normalizeSymbolKey(symbol))?.get(String(opts.bridgeConnectionId));
+  if (!q || now - q.updatedAt > CANDLE_TTL_MS)
+    return { quote: null, bridgeConnectionId: null, userId: null, tick: null };
+  return {
+    quote: q.quote,
+    bridgeConnectionId: q.bridgeConnectionId,
+    userId: q.userId,
+    tick: q.tick ? publicProvenance(q.tick) : null,
+  };
 }
 
 /** Test/diagnostic helper — clear all pushed data + contention-warn state. */
@@ -406,7 +598,7 @@ export function getMt5QuoteAvailability(
   symbol: string,
   now: number = Date.now(),
 ): { hasQuote: boolean; fresh: boolean; hasPrice: boolean; ageMs: number | null } {
-  const q = quoteStore.get(normalizeSymbolKey(symbol));
+  const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
   if (!q) return { hasQuote: false, fresh: false, hasPrice: false, ageMs: null };
   const ageMs = Math.max(0, now - q.updatedAt);
   const fresh = ageMs <= CANDLE_TTL_MS;
@@ -489,8 +681,11 @@ export class Mt5Provider implements DataProvider {
     return readMt5Candles(symbol, timeframe, limit).candles;
   }
 
+  // Legacy DataProvider surface — bridge-unscoped: serves the most recent
+  // writer's quote (chart/scanner/router reads). Execution-bound readers use
+  // readMt5Quote with the bridge identity instead.
   async getQuote(symbol: string): Promise<MarketQuote> {
-    const q = quoteStore.get(normalizeSymbolKey(symbol));
+    const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
     if (q && Date.now() - q.updatedAt <= CANDLE_TTL_MS) return q.quote;
     return { symbol, timestamp: new Date().toISOString() };
   }

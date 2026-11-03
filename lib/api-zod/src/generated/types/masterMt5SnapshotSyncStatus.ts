@@ -7,7 +7,7 @@
  */
 
 /**
- * Derived health for the card sync badge.
+ * Freshness of the last account update only; does not establish freshness or coherence of every amount.
  */
 export type MasterMt5SnapshotSyncStatus =
   (typeof MasterMt5SnapshotSyncStatus)[keyof typeof MasterMt5SnapshotSyncStatus];

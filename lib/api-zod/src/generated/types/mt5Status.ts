@@ -11,6 +11,7 @@ import type { Mt5StatusAccountType } from "./mt5StatusAccountType";
 import type { Mt5StatusExecutionMode } from "./mt5StatusExecutionMode";
 import type { Mt5StatusMode } from "./mt5StatusMode";
 import type { Mt5StatusPlacementLayer } from "./mt5StatusPlacementLayer";
+import type { NativeAccountReport } from "./nativeAccountReport";
 
 export interface Mt5Status {
   connected: boolean;
@@ -36,5 +37,8 @@ export interface Mt5Status {
   accountType: Mt5StatusAccountType;
   maxDemoLot: number;
   openPositions: Mt5Position[];
+  /** Native reported observations for the authenticated user's selected personal MT5 connection only. Never shared-master funds or proof of current broker state. */
+  nativeAccountReport?: NativeAccountReport | null;
+  /** @nullable */
   accountSnapshot: Mt5StatusAccountSnapshot;
 }

@@ -18894,10 +18894,19 @@ components:
         marginLevel: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         liveAllowed: { type: boolean }
+        liveAllowedNote: { type: string }
         positions:
           type: array
           items:
             $ref: "#/components/schemas/Mt5Position"
+        positionsMeasured: { type: boolean }
+        positionsNote: { type: string }
+        scope:
+          type: string
+          enum: [platform, own_connection, shared_master_bridge, none]
+          description: Which account this state describes. Only operators receive the install-wide platform row; everyone else sees their own connection, their shared-master bridge status, or none.
+        scopeNote: { type: string }
+        heartbeatFreshness: { type: string }
         lastHeartbeatAt: { type: ["string", "null"] }
         lastSyncAt: { type: ["string", "null"] }
 

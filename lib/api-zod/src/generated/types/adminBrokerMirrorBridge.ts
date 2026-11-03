@@ -6,12 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminBrokerMirrorBridgeFreshness } from "./adminBrokerMirrorBridgeFreshness";
-
-import type { MasterMt5Snapshot } from "./masterMt5Snapshot";
+import type { NativeAccountReport } from "./nativeAccountReport";
 
 export interface AdminBrokerMirrorBridge {
-  /** Exact native whole-account report; legacy scalars are not current evidence. */
-  nativeAccountReport?: MasterMt5Snapshot["nativeAccountReport"];
+  /** Exact native whole-account report; legacy scalar fields are not current account evidence. */
+  nativeAccountReport?: NativeAccountReport | null;
   bridgeConnectionId: number;
   /** @nullable */
   userId?: number | null;

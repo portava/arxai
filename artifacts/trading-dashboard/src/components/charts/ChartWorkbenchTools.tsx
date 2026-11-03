@@ -137,7 +137,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const currentPreviewRead=fibonacciPreview?getFibonacciProposal?.():null;
   const visiblePreview=fibonacciPreview&&currentPreviewRead?.status==="ready"&&currentPreviewRead.proposal.comparisonKey===fibonacciPreview.comparisonKey?fibonacciPreview:null;
   const previewDrawing=useMemo(()=>visiblePreview?fibonacciProposalDrawing(visiblePreview,previewId,true):null,[visiblePreview,previewId]);
-  const withdrawPreview=(reason:string)=>{setFibonacciPreview(null);setMessage(`Preview withdrawn: ${reason} Request a new preview to use the updated window.`);};
+  const withdrawPreview=(reason:string)=>{setFibonacciPreview(null);setMessage(`Preview cleared: ${reason} Request a new preview to use the updated window.`);};
   useLayoutEffect(()=>{
     if(!fibonacciPreview)return;
     const check=()=>{
@@ -153,7 +153,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const levelRead=levelPreview?getSupportResistanceProposal?.():null;
   const visibleLevels=levelPreview&&levelRead?.status==="ready"&&levelRead.proposal.comparisonKey===levelPreview.comparisonKey?levelPreview:null;
   const levelDrawings=useMemo(()=>visibleLevels?levelProposalDrawings(visibleLevels,levelPrefix,true):[],[visibleLevels,levelPrefix]);
-  const withdrawLevels=(reason:string)=>{setLevelPreview(null);setMessage(`Support/resistance preview withdrawn: ${reason}`);};
+  const withdrawLevels=(reason:string)=>{setLevelPreview(null);setMessage(`Support/resistance preview cleared: ${reason}`);};
   useLayoutEffect(()=>{
     if(!levelPreview)return;
     const check=()=>{const next=getSupportResistanceProposal?.();if(next?.status!=="ready"||next.proposal.comparisonKey!==levelPreview.comparisonKey)withdrawLevels(next?.reason??"The source or visible window changed.");};
@@ -353,7 +353,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     if(next.status!=="ready"){setFibonacciPreview(null);setMessage(next.reason);return next;}
     if(historyRef.current.present.length+1+(levelPreviewRef.current?2:0)>MAX_DRAWINGS){const reason=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`;setMessage(reason);return {status:"unavailable",proposal:null,reason};}
     if(!restoreForAction())return {status:"unavailable",proposal:null,reason:"Restore tools before displaying this preview."};
-    setHidden(false);setFibonacciPreview(next.proposal);setMessage("Preview only. Its anchors stay fixed; changes to the source or window withdraw it. Keep and edit to create your own drawing.");
+    setHidden(false);setFibonacciPreview(next.proposal);setMessage("Preview only. Its anchors stay fixed; changes to the source or window clear it. Keep and edit to create your own drawing.");
     return next;
   };
   const keepFibonacci=():string=>{
@@ -361,7 +361,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     if(!pending)return "No current Fibonacci preview to keep. Request a preview first; no drawing was saved or order sent.";
     if(current?.status!=="ready"||current.proposal.comparisonKey!==pending.comparisonKey){
       const reason=current?.reason??"The source, closed candles or visible window changed.";
-      withdrawPreview(reason);return `Preview withdrawn: ${reason} Request a fresh preview before keeping it. No drawing was saved or order sent.`;
+      withdrawPreview(reason);return `Preview cleared: ${reason} Request a fresh preview before keeping it. No drawing was saved or order sent.`;
     }
     const installed=installedDrawings.current;
     if(hidden||isPresentationHidden()||!presentationVerified()||installed?.adapter!==adapter||installed.epoch!==epoch||!installed.rows.some(d=>d.id===previewId))return "Fibonacci preview is hidden or its visibility is unverified. Restore tools and show drawings before keeping it. No drawing was saved.";
@@ -401,11 +401,11 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       const fresh=getFibonacciProposal();
       if(fresh.status!=="ready"){
         if(fibonacciPreview)withdrawPreview(fresh.reason);
-        return `No new Fibonacci added: ${fresh.reason} ${fibonacciPreview?"The previous preview was withdrawn. ":""}No current source-backed explanation can be established; your kept drawings remain yours. No drawing was saved or order sent.`;
+        return `No new Fibonacci added: ${fresh.reason} ${fibonacciPreview?"The previous preview was cleared. ":""}No current source-backed explanation can be established; your kept drawings remain yours. No drawing was saved or order sent.`;
       }
       if(fibonacciPreview&&fresh.proposal.comparisonKey!==fibonacciPreview.comparisonKey){
         withdrawPreview("The source or chart window changed since this preview.");
-        return "The previous Fibonacci preview is withdrawn because its source or window changed. Request a new preview; old anchors are not presented as a current reading. Your kept drawings were not changed.";
+        return "The previous Fibonacci preview was cleared because its source or window changed. Request a new preview; old anchors are not presented as a current reading. Your kept drawings were not changed.";
       }
       if(request.action!=="selected"&&fibonacciPreview){
         const installed=installedDrawings.current;
@@ -428,7 +428,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     if(historyRef.current.present.length+2+(previewRef.current?1:0)>MAX_DRAWINGS)return "Two drawing slots are needed for support/resistance (including other previews). Remove an object first; no drawings were changed.";
     if(!restoreForAction())return "Restore tools before displaying these candidates. No drawing was saved.";
     setTool(null);setAnchor(null);setChannelEnd(null);setLevelPreview(next.proposal);
-    setMessage("Historical level candidates only. Keep levels and edit makes adjustable annotations; source/window changes withdraw this preview.");
+    setMessage("Historical level candidates only. Keep levels and edit makes adjustable annotations; source/window changes clear this preview.");
     return explainLevelProposal(next.proposal,"prepared");
   };
   const keepLevels=():string=>{
@@ -462,7 +462,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       }
       if(request.action==='explain'&&levelPreviewRef.current){
         const next=getSupportResistanceProposal?.(),pending=levelPreviewRef.current;
-        if(next?.status!=="ready"||next.proposal.comparisonKey!==pending.comparisonKey){withdrawLevels(next?.reason??"The source or window changed.");return "Previous level preview withdrawn. Request fresh levels for the current chart.";}
+        if(next?.status!=="ready"||next.proposal.comparisonKey!==pending.comparisonKey){withdrawLevels(next?.reason??"The source or window changed.");return "Previous level preview cleared. Request fresh levels for the current chart.";}
         const installed=installedDrawings.current;
         const shown=presentationVerified()&&installed?.adapter===adapter&&installed.epoch===epoch&&levelDrawings.every(row=>installed.rows.some(d=>d.id===row.id))&&levelDrawings.length===2;
         return explainLevelProposal(pending,hidden||isPresentationHidden()?'hidden':shown?'shown':'prepared');

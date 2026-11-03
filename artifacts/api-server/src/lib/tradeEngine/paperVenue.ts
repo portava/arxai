@@ -35,6 +35,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
+import { paperEntryOrigin, paperEntryPolicyReason } from "../safety/entryPolicy.js";
+import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import { currentQuote } from "./marketQuote.js";
 import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
 
@@ -252,8 +254,9 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   if (!slOk || !tpOk) return { ok: false, reason: "INVALID_SLTP_GEOMETRY", entryPrice: px };
   // Pre-trade Risk Governor: the same rules a live order faces, priced
   // against the paper simulator's market.
+  const entryOrigin = paperEntryOrigin(a.origin, a.decisionId);
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: a.origin ?? "manual", action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: entryOrigin, action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
     entryPrice: q ? null : a.entryPrice, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
     ...(a.intentRef ? { intentRef: a.intentRef } : {}),
@@ -265,6 +268,11 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
     auditContext: { caller: a.caller, ...(a.clientRequestKey ? { clientRequestKey: a.clientRequestKey } : {}) },
   });
   if (!risk.allowed) return governorRefusal(risk);
+  // Safety Core recheck at booking (PR #102 port): the governor read the
+  // posture when it decided; a mode change or kill switch since then must
+  // still refuse the booking. Fail closed on an unreadable state.
+  const bookingHold = paperEntryPolicyReason(await readPaperEntryPosture());
+  if (bookingHold) return governorRefusal({ ...risk, primaryReason: bookingHold, blockedBy: [...new Set(["trading_halt", ...risk.blockedBy])] });
   const ins = await db.insert(paperOrdersTable).values({
     userId: a.userId,
     paperAccountId: a.paperAccountId,
@@ -409,8 +417,9 @@ export interface PaperFillOpenArgs {
  * their own refusal envelopes.
  */
 export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; order: PaperOrderRow; risk: EnforceResult } | PaperFillBlocked> {
+  const entryOrigin = paperEntryOrigin(a.origin, a.decisionId);
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: a.origin, action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: entryOrigin, action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
     ...("governedEntryPrice" in a ? { entryPrice: a.governedEntryPrice } : {}),
     stopLoss: a.stopLoss, takeProfit: a.takeProfit,
@@ -421,6 +430,11 @@ export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; o
     auditContext: a.auditContext,
   });
   if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
+  // Safety Core recheck at booking (PR #102 port); see openPaperOrder.
+  const bookingHold = paperEntryPolicyReason(await readPaperEntryPosture());
+  if (bookingHold) {
+    return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk: { ...risk, allowed: false, decision: "BLOCK", primaryReason: bookingHold, blockedBy: [...new Set(["trading_halt" as const, ...risk.blockedBy])] } };
+  }
   const ins = await db.insert(paperOrdersTable).values({
     userId: a.userId,
     paperAccountId: a.paperAccountId,
