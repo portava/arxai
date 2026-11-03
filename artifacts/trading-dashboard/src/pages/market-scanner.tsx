@@ -1023,7 +1023,7 @@ export default function MarketScanner() {
 
       <CollapsibleSection
         title="Recent scanner trades"
-        description="Scanner-generated trades will appear here once orders are placed."
+        description="Lists MT5 demo orders sent from the scanner only."
         storageKey="scanner.recentTrades"
         testId="scanner-recent-trades"
         defaultOpen

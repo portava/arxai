@@ -133,6 +133,14 @@ check(
   !recentTrades.includes("will appear here once orders are placed"),
   "the card has no live-order source, so it must not promise Live Shared history",
 );
+// The section that wraps the card on the scanner page shows its description
+// in every mode, directly above the card's own "not listed here" copy, so it
+// must not make the promise either.
+check(
+  "scanner recent-trades section does not promise history the card never loads",
+  !scannerPage.includes("will appear here once orders are placed"),
+  "the section description sits above a card that lists MT5 demo orders only; it must name that source, not promise every order",
+);
 
 console.log(`live-surface demo-wording guard: ${pass}/${pass + fail} PASS`);
 if (failures.length) {
