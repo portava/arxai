@@ -95,6 +95,19 @@ export interface SnapshotReadState {
   updatedAtMs: number | undefined;
 }
 
+/** The snapshot on screen was read within three polls and its latest refresh neither failed nor is paused. */
+export function isSnapshotCurrent(snapRead: SnapshotReadState, nowMs = Date.now()): boolean {
+  const updatedAtMs = snapRead.updatedAtMs;
+  const ageMs = typeof updatedAtMs === "number" && updatedAtMs > 0 ? nowMs - updatedAtMs : null;
+  return !snapRead.refreshFailed && !snapRead.refreshPaused && ageMs != null && ageMs <= SNAPSHOT_CURRENT_MS;
+}
+
+/** When the snapshot on screen was received, as a time of day; null when never. */
+function snapshotReadAt(snapRead: SnapshotReadState): string | null {
+  const updatedAtMs = snapRead.updatedAtMs;
+  return typeof updatedAtMs === "number" && updatedAtMs > 0 ? new Date(updatedAtMs).toLocaleTimeString() : null;
+}
+
 function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable, snapRead }: { trade: Trade; snap: unknown; snapTargetsUnavailable: boolean; snapRead: SnapshotReadState }) {
   const { data: safety } = useQuery<SafetyState>({
     queryKey: ["/me/protective-auto-close/settings"],
@@ -221,11 +234,9 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable, snapRead }: { tra
   // an earlier read and whether the server still has one was not checked.
   const killRead = typeof safety?.settings?.killSwitchEngaged === "boolean";
   const hasQuote = (snap as { currentPrice?: number | null } | null | undefined)?.currentPrice != null;
-  const updatedAtMs = snapRead.updatedAtMs;
-  const snapAgeMs = typeof updatedAtMs === "number" && updatedAtMs > 0 ? Date.now() - updatedAtMs : null;
-  const snapCurrent = !snapRead.refreshFailed && !snapRead.refreshPaused && snapAgeMs != null && snapAgeMs <= SNAPSHOT_CURRENT_MS;
+  const snapCurrent = isSnapshotCurrent(snapRead);
   if (snap && !snapCurrent) {
-    const readAt = typeof updatedAtMs === "number" && updatedAtMs > 0 ? new Date(updatedAtMs).toLocaleTimeString() : null;
+    const readAt = snapshotReadAt(snapRead);
     const lastRead = readAt ? `the last successful read at ${readAt}` : "an earlier read";
     badges.push({
       label: snapRead.refreshFailed ? "Snapshot Could Not Be Refreshed" : "Snapshot Not Current",
@@ -372,9 +383,20 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
   const quoteAt = snap?.quoteAt ?? null;
   // Only a quote the server confirmed "fresh" is the current price. "delayed"
   // (a receive-time stamp, or a tick past the fresh window) — or a snapshot
-  // that does not say — is a last price, not confirmed current.
-  const confirmedCurrent = snap?.quoteFreshness === "fresh";
-  const quoteNote = snap?.quoteNote ?? null;
+  // that does not say — is a last price, not confirmed current. So is any
+  // quote in a snapshot that is no longer current: react-query keeps the last
+  // snapshot when a refresh fails or is paused, so the server's verdict and
+  // its relative note ("observed 2s ago") are from that earlier read.
+  const snapCurrent = isSnapshotCurrent(snapRead);
+  const confirmedCurrent = snapCurrent && snap?.quoteFreshness === "fresh";
+  const quoteAsOf = quoteAt ? `Quote as of ${new Date(quoteAt).toLocaleTimeString()}.` : "";
+  const readAt = snapshotReadAt(snapRead);
+  const notRefreshed = snapRead.refreshFailed
+    ? `This trade's snapshot could not be refreshed ${readAt ? `since ${readAt}` : "after an earlier read"}.`
+    : `This trade's snapshot has not been refreshed ${readAt ? `since ${readAt}` : "after an earlier read"}.`;
+  const unconfirmedDetail = snapCurrent
+    ? (snap?.quoteNote ?? quoteAsOf)
+    : `${notRefreshed}${quoteAsOf ? ` ${quoteAsOf}` : ""}`;
 
   return (
     <Card data-testid={`live-trade-card-${trade.id}`}>
@@ -436,7 +458,7 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             ) : null}
             {currentPrice != null && !confirmedCurrent ? (
               <div className="text-[10px] text-amber-300" data-testid={`snap-quote-unconfirmed-${trade.id}`}>
-                Last price · not confirmed current. {quoteNote ?? (quoteAt ? `Quote as of ${new Date(quoteAt).toLocaleTimeString()}.` : "")} P&L, R and health are measured from this last price.
+                Last price · not confirmed current. {unconfirmedDetail} P&L, R and health are measured from this last price.
               </div>
             ) : null}
             {currentPrice != null && floatingPnl == null && snap.pnlUnavailableReason ? (
