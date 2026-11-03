@@ -54,6 +54,9 @@ function healthyBody() {
       accountRoutingMode: "USER_OWNED_MT5", sharedLiveTradingEnabled: false,
       masterBridgeLiveEnabled: false, complianceReviewFlag: false,
       emergencyKillSwitch: false, killSwitchEngagedAt: null, killSwitchReason: null,
+      // The route always sends both install-wide stops (platformStopReport()).
+      platformStopEngaged: false, platformStopSources: [], platformStopReason: null,
+      platformStopReadable: true, platformStopDetail: {},
     },
     liveAccount: { pinnedBridge: null, detector: { detected: false }, gate: { decision: "BLOCKED" } },
     approvedUsers: { approvedCount: 2, activeCount: 1, rows: [] },
