@@ -44,4 +44,21 @@ describe("SkillBreakdownCard — unmeasured pillars", () => {
     render(<SkillBreakdownCard profile={{ ...profile, disciplineScore: 40 }} unmeasured={["discipline"]} />);
     expect(within(row("Discipline")).getByText("40")).toBeTruthy();
   });
+
+  // Round 3 review: a profile calculated before any debriefs stores
+  // Discipline 0 (not measured). After debriefs arrive the server still names
+  // it unmeasured (judged as of the snapshot) and says it has evidence since:
+  // the card must not say "no evidence yet", it says recalculate.
+  it("a not-measured pillar with evidence since the snapshot says recalculate, not 'no evidence yet'", () => {
+    render(<SkillBreakdownCard profile={profile} unmeasured={["discipline", "consistency"]} newEvidence={["discipline"]} />);
+    const d = row("Discipline");
+    expect(within(d).getByText(/no data/i)).toBeTruthy();
+    expect(within(d).queryByText("0")).toBeNull();
+    expect(d.textContent).toMatch(/not measured when this profile was calculated/i);
+    expect(d.textContent).toMatch(/recalculate/i);
+    expect(d.textContent).not.toMatch(/no post-trade debriefs yet/i);
+    expect(row("Consistency").textContent).toMatch(/no edge reports yet/i);
+    expect(screen.getByTestId("skill-new-evidence").textContent).toMatch(/Discipline/);
+    expect(screen.getByTestId("skill-new-evidence").textContent).toMatch(/Recalculate/);
+  });
 });

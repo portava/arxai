@@ -138,3 +138,54 @@ test("suggestions do not score an unmeasured pillar as 0/100", async () => {
     if (noEvidence.has(s.area)) assert.equal(s.score, undefined, `${s.area} shown as a measured score`);
   }
 });
+
+// Round 3 review: GET /skill/profile judged a stored profile's pillars against
+// TODAY's evidence. A profile calculated with no debriefs stores Discipline 0
+// (not measured); once debriefs were written (without Recalculate) discipline
+// had evidence now, dropped off the unmeasured list, and the card showed the
+// stored, never-measured 0 as a measured score. Unmeasured is now worked out
+// as of the snapshot, and pillars with evidence since are named.
+const past = (minAgo: number) => new Date(Date.now() - minAgo * 60_000);
+
+function datedPapers(n: number): Row[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: i, userId: 5, status: "CLOSED_TP", createdAt: past(120), closedAt: past(90),
+  }));
+}
+
+test("a pillar with no evidence at the snapshot stays 'no data' after evidence arrives, and is named as having new evidence", async () => {
+  reset();
+  tables.set(database.paperOrdersTable, datedPapers(40));
+  await invoke("post", "/skill/calculate");
+  assert.equal(storedProfile!.disciplineScore, 0, "no debriefs when calculated");
+  // Debriefs written after the snapshot; no Recalculate.
+  const later = new Date((storedProfile!.createdAt as Date).getTime() + 60_000);
+  tables.set(database.postTradeDebriefsTable, [
+    { id: 1, userId: 5, followedPlan: 1, traderEmotionAfter: "CALM", checklist: [{ answer: "YES" }], createdAt: later },
+  ]);
+  const { body } = await invoke("get", "/skill/profile");
+  assert.ok(body.unmeasuredPillars.includes("discipline"), "the stored 0 was never measured, whatever today's evidence");
+  assert.ok(body.unmeasuredPillars.includes("emotional"));
+  assert.ok(body.unmeasuredPillars.includes("execution"));
+  assert.deepEqual([...body.unmeasuredPillarsWithNewEvidence].sort(), ["discipline", "emotional", "execution", "planning"].sort());
+  assert.ok(!body.unmeasuredPillarsWithNewEvidence.includes("consistency"), "still no edge reports");
+
+  const sug = await invoke("get", "/skill/suggestions");
+  const discipline = sug.body.suggestions.find((s: any) => s.area === "Discipline");
+  assert.ok(discipline);
+  assert.equal(discipline.score, undefined, "a never-measured 0 is not a score");
+  assert.match(discipline.message, /recalculate/i);
+});
+
+test("evidence that existed when the profile was calculated is measured, not 'no data'", async () => {
+  reset();
+  tables.set(database.paperOrdersTable, datedPapers(40));
+  tables.set(database.postTradeDebriefsTable, [
+    { id: 1, userId: 5, followedPlan: 0, traderEmotionAfter: "ANXIOUS", checklist: [{ answer: "NO" }], createdAt: past(60) },
+  ]);
+  await invoke("post", "/skill/calculate");
+  assert.equal(storedProfile!.disciplineScore, 0, "a measured 0: the plan was not followed");
+  const { body } = await invoke("get", "/skill/profile");
+  assert.ok(!body.unmeasuredPillars.includes("discipline"), "measured at the snapshot");
+  assert.deepEqual(body.unmeasuredPillarsWithNewEvidence, []);
+});
