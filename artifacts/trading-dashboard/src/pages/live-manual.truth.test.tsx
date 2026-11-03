@@ -248,3 +248,52 @@ describe("Manual Trade Ticket — the max-loss cap is the declared figure only",
     expect(caps).toMatch(/loss at your stop was not computed/);
   });
 });
+
+// Round 3 review: the stop rows were read once on mount and then shown in the
+// present tense for as long as the ticket stayed open, with the check time
+// only in a hover title. An emergency stop or the trader's own kill switch
+// engaged in another tab kept reading "off". The stops are now re-read on an
+// interval, the visible note says when they were read, and a failed re-read
+// shows "not checked", not the last answer.
+describe("Manual Trade Ticket — the stop rows are kept current", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("an engagement after the ticket opened reaches the row on the next re-read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const routes = baseRoutes({ "/api/system/status": { body: systemStatus([]) } });
+    stubFetch(routes);
+    await renderSettled();
+    expect(rowBadge("Your kill switch").textContent).toBe("off");
+    expect(rowBadge("Emergency stop").textContent).toBe("off");
+
+    routes["/api/system/status"] = { body: systemStatus(["trader_kill_switch", "platform_emergency_stop"], ["Your kill switch is engaged.", "The platform emergency stop is engaged."]) };
+    routes["/api/permission/status"] = { body: permissionVerdict(true) };
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(rowBadge("Your kill switch").textContent).toBe("ENGAGED");
+    expect(rowBadge("Emergency stop").textContent).toBe("ENGAGED");
+    expect(killSwitchBadge().textContent).toBe("ENGAGED");
+  });
+
+  it("a re-read that fails shows the rows as 'not checked', not the last answer", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const routes = baseRoutes({ "/api/system/status": { body: systemStatus([]) } });
+    stubFetch(routes);
+    await renderSettled();
+    expect(rowBadge("Your kill switch").textContent).toBe("off");
+
+    routes["/api/system/status"] = { status: 500, body: { error: "boom" } };
+    routes["/api/permission/status"] = { status: 500, body: { error: "boom" } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(rowBadge("Your kill switch").textContent).toBe("not checked");
+    expect(rowBadge("Emergency stop").textContent).toBe("not checked");
+    expect(killSwitchBadge().textContent).toBe("not checked");
+  });
+
+  it("the visible note says when the stops were read and that they are re-read", async () => {
+    stubFetch(baseRoutes({ "/api/system/status": { body: systemStatus([]) } }));
+    await renderSettled();
+    const note = screen.getByTestId("ticket-stops-note").textContent ?? "";
+    expect(note).toMatch(/Stops as of \d{1,2}:\d{2}:\d{2}/);
+    expect(note).toMatch(/re-read every 15 seconds/);
+  });
+});

@@ -18,6 +18,9 @@ const TESTER_CAPS_TEXT = "lot ≤ 0.01, stop-loss required, and the Max Loss you
 
 type StopState = "checking" | "engaged" | "off" | "unknown";
 
+/** How often the stop rows are re-read while the ticket is open. */
+const STOPS_POLL_MS = 15_000;
+
 function stopLabel(state: StopState): string {
   return state === "engaged" ? "ENGAGED" : state === "off" ? "off" : state === "checking" ? "checking…" : "not checked";
 }
@@ -71,13 +74,38 @@ export default function LiveManualPage() {
   const [masterBridge, setMasterBridge] = useState<any>(null);
   const [quote, setQuote] = useState<any>(null);
 
+  // When the stops on screen were read (browser time the read was sent).
+  const [stopsReadAt, setStopsReadAt] = useState<number | null>(null);
+
+  // The stops are re-read on an interval: one can be engaged (by an operator,
+  // or by this trader in another tab) while the ticket stays open. A re-read
+  // that fails replaces the last answer with "not checked".
   useEffect(() => {
-    void jget("/api/permission/status")
-      .then(r => setPerm(r.ok && r.body && typeof r.body === "object" ? r.body : null))
-      .catch(() => setPerm(null));
-    void jget("/api/system/status")
-      .then(r => setHalts(r.ok ? statusHaltsOf(r.body) : null))
-      .catch(() => setHalts(null));
+    let cancelled = false;
+    let seq = 0;
+    let shown = 0;
+    const readStops = async () => {
+      const mine = ++seq;
+      const sentAt = Date.now();
+      const [p, h] = await Promise.all([
+        jget("/api/permission/status")
+          .then(r => (r.ok && r.body && typeof r.body === "object" ? (r.body as { reasons?: unknown }) : null))
+          .catch(() => null),
+        jget("/api/system/status")
+          .then(r => (r.ok ? statusHaltsOf(r.body) : null))
+          .catch(() => null),
+      ]);
+      // An older read that answers late never replaces a newer one.
+      if (cancelled || mine < shown) return;
+      shown = mine;
+      setPerm(p); setHalts(h); setStopsReadAt(sentAt);
+    };
+    void readStops();
+    const t = window.setInterval(() => { void readStops(); }, STOPS_POLL_MS);
+    return () => { cancelled = true; window.clearInterval(t); };
+  }, []);
+
+  useEffect(() => {
     // Real master shared-bridge health — the bridge that actually carries
     // live-shared dispatch. The per-user permission flag is NOT the bridge.
     void jget("/api/me/master-bridge/status").then(r => setMasterBridge(r.body));
@@ -234,7 +262,7 @@ export default function LiveManualPage() {
               <div className="flex justify-between"><span>Safety-core kill switch</span><Badge variant={killSwitch === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={killSwitch === "unknown" ? "The permission status could not be read." : "From your permission status. It covers the safety-core kill switch only; the emergency stop and your own kill switch have their own rows."}>{stopLabel(killSwitch)}</Badge></div>
               <div className="flex justify-between"><span>Emergency stop</span><Badge variant={haltState("platform_emergency_stop") === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={haltTitle("platform_emergency_stop", "the platform emergency stop")}>{stopLabel(haltState("platform_emergency_stop"))}</Badge></div>
               <div className="flex justify-between"><span>Your kill switch</span><Badge variant={haltState("trader_kill_switch") === "engaged" ? "destructive" : "outline"} className="text-[10px]" title={haltTitle("trader_kill_switch", "your kill switch")}>{stopLabel(haltState("trader_kill_switch"))}</Badge></div>
-              <p className="text-[10px] text-txt-muted" data-testid="ticket-stops-note">These stops are shown for information. They are not checked when you submit this intent (only the tester caps are), and they do not stop it from being captured.</p>
+              <p className="text-[10px] text-txt-muted" data-testid="ticket-stops-note">{stopsReadAt != null ? `Stops as of ${new Date(stopsReadAt).toLocaleTimeString()} (re-read every ${STOPS_POLL_MS / 1000} seconds). ` : ""}These stops are shown for information. They are not checked when you submit this intent (only the tester caps are), and they do not stop it from being captured.</p>
               <div className="flex justify-between"><span>Master bridge</span><Badge className={!bridgeLoaded ? "bg-muted text-txt-muted text-[10px]" : bridgeConnected ? "bg-success/20 text-success text-[10px]" : "bg-warning/20 text-warning text-[10px]"}>{!bridgeLoaded ? "checking…" : bridgeConnected ? "connected" : "not connected"}</Badge></div>
             </div>
 
