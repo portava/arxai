@@ -414,7 +414,11 @@ export async function generateNewsRiskForSymbol(symbol: string) {
       message: result.tradeWarning ?? result.aiSummary,
       symbol,
       actionRequired: result.blockTrading,
-      dedupeKey: `news-risk:${symbol}:${result.riskLevel}:${result.event?.id ?? "none"}`,
+      // The hold and the live release window are different states (different
+      // titles), so they do not share a dedupe key: an unread hold alert must
+      // not suppress the live-window alert for the same event. Live-window
+      // keys are unchanged.
+      dedupeKey: `news-risk:${symbol}:${result.riskLevel}${result.criticalHold ? ":hold" : ""}:${result.event?.id ?? "none"}`,
     });
   }
 

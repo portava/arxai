@@ -5,8 +5,9 @@
 // "TRADE PLAN HOLD: ... orders placed outside a trade plan are not held by this
 // check", but the CRITICAL alert raised for it was titled "News risk: NO TRADE
 // WINDOW for EURUSD" — a live no-trade window for a release that is not due for
-// 20 hours. The alert's priority, severity, actionRequired and dedupe key are
-// unchanged; only the title words follow the hold.
+// 20 hours. The alert's priority, severity and actionRequired are unchanged;
+// the title words follow the hold, and the hold has its own dedupe key so it
+// cannot suppress the live-window alert for the same event.
 //
 // Only the database handle and the alert writer are stubbed; the real
 // generateNewsRiskForSymbol and the real scorer run. No network.
@@ -75,7 +76,31 @@ test("a CRITICAL event 20h away raises a 'TRADE PLAN HOLD' alert, not a 'NO TRAD
   assert.equal(a.priority, "CRITICAL");
   assert.equal(a.severity, "danger");
   assert.equal(a.actionRequired, true);
-  assert.equal(a.dedupeKey, "news-risk:EURUSD:NO_TRADE_WINDOW:7");
+  // The hold has its own dedupe key (see the live-window test below).
+  assert.equal(a.dedupeKey, "news-risk:EURUSD:NO_TRADE_WINDOW:hold:7");
+});
+
+// Review finding: the title separates the hold from the live window, but both
+// shared the dedupe key news-risk:EURUSD:NO_TRADE_WINDOW:7. createAlert
+// suppresses an alert whose key matches an unread one from the last 30
+// minutes, so a hold alert raised at T-20m silently swallowed the live-window
+// alert raised at T-10m: through the release the feed held only "TRADE PLAN
+// HOLD", whose message says orders outside a plan are not held. The hold now
+// has its own key, so the live window raises its own alert (alerts are only
+// added, never suppressed more); the live-window key is unchanged.
+test("a live-window alert after a hold alert for the same event is not deduped against it", async () => {
+  alerts.length = 0;
+  eventImpact = "CRITICAL";
+  eventMinutesFromNow = 20;
+  await generateNewsRiskForSymbol("EURUSD");
+  eventMinutesFromNow = 10;
+  await generateNewsRiskForSymbol("EURUSD");
+  assert.equal(alerts.length, 2);
+  const [hold, live] = alerts;
+  assert.equal(hold!.title, "News risk: TRADE PLAN HOLD for EURUSD");
+  assert.equal(live!.title, "News risk: NO TRADE WINDOW for EURUSD");
+  assert.notEqual(hold!.dedupeKey, live!.dedupeKey, "the live window must not share the hold's dedupe key");
+  assert.equal(live!.dedupeKey, "news-risk:EURUSD:NO_TRADE_WINDOW:7");
 });
 
 test("a CRITICAL event inside its 15-minute release window keeps the NO TRADE WINDOW title", async () => {
