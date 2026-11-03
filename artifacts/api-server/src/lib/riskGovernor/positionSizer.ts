@@ -12,6 +12,7 @@
 
 import { lotForRisk } from "@workspace/domain/risk";
 import type { PositionSizingResult } from "../paperExecution/types.js";
+import { resolveCanonicalSymbol } from "../instruments/index.js";
 
 const NO_MAX = Number.MAX_SAFE_INTEGER;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -33,8 +34,9 @@ export interface PositionSizeInput {
  *   forex_usd_quote      XXXUSD currency pair: $10 per 0.0001 pip (standard lot, USD account)
  *   forex_other_quote    other currency pair: pip value is in the quote currency, $10 assumed
  *   synthetic_per_point  synthetic index: $1 per point per lot assumed
- *   per_point            index / stock CFD: $1 per point per lot assumed
- *   unknown_contract     not a known currency pair but sized as one (XAUUSD, BTCUSD…): not usable
+ *   per_point            index, stock or ETF CFD known to the ARX market list: $1 per point per lot assumed
+ *   unknown_contract     anything else (metals, energy, crypto, a pair not written as one, an unknown
+ *                        name): sized with a model that does not fit it, so the lot is not usable
  */
 export type SizingValueModel = "forex_usd_quote" | "forex_other_quote" | "synthetic_per_point" | "per_point" | "unknown_contract";
 
@@ -76,7 +78,26 @@ function sizingModelOf(symbol: string, unitValue: number): { model: SizingValueM
     return { model: "synthetic_per_point", basis: `Synthetic index: assumes $${unitValue} per 1.0 price move per lot. Your broker's contract size may differ, so the lot is an estimate.` };
   }
   if (!isForex(symbol)) {
-    return { model: "per_point", basis: `${symbol} is not a currency pair: assumes $${unitValue} per 1.0 price move per lot (index or stock CFD). Contract sizes vary by broker, so the lot is an estimate.` };
+    // valuePerUnitPerLot() values everything here at $1 per point. That fits
+    // only a market positively known to be an index, stock or ETF CFD (or a
+    // synthetic named without "Volatility", such as V75); gold, oil, crypto
+    // or a pair typed in lowercase is none of these, so its lot is not usable.
+    const known = resolveCanonicalSymbol(symbol);
+    if (known.family === "synthetic") {
+      return { model: "synthetic_per_point", basis: `Synthetic index: assumes $${unitValue} per 1.0 price move per lot. Your broker's contract size may differ, so the lot is an estimate.` };
+    }
+    const cfd = known.family === "index" || known.family === "stock" || known.family === "etf"
+      // Outside the market list only the legacy index list identifies a
+      // market (its 1-5 letter "stock" fallback is a guess).
+      || (known.universeStatus === "not_in_universe" && known.assetClass === "indices");
+    if (cfd) {
+      return { model: "per_point", basis: `${symbol} is an index, stock or ETF CFD: assumes $${unitValue} per 1.0 price move per lot. Contract sizes vary by broker, so the lot is an estimate.` };
+    }
+    return {
+      model: "unknown_contract",
+      basis: `${symbol} is not an index, stock or currency pair this calculator can value (metals, energy, crypto and similar), but it was sized at $${unitValue} per 1.0 price move per lot. `
+        + "That can be wrong by a factor of 100 or more, so the lot is not usable. Use your broker's contract specification.",
+    };
   }
   const compact = symbol.replace(/\s/g, "");
   const base = compact.slice(0, 3); const quote = compact.slice(3);

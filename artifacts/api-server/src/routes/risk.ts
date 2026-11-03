@@ -205,14 +205,18 @@ const PositionSizeQuery = z.object({
 
 router.get("/risk/position-size", requireUser, async (req, res) => {
   try {
-    const query = PositionSizeQuery.parse(req.query);
+    const parsed = PositionSizeQuery.parse(req.query);
+    // The calculator's symbol is free text: "eurusd" or " XAUUSD" is sized
+    // and described as the market it names (this route serves only the
+    // calculator; mission and paper sizing pass their own symbols).
+    const query = { ...parsed, symbol: parsed.symbol.trim().toUpperCase() };
     // The lot cap in force, as the Risk Governor applies it: the strictest of
     // the trader's own cap, the operator's account limit and the platform
     // ceiling, then the trader's per-symbol cap. (The trader's saved cap
     // alone could show a lot the governor refuses.) The broker's own maximum
     // volume is not known here.
     const limits = await loadEffectiveLimits(req.authUser!.id);
-    const symbolCap = limits.symbolLimits[query.symbol.trim().toUpperCase()]?.maxLots ?? null;
+    const symbolCap = limits.symbolLimits[query.symbol]?.maxLots ?? null;
     const result = calculatePositionSize({
       ...query,
       maxLotSize: symbolCap == null ? limits.maxLotSize : Math.min(limits.maxLotSize, symbolCap),

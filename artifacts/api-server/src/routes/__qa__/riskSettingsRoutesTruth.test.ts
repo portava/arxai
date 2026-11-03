@@ -180,3 +180,19 @@ test("GET /risk/position-size applies a stricter per-symbol cap", async () => {
   assert.equal(r.finalLot, 0.2);
   effective.symbolLimits = {};
 });
+
+// The calculator's symbol is free text. It was passed through as typed, so
+// "eurusd" was sized at $1 per point ("eurusd is not a currency pair") and
+// came out about 100,000x too large, capped at the max lot. The route now
+// trims and uppercases it, as the per-symbol cap lookup already did.
+test("GET /risk/position-size sizes a lowercase pair as the pair", async () => {
+  effective.maxLotSize = 100; effective.symbolLimits = {};
+  const q = new URLSearchParams({ symbol: " eurusd ", accountBalance: "10000", riskPercent: "1", entry: "1.1", stopLoss: "1.095" });
+  const r = await fetch(`${base}/risk/position-size?${q}`);
+  assert.equal(r.status, 200);
+  const body = await r.json() as { finalLot: number; valueModel: string; basis: string };
+  assert.equal(body.valueModel, "forex_usd_quote");
+  assert.equal(body.finalLot, 0.2);
+  assert.doesNotMatch(body.basis, /not a currency pair/);
+  effective.maxLotSize = 0.5;
+});
