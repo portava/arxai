@@ -63,3 +63,24 @@ test("no losing trade: profit factor is null, not the 999 sentinel; P&L notes ca
   assert.match(report.coach_notes.join(" "), /price points/);
   assert.equal(lastRow(database.replayRunsTable)?.profitFactor, 999);
 });
+
+// The only trade opens on the final candle (SMA20 needs 20 closes) and is
+// force-closed at the same close: one closed trade, pnl 0, BREAK_EVEN. The
+// coach note read "Win rate 0% on 1 closed trades; ... profit factor n/a (no
+// closed trades)" — a closed trade said not to exist.
+test("all closed trades break-even: profit factor does not say no trade closed", async () => {
+  const rising = scenario(Array.from({ length: 20 }, (_, i) => 1000 + i));
+  const run = await runReplay(rising, {});
+  const closed = run.trades.filter((t) => t.status === "CLOSED");
+  assert.equal(closed.length, 1, JSON.stringify(run.trades));
+  assert.equal(run.wins, 0);
+  assert.equal(run.losses, 0);
+  assert.equal(run.breakEven, 1);
+  assert.equal(run.profitFactor, null);
+  const report = await generateReplayReport(run, rising);
+  const notes = report.coach_notes.join(" | ");
+  assert.ok(!/no closed trades/i.test(notes), notes);
+  assert.match(notes, /profit factor n\/a \(no winning or losing trades; all break-even\)/);
+  // NOT NULL columns keep the encoding stored rows have always had.
+  assert.equal(lastRow(database.replayRunsTable)?.profitFactor, 0);
+});

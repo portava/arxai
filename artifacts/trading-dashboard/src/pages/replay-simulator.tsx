@@ -74,9 +74,15 @@ function winRateText(r: RunResult): string {
 }
 
 // Profit factor is gross profit / gross loss, so it needs a losing trade. An
-// older server sent the sentinel 999 (no losses) or 0 (no trades) here.
+// older server sent the sentinel 999 (no losses) or 0 (no wins) here. The
+// closed count is checked first: a run whose closed trades all broke even
+// did close trades, it just had no winner or loser to divide.
 function profitFactorText(r: RunResult): string {
-  if (!(r.losses > 0) || r.profit_factor == null) return r.wins > 0 ? "— (no losing trades)" : "— (no closed trades)";
+  if (!(r.losses > 0) || r.profit_factor == null) {
+    if (!(r.simulated_trades_closed > 0)) return "— (no closed trades)";
+    if (r.wins > 0) return "— (no losing trades)";
+    return "— (no winning or losing trades; all break-even)";
+  }
   return String(r.profit_factor);
 }
 

@@ -70,6 +70,23 @@ describe("Replay Simulator stats", () => {
     expect(stat("profit-factor")).toMatch(/no losing trades/i);
   });
 
+  it("all closed trades break-even: profit factor does not say no trade closed", async () => {
+    // One trade opened on the final candle and was force-closed at the same close.
+    stubFetch(runBody({ simulated_trades_opened: 1, simulated_trades_closed: 1, wins: 0, losses: 0, break_even: 1, net_pnl: 0, max_drawdown: 0, win_rate: 0, profit_factor: null }));
+    await runIt();
+    expect(stat("closed")).toMatch(/1/);
+    expect(stat("profit-factor")).not.toMatch(/no closed trades/i);
+    expect(stat("profit-factor")).toMatch(/no winning or losing trades/i);
+    expect(stat("profit-factor")).toMatch(/break-even/i);
+  });
+
+  it("an older server's 0 profit factor on an all break-even run is not shown as 0 or as no closed trades", async () => {
+    stubFetch(runBody({ simulated_trades_opened: 1, simulated_trades_closed: 1, wins: 0, losses: 0, break_even: 1, net_pnl: 0, max_drawdown: 0, win_rate: 0, profit_factor: 0 }));
+    await runIt();
+    expect(stat("profit-factor")).not.toMatch(/\b0\b/);
+    expect(stat("profit-factor")).not.toMatch(/no closed trades/i);
+  });
+
   it("Net P&L and Max DD carry a price-point unit, and break-even trades are counted", async () => {
     stubFetch(runBody({ wins: 2, losses: 1, break_even: 1, position_size: 1 }));
     await runIt();

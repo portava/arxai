@@ -399,10 +399,15 @@ function storedProfitFactor(profitFactor: number | null, wins: number): number {
   return profitFactor ?? (wins > 0 ? 999 : 0);
 }
 
-/** Plain-English profit factor: never the stored sentinel. */
-function profitFactorText(run: Pick<RunRecord, "profitFactor" | "wins">): string {
+/**
+ * Plain-English profit factor: never the stored sentinel. The closed count is
+ * checked first: a run whose closed trades all broke even did close trades,
+ * it just had no winner or loser to divide.
+ */
+function profitFactorText(run: Pick<RunRecord, "profitFactor" | "wins">, closedCount: number): string {
   if (run.profitFactor != null) return String(run.profitFactor);
-  return run.wins > 0 ? "n/a (no losing trades)" : "n/a (no closed trades)";
+  if (!(closedCount > 0)) return "n/a (no closed trades)";
+  return run.wins > 0 ? "n/a (no losing trades)" : "n/a (no winning or losing trades; all break-even)";
 }
 
 /** Unit of every P&L / drawdown figure the engine reports. */
@@ -443,14 +448,14 @@ export async function generateReplayReport(run: RunRecord, scenario: Scenario) {
   const shouldPromote = run.winRate != null && run.winRate >= 60 && closed.length >= 10 && pfAtLeast(1.5) && run.netPnl > 0;
   // With no closed trade nothing was measured, so nothing "underperformed".
   const shouldReview = (run.winRate != null && run.winRate < 40) || run.netPnl < 0 || run.maxDrawdown > Math.abs(run.netPnl) * 2;
-  if (shouldPromote) playbookRecommendations.push({ type: "PROMOTE", message: `Setup performed well in REPLAY (winRate ${run.winRate}%, PF ${profitFactorText(run)}). Candidate for ACTIVE — needs live paper validation, not live money.` });
+  if (shouldPromote) playbookRecommendations.push({ type: "PROMOTE", message: `Setup performed well in REPLAY (winRate ${run.winRate}%, PF ${profitFactorText(run, closed.length)}). Candidate for ACTIVE — needs live paper validation, not live money.` });
   if (shouldReview)  playbookRecommendations.push({ type: "REVIEW",  message: `Setup underperformed in REPLAY (winRate ${run.winRate == null ? "n/a" : `${run.winRate}%`}, net ${run.netPnl} — ${unit}). Mark for REVIEW.` });
   if (closed.length < 5) playbookRecommendations.push({ type: "MORE_DATA", message: "Not enough simulated trades for a confident recommendation. Run more scenarios." });
 
   const coachNotes: string[] = [
     `Replay processed ${run.candlesProcessed} candles, took ${closed.length} trades.`,
     closed.length > 0
-      ? `Win rate ${run.winRate}% on ${closed.length} closed trades; net ${run.netPnl}; max DD ${run.maxDrawdown} (${unit}); profit factor ${profitFactorText(run)}.`
+      ? `Win rate ${run.winRate}% on ${closed.length} closed trades; net ${run.netPnl}; max DD ${run.maxDrawdown} (${unit}); profit factor ${profitFactorText(run, closed.length)}.`
       : "No simulated trade closed, so there is no win rate or profit factor yet.",
     "All findings are SIMULATION-based and do not authorize live trading.",
   ];
