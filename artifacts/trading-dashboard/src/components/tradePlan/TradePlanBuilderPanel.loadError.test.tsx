@@ -113,19 +113,23 @@ describe("TradePlanBuilderPanel — action failures are shown", () => {
     });
   }
 
-  it("a failed save says the changes were not saved", async () => {
+  // A 500 can come after the server stored the change, so the failure is shown
+  // as unconfirmed, never as "not saved" / "not validated" (see
+  // TradePlanBuilderPanel.actionOutcome.test.tsx for 4xx refusals).
+  it("a failed save (HTTP 500) says saving failed and the outcome could not be confirmed", async () => {
     mountWithPlan("PATCH");
     fireEvent.click(await screen.findByText("Save changes"));
     const err = await screen.findByTestId("trade-plan-action-error");
-    expect(err.textContent).toMatch(/not saved/i);
+    expect(err.textContent).toMatch(/could not confirm whether your changes were saved/i);
     expect(err.textContent).toContain("HTTP 500");
   });
 
-  it("a failed validation says the plan was not validated", async () => {
+  it("a failed validation (HTTP 500) says it could not confirm whether the plan was validated", async () => {
     mountWithPlan("validate");
     fireEvent.click(await screen.findByRole("button", { name: "Validate plan" }));
     const err = await screen.findByTestId("trade-plan-action-error");
-    expect(err.textContent).toMatch(/not validated/i);
+    expect(err.textContent).toMatch(/could not confirm whether the plan was validated/i);
+    expect(err.textContent).toContain("HTTP 500");
   });
 
   it("a failed cancel says the plan was not cancelled", async () => {

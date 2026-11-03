@@ -52,6 +52,19 @@ function failureDetail(e: unknown): string {
   return e instanceof Error && e.message ? e.message : "unknown error";
 }
 
+/** A failed request that carries the HTTP status it was answered with. */
+function httpFailure(status: number): Error & { status: number } {
+  return Object.assign(new Error(`HTTP ${status}`), { status });
+}
+
+// A 4xx answer is the server refusing before it changes the plan (bad id, not
+// found, wrong status, news / portfolio block). A 5xx or a lost response may
+// come after the change was stored, so its outcome is unknown.
+function refusedBeforeChange(e: unknown): boolean {
+  const status = (e as { status?: unknown } | null)?.status;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
 function asNum(v: string): number | null {
   if (v === "" || v == null) return null;
   const n = Number(v);
@@ -99,30 +112,31 @@ export function TradePlanBuilderPanel() {
       ];
       for (const k of keys) if (input[k] !== undefined) body[k] = input[k];
       const r = await fetch(`/api/trade-plans/${active.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw httpFailure(r.status);
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    // Re-read on failure too: a failed answer does not say what the server stored.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   const validate = useMutation({
     mutationFn: async () => {
       if (!active) return;
       const r = await fetch(`/api/trade-plans/${active.id}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw httpFailure(r.status);
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   const cancel = useMutation({
     mutationFn: async () => {
       if (!active) return;
       const r = await fetch(`/api/trade-plans/${active.id}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw httpFailure(r.status);
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   // A failed save / validate / cancel belongs to the plan it was tried on;
@@ -141,12 +155,22 @@ export function TradePlanBuilderPanel() {
   const listFailed = list.isError;
   const hasStaleList = listFailed && (list.data?.plans?.length ?? 0) > 0;
 
+  // Only a 4xx refusal says the plan was not changed. Any other failure says
+  // the outcome could not be confirmed; the plans are re-read (onSettled), so
+  // the status and checklist shown come from the server.
+  const unconfirmed = "check the plan's status once your plans reload.";
   const actionError = save.isError
-    ? `Your changes were not saved (${failureDetail(save.error)}).`
+    ? refusedBeforeChange(save.error)
+      ? `The server refused your changes (${failureDetail(save.error)}). They were not saved.`
+      : `Saving failed (${failureDetail(save.error)}). ARX could not confirm whether your changes were saved; ${unconfirmed}`
     : validate.isError
-      ? `The plan was not validated (${failureDetail(validate.error)}). Its status and checklist below are unchanged.`
+      ? refusedBeforeChange(validate.error)
+        ? `The server refused to validate the plan (${failureDetail(validate.error)}). It was not validated; its status and checklist are unchanged.`
+        : `The validate request failed (${failureDetail(validate.error)}). ARX could not confirm whether the plan was validated; ${unconfirmed}`
       : cancel.isError
-        ? `The plan was not cancelled (${failureDetail(cancel.error)}).`
+        ? refusedBeforeChange(cancel.error)
+          ? `The server refused to cancel the plan (${failureDetail(cancel.error)}). It was not cancelled.`
+          : `The cancel request failed (${failureDetail(cancel.error)}). ARX could not confirm whether the plan was cancelled; ${unconfirmed}`
         : null;
 
   return (
