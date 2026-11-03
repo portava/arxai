@@ -283,10 +283,8 @@ export async function markAllRead(userId: number) {
 }
 
 // ── digest ──────────────────────────────────────────────────────────────────
-export async function generateDigest(rangeHours = 24) {
-  const end = new Date();
-  const start = new Date(end.getTime() - rangeHours * 3_600_000);
-  const rows = await db.select().from(notificationsTable).where(gte(notificationsTable.createdAt, start));
+type NotificationRow = typeof notificationsTable.$inferSelect;
+function summarizeNotifications(rows: NotificationRow[]) {
   const summary = {
     bySeverity: {} as Record<string, number>,
     byType: {} as Record<string, number>,
@@ -302,6 +300,41 @@ export async function generateDigest(rangeHours = 24) {
     if (r.severity === "CRITICAL" && summary.topCritical.length < 10)
       summary.topCritical.push({ id: r.notificationId, title: r.title });
   }
+  return summary;
+}
+
+// The caller's own digest, computed on read and not persisted
+// (notification_digests has no owner column). Only rows owned by userId are
+// counted, so totals and critical titles never include other users' alerts.
+export async function userDigest(userId: number, rangeHours = 24) {
+  const end = new Date();
+  const start = new Date(end.getTime() - rangeHours * 3_600_000);
+  const fetched = await db.select().from(notificationsTable)
+    .where(and(eq(notificationsTable.userId, userId), gte(notificationsTable.createdAt, start)));
+  const rows = fetched.filter((r) => r.userId === userId);
+  const summary = summarizeNotifications(rows);
+  return {
+    scope: "USER" as const,
+    digestId: null,
+    rangeStart: start, rangeEnd: end,
+    totalNotifications: rows.length,
+    criticalCount: summary.bySeverity["CRITICAL"] ?? 0,
+    warningCount: summary.bySeverity["WARNING"] ?? 0,
+    tradeCount: summary.byType["TRADE"] ?? 0,
+    learningCount: summary.byType["LEARNING"] ?? 0,
+    safetyCount: summary.byType["SAFETY"] ?? 0,
+    summary,
+    generatedAt: end,
+  };
+}
+
+// System-wide digest across every user's notifications (persisted). Not for
+// display to an individual user.
+export async function generateDigest(rangeHours = 24) {
+  const end = new Date();
+  const start = new Date(end.getTime() - rangeHours * 3_600_000);
+  const rows = await db.select().from(notificationsTable).where(gte(notificationsTable.createdAt, start));
+  const summary = summarizeNotifications(rows);
   const digestId = `digest_${randomUUID()}`;
   const [created] = await db.insert(notificationDigestsTable).values({
     digestId, rangeStart: start, rangeEnd: end,

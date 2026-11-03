@@ -19,7 +19,7 @@ import {
   mt5DemoCommandsTable,
 } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
-import { readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
+import { readLatestUserMt5State, MT5_STATE_NOT_ATTRIBUTED_NOTE } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -57,9 +57,10 @@ router.get("/me/demo-positions-snapshot", requireUser, async (req, res) => {
     return;
   }
 
-  // Latest positions snapshot belonging to this user. mt5_state is currently
-  // a single-row table; we filter by user_id defensively so user A can never
-  // see user B's positions even if the table grows multi-row later.
+  // Latest positions snapshot belonging to this user. The EA bridge writes
+  // only the install-wide (ownerless) mt5_state row, so this is normally
+  // null; filtering by user_id keeps user A from ever seeing user B's
+  // positions, and null is reported as "not read", never as zero.
   const state = await readLatestUserMt5State(userId);
 
   const positionsRaw: RawPosition[] = Array.isArray(state?.positions)
@@ -122,18 +123,25 @@ router.get("/me/demo-positions-snapshot", requireUser, async (req, res) => {
   ).length;
   const orphanCount = openPositions.length - matchedCount;
 
+  // No row of this user's own: the EA feed is install-wide and never stamped
+  // with a user, so the positions were not read. Counts that depend on them
+  // are null (not measured) and inSync is not claimed; the command history
+  // count is still this user's own and stays.
+  const positionsMeasured = state != null;
   res.json({
     ok: true,
     safetyMode: "demo_only",
     liveExecutionBlocked: true,
     lastSyncAt: state?.lastSyncAt ? new Date(state.lastSyncAt).toISOString() : null,
+    positionsMeasured,
+    positionsNote: positionsMeasured ? null : MT5_STATE_NOT_ATTRIBUTED_NOTE,
     openPositions,
     reconciliation: {
-      mt5OpenPositionCount: openPositions.length,
-      arxMatchedPositionCount: matchedCount,
-      arxOrphanPositionCount: orphanCount,
+      mt5OpenPositionCount: positionsMeasured ? openPositions.length : null,
+      arxMatchedPositionCount: positionsMeasured ? matchedCount : null,
+      arxOrphanPositionCount: positionsMeasured ? orphanCount : null,
       filledCommandHistoryCount: filledCommands.length,
-      inSync: orphanCount === 0,
+      inSync: positionsMeasured ? orphanCount === 0 : null,
     },
   });
 });

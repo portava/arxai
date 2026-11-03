@@ -594,11 +594,28 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
 
 // ── Diagnostic surfaces (read-only, no execution effect) ───────────────────
 
-router.get("/mt5/heartbeat/status", async (_req, res) => {
+/**
+ * Operator-only identifiers on the platform bridge diagnostics. The heartbeat
+ * feed is install-wide (another user's EA for most callers), so its remote
+ * IPs, broker account number and terminal user agent are shown to operators
+ * only; everyone else gets the same booleans, counts and timestamps with those
+ * fields null. Same redaction rule as /mt5/bridge-ops-monitor.
+ */
+function bridgeIdentifierScope(req: Request): { operator: boolean; requesterScope: "operator" | "user"; redactionNote: string | null } {
+  const operator = operatorRoleFromSession(readRoleFromRequest(req)) != null;
+  return {
+    operator,
+    requesterScope: operator ? "operator" : "user",
+    redactionNote: operator ? null : "Remote IPs, the accepted broker account and the terminal user agent are operator-only and shown as null.",
+  };
+}
+
+router.get("/mt5/heartbeat/status", async (req, res) => {
   // Per-user tokens are the ONLY valid EA auth (the server-wide env token is
   // rejected on every EA endpoint), so "token configured" = an active
   // per-user bridge token exists. Boolean shape preserved for consumers.
   const tokenConfigured = await anyActiveUserBridgeTokenExists();
+  const idScope = bridgeIdentifierScope(req);
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -620,10 +637,13 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
     rejectedHeartbeatCount: bridgeDiag.rejectedCount,
     lastRejectedHeartbeatAt: bridgeDiag.lastRejectedHeartbeatAt?.toISOString() ?? null,
     lastRejectReason: bridgeDiag.lastRejectReason,
-    lastRejectRemoteIp: bridgeDiag.lastRejectRemoteIp,
-    lastAcceptedAccount: bridgeDiag.lastAcceptedAccount,
-    lastAcceptedRemoteIp: bridgeDiag.lastAcceptedRemoteIp,
-    lastAcceptedUserAgent: bridgeDiag.lastAcceptedUserAgent,
+    lastRejectRemoteIp: idScope.operator ? bridgeDiag.lastRejectRemoteIp : null,
+    lastAcceptedAccount: idScope.operator ? bridgeDiag.lastAcceptedAccount : null,
+    lastAcceptedRemoteIp: idScope.operator ? bridgeDiag.lastAcceptedRemoteIp : null,
+    lastAcceptedUserAgent: idScope.operator ? bridgeDiag.lastAcceptedUserAgent : null,
+    scope: "platform",
+    requesterScope: idScope.requesterScope,
+    redactionNote: idScope.redactionNote,
     expectedPostEndpoint: "/api/mt5/heartbeat",
     expectedHeader: "X-MT5-Bridge-Token",
     freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
@@ -637,6 +657,7 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
   // rejected on every EA endpoint), so "token configured" = an active
   // per-user bridge token exists. Boolean shape preserved for consumers.
   const tokenConfigured = await anyActiveUserBridgeTokenExists();
+  const idScope = bridgeIdentifierScope(req);
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
@@ -689,6 +710,9 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
     duplicateEaReason: dup.reason,
     distinctAcceptedIpsLast5m: dup.distinctIps.length,
     distinctAcceptedAccountsLast5m: dup.distinctAccounts.length,
+    scope: "platform",
+    requesterScope: idScope.requesterScope,
+    redactionNote: idScope.redactionNote,
     // Legacy / extended diagnostic fields (preserved verbatim).
     expectedServerBaseUrl,
     expectedHeartbeatEndpoint: `${expectedServerBaseUrl}/api/mt5/heartbeat`,
