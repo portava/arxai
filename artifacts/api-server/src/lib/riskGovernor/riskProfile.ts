@@ -366,6 +366,9 @@ function uncheckedChallengeRules(
   return out;
 }
 
+/** A bound on today's risk-count drawdown under the cap: the booked figure is below it too, so both bases pass. */
+const PROP_DAILY_BOUND_PASSES = "Both are under the cap, so DAILY_DD passes.";
+
 /** Why today's drawdown on the paper risk count is only bounded on a start day with positions open at the start. */
 function propDailyRiskCountBoundReason(atMost: number, booked: number, cap: number): string {
   return "Positions were open when the challenge started, and the start recorded only their booked P&L, so today's drawdown since the start "
@@ -377,13 +380,14 @@ function propDailyRiskCountBoundReason(atMost: number, booked: number, cap: numb
  * above the booked figures: both figures, which one DAILY_DD is checked
  * against, what differs and how the risk count is taken. `bound`: the risk
  * count's figure is only the most it can be (propDailyRiskCountBoundReason),
- * and `bookedFailed` says whether the booked figure alone fails DAILY_DD.
+ * `bookedFailed` says whether the booked figure alone fails DAILY_DD, and
+ * `underCap` whether that most is under the cap (both bases pass).
  */
 function propDailyRiskCountNote(
   riskCountDD: number, bookedDD: number,
   realized: { booked: number; risk: number },
   open: { floating: number; bookedFloating: number; openValuedAtStop: string[] },
-  bound: { bookedFailed: boolean; cap: number } | null = null,
+  bound: { bookedFailed: boolean; cap: number; underCap: boolean } | null = null,
 ): string {
   const parts: string[] = [];
   if (realized.risk < realized.booked - 0.005) parts.push(`the paper trades closed since then count ${usd(realized.risk)} (booked ${usd(realized.booked)})`);
@@ -395,7 +399,8 @@ function propDailyRiskCountNote(
       ? ` The open ${list} position could not be valued at a current price here (no market quote for it was read), so it is counted at its stop, the most it can lose through its stop.`
       : ` The open ${list} positions could not be valued at a current price here (no market quote for them was read), so they are counted at their stops, the most they can lose through their stops.`;
   const head = bound
-    ? `${propDailyRiskCountBoundReason(riskCountDD, bookedDD, bound.cap)} ${bound.bookedFailed ? "DAILY_DD fails on the booked figures alone." : "DAILY_DD is not confirmed."}`
+    ? `${propDailyRiskCountBoundReason(riskCountDD, bookedDD, bound.cap)} ${bound.bookedFailed ? "DAILY_DD fails on the booked figures alone."
+      : bound.underCap ? PROP_DAILY_BOUND_PASSES : "DAILY_DD is not confirmed."}`
     : `Today's drawdown is ${usd(riskCountDD)} on the paper risk count, the figure the Risk Governor's daily loss cap reads, and ${usd(bookedDD)} on the paper account's booked figures; DAILY_DD is checked against the larger, ${usd(riskCountDD)}.`;
   return head
     + (parts.length ? ` On the risk count ${parts.join(", and ")}.` : "")
@@ -459,6 +464,7 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
       ...base, measured: false, notMeasuredReason: reason as string | null,
       profitUsd: null as number | null, profitTargetProgress: null as number | null,
       dailyDrawdownRemainingUsd: null as number | null, totalDrawdownRemainingUsd: null as number | null,
+      dailyDrawdownRemainingAtLeastUsd: null as number | null,
       dailyDrawdownSince: null as string | null,
       passed, failed, notChecked, notes,
       status: (cfg.enabled ? "NOT_MEASURED" : "OFF") as PropFirmStatusCode,
@@ -506,7 +512,9 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   // now. The start recorded only booked figures, so on a start day with
   // positions open at the start (or no balance recorded) the risk count's
   // figure is the most it can be, not a measure (riskCountBound): DAILY_DD
-  // then fails on the booked figure alone, and is otherwise not confirmed.
+  // then fails on the booked figure alone, passes when that most is under
+  // the cap (the booked figure is below it, so both bases pass), and is
+  // otherwise not confirmed.
   const startBalance = typeof start.balance === "number" && Number.isFinite(start.balance) ? start.balance : null;
   const flatAtStart = startBalance != null && Math.abs(start.equity - startBalance) < 0.005;
   const dayDrawdown = (settled: number, floating: number) => {
@@ -524,11 +532,13 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const dailyDD = Math.max(bookedDD, riskCountDD);
   const dailyCap = cfg.maxDailyDrawdownUsd;
   const dailyFailed = riskCountBound ? bookedDD >= dailyCap : dailyDD >= dailyCap;
-  // Not confirmed: only a bound on the risk count's figure, and the booked figure does not fail it.
-  const dailyUnconfirmed = riskCountBound && !dailyFailed;
+  // Only a bound on the risk count's figure, and it is under the cap: passes on both bases.
+  const boundUnderCap = riskCountBound && riskCountDD < dailyCap;
+  // Not confirmed: only a bound on the risk count's figure, at or above the cap, and the booked figure does not fail it.
+  const dailyUnconfirmed = riskCountBound && !dailyFailed && !boundUnderCap;
   const dailyBasis: "booked" | "paper_risk_count" = riskCountAbove ? "paper_risk_count" : "booked";
   if (riskCountAbove) {
-    notes.push(propDailyRiskCountNote(r2(riskCountDD), r2(bookedDD), realized, open, riskCountBound ? { bookedFailed: dailyFailed, cap: dailyCap } : null));
+    notes.push(propDailyRiskCountNote(r2(riskCountDD), r2(bookedDD), realized, open, riskCountBound ? { bookedFailed: dailyFailed, cap: dailyCap, underCap: boundUnderCap } : null));
   }
   const dailyNotConfirmedReason = dailyUnconfirmed ? `${propDailyRiskCountBoundReason(r2(riskCountDD), r2(bookedDD), dailyCap)} DAILY_DD is not confirmed.` : null;
   if (cfg.enabled && dailyNotConfirmedReason) notChecked.push({ rule: "DAILY_DD", reason: dailyNotConfirmedReason });
@@ -560,6 +570,12 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
     profitTargetProgress: (cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0) as number | null,
     // null when the risk count's figure is only a bound (riskCountBound).
     dailyDrawdownRemainingUsd: (riskCountBound ? null : r2(cfg.maxDailyDrawdownUsd - dailyDD)) as number | null,
+    /**
+     * Additive: when today's drawdown is only bounded (dailyDrawdownMeasured
+     * false) and that bound is under the cap, the least room left before the
+     * cap (cap − the bound): the room left is at least this. null otherwise.
+     */
+    dailyDrawdownRemainingAtLeastUsd: (boundUnderCap ? r2(dailyCap - riskCountDD) : null) as number | null,
     totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD) as number | null,
     /** Today's drawdown counts paper P/L settled from here (trading-day start or challenge start, whichever is later). */
     dailyDrawdownSince: since.toISOString() as string | null,

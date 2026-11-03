@@ -217,3 +217,47 @@ test("not measured: the basis fields are null, not a figure", async () => {
   assert.equal(s.dailyDrawdownUsd, null);
   assert.equal(s.dailyDrawdownBasis, null);
 });
+
+// Round-3 safety review (s3-views): the bound above is the most the risk
+// count's drop since the start can be (the start recorded booked floating
+// P&L, which is never below the risk count's). DAILY_DD stayed "not
+// confirmed" (notEvaluated, notChecked, Daily DD left NOT MEASURED) even when
+// that bound was under the cap, which proves the rule passes on both bases;
+// the reason printed "at most $X ... against the $Y cap. DAILY_DD is not
+// confirmed." with X far under Y. A bound under the cap now passes DAILY_DD,
+// says so, and reports the remaining room as a lower bound.
+test("start day, the position was already open at the start, the bound is under the cap: DAILY_DD passes, the remaining room is at least cap - bound", async () => {
+  state.account = account(10_000 - 3);
+  state.open = [US30_DOWN_300];
+  state.closes = [];
+  state.settings = settings({
+    maxDailyDrawdownUsd: 1_000,
+    challengeStart: { at: startToday, paperAccountId: 3, equity: 10_000 - 3, equityAsOf: startToday, balance: 10_000 },
+  });
+  const s = await propFirmStatus(7, NOW);
+  assert.ok(s.passed.includes("DAILY_DD"), `passed ${JSON.stringify(s.passed)}; not evaluated ${JSON.stringify(s.notEvaluated)}`);
+  assert.ok(!s.failed.includes("DAILY_DD"));
+  assert.deepEqual(s.notEvaluated, [], "was ['DAILY_DD'] although the bound is under the cap");
+  assert.ok(!s.notChecked.some((r) => r.rule === "DAILY_DD"));
+  assert.deepEqual(s.notEvaluatedReasons, {});
+  // The exact figure is still only bounded: not reported as measured.
+  assert.equal(s.dailyDrawdownMeasured, false);
+  assert.equal(s.dailyDrawdownUsd, null);
+  assert.equal(s.dailyDrawdownRemainingUsd, null);
+  assert.equal(s.dailyDrawdownRemainingAtLeastUsd, 703, "1,000 - 297");
+  assert.equal(s.status, "ACTIVE");
+  const note = s.notes.find((n) => /at most/.test(n));
+  assert.ok(note, JSON.stringify(s.notes));
+  assert.match(note!, /it is at most \$297\.00 there, and \$0\.00 on the paper account's booked figures, against the \$1,000\.00 cap\. Both are under the cap, so DAILY_DD passes\./);
+  assert.doesNotMatch(note!, /not confirmed/);
+});
+
+test("the bound reaching the cap still leaves DAILY_DD not confirmed, with no lower bound on the room left", async () => {
+  state.account = account(10_000 - 3);
+  state.open = [US30_DOWN_300];
+  state.closes = [];
+  state.settings = settings({ challengeStart: { at: startToday, paperAccountId: 3, equity: 10_000 - 3, equityAsOf: startToday, balance: 10_000 } });
+  const s = await propFirmStatus(7, NOW);
+  assert.deepEqual(s.notEvaluated, ["DAILY_DD"]);
+  assert.equal(s.dailyDrawdownRemainingAtLeastUsd, null);
+});
