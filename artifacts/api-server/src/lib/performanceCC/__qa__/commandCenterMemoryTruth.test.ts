@@ -136,10 +136,40 @@ test("Net P&L names its basis: booked demo P&L (older and unsized closes disclos
   ]);
   const cc = await buildCommandCenter(7) as unknown as { netPnl: number; netPnlBasis: string };
   assert.equal(cc.netPnl, 2);
-  assert.match(cc.netPnlBasis, /booked on each closed demo trade\. New closes are booked in USD at the instrument's contract size/);
-  assert.match(cc.netPnlBasis, /older closes may carry the earlier price move × lots × 100 figure/);
-  assert.match(cc.netPnlBasis, /could not be sized adds its stored 0 placeholder/);
-  assert.match(cc.netPnlBasis, /Analytics recomputes every trade in USD/);
+  assert.match(cc.netPnlBasis, /booked on each closed demo trade\. Closes are now booked in USD at the instrument's contract size/);
+  assert.match(cc.netPnlBasis, /closes booked before that may carry the earlier price move × lots × 100 figure/);
+  // An unsized close is left out (it used to say its 0 placeholder was added),
+  // and the balance's treatment is stated as it is now: loss at the model, win 0.
+  assert.match(cc.netPnlBasis, /could not be sized for the instrument is left out of this sum/);
+  assert.match(cc.netPnlBasis, /paper risk model when it lost and as 0 when it won/);
+  assert.doesNotMatch(cc.netPnlBasis, /adds its stored 0 placeholder/);
+  assert.doesNotMatch(cc.netPnlBasis, /demo account units/);
+  assert.match(cc.netPnlBasis, /Analytics recomputes each trade in USD/);
   assert.match(cc.netPnlBasis, /can differ/);
   assert.doesNotMatch(cc.netPnlBasis, /what your demo balance moves by/);
+});
+
+// A close the paper venue could not size holds profit_loss 0. Ruby Memory
+// counted it as a break-even and added its 0 to net P&L; it is a win or a
+// loss by its price move, and its amount is left out and counted.
+test("an unsized manual V75 loss (stored 0) counts as a loss, adds nothing to Net P&L, and is disclosed", async () => {
+  rows.set(database.tradeDecisionLogsTable, [decision(1), decision(2)]);
+  rows.set(database.paperOrdersTable, [
+    order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2, decisionId: 1 }),
+    order(12, { symbol: "V75", status: "CLOSED_MANUAL", closedAt: new Date(), entryPrice: 1000, stopLoss: 980, takeProfit: 1040, exitPrice: 990, profitLoss: 0, decisionId: 2 }),
+    order(13, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2 }),
+  ]);
+  const cc = await buildCommandCenter(7) as unknown as {
+    winRate: number; netPnl: number; netPnlBasis: string; unsizedClosedTrades: number;
+    bestSymbol: string | null; worstSymbol: string | null; insights: string[];
+    aiDecisionStats: Record<string, unknown>;
+  };
+  assert.equal(cc.winRate, 66.67, "2 wins of 3 closes");
+  assert.equal(cc.netPnl, 4);
+  assert.equal(cc.unsizedClosedTrades, 1);
+  assert.match(cc.netPnlBasis, /1 of 3 closed trades \(V75\) could not be sized/);
+  assert.equal(cc.bestSymbol, "EURUSD");
+  assert.equal(cc.worstSymbol, null, "V75's net is not known, so it is not ranked");
+  assert.equal(cc.aiDecisionStats.decisionToWinRate, 50);
+  assert.doesNotMatch(cc.insights.join("\n"), /positive net P&L/, "the unsized loss could take the net below zero");
 });

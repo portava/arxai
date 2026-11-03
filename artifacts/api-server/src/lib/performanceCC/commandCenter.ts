@@ -20,18 +20,23 @@ import { desc, eq } from "drizzle-orm";
 import { generateInsights } from "./insights.js";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { readAccountLivePosture } from "../systemHealth/livePosture.js";
+import { bookedPnlOf, outcomeOf, unsizedPnlNote } from "./aggregator.js";
 
 /**
  * What netPnl is. It sums the P&L the paper venue booked on each closed demo
- * order (profit_loss). The venue now books a close in USD at the contract
- * size, but older rows may hold the earlier move × lots × 100 figure, and a
- * close it could not size holds a 0 placeholder that the demo balance counts
- * at the paper risk model instead (paperBookReader.realizedOf). Analytics
- * recomputes every trade in USD at contract size from the fill prices, so the
- * two boards' Net P&L can differ for the same trades.
+ * order (profit_loss). Every close path (ticket, manual, stop/target
+ * settlement, the paper execution monitor) now books in USD at the contract
+ * size; rows booked before contract sizing may hold the earlier move × lots ×
+ * 100 figure, and the row does not record which. A close the venue could not
+ * size holds a 0 placeholder: it is left out of netPnl (bookedPnlOf), counted
+ * in unsizedClosedTrades and named in the line built from this basis. The
+ * demo balance counts such a close at the paper risk model when it lost and
+ * as 0 when it won (paperBookReader.realizedOf). Analytics recomputes each
+ * trade from its fill prices and leaves out trades it cannot size, so the two
+ * boards' Net P&L can differ for the same trades.
  */
 export const NET_PNL_BASIS =
-  "Sum of the P&L the paper venue booked on each closed demo trade. New closes are booked in USD at the instrument's contract size; older closes may carry the earlier price move × lots × 100 figure, and a close that could not be sized adds its stored 0 placeholder here (your demo balance counts that close at the paper risk model instead). Analytics recomputes every trade in USD at contract size from entry and exit prices, so its Net P&L can differ.";
+  "Sum of the P&L the paper venue booked on each closed demo trade. Closes are now booked in USD at the instrument's contract size; closes booked before that may carry the earlier price move × lots × 100 figure (the trade does not record which). A close that could not be sized for the instrument is left out of this sum, because its P&L is not known; your demo balance counts such a close at the paper risk model when it lost and as 0 when it won. Analytics recomputes each trade in USD at contract size from its entry and exit prices, so its Net P&L can differ.";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.
@@ -51,16 +56,25 @@ export async function buildCommandCenter(userId: number) {
     .orderBy(desc(autopilotSettingsTable.id)).limit(1);
   const settings = settingsRows[0];
 
-  // Closed paper trades.
+  // Closed paper trades. A close the paper venue could not size holds a 0
+  // placeholder: it is a win or a loss by its price move, never a
+  // break-even, and its unknown amount is left out of every money figure.
   const closed = trades.filter(t => t.status?.startsWith("CLOSED") || t.status?.startsWith("PAPER_CLOSED"));
-  const wins = closed.filter(t => (t.profitLoss ?? 0) > 0.001);
-  const losses = closed.filter(t => (t.profitLoss ?? 0) < -0.001);
-  const netPnl = closed.reduce((a, t) => a + (t.profitLoss ?? 0), 0);
+  const wins = closed.filter(t => outcomeOf(t) > 0);
+  const losses = closed.filter(t => outcomeOf(t) < 0);
+  const sized = closed.filter(t => bookedPnlOf(t) != null);
+  const unsized = closed.filter(t => bookedPnlOf(t) == null);
+  const netPnl = sized.reduce((a, t) => a + (t.profitLoss ?? 0), 0);
   const winRate = closed.length ? (wins.length / closed.length) * 100 : 0;
 
-  // Best / worst symbol by net PnL.
+  // Best / worst symbol by net PnL. A symbol with an unsized close has an
+  // unknown net, so it is not ranked.
+  const unsizedSymbols = new Set(unsized.map(t => t.symbol));
   const bySymbol: Record<string, number> = {};
-  for (const t of closed) bySymbol[t.symbol] = (bySymbol[t.symbol] ?? 0) + (t.profitLoss ?? 0);
+  for (const t of sized) {
+    if (unsizedSymbols.has(t.symbol)) continue;
+    bySymbol[t.symbol] = (bySymbol[t.symbol] ?? 0) + (t.profitLoss ?? 0);
+  }
   const sortedSym = Object.entries(bySymbol).sort((a, b) => b[1] - a[1]);
   const bestSymbol = sortedSym[0]?.[0] ?? null;
   const worstSymbol = sortedSym.length > 1 ? sortedSym[sortedSym.length - 1]![0] : null;
@@ -149,9 +163,12 @@ export async function buildCommandCenter(userId: number) {
   const livePosture = await readAccountLivePosture(userId);
 
   // Insights.
+  // "Positive net P&L" is claimed only when it is known: an unsized loss
+  // could take the net below zero.
+  const netKnownPositive = netPnl > 0 && unsized.every(t => outcomeOf(t) > 0);
   const insightOut = generateInsights({
     bestSymbol, worstSymbol, mostRepeatedMistake,
-    totalTrades: closed.length, winRate, netPnl,
+    totalTrades: closed.length, winRate, netPnl: netKnownPositive ? netPnl : Math.min(netPnl, 0),
     tradeCalls: tradeCalls.length, tradeCallsWithoutOrder,
     decisionsCreated: decisions.length,
     learningEvents: learnings.length,
@@ -166,8 +183,11 @@ export async function buildCommandCenter(userId: number) {
     totalPaperTrades: trades.length,
     totalClosedTrades: closed.length,
     winRate: Number(winRate.toFixed(2)),
+    /** Sum over sized closes only (see unsizedClosedTrades). */
     netPnl: Number(netPnl.toFixed(2)),
-    netPnlBasis: NET_PNL_BASIS,
+    netPnlBasis: [NET_PNL_BASIS, unsizedPnlNote(unsized.length, closed.length, [...unsizedSymbols])].filter(Boolean).join(" "),
+    /** Closed trades whose P&L could not be sized: counted in the win rate by price move, left out of netPnl. */
+    unsizedClosedTrades: unsized.length,
     bestSymbol,
     worstSymbol,
     bestSetup,

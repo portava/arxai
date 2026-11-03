@@ -103,7 +103,13 @@ interface CCResp {
 
 interface EquityResp {
   /** null for a LIVE_SHARED session (the paper curve is withheld). */
-  equityCurve?: { points?: Array<{ trade_id: number; cumulative: number }> } | null;
+  equityCurve?: {
+    points?: Array<{ trade_id: number; cumulative: number }>;
+    /** Closes whose P&L could not be sized: they have no point on the curve. */
+    unsized_trades?: number;
+    /** Server note on those closes (null when every close was sized). */
+    pnl_note?: string | null;
+  } | null;
   currentAccountMode?: string | null;
 }
 
@@ -584,6 +590,9 @@ export function MemoryTab() {
     );
   }
   const hasClosed = typeof c.totalClosedTrades === "number" && c.totalClosedTrades > 0;
+  // Net P&L sums only closes the paper venue could size; when none could be,
+  // the server's 0 is not a result.
+  const netPnlMeasured = !(typeof c.unsizedClosedTrades === "number" && hasClosed && c.unsizedClosedTrades >= c.totalClosedTrades);
 
   return (
     <>
@@ -622,16 +631,22 @@ export function MemoryTab() {
             <CardTitle className="text-xs">Net Demo P&amp;L</CardTitle>
           </CardHeader>
           <CardContent>
+            {/* No figure when none of the closed trades could be sized: the
+                server's 0 then sums nothing. */}
             <div
               className={`text-xl font-bold ${
-                !hasClosed ? "" : c.netPnl >= 0 ? "text-success" : "text-danger"
+                !hasClosed || !netPnlMeasured ? "text-txt-secondary" : c.netPnl >= 0 ? "text-success" : "text-danger"
               }`}
               data-testid="memory-net-pnl"
             >
-              {hasClosed ? c.netPnl.toFixed(2) : "—"}
+              {!hasClosed ? "—" : netPnlMeasured ? c.netPnl.toFixed(2) : "Not measured"}
             </div>
+            {/* The server's basis: how each close was booked and what is left
+                out. An older server sends none; no unit is claimed then. */}
             <div className="text-[11px] text-txt-secondary mt-1" data-testid="memory-net-pnl-scope">
-              All closed demo trades, in demo account units
+              {typeof c.netPnlBasis === "string" && c.netPnlBasis
+                ? c.netPnlBasis
+                : "All closed demo trades, as booked by the paper venue"}
             </div>
           </CardContent>
         </Card>
@@ -703,9 +718,16 @@ export function MemoryTab() {
                   />
                 </LineChart>
               </ResponsiveContainer>
-            ) : (
+            ) : (eq.data?.equityCurve?.unsized_trades ?? 0) > 0 ? null : (
               <div className="text-txt-secondary text-sm">
                 No closed demo trades in this range yet.
+              </div>
+            )}
+            {/* Closes the paper venue could not size have no point on the
+                curve; the server says how many. */}
+            {!eq.isLoading && !eq.isError && typeof eq.data?.equityCurve?.pnl_note === "string" && eq.data.equityCurve.pnl_note && (
+              <div className="text-[11px] text-warning mt-2" data-testid="memory-equity-pnl-note">
+                {eq.data.equityCurve.pnl_note}
               </div>
             )}
           </CardContent>

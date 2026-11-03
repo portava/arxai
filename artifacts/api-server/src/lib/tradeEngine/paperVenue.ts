@@ -38,7 +38,7 @@ import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce
 import { currentQuote } from "./marketQuote.js";
 import { realizedOf } from "./paperBookReader.js";
 import {
-  isUnsizedPaperClose, paperLedgerModelPnl, resolvePaperContract, sizePaperOrderPnl, type PaperPnlResult,
+  isUnsizedPaperClose, paperLedgerModelPnl, paperMoveSign, resolvePaperContract, sizePaperOrderPnl, type PaperPnlResult,
 } from "../paperExecution/paperPnl.js";
 import type { ResolvedContractSize } from "../mt5/contractSize.js";
 import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
@@ -152,7 +152,8 @@ export function getMockPrice(symbol: string, atMs: number): number {
 // `move × lots × 100` mis-sized every instrument (EURUSD 1,000×). A close that
 // cannot be sized stores 0 in the NOT NULL profit_loss as a placeholder and
 // its event says so; the read side (paperBookReader.realizedOf) and the
-// balance count it at the governor's paper model.
+// balance count it only when it lost, at the governor's paper model; a win of
+// unknown size adds nothing.
 
 /** Event text for a close whose amount could not be sized. */
 function notSizedText(r: PaperPnlResult): string {
@@ -163,21 +164,39 @@ function notSizedText(r: PaperPnlResult): string {
 export interface PaperPnlSizing {
   /** Settled orders whose stored P&L is the not-sized 0 placeholder. */
   unsizedClosedOrders: number;
+  /**
+   * Of those, the ones that won (exit beyond entry in the trade's favour).
+   * Their gain is not added to the balance (counted 0): a win of unknown size
+   * never raises the balance or equity the Risk Governor reads.
+   */
+  unsizedClosedWins: number;
   /** Open positions whose unrealized P&L could not be sized. */
   unsizedOpenPositions: number;
   /** Plain-English note for the account; null when everything was sized. */
   note: string | null;
 }
 
-export function paperPnlSizingNote(unsizedClosed: number, unsizedOpen = 0): string | null {
+export function paperPnlSizingNote(unsizedClosed: number, unsizedOpen = 0, unsizedClosedWins = 0): string | null {
   if (unsizedClosed <= 0 && unsizedOpen <= 0) return null;
   const parts: string[] = [];
   if (unsizedClosed > 0) parts.push(`Balance includes ${unsizedClosed} closed trade${unsizedClosed === 1 ? "" : "s"}`);
   if (unsizedOpen > 0) parts.push(`${parts.length ? "equity" : "Equity"} includes ${unsizedOpen} open position${unsizedOpen === 1 ? "" : "s"}`);
-  const one = unsizedClosed + unsizedOpen === 1;
+  const how: string[] = [];
+  if (unsizedClosed > 0) {
+    const wins = Math.min(Math.max(0, unsizedClosedWins), unsizedClosed);
+    const losses = unsizedClosed - wins;
+    if (losses > 0) {
+      how.push(`${losses === 1 ? "A closed trade that lost is" : `${losses} closed trades that lost are`} counted at the paper risk model (price move × lots × 100), not a measured amount.`);
+    }
+    if (wins > 0) {
+      how.push(`${wins === 1 ? "A closed trade that won is" : `${wins} closed trades that won are`} not added to the balance (counted as 0), so the balance can be lower than the trades' real result.`);
+    }
+  }
+  if (unsizedOpen > 0) {
+    how.push(`${unsizedOpen === 1 ? "The open position is" : "The open positions are"} counted at the paper risk model (price move × lots × 100), not a measured amount.`);
+  }
   return `${parts.join("; ")} whose P&L could not be sized for the instrument `
-    + `(no contract size or currency conversion). ${one ? "It is" : "They are"} counted at the paper risk model `
-    + `(price move × lots × 100), not a measured amount.`;
+    + `(no contract size or currency conversion). ${how.join(" ")}`;
 }
 
 /**
@@ -190,7 +209,7 @@ export const PAPER_SIMULATOR_PNL_MULTIPLIER = 100;
 /** Simulator margin per lot. Not a broker margin requirement. */
 export const PAPER_SIMULATOR_MARGIN_PER_LOT = 1000;
 
-/** Orders booked at a real market quote; every other order is priced by the simulator. */
+/** Orders booked at a real market quote; every other order is opened and valued at the simulator's synthetic price. */
 function isMarketPriced(o: Pick<PaperOrderRow, "strategyId">): boolean {
   return o.strategyId === "build_ee_paper_execution" || o.strategyId === MARKET_PRICED_SIMULATED_OPEN;
 }
@@ -207,7 +226,14 @@ export interface PaperValuation {
   openOrders: number;
   /** Open orders valued at the simulator's synthetic price (generated candles, not a market quote). */
   openPricedBySimulator: number;
-  /** Closed orders not booked at a market quote: their entry and exit came from the simulator. */
+  /**
+   * Closed orders opened at the simulator's synthetic price (not booked at a
+   * market quote). Their entry came from the simulator. Their exit may have
+   * been the simulator's price (mark-to-market, the trader's close) or a
+   * market price: the paper execution monitor checks every open order's stop
+   * and target against market data and settles at a market price, and an EE
+   * manual close prices at market data. The order row does not record which.
+   */
   closedSimulatorPriced: number;
   /**
    * PAPER_USD: P&L is sized in the paper account currency (USD) from the
@@ -226,17 +252,23 @@ export function describePaperValuation(a: { openOrders: number; openPricedBySimu
     : a.openPricedBySimulator === 0 ? "MARKET_QUOTE"
     : a.openPricedBySimulator === a.openOrders ? "SIMULATOR" : "MIXED";
   const parts: string[] = [];
+  // Stops and targets of simulator-priced orders are checked against the
+  // synthetic price here, and also against market data by the paper execution
+  // monitor whenever it runs (paperExecutionMonitor.runPaperMonitor scans every
+  // open order), so either can settle them.
+  const settledBy = "Stops and targets are checked against that price, and also against market data by the paper execution monitor when it runs, which settles at a market price.";
   if (priceSource === "SIMULATOR") {
-    parts.push(`${a.openOrders === 1 ? "The open order is" : `All ${a.openOrders} open orders are`} valued at the simulator's synthetic price (generated, not a market quote), and stops and targets are settled against it.`);
+    parts.push(`${a.openOrders === 1 ? "The open order is" : `All ${a.openOrders} open orders are`} valued at the simulator's synthetic price (generated, not a market quote). ${settledBy}`);
   } else if (priceSource === "MIXED") {
-    parts.push(`${a.openPricedBySimulator} of ${a.openOrders} open orders are valued at the simulator's synthetic price (generated, not a market quote), and their stops and targets are settled against it; the rest at a current market quote.`);
+    parts.push(`${a.openPricedBySimulator} of ${a.openOrders} open orders are valued at the simulator's synthetic price (generated, not a market quote), the rest at a current market quote. ${settledBy}`);
   } else if (priceSource === "MARKET_QUOTE") {
     parts.push(`Open orders are valued at a current market quote.`);
   }
   if (a.closedSimulatorPriced > 0) {
-    parts.push(`${a.closedSimulatorPriced} closed order${a.closedSimulatorPriced === 1 ? " was" : "s were"} priced by the simulator, not the market, so the balance includes synthetic results.`);
+    const one = a.closedSimulatorPriced === 1;
+    parts.push(`${a.closedSimulatorPriced} closed order${one ? " was" : "s were"} opened at the simulator's synthetic price, not a market quote, so the balance includes synthetic results. ${one ? "Its exit" : "Each exit"} may have been the simulator's price or a market price (the paper execution monitor or an EE manual close); the order does not record which.`);
   }
-  parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
+  parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount, except that a closed trade that won is not added to the balance. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
   return {
     priceSource,
     openOrders: a.openOrders,
@@ -263,8 +295,10 @@ function governorRefusal(risk: { primaryReason?: string | null; blockedBy: strin
 // runs. Equity = balance + unrealized; margin = Σ open lot. An SL/TP hit is
 // the simulator venue's own fill, not a new order, so it is not re-governed.
 // A close whose amount could not be sized (stored 0 placeholder) counts the
-// way the paper book's read side counts it (realizedOf), so the balance moves
-// with the stop or target hit; pnlSizing says how many closes that covers.
+// way the paper book's read side counts it (realizedOf): a stop-out lowers the
+// balance at the paper risk model, and a win of unknown size adds nothing, so
+// an estimate never raises the balance or equity the Risk Governor reads.
+// pnlSizing says how many closes that covers.
 export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing; valuation: PaperValuation }) | null> {
   const account = (await db.select().from(paperAccountsTable)
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
@@ -349,7 +383,10 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
     .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy)))
     .filter((o) => o.status !== "OPEN");
   const realizedTotal = closed.reduce((s, o) => s + realizedOf(o), 0);
-  const unsizedClosedOrders = closed.filter((o) => isUnsizedPaperClose(o)).length;
+  const unsizedClosed = closed.filter((o) => isUnsizedPaperClose(o));
+  const unsizedClosedOrders = unsizedClosed.length;
+  const unsizedClosedWins = unsizedClosed
+    .filter((o) => paperMoveSign(o.direction, o.entryPrice, o.exitPrice!) > 0).length;
   const newBalance = account.startingBalance + realizedTotal;
   const equity = newBalance + unrealized;
   await db.update(paperAccountsTable).set({
@@ -367,7 +404,10 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
   });
   return {
     ...row,
-    pnlSizing: { unsizedClosedOrders, unsizedOpenPositions, note: paperPnlSizingNote(unsizedClosedOrders, unsizedOpenPositions) },
+    pnlSizing: {
+      unsizedClosedOrders, unsizedClosedWins, unsizedOpenPositions,
+      note: paperPnlSizingNote(unsizedClosedOrders, unsizedOpenPositions, unsizedClosedWins),
+    },
     valuation,
   };
 }

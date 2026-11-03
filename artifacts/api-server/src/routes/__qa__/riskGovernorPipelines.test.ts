@@ -215,7 +215,8 @@ test("A demo manual: an oversized order is rejected, never written, and audited"
 test("A demo manual: a sized order passes, is written, and its pass is audited; an identical repeat is a duplicate", async () => {
   const acct = await resetPaper(u.a);
   const px = paperPrice();
-  const order = { paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.1, stopLoss: px * 0.98, takeProfit: px * 1.04 };
+  // 0.01 lot: priced at the 100,000-unit EURUSD lot the paper venue books, a 2% stop risks ~$22 (cap $100).
+  const order = { paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.01, stopLoss: px * 0.98, takeProfit: px * 1.04 };
   const res = await request("POST", "/paper/orders", c.a, order);
   assert.equal(res.status, 200, await res.clone().text());
   const ok = await latestEvent(u.a);
@@ -240,8 +241,9 @@ test("A demo manual: today's realized loss at the cap blocks new risk (daily los
   });
   await db.update(paperAccountsTable).set({ currentBalance: 9_600, equity: 9_600 }).where(eq(paperAccountsTable.id, acct));
   const px = paperPrice();
+  // 0.01 lot keeps the per-trade loss (~$22 at the 100,000-unit lot) under its cap, so only the daily limit blocks.
   const res = await request("POST", "/paper/orders", c.a, {
-    paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.1, stopLoss: px * 0.98, takeProfit: px * 1.04,
+    paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.01, stopLoss: px * 0.98, takeProfit: px * 1.04,
   });
   assert.equal(res.status, 422);
   const body = await res.json() as { blockedBy: string[]; error: string };
@@ -253,23 +255,24 @@ test("A demo manual: today's realized loss at the cap blocks new risk (daily los
 
 test("Position Guardian (paper): a stop tightens freely; widening past the per-trade limit is refused, audited, and leaves the stop", async () => {
   const acct = await resetPaper(u.a);
-  // Per-trade limit 0.1% of $10k = $10. Paper ledger: loss = |entry - stop| × lots × 100.
+  // Per-trade limit 0.1% of $10k = $10. The governor prices a paper EURUSD order at the
+  // 100,000-unit lot the venue books: loss = |entry - stop| × lots × 100,000.
   await db.insert(userRiskSettingsTable).values({ userId: u.a, maxRiskPerTradePercent: 0.1 })
     .onConflictDoUpdate({ target: userRiskSettingsTable.userId, set: { maxRiskPerTradePercent: 0.1 } });
   try {
     const px = paperPrice();
     const placed = await request("POST", "/paper/orders", c.a, {
-      paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 1, stopLoss: px * 0.95, takeProfit: px * 1.1,
+      paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.01, stopLoss: px * 0.995, takeProfit: px * 1.1,
     });
     assert.equal(placed.status, 200, await placed.clone().text());
     const { order } = await placed.json() as { order: { id: number; entryPrice: number } };
     const entry = order.entryPrice;
 
-    const tighten = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.97 });
+    const tighten = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.997 });
     assert.equal(tighten.status, 200, await tighten.clone().text());
 
-    // entry × 0.15 × 100 ≈ $15 at risk, above the $10 limit.
-    const widen = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.85 });
+    // entry × 0.015 × 0.01 × 100,000 ≈ $16 at risk, above the $10 limit.
+    const widen = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.985 });
     assert.equal(widen.status, 422);
     const body = await widen.json() as { code: string; blockedBy: string[]; auditEventId: number };
     assert.equal(body.code, "RISK_GOVERNOR_BLOCK");
@@ -279,10 +282,10 @@ test("Position Guardian (paper): a stop tightens freely; widening past the per-t
     assert.equal(ev.row.decision, "block");
     assert.equal(ev.intent["action"], "MODIFY");
     const [row] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, order.id));
-    assert.ok(Math.abs(row!.stopLoss - entry * 0.97) < 1e-5, "the refused widening left the stop where it was");
+    assert.ok(Math.abs(row!.stopLoss - entry * 0.997) < 1e-5, "the refused widening left the stop where it was");
 
-    // A smaller widening that stays inside the limit (~$7) goes through.
-    const widenOk = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.93 });
+    // A smaller widening that stays inside the limit (~$7.60) goes through.
+    const widenOk = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.993 });
     assert.equal(widenOk.status, 200, await widenOk.clone().text());
   } finally {
     await db.delete(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, u.a));

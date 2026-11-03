@@ -88,4 +88,35 @@ describe("Ruby Memory tab — truth", () => {
     expect((await screen.findByTestId("memory-win-rate")).textContent).toBe("—");
     expect(screen.getByTestId("memory-net-pnl").textContent).toBe("—");
   });
+
+  // The card said "in demo account units" for every close, and the server's
+  // netPnlBasis (how each close was booked, and what is left out) was never
+  // shown. A close the paper venue could not size is left out of Net P&L.
+  it("Net P&L shows the server's basis, not a hard-coded 'demo account units' line", async () => {
+    const basis = "Sum of the P&L the paper venue booked on each closed demo trade. Closes are now booked in USD at the instrument's contract size. 1 of 5 closed trades (V75) could not be sized for the instrument.";
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: { ...paperCc, netPnlBasis: basis, unsizedClosedTrades: 1 }, autopilot: {}, currentAccountMode: "PAPER" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [] } });
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-net-pnl")).textContent).toBe("12.50");
+    expect(screen.getByTestId("memory-net-pnl-scope").textContent).toBe(basis);
+    expect(document.body.textContent).not.toMatch(/demo account units/);
+  });
+
+  it("when no closed trade could be sized, Net P&L is not measured (not 0.00) and the curve says why it has no points", async () => {
+    const note = "P&L not measured: none of the 2 closed trades (V75) could be sized for the instrument (no contract size or currency conversion).";
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: { ...paperCc, winRate: 0, netPnl: 0, totalClosedTrades: 2, unsizedClosedTrades: 2 }, autopilot: {}, currentAccountMode: "PAPER" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [], unsized_trades: 2, pnl_note: note } });
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-net-pnl")).textContent).toBe("Not measured");
+    expect((await screen.findByTestId("memory-equity-pnl-note")).textContent).toBe(note);
+    expect(screen.queryByText(/No closed demo trades in this range yet/)).toBeNull();
+  });
 });
