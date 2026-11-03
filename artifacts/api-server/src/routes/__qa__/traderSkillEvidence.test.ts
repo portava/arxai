@@ -189,3 +189,37 @@ test("evidence that existed when the profile was calculated is measured, not 'no
   assert.ok(!body.unmeasuredPillars.includes("discipline"), "measured at the snapshot");
   assert.deepEqual(body.unmeasuredPillarsWithNewEvidence, []);
 });
+
+// Round 3 review (p2-exec): Emotional control counted as measured whenever
+// any debrief existed, even when none recorded an emotion. The automatic
+// debrief written on every paper close records no emotion, so a trader who
+// never tagged one saw a measured-looking 0 for Emotional control while
+// Analytics said "no data". It is now measured only when a debrief recorded
+// an emotion, as Analytics reads it.
+test("debriefs with no recorded emotion leave Emotional control unmeasured; one recorded emotion measures it", async () => {
+  reset();
+  tables.set(database.paperOrdersTable, datedPapers(20));
+  const auto = (id: number, emotion: unknown) => ({
+    id, userId: 5, followedPlan: 1, traderEmotionAfter: emotion, checklist: [], createdAt: past(60),
+  });
+  tables.set(database.postTradeDebriefsTable, [auto(1, null), auto(2, null), auto(3, "")]);
+  const { body } = await invoke("post", "/skill/calculate");
+  assert.equal(body.signals.debriefCount, 3);
+  assert.equal(body.profile.emotionalControlScore, 0);
+  assert.ok(body.unmeasuredPillars.includes("emotional"), "no debrief recorded an emotion");
+  assert.ok(!body.unmeasuredPillars.includes("discipline"), "discipline reads every debrief's followed-plan flag");
+  const profile = await invoke("get", "/skill/profile");
+  assert.ok(profile.body.unmeasuredPillars.includes("emotional"));
+  const sug = await invoke("get", "/skill/suggestions");
+  const emo = sug.body.suggestions.find((s: any) => s.area === "Emotional control");
+  assert.ok(emo, "the lowest pillars are suggested");
+  assert.equal(emo.score, undefined, "an unmeasured 0 is not a score");
+  assert.match(emo.message, /no data yet/i);
+
+  reset();
+  tables.set(database.paperOrdersTable, datedPapers(20));
+  tables.set(database.postTradeDebriefsTable, [auto(1, null), auto(2, "ANXIOUS")]);
+  const measured = await invoke("post", "/skill/calculate");
+  assert.equal(measured.body.profile.emotionalControlScore, 0, "a measured 0: the one recorded emotion was not calm");
+  assert.ok(!measured.body.unmeasuredPillars.includes("emotional"));
+});
