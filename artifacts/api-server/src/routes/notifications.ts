@@ -4,15 +4,15 @@
 // modify canPlaceTrades, NEVER call MT5, NEVER expose secrets.
 //
 // PHASE-2: every notification read/write is scoped to req.authUser.id. The
-// shared digest/logs/ingest endpoints remain global because they describe
-// system-wide health (not user data) and contain no per-user PII.
+// digest a user reads is their own (userDigest); the persisted system-wide
+// digest is recorded but never returned. Logs/ingest remain global.
 
 import { Router } from "express";
 import {
   notify, listNotifications, getCounts, getById,
   markRead, markAcknowledged, markDismissed, snooze, markAllRead,
   getPreferences, setPreferences,
-  generateDigest, latestDigest, listLogs, seedDemo,
+  generateDigest, userDigest, listLogs, seedDemo,
 } from "../lib/notifications/service.js";
 import {
   ruleGovernorEvaluation, ruleMarketData, rulePaperExecution, ruleAutopilot,
@@ -195,15 +195,20 @@ router.post("/notifications/ingest", requireUser, async (req, res) => {
   }
 });
 
-router.get("/notifications/digest", requireUser, async (_req, res) => {
-  try { res.json(envelope({ digest: await latestDigest() })); }
+// The caller's own last-24h digest. The persisted notification_digests rows
+// aggregate every user's notifications, so they are never returned here.
+router.get("/notifications/digest", requireUser, async (req, res) => {
+  try { res.json(envelope({ digest: await userDigest(req.authUser!.id, 24) })); }
   catch (err) { res.status(500).json(envelope({ error: "digest failed", detail: String(err).slice(0, 200) })); }
 });
 
 router.post("/notifications/digest/generate", requireUser, async (req, res) => {
   try {
     const hours = req.body?.rangeHours ? Number(req.body.rangeHours) : 24;
-    res.json(envelope({ digest: await generateDigest(hours) }));
+    // Still records the system-wide digest, but only its id goes back to the
+    // caller; the digest they see is their own.
+    const system = await generateDigest(hours);
+    res.json(envelope({ digest: await userDigest(req.authUser!.id, hours), systemDigestId: system?.digestId ?? null }));
   } catch (err) {
     res.status(500).json(envelope({ error: "digest generate failed", detail: String(err).slice(0, 200) }));
   }

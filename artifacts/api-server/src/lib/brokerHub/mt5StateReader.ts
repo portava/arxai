@@ -28,6 +28,15 @@ export async function readPlatformMt5State(reader: Reader = db): Promise<Mt5Stat
   return rows[0] ?? null;
 }
 
+/**
+ * Said when readLatestUserMt5State finds no row for the user. The EA bridge
+ * writes the feed into the install-wide row only and never stamps a user on
+ * it, so "no row" means the user's positions and account were not read from
+ * this feed, never that they hold none.
+ */
+export const MT5_STATE_NOT_ATTRIBUTED_NOTE =
+  "No MT5 snapshot is stored for your account in the EA account feed (the feed is saved install-wide, not per user), so your open positions were not read here. This is not a count of zero.";
+
 /** The user's most recently synced snapshot, or null. Never returns another user's row. */
 export async function readLatestUserMt5State(userId: number): Promise<Mt5StateRow | null> {
   const rows = await db.select().from(mt5StateTable)

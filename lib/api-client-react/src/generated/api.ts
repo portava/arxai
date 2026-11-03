@@ -7209,7 +7209,8 @@ export const useMt5SyncPositions = <
 };
 
 /**
- * @summary Latest known MT5 connection state
+ * Requires sign-in (401 otherwise). Operators (ADMIN/OWNER) receive the install-wide EA feed (scope platform). Everyone else receives only their own bridge connection, or the shared-master bridge they route through, with no positions claimed (scope own_connection, shared_master_bridge or none).
+ * @summary MT5 connection state, scoped to the caller
  */
 export const getGetMt5StateUrl = () => {
   return `/api/mt5/state`;
@@ -7258,7 +7259,7 @@ export type GetMt5StateQueryResult = NonNullable<
 export type GetMt5StateQueryError = ErrorType<unknown>;
 
 /**
- * @summary Latest known MT5 connection state
+ * @summary MT5 connection state, scoped to the caller
  */
 
 export function useGetMt5State<
