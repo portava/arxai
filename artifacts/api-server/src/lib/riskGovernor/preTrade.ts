@@ -888,7 +888,8 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   if (intent.action === "MODIFY") {
     // Position Guardian invariant: an automated action (Ruby, a strategy,
     // automation) may only tighten a stop. A trader may widen it by hand, but
-    // never past their per-trade loss limit.
+    // never past their per-trade loss limit, and never remove it (an unbounded
+    // loss).
     const pos = intent.position ?? null;
     if (!pos && intent.origin !== "manual" && results.get("stop_loss_required")?.outcome !== "BLOCK") {
       set("stop_loss_required", "BLOCK",
@@ -905,7 +906,15 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
             `Automated actions may only tighten a stop: ${intent.origin} tried to move it from ${pos.stopLoss} to ${sl ?? "none"}.`,
             measured);
         }
-        if (sl != null) {
+        if (sl == null) {
+          // Removing the stop is the widest widen: the loss on the position is
+          // then unbounded, so no per-trade limit can hold it (the same as rule
+          // 8 on OPEN, which refuses a new trade without a stop). Whatever the
+          // trader's stop requirement and equity.
+          set("per_trade_loss_limit", "BLOCK",
+            "Removing the stop leaves the loss on this position unbounded, so it cannot stay within your per-trade loss limit. Closing or tightening the stop is allowed.",
+            measured);
+        } else {
           const perUnit = lots != null && lots > 0 ? moneyPerPriceUnit(lots, ctx.instruments[intent.symbol]) : null;
           const equity = ctx.account?.equity != null && ctx.account.equity > 0 ? ctx.account.equity : null;
           const pctCap = equity != null ? (equity * L.maxRiskPerTradePercent) / 100 : null;
