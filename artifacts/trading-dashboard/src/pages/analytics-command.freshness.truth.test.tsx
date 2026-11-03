@@ -133,7 +133,7 @@ describe("Analytics Command Center unmeasured figures", () => {
 
 describe("Analytics Command Center P&L basis", () => {
   it("labels Net P&L as USD and says it differs from the booked demo P&L in Ruby Memory", async () => {
-    const note = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close, in demo account units, so their Net P&L differs from this one.";
+    const note = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close: older closes may have been booked as price move × lots × 100, and a close it could not size is booked as a placeholder (0 in Ruby Memory, the paper risk model in your demo balance), so their Net P&L can differ from this one.";
     serve({
       snapshot: SAVED,
       current: { ...FIGURES, asOf: "2026-10-28T12:00:00.000Z",

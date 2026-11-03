@@ -285,5 +285,8 @@ test("consistency: the P&L basis says it differs from Ruby Memory's booked demo 
   setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
   const s = await mod.computeSnapshot(7);
   assert.match(s.pnlCoverage.note, /USD at each instrument's contract size/);
-  assert.match(s.pnlCoverage.note, /Ruby Memory and your demo account show the P&L the paper venue booked on each close, in demo account units/);
+  assert.match(s.pnlCoverage.note, /Ruby Memory and your demo account show the P&L the paper venue booked on each close/);
+  assert.match(s.pnlCoverage.note, /older closes may have been booked as price move × lots × 100/);
+  assert.match(s.pnlCoverage.note, /could not size is booked as a placeholder/);
+  assert.match(s.pnlCoverage.note, /can differ from this one/);
 });

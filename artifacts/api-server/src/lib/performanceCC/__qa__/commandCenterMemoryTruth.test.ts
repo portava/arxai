@@ -127,14 +127,19 @@ test("Best/Weakest setup says its P&L sums overlap across signals", async () => 
 });
 
 // Analytics recomputes P&L in USD at contract size; Ruby Memory sums the
-// booked profit_loss. The two "Net P&L" figures differ for the same book, so
+// booked profit_loss, which for older or unsized closes is on another scale or
+// a placeholder. The two "Net P&L" figures can differ for the same book, so
 // Ruby Memory says what its figure is.
-test("Net P&L names its basis: booked demo P&L in demo account units, not Analytics' USD figure", async () => {
+test("Net P&L names its basis: booked demo P&L (older and unsized closes disclosed), not Analytics' USD figure", async () => {
   rows.set(database.paperOrdersTable, [
     order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2 }),
   ]);
   const cc = await buildCommandCenter(7) as unknown as { netPnl: number; netPnlBasis: string };
   assert.equal(cc.netPnl, 2);
-  assert.match(cc.netPnlBasis, /booked on each closed demo trade, in demo account units/);
-  assert.match(cc.netPnlBasis, /Analytics recomputes P&L in USD/);
+  assert.match(cc.netPnlBasis, /booked on each closed demo trade\. New closes are booked in USD at the instrument's contract size/);
+  assert.match(cc.netPnlBasis, /older closes may carry the earlier price move × lots × 100 figure/);
+  assert.match(cc.netPnlBasis, /could not be sized adds its stored 0 placeholder/);
+  assert.match(cc.netPnlBasis, /Analytics recomputes every trade in USD/);
+  assert.match(cc.netPnlBasis, /can differ/);
+  assert.doesNotMatch(cc.netPnlBasis, /what your demo balance moves by/);
 });

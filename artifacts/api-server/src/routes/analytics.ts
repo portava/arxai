@@ -82,9 +82,10 @@ function pnlCoverageOf(closed: Array<typeof paperOrdersTable.$inferSelect>): Pnl
   const sizedTrades = closed.length - unsized.length;
   const unsizedSymbols = [...new Set(unsized.map((o) => o.symbol))].sort();
   // Ruby Memory and the demo account sum the P&L the paper venue BOOKED on
-  // each close, in demo account units (price move × lots × 100 for most
-  // closes, not a contract size), so the same trades give a different figure.
-  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close, in demo account units, so their Net P&L differs from this one.";
+  // each close. New closes are booked in USD at contract size, but older rows
+  // may hold price move × lots × 100 and an unsized close holds a placeholder,
+  // so the same trades can give a different figure.
+  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close: older closes may have been booked as price move × lots × 100, and a close it could not size is booked as a placeholder (0 in Ruby Memory, the paper risk model in your demo balance), so their Net P&L can differ from this one.";
   const note = unsized.length === 0
     ? basis
     : sizedTrades === 0

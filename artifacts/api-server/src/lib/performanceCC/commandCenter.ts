@@ -23,13 +23,15 @@ import { readAccountLivePosture } from "../systemHealth/livePosture.js";
 
 /**
  * What netPnl is. It sums the P&L the paper venue booked on each closed demo
- * order (profit_loss), which is what the demo account balance moves by.
- * Analytics recomputes P&L in USD at each instrument's contract size from
- * the fill prices, so the two boards' Net P&L are different measures of the
- * same trades and are not expected to match.
+ * order (profit_loss). The venue now books a close in USD at the contract
+ * size, but older rows may hold the earlier move × lots × 100 figure, and a
+ * close it could not size holds a 0 placeholder that the demo balance counts
+ * at the paper risk model instead (paperBookReader.realizedOf). Analytics
+ * recomputes every trade in USD at contract size from the fill prices, so the
+ * two boards' Net P&L can differ for the same trades.
  */
 export const NET_PNL_BASIS =
-  "Sum of the P&L the paper venue booked on each closed demo trade, in demo account units — what your demo balance moves by. Analytics recomputes P&L in USD at each instrument's contract size from entry and exit prices, so its Net P&L differs.";
+  "Sum of the P&L the paper venue booked on each closed demo trade. New closes are booked in USD at the instrument's contract size; older closes may carry the earlier price move × lots × 100 figure, and a close that could not be sized adds its stored 0 placeholder here (your demo balance counts that close at the paper risk model instead). Analytics recomputes every trade in USD at contract size from entry and exit prices, so its Net P&L can differ.";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.
