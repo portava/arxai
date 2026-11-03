@@ -244,6 +244,16 @@ async function buildChartFeed(
       : null;
   const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
   const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+  // Three-state evidence for the truth engine: true = a quote moved (trading),
+  // false = ticks are still arriving with a frozen quote (positive evidence of
+  // a closed market), null = nothing was checked (no tick since boot, a dead
+  // tick feed, or a source with no tick stream). Only false lets its STALE
+  // reason state a scheduled weekend close; null keeps it hedged.
+  const tradingEvidence: boolean | null = tradingObserved
+    ? true
+    : tickFreshness?.marketFrozen === true
+      ? false
+      : null;
 
   if (result.candles.length > 0) {
     const tr = runCandleTruth(result.candles, {
@@ -255,7 +265,7 @@ async function buildChartFeed(
       limit,
       now,
       sessionProfile,
-      tradingObserved,
+      tradingObserved: tradingEvidence,
     });
     candles = tr.verifiedCandles;
     truthResult = tr.truthResult;
@@ -418,8 +428,10 @@ async function buildChartFeed(
   // series' source has observably MOVED in the last two minutes (the EA keeps
   // replaying a frozen quote on weekends), nothing shows a trading market —
   // the series is not live. Observed trading always beats the static schedule.
-  // (`tradingObserved` is read before the truth engine runs, so its STALE
-  // reason applies the same rule.)
+  // (`tradingObserved` is read before the truth engine runs. The engine's
+  // STALE reason is stricter: it states a weekend close only when ticks
+  // still arrive with a frozen quote, and stays hedged when no tick evidence
+  // exists — see `tradingEvidence`.)
   const session = getSymbolProfile(symbol, assetClass).session;
   const closure = lastCandle && !tradingObserved
     ? scheduledWeekendClosure(session, now)

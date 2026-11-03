@@ -65,7 +65,9 @@ type MarketDataStatus = {
   // news / calendar fetches count too — so it is not a quote-freshness verdict.
   // A served quote is classified from its own timestamp (STALE = the quote
   // itself is old, e.g. Friday's close at the weekend).
-  dataFreshness?: "REALTIME" | "DELAYED" | "STALE" | "UNAVAILABLE" | null;
+  // CANDLES_CURRENT (candle fetches only): the bars are current under the
+  // shared rule, but no real-time price was confirmed.
+  dataFreshness?: "REALTIME" | "CANDLES_CURRENT" | "DELAYED" | "STALE" | "UNAVAILABLE" | null;
   dataSource?: string | null;
   dataFreshnessAt?: string | null;
   // Which payload dataFreshness describes: a quote or a candle fetch. Null or
@@ -92,11 +94,12 @@ function freshnessBadgeColor(state: MarketDataStatus["freshnessState"]): string 
 
 // The badge the page shows. The client may only downgrade the server's
 // freshnessState: FRESH is shown only when a REAL-TIME price payload was
-// observed within staleAfterMs. A delayed one reads DELAYED, a served quote
-// whose own timestamp is old reads STALE; a recent success with no
-// recent quote observation (news / calendar / overview, or an old quote) reads
-// NO RECENT QUOTE.
-type ProviderDisplayState = MarketDataStatus["freshnessState"] | "DELAYED" | "NO RECENT QUOTE" | "NO PRICE DATA";
+// observed within staleAfterMs. A delayed one reads DELAYED, current candles
+// with no real-time price confirmed read CANDLES CURRENT (neither FRESH nor
+// DELAYED), a served quote whose own timestamp is old reads STALE; a recent
+// success with no recent quote observation (news / calendar / overview, or an
+// old quote) reads NO RECENT QUOTE.
+type ProviderDisplayState = MarketDataStatus["freshnessState"] | "DELAYED" | "CANDLES CURRENT" | "NO RECENT QUOTE" | "NO PRICE DATA";
 function providerDisplayState(mds: MarketDataStatus): ProviderDisplayState {
   if (mds.freshnessState !== "FRESH") return mds.freshnessState;
   const at = mds.dataFreshnessAt ? Date.parse(mds.dataFreshnessAt) : NaN;
@@ -104,6 +107,7 @@ function providerDisplayState(mds: MarketDataStatus): ProviderDisplayState {
   const recent = Number.isFinite(age) && age >= 0 && age <= mds.staleAfterMs;
   if (!recent || mds.dataFreshness == null) return "NO RECENT QUOTE";
   if (mds.dataFreshness === "REALTIME") return "FRESH";
+  if (mds.dataFreshness === "CANDLES_CURRENT") return "CANDLES CURRENT";
   if (mds.dataFreshness === "DELAYED") return "DELAYED";
   if (mds.dataFreshness === "STALE") return "STALE";
   return "NO PRICE DATA";
@@ -111,6 +115,7 @@ function providerDisplayState(mds: MarketDataStatus): ProviderDisplayState {
 function providerDisplayColor(state: ProviderDisplayState): string {
   switch (state) {
     case "DELAYED": return "bg-amber-500/80 text-white";
+    case "CANDLES CURRENT": return "bg-sky-600/70 text-white";
     case "NO RECENT QUOTE": return "bg-amber-500/70 text-white";
     case "NO PRICE DATA": return "bg-zinc-500/80 text-white";
     default: return freshnessBadgeColor(state);
@@ -136,6 +141,7 @@ function lastObservationLabel(mds: MarketDataStatus): string {
 }
 const QUALITY_WORD: Record<NonNullable<MarketDataStatus["dataFreshness"]>, string> = {
   REALTIME: "real-time",
+  CANDLES_CURRENT: "candles current, no real-time quote seen",
   DELAYED: "delayed",
   STALE: "stale",
   UNAVAILABLE: "no usable price",

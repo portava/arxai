@@ -90,11 +90,27 @@ const STYLES: Record<Risk, string> = {
 // within ±15 minutes of the release, so a NO_TRADE_WINDOW report further out —
 // or one whose warning already says TRADE PLAN HOLD — is the trade-plan hold,
 // not a "do not trade" window. Read from the stored row; no schema change.
+//
+// `live` (pass it only for a report still shown as current): the stored offset
+// is true only at scan time, and a current report can be minutes old. Once the
+// live offset (createdMs + offset − nowMs) is inside the release window, the
+// live no-trade window is in force, so the report is no longer read as the
+// plan hold. Live arithmetic only ever moves a hold INTO the window — it never
+// softens a stored live window into a hold.
 const RELEASE_WINDOW_MIN = 15;
-export function isTradePlanHold(r: Pick<NewsRiskReport, "riskLevel" | "timeUntilEventMinutes" | "tradeWarning">): boolean {
+export function isTradePlanHold(
+  r: Pick<NewsRiskReport, "riskLevel" | "timeUntilEventMinutes" | "tradeWarning">,
+  live?: { createdMs: number; nowMs: number },
+): boolean {
   if (r.riskLevel !== "NO_TRADE_WINDOW") return false;
-  if (r.tradeWarning?.startsWith("TRADE PLAN HOLD")) return true;
-  return r.timeUntilEventMinutes != null && Math.abs(r.timeUntilEventMinutes) > RELEASE_WINDOW_MIN;
+  const storedHold = r.tradeWarning?.startsWith("TRADE PLAN HOLD")
+    || (r.timeUntilEventMinutes != null && Math.abs(r.timeUntilEventMinutes) > RELEASE_WINDOW_MIN);
+  if (!storedHold) return false;
+  if (live && r.timeUntilEventMinutes != null && Number.isFinite(live.createdMs) && Number.isFinite(live.nowMs)) {
+    const liveMin = (live.createdMs + r.timeUntilEventMinutes * 60_000 - live.nowMs) / 60_000;
+    if (Math.abs(liveMin) <= RELEASE_WINDOW_MIN) return false;
+  }
+  return true;
 }
 const TRADE_PLAN_HOLD_STYLE = "bg-red-800 text-white";
 
@@ -186,7 +202,13 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
   // A CLEAR scored from a stored calendar that does not reach the next 24h is
   // not an all-clear: shown as "not checked" with the server's reason.
   const clearNotChecked = r?.riskLevel === "CLEAR" && r.calendarCoverage?.windowCovered === false;
-  const planHold = r ? isTradePlanHold(r) : false;
+  // A current report is classified by its live offset; an outdated one says
+  // what the scan found then.
+  const planHold = r ? isTradePlanHold(r, reportOutdated ? undefined : { createdMs, nowMs }) : false;
+  // The scan stored a plan hold but the live countdown has since entered the
+  // release window: the stored hold wording is the scan's, not now's.
+  const holdSuperseded = r != null && !reportOutdated && !planHold && isTradePlanHold(r);
+  const scanTimePrefix = reportOutdated || holdSuperseded ? `At scan time (${scanTime}): ` : "";
   const levelLabel = r ? (planHold ? "TRADE PLAN HOLD" : r.riskLevel.replace(/_/g, " ")) : "";
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
@@ -285,7 +307,7 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
                   ? `At scan time (${scanTime}): ${planHold ? "trade plans held" : r.riskLevel === "NO_TRADE_WINDOW" ? "do not trade" : "caution"}`
                   : `⚠ ${planHold ? "Trade plans held" : r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}`}
               </div>
-              <p>{r.tradeWarning}</p>
+              <p>{holdSuperseded ? scanTimePrefix : ""}{r.tradeWarning}</p>
             </div>
           )}
           {r.calendarCoverage?.windowCovered === false && (
@@ -294,7 +316,7 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
             </div>
           )}
           <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300" data-testid="news-risk-summary">
-            {reportOutdated ? `At scan time (${scanTime}): ` : ""}{r.aiSummary}
+            {scanTimePrefix}{r.aiSummary}
           </p>
           {/* Driving headlines — the same severity-ranked headlines surfaced on
               the Global Market Heat card, shown only when risk is elevated/high

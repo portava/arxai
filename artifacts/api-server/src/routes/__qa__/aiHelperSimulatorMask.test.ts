@@ -209,6 +209,20 @@ test("/ai/session-plan withheld text names the role mask, not a missing feed", a
   for (const t of texts) {
     assert.doesNotMatch(t, /verified feed|isn't confirmed yet/i, `a feed will not un-hide a role-masked plan: ${t}`);
   }
-  assert.match(String(masked.summary), /simulator/i, "the text says the plan is built from simulator data");
-  assert.match(String(masked.summary), /operator/i, "the text says who may see simulator-based plans");
+  assert.match(String(masked.summary), /operator/i, "the text says who may see session plans");
+});
+
+// The plan is built from the scanner's latest sweep, whose rows carry their
+// own dataSource (LIVE_FEED, STALE_FEED, …); only the plan's own tag is a
+// hard-coded "SIMULATOR". The withheld text said the plan "is built from
+// simulator scanner data" — a source the code never checks, and false on a
+// feed-connected deployment. It now states only the rule the server applies:
+// session plans are shown only to platform operators.
+test("/ai/session-plan withheld text states the operator-only rule, not an unchecked data source", async () => {
+  const masked = await post("/api/ai/session-plan", "TESTER", {});
+  for (const k of ["summary", "marketConditions", "recommendedFirstTest", "preferredStrategy"]) {
+    const t = String(masked[k]);
+    assert.doesNotMatch(t, /built from simulator|simulator scanner data|simulator data/i, `names a data source the server never checked: ${t}`);
+    assert.match(t, /session plans are shown only to platform operators/i, t);
+  }
 });

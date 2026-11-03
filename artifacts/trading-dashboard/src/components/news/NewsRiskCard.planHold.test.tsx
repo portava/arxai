@@ -106,3 +106,53 @@ describe("NewsRiskCard critical-event trade-plan hold", () => {
     expect(screen.getByTestId("news-risk-warning").textContent).toContain("⚠ Do not trade");
   });
 });
+
+// Review finding: isTradePlanHold read only the stored scan-time offset, but a
+// report stays "current" for up to 5 minutes. A scan at T-19m of a CRITICAL
+// release stores a TRADE PLAN HOLD; 4.5 minutes later the card's own ticking
+// countdown is inside the ±15-minute release window, where the trading-path
+// news gate blocks — yet the card still showed a non-pulsing TRADE PLAN HOLD
+// and "Trade plans held" over text saying orders outside a plan are not held.
+// A current report is now classified by its live offset — only ever from the
+// hold into the live window, never the other way.
+describe("NewsRiskCard plan hold reaches the live release window", () => {
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+  const HOLD_AT_T19 = {
+    timeUntilEventMinutes: 19,
+    tradeWarning:
+      "TRADE PLAN HOLD: CRITICAL impact FOMC Rate Decision (USD) in 19m. ARX does not validate trade plans on EURUSD from 24 hours before a critical event until 2 hours after it; orders placed outside a trade plan are not held by this check. The release itself is not due for 19m.",
+    aiSummary: 'EURUSD: CRITICAL impact "FOMC Rate Decision" (USD) in 19m. Risk: TRADE PLAN HOLD.',
+  };
+
+  it("a current hold report whose live countdown is inside the release window reads NO TRADE WINDOW / Do not trade", async () => {
+    mount(report({ ...HOLD_AT_T19, createdAt: minutesAgo(4.5) }));
+    const level = await screen.findByTestId("news-risk-level");
+    expect(screen.queryByTestId("news-risk-outdated")).toBeNull();
+    expect(level.textContent).toBe("NO TRADE WINDOW");
+    expect(level.className).toContain("animate-pulse");
+    const warning = screen.getByTestId("news-risk-warning").textContent ?? "";
+    expect(warning).toContain("⚠ Do not trade");
+    expect(warning).not.toContain("Trade plans held");
+    // The stored hold wording is the scan's, not now's.
+    expect(warning).toMatch(/At scan time \(.*\): TRADE PLAN HOLD/);
+    expect(screen.getByTestId("news-risk-summary").textContent).toMatch(/^At scan time \(.*\): /);
+  });
+
+  it("a current hold report still outside the release window stays TRADE PLAN HOLD", async () => {
+    mount(report({ ...HOLD_AT_T19, createdAt: minutesAgo(2) }));
+    const level = await screen.findByTestId("news-risk-level");
+    expect(level.textContent).toBe("TRADE PLAN HOLD");
+    expect(screen.getByTestId("news-risk-warning").textContent).toContain("Trade plans held");
+  });
+
+  it("a stored live window is never softened into a plan hold by the ticking clock", async () => {
+    mount(report({
+      timeUntilEventMinutes: -12,
+      tradeWarning: "NO TRADE WINDOW: HIGH impact CPI y/y (USD) 12m ago. Trading blocked for this symbol while the no-trade window is active.",
+      createdAt: minutesAgo(4.5),
+    }));
+    const level = await screen.findByTestId("news-risk-level");
+    expect(level.textContent).toBe("NO TRADE WINDOW");
+    expect(screen.getByTestId("news-risk-warning").textContent).toContain("⚠ Do not trade");
+  });
+});

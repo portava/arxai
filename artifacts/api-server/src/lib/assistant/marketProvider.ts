@@ -111,7 +111,15 @@ export interface CandleResult {
   symbol: string;
   timeframe: string;
   candles: Candle[];
-  freshness: "REALTIME" | "DELAYED" | "UNAVAILABLE";
+  /**
+   * REALTIME: the newest bar is stamped within the real-time window (or, for
+   * Alpha Vantage, its own interval check passed). STALE: the shared candle
+   * rule calls the series stale, or its timestamps cannot be checked.
+   * UNCONFIRMED: not stale, but no real-time price was confirmed. The router
+   * maps only DELAYED to the provenance fact `delayed: true` and only
+   * REALTIME to `delayed: false`; STALE and UNCONFIRMED stay unknown (null).
+   */
+  freshness: "REALTIME" | "DELAYED" | "STALE" | "UNCONFIRMED" | "UNAVAILABLE";
   asOf: string | null;
   notes?: string;
 }
@@ -265,7 +273,10 @@ const providerLiveness = {
 };
 // STALE: a quote was served but its own timestamp is past the stale cutoff
 // (for example Friday's close read at the weekend).
-type ObservedDataFreshness = "REALTIME" | "DELAYED" | "STALE" | "UNAVAILABLE";
+// CANDLES_CURRENT: a candle fetch only — the shared trailing-interval rule
+// calls the series current (clean), but its newest bar is not stamped within
+// the real-time window, so no real-time price was confirmed. Never a quote.
+type ObservedDataFreshness = "REALTIME" | "CANDLES_CURRENT" | "DELAYED" | "STALE" | "UNAVAILABLE";
 type ObservedDataKind = "quote" | "candles";
 function markChecked() {
   const n = new Date().toISOString();
@@ -320,15 +331,18 @@ function quoteObservedRecently(nowMs: number): boolean {
 // real-time window. A series the shared candle rule calls stale (read on the
 // close basis the chart router uses for these candles), or whose timestamps
 // cannot be checked (unknown timeframe, unparseable or future-stamped bar), is
-// STALE; anything else is DELAYED. Yesterday's closed daily bar, or Friday's
-// bars read at the weekend, are therefore never "real-time".
+// STALE; one the rule calls delayed is DELAYED; one the rule calls clean is
+// CANDLES_CURRENT (current bars, no real-time price confirmed) — never
+// DELAYED, which the rule did not observe. Yesterday's closed daily bar, or
+// Friday's bars read at the weekend, are therefore never "real-time".
 function candleObservationFreshness(candles: readonly Candle[], timeframe: string, nowMs = Date.now()): ObservedDataFreshness {
   const newest = candles.length ? Date.parse(candles[candles.length - 1]!.t) : NaN;
   const intervalMs = candleIntervalMs(timeframe);
   if (!Number.isFinite(newest) || intervalMs == null || newest - nowMs > MAX_FUTURE_CLOCK_SKEW_MS) return "STALE";
   if (classifyQuoteFreshness(Math.max(0, nowMs - newest)).fresh) return "REALTIME";
   const series = classifyTrailingIntervals(trailingIntervalsFromOpen(newest - intervalMs, intervalMs, nowMs));
-  return series == null || series === "stale" ? "STALE" : "DELAYED";
+  if (series == null || series === "stale") return "STALE";
+  return series === "delayed" ? "DELAYED" : "CANDLES_CURRENT";
 }
 function markError(msg: string) {
   const n = new Date().toISOString();
@@ -1032,6 +1046,30 @@ function withCandleCache(p: MarketProvider): MarketProvider {
   };
 }
 
+// Twelve Data, Polygon and Finnhub stamp every candle result "REALTIME"
+// without looking at the bars. Age-check that claim from the newest bar on
+// every serve (cache hits included, never mutating the cached payload):
+// REALTIME only when the bar is stamped within the real-time window, STALE
+// when the shared rule says stale or the bars cannot be checked, otherwise
+// UNCONFIRMED. Only ever a downgrade; DELAYED / UNAVAILABLE pass through.
+const AGE_UNCHECKED_CANDLE_SOURCES = new Set(["twelve_data", "polygon", "finnhub"]);
+function candleResultFreshness(r: CandleResult, nowMs = Date.now()): CandleResult["freshness"] {
+  if (r.freshness !== "REALTIME" || r.candles.length === 0 || !AGE_UNCHECKED_CANDLE_SOURCES.has(r.source)) return r.freshness;
+  const observed = candleObservationFreshness(r.candles, r.timeframe, nowMs);
+  return observed === "REALTIME" ? "REALTIME" : observed === "STALE" ? "STALE" : "UNCONFIRMED";
+}
+function withCandleResultFreshness(p: MarketProvider): MarketProvider {
+  const inner = p.getCandles.bind(p);
+  return {
+    ...p,
+    async getCandles(symbol, timeframe, limit) {
+      const r = await inner(symbol, timeframe, limit);
+      const freshness = candleResultFreshness(r);
+      return freshness === r.freshness ? r : { ...r, freshness };
+    },
+  };
+}
+
 // Phase 22O — Hybrid composition. When both TwelveData (candles) and Finnhub
 // (quotes/news) keys are present, route per-feature: candles → TwelveData,
 // quotes/news → Finnhub. Status reports the composite as "twelve_data" since
@@ -1215,7 +1253,7 @@ export function getMarketProvider(): MarketProvider {
     chosen = compositeProvider(observedChain);
   }
 
-  const base = chosen.features.candles ? withCandleCache(chosen) : chosen;
+  const base = chosen.features.candles ? withCandleResultFreshness(withCandleCache(chosen)) : chosen;
   _provider = withTradingEconomicsCalendar(base);
   return _provider;
 }
@@ -1398,7 +1436,9 @@ export function getMarketStatus() {
     // DELAYED-only fallback as "Fresh"). `dataFreshness` reflects the
     // *quality* of the most recent successful payload, NOT whether the
     // provider responded. `dataSource` names the provider that produced it.
-    // Null until the first successful fetch is observed.
+    // Null until the first successful fetch is observed. CANDLES_CURRENT
+    // (candle fetches only): the bars are current under the shared rule but
+    // no real-time price was confirmed — neither REALTIME nor DELAYED.
     dataFreshness: providerLiveness.lastObservedDataFreshness,
     dataSource: providerLiveness.lastObservedDataSource,
     // When `dataFreshness` was observed (null until a quote quality is seen).
