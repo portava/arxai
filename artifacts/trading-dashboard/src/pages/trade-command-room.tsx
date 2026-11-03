@@ -33,7 +33,7 @@ import {
   AdvancedPanel, RiskGovernorCard, DecisionStreamCard,
 } from "@/components/dashboard/trade/TradePanels";
 import { resolveTradeRoomStatus, resolveTradeRoomRoute } from "@/components/dashboard/trade/tradeRoomStatus";
-import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
+import { describeBridgeObservation, sharedMasterRouteObserved } from "@/components/dashboard/cockpit/bridgeObservation";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -112,7 +112,8 @@ export default function TradeCommandRoom() {
   // Bridge connectivity from the shared master pool's heartbeat-derived
   // availability — never inferred from the account-mode blocker.
   const bridgeObs = describeBridgeObservation({
-    onSharedRoute: isOnSharedMasterRoute(tradingMode),
+    // No envelope: the route was not read, so the bridge says "not checked".
+    ...sharedMasterRouteObserved(tradingMode),
     allocationView: summaryQ.data?.allocationView ?? null,
     summaryLoading: summaryQ.isLoading,
   });

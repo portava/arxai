@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 import { calendarEventWhen, describeCalendarEnvelope } from "@/lib/calendarCoverage";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
-import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
+import { describeBridgeObservation, sharedMasterRouteObserved } from "./bridgeObservation";
 import { riskCapsStatus } from "@/lib/riskCapsStatus";
 
 const money = (n: number | null | undefined) =>
@@ -407,9 +407,12 @@ export function TradingPermissionSummaryCard() {
   const summaryQ = useGetMeSharedAccountSummary({
     query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
   });
-  const onSharedRoute = isOnSharedMasterRoute(mode);
+  // With no envelope the route was not read: the Bridge row says so rather
+  // than "your account does not trade through the shared master bridge".
+  const routeObs = sharedMasterRouteObserved(mode);
+  const onSharedRoute = routeObs.onSharedRoute === true;
   const bridge = describeBridgeObservation({
-    onSharedRoute,
+    ...routeObs,
     allocationView: summaryQ.data?.allocationView ?? null,
     summaryLoading: summaryQ.isLoading,
   });

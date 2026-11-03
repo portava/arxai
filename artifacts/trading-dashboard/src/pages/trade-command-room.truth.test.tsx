@@ -31,6 +31,7 @@ vi.mock("@/components/dashboard/trade/tradeRoomStatus", () => ({
 vi.mock("@/components/dashboard/cockpit/bridgeObservation", () => ({
   describeBridgeObservation: () => ({ kind: "not_applicable", label: "—" }),
   isOnSharedMasterRoute: () => false,
+  sharedMasterRouteObserved: () => ({ onSharedRoute: false, routeCheckFailed: false }),
 }));
 vi.mock("@/lib/riskCapsStatus", () => ({ riskCapsStatus: () => ({ label: "—" }) }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => undefined] }));

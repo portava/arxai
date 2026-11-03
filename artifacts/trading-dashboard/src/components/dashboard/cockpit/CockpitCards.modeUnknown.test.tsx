@@ -32,6 +32,7 @@ vi.mock("@workspace/api-client-react", () => ({
 
 import { TradingPermissionSummaryCard, AccountSnapshotCard } from "./CockpitCards";
 import { EnvironmentPill } from "./EnvironmentPill";
+import { describeBridgeObservation } from "./bridgeObservation";
 
 function unknownMode(over: Record<string, unknown> = {}) {
   return {
@@ -164,5 +165,27 @@ describe("Account snapshot Active pill — account-mode check failed", () => {
     h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live", cleanBlockedReason: "Live execution is paused by an operator." });
     render(<AccountSnapshotCard />);
     expect(pill()).toBe("Blocked");
+  });
+});
+
+// With the mode unknown the route was never read: isOnSharedMasterRoute is
+// false only because there is no envelope. The Bridge row's detail said "Your
+// account does not trade through the shared master bridge", an unobserved
+// fact (the user may be LIVE_SHARED).
+describe("Trading Permission Bridge row — account-mode check failed", () => {
+  it("says the route could not be checked, not that the account is off the shared bridge", () => {
+    render(<TradingPermissionSummaryCard />);
+    const row = screen.getByTestId("permission-bridge");
+    expect(rowValue("permission-bridge")).toBe("Not checked");
+    const title = row.getAttribute("title") ?? "";
+    expect(title).not.toMatch(/does not trade through/);
+    expect(title).toMatch(/account route could not be checked/);
+  });
+
+  it("the trade room hero uses the same route-aware observation", () => {
+    const obs = describeBridgeObservation({ onSharedRoute: null, routeCheckFailed: true, allocationView: null });
+    expect(obs.detail).not.toMatch(/does not trade through/);
+    expect(describeBridgeObservation({ onSharedRoute: null, allocationView: null })).toMatchObject({ state: "checking", label: "Checking" });
+    expect(describeBridgeObservation({ onSharedRoute: false, allocationView: null }).label).toBe("Not checked here");
   });
 });
