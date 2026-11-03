@@ -85,3 +85,27 @@ test("max risk per trade is reported as a realised-loss check, not risk at entry
   assert.match(v.message, /realised loss/i);
   assert.match(v.message, /risk at entry is not measured/i);
 });
+
+test("trailing drawdown is labelled closed-trade like total drawdown, and the note covers it", async () => {
+  const saved = {
+    trailingDrawdownEnabled: challenge.trailingDrawdownEnabled,
+    trailingDrawdownAmount: challenge.trailingDrawdownAmount,
+    trailingDrawdownType: challenge.trailingDrawdownType,
+  };
+  // Trailing drawdown on the same closed-trade running balance: the 1.48%
+  // closed loss breaches a 1% trailing limit; the two open positions are not in it.
+  challenge.trailingDrawdownEnabled = 1;
+  challenge.trailingDrawdownAmount = 0.01;
+  challenge.trailingDrawdownType = "TRAILING";
+  try {
+    const { summary, violations } = await evaluate();
+    const td = (violations as Array<{ type: string; message: string }>).filter((x) => x.type === "TRAILING_DRAWDOWN");
+    assert.ok(td.length > 0, "the trailing limit is breached");
+    for (const v of td) assert.match(v.message, /^Closed-trade trailing drawdown /);
+    assert.match(String(summary.drawdownNote), /trailing drawdown/i);
+    assert.match(String(summary.drawdownNote), /closed demo trades only/i);
+    assert.match(String(summary.drawdownNote), /2 open positions are not counted/);
+  } finally {
+    Object.assign(challenge, saved);
+  }
+});

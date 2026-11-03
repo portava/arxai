@@ -80,3 +80,25 @@ test("Ruby reports max risk per trade as a realised loss checked after close, no
   assert.match(w, /risk at entry is not measured/);
   assert.doesNotMatch(w, /^Trade #12 loss /);
 });
+
+test("Ruby labels trailing drawdown closed-trade too, with the page's note", async () => {
+  const saved = {
+    trailingDrawdownEnabled: challenge.trailingDrawdownEnabled,
+    trailingDrawdownAmount: challenge.trailingDrawdownAmount,
+    trailingDrawdownType: challenge.trailingDrawdownType,
+  };
+  challenge.trailingDrawdownEnabled = 1;
+  challenge.trailingDrawdownAmount = 0.01;
+  challenge.trailingDrawdownType = "TRAILING";
+  try {
+    const out = await getPropFirmModeStatus(7) as Record<string, any>;
+    const page = await pageSummary();
+    const td = ([...out.violations, ...out.warnings] as string[]).filter((m) => /trailing drawdown/i.test(m));
+    assert.ok(td.length > 0, "the trailing limit is breached");
+    for (const m of td) assert.match(m, /^Closed-trade trailing drawdown /, m);
+    assert.equal(out.progress.drawdownNote, page.drawdownNote);
+    assert.match(String(out.progress.drawdownNote), /trailing drawdown/i);
+  } finally {
+    Object.assign(challenge, saved);
+  }
+});

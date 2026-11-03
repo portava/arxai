@@ -100,6 +100,12 @@ export function PropExtendedRulesPanel({ challengeId, rules, disabled }: Props) 
               </select>
             </label>
           </div>
+          {/* The evaluator walks the same closed-trade running balance as
+              total drawdown; open positions are not marked to market. */}
+          <p className="mt-2 text-[10px] text-amber-400" data-testid="prop-trailing-drawdown-basis">
+            Measured from closed trades only: a running balance of realised P&amp;L. Open positions&rsquo;
+            floating profit or loss is not counted.
+          </p>
         </div>
 
         {/* Per-trade limits */}

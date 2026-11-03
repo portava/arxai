@@ -1290,9 +1290,9 @@ export async function getPropFirmModeStatus(userId: number) {
       const tdRef = ch.trailingDrawdownType === "TRAILING" ? peakBal : ch.startingBalance;
       trailingDdPct = tdRef > 0 ? (tdRef - runBal) / tdRef : 0;
       if (trailingDdPct > ch.trailingDrawdownAmount) {
-        violations.push(`Trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
+        violations.push(`Closed-trade trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
       } else if (trailingDdPct > ch.trailingDrawdownAmount * 0.8) {
-        warnings.push(`Trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
+        warnings.push(`Closed-trade trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
       }
     }
     // Max risk per trade + max position size (per-trade scan). The rule is
@@ -1423,7 +1423,7 @@ export async function getPropFirmModeStatus(userId: number) {
         // built from: closed trades only, with the open positions left out.
         drawdownBasis: "CLOSED_TRADES_ONLY" as const,
         openPositionsNotCounted: openCount,
-        drawdownNote: closedTradeDrawdownNote(openCount),
+        drawdownNote: closedTradeDrawdownNote(openCount, false, ch.trailingDrawdownEnabled === 1),
         daysWorked,
         daysSinceStart,
         openTradeCount: openCount,
