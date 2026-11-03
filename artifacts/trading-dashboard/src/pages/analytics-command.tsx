@@ -162,7 +162,7 @@ export default function AnalyticsCommandCenter() {
           {dd.isError ? (
             <LoadError what="The equity curve and drawdown" error={dd.error} />
           ) : dd.isPending ? (
-            <p className="p-3 text-center text-[11px] text-slate-500">Loading the equity curve…</p>
+            <Loading text="Loading the equity curve…" />
           ) : pnlNotMeasured && coverage ? (
             <Unavailable text={coverage.note} />
           ) : (
@@ -179,6 +179,8 @@ export default function AnalyticsCommandCenter() {
             <ConsistencyTrendCard snapshot={s} />
             {sess.isError
               ? <LoadError what="Session performance" error={sess.error} />
+              : sess.isPending
+                ? <Loading text="Loading session performance…" />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
                 : <SessionHeatmap data={(sess.data?.session ?? {}) as any} />}
@@ -186,12 +188,16 @@ export default function AnalyticsCommandCenter() {
 
           {emo.isError
             ? <LoadError what="The emotional trend" error={emo.error} />
+            : emo.isPending
+              ? <Loading text="Loading the emotional trend…" />
             : <EmotionalTrendGraph trend={emo.data?.trend ?? []} />}
 
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Strategy Analytics</h3>
             {strat.isError
               ? <LoadError what="Strategy analytics" error={strat.error} />
+              : strat.isPending
+                ? <Loading text="Loading strategy analytics…" />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={coverage.note} />
                 : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />}
@@ -219,6 +225,10 @@ function LoadError({ what, error }: { what: string; error: unknown }) {
       {what} could not be loaded. {errorMessage(error)}
     </p>
   );
+}
+// A section whose read has not answered yet: never an empty or zero state.
+function Loading({ text }: { text: string }) {
+  return <p className="p-3 text-center text-[11px] text-slate-500">{text}</p>;
 }
 function Stat({ id, label, v, tone }: { id: string; label: string; v: string; tone?: "emerald"|"red" }) {
   const t = tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";

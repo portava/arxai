@@ -154,3 +154,26 @@ describe("Analytics Command Center when a snapshot reload fails", () => {
     expect(notice.textContent).not.toMatch(/just computed/);
   });
 });
+
+// Regression: once the snapshot loaded, the session, emotional and strategy
+// sections rendered with fallback empty data while their own reads were still
+// pending: "$0 · 0 trades" per session, "No strategy data." and "No emotional
+// data yet." before anything had been read. Only the drawdown section waited.
+describe("Analytics Command Center while section reads are pending", () => {
+  it("sections whose reads have not answered say they are loading, not empty", async () => {
+    routes.snapshot = { status: 200, body: { snapshot: SNAPSHOT } };
+    const answered = vi.fn(globalThis.fetch);
+    const pending = new Set(["/api/analytics/session", "/api/analytics/strategy", "/api/analytics/emotional"]);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) =>
+      pending.has(url) ? new Promise<Response>(() => {}) : answered(url, init)));
+    renderPage();
+    await flush();
+    expect(screen.getByTestId("stat-trades")).toBeTruthy();
+    expect(screen.queryByTestId("session-heatmap")).toBeNull();
+    expect(screen.queryByText("No strategy data.")).toBeNull();
+    expect(screen.queryByText("No emotional data yet.")).toBeNull();
+    expect(screen.getByText(/Loading session performance/)).toBeTruthy();
+    expect(screen.getByText(/Loading strategy analytics/)).toBeTruthy();
+    expect(screen.getByText(/Loading the emotional trend/)).toBeTruthy();
+  });
+});
