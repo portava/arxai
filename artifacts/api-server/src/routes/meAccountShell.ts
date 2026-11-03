@@ -60,9 +60,10 @@ export type AccountShellResponse = {
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   // What the My Account badge shows: tradingStatus, overridden by this
   // user's own trading mode (DISABLED → RESTRICTED), the platform emergency
-  // stop when it halts this user's orders (demo / live → PAUSED) and an
-  // operator allocation freeze (→ PAUSED). Display only; the order paths
-  // enforce these themselves. The reason names what was checked.
+  // stop when it halts this user's orders (demo / live → PAUSED), an
+  // operator allocation freeze (→ PAUSED) and, for a live shared-master
+  // user, no allocation assigned (→ PAUSED). Display only; the order paths
+  // enforce these themselves. The reason names only the checks that ran.
   accountTradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   accountTradingStatusReason: string;
   // Money view — user's own slice only.
@@ -487,11 +488,19 @@ export async function computeAccountShell(
     const emergencyStopSentence = "The platform emergency stop is engaged" +
       (emergencyStop.reason ? ` (${emergencyStop.reason})` : "") +
       (emergencyStop.engagedAt ? ` since ${new Date(emergencyStop.engagedAt).toISOString()}` : "");
+    // An allocation is an operator's row assigning more than 0. The live
+    // pipeline refuses every entry without one (allocationGate:
+    // USER_ALLOCATION_NOT_ASSIGNED), so a shared-master user in LIVE mode with
+    // none is not shown ACTIVE. Demo and paper orders have no allocation gate.
+    const allocationAssigned = hasAlloc && totalAlloc > 0;
+    const sharedMaster = accountMode === "SHARED_MASTER_MT5";
+    const liveAllocationMissing = sharedMaster && perUserTradingMode === "LIVE" && !allocationAssigned;
     const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
       tradingStatus !== "ACTIVE" ? tradingStatus
         : perUserTradingMode === "DISABLED" ? "RESTRICTED"
         : emergencyStopHaltsUser ? "PAUSED"
         : fullFreeze ? "PAUSED"
+        : liveAllocationMissing ? "PAUSED"
         : "ACTIVE";
     const accountTradingStatusReason = (() => {
       // Unreadable settings fail closed to platform mode OFF: say they were
@@ -508,11 +517,26 @@ export async function computeAccountShell(
         return `${emergencyStopSentence}: new demo and live orders are halted on every account until an operator releases it.`;
       }
       if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
+      const noAllocationLine = "No allocation is assigned to you yet: live orders on the shared master account are refused until an operator assigns one.";
+      if (liveAllocationMissing) return noAllocationLine;
+      // Name only the checks that ran: shared-master approval applies to
+      // shared-master accounts, an allocation only when one is assigned.
+      const checked = ["the platform mode", "your trading mode"];
+      if (sharedMaster) checked.push("your shared-master approval");
+      if (allocationAssigned) checked.push("your allocation");
+      const checkedList = checked.length > 1
+        ? `${checked.slice(0, -1).join(", ")} and ${checked[checked.length - 1]}`
+        : checked[0]!;
+      const allowLine = `${checkedList.charAt(0).toUpperCase()}${checkedList.slice(1)} allow trading.`;
       const stopLine = emergencyStop.engaged
         ? `${emergencyStopSentence}: it halts new demo and live orders, not paper (simulated) trades.`
         : "The platform emergency stop is released.";
-      return "The platform mode, your trading mode, your approval and your allocation allow trading. " + stopLine + " " +
-        "The safety-core kill switch, your own kill switch and risk limits are checked on every order and are not part of this status.";
+      return [
+        allowLine,
+        ...(sharedMaster && !allocationAssigned ? [noAllocationLine] : []),
+        stopLine,
+        "The safety-core kill switch, your own kill switch and risk limits are checked on every order and are not part of this status.",
+      ].join(" ");
     })();
     const tradingModeLabel = (() => {
       switch (perUserTradingMode) {

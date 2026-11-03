@@ -15,6 +15,9 @@
 //     open positions was never included.
 //   * The badge read ACTIVE, "the platform ... allow[s] trading", while the
 //     platform emergency stop halted every new demo and live order.
+//   * The ACTIVE reason said "your allocation allow[s] trading" when no
+//     allocation was assigned (live shared-master entries are refused then)
+//     and named an approval check for accounts where none runs.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -304,4 +307,53 @@ test("unreadable platform settings are reported as not read, not as trading swit
   assert.equal(shell.accountTradingStatus, "RESTRICTED");
   assert.match(shell.accountTradingStatusReason, /could not be read/);
   assert.doesNotMatch(shell.accountTradingStatusReason, /switched off for the whole platform/);
+});
+
+test("no allocation assigned: the reason never says the allocation allows trading, and live shared-master users read PAUSED", async () => {
+  platformMode = "LIVE";
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_master_live_access = [{ masterLiveStatus: "APPROVED" }];
+  // Attached to the shared master, no allocation row: allocationPending.
+  tables.virtual_trading_accounts = [{ virtualBalance: 0, virtualEquity: 0, virtualMarginUsed: 0, virtualPnl: 0, status: "active", sharedMasterAccountId: 3 }];
+  tables.user_slot_allocation = [];
+
+  // LIVE: the live pipeline refuses every entry (USER_ALLOCATION_NOT_ASSIGNED).
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  const live = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(live.allocation.allocationPending, true);
+  assert.equal(live.tradingStatus, "ACTIVE", "the mode resolver's input is unchanged");
+  assert.equal(live.accountTradingStatus, "PAUSED");
+  assert.match(live.accountTradingStatusReason, /No allocation is assigned to you yet/);
+  assert.match(live.accountTradingStatusReason, /live orders on the shared master account are refused/);
+  assert.doesNotMatch(live.accountTradingStatusReason, /allocation allow/);
+
+  // An allocation row of 0 is not an assignment either.
+  tables.user_slot_allocation = [{ allocatedFunds: "0", allocationStatus: "active" }];
+  const zero = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(zero.accountTradingStatus, "PAUSED");
+
+  // DEMO: no allocation gate on demo orders, so not PAUSED — but no claim that
+  // an allocation was checked, and the reason says live orders need one.
+  tables.user_slot_allocation = [];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  const demo = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(demo.accountTradingStatus, "ACTIVE");
+  assert.doesNotMatch(demo.accountTradingStatusReason, /your allocation/);
+  assert.match(demo.accountTradingStatusReason, /No allocation is assigned to you yet/);
+
+  // A demo user with no shared-master routing: no allocation applies, none is claimed.
+  accountRoutingMode = "USER_OWNED_MT5";
+  tables.virtual_trading_accounts = [];
+  const plain = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(plain.accountTradingStatus, "ACTIVE");
+  assert.doesNotMatch(plain.accountTradingStatusReason, /allocation/);
+  assert.doesNotMatch(plain.accountTradingStatusReason, /approval/, "no approval check runs for a demo account");
+
+  // Allocated and approved shared-master user: both are named as checked.
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  const allocated = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(allocated.accountTradingStatus, "ACTIVE");
+  assert.match(allocated.accountTradingStatusReason, /your shared-master approval and your allocation allow trading/);
 });

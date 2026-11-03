@@ -142,3 +142,24 @@ describe("My Account — measured figures only", () => {
     expect(screen.getByTestId("my-equity-note").textContent).toMatch(/Not marked to market/);
   });
 });
+
+describe("My Account — allocation pending", () => {
+  it("says what the missing allocation refuses (live shared-master orders), not that all trading is paused", async () => {
+    stub(shell((s) => {
+      s.accountMode = "SHARED_MASTER_MT5";
+      s.tradingMode = "DEMO";
+      s.allocation = {
+        ...s.allocation, totalAllocation: null, manualAllocation: null, aiSleeveAllocation: null,
+        availableCapacity: null, allocationPending: true,
+      };
+      s.accountTradingStatusReason = "The platform mode, your trading mode and your shared-master approval allow trading. " +
+        "No allocation is assigned to you yet: live orders on the shared master account are refused until an operator assigns one.";
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-allocation-pending")).toBeTruthy());
+    const text = screen.getByTestId("my-allocation-pending").textContent ?? "";
+    expect(text).not.toMatch(/Trading is paused/);
+    expect(text).toMatch(/live orders on the shared master account are refused until an allocation is assigned/i);
+    expect(screen.getByTestId("trading-status-badge").textContent).toBe("ACTIVE");
+  });
+});

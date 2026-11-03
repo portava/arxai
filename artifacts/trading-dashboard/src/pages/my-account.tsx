@@ -294,7 +294,10 @@ export default function MyAccountPage() {
             )}
           </CardContent>
         )}
-        {/* Attached to shared master but admin has not allocated yet. */}
+        {/* Attached to shared master but admin has not allocated yet. The
+            live pipeline refuses entries without an allocation
+            (USER_ALLOCATION_NOT_ASSIGNED); demo and paper orders have no
+            allocation gate, so this does not say all trading is paused. */}
         {s.allocation.allocationPending && (
           <CardContent className="pt-0">
             <div
@@ -303,7 +306,7 @@ export default function MyAccountPage() {
             >
               <Info className="h-3.5 w-3.5 mt-[2px] shrink-0" />
               <span>
-                Your shared bridge is attached, but an operator has not allocated capital to your account yet. Trading is paused until an allocation is assigned.
+                Your shared bridge is attached, but an operator has not allocated capital to your account yet. Live orders on the shared master account are refused until an allocation is assigned.
               </span>
             </div>
           </CardContent>
