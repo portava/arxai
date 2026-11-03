@@ -26,7 +26,9 @@ import {
   QUOTE_STALE_AFTER_MS,
   ASSISTANT_CANDLE_CACHE_TTL_MS,
   ASSISTANT_NEWS_CACHE_TTL_MS,
+  MAX_FUTURE_CLOCK_SKEW_MS,
 } from "../data/freshness.js";
+import { candleIntervalMs, classifyTrailingIntervals, trailingIntervalsFromOpen } from "@workspace/domain/market";
 
 export interface MarketQuote {
   symbol: string;
@@ -278,6 +280,12 @@ function markSuccess(observed?: { freshness?: ObservedDataFreshness; source?: st
   // Clear any previous error on a real success.
   providerLiveness.lastErrorMessage = null;
   providerLiveness.lastErrorAt = null;
+  // A candle observation never replaces a quote observation seen within the
+  // stale window: a quote carries its own timestamp, while a candle series
+  // does not say when its last price traded. Without this the badge followed
+  // whichever fetch ran last (a weekend STALE quote became "real-time" on the
+  // next candle fetch).
+  if (observed?.kind === "candles" && quoteObservedRecently(Date.parse(n))) return;
   // Record the per-payload honesty signal if the caller supplied one.
   // Defaults are intentionally NOT set here — callers that omit this
   // remain "REALTIME" only if a prior call set it; otherwise null.
@@ -299,6 +307,28 @@ function markQuoteObserved(freshness: ObservedDataFreshness, source: string | nu
   providerLiveness.lastObservedDataAt = new Date().toISOString();
   providerLiveness.lastObservedDataKind = "quote";
   if (source) providerLiveness.lastObservedDataSource = source;
+}
+function quoteObservedRecently(nowMs: number): boolean {
+  if (providerLiveness.lastObservedDataKind !== "quote" || !providerLiveness.lastObservedDataAt) return false;
+  const age = nowMs - Date.parse(providerLiveness.lastObservedDataAt);
+  return Number.isFinite(age) && age >= 0 && age <= QUOTE_STALE_AFTER_MS;
+}
+// Age-checks a candle payload before it is recorded as an observation. The
+// newest bar's `t` (bar close by this module's Candle contract; some providers
+// stamp the bar open) bounds the age of the newest price from above either way,
+// so REALTIME is recorded only when that bar is stamped within the quote
+// real-time window. A series the shared candle rule calls stale (read on the
+// close basis the chart router uses for these candles), or whose timestamps
+// cannot be checked (unknown timeframe, unparseable or future-stamped bar), is
+// STALE; anything else is DELAYED. Yesterday's closed daily bar, or Friday's
+// bars read at the weekend, are therefore never "real-time".
+function candleObservationFreshness(candles: readonly Candle[], timeframe: string, nowMs = Date.now()): ObservedDataFreshness {
+  const newest = candles.length ? Date.parse(candles[candles.length - 1]!.t) : NaN;
+  const intervalMs = candleIntervalMs(timeframe);
+  if (!Number.isFinite(newest) || intervalMs == null || newest - nowMs > MAX_FUTURE_CLOCK_SKEW_MS) return "STALE";
+  if (classifyQuoteFreshness(Math.max(0, nowMs - newest)).fresh) return "REALTIME";
+  const series = classifyTrailingIntervals(trailingIntervalsFromOpen(newest - intervalMs, intervalMs, nowMs));
+  return series == null || series === "stale" ? "STALE" : "DELAYED";
 }
 function markError(msg: string) {
   const n = new Date().toISOString();
@@ -484,7 +514,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
         markError(`candles ${tdSym}@${interval}: zero parsed numeric rows`);
         return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned values for ${tdSym} but none parsed as numeric.` };
       }
-      markSuccess({ freshness: "REALTIME", source: "twelve_data", kind: "candles" });
+      markSuccess({ freshness: candleObservationFreshness(candles, tf), source: "twelve_data", kind: "candles" });
       return { connected: true, source: "twelve_data", symbol: tdSym, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
     },
     async getLiveQuote(rawSymbol) {
@@ -586,7 +616,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       // Polygon free tier D1 bars are the latest closed daily bar — current
       // for end-of-day analysis. Intraday timeframes are usually empty/1-bar
       // and surface upstream as insufficient (the consumer decides).
-      markSuccess({ freshness: "REALTIME", source: "polygon", kind: "candles" });
+      markSuccess({ freshness: candleObservationFreshness(candles, tf), source: "polygon", kind: "candles" });
       return { connected: true, source: "polygon", symbol: fx.ticker, timeframe: tf, candles, freshness: "REALTIME", asOf: candles[candles.length - 1]!.t };
     },
     async getLiveQuote(rawSymbol) {
@@ -858,7 +888,7 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
       const url = `${base}?function=FX_INTRADAY&from_symbol=${pair.from}&to_symbol=${pair.to}&interval=${interval.name}&outputsize=compact&apikey=${encodeURIComponent(apiKey)}`;
       const payload = await httpJson(url);
       const result = parseAlphaFxCandles(symbol, tf, limit, payload);
-      if (result.candles.length) markSuccess({ freshness: result.freshness, source: "alpha_vantage", kind: "candles" });
+      if (result.candles.length) markSuccess({ freshness: candleObservationFreshness(result.candles, tf), source: "alpha_vantage", kind: "candles" });
       else markError(`alpha_vantage candles: ${providerFailureCode(payload) ?? "NO_DATA"}`);
       return result;
     },
