@@ -59,9 +59,10 @@ export type AccountShellResponse = {
   // allocation freeze, so it is not what the user-facing badge shows.
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   // What the My Account badge shows: tradingStatus, overridden by this
-  // user's own trading mode (DISABLED → RESTRICTED) and an operator
-  // allocation freeze (→ PAUSED). Display only; the order paths enforce
-  // these themselves. The reason names what was checked.
+  // user's own trading mode (DISABLED → RESTRICTED), the platform emergency
+  // stop when it halts this user's orders (demo / live → PAUSED) and an
+  // operator allocation freeze (→ PAUSED). Display only; the order paths
+  // enforce these themselves. The reason names what was checked.
   accountTradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   accountTradingStatusReason: string;
   // Money view — user's own slice only.
@@ -476,20 +477,42 @@ export async function computeAccountShell(
     // order guards (USER_TRADING_DISABLED) and an allocation freeze by the
     // live pipeline, so ACTIVE must not be shown over either.
     const fullFreeze = allocRow?.allocationStatus === "frozen" || Boolean(allocRow?.tradingFrozen);
+    // The platform emergency stop (global_trading_settings) halts new demo and
+    // live orders on every account; the paper simulator is not halted by it
+    // (platformStopForVenue). The Risk Governor enforces it on every order;
+    // here it is only reported, so ACTIVE is not shown while it halts this
+    // user's orders. tradingStatus (the mode resolver's input) is unchanged.
+    const emergencyStop = platform.switches.emergencyStop;
+    const emergencyStopHaltsUser = emergencyStop.engaged && perUserTradingMode !== "SIMULATED";
+    const emergencyStopSentence = "The platform emergency stop is engaged" +
+      (emergencyStop.reason ? ` (${emergencyStop.reason})` : "") +
+      (emergencyStop.engagedAt ? ` since ${new Date(emergencyStop.engagedAt).toISOString()}` : "");
     const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
       tradingStatus !== "ACTIVE" ? tradingStatus
         : perUserTradingMode === "DISABLED" ? "RESTRICTED"
+        : emergencyStopHaltsUser ? "PAUSED"
         : fullFreeze ? "PAUSED"
         : "ACTIVE";
     const accountTradingStatusReason = (() => {
+      // Unreadable settings fail closed to platform mode OFF: say they were
+      // not read, not that an operator switched trading off.
+      if (tradingMode === "DISABLED" && platform.switches.readable === false) {
+        return "The platform trading settings could not be read, so trading is treated as switched off until they can be.";
+      }
       if (tradingMode === "DISABLED") return "Trading is switched off for the whole platform.";
       if (tradingStatus === "WAITING_APPROVAL") return "Your shared-master access is waiting for operator approval.";
       if (tradingStatus === "PAUSED") return `Your shared-master access is ${String(approvalStatus).toLowerCase()}.`;
       if (tradingStatus === "RESTRICTED") return "Your shared-master access is risk-locked.";
       if (perUserTradingMode === "DISABLED") return "Your operator has not enabled trading on your account.";
+      if (emergencyStopHaltsUser) {
+        return `${emergencyStopSentence}: new demo and live orders are halted on every account until an operator releases it.`;
+      }
       if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
-      return "The platform mode, your trading mode, your approval and your allocation allow trading. " +
-        "Your kill switch and risk limits are checked on every order and are not part of this status.";
+      const stopLine = emergencyStop.engaged
+        ? `${emergencyStopSentence}: it halts new demo and live orders, not paper (simulated) trades.`
+        : "The platform emergency stop is released.";
+      return "The platform mode, your trading mode, your approval and your allocation allow trading. " + stopLine + " " +
+        "The safety-core kill switch, your own kill switch and risk limits are checked on every order and are not part of this status.";
     })();
     const tradingModeLabel = (() => {
       switch (perUserTradingMode) {

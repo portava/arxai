@@ -13,6 +13,8 @@
 //     the user's own mode was DISABLED or their allocation was frozen.
 //   * "My Equity" equalled My Balance for allocated users: floating P/L of
 //     open positions was never included.
+//   * The badge read ACTIVE, "the platform ... allow[s] trading", while the
+//     platform emergency stop halted every new demo and live order.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -28,6 +30,10 @@ mock.module("@workspace/db", { namedExports: { ...database, db: fake.db } });
 
 let platformMode = "SIMULATED";
 let accountRoutingMode = "USER_OWNED_MT5";
+type Stop = { engaged: boolean; reason: string | null; engagedAt: Date | null };
+const RELEASED: Stop = { engaged: false, reason: null, engagedAt: null };
+let emergencyStop: Stop = RELEASED;
+let switchesReadable = true;
 let connections: Row[] = [];
 let investor: Row | null = null;
 
@@ -39,7 +45,10 @@ const switchesMod = await import("../../lib/safety/platformSwitches.js");
 mock.module("../../lib/safety/platformSwitches.js", {
   namedExports: {
     ...switchesMod,
-    loadPlatformSettings: async () => ({ switches: { platformMode }, config: { accountRoutingMode } }),
+    loadPlatformSettings: async () => ({
+      switches: { platformMode, emergencyStop, readable: switchesReadable },
+      config: { accountRoutingMode },
+    }),
   },
 });
 const governanceMod = await import("../../lib/governance/effectiveGovernance.js");
@@ -75,6 +84,8 @@ beforeEach(() => {
   for (const k of Object.keys(tables)) delete tables[k];
   platformMode = "SIMULATED";
   accountRoutingMode = "USER_OWNED_MT5";
+  emergencyStop = RELEASED;
+  switchesReadable = true;
   connections = [];
   investor = null;
 });
@@ -249,4 +260,48 @@ test("allocated user's equity is balance plus live floating P/L, or not shown â€
   const demo = await computeAccountShell(USER);
   assert.equal(demo.allocation.equity, null);
   assert.match(demo.allocation.equityNote, /Not marked to market/);
+});
+
+test("the platform emergency stop is not hidden behind ACTIVE: demo and live users read PAUSED, paper users are told it does not halt them", async () => {
+  platformMode = "LIVE";
+  emergencyStop = { engaged: true, reason: "broker outage", engagedAt: new Date("2026-11-03T09:00:00.000Z") };
+
+  for (const mode of ["DEMO", "LIVE"]) {
+    tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: mode }];
+    const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+    // The platform/approval status the mode resolver reads is unchanged.
+    assert.equal(shell.tradingStatus, "ACTIVE");
+    assert.equal(shell.accountTradingStatus, "PAUSED", `${mode}: new ${mode.toLowerCase()} orders are halted by the stop`);
+    assert.match(shell.accountTradingStatusReason, /platform emergency stop is engaged/);
+    assert.match(shell.accountTradingStatusReason, /broker outage/);
+    assert.match(shell.accountTradingStatusReason, /2026-11-03T09:00:00\.000Z/);
+    assert.match(shell.accountTradingStatusReason, /new demo and live orders are halted/);
+    assert.doesNotMatch(shell.accountTradingStatusReason, /allow trading/);
+  }
+
+  // The stop does not halt the paper simulator (platformStopForVenue), so a
+  // paper user is not shown PAUSED â€” but the reason names the stop.
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "SIMULATED" }];
+  const paper = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(paper.accountTradingStatus, "ACTIVE");
+  assert.match(paper.accountTradingStatusReason, /platform emergency stop is engaged/);
+  assert.match(paper.accountTradingStatusReason, /not paper \(simulated\) trades/);
+
+  // Released: the reason says the stop was checked and is released.
+  emergencyStop = RELEASED;
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  const released = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(released.accountTradingStatus, "ACTIVE");
+  assert.match(released.accountTradingStatusReason, /platform emergency stop is released/);
+});
+
+test("unreadable platform settings are reported as not read, not as trading switched off by an operator", async () => {
+  platformMode = "OFF";
+  switchesReadable = false;
+  emergencyStop = { engaged: true, reason: "state unreadable", engagedAt: null };
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(shell.accountTradingStatus, "RESTRICTED");
+  assert.match(shell.accountTradingStatusReason, /could not be read/);
+  assert.doesNotMatch(shell.accountTradingStatusReason, /switched off for the whole platform/);
 });
