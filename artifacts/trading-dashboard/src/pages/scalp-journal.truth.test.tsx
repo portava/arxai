@@ -44,3 +44,27 @@ describe("Scalp Journal summary scope", () => {
     expect(screen.queryByTestId("scalp-summary-scope")).toBeNull();
   });
 });
+
+// Regression (review of 8152161c): fmtMoney was removed from scalpLabels while
+// this page still imported it, so a KNOWN or ESTIMATED entry threw on render
+// ("fmtMoney is not a function") and the production build failed. Journal P/L
+// is in the account's currency, which the entry does not carry: it must not be
+// printed with an assumed "$".
+describe("Scalp Journal P/L currency", () => {
+  it("a KNOWN realised P/L renders in the account currency, never an assumed $", () => {
+    h.entries = [{ ...entry(1), plQuality: "KNOWN", realizedPl: 12.4 }];
+    render(<ScalpJournalPage />);
+    const row = screen.getByTestId("scalp-journal-row");
+    expect(row.textContent).toContain("12.40 (account currency)");
+    expect(row.textContent).not.toMatch(/\$/);
+  });
+
+  it("an ESTIMATED P/L renders in the account currency and says it is estimated", () => {
+    h.entries = [{ ...entry(2), plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -3.5 }];
+    render(<ScalpJournalPage />);
+    const row = screen.getByTestId("scalp-journal-row");
+    expect(row.textContent).toContain("-3.50 (account currency)");
+    expect(row.textContent).toMatch(/estimated from the last reading/);
+    expect(row.textContent).not.toMatch(/\$/);
+  });
+});
