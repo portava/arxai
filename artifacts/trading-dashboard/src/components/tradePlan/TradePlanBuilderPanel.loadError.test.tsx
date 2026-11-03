@@ -102,6 +102,13 @@ describe("TradePlanBuilderPanel — plan list load failure", () => {
 });
 
 describe("TradePlanBuilderPanel — action failures are shown", () => {
+  // The editor is ready once the plan's values are in the form: that render
+  // follows the effects that hand the mutations the selected plan, so an
+  // action clicked earlier (as a fast test can) would act on no plan.
+  async function editorReady() {
+    await screen.findByDisplayValue("EURUSD");
+  }
+
   function mountWithPlan(failing: "PATCH" | "validate" | "cancel" | "create") {
     return mount((url, init) => {
       if (url.startsWith("/api/trade-plans?")) return new Response(JSON.stringify({ plans: [PLAN] }), { status: 200 });
@@ -115,6 +122,7 @@ describe("TradePlanBuilderPanel — action failures are shown", () => {
 
   it("a failed save says the changes were not saved", async () => {
     mountWithPlan("PATCH");
+    await editorReady();
     fireEvent.click(await screen.findByText("Save changes"));
     const err = await screen.findByTestId("trade-plan-action-error");
     expect(err.textContent).toMatch(/not saved/i);
@@ -123,6 +131,7 @@ describe("TradePlanBuilderPanel — action failures are shown", () => {
 
   it("a failed validation says the plan was not validated", async () => {
     mountWithPlan("validate");
+    await editorReady();
     fireEvent.click(await screen.findByRole("button", { name: "Validate plan" }));
     const err = await screen.findByTestId("trade-plan-action-error");
     expect(err.textContent).toMatch(/not validated/i);
@@ -130,6 +139,7 @@ describe("TradePlanBuilderPanel — action failures are shown", () => {
 
   it("a failed cancel says the plan was not cancelled", async () => {
     mountWithPlan("cancel");
+    await editorReady();
     fireEvent.click(await screen.findByText("Cancel plan"));
     const err = await screen.findByTestId("trade-plan-action-error");
     expect(err.textContent).toMatch(/not cancelled/i);
