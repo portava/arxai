@@ -135,7 +135,9 @@ test("a PARTIAL read with every gate open shows the gated line and names the unc
   assert.equal(p.verdict, "refused");
   assert.equal(p.dataFreshness.basis, "PARTIAL");
   assert.ok(!/^Verified M15 candles · Live feed/.test(p.dataFreshness.trustLine), p.dataFreshness.trustLine);
-  assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · mirror syncing · read gated");
+  // The feed is clean and current, so the gated line does not say "syncing":
+  // it names that a chart check did not pass (fix-6's gated wording).
+  assert.equal(p.dataFreshness.trustLine, "M15 candles clean · not every chart check passed · read gated");
   assert.ok(!/isn't confirmed yet/.test(p.refusalReason), p.refusalReason);
   assert.match(p.refusalReason, /seam between closed history and the live candle is not confirmed/);
 });
