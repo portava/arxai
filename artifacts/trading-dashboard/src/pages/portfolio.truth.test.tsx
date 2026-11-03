@@ -112,10 +112,18 @@ describe("portfolio page read failures", () => {
     expect(screen.queryByTestId("correlation-none")).toBeNull();
   });
 
-  it("an empty correlation result says so plainly", () => {
+  // Regression (review of 7b5fbc3c): detectCorrelationWarnings checks only
+  // three groups, so long EURUSD + short USDCHF (one USD bet) or long EURUSD +
+  // long EURGBP returns [] — and the page said "No correlated open rows in
+  // this source." An empty result is "no warning raised", with what was checked.
+  it("an empty correlation result says no warning was raised and names what was checked", () => {
     exposure = { ...base };
     render(<Portfolio />);
-    expect(screen.getByTestId("correlation-none").textContent).toMatch(/No correlated open rows in this source/);
+    const text = screen.getByTestId("correlation-none").textContent ?? "";
+    expect(text).not.toMatch(/No correlated open rows/);
+    expect(text).toMatch(/^No correlation warning was raised for the open rows in this source\./);
+    expect(text).toMatch(/Only three groups are checked: two or more long EURUSD, GBPUSD, AUDUSD or NZDUSD rows; two or more US30, NAS100 or SPX500 rows in the same direction as the first one open; and two or more JPY pairs in the same direction as the first one open\./);
+    expect(text).toMatch(/Other correlations, such as long EURUSD with short USDCHF, are not checked\.$/);
   });
 
   it("prints a negative P&L as -$12.00, not $-12.00", () => {

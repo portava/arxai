@@ -29,6 +29,14 @@ function currencyCoverageLine(totalOpen: number, splitCount: number): string {
     : `None of the ${totalOpen} open rows in this source is on one of the pairs this view splits by currency (${CURRENCY_SPLIT_PAIRS}), so their currency exposure is not shown.`;
 }
 
+// An empty correlation result means none of the server's three checks fired
+// (api-server lib/portfolio/exposure.ts detectCorrelationWarnings), not that
+// the open rows are uncorrelated: long EURUSD + short USDCHF, or long EURUSD +
+// long EURGBP, is never checked. The index and JPY checks compare each row
+// with the first such open row only.
+const CORRELATION_NONE_LINE =
+  "No correlation warning was raised for the open rows in this source. Only three groups are checked: two or more long EURUSD, GBPUSD, AUDUSD or NZDUSD rows; two or more US30, NAS100 or SPX500 rows in the same direction as the first one open; and two or more JPY pairs in the same direction as the first one open. Other correlations, such as long EURUSD with short USDCHF, are not checked.";
+
 // Sign before the symbol: "-$12.00", not "$-12.00".
 function money(v: number): string {
   return `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(2)}`;
@@ -128,7 +136,7 @@ export default function Portfolio() {
         </p>
       ) : null}
       {warns && warns.length === 0 ? (
-        <p className="text-sm text-muted-foreground" data-testid="correlation-none">No correlated open rows in this source.</p>
+        <p className="text-sm text-muted-foreground" data-testid="correlation-none">{CORRELATION_NONE_LINE}</p>
       ) : null}
       {warns && warns.length > 0 ? (
         <Card className="border-yellow-500/30 bg-yellow-500/5">
