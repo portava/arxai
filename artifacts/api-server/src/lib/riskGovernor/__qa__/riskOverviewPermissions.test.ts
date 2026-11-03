@@ -87,3 +87,51 @@ test("nothing reached and no halt: trading true, blockedBy empty", async () => {
   assert.equal(ov.permissions.trading, true);
   assert.deepEqual(ov.permissions.blockedBy, []);
 });
+
+// With a weekly cap set and the trading activity unreadable (no paper
+// account, or the closes read failed), weekly use was read as 0, so the
+// limit read "not reached", trading stayed true and the Rules tab said "not
+// blocked by ... loss limit". The Risk Governor hard-blocks every new order
+// in exactly this case (evaluateDiscipline: activity null with an activity
+// cap set). Unmeasured use is now null, and blockedBy names the block.
+test("activity unreadable with a weekly cap: weekly use is not 0, and new trades are blocked as the governor blocks them", async () => {
+  state.ctx = ctxWith({ activity: null });
+  const ov = await riskOverview(1, "PAPER");
+  assert.equal(ov.budget.weeklyRiskUsed, null, "not measured, not 0");
+  assert.equal(ov.budget.weeklyRiskRemaining, null);
+  assert.equal(ov.budget.weeklyRiskLimit, 300, "the cap itself is known");
+  assert.equal(ov.budget.weeklyRiskUsedUnmeasured, true);
+  assert.equal(ov.permissions.trading, false);
+  assert.deepEqual(ov.permissions.blockedBy, ["activity_unread"]);
+  assert.notEqual(ov.budget.riskStatus, "OK");
+  assert.match(String(ov.budget.riskStatusReason), /weekly risk used is unknown/);
+});
+
+test("activity unreadable with no activity cap set: not blocked on it (the governor does not block either)", async () => {
+  state.ctx = ctxWith({
+    activity: null,
+    limits: { ...LIMITS, discipline: { ...LIMITS.discipline, maxWeeklyLossAmount: null, maxConsecutiveLosses: null, cooldownAfterLossMinutes: null } },
+  });
+  const ov = await riskOverview(1, "PAPER");
+  assert.deepEqual(ov.permissions.blockedBy, []);
+  assert.equal(ov.budget.weeklyRiskUsedUnmeasured, false, "no weekly cap, so nothing unmeasured against one");
+});
+
+test("measured activity: weekly use is the measured figure", async () => {
+  state.ctx = ctxWith({ activity: { ...ACTIVITY, weekRealizedPnl: -50 } });
+  const ov = await riskOverview(1, "PAPER");
+  assert.equal(ov.budget.weeklyRiskUsed, 50);
+  assert.equal(ov.budget.weeklyRiskRemaining, 250);
+  assert.equal(ov.budget.weeklyRiskUsedUnmeasured, false);
+  assert.equal(ov.permissions.trading, true);
+});
+
+test("no active paper account: today's loss is not measured as 0", async () => {
+  state.ctx = ctxWith({ account: null, daily: { realizedPnl: 0, floatingPnl: null } });
+  const ov = await riskOverview(1, "PAPER");
+  assert.equal(ov.budget.dailyRiskUsed, null);
+  assert.equal(ov.budget.dailyRiskRemaining, null);
+  assert.equal(ov.budget.dailyRiskUsedUnmeasured, true);
+  assert.notEqual(ov.budget.riskStatus, "OK");
+  assert.match(String(ov.budget.riskStatusReason), /no active paper account/i);
+});

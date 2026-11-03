@@ -138,13 +138,19 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const ctx = await governorFacts(userId, venue);
   const L = ctx.limits;
   const equity = ctx.account?.equity ?? null;
-  const realized = ctx.daily.realizedPnl ?? 0;
+  // Today's loss is measured only from a computed realized P/L, and on PAPER
+  // only from an account that was read (with no active paper account the
+  // governor's realized figure is a 0 nobody measured). Unmeasured use is
+  // null, never 0.
+  const noPaperAccount = venue === "PAPER" && ctx.account == null;
+  const dailyMeasured = ctx.daily.realizedPnl != null && !noPaperAccount;
   const floatingLoss = ctx.daily.floatingPnl != null && ctx.daily.floatingPnl < 0 ? ctx.daily.floatingPnl : 0;
-  const dailyUsed = Math.max(0, -(realized + floatingLoss));
+  const dailyUsed = dailyMeasured ? Math.max(0, -(ctx.daily.realizedPnl! + floatingLoss)) : null;
   const caps = [L.maxDailyLossAmount, L.maxDailyLossPercent != null && equity != null ? (equity * L.maxDailyLossPercent) / 100 : null]
     .filter((v): v is number => v != null);
   const dailyLimit = caps.length ? Math.min(...caps) : null;
-  const weekUsed = Math.max(0, -(ctx.activity?.weekRealizedPnl ?? 0));
+  // This week's loss needs the activity facts; without them it is unknown.
+  const weekUsed = ctx.activity != null ? Math.max(0, -ctx.activity.weekRealizedPnl) : null;
   const wcaps = [L.discipline.maxWeeklyLossAmount, L.discipline.maxWeeklyLossPercent != null && equity != null ? (equity * L.discipline.maxWeeklyLossPercent) / 100 : null]
     .filter((v): v is number => v != null);
   const weeklyLimit = wcaps.length ? Math.min(...wcaps) : null;
@@ -164,13 +170,20 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const unknowns: string[] = [];
   if (dailyRiskLimitUnvalued) unknowns.push(`your ${L.maxDailyLossPercent}% daily loss cap cannot be valued because account equity is unknown`);
   if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
-  if (dailyCapSet && ctx.daily.realizedPnl == null) unknowns.push("today's realized P/L could not be computed, so daily risk used is unknown");
+  if (dailyCapSet && noPaperAccount) unknowns.push("no active paper account was read, so daily risk used is unknown");
+  else if (dailyCapSet && ctx.daily.realizedPnl == null) unknowns.push("today's realized P/L could not be computed, so daily risk used is unknown");
   if (weeklyCapSet && ctx.activity == null) unknowns.push("this week's trading activity could not be read, so weekly risk used is unknown");
   const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
-  const dailyReached = dailyLimit != null && dailyUsed >= dailyLimit;
-  const weeklyReached = weeklyLimit != null && weekUsed >= weeklyLimit;
+  const dailyReached = dailyLimit != null && dailyUsed != null && dailyUsed >= dailyLimit;
+  const weeklyReached = weeklyLimit != null && weekUsed != null && weekUsed >= weeklyLimit;
+  // The governor refuses every new order when the activity facts are
+  // unreadable and any cap that needs them is set (preTrade evaluateDiscipline).
+  const D = L.discipline;
+  const activityCapSet = D.maxTradesPerDay != null || D.maxWeeklyLossAmount != null || D.maxWeeklyLossPercent != null
+    || D.maxConsecutiveLosses != null || D.cooldownAfterLossMinutes != null;
+  const activityUnread = ctx.activity == null && activityCapSet;
   const status = halt.engaged || dailyReached || weeklyReached
-    ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
+    ? "BLOCK" : dailyLimit != null && dailyUsed != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   // What stops new trades, as this view measures it. A read model only: the
   // Risk Governor decides each order. trading is false whenever anything here
   // blocks, so it never says "trading" next to a BLOCK status.
@@ -178,21 +191,27 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     ...(halt.engaged ? ["stop_switch" as const] : []),
     ...(dailyReached ? ["daily_loss_limit" as const] : []),
     ...(weeklyReached ? ["weekly_loss_limit" as const] : []),
+    ...(activityUnread ? ["activity_unread" as const] : []),
   ];
   return {
     venue,
     preset: settings.riskPreset ?? null,
     limits: L,
     budget: {
-      dailyRiskLimit: dailyLimit != null ? r2(dailyLimit) : null, dailyRiskUsed: r2(dailyUsed),
-      dailyRiskRemaining: dailyLimit != null ? r2(dailyLimit - dailyUsed) : null,
-      weeklyRiskLimit: weeklyLimit != null ? r2(weeklyLimit) : null, weeklyRiskUsed: r2(weekUsed),
-      weeklyRiskRemaining: weeklyLimit != null ? r2(weeklyLimit - weekUsed) : null,
+      // *Used and *Remaining are null when the use was not measured (see the
+      // *RiskUsedUnmeasured flags), never 0 / the whole cap.
+      dailyRiskLimit: dailyLimit != null ? r2(dailyLimit) : null, dailyRiskUsed: dailyUsed != null ? r2(dailyUsed) : null,
+      dailyRiskRemaining: dailyLimit != null && dailyUsed != null ? r2(dailyLimit - dailyUsed) : null,
+      weeklyRiskLimit: weeklyLimit != null ? r2(weeklyLimit) : null, weeklyRiskUsed: weekUsed != null ? r2(weekUsed) : null,
+      weeklyRiskRemaining: weeklyLimit != null && weekUsed != null ? r2(weeklyLimit - weekUsed) : null,
       openRisk: r2(openRisk), openPositions: ctx.positions.length, equity, riskStatus: status,
       // Additive: null equity is unknown (no account read), not "none set";
       // an *Unvalued cap is configured as a percent but cannot be valued, so
       // a null (or amount-only) limit is not "no cap".
       equityKnown: equity != null, dailyRiskLimitUnvalued, weeklyRiskLimitUnvalued, riskStatusReason,
+      /** A daily / weekly cap is set but what was used against it could not be measured. */
+      dailyRiskUsedUnmeasured: dailyCapSet && dailyUsed == null,
+      weeklyRiskUsedUnmeasured: weeklyCapSet && weekUsed == null,
     },
     activity: ctx.activity ?? null,
     halt,
