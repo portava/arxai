@@ -70,7 +70,7 @@ describe("Trade Command Room — account mode still loading", () => {
 
 describe("Trade Command Room — a read envelope keeps its labels", () => {
   it("approved demo user: 'Demo' / 'Approved'", () => {
-    const s = resolveTradeRoomStatus({ isLiveShared: false, isDemo: true, isFrozen: false, canManualTrade: true, cleanBlockedReason: null, cleanModeLabel: "Demo Mode", envelope: {} }, obs);
+    const s = resolveTradeRoomStatus({ isLiveShared: false, isDemo: true, isFrozen: false, canManualTrade: true, cleanBlockedReason: null, cleanModeLabel: "Demo Mode", envelope: { userApprovalStatus: "APPROVED" } }, obs);
     expect(s.connStatus).toBe("Demo");
     expect(s.approval).toBe("Approved");
   });
@@ -112,5 +112,45 @@ describe("Trade Command Room — account-mode query paused (offline), no envelop
     expect(s.rgStatus).toEqual({ label: "Checking", tone: "warning" });
     expect(s.approval).toBe("Checking");
     expect(s.canTrade).toBe(false);
+  });
+});
+
+// userCanManualTrade is tradingStatus ACTIVE + no review + no blocker. An
+// APPROVED trader under the maintenance blocker, or with tradingMode
+// DISABLED, has canManualTrade false, and the Approval row read "Pending"
+// although the envelope's userApprovalStatus said APPROVED. The row now shows
+// the approval status that was read.
+describe("Trade Command Room — Approval row is the read approval status", () => {
+  const live = { isLiveShared: true, isDemo: false, isFrozen: false, cleanModeLabel: "Live (Shared Master MT5)" };
+
+  it("approved trader blocked by maintenance: 'Approved', with the block on the status rows", () => {
+    const s = resolveTradeRoomStatus({
+      ...live, canManualTrade: false,
+      cleanBlockedReason: "Live execution is currently paused for maintenance",
+      envelope: { userApprovalStatus: "APPROVED" },
+    }, obs);
+    expect(s.approval).not.toBe("Pending");
+    expect(s.approval).toBe("Approved");
+    expect(s.rgStatus.label).toBe("Trading blocked");
+    expect(s.canTrade).toBe(false);
+  });
+
+  it("approved trader whose trading mode is DISABLED (frozen): 'Approved', status 'Trading paused'", () => {
+    const s = resolveTradeRoomStatus({ ...live, isFrozen: true, canManualTrade: false, cleanBlockedReason: null, envelope: { userApprovalStatus: "APPROVED" } }, obs);
+    expect(s.approval).toBe("Approved");
+    expect(s.rgStatus.label).toBe("Trading paused");
+  });
+
+  it("names each other read status, and an unrecognised one as unknown", () => {
+    const approvalOf = (userApprovalStatus: string | undefined) =>
+      resolveTradeRoomStatus({ ...live, canManualTrade: false, cleanBlockedReason: null, envelope: { userApprovalStatus } }, obs).approval;
+    expect(approvalOf("NOT_APPROVED")).toBe("Not approved");
+    expect(approvalOf("NOT_REQUIRED")).toBe("Not required");
+    expect(approvalOf("SUSPENDED")).toBe("Suspended");
+    expect(approvalOf("RISK_LOCKED")).toBe("Risk locked");
+    expect(approvalOf("DISABLED")).toBe("Disabled");
+    expect(approvalOf("PENDING")).toBe("Pending");
+    expect(approvalOf("SOMETHING_NEW")).toBe("Unknown");
+    expect(approvalOf(undefined)).toBe("Unknown");
   });
 });
