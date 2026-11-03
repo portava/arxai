@@ -12,7 +12,11 @@ const u = (p: string) => `${BASE}${p}`;
 
 const POLL_MS = 5000;
 
-type Resp = { ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null };
+type Resp = {
+  ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null;
+  /** False when the server could not read the account's mode and filtered rows as PAPER. */
+  modeResolved?: boolean; modeScopeNote?: string | null;
+};
 
 // Lightweight in-card confirm dialogs. We do NOT use the existing
 // ClosePositionConfirmModal / StopLossTakeProfitEditor here because those are
@@ -72,6 +76,10 @@ export function PositionPickerPanel() {
   // raw reason token is never rendered to the user.
   const notLiveMode = data?.notLiveReason === "ACCOUNT_NOT_IN_LIVE_MODE";
   const hasLive = (data?.live?.length ?? 0) > 0;
+  // The server could not read the account's mode and filtered rows as PAPER.
+  // That is not "not in live mode" and not "no positions": the account may be
+  // live and hold positions, so the count and the empty copy are withheld.
+  const modeUnread = data?.modeResolved === false;
 
   const submitClose = async (pos: UnifiedPosition) => {
     if (!pos.brokerTicket) return;
@@ -124,7 +132,9 @@ export function PositionPickerPanel() {
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             My open positions
-            <Badge variant="outline" className="text-[10px]">{(data?.liveCount ?? 0) + (data?.demoCount ?? 0)}</Badge>
+            <Badge variant="outline" className="text-[10px]" data-testid="badge-open-positions-count">
+              {modeUnread && all.length === 0 ? "—" : (data?.liveCount ?? 0) + (data?.demoCount ?? 0)}
+            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -135,13 +145,19 @@ export function PositionPickerPanel() {
                 : `Positions could not be loaded: ${err}`}
             </div>
           )}
-          {!err && notLiveMode && !hasLive && (
+          {!err && modeUnread && all.length === 0 && (
+            <div data-testid="positions-mode-unread" className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200">
+              <div>{data?.modeScopeNote ?? "Your account's trading mode could not be read."}</div>
+              <div className="mt-0.5 text-[11px]">Positions were not loaded. Do not assume you are flat — check MT5 directly.</div>
+            </div>
+          )}
+          {!err && !modeUnread && notLiveMode && !hasLive && (
             <div data-testid="positions-not-live" className="rounded border border-zinc-700 bg-zinc-900/40 p-2 text-xs text-zinc-400">
               <div>You are not currently in live trading mode.</div>
               <div className="mt-0.5 text-[11px] text-zinc-500">Live positions will appear here when live mode is active.</div>
             </div>
           )}
-          {!err && all.length === 0 && !notLiveMode && (
+          {!err && all.length === 0 && !notLiveMode && !modeUnread && (
             <div data-testid="text-no-open-positions" className="text-xs text-zinc-500">
               You have no open demo or live positions right now.
             </div>
