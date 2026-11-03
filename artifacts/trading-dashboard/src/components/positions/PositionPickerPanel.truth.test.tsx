@@ -36,7 +36,9 @@ function row(patch: Partial<UnifiedPosition>): UnifiedPosition {
 }
 
 function body(live: UnifiedPosition[]) {
-  return JSON.stringify({ ok: true, live, demo: [], liveCount: live.length, demoCount: 0, notLiveReason: null });
+  // generatedAt: the server clock reading the verdicts were taken against (the
+  // server always sends it; here server and browser clocks agree).
+  return JSON.stringify({ ok: true, generatedAt: new Date().toISOString(), live, demo: [], liveCount: live.length, demoCount: 0, notLiveReason: null });
 }
 
 /** positions: a queue of responses for /api/me/positions/all ("fail" = network error). */

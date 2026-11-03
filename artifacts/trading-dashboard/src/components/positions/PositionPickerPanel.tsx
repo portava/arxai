@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { PositionSideCard, positionReportState, useNowMs, type UnifiedPosition } from "./PositionSideCard";
+import { PositionSideCard, positionReportState, useNowMs, type PositionReportClock, type UnifiedPosition } from "./PositionSideCard";
 import { resolveSafetyError } from "./safetyMessages";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -12,7 +12,11 @@ const u = (p: string) => `${BASE}${p}`;
 
 const POLL_MS = 5000;
 
-type Resp = { ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null };
+type Resp = {
+  ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null;
+  /** Server clock reading the rows' freshness verdicts were taken against. */
+  generatedAt?: string | null;
+};
 
 // Lightweight in-card confirm dialogs. We do NOT use the existing
 // ClosePositionConfirmModal / StopLossTakeProfitEditor here because those are
@@ -63,6 +67,14 @@ export function PositionPickerPanel() {
     void load();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, []);
+
+  // Report ages are computed on one clock at a time (server age at read +
+  // browser time since the answer arrived), never a server timestamp against
+  // this browser's clock.
+  const serverNowMs = data?.generatedAt ? Date.parse(data.generatedAt) : NaN;
+  const reportClock: PositionReportClock | undefined = loadedAt == null
+    ? undefined
+    : { receivedAtMs: loadedAt, serverNowMs: Number.isFinite(serverNowMs) ? serverNowMs : null };
 
   const all: UnifiedPosition[] = [...(data?.live ?? []), ...(data?.demo ?? [])];
   const selectedPos = all.find((p) => `${p.scope}:${p.brokerTicket}` === selected) ?? null;
@@ -149,7 +161,7 @@ export function PositionPickerPanel() {
           {all.map((p) => {
             const key = `${p.scope}:${p.brokerTicket}`;
             const isSel = key === selected;
-            const report = positionReportState(p, nowMs);
+            const report = positionReportState(p, nowMs, reportClock);
             const pnlClass = !report.confirmed || p.floatingPnl == null
               ? "text-zinc-400"
               : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300";
@@ -198,6 +210,7 @@ export function PositionPickerPanel() {
       {selectedPos && (
         <PositionSideCard
           position={selectedPos}
+          reportClock={reportClock}
           onClose={() => setSelected(null)}
           onCloseTrade={(pos) => setConfirm({ kind: "close", pos })}
           onModifySLTP={(pos) => setConfirm({ kind: "modify", pos, sl: pos.stopLoss?.toString() ?? "", tp: pos.takeProfit?.toString() ?? "" })}
