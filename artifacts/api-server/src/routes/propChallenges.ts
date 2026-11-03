@@ -112,6 +112,18 @@ interface Eval {
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
   resolvedStatus: "ACTIVE" | "PASSED" | "FAILED";
   failureReason: string | null;
+  /** Open paper positions at evaluation time. Their floating P&L is not on
+   *  the row and is not read, so drawdown / daily loss leave them out. */
+  openPositionsNotCounted: number;
+}
+
+/** Drawdown and daily loss are a running balance of realised P&L from
+ *  closed paper orders; open positions are not marked to market. */
+function closedTradeDrawdownNote(openPositions: number): string {
+  const base = "Drawdown and daily loss are measured from closed demo trades only.";
+  if (openPositions <= 0) return `${base} No positions were open when this was evaluated.`;
+  const n = openPositions === 1 ? "1 open position is" : `${openPositions} open positions are`;
+  return `${base} ${n} not counted, so their floating profit or loss is not in these figures.`;
 }
 
 async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
@@ -201,13 +213,13 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       dayRules.push("DAILY_LOSS");
       violations.push({
         type: "DAILY_LOSS", severity: "HARD",
-        message: `Daily loss ${(dayLossPct*100).toFixed(2)}% on ${date} exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`,
+        message: `Closed-trade daily loss ${(dayLossPct*100).toFixed(2)}% on ${date} exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`,
       });
       if (!hardFail) hardFail = "Daily loss limit exceeded";
     } else if (dayLossPct > ch.maxDailyLoss * 0.8) {
       violations.push({
         type: "DAILY_LOSS", severity: "WARN",
-        message: `Daily loss ${(dayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}% on ${date}`,
+        message: `Closed-trade daily loss ${(dayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}% on ${date}`,
       });
     }
 
@@ -220,7 +232,8 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       });
     }
 
-    // Drawdown from peak
+    // Drawdown from peak — of the realised (closed-trade) balance only; open
+    // positions are not marked to market here (see closedTradeDrawdownNote).
     runningBalance = endBal;
     peakBalance = Math.max(peakBalance, runningBalance);
     const ddPct = (peakBalance - runningBalance) / peakBalance;
@@ -229,12 +242,12 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       if (!hardFail) hardFail = "Max total drawdown exceeded";
       violations.push({
         type: "TOTAL_DRAWDOWN", severity: "HARD",
-        message: `Drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}% on ${date}`,
+        message: `Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}% on ${date}`,
       });
     } else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) {
       violations.push({
         type: "TOTAL_DRAWDOWN", severity: "WARN",
-        message: `Drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`,
+        message: `Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`,
       });
     }
 
@@ -368,6 +381,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     worstDayPct, worstDayDate, bestDayPnl: bestDayPnl === -Infinity ? 0 : bestDayPnl,
     consistencyTopShare, tradeCount: closed.length, daysSinceStart,
     days, violations, resolvedStatus, failureReason,
+    openPositionsNotCounted: openOrders.length,
   };
 }
 
@@ -520,6 +534,10 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
         maxTotalDrawdown: ch.maxTotalDrawdown,
         minTradingDays: ch.minTradingDays, maxTradingDays: ch.maxTradingDays,
         currentBalance: ch.startingBalance + ev.totalPnl,
+        // What the drawdown / daily-loss figures above are built from.
+        drawdownBasis: "CLOSED_TRADES_ONLY",
+        openPositionsNotCounted: ev.openPositionsNotCounted,
+        drawdownNote: closedTradeDrawdownNote(ev.openPositionsNotCounted),
       },
       days: ev.days,
       violations: ev.violations,

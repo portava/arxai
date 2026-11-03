@@ -29,6 +29,11 @@ interface EvalResp {
     tradeCount: number; profitTarget: number; maxDailyLoss: number;
     maxTotalDrawdown: number; minTradingDays: number; maxTradingDays: number;
     currentBalance: number;
+    /** Drawdown / daily loss are built from closed demo trades only. */
+    drawdownBasis?: "CLOSED_TRADES_ONLY";
+    /** Open positions left out of drawdown / daily loss (floating P&L not read). */
+    openPositionsNotCounted?: number;
+    drawdownNote?: string;
   };
   days: Array<{ tradeDate: string; dailyProfitLoss: number; tradesTaken: number; dailyLossPercent: number }>;
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
@@ -131,8 +136,8 @@ export default function PropChallengePage() {
               <PropChallengeProgressCard summary={evalQ.data.summary} />
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <PropProfitTargetMeter totalPct={evalQ.data.summary.totalPct} target={evalQ.data.summary.profitTarget} />
-                <PropDrawdownMeter ddPct={evalQ.data.summary.maxDrawdownPct} limit={evalQ.data.summary.maxTotalDrawdown} />
-                <PropDailyLossLimitCard worstPct={evalQ.data.summary.worstDayPct} worstDate={evalQ.data.summary.worstDayDate} limit={evalQ.data.summary.maxDailyLoss} />
+                <PropDrawdownMeter ddPct={evalQ.data.summary.maxDrawdownPct} limit={evalQ.data.summary.maxTotalDrawdown} openPositions={evalQ.data.summary.openPositionsNotCounted ?? null} />
+                <PropDailyLossLimitCard worstPct={evalQ.data.summary.worstDayPct} worstDate={evalQ.data.summary.worstDayDate} limit={evalQ.data.summary.maxDailyLoss} openPositions={evalQ.data.summary.openPositionsNotCounted ?? null} />
               </div>
               <PropRuleViolationFeed violations={evalQ.data.violations} />
               <PropChallengeCalendar days={evalQ.data.days} />
