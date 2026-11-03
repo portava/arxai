@@ -16,7 +16,11 @@
 // EA-reported flags (terminal, AlgoTrading, EnableLiveExecution, ReadOnlyMode,
 // clock drift) are current only while the bridge is fresh and the report is
 // recent; otherwise they read "last reported", with the report time.
-import { act, cleanup, render, screen } from "@testing-library/react";
+//
+// A refresh that fails keeps the last successful load on screen, but none of
+// it is current any more: EA-reported flags read "last reported", the
+// liveness badge reads "last known", and the error says the cards are old.
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -291,5 +295,39 @@ describe("EA health — EA-reported flags carry their report time", () => {
   it("no report time at all: flags say the time is unknown", async () => {
     await renderWith([reportRow({ liveness: "stale", capabilitiesReportedAt: null })]);
     expect(screen.getByTestId("ea-terminal-11").textContent).toMatch(/last reported yes · time unknown/);
+  });
+});
+
+describe("EA health — a failed refresh never leaves the last load looking current", () => {
+  it("after a failed poll, flags read last reported, the badge reads last known and the error says the cards are old", async () => {
+    const body = { ok: true, evaluatedAt: iso(0), counts: { total: 1, fresh: 1, stale: 0, offline: 0 }, rows: [reportRow()] };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => body } as Response)
+      .mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AdminEaHealthPage />);
+    await act(async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); });
+    expect(screen.getByTestId("ea-terminal-11").textContent).toBe("yes");
+    expect(screen.getByTestId("ea-liveness-11").textContent).toBe("FRESH");
+
+    fireEvent.click(screen.getByTestId("ea-health-refresh"));
+    await act(async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); });
+
+    const when = new Date(iso(2_000)).toLocaleString();
+    for (const id of ["ea-terminal-11", "ea-algo-11", "ea-live-11", "ea-readonly-11"]) {
+      const el = screen.getByTestId(id);
+      expect(el.textContent, id).not.toBe("yes");
+      expect(el.textContent, id).not.toBe("no");
+      expect(el.textContent, id).toMatch(/last reported (yes|no)/);
+      expect(el.textContent, id).toContain(when);
+      expect(el.className, id).not.toContain("text-success");
+    }
+    expect(screen.getByTestId("ea-inputs-asof-11").textContent).toMatch(/not current \(the latest refresh failed\)/);
+    expect(screen.getByTestId("ea-clock-drift-11").textContent).toMatch(/last reported/);
+    expect(screen.getByTestId("ea-liveness-11").textContent).toMatch(/last known/i);
+    expect(screen.getByTestId("ea-liveness-11").className).not.toContain("text-success");
+    const err = screen.getByTestId("ea-health-load-error");
+    expect(err.textContent).toContain("network down");
+    expect(err.textContent).toMatch(/not current/);
   });
 });

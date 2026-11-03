@@ -194,14 +194,19 @@ function heartbeatAgeText(row: HealthRow, evaluatedAt: string): string {
   return `${row.heartbeatAgeSeconds}s`;
 }
 
-function livenessBadge(l: HealthRow["liveness"]) {
+// `lastKnown`: the latest poll failed, so this is the liveness the server
+// reported at the last successful load, not the bridge's state now.
+function livenessBadge(l: HealthRow["liveness"], id: number, lastKnown: boolean) {
   const map: Record<string, string> = {
     fresh: "border-success/40 text-success",
     stale: "border-warning/40 text-warning",
     offline: "border-danger/40 text-danger",
     revoked: "border-border text-txt-secondary",
   };
-  return <Badge variant="outline" className={map[l]}>{l.toUpperCase()}</Badge>;
+  if (lastKnown) {
+    return <Badge variant="outline" className="border-border text-txt-muted" data-testid={`ea-liveness-${id}`}>last known: {l.toUpperCase()}</Badge>;
+  }
+  return <Badge variant="outline" className={map[l]} data-testid={`ea-liveness-${id}`}>{l.toUpperCase()}</Badge>;
 }
 
 function EaHealthInner() {
@@ -209,6 +214,8 @@ function EaHealthInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // A failed poll keeps the last successful load on screen (so the operator
+  // still sees something) but `error` then marks all of it as not current.
   async function load() {
     try {
       setLoading(true);
@@ -230,6 +237,10 @@ function EaHealthInner() {
     }, 10000);
     return () => clearInterval(id);
   }, []);
+
+  // The latest poll failed while an earlier load is still shown: nothing below
+  // is current (evaluatedAt is frozen at that earlier load).
+  const lastLoadOnly = error !== null && data !== null;
 
   const featureKeys = useMemo(() => {
     const set = new Set<string>();
@@ -253,6 +264,7 @@ function EaHealthInner() {
 
       {data && (
         <div className="flex gap-2 flex-wrap text-sm">
+          {lastLoadOnly && <Badge variant="outline" className="border-warning/40 text-warning">last successful load · {new Date(data.evaluatedAt).toLocaleString()}</Badge>}
           <Badge variant="outline">Total: {data.counts.total}</Badge>
           <Badge variant="outline" className="border-success/40 text-success">Fresh: {data.counts.fresh}</Badge>
           <Badge variant="outline" className="border-warning/40 text-warning">Stale: {data.counts.stale}</Badge>
@@ -261,13 +273,19 @@ function EaHealthInner() {
       )}
 
       {loading && !data && <Card><CardContent className="p-6 text-sm text-txt-secondary">Loading EA health…</CardContent></Card>}
-      {error && <Card><CardContent className="p-6 text-sm text-danger">{error}</CardContent></Card>}
+      {error && (
+        <Card data-testid="ea-health-load-error"><CardContent className="p-6 text-sm text-danger">
+          {data
+            ? <>The latest refresh failed ({error}). Everything below is from the last successful load (server time {new Date(data.evaluatedAt).toLocaleString()}) and is not current.</>
+            : <>EA health could not be loaded ({error}).</>}
+        </CardContent></Card>
+      )}
       {data && data.rows.length === 0 && (
         <Card><CardContent className="p-6 text-sm text-txt-secondary">No active MT5 bridges reporting.</CardContent></Card>
       )}
 
       {data?.rows.map((row) => {
-        const eaCurrent = eaReportIsCurrent(row, data.evaluatedAt);
+        const eaCurrent = !lastLoadOnly && eaReportIsCurrent(row, data.evaluatedAt);
         const id = row.connection.id;
         return (
         <Card key={row.connection.id} data-testid={`ea-health-row-${row.connection.id}`}>
@@ -275,7 +293,7 @@ function EaHealthInner() {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  {row.liveness === "fresh" ? <Wifi className="w-4 h-4 text-success" /> : <WifiOff className="w-4 h-4 text-txt-secondary" />}
+                  {row.liveness === "fresh" && !lastLoadOnly ? <Wifi className="w-4 h-4 text-success" /> : <WifiOff className="w-4 h-4 text-txt-secondary" />}
                   {row.connection.connectionName ?? `Connection ${row.connection.id}`}
                   <span className="text-xs text-txt-muted">user #{row.connection.userId ?? "—"}</span>
                 </CardTitle>
@@ -284,7 +302,7 @@ function EaHealthInner() {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {livenessBadge(row.liveness)}
+                {livenessBadge(row.liveness, row.connection.id, lastLoadOnly)}
                 <Badge variant="outline">EA v{row.eaVersion ?? "?"}</Badge>
                 <Badge variant="outline" className={row.accountType === "live" || row.accountType === "real" ? "border-danger/40 text-danger" : ""}>{(row.accountType ?? "unknown").toUpperCase()}</Badge>
               </div>
@@ -294,7 +312,7 @@ function EaHealthInner() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Heartbeat & connection</div>
-                <div className="flex justify-between" data-testid={`ea-heartbeat-age-${row.connection.id}`}><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) || heartbeatAgeText(row, data?.evaluatedAt ?? "").startsWith("unknown") ? "text-warning" : ""}>{heartbeatAgeText(row, data?.evaluatedAt ?? "")}</span></div>
+                <div className="flex justify-between" data-testid={`ea-heartbeat-age-${row.connection.id}`}><span className="text-txt-secondary">Heartbeat age</span><span className={lastLoadOnly || !isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) || heartbeatAgeText(row, data?.evaluatedAt ?? "").startsWith("unknown") ? "text-warning" : ""}>{heartbeatAgeText(row, data?.evaluatedAt ?? "")}{lastLoadOnly && " at the last successful load"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Last heartbeat</span><span>{row.connection.lastHeartbeatAt ? new Date(row.connection.lastHeartbeatAt).toLocaleString() : "never"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><ReportedTri v={row.eaInputs.terminalConnected} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-terminal-${id}`} /></div>
                 <div className="flex justify-between" data-testid={`ea-last-command-picked-${row.connection.id}`} title={lastCommandPickedText(row).note}><span className="text-txt-secondary">Last command picked</span><span>{lastCommandPickedText(row).value}</span></div>
@@ -306,7 +324,9 @@ function EaHealthInner() {
                 <div className={`text-[11px] ${eaCurrent ? "text-txt-muted" : "text-warning"}`} data-testid={`ea-inputs-asof-${id}`}>
                   {eaCurrent
                     ? <>EA-reported · as of {reportedWhen(row.capabilitiesReportedAt)}</>
-                    : <>EA-reported values are not current (bridge {row.liveness}) · last report {reportedWhen(row.capabilitiesReportedAt)}</>}
+                    : lastLoadOnly
+                      ? <>EA-reported values are not current (the latest refresh failed) · last report {reportedWhen(row.capabilitiesReportedAt)}</>
+                      : <>EA-reported values are not current (bridge {row.liveness}) · last report {reportedWhen(row.capabilitiesReportedAt)}</>}
                 </div>
                 <div className="flex justify-between"><span className="text-txt-secondary">AlgoTrading allowed</span><ReportedTri v={row.eaInputs.algoTradingAllowed} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-algo-${id}`} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">EnableLiveExecution</span><ReportedTri v={row.eaInputs.enableLiveExecution} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-live-${id}`} /></div>
