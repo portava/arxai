@@ -161,10 +161,14 @@ export function TradePlanBuilderPanel() {
   const create = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/trade-plans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw httpFailure(r.status);
       return r.json() as Promise<TradePlan>;
     },
-    onSuccess: (p) => { setActiveId(p.id); qc.invalidateQueries({ queryKey: ["trade-plans"] }); },
+    onSuccess: (p) => { setActiveId(p.id); },
+    // The server stores the new plan before its vault write, which can still
+    // fail (500), and a response can be lost after the insert: re-read the
+    // list on failure too, so a plan that was created is listed.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   const save = useMutation({
@@ -311,7 +315,9 @@ export function TradePlanBuilderPanel() {
         </button>
         {create.isError && (
           <p data-testid="trade-plan-create-error" role="alert" className="text-xs text-red-300">
-            A new plan was not created ({failureDetail(create.error)}).
+            {refusedBeforeChange(create.error)
+              ? `The server refused to create a plan (${failureDetail(create.error)}). No plan was created.`
+              : `Creating the plan failed (${failureDetail(create.error)}). ARX could not confirm whether a plan was created; check your plans once they reload.`}
           </p>
         )}
         {listFailed && (

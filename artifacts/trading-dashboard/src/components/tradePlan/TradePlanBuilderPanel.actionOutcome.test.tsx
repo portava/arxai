@@ -108,3 +108,54 @@ describe("TradePlanBuilderPanel — a 4xx is a refusal before any change", () =>
     expect(err.textContent).toMatch(/not validated/i);
   });
 });
+
+// POST /trade-plans inserts the DRAFT plan and then awaits the vault write,
+// which has no catch: a failed vault write answers 500 after the plan was
+// stored, and a lost response has the same effect. The create used to say "A
+// new plan was not created" and re-read the list only on success, so the plan
+// that was stored stayed unlisted.
+describe("TradePlanBuilderPanel — create", () => {
+  function mountCreate(answer: number | "network", stores: boolean) {
+    const plans = [{ ...PLAN }];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.startsWith("/api/trade-plans?")) return new Response(JSON.stringify({ plans }), { status: 200 });
+      if (url === "/api/trade-plans" && init?.method === "POST") {
+        if (stores) plans.unshift({ ...PLAN, id: 8, symbol: null });
+        if (answer === "network") throw new TypeError("Failed to fetch");
+        return new Response(JSON.stringify({ error: "Failed" }), { status: answer });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={qc}><TradePlanBuilderPanel /></QueryClientProvider>);
+  }
+
+  it("create 500 after the server stored the plan: could not confirm, and the plan list is re-read", async () => {
+    mountCreate(500, true);
+    await screen.findByTestId("trade-plan-status-7");
+    fireEvent.click(await screen.findByText("+ New trade plan"));
+    const err = await screen.findByTestId("trade-plan-create-error");
+    expect(err.textContent).toContain("HTTP 500");
+    expect(err.textContent).toMatch(/could not confirm whether a plan was created/i);
+    expect(err.textContent).not.toMatch(/not created/i);
+    await waitFor(() => expect(screen.getByTestId("trade-plan-status-8")).toBeTruthy());
+  });
+
+  it("create with the response lost in transit: could not confirm", async () => {
+    mountCreate("network", true);
+    fireEvent.click(await screen.findByText("+ New trade plan"));
+    const err = await screen.findByTestId("trade-plan-create-error");
+    expect(err.textContent).toMatch(/could not confirm whether a plan was created/i);
+    await waitFor(() => expect(screen.getByTestId("trade-plan-status-8")).toBeTruthy());
+  });
+
+  it("create 400: the server refused, no plan was created", async () => {
+    mountCreate(400, false);
+    fireEvent.click(await screen.findByText("+ New trade plan"));
+    const err = await screen.findByTestId("trade-plan-create-error");
+    expect(err.textContent).toContain("HTTP 400");
+    expect(err.textContent).toMatch(/refused/i);
+    expect(err.textContent).toMatch(/no plan was created/i);
+  });
+});
