@@ -507,3 +507,35 @@ test("a booked-basis refusal measured from the recorded peak keeps naming it, wi
   assert.equal(r.measured?.["peakSince"], hoursAgo(300).toISOString());
   assert.match(r.reason!, /That is 11% below its recorded peak of 10000 \(drawdown limit 10%\)\./);
 });
+
+test("when only the newest closes are counted, their booked figure is labelled as theirs, never as the week's (refusal and risk overview note)", async () => {
+  // US30 at 1 unit per lot. Oldest first: ten +5-point 1-lot wins six days
+  // ago (booked +5, +500 at the model, each), then 50 −1-point 1-lot losses
+  // (booked −1, −100 at the model, each). The whole week books 0 and counts
+  // 0; the newest 50 book −50 and count −5,000.
+  state.closes = [
+    ...Array.from({ length: 10 }, (_v, i) => indexClose(5, 1, hoursAgo(6 * 24 - i))),
+    ...Array.from({ length: 50 }, (_v, i) => indexClose(-1, 1, hoursAgo(1 + 2 * (49 - i)))),
+  ];
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_000 };
+  state.open = [];
+  fake = createFakeDb({});
+  const ctx = await buildRiskContext(intent, { paperAccountId: 3, facts: { quote: fxQuote, now: NOW } });
+  assert.equal(ctx.activity?.weekRealizedPnl, -5_000);
+  assert.equal(ctx.activity?.bookedWeekRealizedPnl, -50, "the newest closes' booked total");
+  assert.equal(ctx.activity?.allWeekRealizedPnl, 0);
+  const { riskCountNoteFor } = await import("../riskProfile.js");
+  const note = riskCountNoteFor(ctx) ?? "";
+  assert.doesNotMatch(note, /last 7 days'\) realized paper P&L is counted as -\$5,000\.00 \(booked -\$50\.00\)/);
+  assert.match(note, /your newest 50 of this week's 60 closes are counted as -\$5,000\.00 \(those closes booked -\$50\.00\)/);
+  assert.match(note, /because they lost more than all of this week's closes, which net \$0\.00/);
+  LIMITS.discipline.maxWeeklyLossAmount = 500;
+  try {
+    const res = await enforcePreTradeRisk(intent, { paperAccountId: 3, facts: { quote: fxQuote, now: NOW }, preview: true });
+    const d = rule(res, "trading_discipline");
+    assert.equal(d.outcome, "BLOCK");
+    assert.match(d.reason!, /this week's loss 5000 \(paper risk count, [^;]+; your newest 50 closes booked -50\) \(counted from your newest 50 of this week's 60 closes, since [^;]+; all of this week's closes net 0\) reached your weekly cap of 500/);
+  } finally {
+    LIMITS.discipline.maxWeeklyLossAmount = null;
+  }
+});

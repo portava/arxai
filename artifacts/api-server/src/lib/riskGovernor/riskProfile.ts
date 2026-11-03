@@ -332,9 +332,15 @@ export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account"> &
     parts.push(`today's realized paper P&L is counted as ${usd(ctx.daily.realizedPnl)} (booked ${usd(booked)})`);
   }
   // The week's figure (weekly used, the weekly caps) is the risk count too.
+  // Both it and its booked figure cover the closes counted: the last 7 days',
+  // or, when weekNewestCloses is set, only the newest closes within the week
+  // (weekNewestClosesNote then gives the whole week's figure).
   const bookedWeek = ctx.activity?.bookedWeekRealizedPnl;
   if (bookedWeek != null && ctx.activity != null) {
-    parts.push(`this week's (the last 7 days') realized paper P&L is counted as ${usd(ctx.activity.weekRealizedPnl)} (booked ${usd(bookedWeek)})`);
+    const newest = ctx.activity.weekNewestCloses;
+    parts.push(newest != null
+      ? `your newest ${newest.counted} of this week's ${newest.ofTotal} closes are counted as ${usd(ctx.activity.weekRealizedPnl)} (those closes booked ${usd(bookedWeek)})`
+      : `this week's (the last 7 days') realized paper P&L is counted as ${usd(ctx.activity.weekRealizedPnl)} (booked ${usd(bookedWeek)})`);
   }
   const bookedFloating = ctx.daily.bookedFloatingPnl;
   if (bookedFloating != null && ctx.daily.floatingPnl != null) {

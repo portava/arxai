@@ -585,9 +585,11 @@ export interface TradingActivity {
   tradesToday: number;
   weekRealizedPnl: number;
   /**
-   * PAPER only, and only when it differs: the week's realized P/L as booked.
-   * weekRealizedPnl is then the paper risk count (the lower of the week's
-   * booked total and its total at the paper risk model).
+   * PAPER only, and only when it differs: the realized P/L as booked of the
+   * closes weekRealizedPnl counts (the last 7 days', or the newest closes
+   * within the week when weekNewestCloses is set). weekRealizedPnl is then
+   * the paper risk count (the lower of those closes' booked total and their
+   * total at the paper risk model).
    */
   bookedWeekRealizedPnl?: number;
   /**
@@ -1440,8 +1442,10 @@ function evaluateDiscipline(
     // Every venue: when the newest closes lost more than the whole week, the
     // figure counted is theirs; name it and the whole week's figure.
     const newest = act.allWeekRealizedPnl != null ? act.weekNewestCloses ?? null : null;
+    // The booked figure covers the closes counted: the newest closes' own
+    // when only they are counted, never the whole week's.
     const weekBooked = (act.bookedWeekRealizedPnl != null
-      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "")
+      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; ${newest ? `your newest ${newest.counted} closes booked` : "booked"} ${round(act.bookedWeekRealizedPnl)})` : "")
       + (newest
         ? ` (counted from your newest ${newest.counted} of this week's ${newest.ofTotal} closes, since ${newest.since.toISOString()}; all of this week's closes net ${round(act.allWeekRealizedPnl!)})`
         : "");
