@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   applyMutate: vi.fn(),
   stopMutate: vi.fn(),
   botMutate: vi.fn(),
+  lockMutate: vi.fn(),
   toast: vi.fn(),
 }));
 
@@ -35,7 +36,7 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => ({
   useGetPositionSize: () => ({ data: undefined }),
   useUpdateRiskSettings: () => ({ mutate: vi.fn(), isPending: false }),
   useApplyRiskMode: () => ({ mutate: h.applyMutate, isPending: false }),
-  useSetLiveLock: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetLiveLock: () => ({ mutate: h.lockMutate, isPending: false }),
   useEmergencyStop: () => ({ mutate: h.stopMutate, isPending: false }),
   useUpdateBotStatus: () => ({ mutate: h.botMutate, isPending: false }),
 }));
@@ -89,6 +90,7 @@ afterEach(() => {
   h.applyMutate.mockReset();
   h.stopMutate.mockReset();
   h.botMutate.mockReset();
+  h.lockMutate.mockReset();
   h.toast.mockReset();
 });
 
@@ -258,6 +260,23 @@ describe("a failed GET /risk/settings is not shown as Balanced defaults", () => 
       expect(row.textContent).not.toMatch(/OPEN|Balanced/);
       expect(row.querySelector(".text-success")).toBeNull();
     }
+  });
+
+  // Merged with fix-2's "only the stricter request is offered" (the Pause card
+  // does the same): with the lock unread there is no plain on / off toggle; the
+  // one button is the stricter "on (current state not read)", and it sends
+  // locked: true explicitly, never a toggle of an unread value (!undefined).
+  it("the live mode lock card does not say 'off' or offer a plain toggle when the lock was never read", () => {
+    renderPage({ tab: "emergency", settings: FAILED });
+    expect(screen.queryByText(/Live Mode Lock: off/)).toBeNull();
+    expect(screen.queryByText(/Live Mode Lock: on/)).toBeNull();
+    expect(screen.getByTestId("live-lock-title").textContent).toMatch(/Live Mode Lock: could not be loaded/);
+    expect(screen.queryByRole("button", { name: /^Turn live mode lock (on|off)$/ })).toBeNull();
+    const toggle = screen.getByTestId("live-lock-toggle") as HTMLButtonElement;
+    expect(toggle.textContent).toMatch(/Turn live mode lock on \(current state not read\)/);
+    fireEvent.click(toggle);
+    expect(h.lockMutate).toHaveBeenCalledTimes(1);
+    expect(h.lockMutate.mock.calls[0]![0]).toEqual({ data: { locked: true } });
   });
 });
 

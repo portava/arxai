@@ -169,7 +169,9 @@ export default function AdminTradingControlPage() {
     setSettings(s?.settings ?? null);
     setSettingsResp(s ?? null);
     setSettingsLoaded(true);
-    setSettingsReadAt(s ? new Date() : null);
+    // Stamped only when the settings row itself was read: a 200 with
+    // settings:null is a server-side read failure, not a read at this time.
+    setSettingsReadAt(s?.settings ? new Date() : null);
     // A failed users read is "could not be loaded", never zero users.
     if (u?.users) { setUsers(u.users); setUsersLoad("loaded"); }
     else { setUsers([]); setUsersLoad("failed"); }
