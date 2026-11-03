@@ -361,6 +361,37 @@ describe("the Emergency tab controls do not show a lock or pause state that was 
     expect(within(card).queryByRole("button", { name: /^Set Paused Flag$/ })).toBeNull();
   });
 
+  // React Query keeps the last good `data` when a refetch fails (for example
+  // the re-read after "Turn live mode lock on" returns 500 twice). That old
+  // value is not the current lock state: the card, the System Status row and
+  // the header badge say it could not be loaded, and only "on" is offered.
+  it("a settings read whose latest refetch failed is not shown as the current lock state", () => {
+    for (const failed of [{ isError: true }, { isError: false, failureCount: 1 }]) {
+      for (const liveLocked of [false, true]) {
+        renderPage({
+          tab: "emergency",
+          settings: { data: { ...BALANCED_APPLIED, liveLocked }, isLoading: false, ...failed } as Partial<Q>,
+          bot: { data: BOT },
+        });
+        const card = screen.getByTestId("live-lock-card");
+        expect(screen.getByTestId("live-lock-title").textContent).toMatch(/Live Mode Lock: could not be loaded/);
+        expect(card.textContent).not.toMatch(/Live Mode Lock: (on|off)/);
+        expect(openIcon(card)).toBeNull();
+        expect(within(card).getByTestId("live-lock-unread").textContent)
+          .toMatch(/latest read of your risk settings failed/);
+        expect(within(card).queryByRole("button", { name: /^Turn live mode lock (on|off)$/ })).toBeNull();
+        const toggle = within(card).getByRole("button", { name: /Turn live mode lock on \(current state not read\)/ });
+        fireEvent.click(toggle);
+        expect(h.lockMutate.mock.calls.at(-1)![0]).toEqual({ data: { locked: true } });
+        const row = screen.getByTestId("system-status-Live Locked");
+        expect(row.textContent).toMatch(/could not be loaded/);
+        expect(row.textContent).not.toMatch(/\bON\b|\bOFF\b/);
+        expect(screen.queryByTestId("live-lock-badge")).toBeNull();
+        cleanup();
+      }
+    }
+  });
+
   it("the unknown-state buttons send the stricter request: lock, and pause", () => {
     renderPage({ tab: "emergency", settings: FAILED, bot: FAILED });
     fireEvent.click(within(screen.getByTestId("pause-card")).getByRole("button", { name: /Set Paused Flag \(current state not read\)/ }));
