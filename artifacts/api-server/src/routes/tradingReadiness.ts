@@ -391,7 +391,18 @@ function buildSummary(
   checklist: ChecklistItem[],
 ): string {
   if (status === "LOCKED") {
-    return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
+    const coreKs = signals.safety?.killSwitchEngaged === true;
+    const emergency = signals.emergencyStopEngaged;
+    // A real stop halts orders; only then is this an operator's to clear.
+    if (coreKs || emergency) {
+      const who = coreKs && emergency ? "The kill switch and the platform emergency stop must be"
+        : coreKs ? "The kill switch must be" : "The platform emergency stop must be";
+      return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${who} cleared by an operator.`;
+    }
+    // Readiness-only blockers (news, a broker health verdict, a risk lock):
+    // this check changes no stop, lock or gate. The one thing a stored LOCKED
+    // does is make tradeDecision.orchestrate() hold, so say that too.
+    return `LOCKED — ${blockers.join("; ")}. This pre-session check is advisory: it recommends not trading until these are resolved, and it does not engage or release any stop, lock or order gate — order execution is decided by the safety layer. While it is your latest check, the AI trade decision counts it as a blocker and recommends HOLD.`;
   }
   if (status === "NOT_READY") {
     // Name the checks that actually failed. Broker / news / risk-lock failures

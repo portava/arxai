@@ -82,3 +82,48 @@ test("a read mode is still shown as read", () => {
   const out = evaluateReadiness(signals({ safety: { killSwitchEngaged: false, operationalMode: "SUGGEST_ONLY" } }), INPUT);
   assert.equal(out.checklist.find((c) => c.id === "safety")!.detail, "Operational mode: SUGGEST_ONLY");
 });
+
+// (c) LOCKED from a readiness-only blocker (CRITICAL news within 30 min, a
+//     broker health verdict, a risk lock) said "Resolve hard blockers before
+//     trading. This is a safety hold, not a punishment." right above the
+//     page's note that this check does not lock or unlock trading. The summary
+//     now says what the check does and does not do; "must be cleared by an
+//     operator" is kept only for the real stops.
+const contract = { contractName: "Mine", maxTradesPerDay: 3, maxDailyLossPercent: null, maxRiskPerTradePercent: null } as unknown as Signals["activeContract"];
+const review = { weekStart: new Date(Date.now() - 3 * 86_400_000) } as unknown as Signals["recentReview"];
+const criticalSoon = [{ eventTime: new Date(Date.now() + 10 * 60_000), impactLevel: "CRITICAL", eventName: "FOMC" }] as unknown as Signals["upcomingNews"];
+
+test("LOCKED by CRITICAL news within 30 min is not called a safety hold; it says the check is advisory", () => {
+  const out = evaluateReadiness(signals({ activeContract: contract, recentReview: review, upcomingNews: criticalSoon }), INPUT);
+  assert.equal(out.status, "LOCKED");
+  assert.match(out.aiSummary, /^LOCKED — CRITICAL news within 30 min\./);
+  assert.doesNotMatch(out.aiSummary, /safety hold/i);
+  assert.doesNotMatch(out.aiSummary, /must be cleared by an operator/i);
+  assert.doesNotMatch(out.aiSummary, /Resolve hard blockers/i);
+  assert.match(out.aiSummary, /advisory/i);
+  assert.match(out.aiSummary, /does not engage or release any stop, lock or order gate/);
+  // It also says what the stored LOCKED does: the AI trade decision holds on it.
+  assert.match(out.aiSummary, /AI trade decision counts it as a blocker and recommends HOLD/);
+});
+
+test("LOCKED by a broker health verdict reads the same advisory way", () => {
+  const out = evaluateReadiness(signals({
+    activeContract: contract, recentReview: review,
+    brokerLog: { ...(signals().brokerLog as object), status: "PRICE_FEED_DELAYED" } as unknown as Signals["brokerLog"],
+  }), INPUT);
+  assert.equal(out.status, "LOCKED");
+  assert.doesNotMatch(out.aiSummary, /safety hold/i);
+  assert.match(out.aiSummary, /advisory/i);
+});
+
+test("LOCKED by a real stop still says an operator must clear it", () => {
+  for (const patch of [
+    { safety: { killSwitchEngaged: true, operationalMode: "LIVE" } },
+    { emergencyStopEngaged: true },
+  ] as Array<Partial<Signals>>) {
+    const out = evaluateReadiness(signals({ activeContract: contract, recentReview: review, ...patch }), INPUT);
+    assert.equal(out.status, "LOCKED");
+    assert.match(out.aiSummary, /must be cleared by an operator/i);
+    assert.doesNotMatch(out.aiSummary, /safety hold/i);
+  }
+});
