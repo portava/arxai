@@ -18,7 +18,9 @@ const trade = (id: number, pnl: number | null) => ({
   strategyTag: null, setupGrade: null, reasonForEntry: null, notes: null, createdAt: "2026-10-27T09:00:00.000Z",
 });
 
-function stub(trades: unknown[], days: unknown[], totalPnl: number) {
+const EMPTY_INSIGHTS = { isEmpty: true, sampleSize: 0, insights: [], byStrategy: [], topSymbols: [], topMistakes: [], averages: { avgWin: 0, avgLoss: 0, expectancy: 0 }, bestDay: null, worstDay: null };
+
+function stub(trades: unknown[], days: unknown[], totalPnl: number, insights: unknown = EMPTY_INSIGHTS) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const u = String(url);
     const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b }) as Response;
@@ -27,7 +29,7 @@ function stub(trades: unknown[], days: unknown[], totalPnl: number) {
     if (u.endsWith("/api/me/performance-calendar")) return ok({ days, isEmpty: days.length === 0, source: "paper_trades" });
     if (u.endsWith("/api/me/performance-summary")) return ok({ totalTrades: trades.length, totalPnl, wins: 1, losses: 0, winRate: 50, isEmpty: false, source: "paper_trades" });
     if (u.endsWith("/api/me/ai-trade-reviews")) return ok({ reviews: [] });
-    if (u.endsWith("/api/me/performance-insights")) return ok({ isEmpty: true, sampleSize: 0, insights: [], byStrategy: [], topSymbols: [], topMistakes: [], averages: { avgWin: 0, avgLoss: 0, expectancy: 0 }, bestDay: null, worstDay: null });
+    if (u.endsWith("/api/me/performance-insights")) return ok(insights);
     if (u.endsWith("/api/me/coaching-plan")) return ok({ isEmpty: true, sampleSize: 0, topStrengths: [], topWeaknesses: [], topMistakes: [] });
     if (u.endsWith("/api/me/playbooks")) return ok({ playbooks: [] });
     return { ok: false, status: 404, json: async () => ({}) } as Response;
@@ -69,5 +71,30 @@ describe("My Demo Trades — P/L says what unit it is in", () => {
     await act(async () => { await Promise.resolve(); });
     expect(document.body.textContent).not.toContain("0.30000000000000004");
     expect(screen.getByTestId("paper-day-pnl-2026-10-27").textContent).toContain("+0.3");
+  });
+
+  // /me/performance-insights is computed from the same paper_trades.pnl
+  // (detectPatterns), so its averages, best day and per-strategy average are
+  // the same price-move × lots unit, not money.
+  it("the Insights tab labels avg win / loss, expectancy, best day and strategy avg as price move × lots", async () => {
+    stub([trade(5, 0.005)], [], 0.005, {
+      isEmpty: false, sampleSize: 4, insights: [], topSymbols: [], topMistakes: [],
+      byStrategy: [{ strategy: "breakout", count: 4, winRate: 50, avgPnl: 0.0025 }],
+      averages: { avgWin: 0.005, avgLoss: -0.003, expectancy: 0.001 },
+      bestDay: { date: "2026-10-27", pnl: 0.007 }, worstDay: null,
+    });
+    await renderPage();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /Insights/ }), { button: 0, ctrlKey: false });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId("insights-pnl-unit-note").textContent).toMatch(/not a money amount/i);
+    const win = screen.getByTestId("insights-avg-win");
+    expect(win.textContent).toMatch(/Avg win \(price move × lots\)/);
+    expect(win.textContent).toContain("+0.005");
+    const loss = screen.getByTestId("insights-avg-loss");
+    expect(loss.textContent).toMatch(/Avg loss \(price move × lots\)/);
+    expect(loss.textContent).toContain("-0.003");
+    expect(screen.getByTestId("insights-expectancy").textContent).toMatch(/Expectancy \(price move × lots\).*\+0\.001/);
+    expect(screen.getByTestId("insights-best-day").textContent).toMatch(/Best day \(price move × lots\).*2026-10-27 \(\+0\.007\)/);
+    expect(screen.getByTestId("insights-strategy-breakout").textContent).toMatch(/avg \+0\.0025 \(price move × lots\)/);
   });
 });

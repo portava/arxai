@@ -652,12 +652,14 @@ export default function MyPaperTradesPage() {
             </CardContent></Card>
           ) : (
             <>
+              {/* Computed from the same demo-trade P/L (price move × lots) as the Trades tab. */}
+              <p className="text-xs text-muted-foreground" data-testid="insights-pnl-unit-note">{PNL_UNIT_NOTE}</p>
               <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4"/>Performance Insights</CardTitle><CardDescription>Across {insights.sampleSize} trades · educational only</CardDescription></CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div><div className="text-muted-foreground">Avg win</div><div className="text-emerald-500 font-semibold">{insights.averages.avgWin}</div></div>
-                  <div><div className="text-muted-foreground">Avg loss</div><div className="text-red-500 font-semibold">{insights.averages.avgLoss}</div></div>
-                  <div><div className="text-muted-foreground">Expectancy</div><div className={`font-semibold ${insights.averages.expectancy >= 0 ? "text-emerald-500" : "text-red-500"}`}>{insights.averages.expectancy}</div></div>
-                  <div><div className="text-muted-foreground">Best day</div><div>{insights.bestDay ? `${insights.bestDay.date} (${insights.bestDay.pnl})` : "—"}</div></div>
+                  <div data-testid="insights-avg-win"><div className="text-muted-foreground">Avg win ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgWin)}`}>{formatPriceMovePnl(insights.averages.avgWin)}</div></div>
+                  <div data-testid="insights-avg-loss"><div className="text-muted-foreground">Avg loss ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgLoss)}`}>{formatPriceMovePnl(insights.averages.avgLoss)}</div></div>
+                  <div data-testid="insights-expectancy"><div className="text-muted-foreground">Expectancy ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.expectancy)}`}>{formatPriceMovePnl(insights.averages.expectancy)}</div></div>
+                  <div data-testid="insights-best-day"><div className="text-muted-foreground">Best day ({PNL_UNIT_SHORT})</div><div>{insights.bestDay ? `${insights.bestDay.date} (${formatPriceMovePnl(insights.bestDay.pnl)})` : "—"}</div></div>
                 </CardContent>
               </Card>
               {insights.insights.length > 0 && (
@@ -675,7 +677,7 @@ export default function MyPaperTradesPage() {
               {insights.byStrategy.length > 0 && (
                 <Card><CardHeader className="pb-2"><CardTitle className="text-base">By strategy</CardTitle></CardHeader>
                   <CardContent className="space-y-1 text-sm">{insights.byStrategy.map((s) => (
-                    <div key={s.strategy} className="flex justify-between"><span>{s.strategy}</span><span className="text-muted-foreground">{s.count} trades · {s.winRate}% win · avg {s.avgPnl}</span></div>
+                    <div key={s.strategy} className="flex justify-between" data-testid={`insights-strategy-${s.strategy}`}><span>{s.strategy}</span><span className="text-muted-foreground">{s.count} trades · {s.winRate}% win · avg {formatPriceMovePnl(s.avgPnl)} ({PNL_UNIT_SHORT})</span></div>
                   ))}</CardContent>
                 </Card>
               )}
