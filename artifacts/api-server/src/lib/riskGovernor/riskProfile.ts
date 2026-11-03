@@ -73,6 +73,12 @@ export interface PropFirmChallengeStart {
   equity: number;
   /** … and when that equity was last marked (paper_accounts.updated_at, ISO). */
   equityAsOf: string;
+  /**
+   * The paper account's balance at that moment (equity minus floating P/L).
+   * Absent on starts recorded before it was tracked: the floating P/L at the
+   * start is then not known.
+   */
+  balance?: number;
 }
 
 export const DEFAULT_PROP_FIRM: PropFirmConfig = {
@@ -110,7 +116,7 @@ export async function configurePropFirm(userId: number, patch: Partial<PropFirmC
   if (cfg.enabled && (opts.restart || !prev.enabled || !prev.challengeStart)) {
     const acct = await readActivePaperAccount(userId);
     cfg.challengeStart = acct
-      ? { at: new Date().toISOString(), paperAccountId: acct.id, equity: acct.equity, equityAsOf: acct.updatedAt.toISOString() }
+      ? { at: new Date().toISOString(), paperAccountId: acct.id, equity: acct.equity, equityAsOf: acct.updatedAt.toISOString(), balance: acct.currentBalance }
       : null;
   }
   const limits = cfg.enabled ? {
@@ -262,7 +268,10 @@ function uncheckedChallengeRules(
  * active paper account's stored equity minus its equity when the challenge
  * started, and today's drawdown counts paper P/L settled since the later of
  * the trading day's start and the challenge start, plus the current floating
- * loss. Equity is the account's last stored mark (equityAsOf).
+ * loss. On the day the challenge started, a floating loss already open at the
+ * start is in the start equity, so only floating loss beyond it counts (with
+ * no balance recorded at the start: the drop in equity since the start).
+ * Equity is the account's last stored mark (equityAsOf).
  *
  * A rule is scored (passed / failed) only when that measurement exists. With
  * no active paper account, no recorded challenge start, or a start on a
@@ -322,13 +331,22 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const since = new Date(Math.max(dayStart, Date.parse(start.at) || 0));
   const realizedToday = await sumPaperRealizedSince({ account: acct.id }, since);
   const floating = acct.equity - acct.currentBalance;
-  const dailyDD = Math.max(0, -(realizedToday + Math.min(0, floating)));
+  const earlierDays = !(Date.parse(start.at) >= dayStart);
+  // On the start day the loss is measured from the start: a floating loss
+  // already open then is in start.equity and is not a loss since the start.
+  // A start recorded without its balance has no known floating P/L at the
+  // start, so it falls back to the drop in equity since the start.
+  const startBalance = typeof start.balance === "number" && Number.isFinite(start.balance) ? start.balance : null;
+  const dailyDD = earlierDays
+    ? Math.max(0, -(realizedToday + Math.min(0, floating)))
+    : startBalance != null
+      ? Math.max(0, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
+      : Math.max(0, start.equity - acct.equity);
   const totalDD = Math.max(0, -profit);
   if (Math.abs(cfg.startingBalance - start.equity) >= 0.01) {
     notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `
       + `Profit, target and drawdown are measured in dollars from $${r2(start.equity)} and are not scaled.`);
   }
-  const earlierDays = !(Date.parse(start.at) >= dayStart);
   // Rules are checked only while the mode is on: while it is off nothing is
   // listed as passed or failed. A rule is passed only when all of it was
   // measured: today's loss is all of DAILY_DD only for a challenge that

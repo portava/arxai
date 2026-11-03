@@ -132,9 +132,12 @@ test("a default $10k paper account on the default $100k challenge is measured fr
 });
 
 test("profit counts only what happened after the challenge started", async () => {
-  state.acct = paper({ equity: 10_400, currentBalance: 10_400 });
+  // Since the start (no floating P/L then): one trade closed at -100 and an
+  // open one floats +200, so equity is 10,400 on a 10,200 balance. A start
+  // records its balance (balance-less legacy starts have their own test).
+  state.acct = paper({ equity: 10_400, currentBalance: 10_200 });
   state.realized = -100; state.realizedSince = [];
-  const start = { at: "2026-10-28T10:00:00.000Z", paperAccountId: 3, equity: 10_300, equityAsOf: "2026-10-28T09:59:00.000Z" };
+  const start = { at: "2026-10-28T10:00:00.000Z", paperAccountId: 3, equity: 10_300, equityAsOf: "2026-10-28T09:59:00.000Z", balance: 10_300 };
   state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_300, profitTarget: 1_000, challengeStart: start } };
   const s = await propFirmStatus(1, NOW);
   assert.equal(s.profitUsd, 100, "equity 10,400 against 10,300 at the start");
@@ -281,4 +284,75 @@ test("a challenge started today: today's loss is all of DAILY_DD, so DAILY_DD ca
     challengeStart: { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equity: 10_000, equityAsOf: "2026-10-28T07:59:00.000Z" } } };
   const s = await propFirmStatus(1, NOW);
   assert.deepEqual(s.passed, ["DAILY_DD", "TOTAL_DD_CURRENT"]);
+});
+
+// A floating loss already open when the challenge starts (Reset with a losing
+// paper position) is in the start equity. It was counted again as today's
+// drawdown: -$4,000 floating at the start read "Daily DD left $1000" and
+// WARNING with nothing lost since the start, and -$5,000 read FAILED at once.
+// The start now records the balance next to the equity, and on the start day
+// only floating loss beyond the floating loss at the start counts.
+test("Reset records the paper balance next to the equity at the start", async () => {
+  state.acct = paper({ equity: 6_000, currentBalance: 10_000 });
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, challengeStart: null } };
+  state.written = [];
+  const reset = await configurePropFirm(1, { enabled: true }, { restart: true });
+  assert.equal(reset.config.challengeStart!.equity, 6_000);
+  assert.equal(reset.config.challengeStart!.balance, 10_000);
+  assert.deepEqual((state.written.at(-1)!["propFirm"] as Record<string, unknown>)["challengeStart"], reset.config.challengeStart);
+});
+
+test("a floating loss already open at the challenge start is not today's drawdown", async () => {
+  state.limitsReadable = true;
+  state.realized = 0;
+  const startAt = { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equityAsOf: "2026-10-28T07:59:00.000Z" };
+  for (const floatingAtStart of [-4_000, -5_000]) {
+    state.acct = paper({ equity: 10_000 + floatingAtStart, currentBalance: 10_000 });
+    state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 10_000,
+      challengeStart: { ...startAt, equity: 10_000 + floatingAtStart, balance: 10_000 } } };
+    const s = await propFirmStatus(1, NOW);
+    assert.equal(s.profitUsd, 0);
+    assert.equal(s.dailyDrawdownRemainingUsd, 5_000, `floating ${floatingAtStart} at the start is not a loss since the start`);
+    assert.equal(s.status, "ACTIVE");
+    assert.deepEqual(s.failed, []);
+  }
+});
+
+test("on the start day, only loss beyond the start's floating loss counts; a close at the same loss is no new loss", async () => {
+  const startAt = { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equityAsOf: "2026-10-28T07:59:00.000Z" };
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 10_000,
+    challengeStart: { ...startAt, equity: 6_000, balance: 10_000 } } };
+  // Floating worsens from -4,000 to -5,500: 1,500 lost today.
+  state.realized = 0;
+  state.acct = paper({ equity: 4_500, currentBalance: 10_000 });
+  let s = await propFirmStatus(1, NOW);
+  assert.equal(s.dailyDrawdownRemainingUsd, 3_500);
+  // The position closes at -4,000: settled, but nothing new was lost.
+  state.realized = -4_000;
+  state.acct = paper({ equity: 6_000, currentBalance: 6_000 });
+  s = await propFirmStatus(1, NOW);
+  assert.equal(s.dailyDrawdownRemainingUsd, 5_000);
+  assert.equal(s.status, "ACTIVE");
+});
+
+test("a start recorded without its balance is measured from the start equity on the start day", async () => {
+  state.realized = 0;
+  state.acct = paper({ equity: 6_000, currentBalance: 10_000 });
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 10_000,
+    challengeStart: { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equity: 6_000, equityAsOf: "2026-10-28T07:59:00.000Z" } } };
+  let s = await propFirmStatus(1, NOW);
+  assert.equal(s.dailyDrawdownRemainingUsd, 5_000);
+  assert.equal(s.status, "ACTIVE");
+  state.acct = paper({ equity: 5_000, currentBalance: 10_000 });
+  s = await propFirmStatus(1, NOW);
+  assert.equal(s.dailyDrawdownRemainingUsd, 4_000);
+});
+
+test("on later days the current floating loss still counts toward today's drawdown", async () => {
+  state.realized = 0;
+  state.acct = paper({ equity: 6_000, currentBalance: 10_000 });
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 10_000,
+    challengeStart: { at: "2026-10-25T08:00:00.000Z", paperAccountId: 3, equity: 6_000, equityAsOf: "2026-10-25T07:59:00.000Z", balance: 10_000 } } };
+  const s = await propFirmStatus(1, NOW);
+  assert.equal(s.dailyDrawdownRemainingUsd, 1_000);
 });

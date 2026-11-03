@@ -140,7 +140,10 @@ export default function PropFirmMode() {
         <p className="text-xs text-muted-foreground" data-testid="prop-measured-from">
           Measured on paper account #{s.paperAccountId}: equity ${s.equityUsd} as of {when(s.equityAsOf)} (the account's last stored mark),
           against ${s.startEquityUsd} when the challenge started {when(s.challengeStartedAt)}.
-          {s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
+          {/* On the start day the server measures from the start: a floating loss already open then is in the start equity. */}
+          {s.dailyDrawdownSince && s.dailyDrawdownSince === s.challengeStartedAt
+            ? <> Today's drawdown is the loss since the challenge started; a floating loss already open at the start is not counted.</>
+            : s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
         </p>
       )}
       {s && s.status === "TARGET_REACHED" && (
