@@ -21,7 +21,10 @@ import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Trade } from "@workspace/db";
 
-type Quote = { symbol: string; timestamp: string; last?: number; bid?: number; ask?: number };
+type Quote = {
+  symbol: string; timestamp: string; last?: number; bid?: number; ask?: number;
+  source?: string | null; tickTimeObserved?: boolean;
+};
 // Quotes are judged against the 5 min quote budget, so priced fixtures carry a
 // time a few seconds ago (a fixed past date would be a last-known price).
 const QUOTE_AT = new Date(Date.now() - 2_000).toISOString();
@@ -212,4 +215,30 @@ test("the accessor's null (no provider served a quote) reads as no current quote
     nextQuoteIsNull = false;
     nextQuote = saved;
   }
+});
+
+// The reason is user copy (Live Trades card text box, close/trail 409): it
+// names the source in plain English, never the router's provider id.
+test("an unavailable-price reason names the source in plain English, not a raw provider id", async () => {
+  const oldAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+  const cases: Array<[string, RegExp]> = [
+    ["mt5_broker", /the MT5 broker feed/],
+    ["deriv_public", /the Deriv feed/],
+    ["deriv", /the Deriv feed/],
+    ["assistant_real", /the market-data provider/],
+    ["assistant_real:twelvedata", /the market-data provider/],
+  ];
+  for (const [source, plain] of cases) {
+    nextQuote = { symbol: "EURUSD", timestamp: oldAt, last: 1.101, source, tickTimeObserved: true };
+    const snap = await evaluateTrade(trade());
+    const reason = snap.priceUnavailableReason ?? "";
+    assert.ok(!reason.includes(source), `${source}: ${reason}`);
+    assert.doesNotMatch(reason, /mt5_broker|deriv_public|assistant_real/, reason);
+    assert.match(reason, plain, reason);
+    assert.equal(snap.primarySuggestion, reason);
+  }
+  nextQuote = { symbol: "EURUSD", timestamp: "", last: 1.101, source: "deriv_public" };
+  const unknownTime = await evaluateTrade(trade());
+  assert.doesNotMatch(unknownTime.priceUnavailableReason ?? "", /deriv_public/);
+  assert.match(unknownTime.priceUnavailableReason ?? "", /the Deriv feed/);
 });

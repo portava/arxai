@@ -70,6 +70,20 @@ function unpricedSnapshot(trade: Trade, reason: string): TradeManagementSnapshot
   };
 }
 
+/**
+ * Plain-English name for the router provider id a quote came from — the
+ * reason sentences are user copy (Live Trades card, close/trail refusals), so
+ * they never show a raw id such as "mt5_broker" or "deriv_public". Never
+ * "your": an unpinned MT5 quote may come from whichever bridge pushed last.
+ */
+function quoteSourceName(source: string | null | undefined): string | null {
+  if (typeof source !== "string" || !source.trim()) return null;
+  const s = source.trim().toLowerCase();
+  if (s.startsWith("mt5_broker")) return "the MT5 broker feed";
+  if (s.startsWith("deriv")) return "the Deriv feed";
+  return "the market-data provider";
+}
+
 export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapshot> {
   const quote = await getLatestQuote(trade.symbol);
   if (!quote || !isPrice(quote.last)) {
@@ -85,7 +99,7 @@ export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapsh
     hasPrice: true,
     observedAt: quote.timestamp,
     basis: quote.tickTimeObserved === true ? "producer_tick" : "server_receive",
-    sourceLabel: quote.source ?? null,
+    sourceLabel: quoteSourceName(quote.source),
   });
   if (obs.stale) {
     return unpricedSnapshot(
