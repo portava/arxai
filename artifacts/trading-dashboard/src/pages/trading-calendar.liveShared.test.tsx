@@ -41,7 +41,7 @@ describe("trading calendar — LIVE_SHARED", () => {
       return json({}, 404);
     });
     await waitFor(() => expect(screen.getByTestId("calendar-mode-note").textContent).toContain("not zero"));
-    expect(screen.queryByText(/from your demo trades/)).toBeNull();
+    expect(screen.queryByText(/from your (demo trades|simulated orders)/)).toBeNull();
     expect(screen.queryByText("0.00")).toBeNull();
     expect(screen.getByTestId("calendar-total-pnl").textContent).toMatch(/Not shown/);
     expect(screen.getByTestId("calendar-total-trades").textContent).toMatch(/Not shown/);

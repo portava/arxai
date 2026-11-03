@@ -34,8 +34,15 @@ function ymd(d: Date | string | null | undefined): string | null {
   return dt.toISOString().slice(0, 10);
 }
 
-function rateDay(netPnl: number, trades: number, winRate: number): "A" | "B" | "C" | "D" | "F" {
-  if (trades === 0) return "F";
+export type DayRating = "A" | "B" | "C" | "D" | "F";
+
+/**
+ * A grade for the trades that closed on a day. null when nothing closed that
+ * day (including days that have not happened yet): there is nothing to grade,
+ * and "F" would read as a failed day.
+ */
+function rateDay(netPnl: number, trades: number, winRate: number): DayRating | null {
+  if (trades === 0) return null;
   if (netPnl > 0 && winRate >= 70) return "A";
   if (netPnl > 0 && winRate >= 50) return "B";
   if (netPnl >= 0) return "C";
@@ -68,7 +75,8 @@ export interface DailyStats {
   worst_trade_id: number | null;
   avg_win: number;
   avg_loss: number;
-  profit_factor: number;
+  /** null when no losing trade closed that day (undefined: nothing to divide by). */
+  profit_factor: number | null;
   symbols_traded: string[];
   ai_decisions_count: number;
   paper_trades_opened: number;
@@ -77,7 +85,8 @@ export interface DailyStats {
   learning_events_created: number;
   mistake_tags: string[];
   top_lesson: string;
-  day_rating: "A" | "B" | "C" | "D" | "F";
+  /** null when no trade closed that day — not graded. */
+  day_rating: DayRating | null;
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
 }
 
@@ -113,7 +122,9 @@ export async function computeDailyStats(userId: number, date: string): Promise<D
   const winRate = closedToday.length > 0 ? (wins.length / closedToday.length) * 100 : 0;
   const avgWin = wins.length ? grossProfit / wins.length : 0;
   const avgLoss = losses.length ? grossLoss / losses.length : 0;
-  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 9.99 : 0);
+  // Gross profit ÷ gross loss. With no losing trade there is nothing to
+  // divide by: undefined (null), never an invented cap such as 9.99.
+  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : null;
   const sortedByPnl = [...closedToday].sort((a, b) => (b.profitLoss ?? 0) - (a.profitLoss ?? 0));
   const bestTrade = sortedByPnl[0]?.profitLoss ?? null;
   const worstTrade = sortedByPnl[sortedByPnl.length - 1]?.profitLoss ?? null;
@@ -178,7 +189,7 @@ export async function computeDailyStats(userId: number, date: string): Promise<D
     worst_trade_id: worstTradeId,
     avg_win: Number(avgWin.toFixed(2)),
     avg_loss: Number(avgLoss.toFixed(2)),
-    profit_factor: Number(profitFactor.toFixed(2)),
+    profit_factor: profitFactor == null ? null : Number(profitFactor.toFixed(2)),
     symbols_traded: symbolsTraded,
     ai_decisions_count: decisions.length,
     paper_trades_opened: openedToday.length,
@@ -360,6 +371,15 @@ export async function computeDecisionQuality(userId: number, range: RangeKey) {
   };
 }
 
+/**
+ * The ledger the Trading Calendar reads. It is not the demo-trade journal
+ * behind My Performance (paper_trades): the two record different trades and
+ * compute P&L differently, so their figures for the same date differ.
+ */
+export const CALENDAR_SOURCE = "PAPER_ORDERS" as const;
+export const CALENDAR_SOURCE_NOTE =
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+
 /** Build calendar grid for a month YYYY-MM. */
 export async function computeCalendarMonth(userId: number, month: string) {
   // month = "2026-05"
@@ -367,9 +387,15 @@ export async function computeCalendarMonth(userId: number, month: string) {
   const year = parseInt(yearStr ?? "0", 10);
   const m = parseInt(monthStr ?? "0", 10);
   if (!year || !m || m < 1 || m > 12) {
-    return { month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0 };
+    return {
+      month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0,
+      source: CALENDAR_SOURCE, source_note: CALENDAR_SOURCE_NOTE,
+    };
   }
   const daysInMonth = new Date(Date.UTC(year, m, 0)).getUTCDate();
+  // Days after today (UTC) have not happened: they are flagged, and are not
+  // counted as no-trade days.
+  const todayUtc = new Date().toISOString().slice(0, 10);
   const days = [];
   let totalPnl = 0;
   let totalTrades = 0;
@@ -380,14 +406,16 @@ export async function computeCalendarMonth(userId: number, month: string) {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const stats = await computeDailyStats(userId, dateStr);
+    const isFuture = dateStr > todayUtc;
     totalPnl += stats.net_pnl;
     totalTrades += stats.total_trades;
     if (stats.day_status === "WINNING_DAY") winningDays += 1;
     else if (stats.day_status === "LOSING_DAY") losingDays += 1;
     else if (stats.day_status === "BREAK_EVEN_DAY") breakEvenDays += 1;
-    else noTradeDays += 1;
+    else if (!isFuture) noTradeDays += 1;
     days.push({
       date: dateStr,
+      is_future: isFuture,
       net_pnl: stats.net_pnl,
       total_trades: stats.total_trades,
       wins: stats.wins,
@@ -409,7 +437,26 @@ export async function computeCalendarMonth(userId: number, month: string) {
     losing_days: losingDays,
     break_even_days: breakEvenDays,
     no_trade_days: noTradeDays,
+    source: CALENDAR_SOURCE,
+    source_note: CALENDAR_SOURCE_NOTE,
   };
+}
+
+/** A paper order whose P&L is a realized result (it closed with a fill). */
+function hasRealizedPnl(status: string | null | undefined): boolean {
+  return typeof status === "string" && (status.startsWith("CLOSED") || status.startsWith("PAPER_CLOSED"));
+}
+
+/**
+ * Why a day-detail row has no P&L. profit_loss is NOT NULL default 0 and is
+ * written only when an order closes, so on an open or cancelled order the 0
+ * is not a measurement.
+ */
+function noPnlNote(status: string | null | undefined): string | null {
+  if (hasRealizedPnl(status)) return null;
+  if (status === "OPEN") return "Still open — no realized P&L yet (unrealized P&L is not recorded on the order).";
+  if (status === "CANCELLED") return "Cancelled — no P&L.";
+  return "No realized P&L recorded for this order.";
 }
 
 /** Per-day detail: trades + debriefs + decisions + learning events. */
@@ -469,7 +516,9 @@ export async function computeDayDetail(userId: number, date: string) {
         symbol: t.symbol,
         action: t.direction,
         status: t.status,
-        pnl: Number((t.profitLoss ?? 0).toFixed(2)),
+        // null unless the order closed: an open or cancelled order's stored 0 is not a result.
+        pnl: hasRealizedPnl(t.status) ? Number((t.profitLoss ?? 0).toFixed(2)) : null,
+        pnl_note: noPnlNote(t.status),
         entry_price: t.entryPrice,
         exit_price: t.exitPrice,
         stop_loss: t.stopLoss,
@@ -557,7 +606,8 @@ export async function computeRangeSummary(userId: number, range: RangeKey) {
     net_pnl: Number(netPnl.toFixed(2)),
     gross_profit: Number(grossProfit.toFixed(2)),
     gross_loss: Number(grossLoss.toFixed(2)),
-    profit_factor: grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : (grossProfit > 0 ? 9.99 : 0),
+    // null with no losing trade (undefined), never an invented 9.99.
+    profit_factor: grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : null,
     avg_daily_pnl: Object.keys(byDay).length ? Number((netPnl / Object.keys(byDay).length).toFixed(2)) : 0,
     best_day: bestDay,
     worst_day: worstDay,
@@ -568,28 +618,52 @@ export async function computeRangeSummary(userId: number, range: RangeKey) {
   };
 }
 
-/** The summary reads only this many of the user's latest paper autopilot cycles. */
+/**
+ * When the summary is handed a window of the user's latest cycles (rather than
+ * every cycle started today), the window holds this many cycles.
+ */
 export const AUTOPILOT_SUMMARY_READ_LIMIT = 50;
 
-/** Read-only Build FF autopilot summary (last cycle, today's cycles). */
+/**
+ * Read-only Build FF autopilot summary (last cycle, today's cycles).
+ *
+ * "Today" is the UTC calendar day. Every cycle started today is counted: the
+ * counts used to be taken from the newest 50 cycles only, so at the default
+ * 60-second interval they stopped at about the last 50 minutes.
+ */
 export async function computeAutopilotSummary(userId: number) {
-  const recent = await db.select().from(autopilotCyclesTable)
+  const now = new Date();
+  const lastRows = await db.select().from(autopilotCyclesTable)
     .where(eq(autopilotCyclesTable.userId, userId))
-    .orderBy(desc(autopilotCyclesTable.id)).limit(AUTOPILOT_SUMMARY_READ_LIMIT);
-  return summarizeAutopilotCycles(recent, new Date());
+    .orderBy(desc(autopilotCyclesTable.id)).limit(1);
+  const todayStart = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const todayCycles = await db.select().from(autopilotCyclesTable)
+    .where(and(
+      eq(autopilotCyclesTable.userId, userId),
+      gte(autopilotCyclesTable.startedAt, todayStart),
+    ));
+  return summarizeAutopilotCycles(todayCycles, now, { last: lastRows[0] ?? null, wholeDay: true });
 }
 
 type AutopilotCycleRow = typeof autopilotCyclesTable.$inferSelect;
 
-export function summarizeAutopilotCycles(recent: AutopilotCycleRow[], now: Date) {
+/**
+ * Summarise autopilot cycles. `wholeDay: true` means `recent` is every cycle
+ * started today (UTC), so the counts are totals. Otherwise `recent` is a window
+ * of the latest AUTOPILOT_SUMMARY_READ_LIMIT cycles, and when every cycle in it
+ * started today the counts are lower bounds (`today_counts_capped`).
+ */
+export function summarizeAutopilotCycles(
+  recent: AutopilotCycleRow[],
+  now: Date,
+  opts: { last?: AutopilotCycleRow | null; wholeDay?: boolean } = {},
+) {
   const today = now.toISOString().slice(0, 10);
-  const todayCycles = recent.filter(c => ymd(c.startedAt) === today);
-  const last = recent[0] ?? null;
-  // "Today" counts come from the latest AUTOPILOT_SUMMARY_READ_LIMIT cycles
-  // only. When every cycle read started today, more of today's cycles may lie
-  // beyond the window, so the counts are lower bounds, not totals.
-  const todayCountsCapped =
-    recent.length >= AUTOPILOT_SUMMARY_READ_LIMIT && todayCycles.length === recent.length;
+  const wholeDay = opts.wholeDay === true;
+  const todayCycles = wholeDay ? recent : recent.filter(c => ymd(c.startedAt) === today);
+  const last = opts.last !== undefined ? opts.last : (recent[0] ?? null);
+  const todayCountsCapped = !wholeDay
+    && recent.length >= AUTOPILOT_SUMMARY_READ_LIMIT && todayCycles.length === recent.length;
   return {
     last_cycle: last ? {
       autopilot_cycle_id: last.autopilotCycleId,
@@ -602,15 +676,19 @@ export function summarizeAutopilotCycles(recent: AutopilotCycleRow[], now: Date)
       debriefs_triggered: last.debriefsTriggered,
       learning_events_triggered: last.learningEventsTriggered,
     } : null,
+    today_utc: today,
+    /** "Today" is the UTC calendar day. */
+    today_basis: "UTC" as const,
+    /** false: no autopilot cycle started today, so every "today" count is 0 because nothing ran. */
+    ran_today: todayCycles.length > 0,
     cycles_today: todayCycles.length,
     paper_trades_opened_today: todayCycles.reduce((a, c) => a + c.paperTradesOpened, 0),
     paper_trades_closed_today: todayCycles.reduce((a, c) => a + c.paperTradesClosed, 0),
     safety_blocks_today: todayCycles.reduce((a, c) => a + c.paperTradesRejected, 0),
-    /** True when the today counts may be undercounted by the read window. */
+    /** True when the today counts may be undercounted by the read window (never for a whole-day read). */
     today_counts_capped: todayCountsCapped,
-    cycles_read_limit: AUTOPILOT_SUMMARY_READ_LIMIT,
-    /** "Today" is the UTC calendar day. */
-    today_basis: "UTC" as const,
+    /** The read window's size, or null when every cycle started today was read. */
+    cycles_read_limit: wholeDay ? null : AUTOPILOT_SUMMARY_READ_LIMIT,
     mode: "PAPER_ONLY" as const,
     live_trading_allowed: false as const,
   };

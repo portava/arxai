@@ -17,6 +17,12 @@ export type IssueSeverity = "critical" | "high" | "medium" | "low";
 
 export interface ReconciliationIssue {
   id: string;
+  /**
+   * The key `id` is derived from (id = issueId(type, naturalKey)). An admin
+   * action on the issue must send it back; it cannot be rebuilt from the
+   * other fields for every type (pos:/att:/vac:/sma:/umla: use row ids).
+   */
+  naturalKey: string;
   type: ReconciliationIssueType;
   severity: IssueSeverity;
   userId: number | null;
@@ -59,6 +65,11 @@ export const RECONCILIATION_ISSUE_TYPES: readonly ReconciliationIssueType[] = [
 
 export function issueId(type: ReconciliationIssueType, naturalKey: string): string {
   return createHash("sha256").update(`${type}|${naturalKey}`).digest("hex").slice(0, 32);
+}
+
+/** The id and the natural key it is derived from, for an issue literal. */
+function keyed(type: ReconciliationIssueType, naturalKey: string): { id: string; naturalKey: string } {
+  return { id: issueId(type, naturalKey), naturalKey };
 }
 
 /** A detector that threw: its issue type is unknown for that run, not zero. */
@@ -131,7 +142,7 @@ async function detectBridgeMismatch(run: DetectorRun): Promise<ReconciliationIss
     const rows = cap((await listConnections({ statuses: ["ACTIVE"], modes: ["LIVE", "REAL"], order: "oldest" }))
       .filter((c) => !c.accountNumber), LIST_CAP);
     return rows.map((c) => ({
-      id: issueId("BRIDGE_MISMATCH", `conn:${c.id}`),
+      ...keyed("BRIDGE_MISMATCH", `conn:${c.id}`),
       type: "BRIDGE_MISMATCH" as const,
       severity: "high" as IssueSeverity,
       userId: c.userId,
@@ -151,7 +162,7 @@ async function detectOrphanBrokerPositions(run: DetectorRun): Promise<Reconcilia
   return safe(run, "orphan_broker", "ORPHAN_BROKER_POSITION", "critical", async (cap) => {
     const r = await readOrphanLivePositions(LIST_CAP + 1);
     return cap(r.rows, LIST_CAP).map((row) => ({
-      id: issueId("ORPHAN_BROKER_POSITION", `pos:${n(row.id)}`),
+      ...keyed("ORPHAN_BROKER_POSITION", `pos:${n(row.id)}`),
       type: "ORPHAN_BROKER_POSITION" as const,
       severity: "critical" as IssueSeverity,
       userId: n(row.user_id),
@@ -187,7 +198,7 @@ async function detectMissingAttribution(run: DetectorRun): Promise<Reconciliatio
         LIMIT ${LIST_CAP + 1}`,
     );
     return cap(r.rows, LIST_CAP).map((row) => ({
-      id: issueId("MISSING_ATTRIBUTION", `att:${n(row.id)}`),
+      ...keyed("MISSING_ATTRIBUTION", `att:${n(row.id)}`),
       type: "MISSING_ATTRIBUTION" as const,
       severity: "high" as IssueSeverity,
       userId: n(row.user_id),
@@ -217,7 +228,7 @@ async function detectCommandResultMismatch(run: DetectorRun): Promise<Reconcilia
         LIMIT ${LIST_CAP + 1}`,
     );
     return cap(r.rows, LIST_CAP).map((row) => ({
-      id: issueId("COMMAND_RESULT_MISMATCH", `cmd:${s(row.command_id)}`),
+      ...keyed("COMMAND_RESULT_MISMATCH", `cmd:${s(row.command_id)}`),
       type: "COMMAND_RESULT_MISMATCH" as const,
       severity: "critical" as IssueSeverity,
       userId: n(row.user_id),
@@ -246,7 +257,7 @@ async function detectUserAllocationMismatch(run: DetectorRun): Promise<Reconcili
         LIMIT ${LIST_CAP + 1}`,
     );
     return cap(r.rows, LIST_CAP).map((row) => ({
-      id: issueId("USER_ALLOCATION_MISMATCH", `vac:${n(row.id)}`),
+      ...keyed("USER_ALLOCATION_MISMATCH", `vac:${n(row.id)}`),
       type: "USER_ALLOCATION_MISMATCH" as const,
       severity: "high" as IssueSeverity,
       userId: n(row.user_id),
@@ -269,7 +280,7 @@ async function detectStaleHeartbeat(run: DetectorRun): Promise<ReconciliationIss
     const rows = cap((await listConnections({ statuses: ["ACTIVE"], order: "oldest" }))
       .filter((c) => !heartbeatIsOnline(classifyHeartbeatAt(c.lastHeartbeat, nowMs))), LIST_CAP);
     return rows.map((c) => ({
-      id: issueId("STALE_HEARTBEAT", `conn:${c.id}`),
+      ...keyed("STALE_HEARTBEAT", `conn:${c.id}`),
       type: "STALE_HEARTBEAT" as const,
       severity: "medium" as IssueSeverity,
       userId: c.userId,
@@ -301,7 +312,7 @@ async function detectBlockedRejected(run: DetectorRun): Promise<ReconciliationIs
   });
   for (const row of live) {
     out.push({
-      id: issueId("BLOCKED_REJECTED_COMMAND", `live:${s(row.command_id)}`),
+      ...keyed("BLOCKED_REJECTED_COMMAND", `live:${s(row.command_id)}`),
       type: "BLOCKED_REJECTED_COMMAND",
       severity: "medium",
       userId: n(row.user_id),
@@ -329,7 +340,7 @@ async function detectBlockedRejected(run: DetectorRun): Promise<ReconciliationIs
   });
   for (const row of demo) {
     out.push({
-      id: issueId("BLOCKED_REJECTED_COMMAND", `demo:${s(row.command_id)}`),
+      ...keyed("BLOCKED_REJECTED_COMMAND", `demo:${s(row.command_id)}`),
       type: "BLOCKED_REJECTED_COMMAND",
       severity: "low",
       userId: n(row.user_id),
@@ -357,7 +368,7 @@ async function detectMasterBridgeExposure(run: DetectorRun): Promise<Reconciliat
         LIMIT ${LIST_CAP + 1}`,
     );
     return cap(r.rows, LIST_CAP).map((row) => ({
-      id: issueId("MASTER_BRIDGE_EXPOSURE_WARNING", `sma:${n(row.id)}`),
+      ...keyed("MASTER_BRIDGE_EXPOSURE_WARNING", `sma:${n(row.id)}`),
       type: "MASTER_BRIDGE_EXPOSURE_WARNING" as const,
       severity: "high" as IssueSeverity,
       userId: null, bridgeConnectionId: null, commandId: null, brokerTicket: null, symbol: null,
@@ -386,7 +397,7 @@ async function detectLiveDemoModeMismatch(run: DetectorRun): Promise<Reconciliat
       .filter((row) => nonLive.has(n(row.bridge_connection_id)!))
       .map((row): RawRow => ({ ...row, bridge_mode: nonLive.get(n(row.bridge_connection_id)!) })), LIST_CAP);
     return flagged.map((row) => ({
-      id: issueId("LIVE_DEMO_MODE_MISMATCH", `cmd:${s(row.command_id)}`),
+      ...keyed("LIVE_DEMO_MODE_MISMATCH", `cmd:${s(row.command_id)}`),
       type: "LIVE_DEMO_MODE_MISMATCH" as const,
       severity: "critical" as IssueSeverity,
       userId: n(row.user_id),
@@ -415,7 +426,7 @@ async function detectApprovalRiskLockConflict(run: DetectorRun): Promise<Reconci
         LIMIT ${LIST_CAP + 1}`,
     );
     return cap(r.rows, LIST_CAP).map((row) => ({
-      id: issueId("USER_APPROVAL_RISK_LOCK_CONFLICT", `umla:${n(row.id)}`),
+      ...keyed("USER_APPROVAL_RISK_LOCK_CONFLICT", `umla:${n(row.id)}`),
       type: "USER_APPROVAL_RISK_LOCK_CONFLICT" as const,
       severity: "critical" as IssueSeverity,
       userId: n(row.user_id),

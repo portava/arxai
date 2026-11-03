@@ -44,7 +44,6 @@ import {
   analyticsSnapshotsTable,
   aiMentorSessionsTable,
   tradingReadinessChecksTable,
-  edgeDiscoveryReportsTable,
   vaultEventsTable,
 } from "@workspace/db";
 import { desc, eq, and } from "drizzle-orm";
@@ -56,6 +55,7 @@ import {
 } from "../lib/strategyEngine";
 import { getStatus as getSafetyStatus } from "../lib/safetyCore";
 import { platformStop, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
+import { loadLatestSlices } from "./edgeDiscovery.js";
 import { getMarketData, summarizeForAA, computeBlockers as computeMdBlockers } from "../lib/marketData/marketDataService.js";
 import type { MarketDataSnapshot, MarketDataBlocker } from "../lib/marketData/types.js";
 
@@ -181,6 +181,35 @@ export async function paperLosingStreak(userId: number, activity: { consecutiveL
     summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })), 0, new Date(), "paper_orders:user").consecutiveLosses,
     activity?.consecutiveLosses ?? 0,
   );
+}
+
+/**
+ * Per-symbol edge confidence signal. Reads the edge board's current picture
+ * (newest generation of each slice, legacy "PF 999" rows re-derived), so a
+ * past run or the no-losses marker never passes as today's edge.
+ */
+export async function readEdgeSignal(userId: number, symbol: string): Promise<{ signal: SignalScore; warning: string | null }> {
+  const slices = (await loadLatestSlices(userId)).filter((r) => r.symbol === symbol);
+  if (slices.length === 0) {
+    return { signal: { source: "edge", status: "MISSING", score: 0, detail: "No edge report for this symbol" }, warning: null };
+  }
+  const top = [...slices].sort((a, b) => b.confidenceScore - a.confidenceScore)[0]!;
+  const detail = `${top.edgeName} ${top.status} conf=${top.confidenceScore.toFixed(0)}`;
+  // A slice the edge board rates NO_EDGE / WEAK_EDGE is not a passing edge,
+  // whatever its confidence (confidence measures the sample, not the edge).
+  if (top.status === "NO_EDGE" || top.status === "WEAK_EDGE") {
+    return {
+      signal: { source: "edge", status: "WARN", score: 0, detail },
+      warning: `Edge for ${symbol}: your data shows ${top.status === "NO_EDGE" ? "no measurable edge" : "only a weak edge"} (${top.edgeName})`,
+    };
+  }
+  if (top.confidenceScore < 40) {
+    return {
+      signal: { source: "edge", status: "WARN", score: 0, detail },
+      warning: `Edge for ${symbol} is weak (${top.confidenceScore.toFixed(0)}/100)`,
+    };
+  }
+  return { signal: { source: "edge", status: "PASS", score: Math.min(10, top.confidenceScore / 10), detail }, warning: null };
 }
 
 // ── Core orchestration ──────────────────────────────────────────────────────
@@ -353,7 +382,7 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 7) AI confidence score from latest analytics snapshot + skill profile.
-  const [snapRows, skillRows, mentorRows, readinessRows, edgeRows] = await Promise.all([
+  const [snapRows, skillRows, mentorRows, readinessRows, edgeSignal] = await Promise.all([
     db.select().from(analyticsSnapshotsTable).where(eq(analyticsSnapshotsTable.userId, userId))
       .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
     db.select().from(traderSkillProfilesTable).where(eq(traderSkillProfilesTable.userId, userId))
@@ -362,8 +391,7 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
       .orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
     db.select().from(tradingReadinessChecksTable).where(eq(tradingReadinessChecksTable.userId, userId))
       .orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
-    db.select().from(edgeDiscoveryReportsTable)
-      .where(and(eq(edgeDiscoveryReportsTable.userId, userId), eq(edgeDiscoveryReportsTable.symbol, symbol))).limit(5),
+    readEdgeSignal(userId, symbol),
   ]);
   const snap = snapRows[0] ?? null;
   const skill = skillRows[0] ?? null;
@@ -422,17 +450,8 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 8) Per-symbol edge confidence (Build W).
-  if (edgeRows.length > 0) {
-    const top = edgeRows.sort((a, b) => b.confidenceScore - a.confidenceScore)[0]!;
-    if (top.confidenceScore < 40) {
-      warnings.push(`Edge for ${symbol} is weak (${top.confidenceScore.toFixed(0)}/100)`);
-      signalsUsed.push({ source: "edge", status: "WARN", score: 0, detail: `${top.edgeName} conf=${top.confidenceScore.toFixed(0)}` });
-    } else {
-      signalsUsed.push({ source: "edge", status: "PASS", score: Math.min(10, top.confidenceScore / 10), detail: `${top.edgeName} conf=${top.confidenceScore.toFixed(0)}` });
-    }
-  } else {
-    signalsUsed.push({ source: "edge", status: "MISSING", score: 0, detail: "No edge report for this symbol" });
-  }
+  if (edgeSignal.warning) warnings.push(edgeSignal.warning);
+  signalsUsed.push(edgeSignal.signal);
 
   // 9) Latest persisted signal (cross-check with strategy engine).
   const latestSignals = await db.select().from(signalsTable)

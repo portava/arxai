@@ -69,3 +69,38 @@ describe("Win/Loss Report win rate", () => {
     expect(read.textContent).toContain("Win rate is 67% across 3 decided trades.");
   });
 });
+
+// The server files every journal entry under JOURNAL (it used to be PAPER).
+// When no entry has a recorded P/L the headline says the result is unknown,
+// and the JOURNAL row of the environment table must say the same: "—", not
+// a measured $0.00 or 0% win rate.
+describe("Win/Loss Report environment row when P/L is unknown", () => {
+  it("the JOURNAL row shows — for P/L and win rate when no entry has a recorded P/L", async () => {
+    const body = {
+      ...SCORECARD,
+      environments: { ...SCORECARD.environments, JOURNAL: { ...SCORECARD.environments.JOURNAL, trades: 3, wins: 0, losses: 0, winRate: 0, pnl: 0 } },
+      headline: { winRate: 0, totalPnl: 0, totalTrades: 3, tradesWithRecordedPnl: 0 },
+      bestSymbol: null, worstSymbol: null,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/api/performance/scorecard")
+        ? new Response(JSON.stringify(body), { status: 200 })
+        : new Response("null", { status: 404 })));
+    render(<PerformanceScorecard />);
+    expect((await screen.findByTestId("performance-read")).textContent).toMatch(/net result is unknown/);
+    expect(screen.getByTestId("env-pnl-JOURNAL").textContent).toBe("—");
+    expect(screen.getByTestId("env-winrate-JOURNAL").textContent).toBe("—");
+    expect(screen.getByTestId("env-trades-JOURNAL").textContent).toBe("3");
+  });
+
+  it("the JOURNAL row keeps a recorded P/L and win rate", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/api/performance/scorecard")
+        ? new Response(JSON.stringify({ ...SCORECARD, headline: { ...SCORECARD.headline, tradesWithRecordedPnl: 3 } }), { status: 200 })
+        : new Response("null", { status: 404 })));
+    render(<PerformanceScorecard />);
+    await screen.findByTestId("performance-read");
+    expect(screen.getByTestId("env-pnl-JOURNAL").textContent).toBe("+$20.00");
+    expect(screen.getByTestId("env-winrate-JOURNAL").textContent).toBe("67%");
+  });
+});

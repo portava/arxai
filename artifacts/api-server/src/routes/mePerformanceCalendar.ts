@@ -61,12 +61,26 @@ type ClosedRow = {
  */
 type CalendarSource = "paper_trades" | "live_trades" | "withheld_live_shared";
 
+// The ledger a loaded response was computed from, and a note naming it. The
+// demo ledger is the trades a trader logs by hand (paper_trades) — not the
+// simulated orders (paper_orders) the Trading Calendar reads — so the two
+// pages' figures differ for a date.
+type LedgerSource = Exclude<CalendarSource, "withheld_live_shared">;
+const SOURCE_NOTE: Record<LedgerSource, string> = {
+  live_trades: "From your closed live trades recorded against your account.",
+  paper_trades:
+    "From the demo trades you log by hand on My Performance. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.",
+};
+function sourceFields(source: LedgerSource) {
+  return { source, sourceNote: SOURCE_NOTE[source] };
+}
+
 // Mode-aware loader. In LIVE mode the calendar reflects ONLY closed live trades
 // (shared_trade_attribution). In demo/paper/simulated it reflects paper_trades.
 // No mixing — a live calendar never shows paper P&L and vice-versa.
 async function loadClosedRows(
   userId: number, fromIso?: string, toIso?: string,
-): Promise<{ rows: ClosedRow[]; source: CalendarSource }> {
+): Promise<{ rows: ClosedRow[]; source: LedgerSource }> {
   const env = await getEnvelope(userId);
   const isLive = env.tradingMode === "LIVE";
 
@@ -161,7 +175,7 @@ router.get("/me/performance-calendar", requireUser, async (req, res) => {
   res.json({
     days,
     isEmpty: days.length === 0,
-    source,
+    ...sourceFields(source),
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });
@@ -193,7 +207,7 @@ router.get("/me/performance-calendar/:date", requireUser, async (req, res): Prom
       entryPrice: r.entryPrice, exitPrice: r.exitPrice, strategyTag: r.strategyTag,
       closedAt: r.closedAt?.toISOString() ?? null,
     })),
-    source,
+    ...sourceFields(source),
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });
@@ -229,7 +243,7 @@ router.get("/me/performance-summary", requireUser, async (req, res) => {
     bestDay: best ? { date: best.date, pnl: best.totalPnl } : null,
     worstDay: worst ? { date: worst.date, pnl: worst.totalPnl } : null,
     isEmpty: totalTrades === 0,
-    source,
+    ...sourceFields(source),
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
   });

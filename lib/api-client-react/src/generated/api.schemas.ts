@@ -3448,6 +3448,20 @@ export const ChartFeedStatusQuality = {
   unavailable: "unavailable",
 } as const;
 
+/**
+ * Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.
+
+ * @nullable
+ */
+export type ChartFeedStatusNotLiveReason =
+  | (typeof ChartFeedStatusNotLiveReason)[keyof typeof ChartFeedStatusNotLiveReason]
+  | null;
+
+export const ChartFeedStatusNotLiveReason = {
+  market_closed: "market_closed",
+  stored_history: "stored_history",
+} as const;
+
 export interface ChartFeedStatus {
   symbol: string;
   displaySymbol: string;
@@ -3486,6 +3500,12 @@ export interface ChartFeedStatus {
    */
   feedReadinessState?: string | null;
   message: string;
+  /**
+   * Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.
+
+   * @nullable
+   */
+  notLiveReason?: ChartFeedStatusNotLiveReason;
 }
 
 /**
@@ -4999,7 +5019,7 @@ export const RubyDraftReadIntent = {
 } as const;
 
 /**
- * Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution.
+ * Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution.
  */
 export type RubyDraftReadDataQuality =
   (typeof RubyDraftReadDataQuality)[keyof typeof RubyDraftReadDataQuality];
@@ -5009,6 +5029,9 @@ export const RubyDraftReadDataQuality = {
   insufficient: "insufficient",
 } as const;
 
+/**
+ * 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral').
+ */
 export type RubyDraftReadBias =
   (typeof RubyDraftReadBias)[keyof typeof RubyDraftReadBias];
 
@@ -5029,9 +5052,14 @@ export interface RubyDraftRead {
   timeframe: string;
   /** True when the state is fresh and understanding engines are populated */
   feedUsable: boolean;
-  /** Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution. */
+  /** Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution. */
   dataQuality: RubyDraftReadDataQuality;
+  /** True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers. */
+  feedConfirmed?: boolean;
+  /** 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral'). */
   bias: RubyDraftReadBias;
+  /** When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers. */
+  asOf?: string;
   headline: string;
   points: string[];
   cautions: string[];
@@ -11864,6 +11892,10 @@ export interface PortfolioExposure {
   exposureByMarket: PortfolioExposureExposureByMarket;
   exposureByStrategy: PortfolioExposureExposureByStrategy;
   exposureByCurrency: PortfolioExposureExposureByCurrencyItem[];
+  /** Open rows whose symbol could not be split into currencies (not one of the mapped pairs, e.g. EURGBP, XAUUSD, a broker-suffixed name or a synthetic). Their exposure is not in exposureByCurrency, so an empty list with unmapped rows is not "no currency exposure". */
+  currencyExposureUnmappedRows?: number;
+  /** The distinct symbols counted in currencyExposureUnmappedRows. */
+  currencyExposureUnmappedSymbols?: string[];
   /** Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown. */
   dailyDrawdown: number;
   /** Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown. */

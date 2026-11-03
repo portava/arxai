@@ -22,7 +22,12 @@ import type { BridgeV2AdminStatus } from "@workspace/api-client-react";
 import {
   RefreshCw, CheckCircle2, XCircle, HelpCircle, Wifi, WifiOff, Lock, Activity,
 } from "lucide-react";
-import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
+import {
+  classifyHeartbeatAgeSeconds,
+  heartbeatIsOnline,
+  isHeartbeatAgeSecondsFresh,
+  type HeartbeatFreshness,
+} from "@workspace/domain/broker-health/heartbeatPolicy";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 async function apiJson<T>(path: string): Promise<T> {
@@ -58,15 +63,34 @@ function Tri({ v }: { v: boolean | null | undefined }) {
     : <span className="inline-flex items-center gap-1 text-txt-secondary"><XCircle className="w-3.5 h-3.5" /> no</span>;
 }
 
-function freshnessBadge(f: BridgeV2AdminStatus["freshness"]) {
-  const map: Record<string, string> = {
-    LIVE: "border-success/40 text-success",
-    STALE: "border-warning/40 text-warning",
-    OFFLINE: "border-danger/40 text-danger",
-    UNKNOWN: "border-border text-txt-secondary",
-  };
-  return <Badge variant="outline" className={map[f] ?? ""}>{f}</Badge>;
+// The card's headline state is the heartbeat in the shared vocabulary (fresh
+// < 15 s, delayed < 60 s, offline beyond) — the same word the lock text, EA
+// Health and the watchdog use for this age. An older server without
+// heartbeatFreshness is classified from the age it sent.
+function heartbeatOf(b: BridgeV2AdminStatus): HeartbeatFreshness {
+  return b.heartbeatFreshness ?? classifyHeartbeatAgeSeconds(b.heartbeatAgeSeconds);
 }
+
+function heartbeatBadge(f: HeartbeatFreshness, testid: string) {
+  const map: Record<HeartbeatFreshness, { cls: string; label: string }> = {
+    fresh: { cls: "border-success/40 text-success", label: "Heartbeat fresh" },
+    degraded: { cls: "border-warning/40 text-warning", label: "Heartbeat delayed" },
+    offline: { cls: "border-danger/40 text-danger", label: "Heartbeat offline" },
+    unknown: { cls: "border-border text-txt-secondary", label: "Heartbeat unknown" },
+  };
+  const m = map[f];
+  return <Badge variant="outline" className={m.cls} data-testid={testid}>{m.label}</Badge>;
+}
+
+// The v2 stream's own bands (LIVE ≤ 15 s, STALE ≤ 120 s, OFFLINE beyond) are a
+// separate measure; shown with their range so they never read as a second
+// word for the heartbeat state.
+const STREAM_BAND_RANGE: Record<string, string> = {
+  LIVE: "≤ 15 s",
+  STALE: "15–120 s",
+  OFFLINE: "> 120 s",
+  UNKNOWN: "no event",
+};
 
 function ts(s: string | null | undefined): string {
   return s ? new Date(s).toLocaleString() : "—";
@@ -152,7 +176,7 @@ function BridgeV2MonitorInner() {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  {b.connected ? <Wifi className="w-4 h-4 text-success" /> : <WifiOff className="w-4 h-4 text-txt-secondary" />}
+                  {heartbeatIsOnline(heartbeatOf(b)) ? <Wifi className="w-4 h-4 text-success" /> : <WifiOff className="w-4 h-4 text-txt-secondary" />}
                   Bridge user #{b.userId}
                   <span className="text-xs text-txt-muted">conn {b.bridgeConnectionId ?? "—"}</span>
                 </CardTitle>
@@ -161,7 +185,7 @@ function BridgeV2MonitorInner() {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {freshnessBadge(b.freshness)}
+                {heartbeatBadge(heartbeatOf(b), `bridge-v2-heartbeat-${b.userId}`)}
                 <Badge variant="outline" className={b.accountType === "live" || b.accountType === "real" ? "border-danger/40 text-danger" : ""}>
                   {(b.accountType ?? "unknown").toUpperCase()}
                 </Badge>
@@ -179,6 +203,7 @@ function BridgeV2MonitorInner() {
               <div className="space-y-1.5">
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Readiness</div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(b.heartbeatAgeSeconds) ? "text-warning" : ""}>{b.heartbeatAgeSeconds == null ? "—" : `${b.heartbeatAgeSeconds}s`}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">v2 stream band</span><span data-testid={`bridge-v2-stream-band-${b.userId}`}>{b.streamHealth ?? b.freshness} ({STREAM_BAND_RANGE[b.streamHealth ?? b.freshness] ?? "?"})</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><Tri v={b.terminalConnected} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">AlgoTrading allowed</span><Tri v={b.algoTradingAllowed} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">EnableLiveExecution</span><Tri v={b.enableLiveExecution} /></div>

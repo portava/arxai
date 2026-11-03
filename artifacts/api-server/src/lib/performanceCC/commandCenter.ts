@@ -21,6 +21,16 @@ import { generateInsights } from "./insights.js";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { readAccountLivePosture } from "../systemHealth/livePosture.js";
 
+/**
+ * What netPnl is. It sums the P&L the paper venue booked on each closed demo
+ * order (profit_loss), which is what the demo account balance moves by.
+ * Analytics recomputes P&L in USD at each instrument's contract size from
+ * the fill prices, so the two boards' Net P&L are different measures of the
+ * same trades and are not expected to match.
+ */
+export const NET_PNL_BASIS =
+  "Sum of the P&L the paper venue booked on each closed demo trade, in demo account units — what your demo balance moves by. Analytics recomputes P&L in USD at each instrument's contract size from entry and exit prices, so its Net P&L differs.";
+
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.
 export async function buildCommandCenter(userId: number) {
@@ -62,7 +72,9 @@ export async function buildCommandCenter(userId: number) {
     ? { strategy: sortedEdges[sortedEdges.length - 1]!.strategyName, signal: sortedEdges[sortedEdges.length - 1]!.signalName, symbol: sortedEdges[sortedEdges.length - 1]!.symbol, edge_score: sortedEdges[sortedEdges.length - 1]!.edgeScore }
     : null;
 
-  // Best setup = strategy with highest aggregated PnL.
+  // Best setup = strategy (signal) with the highest summed P&L of the trades
+  // it supported. A trade's P&L is added in full to every signal that
+  // supported it, so these sums overlap — said in setupRankingBasis.
   const setupPnl: Record<string, number> = {};
   for (const e of edges) {
     const key = e.strategyName || "unknown";
@@ -85,12 +97,22 @@ export async function buildCommandCenter(userId: number) {
   const buyCount = decisions.filter(d => d.action === "BUY").length;
   const sellCount = decisions.filter(d => d.action === "SELL").length;
   const holdCount = decisions.filter(d => d.action === "HOLD").length;
-  const tradedDecisionIds = new Set(closed.map(t => t.decisionId).filter((x): x is number => x !== null));
-  const blockedCount = decisions.filter(d => d.shouldTrade && !tradedDecisionIds.has(d.id)).length;
+  // A decision was acted on when a paper order was opened against it — open
+  // or closed. A cancelled (voided) order is not a trade.
+  const actedDecisionIds = new Set(trades.filter(t => t.status !== "CANCELLED")
+    .map(t => t.decisionId).filter((x): x is number => x !== null));
+  const tradeCalls = decisions.filter(d => d.shouldTrade);
+  // Trade calls with no order. Why is not recorded per decision (a safety
+  // filter, a setting, or the call was never sent), so this is not a count
+  // of safety-filter blocks — and blockedCount, which claimed to be, is null.
+  const tradeCallsWithoutOrder = tradeCalls.filter(d => !actedDecisionIds.has(d.id)).length;
+  const actedDecisions = decisions.filter(d => actedDecisionIds.has(d.id));
+  // Win rate is over decisions whose order has closed: an open order has no result yet.
+  const closedDecisionIds = new Set(closed.map(t => t.decisionId).filter((x): x is number => x !== null));
   const winDecisionIds = new Set(wins.map(t => t.decisionId).filter((x): x is number => x !== null));
-  const tradedDecisions = decisions.filter(d => tradedDecisionIds.has(d.id));
-  const decisionToWinRate = tradedDecisions.length
-    ? (decisions.filter(d => winDecisionIds.has(d.id)).length / tradedDecisions.length) * 100
+  const closedDecisions = decisions.filter(d => closedDecisionIds.has(d.id));
+  const decisionToWinRate = closedDecisions.length
+    ? (decisions.filter(d => winDecisionIds.has(d.id)).length / closedDecisions.length) * 100
     : 0;
   const avgConfidence = decisions.length ? decisions.reduce((a, d) => a + d.confidence, 0) / decisions.length : 0;
   const avgRiskScore = decisions.length ? decisions.reduce((a, d) => a + d.riskScore, 0) / decisions.length : 0;
@@ -99,23 +121,20 @@ export async function buildCommandCenter(userId: number) {
   // Risk safety stats (count safety-blocked autopilot rejections + cooldowns).
   const safetyBlockTotal = recentCycles.reduce((a, c) => a + c.paperTradesRejected, 0);
 
-  // Improvement score (very simple): later edges' avg edge_score vs earlier ones.
-  let improvementScore = 0;
-  if (edges.length >= 4) {
-    const sorted = [...edges].sort((a, b) => a.id - b.id);
-    const half = Math.floor(sorted.length / 2);
-    const earlyAvg = sorted.slice(0, half).reduce((a, e) => a + e.edgeScore, 0) / half;
-    const lateAvg = sorted.slice(half).reduce((a, e) => a + e.edgeScore, 0) / (sorted.length - half);
-    improvementScore = Number((lateAvg - earlyAvg).toFixed(2));
-  }
+  // Improvement over time is not measured. A strategy edge keeps only its
+  // CURRENT score — there is no score history — so comparing rows ordered by
+  // id compared which signals were seen first, not performance over time
+  // (and with fewer than 4 edges it read 0.00, "no change"). It is null.
+  const improvementScore: number | null = null;
+  const improvementScoreBasis =
+    "Not measured: strategy edges keep only their current score, not a history, so change over time cannot be computed.";
   const learningConfidence = closed.length >= 30 ? 80 : closed.length >= 10 ? 50 : 20;
 
-  // Overall status heuristic.
-  let overallStatus: "IMPROVING" | "STABLE" | "DECLINING" | "INSUFFICIENT_DATA" = "INSUFFICIENT_DATA";
-  if (closed.length < 10) overallStatus = "INSUFFICIENT_DATA";
-  else if (improvementScore > 2) overallStatus = "IMPROVING";
-  else if (improvementScore < -2) overallStatus = "DECLINING";
-  else overallStatus = "STABLE";
+  // Overall status. IMPROVING / STABLE / DECLINING were read from the
+  // improvement score, which is not measured; with enough trades the trend
+  // is NOT_MEASURED rather than a guess.
+  const overallStatus: "IMPROVING" | "STABLE" | "DECLINING" | "INSUFFICIENT_DATA" | "NOT_MEASURED" =
+    closed.length < 10 ? "INSUFFICIENT_DATA" : "NOT_MEASURED";
 
   // Paper mode status from FF settings + recent cycles.
   const paperModeStatus: "ACTIVE" | "IDLE" | "BLOCKED" =
@@ -131,7 +150,7 @@ export async function buildCommandCenter(userId: number) {
   const insightOut = generateInsights({
     bestSymbol, worstSymbol, mostRepeatedMistake,
     totalTrades: closed.length, winRate, netPnl,
-    improvementScore, blockedTrades: blockedCount,
+    tradeCalls: tradeCalls.length, tradeCallsWithoutOrder,
     decisionsCreated: decisions.length,
     learningEvents: learnings.length,
   });
@@ -146,21 +165,29 @@ export async function buildCommandCenter(userId: number) {
     totalClosedTrades: closed.length,
     winRate: Number(winRate.toFixed(2)),
     netPnl: Number(netPnl.toFixed(2)),
+    netPnlBasis: NET_PNL_BASIS,
     bestSymbol,
     worstSymbol,
     bestSetup,
     weakestSetup,
+    setupRankingBasis: "Setups are ranked by the summed P&L of the trades each signal supported. A trade supported by several signals counts toward each of them, so these sums overlap and do not add up to your net P&L.",
     mostRepeatedMistake,
     strongestEdge,
     weakestEdge,
     aiDecisionStats: {
       decisionsCreated: decisions.length,
       buyCount, sellCount, holdCount,
-      blockedCount,
+      /** Decisions that said to trade. */
+      tradeCalls: tradeCalls.length,
+      /** Trade calls with no paper order (open or closed) against them. */
+      tradeCallsWithoutOrder,
+      /** Not measured: no safety-filter outcome is stored per decision. */
+      blockedCount: null,
+      blockedCountScope: "Not recorded: ARX does not store a safety-filter outcome per AI decision, so how many were blocked by a safety filter is unknown. tradeCallsWithoutOrder counts trade calls with no demo order, for any reason.",
       avgConfidence: Number(avgConfidence.toFixed(2)),
       avgRiskScore: Number(avgRiskScore.toFixed(2)),
       avgEdgeScore: Number(avgEdgeScore.toFixed(2)),
-      decisionToTradeRate: decisions.length ? Number(((tradedDecisions.length / decisions.length) * 100).toFixed(2)) : 0,
+      decisionToTradeRate: decisions.length ? Number(((actedDecisions.length / decisions.length) * 100).toFixed(2)) : 0,
       decisionToWinRate: Number(decisionToWinRate.toFixed(2)),
     },
     learningStats: {
@@ -168,6 +195,7 @@ export async function buildCommandCenter(userId: number) {
       strategyEdgesUpdated: edges.length,
       mistakePatternsTracked: mistakes.length,
       improvementScore,
+      improvementScoreBasis,
       learningConfidence,
     },
     riskStats: {

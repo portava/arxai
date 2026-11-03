@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+/** How the server valued the account (lib/tradeEngine/paperVenue.ts describePaperValuation). Older servers omit it. */
+interface PaperValuation {
+  priceSource: "SIMULATOR" | "MARKET_QUOTE" | "MIXED" | "NO_OPEN_ORDERS";
+  openOrders: number; openPricedBySimulator: number; closedSimulatorPriced: number;
+  /** "PAPER_USD": P&L sized in USD from the contract size; anything else is not a units claim the card repeats. */
+  units: string; pnlMultiplier: number; marginPerLot: number; note: string;
+}
 interface PaperAccount {
   id: number; accountName: string;
   startingBalance: number; currentBalance: number; equity: number; marginUsed: number;
@@ -9,6 +16,7 @@ interface PaperAccount {
   updatedAt?: string | null;
   /** Server note when the balance or equity counts P&L that could not be sized. */
   pnlSizing?: { unsizedClosedOrders: number; unsizedOpenPositions: number; note: string | null };
+  valuation?: PaperValuation;
 }
 
 /**
@@ -34,6 +42,36 @@ function readFailureCopy(err: unknown): string {
   const why = err instanceof PaperAccountReadError ? (err.reason ?? `HTTP ${err.status}`) : "the request failed";
   return `Your demo account could not be loaded (${why}). ` +
     "Wait for it to load before creating another one — creating a new demo account deactivates the current one.";
+}
+
+/** Plain-English line for where the account's prices came from. */
+export function paperPriceSourceLine(v: PaperValuation | undefined): string {
+  if (!v) return "Price source not reported by the server. Orders opened without a market quote are valued at the simulator's synthetic price, not a market quote.";
+  const open = v.priceSource === "SIMULATOR"
+    ? "Prices: simulator (synthetic, generated — not a market quote). Stops and targets are settled against it."
+    : v.priceSource === "MIXED"
+    ? `Prices: ${v.openPricedBySimulator} of ${v.openOrders} open orders at the simulator's synthetic price (not a market quote), the rest at a market quote.`
+    : v.priceSource === "MARKET_QUOTE"
+    ? "Prices: open orders valued at a current market quote."
+    : "No open orders.";
+  const closed = v.closedSimulatorPriced > 0
+    ? ` ${v.closedSimulatorPriced} closed order${v.closedSimulatorPriced === 1 ? " was" : "s were"} priced by the simulator, so the balance includes synthetic results.`
+    : "";
+  return open + closed;
+}
+
+/**
+ * The units line. Only a server that reports how it sized the figures
+ * (units PAPER_USD) gets a units claim; otherwise the card says the units were
+ * not reported and claims no scale.
+ */
+export function paperUnitsLine(v: PaperValuation | undefined): string {
+  if (v?.units !== "PAPER_USD") {
+    return "Units not reported by the server. These are simulated figures, not money in a broker account, and margin is not a broker margin.";
+  }
+  return `Figures are simulated USD, not money in a broker account: P&L is sized from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${v.pnlMultiplier}). `
+    + `Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${v.pnlMultiplier}), so an older balance can mix the two scales. `
+    + `Margin is lots × ${v.marginPerLot.toLocaleString("en-US")}, not a broker margin.`;
 }
 
 export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void }) {
@@ -115,6 +153,8 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
           {acc.pnlSizing?.note ? (
             <p className="text-[10px] text-amber-200" data-testid="paper-account-sizing-note">{acc.pnlSizing.note}</p>
           ) : null}
+          <p className="text-[10px] text-amber-300" data-testid="paper-account-price-source">{paperPriceSourceLine(acc.valuation)}</p>
+          <p className="text-[10px] text-slate-400" data-testid="paper-account-units">{paperUnitsLine(acc.valuation)}</p>
         </div>
       ) : data?.account === null ? (
         <div className="space-y-2">

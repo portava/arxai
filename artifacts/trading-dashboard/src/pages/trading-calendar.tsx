@@ -13,17 +13,27 @@ interface CalendarDay {
   wins: number;
   losses: number;
   win_rate: number;
-  /** null = not rated (no rating was computed for this day, e.g. the live route). */
+  /**
+   * null = not rated: nothing closed that day (not graded), or no rating was
+   * computed for it (the live route does not grade days).
+   */
   day_rating: "A" | "B" | "C" | "D" | "F" | null;
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
+  /** The day is after today (UTC): it has not happened yet. */
+  is_future?: boolean;
 }
 // Totals are null when the server did not compute them (a LIVE_SHARED
 // session, where the paper book is withheld and live trades are not totalled).
 interface CalendarResp {
-  calendar: { month: string; days: CalendarDay[]; total_pnl: number | null; total_trades: number | null; winning_days: number | null; losing_days: number | null; no_trade_days: number | null };
+  calendar: {
+    month: string; days: CalendarDay[]; total_pnl: number | null; total_trades: number | null;
+    winning_days: number | null; losing_days: number | null; no_trade_days: number | null;
+    /** Which ledger the month was read from (server text). */
+    source_note?: string;
+  };
   currentAccountMode?: string;
   liveAggregation?: string;
   modeNote?: string;
@@ -39,6 +49,44 @@ interface DayDetailResp { day: { date: string; stats: any; trades: any[] }; curr
 const NOT_SHOWN = "Not shown";
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+// Which ledger this page reads, for a server that does not send its note.
+// The demo calendar reads simulated orders, not the demo trades a trader
+// logs by hand on My Performance, so the two pages differ for a date.
+const DEMO_SOURCE_NOTE =
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+const LIVE_SOURCE_NOTE = "From your closed live trades recorded against your account.";
+
+/**
+ * A day-detail row's P&L is a realized result only when the order closed.
+ * An open or cancelled order's stored 0 is not a measurement (the server
+ * sends pnl null for those; an older server sent 0, which is downgraded here).
+ */
+function realizedPnl(t: { status?: unknown; pnl?: unknown }): number | null {
+  const closed = typeof t.status === "string" && /^(PAPER_)?CLOSED/.test(t.status);
+  return closed && typeof t.pnl === "number" && Number.isFinite(t.pnl) ? t.pnl : null;
+}
+
+function noPnlText(t: { status?: unknown; pnl_note?: unknown }): string {
+  if (typeof t.pnl_note === "string" && t.pnl_note) return t.pnl_note;
+  if (t.status === "OPEN") return "Still open — no realized P&L yet";
+  if (t.status === "CANCELLED") return "Cancelled — no P&L";
+  return "No P&L recorded";
+}
+
+/**
+ * Profit factor (gross profit ÷ gross loss) is a number only when a losing
+ * trade closed. With no loss it is undefined; an older server sent an
+ * invented 9.99 (or 0) for that, which is downgraded here.
+ */
+function profitFactorText(stats: { profit_factor?: unknown; wins?: unknown; losses?: unknown }): string {
+  const pf = stats.profit_factor;
+  const losses = typeof stats.losses === "number" ? stats.losses : null;
+  const wins = typeof stats.wins === "number" ? stats.wins : null;
+  if (typeof pf === "number" && Number.isFinite(pf) && losses != null && losses > 0) return pf.toFixed(2);
+  if (losses === 0 && wins != null && wins > 0) return "No losses (undefined)";
+  return "—";
 }
 
 function dayColor(d: CalendarDay) {
@@ -57,7 +105,7 @@ function dayColor(d: CalendarDay) {
 // computes no day rating, so live days are shown as not rated (null).
 function mapLiveToCalendarResp(
   month: string,
-  live: { days?: any[]; isEmpty?: boolean; currentAccountMode?: string } | undefined,
+  live: { days?: any[]; isEmpty?: boolean; currentAccountMode?: string; sourceNote?: string } | undefined,
 ): CalendarResp {
   const src = Array.isArray(live?.days) ? live!.days : [];
   const byDate = new Map<string, any>();
@@ -80,7 +128,7 @@ function mapLiveToCalendarResp(
       wins: Number(d.wins ?? 0),
       losses: Number(d.losses ?? 0),
       win_rate: Number(d.winRate ?? 0),
-      // The live route computes no day rating; do not invent one.
+      // The live route computes no day rating; no grade is invented or shown.
       day_rating: null,
       day_status: status,
       debriefs_created: 0,
@@ -107,6 +155,7 @@ function mapLiveToCalendarResp(
       winning_days: days.filter((d) => d.day_status === "WINNING_DAY").length,
       losing_days: days.filter((d) => d.day_status === "LOSING_DAY").length,
       no_trade_days: days.filter((d) => d.day_status === "NO_TRADE_DAY").length,
+      source_note: typeof live?.sourceNote === "string" && live.sourceNote ? live.sourceNote : undefined,
     },
   };
 }
@@ -184,7 +233,8 @@ export default function TradingCalendarPage() {
             },
             trades: Array.isArray(d.trades) ? d.trades.map((t: any) => ({
               trade_id: t.id, symbol: t.symbol, action: t.side, status: "CLOSED",
-              pnl: Number(t.pnl ?? 0), decision_id: null,
+              // A live trade with no recorded P&L stays null (never 0.00).
+              pnl: t.pnl == null || !Number.isFinite(Number(t.pnl)) ? null : Number(t.pnl), decision_id: null,
               entry_price: t.entryPrice, exit_price: t.exitPrice,
               stop_loss: "—", take_profit: "—",
             })) : [],
@@ -240,8 +290,19 @@ export default function TradingCalendarPage() {
                   {calData?.modeNote ?? "Live trades on your shared account are not totalled on this calendar, so no figures are shown. They are not zero."}
                 </span>
               )
-              : isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
+              : isLive ? "Daily P&L and win rate from your closed live trades." : "Daily P&L, win rate, and AI activity from your simulated orders."}
           </div>
+          {mode.isSuccess && !notShownHere && (
+            <div className="text-xs text-muted-foreground mt-1" data-testid="calendar-source-note">
+              {calData?.calendar?.source_note ?? (isLive ? LIVE_SOURCE_NOTE : DEMO_SOURCE_NOTE)}
+              {!isLive && (
+                <>
+                  {" "}Calculated from your simulated orders each time this page loads. &ldquo;Rebuild saved snapshots&rdquo; refreshes the
+                  saved daily snapshots the Trader Coach reads; it does not change this calendar.
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <input
@@ -259,13 +320,6 @@ export default function TradingCalendarPage() {
           )}
         </div>
       </div>
-
-      {mode.isSuccess && !isLive && !notShownHere && (
-        <div className="text-xs text-muted-foreground -mt-4" data-testid="calendar-source-note">
-          Calculated from your demo orders each time this page loads. &ldquo;Rebuild saved snapshots&rdquo; refreshes the
-          saved daily snapshots the Trader Coach reads; it does not change this calendar.
-        </div>
-      )}
 
       {(rebuild.isSuccess || rebuild.isError) && (
         <div className={`text-xs ${rebuild.isError ? "text-rose-300" : "text-muted-foreground"}`} data-testid="rebuild-result">
@@ -341,7 +395,9 @@ export default function TradingCalendarPage() {
                   >
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold">{Number(d.date.slice(8))}</span>
-                      {d.day_rating && <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>}
+                      {d.day_rating ? (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0" data-testid={`day-rating-${d.date}`}>{d.day_rating}</Badge>
+                      ) : null}
                     </div>
                     <div className="mt-1 text-sm font-bold flex items-center gap-1">
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
@@ -350,7 +406,7 @@ export default function TradingCalendarPage() {
                       {d.total_trades > 0 ? d.net_pnl.toFixed(2) : "—"}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-1">
-                      {d.total_trades > 0 ? `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w` : "no trades"}
+                      {d.total_trades > 0 ? `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w` : d.is_future ? "not yet" : "no trades"}
                     </div>
                     {(d.debriefs_created > 0 || d.learning_events_created > 0) && (
                       <div className="text-[10px] text-muted-foreground">
@@ -380,8 +436,8 @@ export default function TradingCalendarPage() {
                   <div><div className="text-muted-foreground text-xs">Net P&L</div>{num(day.data.day.stats.net_pnl) == null ? <div className="font-bold text-muted-foreground">—</div> : <div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div>}</div>
                   <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{num(day.data.day.stats.total_trades) ?? "—"}</div></div>
                   <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{num(day.data.day.stats.win_rate) == null ? "—" : `${day.data.day.stats.win_rate.toFixed(1)}%`}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor ?? "—"}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold">{day.data.day.stats.day_rating ?? "Not rated"}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold" data-testid="day-detail-profit-factor">{profitFactorText(day.data.day.stats)}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold" data-testid="day-detail-rating">{day.data.day.stats.day_rating ?? (num(day.data.day.stats.total_trades) === 0 ? "Not rated — no closed trades" : "Not rated")}</div></div>
                 </div>
                 {dayLiveWithheld && <div className="text-sm text-muted-foreground" data-testid="day-mode-note">{day.data.modeNote ?? "This is a live account. Live trades are not totalled by day here, so no figures are shown. They are not zero."}</div>}
                 {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}
@@ -391,7 +447,14 @@ export default function TradingCalendarPage() {
                     <div key={t.trade_id} className="border border-slate-700 rounded p-3 text-sm" data-testid={`trade-row-${t.trade_id}`}>
                       <div className="flex items-center justify-between">
                         <div className="font-semibold">#{t.trade_id} {t.symbol} <Badge variant="outline">{t.action}</Badge> <Badge>{t.status}</Badge></div>
-                        <div className={`font-bold ${t.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{t.pnl.toFixed(2)}</div>
+                        {(() => {
+                          const pnl = realizedPnl(t);
+                          return pnl == null ? (
+                            <div className="text-xs text-muted-foreground text-right" data-testid={`trade-pnl-${t.trade_id}`}>{noPnlText(t)}</div>
+                          ) : (
+                            <div className={`font-bold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`} data-testid={`trade-pnl-${t.trade_id}`}>{pnl.toFixed(2)}</div>
+                          );
+                        })()}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         decision_id: {t.decision_id ?? "—"} · entry: {t.entry_price} · exit: {t.exit_price ?? "—"} · SL: {t.stop_loss} · TP: {t.take_profit}

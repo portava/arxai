@@ -16,13 +16,14 @@ import { Router } from "express";
 import {
   db, aiMentorSessionsTable, mentorActionItemsTable,
   traderSkillProfilesTable, postTradeDebriefsTable,
-  edgeDiscoveryReportsTable, tradingReadinessChecksTable,
+  tradingReadinessChecksTable,
   weeklyPerformanceReviewsTable, tradingRuleContractsTable,
   tradingRuleViolationsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
+import { loadLatestSlices } from "./edgeDiscovery.js";
 
 const router = Router();
 const MENTOR_DISCLAIMER =
@@ -60,8 +61,9 @@ async function loadContext(userId: number) {
       .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
       .orderBy(desc(postTradeDebriefsTable.id)).limit(20),
-    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId))
-      .orderBy(desc(edgeDiscoveryReportsTable.confidenceScore)).limit(20),
+    // The edge board's current picture: the newest generation of each slice,
+    // with legacy "PF 999" rows re-derived (never a past run or the marker).
+    loadLatestSlices(userId),
     db.select().from(tradingReadinessChecksTable).where(eq(tradingReadinessChecksTable.userId, userId))
       .orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
     db.select().from(weeklyPerformanceReviewsTable).where(eq(weeklyPerformanceReviewsTable.userId, userId))
@@ -72,6 +74,7 @@ async function loadContext(userId: number) {
   ]);
   const recentMistakes = debriefs
     .map((d) => d.biggestMistake).filter((m): m is string => !!m && m.length > 0).slice(0, 5);
+  edges.sort((a, b) => b.confidenceScore - a.confidenceScore);
   const strongestEdge = edges.find((e) => e.status === "STRONG_EDGE")
                      ?? edges.find((e) => e.status === "DEVELOPING_EDGE")
                      ?? null;
@@ -128,7 +131,13 @@ function compose(sessionType: SessionType, ctx: Ctx): {
   const weakestPillar = pickWeakestPillar(skill);
   const profileAge = skill ? ageText(skill.updatedAt) : null;
   const oneRule = pickOneRule(ctx);
-  const oneStrength = ctx.strongestEdge?.edgeName ?? null;
+  // A DEVELOPING_EDGE slice is promising, not proven: say so wherever it is
+  // named as the strength to lean into.
+  const oneStrength = ctx.strongestEdge
+    ? ctx.strongestEdge.status === "STRONG_EDGE"
+      ? ctx.strongestEdge.edgeName
+      : `${ctx.strongestEdge.edgeName} (a developing edge, not yet proven)`
+    : null;
   const oneMistake  = ctx.recentMistakes[0] ?? "drifting from your written plan";
 
   switch (sessionType) {
@@ -284,7 +293,7 @@ function compose(sessionType: SessionType, ctx: Ctx): {
           (skill
             ? `${skill.skillLevel} (${Math.round(skill.totalScore)}/100, skill profile calculated ${profileAge}). `
             : `${NO_PROFILE_TEXT} `) +
-          `Top warning: ${ctx.weakestEdge ? `your data shows NO measurable edge on ${ctx.weakestEdge.edgeName} — avoid it today.` : `watch for ${oneMistake}.`} ` +
+          `Top warning: ${ctx.weakestEdge ? `your data shows ${ctx.weakestEdge.status === "NO_EDGE" ? "NO measurable edge" : "only a weak edge"} on ${ctx.weakestEdge.edgeName} — avoid it today.` : `watch for ${oneMistake}.`} ` +
           `One rule to respect: ${oneRule}. One strength to lean into: ${oneStrength ?? "patience — wait for your A+ setup"}. ` +
           `Recommended drill: write a one-line trade plan for the very next setup before you click anything.`,
         recommendedAction: `Plan, execute, debrief. One setup at a time.`,

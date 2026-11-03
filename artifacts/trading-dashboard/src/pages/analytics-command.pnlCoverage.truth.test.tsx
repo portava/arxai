@@ -69,16 +69,16 @@ describe("Analytics Command Center — P&L coverage", () => {
     for (const stored of ["$1234", "$411.33", "2.50", "$321"]) {
       expect(page, stored).not.toContain(stored);
     }
-    expect(screen.getByTestId("stat-net-p-l").textContent).toMatch(/not measured/);
-    expect(screen.getByTestId("stat-expectancy").textContent).toMatch(/not measured/);
-    expect(screen.getByTestId("stat-profit-factor").textContent).toMatch(/not measured/);
-    expect(screen.getByTestId("stat-max-dd").textContent).toMatch(/not measured/);
-    expect(screen.getByTestId("highlight-strongest-strategy").textContent).toMatch(/not measured/);
+    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toMatch(/not measured/);
+    expect(screen.getByTestId("analytics-stat-expectancy").textContent).toMatch(/not measured/);
+    expect(screen.getByTestId("analytics-stat-profit-factor").textContent).toMatch(/not measured/);
+    expect(screen.getByTestId("analytics-stat-max-dd").textContent).toMatch(/not measured/);
+    expect(screen.getByTestId("analytics-highlight-best-symbol").textContent).toMatch(/not measured/);
     // Not "No closed trades yet." (there are 3) and no $0 session money.
     expect(page).not.toMatch(/No closed trades yet/);
     expect(page).not.toMatch(/\$0\b/);
     // Price-move figures stay: win rate and R are not money.
-    expect(screen.getByTestId("stat-win-rate").textContent).toContain("66.7%");
+    expect(screen.getByTestId("analytics-stat-win-rate").textContent).toContain("66.7%");
   });
 
   it("some trades unsized: the figures show, with the note saying what was left out", async () => {
@@ -88,7 +88,7 @@ describe("Analytics Command Center — P&L coverage", () => {
     }));
     renderPage();
     await waitFor(() => expect(screen.getByTestId("analytics-pnl-coverage").textContent).toContain(PARTIAL.note));
-    expect(screen.getByTestId("stat-net-p-l").textContent).toContain("$1234");
+    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toContain("$1234");
   });
 
   it("coverage requests failed: says it could not be loaded, not silence or an empty state", async () => {
@@ -109,7 +109,7 @@ describe("Analytics Command Center — P&L coverage", () => {
     stub(routes({ "GET /api/analytics/drawdown": { status: 500, body: { error: "Failed to load drawdown" } } }));
     renderPage();
     await waitFor(() => expect(screen.getByTestId("analytics-pnl-coverage").textContent).toContain(NONE_SIZED.note));
-    expect(screen.getByTestId("stat-net-p-l").textContent).toMatch(/not measured/);
+    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toMatch(/not measured/);
   });
 
   it("snapshot request failed: 'could not be loaded', never 'Computing your first analytics snapshot'", async () => {

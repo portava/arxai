@@ -9,6 +9,7 @@ import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositio
 import { Router, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { adminActionAuditLogTable } from "@workspace/db/schema";
+import { and, desc, inArray, sql } from "drizzle-orm";
 import {
   aggregateReconciliationIssues,
   issueId,
@@ -124,6 +125,58 @@ async function validateActionBody(
   return { reason: reasonRaw, type: body.type, naturalKey, targetUserId: Number.isFinite(tuid) ? tuid : null };
 }
 
+// The four issue actions only append an audit row: they do not change, fix or
+// hide an issue, which stays listed while its condition is still detected.
+// The list therefore carries each issue's most recent recorded action, read
+// from those audit rows, so a dismissed issue does not look untouched.
+const ISSUE_ACTION_CODES = [
+  "RECONCILIATION_ISSUE_DISMISSED",
+  "RECONCILIATION_ISSUE_REVIEWED",
+  "RECONCILIATION_ATTRIBUTION_LINKED",
+  "RECONCILIATION_MANUAL_RESOLUTION",
+] as const;
+
+export interface IssueLastAction {
+  action: string;
+  at: string | null;
+  adminId: number | null;
+  reason: string | null;
+}
+
+/** Most recent recorded action per issue id; null when the audit log could not be read. */
+async function lastActionsByIssue(ids: string[]): Promise<Map<string, IssueLastAction> | null> {
+  const out = new Map<string, IssueLastAction>();
+  if (ids.length === 0) return out;
+  try {
+    const rows = await db.select({
+      action: adminActionAuditLogTable.action,
+      createdAt: adminActionAuditLogTable.createdAt,
+      adminId: adminActionAuditLogTable.adminId,
+      reason: adminActionAuditLogTable.reason,
+      afterState: adminActionAuditLogTable.afterState,
+    })
+      .from(adminActionAuditLogTable)
+      .where(and(
+        inArray(adminActionAuditLogTable.action, [...ISSUE_ACTION_CODES]),
+        inArray(sql<string>`${adminActionAuditLogTable.afterState}->>'issueId'`, ids),
+      ))
+      .orderBy(desc(adminActionAuditLogTable.createdAt));
+    for (const r of rows) {
+      const id = (r.afterState as { issueId?: unknown } | null)?.issueId;
+      if (typeof id !== "string" || out.has(id)) continue;
+      out.set(id, {
+        action: r.action,
+        at: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+        adminId: r.adminId ?? null,
+        reason: r.reason ?? null,
+      });
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 // ─── GET /api/admin/reconciliation-center/issues ──────────────────────────
 router.get("/admin/reconciliation-center/issues", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
@@ -136,7 +189,15 @@ router.get("/admin/reconciliation-center/issues", async (req, res) => {
       afterState: { total: agg.total, countsBySeverity: agg.countsBySeverity },
       ipAddress: clientIp(req),
     });
-    res.json({ ok: true, ...agg, categories: RECONCILIATION_ISSUE_TYPES });
+    const last = await lastActionsByIssue(agg.issues.map((i) => i.id));
+    res.json({
+      ok: true,
+      ...agg,
+      issues: agg.issues.map((i) => ({ ...i, lastAction: last?.get(i.id) ?? null })),
+      // false: recorded actions could not be read, so lastAction:null is unknown.
+      actionsReadable: last != null,
+      categories: RECONCILIATION_ISSUE_TYPES,
+    });
   } catch (e) {
     res.status(500).json({ ok: false, error: "reconciliation_failed", reason: (e as Error).message.slice(0, 200) });
   }

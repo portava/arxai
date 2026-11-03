@@ -1,7 +1,7 @@
 import type { StrategyRow } from "./types";
 
 export function StrategyAnalyticsTable({ rows }: { rows: StrategyRow[] }) {
-  if (rows.length === 0) return <p className="rounded border border-dashed border-slate-700 p-3 text-center text-[11px] text-slate-500">No strategy data.</p>;
+  if (rows.length === 0) return <p className="rounded border border-dashed border-slate-700 p-3 text-center text-[11px] text-slate-500">No closed trades to group by symbol.</p>;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-700 bg-slate-900/40">
       <table className="w-full text-xs text-slate-200">

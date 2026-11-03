@@ -180,6 +180,75 @@ export function paperPnlSizingNote(unsizedClosed: number, unsizedOpen = 0): stri
     + `(price move × lots × 100), not a measured amount.`;
 }
 
+/**
+ * The paper risk model's scale (paperExecution/paperPnl.ts
+ * PAPER_LEDGER_MODEL_CONTRACT_SIZE): price move × lots × 100. It is used only
+ * for an amount that could not be sized for the instrument (pnlSizing says how
+ * many), never as a measured result.
+ */
+export const PAPER_SIMULATOR_PNL_MULTIPLIER = 100;
+/** Simulator margin per lot. Not a broker margin requirement. */
+export const PAPER_SIMULATOR_MARGIN_PER_LOT = 1000;
+
+/** Orders booked at a real market quote; every other order is priced by the simulator. */
+function isMarketPriced(o: Pick<PaperOrderRow, "strategyId">): boolean {
+  return o.strategyId === "build_ee_paper_execution" || o.strategyId === MARKET_PRICED_SIMULATED_OPEN;
+}
+
+/**
+ * How markToMarket valued a paper account: where its prices came from and the
+ * units its figures are in. A simulator-priced order's P&L is sized at a
+ * synthetic price and margin is a simulator figure, so a reader is told so
+ * instead of reading them as market results or broker figures.
+ */
+export interface PaperValuation {
+  /** Price source of the open orders' current valuation. */
+  priceSource: "SIMULATOR" | "MARKET_QUOTE" | "MIXED" | "NO_OPEN_ORDERS";
+  openOrders: number;
+  /** Open orders valued at the simulator's synthetic price (generated candles, not a market quote). */
+  openPricedBySimulator: number;
+  /** Closed orders not booked at a market quote: their entry and exit came from the simulator. */
+  closedSimulatorPriced: number;
+  /**
+   * PAPER_USD: P&L is sized in the paper account currency (USD) from the
+   * instrument's contract size (paperExecution/paperPnl.ts); an amount that
+   * could not be sized counts at the paper risk model (see pnlSizing).
+   */
+  units: "PAPER_USD";
+  /** Multiplier of the paper risk model (price move × lots × this), used only for an amount that could not be sized. */
+  pnlMultiplier: number;
+  marginPerLot: number;
+  note: string;
+}
+
+export function describePaperValuation(a: { openOrders: number; openPricedBySimulator: number; closedSimulatorPriced: number }): PaperValuation {
+  const priceSource = a.openOrders === 0 ? "NO_OPEN_ORDERS"
+    : a.openPricedBySimulator === 0 ? "MARKET_QUOTE"
+    : a.openPricedBySimulator === a.openOrders ? "SIMULATOR" : "MIXED";
+  const parts: string[] = [];
+  if (priceSource === "SIMULATOR") {
+    parts.push(`${a.openOrders === 1 ? "The open order is" : `All ${a.openOrders} open orders are`} valued at the simulator's synthetic price (generated, not a market quote), and stops and targets are settled against it.`);
+  } else if (priceSource === "MIXED") {
+    parts.push(`${a.openPricedBySimulator} of ${a.openOrders} open orders are valued at the simulator's synthetic price (generated, not a market quote), and their stops and targets are settled against it; the rest at a current market quote.`);
+  } else if (priceSource === "MARKET_QUOTE") {
+    parts.push(`Open orders are valued at a current market quote.`);
+  }
+  if (a.closedSimulatorPriced > 0) {
+    parts.push(`${a.closedSimulatorPriced} closed order${a.closedSimulatorPriced === 1 ? " was" : "s were"} priced by the simulator, not the market, so the balance includes synthetic results.`);
+  }
+  parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
+  return {
+    priceSource,
+    openOrders: a.openOrders,
+    openPricedBySimulator: a.openPricedBySimulator,
+    closedSimulatorPriced: a.closedSimulatorPriced,
+    units: "PAPER_USD",
+    pnlMultiplier: PAPER_SIMULATOR_PNL_MULTIPLIER,
+    marginPerLot: PAPER_SIMULATOR_MARGIN_PER_LOT,
+    note: parts.join(" "),
+  };
+}
+
 function governorRefusal(risk: { primaryReason?: string | null; blockedBy: string[]; auditEventId?: number | null }): PaperRefusal {
   return {
     ok: false, reason: "RISK_GOVERNOR_BLOCK",
@@ -196,7 +265,7 @@ function governorRefusal(risk: { primaryReason?: string | null; blockedBy: strin
 // A close whose amount could not be sized (stored 0 placeholder) counts the
 // way the paper book's read side counts it (realizedOf), so the balance moves
 // with the stop or target hit; pnlSizing says how many closes that covers.
-export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing }) | null> {
+export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing; valuation: PaperValuation }) | null> {
   const account = (await db.select().from(paperAccountsTable)
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
   if (!account) return null;
@@ -214,7 +283,7 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
   // simulator prices (or a partial valuation) onto a real-priced paper book.
   const prices = new Map<number, number>();
   for (const o of open) {
-    if (o.strategyId !== "build_ee_paper_execution" && o.strategyId !== MARKET_PRICED_SIMULATED_OPEN) continue;
+    if (!isMarketPriced(o)) continue;
     const quote = await currentQuote(o.symbol);
     if (!quote.ok) return null;
     prices.set(o.id, o.direction === "BUY" ? quote.bid : quote.ask);
@@ -229,13 +298,15 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
     if (!c) { c = resolvePaperContract(o.userId, o.symbol); contracts.set(o.symbol, c); }
     return c.then((contract) => sizePaperOrderPnl(o, price, contract));
   };
+  let stillOpen = 0;
+  let stillOpenBySimulator = 0;
 
   for (const o of open) {
     const px = prices.get(o.id) ?? getMockPrice(o.symbol, now);
     // (Build EE) EE-managed orders are owned by the Build EE monitor (which
     // uses Build DD market data). Mark-to-market must NOT auto-close them
     // with mock prices — refresh unrealized P&L only from a real quote.
-    const eeOwned = o.strategyId === "build_ee_paper_execution" || o.strategyId === MARKET_PRICED_SIMULATED_OPEN;
+    const eeOwned = isMarketPriced(o);
     let hit: "TP" | "SL" | null = null;
     if (!eeOwned) {
       if (o.direction === "BUY") {
@@ -253,7 +324,7 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
       await settlePaperOrder({
         order: o, status, exitPrice: exitPx, pnl: r.amount ?? 0,
         eventMessage: o.userId == null ? null
-          : `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, ${r.amount != null ? `P&L ${r.amount.toFixed(2)}` : notSizedText(r)}`,
+          : `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)} on the simulator's synthetic price (not a market quote), ${r.amount != null ? `P&L ${r.amount.toFixed(2)}` : notSizedText(r)}`,
       });
       // (BB) Closed-loop auto-debrief on SL/TP close. Best-effort, idempotent.
       runAutoDebrief(o.id, { triggeredBy: "mark_to_market" })
@@ -267,7 +338,9 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
         unrealized += paperLedgerModelPnl(o.direction, o.lotSize, o.entryPrice, px);
         unsizedOpenPositions++;
       }
-      margin += o.lotSize * 1000;
+      margin += o.lotSize * PAPER_SIMULATOR_MARGIN_PER_LOT;
+      stillOpen++;
+      if (!prices.has(o.id)) stillOpenBySimulator++;
     }
   }
 
@@ -285,10 +358,18 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
 
   const row = (await db.select().from(paperAccountsTable)
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
-  return row ? {
+  if (!row) return null;
+  // Where these figures came from and what units they are in (read-only; not stored).
+  const valuation = describePaperValuation({
+    openOrders: stillOpen,
+    openPricedBySimulator: stillOpenBySimulator,
+    closedSimulatorPriced: closed.filter((o) => o.status !== "CANCELLED" && !isMarketPriced(o)).length,
+  });
+  return {
     ...row,
     pnlSizing: { unsizedClosedOrders, unsizedOpenPositions, note: paperPnlSizingNote(unsizedClosedOrders, unsizedOpenPositions) },
-  } : null;
+    valuation,
+  };
 }
 
 /** Open a paper order: owner check, SL/TP geometry, Risk Governor, then the simulator book. */
@@ -396,7 +477,7 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
   const cur = await ownPaperOrder(a.orderId, a.userId);
   if (!cur) return { ok: false, reason: "PAPER_ORDER_NOT_FOUND" };
   if (cur.status !== "OPEN") return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
-  const realPriced = cur.strategyId === MARKET_PRICED_SIMULATED_OPEN || cur.strategyId === "build_ee_paper_execution";
+  const realPriced = isMarketPriced(cur);
   const quote = realPriced ? await currentQuote(cur.symbol) : null;
   if (quote && !quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
   const exitPx = quote?.ok ? (cur.direction === "BUY" ? quote.bid : quote.ask) : getMockPrice(cur.symbol, Date.now());

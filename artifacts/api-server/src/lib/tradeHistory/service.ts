@@ -269,14 +269,18 @@ export async function getTradeHistorySummary(userId: number) {
     return { hasTrades: false, count: 0 };
   }
 
+  // Only a closed trade with a recorded net P/L has an outcome. With none,
+  // win rate and P/L are unknown (null), never 0% / 0; an average with no
+  // trade to average is null too.
   const closed = trades.filter((t) => t.closedAt && t.netPnl !== null);
   const wins   = closed.filter((t) => (t.netPnl ?? 0) > 0);
   const losses = closed.filter((t) => (t.netPnl ?? 0) < 0);
 
-  const totalNetPnl = closed.reduce((s, t) => s + (t.netPnl ?? 0), 0);
-  const avgWin  = wins.length   ? wins.reduce((s, t) => s + (t.netPnl ?? 0), 0) / wins.length   : 0;
-  const avgLoss = losses.length ? losses.reduce((s, t) => s + (t.netPnl ?? 0), 0) / losses.length : 0;
-  const winRate = closed.length ? (wins.length / closed.length) * 100 : 0;
+  const totalNetPnl = closed.length ? closed.reduce((s, t) => s + (t.netPnl ?? 0), 0) : null;
+  const avgWin  = wins.length   ? wins.reduce((s, t) => s + (t.netPnl ?? 0), 0) / wins.length   : null;
+  const avgLoss = losses.length ? losses.reduce((s, t) => s + (t.netPnl ?? 0), 0) / losses.length : null;
+  const winRate = closed.length ? (wins.length / closed.length) * 100 : null;
+  const round2 = (v: number | null) => (v == null ? null : Math.round(v * 100) / 100);
 
   // Symbol breakdown
   const bySymbol: Record<string, { count: number; netPnl: number; wins: number }> = {};
@@ -308,13 +312,23 @@ export async function getTradeHistorySummary(userId: number) {
     hasTrades: true,
     count: trades.length,
     closedCount: closed.length,
-    winRate: Math.round(winRate * 10) / 10,
-    totalNetPnl: Math.round(totalNetPnl * 100) / 100,
-    avgWin:  Math.round(avgWin  * 100) / 100,
-    avgLoss: Math.round(avgLoss * 100) / 100,
+    /** Imported rows with no outcome yet: still open, or closed with no net P/L in the file. */
+    withoutOutcomeCount: trades.length - closed.length,
+    winRate: winRate == null ? null : Math.round(winRate * 10) / 10,
+    totalNetPnl: round2(totalNetPnl),
+    avgWin:  round2(avgWin),
+    avgLoss: round2(avgLoss),
+    /** netPnl is in the trading account's currency, which an import does not record. */
+    pnlCurrency: null,
+    pnlCurrencyNote: "P/L is in your trading account's currency as exported; the import does not record which currency that is.",
     topSymbols: symbols,
+    /** topSymbols is ordered by number of closed trades, not by performance. */
+    topSymbolsOrder: "CLOSED_TRADE_COUNT" as const,
     sessions: bySession,
     sources,
+    /** Sources are uploaded history files, not live connections. */
+    sourcesKind: "IMPORTED_FILES" as const,
+    importCount: imports.length,
     dateFrom: trades[trades.length - 1]?.openedAt ?? null,
     dateTo:   trades[0]?.openedAt ?? null,
   };

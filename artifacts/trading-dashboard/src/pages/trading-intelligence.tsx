@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Brain, TrendingUp, TrendingDown, Heart, Upload,
+  Brain, TrendingDown, Heart, Upload,
   BarChart3, Clock, Target, AlertTriangle, CheckCircle,
   ChevronDown, ChevronUp, RefreshCw, Smile,
 } from "lucide-react";
@@ -60,10 +60,61 @@ function StatChip({ label, value, sub }: { label: string; value: string | number
   );
 }
 
+// ── Trade-history summary truth ───────────────────────────────────────────────
+// GET /api/me/trade-history/summary. Only a closed trade with a recorded net
+// P/L has an outcome: with none, win rate and P/L are unknown ("—"), never
+// 0% / $0 (an older server sent 0; closedCount 0 downgrades it). P/L is in the
+// trading account's currency, which an import does not record, so no "$".
+// Sources are uploaded history files, not live connections.
+type TradeHistorySummary = {
+  ok?: boolean; hasTrades?: boolean; count?: number; closedCount?: number; withoutOutcomeCount?: number;
+  winRate?: number | null; totalNetPnl?: number | null; avgWin?: number | null; avgLoss?: number | null;
+  sources?: string[]; importCount?: number; dateFrom?: string | null; dateTo?: string | null;
+  topSymbols?: Array<{ symbol: string; winRate: number; count: number }>;
+  sessions?: Record<string, { count: number; netPnl: number }>;
+};
+
+function measured(s: TradeHistorySummary, v: number | null | undefined): number | null {
+  if (!s.closedCount) return null;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** A P/L amount in the account's (unrecorded) currency: sign first, no "$". */
+export function formatAccountPnl(v: number | null | undefined): string | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return `${v > 0 ? "+" : v < 0 ? "-" : ""}${Math.abs(v).toFixed(2)}`;
+}
+
+function formatWinRate(v: number | null): string | null {
+  return v == null ? null : `${v}%`;
+}
+
+function formatDay(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+}
+
+function sourceLabel(src: string): string {
+  return src.replace("MT5_", "MT5 ").replace("_", " ");
+}
+
+const PNL_CURRENCY_SUB = "account currency";
+const NO_OUTCOME_NOTE = "No imported trade has closed with a recorded P/L yet, so win rate and P/L are not measured.";
+
+/** "Covers trades opened 2026-10-01 to 2026-10-03, from uploaded MT5 CSV files." */
+function coverageLine(s: TradeHistorySummary): string {
+  const from = formatDay(s.dateFrom);
+  const to = formatDay(s.dateTo);
+  const range = from && to ? `Covers trades opened ${from} to ${to}` : "Date range not recorded";
+  const srcs = (s.sources ?? []).map(sourceLabel).join(", ");
+  return `${range}, from uploaded ${srcs ? `${srcs} ` : ""}history files (not a live connection).`;
+}
+
 // ── DNA tab ───────────────────────────────────────────────────────────────────
-function DnaTab() {
+export function DnaTab() {
   const { name } = useAssistantName();
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<TradeHistorySummary>({
     queryKey: ["me", "trade-history", "summary"],
     queryFn:  () => apiFetch("/api/me/trade-history/summary"),
   });
@@ -71,6 +122,16 @@ function DnaTab() {
   if (isLoading) return <div className="text-sm text-muted-foreground p-4">Loading your trading profile…</div>;
 
   const s = data;
+
+  if (isError || !s || s.ok === false) {
+    return (
+      <Alert variant="destructive" data-testid="dna-unavailable">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Trading profile could not be loaded</AlertTitle>
+        <AlertDescription>Your imported history could not be read. This is not the same as having no history.</AlertDescription>
+      </Alert>
+    );
+  }
 
   if (!s?.hasTrades) {
     return (
@@ -90,9 +151,10 @@ function DnaTab() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-semibold">Strategy DNA</h2>
-          <p className="text-xs text-muted-foreground">
-            Built from {s.count} trades across {(s.sources as string[])?.join(", ")}
+          <p className="text-xs text-muted-foreground" data-testid="dna-built-from">
+            Built from {s.count} imported trades, {s.closedCount ?? 0} closed with a recorded P/L.
           </p>
+          <p className="text-xs text-muted-foreground" data-testid="dna-coverage">{coverageLine(s)}</p>
         </div>
         <Button size="sm" variant="ghost" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
@@ -100,26 +162,31 @@ function DnaTab() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatChip label="Win Rate"      value={s.winRate !== null ? `${s.winRate}%` : null} />
-        <StatChip label="Total P/L"     value={s.totalNetPnl !== null ? `$${s.totalNetPnl}` : null} />
-        <StatChip label="Avg Win"       value={s.avgWin  !== null ? `$${s.avgWin}` : null} />
-        <StatChip label="Avg Loss"      value={s.avgLoss !== null ? `$${s.avgLoss}` : null} />
+      {!s.closedCount && (
+        <p className="text-xs text-muted-foreground" data-testid="dna-no-outcome">{NO_OUTCOME_NOTE}</p>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="dna-stats">
+        <StatChip label="Win Rate"      value={formatWinRate(measured(s, s.winRate))} />
+        <StatChip label="Total P/L"     value={formatAccountPnl(measured(s, s.totalNetPnl))} sub={PNL_CURRENCY_SUB} />
+        <StatChip label="Avg Win"       value={formatAccountPnl(measured(s, s.avgWin))} sub={PNL_CURRENCY_SUB} />
+        <StatChip label="Avg Loss"      value={formatAccountPnl(measured(s, s.avgLoss))} sub={PNL_CURRENCY_SUB} />
       </div>
 
-      {s.topSymbols && (s.topSymbols as Array<{ symbol: string; winRate: number; count: number }>).length > 0 && (
+      {s.topSymbols && s.topSymbols.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-1.5">
-              <TrendingUp className="h-4 w-4 text-emerald-500" /> Top Symbols
+              <BarChart3 className="h-4 w-4 text-muted-foreground" /> Most-Traded Symbols
             </CardTitle>
+            <CardDescription className="text-xs" data-testid="dna-symbols-order">Ordered by number of closed trades, not by performance. The badge is that symbol's win rate.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {(s.topSymbols as Array<{ symbol: string; winRate: number; count: number }>).slice(0, 5).map((sym) => (
+            {s.topSymbols.slice(0, 5).map((sym) => (
               <div key={sym.symbol} className="flex items-center justify-between text-sm">
                 <span className="font-medium font-mono">{sym.symbol}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">{sym.count} trades</span>
+                  <span className="text-xs text-muted-foreground">{sym.count} closed trades</span>
                   <Badge
                     variant={sym.winRate >= 55 ? "default" : sym.winRate >= 45 ? "secondary" : "destructive"}
                     className="text-xs"
@@ -141,12 +208,12 @@ function DnaTab() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-2">
-            {Object.entries(s.sessions as Record<string, { count: number; netPnl: number }>).map(([ses, d]) => (
+            {Object.entries(s.sessions).map(([ses, d]) => (
               <div key={ses} className="rounded border p-2 text-xs">
                 <div className="font-medium capitalize mb-0.5">{ses}</div>
-                <div className="text-muted-foreground">{d.count} trades</div>
-                <div className={d.netPnl >= 0 ? "text-emerald-500" : "text-red-400"}>
-                  {d.netPnl >= 0 ? "+" : ""}${d.netPnl.toFixed(2)}
+                <div className="text-muted-foreground">{d.count} closed trades</div>
+                <div className={d.netPnl > 0 ? "text-emerald-500" : d.netPnl < 0 ? "text-red-400" : "text-muted-foreground"}>
+                  {formatAccountPnl(d.netPnl) ?? "—"} <span className="text-muted-foreground">{PNL_CURRENCY_SUB}</span>
                 </div>
               </div>
             ))}
@@ -308,7 +375,7 @@ function MoodTab() {
 }
 
 // ── Trade History tab ─────────────────────────────────────────────────────────
-function TradeHistoryTab() {
+export function TradeHistoryTab() {
   const [file, setFile] = useState<File | null>(null);
   const [source, setSource] = useState<string>("MT5_CSV");
   const [importing, setImporting] = useState(false);
@@ -322,7 +389,7 @@ function TradeHistoryTab() {
     queryFn:  () => apiFetch("/api/me/trade-history/imports"),
   });
 
-  const { data: summaryData } = useQuery({
+  const { data: summaryData, isError: summaryFailed } = useQuery<TradeHistorySummary>({
     queryKey: ["me", "trade-history", "summary"],
     queryFn:  () => apiFetch("/api/me/trade-history/summary"),
   });
@@ -352,12 +419,21 @@ function TradeHistoryTab() {
 
   return (
     <div className="space-y-4">
+      {(summaryFailed || summaryData?.ok === false) && (
+        <p className="text-xs text-amber-500" data-testid="history-summary-unavailable">Your history summary could not be loaded.</p>
+      )}
       {summaryData?.hasTrades && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatChip label="Total Trades" value={summaryData.count} />
-          <StatChip label="Win Rate"     value={`${summaryData.winRate}%`} />
-          <StatChip label="Total P/L"    value={`$${summaryData.totalNetPnl}`} />
-          <StatChip label="Sources"      value={(summaryData.sources as string[])?.length} sub="connected" />
+        <div className="space-y-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="history-stats">
+            <StatChip label="Imported Trades" value={summaryData.count ?? null} sub={`${summaryData.closedCount ?? 0} closed with a recorded P/L`} />
+            <StatChip label="Win Rate"     value={formatWinRate(measured(summaryData, summaryData.winRate))} />
+            <StatChip label="Total P/L"    value={formatAccountPnl(measured(summaryData, summaryData.totalNetPnl))} sub={PNL_CURRENCY_SUB} />
+            <StatChip label="Imports"      value={summaryData.importCount ?? summaryData.sources?.length ?? null} sub="uploaded files, not a live connection" />
+          </div>
+          {!summaryData.closedCount && (
+            <p className="text-xs text-muted-foreground" data-testid="history-no-outcome">{NO_OUTCOME_NOTE}</p>
+          )}
+          <p className="text-xs text-muted-foreground" data-testid="history-coverage">{coverageLine(summaryData)}</p>
         </div>
       )}
 

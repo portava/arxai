@@ -5,8 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import { ShieldAlert } from "lucide-react";
 
 type Sev = "critical" | "high" | "medium" | "low";
+interface IssueLastAction {
+  action: string; at: string | null; adminId: number | null; reason: string | null;
+}
 interface Issue {
   id: string; type: string; severity: Sev;
+  /** The key the server derived `id` from; every action must send it back. */
+  naturalKey?: string;
+  /** Most recent recorded action (actions are audit notes only). */
+  lastAction?: IssueLastAction | null;
   userId: number | null; bridgeConnectionId: number | null;
   commandId: string | null; brokerTicket: string | null;
   symbol: string | null; status: string; reason: string;
@@ -32,7 +39,16 @@ interface Resp {
   truncatedChecks?: Array<{ check: string; type: string; severity: Sev; limit: number }>;
   truncatedTypes?: string[];
   truncatedSeverities?: Sev[];
+  /** false: recorded actions could not be read, so a missing lastAction is unknown. */
+  actionsReadable?: boolean;
 }
+
+const ACTION_DONE_LABEL: Record<string, string> = {
+  RECONCILIATION_ISSUE_DISMISSED: "Dismissed",
+  RECONCILIATION_ISSUE_REVIEWED: "Marked reviewed",
+  RECONCILIATION_ATTRIBUTION_LINKED: "Attribution link recorded",
+  RECONCILIATION_MANUAL_RESOLUTION: "Manual resolution recorded",
+};
 
 const ACTIONS = [
   { key: "dismiss", label: "Dismiss" },
@@ -44,6 +60,9 @@ const ACTIONS = [
 export default function AdminReconciliationCenter() {
   const [data, setData] = useState<Resp | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Set when the issue list could not be loaded: nothing was evaluated, so
+  // the page must not show zero counts or "No open reconciliation issues."
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function load() {
@@ -52,17 +71,18 @@ export default function AdminReconciliationCenter() {
       const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
       if (r.status === 403) { setErr("Admin-only page."); return; }
       if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
-      const j = (await r.json()) as Resp;
+      let j: Resp | null = null;
+      try { j = (await r.json()) as Resp; } catch { j = null; }
       // A failed request is a load failure, never "total 0 / no open issues".
-      if (!r.ok || !j.ok) {
+      if (!r.ok || !j || j.ok !== true || !Array.isArray(j.issues)) {
         setData(null);
-        setErr(`Reconciliation issues could not be loaded${j.reason || j.error ? `: ${j.reason ?? j.error}` : ""}. This is a load failure, not an all-clear.`);
+        setLoadErr(`HTTP ${r.status}${j?.error ? `: ${j.error}` : ""}${j?.reason ? ` (${j.reason})` : ""}`);
         return;
       }
-      setData(j);
+      setData(j); setLoadErr(null);
     } catch (e) {
       setData(null);
-      setErr(`Reconciliation issues could not be loaded${e instanceof Error ? `: ${e.message}` : ""}. This is a load failure, not an all-clear.`);
+      setLoadErr(e instanceof Error ? e.message : String(e));
     }
   }
   useEffect(() => { void load(); }, []);
@@ -73,7 +93,11 @@ export default function AdminReconciliationCenter() {
       alert("Reason is required (min 3 chars).");
       return;
     }
-    const naturalKey = guessNaturalKey(issue);
+    const naturalKey = issue.naturalKey || guessNaturalKey(issue);
+    if (!naturalKey) {
+      alert("This issue came without its action key, so no action can be recorded for it. Reload the page and try again.");
+      return;
+    }
     setBusy(issue.id);
     try {
       const r = await fetch(`/api/admin/reconciliation-center/issues/${issue.id}/${action}`, {
@@ -89,6 +113,23 @@ export default function AdminReconciliationCenter() {
   }
 
   if (err) return <div className="p-6"><Card><CardHeader><CardTitle>{err}</CardTitle></CardHeader></Card></div>;
+  if (loadErr) {
+    return (
+      <div className="p-6">
+        <Card data-testid="card-reconciliation-load-error">
+          <CardHeader><CardTitle className="text-base">Reconciliation issues could not be loaded.</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p className="text-danger">({loadErr})</p>
+            <p className="text-muted-foreground">
+              Nothing was evaluated, so this page cannot say whether any
+              reconciliation issues are open. It is not a count of zero.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => void load()}>Retry</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   if (!data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
 
   const sev = data.countsBySeverity ?? { critical: 0, high: 0, medium: 0, low: 0 };
@@ -106,7 +147,7 @@ export default function AdminReconciliationCenter() {
         <ShieldAlert className="h-6 w-6 text-primary" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Reconciliation Center</h1>
-          <p className="text-sm text-muted-foreground">Admin-only. Read + audited actions only — never places trades.</p>
+          <p className="text-sm text-muted-foreground">Admin-only. Read + audited notes only — never places trades.</p>
         </div>
         <Badge variant="outline">{data.truncated ? `total at least ${data.total ?? 0}` : `total ${data.total ?? 0}`}</Badge>
         {!complete && <Badge variant="outline" className="border-warning/40 text-warning">incomplete check</Badge>}
@@ -164,8 +205,15 @@ export default function AdminReconciliationCenter() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Open issues</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Detected issues</CardTitle></CardHeader>
         <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground" data-testid="text-reconciliation-actions-note">
+            Dismiss, Mark reviewed, Link attribution and Resolve manually each
+            record an audited note with your reason. None of them changes, fixes
+            or hides the issue: it stays listed while its condition is still
+            detected.
+            {data.actionsReadable === false && " Recorded actions could not be loaded, so earlier notes are not shown."}
+          </p>
           {(data.issues ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {complete ? "No open reconciliation issues." : "No issues found by the checks that ran. Not every check ran, so this is not an all-clear."}
@@ -182,6 +230,15 @@ export default function AdminReconciliationCenter() {
                 {i.symbol && <Badge variant="outline">{i.symbol}</Badge>}
                 <Badge variant="outline">{i.status}</Badge>
               </div>
+              {i.lastAction && (
+                <div className="text-xs text-warning" data-testid={`text-issue-last-action-${i.id}`}>
+                  {ACTION_DONE_LABEL[i.lastAction.action] ?? i.lastAction.action}
+                  {i.lastAction.adminId != null ? ` by admin #${i.lastAction.adminId}` : ""}
+                  {i.lastAction.at ? ` at ${new Date(i.lastAction.at).toLocaleString()}` : ""}
+                  {i.lastAction.reason ? ` (“${i.lastAction.reason}”)` : ""}
+                  {" — still detected."}
+                </div>
+              )}
               <div><span className="text-muted-foreground">Reason:</span> {i.reason}</div>
               <div><span className="text-muted-foreground">Recommended:</span> {i.recommendedAction}</div>
               <div className="text-xs text-muted-foreground">id {i.id.slice(0, 12)}…</div>
@@ -199,29 +256,23 @@ export default function AdminReconciliationCenter() {
   );
 }
 
+// Fallback for a response without `naturalKey`. Only the types whose key is
+// built from fields the issue carries can be rebuilt; the row-id keyed types
+// (pos:/att:/vac:/sma:/umla:) cannot, and return "" (the action is refused
+// here rather than sent with a key the server would reject).
 function guessNaturalKey(i: Issue): string {
   const m = i.metadata ?? {};
   switch (i.type) {
     case "BRIDGE_MISMATCH":
     case "STALE_HEARTBEAT":
-      return `conn:${i.bridgeConnectionId}`;
-    case "ORPHAN_BROKER_POSITION":
-      return String((m as { _pos?: string })._pos ?? "");
-    case "MISSING_ATTRIBUTION":
-      return String((m as { _att?: string })._att ?? "");
+      return i.bridgeConnectionId != null ? `conn:${i.bridgeConnectionId}` : "";
     case "COMMAND_RESULT_MISMATCH":
     case "LIVE_DEMO_MODE_MISMATCH":
-      return `cmd:${i.commandId}`;
+      return i.commandId ? `cmd:${i.commandId}` : "";
     case "BLOCKED_REJECTED_COMMAND": {
       const queue = (m.queue as string | undefined) ?? "live";
-      return `${queue}:${i.commandId}`;
+      return i.commandId ? `${queue}:${i.commandId}` : "";
     }
-    case "USER_ALLOCATION_MISMATCH":
-      return String((m as { _vac?: string })._vac ?? "");
-    case "MASTER_BRIDGE_EXPOSURE_WARNING":
-      return String((m as { _sma?: string })._sma ?? "");
-    case "USER_APPROVAL_RISK_LOCK_CONFLICT":
-      return String((m as { _umla?: string })._umla ?? "");
     default:
       return "";
   }

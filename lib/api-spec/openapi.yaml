@@ -13823,6 +13823,15 @@ components:
           type: ["string", "null"]
           description: Deriv synthetic warm-up lifecycle state when applicable
         message: { type: string }
+        notLiveReason:
+          type: ["string", "null"]
+          enum: [market_closed, stored_history, null]
+          description: >
+            Why the series is not live although its bars may be clean: the
+            market is in its scheduled weekend close (market_closed), or the
+            bars are the stored MT5 mirror with no bridge pushing them
+            (stored_history). null when neither applies. Absent from older
+            servers.
 
     ChartMergeSeamReport:
       type: object
@@ -14632,8 +14641,10 @@ components:
         displaySymbol: { type: string }
         timeframe: { type: string }
         feedUsable: { type: boolean, description: True when the state is fresh and understanding engines are populated }
-        dataQuality: { type: string, enum: [ok, insufficient], description: "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution." }
-        bias: { type: string, enum: [bullish, bearish, neutral, unknown] }
+        dataQuality: { type: string, enum: [ok, insufficient], description: "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution." }
+        feedConfirmed: { type: boolean, description: "True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers." }
+        bias: { type: string, enum: [bullish, bearish, neutral, unknown], description: "'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral')." }
+        asOf: { type: string, description: "When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers." }
         headline: { type: string }
         points: { type: array, items: { type: string } }
         cautions: { type: array, items: { type: string } }
@@ -20524,6 +20535,13 @@ components:
             properties:
               currency: { type: string }
               netLots: { type: number }
+        currencyExposureUnmappedRows:
+          type: integer
+          description: Open rows whose symbol could not be split into currencies (not one of the mapped pairs, e.g. EURGBP, XAUUSD, a broker-suffixed name or a synthetic). Their exposure is not in exposureByCurrency, so an empty list with unmapped rows is not "no currency exposure".
+        currencyExposureUnmappedSymbols:
+          type: array
+          items: { type: string }
+          description: The distinct symbols counted in currencyExposureUnmappedRows.
         dailyDrawdown:
           type: number
           description: Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown.

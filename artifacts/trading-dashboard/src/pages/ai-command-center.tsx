@@ -647,9 +647,25 @@ export function MemoryTab() {
             <CardTitle className="text-xs">Improvement Score</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">
-              {c.learningStats.improvementScore.toFixed(2)}
-            </div>
+            {/* Shown as a number only when the server says how it was
+                measured. A server without improvementScoreBasis computed it
+                from current edge scores ordered by id (not a trend), and
+                read 0.00 when it computed nothing. */}
+            {typeof c.learningStats.improvementScore === "number" &&
+            typeof c.learningStats.improvementScoreBasis === "string" ? (
+              <div className="text-xl font-bold" data-testid="improvement-score">
+                {c.learningStats.improvementScore.toFixed(2)}
+              </div>
+            ) : (
+              <>
+                <div className="text-xl font-bold text-txt-secondary" data-testid="improvement-score">Not measured</div>
+                <div className="text-xs text-txt-secondary">
+                  {typeof c.learningStats.improvementScoreBasis === "string"
+                    ? c.learningStats.improvementScoreBasis
+                    : "Change over time is not measured: strategy edges keep only their current score, not a history."}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -713,6 +729,13 @@ export function MemoryTab() {
               Weakest setup:{" "}
               <Badge variant="outline">{c.weakestSetup ?? "—"}</Badge>
             </div>
+            {(c.bestSetup || c.weakestSetup) && (
+              <div className="text-xs text-txt-secondary" data-testid="setup-ranking-basis">
+                {typeof c.setupRankingBasis === "string"
+                  ? c.setupRankingBasis
+                  : "Setups are ranked by the summed P&L of the trades each signal supported; a trade supported by several signals counts toward each, so these sums overlap."}
+              </div>
+            )}
             <div>
               Strongest edge:{" "}
               <span className="text-xs">
@@ -737,9 +760,19 @@ export function MemoryTab() {
               {c.aiDecisionStats.sellCount} · HOLD{" "}
               {c.aiDecisionStats.holdCount})
             </div>
-            <div>
-              Blocked: {c.aiDecisionStats.blockedCount} · Decision→Trade:{" "}
+            {/* Not "Blocked": no safety-filter outcome is stored per
+                decision, so a trade call with no order may have been
+                refused, filtered by a setting, or never sent. */}
+            <div data-testid="decision-calls-without-order">
+              Trade calls with no demo order:{" "}
+              {typeof c.aiDecisionStats.tradeCallsWithoutOrder === "number"
+                ? `${c.aiDecisionStats.tradeCallsWithoutOrder}${typeof c.aiDecisionStats.tradeCalls === "number" ? ` of ${c.aiDecisionStats.tradeCalls}` : ""}`
+                : "—"}{" "}
+              · Decision→Trade:{" "}
               {c.aiDecisionStats.decisionToTradeRate.toFixed(1)}%
+            </div>
+            <div className="text-xs text-txt-secondary">
+              Why a call has no order is not recorded, so this is not a count of safety-filter blocks.
             </div>
             <div>
               Decision→Win rate:{" "}
@@ -835,10 +868,13 @@ export function MemoryTab() {
  *  Center reports. Each surface names the engine it reports. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function PaperAutopilotSummaryCard({ a }: { a: any }) {
-  // The server counts "today" (UTC) from the latest cycles_read_limit cycles
-  // only; when they all started today the counts are lower bounds.
-  const capped = a?.today_counts_capped === true;
-  const n = (v: unknown) => `${v ?? 0}${capped ? "+" : ""}`;
+  // "Today" is the UTC day. A missing summary is "could not be loaded", never
+  // a row of zeros. When the server counted "today" from a read window
+  // (today_counts_capped) the counts are lower bounds.
+  const loaded = a != null && typeof a.cycles_today === "number";
+  const capped = loaded && a.today_counts_capped === true;
+  const n = (v: unknown) =>
+    loaded && typeof v === "number" ? `${v}${capped ? "+" : ""}` : "—";
   return (
     <Card className="rounded-2xl border-border bg-card">
       <CardHeader>
@@ -855,38 +891,44 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           is a separate engine and is not counted here.
         </p>
       </CardHeader>
-      {!a ? (
-        <CardContent
-          className="text-sm text-txt-secondary"
-          data-testid="paper-autopilot-missing"
-        >
-          The paper autopilot summary was not returned, so today&apos;s cycles
-          and trades are unknown.
-        </CardContent>
-      ) : (
       <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
-          <div className="text-txt-secondary text-xs">Cycles today</div>
-          <div className="font-bold">{n(a?.cycles_today)}</div>
+          <div className="text-txt-secondary text-xs">Cycles today (UTC)</div>
+          <div className="font-bold" data-testid="autopilot-cycles-today">{n(a?.cycles_today)}</div>
         </div>
         <div>
-          <div className="text-txt-secondary text-xs">Opened today</div>
+          <div className="text-txt-secondary text-xs">Opened today (UTC)</div>
           <div className="font-bold">
             {n(a?.paper_trades_opened_today)}
           </div>
         </div>
         <div>
-          <div className="text-txt-secondary text-xs">Closed today</div>
+          <div className="text-txt-secondary text-xs">Closed today (UTC)</div>
           <div className="font-bold">
             {n(a?.paper_trades_closed_today)}
           </div>
         </div>
         <div>
           <div className="text-txt-secondary text-xs">
-            Safety blocks today
+            Safety blocks today (UTC)
           </div>
           <div className="font-bold">{n(a?.safety_blocks_today)}</div>
         </div>
+        {!loaded ? (
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
+            data-testid="paper-autopilot-missing"
+          >
+            <span data-testid="autopilot-today-note">
+              The paper autopilot summary could not be loaded, so today&apos;s
+              cycles and trades are unknown.
+            </span>
+          </div>
+        ) : a.cycles_today === 0 ? (
+          <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
+            No autopilot cycle has run today (UTC), so it has opened, closed and blocked nothing today.
+          </div>
+        ) : null}
         {capped && (
           <div
             className="col-span-2 sm:col-span-4 text-xs text-warning"
@@ -897,7 +939,7 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
             at least these numbers.
           </div>
         )}
-        {a?.last_cycle && (
+        {loaded && a.last_cycle && (
           <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
             Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
             {a.last_cycle.status} · opened{" "}
@@ -906,7 +948,6 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         )}
       </CardContent>
-      )}
     </Card>
   );
 }

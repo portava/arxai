@@ -4,7 +4,7 @@
 // (api-server/src/routes/meTradingMode.ts) — there is no top-level
 // tradingMode, so reading one left a LIVE trader on their demo calendar.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TradingCalendarPage from "./trading-calendar";
 
@@ -54,10 +54,10 @@ describe("Trading Calendar mode", () => {
       "/api/performance/calendar": { body: { calendar: { month, days: [], total_pnl: 999, total_trades: 9, winning_days: 9, losing_days: 0, no_trade_days: 0 } } },
     });
     renderPage();
-    expect(await screen.findByText(/from your live trades/)).toBeTruthy();
+    expect(await screen.findByText(/win rate from your closed live trades/)).toBeTruthy();
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/me/performance-calendar?from="))).toBe(true));
     expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/performance/calendar"))).toBe(false);
-    expect(document.body.textContent).not.toMatch(/from your demo trades/);
+    expect(document.body.textContent).not.toMatch(/from your (demo trades|simulated orders)/);
     expect(screen.queryByTestId("btn-rebuild")).toBeNull();
     // The live day keeps its real P&L, and a live day carries no invented rating.
     const cell = await screen.findByTestId(`day-${month}-03`);
@@ -73,7 +73,7 @@ describe("Trading Calendar mode", () => {
       "/api/performance/calendar": { body: { calendar: { month, days: [], total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0, no_trade_days: 0 } } },
     });
     renderPage();
-    expect(await screen.findByText(/from your demo trades/)).toBeTruthy();
+    expect(await screen.findByText(/AI activity from your simulated orders/)).toBeTruthy();
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/performance/calendar?month="))).toBe(true));
     expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/me/performance-calendar"))).toBe(false);
   });
@@ -94,7 +94,7 @@ describe("Trading Calendar mode", () => {
     expect(screen.getByTestId("calendar-total-pnl").textContent).toMatch(/Not shown/);
     expect(screen.getByTestId("calendar-total-trades").textContent).toMatch(/Not shown/);
     expect(body).not.toMatch(/0\.00/);
-    expect(body).not.toMatch(/from your live trades/);
+    expect(body).not.toMatch(/from your (closed )?live trades/);
   });
 });
 
@@ -134,8 +134,8 @@ describe("Trading Calendar failed loads", () => {
     renderPage();
     expect((await screen.findByTestId("calendar-mode-error")).textContent).toMatch(/could not be loaded/);
     const body = document.body.textContent ?? "";
-    expect(body).not.toMatch(/from your demo trades/);
-    expect(body).not.toMatch(/from your live trades/);
+    expect(body).not.toMatch(/from your (demo trades|simulated orders)/);
+    expect(body).not.toMatch(/from your (closed )?live trades/);
     expect(screen.queryByTestId("btn-rebuild")).toBeNull();
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
   });
@@ -171,7 +171,7 @@ describe("Trading Calendar rebuild button", () => {
     renderPage();
     const btn = await screen.findByTestId("btn-rebuild");
     expect(btn.textContent).toMatch(/snapshots/i);
-    expect(screen.getByTestId("calendar-source-note").textContent).toMatch(/demo orders each time this page loads/);
+    expect(screen.getByTestId("calendar-source-note").textContent).toMatch(/simulated orders each time this page loads/);
     await waitFor(() => expect(calendarCalls()).toBe(1));
     btn.click();
     const result = await screen.findByTestId("rebuild-result");
@@ -190,5 +190,184 @@ describe("Trading Calendar rebuild button", () => {
     renderPage();
     (await screen.findByTestId("btn-rebuild")).click();
     expect((await screen.findByTestId("rebuild-result")).textContent).toMatch(/could not be rebuilt/);
+  });
+});
+
+// ── What each cell and the day detail claim (merged from the calendar truth
+// fixes: grades, open/cancelled P&L, source ledger, profit factor). ──
+type Routes = Record<string, unknown>;
+
+function mockFetch(routes: Routes) {
+  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+    const url = String(input);
+    const key = Object.keys(routes).find((k) => url.startsWith(k));
+    const body = key ? routes[key] : {};
+    return { ok: true, status: 200, json: async () => body } as Response;
+  }));
+}
+
+function day(date: string, over: Record<string, unknown> = {}) {
+  return {
+    date, net_pnl: 0, total_trades: 0, wins: 0, losses: 0, win_rate: 0,
+    day_rating: null, day_status: "NO_TRADE_DAY", debriefs_created: 0, learning_events_created: 0,
+    symbols_traded: [], is_future: false, ...over,
+  };
+}
+
+const MONTH = new Date().toISOString().slice(0, 7);
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe("trading calendar: day grades", () => {
+  it("a no-trade day and a future day carry no grade badge; a future day says 'not yet'", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
+      "/api/performance/calendar": {
+        calendar: {
+          month: MONTH, total_pnl: 2, total_trades: 1, winning_days: 1, losing_days: 0, no_trade_days: 1,
+          days: [
+            day(`${MONTH}-01`),
+            day(`${MONTH}-02`, { net_pnl: 2, total_trades: 1, wins: 1, win_rate: 100, day_rating: "A", day_status: "WINNING_DAY" }),
+            day(`${MONTH}-03`, { is_future: true }),
+          ],
+        },
+      },
+      "/api/performance/day": {
+        day: { date: `${MONTH}-01`, stats: { net_pnl: 0, total_trades: 0, win_rate: 0, profit_factor: null, day_rating: null, top_lesson: "" }, trades: [] },
+      },
+    });
+    renderPage();
+    await screen.findByTestId(`day-${MONTH}-01`);
+    expect(screen.getByTestId(`day-${MONTH}-01`).textContent).not.toMatch(/F/);
+    expect(screen.queryByTestId(`day-rating-${MONTH}-01`)).toBeNull();
+    expect(screen.queryByTestId(`day-rating-${MONTH}-03`)).toBeNull();
+    expect(screen.getByTestId(`day-rating-${MONTH}-02`).textContent).toBe("A");
+    expect(screen.getByTestId(`day-${MONTH}-03`).textContent).toMatch(/not yet/);
+    expect(screen.getByTestId(`day-${MONTH}-03`).textContent).not.toMatch(/no trades/);
+
+    fireEvent.click(screen.getByTestId(`day-${MONTH}-01`));
+    const detail = await screen.findByTestId("day-detail-rating");
+    await waitFor(() => expect(detail.textContent).toMatch(/Not rated/));
+    expect(detail.textContent).not.toMatch(/^F$/);
+  });
+
+  it("live days are not given an invented grade", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "LIVE" } },
+      "/api/me/performance-calendar": { days: [{ date: `${MONTH}-02`, totalPnl: -5, tradesCount: 2, wins: 0, losses: 2, winRate: 0 }] },
+    });
+    renderPage();
+    await screen.findByTestId(`day-${MONTH}-02`);
+    expect(screen.queryByTestId(`day-rating-${MONTH}-02`)).toBeNull();
+    // It used to print a "C" badge on every live day, whatever the result.
+    expect(screen.getByTestId(`day-${MONTH}-02`).textContent).not.toMatch(/C/);
+  });
+});
+
+describe("trading calendar: day detail P&L", () => {
+  it("an open or cancelled order shows no P&L, not a green 0.00 (also when an older server sends 0)", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
+      "/api/performance/calendar": {
+        calendar: { month: MONTH, total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0, no_trade_days: 1, days: [day(`${MONTH}-01`)] },
+      },
+      "/api/performance/day": {
+        day: {
+          date: `${MONTH}-01`,
+          stats: { net_pnl: 2, total_trades: 1, win_rate: 100, profit_factor: null, day_rating: "A", top_lesson: "" },
+          trades: [
+            { trade_id: 12, symbol: "EURUSD", action: "BUY", status: "OPEN", pnl: null, pnl_note: "Still open — no realized P&L yet (unrealized P&L is not recorded on the order).", entry_price: 1.1, exit_price: null, stop_loss: 1.09, take_profit: 1.12, decision_id: null },
+            { trade_id: 13, symbol: "EURUSD", action: "SELL", status: "CANCELLED", pnl: 0, entry_price: 1.1, exit_price: null, stop_loss: 1.11, take_profit: 1.08, decision_id: null },
+            { trade_id: 14, symbol: "EURUSD", action: "BUY", status: "CLOSED_TP", pnl: 2, pnl_note: null, entry_price: 1.1, exit_price: 1.12, stop_loss: 1.09, take_profit: 1.12, decision_id: null },
+          ],
+        },
+      },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId(`day-${MONTH}-01`));
+    const open = await screen.findByTestId("trade-pnl-12");
+    expect(open.textContent).not.toMatch(/0\.00/);
+    expect(open.textContent).toMatch(/no realized P&L/);
+    expect(open.className).not.toMatch(/emerald/);
+    const cancelled = screen.getByTestId("trade-pnl-13");
+    expect(cancelled.textContent).not.toMatch(/0\.00/);
+    expect(cancelled.textContent).toMatch(/Cancelled/);
+    expect(screen.getByTestId("trade-pnl-14").textContent).toBe("2.00");
+  });
+
+  it("a live trade with no recorded P&L is not shown as 0.00", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "LIVE" } },
+      "/api/me/performance-calendar/": { date: `${MONTH}-02`, totalPnl: 0, tradesCount: 1, winRate: 0, trades: [{ id: 5, symbol: "EURUSD", side: "buy", pnl: null, entryPrice: 1.1, exitPrice: 1.1 }] },
+      "/api/me/performance-calendar": { days: [{ date: `${MONTH}-02`, totalPnl: 0, tradesCount: 1, wins: 0, losses: 0, winRate: 0 }] },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId(`day-${MONTH}-02`));
+    const cell = await screen.findByTestId("trade-pnl-5");
+    expect(cell.textContent).not.toMatch(/0\.00/);
+  });
+});
+
+describe("trading calendar: source", () => {
+  it("names its ledger (simulated orders) and says My Performance's hand-logged trades are separate", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
+      // An older server sends no source note: the page still names its source.
+      "/api/performance/calendar": {
+        calendar: { month: MONTH, total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0, no_trade_days: 1, days: [day(`${MONTH}-01`)] },
+      },
+    });
+    renderPage();
+    await screen.findByTestId(`day-${MONTH}-01`);
+    expect(screen.queryByText(/from your demo trades/)).toBeNull();
+    const note = screen.getByTestId("calendar-source-note");
+    expect(note.textContent).toMatch(/simulated orders/i);
+    expect(note.textContent).toMatch(/My Performance/);
+  });
+
+  it("live mode shows the server's source note", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "LIVE" } },
+      "/api/me/performance-calendar": { days: [], source: "live_trades", sourceNote: "From your closed live trades recorded against your account." },
+    });
+    renderPage();
+    const note = await screen.findByTestId("calendar-source-note");
+    await waitFor(() => expect(note.textContent).toMatch(/closed live trades recorded against your account/));
+  });
+});
+
+describe("trading calendar: day profit factor", () => {
+  for (const [label, pf] of [["new server (null)", null], ["older server (9.99 cap)", 9.99]] as const) {
+    it(`no losing trade: profit factor is undefined, not 9.99 — ${label}`, async () => {
+      mockFetch({
+        "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
+        "/api/performance/calendar": {
+          calendar: { month: MONTH, total_pnl: 2, total_trades: 1, winning_days: 1, losing_days: 0, no_trade_days: 0, days: [day(`${MONTH}-01`, { total_trades: 1, wins: 1, net_pnl: 2, day_rating: "A", day_status: "WINNING_DAY" })] },
+        },
+        "/api/performance/day": {
+          day: { date: `${MONTH}-01`, stats: { net_pnl: 2, total_trades: 1, wins: 1, losses: 0, win_rate: 100, profit_factor: pf, day_rating: "A", top_lesson: "" }, trades: [] },
+        },
+      });
+      renderPage();
+      fireEvent.click(await screen.findByTestId(`day-${MONTH}-01`));
+      const cell = await screen.findByTestId("day-detail-profit-factor");
+      expect(cell.textContent).not.toMatch(/9\.99/);
+      expect(cell.textContent).toMatch(/No losses/);
+    });
+  }
+
+  it("a measured profit factor is shown", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
+      "/api/performance/calendar": {
+        calendar: { month: MONTH, total_pnl: 1.5, total_trades: 2, winning_days: 1, losing_days: 0, no_trade_days: 0, days: [day(`${MONTH}-01`, { total_trades: 2 })] },
+      },
+      "/api/performance/day": {
+        day: { date: `${MONTH}-01`, stats: { net_pnl: 1.5, total_trades: 2, wins: 1, losses: 1, win_rate: 50, profit_factor: 2, day_rating: "B", top_lesson: "" }, trades: [] },
+      },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId(`day-${MONTH}-01`));
+    expect((await screen.findByTestId("day-detail-profit-factor")).textContent).toBe("2.00");
   });
 });

@@ -191,7 +191,9 @@ type ReportRow = typeof edgeDiscoveryReportsTable.$inferSelect;
 // The stored behaviour sentence (behaviourSentence, always last in the
 // summary) is kept: it is what behaviourBasisOf reads, and dropping it made a
 // slice measured from its own debriefs read as an older account-wide report.
-function presentReport(r: ReportRow): ReportRow {
+// Exported so every reader of edge reports (mentor, trade decision, analytics)
+// presents the same status and confidence as the edge board.
+export function presentReport(r: ReportRow): ReportRow {
   if (r.profitFactor < PF_NO_LOSSES_MARKER) return r;
   const s: Stats = {
     sampleSize: r.sampleSize, winRate: r.winRate, averageRr: r.averageRr,
@@ -236,7 +238,8 @@ function latestPerSlice(rows: ReportRow[]): ReportRow[] {
   }
   return out;
 }
-async function loadLatestSlices(userId: number): Promise<ReportRow[]> {
+/** The edge board's current picture: newest generation of each slice, re-derived. */
+export async function loadLatestSlices(userId: number): Promise<ReportRow[]> {
   const rows = await db.select().from(edgeDiscoveryReportsTable)
     .where(eq(edgeDiscoveryReportsTable.userId, userId))
     .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(SLICE_SCAN_LIMIT);

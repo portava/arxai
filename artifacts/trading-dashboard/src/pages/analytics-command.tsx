@@ -5,7 +5,8 @@ import {
   EquityCurveChart, DrawdownChart, StrategyAnalyticsTable,
   SessionHeatmap, EmotionalTrendGraph, RiskExposureGraph, ConsistencyTrendCard,
 } from "@/components/analytics";
-import type { AnalyticsSnapshot, StrategyRow, EquityPoint } from "@/components/analytics";
+import type { AnalyticsFigures, AnalyticsSnapshot, AnalyticsCurrent, StrategyRow, EquityPoint } from "@/components/analytics";
+import type { EdgeSliceHighlight } from "@/components/analytics/types";
 
 /**
  * What the money figures cover (routes/analytics.ts pnlCoverageOf). A closed
@@ -16,7 +17,7 @@ interface PnlCoverage {
   unsizedSymbols: string[]; note: string;
 }
 interface DrawdownResponse { equityCurve: EquityPoint[]; maxDrawdown: number; pnlCoverage?: PnlCoverage }
-interface SessionBucket { trades: number; pnl: number; wins: number }
+interface SessionBucket { trades: number; pnl: number; wins: number; sizedTrades?: number }
 type SessionData = Record<"ASIA"|"LONDON"|"NEWYORK", SessionBucket>;
 interface EmotionalResponse { trend: Array<{ idx:number; isCalm:number; followedPlan:number; emotion:string }>; totalDebriefs: number }
 
@@ -34,19 +35,33 @@ const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "
 
 const NOT_MEASURED = "not measured";
 
+/** GET /analytics/snapshot: the last saved snapshot and the figures computed now. */
+interface SnapshotResponse {
+  snapshot: AnalyticsSnapshot | null;
+  /** Absent on older servers; null with currentError when the live computation failed. */
+  current?: AnalyticsCurrent | null;
+  currentError?: string | null;
+}
+
+function when(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+}
+
 export default function AnalyticsCommandCenter() {
   const qc = useQueryClient();
-  const snap = useQuery<{ snapshot: AnalyticsSnapshot | null }>({
+  const snap = useQuery<SnapshotResponse>({
     queryKey: ["analytics-snapshot"],
-    queryFn: () => getAnalyticsJson<{ snapshot: AnalyticsSnapshot | null }>("/api/analytics/snapshot", "Loading the analytics snapshot"),
+    queryFn: () => getAnalyticsJson<SnapshotResponse>("/api/analytics/snapshot", "Loading the analytics snapshot"),
   });
   const strat = useQuery<{ strategies: StrategyRow[]; pnlCoverage?: PnlCoverage }>({
     queryKey: ["analytics-strategy"],
     queryFn: () => getAnalyticsJson<{ strategies: StrategyRow[]; pnlCoverage?: PnlCoverage }>("/api/analytics/strategy", "Loading strategy analytics"),
   });
-  const sess = useQuery<{ session: SessionData }>({
+  const sess = useQuery<{ session: SessionData; sessionBasis?: string }>({
     queryKey: ["analytics-session"],
-    queryFn: () => getAnalyticsJson<{ session: SessionData }>("/api/analytics/session", "Loading session analytics"),
+    queryFn: () => getAnalyticsJson<{ session: SessionData; sessionBasis?: string }>("/api/analytics/session", "Loading session analytics"),
   });
   const emo = useQuery<EmotionalResponse>({
     queryKey: ["analytics-emotional"],
@@ -74,7 +89,19 @@ export default function AnalyticsCommandCenter() {
     }
   }, [snap.isSuccess, snap.data?.snapshot, generate]);
 
-  const s = snap.data?.snapshot ?? null;
+  // The tiles use the figures computed now from every paper order when the
+  // server sent them, so they agree with the tables below (always computed
+  // live). Otherwise they fall back to the last saved snapshot, which can miss
+  // trades closed after it was computed, and the page says so.
+  const saved = snap.data?.snapshot ?? null;
+  const live = snap.data?.current ?? null;
+  const s = live ?? (saved ? downgradeSaved(saved) : null);
+  const savedAt = when(saved?.createdAt);
+  const asOfLine = live
+    ? `Computed from all your paper orders at ${when(live.asOf) ?? "an unknown time"}.${savedAt ? ` Last saved snapshot: ${savedAt}.` : ""}`
+    : saved
+      ? `Saved snapshot computed ${savedAt ?? "at an unknown time"} — trades closed after it are not included${snap.data?.currentError ? ` (${snap.data.currentError})` : ""}. Recompute to refresh.`
+      : null;
   const snapshotState: string = snap.isError
     ? `The analytics snapshot could not be loaded. ${errorMessage(snap.error)}`
     : snap.isPending
@@ -86,10 +113,11 @@ export default function AnalyticsCommandCenter() {
           : "No analytics snapshot yet. Use Recompute snapshot to compute one.";
   const snapshotFailed = snap.isError || generate.isError;
 
-  // The stored snapshot's money columns are NOT NULL, so a snapshot with no
-  // sizable trade holds 0 (or an older Δprice × lots × 100 figure). The
-  // current coverage (drawdown response) says whether they are results.
-  const coverage = dd.data?.pnlCoverage ?? strat.data?.pnlCoverage ?? null;
+  // What the money figures cover: the live figures' own coverage (computed with
+  // the tiles), else the drawdown or strategy response's. A saved snapshot's
+  // money columns are NOT NULL, so one with no sizable trade holds 0 (or an
+  // older Δprice × lots × 100 figure); the coverage says whether they are results.
+  const coverage = live?.pnlCoverage ?? dd.data?.pnlCoverage ?? strat.data?.pnlCoverage ?? null;
   const coverageUnavailable = coverage == null && (dd.isError || dd.isSuccess);
   const pnlNotMeasured = coverage != null && coverage.closedTrades > 0 && coverage.sizedTrades === 0;
   const money = (v: string) => (pnlNotMeasured ? NOT_MEASURED : v);
@@ -112,7 +140,9 @@ export default function AnalyticsCommandCenter() {
 
       {generate.isError && s && (
         <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
-          The snapshot could not be recomputed. {errorMessage(generate.error)}. The figures below are from the previous snapshot.
+          The snapshot could not be recomputed. {errorMessage(generate.error)}. {live
+            ? "The figures below are computed now from your paper orders; the saved snapshot was not updated."
+            : "The figures below are from the previous snapshot."}
         </p>
       )}
 
@@ -123,16 +153,27 @@ export default function AnalyticsCommandCenter() {
         </p>
       ) : (
         <>
+          <p className={`text-[11px] ${live ? "text-slate-400" : "text-amber-300"}`} data-testid="analytics-asof">{asOfLine}</p>
+
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
             <Stat id="trades"        label="Trades"        v={s.totalTrades.toString()} />
-            <Stat id="net-p-l"       label="Net P&L"       v={money(`$${s.netProfitLoss.toFixed(0)}`)} tone={moneyTone(s.netProfitLoss >= 0)} />
-            <Stat id="win-rate"      label="Win rate"      v={`${(s.winRate*100).toFixed(1)}%`} />
-            <Stat id="avg-rr"        label="Avg RR"        v={`${s.averageRr.toFixed(2)}R`} />
-            <Stat id="expectancy"    label="Expectancy"    v={money(`$${s.expectancy.toFixed(2)}`)} tone={moneyTone(s.expectancy >= 0)} />
-            <Stat id="profit-factor" label="Profit factor" v={money(s.profitFactor === 999 ? "∞" : s.profitFactor.toFixed(2))} />
-            <Stat id="max-dd"        label="Max DD"        v={money(`$${s.maxDrawdown.toFixed(0)}`)} tone={pnlNotMeasured ? undefined : "red"} />
+            {/* null = not measured: "—", no colour, and the reason below. When no
+                closed trade could be sized in USD every money figure reads
+                "not measured", with the coverage note below. */}
+            <Stat id="net-pnl"       label="Net P&L (USD)" v={s.netProfitLoss == null ? "—" : money(`$${s.netProfitLoss.toFixed(0)}`)} tone={s.netProfitLoss == null ? undefined : moneyTone(s.netProfitLoss >= 0)} />
+            <Stat id="win-rate"      label="Win rate"      v={s.winRate == null ? "—" : `${(s.winRate*100).toFixed(1)}%`} />
+            <Stat id="avg-rr"        label="Avg RR"        v={s.averageRr == null ? "—" : `${s.averageRr.toFixed(2)}R`} />
+            <Stat id="expectancy"    label="Expectancy"    v={s.expectancy == null ? "—" : money(`$${s.expectancy.toFixed(2)}`)} tone={s.expectancy == null ? undefined : moneyTone(s.expectancy >= 0)} />
+            <Stat id="profit-factor" label="Profit factor" v={s.profitFactor == null ? "—" : money(s.profitFactor.toFixed(2))} />
+            <Stat id="max-dd"        label="Max DD"        v={s.maxDrawdown == null ? "—" : money(`$${s.maxDrawdown.toFixed(0)}`)} tone={!pnlNotMeasured && s.maxDrawdown != null && s.maxDrawdown > 0 ? "red" : undefined} />
           </section>
+          {notMeasuredLine(s) ? (
+            <p className="text-[11px] text-slate-400" data-testid="analytics-unmeasured">{notMeasuredLine(s)}</p>
+          ) : null}
 
+          {/* What the money figures are and cover: USD at contract size,
+              recomputed from fill prices (not the booked demo P&L Ruby Memory
+              shows), and which closed trades could not be sized. */}
           <p className={`text-[11px] ${pnlNotMeasured || coverageUnavailable ? "text-amber-300" : "text-slate-400"}`} data-testid="analytics-pnl-coverage">
             {coverage
               ? coverage.note
@@ -163,7 +204,7 @@ export default function AnalyticsCommandCenter() {
               ? <LoadError what="Session performance" error={sess.error} />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
-                : <SessionHeatmap data={(sess.data?.session ?? {}) as any} />}
+                : <SessionHeatmap data={(sess.data?.session ?? {}) as any} basis={sess.data?.sessionBasis} />}
           </div>
 
           {emo.isError
@@ -171,7 +212,7 @@ export default function AnalyticsCommandCenter() {
             : <EmotionalTrendGraph trend={emo.data?.trend ?? []} />}
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-200">Strategy Analytics</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-200">Results by symbol</h3>
             {strat.isError
               ? <LoadError what="Strategy analytics" error={strat.error} />
               : pnlNotMeasured && coverage
@@ -180,10 +221,18 @@ export default function AnalyticsCommandCenter() {
           </section>
 
           <section className="grid gap-3 sm:grid-cols-2">
-            <Highlight id="strongest-strategy" label="Strongest strategy"         v={pnlNotMeasured ? NOT_MEASURED : s.strongestStrategy} tone="emerald" />
-            <Highlight id="weakest-strategy"   label="Weakest strategy"           v={pnlNotMeasured ? NOT_MEASURED : s.weakestStrategy} tone="red" />
-            <Highlight id="strongest-market-condition" label="Strongest market condition" v={s.strongestMarketCondition} tone="emerald" />
-            <Highlight id="weakest-market-condition"   label="Weakest market condition"   v={s.weakestMarketCondition} tone="red" />
+            {/* These group by SYMBOL and by Edge Discovery slice: paper orders
+                carry no strategy, and no edge report records a market condition.
+                Best / worst symbol rank by money, so they are "not measured"
+                when no closed trade could be sized. */}
+            <Highlight id="best-symbol"  label="Best symbol (net P&L)"  v={pnlNotMeasured ? NOT_MEASURED : live ? live.strongestSymbol ?? null : s.strongestStrategy} tone="emerald" empty="No symbol is net profitable"
+              sub={live?.highlightBasis?.symbols ?? "Highest net P&L among symbols when the snapshot was saved."} />
+            <Highlight id="worst-symbol" label="Worst symbol (net P&L)" v={pnlNotMeasured ? NOT_MEASURED : live ? live.weakestSymbol ?? null : s.weakestStrategy} tone="red" empty="No symbol is net losing"
+              sub={live?.highlightBasis?.symbols ?? "Lowest net P&L among symbols when the snapshot was saved."} />
+            <Highlight id="strongest-edge" label="Strongest edge slice" v={live ? edgeSliceText(live.strongestEdgeSlice) : s.strongestMarketCondition} tone="emerald" empty="No slice is rated a strong or developing edge"
+              sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the highest confidence score when the snapshot was saved — not your results in a market condition."} />
+            <Highlight id="weakest-edge" label="Weakest edge slice" v={live ? edgeSliceText(live.weakestEdgeSlice) : s.weakestMarketCondition} tone="red" empty="No slice is rated a weak or no edge"
+              sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the lowest confidence score when the snapshot was saved — not your results in a market condition."} />
           </section>
 
           <p className="text-[10px] italic text-slate-500">
@@ -202,21 +251,62 @@ function LoadError({ what, error }: { what: string; error: unknown }) {
     </p>
   );
 }
-function Stat({ id, label, v, tone }: { id: string; label: string; v: string; tone?: "emerald"|"red" }) {
+function Stat({ id, label, v, tone }: { id?: string; label: string; v: string; tone?: "emerald"|"red" }) {
   const t = tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";
   return (
-    <div className="rounded border border-slate-700 bg-slate-900/50 p-2 text-center" data-testid={`stat-${id}`}>
+    <div className="rounded border border-slate-700 bg-slate-900/50 p-2 text-center" data-testid={id ? `analytics-stat-${id}` : undefined}>
       <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
       <div className={`text-base font-bold ${t}`}>{v}</div>
     </div>
   );
 }
-function Highlight({ id, label, v, tone }: { id: string; label: string; v: string | null; tone: "emerald"|"red" }) {
+const FIGURE_LABELS: Record<string, string> = {
+  netProfitLoss: "Net P&L", winRate: "Win rate", averageRr: "Avg RR", expectancy: "Expectancy",
+  profitFactor: "Profit factor", maxDrawdown: "Max DD",
+};
+/** "Not measured: Win rate (No closed paper trades yet); ..." for the tiles above. */
+function notMeasuredLine(f: AnalyticsFigures): string | null {
+  const parts = Object.entries(FIGURE_LABELS)
+    .filter(([k]) => f[k as keyof AnalyticsFigures] == null)
+    .map(([k, label]) => {
+      const why = f.unmeasured?.[k];
+      return why ? `${label} (${why.endsWith(".") ? why.slice(0, -1) : why})` : label;
+    });
+  return parts.length ? `Not measured: ${parts.join("; ")}.` : null;
+}
+
+/**
+ * A saved snapshot's columns are NOT NULL, so "not measured" was stored as 0
+ * (and a profit factor with no losing trade as 999). Downgrade what the row
+ * itself shows was not measured; its behaviour scores cannot be told apart.
+ */
+function downgradeSaved(r: AnalyticsSnapshot): AnalyticsFigures {
+  const noTrades = r.totalTrades === 0;
+  const why = "No closed paper trades when this snapshot was saved.";
+  return {
+    ...r,
+    netProfitLoss: noTrades ? null : r.netProfitLoss,
+    winRate: noTrades ? null : r.winRate,
+    averageRr: noTrades ? null : r.averageRr,
+    expectancy: noTrades ? null : r.expectancy,
+    profitFactor: noTrades || r.profitFactor === 999 ? null : r.profitFactor,
+    maxDrawdown: noTrades ? null : r.maxDrawdown,
+    unmeasured: noTrades
+      ? Object.fromEntries(Object.keys(FIGURE_LABELS).map((k) => [k, why]))
+      : r.profitFactor === 999 ? { profitFactor: "No losing trade, so gross win ÷ gross loss is undefined." } : {},
+  };
+}
+
+function edgeSliceText(e: EdgeSliceHighlight | null | undefined): string | null {
+  return e ? `${e.label} — ${e.statusWords}, confidence ${e.confidenceScore}/100 (${e.sampleSize} trades)` : null;
+}
+function Highlight({ id, label, v, tone, sub, empty }: { id: string; label: string; v: string | null; tone: "emerald"|"red"; sub?: string; empty: string }) {
   const t = tone === "emerald" ? "border-emerald-700 bg-emerald-950/30 text-emerald-100" : "border-red-700 bg-red-950/30 text-red-100";
   return (
-    <div className={`rounded border p-3 ${t}`} data-testid={`highlight-${id}`}>
+    <div className={`rounded border p-3 ${t}`} data-testid={`analytics-highlight-${id}`}>
       <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>
-      <div className="text-base font-semibold">{v ?? "—"}</div>
+      <div className="text-base font-semibold">{v ?? empty}</div>
+      {sub ? <div className="mt-1 text-[10px] opacity-70">{sub}</div> : null}
     </div>
   );
 }
