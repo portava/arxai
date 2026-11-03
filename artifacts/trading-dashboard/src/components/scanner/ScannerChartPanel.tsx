@@ -301,16 +301,62 @@ type ChartPending = {
   pendingStatus: string | null;
   status: string;
   expiration?: string | null;
+  /** What a submit would answer for the bridge now (server, at bridgeCheckedAt). */
+  currentPendingStatus?: string | null;
+  currentPendingReason?: string | null;
+  /** When the server read the bridge for this list (list-level, copied per draft). */
+  bridgeCheckedAt?: string | null;
 };
+
+// Why a draft was not sent, by the bridge answer the server stored when the
+// draft was saved or last submitted (resolvePendingSubmitStatus vocabulary).
+// None of these reaches the broker.
+const DRAFT_NOT_SENT_REASON: Record<string, string> = {
+  BRIDGE_DISCONNECTED: "your MT5 bridge had not sent a recent heartbeat, so pending-order support could not be checked",
+  BRIDGE_UNSUPPORTED: "your connected EA did not report support for this pending-order type",
+  EA_UPGRADE_REQUIRED: "the trading bridge could not place pending orders",
+  READ_ONLY: "ARX's pending-order path is read-only and does not deliver pending orders to the broker",
+  LIVE_LOCKED: "live execution was locked, so pending-order submission was disabled",
+  BLOCKED_BY_PAPER_LOCK: "ARX is paper-only and its queue gate does not deliver pending orders to the broker",
+  TRADING_DISABLED: "trading was disabled for this account",
+  BLOCKED_BY_RISK: "the risk governor blocked the submission",
+};
+
+// The server's current bridge answer for a refusal draft, in plain English.
+const DRAFT_NOW_LABEL: Record<string, string> = {
+  BRIDGE_DISCONNECTED: "bridge not connected",
+  BRIDGE_UNSUPPORTED: "EA does not report pending-order support",
+  EA_UPGRADE_REQUIRED: "EA does not report pending-order support",
+  READ_ONLY: "pending-order path is read-only",
+  LIVE_LOCKED: "live execution locked",
+  BLOCKED_BY_PAPER_LOCK: "paper-only, not delivered to the broker",
+  TRADING_DISABLED: "trading disabled",
+  BLOCKED_BY_RISK: "blocked by the risk governor",
+};
+
+function utcMinuteOf(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC` : null;
+}
 
 /**
  * Plain-English label for a pending-order DRAFT. The list endpoint returns
- * drafts saved in ARX: EA_UPGRADE_REQUIRED drafts are never queued to MT5 (the
- * bridge only executes market orders) and READY_TO_EXECUTE has no broker
- * confirmation, so none of them is presented as a working order at the broker.
+ * drafts saved in ARX with the bridge answer stored when each was saved or
+ * last submitted (BRIDGE_DISCONNECTED, BRIDGE_UNSUPPORTED, READ_ONLY, …) and,
+ * when the server read the bridge for the list, what a submit would answer
+ * now (currentPendingStatus / currentPendingReason at bridgeCheckedAt). No
+ * draft is ever queued to MT5, so none is presented as a working order at
+ * the broker; QUEUED / READY_TO_EXECUTE have no broker confirmation.
  */
 export function pendingDraftLabel(
-  d: { pendingStatus: string | null; expiration?: string | null },
+  d: {
+    pendingStatus: string | null;
+    expiration?: string | null;
+    currentPendingStatus?: string | null;
+    currentPendingReason?: string | null;
+    bridgeCheckedAt?: string | null;
+  },
   nowMs: number,
 ): { chip: string; title: string; line: string } {
   const expMs = d.expiration ? Date.parse(d.expiration) : NaN;
@@ -322,10 +368,24 @@ export function pendingDraftLabel(
       line: "Expired draft",
     };
   }
-  if (d.pendingStatus === "EA_UPGRADE_REQUIRED") {
+  const recorded = d.pendingStatus ? DRAFT_NOT_SENT_REASON[d.pendingStatus] : undefined;
+  if (recorded) {
+    const checkedAt = utcMinuteOf(d.bridgeCheckedAt);
+    const current = checkedAt && d.currentPendingStatus ? d.currentPendingStatus : null;
+    const nowLabel = current ? DRAFT_NOW_LABEL[current] : undefined;
+    const parts = [
+      "Saved in ARX as a validated pending-order draft. It is not at the broker and will not fill.",
+      `When it was saved or last submitted, ${recorded}.`,
+    ];
+    if (current) {
+      const why = d.currentPendingReason ?? (nowLabel ? `${nowLabel}.` : "the answer was not recognised.");
+      parts.push(`Bridge checked ${checkedAt}: ${why}`);
+    } else {
+      parts.push("What a submit would answer now was not checked.");
+    }
     return {
-      chip: "Draft · not sent",
-      title: "Saved as a validated pending-order draft. The trading bridge cannot place pending orders yet, so this order is not at the broker and will not fill.",
+      chip: nowLabel ? `Draft · not sent · ${nowLabel}` : "Draft · not sent",
+      title: parts.join(" "),
       line: "Draft (not sent)",
     };
   }
@@ -334,6 +394,20 @@ export function pendingDraftLabel(
       chip: "Draft · not confirmed",
       title: "Marked ready to execute, but no broker confirmation has been received, so it is not shown as a working order.",
       line: "Draft (not confirmed)",
+    };
+  }
+  if (d.pendingStatus === "QUEUED") {
+    return {
+      chip: "Draft · not confirmed",
+      title: "Submitted to the broker queue, but no broker confirmation has been received, so it is not shown as a working order.",
+      line: "Draft (not confirmed)",
+    };
+  }
+  if (d.pendingStatus === "CANCEL_QUEUED") {
+    return {
+      chip: "Draft · cancel not confirmed",
+      title: "A cancel was requested for this draft and has not been confirmed. It is not a working order at the broker.",
+      line: "Draft (cancel not confirmed)",
     };
   }
   return {
@@ -1341,7 +1415,12 @@ export function ScannerChartPanel() {
         const demo = Array.isArray(posRes?.demo) ? (posRes.demo as ChartPosition[]) : [];
         setPositions([...live, ...demo]);
         const drafts = Array.isArray(penRes?.drafts) ? (penRes.drafts as ChartPending[]) : [];
-        setPending(drafts.filter((d) => d.status !== "cancelled" && d.pendingStatus !== "CANCELLED"));
+        // The server reads the bridge once for the list; each draft carries
+        // that time so its label can say when its current answer was read.
+        const bridgeCheckedAt = typeof penRes?.bridgeCheckedAt === "string" ? (penRes.bridgeCheckedAt as string) : null;
+        setPending(drafts
+          .filter((d) => d.status !== "cancelled" && d.pendingStatus !== "CANCELLED")
+          .map((d) => ({ ...d, bridgeCheckedAt })));
       } catch {
         if (!cancelled) {
           setPositions([]);
