@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Flame } from "lucide-react";
-import { useCreateMeScalpAddOnCheck } from "@workspace/api-client-react";
+import { useCreateMeScalpAddOnCheck, type MeScalpAddOnCheckResp } from "@workspace/api-client-react";
 import {
   ADD_ON_LABEL,
   ADD_ON_TONE,
@@ -33,6 +33,23 @@ function ageText(asOf: string, now: number): string | null {
   return `${h}h ${min % 60}m ago`;
 }
 
+/**
+ * Same window as the server's SCALP_POSITIONS_FRESH_MS (the rule behind
+ * positionsStale). The check runs once per symbol/side and is not refetched,
+ * so the panel ages the reading itself while the ticket stays open.
+ */
+const POSITIONS_FRESH_MS = 90_000;
+const AGE_TICK_MS = 1_000;
+
+function useTickingNow(intervalMs: number): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return nowMs;
+}
+
 export function LiveScalpAddOnPanel({
   symbol,
   side,
@@ -51,15 +68,24 @@ export function LiveScalpAddOnPanel({
   }, [symbol, side, mutate]);
 
   if (!data || !data.hasOpenBasket) return null;
+  return <AddOnRead data={data} name={name} />;
+}
 
+function AddOnRead({ data, name }: { data: MeScalpAddOnCheckResp; name: string }) {
+  const now = useTickingNow(AGE_TICK_MS);
   const addOn = data.addOn;
   const flame = data.flame;
   // The server flags a positions reading older than 90 seconds (or with no
   // recorded time) as stale, by the same rule as the Position Manager: the
   // basket, adds used and the advice then describe that reading, not now.
-  const stale = data.positionsStale === true;
+  // That flag is from when the check ran; the reading keeps ageing while the
+  // ticket is open, so the panel also downgrades it once it passes the same
+  // window on a ticking clock (it never upgrades a server "stale").
   const asOf = data.positionsAsOf ?? null;
-  const age = asOf ? ageText(asOf, Date.now()) : null;
+  const asOfMs = asOf ? new Date(asOf).getTime() : NaN;
+  const agedOut = Number.isFinite(asOfMs) && now - asOfMs > POSITIONS_FRESH_MS;
+  const stale = data.positionsStale === true || agedOut;
+  const age = asOf ? ageText(asOf, now) : null;
   const when = asOf ? `${safeDate(asOf, "datetime")}${age ? ` (${age})` : ""}` : null;
 
   return (
