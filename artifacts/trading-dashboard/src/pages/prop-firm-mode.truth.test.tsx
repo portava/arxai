@@ -80,6 +80,20 @@ describe("Prop Firm Mode — labels", () => {
     expect(calls.some((c) => c.url.endsWith("/prop-firm/reset") && c.method === "POST")).toBe(true);
   });
 
+  // Regression: the title said "It does not reset any value", but
+  // /prop-firm/reset calls configurePropFirm({ enabled: true }), which writes
+  // the prop daily loss, drawdown, lot and position caps over the trader's
+  // current risk limits, replacing any they tightened since.
+  it("the 'Turn on with saved values' title says it writes the prop caps over the current risk limits", async () => {
+    stubFetch(() => json(status({ status: "OFF", config: { ...status().config, enabled: false } })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Turn on with saved values")).toBeTruthy());
+    const title = screen.getByText("Turn on with saved values").getAttribute("title") ?? "";
+    expect(title).not.toMatch(/does not reset any value/);
+    expect(title).toMatch(/writes their daily loss, total drawdown, lot size and open-position caps over your current risk limits/);
+    expect(title).toMatch(/even a stricter one/);
+  });
+
   it("while the mode is OFF no rule shows a tick, even if an older server lists them as passed", async () => {
     stubFetch(() => json(status({ status: "OFF", rulesEvaluated: undefined, config: { ...status().config, enabled: false } })));
     render(<PropFirmMode />);

@@ -79,8 +79,10 @@ export default function PropFirmMode() {
     void load();
   }
   const save = () => run("Save & enable", "/api/prop-firm/configure", { enabled: true, ...edit });
-  // POST /prop-firm/reset turns the mode on with the values already saved; it
-  // does not reset any value, so the button says what it does.
+  // POST /prop-firm/reset turns the mode on with the prop-firm values already
+  // saved (configurePropFirm({ enabled: true })). That writes the prop daily
+  // loss, drawdown, lot and position caps over the trader's current risk
+  // limits, so the button and its title say so.
   const enableSaved = () => run("Turn on with saved values", "/api/prop-firm/reset");
   const disable = () => run("Disable mode", "/api/prop-firm/configure", { enabled: false });
   // A cleared field is "no change", never 0 (Number("") is 0, which the server rejects).
@@ -168,7 +170,7 @@ export default function PropFirmMode() {
             <Input type="number" placeholder={`Consistency rule % (${s.config.consistencyRulePctOfTotal})`} onChange={(e) => setNum("consistencyRulePctOfTotal", e.target.value)} />
             <div className="md:col-span-3 flex gap-2">
               <Button onClick={save}>Save & enable</Button>
-              <Button variant="outline" onClick={enableSaved} title="Turns the mode on with the values already saved. It does not reset any value.">Turn on with saved values</Button>
+              <Button variant="outline" onClick={enableSaved} title="Turns the mode on with the prop-firm values already saved here. It writes their daily loss, total drawdown, lot size and open-position caps over your current risk limits, replacing any limit you changed since, even a stricter one.">Turn on with saved values</Button>
               <Button variant="ghost" onClick={disable}>Disable mode</Button>
             </div>
           </CardContent>
