@@ -309,10 +309,19 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     // The drawdown rule measures each full basis against a peak on the same
     // basis: the booked equity against the peak recorded from it, and the
     // equity at the paper risk model against the highest equity at that
-    // model, read from the same closes (never stored).
+    // model, read from the same closes (never stored). The booked equity
+    // counts open positions at the venue's mark now, as the risk count does:
+    // the stored equity is only as new as the account's last revaluation
+    // (markToMarket), and nothing revalues it before the governor runs. It
+    // takes the lower of the stored floating P&L and the open positions'
+    // sized P&L at the mark, so it is never above the stored equity.
     const model = paperModelEquity(acct, closes, openValue, now);
+    const storedFloating = acct.equity - acct.currentBalance;
+    const openAtMarkLower = openValue.sized < storedFloating;
     paperEquityBases = {
-      bookedEquity: acct.equity,
+      bookedEquity: acct.currentBalance + Math.min(storedFloating, openValue.sized),
+      storedEquity: acct.equity, storedAt: acct.updatedAt ?? null, bookedBalance: acct.currentBalance,
+      bookedOpenValuedAtStop: openAtMarkLower ? [...openValue.valuedAtStop] : [],
       modelEquity: model.equity, modelPeakEquity: model.peakEquity, modelPeakAt: model.peakAt,
       modelOpenValuedAtStop: model.openValuedAtStop,
       source: `paper_account:${acct.id}`,
@@ -608,10 +617,12 @@ async function loadEquityPeak(intent: TradeIntent, account: RiskAccount): Promis
 /** Raise the account's recorded equity high-water mark; it never falls. */
 // The high-water mark keeps recording the account's booked equity: a paper
 // account whose caps are checked against a lower risk-count equity
-// (bookedEquity set) still raises its mark from the booked figure. On PAPER
-// the drawdown rule measures the booked equity against it, and the equity at
-// the paper risk model against that model's own peak (PaperEquityBases), so
-// no figure on one basis is compared with a peak on the other.
+// (bookedEquity set) still raises its mark from the booked figure (the
+// stored paper_accounts.equity). On PAPER the drawdown rule measures the
+// booked equity with open positions at the current price against it, and the
+// equity at the paper risk model against that model's own peak
+// (PaperEquityBases), so no figure on one basis is compared with a peak on
+// the other.
 async function recordEquityPeak(intent: TradeIntent, account: RiskAccount | null): Promise<void> {
   const equity = account?.bookedEquity ?? account?.equity ?? null;
   if (!account || equity == null || !Number.isFinite(equity) || equity <= 0) return;
@@ -724,7 +735,8 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
               ? { ...ctx.equityPeak, since: ctx.equityPeak.since?.toISOString() ?? null }
               : null,
             paperEquityBases: ctx.paperEquityBases
-              ? { ...ctx.paperEquityBases, modelPeakAt: ctx.paperEquityBases.modelPeakAt?.toISOString() ?? null }
+              ? { ...ctx.paperEquityBases, modelPeakAt: ctx.paperEquityBases.modelPeakAt?.toISOString() ?? null,
+                storedAt: ctx.paperEquityBases.storedAt?.toISOString() ?? null }
               : null,
             accountSnapshot: ctx.accountSnapshot
               ? { ...ctx.accountSnapshot, observedAt: ctx.accountSnapshot.observedAt?.toISOString() ?? null }

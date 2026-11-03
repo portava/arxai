@@ -11,6 +11,10 @@
 //     no longer compares the risk-count equity (which mixes the two) with the
 //     booked peak: a profitable FX account read a 10.7% "drawdown" that
 //     neither basis had and was blocked for good;
+//   - the booked basis values open positions at the venue's current price
+//     (round-3 safety review): the stored paper equity is only as new as its
+//     last revaluation, so an open loss it has not stored still counts, and
+//     the booked basis is never above the stored equity;
 //
 // The REAL governor and fact loader run; the paper book read side is stubbed
 // with a store that honours the reads' `since` and `limit` (newest close
@@ -203,6 +207,72 @@ test("the booked basis still blocks on its own (never more lenient than the book
   assert.equal(r.measured?.["modelDrawdownPercent"], 0.01);
 });
 
+// ── Round-3 safety review: the booked basis values open positions at the
+// venue's current price. Nothing revalues the stored paper equity before the
+// governor runs (markToMarket runs after an order, on a close and on a paper
+// page read), so the stored floating P&L can be older than the price.
+/** An open simulator-priced EURUSD order (100,000 units per lot, 1 lot unless set). */
+const fxOpen = (over: Row): Row => ({
+  id: 61, userId: 7, paperAccountId: 3, status: "OPEN", orderType: "MARKET", strategyId: null, closedAt: null,
+  exitPrice: null, profitLoss: 0, openedAt: hoursAgo(2), symbol: "EURUSD", direction: "BUY", lotSize: 1, ...over,
+});
+
+test("the reviewer's case: stored 9,200 against a 10,000 peak and an open 1-lot EURUSD BUY at −300 at the mark blocks on the booked basis (8,900, 11%)", async () => {
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  // A 1-lot EURUSD −80-pip close two days ago: booked −800, −0.8 at the model.
+  state.closes = [fxClose(-80, 1, hoursAgo(48))];
+  // The account was last revalued before the open position moved: no floating P&L stored.
+  state.account = { ...ACCOUNT, currentBalance: 9_200, equity: 9_200, updatedAt: hoursAgo(3) };
+  state.open = [fxOpen({ entryPrice: px + 0.003, stopLoss: px - 0.01, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK", `an account 11% below its peak at the current price was allowed: ${JSON.stringify(r.measured)}`);
+  assert.equal(r.measured?.["drawdownBasis"], "booked");
+  assert.equal(r.measured?.["bookedEquity"], 8_900);
+  assert.equal(r.measured?.["storedEquity"], 9_200);
+  assert.equal(r.measured?.["bookedDrawdownPercent"], 11);
+  assert.ok((r.measured?.["modelDrawdownPercent"] as number) < 0.02, "the model basis alone cannot see an FX loss of this size");
+  assert.equal(r.reason, "The paper account's booked equity is 8900 with its open positions valued at the paper venue's current price "
+    + `(booked balance 9200, open positions -300); the account stores 9200 from its last revaluation at ${hoursAgo(3).toISOString()}. `
+    + "That is 11% below its recorded peak of 10000 (drawdown limit 10%). New trades are blocked; closing is allowed.");
+  // The recorded peak keeps recording the stored (booked) equity, as before.
+  await withDrawdownLimit(10, () => ddRule({ preview: false }));
+  const peaks = fake.inserts.filter((i) => i.table === "user_equity_peaks");
+  assert.equal(peaks.length, 1);
+  assert.equal(peaks[0]!.values.peakEquity, 9_200, "the recorded peak is written from the stored equity, unchanged");
+});
+
+test("an open position past its stop and not settled yet counts at its stop on the booked basis", async () => {
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  state.closes = [fxClose(-80, 1, hoursAgo(48))];
+  state.account = { ...ACCOUNT, currentBalance: 9_200, equity: 9_200 };
+  // BUY 1 lot at px + 0.006 with its stop at px + 0.003: the price is past the
+  // stop, so the venue settles it at the stop (−300), not at the price (−600).
+  state.open = [fxOpen({ entryPrice: px + 0.006, stopLoss: px + 0.003, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK", `a crossed stop the account has not settled was dropped: ${JSON.stringify(r.measured)}`);
+  assert.equal(r.measured?.["drawdownBasis"], "booked");
+  assert.equal(r.measured?.["bookedEquity"], 8_900);
+  assert.equal(r.reason, "The paper account's booked equity is 8900 with its open positions valued at the paper venue's current price "
+    + "(booked balance 9200, open positions -300); the account stores 9200 from its last revaluation. "
+    + "That is 11% below its recorded peak of 10000 (drawdown limit 10%). New trades are blocked; closing is allowed.");
+});
+
+test("the booked basis at the current price is never above the stored equity: a stored open loss stays when the price has since recovered", async () => {
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  state.closes = [];
+  // Stored floating −1,100; the position is 30 pips in profit at the mark now.
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 8_900 };
+  state.open = [fxOpen({ entryPrice: px - 0.003, stopLoss: px - 0.02, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["bookedEquity"], 8_900);
+  assert.equal(r.measured?.["storedEquity"], undefined, "no stored figure is disclosed when it is the one counted");
+  assert.equal(r.reason, "The paper account's booked equity 8900 is 11% below its recorded peak of 10000 (drawdown limit 10%). New trades are blocked; closing is allowed.");
+});
+
 test("the model peak is read from the closes (a past high is kept); nothing new is written and the recorded peak stays booked", async () => {
   // US30 at 1 unit per lot: +100 points on 0.1 lot (+10 booked, +1,000 model),
   // then −60 points (−6 booked, −600 model). Model: 10,000 → 11,000 → 10,400.
@@ -245,6 +315,27 @@ test("an open position with no market quote read is counted at its stop on the m
   fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
   const r = await withDrawdownLimit(5, () => ddRule());
   assert.equal(r.outcome, "BLOCK");
-  assert.match(r.reason!, /the account's equity 9500 is 5% below its peak of 10000 on the same basis \(drawdown limit 5%\); the paper account shows 9997 booked\./);
+  // US30 has no contract size here, so the position counts on the booked
+  // basis as markToMarket stores an unsized loss (at the model): the booked
+  // equity at the current price is 9,500 too (round-3 safety review), and
+  // both bases name the position counted at its stop.
+  assert.equal(r.measured?.["drawdownBasis"], "booked_and_paper_risk_model");
+  assert.match(r.reason!, /^The paper account's booked equity is 9500 with its open positions valued at the paper venue's current price \(booked balance 10000, open positions -500; the open US30 position is counted at its stop because no market quote for it was read with this order\); the account stores 9997 from its last revaluation\. That is 5% below its recorded peak of 10000 \(drawdown limit 5%\)\./);
+  assert.match(r.reason!, /the account's equity 9500 is 5% below its peak of 10000 on the same basis \(drawdown limit 5%\)\./);
   assert.match(r.reason!, /each open position at that model; the open US30 position is counted at its stop because no market quote for it was read with this order; its peak is/);
+});
+
+test("a model-basis refusal shows the booked equity at the current price beside the stored figure when they differ", async () => {
+  // A US30 0.1-lot 50-point close (booked −5, −500 at the model), and an
+  // open 1-lot EURUSD BUY at −30 at the mark that the account has not stored.
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  state.closes = [indexClose(-50, 0.1, hoursAgo(3))];
+  state.account = { ...ACCOUNT, currentBalance: 9_995, equity: 9_995 };
+  state.open = [fxOpen({ entryPrice: px + 0.0003, stopLoss: px - 0.01, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(5, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["drawdownBasis"], "paper_risk_model");
+  assert.equal(r.measured?.["bookedEquity"], 9_965);
+  assert.match(r.reason!, /^At the paper risk model \(price move × lots × 100\), the account's equity 9499\.97 is 5% below its peak of 10000 on the same basis \(drawdown limit 5%\); the paper account's booked equity is 9965 with its open positions at the current price \(it stores 9995\)\. /);
 });
