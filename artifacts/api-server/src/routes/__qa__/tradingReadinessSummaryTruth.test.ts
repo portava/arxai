@@ -101,9 +101,9 @@ test("LOCKED by CRITICAL news within 30 min is not called a safety hold; it says
   assert.doesNotMatch(out.aiSummary, /must be cleared by an operator/i);
   assert.doesNotMatch(out.aiSummary, /Resolve hard blockers/i);
   assert.match(out.aiSummary, /advisory/i);
-  assert.match(out.aiSummary, /does not engage or release any stop, lock or order gate/);
+  assert.match(out.aiSummary, /does not engage or release any stop or risk lock/);
   // It also says what the stored LOCKED does: the AI trade decision holds on it.
-  assert.match(out.aiSummary, /AI trade decision counts it as a blocker and recommends HOLD/);
+  assert.match(out.aiSummary, /AI trade decision counts it as a blocker and returns HOLD/);
 });
 
 test("LOCKED by a broker health verdict reads the same advisory way", () => {
@@ -114,6 +114,23 @@ test("LOCKED by a broker health verdict reads the same advisory way", () => {
   assert.equal(out.status, "LOCKED");
   assert.doesNotMatch(out.aiSummary, /safety hold/i);
   assert.match(out.aiSummary, /advisory/i);
+});
+
+// The readiness-only LOCKED summary said the check "does not engage or
+// release any stop, lock or order gate — order execution is decided by the
+// safety layer" and that the AI trade decision only "recommends HOLD". The
+// stored LOCKED is acted on: orchestrate() makes shouldTrade=false, so the
+// paper autopilot (AA_HOLD) and paper execution from a decision open nothing.
+test("readiness-only LOCKED says the paper autopilot opens no trades, not that no order gate reads it", () => {
+  const out = evaluateReadiness(signals({ activeContract: contract, recentReview: review, upcomingNews: criticalSoon }), INPUT);
+  assert.equal(out.status, "LOCKED");
+  assert.doesNotMatch(out.aiSummary, /order gate/);
+  assert.doesNotMatch(out.aiSummary, /recommends HOLD/);
+  assert.match(out.aiSummary, /does not engage or release any stop or risk lock/);
+  assert.match(out.aiSummary, /AI trade decision counts it as a blocker and returns HOLD/);
+  assert.match(out.aiSummary, /paper autopilot opens no trades/);
+  assert.match(out.aiSummary, /no paper trade can be executed from an AI trade decision/);
+  assert.match(out.aiSummary, /manual orders/);
 });
 
 test("LOCKED by a real stop still says an operator must clear it", () => {

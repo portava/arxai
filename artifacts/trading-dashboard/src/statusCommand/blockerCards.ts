@@ -189,7 +189,10 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       blocks: "All bridge-mediated MT5 actions.",
       why: "Bridge token is configured server-side, but no EA is connecting.",
       howToCheck: "Open MT5 Bridge and verify EA + token header + WebRequest allow-list.",
-      safeNextStep: "Restore the EA server-side. ARX stays in simulator/demo mode meanwhile.",
+      // The diagnostic summary's bridgeMode is the caller's own EA connection
+      // and it never reads the account mode, so this card says what a
+      // disconnected EA stops, not which mode the account trades in.
+      safeNextStep: "Restore the EA server-side. Until it reports in, nothing is sent through this MT5 EA bridge. This card does not read your account mode: a Live Shared account trades through the shared master, not your own EA, so check the Mode row for where your orders go.",
       doNotDo: "Do not retry MT5 actions until the EA reports in.",
       relatedRoute: withRoute("Open MT5 Bridge", "/mt5-bridge"),
       evidence: [`bridgeMode=disconnected`],

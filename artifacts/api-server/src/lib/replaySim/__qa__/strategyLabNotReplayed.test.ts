@@ -13,6 +13,7 @@ mock.method(database.pool, "connect", () => { throw new Error("Unexpected databa
 
 const updates: Array<Record<string, unknown>> = [];
 let scenarioIds = ["a", "b"];
+const nets: Record<string, number> = {};
 const fakeDb = {
   select: () => ({
     from: () => ({
@@ -28,13 +29,13 @@ const fakeDb = {
 };
 mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 mock.module("../scenarios.js", {
-  namedExports: { getScenario: async (id: string) => (id === "a" || id === "c" ? { scenarioId: id } : null) },
+  namedExports: { getScenario: async (id: string) => (id !== "b" ? { scenarioId: id } : null) },
 });
 mock.module("../engine.js", {
   namedExports: {
     runReplay: async (scenario: { scenarioId: string }) => ({ replayRunId: `r-${scenario.scenarioId}` }),
     generateReplayReport: async (_run: unknown, scenario: { scenarioId: string }) => ({
-      total_trades: 3, wins: 1, net_pnl: scenario.scenarioId === "c" ? 7 : -5, win_rate: 33, profit_factor: 0.5,
+      total_trades: 3, wins: 1, net_pnl: nets[scenario.scenarioId] ?? (scenario.scenarioId === "c" ? 7 : -5), win_rate: 33, profit_factor: 0.5,
       replay_report_id: "rr1", should_promote_to_playbook: false, should_mark_for_review: true,
     }),
   },
@@ -72,4 +73,35 @@ test("two replayed scenarios are named best and worst", async () => {
   assert.equal(recs.find((r) => r.type === "BEST_SCENARIO")!.message, "Best scenario: c with net 7");
   assert.equal(recs.find((r) => r.type === "WORST_SCENARIO")!.message, "Worst scenario: a with net -5");
   assert.equal(recs.find((r) => r.type === "SINGLE_SCENARIO"), undefined);
+});
+
+// Two (or more) replayed scenarios with the same net were still split into
+// "Best scenario: a with net 0" and "Worst scenario: c with net 0", picked by
+// input order only (the sort is stable on equal nets). Equal results are not
+// a best/worst comparison; a tie at the top or bottom names every tied one.
+test("replayed scenarios that all had the same net are not named best or worst", async () => {
+  scenarioIds = ["a", "c"];
+  nets.a = 0; nets.c = 0;
+  try {
+    const summary = await runExperiment("exp_1", 7) as Record<string, unknown>;
+    const recs = summary["recommendations"] as Array<{ type: string; message: string }>;
+    assert.equal(recs.find((r) => r.type === "BEST_SCENARIO"), undefined);
+    assert.equal(recs.find((r) => r.type === "WORST_SCENARIO"), undefined);
+    for (const r of recs) assert.doesNotMatch(r.message, /Best scenario|Worst scenario/);
+    const tied = recs.find((r) => r.type === "SCENARIOS_TIED");
+    assert.ok(tied, "the tie is reported once");
+    assert.equal(tied!.message, "All 2 replayed scenarios had the same net (0), so none is best or worst.");
+  } finally { delete nets.a; delete nets.c; }
+});
+
+test("a tie at the top or bottom names every tied scenario", async () => {
+  scenarioIds = ["a", "c", "d", "e"];
+  nets.a = 4; nets.c = 9; nets.d = 9; nets.e = 4;
+  try {
+    const summary = await runExperiment("exp_1", 7) as Record<string, unknown>;
+    const recs = summary["recommendations"] as Array<{ type: string; message: string }>;
+    assert.equal(recs.find((r) => r.type === "BEST_SCENARIO")!.message, "Best scenarios (tied): c, d with net 9");
+    assert.equal(recs.find((r) => r.type === "WORST_SCENARIO")!.message, "Worst scenarios (tied): a, e with net 4");
+    assert.equal(recs.find((r) => r.type === "SCENARIOS_TIED"), undefined);
+  } finally { for (const k of ["a", "c", "d", "e"]) delete nets[k]; }
 });

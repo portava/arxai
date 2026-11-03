@@ -117,10 +117,23 @@ async function runExperimentBody(
   if (perScenario.every(p => p.review))  recommendations.push({ type: "REVIEW_ALL",  message: "Setup flagged for REVIEW across every scenario." });
   // Best/worst need at least two replayed results to compare; one scenario is
   // not both "best" and "worst" (a losing scenario must not read "Best").
+  // Equal nets are not a comparison either: when every replayed net is the
+  // same none is best or worst, and a tie at the top or bottom names every
+  // tied scenario (the stable sort would otherwise pick one by input order).
   if (ranking.length >= 2) {
-    const best = ranking[0]!, worst = ranking[ranking.length - 1]!;
-    recommendations.push({ type: "BEST_SCENARIO", message: `Best scenario: ${best.scenarioId} with net ${best.netPnl}` });
-    recommendations.push({ type: "WORST_SCENARIO", message: `Worst scenario: ${worst.scenarioId} with net ${worst.netPnl}` });
+    const top = ranking[0]!.netPnl, bottom = ranking[ranking.length - 1]!.netPnl;
+    if (top === bottom) {
+      recommendations.push({ type: "SCENARIOS_TIED", message: `All ${ranking.length} replayed scenarios had the same net (${top}), so none is best or worst.` });
+    } else {
+      const named = (word: string, net: number) => {
+        const ids = ranking.filter(r => r.netPnl === net).map(r => r.scenarioId);
+        return ids.length === 1
+          ? `${word} scenario: ${ids[0]} with net ${net}`
+          : `${word} scenarios (tied): ${ids.join(", ")} with net ${net}`;
+      };
+      recommendations.push({ type: "BEST_SCENARIO", message: named("Best", top) });
+      recommendations.push({ type: "WORST_SCENARIO", message: named("Worst", bottom) });
+    }
   } else if (ranking.length === 1) {
     recommendations.push({ type: "SINGLE_SCENARIO", message: `Only one scenario was replayed (${ranking[0]!.scenarioId}, net ${ranking[0]!.netPnl}), so there is nothing to compare.` });
   }

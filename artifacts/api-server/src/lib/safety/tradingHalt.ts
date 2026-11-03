@@ -78,14 +78,41 @@ export interface HaltReport {
   /** Exactly what loadTradingHalt / loadPlatformHalt return (what the gates read). */
   halt: TradingHalt;
   /** One sentence per entry of halt.sources, in order, each with its own
-   *  detail ("state unreadable", the trader's stored reason). */
+   *  detail (the trader's stored reason). A source that could not be read is
+   *  worded as unread and treated as engaged, never as an observed engage. */
   reasons: string[];
 }
 
-function haltReport(sources: HaltSource[], detail: Partial<Record<HaltSource, string | null>>): HaltReport {
+/** Status-view subject for a source whose state could not be read. */
+const UNREAD_NAMES: Partial<Record<HaltSource, string>> = {
+  platform_emergency_stop: "The platform emergency stop",
+  safety_core_kill_switch: "The safety-core kill switch",
+  trader_kill_switch: "Your kill switch",
+  allocation_frozen: "Your shared-account allocation",
+};
+
+/**
+ * The status-view sentence for one source. A source that could not be read
+ * is not "engaged" as a fact and has nothing to release, so it says what was
+ * observed. halt.reason (what the gates read) is built by haltFrom unchanged.
+ */
+function statusReason(s: HaltSource, detail: Partial<Record<HaltSource, string | null>>, unread: ReadonlySet<HaltSource>): string {
+  const name = UNREAD_NAMES[s];
+  if (name && unread.has(s)) {
+    const why = detail[s] === "settings missing" ? " (its settings row is missing)" : "";
+    return `${name} could not be read${why}, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.`;
+  }
+  return haltFrom([s], detail).reason ?? s;
+}
+
+function haltReport(
+  sources: HaltSource[],
+  detail: Partial<Record<HaltSource, string | null>>,
+  unread: ReadonlySet<HaltSource>,
+): HaltReport {
   return {
     halt: haltFrom(sources, detail),
-    reasons: sources.map((s) => haltFrom([s], detail).reason ?? s),
+    reasons: sources.map((s) => statusReason(s, detail, unread)),
   };
 }
 
@@ -102,23 +129,30 @@ export async function loadPlatformHalt(): Promise<TradingHalt> {
 export async function loadPlatformHaltReport(): Promise<HaltReport> {
   const sources: HaltSource[] = [];
   const detail: Partial<Record<HaltSource, string | null>> = {};
-  await addInstallWideStops(sources, detail, "LIVE");
-  return haltReport(sources, detail);
+  const unread = new Set<HaltSource>();
+  await addInstallWideStops(sources, detail, "LIVE", unread);
+  return haltReport(sources, detail, unread);
 }
 
 // Both install-wide stops through the one platform-stop read (platformStop).
 // No settings row: a fresh install, which starts released (schema defaults).
 // No safety_core row yet: released (lib/safetyCore.ts seeds it at boot).
 // The paper simulator is not halted by the emergency stop (platformStopForVenue).
+// A source counts as unread (status wording only) when the platform-stop read
+// was not readable and the source carries the readers' fail-closed detail.
+const PLATFORM_UNREAD_DETAILS: ReadonlySet<string> = new Set(["state unreadable", "settings missing"]);
+
 async function addInstallWideStops(
   sources: HaltSource[],
   detail: Partial<Record<HaltSource, string | null>>,
   venue: RiskVenue,
+  unread: Set<HaltSource>,
 ): Promise<void> {
   const stop = platformStopForVenue(await platformStop(), venue);
   for (const s of stop.sources) {
     sources.push(s);
     detail[s] = stop.detail[s] ?? null;
+    if (!stop.readable && PLATFORM_UNREAD_DETAILS.has(stop.detail[s] ?? "")) unread.add(s);
   }
 }
 
@@ -140,9 +174,10 @@ export interface TradingHaltArgs {
 export async function loadTradingHaltReport(args: TradingHaltArgs): Promise<HaltReport> {
   const sources: HaltSource[] = [];
   const detail: Partial<Record<HaltSource, string | null>> = {};
+  const unread = new Set<HaltSource>();
   const broker = args.venue !== "PAPER";
 
-  await addInstallWideStops(sources, detail, args.venue);
+  await addInstallWideStops(sources, detail, args.venue, unread);
 
   const arm = await read(async () => (await db.select({
     on: arxLiveArmingTable.killSwitchEngaged, why: arxLiveArmingTable.killSwitchReason,
@@ -150,6 +185,7 @@ export async function loadTradingHaltReport(args: TradingHaltArgs): Promise<Halt
   if (arm === "unreadable" || arm?.on) {
     sources.push("trader_kill_switch");
     detail.trader_kill_switch = arm === "unreadable" ? "state unreadable" : arm?.why ?? null;
+    if (arm === "unreadable") unread.add("trader_kill_switch");
   }
 
   if (broker && args.virtualAccountId != null) {
@@ -163,10 +199,11 @@ export async function loadTradingHaltReport(args: TradingHaltArgs): Promise<Halt
       sources.push("allocation_frozen");
       detail.allocation_frozen = slot === "unreadable" ? "state unreadable"
         : slot?.closeOnly ? "close-only" : null;
+      if (slot === "unreadable") unread.add("allocation_frozen");
     }
   }
 
-  return haltReport(sources, detail);
+  return haltReport(sources, detail, unread);
 }
 
 // ── May this venue trade now, and why not ──────────────────────────────────

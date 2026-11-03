@@ -27,7 +27,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { getMarketProvider } from "../lib/assistant/marketProvider.js";
 import { getPreferences } from "../lib/notifications/service.js";
-import { FAIL_CLOSED_ENVELOPE, getEnvelope, type SafetyEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { envelopeUnread, getEnvelope, type SafetyEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 
 const router = Router();
 
@@ -50,9 +50,9 @@ const SAFETY_MODE = "paper_only" as const;
 async function readLivePosture(userId: number): Promise<SafetyEnvelope | null> {
   try {
     const env = await getEnvelope(userId);
-    // getEnvelope returns the fail-closed default itself when the settings
+    // getEnvelope fails closed when the settings or the user's permissions
     // could not be read: that lock is a default, not a reading.
-    return env === FAIL_CLOSED_ENVELOPE ? null : env;
+    return envelopeUnread(env) ? null : env;
   } catch {
     return null;
   }
@@ -74,9 +74,11 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
 
     // 2. Paper mode — paper trading is always available; whether the account
     // is limited to it is the safety envelope's live lock (read per user).
+    // The label says only what holds in every case (paper is available); the
+    // status and detail carry whether the account is paper-only.
     const paperModeItem: ReadinessItem = {
       key: "paper_mode",
-      label: "Paper mode enabled",
+      label: "Paper trading available",
       status: !posture ? "WARN" : posture.liveLocked ? "PASS" : "INFO",
       detail: !posture
         ? "Paper trading is available. Whether your account is limited to it could not be read just now."
@@ -86,10 +88,15 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
       cta: null,
     };
 
-    // 3. Live trading locked — from the user's safety envelope, never a constant.
+    // 3. Live trading lock — from the user's safety envelope, never a constant.
+    // The label is the row's headline, so it follows the reading too.
     const liveLockedItem: ReadinessItem = {
       key: "live_locked",
-      label: "Live trading locked",
+      label: !posture
+        ? "Live trading lock could not be read"
+        : posture.liveLocked
+          ? "Live trading locked"
+          : "Live trading not locked",
       status: !posture ? "WARN" : posture.liveLocked ? "PASS" : "INFO",
       detail: !posture
         ? "Your account's live-trading lock could not be read just now, so this check cannot confirm it."

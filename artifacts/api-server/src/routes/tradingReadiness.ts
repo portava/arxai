@@ -90,8 +90,10 @@ const BROKER_STATUS_MEANING: Record<string, BrokerStatusMeaning> = {
     kind: "block",
     // The observed state of broker_health_state.executionEnabled, which starts
     // false (schema default) and may never have been switched on: never
-    // worded as an operator action nobody observed.
-    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was not enabled (the operator execution switch was off): no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
+    // worded as an operator action nobody observed. The switch never blocks
+    // PAPER orders, but this verdict LOCKS readiness, and a stored LOCKED
+    // makes tradeDecision.orchestrate() hold (so the paper autopilot skips).
+    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was not enabled (the operator execution switch was off): no new DEMO or LIVE positions can be opened while it stays off. The switch does not block manual paper orders, but it locks this check, so while this is your latest check the AI trade decision holds and the paper autopilot opens no trades",
     short: "execution not enabled (operator execution switch off); the link was up",
   },
   PRICE_FEED_DELAYED: {
@@ -400,9 +402,11 @@ function buildSummary(
       return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${who} cleared by an operator.`;
     }
     // Readiness-only blockers (news, a broker health verdict, a risk lock):
-    // this check changes no stop, lock or gate. The one thing a stored LOCKED
-    // does is make tradeDecision.orchestrate() hold, so say that too.
-    return `LOCKED — ${blockers.join("; ")}. This pre-session check is advisory: it recommends not trading until these are resolved, and it does not engage or release any stop, lock or order gate — order execution is decided by the safety layer. While it is your latest check, the AI trade decision counts it as a blocker and recommends HOLD.`;
+    // this check engages or releases no stop or risk lock, and manual orders
+    // do not read it. A stored LOCKED is a blocker in
+    // tradeDecision.orchestrate() (shouldTrade=false), so the paper autopilot
+    // (AA_HOLD) and paper execution from a decision open nothing: say so.
+    return `LOCKED — ${blockers.join("; ")}. This pre-session check does not engage or release any stop or risk lock. For your manual orders it is advisory: they do not read it and are decided by the safety layer. While it is your latest check, the AI trade decision counts it as a blocker and returns HOLD, so the paper autopilot opens no trades and no paper trade can be executed from an AI trade decision.`;
   }
   if (status === "NOT_READY") {
     // Name the checks that actually failed. Broker / news / risk-lock failures

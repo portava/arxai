@@ -18,7 +18,31 @@ interface Experiment {
   };
 }
 
-type RankingRow = { scenarioId: string; netPnl: number; winRateText: string };
+type RankingRow = { scenarioId: string; netPnl: number; winRateText: string; rank: number };
+type Recommendation = { type: string; message: string };
+
+/**
+ * Best/worst over replayed scenarios with known nets (at least two). Equal
+ * nets are not a comparison: when every net is the same none is best or
+ * worst, and a tie at the top or bottom names every tied scenario.
+ */
+function bestWorstLines(ranked: { scenarioId: string; netPnl: number }[], suffix: string): Recommendation[] {
+  const nets = ranked.map((r) => r.netPnl);
+  const top = Math.max(...nets), bottom = Math.min(...nets);
+  if (top === bottom) {
+    return [{ type: "SCENARIOS_TIED", message: `All ${ranked.length} replayed scenarios had the same net (${top}), so none is best or worst.` }];
+  }
+  const named = (word: string, net: number) => {
+    const ids = ranked.filter((r) => r.netPnl === net).map((r) => r.scenarioId);
+    return ids.length === 1
+      ? `${word} scenario: ${ids[0]} with net ${net}${suffix}`
+      : `${word} scenarios (tied): ${ids.join(", ")} with net ${net}${suffix}`;
+  };
+  return [
+    { type: "BEST_SCENARIO", message: named("Best", top) },
+    { type: "WORST_SCENARIO", message: named("Worst", bottom) },
+  ];
+}
 
 /**
  * Ranking and recommendations as the card shows them. A scenario that was
@@ -36,10 +60,13 @@ export function strategyLabResults(summary: Experiment["resultSummary"]): {
   for (const p of per) if (p.replayRunId === "") notReplayed.add(p.scenarioId);
   for (const r of summary?.ranking ?? []) if (r.replayRunId === "") notReplayed.add(r.scenarioId);
   const replayedRanking = (summary?.ranking ?? []).filter((r) => !notReplayed.has(r.scenarioId));
-  const rows = replayedRanking.map((r) => {
+  const netsKnown = replayedRanking.every((r) => isNum(r.netPnl));
+  const rows = replayedRanking.map((r, i) => {
     const trades = isNum(r.trades) ? r.trades : perById.get(r.scenarioId)?.trades;
     const winRateText = trades === 0 ? "no trades" : isNum(r.winRate) ? `wr ${r.winRate}%` : `wr ${DASH}`;
-    return { scenarioId: r.scenarioId, netPnl: r.netPnl, winRateText };
+    // Equal nets share a rank (1, 1, 3): their order is only input order.
+    const rank = netsKnown ? 1 + replayedRanking.filter((o) => o.netPnl > r.netPnl).length : i + 1;
+    return { scenarioId: r.scenarioId, netPnl: r.netPnl, winRateText, rank };
   });
   const stored = summary?.recommendations ?? [];
   // A summary that ranked a never-replayed scenario (no notReplayed field)
@@ -49,8 +76,15 @@ export function strategyLabResults(summary: Experiment["resultSummary"]): {
   // nothing is neither (older summaries named it both, a loss as "Best"). The
   // pair collapses into one line saying there is nothing to compare.
   const comparable = replayedRanking.length >= 2;
+  // Equal nets at the top or bottom (older summaries named one of them by
+  // input order): the best/worst lines are re-read so every tied one is named.
+  const tied = comparable && netsKnown && (() => {
+    const nets = replayedRanking.map((r) => r.netPnl);
+    const top = Math.max(...nets), bottom = Math.min(...nets);
+    return nets.filter((n) => n === top).length > 1 || nets.filter((n) => n === bottom).length > 1;
+  })();
   let collapsed = false;
-  const recommendations: { type: string; message: string }[] = [];
+  const recommendations: Recommendation[] = [];
   for (const r of stored) {
     const bestOrWorst = r.type === "BEST_SCENARIO" || r.type === "WORST_SCENARIO";
     if (!bestOrWorst) { recommendations.push(r); continue; }
@@ -61,6 +95,12 @@ export function strategyLabResults(summary: Experiment["resultSummary"]): {
       recommendations.push(only
         ? { type: "SINGLE_SCENARIO", message: `Only one scenario was replayed (${only.scenarioId}, net ${only.netPnl}), so there is nothing to compare.` }
         : { type: "NO_SCENARIO_REPLAYED", message: "No scenario in this experiment was replayed, so there is nothing to compare." });
+      continue;
+    }
+    if (tied || (rerank && netsKnown)) {
+      if (collapsed) continue;
+      collapsed = true;
+      recommendations.push(...bestWorstLines(replayedRanking, rerank ? " (over replayed scenarios only)" : ""));
       continue;
     }
     if (!rerank) { recommendations.push(r); continue; }
@@ -163,7 +203,7 @@ export default function StrategyLab() {
                     {(res.rows.length > 0 || res.notReplayed.length > 0) && (
                       <div className="mt-3 text-xs" data-testid="strategy-lab-ranking">
                         <div className="font-semibold mb-1">Setup ranking</div>
-                        <ul className="space-y-0.5">{res.rows.map((r, i) => <li key={i}>#{i + 1} <span className="font-mono">{r.scenarioId.slice(0, 22)}…</span> — net {r.netPnl}, {r.winRateText}</li>)}</ul>
+                        <ul className="space-y-0.5">{res.rows.map((r, i) => <li key={i}>#{r.rank} <span className="font-mono">{r.scenarioId.slice(0, 22)}…</span> — net {r.netPnl}, {r.winRateText}</li>)}</ul>
                         {res.notReplayed.length > 0 && (
                           <div className="text-muted-foreground mt-1">Not replayed (scenario not found): <span className="font-mono">{res.notReplayed.join(", ")}</span> — no result, not ranked.</div>
                         )}
