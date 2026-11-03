@@ -14,8 +14,12 @@ interface PaperAccount {
   isActive: number; createdAt: string;
   /** When the server last valued (marked to market) this account. */
   updatedAt?: string | null;
-  /** Server note when the balance or equity counts P&L that could not be sized. */
-  pnlSizing?: { unsizedClosedOrders: number; unsizedOpenPositions: number; note: string | null };
+  /**
+   * Server note when the balance or equity counts P&L that could not be sized.
+   * unsizedClosedWins (newer servers): closes of unknown size that won, which
+   * the balance does not add.
+   */
+  pnlSizing?: { unsizedClosedOrders: number; unsizedClosedWins?: number; unsizedOpenPositions: number; note: string | null };
   valuation?: PaperValuation;
 }
 
@@ -65,11 +69,16 @@ export function paperPriceSourceLine(v: PaperValuation | undefined): string {
  * (units PAPER_USD) gets a units claim; otherwise the card says the units were
  * not reported and claims no scale.
  */
-export function paperUnitsLine(v: PaperValuation | undefined): string {
+export function paperUnitsLine(v: PaperValuation | undefined, sizing?: PaperAccount["pnlSizing"]): string {
   if (v?.units !== "PAPER_USD") {
     return "Units not reported by the server. These are simulated figures, not money in a broker account, and margin is not a broker margin.";
   }
-  return `Figures are simulated USD, not money in a broker account: P&L is sized from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${v.pnlMultiplier}). `
+  // A server that reports unsizedClosedWins adds nothing for a closed win of
+  // unknown size; an older one counted it at the model like a loss.
+  const winsRule = typeof sizing?.unsizedClosedWins === "number"
+    ? ", except that a closed trade that won is not added to the balance"
+    : "";
+  return `Figures are simulated USD, not money in a broker account: P&L is sized from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${v.pnlMultiplier})${winsRule}. `
     + `Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${v.pnlMultiplier}), so an older balance can mix the two scales. `
     + `Margin is lots × ${v.marginPerLot.toLocaleString("en-US")}, not a broker margin.`;
 }
@@ -154,7 +163,7 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
             <p className="text-[10px] text-amber-200" data-testid="paper-account-sizing-note">{acc.pnlSizing.note}</p>
           ) : null}
           <p className="text-[10px] text-amber-300" data-testid="paper-account-price-source">{paperPriceSourceLine(acc.valuation)}</p>
-          <p className="text-[10px] text-slate-400" data-testid="paper-account-units">{paperUnitsLine(acc.valuation)}</p>
+          <p className="text-[10px] text-slate-400" data-testid="paper-account-units">{paperUnitsLine(acc.valuation, acc.pnlSizing)}</p>
         </div>
       ) : data?.account === null ? (
         <div className="space-y-2">

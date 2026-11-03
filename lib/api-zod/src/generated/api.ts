@@ -11671,6 +11671,12 @@ export const GetPaperAccountsResponse = zod.object({
       pnlSizing: zod
         .object({
           unsizedClosedOrders: zod.number(),
+          unsizedClosedWins: zod
+            .number()
+            .optional()
+            .describe(
+              "Of unsizedClosedOrders, the closes that won. Their gain is not added to the balance (counted as 0). Absent from older servers.",
+            ),
           unsizedOpenPositions: zod.number(),
           note: zod.string().nullable(),
         })
@@ -11703,6 +11709,12 @@ export const CreatePaperAccountResponse = zod.object({
   pnlSizing: zod
     .object({
       unsizedClosedOrders: zod.number(),
+      unsizedClosedWins: zod
+        .number()
+        .optional()
+        .describe(
+          "Of unsizedClosedOrders, the closes that won. Their gain is not added to the balance (counted as 0). Absent from older servers.",
+        ),
       unsizedOpenPositions: zod.number(),
       note: zod.string().nullable(),
     })
@@ -11727,6 +11739,12 @@ export const GetActivePaperAccountResponse = zod.object({
     pnlSizing: zod
       .object({
         unsizedClosedOrders: zod.number(),
+        unsizedClosedWins: zod
+          .number()
+          .optional()
+          .describe(
+            "Of unsizedClosedOrders, the closes that won. Their gain is not added to the balance (counted as 0). Absent from older servers.",
+          ),
         unsizedOpenPositions: zod.number(),
         note: zod.string().nullable(),
       })

@@ -181,3 +181,29 @@ test("paper balance: no note when every close was sized", async () => {
   assert.equal(out.pnlSizing.unsizedClosedOrders, 0);
   assert.equal(out.pnlSizing.note, null);
 });
+
+test("paper balance and equity: an unsized target hit never raises the stored balance or equity the Risk Governor reads", async () => {
+  // A 1-lot V75 BUY with no broker spec hits its target 2,000 points above entry.
+  const tp = await settleThroughMonitor(v75({ userId: 4, lotSize: 1, takeProfit: 2100 }), 2101);
+  assert.equal(tp.status, "CLOSED_TP");
+  assert.equal(tp.profitLoss, 0, "stored as the not-sized placeholder");
+  const sl = await settleThroughMonitor(v75({ id: 65, userId: 4 }), 89);
+  const account: Row = { id: 9, userId: 4, accountName: "Practice", startingBalance: 10_000, currentBalance: 10_000, equity: 10_000, marginUsed: 0, isActive: 1 };
+  selectRows = (t, nth) => {
+    if (t === "paper_accounts") return [{ ...account, ...(sets.filter((s) => s.table === "paper_accounts").at(-1)?.values ?? {}) }];
+    if (t === "paper_orders") return nth === 0 ? [] : [tp, sl];
+    return [];
+  };
+  const out = await markToMarket(9);
+  assert.ok(out);
+  const stored = sets.filter((s) => s.table === "paper_accounts").at(-1)!.values;
+  // Was 10,000 + 200,000 − 10: the estimated win (2,000 × 1 × 100) was written to
+  // paper_accounts.current_balance and equity, which loadPaperFacts reads as equity.
+  assert.equal(stored["currentBalance"], 10_000 - 10, "only the unsized stop-out moves the balance");
+  assert.equal(stored["equity"], 10_000 - 10);
+  assert.equal(out.pnlSizing.unsizedClosedOrders, 2);
+  assert.equal(out.pnlSizing.unsizedClosedWins, 1);
+  assert.match(String(out.pnlSizing.note), /2 closed trades whose P&L could not be sized/);
+  assert.match(String(out.pnlSizing.note), /A closed trade that lost is counted at the paper risk model \(price move × lots × 100\), not a measured amount\./);
+  assert.match(String(out.pnlSizing.note), /A closed trade that won is not added to the balance \(counted as 0\)/);
+});

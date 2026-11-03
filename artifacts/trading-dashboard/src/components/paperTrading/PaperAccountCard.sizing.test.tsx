@@ -30,6 +30,30 @@ describe("PaperAccountCard balance sizing note", () => {
     expect(screen.getByTestId("paper-account-sizing-note").textContent).toBe(note);
   });
 
+  it("a server that leaves unsized wins out of the balance: the note and the units line say a win of unknown size is not added", async () => {
+    const note = "Balance includes 2 closed trades whose P&L could not be sized for the instrument (no contract size or currency conversion). A closed trade that lost is counted at the paper risk model (price move × lots × 100), not a measured amount. A closed trade that won is not added to the balance (counted as 0), so the balance can be lower than the trades' real result.";
+    const valuation = {
+      priceSource: "NO_OPEN_ORDERS", openOrders: 0, openPricedBySimulator: 0, closedSimulatorPriced: 0,
+      units: "PAPER_USD", pnlMultiplier: 100, marginPerLot: 1000, note: "",
+    };
+    renderWith({ account: { ...account, valuation, pnlSizing: { unsizedClosedOrders: 2, unsizedClosedWins: 1, unsizedOpenPositions: 0, note } } });
+    await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
+    expect(screen.getByTestId("paper-account-sizing-note").textContent).toBe(note);
+    const units = screen.getByTestId("paper-account-units").textContent ?? "";
+    // Was "...counts at the paper risk model (price move × lots × 100)." with no exception for wins.
+    expect(units).toMatch(/could not be sized counts at the paper risk model \(price move × lots × 100\), except that a closed trade that won is not added to the balance/);
+  });
+
+  it("an older server that does not report unsizedClosedWins: the units line makes no claim that wins are left out", async () => {
+    const valuation = {
+      priceSource: "NO_OPEN_ORDERS", openOrders: 0, openPricedBySimulator: 0, closedSimulatorPriced: 0,
+      units: "PAPER_USD", pnlMultiplier: 100, marginPerLot: 1000, note: "",
+    };
+    renderWith({ account: { ...account, valuation, pnlSizing: { unsizedClosedOrders: 1, unsizedOpenPositions: 0, note: "x" } } });
+    await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
+    expect(screen.getByTestId("paper-account-units").textContent ?? "").not.toMatch(/not added to the balance/);
+  });
+
   it("shows no note when every close was sized", async () => {
     renderWith({ account: { ...account, pnlSizing: { unsizedClosedOrders: 0, unsizedOpenPositions: 0, note: null } } });
     await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
