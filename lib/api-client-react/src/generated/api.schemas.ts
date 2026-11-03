@@ -10507,6 +10507,20 @@ export interface MentorActionItem {
   updatedAt: string;
 }
 
+export type TraderSkillPillar =
+  (typeof TraderSkillPillar)[keyof typeof TraderSkillPillar];
+
+export const TraderSkillPillar = {
+  discipline: "discipline",
+  execution: "execution",
+  risk: "risk",
+  emotional: "emotional",
+  consistency: "consistency",
+  planning: "planning",
+  review: "review",
+  practice: "practice",
+} as const;
+
 export type TraderSkillProfileSkillLevel =
   (typeof TraderSkillProfileSkillLevel)[keyof typeof TraderSkillProfileSkillLevel];
 
@@ -13314,6 +13328,8 @@ export interface TradePlanChecklist {
   warnCount: number;
   isReady: boolean;
   rewardToRisk?: number | null;
+  /** When validate computed this checklist. Absent on plans validated before it was recorded. */
+  checkedAtIso?: string | null;
 }
 
 export type TradePlanStatus =
@@ -13325,6 +13341,18 @@ export const TradePlanStatus = {
   INVALIDATED: "INVALIDATED",
   EXECUTED: "EXECUTED",
   CANCELED: "CANCELED",
+} as const;
+
+/**
+ * Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).
+ */
+export type TradePlanChartTruthStatus =
+  (typeof TradePlanChartTruthStatus)[keyof typeof TradePlanChartTruthStatus];
+
+export const TradePlanChartTruthStatus = {
+  PASSED: "PASSED",
+  LIMITED: "LIMITED",
+  NOT_CHECKED: "NOT_CHECKED",
 } as const;
 
 export interface TradePlan {
@@ -13348,9 +13376,19 @@ export interface TradePlan {
   status: TradePlanStatus;
   aiSummary?: string | null;
   checklist?: TradePlanChecklist | null;
+  /** True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result. */
+  checklistStale?: boolean;
   executionConfirmationId?: number | null;
   createdAtIso: string;
   updatedAtIso: string;
+  /** Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed). */
+  chartTruthStatus?: TradePlanChartTruthStatus;
+  /** Validate response only. Chart Truth score of the cached chart read used at validation. */
+  chartTruthScore?: number | null;
+  /** Validate response only. Present when Chart Truth limited the plan's chart basis. */
+  chartQualityNote?: string | null;
+  /** Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged. */
+  effectiveConfidenceLevel?: number | null;
 }
 
 export interface TradePlanList {
@@ -15231,6 +15269,8 @@ export interface ScalpResult {
   newsRisk: ScalpResultNewsRisk;
   /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
   newsRiskUnchecked?: boolean;
+  /** True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW. */
+  newsRiskNotConfigured?: boolean;
   timingStatus: ScalpResultTimingStatus;
   validForSeconds: number;
   expiresAt: string;
@@ -15426,6 +15466,13 @@ export interface MeScalpBasketsResp {
    * @nullable
    */
   positionsNote?: string | null;
+  /**
+   * When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.
+   * @nullable
+   */
+  positionsAsOf?: string | null;
+  /** True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P/L, stops and exit / add-on advice then describe that reading, not the account now. */
+  positionsStale?: boolean;
 }
 
 export type MeScalpAddOnCheckBodyDirection =
@@ -18156,6 +18203,8 @@ export type GetEdgeWarnings200 = {
 
 export type GetTraderSkillProfile200 = {
   profile?: TraderSkillProfile | null;
+  /** Pillars of this profile with no evidence (no debriefs, edge reports ...) and a stored 0: not measured. They still count as 0 in totalScore. null when the evidence could not be read. */
+  unmeasuredPillars?: TraderSkillPillar[] | null;
 };
 
 export type CalculateTraderSkillProfile200Signals = { [key: string]: number };
@@ -18163,6 +18212,8 @@ export type CalculateTraderSkillProfile200Signals = { [key: string]: number };
 export type CalculateTraderSkillProfile200 = {
   profile?: TraderSkillProfile;
   signals?: CalculateTraderSkillProfile200Signals;
+  /** Pillars with no evidence in this computation (each counted as 0 in totalScore). */
+  unmeasuredPillars?: TraderSkillPillar[];
 };
 
 export type GetSkillLevelHistory200 = {

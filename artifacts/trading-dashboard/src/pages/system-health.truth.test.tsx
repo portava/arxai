@@ -1,7 +1,7 @@
 // System Health page labels state what was measured (downgrade-only).
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
-import SystemHealthPage, { redactionLabel, subsystemBadgeLabel } from "./system-health";
+import SystemHealthPage, { overallLabel, redactionLabel, subsystemBadgeLabel } from "./system-health";
 
 function report(over: Record<string, unknown> = {}) {
   return {
@@ -44,5 +44,26 @@ describe("System Health labels", () => {
     expect(screen.getByTestId("subsystem-DD").textContent).toContain("OK");
     expect(screen.getByTestId("text-redaction-status").textContent).toContain("not checked");
     expect(screen.getByTestId("page-system-health").textContent).not.toContain("Working: true");
+  });
+
+  it("HEALTHY over reachability-only subsystems is not shown as HEALTHY", async () => {
+    const r = report({ overallStatus: "HEALTHY" });
+    expect(overallLabel(r as never)).toEqual({
+      label: "No problems found",
+      note: "1 of 2 subsystems (BB) were only checked for reachability; their service health was not checked.",
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ report: r }), { status: 200 })));
+    render(<SystemHealthPage />);
+    await waitFor(() => expect(screen.getByTestId("system-health-overall")).toBeTruthy());
+    const overall = screen.getByTestId("system-health-overall").textContent ?? "";
+    expect(overall).not.toContain("HEALTHY");
+    expect(overall).toContain("No problems found");
+    expect(overall).toContain("service health was not checked");
+  });
+
+  it("HEALTHY with every OK measured in process stays HEALTHY; other verdicts pass through", () => {
+    const measured = { DD: { status: "OK", checkScope: "IN_PROCESS" as const, notes: [] } };
+    expect(overallLabel({ overallStatus: "HEALTHY", subsystemStatus: measured })).toEqual({ label: "HEALTHY", note: null });
+    expect(overallLabel({ overallStatus: "DEGRADED", subsystemStatus: measured }).label).toBe("DEGRADED");
   });
 });

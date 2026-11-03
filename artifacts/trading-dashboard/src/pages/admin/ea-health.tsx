@@ -101,11 +101,34 @@ type HealthResp = {
   rows: HealthRow[];
 };
 
-function Tri({ v }: { v: boolean | null }) {
-  if (v === null) return <span className="inline-flex items-center gap-1 text-txt-muted"><HelpCircle className="w-3.5 h-3.5" /> unknown</span>;
+function Tri({ v, testId }: { v: boolean | null; testId?: string }) {
+  if (v === null) return <span className="inline-flex items-center gap-1 text-txt-muted" data-testid={testId}><HelpCircle className="w-3.5 h-3.5" />unknown</span>;
   return v
-    ? <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 className="w-3.5 h-3.5" /> yes</span>
-    : <span className="inline-flex items-center gap-1 text-txt-secondary"><XCircle className="w-3.5 h-3.5" /> no</span>;
+    ? <span className="inline-flex items-center gap-1 text-success" data-testid={testId}><CheckCircle2 className="w-3.5 h-3.5" />yes</span>
+    : <span className="inline-flex items-center gap-1 text-txt-secondary" data-testid={testId}><XCircle className="w-3.5 h-3.5" />no</span>;
+}
+
+// EA-reported values (eaInputs, clock drift) are written with every heartbeat
+// and stamped capabilitiesReportedAt. They are current only while the bridge
+// is fresh AND that report is within the fresh heartbeat window (server
+// clock: evaluatedAt). Otherwise they are last-known values, labelled with
+// their report time, never a plain green "yes" (the watchdog likewise ignores
+// an offline bridge's flags as stale).
+function eaReportIsCurrent(row: HealthRow, evaluatedAt: string): boolean {
+  if (row.liveness !== "fresh" || !row.capabilitiesReportedAt) return false;
+  const ageSec = (Date.parse(evaluatedAt) - Date.parse(row.capabilitiesReportedAt)) / 1000;
+  return isHeartbeatAgeSecondsFresh(ageSec);
+}
+function reportedWhen(reportedAt: string | null): string {
+  return reportedAt ? new Date(reportedAt).toLocaleString() : "time unknown";
+}
+function ReportedTri({ v, current, reportedAt, testId }: { v: boolean | null; current: boolean; reportedAt: string | null; testId: string }) {
+  if (current || v === null) return <Tri v={v} testId={testId} />;
+  return (
+    <span className="inline-flex items-center gap-1 text-txt-muted" data-testid={testId}>
+      <Clock className="w-3.5 h-3.5" />last reported {v ? "yes" : "no"} · {reportedWhen(reportedAt)}
+    </span>
+  );
 }
 
 // A pass where a detector failed (or the server did not say every detector
@@ -243,7 +266,10 @@ function EaHealthInner() {
         <Card><CardContent className="p-6 text-sm text-txt-secondary">No active MT5 bridges reporting.</CardContent></Card>
       )}
 
-      {data?.rows.map((row) => (
+      {data?.rows.map((row) => {
+        const eaCurrent = eaReportIsCurrent(row, data.evaluatedAt);
+        const id = row.connection.id;
+        return (
         <Card key={row.connection.id} data-testid={`ea-health-row-${row.connection.id}`}>
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -270,16 +296,21 @@ function EaHealthInner() {
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Heartbeat & connection</div>
                 <div className="flex justify-between" data-testid={`ea-heartbeat-age-${row.connection.id}`}><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) || heartbeatAgeText(row, data?.evaluatedAt ?? "").startsWith("unknown") ? "text-warning" : ""}>{heartbeatAgeText(row, data?.evaluatedAt ?? "")}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Last heartbeat</span><span>{row.connection.lastHeartbeatAt ? new Date(row.connection.lastHeartbeatAt).toLocaleString() : "never"}</span></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><Tri v={row.eaInputs.terminalConnected} /></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><ReportedTri v={row.eaInputs.terminalConnected} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-terminal-${id}`} /></div>
                 <div className="flex justify-between" data-testid={`ea-last-command-picked-${row.connection.id}`} title={lastCommandPickedText(row).note}><span className="text-txt-secondary">Last command picked</span><span>{lastCommandPickedText(row).value}</span></div>
                 <div className="text-[11px] text-txt-muted">{lastCommandPickedText(row).note}</div>
               </div>
 
               <div className="space-y-1.5">
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">EA inputs & safety</div>
-                <div className="flex justify-between"><span className="text-txt-secondary">AlgoTrading allowed</span><Tri v={row.eaInputs.algoTradingAllowed} /></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">EnableLiveExecution</span><Tri v={row.eaInputs.enableLiveExecution} /></div>
-                <div className="flex justify-between"><span className="text-txt-secondary">ReadOnlyMode</span><Tri v={row.eaInputs.readOnlyMode} /></div>
+                <div className={`text-[11px] ${eaCurrent ? "text-txt-muted" : "text-warning"}`} data-testid={`ea-inputs-asof-${id}`}>
+                  {eaCurrent
+                    ? <>EA-reported · as of {reportedWhen(row.capabilitiesReportedAt)}</>
+                    : <>EA-reported values are not current (bridge {row.liveness}) · last report {reportedWhen(row.capabilitiesReportedAt)}</>}
+                </div>
+                <div className="flex justify-between"><span className="text-txt-secondary">AlgoTrading allowed</span><ReportedTri v={row.eaInputs.algoTradingAllowed} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-algo-${id}`} /></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">EnableLiveExecution</span><ReportedTri v={row.eaInputs.enableLiveExecution} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-live-${id}`} /></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">ReadOnlyMode</span><ReportedTri v={row.eaInputs.readOnlyMode} current={eaCurrent} reportedAt={row.capabilitiesReportedAt} testId={`ea-readonly-${id}`} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">allowOrderExecution</span><Tri v={row.allowOrderExecution} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">liveLocked</span><Tri v={row.liveLocked} /></div>
               </div>
@@ -288,8 +319,9 @@ function EaHealthInner() {
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Clock drift & updates</div>
                 <div className="flex justify-between">
                   <span className="text-txt-secondary inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Clock drift</span>
-                  <span className={row.clockDrift.severity === "SEVERE" ? "text-danger" : row.clockDrift.severity === "WARN" ? "text-warning" : ""}>
+                  <span className={row.clockDrift.severity === "SEVERE" ? "text-danger" : row.clockDrift.severity === "WARN" ? "text-warning" : ""} data-testid={`ea-clock-drift-${id}`}>
                     {row.clockDrift.seconds === null ? "—" : `${row.clockDrift.seconds.toFixed(1)}s`} {row.clockDrift.severity ? `(${row.clockDrift.severity})` : ""}
+                    {row.clockDrift.seconds !== null && !eaCurrent && <span className="text-txt-muted"> · last reported {reportedWhen(row.capabilitiesReportedAt)}</span>}
                   </span>
                 </div>
                 <div className="flex justify-between" data-testid={`ea-self-update-${row.connection.id}`}><span className="text-txt-secondary">Self-update supported</span>{row.selfUpdateReported === false ? <NotReported /> : <Tri v={row.selfUpdateSupported} />}</div>
@@ -395,7 +427,8 @@ function EaHealthInner() {
             </div>
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }

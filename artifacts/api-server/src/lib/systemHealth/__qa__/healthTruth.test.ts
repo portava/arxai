@@ -1,6 +1,6 @@
 // System Health truth: a check that did not run is never reported as passed.
 //
-// Locks three inaccuracies on the admin System Health page:
+// Locks four inaccuracies on the admin System Health page:
 //   (a) the secret-redaction scan swallowed a failed DB query into zero
 //       findings, so the page said "Working: true" with the database down;
 //   (b) overallStatus was computed BEFORE the persist step pushed
@@ -8,7 +8,9 @@
 //       report read HEALTHY beside its own error;
 //   (c) an unauthenticated GET answering 2xx was reported as subsystem "OK"
 //       with constant claims nobody measured ("critical alerts work",
-//       "secrets redacted", "paper-only enforced", ...).
+//       "secrets redacted", "paper-only enforced", ...);
+//   (d) with every subsystem OK on reachability alone, the report still said
+//       "System healthy — no admin action required".
 //
 // Runs the REAL runHealthCheck with its I/O seams replaced by module mocks:
 // no database, no broker, no network (fetch is stubbed).
@@ -135,6 +137,9 @@ test("(b) a persist failure is reflected in overallStatus and the healthy recomm
   assert.ok(r.errors.some((e) => /failed to persist health check/.test(e)));
   assert.notEqual(r.overallStatus, "HEALTHY");
   assert.ok(!r.recommendedAdminActions.includes("System healthy — no admin action required"));
+  // The all-clear line (in either wording) goes with the persist error.
+  assert.ok(!r.recommendedAdminActions.some((a) => /System healthy|No problems found/.test(a)),
+    r.recommendedAdminActions.join(" | "));
 });
 
 test("(c) a 2xx probe is reported as reachability only, with no unmeasured claims", async (t) => {
@@ -153,4 +158,19 @@ test("(c) a 2xx probe is reported as reachability only, with no unmeasured claim
     if (build === "DD") assert.equal(sub.checkScope, "IN_PROCESS");
     else if (sub.status === "OK") assert.equal(sub.checkScope, "REACHABILITY_ONLY", build);
   }
+});
+
+test("(d) reachability-only OKs: no 'System healthy' claim, and the report names those subsystems", async (t) => {
+  state.dbDown = false; state.insertFails = false;
+  stubFetch(t);
+  const r = await runHealthCheck();
+  assert.equal(r.subsystemStatus.AA.checkScope, "REACHABILITY_ONLY");
+  assert.ok(!r.recommendedAdminActions.includes("System healthy — no admin action required"),
+    "the report claims health that only reachability probes measured");
+  assert.ok(r.reachabilityOnlySubsystems.includes("AA"));
+  assert.ok(!r.reachabilityOnlySubsystems.includes("DD"), "DD is checked in process");
+  const action = r.recommendedAdminActions.find((a) => /No problems found/.test(a));
+  assert.ok(action, r.recommendedAdminActions.join(" | "));
+  assert.match(action!, new RegExp(`${r.reachabilityOnlySubsystems.length} of 12 subsystems`));
+  assert.match(action!, /service health was not checked/);
 });

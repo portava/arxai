@@ -76,6 +76,43 @@ export function basketKeyFor(
   return `${accountMode}|${symbol.toUpperCase()}|${direction}|${firstLegOpenedAtMs ?? 0}`;
 }
 
+/** Broker tickets stored on a journal row (jsonb string[]), as strings. */
+export function storedLegTickets(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((t) => t != null && t !== "").map(String) : [];
+}
+
+/** Every leg ticket the basket has held: the stored ones plus the open ones. */
+export function unionLegTickets(stored: unknown, open: string[]): string[] {
+  const out = storedLegTickets(stored);
+  for (const t of open) if (!out.includes(t)) out.push(t);
+  return out;
+}
+
+/**
+ * The OPEN journal entry that a currently-open basket continues. The basket
+ * key carries the first leg's open time, so when the oldest leg closes and
+ * the rest stay open the key changes. That is a partial close, not a closed
+ * scalp: the entry is matched by its key, or else by a broker ticket it
+ * shares with the open legs on the same symbol and side. Null when the
+ * basket is new.
+ */
+export function findContinuedEntry<
+  R extends { basketKey: string; symbol: string; direction: string; legTickets: unknown },
+>(
+  openRows: R[],
+  snap: { basketKey: string; symbol: string; direction: string; legTickets: string[] },
+): R | null {
+  const exact = openRows.find((r) => r.basketKey === snap.basketKey);
+  if (exact) return exact;
+  if (snap.legTickets.length === 0) return null;
+  const sym = snap.symbol.toUpperCase();
+  return openRows.find((r) =>
+    r.symbol.toUpperCase() === sym &&
+    r.direction === snap.direction &&
+    storedLegTickets(r.legTickets).some((t) => snap.legTickets.includes(t)),
+  ) ?? null;
+}
+
 /** Earliest leg open time (ms) in a basket, or null when none is known. */
 export function firstLegOpenedAtMs(basket: ScalpBasket): number | null {
   let min: number | null = null;

@@ -185,7 +185,7 @@ describe("Position Manager — a failed refetch does not keep the earlier basket
     await waitFor(() => expect(screen.getByText(/couldn't read your open positions right now/i)).toBeTruthy());
     expect(screen.queryAllByTestId("scalp-basket-row")).toHaveLength(0);
     expect(screen.queryByText("Lock in some profit")).toBeNull();
-    expect(screen.queryByText(/No open scalp positions to manage/i)).toBeNull();
+    expect(screen.queryByText(/No open .*positions to manage/i)).toBeNull();
 
     basketsFn.mockResolvedValueOnce({ baskets: [makeBasket()], accountMode: "DEMO", generatedAt: new Date().toISOString() });
     await act(async () => {

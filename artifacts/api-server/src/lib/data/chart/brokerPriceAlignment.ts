@@ -215,12 +215,32 @@ export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | und
 }
 
 /**
+ * Why a compared broker quote cannot speak for this chart's series, in plain
+ * English, or null when the quote is BOUND (same feed, account and a current
+ * tick). Used to name a failed deviation from such a quote for what it is.
+ */
+export function unboundQuoteDescription(
+  binding: BrokerQuoteBinding | null | undefined,
+): { reason: string; short: string } | null {
+  if (isBoundBrokerQuote(binding)) return null;
+  if (binding?.status === "MISMATCH") return { reason: "a broker quote from a different feed or account than this chart", short: "broker quote is from another feed" };
+  if (binding?.status === "STALE") return { reason: "an old broker tick (outside the freshness budget)", short: "broker tick is old" };
+  return { reason: "a broker quote whose feed or tick time could not be verified", short: "broker quote unverified" };
+}
+
+/**
  * Honest "Mirror …" segment for a chart trust line.
  *
  * Reflects the REAL broker-alignment granularity rather than the binary
  * `tradeConfirmationAllowed` gate alone, so a read-chart surface never claims
  * the chart price is synced with the broker when it is only drifting or cannot
  * be verified at all:
+ *   - `tradeConfirmationAllowed === false` because neither the seam nor a
+ *       bound broker comparison could be checked (`cause.notChecked`)
+ *       → "Mirror not checked"  (absence is never called a failure)
+ *   - `tradeConfirmationAllowed === false` only because an UNBOUND quote's
+ *       deviation crossed the failure band (seam not failed, `cause` given)
+ *       → "Mirror not confirmed (<why the quote does not apply>)"
  *   - `tradeConfirmationAllowed === false` (merge-seam OR alignment "failed")
  *       → "Mirror degraded"  (composes seam AND alignment state)
  *   - aligned (tight/normal) with broker data → "Mirror synced"
@@ -234,7 +254,15 @@ export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | und
 export function mirrorTrustSegment(
   tradeConfirmationAllowed: boolean,
   alignment: Pick<BrokerPriceAlignment, "aligned" | "tolerance" | "brokerDataAvailable" | "quoteBinding">,
+  cause?: { seamFailed: boolean; notChecked: boolean },
 ): string | null {
+  // Nothing observed: the gate is closed for lack of evidence, not a failure.
+  if (!tradeConfirmationAllowed && cause?.notChecked) return "Mirror not checked";
+  // Only another feed's quote, or an old/unverified tick, crossed the failure
+  // band: that says nothing about this chart's alignment.
+  const unbound = alignment.brokerDataAvailable && alignment.tolerance === "failed"
+    ? unboundQuoteDescription(alignment.quoteBinding) : null;
+  if (!tradeConfirmationAllowed && cause && !cause.seamFailed && unbound) return `Mirror not confirmed (${unbound.short})`;
   // Seam failure or alignment failure already collapsed tradeConfirmationAllowed
   // to false — surface that as degraded regardless of the raw tolerance band.
   if (!tradeConfirmationAllowed) return "Mirror degraded";

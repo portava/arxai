@@ -127,8 +127,11 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
   const brokerReadOnly = postureUnmeasured ? null : readBool(bridge?.brokerReadOnly);
   const mt5Deferred = bridge?.bridgeMode === "deferred" || bridge?.bridgeMode === "unknown";
   const mt5BridgeConnected = bridge?.bridgeMode === "connected";
-  const heartbeatPresent = readBool(bridge?.heartbeatPresent);
-  const heartbeatAgeSeconds = bridge?.heartbeatAgeSeconds ?? null;
+  // bridgeMode "unknown": the server could not read the EA connection, so its
+  // heartbeatPresent:false is not an observed absence — the heartbeat is unknown.
+  const bridgeUnread = bridge?.bridgeMode === "unknown";
+  const heartbeatPresent = bridgeUnread ? null : readBool(bridge?.heartbeatPresent);
+  const heartbeatAgeSeconds = bridgeUnread ? null : bridge?.heartbeatAgeSeconds ?? null;
   const paperOnly = postureUnmeasured ? null : readBool(bridge?.paperOnly);
   const simulatorMode = bridge && !postureUnmeasured ? bridge.bridgeMode === "simulator" || bridge.bridgeMode === "deferred" : null;
 

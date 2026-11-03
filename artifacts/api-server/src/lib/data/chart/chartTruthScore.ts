@@ -100,6 +100,15 @@ function aggregate(subMetrics: ChartTruthSubMetric[]): ChartTruthScore {
       (primaryConcern ?? "All measured checks healthy.") };
 }
 
+/** True only when a closed-to-forming bar pair let the merge seam be observed. */
+export function isMergeSeamMeasured(truthResult: TimeframeTruthResult | null | undefined): boolean {
+  if (!truthResult || !Number.isFinite(truthResult.candleCount) || truthResult.candleCount <= 0) return false;
+  const seam = truthResult.mergeSeam;
+  return !!seam && seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
+    seam.formingBarCount > 0 && truthResult.candleCount > seam.formingBarCount &&
+    Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
+}
+
 /**
  * Compute the Chart Truth Score from Phase 1 truth result + feed status.
  *
@@ -226,13 +235,15 @@ export function computeChartTruthScore(
   // When real broker bid/ask is available, a wide or failed deviation means the
   // chart price and broker price have diverged — a real mirror sync issue.
   const seam = truthResult.mergeSeam;
-  const seamMeasured = seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
-    seam.formingBarCount > 0 && n > seam.formingBarCount && Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
+  const seamMeasured = isMergeSeamMeasured(truthResult);
   let mirrorRaw: number;
   let mirrorDetail: string;
   if (!seamMeasured) {
-    mirrorRaw = 80;
-    mirrorDetail = "No closed-to-forming pair available — seam not assessable.";
+    // Half of this check (seam integrity) was not observed, so it earns no
+    // placeholder points: below, only an observed broker FAILURE is scored
+    // (it stays a measured failure); anything else is left unmeasured.
+    mirrorRaw = 100;
+    mirrorDetail = "Merge seam could not be checked (no closed-to-forming bar pair).";
   } else if (seam.overlapAtSeam) {
     mirrorRaw = 30;
     mirrorDetail = "Seam overlap detected — forming bar open overlaps last closed bar.";
@@ -278,6 +289,10 @@ export function computeChartTruthScore(
     mirrorDetail += " Broker quote unavailable for alignment check.";
   }
   const alignmentMeasured = hasMeasuredBrokerAlignment(alignment);
+  // Seam not checked: a failure in either half fails the whole check, so an
+  // observed broker FAILURE is scored. A healthy or drifting comparison cannot
+  // confirm the mirror on its own and earns no points.
+  const mirrorScored = alignmentMeasured && (seamMeasured || alignment!.tolerance === "failed");
   // A numeric comparison whose quote is not bound to this series' identity and
   // freshness earns nothing; the observed binding failure stays named.
   const binding = alignment?.quoteBinding;
@@ -289,8 +304,10 @@ export function computeChartTruthScore(
       ? "Broker mirror accuracy unmeasured — broker quote identity and freshness were not evaluated."
       : "Broker mirror accuracy unmeasured — no usable broker-price comparison.";
   subMetrics.push(sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12,
-    alignmentMeasured ? mirrorRaw : null,
-    alignmentMeasured ? mirrorDetail : unboundDetail));
+    mirrorScored ? mirrorRaw : null,
+    mirrorScored ? mirrorDetail
+      : alignmentMeasured ? `${mirrorDetail} Symbol mirror not confirmed — this check earns no points until the seam is observed too.`
+        : unboundDetail));
 
   // ── 5. Historical/Live Merge Quality (0.10) ───────────────────────────────
   // Strictly the quality of the merge seam itself.

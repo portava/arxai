@@ -13203,6 +13203,23 @@ export const GetTraderSkillProfileResponse = zod.object({
       zod.null(),
     ])
     .optional(),
+  unmeasuredPillars: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .nullish()
+    .describe(
+      "Pillars of this profile with no evidence (no debriefs, edge reports ...) and a stored 0: not measured. They still count as 0 in totalScore. null when the evidence could not be read.",
+    ),
 });
 
 export const CalculateTraderSkillProfileResponse = zod.object({
@@ -13232,6 +13249,23 @@ export const CalculateTraderSkillProfileResponse = zod.object({
     })
     .optional(),
   signals: zod.record(zod.string(), zod.number()).optional(),
+  unmeasuredPillars: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .optional()
+    .describe(
+      "Pillars with no evidence in this computation (each counted as 0 in totalScore).",
+    ),
 });
 
 export const GetSkillLevelHistoryResponse = zod.object({
@@ -15931,13 +15965,49 @@ export const ListTradePlansResponse = zod.object({
             warnCount: zod.number(),
             isReady: zod.boolean(),
             rewardToRisk: zod.number().nullish(),
+            checkedAtIso: zod
+              .string()
+              .nullish()
+              .describe(
+                "When validate computed this checklist. Absent on plans validated before it was recorded.",
+              ),
           }),
           zod.null(),
         ])
         .optional(),
+      checklistStale: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+        ),
       executionConfirmationId: zod.number().nullish(),
       createdAtIso: zod.string(),
       updatedAtIso: zod.string(),
+      chartTruthStatus: zod
+        .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+        .optional()
+        .describe(
+          "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+        ),
+      chartTruthScore: zod
+        .number()
+        .nullish()
+        .describe(
+          "Validate response only. Chart Truth score of the cached chart read used at validation.",
+        ),
+      chartQualityNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+        ),
+      effectiveConfidenceLevel: zod
+        .number()
+        .nullish()
+        .describe(
+          "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+        ),
     }),
   ),
 });
@@ -15999,13 +16069,49 @@ export const CreateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const GetTradePlanParams = zod.object({
@@ -16048,13 +16154,49 @@ export const GetTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const UpdateTradePlanParams = zod.object({
@@ -16118,13 +16260,49 @@ export const UpdateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const ValidateTradePlanParams = zod.object({
@@ -16167,13 +16345,49 @@ export const ValidateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const CancelTradePlanParams = zod.object({
@@ -16216,13 +16430,49 @@ export const CancelTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const ConvertTradePlanParams = zod.object({
@@ -16266,13 +16516,49 @@ export const ConvertTradePlanResponse = zod.object({
           warnCount: zod.number(),
           isReady: zod.boolean(),
           rewardToRisk: zod.number().nullish(),
+          checkedAtIso: zod
+            .string()
+            .nullish()
+            .describe(
+              "When validate computed this checklist. Absent on plans validated before it was recorded.",
+            ),
         }),
         zod.null(),
       ])
       .optional(),
+    checklistStale: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+      ),
     executionConfirmationId: zod.number().nullish(),
     createdAtIso: zod.string(),
     updatedAtIso: zod.string(),
+    chartTruthStatus: zod
+      .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+      .optional()
+      .describe(
+        "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+      ),
+    chartTruthScore: zod
+      .number()
+      .nullish()
+      .describe(
+        "Validate response only. Chart Truth score of the cached chart read used at validation.",
+      ),
+    chartQualityNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+      ),
+    effectiveConfidenceLevel: zod
+      .number()
+      .nullish()
+      .describe(
+        "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+      ),
   }),
   executionConfirmationId: zod.number().nullish(),
 });
@@ -17492,6 +17778,12 @@ export const CreateMeScalpFocusResponse = zod.object({
     .describe(
       "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
     ),
+  newsRiskNotConfigured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+    ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
   expiresAt: zod.string(),
@@ -17694,6 +17986,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17886,6 +18184,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .optional()
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18080,6 +18384,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -18272,6 +18582,12 @@ export const CreateMeScalpRankResponse = zod.object({
         .optional()
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18487,6 +18803,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
         ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -18679,6 +19001,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         .optional()
         .describe(
           "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
         ),
       timingStatus: zod.enum([
         "VALID_NOW",
@@ -18949,6 +19277,18 @@ export const GetMeScalpBasketsResponse = zod.object({
     .nullish()
     .describe(
       "Plain statement of why positions were not read; null when they were.",
+    ),
+  positionsAsOf: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.",
+    ),
+  positionsStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P\/L, stops and exit \/ add-on advice then describe that reading, not the account now.",
     ),
 });
 

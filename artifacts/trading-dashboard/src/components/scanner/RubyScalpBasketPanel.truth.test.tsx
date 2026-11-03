@@ -1,26 +1,24 @@
 // Position Manager truth:
-//   * When the server says the open positions were not read
-//     (positionsMeasured: false — e.g. a DEMO user whose EA snapshot is not
-//     stamped with a user), the panel must not say "No open scalp positions to
-//     manage". It says the positions were not read and shows the server's note.
+//  - when the server says the open positions were not read
+//    (positionsMeasured: false — e.g. a DEMO user whose EA snapshot is not
+//    stamped with a user), the panel must not say "No open ... positions to
+//    manage". It says the positions were not read and shows the server's note.
+//  - the server says when the bridge last reported the positions shown and
+//    flags a reading older than 90 seconds as stale. Hours-old positions,
+//    open P/L and stops must not read as the account now.
+//  - an empty list is "no open positions" only when positions were read. The
+//    Position Manager reads live and demo MT5 positions only; a Paper account
+//    or an unread demo book must say so.
 //
-// Real QueryClient; the generated hook is replaced by a plain useQuery driven
-// by a controllable function.
+// Real QueryClient; the generated baskets hook is replaced by a plain useQuery.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { ScalpBasket } from "@workspace/api-client-react";
+import type { MeScalpBasketsResp, ScalpBasket } from "@workspace/api-client-react";
 
-type BasketsResp = {
-  baskets: ScalpBasket[];
-  accountMode: string;
-  generatedAt: string;
-  positionsMeasured?: boolean;
-  positionsNote?: string | null;
-};
-const basketsFn = vi.fn<() => Promise<BasketsResp>>();
+const basketsFn = vi.fn<() => Promise<MeScalpBasketsResp>>();
 
 vi.mock("@workspace/api-client-react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@workspace/api-client-react")>();
@@ -35,6 +33,30 @@ import { RubyScalpBasketPanel } from "./RubyScalpBasketPanel";
 
 const NOTE =
   "No MT5 snapshot is stored for your account in the EA account feed (the feed is saved install-wide, not per user), so your open positions were not read here. This is not a count of zero.";
+
+function makeBasket(): ScalpBasket {
+  return {
+    symbol: "EURUSD",
+    displayName: "EUR/USD",
+    direction: "BUY",
+    accountMode: "LIVE",
+    entryCount: 2,
+    totalVolume: 0.2,
+    averageEntry: 1.1001,
+    currentPrice: 1.1012,
+    combinedFloatingPl: 22,
+    breakEvenPrice: 1.1001,
+    hasUnprotectedLeg: false,
+    legs: [],
+    flame: { flameStage: "ACTIVE" },
+    exit: { urgency: "NONE", action: "HOLD", headline: "Healthy", detail: "Let it work.", alertOnly: true },
+    addOn: {
+      recommendation: "HOLD", maxAddOns: 3, usedAddOns: 1, remainingAddOns: 2, allowed: false,
+      revengeGuardTriggered: false, requiresFreshConfirmation: false, profitCushion: null, reason: "Hold.",
+    },
+    generatedAt: new Date().toISOString(),
+  } as unknown as ScalpBasket;
+}
 
 let client: QueryClient;
 function withClient(children: ReactNode) {
@@ -61,7 +83,7 @@ describe("Position Manager — positions that were not read are not shown as non
     });
     render(withClient(<RubyScalpBasketPanel />));
     await waitFor(() => expect(screen.getByTestId("ruby-scalp-baskets-not-measured")).toBeTruthy());
-    expect(screen.queryByText(/No open scalp positions/i)).toBeNull();
+    expect(screen.queryByText(/No open .*positions/i)).toBeNull();
     const notice = screen.getByTestId("ruby-scalp-baskets-not-measured");
     expect(notice.textContent).toMatch(/not read/i);
     expect(notice.textContent).toContain(NOTE);
@@ -77,7 +99,7 @@ describe("Position Manager — positions that were not read are not shown as non
     });
     render(withClient(<RubyScalpBasketPanel />));
     await waitFor(() => expect(screen.getByTestId("ruby-scalp-baskets-not-measured")).toBeTruthy());
-    expect(screen.queryByText(/No open scalp positions/i)).toBeNull();
+    expect(screen.queryByText(/No open .*positions/i)).toBeNull();
     expect(screen.getByTestId("ruby-scalp-baskets-not-measured").textContent).toMatch(/not read/i);
   });
 
@@ -90,7 +112,7 @@ describe("Position Manager — positions that were not read are not shown as non
       generatedAt: new Date().toISOString(),
     });
     render(withClient(<RubyScalpBasketPanel />));
-    await waitFor(() => expect(screen.getByText(/No open scalp positions to manage/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/No open demo MT5 positions to manage/i)).toBeTruthy());
     expect(screen.queryByTestId("ruby-scalp-baskets-not-measured")).toBeNull();
   });
 });
@@ -149,5 +171,82 @@ describe("Position Manager — average entry is formatted, break-even is qualifi
     const label = screen.getByTestId("scalp-basket-break-even-label");
     expect(label.textContent).toMatch(/before costs/i);
     expect(label.getAttribute("title") ?? "").toMatch(/spread, commission and swap are not included/i);
+  });
+});
+
+describe("Position Manager — positions reading age", () => {
+  it("a 3-hour-old reading is shown as that reading, not live", async () => {
+    const asOf = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    basketsFn.mockResolvedValueOnce({
+      baskets: [makeBasket()], accountMode: "LIVE_SHARED", positionsMeasured: true,
+      positionsAsOf: asOf, positionsStale: true, generatedAt: new Date().toISOString(),
+    });
+    render(withClient(<RubyScalpBasketPanel />));
+    await waitFor(() => expect(screen.getAllByTestId("scalp-basket-row")).toHaveLength(1));
+    const warn = screen.getByTestId("scalp-baskets-stale");
+    expect(warn.textContent).toMatch(/not live/);
+    expect(warn.textContent).toMatch(/3h 0m ago/);
+    expect(warn.textContent).toMatch(/may have changed or closed/);
+    expect(screen.getByText("Open P/L (old reading)")).toBeTruthy();
+  });
+
+  it("a stale reading with no recorded time says so", async () => {
+    basketsFn.mockResolvedValueOnce({
+      baskets: [makeBasket()], accountMode: "LIVE_SHARED", positionsMeasured: true,
+      positionsAsOf: null, positionsStale: true, generatedAt: new Date().toISOString(),
+    });
+    render(withClient(<RubyScalpBasketPanel />));
+    await waitFor(() => expect(screen.getByTestId("scalp-baskets-stale")).toBeTruthy());
+    expect(screen.getByTestId("scalp-baskets-stale").textContent).toMatch(/No reading time is recorded/);
+  });
+
+  it("a current reading carries its time and no stale warning", async () => {
+    const asOf = new Date(Date.now() - 5_000).toISOString();
+    basketsFn.mockResolvedValueOnce({
+      baskets: [makeBasket()], accountMode: "LIVE_SHARED", positionsMeasured: true,
+      positionsAsOf: asOf, positionsStale: false, generatedAt: new Date().toISOString(),
+    });
+    render(withClient(<RubyScalpBasketPanel />));
+    await waitFor(() => expect(screen.getByTestId("scalp-baskets-as-of")).toBeTruthy());
+    expect(screen.queryByTestId("scalp-baskets-stale")).toBeNull();
+    expect(screen.getByText("Open P/L")).toBeTruthy();
+  });
+});
+
+describe("Position Manager — empty list copy", () => {
+  async function emptyCopy(resp: Partial<MeScalpBasketsResp>): Promise<string> {
+    basketsFn.mockResolvedValueOnce({
+      baskets: [], accountMode: "LIVE_SHARED", generatedAt: new Date().toISOString(), ...resp,
+    } as MeScalpBasketsResp);
+    render(withClient(<RubyScalpBasketPanel />));
+    await waitFor(() => expect(screen.getByTestId("scalp-baskets-empty")).toBeTruthy());
+    return screen.getByTestId("scalp-baskets-empty").textContent ?? "";
+  }
+
+  it("Paper: says paper positions are not covered, not 'no open positions'", async () => {
+    const text = await emptyCopy({ accountMode: "PAPER", positionsMeasured: true });
+    expect(text).toMatch(/Paper mode/);
+    expect(text).toMatch(/live and demo MT5 positions only/);
+    expect(text).not.toMatch(/No open/);
+  });
+
+  it("no account: says no positions were read", async () => {
+    const text = await emptyCopy({ accountMode: "NONE", positionsMeasured: true });
+    expect(text).toMatch(/No live or demo account is active/);
+    expect(text).not.toMatch(/No open/);
+  });
+
+  it("an unread demo book shows why, not 'no open positions'", async () => {
+    const text = await emptyCopy({
+      accountMode: "DEMO", positionsMeasured: false,
+      positionsNote: "No MT5 snapshot is stored for your account, so your open positions were not read here. This is not a count of zero.",
+    });
+    expect(text).toMatch(/not read here/);
+    expect(text).not.toMatch(/No open/);
+  });
+
+  it("a read, empty live book is a real none", async () => {
+    const text = await emptyCopy({ accountMode: "LIVE_SHARED", positionsMeasured: true, positionsNote: null });
+    expect(text).toMatch(/No open live MT5 positions to manage/);
   });
 });

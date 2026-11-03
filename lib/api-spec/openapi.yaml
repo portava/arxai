@@ -4946,6 +4946,14 @@ paths:
                     oneOf:
                       - { $ref: "#/components/schemas/TraderSkillProfile" }
                       - { type: "null" }
+                  unmeasuredPillars:
+                    type: array
+                    nullable: true
+                    description: >-
+                      Pillars of this profile with no evidence (no debriefs, edge
+                      reports ...) and a stored 0: not measured. They still count
+                      as 0 in totalScore. null when the evidence could not be read.
+                    items: { $ref: "#/components/schemas/TraderSkillPillar" }
 
   /skill/calculate:
     post:
@@ -4963,6 +4971,10 @@ paths:
                   signals:
                     type: object
                     additionalProperties: { type: integer }
+                  unmeasuredPillars:
+                    type: array
+                    description: Pillars with no evidence in this computation (each counted as 0 in totalScore).
+                    items: { $ref: "#/components/schemas/TraderSkillPillar" }
 
   /skill/history:
     get:
@@ -19578,6 +19590,10 @@ components:
         createdAt:         { type: string }
         updatedAt:         { type: string }
 
+    TraderSkillPillar:
+      type: string
+      enum: [discipline, execution, risk, emotional, consistency, planning, review, practice]
+
     TraderSkillProfile:
       type: object
       required: [id, skillLevel, totalScore, disciplineScore, executionScore, riskScore, emotionalControlScore, consistencyScore, planningScore, reviewScore, practiceScore, createdAt, updatedAt]
@@ -21655,6 +21671,10 @@ components:
         warnCount: { type: integer }
         isReady: { type: boolean }
         rewardToRisk: { type: number, nullable: true }
+        checkedAtIso:
+          type: string
+          nullable: true
+          description: When validate computed this checklist. Absent on plans validated before it was recorded.
 
     TradePlan:
       type: object
@@ -21683,9 +21703,37 @@ components:
           oneOf:
             - $ref: "#/components/schemas/TradePlanChecklist"
             - type: "null"
+        checklistStale:
+          type: boolean
+          description: >-
+            True when the plan was saved after its checklist and AI review were
+            computed (a DRAFT carrying a checklist). They describe earlier values
+            and must not be shown as the current plan's result.
         executionConfirmationId: { type: integer, nullable: true }
         createdAtIso: { type: string }
         updatedAtIso: { type: string }
+        chartTruthStatus:
+          type: string
+          enum: [PASSED, LIMITED, NOT_CHECKED]
+          description: >-
+            Validate response only. Whether Chart Truth was checked for the
+            plan's symbol at validation: PASSED, LIMITED (chartQualityNote says
+            why) or NOT_CHECKED (no symbol, no recent chart read, or the read
+            failed).
+        chartTruthScore:
+          type: number
+          nullable: true
+          description: Validate response only. Chart Truth score of the cached chart read used at validation.
+        chartQualityNote:
+          type: string
+          nullable: true
+          description: Validate response only. Present when Chart Truth limited the plan's chart basis.
+        effectiveConfidenceLevel:
+          type: integer
+          nullable: true
+          description: >-
+            Validate response only, with chartQualityNote. The plan's confidence
+            capped at the Chart Truth score; the stored confidenceLevel is unchanged.
 
     TradePlanList:
       type: object
@@ -23319,6 +23367,13 @@ components:
             True when scheduled news risk could not be checked (the news lookup
             failed or a configured economic calendar did not answer). newsRisk is
             then not an observation and must not be shown as LOW.
+        newsRiskNotConfigured:
+          type: boolean
+          description: >-
+            True when no economic calendar is configured, so scheduled news was
+            not checked at all. The read is technicals-only by design (no scalp
+            is withheld for it), but newsRisk is then not an observation and
+            must not be shown as LOW.
         timingStatus: { type: string, enum: [VALID_NOW, WAIT_FOR_ENTRY, LATE, EXPIRED] }
         validForSeconds: { type: integer }
         expiresAt: { type: string }
@@ -23491,6 +23546,12 @@ components:
         positionsNote:
           type: ["string", "null"]
           description: Plain statement of why positions were not read; null when they were.
+        positionsAsOf:
+          type: ["string", "null"]
+          description: When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.
+        positionsStale:
+          type: boolean
+          description: True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P/L, stops and exit / add-on advice then describe that reading, not the account now.
 
     MeScalpAddOnCheckBody:
       type: object
