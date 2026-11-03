@@ -89,7 +89,7 @@ mock.module("../safety/tradingHalt.js", { namedExports: {
   loadTradingHalt: async (a: { venue: string }) => halts[a.venue] ?? RELEASED,
 } });
 
-const { computeRiskAudit } = await import("../riskAudit.js");
+const { computeRiskAudit, riskAuditBasis } = await import("../riskAudit.js");
 const riskRouter = (await import("../../routes/risk.js")).default;
 
 function closedLoss(id: number, userId: number, pnl: number, minutesAgo: number, pnlStatus: string | null = null): Row {
@@ -236,4 +236,40 @@ test("the legacy /mt5/execute check does not read the stop switches (its blockin
   const a = await computeRiskAudit(1000, SETTINGS);
   assert.equal(a.tradingHalt, null, "not read: reported as null, never as released");
   assert.equal(a.passed, true);
+});
+
+// ── Weekly rows with UNKNOWN P/L ────────────────────────────────────────────
+// Before: weekly loss left out UNKNOWN-P/L rows with no warning (only today's
+// were named), and the result still read as fully measured, so the page showed
+// "Weekly Loss Used 0.00%" and "no rule tripped" over a loss never measured.
+// The rows are now counted, named in a warning, and reported as a partly
+// measured figure so the page cannot read the sum as the whole loss.
+test("an UNKNOWN-P/L row closed earlier this week is named, counted and reported as a partly measured weekly loss", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-04T12:00:00Z") });
+  const monday = new Date("2026-11-02T12:00:00Z");
+  rows = [{ id: 1, userId: 1, status: "CLOSED_LOSS", pnl: -999, pnlStatus: "UNKNOWN", closedAt: monday, createdAt: monday }];
+  const a = await computeRiskAudit(1000, SETTINGS, { countClosedRows: true, userId: 1 });
+  assert.equal(a.weeklyLossUsed, 0, "the unknown P/L is still not summed");
+  assert.equal(a.unknownPnlRowsThisWeek, 1);
+  assert.equal(a.unknownPnlRowsToday, 0);
+  assert.ok(a.warnings.some((w) => /closed this week have no known P\/L.*weekly loss/.test(w)), a.warnings.join(" | "));
+  assert.deepEqual(riskAuditBasis(a).partlyMeasured, ["weeklyLossUsed"]);
+  assert.deepEqual(riskAuditBasis(a).notMeasured, []);
+});
+
+test("GET /risk/audit reports unknown-P/L rows today as partly measured daily and weekly loss", async () => {
+  rows = [closedLoss(1, 1, -10, 30), closedLoss(2, 1, -999, 20, "UNKNOWN")];
+  const res = await fetch(`${base}/api/risk/audit`);
+  const a = await res.json() as { unknownPnlRowsToday: number; unknownPnlRowsThisWeek: number; partlyMeasured: string[] };
+  assert.equal(a.unknownPnlRowsToday, 1);
+  assert.equal(a.unknownPnlRowsThisWeek, 1);
+  assert.deepEqual(a.partlyMeasured, ["dailyLossUsed", "weeklyLossUsed"]);
+});
+
+test("with every P/L known nothing is reported as partly measured", async () => {
+  rows = [closedLoss(1, 1, -10, 30)];
+  const a = await computeRiskAudit(1000, SETTINGS, { countClosedRows: true, userId: 1 });
+  assert.equal(a.unknownPnlRowsToday, 0);
+  assert.equal(a.unknownPnlRowsThisWeek, 0);
+  assert.deepEqual(riskAuditBasis(a).partlyMeasured, []);
 });

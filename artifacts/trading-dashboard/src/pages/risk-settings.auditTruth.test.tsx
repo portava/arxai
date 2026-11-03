@@ -109,3 +109,39 @@ describe("risk audit scope", () => {
     expect(screen.getByText("all users")).toBeTruthy();
   });
 });
+
+// Closed rows with UNKNOWN P/L are left out of the loss sums. The weekly ones
+// were left out silently and the audit still read as fully measured, so the
+// page showed "Weekly Loss Used 0.00%" under "no rule tripped" over a loss
+// never measured. A partly measured loss is now the unmeasured tone, never a
+// pass, and the row says what was left out.
+describe("risk audit with unknown-P/L rows", () => {
+  const PARTIAL = {
+    ...BASE, closedTradesMeasured: true, scope: "USER", measuredFrom: "LEGACY_TRADES_TABLE",
+    warnings: ["1 trade(s) closed this week have no known P/L and are not counted in weekly loss."],
+    unknownPnlRowsToday: 0, unknownPnlRowsThisWeek: 1, partlyMeasured: ["weeklyLossUsed"], notMeasured: [],
+  };
+
+  it("the banner is not a pass: it says the loss is not fully measured", () => {
+    set(PARTIAL);
+    render(<AuditBanner />);
+    const headline = screen.getByTestId("risk-audit-headline").textContent ?? "";
+    expect(headline).not.toMatch(/no rule tripped/);
+    expect(headline).toMatch(/weekly loss is not fully measured/);
+  });
+
+  it("the weekly row says what was left out, and the detail does not read clear", () => {
+    set(PARTIAL);
+    render(<RiskAuditDetail />);
+    expect(screen.getByText(/1 closed trade with unknown P\/L not counted/)).toBeTruthy();
+    expect(screen.queryByTestId("risk-audit-detail-clear")).toBeNull();
+    expect(screen.getByTestId("risk-audit-unmeasured").textContent).toMatch(/not fully measured/);
+  });
+
+  it("the counts alone (no partlyMeasured from the server) still downgrade the verdict", () => {
+    set({ ...PARTIAL, partlyMeasured: undefined, warnings: [], unknownPnlRowsToday: 2, unknownPnlRowsThisWeek: 2 });
+    render(<><AuditBanner /><RiskAuditDetail /></>);
+    expect(screen.getByTestId("risk-audit-headline").textContent).toMatch(/daily and weekly loss is not fully measured/);
+    expect(screen.queryByTestId("risk-audit-detail-clear")).toBeNull();
+  });
+});

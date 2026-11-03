@@ -108,6 +108,14 @@ export interface RiskAuditResult {
    * they were not measured and read 0 / clear whatever the real P/L.
    */
   closedTradesMeasured: boolean;
+  /**
+   * Closed rows (today / since the start of the week) whose P/L is UNKNOWN.
+   * They are left out of daily / weekly loss, so while either is above 0
+   * that figure is only part of the loss (riskAuditBasis partlyMeasured).
+   * 0 when closed rows were not counted (closedTradesMeasured false).
+   */
+  unknownPnlRowsToday: number;
+  unknownPnlRowsThisWeek: number;
   /** Where the counts come from: the legacy simulated trades table (no new rows since /execute-trade was retired). */
   measuredFrom: "LEGACY_TRADES_TABLE";
   /** USER: only the trader's own rows were counted. ALL_USERS: every user's rows. */
@@ -134,15 +142,24 @@ export const RISK_AUDIT_CLOSED_ROW_FIELDS = ["dailyLossUsed", "weeklyLossUsed", 
  *    not measurements.
  * A result that does not say is read as the unscoped, unmeasured case.
  */
-export function riskAuditBasis(audit: { closedTradesMeasured?: boolean; scope?: string }): {
+export function riskAuditBasis(audit: {
+  closedTradesMeasured?: boolean; scope?: string; unknownPnlRowsToday?: number; unknownPnlRowsThisWeek?: number;
+}): {
   tradeSource: "LEGACY_TRADES_TABLE";
   tradeScope: "USER" | "ALL_ACCOUNTS";
   notMeasured: string[];
+  partlyMeasured: string[];
 } {
+  const measured = audit.closedTradesMeasured === true;
+  // A loss sum that left out rows with UNKNOWN P/L is only part of the loss.
+  const partlyMeasured: string[] = [];
+  if (measured && (audit.unknownPnlRowsToday ?? 0) > 0) partlyMeasured.push("dailyLossUsed");
+  if (measured && (audit.unknownPnlRowsThisWeek ?? 0) > 0) partlyMeasured.push("weeklyLossUsed");
   return {
     tradeSource: "LEGACY_TRADES_TABLE",
     tradeScope: audit.scope === "USER" ? "USER" : "ALL_ACCOUNTS",
-    notMeasured: audit.closedTradesMeasured === true ? [] : [...RISK_AUDIT_CLOSED_ROW_FIELDS],
+    notMeasured: measured ? [] : [...RISK_AUDIT_CLOSED_ROW_FIELDS],
+    partlyMeasured,
   };
 }
 
@@ -191,6 +208,10 @@ export async function computeRiskAudit(
     .from(tradesTable)
     .where(own(and(gte(tradesTable.closedAt, weekStart), isClosed)!));
 
+  const weeklyUnknown = weekClosed.filter((t) => !knownPnl(t)).length;
+  if (weeklyUnknown > 0) {
+    warnings.push(`${weeklyUnknown} trade(s) closed this week have no known P/L and are not counted in weekly loss.`);
+  }
   const weeklyPnl = weekClosed.filter(knownPnl).reduce((s, t) => s + (t.pnl ?? 0), 0);
   const weeklyLossUsed = weeklyPnl < 0 ? (Math.abs(weeklyPnl) / accountBalance) * 100 : 0;
 
@@ -311,6 +332,8 @@ export async function computeRiskAudit(
     losingStreak,
     cooldownActive,
     closedTradesMeasured,
+    unknownPnlRowsToday: dailyUnknown,
+    unknownPnlRowsThisWeek: weeklyUnknown,
     measuredFrom: "LEGACY_TRADES_TABLE",
     scope: scoped ? "USER" : "ALL_USERS",
     tradingHalt: opts.halt ?? null,

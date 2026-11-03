@@ -4360,6 +4360,24 @@ export const GetRiskAuditResponse = zod.object({
     .describe(
       "Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. Empty when closedTradesMeasured is true.",
     ),
+  partlyMeasured: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Fields that are only part of what they name: dailyLossUsed \/ weeklyLossUsed when closed rows in that window have UNKNOWN P\/L and were left out of the sum (unknownPnlRowsToday \/ unknownPnlRowsThisWeek). Show them as not fully measured, never as the whole loss or a clean pass.",
+    ),
+  unknownPnlRowsToday: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows today whose P\/L is UNKNOWN; left out of dailyLossUsed. 0 when closed rows were not counted.",
+    ),
+  unknownPnlRowsThisWeek: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows since the start of the week whose P\/L is UNKNOWN; left out of weeklyLossUsed. 0 when closed rows were not counted.",
+    ),
   evaluatedAt: zod.coerce
     .date()
     .optional()

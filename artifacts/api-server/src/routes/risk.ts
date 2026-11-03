@@ -189,6 +189,7 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       tradeSource: basis.tradeSource,
       tradeScope: basis.tradeScope,
       notMeasured: basis.notMeasured,
+      partlyMeasured: basis.partlyMeasured,
       evaluatedAt: new Date().toISOString(),
     });
   } catch (err) {

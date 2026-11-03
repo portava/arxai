@@ -9552,6 +9552,12 @@ export interface RiskAudit {
   tradeScope?: string;
   /** Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. Empty when closedTradesMeasured is true. */
   notMeasured?: string[];
+  /** Fields that are only part of what they name: dailyLossUsed / weeklyLossUsed when closed rows in that window have UNKNOWN P/L and were left out of the sum (unknownPnlRowsToday / unknownPnlRowsThisWeek). Show them as not fully measured, never as the whole loss or a clean pass. */
+  partlyMeasured?: string[];
+  /** Closed rows today whose P/L is UNKNOWN; left out of dailyLossUsed. 0 when closed rows were not counted. */
+  unknownPnlRowsToday?: number;
+  /** Closed rows since the start of the week whose P/L is UNKNOWN; left out of weeklyLossUsed. 0 when closed rows were not counted. */
+  unknownPnlRowsThisWeek?: number;
   /** When the server computed this audit. */
   evaluatedAt?: string;
   /** The trader's kill switches (platform emergency stop, safety-core switch, the trader's own kill switch), from the reader the pre-trade Risk Governor uses (an unreadable switch counts as engaged). Not included, so "none engaged" does not mean nothing halts new trades - the broker's operator controls and a frozen shared-account allocation, which the governor also applies to DEMO / LIVE orders. An engaged switch also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
