@@ -186,11 +186,14 @@ describe("Prop Firm Mode — the daily loss cap depends on Block after daily los
     expect(line).toMatch(/total drawdown, lot size and open-position caps still apply/);
   });
 
-  it("with Block after daily loss on, the page says the daily loss cap is enforced", async () => {
-    stubFetch(withSettings(json({ blockAfterDailyLossHit: true })));
+  it("with Block after daily loss on and the prop cap stored, the page says the daily loss cap is enforced", async () => {
+    stubFetch(withSettings(json({ blockAfterDailyLossHit: true, maxDailyLossAmount: 5000 })));
     render(<PropFirmMode />);
-    await waitFor(() => expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/is on/));
-    expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).not.toMatch(/not enforced/);
+    await waitFor(() => expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/is enforced as well/));
+    const line = screen.getByTestId("prop-firm-daily-loss-enforcement").textContent ?? "";
+    expect(line).toMatch(/is on/);
+    expect(line).toMatch(/\$5000/);
+    expect(line).not.toMatch(/not enforced/);
   });
 
   it("a failed settings read says whether the cap is enforced could not be checked", async () => {
@@ -198,6 +201,54 @@ describe("Prop Firm Mode — the daily loss cap depends on Block after daily los
     render(<PropFirmMode />);
     await waitFor(() => expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/could not be checked \(boom \(HTTP 500\)\)/));
     expect(screen.getByTestId("prop-firm-daily-loss-enforcement").textContent).toMatch(/not known whether the daily loss cap is enforced/);
+  });
+});
+
+// Round 3 review: "the daily loss cap is enforced as well" was shown whenever
+// blockAfterDailyLossHit was true, without checking which daily loss amount
+// is stored. The prop cap is only in force while user_risk_settings holds it:
+// a mode never enabled, a "Reset to defaults" (maxDailyLossAmount null) or a
+// later edit leaves a different cap, or none, in force.
+describe("Prop Firm Mode — the enforced daily loss cap is the one stored", () => {
+  const withSettings = (settings: unknown, st: Record<string, unknown> = {}) => (c: Call) =>
+    c.url === "/api/me/risk-settings" ? json(settings) : json(status(st));
+  const line = () => screen.getByTestId("prop-firm-daily-loss-enforcement").textContent ?? "";
+
+  it("mode never enabled, no daily loss amount stored: the prop cap is not called enforced", async () => {
+    stubFetch(withSettings({ blockAfterDailyLossHit: true, maxDailyLossAmount: null }, { status: "OFF", config: { ...status().config, enabled: false } }));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    await waitFor(() => expect(line()).toMatch(/is on/));
+    expect(line()).not.toMatch(/enforced as well/);
+    expect(line()).toMatch(/no daily loss amount is set in your risk settings/);
+    expect(line()).toMatch(/prop daily loss cap \(\$5000\) is not enforced/);
+  });
+
+  it("mode on but the stored amount was reset to none: the prop cap is not called enforced", async () => {
+    stubFetch(withSettings({ blockAfterDailyLossHit: true, maxDailyLossAmount: null }));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    await waitFor(() => expect(line()).toMatch(/is on/));
+    expect(line()).not.toMatch(/enforced as well/);
+    expect(line()).toMatch(/is not enforced/);
+  });
+
+  it("a different stored amount: says which cap is in force, not the prop value", async () => {
+    stubFetch(withSettings({ blockAfterDailyLossHit: true, maxDailyLossAmount: 8000 }));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    await waitFor(() => expect(line()).toMatch(/\$8000/));
+    expect(line()).not.toMatch(/enforced as well/);
+    expect(line()).toMatch(/daily loss cap in your risk settings is \$8000, not the prop value \$5000/);
+  });
+
+  it("the stored amount not reported: whether the prop cap is enforced is not known", async () => {
+    stubFetch(withSettings({ blockAfterDailyLossHit: true }));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByText("Configure")).toBeTruthy());
+    await waitFor(() => expect(line()).toMatch(/is on/));
+    expect(line()).not.toMatch(/enforced as well/);
+    expect(line()).toMatch(/not known whether the prop daily loss cap is enforced/);
   });
 });
 
