@@ -14,6 +14,7 @@
 import { Router } from "express";
 import { db, tradePlansTable, executionConfirmationsTable, vaultEventsTable } from "@workspace/db";
 import { readBrokerHealthState } from "../lib/brokerHub/brokerHealthState.js";
+import { BROKER_HEALTH_VERDICT_STALE_MS } from "../lib/brokerHub/freshness.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
@@ -49,17 +50,82 @@ async function gatherPermissionContext(userId: number): Promise<{
   };
 }
 
-async function gatherBrokerStatus(): Promise<"CONNECTED" | "DEGRADED" | "DOWN" | "DISABLED" | "UNKNOWN"> {
+type BrokerStatus = "CONNECTED" | "DEGRADED" | "DOWN" | "DISABLED" | "UNKNOWN";
+
+interface BrokerEvidence {
+  status: BrokerStatus;
+  /** The cached verdict is too old (or has no time) to describe the connection now. */
+  stale: boolean;
+  /** Plain statement for the checklist: which check, when, what it said. */
+  detail: string;
+}
+
+function agoText(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 120) return `${s} second${s === 1 ? "" : "s"} ago`;
+  const m = Math.round(s / 60);
+  if (m < 120) return `${m} minutes ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hours ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+const PLATFORM_SCOPE = "This is the platform's MT5 bridge, not a check of your own broker account.";
+
+// broker_health_state is the platform-wide cache of the last broker health
+// evaluation, rewritten only when an operator runs a health check. Its
+// lastStatus is "what the broker was when we last checked", so it is only
+// current within BROKER_HEALTH_VERDICT_STALE_MS of lastEvaluatedAt. An older
+// (or undated) CONNECTED / DEGRADED verdict does not describe the connection
+// now: it is reported as not confirmed (WARN), never as a PASS. Bad verdicts
+// (DOWN / disabled / none) keep failing whatever their age.
+async function gatherBrokerStatus(nowMs = Date.now()): Promise<BrokerEvidence> {
   const row = await readBrokerHealthState();
-  if (!row) return "UNKNOWN";
-  if (!row.executionEnabled) return "DISABLED";
-  switch (row.lastStatus) {
-    case "CONNECTED": return "CONNECTED";
-    case "DEGRADED":  return "DEGRADED";
-    case "DISCONNECTED":
-    case "ERROR":     return "DOWN";
-    default:          return "UNKNOWN";
+  if (!row) {
+    return { status: "UNKNOWN", stale: false, detail: "No platform broker health check has been recorded, so the broker connection is unknown." };
   }
+  if (!row.executionEnabled) {
+    return { status: "DISABLED", stale: false, detail: "Execution is turned off in the platform broker health settings." };
+  }
+  const evaluatedMs = row.lastEvaluatedAt ? new Date(row.lastEvaluatedAt).getTime() : NaN;
+  const ageMs = Number.isFinite(evaluatedMs) ? nowMs - evaluatedMs : NaN;
+  const current = Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= BROKER_HEALTH_VERDICT_STALE_MS;
+  const when = Number.isFinite(ageMs) && ageMs >= 0 ? agoText(ageMs) : null;
+  const status: BrokerStatus =
+    row.lastStatus === "CONNECTED" ? "CONNECTED"
+    : row.lastStatus === "DEGRADED" ? "DEGRADED"
+    : row.lastStatus === "DISCONNECTED" || row.lastStatus === "ERROR" ? "DOWN"
+    : "UNKNOWN";
+  const said = row.lastStatus ?? "no status";
+  if (status === "CONNECTED" || status === "DEGRADED") {
+    if (!current) {
+      const age = when
+        ? `said ${said} ${when}`
+        : `said ${said}, but when it ran could not be confirmed`;
+      return {
+        status, stale: true,
+        detail: `Not confirmed — the last platform broker health check ${age}, too old to describe the connection now ` +
+          `(a check is current for ${Math.round(BROKER_HEALTH_VERDICT_STALE_MS / 1000)} seconds). ${PLATFORM_SCOPE}`,
+      };
+    }
+    return { status, stale: false, detail: `${said} at the platform broker health check ${when}. ${PLATFORM_SCOPE}` };
+  }
+  return {
+    status, stale: false,
+    detail: `${said} at the last platform broker health check${when ? ` (${when})` : ""}. ${PLATFORM_SCOPE}`,
+  };
+}
+
+// The checklist domain maps a status to PASS / WARN / FAIL with a bare
+// detail. Here the broker item gets the evidence detail, and a stale
+// CONNECTED / DEGRADED verdict (PASS / WARN) becomes a WARN: a downgrade only,
+// a FAIL is never softened.
+function withBrokerEvidence(items: ChecklistItem[], broker: BrokerEvidence): ChecklistItem[] {
+  return items.map((i) => {
+    if (i.key !== "BROKER_HEALTH") return i;
+    const status = broker.stale && i.status === "PASS" ? "WARN" : i.status;
+    return { ...i, status, detail: broker.detail };
+  });
 }
 
 function serializePlan(row: typeof tradePlansTable.$inferSelect) {
@@ -220,7 +286,7 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // calls serialize instead of stomping each other. The lock is released on
     // commit, so multiple concurrent validates each produce a fresh consistent
     // checklist + summary based on the most recent committed plan state.
-    const [perm, brokerStatus] = await Promise.all([
+    const [perm, broker] = await Promise.all([
       gatherPermissionContext(userId),
       gatherBrokerStatus(),
     ]);
@@ -313,14 +379,15 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         takeProfit: plan.takeProfit, riskAmount: plan.riskAmount, maxLossAllowed: plan.maxLossAllowed,
         rewardToRiskTarget: plan.rewardToRiskTarget, confidenceLevel: plan.confidenceLevel,
         permissionStatus: perm.status, permissionBlockers: perm.blockers, permissionWarnings: perm.warnings,
-        brokerStatus, hasActiveRiskLock: perm.hasActiveRiskLock,
+        brokerStatus: broker.status, hasActiveRiskLock: perm.hasActiveRiskLock,
       };
       const checkedAtIso = new Date().toISOString();
       const evaluated = evaluateChecklist(inputs);
-      const items = [...evaluated.items, ...notChecked];
+      const items = [...withBrokerEvidence(evaluated.items, broker), ...notChecked];
       const checklist = {
         ...evaluated,
         items,
+        passCount: items.filter((i) => i.status === "PASS").length,
         warnCount: items.filter((i) => i.status === "WARN").length,
         checkedAtIso,
       };

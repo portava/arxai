@@ -10,6 +10,13 @@
 //    must say so (a WARN "could not be checked" item, so readiness is not
 //    changed) and the summary / alert must not claim every check passed.
 //
+//  - "Broker health is CONNECTED" came from the cached platform-wide
+//    broker_health_state verdict with no age check (it is only rewritten when
+//    an operator runs a health check). A verdict older than the cache's stale
+//    window does not describe the connection now: not PASS. The detail says
+//    which check it was and when, and that it is the platform bridge, not
+//    the trader's own broker account.
+//
 // Stubbed: the database handle, the permission verdict, the broker health
 // cache, news / portfolio risk, the chart cache and alerts. The real route
 // and the real checklist domain run. No network, no broker.
@@ -208,4 +215,48 @@ test("a plan with no symbol was not checked against news risk, and says so", asy
   assert.ok(item);
   assert.equal(item.status, "WARN");
   assert.match(item.detail, /no symbol/i);
+});
+
+function brokerItem(body: any) {
+  const item = body.checklist.items.find((i: any) => i.key === "BROKER_HEALTH");
+  assert.ok(item, "broker health item present");
+  return item;
+}
+
+test("a CONNECTED verdict evaluated 6 hours ago is not a PASS", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date(Date.now() - 6 * 3_600_000) };
+  const { status, body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  assert.equal(status, 200);
+  const item = brokerItem(body);
+  assert.notEqual(item.status, "PASS");
+  assert.equal(item.status, "WARN", "unknown now, so a caution; it does not newly block readiness");
+  assert.match(item.detail, /not confirmed/i);
+  assert.match(item.detail, /6 hours ago/);
+  assert.match(item.detail, /not a check of your own broker account/i);
+  assert.equal(body.checklist.passCount, body.checklist.items.filter((i: any) => i.status === "PASS").length);
+});
+
+test("a CONNECTED verdict with no evaluation time is not a PASS", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: null };
+  const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  assert.notEqual(brokerItem(body).status, "PASS");
+});
+
+test("a CONNECTED verdict from a moment ago passes and says where it came from", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date(Date.now() - 30_000) };
+  const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  const item = brokerItem(body);
+  assert.equal(item.status, "PASS");
+  assert.match(item.detail, /platform broker health check/i);
+});
+
+test("a stale DISCONNECTED verdict still fails", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "DISCONNECTED", lastEvaluatedAt: new Date(Date.now() - 6 * 3_600_000) };
+  const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  assert.equal(brokerItem(body).status, "FAIL");
+  assert.equal(body.status, "INVALIDATED");
 });
