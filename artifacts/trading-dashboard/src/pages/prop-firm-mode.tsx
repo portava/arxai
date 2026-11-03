@@ -29,6 +29,12 @@ type Status = {
   equityMeasured?: boolean;
   /** False when the day's drawdown is a placeholder (newer servers). */
   dailyDrawdownMeasured?: boolean;
+  /**
+   * Set (newer servers) when today's drawdown is only bounded and the bound is
+   * under the cap: DAILY_DD passes on both bases and the room left is at
+   * least this.
+   */
+  dailyDrawdownRemainingAtLeastUsd?: number | null;
 };
 type NumericKey = "startingBalance" | "profitTarget" | "maxDailyDrawdownUsd" | "maxTotalDrawdownUsd" | "minTradingDays" | "maxLotSize" | "maxPositions" | "consistencyRulePctOfTotal";
 const STATUS_LABEL: Record<string, string> = { NOT_MEASURED: "NOT MEASURED", TARGET_REACHED: "TARGET REACHED" };
@@ -164,7 +170,11 @@ export default function PropFirmMode() {
   // then the day's drawdown is a placeholder too (an older server still listed
   // DAILY_DD as passed). The page only downgrades: a rule whose input was not
   // measured is never a tick, and the status is not a measured verdict.
-  const dailyUnmeasured = s?.dailyDrawdownMeasured === false || unmeasured;
+  // A day's drawdown that is only bounded, with the bound under the cap: the
+  // server passes DAILY_DD on it and gives the least room left.
+  const dailyBoundUnderCap = !unmeasured && s?.dailyDrawdownMeasured === false
+    && typeof s?.dailyDrawdownRemainingAtLeastUsd === "number";
+  const dailyUnmeasured = (s?.dailyDrawdownMeasured === false && !dailyBoundUnderCap) || unmeasured;
   const serverNotChecked = s?.notChecked ?? [];
   // DAILY_DD_TODAY / TOTAL_DD_CURRENT are the measured parts of those rules
   // (newer servers): they are no tick either when their input was not measured.
@@ -259,7 +269,8 @@ export default function PropFirmMode() {
           <Stat label="Enabled" value={s.config.enabled ? "YES" : "NO"} />
           <Stat label="Profit USD" value={unmeasured ? NOT_MEASURED : money(s.profitUsd)} />
           <Stat label="Target progress" value={unmeasured || s.profitTargetProgress == null ? NOT_MEASURED : `${s.profitTargetProgress}%`} />
-          <Stat label="Daily DD left" value={dailyUnmeasured ? NOT_MEASURED : money(s.dailyDrawdownRemainingUsd)} />
+          <Stat label="Daily DD left" value={dailyUnmeasured ? NOT_MEASURED
+            : dailyBoundUnderCap ? `at least ${money(s.dailyDrawdownRemainingAtLeastUsd ?? null)}` : money(s.dailyDrawdownRemainingUsd)} />
           <Stat label="Total DD left" value={unmeasured ? NOT_MEASURED : money(s.totalDrawdownRemainingUsd)} />
           {/* Passed CHECKS: DAILY_DD_TODAY / TOTAL_DD_CURRENT are the measured parts of a rule, not the whole rule. */}
           <Stat label="Passed checks" value={String(passedShown.length)} />

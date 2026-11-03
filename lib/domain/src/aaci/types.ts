@@ -184,6 +184,10 @@ export interface AaciSharedTruthSnapshot {
     hardPass?: boolean;
     riskMode?: string;
     dailyLossHit?: boolean;
+    // The loss count or the loss limits could not be read (trader readiness
+    // could not load them): dailyLossHit is unknown unless a reached cap was
+    // read, and the hard gate's loss-limit factor never passes on it.
+    lossFactsUnread?: boolean;
     weeklyLossHit?: boolean;
     drawdownLimitHit?: boolean;
     marginHealth?: number;

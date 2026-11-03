@@ -157,6 +157,56 @@ test("a challenge past its day limit with no closed trades is a violation /evalu
   assert.doesNotMatch(String(ruby.note), /INSUFFICIENT_DATA/);
 });
 
+// Round-3 safety review (s3-views): /evaluate raises the HARD drawdown message
+// on every walk day after a breach (it checks the running maximum), each
+// dated that day. Ruby kept only the last walk day's copy, so it dated a
+// breach to the last trading day, even when the drawdown that day was 0%.
+// It now dates each basis's maximum drawdown to the day it was reached, and
+// gives the day the limit was first exceeded when that is earlier, in
+// /evaluate's own words.
+const dayKey = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString().slice(0, 10);
+
+test("the finding's book: a 12% model drawdown on one day, a new peak since, a small close last: Ruby dates the breach to the day it happened", async () => {
+  setBook(challenge(), [
+    // US30 0.1 lot, 120 points down: booked -12, model -1,200 (12%).
+    close(8, { entryPrice: 40_000, exitPrice: 39_880, profitLoss: -12, status: "CLOSED_SL" }),
+    // US30 0.1 lot, 150 points up: booked +15, model +1,500, a new model peak (10,300).
+    close(5, { entryPrice: 40_000, exitPrice: 40_150, profitLoss: 15 }),
+    // A small EURUSD close: booked +1, model 0.001.
+    close(1, { symbol: "EURUSD", lotSize: 0.01, entryPrice: 1.1, exitPrice: 1.101, profitLoss: 1 }),
+  ]);
+  const ruby = await getPropFirmModeStatus(7) as Record<string, any>;
+  const page = await evaluateNow();
+  assert.equal(page.summary.status, "FAILED");
+  const dd = (ruby.violations as string[]).filter((m) => m.startsWith("Closed-trade drawdown "));
+  assert.equal(dd.length, 1, JSON.stringify(ruby.violations));
+  assert.equal(dd[0], `Closed-trade drawdown 12.00% exceeds limit 10.00% on ${dayKey(8)} (${MODEL_CLAUSE})`,
+    `was dated ${dayKey(1)}, the last trading day, when the model drawdown was 0%`);
+  assert.ok(!(ruby.canTakeNewTradeReasons as string[]).some((m) => m.includes(`exceeds limit 10.00% on ${dayKey(1)}`)));
+  assert.ok((page.violations as Array<{ message: string }>).some((v) => v.message === dd[0]), "still /evaluate's own words");
+  assert.equal(ruby.ruleStatus, "VIOLATION");
+  assert.equal(ruby.canTakeNewTrade, false);
+});
+
+test("a drawdown that deepened after the first breach: Ruby gives the day the limit was first exceeded and the day the maximum was reached", async () => {
+  setBook(challenge({ maxDailyLoss: 0.5 }), [
+    // US30 0.1 lot, 105 points down: model -1,050 (10.5%).
+    close(8, { entryPrice: 40_000, exitPrice: 39_895, profitLoss: -10.5, status: "CLOSED_SL" }),
+    // 35 points more: model balance 8,600 (14%).
+    close(5, { entryPrice: 40_000, exitPrice: 39_965, profitLoss: -3.5, status: "CLOSED_SL" }),
+    close(1, { symbol: "EURUSD", lotSize: 0.01, entryPrice: 1.1, exitPrice: 1.101, profitLoss: 1 }),
+  ]);
+  const ruby = await getPropFirmModeStatus(7) as Record<string, any>;
+  const page = await evaluateNow();
+  const dd = (ruby.violations as string[]).filter((m) => m.startsWith("Closed-trade drawdown "));
+  assert.deepEqual(dd, [
+    `Closed-trade drawdown 10.50% exceeds limit 10.00% on ${dayKey(8)} (${MODEL_CLAUSE})`,
+    `Closed-trade drawdown 14.00% exceeds limit 10.00% on ${dayKey(5)} (${MODEL_CLAUSE})`,
+  ]);
+  const pageMessages = new Set((page.violations as Array<{ message: string }>).map((v) => v.message));
+  for (const m of dd) assert.ok(pageMessages.has(m), m);
+});
+
 // Deterministic PRNG so a failure reproduces.
 function rng(seed: number): () => number {
   let s = seed >>> 0;

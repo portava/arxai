@@ -64,6 +64,34 @@ describe("Risk Command Center — Rules tab permissions", () => {
     expect((await screen.findByTestId("risk-status-reason")).textContent).toContain("-$5,000.00");
   });
 
+  // Round-3 safety review (s3-views): the row said "Your account equity is at
+  // or below zero" as a bare fact. On PAPER the equity the governor reads is
+  // the paper risk count, which can be far below the booked equity the paper
+  // account and the budget card show ($395 here), so the row contradicted
+  // them and named no source. It now names the basis.
+  it("equity_exhausted on PAPER names the paper risk count as the basis, never a bare 'account equity is at or below zero'", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    const reason = "The paper risk count puts account equity at -$5,000.00, at or below zero (the paper account shows $395.00 booked), so your 1% per-trade limit leaves no risk for a new trade. The Risk Governor refuses new trades until equity is above zero.";
+    stub(cards({ riskStatusReason: reason, dailyRiskRemaining: null,
+      permissions: { trading: false, pauseReason: null, stopSwitchEngaged: false, blockedBy: ["equity_exhausted"] } }));
+    render(<RiskCommandCenter />);
+    const row = await screen.findByTestId("risk-perm-new-trades");
+    expect(row.textContent).not.toMatch(/Your account equity is at or below zero/);
+    expect(row.textContent).toMatch(/paper risk count/);
+    expect(row.textContent).toMatch(/can be below the booked equity the paper account shows/);
+    expect(row.textContent).toMatch(/until that count is above zero/);
+  });
+
+  it("equity_exhausted on a broker venue names that venue's account equity as the basis", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    stub(cards({ venue: "DEMO", dailyRiskRemaining: null,
+      permissions: { trading: false, pauseReason: null, stopSwitchEngaged: false, blockedBy: ["equity_exhausted"] } }));
+    render(<RiskCommandCenter />);
+    const row = await screen.findByTestId("risk-perm-new-trades");
+    expect(row.textContent).toMatch(/The DEMO account equity the Risk Governor reads is at or below zero/);
+    expect(row.textContent).not.toMatch(/paper risk count/);
+  });
+
   it("nothing blocking says so without claiming approval", async () => {
     window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
     stub(cards({ riskStatus: "OK", dailyRiskRemaining: 90, permissions: { trading: true, pauseReason: null, stopSwitchEngaged: false, blockedBy: [] } }));

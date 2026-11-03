@@ -403,3 +403,38 @@ describe("Prop Firm Mode — drawdown basis on the start day", () => {
     expect(from.textContent).toMatch(/plus the current floating loss/);
   });
 });
+
+// Round-3 safety review (s3-views): on a start day with positions open at the
+// start, today's drawdown on the paper risk count is only bounded. A newer
+// server passes DAILY_DD when that bound is under the cap (both bases pass)
+// and reports the least room left (dailyDrawdownRemainingAtLeastUsd). The
+// page hid the pass and showed "Daily DD left: Not measured" whenever the
+// drawdown was not measured exactly.
+describe("Prop Firm Mode — a bounded daily drawdown under the cap", () => {
+  const base = {
+    config: CONFIG, measured: true, notMeasuredReason: null,
+    profitUsd: 0, profitTargetProgress: 0, dailyDrawdownRemainingUsd: null, totalDrawdownRemainingUsd: 10000,
+    failed: [], notChecked: [], status: "ACTIVE", equitySource: "paper_ledger", equityMeasured: true,
+    paperAccountId: 3, equityUsd: 100100, equityAsOf: "2026-10-28T11:59:00.000Z", startEquityUsd: 100100,
+    challengeStartedAt: "2026-10-28T08:00:00.000Z", dailyDrawdownSince: "2026-10-28T08:00:00.000Z",
+    notes: ["... it is at most $99.90 there, and $0.00 on the paper account's booked figures, against the $5,000.00 cap. Both are under the cap, so DAILY_DD passes."],
+    dailyDrawdownMeasured: false, dailyDrawdownUsd: null,
+  };
+  const dailyLeft = () => screen.getByText("Daily DD left").parentElement!.textContent;
+  it("ticks DAILY_DD and shows the room left as a lower bound", async () => {
+    stubStatus({ ...base, passed: ["DAILY_DD", "TOTAL_DD_CURRENT"], notEvaluated: [], notEvaluatedReasons: {}, dailyDrawdownRemainingAtLeastUsd: 4900.1 });
+    render(<PropFirmMode />);
+    const rules = await screen.findByTestId("prop-firm-rules");
+    expect(rules.textContent).toMatch(/✓ DAILY_DD(?!_)/);
+    expect(rules.textContent).not.toMatch(/DAILY_DD: not checked/);
+    expect(dailyLeft()).toContain("at least $4900.1");
+    expect(dailyLeft()).not.toContain("Not measured");
+  });
+  it("without the lower bound (an older server, or a bound at the cap) it still shows not measured and no tick", async () => {
+    stubStatus({ ...base, passed: ["DAILY_DD", "TOTAL_DD_CURRENT"], notEvaluated: [] });
+    render(<PropFirmMode />);
+    const rules = await screen.findByTestId("prop-firm-rules");
+    expect(rules.textContent).not.toMatch(/✓ DAILY_DD(?!_)/);
+    expect(dailyLeft()).toContain("Not measured");
+  });
+});
