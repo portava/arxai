@@ -68,25 +68,44 @@ export interface RiskAuditHalt {
   reason: string | null;
   /** Venues on which new trades are halted. Empty when none is engaged. */
   venues: Array<"PAPER" | "DEMO" | "LIVE">;
+  /**
+   * Additive: the entries of `sources` that could not be read and are
+   * counted as engaged (fail closed); every other entry was read as engaged.
+   * Absent when the reader did not say (then only `reason`, which names the
+   * first source, tells anything about one source's state).
+   */
+  unreadableSources?: string[];
 }
+
+type HaltRead = { engaged: boolean; sources: string[]; reason: string | null; unread?: string[] };
+
+/** Who the halt line names for a first source that could not be read. */
+const UNREAD_HALT_NAME: Record<string, string> = {
+  platform_emergency_stop: "The platform emergency stop",
+  safety_core_kill_switch: "The safety-core kill switch",
+  trader_kill_switch: "Your kill switch",
+};
 
 /**
  * Combine the governor's PAPER and LIVE halt reads. Every switch that halts
  * PAPER also halts DEMO / LIVE; the platform emergency stop halts only DEMO /
  * LIVE (the paper simulator reaches no broker).
  */
-export function riskAuditHaltFrom(
-  paper: { engaged: boolean; sources: string[]; reason: string | null },
-  live: { engaged: boolean; sources: string[]; reason: string | null },
-): RiskAuditHalt {
+export function riskAuditHaltFrom(paper: HaltRead, live: HaltRead): RiskAuditHalt {
   const engaged = paper.engaged || live.engaged;
   const src = live.engaged ? live : paper;
-  return {
+  const out: RiskAuditHalt = {
     engaged,
     sources: engaged ? [...src.sources] : [],
     reason: engaged ? src.reason : null,
     venues: paper.engaged ? ["PAPER", "DEMO", "LIVE"] : live.engaged ? ["DEMO", "LIVE"] : [],
   };
+  // Only when the reader said which sources it could not read.
+  if (Array.isArray(src.unread)) {
+    const unread = src.unread;
+    out.unreadableSources = engaged ? src.sources.filter((s) => unread.includes(s)) : [];
+  }
+  return out;
 }
 
 export interface RiskAuditResult {
@@ -248,9 +267,17 @@ export async function computeRiskAudit(
   // ── Evaluate rules ────────────────────────────────────────────────────────
 
   // An engaged stop switch halts new trades before any legacy rule applies.
+  // halt.reason is the gate's reason for the first source; for a source that
+  // could not be read it still says "is engaged ... Release it", so this line
+  // says what was observed instead (the halt itself is unchanged).
   if (opts.halt?.engaged) {
+    const first = opts.halt.sources[0];
+    const firstUnread = first != null && (opts.halt.unreadableSources ?? []).includes(first);
+    const what = firstUnread
+      ? `${UNREAD_HALT_NAME[first] ?? "A stop switch"} could not be read, so it is treated as engaged (fail closed). It was not seen engaged.`
+      : opts.halt.reason ?? "a stop switch is engaged.";
     reasonsBlocked.push(
-      `New trades are halted on ${opts.halt.venues.join(", ") || "your account"}: ${opts.halt.reason ?? "a stop switch is engaged."}`
+      `New trades are halted on ${opts.halt.venues.join(", ") || "your account"}: ${what}`
     );
   }
 

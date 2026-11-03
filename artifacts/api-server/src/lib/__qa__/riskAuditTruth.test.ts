@@ -85,8 +85,13 @@ mock.module("../risk/userRiskSettings.js", { namedExports: {
 type Halt = { engaged: boolean; sources: string[]; reason: string | null };
 const RELEASED: Halt = { engaged: false, sources: [], reason: null };
 let halts: Record<string, Halt> = { PAPER: RELEASED, LIVE: RELEASED };
+// Sources the reader could not read (fail closed), per venue.
+let unreads: Record<string, string[]> = { PAPER: [], LIVE: [] };
 mock.module("../safety/tradingHalt.js", { namedExports: {
   loadTradingHalt: async (a: { venue: string }) => halts[a.venue] ?? RELEASED,
+  loadTradingHaltReport: async (a: { venue: string }) => ({
+    halt: halts[a.venue] ?? RELEASED, reasons: [], unread: unreads[a.venue] ?? [],
+  }),
 } });
 
 const { computeRiskAudit, riskAuditBasis } = await import("../riskAudit.js");
@@ -203,7 +208,7 @@ test("GET /risk/audit does not pass while the trader's kill switch is engaged, a
     const a = await res.json() as { passed: boolean; reasonsBlocked: string[]; tradingHalt: { engaged: boolean; sources: string[]; venues: string[] } | null };
     assert.equal(a.passed, false);
     assert.match(a.reasonsBlocked[0] ?? "", /New trades are halted on PAPER, DEMO, LIVE: Your kill switch is engaged/);
-    assert.deepEqual(a.tradingHalt, { engaged: true, sources: ["trader_kill_switch"], reason: TRADER_KS.reason, venues: ["PAPER", "DEMO", "LIVE"] });
+    assert.deepEqual(a.tradingHalt, { engaged: true, sources: ["trader_kill_switch"], reason: TRADER_KS.reason, venues: ["PAPER", "DEMO", "LIVE"], unreadableSources: [] });
   } finally {
     halts = { PAPER: RELEASED, LIVE: RELEASED };
   }
@@ -228,7 +233,40 @@ test("with every switch released the view reports that it read them", async () =
   const res = await fetch(`${base}/api/risk/audit`);
   const a = await res.json() as { passed: boolean; tradingHalt: { engaged: boolean; venues: string[] } | null };
   assert.equal(a.passed, true);
-  assert.deepEqual(a.tradingHalt, { engaged: false, sources: [], reason: null, venues: [] });
+  assert.deepEqual(a.tradingHalt, { engaged: false, sources: [], reason: null, venues: [], unreadableSources: [] });
+});
+
+// The halt named only its first source's reason, so a switch listed after a
+// read-engaged one could not be told apart from an engaged one: the page gave
+// release steps for a switch nobody read. The view now lists which sources
+// could not be read, and the blocked line never calls an unread first source
+// engaged.
+test("GET /risk/audit lists the switches it could not read; an unread first switch is not called engaged", async () => {
+  rows = [];
+  const mixed: Halt = { engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], reason: "The platform emergency stop is engaged by an operator. (maintenance)" };
+  halts = { PAPER: { engaged: true, sources: ["trader_kill_switch"], reason: "Your kill switch is engaged. Release it to trade again. (state unreadable)" }, LIVE: mixed };
+  unreads = { PAPER: ["trader_kill_switch"], LIVE: ["trader_kill_switch"] };
+  try {
+    const res = await fetch(`${base}/api/risk/audit`);
+    const a = await res.json() as { reasonsBlocked: string[]; tradingHalt: { sources: string[]; unreadableSources?: string[] } };
+    assert.deepEqual(a.tradingHalt.sources, ["platform_emergency_stop", "trader_kill_switch"]);
+    assert.deepEqual(a.tradingHalt.unreadableSources, ["trader_kill_switch"], "the read-engaged emergency stop is not listed as unread");
+    assert.match(a.reasonsBlocked[0] ?? "", /The platform emergency stop is engaged by an operator\. \(maintenance\)/);
+
+    // Only the trader's own switch, and it could not be read.
+    const unreadKs: Halt = { engaged: true, sources: ["trader_kill_switch"], reason: "Your kill switch is engaged. Release it to trade again. (state unreadable)" };
+    halts = { PAPER: unreadKs, LIVE: unreadKs };
+    const res2 = await fetch(`${base}/api/risk/audit`);
+    const b = await res2.json() as { passed: boolean; reasonsBlocked: string[]; tradingHalt: { unreadableSources?: string[]; reason: string | null } };
+    assert.equal(b.passed, false, "fail closed: still blocked");
+    assert.deepEqual(b.tradingHalt.unreadableSources, ["trader_kill_switch"]);
+    assert.equal(b.tradingHalt.reason, unreadKs.reason, "the gate's reason is passed through unchanged");
+    assert.doesNotMatch(b.reasonsBlocked[0] ?? "", /is engaged|Release it/);
+    assert.match(b.reasonsBlocked[0] ?? "", /^New trades are halted on PAPER, DEMO, LIVE: Your kill switch could not be read, so it is treated as engaged/);
+  } finally {
+    halts = { PAPER: RELEASED, LIVE: RELEASED };
+    unreads = { PAPER: [], LIVE: [] };
+  }
 });
 
 test("the legacy /mt5/execute check does not read the stop switches (its blocking is unchanged)", async () => {

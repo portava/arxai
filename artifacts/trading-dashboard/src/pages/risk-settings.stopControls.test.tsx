@@ -206,6 +206,72 @@ describe("Risk Settings: a stop switch that could not be read", () => {
     }
   });
 
+  // Operator-engaged emergency stop (read, stored reason "maintenance") plus
+  // a failed read of the trader's own switch: the reason names only the
+  // first source, so the page gave "release it with Resume" for a switch
+  // nobody read. Without per-source data every later source is hedged; with
+  // the server's unreadableSources, release steps go only to switches read
+  // as engaged.
+  it("a switch listed after a read-engaged one gets no unhedged release steps when the server does not say it was read", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The platform emergency stop is engaged by an operator. (maintenance)",
+      },
+    };
+    render(<RiskSettings />);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).toMatch(/^Platform-wide stop: it halts every trader/);
+    expect(release).toMatch(/Also listed as halting \(engaged, or could not be read\): Your own kill switch/);
+    expect(release.indexOf("Your own kill switch")).toBeGreaterThan(release.indexOf("engaged, or could not be read"));
+  });
+
+  it("with the server's unreadableSources an unread switch gets no release steps, wherever it is listed", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The platform emergency stop is engaged by an operator. (maintenance)",
+        unreadableSources: ["trader_kill_switch"],
+      },
+    };
+    render(<RiskSettings />);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).not.toMatch(/Resume on Risk Command Center/);
+    expect(release).toMatch(/Platform-wide stop: it halts every trader/);
+    expect(release).toMatch(/Your kill switch could not be read; new trades are blocked until it can be read/);
+    expect(release).not.toMatch(/engaged, or could not be read/);
+    expect(screen.getByTestId("risk-audit-headline").textContent).toMatch(/a stop switch is engaged/);
+    expect(statusRow("Stop switch")).toMatch(/ENGAGED; another switch could not be read \(PAPER, DEMO, LIVE\)/);
+    cleanup();
+
+    // Both read as engaged: release steps for both, nothing hedged.
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["platform_emergency_stop", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The platform emergency stop is engaged by an operator. (maintenance)", unreadableSources: [],
+      },
+    };
+    render(<RiskSettings />);
+    const both = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(both).toMatch(/Resume on Risk Command Center/);
+    expect(both).toMatch(/Platform-wide stop/);
+    expect(both).not.toMatch(/could not be read/);
+    cleanup();
+
+    // A trader's stored reason that reads "state unreadable" is their reason:
+    // the server read the switch, so it is ENGAGED with release steps.
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: { ...TRADER_KS, reason: "Your kill switch is engaged. Release it to trade again. (state unreadable)", unreadableSources: [] },
+    };
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/^ENGAGED \(PAPER, DEMO, LIVE\)/);
+    expect(screen.getByTestId("risk-halt-release").textContent).toMatch(/Resume on Risk Command Center/);
+  });
+
   it("a switch whose stored reason was read is still ENGAGED with release instructions", () => {
     h.audit = { ...AUDIT, passed: false, reasonsBlocked: ["x"], tradingHalt: TRADER_KS };
     render(<RiskSettings />);
