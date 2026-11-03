@@ -16,7 +16,8 @@
 //
 // Needs a real PostgreSQL (DATABASE_URL); the REAL fact loader and the REAL
 // pure evaluator run. Rows are written for a test-only user id and removed.
-// Run: node --import tsx --test --test-force-exit \
+// Run: pnpm --filter @workspace/api-server run test:risk-governor-broker-activity (needs PostgreSQL), or
+// node --import tsx --test --test-force-exit \
 //        src/lib/riskGovernor/__qa__/brokerActivityWindow.test.ts
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
