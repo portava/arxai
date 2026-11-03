@@ -1266,15 +1266,35 @@ export async function getPropFirmModeStatus(userId: number) {
     // not marked to market), as on the page. A breach is a violation; nearing
     // a limit, or a realised per-trade loss over the limit, is a warning.
     const lastWalkDay = ev.days.length > 0 ? ev.days[ev.days.length - 1]!.tradeDate : null;
+    // Drawdown is checked on each basis's running maximum, so /evaluate raises
+    // the HARD drawdown message again on every walk day after a breach, each
+    // dated that day. The last walk day's check is the current one, but its
+    // date is not when the breach happened. Each basis's current maximum is
+    // given dated to the day it was reached, and the day the limit was first
+    // exceeded on that basis when that is earlier, in /evaluate's own words.
+    const ddHard = ev.violations
+      .map((v, i) => ({ v, day: ev.violationDates[i] ?? null }))
+      .filter(({ v }) => v.type === "TOTAL_DRAWDOWN" && v.severity === "HARD");
+    const undated = (m: string) => m.replace(/ on \d{4}-\d{2}-\d{2}/, "");
+    const basisOfDrawdown = (m: string) => undated(m).replace(/^Closed-trade drawdown [\d.]+% exceeds limit [\d.]+%/, "");
+    const drawdownBreaches: string[] = [];
+    for (const cur of ddHard.filter((x) => x.day === lastWalkDay)) {
+      const first = ddHard.find((x) => basisOfDrawdown(x.v.message) === basisOfDrawdown(cur.v.message)) ?? cur;
+      const reached = ddHard.find((x) => undated(x.v.message) === undated(cur.v.message)) ?? cur;
+      for (const m of [first.v.message, reached.v.message]) if (!drawdownBreaches.includes(m)) drawdownBreaches.push(m);
+    }
     ev.violations.forEach((v, i) => {
       if (!PROP_TWO_BASIS_RULES.has(v.type) || v.severity === "INFO") return;
       const day = ev.violationDates[i] ?? null;
-      // Drawdown is checked on the running maximum, so the last day's check is the current one.
+      // A drawdown breach is given above, dated to when it happened.
+      if (v.type === "TOTAL_DRAWDOWN" && v.severity === "HARD") return;
+      // Nearing the drawdown limit: the last day's check is the current one.
       if (v.type === "TOTAL_DRAWDOWN" && day !== lastWalkDay) return;
       // A daily-loss breach on any day fails the challenge; nearing the limit matters only today.
       if (v.type === "DAILY_LOSS" && v.severity !== "HARD" && day !== todayKey) return;
       (v.severity === "HARD" ? violations : warnings).push(v.message);
     });
+    violations.push(...drawdownBreaches);
     if (daysSinceStart > ch.maxTradingDays) violations.push(`Day ${daysSinceStart} > maxTradingDays ${ch.maxTradingDays}`);
     // Unknown P&L: the balance, profit, daily loss and drawdown leave these
     // closes out, so compliance with the loss limits cannot be confirmed.
