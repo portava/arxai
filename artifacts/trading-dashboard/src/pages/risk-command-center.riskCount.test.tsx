@@ -1,6 +1,6 @@
-// Risk Command Center: the Risk Governor counts each closed paper trade at the
-// lower of its booked P&L and the paper risk model (price move × lots × 100),
-// so "Daily used", "Daily risk left" and the equity a percent cap is valued on
+// Risk Command Center: the Risk Governor counts closed paper trades at the
+// lower of their booked total and their paper risk model total (price move ×
+// lots × 100), so "Daily used", "Daily risk left" and the equity a percent cap is valued on
 // can differ from the booked P&L and equity on the paper account. The page
 // showed those figures with no word that they are a conservative count. It
 // now shows the server's note, with both figures, when they differ.
@@ -14,7 +14,7 @@ const profile = {
   settings: { maxRiskPerTradeAmount: null, maxDailyLossAmount: null, maxPositionSize: null, minRewardRiskRatio: 1.5, maxTradesPerDay: 10, maxOpenTrades: 3 },
   effectiveLimits: { maxLotSize: 1, maxDailyLossPercent: 5, maxDailyLossAmount: null, maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null, discipline: { maxTradesPerDay: 10, maxOpenTrades: 3 } },
 };
-const note = "For your loss limits today's realized paper P&L is counted as -$499.90 (booked $95.00), and equity is counted as $9,500.10 (the paper account shows $10,095.00). The Risk Governor counts each closed paper trade at the lower of its booked P&L and the paper risk model (price move × lots × 100), so a limit is never checked against a smaller loss or a larger equity than either figure gives.";
+const note = "For your loss limits today's realized paper P&L is counted as -$499.90 (booked $95.00), and equity is counted as $9,500.10 (the paper account shows $10,095.00). The Risk Governor counts closed paper trades at the lower of two totals over the same trades, their booked P&L and the paper risk model (price move × lots × 100), so a limit is never checked against a smaller loss or a larger equity than either total gives.";
 const budget = {
   venue: "PAPER", dailyRiskLimit: 475.01, dailyRiskUsed: 499.9, dailyRiskRemaining: -24.89, weeklyRiskLimit: null, weeklyRiskUsed: 499.9,
   weeklyRiskRemaining: null, openRisk: 0, openPositions: 0, equity: 9500.1, riskStatus: "BLOCK",

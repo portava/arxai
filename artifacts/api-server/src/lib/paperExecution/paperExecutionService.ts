@@ -90,9 +90,10 @@ async function getActivePaperAccount(ownerUserId: number | null, explicitId?: nu
  *     size the paper venue books the symbol at, converted to USD at the quote
  *     mid, never below the paper risk model of 100. A symbol with no known
  *     contract or USD rate, or a contract under 100 units, stays at 100;
- *   - equity: the stored equity lowered by the paper risk count
- *     (paperRiskShortfall over the account's settled orders), as the
- *     governor's caps read it;
+ *   - equity: the stored equity lowered by the paper risk count of the
+ *     account's settled orders (paperRiskShortfall: to the lower of their
+ *     booked total and their paper risk model total), as the governor's caps
+ *     read it;
  *   - risk budget: the lower of the percent limit and the money limit.
  * When the contract prices above 100 the lot is floored to the step, so the
  * loss at stop stays inside the budget. The lot is never larger than the

@@ -153,8 +153,9 @@ export function getMockPrice(symbol: string, atMs: number): number {
 // cannot be sized stores 0 in the NOT NULL profit_loss as a placeholder and
 // its event says so; the balance (paperBookReader.bookedRealizedOf) counts it
 // only when it lost, at the governor's paper model; a win of unknown size adds
-// nothing. Risk readers count every close at the lower of this and the paper
-// risk model (paperBookReader.realizedOf); the balance stays the booked sum.
+// nothing. Risk readers count closes at the lower of their booked total and
+// their paper risk model total (paperPnl.paperRiskTotals); the balance stays
+// the booked sum.
 
 /** Event text for a close whose amount could not be sized. */
 function notSizedText(r: PaperPnlResult): string {
@@ -319,7 +320,7 @@ function governorRefusal(risk: { primaryReason?: string | null; blockedBy: strin
 // equity: a floating loss at the paper risk model, a floating gain as 0. So an
 // estimate never raises the balance or equity the Risk Governor reads. The
 // balance is the booked sum; the governor lowers the equity it caps against to
-// the risk count (paperBookReader.realizedOf) itself.
+// the risk count (paperPnl.paperRiskShortfall) itself.
 // pnlSizing says how many closes and open positions that covers.
 export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing; valuation: PaperValuation }) | null> {
   const account = (await db.select().from(paperAccountsTable)

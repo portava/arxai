@@ -182,9 +182,10 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
   if (dailyCapSet && dailyRiskUsedUnknownReason) unknowns.push(`${dailyRiskUsedUnknownReason}, so daily risk used is unknown`);
   if (weeklyCapSet && weeklyRiskUsedUnknownReason) unknowns.push(`${weeklyRiskUsedUnknownReason}, so weekly risk used is unknown`);
-  // PAPER: the governor counts each closed paper trade at the lower of its
-  // booked P&L and the paper risk model, so "used" and the equity a percent
-  // cap is valued on can differ from the booked figures. Say so, with both.
+  // PAPER: the governor counts closed paper trades at the lower of their
+  // booked total and their paper risk model total, so "used" and the equity a
+  // percent cap is valued on can differ from the booked figures. Say so, with
+  // both.
   const riskCountNote = paperRiskCountNote(ctx);
   const dailyReached = dailyLimit != null && dailyUsed != null && dailyUsed >= dailyLimit;
   const weeklyReached = weeklyLimit != null && weekUsed != null && weekUsed >= weeklyLimit;
@@ -245,9 +246,9 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
       weeklyRiskUsedUnmeasured: weeklyCapSet && weekUsed == null,
       /**
        * Additive: set when the Risk Governor's paper loss count or the equity
-       * it values caps on is below the booked figures (each closed paper
-       * trade counts at the lower of its booked P&L and the paper risk
-       * model); says both figures in plain words. null when they agree.
+       * it values caps on is below the booked figures (closed paper trades
+       * count at the lower of their booked total and their paper risk model
+       * total); says both figures in plain words. null when they agree.
        */
       riskCountNote,
     },
@@ -275,7 +276,7 @@ export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account">):
     parts.push(`equity is counted as ${usd(ctx.account.equity)} (the paper account shows ${usd(bookedEq)})`);
   }
   if (!parts.length) return null;
-  return `For your loss limits ${parts.join(", and ")}. The Risk Governor counts each closed paper trade at the lower of its booked P&L and the paper risk model (price move × lots × 100), so a limit is never checked against a smaller loss or a larger equity than either figure gives.`;
+  return `For your loss limits ${parts.join(", and ")}. The Risk Governor counts closed paper trades at the lower of two totals over the same trades, their booked P&L and the paper risk model (price move × lots × 100), so a limit is never checked against a smaller loss or a larger equity than either total gives.`;
 }
 
 export type PropFirmStatusCode = "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "TARGET_REACHED" | "PASSED";

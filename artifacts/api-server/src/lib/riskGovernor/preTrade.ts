@@ -369,10 +369,12 @@ export interface RiskAccount {
   equity: number | null;
   /**
    * PAPER only, and only when it differs: the account's equity as booked
-   * (stored). `equity` is then the risk-count equity every cap is checked
-   * against (booked equity lowered so each close counts at the lower of its
-   * booked amount and the paper risk model); the equity high-water mark keeps
-   * recording this booked figure.
+   * (stored). `equity` is then the paper risk-count equity every cap is
+   * checked against: the booked equity lowered to the lower of the booked
+   * total and the paper risk model total (price move × lots × 100) of every
+   * settled order on the account. The equity high-water mark keeps recording
+   * this booked figure, and every refusal that reads the risk-count equity
+   * names both figures.
    */
   bookedEquity?: number;
   freeMargin: number | null;
@@ -446,8 +448,9 @@ export interface RiskContext {
     realizedPnl: number | null; floatingPnl: number | null;
     /**
      * PAPER only, and only when it differs: today's realized P/L as booked.
-     * realizedPnl is then the paper risk count (each close at the lower of its
-     * booked amount and the paper risk model), which every rule reads.
+     * realizedPnl is then the paper risk count (the lower of today's booked
+     * total and today's total at the paper risk model), which every rule
+     * reads and the daily-loss refusal names next to this figure.
      */
     bookedRealizedPnl?: number;
   };
@@ -492,6 +495,12 @@ export interface TradingActivity {
   /** Trades opened today (UTC) that are still open, plus trades closed today. */
   tradesToday: number;
   weekRealizedPnl: number;
+  /**
+   * PAPER only, and only when it differs: the week's realized P/L as booked.
+   * weekRealizedPnl is then the paper risk count (the lower of the week's
+   * booked total and its total at the paper risk model).
+   */
+  bookedWeekRealizedPnl?: number;
   consecutiveLosses: number;
   lastClosedAt: Date | null;
   lastClosedWasLoss: boolean;
@@ -582,6 +591,42 @@ export interface RiskDecision {
 }
 
 const round = (n: number, dp = 2) => Number(n.toFixed(dp));
+const sentenceCase = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** How the paper risk count values a figure, for refusals that read it. */
+const PAPER_RISK_COUNT_BASIS = "the lower of the booked total and the price move × lots × 100 total of the closed paper trades";
+
+/**
+ * Why an account's equity, although it was read, cannot value a percent cap:
+ * it is 0 or below. On PAPER, when the risk count is below the booked figure
+ * (bookedEquity set), it names the paper risk count with the booked equity
+ * next to it. null when equity is above 0, or was not read (that is
+ * "unknown", said by each rule).
+ */
+function nonPositiveEquity(a: RiskAccount | null | undefined): string | null {
+  if (!a || a.equity == null || !Number.isFinite(a.equity) || a.equity > 0) return null;
+  return a.bookedEquity != null
+    ? `the paper risk count puts account equity at ${round(a.equity)}, at or below zero (the paper account shows ${round(a.bookedEquity)} booked; the risk count takes ${PAPER_RISK_COUNT_BASIS})`
+    : `account equity is ${round(a.equity)}, at or below zero`;
+}
+
+/**
+ * PAPER: what the daily-loss figures are when the risk count differs from
+ * the booked figures, for the daily-loss refusal. "" when they agree.
+ */
+function paperDailyCountNote(ctx: RiskContext, withEquity: boolean): string {
+  const parts: string[] = [];
+  const { realizedPnl, bookedRealizedPnl } = ctx.daily;
+  if (realizedPnl != null && bookedRealizedPnl != null) {
+    parts.push(`today's closed trades count ${round(realizedPnl)} (booked ${round(bookedRealizedPnl)})`);
+  }
+  const a = ctx.account;
+  if (withEquity && a?.equity != null && a.bookedEquity != null) {
+    parts.push(`equity counts ${round(a.equity)} (the paper account shows ${round(a.bookedEquity)} booked)`);
+  }
+  if (!parts.length) return "";
+  return ` This is the paper risk count: ${parts.join(", and ")}; it takes ${PAPER_RISK_COUNT_BASIS}.`;
+}
 
 function moneyPerPriceUnit(lots: number, inst: InstrumentModel | undefined): number | null {
   if (!inst || inst.contractSize == null || inst.quoteToAccountFx == null) return null;
@@ -748,8 +793,11 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
           const cap = [pctCap, L.maxRiskPerTradeAmount].filter((v): v is number => v != null)
             .reduce((a, b) => Math.min(a, b), Number.POSITIVE_INFINITY);
           const loss = perUnit != null ? Math.abs(pos.entryPrice - sl) * perUnit : null;
+          const nonPos = nonPositiveEquity(ctx.account);
           if (loss == null || !Number.isFinite(cap)) {
-            set("per_trade_loss_limit", "BLOCK", "A widened stop cannot be checked against your per-trade limit (position size or equity unknown).", measured);
+            set("per_trade_loss_limit", "BLOCK", loss != null && nonPos
+              ? `A widened stop cannot be checked against your per-trade limit: ${nonPos}.`
+              : "A widened stop cannot be checked against your per-trade limit (position size or equity unknown).", measured);
           } else if (loss > cap + 1e-9) {
             set("per_trade_loss_limit", "BLOCK",
               `Moving the stop to ${sl} puts ${round(loss)} at risk, above your per-trade limit of ${round(cap)}.`,
@@ -833,6 +881,10 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   const inst = ctx.instruments[intent.symbol];
   const perUnit = lots != null && lots > 0 ? moneyPerPriceUnit(lots, inst) : null;
   const equity = ctx.account?.equity != null && ctx.account.equity > 0 ? ctx.account.equity : null;
+  // Equity that was read but is 0 or below is not "unknown": say what it is
+  // (on PAPER, the risk count with the booked equity next to it).
+  const nonPosEquity = nonPositiveEquity(ctx.account);
+  const equityGap = nonPosEquity ?? "equity is unknown";
   const newNotional = perUnit != null && ref != null ? perUnit * ref : null;
   const newLossAtStop = perUnit != null && ref != null && sl != null && sl > 0 ? Math.abs(ref - sl) * perUnit : null;
   const sizingGap = !inst || inst.contractSize == null
@@ -862,7 +914,11 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
     };
     if (sl == null) set("per_trade_loss_limit", "BLOCK", "Without a stop loss the loss on this trade is unbounded.", measured);
     else if (sizingGap) set("per_trade_loss_limit", "BLOCK", `Cannot measure the loss at stop: ${sizingGap}.`, measured);
-    else if (equity == null && L.maxRiskPerTradeAmount == null) set("per_trade_loss_limit", "BLOCK", "Account equity is unknown, so per-trade risk cannot be checked.", measured);
+    else if (nonPosEquity) {
+      // A percent of an equity at or below 0 allows no loss at all.
+      set("per_trade_loss_limit", "BLOCK",
+        `${sentenceCase(nonPosEquity)}, so your ${L.maxRiskPerTradePercent}% per-trade limit leaves no risk for a new trade. New trades are blocked; closing is allowed.`, measured);
+    } else if (equity == null && L.maxRiskPerTradeAmount == null) set("per_trade_loss_limit", "BLOCK", "Account equity is unknown, so per-trade risk cannot be checked.", measured);
     else if (newLossAtStop! > cap + 1e-9) {
       set("per_trade_loss_limit", "BLOCK",
         `Loss at stop ${round(newLossAtStop!)} exceeds your per-trade limit of ${round(cap)}.`, measured);
@@ -886,14 +942,18 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
       measured["combinedPnl"] = round(combined);
       let reason: string | null = null;
       if (L.maxDailyLossAmount != null && combined <= -L.maxDailyLossAmount) {
-        reason = `Daily loss ${round(-combined)} reached the ${L.maxDailyLossAmount} cap. New trades are blocked until tomorrow; closing is allowed.`;
+        reason = `Daily loss ${round(-combined)} reached the ${L.maxDailyLossAmount} cap. New trades are blocked until tomorrow; closing is allowed.${paperDailyCountNote(ctx, false)}`;
+      } else if (L.maxDailyLossPercent != null && nonPosEquity) {
+        // A percent of an equity at or below 0 leaves no daily budget: the
+        // cap is used up, never "not set" or "unknown".
+        reason = `${sentenceCase(nonPosEquity)}, so your ${L.maxDailyLossPercent}% daily loss cap is used up. New trades are blocked; closing is allowed.`;
       } else if (L.maxDailyLossPercent != null && combined < 0) {
         if (equity == null) reason = "Account equity is unknown, so the daily loss percentage cannot be checked.";
         else {
           const pct = (-combined / equity) * 100;
           measured["lossPercent"] = round(pct);
           if (pct >= L.maxDailyLossPercent) {
-            reason = `Daily loss ${round(pct)}% reached the ${L.maxDailyLossPercent}% cap. New trades are blocked until tomorrow; closing is allowed.`;
+            reason = `Daily loss ${round(pct)}% reached the ${L.maxDailyLossPercent}% cap. New trades are blocked until tomorrow; closing is allowed.${paperDailyCountNote(ctx, true)}`;
           }
         }
       }
@@ -906,15 +966,23 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
       const m: RiskRuleResult["measured"] = { ...(prior.measured ?? {}), maxDrawdownPercent: L.maxDrawdownPercent,
         peakEquity: peakFact?.peakEquity ?? null, peakSince: peakFact?.since?.toISOString() ?? null };
       if (equity == null) {
-        set("daily_loss_limit", "BLOCK", "Account equity is unknown, so your drawdown limit cannot be checked.", m);
+        set("daily_loss_limit", "BLOCK", nonPosEquity
+          ? `${sentenceCase(nonPosEquity)}, so your ${L.maxDrawdownPercent}% drawdown limit is used up. New trades are blocked; closing is allowed.`
+          : "Account equity is unknown, so your drawdown limit cannot be checked.", m);
       } else {
         const peak = Math.max(equity, peakFact?.peakEquity ?? equity);
         const dd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
         m["peakEquity"] = round(peak);
         m["drawdownPercent"] = round(dd);
+        const booked = ctx.account?.bookedEquity;
+        if (booked != null) m["bookedEquity"] = round(booked);
         if (dd >= L.maxDrawdownPercent) {
-          set("daily_loss_limit", "BLOCK",
-            `Account is ${round(dd)}% below its peak equity of ${round(peak)} (drawdown limit ${L.maxDrawdownPercent}%). New trades are blocked; closing is allowed.`, m);
+          // PAPER with a risk count below the booked equity: the drawdown is
+          // the risk-count equity against the peak recorded from the booked
+          // equity, so the refusal says so and shows the booked equity.
+          set("daily_loss_limit", "BLOCK", booked != null
+            ? `Paper risk-count equity ${round(equity)} is ${round(dd)}% below its peak equity of ${round(peak)} (drawdown limit ${L.maxDrawdownPercent}%). The peak is recorded from the booked equity, and the paper account shows ${round(booked)} booked; the risk count takes ${PAPER_RISK_COUNT_BASIS}. New trades are blocked; closing is allowed.`
+            : `Account is ${round(dd)}% below its peak equity of ${round(peak)} (drawdown limit ${L.maxDrawdownPercent}%). New trades are blocked; closing is allowed.`, m);
         } else set("daily_loss_limit", "PASS", null, m);
       }
     }
@@ -934,7 +1002,7 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
         `Your open ${unbounded.p.side} ${unbounded.p.symbol} has ${unbounded.p.stopLoss == null ? "no stop" : "an unmeasurable size"}, so total exposure is unbounded. Add a stop before opening more.`,
         measured);
     } else if (newLossAtStop == null || cap == null) {
-      set("max_portfolio_exposure", "BLOCK", `Cannot measure portfolio exposure: ${sizingGap ?? (sl == null ? "the new trade has no stop" : "equity is unknown")}.`, measured);
+      set("max_portfolio_exposure", "BLOCK", `Cannot measure portfolio exposure: ${sizingGap ?? (sl == null ? "the new trade has no stop" : equityGap)}.`, measured);
     } else if (openRisk + newLossAtStop > cap + 1e-9) {
       set("max_portfolio_exposure", "BLOCK",
         `Open risk ${round(openRisk)} plus this trade ${round(newLossAtStop)} exceeds your portfolio cap of ${round(cap)} (${L.maxPortfolioRiskPercent}% of equity).`,
@@ -948,7 +1016,7 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   {
     const measured: RiskRuleResult["measured"] = { grossOpen: round(grossOpen), newNotional: newNotional != null ? round(newNotional) : null, equity, maxLeverage: L.maxLeverage };
     if (unknownNotional) set("leverage", "BLOCK", `Cannot size your open ${unknownNotional.p.symbol} position, so leverage cannot be checked.`, measured);
-    else if (newNotional == null || equity == null) set("leverage", "BLOCK", `Cannot measure leverage: ${sizingGap ?? "equity is unknown"}.`, measured);
+    else if (newNotional == null || equity == null) set("leverage", "BLOCK", `Cannot measure leverage: ${sizingGap ?? equityGap}.`, measured);
     else {
       const lev = (grossOpen + newNotional) / equity;
       measured["leverage"] = round(lev);
@@ -966,7 +1034,7 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
     if (count > L.maxPositionsPerSymbol) {
       set("concentration", "BLOCK", `${intent.symbol} would have ${count} open positions (limit ${L.maxPositionsPerSymbol} per symbol).`, measured);
     } else if (newNotional == null || equity == null || same.some((m) => m.notional == null)) {
-      set("concentration", "BLOCK", `Cannot measure ${intent.symbol} concentration: ${sizingGap ?? "equity is unknown"}.`, measured);
+      set("concentration", "BLOCK", `Cannot measure ${intent.symbol} concentration: ${sizingGap ?? equityGap}.`, measured);
     } else {
       const symLev = symNotional / equity;
       measured["symbolLeverage"] = round(symLev);
@@ -1086,16 +1154,22 @@ function evaluateDiscipline(
     if (D.maxTradesPerDay != null && act.tradesToday >= D.maxTradesPerDay) {
       hard.push(`you have reached your ${D.maxTradesPerDay} trades for today`);
     }
+    // PAPER: the week's figure is the paper risk count; name the booked one when they differ.
+    const weekBooked = act.bookedWeekRealizedPnl != null
+      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "";
+    const nonPos = nonPositiveEquity(ctx.account);
     if (D.maxWeeklyLossAmount != null && act.weekRealizedPnl <= -D.maxWeeklyLossAmount) {
-      hard.push(`this week's loss ${round(-act.weekRealizedPnl)} reached your weekly cap of ${D.maxWeeklyLossAmount}`);
+      hard.push(`this week's loss ${round(-act.weekRealizedPnl)}${weekBooked} reached your weekly cap of ${D.maxWeeklyLossAmount}`);
     }
-    if (D.maxWeeklyLossPercent != null && act.weekRealizedPnl < 0) {
+    if (D.maxWeeklyLossPercent != null && nonPos) {
+      hard.push(`${nonPos}, so your ${D.maxWeeklyLossPercent}% weekly loss cap is used up`);
+    } else if (D.maxWeeklyLossPercent != null && act.weekRealizedPnl < 0) {
       const equity = ctx.account?.equity != null && ctx.account.equity > 0 ? ctx.account.equity : null;
       if (equity == null) hard.push("account equity is unknown, so your weekly loss percentage cannot be checked");
       else {
         const pct = (-act.weekRealizedPnl / equity) * 100;
         measured["weekLossPercent"] = round(pct);
-        if (pct >= D.maxWeeklyLossPercent) hard.push(`this week's loss ${round(pct)}% reached your weekly cap of ${D.maxWeeklyLossPercent}%`);
+        if (pct >= D.maxWeeklyLossPercent) hard.push(`this week's loss ${round(pct)}%${weekBooked} reached your weekly cap of ${D.maxWeeklyLossPercent}%`);
       }
     }
     if (D.maxConsecutiveLosses != null && act.consecutiveLosses >= D.maxConsecutiveLosses) {
