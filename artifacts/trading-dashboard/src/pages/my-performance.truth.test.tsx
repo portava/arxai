@@ -153,6 +153,52 @@ describe("My Performance: one failed endpoint is not an empty account", () => {
   });
 });
 
+// Round 3 review: only the Trades tab checked `loading`. During the first load
+// (all reads still in flight, every list still its initial []) the other tabs
+// showed empty-account claims: "No risk events yet — your governor is quiet.",
+// "No journal entries yet", "No AI insights yet", "No playbooks yet"...
+describe("My Performance: nothing is claimed empty before it was read", () => {
+  const EMPTY_CLAIMS = [
+    /your governor is quiet/, /No journal entries yet/, /will populate after your first closed trade/, /No fake data/,
+    /No AI insights yet/, /Your coaching plan will improve/, /No playbooks yet/,
+  ];
+  const noEmptyClaims = () => {
+    const text = document.body.textContent ?? "";
+    for (const re of EMPTY_CLAIMS) expect(text).not.toMatch(re);
+  };
+
+  it("while the first load is in flight every tab says Loading…, not an empty account", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    render(<MyPerformancePage />);
+    for (const [tab, testid] of [
+      [/Risk Governor/, "section-loading-riskEvents"],
+      [/Journal/, "section-loading-journal"],
+      [/Performance/, "section-loading-calendar"],
+      [/Insights/, "section-loading-insights"],
+      [/Coaching/, "section-loading-coaching"],
+      [/Playbooks/, "section-loading-playbooks"],
+      [/Pre-Trade Check/, "section-loading-precheck"],
+    ] as Array<[RegExp, string]>) {
+      selectTab(tab);
+      await waitFor(() => expect(screen.getByTestId(testid).textContent).toMatch(/Loading/));
+      noEmptyClaims();
+    }
+  });
+
+  it("once loaded, a genuinely empty section still says so", async () => {
+    stubFetch(okBodies());
+    render(<MyPerformancePage />);
+    await waitFor(() => expect(screen.getByText("EURUSD")).toBeTruthy());
+    selectTab(/Risk Governor/);
+    await waitFor(() => expect(screen.getByText(/your governor is quiet/)).toBeTruthy());
+    expect(screen.queryByTestId("section-loading-riskEvents")).toBeNull();
+    selectTab(/Journal/);
+    await waitFor(() => expect(screen.getByText("No journal entries yet")).toBeTruthy());
+    selectTab(/Playbooks/);
+    await waitFor(() => expect(screen.getAllByText("No playbooks yet").length).toBeGreaterThan(0));
+  });
+});
+
 describe("My Performance: cooldown card", () => {
   it("says the cooldown is not enforced instead of 'After loss: 0m' when no limit applies", async () => {
     const status = riskStatus({
