@@ -187,49 +187,94 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
 
 // ── Live Audit Banner ────────────────────────────────────────────────────────
 
-function AuditBanner({ symbol }: { symbol?: string }) {
+/**
+ * What the legacy risk audit reads. Loss percentages and the losing streak
+ * are only real when the server says it measured closed rows.
+ */
+function riskAuditSourceNote(scope: string | undefined): string {
+  const whose = scope === "USER" ? "your rows in" : scope === "ALL_USERS" ? "every user's rows in" : "rows in";
+  return `Counted from ${whose} the legacy simulated trades table, which takes no new rows: trades you place now are not in it. ` +
+    "Loss percentages are of a placeholder $1,000 balance, not your account. Shown for review only; orders are checked separately when placed.";
+}
+
+type AuditVerdict = { tone: "pass" | "unmeasured" | "tripped"; headline: string };
+
+type HaltRead = { engaged: boolean; sources: string[]; reason: string | null; venues: string[] } | null | undefined;
+
+/** Where an engaged stop switch is released, by which switch it is. */
+export function haltReleaseHint(sources: string[]): string {
+  const parts: string[] = [];
+  if (sources.includes("trader_kill_switch")) {
+    parts.push("Your own kill switch: release it with Resume on Risk Command Center (Audit tab).");
+  }
+  if (sources.includes("safety_core_kill_switch") || sources.includes("platform_emergency_stop")) {
+    parts.push("Platform-wide stop: it halts every trader, and an operator (admin or owner) releases it on the Emergency page.");
+  }
+  return parts.join(" ");
+}
+
+/** The banner may say a check passed only when the server measured it. */
+function riskAuditVerdict(audit: { passed: boolean; closedTradesMeasured?: boolean; tradingHalt?: HaltRead }): AuditVerdict {
+  if (audit.tradingHalt?.engaged) return { tone: "tripped", headline: "New trades are halted: a stop switch is engaged" };
+  if (!audit.passed) return { tone: "tripped", headline: "Legacy risk audit: a rule is tripped" };
+  if (audit.closedTradesMeasured !== true) {
+    return { tone: "unmeasured", headline: "Legacy risk audit: daily / weekly loss and losing streak were not measured" };
+  }
+  return { tone: "pass", headline: "Legacy risk audit: no rule tripped" };
+}
+
+export function AuditBanner({ symbol }: { symbol?: string }) {
   const auditParams = symbol ? { symbol } : {};
-  const { data: audit, isLoading } = useGetRiskAudit(
+  const { data: audit, isLoading, isError } = useGetRiskAudit(
     auditParams,
     { query: { queryKey: getGetRiskAuditQueryKey(auditParams), refetchInterval: 30_000 } }
   );
 
   if (isLoading) return <Skeleton className="h-16 w-full" />;
-  // No audit read is no verdict: say so where the verdict normally sits.
-  if (!audit) {
+  // No audit read is no verdict: say so where the verdict normally sits. A
+  // failed refresh does not keep showing the last verdict as current.
+  if (isError || !audit) {
     return (
       <div
         className="flex items-center gap-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-3"
-        data-testid="risk-audit-banner-unavailable"
+        data-testid="risk-audit-banner"
       >
         <AlertTriangle className="h-6 w-6 shrink-0 text-yellow-400" />
-        <div className="min-w-0">
+        <div className="min-w-0" data-testid="risk-audit-banner-unavailable">
           <p className="font-semibold text-sm text-yellow-300">Risk audit could not be loaded</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            No risk verdict is shown, because none was read. It is retried every 30 seconds.
+            No risk verdict is shown, because no current one was read. It is retried every 30 seconds.
           </p>
         </div>
       </div>
     );
   }
+  const verdict = riskAuditVerdict(audit);
+  const measured = audit.closedTradesMeasured === true;
 
   return (
     <div
+      data-testid="risk-audit-banner"
       className={cn(
         "flex items-center gap-4 rounded-lg border px-5 py-3",
-        audit.passed
+        verdict.tone === "pass"
           ? "border-success/30 bg-success/10"
-          : "border-red-500/30 bg-red-500/5"
+          : verdict.tone === "unmeasured"
+            ? "border-amber-500/30 bg-amber-500/5"
+            : "border-red-500/30 bg-red-500/5"
       )}
     >
       <div className="shrink-0">
-        {audit.passed
+        {verdict.tone === "pass"
           ? <ShieldCheck className="h-8 w-8 text-success" />
-          : <ShieldX className="h-8 w-8 text-red-400" />}
+          : verdict.tone === "unmeasured"
+            ? <ShieldAlert className="h-8 w-8 text-amber-400" />
+            : <ShieldX className="h-8 w-8 text-red-400" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={cn("font-semibold text-sm", audit.passed ? "text-success" : "text-red-300")}>
-          {audit.passed ? "Trading conditions GREEN — all risk checks passed" : "Trading BLOCKED — risk rule violation"}
+        <p className={cn("font-semibold text-sm",
+          verdict.tone === "pass" ? "text-success" : verdict.tone === "unmeasured" ? "text-amber-300" : "text-red-300")}>
+          {verdict.headline}
         </p>
         {!audit.passed && (
           <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -237,16 +282,22 @@ function AuditBanner({ symbol }: { symbol?: string }) {
             {audit.reasonsBlocked.length > 1 && ` (+${audit.reasonsBlocked.length - 1} more)`}
           </p>
         )}
+        {audit.tradingHalt?.engaged && (
+          <p className="text-xs text-red-300 mt-0.5" data-testid="risk-halt-release">
+            {haltReleaseHint(audit.tradingHalt.sources)}
+          </p>
+        )}
         {audit.warnings.length > 0 && audit.passed && (
           <p className="text-xs text-yellow-400/80 truncate mt-0.5">
             ⚠ {audit.warnings[0]}
           </p>
         )}
+        <p className="text-xs text-muted-foreground mt-0.5">{riskAuditSourceNote(audit.scope)}</p>
       </div>
       <div className="hidden md:flex gap-6 shrink-0 text-center">
         <div>
           <div className="text-xs text-muted-foreground">Daily Loss</div>
-          <div className="font-mono font-bold text-sm">{audit.dailyLossUsed.toFixed(1)}%</div>
+          <div className="font-mono font-bold text-sm">{measured ? `${audit.dailyLossUsed.toFixed(1)}%` : "not measured"}</div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Trades Left</div>
@@ -266,6 +317,41 @@ function AuditBanner({ symbol }: { symbol?: string }) {
     </div>
   );
 }
+
+// ── Bot settings flags ───────────────────────────────────────────────────────
+
+/**
+ * What the bot settings flags do. Bot mode, "is running" and the paused flag
+ * are stored in your bot settings and echoed back here; no order path (the
+ * Risk Governor, the paper autopilot, the live pipeline) reads them. Only a
+ * stop switch halts new trades.
+ */
+export const BOT_PAUSE_FLAG_NOTE =
+  "Stores a paused flag in your bot settings. No order path reads this flag, so it does not stop new trades. " +
+  "To halt new trades on your account, use \"Pause my trading\" on Risk Command Center (Audit tab), which engages your kill switch.";
+
+export const BOT_FLAGS_NOTE =
+  "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. The Stop switch row is what halts new trades.";
+
+// ── Emergency stop scope ─────────────────────────────────────────────────────
+
+type StopScope = "PLATFORM" | "YOUR_ACCOUNT" | undefined;
+
+/** Who the emergency stop halts for this viewer, as the server reports it. */
+export function emergencyStopScopeLine(scope: StopScope): string {
+  if (scope === "PLATFORM") {
+    return "As an operator, you engage the platform-wide safety-core kill switch: new trades stop for every trader on every venue, " +
+      "and the platform mode drops to OBSERVE_ONLY, until an operator releases it on the Emergency page.";
+  }
+  if (scope === "YOUR_ACCOUNT") {
+    return "It engages your own kill switch: new trades on your account stop on every venue and live is disarmed, " +
+      "until you release it with Resume on Risk Command Center. Other traders are not affected.";
+  }
+  return "Who it halts could not be loaded: for an operator (admin or owner) it halts every trader on the platform; otherwise only your account.";
+}
+
+export const EMERGENCY_STOP_EFFECTS =
+  "It cancels open rows in the legacy simulated trades table only: open paper-book and broker positions stay open. It also sets your bot settings to OFF.";
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
@@ -301,6 +387,13 @@ export default function RiskSettings() {
   const { data: botStatus, isError: botStatusFailed } = useGetBotStatus(
     { query: { queryKey: getGetBotStatusQueryKey(), refetchInterval: 30_000 } },
   );
+  // Same query as the audit banner: it also carries the stop-switch read.
+  const { data: auditForHalt, isError: auditHaltError, isLoading: auditHaltLoading } = useGetRiskAudit(
+    {},
+    { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } }
+  );
+  const halt = auditForHalt?.tradingHalt;
+  const stopScope = botStatus?.emergencyStopScope;
   const updateSettings = useUpdateRiskSettings();
   const applyMode = useApplyRiskMode();
   const setLiveLock = useSetLiveLock();
@@ -458,7 +551,7 @@ export default function RiskSettings() {
         queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
         queryClient.invalidateQueries({ queryKey: RISK_LIMIT_LAYERS_QUERY_KEY });
         toast({
-          title: "⛔ Emergency Stop Executed",
+          title: res.scope === "PLATFORM" ? "⛔ Platform-wide emergency stop engaged" : "⛔ Emergency stop engaged",
           description: res.message,
           variant: "destructive",
         });
@@ -473,9 +566,9 @@ export default function RiskSettings() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
-          toast({ title: "Trading paused", description: "Bot will not open new positions." });
+          toast({ title: "Bot paused flag set", description: BOT_PAUSE_FLAG_NOTE });
         },
-        onError: () => toast({ title: "Failed to pause", variant: "destructive" }),
+        onError: () => toast({ title: "Could not set the bot paused flag", variant: "destructive" }),
       }
     );
   }
@@ -486,9 +579,9 @@ export default function RiskSettings() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetBotStatusQueryKey() });
-          toast({ title: "Trading resumed" });
+          toast({ title: "Bot paused flag cleared", description: BOT_PAUSE_FLAG_NOTE });
         },
-        onError: () => toast({ title: "Failed to resume", variant: "destructive" }),
+        onError: () => toast({ title: "Could not clear the bot paused flag", variant: "destructive" }),
       }
     );
   }
@@ -549,9 +642,14 @@ export default function RiskSettings() {
               <Lock size={12} className="mr-1.5" /> Live Locked
             </Badge>
           )}
+          {halt?.engaged && (
+            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border" data-testid="risk-halt-badge">
+              <XCircle size={12} className="mr-1.5" /> New trades halted
+            </Badge>
+          )}
           {botStatus?.isPaused && (
-            <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border">
-              <PauseCircle size={12} className="mr-1.5" /> Paused
+            <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border" data-testid="bot-paused-flag-badge">
+              <PauseCircle size={12} className="mr-1.5" /> Bot paused flag set
             </Badge>
           )}
         </div>
@@ -1249,9 +1347,9 @@ export default function RiskSettings() {
               <CardTitle className="flex items-center gap-2 text-red-400">
                 <XCircle size={20} /> Emergency Kill Switch
               </CardTitle>
-              <CardDescription className="text-muted-foreground text-sm">
-                Immediately stops the bot, cancels all open mock trades, and resets to OFF mode.
-                This cannot be undone — the bot must be manually restarted.
+              <CardDescription className="text-muted-foreground text-sm space-y-1" data-testid="emergency-stop-description">
+                <span className="block">{emergencyStopScopeLine(stopScope)}</span>
+                <span className="block">{EMERGENCY_STOP_EFFECTS}</span>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1263,7 +1361,9 @@ export default function RiskSettings() {
                     className="w-full h-16 text-lg font-black tracking-widest gap-3 shadow-lg shadow-red-500/20 hover:shadow-red-500/40 transition-shadow"
                   >
                     <XCircle size={24} />
-                    ⛔ EMERGENCY STOP ALL TRADING
+                    {stopScope === "PLATFORM"
+                      ? "⛔ EMERGENCY STOP: EVERY TRADER"
+                      : stopScope === "YOUR_ACCOUNT" ? "⛔ EMERGENCY STOP: MY TRADING" : "⛔ EMERGENCY STOP"}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="border-red-500/40">
@@ -1271,15 +1371,23 @@ export default function RiskSettings() {
                     <DialogTitle className="text-red-400 flex items-center gap-2">
                       <AlertTriangle /> Confirm Emergency Stop
                     </DialogTitle>
-                    <DialogDescription className="text-sm text-muted-foreground space-y-2 pt-2">
-                      <p>This will immediately:</p>
-                      <ul className="list-disc list-inside space-y-1 text-foreground/80">
-                        <li>Stop all active bot scanning</li>
-                        <li>Cancel every open mock trade</li>
-                        <li>Set bot mode to <strong>OFF</strong></li>
-                        <li>Require manual restart to resume</li>
-                      </ul>
-                      <p className="text-red-400 font-medium pt-2">Are you sure?</p>
+                    <DialogDescription asChild>
+                      <div className="text-sm text-muted-foreground space-y-2 pt-2" data-testid="emergency-stop-dialog">
+                        <p>This will immediately:</p>
+                        <ul className="list-disc list-inside space-y-1 text-foreground/80">
+                          <li>
+                            {stopScope === "PLATFORM"
+                              ? <>Engage the <strong>platform-wide</strong> safety-core kill switch: new trades stop for <strong>every trader</strong></>
+                              : stopScope === "YOUR_ACCOUNT"
+                                ? <>Engage <strong>your own</strong> kill switch: new trades on your account stop on every venue</>
+                                : <>Engage a kill switch (who it halts could not be loaded)</>}
+                          </li>
+                          <li>Cancel open rows in the legacy simulated trades table (paper-book and broker positions stay open)</li>
+                          <li>Set your bot settings to <strong>OFF</strong></li>
+                        </ul>
+                        <p>{emergencyStopScopeLine(stopScope)}</p>
+                        <p className="text-red-400 font-medium pt-2">Are you sure?</p>
+                      </div>
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter className="gap-2">
@@ -1305,17 +1413,17 @@ export default function RiskSettings() {
             <Card className="border-yellow-500/30">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2 text-yellow-400">
-                  <PauseCircle size={16} /> Pause Trading
+                  <PauseCircle size={16} /> Bot Paused Flag
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  Suspends new trade entries while keeping the bot running and open positions intact.
+                <CardDescription className="text-xs" data-testid="bot-paused-flag-note">
+                  {BOT_PAUSE_FLAG_NOTE}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {botStatus?.isPaused ? (
                   <Alert className="border-yellow-500/30 bg-yellow-500/5 py-2">
                     <PauseCircle className="h-3 w-3 text-yellow-400" />
-                    <AlertDescription className="text-xs text-yellow-300 ml-1">Bot is currently paused</AlertDescription>
+                    <AlertDescription className="text-xs text-yellow-300 ml-1">The bot paused flag is set. New trades are not stopped by it.</AlertDescription>
                   </Alert>
                 ) : null}
                 <Button
@@ -1330,9 +1438,9 @@ export default function RiskSettings() {
                   disabled={updateBotStatus.isPending}
                 >
                   {botStatus?.isPaused ? (
-                    <><Activity size={14} /> Resume Trading</>
+                    <><Activity size={14} /> Clear Paused Flag</>
                   ) : (
-                    <><PauseCircle size={14} /> Pause All Trading</>
+                    <><PauseCircle size={14} /> Set Paused Flag</>
                   )}
                 </Button>
               </CardContent>
@@ -1389,40 +1497,58 @@ export default function RiskSettings() {
                 <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
                   <ShieldAlert size={16} /> System Status
                 </CardTitle>
+                <CardDescription className="text-xs" data-testid="bot-flags-note">{BOT_FLAGS_NOTE}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {(() => {
                   // A row nobody read is grey "could not be loaded", never a green "NO".
                   const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
-                  const rows: { label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
-                    botStatus
-                      ? { label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
-                      : { label: "Bot Mode", value: botUnread, tone: "unread" },
-                    botStatus
-                      ? { label: "Is Running", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
-                      : { label: "Is Running", value: botUnread, tone: "unread" },
-                    botStatus
-                      ? { label: "Is Paused", value: botStatus.isPaused ? "YES" : "NO", tone: botStatus.isPaused ? "warn" : "neutral" }
-                      : { label: "Is Paused", value: botUnread, tone: "unread" },
-                    !settings
-                      ? { label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
-                      : { label: "Live Locked", value: settings.liveLocked ? "LOCKED" : "OPEN", tone: settings.liveLocked ? "ok" : "warn" },
-                    !settings
-                      ? { label: "Risk Mode", value: SETTINGS_UNREAD, tone: "unread" }
+                  // id keeps each row's stable test id; label is what the row says.
+                  const rows: { id: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
+                    halt
+                      ? {
+                          id: "Stop switch", label: "Stop switch",
+                          value: halt.engaged ? `ENGAGED (${halt.venues.join(", ")})` : "none engaged",
+                          tone: halt.engaged ? "warn" : "ok",
+                        }
                       : {
+                          id: "Stop switch", label: "Stop switch",
+                          value: auditHaltError ? "could not be loaded" : auditHaltLoading ? "loading" : "not read",
+                          tone: "unread",
+                        },
+                    botStatus
+                      ? { id: "Bot Mode", label: "Bot Mode", value: botStatus.mode, tone: botStatus.mode === "OFF" || !botStatus.isRunning ? "ok" : "warn" }
+                      : { id: "Bot Mode", label: "Bot Mode", value: botUnread, tone: "unread" },
+                    botStatus
+                      ? { id: "Is Running", label: "Is Running", value: botStatus.isRunning ? "YES" : "NO", tone: botStatus.isRunning ? "warn" : "ok" }
+                      : { id: "Is Running", label: "Is Running", value: botUnread, tone: "unread" },
+                    // The paused flag is not a stop: no order path reads it, so it is never green.
+                    botStatus
+                      ? { id: "Is Paused", label: "Paused flag", value: botStatus.isPaused ? "SET" : "NOT SET", tone: botStatus.isPaused ? "warn" : "neutral" }
+                      : { id: "Is Paused", label: "Paused flag", value: botUnread, tone: "unread" },
+                    !settings
+                      ? { id: "Live Locked", label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
+                      : { id: "Live Locked", label: "Live Locked", value: settings.liveLocked ? "LOCKED" : "OPEN", tone: settings.liveLocked ? "ok" : "warn" },
+                    !settings
+                      ? { id: "Risk Mode", label: "Risk Mode", value: SETTINGS_UNREAD, tone: "unread" }
+                      : {
+                          id: "Risk Mode",
                           label: "Risk Mode",
                           value: labelMismatch ? `${currentMode} label · limits differ` : currentMode,
                           tone: currentMode !== "Aggressive" && !labelMismatch ? "ok" : "warn",
                         },
                   ];
                   return rows.map((row) => (
-                    <div key={row.label} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.label}`}>
+                    <div key={row.id} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.id}`}>
                       <span className="text-muted-foreground">{row.label}</span>
-                      <span className={cn("font-mono font-semibold",
-                        row.tone === "ok" ? "text-success"
-                          : row.tone === "warn" ? "text-yellow-400"
-                          : row.tone === "neutral" ? "text-foreground"
-                          : "text-muted-foreground")}>
+                      <span
+                        data-testid={`risk-status-row-${row.label}`}
+                        className={cn("font-mono font-semibold",
+                          row.tone === "ok" ? "text-success"
+                            : row.tone === "warn" ? "text-yellow-400"
+                            : row.tone === "neutral" ? "text-foreground"
+                            : "text-muted-foreground")}
+                      >
                         {row.value}
                       </span>
                     </div>
@@ -1445,13 +1571,13 @@ export default function RiskSettings() {
 
 // ── Detailed Risk Audit Component ────────────────────────────────────────────
 
-function RiskAuditDetail() {
-  const { data: audit, isLoading, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
+export function RiskAuditDetail() {
+  const { data: audit, isLoading, isError, refetch } = useGetRiskAudit({}, { query: { queryKey: getGetRiskAuditQueryKey({}), refetchInterval: 30_000 } });
 
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (!audit) {
+  if (isError || !audit) {
     return (
-      <Card className="border-yellow-500/30" data-testid="risk-audit-detail-unavailable">
+      <Card className="border-yellow-500/30" data-testid="risk-audit-detail">
         <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
           <div>
             <CardTitle className="text-base flex items-center gap-2">
@@ -1461,7 +1587,7 @@ function RiskAuditDetail() {
           </div>
           <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-6" data-testid="risk-audit-detail-unavailable">
           <p className="text-sm text-yellow-300">
             No metrics, blocked conditions or warnings are shown, because the audit could not be checked.
           </p>
@@ -1469,6 +1595,8 @@ function RiskAuditDetail() {
       </Card>
     );
   }
+  const measured = audit.closedTradesMeasured === true;
+  const notMeasured = <span className="text-muted-foreground">not measured</span>;
 
   return (
     <Card className="border-border/50">
@@ -1477,7 +1605,7 @@ function RiskAuditDetail() {
           <CardTitle className="text-base flex items-center gap-2">
             <Activity size={16} /> Live Risk Audit
           </CardTitle>
-          <CardDescription className="text-xs">Real-time evaluation of all risk rules — refreshes every 30s</CardDescription>
+          <CardDescription className="text-xs">{riskAuditSourceNote(audit.scope)} Refreshes every 30s.</CardDescription>
         </div>
         <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Refresh</Button>
       </CardHeader>
@@ -1488,16 +1616,16 @@ function RiskAuditDetail() {
           </h4>
           <div className="space-y-1">
             <StatRow label="Risk Per Trade" value={`${audit.riskPercent}%`} />
-            <StatRow label="Daily Loss Used" value={`${audit.dailyLossUsed.toFixed(2)}%`} />
-            <StatRow label="Weekly Loss Used" value={`${audit.weeklyLossUsed.toFixed(2)}%`} />
+            <StatRow label="Daily Loss Used" value={measured ? `${audit.dailyLossUsed.toFixed(2)}%` : notMeasured} />
+            <StatRow label="Weekly Loss Used" value={measured ? `${audit.weeklyLossUsed.toFixed(2)}%` : notMeasured} />
             <StatRow label="Trades Remaining Today" value={audit.tradesRemaining} />
-            <StatRow label="Open Trades" value={audit.openTradesCount} />
-            <StatRow label="Current Losing Streak" value={audit.losingStreak} />
+            <StatRow label="Open Trades" value={audit.openTradesCount} sub={audit.scope === "USER" ? "yours" : audit.scope === "ALL_USERS" ? "all users" : "scope not reported"} />
+            <StatRow label="Current Losing Streak" value={measured ? audit.losingStreak : notMeasured} />
             <StatRow
               label="Cooldown"
               value={audit.cooldownActive
                 ? <span className="text-red-400">ACTIVE</span>
-                : <span className="text-success">Clear</span>}
+                : measured ? <span className="text-success">Clear</span> : notMeasured}
             />
           </div>
         </div>
@@ -1535,11 +1663,18 @@ function RiskAuditDetail() {
             </div>
           )}
 
-          {audit.passed && audit.warnings.length === 0 && (
+          {audit.passed && audit.warnings.length === 0 && measured && (
             <div className="flex flex-col items-center justify-center h-full gap-2 py-6">
               <ShieldCheck size={32} className="text-success" />
-              <p className="text-sm text-success font-semibold">All clear</p>
-              <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings</p>
+              <p className="text-sm text-success font-semibold">No rule tripped</p>
+              <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings in the legacy audit</p>
+            </div>
+          )}
+          {audit.passed && !measured && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-unmeasured">
+              <ShieldAlert size={32} className="text-amber-400" />
+              <p className="text-sm text-amber-300 font-semibold">Not all rules were measured</p>
+              <p className="text-xs text-muted-foreground text-center">Daily / weekly loss, losing streak and cooldown were not measured, so they are not shown as passing.</p>
             </div>
           )}
         </div>

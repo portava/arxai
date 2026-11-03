@@ -89,7 +89,11 @@ describe("Trading Calendar mode", () => {
     expect(await screen.findByTestId("calendar-not-shown")).toBeTruthy();
     const body = document.body.textContent ?? "";
     expect(body).not.toMatch(/No live trades recorded/);
-    expect(body).not.toMatch(/Net P&L \(month\)/);
+    // Merged with fix-0: the month's totals are shown as unknown ("Not shown"),
+    // never as a 0.00 month, instead of the tiles being left out.
+    expect(screen.getByTestId("calendar-total-pnl").textContent).toMatch(/Not shown/);
+    expect(screen.getByTestId("calendar-total-trades").textContent).toMatch(/Not shown/);
+    expect(body).not.toMatch(/0\.00/);
     expect(body).not.toMatch(/from your live trades/);
   });
 });

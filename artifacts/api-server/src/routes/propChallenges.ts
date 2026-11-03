@@ -116,6 +116,11 @@ interface Eval {
   final: boolean;
   /** The end of the evaluated window (ISO): completedAt for a finished challenge, now otherwise. */
   evaluatedThrough: string;
+  /** Open paper positions at evaluation time. Their floating P&L is not on
+   *  the row and is not read, so drawdown / daily loss leave them out.
+   *  Always 0 for a finished challenge, which is judged on closed trades up
+   *  to its end. */
+  openPositionsNotCounted: number;
 }
 
 // A challenge in one of these states is over. It is judged on what happened
@@ -123,6 +128,22 @@ interface Eval {
 const FINISHED_STATUSES: ReadonlySet<string> = new Set(["PASSED", "FAILED", "CANCELED"]);
 function isFinishedChallenge(status: string): boolean {
   return FINISHED_STATUSES.has(status);
+}
+
+const RISK_PER_TRADE_NOTE =
+  "Max risk per trade is checked on each closed trade's realised loss against that day's starting balance. " +
+  "Risk at entry (stop-loss distance) is not measured, so a trade that risked more but closed at a small loss or a profit is not flagged.";
+
+/** Drawdown and daily loss are a running balance of realised P&L from
+ *  closed paper orders; open positions are not marked to market. A finished
+ *  challenge is judged on closed trades up to its end, so it does not count
+ *  (or claim the absence of) positions open now. */
+function closedTradeDrawdownNote(openPositions: number, final = false): string {
+  const base = "Drawdown and daily loss are measured from closed demo trades only.";
+  if (final) return `${base} This challenge is finished, so only trades closed by its end count; open positions are not counted.`;
+  if (openPositions <= 0) return `${base} No positions were open when this was evaluated.`;
+  const n = openPositions === 1 ? "1 open position is" : `${openPositions} open positions are`;
+  return `${base} ${n} not counted, so their floating profit or loss is not in these figures.`;
 }
 
 async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
@@ -181,6 +202,9 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
 
     // Phase 27-B: Max risk per trade (per-trade loss vs day-start balance).
     // Per-trade, never fabricated — uses actual paper-order profitLoss.
+    // This is the REALISED loss after close; risk at entry (stop-loss
+    // distance) is not measured, so a trade that risked more but closed at a
+    // small loss or a profit raises nothing. Messages and the summary say so.
     if (startBal > 0) {
       for (const o of dayOrders) {
         if (o.profitLoss < 0) {
@@ -189,12 +213,12 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
             dayRules.push("MAX_RISK_PER_TRADE");
             violations.push({
               type: "MAX_RISK_PER_TRADE", severity: "WARN",
-              message: `Trade #${o.id} loss ${(tradeLossPct*100).toFixed(2)}% exceeds max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date}`,
+              message: `Trade #${o.id} realised loss ${(tradeLossPct*100).toFixed(2)}% of the day's starting balance exceeds the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date} (checked after close; risk at entry is not measured)`,
             });
           } else if (tradeLossPct > ch.maxRiskPerTrade * 0.8) {
             violations.push({
               type: "MAX_RISK_PER_TRADE", severity: "INFO",
-              message: `Trade #${o.id} loss ${(tradeLossPct*100).toFixed(2)}% approaching max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date}`,
+              message: `Trade #${o.id} realised loss ${(tradeLossPct*100).toFixed(2)}% of the day's starting balance is approaching the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date} (checked after close; risk at entry is not measured)`,
             });
           }
         }
@@ -218,13 +242,13 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       dayRules.push("DAILY_LOSS");
       violations.push({
         type: "DAILY_LOSS", severity: "HARD",
-        message: `Daily loss ${(dayLossPct*100).toFixed(2)}% on ${date} exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`,
+        message: `Closed-trade daily loss ${(dayLossPct*100).toFixed(2)}% on ${date} exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`,
       });
       if (!hardFail) hardFail = "Daily loss limit exceeded";
     } else if (dayLossPct > ch.maxDailyLoss * 0.8) {
       violations.push({
         type: "DAILY_LOSS", severity: "WARN",
-        message: `Daily loss ${(dayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}% on ${date}`,
+        message: `Closed-trade daily loss ${(dayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}% on ${date}`,
       });
     }
 
@@ -237,7 +261,8 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       });
     }
 
-    // Drawdown from peak
+    // Drawdown from peak — of the realised (closed-trade) balance only; open
+    // positions are not marked to market here (see closedTradeDrawdownNote).
     runningBalance = endBal;
     peakBalance = Math.max(peakBalance, runningBalance);
     const ddPct = (peakBalance - runningBalance) / peakBalance;
@@ -246,12 +271,12 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       if (!hardFail) hardFail = "Max total drawdown exceeded";
       violations.push({
         type: "TOTAL_DRAWDOWN", severity: "HARD",
-        message: `Drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}% on ${date}`,
+        message: `Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}% on ${date}`,
       });
     } else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) {
       violations.push({
         type: "TOTAL_DRAWDOWN", severity: "WARN",
-        message: `Drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`,
+        message: `Closed-trade drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`,
       });
     }
 
@@ -388,6 +413,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     consistencyTopShare, tradeCount: closed.length, daysSinceStart,
     days, violations, resolvedStatus, failureReason,
     final, evaluatedThrough: endAt.toISOString(),
+    openPositionsNotCounted: openOrders.length,
   };
 }
 
@@ -546,6 +572,14 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
         currentBalance: ch.startingBalance + ev.totalPnl,
         final: ev.final,
         evaluatedThrough: ev.evaluatedThrough,
+        // What the drawdown / daily-loss figures above are built from.
+        drawdownBasis: "CLOSED_TRADES_ONLY",
+        openPositionsNotCounted: ev.openPositionsNotCounted,
+        drawdownNote: closedTradeDrawdownNote(ev.openPositionsNotCounted, ev.final),
+        // What the max-risk-per-trade rule actually checks.
+        maxRiskPerTrade: ch.maxRiskPerTrade,
+        riskPerTradeBasis: "REALISED_LOSS_AFTER_CLOSE",
+        riskPerTradeNote: RISK_PER_TRADE_NOTE,
       },
       days: ev.days,
       violations: ev.violations,

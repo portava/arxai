@@ -258,7 +258,7 @@ describe("System Status never colours an unread bot status green", () => {
       bot: { data: { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null } },
     });
     const paused = screen.getByTestId("system-status-Is Paused");
-    expect(paused.textContent).toMatch(/NO/);
+    expect(paused.textContent).toMatch(/NOT SET/);
     expect(paused.querySelector(".text-success")).toBeNull();
     const running = screen.getByTestId("system-status-Is Running");
     expect(running.querySelector(".text-success")).toBeNull();
@@ -283,7 +283,8 @@ describe("the page re-reads what its own actions changed", () => {
   it("an emergency stop invalidates the bot status (and audit, and limits)", () => {
     h.stopMutate.mockImplementation((_v: unknown, o: Opts) => o.onSuccess?.({ success: true, message: "stopped", closedTrades: 0 }));
     const { invalidate } = renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT } });
-    fireEvent.click(screen.getByRole("button", { name: /EMERGENCY STOP ALL TRADING/ }));
+    // The stop button names its scope (fix-0); with no scope reported it reads "⛔ EMERGENCY STOP".
+    fireEvent.click(screen.getByRole("button", { name: /EMERGENCY STOP/ }));
     fireEvent.click(screen.getByRole("button", { name: /Confirm Emergency Stop/ }));
     expect(h.stopMutate).toHaveBeenCalledTimes(1);
     const keys = keyed(invalidate.mock.calls);
@@ -294,7 +295,8 @@ describe("the page re-reads what its own actions changed", () => {
   it("pause invalidates the bot status, and the bot status is polled", () => {
     h.botMutate.mockImplementation((_v: unknown, o: Opts) => o.onSuccess?.(BOT));
     const { invalidate } = renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT } });
-    fireEvent.click(screen.getByRole("button", { name: /Pause All Trading/ }));
+    // The control sets the bot paused flag (fix-0 renamed it: no order path reads the flag).
+    fireEvent.click(screen.getByRole("button", { name: /Set Paused Flag/ }));
     expect(keyed(invalidate.mock.calls)).toContain(JSON.stringify(["/api/bot/status"]));
     const opts = h.botOpts as { query?: { refetchInterval?: number } } | undefined;
     expect(opts?.query?.refetchInterval).toBeGreaterThan(0);

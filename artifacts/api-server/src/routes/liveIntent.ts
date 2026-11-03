@@ -148,12 +148,14 @@ router.post("/live-intent/submit", async (req, res) => {
       status,
       intentId,
       mt5Connected,
-      // The reason describes the verdict actually reached: a connected MT5
-      // bridge is not called "not connected".
+      // The reason describes the verdict actually reached and follows the
+      // same mt5Connected the status was built from: a connected MT5 bridge
+      // is not called "not connected", so the card never contradicts its own
+      // fields.
       reason: !riskCheckPassed
         ? `Risk check failed: ${failedChecks.join("; ")}`
         : mt5Connected
-          ? "Risk checks passed and the MT5 bridge reports connected. Tester workflow was captured, but no real broker order was placed: this route never sends orders."
+          ? "Risk checks passed and the MT5 bridge reported connected at submit. Tester workflow was captured, but no real broker order was placed: this route never sends broker orders."
           : "MT5 bridge is not connected yet. Tester workflow was captured, but no real broker order was placed.",
       intent: inserted,
       auditEventId: vault?.id ?? null,

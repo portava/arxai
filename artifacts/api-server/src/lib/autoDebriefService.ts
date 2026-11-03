@@ -21,6 +21,7 @@ import {
 import { asc, eq, gte, lte, and, isNull } from "drizzle-orm";
 import { computeSnapshot } from "../routes/analytics.js";
 import { logger } from "./logger.js";
+import { isUnsizedPaperClose, paperMoveSign } from "./paperExecution/paperPnl.js";
 
 // ── Heat tag lookup — find the closest heat snapshot at trade entry time ──────
 // Fail-soft: returns null if no snapshot found or query fails.
@@ -110,8 +111,21 @@ interface DecisionRow {
   decisionJson: unknown;
 }
 
-function classifyResult(status: string, pnl: number): "WIN" | "LOSS" | "BREAKEVEN" | "CANCELLED" {
-  if (status === "CANCELLED") return "CANCELLED";
+/**
+ * WIN / LOSS / BREAKEVEN of a closed paper order. A close whose amount could
+ * not be sized stores profit_loss 0, a placeholder (isUnsizedPaperClose): its
+ * result is the price move in the trade's favour, never a breakeven read off
+ * that 0.
+ */
+function classifyResult(t: {
+  status: string; profitLoss: number; direction: string; entryPrice: number; exitPrice: number | null;
+}): "WIN" | "LOSS" | "BREAKEVEN" | "CANCELLED" {
+  if (t.status === "CANCELLED") return "CANCELLED";
+  if (isUnsizedPaperClose(t)) {
+    const sign = paperMoveSign(t.direction, t.entryPrice, t.exitPrice!);
+    return sign > 0 ? "WIN" : sign < 0 ? "LOSS" : "BREAKEVEN";
+  }
+  const pnl = t.profitLoss;
   if (pnl > 0.0001) return "WIN";
   if (pnl < -0.0001) return "LOSS";
   return "BREAKEVEN";
@@ -128,7 +142,8 @@ interface AutoDebriefHeuristics {
 
 function deriveHeuristics(args: {
   result: "WIN" | "LOSS" | "BREAKEVEN" | "CANCELLED";
-  pnl: number;
+  /** null = the amount could not be sized; the result is from the price move. */
+  pnl: number | null;
   symbol: string;
   direction: string;
   entryPrice: number;
@@ -167,10 +182,10 @@ function deriveHeuristics(args: {
     mistakeTags.push("TOOK_LOW_CONFIDENCE_TRADE");
 
   if (result === "WIN") {
-    whatWorked.push(`Won ${pnl.toFixed(2)} on ${symbol} ${direction}`);
+    whatWorked.push(pnl != null ? `Won ${pnl.toFixed(2)} on ${symbol} ${direction}` : `Won on ${symbol} ${direction} (P&L not sized)`);
     if (didFollowDecision === true) whatWorked.push("Followed the orchestrator recommendation");
   } else if (result === "LOSS") {
-    whatFailed.push(`Lost ${Math.abs(pnl).toFixed(2)} on ${symbol} ${direction}`);
+    whatFailed.push(pnl != null ? `Lost ${Math.abs(pnl).toFixed(2)} on ${symbol} ${direction}` : `Lost on ${symbol} ${direction} (P&L not sized)`);
     if (decision?.action === "HOLD") whatFailed.push("Took a trade the orchestrator advised HOLD on");
     else if (didFollowDecision === false) whatFailed.push(`Traded ${direction} when orchestrator suggested ${decision?.action ?? "different action"}`);
   } else if (result === "BREAKEVEN") {
@@ -265,9 +280,14 @@ export async function runAutoDebrief(
     log.info("no decision_id linked to trade");
   }
 
-  // 5. Compute derived fields.
-  const pnl = trade.profitLoss;
-  const result = classifyResult(trade.status, pnl);
+  // 5. Compute derived fields. A close whose amount could not be sized
+  // stores profit_loss 0 as a placeholder: its pnl is unknown (null), never
+  // 0, and its result comes from the price move.
+  const pnlSized = !isUnsizedPaperClose(trade);
+  const pnl: number | null = pnlSized ? trade.profitLoss : null;
+  const pnlNote: string | null = pnlSized ? null
+    : "P&L not sized: the simulator could not size this instrument (no contract size or currency conversion), so the 0 stored on the order is a placeholder. The result is from the price move.";
+  const result = classifyResult(trade);
   const openedMs = trade.openedAt.getTime();
   const closedMs = (trade.closedAt ?? new Date()).getTime();
   const holdTimeSeconds = Math.max(0, Math.floor((closedMs - openedMs) / 1000));
@@ -311,6 +331,7 @@ export async function runAutoDebrief(
     action: trade.direction,
     result,
     pnl,
+    pnl_note: pnlNote,
     pnl_percent: pnlPercent,
     entry_price: trade.entryPrice,
     exit_price: trade.exitPrice,

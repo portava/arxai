@@ -2,7 +2,9 @@
 // pendingStatus "EA_UPGRADE_REQUIRED" with a fixed "the MT5 EA does not yet
 // support pending-order execution" reason, without looking at the user's
 // bridge. The draft is never sent to the broker either way; what the status
-// and reason claim about the EA must come from the bridge it reports.
+// and reason claim about the EA must come from the bridge it reports, and
+// must be the answer the submit gate gives for the same bridge (see
+// pendingOrderDraftSurfaceAgreement.test.ts).
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createFakeDb, withRouter } from "./_fakeRouteDb.js";
@@ -62,36 +64,40 @@ async function draft(orderType = "BUY_LIMIT") {
 
 const lastInsertStatus = () => fake.inserts.at(-1)?.values["pendingStatus"];
 
-test("EA reporting pending-order support (legacy key): not 'EA upgrade required'; held by the paper-only lock", async () => {
+test("EA reporting pending-order support (legacy key): not 'EA upgrade required'; held by ARX's read-only, paper-only path", async () => {
   connectionsThrow = false;
   connection = conn({ pendingOrders: true });
   const { body } = await draft();
   assert.equal(body["ok"], true);
-  assert.equal(body["pendingStatus"], "BLOCKED_BY_PAPER_LOCK");
-  assert.equal(lastInsertStatus(), "BLOCKED_BY_PAPER_LOCK");
+  // The submit gate's answer for this bridge (this route's SAFETY inputs).
+  assert.equal(body["pendingStatus"], "READ_ONLY");
+  assert.equal(lastInsertStatus(), "READ_ONLY");
   assert.match(String(body["reason"]), /reports pending-order support/);
+  assert.match(String(body["reason"]), /paper-only/);
   assert.match(String(body["reason"]), /not been sent to your broker/);
   assert.doesNotMatch(String(body["reason"]), /does not yet support/);
 });
 
-test("EA reporting supportsPendingOrders (v1.50 vocabulary) counts as support", async () => {
+test("EA reporting supportsPendingOrders only in the v1.50 list: said as reported, and that the gate does not read it", async () => {
   connection = conn({ v150: { normalized: { supportsPendingOrders: true } } });
   const { body } = await draft();
-  assert.equal(body["pendingStatus"], "BLOCKED_BY_PAPER_LOCK");
+  assert.equal(body["pendingStatus"], "BRIDGE_UNSUPPORTED");
+  assert.match(String(body["reason"]), /reports pending-order support only in its v1\.50 capability list/);
+  assert.doesNotMatch(String(body["reason"]), /does not report pending-order support/);
 });
 
-test("EA that does not report pending-order support: EA_UPGRADE_REQUIRED, said as reported", async () => {
+test("EA that does not report pending-order support: BRIDGE_UNSUPPORTED, said as reported", async () => {
   connection = conn({ marketOrders: true });
   const { body } = await draft();
-  assert.equal(body["pendingStatus"], "EA_UPGRADE_REQUIRED");
-  assert.equal(lastInsertStatus(), "EA_UPGRADE_REQUIRED");
+  assert.equal(body["pendingStatus"], "BRIDGE_UNSUPPORTED");
+  assert.equal(lastInsertStatus(), "BRIDGE_UNSUPPORTED");
   assert.match(String(body["reason"]), /does not report pending-order support/);
 });
 
 test("stop-limit needs the stop-limit capability too", async () => {
   connection = conn({ pendingOrders: true });
   const { body } = await draft("BUY_STOP_LIMIT");
-  assert.equal(body["pendingStatus"], "EA_UPGRADE_REQUIRED");
+  assert.equal(body["pendingStatus"], "BRIDGE_UNSUPPORTED");
   assert.match(String(body["reason"]), /stop-limit/);
 });
 

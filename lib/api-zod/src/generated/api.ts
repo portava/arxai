@@ -3918,9 +3918,21 @@ export const GetBotStatusResponse = zod.object({
   symbol: zod.string(),
   strategy: zod.string(),
   riskMode: zod.enum(["Conservative", "Balanced", "Aggressive"]),
-  isRunning: zod.boolean(),
-  isPaused: zod.boolean(),
+  isRunning: zod
+    .boolean()
+    .describe("Stored bot setting. No order path reads it."),
+  isPaused: zod
+    .boolean()
+    .describe(
+      "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
+    ),
   lastScanAt: zod.string().nullish(),
+  emergencyStopScope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "Who POST \/bot\/emergency-stop halts for this caller. PLATFORM (owner\/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -3940,9 +3952,21 @@ export const UpdateBotStatusResponse = zod.object({
   symbol: zod.string(),
   strategy: zod.string(),
   riskMode: zod.enum(["Conservative", "Balanced", "Aggressive"]),
-  isRunning: zod.boolean(),
-  isPaused: zod.boolean(),
+  isRunning: zod
+    .boolean()
+    .describe("Stored bot setting. No order path reads it."),
+  isPaused: zod
+    .boolean()
+    .describe(
+      "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
+    ),
   lastScanAt: zod.string().nullish(),
+  emergencyStopScope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "Who POST \/bot\/emergency-stop halts for this caller. PLATFORM (owner\/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -3995,7 +4019,17 @@ export const UpdateBotSettingsResponse = zod.object({
 export const EmergencyStopResponse = zod.object({
   success: zod.boolean(),
   message: zod.string(),
-  closedTrades: zod.number(),
+  closedTrades: zod
+    .number()
+    .describe(
+      "Open rows in the legacy simulated trades table that were cancelled. Paper-book and broker positions are not closed and are not counted.",
+    ),
+  scope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -4278,6 +4312,57 @@ export const GetRiskAuditResponse = zod.object({
   openTradesCount: zod.number(),
   losingStreak: zod.number(),
   cooldownActive: zod.boolean(),
+  closedTradesMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when daily \/ weekly loss, the losing streak and the cooldown were measured from closed rows. False or missing means they were not measured and must not be shown as 0 \/ clear.",
+    ),
+  measuredFrom: zod
+    .enum(["LEGACY_TRADES_TABLE"])
+    .optional()
+    .describe(
+      "Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since \/execute-trade was retired.",
+    ),
+  balanceSource: zod
+    .enum(["PLACEHOLDER_1000"])
+    .optional()
+    .describe(
+      "The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.",
+    ),
+  scope: zod
+    .enum(["USER", "ALL_USERS"])
+    .optional()
+    .describe(
+      "USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.",
+    ),
+  tradingHalt: zod
+    .union([
+      zod.object({
+        engaged: zod.boolean(),
+        sources: zod
+          .array(zod.string())
+          .describe(
+            "Engaged switches, platform-wide ones first (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch).",
+          ),
+        reason: zod
+          .string()
+          .nullable()
+          .describe(
+            "Plain-English reason for the first engaged switch. Null when none is engaged.",
+          ),
+        venues: zod
+          .array(zod.enum(["PAPER", "DEMO", "LIVE"]))
+          .describe(
+            "Venues on which new trades are halted. Empty when none is engaged.",
+          ),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them.",
+    ),
 });
 
 /**
@@ -11475,6 +11560,16 @@ export const GetPaperAccountsResponse = zod.object({
       isActive: zod.number(),
       createdAt: zod.string(),
       updatedAt: zod.string(),
+      pnlSizing: zod
+        .object({
+          unsizedClosedOrders: zod.number(),
+          unsizedOpenPositions: zod.number(),
+          note: zod.string().nullable(),
+        })
+        .optional()
+        .describe(
+          "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes and open positions the balance and equity count without a sized P&L.",
+        ),
     }),
   ),
   simulated: zod.boolean().optional(),
@@ -11497,6 +11592,16 @@ export const CreatePaperAccountResponse = zod.object({
   isActive: zod.number(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  pnlSizing: zod
+    .object({
+      unsizedClosedOrders: zod.number(),
+      unsizedOpenPositions: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes and open positions the balance and equity count without a sized P&L.",
+    ),
 });
 
 export const GetActivePaperAccountResponse = zod.object({
@@ -11511,6 +11616,16 @@ export const GetActivePaperAccountResponse = zod.object({
     isActive: zod.number(),
     createdAt: zod.string(),
     updatedAt: zod.string(),
+    pnlSizing: zod
+      .object({
+        unsizedClosedOrders: zod.number(),
+        unsizedOpenPositions: zod.number(),
+        note: zod.string().nullable(),
+      })
+      .optional()
+      .describe(
+        "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes and open positions the balance and equity count without a sized P&L.",
+      ),
   }),
   simulated: zod.boolean().optional(),
   disclaimer: zod.string().optional(),
@@ -13872,6 +13987,12 @@ export const GetSystemStatusResponse = zod.object({
     .string()
     .optional()
     .describe("When activeHalts was read (ISO 8601)."),
+  modeBlockers: zod
+    .record(zod.string(), zod.array(zod.string()))
+    .optional()
+    .describe(
+      "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+    ),
 });
 
 /**
@@ -13960,6 +14081,12 @@ export const EngageKillSwitchResponse = zod.object({
       .string()
       .optional()
       .describe("When activeHalts was read (ISO 8601)."),
+    modeBlockers: zod
+      .record(zod.string(), zod.array(zod.string()))
+      .optional()
+      .describe(
+        "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+      ),
   }),
 });
 
@@ -14018,6 +14145,12 @@ export const ResetKillSwitchResponse = zod.object({
       .string()
       .optional()
       .describe("When activeHalts was read (ISO 8601)."),
+    modeBlockers: zod
+      .record(zod.string(), zod.array(zod.string()))
+      .optional()
+      .describe(
+        "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+      ),
   }),
 });
 
@@ -17095,6 +17228,13 @@ export const CreateMePendingOrderDraftResponse = zod.object({
  */
 export const GetMePendingOrderDraftsResponse = zod.object({
   ok: zod.boolean().optional(),
+  bridgeCheckedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "When the bridge was read for currentPendingStatus; null when it could not be read.",
+    ),
+  bridgeCheckError: zod.string().nullish(),
   drafts: zod
     .array(
       zod.object({
@@ -17113,6 +17253,13 @@ export const GetMePendingOrderDraftsResponse = zod.object({
         status: zod.string().optional(),
         reason: zod.string().nullish(),
         createdAt: zod.coerce.date().optional(),
+        currentPendingStatus: zod
+          .string()
+          .nullish()
+          .describe(
+            "What POST \/me\/pending-order-draft\/{id}\/submit would answer for the user's bridge at bridgeCheckedAt (same resolver). pendingStatus is the stored answer from when the draft was saved or last submitted. Null when the bridge could not be read, or the draft is not in a refusal state (placed, queued, cancelled).",
+          ),
+        currentPendingReason: zod.string().nullish(),
       }),
     )
     .optional(),

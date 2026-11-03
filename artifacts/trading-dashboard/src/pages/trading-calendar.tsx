@@ -13,15 +13,20 @@ interface CalendarDay {
   wins: number;
   losses: number;
   win_rate: number;
-  /** "—" = not rated (the live route computes no day rating). */
-  day_rating: "A" | "B" | "C" | "D" | "F" | "—";
+  /** null = not rated (no rating was computed for this day, e.g. the live route). */
+  day_rating: "A" | "B" | "C" | "D" | "F" | null;
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
 }
+// Totals are null when the server did not compute them (a LIVE_SHARED
+// session, where the paper book is withheld and live trades are not totalled).
 interface CalendarResp {
-  calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number };
+  calendar: { month: string; days: CalendarDay[]; total_pnl: number | null; total_trades: number | null; winning_days: number | null; losing_days: number | null; no_trade_days: number | null };
+  currentAccountMode?: string;
+  liveAggregation?: string;
+  modeNote?: string;
   /**
    * The server answered for a LIVE_SHARED account without reading any trades
    * (an empty, mode-tagged reply). Nothing was looked up, so the page must not
@@ -29,7 +34,12 @@ interface CalendarResp {
    */
   notShownHere?: boolean;
 }
-interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
+interface DayDetailResp { day: { date: string; stats: any; trades: any[] }; currentAccountMode?: string; modeNote?: string }
+
+const NOT_SHOWN = "Not shown";
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
 
 function dayColor(d: CalendarDay) {
   switch (d.day_status) {
@@ -44,7 +54,7 @@ function dayColor(d: CalendarDay) {
 // into the CalendarResp shape the existing UI renders. No paper data in LIVE mode.
 // The route lists only days that had closed trades over the whole from..to
 // range it read, so every other day of the month is a no-trade day. It
-// computes no day rating, so live days are shown as not rated ("—").
+// computes no day rating, so live days are shown as not rated (null).
 function mapLiveToCalendarResp(
   month: string,
   live: { days?: any[]; isEmpty?: boolean; currentAccountMode?: string } | undefined,
@@ -70,15 +80,25 @@ function mapLiveToCalendarResp(
       wins: Number(d.wins ?? 0),
       losses: Number(d.losses ?? 0),
       win_rate: Number(d.winRate ?? 0),
-      day_rating: "—" as const,
+      // The live route computes no day rating; do not invent one.
+      day_rating: null,
       day_status: status,
       debriefs_created: 0,
       learning_events_created: 0,
       symbols_traded: [],
     };
   });
+  // A LIVE_SHARED reply read no trades: its month is unknown (null totals,
+  // no day cells), never a 0.00 month of no-trade days.
+  if (live?.currentAccountMode === "LIVE_SHARED") {
+    return {
+      notShownHere: true,
+      currentAccountMode: "LIVE_SHARED",
+      calendar: { month, days: [], total_pnl: null, total_trades: null, winning_days: null, losing_days: null, no_trade_days: null },
+    };
+  }
   return {
-    notShownHere: live?.currentAccountMode === "LIVE_SHARED",
+    notShownHere: false,
     calendar: {
       month,
       days,
@@ -158,8 +178,8 @@ export default function TradingCalendarPage() {
               net_pnl: Number(d.totalPnl ?? 0),
               total_trades: Number(d.tradesCount ?? 0),
               win_rate: Number(d.winRate ?? 0),
-              profit_factor: "—",
-              day_rating: "—",
+              profit_factor: null,
+              day_rating: null,
               top_lesson: null,
             },
             trades: Array.isArray(d.trades) ? d.trades.map((t: any) => ({
@@ -192,6 +212,12 @@ export default function TradingCalendarPage() {
     },
   });
 
+  // The server withheld the paper book for a live account (or the live route
+  // did not read a shared account) and did not total live trades: show its
+  // note and no numbers, rather than demo copy and 0.00.
+  const totals = calData?.calendar;
+  const totalPnl = num(totals?.total_pnl);
+  const dayLiveWithheld = day.data?.currentAccountMode === "LIVE_SHARED";
   const days = calData?.calendar.days ?? [];
   // Pad start so day-of-week aligns.
   const firstWeekday = days[0] ? new Date(days[0].date + "T00:00:00Z").getUTCDay() : 0;
@@ -209,7 +235,11 @@ export default function TradingCalendarPage() {
               : !mode.isSuccess
               ? "Checking your trading mode…"
               : notShownHere
-              ? "Live trades on your shared account are not shown on this calendar."
+              ? (
+                <span data-testid="calendar-mode-note">
+                  {calData?.modeNote ?? "Live trades on your shared account are not totalled on this calendar, so no figures are shown. They are not zero."}
+                </span>
+              )
               : isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
           </div>
         </div>
@@ -221,7 +251,7 @@ export default function TradingCalendarPage() {
             className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm"
             data-testid="input-month"
           />
-          {mode.isSuccess && !isLive && (
+          {mode.isSuccess && !isLive && !notShownHere && (
             <Button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} data-testid="btn-rebuild">
               <RefreshCcw className={`mr-2 h-4 w-4 ${rebuild.isPending ? "animate-spin" : ""}`} />
               Rebuild saved snapshots
@@ -265,20 +295,20 @@ export default function TradingCalendarPage() {
         </Card>
       )}
 
-      {calData && !notShownHere && (
+      {totals && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
-            <CardContent><div className={`text-xl font-bold ${calData.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{calData.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
+            <CardContent><div data-testid="calendar-total-pnl" className={`text-xl font-bold ${totalPnl == null ? "text-muted-foreground" : totalPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{totalPnl == null ? NOT_SHOWN : totalPnl.toFixed(2)}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Total Trades</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold">{calData.calendar.total_trades}</div></CardContent></Card>
+            <CardContent><div data-testid="calendar-total-trades" className={`text-xl font-bold ${num(totals.total_trades) == null ? "text-muted-foreground" : ""}`}>{num(totals.total_trades) ?? NOT_SHOWN}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Winning Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-emerald-400">{calData.calendar.winning_days}</div></CardContent></Card>
+            <CardContent><div className={`text-xl font-bold ${num(totals.winning_days) == null ? "text-muted-foreground" : "text-emerald-400"}`}>{num(totals.winning_days) ?? NOT_SHOWN}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Losing Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-rose-400">{calData.calendar.losing_days}</div></CardContent></Card>
+            <CardContent><div className={`text-xl font-bold ${num(totals.losing_days) == null ? "text-muted-foreground" : "text-rose-400"}`}>{num(totals.losing_days) ?? NOT_SHOWN}</div></CardContent></Card>
         </div>
       )}
 
-      {isLive && calData && !notShownHere && calData.calendar.total_trades === 0 && (
+      {isLive && calData && !notShownHere && num(calData.calendar.total_trades) === 0 && (
         <Card className="border-border">
           <CardContent className="pt-4 text-sm text-muted-foreground">
             No live trades recorded yet for {month}. Live P&amp;L will appear here once you place and close live trades.
@@ -291,7 +321,7 @@ export default function TradingCalendarPage() {
         <CardContent>
           {cal.isError ? (
             <div className="text-sm text-rose-300" data-testid="calendar-load-error">
-              The calendar for {month} could not be loaded. Nothing is shown rather than an empty month.
+              The calendar for {month} could not be loaded, so no P&amp;L or trade counts are shown. Nothing is shown rather than an empty month.
             </div>
           ) : !calData ? (
             <Skeleton className="h-72 w-full" />
@@ -311,7 +341,7 @@ export default function TradingCalendarPage() {
                   >
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold">{Number(d.date.slice(8))}</span>
-                      {d.day_rating !== "—" && <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>}
+                      {d.day_rating && <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>}
                     </div>
                     <div className="mt-1 text-sm font-bold flex items-center gap-1">
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
@@ -342,20 +372,21 @@ export default function TradingCalendarPage() {
           <CardContent>
             {day.isLoading ? <Skeleton className="h-32 w-full" /> : day.isError ? (
               <div className="text-sm text-rose-300" data-testid="day-load-error">
-                Details for {selectedDate} could not be loaded.
+                Details for {selectedDate} could not be loaded, so no figures are shown.
               </div>
             ) : day.data ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-                  <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{day.data.day.stats.total_trades}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{day.data.day.stats.win_rate.toFixed(1)}%</div></div>
-                  <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor}</div></div>
-                  <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold">{day.data.day.stats.day_rating}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Net P&L</div>{num(day.data.day.stats.net_pnl) == null ? <div className="font-bold text-muted-foreground">—</div> : <div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div>}</div>
+                  <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{num(day.data.day.stats.total_trades) ?? "—"}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{num(day.data.day.stats.win_rate) == null ? "—" : `${day.data.day.stats.win_rate.toFixed(1)}%`}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold">{day.data.day.stats.profit_factor ?? "—"}</div></div>
+                  <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold">{day.data.day.stats.day_rating ?? "Not rated"}</div></div>
                 </div>
+                {dayLiveWithheld && <div className="text-sm text-muted-foreground" data-testid="day-mode-note">{day.data.modeNote ?? "This is a live account. Live trades are not totalled by day here, so no figures are shown. They are not zero."}</div>}
                 {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}
                 <div className="space-y-2">
-                  {day.data.day.trades.length === 0 && <div className="text-muted-foreground text-sm">No trades on this day.</div>}
+                  {day.data.day.trades.length === 0 && !dayLiveWithheld && <div className="text-muted-foreground text-sm">No trades on this day.</div>}
                   {day.data.day.trades.map((t: any) => (
                     <div key={t.trade_id} className="border border-slate-700 rounded p-3 text-sm" data-testid={`trade-row-${t.trade_id}`}>
                       <div className="flex items-center justify-between">

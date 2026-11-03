@@ -149,6 +149,12 @@ export interface OpportunityScore {
      *  The field name is kept for payload-shape compatibility only. */
     aiConfidenceCalibration: number;
   };
+  /**
+   * The score the scan computed, before the timing read's heat boost moved
+   * `score`. Set only by decorateOpportunitiesWithTimingContext. The status
+   * badge was decided on this score and is not recomputed after the boost.
+   */
+  scoreBeforeTiming?: number;
 }
 
 function clamp(n: number, lo: number, hi: number) {
@@ -277,6 +283,8 @@ export interface ScannerOpportunity {
   reasonToAvoid: string;
   rulesPassed: string[];
   rulesFailed: string[];
+  /** Rules that could not be checked (e.g. spread_acceptable with no observed spread). */
+  rulesUnchecked?: string[];
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
   entry: number; stopLoss: number; takeProfit: number;
@@ -528,6 +536,30 @@ export interface ScannerFinalRead {
 /** User-facing banner shown on any simulator-derived (analysis-only) read. */
 export const ANALYSIS_ONLY_LABEL = "ANALYSIS ONLY — SIMULATED DATA";
 
+/**
+ * Why a LOW_OPPORTUNITY_SCORE row is not a trade, in terms of the score the
+ * row shows. The badge was decided on the scan's score; when the timing read
+ * moved the shown score afterwards (possibly above 60), say both numbers and
+ * that the boost does not re-open the row. "No risk rule failed" only names
+ * the rules that were checked.
+ */
+function lowOpportunityScoreReason(opp: ScannerOpportunity): string {
+  const shown = opp.opportunity?.score;
+  const scanned = opp.opportunity?.scoreBeforeTiming ?? shown;
+  const spreadUnchecked = (opp.rulesUnchecked ?? []).includes("spread_acceptable");
+  const rules = spreadUnchecked
+    ? "No checked risk rule failed; the spread was not observed, so the spread rule was not checked."
+    : "No risk rule failed.";
+  if (typeof scanned !== "number" || !Number.isFinite(scanned)) {
+    return `No clean trade right now — the opportunity score at scan time was below the scanner's minimum of 60. ${rules}`;
+  }
+  if (typeof shown === "number" && Number.isFinite(shown) && shown !== scanned) {
+    return `No clean trade right now — the scan's opportunity score was ${scanned}, below the scanner's minimum of 60. ` +
+      `The timing read then moved the score to ${shown}; that does not re-open a setup the scan rejected. ${rules}`;
+  }
+  return `No clean trade right now — the opportunity score ${scanned} is below the scanner's minimum of 60. ${rules}`;
+}
+
 export function computeFinalRead(
   opp: ScannerOpportunity,
 ): ScannerFinalRead {
@@ -576,7 +608,7 @@ export function computeFinalRead(
   } else if (opp.statusBadge === "LOW_OPPORTUNITY_SCORE") {
     // Same non-actionable outcome as before (never raised), with the true cause.
     label = "NO_TRADE";
-    reasons.push("No clean trade right now — the opportunity score at scan time was below the scanner's minimum of 60. No risk rule failed.");
+    reasons.push(lowOpportunityScoreReason(opp));
   } else if (opp.statusBadge === "LOW_CONFIDENCE" && label === "TRADE_WATCH") {
     label = "WAIT_FOR_CONFIRMATION";
     reasons.push("Technical confidence is low.");
@@ -1070,7 +1102,7 @@ export async function decorateOpportunitiesWithTimingContext(
       : "REJECT";
     return {
       ...o,
-      opportunity: { ...o.opportunity, score: boostedScore, label: newLabel },
+      opportunity: { ...o.opportunity, score: boostedScore, label: newLabel, scoreBeforeTiming: o.opportunity.score },
       timingContext: ctx,
     };
   });
@@ -1710,6 +1742,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       riskRewardRatio: a.riskRewardRatio,
       reasonForTrade: displayReasonForTrade, reasonToAvoid: displayReasonToAvoid,
       rulesPassed: a.rulesPassed, rulesFailed: a.rulesFailed,
+      rulesUnchecked: a.rulesUnchecked ?? [],
       statusBadge: statusBadgeFor(a, opp),
       opportunity: opp,
       entry, stopLoss: a.stopLoss, takeProfit: a.takeProfit,

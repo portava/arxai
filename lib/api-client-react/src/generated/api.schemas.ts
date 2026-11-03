@@ -9124,15 +9124,30 @@ export const BotStatusRiskMode = {
   Aggressive: "Aggressive",
 } as const;
 
+/**
+ * Who POST /bot/emergency-stop halts for this caller. PLATFORM (owner/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.
+ */
+export type BotStatusEmergencyStopScope =
+  (typeof BotStatusEmergencyStopScope)[keyof typeof BotStatusEmergencyStopScope];
+
+export const BotStatusEmergencyStopScope = {
+  PLATFORM: "PLATFORM",
+  YOUR_ACCOUNT: "YOUR_ACCOUNT",
+} as const;
+
 export interface BotStatus {
   mode: BotStatusMode;
   symbol: string;
   strategy: string;
   riskMode: BotStatusRiskMode;
+  /** Stored bot setting. No order path reads it. */
   isRunning: boolean;
+  /** Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST /risk/pause) does. */
   isPaused: boolean;
   /** @nullable */
   lastScanAt?: string | null;
+  /** Who POST /bot/emergency-stop halts for this caller. PLATFORM (owner/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch. */
+  emergencyStopScope?: BotStatusEmergencyStopScope;
 }
 
 export type BotStatusUpdateMode =
@@ -9187,10 +9202,24 @@ export interface BotSettingsUpdate {
   scanIntervalSeconds?: number;
 }
 
+/**
+ * PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch.
+ */
+export type EmergencyStopResultScope =
+  (typeof EmergencyStopResultScope)[keyof typeof EmergencyStopResultScope];
+
+export const EmergencyStopResultScope = {
+  PLATFORM: "PLATFORM",
+  YOUR_ACCOUNT: "YOUR_ACCOUNT",
+} as const;
+
 export interface EmergencyStopResult {
   success: boolean;
   message: string;
+  /** Open rows in the legacy simulated trades table that were cancelled. Paper-book and broker positions are not closed and are not counted. */
   closedTrades: number;
+  /** PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch. */
+  scope?: EmergencyStopResultScope;
 }
 
 export type SignalDirection =
@@ -9409,6 +9438,59 @@ export interface RiskLockResult {
   message: string;
 }
 
+/**
+ * Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since /execute-trade was retired.
+ */
+export type RiskAuditMeasuredFrom =
+  (typeof RiskAuditMeasuredFrom)[keyof typeof RiskAuditMeasuredFrom];
+
+export const RiskAuditMeasuredFrom = {
+  LEGACY_TRADES_TABLE: "LEGACY_TRADES_TABLE",
+} as const;
+
+/**
+ * The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.
+ */
+export type RiskAuditBalanceSource =
+  (typeof RiskAuditBalanceSource)[keyof typeof RiskAuditBalanceSource];
+
+export const RiskAuditBalanceSource = {
+  PLACEHOLDER_1000: "PLACEHOLDER_1000",
+} as const;
+
+/**
+ * USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.
+ */
+export type RiskAuditScope =
+  (typeof RiskAuditScope)[keyof typeof RiskAuditScope];
+
+export const RiskAuditScope = {
+  USER: "USER",
+  ALL_USERS: "ALL_USERS",
+} as const;
+
+export type RiskAuditHaltVenuesItem =
+  (typeof RiskAuditHaltVenuesItem)[keyof typeof RiskAuditHaltVenuesItem];
+
+export const RiskAuditHaltVenuesItem = {
+  PAPER: "PAPER",
+  DEMO: "DEMO",
+  LIVE: "LIVE",
+} as const;
+
+export interface RiskAuditHalt {
+  engaged: boolean;
+  /** Engaged switches, platform-wide ones first (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). */
+  sources: string[];
+  /**
+   * Plain-English reason for the first engaged switch. Null when none is engaged.
+   * @nullable
+   */
+  reason: string | null;
+  /** Venues on which new trades are halted. Empty when none is engaged. */
+  venues: RiskAuditHaltVenuesItem[];
+}
+
 export interface RiskAudit {
   passed: boolean;
   reasonsBlocked: string[];
@@ -9422,6 +9504,16 @@ export interface RiskAudit {
   openTradesCount: number;
   losingStreak: number;
   cooldownActive: boolean;
+  /** True when daily / weekly loss, the losing streak and the cooldown were measured from closed rows. False or missing means they were not measured and must not be shown as 0 / clear. */
+  closedTradesMeasured?: boolean;
+  /** Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since /execute-trade was retired. */
+  measuredFrom?: RiskAuditMeasuredFrom;
+  /** The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance. */
+  balanceSource?: RiskAuditBalanceSource;
+  /** USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted. */
+  scope?: RiskAuditScope;
+  /** The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
+  tradingHalt?: RiskAuditHalt | null;
 }
 
 export interface PositionSizeResult {
@@ -10784,6 +10876,16 @@ export interface PropChallengeViolation {
   createdAt: string;
 }
 
+/**
+ * A paper close whose P&L could not be sized for its instrument (no contract size or currency conversion) stores profit_loss 0 as a placeholder, and an open position in such an instrument has no sized unrealized P&L. The balance and equity count them at the paper risk model (price move x lots x 100), not a measured amount; this says how many closes and open positions that covers, with a plain-English note (null when everything was sized).
+ */
+export interface PaperPnlSizing {
+  unsizedClosedOrders: number;
+  unsizedOpenPositions: number;
+  /** @nullable */
+  note: string | null;
+}
+
 export interface PaperAccount {
   id: number;
   /** @nullable */
@@ -10796,6 +10898,8 @@ export interface PaperAccount {
   isActive: number;
   createdAt: string;
   updatedAt: string;
+  /** Present when the account was just valued (GET /paper/accounts/active). Says how many closes and open positions the balance and equity count without a sized P&L. */
+  pnlSizing?: PaperPnlSizing;
 }
 
 export type PaperOrderDirection =
@@ -12129,6 +12233,11 @@ export const SystemStatusAllowedModesItem = {
   LIVE_TRADING: "LIVE_TRADING",
 } as const;
 
+/**
+ * For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST /system/mode, whose refusal carries its own blockers.
+ */
+export type SystemStatusModeBlockers = { [key: string]: string[] };
+
 export interface SystemStatus {
   operationalMode: SystemStatusOperationalMode;
   globalState: string;
@@ -12159,6 +12268,8 @@ export interface SystemStatus {
   activeHaltReasons?: string[];
   /** When activeHalts was read (ISO 8601). */
   activeHaltsCheckedAt?: string;
+  /** For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST /system/mode, whose refusal carries its own blockers. */
+  modeBlockers?: SystemStatusModeBlockers;
 }
 
 export type SetSystemModeBodyMode =
@@ -13777,10 +13888,16 @@ export interface MePendingOrderDraftItem {
   status?: string;
   reason?: string | null;
   createdAt?: string;
+  /** What POST /me/pending-order-draft/{id}/submit would answer for the user's bridge at bridgeCheckedAt (same resolver). pendingStatus is the stored answer from when the draft was saved or last submitted. Null when the bridge could not be read, or the draft is not in a refusal state (placed, queued, cancelled). */
+  currentPendingStatus?: string | null;
+  currentPendingReason?: string | null;
 }
 
 export interface MePendingOrderDraftsResp {
   ok?: boolean;
+  /** When the bridge was read for currentPendingStatus; null when it could not be read. */
+  bridgeCheckedAt?: string | null;
+  bridgeCheckError?: string | null;
   drafts?: MePendingOrderDraftItem[];
 }
 

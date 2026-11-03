@@ -111,3 +111,28 @@ test("the summary says its live / execution / read-only / demo-only flags are no
   assert.equal(typeof body["liveTradingEnabled"], "boolean");
   assert.equal(typeof body["brokerReadOnly"], "boolean");
 });
+
+// getUserActiveConnection only returns a connection with an active bridge
+// token (activeTokenOnly), so a caller who has one HAS a token. A stopped EA
+// is "disconnected" (verify the EA), never "deferred / no bridge token is
+// active / create a bridge token" — that copy hid a real outage.
+test("a user with an active token whose EA stopped heartbeating is disconnected, not deferred", async () => {
+  conns.set(4, { lastHeartbeat: new Date(Date.now() - 30_000) });
+  caller = 4;
+  const body = await summary();
+  assert.equal(body["heartbeatScope"], "your_connection");
+  assert.equal(body["bridgeMode"], "disconnected");
+  assert.doesNotMatch(String(body["reason"]), /no MT5 bridge token is active/i);
+  assert.match(String(body["reason"]), /bridge token is active/i);
+  assert.match(String(body["safestNextStep"]), /verify the EA is running/i);
+  assert.doesNotMatch(String(body["safestNextStep"]), /Create a bridge token/i);
+});
+
+test("a user with no EA connection of their own is told that, about their own account", async () => {
+  caller = 5;
+  const body = await summary();
+  assert.equal(body["heartbeatScope"], "no_connection");
+  assert.equal(body["bridgeMode"], "deferred");
+  assert.match(String(body["reason"]), /no MT5 EA connection of your own/i);
+  assert.match(String(body["safestNextStep"]), /Create a bridge token/i);
+});

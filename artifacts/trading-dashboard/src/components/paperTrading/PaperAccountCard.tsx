@@ -7,6 +7,8 @@ interface PaperAccount {
   isActive: number; createdAt: string;
   /** When the server last valued (marked to market) this account. */
   updatedAt?: string | null;
+  /** Server note when the balance or equity counts P&L that could not be sized. */
+  pnlSizing?: { unsizedClosedOrders: number; unsizedOpenPositions: number; note: string | null };
 }
 
 /**
@@ -110,6 +112,9 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
               {valuedAt ? `Valued at ${valuedAt}` : "Valuation time not reported"}
             </p>
           )}
+          {acc.pnlSizing?.note ? (
+            <p className="text-[10px] text-amber-200" data-testid="paper-account-sizing-note">{acc.pnlSizing.note}</p>
+          ) : null}
         </div>
       ) : data?.account === null ? (
         <div className="space-y-2">
