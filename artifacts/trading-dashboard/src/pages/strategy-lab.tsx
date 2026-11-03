@@ -45,17 +45,29 @@ export function strategyLabResults(summary: Experiment["resultSummary"]): {
   // A summary that ranked a never-replayed scenario (no notReplayed field)
   // has best/worst lines that may name it; re-read them from the replayed rows.
   const rerank = notReplayed.size > 0 && !Array.isArray(summary?.notReplayed);
-  const recommendations = stored.map((r) => {
-    if (!rerank || (r.type !== "BEST_SCENARIO" && r.type !== "WORST_SCENARIO")) return r;
-    const pick = r.type === "BEST_SCENARIO" ? replayedRanking[0] : replayedRanking[replayedRanking.length - 1];
+  // Best/worst need at least two replayed results: one scenario compared with
+  // nothing is neither (older summaries named it both, a loss as "Best"). The
+  // pair collapses into one line saying there is nothing to compare.
+  const comparable = replayedRanking.length >= 2;
+  let collapsed = false;
+  const recommendations: { type: string; message: string }[] = [];
+  for (const r of stored) {
+    const bestOrWorst = r.type === "BEST_SCENARIO" || r.type === "WORST_SCENARIO";
+    if (!bestOrWorst) { recommendations.push(r); continue; }
+    if (!comparable) {
+      if (collapsed) continue;
+      collapsed = true;
+      const only = replayedRanking[0];
+      recommendations.push(only
+        ? { type: "SINGLE_SCENARIO", message: `Only one scenario was replayed (${only.scenarioId}, net ${only.netPnl}), so there is nothing to compare.` }
+        : { type: "NO_SCENARIO_REPLAYED", message: "No scenario in this experiment was replayed, so there is nothing to compare." });
+      continue;
+    }
+    if (!rerank) { recommendations.push(r); continue; }
+    const pick = r.type === "BEST_SCENARIO" ? replayedRanking[0]! : replayedRanking[replayedRanking.length - 1]!;
     const word = r.type === "BEST_SCENARIO" ? "Best" : "Worst";
-    return {
-      type: r.type,
-      message: pick
-        ? `${word} scenario: ${pick.scenarioId} with net ${pick.netPnl} (over replayed scenarios only)`
-        : `${word} scenario: none — no scenario in this experiment was replayed`,
-    };
-  });
+    recommendations.push({ type: r.type, message: `${word} scenario: ${pick.scenarioId} with net ${pick.netPnl} (over replayed scenarios only)` });
+  }
   return { rows, notReplayed: [...notReplayed], recommendations };
 }
 

@@ -12,13 +12,14 @@ mock.method(database.pool, "query", () => { throw new Error("Unexpected database
 mock.method(database.pool, "connect", () => { throw new Error("Unexpected database access"); });
 
 const updates: Array<Record<string, unknown>> = [];
+let scenarioIds = ["a", "b"];
 const fakeDb = {
   select: () => ({
     from: () => ({
       where: () => ({
         limit: async () => [{
           experimentId: "exp_1", title: "t", symbol: "EURUSD", timeframe: "M5", playbookEntryId: "",
-          scenarioIds: ["a", "b"], settings: {}, resultSummary: {}, status: "PENDING",
+          scenarioIds, settings: {}, resultSummary: {}, status: "PENDING",
         }],
       }),
     }),
@@ -27,13 +28,13 @@ const fakeDb = {
 };
 mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 mock.module("../scenarios.js", {
-  namedExports: { getScenario: async (id: string) => (id === "a" ? { scenarioId: "a" } : null) },
+  namedExports: { getScenario: async (id: string) => (id === "a" || id === "c" ? { scenarioId: id } : null) },
 });
 mock.module("../engine.js", {
   namedExports: {
-    runReplay: async () => ({ replayRunId: "r1" }),
-    generateReplayReport: async () => ({
-      total_trades: 3, wins: 1, net_pnl: -5, win_rate: 33, profit_factor: 0.5,
+    runReplay: async (scenario: { scenarioId: string }) => ({ replayRunId: `r-${scenario.scenarioId}` }),
+    generateReplayReport: async (_run: unknown, scenario: { scenarioId: string }) => ({
+      total_trades: 3, wins: 1, net_pnl: scenario.scenarioId === "c" ? 7 : -5, win_rate: 33, profit_factor: 0.5,
       replay_report_id: "rr1", should_promote_to_playbook: false, should_mark_for_review: true,
     }),
   },
@@ -47,11 +48,14 @@ test("a scenario that was not replayed is not ranked or named best/worst", async
   assert.deepEqual(ranking.map((r) => r.scenarioId), ["a"]);
   assert.deepEqual(summary["notReplayed"], ["b"]);
   const recs = summary["recommendations"] as Array<{ type: string; message: string }>;
-  const best = recs.find((r) => r.type === "BEST_SCENARIO")!;
-  assert.match(best.message, /Best scenario: a with net -5/);
-  for (const r of recs.filter((x) => x.type === "BEST_SCENARIO" || x.type === "WORST_SCENARIO")) {
-    assert.doesNotMatch(r.message, /\bb\b with net 0/);
-  }
+  // One replayed scenario was compared with nothing: it is neither "Best" nor
+  // "Worst" (a losing scenario called "Best"), and the missing one is never named.
+  assert.equal(recs.find((r) => r.type === "BEST_SCENARIO"), undefined);
+  assert.equal(recs.find((r) => r.type === "WORST_SCENARIO"), undefined);
+  const only = recs.find((r) => r.type === "SINGLE_SCENARIO");
+  assert.ok(only, "the single replayed scenario is reported once");
+  assert.equal(only!.message, "Only one scenario was replayed (a, net -5), so there is nothing to compare.");
+  for (const r of recs) assert.doesNotMatch(r.message, /\bb\b with net 0/);
   const nr = recs.find((r) => r.type === "NOT_REPLAYED");
   assert.ok(nr, "the missing scenario is disclosed");
   assert.match(nr!.message, /1 scenario was not found and was not replayed: b/);
@@ -59,4 +63,13 @@ test("a scenario that was not replayed is not ranked or named best/worst", async
   const per = summary["perScenario"] as Array<{ scenarioId: string; replayRunId: string }>;
   assert.equal(per.find((p) => p.scenarioId === "b")!.replayRunId, "");
   assert.equal(updates.at(-1)!.status, "COMPLETED");
+});
+
+test("two replayed scenarios are named best and worst", async () => {
+  scenarioIds = ["a", "c"];
+  const summary = await runExperiment("exp_1", 7) as Record<string, unknown>;
+  const recs = summary["recommendations"] as Array<{ type: string; message: string }>;
+  assert.equal(recs.find((r) => r.type === "BEST_SCENARIO")!.message, "Best scenario: c with net 7");
+  assert.equal(recs.find((r) => r.type === "WORST_SCENARIO")!.message, "Worst scenario: a with net -5");
+  assert.equal(recs.find((r) => r.type === "SINGLE_SCENARIO"), undefined);
 });

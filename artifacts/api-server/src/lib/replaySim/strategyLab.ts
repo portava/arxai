@@ -115,8 +115,15 @@ async function runExperimentBody(
   const recommendations: { type: string; message: string }[] = [];
   if (perScenario.every(p => p.promote)) recommendations.push({ type: "PROMOTE_ALL", message: "Setup promoted across every scenario in this experiment (REPLAY-only evidence)." });
   if (perScenario.every(p => p.review))  recommendations.push({ type: "REVIEW_ALL",  message: "Setup flagged for REVIEW across every scenario." });
-  if (ranking[0])                        recommendations.push({ type: "BEST_SCENARIO", message: `Best scenario: ${ranking[0].scenarioId} with net ${ranking[0].netPnl}` });
-  if (ranking[ranking.length - 1])       recommendations.push({ type: "WORST_SCENARIO", message: `Worst scenario: ${ranking[ranking.length - 1].scenarioId} with net ${ranking[ranking.length - 1].netPnl}` });
+  // Best/worst need at least two replayed results to compare; one scenario is
+  // not both "best" and "worst" (a losing scenario must not read "Best").
+  if (ranking.length >= 2) {
+    const best = ranking[0]!, worst = ranking[ranking.length - 1]!;
+    recommendations.push({ type: "BEST_SCENARIO", message: `Best scenario: ${best.scenarioId} with net ${best.netPnl}` });
+    recommendations.push({ type: "WORST_SCENARIO", message: `Worst scenario: ${worst.scenarioId} with net ${worst.netPnl}` });
+  } else if (ranking.length === 1) {
+    recommendations.push({ type: "SINGLE_SCENARIO", message: `Only one scenario was replayed (${ranking[0]!.scenarioId}, net ${ranking[0]!.netPnl}), so there is nothing to compare.` });
+  }
   if (notReplayed.length > 0) {
     recommendations.push({
       type: "NOT_REPLAYED",
