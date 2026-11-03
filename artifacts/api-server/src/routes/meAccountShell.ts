@@ -68,7 +68,9 @@ export type AccountShellResponse = {
   // user's own trading mode (DISABLED → RESTRICTED), the platform emergency
   // stop when it halts this user's orders (demo / live → PAUSED), an
   // operator allocation freeze (→ PAUSED) and, for a live shared-master
-  // user, no allocation assigned (→ PAUSED). Display only; the order paths
+  // user, a master-live status that is not APPROVED (PENDING_REQUEST →
+  // WAITING_APPROVAL, DENIED / REVOKED → PAUSED) or no allocation assigned
+  // (→ PAUSED). Display only; the order paths
   // enforce these themselves. The reason names only the checks that ran.
   accountTradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
   accountTradingStatusReason: string;
@@ -523,11 +525,27 @@ export async function computeAccountShell(
     const allocationAssigned = hasAlloc && totalAlloc > 0;
     const sharedMaster = accountMode === "SHARED_MASTER_MT5";
     const liveAllocationMissing = sharedMaster && perUserTradingMode === "LIVE" && !allocationAssigned;
+    // Stored master-live statuses that tradingStatus leaves at ACTIVE but the
+    // master-live access gate refuses (PENDING_REQUEST, DENIED, REVOKED, or
+    // anything else not APPROVED): say what is true, and do not show a live
+    // shared-master user ACTIVE. Display only; tradingStatus is unchanged.
+    const sharedApprovalNotGranted = sharedMaster && tradingStatus === "ACTIVE" && approvalStatus !== "APPROVED";
+    const sharedApprovalLine = !sharedApprovalNotGranted
+      ? null
+      : String(approvalStatus) === "PENDING_REQUEST"
+        ? "Your request for shared-master live access is waiting for operator review: live orders on the shared master account are refused until an operator approves it."
+        : String(approvalStatus) === "DENIED"
+          ? "Your request for shared-master live access was denied: live orders on the shared master account are refused."
+          : String(approvalStatus) === "REVOKED"
+            ? "Your shared-master live access was revoked: live orders on the shared master account are refused."
+            : `Your shared-master live access is not approved (status ${String(approvalStatus)}): live orders on the shared master account are refused.`;
+    const liveApprovalMissing = sharedApprovalNotGranted && perUserTradingMode === "LIVE";
     const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
       tradingStatus !== "ACTIVE" ? tradingStatus
         : perUserTradingMode === "DISABLED" ? "RESTRICTED"
         : stopHaltsUser ? "PAUSED"
         : fullFreeze ? "PAUSED"
+        : liveApprovalMissing ? (String(approvalStatus) === "PENDING_REQUEST" ? "WAITING_APPROVAL" : "PAUSED")
         : liveAllocationMissing ? "PAUSED"
         : "ACTIVE";
     const accountTradingStatusReason = (() => {
@@ -548,12 +566,13 @@ export async function computeAccountShell(
         return `${userStop.sources.map((src) => describeStop(userStop, src)).join("; ")}: ${what}`;
       }
       if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
+      if (liveApprovalMissing) return sharedApprovalLine!;
       const noAllocationLine = "No allocation is assigned to you yet: live orders on the shared master account are refused until an operator assigns one.";
       if (liveAllocationMissing) return noAllocationLine;
-      // Name only the checks that ran: shared-master approval applies to
-      // shared-master accounts, an allocation only when one is assigned.
+      // Name only the checks that ran and passed: shared-master approval
+      // only when it is APPROVED, an allocation only when one is assigned.
       const checked = ["the platform mode", "your trading mode"];
-      if (sharedMaster) checked.push("your shared-master approval");
+      if (sharedMaster && approvalStatus === "APPROVED") checked.push("your shared-master approval");
       if (allocationAssigned) checked.push("your allocation");
       const checkedList = checked.length > 1
         ? `${checked.slice(0, -1).join(", ")} and ${checked[checked.length - 1]}`
@@ -565,6 +584,7 @@ export async function computeAccountShell(
         : "The platform emergency stop and the safety-core kill switch are released.";
       return [
         allowLine,
+        ...(sharedApprovalLine ? [sharedApprovalLine] : []),
         ...(sharedMaster && !allocationAssigned ? [noAllocationLine] : []),
         stopLine,
         "Your own kill switch and risk limits are checked on every order and are not part of this status.",

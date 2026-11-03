@@ -399,3 +399,45 @@ test("the safety-core kill switch halts every venue, paper included: the badge r
   assert.equal(released.accountTradingStatus, "ACTIVE");
   assert.match(released.accountTradingStatusReason, /platform emergency stop and the safety-core kill switch are released/);
 });
+
+test("a revoked, denied or pending shared-master approval is never named as allowing trading; live users are not shown ACTIVE", async () => {
+  platformMode = "LIVE";
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  tables.virtual_trading_accounts = [{ virtualBalance: 1000, virtualEquity: 1000, virtualMarginUsed: 0, virtualPnl: 0, status: "active", sharedMasterAccountId: 3 }];
+
+  const cases: Array<[string, RegExp, string]> = [
+    ["REVOKED", /shared-master live access was revoked/, "PAUSED"],
+    ["DENIED", /shared-master live access was denied/, "PAUSED"],
+    ["PENDING_REQUEST", /waiting for operator review/, "WAITING_APPROVAL"],
+  ];
+  for (const [status, line, liveBadge] of cases) {
+    tables.user_master_live_access = [{ masterLiveStatus: status }];
+
+    // LIVE: the master-live access gate refuses every live order for these statuses.
+    tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+    const live = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+    assert.equal(live.approvalStatus, status);
+    assert.equal(live.tradingStatus, "ACTIVE", "the mode resolver's input is unchanged");
+    assert.equal(live.accountTradingStatus, liveBadge, `${status}: a live shared-master user is not shown ACTIVE`);
+    assert.doesNotMatch(live.accountTradingStatusReason, /approval allow/, `${status}: a failed approval is not named as passed`);
+    assert.match(live.accountTradingStatusReason, line);
+    assert.match(live.accountTradingStatusReason, /live orders on the shared master account are refused/);
+
+    // DEMO: no master-live gate on demo orders, so the badge may stay ACTIVE —
+    // but the reason still never names the approval as passed.
+    tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+    const demo = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+    assert.equal(demo.accountTradingStatus, "ACTIVE");
+    assert.doesNotMatch(demo.accountTradingStatusReason, /approval allow/);
+    assert.match(demo.accountTradingStatusReason, line);
+  }
+
+  // APPROVED: the approval is named as checked.
+  tables.user_master_live_access = [{ masterLiveStatus: "APPROVED" }];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  const approved = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(approved.accountTradingStatus, "ACTIVE");
+  assert.match(approved.accountTradingStatusReason, /your shared-master approval/);
+  assert.doesNotMatch(approved.accountTradingStatusReason, /refused/);
+});
