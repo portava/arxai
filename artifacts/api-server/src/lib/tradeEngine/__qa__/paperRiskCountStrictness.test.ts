@@ -106,9 +106,9 @@ test("per close: the risk count is never above the booked amount nor the 16c8a1a
 });
 
 test("an index close with a small booked loss still counts at the 16c8a1a0 figure in the daily-loss total; the booked figure is unchanged", async () => {
-  assert.equal(bookedRealizedOf(INDEX_LOSS), -5, "the P&L shown and the balance stay the booked −5");
-  assert.equal(realizedOf(INDEX_LOSS), at16c8a1a0(INDEX_LOSS as never), "counts −500, as at 16c8a1a0");
-  assert.equal(realizedOf(FX_WIN), at16c8a1a0(FX_WIN as never), "a win booked above the model counts only at the model");
+  assert.equal(bookedRealizedOf(INDEX_LOSS as never), -5, "the P&L shown and the balance stay the booked −5");
+  assert.equal(realizedOf(INDEX_LOSS as never), at16c8a1a0(INDEX_LOSS as never), "counts −500, as at 16c8a1a0");
+  assert.equal(realizedOf(FX_WIN as never), at16c8a1a0(FX_WIN as never), "a win booked above the model counts only at the model");
   fake = createFakeDb({ paper_orders: [INDEX_LOSS, FX_WIN] });
   const total = await sumPaperRealizedSince({ account: 3 }, minsAgo(60));
   assert.ok(Math.abs(total - (-500 + (1.101 - 1.1) * 100)) < 1e-9, `daily total ${total}`);
