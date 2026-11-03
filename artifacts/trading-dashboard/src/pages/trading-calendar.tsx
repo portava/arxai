@@ -335,9 +335,15 @@ export default function TradingCalendarPage() {
                   {calData?.modeNote ?? "Live trades on your shared account are not totalled on this calendar, so no figures are shown. They are not zero."}
                 </span>
               )
+              // Which ledger is read (or withheld, for a shared live account)
+              // is only known from the calendar reply; none is named before it.
+              : !calData
+              ? (cal.isError
+                ? "Which trades this calendar reads is not known, because it did not load."
+                : "Checking which trades this calendar reads…")
               : isLive ? "Daily P&L and win rate from your closed live trades." : "Daily P&L, win rate, and AI activity from your simulated orders."}
           </div>
-          {mode.isSuccess && !notShownHere && (
+          {mode.isSuccess && calData && !notShownHere && (
             <div className="text-xs text-muted-foreground mt-1" data-testid="calendar-source-note">
               {calData?.calendar?.source_note ?? (isLive ? LIVE_SOURCE_NOTE : DEMO_SOURCE_NOTE)}
               {!isLive && (
@@ -357,7 +363,9 @@ export default function TradingCalendarPage() {
             className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm"
             data-testid="input-month"
           />
-          {mode.isSuccess && !isLive && !notShownHere && (
+          {/* Shown once the reply says the paper ledger is read here (not
+              withheld for a shared live account). */}
+          {mode.isSuccess && calData && !isLive && !notShownHere && (
             <Button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} data-testid="btn-rebuild">
               <RefreshCcw className={`mr-2 h-4 w-4 ${rebuild.isPending ? "animate-spin" : ""}`} />
               Rebuild saved snapshots
