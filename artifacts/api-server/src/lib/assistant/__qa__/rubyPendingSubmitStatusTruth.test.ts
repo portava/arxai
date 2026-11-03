@@ -92,3 +92,19 @@ test("Ruby's prompt and tool descriptions do not call READ_ONLY an account lock 
   assert.match(describe("getMyPendingOrderDrafts"), /currentSubmitExplanation/);
   assert.match(describe("getBridgeCapabilities"), /same answer as the pending-order page/);
 });
+
+// bridgeConnected is the shared heartbeat policy (online under 60 s), and the
+// same description says BRIDGE_DISCONNECTED means "no heartbeat in the last
+// minute", yet it told Ruby bridgeConnected was true "within the last ~90s".
+// With a heartbeat 75 s old Ruby got bridgeConnected:false and a 90 s window.
+test("Ruby is told the bridgeConnected window the tool actually uses (60 seconds)", async () => {
+  const { MT5_HEARTBEAT_OFFLINE_AT_SECONDS } = await import("@workspace/domain/broker-health/heartbeatPolicy");
+  const describe = String((TOOL_DEFINITIONS as unknown as Array<{ name: string; description: string }>)
+    .find((t) => t.name === "getBridgeCapabilities")?.description);
+  assert.doesNotMatch(describe, /~90s|90 ?s(econds)?/);
+  assert.match(describe, new RegExp(`bridgeConnected \\(bool, true only if a heartbeat arrived within the last ${MT5_HEARTBEAT_OFFLINE_AT_SECONDS} seconds`));
+
+  connection = { ...upgradedEa(), lastHeartbeat: new Date(Date.now() - 75_000) };
+  const out = await getBridgeCapabilitiesTool(7, FAIL_CLOSED_ENVELOPE as Env) as Record<string, unknown>;
+  assert.equal(out.bridgeConnected, false, "75 s old is outside the window the description now states");
+});
