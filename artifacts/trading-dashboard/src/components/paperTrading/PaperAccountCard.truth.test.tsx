@@ -77,7 +77,14 @@ describe("PaperAccountCard truth", () => {
     } } });
     mountTruth();
     await waitFor(() => expect(screen.getByTestId("paper-account-price-source").textContent).toMatch(/synthetic, generated — not a market quote/));
-    expect(screen.getByTestId("paper-account-price-source").textContent).toMatch(/2 closed orders were priced by the simulator/);
+    const source = screen.getByTestId("paper-account-price-source").textContent ?? "";
+    expect(source).toMatch(/2 closed orders were opened at the simulator's synthetic price, so the balance includes synthetic results/);
+    // Was "Stops and targets are settled against it" and "2 closed orders were priced by the
+    // simulator": the paper execution monitor can settle the same orders at a market price.
+    expect(source).not.toMatch(/settled against it/);
+    expect(source).not.toMatch(/priced by the simulator/);
+    expect(source).toMatch(/also against market data by the paper execution monitor when it runs/);
+    expect(source).toMatch(/an exit may have been the simulator's price or a market price \(the order does not record which\)/);
     const units = screen.getByTestId("paper-account-units").textContent ?? "";
     expect(units).toMatch(/simulated USD, not money/);
     expect(units).toMatch(/sized from the instrument's contract size/);

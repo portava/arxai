@@ -51,15 +51,19 @@ function readFailureCopy(err: unknown): string {
 /** Plain-English line for where the account's prices came from. */
 export function paperPriceSourceLine(v: PaperValuation | undefined): string {
   if (!v) return "Price source not reported by the server. Orders opened without a market quote are valued at the simulator's synthetic price, not a market quote.";
+  // The paper execution monitor also checks every open order's stop and target
+  // against market data and settles at a market price, so a simulator-priced
+  // order's exit is not necessarily the simulator's price.
+  const monitor = " Stops and targets are checked against it, and also against market data by the paper execution monitor when it runs.";
   const open = v.priceSource === "SIMULATOR"
-    ? "Prices: simulator (synthetic, generated — not a market quote). Stops and targets are settled against it."
+    ? `Prices: simulator (synthetic, generated — not a market quote).${monitor}`
     : v.priceSource === "MIXED"
-    ? `Prices: ${v.openPricedBySimulator} of ${v.openOrders} open orders at the simulator's synthetic price (not a market quote), the rest at a market quote.`
+    ? `Prices: ${v.openPricedBySimulator} of ${v.openOrders} open orders at the simulator's synthetic price (not a market quote), the rest at a market quote.${monitor}`
     : v.priceSource === "MARKET_QUOTE"
     ? "Prices: open orders valued at a current market quote."
     : "No open orders.";
   const closed = v.closedSimulatorPriced > 0
-    ? ` ${v.closedSimulatorPriced} closed order${v.closedSimulatorPriced === 1 ? " was" : "s were"} priced by the simulator, so the balance includes synthetic results.`
+    ? ` ${v.closedSimulatorPriced} closed order${v.closedSimulatorPriced === 1 ? " was" : "s were"} opened at the simulator's synthetic price, so the balance includes synthetic results; an exit may have been the simulator's price or a market price (the order does not record which).`
     : "";
   return open + closed;
 }
