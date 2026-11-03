@@ -169,7 +169,10 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
         <p className="text-sm text-slate-400">No report for this symbol yet. Click "Run scan" to generate one.</p>
       )}
 
-      {r && !measured && (
+      {/* Only a report with a timeframe that was really not observed (too few
+          candles) or labelled INSUFFICIENT_DATA; a not-current report has its
+          own block below and is not a not-enough-data report. */}
+      {r && !observed && (
         <>
           <div className="flex flex-wrap items-center gap-3" data-testid="mtf-insufficient">
             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${LABEL_STYLES.INSUFFICIENT_DATA}`}>

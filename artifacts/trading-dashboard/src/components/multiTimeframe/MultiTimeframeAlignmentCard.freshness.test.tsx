@@ -59,6 +59,9 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     expect(text).not.toMatch(/Suggested bias/);
     expect(text).not.toMatch(/is in uptrend/);
     expect(text).toContain(WARNING);
+    // The candles were plentiful (120 per timeframe): not a not-enough-data report.
+    expect(screen.queryByTestId("mtf-insufficient")).toBeNull();
+    expect(text).not.toMatch(/NOT ENOUGH DATA|Not enough candles|Alignment not measured/);
   });
 
   it("each timeframe tile names its newest bar time and whether it is current", async () => {
@@ -104,6 +107,16 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     expect(text).not.toMatch(/Best bias/);
     expect(text).not.toMatch(/Alignment\s*82\/100/);
     expect(text).toMatch(/H1 newest bar is not current/);
+    expect(screen.queryByTestId("mtf-insufficient")).toBeNull();
+    expect(text).not.toMatch(/NOT ENOUGH DATA|Not enough candles|Alignment not measured/);
+  });
+
+  it("a not-current report with a timeframe short of candles shows the not-enough-data block", async () => {
+    const short = { ...snap("SIDEWAYS", "2026-10-24T20:00:00.000Z", "STALE"), candlesUsed: 4 };
+    renderWith(report({ higherTrend: short }));
+    const block = await screen.findByTestId("mtf-insufficient");
+    expect(block.textContent).toMatch(/NOT ENOUGH DATA/);
+    expect(document.body.textContent).toMatch(/Not enough candles were received for H4 \(4\)/);
   });
 
   it("an older report without bar times says their age was not recorded", async () => {
