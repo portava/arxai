@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Send } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { safeDate } from "@/lib/safeFormat";
 
 // "Convert" does not execute anything. POST /trade-plans/:id/convert creates a
@@ -120,6 +120,21 @@ export function SentToConfirmationStatus({ confirmationId }: { confirmationId: n
     },
     refetchInterval: 30_000,
   });
+  // The row does not change when it expires (the read does not sweep expiry),
+  // so a refetch of the same row does not re-render this component. While the
+  // request is waiting, a timer re-renders it just after its expiry so the
+  // text turns to "Expired" on time instead of saying it is still waiting.
+  const [tick, setTick] = useState(0);
+  const waitingUntilMs = q.data && (q.data.status === "PENDING" || q.data.status === "CONFIRMED")
+    ? new Date(q.data.expiresAtIso).getTime()
+    : NaN;
+  useEffect(() => {
+    if (!Number.isFinite(waitingUntilMs)) return;
+    const delay = waitingUntilMs - Date.now();
+    if (delay < 0) return;
+    const t = setTimeout(() => setTick((n) => n + 1), Math.min(delay + 250, 2_147_000_000));
+    return () => clearTimeout(t);
+  }, [waitingUntilMs, tick]);
   const state = q.data ? describeRequest(q.data, Date.now()) : null;
   return (
     <div className="rounded-md border border-indigo-700 bg-indigo-950/40 p-3 text-sm text-indigo-200">
