@@ -479,10 +479,12 @@ function plural(n: number, one: string, many: string): string {
 
 /**
  * Why the Builder has no pick, from what was actually evaluated. A market
- * with no live read, no fresh price / broker specs (AWAITING_DATA), or that
- * is closed / not tradeable was never checked against the user's goal, so
- * "nothing matches your target" (and "try a smaller target") is only said
- * when at least one market was evaluated on live data.
+ * with no live read, no fresh price, not enough verified candles or no broker
+ * specs (AWAITING_DATA), that is closed / not tradeable, or whose scheduled
+ * news risk could not be checked (newsRiskUnchecked: the engine fails closed
+ * on it) was never checked against the user's goal, so "nothing matches your
+ * target" (and "try a smaller target") is only said when at least one market
+ * was evaluated on live data.
  */
 export function builderNoTradeReason(
   evaluated: ScalpResult[],
@@ -493,19 +495,36 @@ export function builderNoTradeReason(
   if (n === 0) {
     return `No market in this group returned a live read just now, so nothing was checked against ${goalText}. This is missing data, not a verdict on ${goalText}. Try again shortly.`;
   }
-  const noData = evaluated.filter((r) => r.status === "AWAITING_DATA").length;
+  const awaiting = evaluated.filter((r) => r.status === "AWAITING_DATA");
+  const noLivePrice = awaiting.filter((r) => r.rejectReason === "NO_SCANNER_READ" || r.rejectReason === "NOT_LIVE").length;
+  const fewCandles = awaiting.filter((r) => r.rejectReason === "INSUFFICIENT_DATA").length;
+  const noSpecs = awaiting.filter((r) => r.rejectReason === "NO_SPECS").length;
+  const noDataOther = awaiting.length - noLivePrice - fewCandles - noSpecs;
   const notTradeable = evaluated.filter(
     (r) => r.status === "MARKET_CLOSED" || r.status === "SYMBOL_NOT_TRADEABLE",
   ).length;
-  const checked = n - noData - notTradeable;
+  // Not already counted above, and its scheduled-news check did not run.
+  const newsUnchecked = evaluated.filter(
+    (r) => r.status !== "AWAITING_DATA" && r.status !== "MARKET_CLOSED"
+      && r.status !== "SYMBOL_NOT_TRADEABLE" && r.newsRiskUnchecked === true,
+  ).length;
+  const checked = n - awaiting.length - notTradeable - newsUnchecked;
+  const newsWhy = "the economic calendar or news lookup did not answer";
   if (checked === 0) {
     const why: string[] = [];
-    if (noData > 0) why.push(`${noData} had no live price or broker specs`);
+    if (noLivePrice > 0) why.push(`${noLivePrice} had no live price`);
+    if (fewCandles > 0) why.push(`${fewCandles} did not have enough verified candles`);
+    if (noSpecs > 0) why.push(`${noSpecs} had no broker symbol details`);
+    if (noDataOther > 0) why.push(`${noDataOther} had no live price or broker specs`);
     if (notTradeable > 0) why.push(`${plural(notTradeable, "is", "are")} closed or not tradeable`);
+    if (newsUnchecked > 0) why.push(`${newsUnchecked} could not be checked for scheduled news because ${newsWhy}`);
     return `None of the ${plural(n, "market", "markets")} in this group could be evaluated right now (${why.join(", ")}), so nothing was checked against ${goalText}. This is missing data, not a verdict on ${goalText}.`;
   }
   const skipped = n - checked;
-  return `${checked} of ${plural(n, "market", "markets")} had live data to evaluate${skipped > 0 ? ` (${skipped} could not be evaluated)` : ""}; none gave a clean scalp for ${goalText} right now. Try a wider market group or a different mode${goal === "target" ? ", or a smaller target" : ""}.`;
+  const newsNote = newsUnchecked > 0
+    ? ` ${plural(newsUnchecked, "market", "markets")} could not be checked for scheduled news because ${newsWhy}, so ${newsUnchecked === 1 ? "it was" : "they were"} not offered.`
+    : "";
+  return `${checked} of ${plural(n, "market", "markets")} had live data to evaluate${skipped > 0 ? ` (${skipped} could not be evaluated)` : ""}; none gave a clean scalp for ${goalText} right now.${newsNote} Try a wider market group or a different mode${goal === "target" ? ", or a smaller target" : ""}.`;
 }
 
 export interface ScalpRankArgs {
