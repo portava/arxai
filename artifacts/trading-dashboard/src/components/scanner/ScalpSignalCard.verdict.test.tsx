@@ -369,3 +369,33 @@ describe("ScalpSignalCard — no calendar configured", () => {
     expect(textOf(container)).not.toMatch(/news\s*LOW/i);
   });
 });
+
+// Round 3 pass 3: a reject's spreadRisk / slippageRisk "LOW" is the engine's
+// placeholder, not a reading. The chips must not show it.
+describe("ScalpSignalCard — spread / slippage chips on a rejected scalp", () => {
+  it("SPREAD_TOO_WIDE shows the spread as too wide, never LOW", () => {
+    const { container } = render(
+      <ScalpSignalCard result={makeResult({ status: "SPREAD_TOO_WIDE", direction: null, canBuildTrade: false })} onBuild={() => {}} />,
+    );
+    expect(container.querySelector('[data-testid="scalp-spread-risk"]')?.textContent).toBe("Too wide");
+    expect(container.querySelector('[data-testid="scalp-slippage-risk"]')?.textContent).toBe("Not read");
+  });
+
+  it("a reject that never read the spread shows both chips as not read", () => {
+    for (const result of [
+      makeResult({ status: "NO_CLEAN_SCALP", direction: null, canBuildTrade: false, spreadNotRead: true } as Partial<ScalpResult>),
+      makeResult({ status: "MARKET_CLOSED", direction: null, canBuildTrade: false }),
+    ]) {
+      const { container, unmount } = render(<ScalpSignalCard result={result} onBuild={() => {}} />);
+      expect(container.querySelector('[data-testid="scalp-spread-risk"]')?.textContent, result.status).toBe("Not read");
+      expect(container.querySelector('[data-testid="scalp-slippage-risk"]')?.textContent, result.status).toBe("Not read");
+      unmount();
+    }
+  });
+
+  it("a read scalp keeps its bands", () => {
+    const { container } = render(<ScalpSignalCard result={makeResult({ spreadRisk: "MEDIUM" })} onBuild={() => {}} />);
+    expect(container.querySelector('[data-testid="scalp-spread-risk"]')?.textContent).toBe("MEDIUM");
+    expect(container.querySelector('[data-testid="scalp-slippage-risk"]')?.textContent).toBe("LOW");
+  });
+});

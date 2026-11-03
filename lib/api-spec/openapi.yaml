@@ -23460,6 +23460,15 @@ components:
             must then not name a currency.
         spreadRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
         slippageRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        spreadNotRead:
+          type: boolean
+          description: >-
+            True when the engine turned the scalp down before it read the
+            spread (no live price or data, market closed, not tradeable, no
+            clear direction, stop inside noise, missing broker specs).
+            spreadRisk and slippageRisk are then placeholders, not
+            observations, and must not be shown. Absent when they were read,
+            and from older servers. Display only; no decision reads it.
         newsRisk: { type: string, enum: [LOW, MEDIUM, HIGH] }
         newsRiskUnchecked:
           type: boolean

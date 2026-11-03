@@ -15353,6 +15353,8 @@ export interface ScalpResult {
   moneyCurrency?: string | null;
   spreadRisk: ScalpResultSpreadRisk;
   slippageRisk: ScalpResultSlippageRisk;
+  /** True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it. */
+  spreadNotRead?: boolean;
   newsRisk: ScalpResultNewsRisk;
   /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
   newsRiskUnchecked?: boolean;

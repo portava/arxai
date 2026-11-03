@@ -28,6 +28,7 @@ import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import {
   isScalpAwaitingBrokerSpecs,
   isScalpAwaitingFeed,
+  scalpSpreadRead,
   scalpTimeframeWords,
 } from "@/components/scanner/scalpLabels";
 import { EVENT_RISK_NOT_ASSESSED_IN_READ } from "@/lib/eventRiskCopy";
@@ -608,9 +609,18 @@ export function buildReasoningFromScalp(
       : r.newsRiskNotChecked === true && r.newsRisk === "LOW"
         ? "news not checked (no economic calendar connected)"
         : "";
+  // A reject's spread / slippage "LOW" is a placeholder unless the engine read
+  // the spread before turning the scalp down (same rule as the card's chips).
+  const spreadRead = scalpSpreadRead(r);
   const riskBits = [
-    clean(r.spreadRisk) ? `spread ${r.spreadRisk}` : "",
-    clean(r.slippageRisk) ? `slippage ${r.slippageRisk}` : "",
+    ...(spreadRead === "not_read"
+      ? ["spread and slippage not read"]
+      : spreadRead === "too_wide"
+        ? ["spread too wide", "slippage not read"]
+        : [
+            clean(r.spreadRisk) ? `spread ${r.spreadRisk}` : "",
+            clean(r.slippageRisk) ? `slippage ${r.slippageRisk}` : "",
+          ]),
     newsNotChecked || (newsLabel ? `news ${newsLabel}` : ""),
   ].filter(Boolean);
   let evidenceRisk = riskBits.length
