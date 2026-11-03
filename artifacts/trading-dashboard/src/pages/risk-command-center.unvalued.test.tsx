@@ -105,6 +105,19 @@ describe("Risk Command Center null money values", () => {
     expect(statValue("Weekly used")).toBe(`unknown (${why})`);
   });
 
+  // Truth: the Rules tab printed "Profit target progress 0%" for a challenge
+  // whose paper equity was not measured (no paper account).
+  it("prop-firm target progress that was not measured is not shown as 0%", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    window.localStorage.setItem("arx.collapsible.risk.propFirm", "1");
+    stub(budget, { ...cards, propFirm: { status: "ACTIVE", profitTargetProgress: 0, equityMeasured: false } });
+    render(<RiskCommandCenter />);
+    await screen.findByText("Profit target progress");
+    const row = screen.getByText("Profit target progress").parentElement?.textContent ?? "";
+    expect(row).not.toMatch(/0%/);
+    expect(row).toMatch(/not measured/i);
+  });
+
   it("with no active paper account daily and weekly used say so, not $0", async () => {
     window.localStorage.setItem("arx.pageTab.risk-command-center", "limits");
     const why = "there is no active paper account";

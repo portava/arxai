@@ -179,20 +179,32 @@ export async function propFirmStatus(userId: number) {
   const equity = ov.budget.equity;
   const equityMeasured = equity != null;
   const profit = equity != null ? equity - cfg.startingBalance : 0;
+  // The day's drawdown is measured only when the budget measured risk used
+  // (with no active paper account it is a placeholder 0).
+  const dailyDrawdownMeasured = ov.budget.dailyRiskUsedKnown;
   const dailyDD = ov.budget.dailyRiskUsed;
   const totalDD = Math.max(0, -profit);
-  // Rules are checked only while the mode is on; a rule that needs the paper
-  // equity is not checked without it. Neither case is ever listed as passed.
+  // Paper equity is null only when there is no active paper account.
+  const equityWhy = "there is no active paper account";
+  // Rules are checked only while the mode is on; a rule whose input was not
+  // measured is not checked. Neither case is ever listed as passed.
   const passed: string[] = []; const failed: string[] = []; const notEvaluated: string[] = [];
+  const notEvaluatedReasons: Record<string, string> = {};
+  const notChecked = (rule: string, why: string) => { notEvaluated.push(rule); notEvaluatedReasons[rule] = why; };
   if (cfg.enabled) {
-    if (!equityMeasured) notEvaluated.push("PROFIT_TARGET");
+    if (!equityMeasured) notChecked("PROFIT_TARGET", equityWhy);
     else if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
-    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
-    if (!equityMeasured) notEvaluated.push("TOTAL_DD");
+    if (!dailyDrawdownMeasured) notChecked("DAILY_DD", ov.budget.dailyRiskUsedUnknownReason ?? "today's drawdown was not measured");
+    else if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
+    if (!equityMeasured) notChecked("TOTAL_DD", equityWhy);
     else if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
   }
-  const status = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : profit >= cfg.profitTarget ? "PASSED"
-    : dailyDD > cfg.maxDailyDrawdownUsd * 0.7 || totalDD > cfg.maxTotalDrawdownUsd * 0.7 ? "WARNING" : "ACTIVE";
+  // The status is never PASSED or WARNING from a placeholder: profit counts
+  // only when equity was measured, the day's drawdown only when measured. With
+  // nothing measured the mode is ACTIVE and the flags say so.
+  const status = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : equityMeasured && profit >= cfg.profitTarget ? "PASSED"
+    : (dailyDrawdownMeasured && dailyDD > cfg.maxDailyDrawdownUsd * 0.7) || (equityMeasured && totalDD > cfg.maxTotalDrawdownUsd * 0.7)
+      ? "WARNING" : "ACTIVE";
   return {
     config: cfg, profitUsd: r2(profit),
     profitTargetProgress: cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0,
@@ -201,9 +213,13 @@ export async function propFirmStatus(userId: number) {
     passed, failed, status, equitySource: "paper_ledger" as const,
     /** False while the mode is off: no rule was checked. */
     rulesEvaluated: cfg.enabled,
-    /** Rules not checked because the paper equity could not be read. */
+    /** Rules not checked because an input was not measured (see notEvaluatedReasons). */
     notEvaluated,
+    /** Additive: why each rule in notEvaluated was not checked, in plain words. */
+    notEvaluatedReasons,
     equityMeasured,
+    /** Additive: false when the day's drawdown (and dailyDrawdownRemainingUsd) is a placeholder. */
+    dailyDrawdownMeasured,
   };
 }
 

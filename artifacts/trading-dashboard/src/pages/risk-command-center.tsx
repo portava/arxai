@@ -19,7 +19,12 @@ type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean;
   // with the plain reason. Absent on an older server.
   & { dailyRiskUsedKnown?: boolean; dailyRiskUsedUnknownReason?: string | null; weeklyRiskUsedKnown?: boolean; weeklyRiskUsedUnknownReason?: string | null };
 type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
-type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number; equityMeasured?: boolean } | null };
+
+// A prop-firm status worked out from a placeholder (no paper equity measured)
+// is not a measured verdict; FAILED and OFF come only from measured rules.
+const propFirmStatusText = (pf: { status: string; equityMeasured?: boolean }) =>
+  (pf.equityMeasured === false && pf.status !== "FAILED" && pf.status !== "OFF" ? "NOT MEASURED (no paper equity measured)" : pf.status);
 
 // A null money value is "no cap set" only when the server says no cap is
 // configured (flag false). A percent cap with unknown equity cannot be
@@ -235,14 +240,14 @@ export default function RiskCommandCenter() {
 
       <CollapsibleSection
         title="Prop-firm rules"
-        description={cards?.propFirm ? `Status ${cards.propFirm.status}` : "Open only when a prop-firm challenge is active."}
+        description={cards?.propFirm ? `Status ${propFirmStatusText(cards.propFirm)}` : "Open only when a prop-firm challenge is active."}
         storageKey="risk.propFirm"
         testId="risk-propfirm-section"
       >
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress}%</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{propFirmStatusText(cards.propFirm)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.equityMeasured === false ? "Not measured (no paper equity measured)" : `${cards.propFirm.profitTargetProgress}%`}</span></div>
             <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
           </div>
         ) : (

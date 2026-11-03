@@ -12,10 +12,15 @@ type Status = {
   passed: string[]; failed: string[]; status: "OFF" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
   /** False while the mode is off: no rule was checked. Older servers omit it. */
   rulesEvaluated?: boolean;
-  /** Rules not checked because the paper equity could not be read. */
+  /** Rules not checked because an input was not measured. */
   notEvaluated?: string[];
+  /** Why each not-checked rule was not checked (newer servers). */
+  notEvaluatedReasons?: Record<string, string>;
   equityMeasured?: boolean;
+  /** False when the day's drawdown is a placeholder (newer servers). */
+  dailyDrawdownMeasured?: boolean;
 };
+const UNMEASURED_STATUS_COLOR = "bg-muted text-muted-foreground";
 type NumericKey = "startingBalance" | "profitTarget" | "maxDailyDrawdownUsd" | "maxTotalDrawdownUsd" | "minTradingDays" | "maxLotSize" | "maxPositions" | "consistencyRulePctOfTotal";
 const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
 
@@ -77,6 +82,20 @@ export default function PropFirmMode() {
   };
   const rulesOff = s != null && (s.rulesEvaluated === false || s.status === "OFF");
   const unmeasured = s?.equityMeasured === false;
+  // Paper equity is unmeasured only when there is no active paper account, and
+  // then the day's drawdown is a placeholder too (an older server still listed
+  // DAILY_DD as passed). The page only downgrades: a rule whose input was not
+  // measured is never a tick, and the status is not a measured verdict.
+  const dailyUnmeasured = s?.dailyDrawdownMeasured === false || unmeasured;
+  const unmeasuredRules = new Set<string>([...(s?.notEvaluated ?? []),
+    ...(dailyUnmeasured ? ["DAILY_DD"] : []), ...(unmeasured ? ["PROFIT_TARGET", "TOTAL_DD"] : [])]);
+  const passedShown = (s?.passed ?? []).filter((p) => !unmeasuredRules.has(p));
+  const notCheckedShown = [...(s?.notEvaluated ?? []), ...[...unmeasuredRules].filter((r) => !(s?.notEvaluated ?? []).includes(r) && (s?.passed ?? []).includes(r))];
+  const notCheckedWhy = (rule: string) => s?.notEvaluatedReasons?.[rule]
+    ?? (rule === "DAILY_DD" ? "today's drawdown was not measured" : "paper equity was not measured");
+  const statusUnmeasured = s != null && unmeasured && (s.status === "ACTIVE" || s.status === "PASSED" || s.status === "WARNING");
+  const statusLabel = s == null ? "" : statusUnmeasured ? "NOT MEASURED" : s.status;
+  const statusColor = s == null ? "" : statusUnmeasured ? UNMEASURED_STATUS_COLOR : STATUS_COLOR[s.status];
 
   return (
     <div className="space-y-4">
@@ -94,7 +113,7 @@ export default function PropFirmMode() {
         </div>
         <Badge variant="outline" title="Profit, drawdown and rule progress are read from your paper account.">Progress: PAPER</Badge>
         <Badge variant="outline" className="border-amber-500/50 text-amber-500" title="Saved caps apply to paper, demo and live orders.">Limits: ALL VENUES</Badge>
-        {s && <Badge className={STATUS_COLOR[s.status]}>{s.status}</Badge>}
+        {s && <Badge className={statusColor} title={statusUnmeasured ? "The mode is on, but no paper equity was measured, so the challenge has no measured status." : undefined}>{statusLabel}</Badge>}
       </div>
 
       {!s && loadError && (
@@ -119,11 +138,11 @@ export default function PropFirmMode() {
           <Stat label="Enabled" value={s.config.enabled ? "YES" : "NO"} />
           <Stat label="Profit USD" value={unmeasured ? "Not measured" : `$${s.profitUsd}`} />
           <Stat label="Target progress" value={unmeasured ? "Not measured" : `${s.profitTargetProgress}%`} />
-          <Stat label="Daily DD left" value={`$${s.dailyDrawdownRemainingUsd}`} />
+          <Stat label="Daily DD left" value={dailyUnmeasured ? "Not measured" : `$${s.dailyDrawdownRemainingUsd}`} />
           <Stat label="Total DD left" value={unmeasured ? "Not measured" : `$${s.totalDrawdownRemainingUsd}`} />
-          <Stat label="Passed rules" value={String(s.passed.length)} />
+          <Stat label="Passed rules" value={String(passedShown.length)} />
           <Stat label="Failed rules" value={String(s.failed.length)} />
-          <Stat label="Account status" value={s.status} />
+          <Stat label="Account status" value={statusLabel} />
         </div>
       )}
 
@@ -158,9 +177,9 @@ export default function PropFirmMode() {
               <p className="text-sm text-muted-foreground">Rules are not checked while the mode is off.</p>
             ) : (
               <>
-                {s.passed.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
+                {passedShown.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
                 {s.failed.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
-                {(s.notEvaluated ?? []).map((n) => <Badge key={n} variant="outline">{n}: not checked (paper equity could not be read)</Badge>)}
+                {notCheckedShown.map((n) => <Badge key={n} variant="outline">{n}: not checked ({notCheckedWhy(n)})</Badge>)}
               </>
             )}
           </CardContent>
