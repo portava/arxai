@@ -140,6 +140,28 @@ describe("Trading Calendar failed loads", () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
   });
 
+  // The review scenario: the mode read rejects (network error) or returns a
+  // non-JSON proxy 502. The calendar query never runs, so the page must still
+  // say the mode could not be loaded rather than a header over an empty grid.
+  for (const [label, impl] of [
+    ["a network error", () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["a non-JSON 502", () => Promise.resolve(new Response("<html>Bad Gateway</html>", { status: 502 }))],
+  ] as const) {
+    it(`a mode read that fails with ${label} says it could not be loaded, not a blank calendar`, async () => {
+      fetchMock = vi.fn(async (input: string) => {
+        const url = String(input);
+        if (url.startsWith("/api/me/trading/mode")) return impl();
+        return new Response(JSON.stringify(paperCal), { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      renderPage();
+      expect((await screen.findByTestId("calendar-mode-error")).textContent).toMatch(/could not be loaded/);
+      expect(screen.queryByText("Sun")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/from your (demo trades|simulated orders)/);
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
+    });
+  }
+
   it("a 500 from the day route says the day could not be loaded", async () => {
     serve({
       "/api/me/trading/mode": { body: modeResp("DEMO") },
