@@ -33,6 +33,12 @@ export interface ResolvedBrokerSymbolSpec {
    * profit currency), exactly as the EA sent it; null when no broker row.
    */
   contract: BrokerContractSpec | null;
+  /**
+   * The MT5 connection whose EA last reported this row (null when no row, or a
+   * row stored before reports recorded it). Tick values are quoted in THAT
+   * account's deposit currency.
+   */
+  bridgeConnectionId: number | null;
 }
 
 const EMPTY_SPEC: PreTradeBrokerSpec = {
@@ -64,7 +70,7 @@ export async function getBrokerSymbolSpec(userId: number, symbol: string): Promi
     .limit(1);
   const row = rows[0];
   if (!row) {
-    return { symbol, spec: { ...EMPTY_SPEC }, hasBrokerTruth: false, reportedAt: null, registry, spreadPoints: null, contract: null };
+    return { symbol, spec: { ...EMPTY_SPEC }, hasBrokerTruth: false, reportedAt: null, registry, spreadPoints: null, contract: null, bridgeConnectionId: null };
   }
   const spec: PreTradeBrokerSpec = {
     visible: row.visible,
@@ -93,5 +99,6 @@ export async function getBrokerSymbolSpec(userId: number, symbol: string): Promi
       profitCurrency: typeof row.profitCurrency === "string" && row.profitCurrency.trim() ? row.profitCurrency.trim() : null,
       reportedAt,
     },
+    bridgeConnectionId: typeof row.bridgeConnectionId === "number" ? row.bridgeConnectionId : null,
   };
 }
