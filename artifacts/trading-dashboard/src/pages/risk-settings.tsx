@@ -605,7 +605,9 @@ export default function RiskSettings() {
   }
 
   function handleToggleLiveLock() {
-    const next = !settings?.liveLocked;
+    // Never toggle a value that was not read (it would write locked = !undefined).
+    if (!settings) return;
+    const next = !settings.liveLocked;
     setLiveLock.mutate(
       { data: { locked: next } },
       {
@@ -1557,10 +1559,13 @@ export default function RiskSettings() {
                 permits live trading. */}
             <Card className="border border-border/50">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  {settings?.liveLocked
-                    ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: on</span></>
-                    : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: off</span></>}
+                <CardTitle className="text-sm flex items-center gap-2" data-testid="live-lock-title">
+                  {/* on / off only once the stored value was read. */}
+                  {!settings
+                    ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: {SETTINGS_UNREAD}</span></>
+                    : settings.liveLocked
+                      ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: on</span></>
+                      : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: off</span></>}
                 </CardTitle>
                 <CardDescription className="text-xs" data-testid="live-lock-description">
                   A preference saved on your account. While it is on, your permission status and the trade-plan and
@@ -1573,9 +1578,13 @@ export default function RiskSettings() {
                   variant="outline"
                   className="w-full gap-2 border"
                   onClick={handleToggleLiveLock}
-                  disabled={setLiveLock.isPending}
+                  // An unread lock has no "other" state to switch to.
+                  disabled={setLiveLock.isPending || !settings}
+                  data-testid="live-lock-toggle"
                 >
-                  {settings?.liveLocked ? (
+                  {!settings ? (
+                    <><Lock size={14} /> Lock state could not be loaded</>
+                  ) : settings.liveLocked ? (
                     <><Unlock size={14} /> Turn live mode lock off</>
                   ) : (
                     <><Lock size={14} /> Turn live mode lock on</>

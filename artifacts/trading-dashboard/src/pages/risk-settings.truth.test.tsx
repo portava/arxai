@@ -239,6 +239,17 @@ describe("a failed GET /risk/settings is not shown as Balanced defaults", () => 
       expect(row.querySelector(".text-success")).toBeNull();
     }
   });
+
+  it("the live mode lock card does not say 'off' or offer to turn it on when the lock was never read", () => {
+    renderPage({ tab: "emergency", settings: FAILED });
+    expect(screen.queryByText(/Live Mode Lock: off/)).toBeNull();
+    expect(screen.queryByText(/Live Mode Lock: on/)).toBeNull();
+    expect(screen.getByTestId("live-lock-title").textContent).toMatch(/Live Mode Lock: could not be loaded/);
+    // A toggle on an unread value would write locked = !undefined.
+    expect(screen.queryByRole("button", { name: /Turn live mode lock (on|off)/ })).toBeNull();
+    const toggle = screen.getByTestId("live-lock-toggle") as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+  });
 });
 
 describe("System Status never colours an unread bot status green", () => {
