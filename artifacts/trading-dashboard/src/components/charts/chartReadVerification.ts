@@ -36,6 +36,17 @@ const FEED_QUALITY_WORDS: Record<string, string> = {
   unavailable: "the candle feed is unavailable",
 };
 
+// tradeConfirmationAllowed is false for a merge-seam failure (the chart's own
+// history and live bars) OR a broker comparison that ran and failed. Name the
+// cause the server gate recorded; the broker wording only when one failed.
+function tradeConfirmationReasons(blockedReasons: unknown): string[] {
+  const recorded = Array.isArray(blockedReasons) ? blockedReasons.filter((r): r is string => typeof r === "string") : [];
+  const out: string[] = [];
+  if (recorded.some((r) => r.startsWith("Merge-seam integrity failed"))) out.push("the chart's history and live bars do not join cleanly");
+  if (recorded.some((r) => r.startsWith("Broker price alignment failed"))) out.push("the broker-mirror check failed");
+  return out.length ? out : ["the chart's trade-confirmation check failed (the gate did not record why)"];
+}
+
 type SubMetric = { key?: string; rawScore?: number | null; evidenceStatus?: string };
 
 export function chartReadVerification(state: ChartState): ChartReadVerification {
@@ -47,7 +58,7 @@ export function chartReadVerification(state: ChartState): ChartReadVerification 
     if (!gate.confidentReadAllowed) reasons.push(`Chart Truth ${gate.chartTruthScore}/100 (needs 75)`);
     if (gate.candlestickModeAllowed !== true) reasons.push("the provider does not deliver real OHLC candles");
     if (!gate.autonomousChartActionAllowed) reasons.push("the feed is stale");
-    if (!gate.tradeConfirmationAllowed) reasons.push("the broker-mirror check failed");
+    if (!gate.tradeConfirmationAllowed) reasons.push(...tradeConfirmationReasons(gate.blockedReasons));
     const score = (state as { chartTruthScore?: { subMetrics?: unknown } | null }).chartTruthScore;
     const subMetrics = Array.isArray(score?.subMetrics) ? (score!.subMetrics as SubMetric[]) : null;
     if (!subMetrics) {

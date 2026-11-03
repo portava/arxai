@@ -129,8 +129,20 @@ describe("Chart Pulse readiness respects the chart-truth gate", () => {
     expect(screen.getByTestId("chart-pulse-unverified").textContent).toContain("the candle feed is delayed");
   });
 
+  // Truth: a merge-seam failure (the chart's own history/live join) also
+  // closes trade confirmation; with no broker quote it was reported as a
+  // failed broker-mirror check that never ran.
+  it("a merge-seam failure is named as such, not as a failed broker comparison", () => {
+    render(<ChartPulse state={state(gate(87, { tradeConfirmationAllowed: false,
+      blockedReasons: ["Merge-seam integrity failed — chart-based trade confirmation blocked."] }))} />);
+    const banner = screen.getByTestId("chart-pulse-unverified").textContent ?? "";
+    expect(banner).not.toMatch(/broker-mirror/i);
+    expect(banner).toContain("the chart's history and live bars do not join cleanly");
+  });
+
   it("failed mirror and missing gate are not verified", () => {
-    render(<ChartPulse state={state(gate(87, { tradeConfirmationAllowed: false }))} />);
+    render(<ChartPulse state={state(gate(87, { tradeConfirmationAllowed: false,
+      blockedReasons: ["Broker price alignment failed — chart-based trade confirmation blocked."] }))} />);
     expect(screen.getByTestId("chart-pulse-unverified").textContent).toMatch(/broker-mirror check failed/i);
     cleanup();
     render(<ChartPulse state={state(undefined)} />);

@@ -168,7 +168,8 @@ test("a feed that is not live (weekend closure / stored bars) cannot back 'ready
 });
 
 test("a failed broker mirror or stale feed also blocks 'ready'; missing gate is not verified", () => {
-  const mirror = chartReadVerification(gate(87, { tradeConfirmationAllowed: false }), feed, boundScore());
+  const mirror = chartReadVerification(gate(87, { tradeConfirmationAllowed: false,
+    blockedReasons: ["Broker price alignment failed — chart-based trade confirmation blocked."] }), feed, boundScore());
   assert.equal(mirror.verified, false);
   assert.match(mirror.reasons.join(" "), /broker-mirror check/);
   const stale = chartReadVerification(gate(87, { autonomousChartActionAllowed: false }), feed, boundScore());
@@ -279,4 +280,34 @@ test("a verified read is exactly one Ruby's handshake also passes", async () => 
   assert.equal(buildChartHandshake(g, s).sourceOverall, "PASS");
   // A feed the candle engines do not call clean is not verified either.
   assert.equal(chartReadVerification(g, { ...feed, aiUsable: false, quality: "delayed" }, s).verified, false);
+});
+
+// Truth: tradeConfirmationAllowed is false for a merge-seam failure OR a failed
+// broker comparison, but every false was reported as "the chart's prices
+// failed the broker-mirror check" — even with no broker quote, when no broker
+// comparison ran. The reason now names the cause the gate recorded.
+test("a merge-seam failure with no broker quote is not blamed on a broker comparison", () => {
+  const truth = truthFixture({ mergeSeam: { formingBarDetected: true, formingBarCount: 1, gapAtSeam: false, overlapAtSeam: true, seamGapIntervals: 0 } });
+  const alignment = noBrokerAlignment(1.1, "LAST");
+  assert.equal(alignment.brokerDataAvailable, false);
+  const score = computeChartTruthScore(truth, feed, alignment);
+  const g = computeChartGateOutput(score, read as never, alignment, truth, feed);
+  assert.equal(g.tradeConfirmationAllowed, false);
+  const v = chartReadVerification(g, feed, score);
+  assert.equal(v.verified, false);
+  const why = v.reasons.join("; ");
+  assert.doesNotMatch(why, /broker-mirror|failed the broker/);
+  assert.ok(v.reasons.includes("the chart's history and live bars do not join cleanly"), why);
+  const s = aGradeState(g);
+  s.chartTruthScore = score;
+  assert.doesNotMatch(sentencesFor(s).bestNextAction.text, /broker-mirror/);
+});
+
+test("a broker comparison that ran and failed keeps the broker-mirror wording", () => {
+  const g = computeChartGateOutput(boundScore(), read as never,
+    { ...boundAlignment(), tolerance: "failed" }, truthFixture(), feed);
+  assert.equal(g.tradeConfirmationAllowed, false);
+  const v = chartReadVerification(g, feed, boundScore());
+  assert.ok(v.reasons.includes("the chart's prices failed the broker-mirror check"), v.reasons.join("; "));
+  assert.ok(!v.reasons.includes("the chart's history and live bars do not join cleanly"));
 });
