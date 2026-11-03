@@ -137,6 +137,18 @@ function installWideStops(g: ReadinessResp["globalSwitches"]) {
   };
 }
 
+/**
+ * The platform settings row was not read: the platform emergency stop is
+ * engaged only because the settings read failed ("settings missing" / "state
+ * unreadable"). Every other settings-derived field (mode, routing, live flags,
+ * operator arm) is then a fail-closed stand-in too. Returns the server's
+ * reason, or null when the settings were read.
+ */
+function settingsUnreadDetail(g: ReadinessResp["globalSwitches"]): string | null {
+  const stops = installWideStops(g);
+  return stops.emergencyStopUnread ? String(stops.emergencyStopDetail) : null;
+}
+
 type SmokeStatus = "pass" | "fail" | "not_checked";
 type SmokeResp = {
   ok: boolean;
@@ -494,14 +506,19 @@ function ReadinessCards({ readiness, loadError }: { readiness: ReadinessResp | n
   const b = readiness.liveAccount.pinnedBridge;
   const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
   const stops = installWideStops(g);
+  // Settings not read: show each settings-derived value as unread, never the
+  // fail-closed stand-in (OFF / USER_OWNED_MT5 / false) as a reading.
+  const unread = settingsUnreadDetail(g);
+  const settingRow = (label: string, value: React.ReactNode, ok?: boolean) =>
+    unread ? row(label, `could not be read (${unread})`, undefined) : row(label, value, ok);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-      <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Platform</CardTitle></CardHeader><CardContent className="pt-1">
-        {row("Platform mode", g.platformMode, g.platformMode === "LIVE")}
-        {row("Routing", g.accountRoutingMode, g.accountRoutingMode === "SHARED_MASTER_MT5")}
-        {row("Live enabled", String(g.liveEnabled), g.liveEnabled)}
-        {row("Shared live trading", String(g.sharedLiveTradingEnabled), g.sharedLiveTradingEnabled)}
-        {row("Master bridge live", String(g.masterBridgeLiveEnabled), g.masterBridgeLiveEnabled)}
+      <Card data-testid="readiness-platform-card"><CardHeader className="pb-1"><CardTitle className="text-xs">Platform</CardTitle></CardHeader><CardContent className="pt-1">
+        {settingRow("Platform mode", g.platformMode, g.platformMode === "LIVE")}
+        {settingRow("Routing", g.accountRoutingMode, g.accountRoutingMode === "SHARED_MASTER_MT5")}
+        {settingRow("Live enabled", String(g.liveEnabled), g.liveEnabled)}
+        {settingRow("Shared live trading", String(g.sharedLiveTradingEnabled), g.sharedLiveTradingEnabled)}
+        {settingRow("Master bridge live", String(g.masterBridgeLiveEnabled), g.masterBridgeLiveEnabled)}
       </CardContent></Card>
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Bridge / EA</CardTitle></CardHeader><CardContent className="pt-1">
         {row("Master bridge pinned", b ? `#${b.connectionId}` : "not pinned", b != null)}
@@ -512,7 +529,7 @@ function ReadinessCards({ readiness, loadError }: { readiness: ReadinessResp | n
       </CardContent></Card>
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Safety</CardTitle></CardHeader><CardContent className="pt-1">
         <div data-testid="safety-master-switch-env">{row("Env ARX_LIVE_BROKER_EXECUTION_ENABLED", String(g.serverMasterSwitchEnvOnly))}</div>
-        <div data-testid="safety-master-switch-armed">{row("Operator arm (DB flag)", String(g.liveBrokerExecutionArmedDb))}</div>
+        <div data-testid="safety-master-switch-armed">{settingRow("Operator arm (DB flag)", String(g.liveBrokerExecutionArmedDb))}</div>
         <div data-testid="safety-master-switch-effective">{row("Live broker execution (effective: env AND operator arm)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}</div>
         <div data-testid="safety-emergency-stop-row">
           {stops.emergencyStopUnread
@@ -560,6 +577,9 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     const det = r.liveAccount.detector as { detected: boolean; bridge?: EaInputs | null };
     const ea: EaInputs = (det.detected && det.bridge) ? det.bridge : {};
     const stops = installWideStops(g);
+    // Settings not read: these rows keep failing (fail-closed) and say why.
+    const unread = settingsUnreadDetail(g);
+    const settingsDetail = unread ? `settings could not be read (${unread})` : undefined;
     const engagedStops = [
       stops.emergencyStop
         ? (stops.emergencyStopUnread ? "platform emergency stop could not be read — treated as engaged" : "platform emergency stop engaged")
@@ -581,11 +601,11 @@ function useChecklist(r: ReadinessResp | null): Check[] {
       { id: "enable_live_execution", ok: ea.enableLiveExecution === true, label: "EA EnableLiveExecution=true" },
       { id: "terminal_connected", ok: ea.terminalConnected === true, label: "EA terminal connected" },
       { id: "algo_trading_allowed", ok: ea.algoTradingAllowed === true, label: "EA algo trading allowed" },
-      { id: "routing_shared", ok: g.accountRoutingMode === "SHARED_MASTER_MT5", label: "Routing = SHARED_MASTER_MT5" },
-      { id: "master_bridge_mode_live", ok: g.masterBridgeLiveEnabled, label: "Master bridge mode = live" },
-      { id: "shared_live_enabled", ok: g.sharedLiveTradingEnabled, label: "Shared live trading enabled" },
-      { id: "platform_mode_live", ok: g.platformMode === "LIVE", label: "Platform mode = LIVE" },
-      { id: "live_enabled", ok: g.liveEnabled, label: "liveEnabled flag = true" },
+      { id: "routing_shared", ok: !unread && g.accountRoutingMode === "SHARED_MASTER_MT5", label: "Routing = SHARED_MASTER_MT5", detail: settingsDetail },
+      { id: "master_bridge_mode_live", ok: !unread && g.masterBridgeLiveEnabled, label: "Master bridge mode = live", detail: settingsDetail },
+      { id: "shared_live_enabled", ok: !unread && g.sharedLiveTradingEnabled, label: "Shared live trading enabled", detail: settingsDetail },
+      { id: "platform_mode_live", ok: !unread && g.platformMode === "LIVE", label: "Platform mode = LIVE", detail: settingsDetail },
+      { id: "live_enabled", ok: !unread && g.liveEnabled, label: "liveEnabled flag = true", detail: settingsDetail },
       { id: "kill_released", ok: g.emergencyKillSwitch === false && stops.released, label: "Kill switches released (platform emergency stop and safety-core)", detail: engagedStops || undefined },
       { id: "approved_users", ok: r.approvedUsers.approvedCount > 0, label: "At least one user approved", detail: `${r.approvedUsers.approvedCount} approved` },
       { id: "user_limits", ok: usersWithCaps > 0 && usersWithCaps === r.approvedUsers.approvedCount, label: "Approved users have symbol/lot/risk caps", detail: `${usersWithCaps}/${r.approvedUsers.approvedCount} with caps` },
@@ -683,11 +703,17 @@ function ArmExecutionCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-[11px] text-muted-foreground space-y-1">
-          <div>
-            DB flag: <code className="font-mono">liveBrokerExecutionArmed = {String(g.liveBrokerExecutionArmedDb)}</code>
-            {g.liveBrokerExecutionArmedAt && <> · armed at <code className="font-mono">{g.liveBrokerExecutionArmedAt}</code></>}
-            {g.liveBrokerExecutionArmedBy != null && <> · by admin #{g.liveBrokerExecutionArmedBy}</>}
-          </div>
+          {settingsUnreadDetail(g) ? (
+            <div data-testid="arm-db-flag-unread">
+              DB flag <code className="font-mono">liveBrokerExecutionArmed</code>: could not be read ({settingsUnreadDetail(g)}).
+            </div>
+          ) : (
+            <div>
+              DB flag: <code className="font-mono">liveBrokerExecutionArmed = {String(g.liveBrokerExecutionArmedDb)}</code>
+              {g.liveBrokerExecutionArmedAt && <> · armed at <code className="font-mono">{g.liveBrokerExecutionArmedAt}</code></>}
+              {g.liveBrokerExecutionArmedBy != null && <> · by admin #{g.liveBrokerExecutionArmedBy}</>}
+            </div>
+          )}
           <div data-testid="arm-env-line">
             Env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code>: {String(g.serverMasterSwitchEnvOnly)} (must be true for live execution: effective = env AND operator arm; unset = off. Set on the server, not on this page.)
           </div>
