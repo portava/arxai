@@ -5067,7 +5067,7 @@ export const useApplyRiskMode = <
 };
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const getSetLiveLockUrl = () => {
   return `/api/risk/lock-live`;
@@ -5130,7 +5130,7 @@ export type SetLiveLockMutationBody = BodyType<RiskLockInput>;
 export type SetLiveLockMutationError = ErrorType<unknown>;
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const useSetLiveLock = <
   TError = ErrorType<unknown>,

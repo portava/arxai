@@ -106,6 +106,12 @@ router.post("/risk/mode", requireUser, async (req, res) => {
 });
 
 // ── POST /risk/lock-live ───────────────────────────────────────────────────
+// Writes the trader's risk_settings.liveLocked. It is a stored preference:
+// the permission evaluator (/permission/status, trade-plan and confirmation
+// checklists) lists it as a blocker, but no order path reads it — live
+// dispatch is gated by live arming and the Risk Governor, and the legacy
+// /mt5 mode is always LIVE_LOCKED. Wiring it into a gate is a product
+// decision; the reply says what the toggle does and does not do.
 
 const RiskLockBody = z.object({ locked: z.boolean() });
 
@@ -116,8 +122,8 @@ router.post("/risk/lock-live", requireUser, async (req, res) => {
     return res.json({
       locked,
       message: locked
-        ? "Live trading locked. Manual unlock required before going live."
-        : "Live trading lock removed.",
+        ? "Live mode lock saved. It is a preference: your permission status and checklists list it as a blocker, but orders are not checked against it."
+        : "Live mode lock removed. This does not enable live trading: live orders still need live arming and must pass the Risk Governor.",
     });
   } catch (err) {
     req.log.error(err);

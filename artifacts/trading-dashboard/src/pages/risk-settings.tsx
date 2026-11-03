@@ -155,6 +155,15 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
   );
 }
 
+// ── Live mode lock copy ──────────────────────────────────────────────────────
+// risk_settings.liveLocked is a stored preference: the permission status and
+// checklists list it as a blocker, but no order path reads it.
+
+const LIVE_LOCK_ON_NOTE =
+  "Saved as a preference. Your permission status and checklists now list it as a blocker, but orders are not checked against it. To stop new orders, use \"Pause my trading\" in Risk Command Center.";
+const LIVE_LOCK_OFF_NOTE =
+  "This does not enable live trading: live orders still need live arming and must pass the Risk Governor.";
+
 // ── What the risk audit read ─────────────────────────────────────────────────
 // GET /risk/audit is the legacy audit: it measures loss % against a $1,000
 // placeholder balance (balanceSource) and counts trades in the retired legacy
@@ -438,11 +447,12 @@ export default function RiskSettings() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetRiskSettingsQueryKey() });
+          // The lock is a stored preference: no order path reads it (live
+          // dispatch is gated by live arming and the Risk Governor), so the
+          // toast never says live trading is now permitted or stopped.
           toast({
-            title: next ? "Live mode LOCKED" : "Live mode unlocked",
-            description: next
-              ? "Manual unlock required before going live."
-              : "Live trading is now permitted.",
+            title: next ? "Live mode lock saved" : "Live mode lock removed",
+            description: next ? LIVE_LOCK_ON_NOTE : LIVE_LOCK_OFF_NOTE,
           });
         },
         onError: () => toast({ title: "Failed to toggle lock", variant: "destructive" }),
@@ -525,8 +535,8 @@ export default function RiskSettings() {
             {currentMode} Mode
           </Badge>
           {settings?.liveLocked && (
-            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
-              <Lock size={12} className="mr-1.5" /> Live Locked
+            <Badge className="bg-muted/40 text-muted-foreground border-border/50 px-3 py-1 border" data-testid="live-lock-badge">
+              <Lock size={12} className="mr-1.5" /> Live lock on (preference)
             </Badge>
           )}
           {botStatus?.isPaused && (
@@ -1250,48 +1260,36 @@ export default function RiskSettings() {
               </CardContent>
             </Card>
 
-            {/* Live Bridge Lock */}
-            <Card className={cn("border", settings?.liveLocked ? "border-red-500/40" : "border-border/50")}>
+            {/* Live mode lock — a stored preference (risk_settings.liveLocked).
+                The permission status and checklists list it as a blocker; no
+                order path reads it, so the card never claims it stops or
+                permits live trading. */}
+            <Card className="border border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   {settings?.liveLocked
-                    ? <><Lock size={16} className="text-red-400" /> <span className="text-red-400">Live Locked</span></>
-                    : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock</span></>}
+                    ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: on</span></>
+                    : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: off</span></>}
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  When locked, switching to LIVE trading mode is disabled until manually unlocked.
+                <CardDescription className="text-xs" data-testid="live-lock-description">
+                  A preference saved on your account. While it is on, your permission status and the trade-plan and
+                  confirmation checklists list it as a blocker. Orders are not checked against it: live orders are
+                  controlled by live arming and the Risk Governor, so turning it off does not enable live trading.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {settings?.liveLocked && (
-                  <Alert className="border-red-500/30 bg-red-500/5 py-2">
-                    <Lock className="h-3 w-3 text-red-400" />
-                    <AlertDescription className="text-xs text-red-300 ml-1">Live trading is locked</AlertDescription>
-                  </Alert>
-                )}
                 <Button
                   variant="outline"
-                  className={cn(
-                    "w-full gap-2 border",
-                    settings?.liveLocked
-                      ? "border-success/40 text-success hover:bg-success/10"
-                      : "border-red-500/40 text-red-400 hover:bg-red-500/10"
-                  )}
+                  className="w-full gap-2 border"
                   onClick={handleToggleLiveLock}
                   disabled={setLiveLock.isPending}
                 >
                   {settings?.liveLocked ? (
-                    <><Unlock size={14} /> Unlock Live Mode</>
+                    <><Unlock size={14} /> Turn live mode lock off</>
                   ) : (
-                    <><Lock size={14} /> Lock Live Mode</>
+                    <><Lock size={14} /> Turn live mode lock on</>
                   )}
                 </Button>
-
-                {settings?.liveLocked && (
-                  <div className="mt-3">
-                    <DisclaimerBanner kind="liveUnlock" compact />
-                  </div>
-                )}
               </CardContent>
             </Card>
 
@@ -1320,19 +1318,21 @@ export default function RiskSettings() {
                     ok: true,
                   },
                   {
-                    label: "Live Locked",
-                    value: settings?.liveLocked ? "LOCKED" : "OPEN",
-                    ok: settings?.liveLocked,
+                    // A preference, not a gate: shown neutral, never green/amber.
+                    label: "Live lock (preference)",
+                    value: settings == null ? "—" : settings.liveLocked ? "ON" : "OFF",
+                    ok: true,
+                    neutral: true,
                   },
                   {
                     label: "Risk Mode",
                     value: currentMode,
                     ok: currentMode !== "Aggressive",
                   },
-                ].map((row) => (
+                ].map((row: { label: string; value: string; ok?: boolean; neutral?: boolean }) => (
                   <div key={row.label} className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">{row.label}</span>
-                    <span className={cn("font-mono font-semibold", row.ok ? "text-success" : "text-yellow-400")}>
+                    <span className={cn("font-mono font-semibold", row.neutral ? "text-foreground" : row.ok ? "text-success" : "text-yellow-400")} data-testid={row.neutral ? "live-lock-status" : undefined}>
                       {row.value}
                     </span>
                   </div>

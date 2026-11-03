@@ -89,3 +89,25 @@ test("GET /risk/audit says it used a $1,000 placeholder and the legacy trades lo
   assert.equal(body["passed"], true);
   assert.equal(body["tradesRemaining"], 5);
 });
+
+// POST /risk/lock-live writes risk_settings.liveLocked, a preference no live
+// dispatch gate reads (only the permission status / checklists list it). The
+// reply said "Manual unlock required before going live" and "lock removed"
+// as if it gated live trading; it now says what the toggle does and does not do.
+test("POST /risk/lock-live says the lock is a preference orders are not checked against", async () => {
+  const post = async (locked: boolean) => {
+    const r = await fetch(`${base}/risk/lock-live`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked }),
+    });
+    assert.equal(r.status, 200);
+    return r.json() as Promise<{ locked: boolean; message: string }>;
+  };
+  const on = await post(true);
+  assert.equal(on.locked, true);
+  assert.doesNotMatch(on.message, /required before going live/);
+  assert.match(on.message, /preference/);
+  assert.match(on.message, /orders are not checked against it/);
+  const off = await post(false);
+  assert.equal(off.locked, false);
+  assert.match(off.message, /does not enable live trading/);
+});

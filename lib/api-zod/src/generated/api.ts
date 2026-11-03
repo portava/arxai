@@ -4245,7 +4245,7 @@ export const ApplyRiskModeResponse = zod.object({
 });
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const SetLiveLockBody = zod.object({
   locked: zod.boolean(),
