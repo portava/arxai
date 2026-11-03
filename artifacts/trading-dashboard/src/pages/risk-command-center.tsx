@@ -46,6 +46,9 @@ const BLOCK_REASON: Record<string, string> = {
   weekly_loss_limit: "Your weekly loss limit is reached",
   // The governor refuses new orders while the activity its caps need is unreadable.
   activity_unread: "Your recent trading activity could not be read, so your weekly loss, trade-count and loss-streak limits cannot be checked. The Risk Governor refuses new trades until it can read it",
+  // A percent of an equity at or below 0 allows no risk; the risk status
+  // reason gives the equity figure (and the booked one on paper).
+  equity_exhausted: "Your account equity is at or below zero, so your percent risk limits leave no room for a new trade. The Risk Governor refuses new trades until equity is above zero",
 };
 
 /**
@@ -297,7 +300,7 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-rules-tab">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Permissions</CardTitle>
-          <CardDescription>What stops new trades on your account right now: your stop switches, your daily and weekly loss limits, and trading activity that could not be read while a limit needs it. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
+          <CardDescription>What stops new trades on your account right now: your stop switches, your daily and weekly loss limits, an account equity at or below zero, and trading activity that could not be read while a limit needs it. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1">
           {cards ? (() => {

@@ -49,6 +49,21 @@ describe("Risk Command Center — Rules tab permissions", () => {
     expect(within(row).getByText("Your daily loss limit is reached")).toBeTruthy();
   });
 
+  // An equity at or below 0 (on paper, the risk count's) leaves no room under
+  // any percent cap; the server says equity_exhausted. Never the raw code.
+  it("equity_exhausted reads blocked in plain words, with the server's figures", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    const reason = "The paper risk count puts account equity at -$5,000.00, at or below zero (the paper account shows $395.00 booked), so your 1% per-trade limit leaves no risk for a new trade. The Risk Governor refuses new trades until equity is above zero.";
+    stub(cards({ riskStatusReason: reason, dailyRiskRemaining: null,
+      permissions: { trading: false, pauseReason: null, stopSwitchEngaged: false, blockedBy: ["equity_exhausted"] } }));
+    render(<RiskCommandCenter />);
+    const row = await screen.findByTestId("risk-perm-new-trades");
+    expect(row.textContent).toMatch(/New trades: blocked/);
+    expect(row.textContent).toMatch(/equity is at or below zero/);
+    expect(row.textContent).not.toMatch(/equity_exhausted/);
+    expect((await screen.findByTestId("risk-status-reason")).textContent).toContain("-$5,000.00");
+  });
+
   it("nothing blocking says so without claiming approval", async () => {
     window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
     stub(cards({ riskStatus: "OK", dailyRiskRemaining: 90, permissions: { trading: true, pauseReason: null, stopSwitchEngaged: false, blockedBy: [] } }));

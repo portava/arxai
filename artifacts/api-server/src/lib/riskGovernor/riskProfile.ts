@@ -156,12 +156,19 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     : ctx.activity == null ? "this week's trading activity could not be read" : null;
   const floatingLoss = ctx.daily.floatingPnl != null && ctx.daily.floatingPnl < 0 ? ctx.daily.floatingPnl : 0;
   const dailyUsed = dailyRiskUsedUnknownReason == null ? Math.max(0, -(ctx.daily.realizedPnl! + floatingLoss)) : null;
-  const caps = [L.maxDailyLossAmount, L.maxDailyLossPercent != null && equity != null ? (equity * L.maxDailyLossPercent) / 100 : null]
+  // An equity that was read and is at or below 0 (on PAPER, the paper risk
+  // count's equity) leaves no room under any percent cap: the Risk Governor
+  // refuses every new order (its per-trade rule, and its daily and weekly
+  // percent caps read used up). Each percent cap is then valued at 0, never
+  // at a negative amount.
+  const equityExhausted = ctx.account != null && equity != null && Number.isFinite(equity) && equity <= 0;
+  const pctCap = (pct: number | null) => (pct == null || equity == null ? null : equityExhausted ? 0 : (equity * pct) / 100);
+  const caps = [L.maxDailyLossAmount, pctCap(L.maxDailyLossPercent)]
     .filter((v): v is number => v != null);
   const dailyLimit = caps.length ? Math.min(...caps) : null;
   // This week's loss needs the activity facts; without them it is unknown.
   const weekUsed = weeklyRiskUsedUnknownReason == null && ctx.activity != null ? Math.max(0, -ctx.activity.weekRealizedPnl) : null;
-  const wcaps = [L.discipline.maxWeeklyLossAmount, L.discipline.maxWeeklyLossPercent != null && equity != null ? (equity * L.discipline.maxWeeklyLossPercent) / 100 : null]
+  const wcaps = [L.discipline.maxWeeklyLossAmount, pctCap(L.discipline.maxWeeklyLossPercent)]
     .filter((v): v is number => v != null);
   const weeklyLimit = wcaps.length ? Math.min(...wcaps) : null;
   const openRisk = ctx.positions.reduce((s, p) => {
@@ -207,10 +214,15 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
       ? `there is no active paper account, so ${list} cannot be checked and the Risk Governor refuses new orders until one is active`
       : `your recent trading activity could not be read, so ${list} cannot be checked and the Risk Governor refuses new orders until it can be read`);
   }
-  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
+  // What an exhausted equity blocks, with the figure the governor reads (and,
+  // on PAPER, the booked equity beside the risk count), first in the reason.
+  const exhaustedReason = equityExhausted ? equityExhaustedReason(ctx, L) : null;
+  const reasons = [...(exhaustedReason ? [exhaustedReason] : []), ...unknowns];
+  const riskStatusReason = reasons.length ? `${reasons.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   // Unread activity with such a cap set blocks like a reached limit
-  // (blockedBy activity_unread), so the status is BLOCK, never OK / UNKNOWN.
-  const status = halt.engaged || dailyReached || weeklyReached || activityUnread
+  // (blockedBy activity_unread), so the status is BLOCK, never OK / UNKNOWN;
+  // so does an exhausted equity (blockedBy equity_exhausted).
+  const status = halt.engaged || dailyReached || weeklyReached || activityUnread || equityExhausted
     ? "BLOCK" : dailyLimit != null && dailyUsed != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   // What stops new trades, as this view measures it. A read model only: the
   // Risk Governor decides each order. trading is false whenever anything here
@@ -220,6 +232,7 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     ...(dailyReached ? ["daily_loss_limit" as const] : []),
     ...(weeklyReached ? ["weekly_loss_limit" as const] : []),
     ...(activityUnread ? ["activity_unread" as const] : []),
+    ...(equityExhausted ? ["equity_exhausted" as const] : []),
   ];
   return {
     venue,
@@ -259,6 +272,26 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
 }
 
 const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(r2(n)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Why an equity read at or below 0 blocks new trades, in the words the Risk
+ * Governor's refusals use (preTrade nonPositiveEquity): the equity it reads
+ * (on PAPER, the paper risk count, with the booked equity beside it when they
+ * differ), and the percent limits it uses up.
+ */
+function equityExhaustedReason(ctx: Pick<RiskContext, "account">, L: RiskContext["limits"]): string {
+  const a = ctx.account!;
+  const figure = a.bookedEquity != null
+    ? `the paper risk count puts account equity at ${usd(a.equity!)}, at or below zero (the paper account shows ${usd(a.bookedEquity)} booked)`
+    : `account equity is ${usd(a.equity!)}, at or below zero`;
+  const perTrade = L.maxRiskPerTradePercent != null ? `your ${L.maxRiskPerTradePercent}% per-trade limit` : "your per-trade limit";
+  const usedUp = [
+    ...(L.maxDailyLossPercent != null ? [`your ${L.maxDailyLossPercent}% daily loss cap`] : []),
+    ...(L.discipline.maxWeeklyLossPercent != null ? [`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap`] : []),
+  ];
+  const caps = usedUp.length ? `, and ${usedUp.join(" and ")} ${usedUp.length > 1 ? "are" : "is"} used up` : "";
+  return `${figure}, so ${perTrade} leaves no risk for a new trade${caps}. The Risk Governor refuses new trades until equity is above zero`;
+}
 
 /**
  * Plain-English note for a paper risk count that differs from the booked
