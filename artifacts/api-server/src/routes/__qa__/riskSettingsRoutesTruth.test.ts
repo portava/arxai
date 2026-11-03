@@ -42,6 +42,14 @@ mock.module("../../lib/risk/userRiskSettings.js", {
     updateUserRiskSettings: async (_u: number, patch: Record<string, unknown>) => ({ ...SETTINGS, ...patch }),
   },
 });
+// The limits in force (strictest of trader, operator and platform), as the
+// Risk Governor resolves them. Default: the operator capped the lot at 0.5.
+const effective: { maxLotSize: number; symbolLimits: Record<string, { maxLots: number | null; blocked: boolean }> } = {
+  maxLotSize: 0.5, symbolLimits: {},
+};
+mock.module("../../lib/riskGovernor/limitSettings.js", {
+  namedExports: { loadEffectiveLimits: async () => ({ ...effective, sources: { maxLotSize: "user_risk_limits.max_lot_size" } }) },
+});
 const realAudit = await import("../../lib/riskAudit.js");
 mock.module("../../lib/riskAudit.js", {
   namedExports: {
@@ -111,3 +119,32 @@ test("POST /risk/lock-live says the lock is a preference orders are not checked 
   assert.equal(off.locked, false);
   assert.match(off.message, /does not enable live trading/);
 });
+
+// GET /risk/position-size capped the lot at the trader's own saved cap (or
+// the platform 5) and ignored the operator's account limit, so "Max Allowed
+// Lot 5.00 / Final Lot Size 2.00" showed for an order the governor refuses.
+// It now uses the lot cap in force: strictest of trader, operator, platform,
+// and the trader's per-symbol cap.
+async function size(symbol: string) {
+  const q = new URLSearchParams({ symbol, accountBalance: "100000", riskPercent: "2", entry: "1.1", stopLoss: "1.09" });
+  const r = await fetch(`${base}/risk/position-size?${q}`);
+  assert.equal(r.status, 200);
+  return r.json() as Promise<{ maxLotAllowed: number; finalLot: number; suggestedLot: number }>;
+}
+
+test("GET /risk/position-size caps the lot at the operator's limit, not the saved 5", async () => {
+  effective.maxLotSize = 0.5; effective.symbolLimits = {};
+  const r = await size("EURUSD");
+  assert.equal(r.suggestedLot, 2, "the risk budget alone would size 2.00 lots");
+  assert.equal(r.maxLotAllowed, 0.5);
+  assert.equal(r.finalLot, 0.5);
+});
+
+test("GET /risk/position-size applies a stricter per-symbol cap", async () => {
+  effective.maxLotSize = 0.5; effective.symbolLimits = { EURUSD: { maxLots: 0.2, blocked: false } };
+  const r = await size("eurusd");
+  assert.equal(r.maxLotAllowed, 0.2);
+  assert.equal(r.finalLot, 0.2);
+  effective.symbolLimits = {};
+});
+

@@ -1077,7 +1077,11 @@ export default function RiskSettings() {
                     <StatRow label="Risk Amount" value={`$${calcResult.riskAmount.toFixed(2)}`} />
                     <StatRow label="Stop Distance" value={calcResult.stopDistance.toFixed(4)} />
                     <StatRow label="Suggested Lot" value={calcResult.valueModel === "unknown_contract" ? "—" : calcResult.suggestedLot.toFixed(2)} />
-                    <StatRow label="Max Allowed Lot" value={calcResult.maxLotAllowed.toFixed(2)} />
+                    <StatRow
+                      label="Max Allowed Lot"
+                      value={calcResult.maxLotAllowed.toFixed(2)}
+                      sub="Lot cap in force: the strictest of your cap, your operator's limit, the platform cap and any cap you set for this symbol. Your broker may allow less."
+                    />
                     <div className="mt-3 pt-3 border-t border-border/50">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold" data-testid="sizer-final-label">

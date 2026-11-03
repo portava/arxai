@@ -66,4 +66,14 @@ describe("Position sizer — estimate disclosure", () => {
     expect(screen.getByTestId("sizer-final-label").textContent).toBe("Estimated Lot Size");
     expect(screen.getByTestId("sizer-basis").textContent).toMatch(/not reported/);
   });
+
+  // The server's maxLotAllowed is now the lot cap in force (strictest of the
+  // trader's, the operator's, the platform's and the per-symbol cap); the
+  // row says so instead of reading as the trader's own setting.
+  it("Max Allowed Lot says it is the cap in force, operator limit included", async () => {
+    stub({ ...BASE, warning: null, maxLotAllowed: 0.5, finalLot: 0.5, suggestedLot: 2, valueModel: "forex_usd_quote", estimate: false, valuePerUnitPerLot: 100000, basis: "x" });
+    await calculate("EURUSD");
+    const sub = screen.getByText(/Lot cap in force: the strictest of your cap, your operator's limit/);
+    expect(sub.parentElement?.textContent).toMatch(/^0\.50Lot cap in force/);
+  });
 });

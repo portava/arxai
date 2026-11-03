@@ -10,6 +10,7 @@ import {
 import { shadowCapture } from "../lib/auditVault.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getOrCreateUserRiskSettings, updateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
+import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
 
 const router = Router();
 
@@ -192,10 +193,16 @@ const PositionSizeQuery = z.object({
 router.get("/risk/position-size", requireUser, async (req, res) => {
   try {
     const query = PositionSizeQuery.parse(req.query);
-    const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
+    // The lot cap in force, as the Risk Governor applies it: the strictest of
+    // the trader's own cap, the operator's account limit and the platform
+    // ceiling, then the trader's per-symbol cap. (The trader's saved cap
+    // alone could show a lot the governor refuses.) The broker's own maximum
+    // volume is not known here.
+    const limits = await loadEffectiveLimits(req.authUser!.id);
+    const symbolCap = limits.symbolLimits[query.symbol.trim().toUpperCase()]?.maxLots ?? null;
     const result = calculatePositionSize({
       ...query,
-      maxLotSize: settings.maxLotSize,
+      maxLotSize: symbolCap == null ? limits.maxLotSize : Math.min(limits.maxLotSize, symbolCap),
     });
     return res.json(result);
   } catch (err) {
