@@ -31,7 +31,7 @@ import type {
   ScalpJournalEntry,
   ScalpSymbolPersonality,
 } from "@workspace/api-client-react";
-import { directionTone, fmtMoney } from "@/components/scanner/scalpLabels";
+import { directionTone, fmtScalpMoney } from "@/components/scanner/scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // Scalp Journal & Lessons — a dedicated, filterable history page for the
@@ -66,11 +66,11 @@ function resultBadge(
 function plLine(entry: ScalpJournalEntry): { text: string; tone: string; note: string | null } {
   if (entry.plQuality === "KNOWN" && entry.realizedPl != null) {
     const tone = entry.realizedPl > 0 ? "text-emerald-300" : entry.realizedPl < 0 ? "text-rose-300" : "text-muted-foreground";
-    return { text: fmtMoney(entry.realizedPl), tone, note: null };
+    return { text: fmtScalpMoney(entry.realizedPl, null), tone, note: null };
   }
   if (entry.plQuality === "ESTIMATED" && entry.lastFloatingPl != null) {
     const tone = entry.lastFloatingPl > 0 ? "text-emerald-300" : entry.lastFloatingPl < 0 ? "text-rose-300" : "text-muted-foreground";
-    return { text: `${fmtMoney(entry.lastFloatingPl)}`, tone, note: "estimated from the last reading" };
+    return { text: fmtScalpMoney(entry.lastFloatingPl, null), tone, note: "estimated from the last reading" };
   }
   return { text: "—", tone: "text-muted-foreground", note: "the broker never sent a final figure" };
 }
