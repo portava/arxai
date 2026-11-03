@@ -593,6 +593,10 @@ export function MemoryTab() {
   // Net P&L sums only closes the paper venue could size; when none could be,
   // the server's 0 is not a result.
   const netPnlMeasured = !(typeof c.unsizedClosedTrades === "number" && hasClosed && c.unsizedClosedTrades >= c.totalClosedTrades);
+  // With any unsized close left out, the sum's sign is not established (an
+  // unsized stop-out may outweigh a sized gain), so it is not coloured as a
+  // gain or a loss. The figure and its basis still show.
+  const netPnlSignKnown = netPnlMeasured && !(typeof c.unsizedClosedTrades === "number" && c.unsizedClosedTrades > 0);
 
   return (
     <>
@@ -632,10 +636,11 @@ export function MemoryTab() {
           </CardHeader>
           <CardContent>
             {/* No figure when none of the closed trades could be sized: the
-                server's 0 then sums nothing. */}
+                server's 0 then sums nothing. No gain/loss colour while any
+                close is left out unsized. */}
             <div
               className={`text-xl font-bold ${
-                !hasClosed || !netPnlMeasured ? "text-txt-secondary" : c.netPnl >= 0 ? "text-success" : "text-danger"
+                !hasClosed || !netPnlSignKnown ? "text-txt-secondary" : c.netPnl >= 0 ? "text-success" : "text-danger"
               }`}
               data-testid="memory-net-pnl"
             >
