@@ -63,7 +63,8 @@ type BridgeReadiness = {
   eaVersionAtLeast?: boolean | null;
   bridgeReady?: boolean | null;
   bridgeBlockers?: string[];
-  gateBlockers?: string[];
+  /** null = the gate was not evaluated for this read (no blocker list exists). */
+  gateBlockers?: string[] | null;
   /** Demo execution armed for this account (MT5 Setup → Demo Execution Control); null/absent = not reported. */
   armed?: boolean | null;
   eaInputs: {
@@ -214,8 +215,9 @@ const POLL_FAILURES_BEFORE_UNKNOWN = 3;
 const CONFIRM_STEP_BLOCKER = "USER_NOT_CONFIRMED";
 const NOT_ARMED_WORDS = "your account is not armed for demo execution (arm it in MT5 Setup → Demo Execution Control)";
 const GATE_BLOCKER_WORDS: Record<string, string> = {
-  // The debug endpoint renames the gate's WRONG_EXECUTION_MODE to
-  // DEMO_EXECUTION_NOT_ARMED; older servers still send the gate's own code.
+  // Current servers send DEMO_EXECUTION_NOT_ARMED (the debug endpoint renames
+  // the gate's WRONG_EXECUTION_MODE); older ones send the gate's raw
+  // WRONG_EXECUTION_MODE. Both mean the same thing.
   DEMO_EXECUTION_NOT_ARMED: NOT_ARMED_WORDS,
   WRONG_EXECUTION_MODE: NOT_ARMED_WORDS,
   NOT_VERIFIED_DEMO: "the demo account has not passed demo verification",
@@ -445,6 +447,9 @@ export function ScannerTradeModal({
   const demoExecution: DemoExecutionState = (() => {
     if (bridgeCheck === "checking") return { kind: "checking" };
     if (bridgeCheck === "failed" || !bridge) return { kind: "unchecked" };
+    // The server answered but its dispatch gate threw (gateEvaluated:false /
+    // bridgeReady:null): no blocker list was measured, so an empty one must not
+    // read as "nothing blocking".
     if (bridge.gateEvaluated === false || bridge.bridgeReady === null) return { kind: "gateNotEvaluated" };
     if (!Array.isArray(bridge.gateBlockers)) return { kind: "unreported" };
     const blocking = bridge.gateBlockers.filter((b) => b !== CONFIRM_STEP_BLOCKER);

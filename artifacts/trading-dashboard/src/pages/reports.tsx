@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils";
 const REPORT_TYPES = [
   ["account_summary", "Account Summary"],
   ["trading_session_summary", "Trading Session Summary"],
-  ["paper_trades", "Demo Trades"],
-  ["performance_calendar", "Performance Calendar"],
+  ["paper_trades", "Demo Trades (My Demo Trades log)"],
+  ["performance_calendar", "Performance Calendar (My Demo Trades log)"],
   ["trade_journal", "Trade Journal"],
   ["ai_trade_reviews", "AI Trade Reviews"],
   ["risk_governor", "Risk Governor"],
@@ -126,6 +126,10 @@ export default function ReportsPage() {
             </select>
           </Field>
         </div>
+        <p className="mt-2 text-[11px] text-txt-muted" data-testid="reports-range-source-note">
+          Dates are UTC days and the end day is included. Demo-trade figures in these reports come from the trades you log on My Demo Trades;
+          the Calendar page and Ruby Memory read the demo sandbox order ledger, so their totals can differ.
+        </p>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm text-txt-secondary">
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={includeJournal} onChange={(e) => setIncJ(e.target.checked)} />Include journal</label>
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={includeAIReviews} onChange={(e) => setIncR(e.target.checked)} />Include AI reviews</label>
@@ -166,7 +170,9 @@ export default function ReportsPage() {
                         : "border-warning/40 bg-warning/10 text-warning")}>{r.status}</span>
                       {r.errorMessage ? <span className="ml-1 text-[11px] text-txt-muted">{r.errorMessage}</span> : null}
                     </td>
-                    <td className="py-2.5 pr-3 text-txt-secondary">{r.rowCount ?? 0}</td>
+                    <td className="py-2.5 pr-3 text-txt-secondary">
+                      {r.status === "completed" && r.rowCount != null ? r.rowCount : "not counted"}
+                    </td>
                     <td className="py-2.5 pr-3 text-txt-muted">{new Date(r.createdAt).toLocaleString()}</td>
                     <td className="py-2.5 text-right">
                       {r.downloadUrl && r.status === "completed" && (

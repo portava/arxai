@@ -91,3 +91,46 @@ describe("useLiveAccountSnapshot carried position rows on the poll fallback", ()
     expect(result.current.snapshot?.positions[0]?.freshness).toBe("stale");
   });
 });
+
+// slot-summary reports openPnL / equity / freeMargin as an explicit null while
+// any open position is unpriced. The poll fallback used `?? prev`, so the
+// server's deliberate "unknown" was replaced by the last stream figure and
+// stamped fresh. Only an ABSENT key may fall back to the carried value.
+describe("useLiveAccountSnapshot withheld figures on the poll fallback", () => {
+  it("an explicit null from slot-summary stays null; it is never replaced by the last stream value", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        dataFreshness: "FRESH", isAllocated: true, isLive: true, balance: 1000,
+        openPnL: null, equity: null, freeMargin: null, marginLevelPercent: null,
+        openPnLIncomplete: true, unpricedPositionCount: 1, openPositionCount: 1, positions: [],
+      }),
+    })));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    const ev = streamSnapshot(FLAGGED);
+    ev.snapshot.openPL = 12.5; ev.snapshot.equity = 1000; ev.snapshot.freeMargin = 950; ev.snapshot.marginLevel = 400;
+    act(() => { MockEventSource.instances[0]!.emit(ev); });
+    expect(result.current.snapshot?.openPL).toBe(12.5);
+    await act(async () => { MockEventSource.instances[0]!.fail(); await Promise.resolve(); await Promise.resolve(); });
+    await vi.waitFor(() => expect(result.current.connectionStatus).toBe("polling"));
+    expect(result.current.snapshot?.openPL).toBeNull();
+    expect(result.current.snapshot?.equity).toBeNull();
+    expect(result.current.snapshot?.freeMargin).toBeNull();
+    expect(result.current.snapshot?.marginLevel).toBeNull();
+    expect(result.current.snapshot?.balance).toBe(1000);
+  });
+
+  it("a key slot-summary does not send at all still falls back to the carried value", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ dataFreshness: "FRESH", isAllocated: true, isLive: true, openPnL: -3, openPositionCount: 1, positions: [] }),
+    })));
+    const { result } = renderHook(() => useLiveAccountSnapshot());
+    act(() => { MockEventSource.instances[0]!.emit(streamSnapshot(FLAGGED)); });
+    await act(async () => { MockEventSource.instances[0]!.fail(); await Promise.resolve(); await Promise.resolve(); });
+    await vi.waitFor(() => expect(result.current.connectionStatus).toBe("polling"));
+    expect(result.current.snapshot?.openPL).toBe(-3);
+    expect(result.current.snapshot?.balance).toBe(1000);
+    expect(result.current.snapshot?.equity).toBe(958);
+  });
+});

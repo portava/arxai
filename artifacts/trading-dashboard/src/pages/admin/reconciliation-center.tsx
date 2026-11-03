@@ -21,6 +21,17 @@ interface Resp {
   countsBySeverity?: Record<Sev, number>;
   total?: number; computedAt?: string;
   categories?: string[];
+  reason?: string;
+  /** True only when every detector ran; otherwise counts cover only the checks that ran. */
+  complete?: boolean;
+  /** Issue types whose detector could not run (unknown, not zero). */
+  uncheckedTypes?: string[];
+  failedChecks?: Array<{ check: string; type: string; severity: Sev; error: string }>;
+  /** True when a detector's list hit its row cap: those counts are "at least". */
+  truncated?: boolean;
+  truncatedChecks?: Array<{ check: string; type: string; severity: Sev; limit: number }>;
+  truncatedTypes?: string[];
+  truncatedSeverities?: Sev[];
 }
 
 const ACTIONS = [
@@ -37,11 +48,22 @@ export default function AdminReconciliationCenter() {
 
   async function load() {
     setErr(null);
-    const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
-    if (r.status === 403) { setErr("Admin-only page."); return; }
-    if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
-    const j = (await r.json()) as Resp;
-    setData(j);
+    try {
+      const r = await fetch("/api/admin/reconciliation-center/issues", { credentials: "include" });
+      if (r.status === 403) { setErr("Admin-only page."); return; }
+      if (r.status === 401) { setErr("Sign in as admin to view this page."); return; }
+      const j = (await r.json()) as Resp;
+      // A failed request is a load failure, never "total 0 / no open issues".
+      if (!r.ok || !j.ok) {
+        setData(null);
+        setErr(`Reconciliation issues could not be loaded${j.reason || j.error ? `: ${j.reason ?? j.error}` : ""}. This is a load failure, not an all-clear.`);
+        return;
+      }
+      setData(j);
+    } catch (e) {
+      setData(null);
+      setErr(`Reconciliation issues could not be loaded${e instanceof Error ? `: ${e.message}` : ""}. This is a load failure, not an all-clear.`);
+    }
   }
   useEffect(() => { void load(); }, []);
 
@@ -71,6 +93,12 @@ export default function AdminReconciliationCenter() {
 
   const sev = data.countsBySeverity ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const byType = data.countsByType ?? {};
+  const complete = data.complete === true;
+  const unchecked = data.uncheckedTypes ?? [];
+  // A capped list means more matched than were listed: "50+" is a lower bound.
+  const cutTypes = data.truncatedTypes ?? [];
+  const cutSeverities = data.truncatedSeverities ?? [];
+  const plus = (cut: boolean) => (cut ? "+" : "");
 
   return (
     <div className="space-y-4 p-4">
@@ -80,16 +108,46 @@ export default function AdminReconciliationCenter() {
           <h1 className="text-2xl font-bold">Reconciliation Center</h1>
           <p className="text-sm text-muted-foreground">Admin-only. Read + audited actions only — never places trades.</p>
         </div>
-        <Badge variant="outline">total {data.total ?? 0}</Badge>
+        <Badge variant="outline">{data.truncated ? `total at least ${data.total ?? 0}` : `total ${data.total ?? 0}`}</Badge>
+        {!complete && <Badge variant="outline" className="border-warning/40 text-warning">incomplete check</Badge>}
       </div>
+
+      {!complete && (
+        <Card className="border-warning/40" data-testid="recon-unchecked">
+          <CardContent className="pt-4 text-sm space-y-1">
+            <p className="text-warning">
+              Not every reconciliation check ran{data.computedAt ? ` (checked ${new Date(data.computedAt).toLocaleString()})` : ""}. Counts on this page cover only the checks that ran.
+            </p>
+            {unchecked.length > 0 ? (
+              <p className="text-muted-foreground">Could not be checked: {unchecked.join(", ")}. Issues of these types may exist.</p>
+            ) : (
+              <p className="text-muted-foreground">The server did not confirm which checks ran.</p>
+            )}
+            {(data.failedChecks ?? []).map((f) => (
+              <p key={f.check} className="text-xs text-muted-foreground">{f.check} ({f.type}): {f.error}</p>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {data.truncated && (
+        <Card className="border-warning/40" data-testid="recon-capped">
+          <CardContent className="pt-4 text-sm space-y-1">
+            <p className="text-warning">Some lists hit their row cap, so counts marked + are lower bounds — the true numbers are higher.</p>
+            {(data.truncatedChecks ?? []).map((c) => (
+              <p key={c.check} className="text-xs text-muted-foreground">{c.type} ({c.check}): first {c.limit} listed, more exist.</p>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Counts by severity</CardTitle></CardHeader>
         <CardContent className="flex gap-2 flex-wrap text-sm">
-          <Badge className="bg-danger/20 text-danger">critical {sev.critical}</Badge>
-          <Badge className="bg-warning/20 text-warning">high {sev.high}</Badge>
-          <Badge className="bg-warning/20 text-warning">medium {sev.medium}</Badge>
-          <Badge className="bg-primary/20 text-primary">low {sev.low}</Badge>
+          <Badge className="bg-danger/20 text-danger" data-testid="recon-sev-critical">critical {sev.critical}{plus(cutSeverities.includes("critical"))}</Badge>
+          <Badge className="bg-warning/20 text-warning" data-testid="recon-sev-high">high {sev.high}{plus(cutSeverities.includes("high"))}</Badge>
+          <Badge className="bg-warning/20 text-warning" data-testid="recon-sev-medium">medium {sev.medium}{plus(cutSeverities.includes("medium"))}</Badge>
+          <Badge className="bg-primary/20 text-primary" data-testid="recon-sev-low">low {sev.low}{plus(cutSeverities.includes("low"))}</Badge>
         </CardContent>
       </Card>
 
@@ -97,8 +155,9 @@ export default function AdminReconciliationCenter() {
         <CardHeader><CardTitle className="text-base">Counts by type</CardTitle></CardHeader>
         <CardContent className="grid gap-1 md:grid-cols-2 text-sm">
           {Object.entries(byType).map(([k, v]) => (
-            <div key={k} className="flex justify-between border-b border-border/40 py-1">
-              <span className="text-muted-foreground">{k}</span><span>{v}</span>
+            <div key={k} className="flex justify-between border-b border-border/40 py-1" data-testid={`recon-type-${k}`}>
+              <span className="text-muted-foreground">{k}</span>
+              <span>{unchecked.includes(k) ? <span className="text-warning">not checked</span> : `${v}${plus(cutTypes.includes(k))}`}</span>
             </div>
           ))}
         </CardContent>
@@ -108,7 +167,9 @@ export default function AdminReconciliationCenter() {
         <CardHeader><CardTitle className="text-base">Open issues</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {(data.issues ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open reconciliation issues.</p>
+            <p className="text-sm text-muted-foreground">
+              {complete ? "No open reconciliation issues." : "No issues found by the checks that ran. Not every check ran, so this is not an all-clear."}
+            </p>
           ) : (data.issues ?? []).map((i) => (
             <div key={i.id} className="rounded-md border border-border/60 p-3 text-sm space-y-2">
               <div className="flex flex-wrap items-center gap-2">

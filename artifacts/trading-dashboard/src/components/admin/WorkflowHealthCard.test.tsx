@@ -56,6 +56,27 @@ describe("WorkflowHealthCard headline", () => {
     expect(badge.getAttribute("title") ?? "").toMatch(/database.*bridge/i);
   });
 
+  it("names an unreadable bridge aggregate as 'Bridge status unknown' even when the server's ok is false", async () => {
+    stub(payload({ ok: false, dbOk: true, bridge: { readable: false } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toBe("Bridge status unknown");
+  });
+
+  it("names every bridge down as 'no bridge heartbeating' even when the server's ok is false", async () => {
+    stub(payload({ ok: false, dbOk: true, bridge: { total: 2, healthy: 0, stale: 0, down: 2 } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toBe("Degraded — no bridge heartbeating");
+  });
+
+  it("falls back to Degraded when the server says not ok for a reason the card does not name", async () => {
+    stub(payload({ ok: false, dbOk: true, bridge: { total: 1, healthy: 1, readable: true } }));
+    render(<WorkflowHealthCard />);
+    const badge = await screen.findByTestId("badge-workflow-health");
+    expect(badge.textContent).toBe("Degraded");
+  });
+
   it("says Degraded when the server reports not ok", async () => {
     stub(payload({ ok: false, dbOk: false, bridge: { total: 1, healthy: 1 } }));
     render(<WorkflowHealthCard />);

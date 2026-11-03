@@ -46,6 +46,13 @@ type OperatorPayload = {
   reconciliationSummary: {
     total: number; critical: number; high: number; medium: number; low: number;
     byType: Record<string, number>;
+    /** True only when every reconciliation detector ran. */
+    complete?: boolean;
+    uncheckedTypes?: string[];
+    /** A list hit its row cap: these counts are lower bounds. */
+    truncated?: boolean;
+    truncatedTypes?: string[];
+    truncatedSeverities?: string[];
   };
 };
 
@@ -233,12 +240,26 @@ export default function OperatorCommandCenter() {
       {/* G. Reconciliation Summary */}
       <Panel title="Reconciliation Summary" testid="panel-reconciliation">
         <div className="space-y-2 text-sm">
+          {d.reconciliationSummary.complete !== true && (
+            <p className="text-warning" data-testid="reconciliation-unchecked">
+              Reconciliation could not be fully checked —{" "}
+              {(d.reconciliationSummary.uncheckedTypes ?? []).length > 0
+                ? `${(d.reconciliationSummary.uncheckedTypes ?? []).join(", ")} did not run`
+                : "the server did not confirm every check ran"}
+              . The counts below cover only the checks that ran.
+            </p>
+          )}
+          {d.reconciliationSummary.truncated && (
+            <p className="text-warning" data-testid="reconciliation-capped">
+              {(d.reconciliationSummary.truncatedTypes ?? []).join(", ")} hit the row cap — counts marked + are lower bounds.
+            </p>
+          )}
           <div className="grid grid-cols-5 gap-2">
-            <div>Total: <strong>{d.reconciliationSummary.total}</strong></div>
-            <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}</strong></div>
-            <div>High: <strong>{d.reconciliationSummary.high}</strong></div>
-            <div>Medium: <strong>{d.reconciliationSummary.medium}</strong></div>
-            <div>Low: <strong>{d.reconciliationSummary.low}</strong></div>
+            <div>Total: <strong>{d.reconciliationSummary.total}{d.reconciliationSummary.truncated ? "+" : ""}</strong></div>
+            <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("critical") ? "+" : ""}</strong></div>
+            <div>High: <strong>{d.reconciliationSummary.high}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("high") ? "+" : ""}</strong></div>
+            <div>Medium: <strong>{d.reconciliationSummary.medium}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("medium") ? "+" : ""}</strong></div>
+            <div>Low: <strong>{d.reconciliationSummary.low}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("low") ? "+" : ""}</strong></div>
           </div>
           {Object.keys(d.reconciliationSummary.byType).length > 0 && (
             <pre className="rounded-xl border border-border bg-background/40 p-2 text-xs text-txt-secondary">{JSON.stringify(d.reconciliationSummary.byType, null, 2)}</pre>

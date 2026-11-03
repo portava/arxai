@@ -21,7 +21,8 @@ export type BridgeBlockInput = {
   heartbeatFreshStrict?: boolean | null;
   eaVersionAtLeast?: boolean | null;
   bridgeBlockers?: string[];
-  gateBlockers?: string[];
+  /** null = the gate was not evaluated for this read. */
+  gateBlockers?: string[] | null;
   armed?: boolean | null;
   eaInputs: { readOnlyMode: boolean | null; enableDemoExecution: boolean | null };
 };

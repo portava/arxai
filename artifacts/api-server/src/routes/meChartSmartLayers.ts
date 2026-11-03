@@ -224,6 +224,23 @@ router.get(
     const overlayAgeMs = Number.isFinite(signalGeneratedMs)
       ? Math.max(0, nowMs - signalGeneratedMs)
       : null;
+    // overlayAgeMs is how long ago the server rebuilt the read — it is rebuilt
+    // on every request, so on its own it always looks fresh. Whether the
+    // candles UNDER the overlays are live is a separate fact: the signal's
+    // dataSource (only LIVE_FEED is live) and the structure levels' chart
+    // state (stale = not live). null = no signal, nothing to judge.
+    const signalCandlesLive = signal ? signal.dataSource === "LIVE_FEED" : null;
+    const levelCandlesStale = chartState ? chartState.stale === true : false;
+    const sourceDataLive: boolean | null =
+      signalCandlesLive == null ? null : signalCandlesLive && !levelCandlesStale;
+    const sourceDataNote: string | null =
+      sourceDataLive !== false
+        ? null
+        : !signalCandlesLive
+          ? signal?.dataSource === "LIVE_DELAYED"
+            ? "the signal's candles are delayed"
+            : "the signal's candles are not from a live feed right now"
+          : "the chart's structure-level candles are stale";
 
     // Server-side (data) handshake: chart is assumed rendered for the data view
     // and the chart symbol is the requested symbol vs the symbol the signal was
@@ -238,6 +255,8 @@ router.get(
       levelCount,
       newsMapped,
       overlayAgeMs,
+      sourceDataLive,
+      sourceDataNote,
     });
 
     res.json({
@@ -277,6 +296,8 @@ router.get(
         hasSufficientData,
         levelCount,
         newsMapped,
+        sourceDataLive,
+        sourceDataNote,
       },
       ...SAFETY_ENVELOPE,
     });

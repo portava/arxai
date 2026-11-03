@@ -670,8 +670,20 @@ export interface OverlayHandshakeInput {
   levelCount: number;
   /** Whether the news radar produced a (possibly-empty) mapping. */
   newsMapped: boolean;
-  /** Age of the overlay data in ms (null when unknown). */
+  /**
+   * How long ago the overlays were rebuilt, in ms (null when unknown). This is
+   * the age of the server's read, not of the candles it read.
+   */
   overlayAgeMs: number | null;
+  /**
+   * Whether the candles the overlays were drawn from are live: true = live
+   * feed, false = not live (delayed / awaiting feed / stale), null = not
+   * reported. A rebuild seconds ago from stale candles is not fresh. Omitted
+   * by older callers, in which case only the rebuild age is judged.
+   */
+  sourceDataLive?: boolean | null;
+  /** Plain-English reason the source candles are not live (shown in the check). */
+  sourceDataNote?: string | null;
 }
 
 /**
@@ -759,11 +771,29 @@ export function buildOverlayHandshake(
       status: "NOT_AVAILABLE",
       detail: "Overlay age is unknown.",
     });
+  } else if (input.overlayAgeMs <= FRESHNESS_WARN_MS && input.sourceDataLive === false) {
+    // A recent rebuild says only that the server answered; the candles under
+    // it are not live, so the overlays show the last known market.
+    checks.push({
+      key: "freshness",
+      status: "WARN",
+      detail: `Overlays were rebuilt just now, but from candles that are not live${
+        input.sourceDataNote ? ` (${input.sourceDataNote})` : ""
+      } — they show the last known market, not the current one.`,
+    });
+  } else if (input.overlayAgeMs <= FRESHNESS_WARN_MS && input.sourceDataLive === null) {
+    checks.push({
+      key: "freshness",
+      status: "NOT_AVAILABLE",
+      detail: "Overlays were rebuilt just now, but whether their candles are live was not reported.",
+    });
   } else if (input.overlayAgeMs <= FRESHNESS_WARN_MS) {
     checks.push({
       key: "freshness",
       status: "PASS",
-      detail: "Overlays are fresh.",
+      detail: input.sourceDataLive === true
+        ? "Overlays are fresh — rebuilt from live candles within the last 90 seconds."
+        : "Overlays are fresh.",
     });
   } else if (input.overlayAgeMs <= FRESHNESS_FAIL_MS) {
     checks.push({

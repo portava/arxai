@@ -397,7 +397,9 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
           )
         : null,
       bridgeBlockers: gateEvidence?.bridgeBlockers ?? [],
-      gateBlockers,
+      // null = gate not evaluated: there is no blocker list, and an empty
+      // array would read as "nothing blocking".
+      gateBlockers: gateEvidence ? gateBlockers : null,
       // Account-side gate inputs, reported on their own so the UI can tell
       // the user where each is fixed (arming lives in MT5 Setup → Demo
       // Execution Control, not in the EA inputs). null = gate not evaluated.

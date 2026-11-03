@@ -26,14 +26,48 @@ const MODE_META = {
   DEMO: { tone: "info" as const, icon: Plug, label: "Demo" },
   LIVE_LOCKED: { tone: "warning" as const, icon: Lock, label: "Live Locked" },
   LIVE: { tone: "danger" as const, icon: Zap, label: "LIVE" },
+  // /mt5/status modes for the user's own connection.
+  NOT_CONNECTED: { tone: "neutral" as const, icon: WifiOff, label: "Not connected" },
+  STALE: { tone: "warning" as const, icon: WifiOff, label: "Stale" },
 } as const;
+// Not a server mode: the user routes through the shared master bridge, so the
+// own-connection mode (NOT_CONNECTED) does not describe their bridge.
+const SHARED_MODE_META = { tone: "info" as const, icon: Plug, label: "Shared bridge" };
+const UNKNOWN_MODE_META = { tone: "neutral" as const, icon: WifiOff, label: "Unknown" };
+const CHECKING_MODE_META = { tone: "neutral" as const, icon: WifiOff, label: "Checking" };
+
+type SharedBridgeView = { availability?: string; connected?: boolean; message?: string } | null;
+/**
+ * What the MT5 pill may say. `connected` on /mt5/status is the user's OWN
+ * connection; a SHARED_MASTER user is routed through the master bridge,
+ * reported separately as sharedMasterBridge (re-aged by the server). A failed
+ * status request is unknown, never "OFF".
+ */
+function mt5BridgeView(mt5: any, loadFailed: boolean): {
+  pill: string; tone: "success" | "warning" | "neutral"; connectedText: string; up: boolean;
+} {
+  if (!mt5) {
+    return loadFailed
+      ? { pill: "Unknown", tone: "warning", connectedText: "could not be loaded", up: false }
+      : { pill: "…", tone: "neutral", connectedText: "checking", up: false };
+  }
+  if (mt5.connected === true) return { pill: "ON", tone: "success", connectedText: "yes (your own EA)", up: true };
+  if (mt5.route === "SHARED_MASTER") {
+    const shared = (mt5.sharedMasterBridge ?? null) as SharedBridgeView;
+    if (shared?.connected === true) return { pill: "ON", tone: "success", connectedText: "yes (shared MT5 bridge)", up: true };
+    const a = shared?.availability;
+    const word = a === "STALE" ? "Stale" : a === "RECONCILING" ? "Reconciling" : !a || a === "UNKNOWN" ? "Unknown" : "Unavailable";
+    return { pill: word, tone: "warning", connectedText: `no — shared MT5 bridge ${word.toLowerCase()}`, up: false };
+  }
+  return { pill: "OFF", tone: "neutral", connectedText: "no", up: false };
+}
 
 export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const unlocks = useAllUnlocks();
   // Only poll MT5 / bot status once the user has unlocked those surfaces.
   // Fresh browser sessions get no leak of the global single-tenant state
   // (account, broker, mode, running flag) into the global header.
-  const { data: mt5 } = useGetMt5Status({
+  const { data: mt5, isError: mt5Error } = useGetMt5Status({
     query: {
       queryKey: getGetMt5StatusQueryKey(),
       refetchInterval: 5000,
@@ -49,7 +83,12 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   });
   const session = getCurrentSession();
   const sessionMeta = SESSION_META[session];
-  const modeMeta = (mt5 && MODE_META[mt5.mode as keyof typeof MODE_META]) || MODE_META.MOCK;
+  const mt5LoadFailed = mt5Error === true && mt5 == null;
+  const modeMeta = !mt5
+    ? (mt5LoadFailed ? UNKNOWN_MODE_META : CHECKING_MODE_META)
+    : (mt5 as { route?: string }).route === "SHARED_MASTER" && !mt5.connected
+      ? SHARED_MODE_META
+      : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
   const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;
 
@@ -74,6 +113,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
             Per-user isolation still enforced server-side. */}
         <CompactStatusRow
           mt5={mt5}
+          mt5LoadFailed={mt5LoadFailed}
           bot={bot}
           unlocks={unlocks}
           sessionLabel={sessionMeta.label}
@@ -143,6 +183,7 @@ function UserMenu() {
 
 type CompactStatusRowProps = {
   mt5: any;
+  mt5LoadFailed: boolean;
   bot: any;
   unlocks: ReturnType<typeof useAllUnlocks>;
   sessionLabel: string;
@@ -158,10 +199,11 @@ function CompactStatusRow(p: CompactStatusRowProps) {
     { id: "session", label: "Sess", value: p.sessionLabel, legacyTestId: "badge-session",
       tone: p.sessionTone === "bullish" ? "success" : p.sessionTone === "warning" ? "warning" : p.sessionTone === "info" ? "neutral" : "neutral" },
   ];
+  const bridge = mt5BridgeView(p.mt5, p.mt5LoadFailed);
   if (p.unlocks.mt5) {
-    pills.push({ id: "mt5", label: "MT5", value: p.mt5?.connected ? "ON" : "OFF",
+    pills.push({ id: "mt5", label: "MT5", value: bridge.pill,
       legacyTestId: "badge-mt5-connection",
-      tone: p.mt5?.connected ? "success" : "neutral" });
+      tone: bridge.tone });
     pills.push({ id: "mode", label: "Mode", value: p.modeLabel,
       legacyTestId: "badge-mode",
       tone: p.modeTone === "danger" ? "danger" : p.modeTone === "warning" ? "warning" : "neutral" });
@@ -177,7 +219,7 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       {/* A session NAME bucketed by UTC hours — not the page's display time zone. */}
       <DetailRow label="Trading session (by UTC hours)" value={p.sessionLabel} />
       <DetailRow label="MT5 mode" value={p.modeLabel} />
-      <DetailRow label="MT5 connected" value={p.mt5?.connected ? "yes" : "no"} />
+      <DetailRow label="MT5 connected" value={bridge.connectedText} />
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
         <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
       )}
@@ -213,7 +255,7 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       <span className="sr-only" data-testid="badge-session">{p.sessionLabel}</span>
       {p.unlocks.mt5 && (
         <>
-          <span className="sr-only" data-testid="badge-mt5-connection">{p.mt5?.connected ? "connected" : "disconnected"}</span>
+          <span className="sr-only" data-testid="badge-mt5-connection">{bridge.up ? "connected" : p.mt5 ? "disconnected" : "unknown"}</span>
           <span className="sr-only" data-testid="badge-mode">{p.modeLabel}</span>
         </>
       )}

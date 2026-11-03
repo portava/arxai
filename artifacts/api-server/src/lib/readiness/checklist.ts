@@ -45,7 +45,7 @@ export async function buildChecklist(report?: ReadinessReport): Promise<Checklis
   const feFailed = feTests.filter((t) => t.status !== "PASS").map((t) => t.name);
   const fullPaperTests = (rpt.workflowResults as { full_paper_loop?: { tests?: Array<{ status: string; name: string }> } }).full_paper_loop?.tests ?? [];
 
-  const sections: ChecklistSection[] = [
+  const checkSections: ChecklistSection[] = [
     {
       name: "Safety",
       items: [
@@ -85,13 +85,18 @@ export async function buildChecklist(report?: ReadinessReport): Promise<Checklis
     {
       name: "Endpoints",
       items: [
-        { item: "Major AA-NN endpoints reachable", status: epFailed.length === 0 ? "PASS" : (epFailed.length > 5 ? "FAIL" : "WARN"), evidence: `${epTests.length - epFailed.length}/${epTests.length} reachable`, recommendedFix: epFailed.length > 0 ? `Investigate: ${epFailed.slice(0,3).join("; ")}` : "" },
+        // Zero probes is unmeasured, not "0/0 reachable".
+        epTests.length === 0
+          ? { item: "Major AA-NN endpoints reachable", status: "FAIL", evidence: "no endpoint probes ran in this report", recommendedFix: "Investigate why the endpoint probes did not run." }
+          : { item: "Major AA-NN endpoints reachable", status: epFailed.length === 0 ? "PASS" : (epFailed.length > 5 ? "FAIL" : "WARN"), evidence: `${epTests.length - epFailed.length}/${epTests.length} reachable`, recommendedFix: epFailed.length > 0 ? `Investigate: ${epFailed.slice(0,3).join("; ")}` : "" },
       ],
     },
     {
       name: "Frontend",
       items: [
-        { item: "Security + admin pages reachable", status: feFailed.length === 0 ? "PASS" : "WARN", evidence: `${feTests.length - feFailed.length}/${feTests.length} pages`, recommendedFix: feFailed.length > 0 ? feFailed.slice(0,3).join("; ") : "" },
+        feTests.length === 0
+          ? { item: "Security + admin pages reachable", status: "WARN", evidence: "no frontend probes ran in this report", recommendedFix: "Investigate why the frontend probes did not run." }
+          : { item: "Security + admin pages reachable", status: feFailed.length === 0 ? "PASS" : "WARN", evidence: `${feTests.length - feFailed.length}/${feTests.length} pages`, recommendedFix: feFailed.length > 0 ? feFailed.slice(0,3).join("; ") : "" },
       ],
     },
     {
@@ -114,27 +119,56 @@ export async function buildChecklist(report?: ReadinessReport): Promise<Checklis
         { item: "MM system health reachable", status: statusFromCounts(safe("mm_system_health_admin").passed, safe("mm_system_health_admin").warned, safe("mm_system_health_admin").failed), evidence: `${safe("mm_system_health_admin").passed} passed`, recommendedFix: "" },
       ],
     },
+  ];
+
+  // One document, one verdict: the checklist's own FAIL/WARN items (including
+  // unmeasured probes and the unprobed route-auth item) count alongside the
+  // report's warnings and status. The checklist can only make the verdict
+  // worse than the report's, never better.
+  const checkItems = checkSections.flatMap((sec) => sec.items.map((it) => ({ section: sec.name, ...it })));
+  const failedItems = checkItems.filter((it) => it.status === "FAIL");
+  const warnedItems = checkItems.filter((it) => it.status === "WARN");
+  const knownWarnings: ChecklistItem[] = [
+    ...rpt.warnings.map((w) => ({ item: w, status: "WARN" as const, evidence: w, recommendedFix: "Review and address as time permits." })),
+    ...warnedItems.map((it) => ({ item: `${it.section}: ${it.item}`, status: "WARN" as const, evidence: it.evidence, recommendedFix: it.recommendedFix })),
+  ];
+  const fixes = [...new Set([
+    ...rpt.recommendedFixes,
+    ...[...failedItems, ...warnedItems].map((it) => it.recommendedFix).filter((f) => f.length > 0),
+  ])];
+  const sections: ChecklistSection[] = [
+    ...checkSections,
     {
       name: "Known warnings",
-      items: rpt.warnings.length === 0
-        ? [{ item: "No warnings", status: "PASS", evidence: "0 warnings", recommendedFix: "" }]
-        : rpt.warnings.slice(0, 10).map((w) => ({ item: w, status: "WARN" as const, evidence: w, recommendedFix: "Review and address as time permits." })),
+      items: knownWarnings.length === 0
+        ? [{ item: "No warnings", status: "PASS", evidence: "0 warnings in the report and 0 WARN items in this checklist", recommendedFix: "" }]
+        : knownWarnings.slice(0, 10),
     },
     {
       name: "Next recommended fixes",
-      items: rpt.recommendedFixes.length === 0
+      items: fixes.length === 0
         ? [{ item: "No fixes recommended", status: "PASS", evidence: "", recommendedFix: "" }]
-        : rpt.recommendedFixes.slice(0, 10).map((fix) => ({ item: fix, status: "WARN" as const, evidence: "", recommendedFix: fix })),
+        : fixes.slice(0, 10).map((fix) => ({ item: fix, status: "WARN" as const, evidence: "", recommendedFix: fix })),
     },
   ];
 
+  const RANK = { PASS: 0, PASS_WITH_WARNINGS: 1, FAIL: 2, BLOCKED: 3 } as const;
+  type Verdict = keyof typeof RANK;
+  const reportVerdict: Verdict = (rpt.overallStatus in RANK ? rpt.overallStatus : "FAIL") as Verdict;
+  const checklistVerdict: Verdict = failedItems.length > 0 ? "FAIL" : warnedItems.length > 0 ? "PASS_WITH_WARNINGS" : "PASS";
+  const verdict: Verdict = RANK[checklistVerdict] > RANK[reportVerdict] ? checklistVerdict : reportVerdict;
+  const names = (xs: typeof checkItems) =>
+    `${xs.slice(0, 3).map((it) => `${it.item} (${it.evidence})`).join("; ")}${xs.length > 3 ? `; and ${xs.length - 3} more` : ""}`;
+  const because = verdict === reportVerdict ? ""
+    : verdict === "FAIL" ? ` Failed checklist items: ${names(failedItems)}.`
+    : ` Checklist warnings: ${names(warnedItems)}.`;
   const finalRecommendation =
-    rpt.overallStatus === "BLOCKED"
+    verdict === "BLOCKED"
       ? "BLOCKED — Do NOT proceed. Address hard-fail items first. Live trading remains DISABLED."
-      : rpt.overallStatus === "FAIL"
-      ? "FAIL — Address critical failures before continuing paper testing. Live trading remains DISABLED."
-      : rpt.overallStatus === "PASS_WITH_WARNINGS"
-      ? "PASS_WITH_WARNINGS — Safe to continue paper testing. Live trading remains DISABLED."
+      : verdict === "FAIL"
+      ? `FAIL — Address critical failures before continuing paper testing.${because} Live trading remains DISABLED.`
+      : verdict === "PASS_WITH_WARNINGS"
+      ? `PASS_WITH_WARNINGS — Safe to continue paper testing.${because} Live trading remains DISABLED.`
       : "PASS — Safe to continue paper testing. Live trading remains DISABLED.";
 
   return {
