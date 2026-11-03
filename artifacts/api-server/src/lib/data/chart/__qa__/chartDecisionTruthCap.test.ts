@@ -311,3 +311,25 @@ test("a broker comparison that ran and failed keeps the broker-mirror wording", 
   assert.ok(v.reasons.includes("the chart's prices failed the broker-mirror check"), v.reasons.join("; "));
   assert.ok(!v.reasons.includes("the chart's history and live bars do not join cleanly"));
 });
+
+// Truth: the scalp-only branch returned before the read-verification check,
+// so on an unverified read the Scalp sentence still said "keep it small and
+// fast" / "only quick in-and-out trades make sense here" while Pulse said the
+// read was not verified and watch-only.
+test("scalp-only conditions on an unverified read do not invite a scalp", () => {
+  const s = aGradeState(gate(70));
+  const scalpOnly = { ...s.marketUnderstanding.timeframeAgreement, scalpOnlyWarning: true };
+  const mu = { ...s.marketUnderstanding, timeframeAgreement: scalpOnly };
+  for (const momentumBurst of [true, false]) {
+    const text = sentencesFor({ ...s, marketUnderstanding: mu, fastFlags: { ...s.fastFlags, momentumBurst } }).scalp.text;
+    assert.doesNotMatch(text, /keep it small and fast|make sense here/);
+    assert.match(text, /not verified/);
+    assert.match(text, /Chart Truth is 70\/100/);
+    assert.match(text, /don't scalp off it yet/);
+  }
+  // A verified read keeps the scalp-only guidance.
+  const ok = aGradeState(gate(87));
+  const verifiedText = sentencesFor({ ...ok, marketUnderstanding: { ...ok.marketUnderstanding, timeframeAgreement: scalpOnly },
+    fastFlags: { ...ok.fastFlags, momentumBurst: true } }).scalp.text;
+  assert.match(verifiedText, /^Scalp-only: there's a quick momentum burst/);
+});

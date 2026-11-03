@@ -463,6 +463,18 @@ function sentenceScalp(s: SentenceInput): ChartMarketSentence {
   const tf = s.marketUnderstanding.timeframeAgreement;
   const momentum = s.fastFlags.momentumBurst;
   if (tf.scalpOnlyWarning) {
+    // Scalp-only guidance still invites a quick trade, so an unverified read
+    // gets the caution instead (the same rule as the momentum branch below).
+    const why = unverifiedWhy(s);
+    if (why) {
+      return {
+        ...base,
+        tone: "caution",
+        text: momentum
+          ? `Scalp-only conditions with a momentum burst, but this read is not verified (${why}) — don't scalp off it yet.`
+          : `Scalp-only conditions (the timeframes disagree), but this read is not verified (${why}) — don't scalp off it yet.`,
+      };
+    }
     return {
       ...base,
       tone: "caution",
