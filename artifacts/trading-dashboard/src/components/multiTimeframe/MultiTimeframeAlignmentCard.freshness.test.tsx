@@ -220,6 +220,68 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     });
   });
 
+  // Reports stored before bar times were recorded carry no freshness. Their
+  // newest bar opened no later than the scan (createdAt), so the report's own
+  // age on the server's clock is a lower bound on the bar's age.
+  describe("a report stored before bar times were recorded", () => {
+    const legacy = (createdAt: string) => report({
+      lowerTrend: snap("UP", undefined, undefined),
+      middleTrend: snap("UP", undefined, undefined),
+      higherTrend: snap("UP", undefined, undefined),
+      alignmentScore: 82, alignmentLabel: "STRONG_BULLISH_ALIGNMENT", conflictWarning: null, bestBias: "BUY",
+      createdAt,
+    });
+
+    it("one scanned days ago shows no alignment score or best bias", async () => {
+      // Generated Monday, opened Saturday.
+      atTime("2026-10-31T10:00:00.000Z");
+      renderWith(legacy("2026-10-26T10:00:00.000Z"));
+      await screen.findByTestId("mtf-not-current");
+      const text = document.body.textContent ?? "";
+      expect(text).not.toMatch(/Best bias/);
+      expect(text).not.toMatch(/Alignment\s*82\/100/);
+      expect(text).not.toMatch(/STRONG BULLISH ALIGNMENT/);
+      expect(screen.getByTestId("mtf-label").textContent).toBe("DATA NOT CURRENT");
+      const reason = screen.getByTestId("mtf-not-current-reason").textContent ?? "";
+      expect(reason).toMatch(/This scan is from Mon 2026-10-26 10:00 UTC/);
+      expect(reason).toMatch(/M5, H1, H4 bar times were not recorded, and this report is older than two H4 bars/);
+      expect(reason).toMatch(/Run the scan again for a current read/);
+      expect(screen.getByTestId("mtf-legacy-freshness").textContent).toMatch(/stored before bar times were recorded/);
+      expect(screen.getAllByTestId("mtf-bar-time").map((e) => e.textContent)).toEqual([
+        "bar time not recorded", "bar time not recorded", "bar time not recorded",
+      ]);
+    });
+
+    it("one scanned 30 minutes ago names only the timeframes it is provably old for", async () => {
+      atTime("2026-10-26T10:30:00.000Z");
+      renderWith(legacy("2026-10-26T10:00:00.000Z"));
+      await screen.findByTestId("mtf-not-current");
+      expect(document.body.textContent).not.toMatch(/Best bias/);
+      expect(screen.getByTestId("mtf-not-current-reason").textContent)
+        .toMatch(/Not a current read: M5 bar times were not recorded, and this report is older than two M5 bars\./);
+    });
+
+    it("one scanned minutes ago keeps its score, with the not-checked note", async () => {
+      atTime("2026-10-26T10:03:00.000Z");
+      renderWith(legacy("2026-10-26T10:00:00.000Z"));
+      await screen.findByTestId("mtf-legacy-freshness");
+      expect(screen.queryByTestId("mtf-not-current")).toBeNull();
+      expect(document.body.textContent).toMatch(/Alignment\s*82\/100/);
+    });
+
+    it("with no server time, it is not shown as a current alignment", async () => {
+      atTime("2026-10-26T10:03:00.000Z");
+      renderWith(legacy("2026-10-26T10:00:00.000Z"), null);
+      await screen.findByTestId("mtf-not-current");
+      const text = document.body.textContent ?? "";
+      expect(text).not.toMatch(/Best bias/);
+      expect(text).not.toMatch(/Alignment\s*82\/100/);
+      expect(screen.getByTestId("mtf-label").textContent).toBe("NOT RE-CHECKED");
+      expect(screen.getByTestId("mtf-not-current-reason").textContent)
+        .toMatch(/No server time came with this report, and this device's clock is not used to judge its age/);
+    });
+  });
+
   it("an older report without bar times says their age was not recorded", async () => {
     renderWith(report({
       lowerTrend: snap("UP", undefined, undefined),

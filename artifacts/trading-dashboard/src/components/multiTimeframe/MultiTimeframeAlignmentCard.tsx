@@ -133,6 +133,20 @@ function recheckSinceScan(timeframe: string, s: Snap, serverNowMs: number | null
 }
 
 /**
+ * A report stored before bar times were recorded has no freshness to re-check.
+ * Its newest bar opened no later than the scan (createdAt), so the report's own
+ * age on the server's clock is a lower bound on the bar's age: "old" once the
+ * report is older than two bars of this timeframe, "recent" when that does not
+ * prove it (the bars may still have been old), "unchecked" with no server time.
+ */
+function legacySinceScan(timeframe: string, s: Snap, createdAt: string, serverNowMs: number | null): "old" | "recent" | "unchecked" | null {
+  if (!freshnessUnrecorded(s)) return null;
+  if (serverNowMs == null) return "unchecked";
+  const scan = { open: 0, high: 0, low: 0, close: 0, time: createdAt };
+  return assessTimeframeFreshness(timeframe, scan, serverNowMs).freshness === "STALE" ? "old" : "recent";
+}
+
+/**
  * Plain-English line for a timeframe's newest bar: when it opened and whether
  * it was current when the report was generated (and, if it was, whether it
  * still is), or that the bars carried no time, or (older reports) that it was
@@ -210,11 +224,20 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
   const agedTiles = tiles.filter((tf) => recheck(tf) === "aged");
   const uncheckedTiles = tiles.filter((tf) => recheck(tf) === "unchecked");
   const isAged = (tf: (typeof tiles)[number]) => agedTiles.includes(tf);
-  const provenNotCurrent = observed && (r!.alignmentLabel === "DATA_NOT_CURRENT" || staleTiles.length > 0 || agedTiles.length > 0);
-  const notCurrent = provenNotCurrent || (observed && uncheckedTiles.length > 0);
+  // Stored before bar times were recorded: old when the report itself is
+  // older than two bars of the timeframe (on the server's clock).
+  const legacyAge = (tf: (typeof tiles)[number]) => legacySinceScan(tf.label, tf.s, r!.createdAt, serverNowMs);
+  const legacyOldTiles = tiles.filter((tf) => legacyAge(tf) === "old");
+  const legacyUncheckedTiles = tiles.filter((tf) => legacyAge(tf) === "unchecked");
+  const provenNotCurrent = observed &&
+    (r!.alignmentLabel === "DATA_NOT_CURRENT" || staleTiles.length > 0 || agedTiles.length > 0 || legacyOldTiles.length > 0);
+  const notCurrent = provenNotCurrent || (observed && (uncheckedTiles.length > 0 || legacyUncheckedTiles.length > 0));
+  const tileNotCurrentNow = (tf: (typeof tiles)[number]) =>
+    snapNotCurrent(tf.s) || isAged(tf) || uncheckedTiles.includes(tf) || legacyOldTiles.includes(tf) || legacyUncheckedTiles.includes(tf);
+  const labelsOf = (list: (typeof tiles)) => list.map((tf) => tf.label).join(", ");
   const scanStamp = r ? utcStamp(r.createdAt) : null;
   const measured = observed && !notCurrent;
-  const legacyFreshness = measured && tiles.some((tf) => freshnessUnrecorded(tf.s));
+  const legacyFreshness = (measured || notCurrent) && tiles.some((tf) => freshnessUnrecorded(tf.s));
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
@@ -295,7 +318,7 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
                   from {tf.s.candlesUsed} candles
                 </div>
                 <div
-                  className={`text-[10px] ${snapNotCurrent(tf.s) || isAged(tf) || uncheckedTiles.includes(tf) ? "text-amber-400/90" : "text-slate-500"}`}
+                  className={`text-[10px] ${tileNotCurrentNow(tf) ? "text-amber-400/90" : "text-slate-500"}`}
                   data-testid="mtf-bar-time"
                 >
                   {barTimeText(tf.s, recheck(tf))}
@@ -307,16 +330,30 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
             <TimeframeConflictWarning warning={r.conflictWarning} label={r.alignmentLabel} />
           ) : (
             <p className="rounded-md border border-amber-800 bg-amber-950/30 p-3 text-xs text-amber-200" data-testid="mtf-not-current-reason">
-              {(agedTiles.length > 0 || uncheckedTiles.length > 0) && `This scan is from ${scanStamp ?? "a time that was not recorded"}. `}
+              {(agedTiles.length > 0 || uncheckedTiles.length > 0 || legacyOldTiles.length > 0 || legacyUncheckedTiles.length > 0) &&
+                `This scan is from ${scanStamp ?? "a time that was not recorded"}. `}
               {provenNotCurrent ? "Not a current read" : "Not shown as a current read"}:{" "}
               {[
                 ...staleTiles.map((tf) => `${tf.label} newest bar is not current (${barTimeText(tf.s)})`),
                 ...agedTiles.map((tf) => `${tf.label} newest bar is no longer current (${barTimeText(tf.s, "aged")})`),
                 ...uncheckedTiles.map((tf) => `${tf.label} newest bar was current when scanned; whether it still is was not checked`),
+                ...(legacyOldTiles.length > 0
+                  ? [`${labelsOf(legacyOldTiles)} bar times were not recorded, and this report is older than two ${legacyOldTiles[legacyOldTiles.length - 1]!.label} bars`]
+                  : []),
+                ...(legacyUncheckedTiles.length > 0
+                  ? [`${labelsOf(legacyUncheckedTiles)} bar times were not recorded, and this report's age was not checked`]
+                  : []),
               ].join("; ")}.
-              {uncheckedTiles.length > 0 && clock == null && " No server time came with this report, and this device's clock is not used to judge its age."}
+              {(uncheckedTiles.length > 0 || legacyUncheckedTiles.length > 0) && clock == null &&
+                " No server time came with this report, and this device's clock is not used to judge its age."}
               {" "}No alignment score or bias is shown.{" "}
               {staleTiles.length > 0 ? "Run the scan again once market data is current." : "Run the scan again for a current read."}
+            </p>
+          )}
+          {legacyFreshness && (
+            <p className="text-[11px] text-slate-500" data-testid="mtf-legacy-freshness">
+              This report was stored before bar times were recorded, so whether its candles were current
+              when it was generated was not checked.
             </p>
           )}
           {r.alignmentLabel === "DATA_NOT_CURRENT" && (
