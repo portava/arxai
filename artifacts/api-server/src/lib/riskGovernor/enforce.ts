@@ -527,10 +527,20 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
     : await db.select({ s: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8` })
         .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, startOfTodayUtc(now))));
 
-  // Trading activity for rule 13, from the same ledgers as realized P/L.
+  // Trading activity for rule 13, from the same ledgers as realized P/L. The
+  // losing streak, the cooldown and the last-hour checks read the newest
+  // ACTIVITY_CLOSES closes' signs. Today's trade count and the week's P/L
+  // cover every close in their window, from an unbounded COUNT and SUM over
+  // the same ledger, so an account that closed more than ACTIVITY_CLOSES
+  // trades in a week or a day never drops its older closes. The week's P/L
+  // counted is the lower of the whole week's and the newest closes' within
+  // the week (they differ only when more than ACTIVITY_CLOSES closed in the
+  // week), so the weekly cap never counts less loss than they show; both are
+  // carried so the refusal can name them.
   let activity: TradingActivity | null = null;
   try {
     const day = startOfTodayUtc(now);
+    const weekStart = new Date(now.getTime() - 7 * 86_400_000);
     const closes = intent.venue === "LIVE"
       ? (await livePositionLedger.select(
         { closedAt: livePositionColumns.closedAt, pnl: livePositionColumns.floatingPl },
@@ -543,9 +553,40 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
       : (await db.select({ closedAt: tradesTable.closedAt, pnl: tradesTable.pnl })
           .from(tradesTable).where(and(eq(tradesTable.userId, userId), sql`${tradesTable.closedAt} is not null`))
           .orderBy(desc(tradesTable.closedAt)).limit(ACTIVITY_CLOSES));
-    activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
-      sided.filter((p) => p.at >= day).length, now,
-      intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+    const openedToday = sided.filter((p) => p.at >= day).length;
+    const summary = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
+      openedToday, now, intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+    const closedSince = async (since: Date): Promise<{ pnl: number; n: number }> => {
+      const [row] = intent.venue === "LIVE"
+        ? await livePositionLedger.select(
+          { pnl: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)::float8`, n: sql<number>`count(*)::int` },
+          { where: and(eq(livePositionColumns.userId, userId), gte(livePositionColumns.closedAt, since)) },
+        )
+        : await db.select({ pnl: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8`, n: sql<number>`count(*)::int` })
+            .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, since)));
+      const pnl = Number(row?.pnl ?? 0);
+      const n = Number(row?.n ?? 0);
+      if (!Number.isFinite(pnl) || !Number.isFinite(n)) throw new Error("closed-trade totals are not numbers");
+      return { pnl, n };
+    };
+    const week = await closedSince(weekStart);
+    const today = await closedSince(day);
+    const weekAll = Number(week.pnl.toFixed(2));
+    const newestInWeek = closes.filter((c) => c.closedAt!.getTime() >= weekStart.getTime());
+    const newestLower = summary.weekRealizedPnl < weekAll - 0.005 && newestInWeek.length > 0;
+    activity = {
+      ...summary,
+      tradesToday: Math.max(summary.tradesToday, openedToday + today.n),
+      weekRealizedPnl: newestLower ? summary.weekRealizedPnl : weekAll,
+      ...(newestLower ? {
+        allWeekRealizedPnl: weekAll,
+        weekNewestCloses: {
+          counted: newestInWeek.length,
+          since: new Date(Math.min(...newestInWeek.map((c) => c.closedAt!.getTime()))),
+          ofTotal: Math.max(week.n, newestInWeek.length),
+        },
+      } : {}),
+    };
   } catch { activity = null; }
 
   // Instrument model per symbol: broker spec first, else the strict FX lot;

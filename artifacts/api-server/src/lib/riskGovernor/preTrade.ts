@@ -575,6 +575,15 @@ export interface TradingActivity {
    * booked total and its total at the paper risk model).
    */
   bookedWeekRealizedPnl?: number;
+  /**
+   * DEMO/LIVE, only when it differs: the realized P/L of every close of the
+   * last 7 days. weekRealizedPnl is then the lower figure of the newest
+   * closes within the week (weekNewestCloses), the closes the streak and the
+   * cooldown read, so the weekly cap never counts less loss than they show.
+   */
+  allWeekRealizedPnl?: number;
+  /** With allWeekRealizedPnl: how many of the week's closes weekRealizedPnl counts, the oldest of them, and the week's total. */
+  weekNewestCloses?: { counted: number; since: Date; ofTotal: number };
   consecutiveLosses: number;
   lastClosedAt: Date | null;
   lastClosedWasLoss: boolean;
@@ -1370,8 +1379,15 @@ function evaluateDiscipline(
       hard.push(`you have reached your ${D.maxTradesPerDay} trades for today`);
     }
     // PAPER: the week's figure is the paper risk count; name the booked one when they differ.
-    const weekBooked = act.bookedWeekRealizedPnl != null
-      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "";
+    // DEMO/LIVE: when the newest closes lost more than the whole week, the
+    // figure counted is theirs; name it and the whole week's figure.
+    const newest = act.allWeekRealizedPnl != null ? act.weekNewestCloses ?? null : null;
+    const weekBooked = (act.bookedWeekRealizedPnl != null
+      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "")
+      + (newest
+        ? ` (counted from your newest ${newest.counted} of this week's ${newest.ofTotal} closes, since ${newest.since.toISOString()}; all of this week's closes net ${round(act.allWeekRealizedPnl!)})`
+        : "");
+    if (act.allWeekRealizedPnl != null) measured["allWeekRealizedPnl"] = round(act.allWeekRealizedPnl);
     const nonPos = nonPositiveEquity(ctx);
     if (D.maxWeeklyLossAmount != null && act.weekRealizedPnl <= -D.maxWeeklyLossAmount) {
       hard.push(`this week's loss ${round(-act.weekRealizedPnl)}${weekBooked} reached your weekly cap of ${D.maxWeeklyLossAmount}`);
