@@ -63,6 +63,19 @@ describe("Topbar MT5 pill — shared master bridge", () => {
     expect(pill("mode")).not.toContain("Mock");
   });
 
+  it("a user whose routing could not be read is not shown OFF / 'no' / Not connected", () => {
+    mt5Reply = { data: { connected: false, mode: "NOT_CONNECTED", route: "NONE", sharedMasterBridge: null, routeReadFailed: true, lastHeartbeatAt: null } };
+    render(<Topbar />);
+    expect(pill("mt5")).not.toContain("OFF");
+    expect(pill("mt5")).toMatch(/unknown/i);
+    expect(pill("mode")).not.toMatch(/Not connected/);
+    expect(pill("mode")).toMatch(/unknown/i);
+    expect(screen.getByTestId("badge-mt5-connection").textContent).toBe("unknown");
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/MT5 connected\s*no\b/);
+    expect(drawer).toMatch(/could not be read/i);
+  });
+
   it("a failed status request reads unknown, not OFF", () => {
     mt5Reply = { data: undefined, isError: true };
     render(<Topbar />);

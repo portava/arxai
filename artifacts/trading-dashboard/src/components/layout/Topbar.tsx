@@ -44,7 +44,8 @@ type SharedBridgeView = { availability?: string; connected?: boolean; message?: 
  * status request is unknown, never "OFF".
  */
 function mt5BridgeView(mt5: any, loadFailed: boolean): {
-  pill: string; tone: "success" | "warning" | "neutral"; connectedText: string; up: boolean;
+  /** unknown: nothing current was read, so the legacy marker says "unknown", not "disconnected". */
+  pill: string; tone: "success" | "warning" | "neutral"; connectedText: string; up: boolean; unknown?: boolean;
 } {
   if (!mt5) {
     return loadFailed
@@ -58,6 +59,11 @@ function mt5BridgeView(mt5: any, loadFailed: boolean): {
     const a = shared?.availability;
     const word = a === "STALE" ? "Stale" : a === "RECONCILING" ? "Reconciling" : !a || a === "UNKNOWN" ? "Unknown" : "Unavailable";
     return { pill: word, tone: "warning", connectedText: `no — shared MT5 bridge ${word.toLowerCase()}`, up: false };
+  }
+  // No own connection, and the server could not read whether the user routes
+  // through the shared bridge: unknown, not a confirmed "no bridge".
+  if (mt5.routeReadFailed === true) {
+    return { pill: "Unknown", tone: "warning", connectedText: "unknown — whether you use the shared MT5 bridge could not be read", up: false, unknown: true };
   }
   return { pill: "OFF", tone: "neutral", connectedText: "no", up: false };
 }
@@ -88,7 +94,9 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
     ? (mt5LoadFailed ? UNKNOWN_MODE_META : CHECKING_MODE_META)
     : (mt5 as { route?: string }).route === "SHARED_MASTER" && !mt5.connected
       ? SHARED_MODE_META
-      : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
+      : (mt5 as { routeReadFailed?: boolean }).routeReadFailed === true && !mt5.connected
+        ? UNKNOWN_MODE_META
+        : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
   const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;
 
@@ -255,7 +263,7 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       <span className="sr-only" data-testid="badge-session">{p.sessionLabel}</span>
       {p.unlocks.mt5 && (
         <>
-          <span className="sr-only" data-testid="badge-mt5-connection">{bridge.up ? "connected" : p.mt5 ? "disconnected" : "unknown"}</span>
+          <span className="sr-only" data-testid="badge-mt5-connection">{bridge.up ? "connected" : bridge.unknown || !p.mt5 ? "unknown" : "disconnected"}</span>
           <span className="sr-only" data-testid="badge-mode">{p.modeLabel}</span>
         </>
       )}

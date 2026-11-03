@@ -48,7 +48,7 @@ mock.module("../../lib/brokerHub/connections.js", {
   namedExports: { ...realConnections, getUserActiveConnection: async () => connection },
 });
 
-let shared: { route: string; sharedMasterBridge: Record<string, unknown> | null } = { route: "NONE", sharedMasterBridge: null };
+let shared: { route: string; sharedMasterBridge: Record<string, unknown> | null; routeReadFailed?: true } = { route: "NONE", sharedMasterBridge: null };
 const realShared = await import("../mt5SharedBridgeStatus.js");
 mock.module("../mt5SharedBridgeStatus.js", {
   namedExports: { ...realShared, readSharedMasterBridgeForUser: async () => shared },
@@ -140,4 +140,51 @@ test("an operator sees the platform row, marked as the install-wide feed", async
   assert.equal(r.body["account"], "99887766");
   assert.equal((r.body["positions"] as unknown[]).length, 1);
   assert.equal(r.body["liveAllowed"], true);
+});
+
+// A routing read that failed (routeReadFailed) is not a confirmed "no bridge":
+// /mt5/state and /mt5/status say whether the shared bridge applies could not
+// be read, instead of "You have no MT5 bridge connection".
+async function getStatus(authUser: { id: number; role: string }): Promise<Record<string, unknown>> {
+  const app = express();
+  app.use((req, _res, next) => {
+    (req as unknown as { authUser: unknown }).authUser = authUser;
+    (req as unknown as { log: unknown }).log = { info() {}, warn() {}, error() {} };
+    next();
+  });
+  app.use(router);
+  const server: Server = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${port}/mt5/status`);
+    assert.equal(res.status, 200);
+    return (await res.json()) as Record<string, unknown>;
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
+test("a trader whose routing could not be read is not told they have no bridge", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null, routeReadFailed: true };
+  const r = await get({ id: 33, role: "USER" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body["scope"], "none");
+  assert.doesNotMatch(String(r.body["scopeNote"]), /You have no MT5 bridge connection/);
+  assert.match(String(r.body["scopeNote"]), /could not be read/);
+  assertNoPlatformLeak(r.body);
+
+  const s = await getStatus({ id: 33, role: "USER" });
+  assert.equal(s["connected"], false);
+  assert.equal(s["routeReadFailed"], true);
+  assert.match(String(s["userSafeMessage"]), /could not be read/);
+});
+
+test("a confirmed no-bridge read carries no routeReadFailed flag", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null };
+  const s = await getStatus({ id: 34, role: "USER" });
+  assert.equal(s["route"], "NONE");
+  assert.equal("routeReadFailed" in s, false);
+  assert.match(String(s["userSafeMessage"]), /not connected/);
 });

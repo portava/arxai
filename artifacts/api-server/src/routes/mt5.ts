@@ -1607,6 +1607,9 @@ router.get("/mt5/status", requireUser, async (req, res) => {
       mode: "NOT_CONNECTED",
       route: shared.route,
       sharedMasterBridge: shared.sharedMasterBridge,
+      // Additive: the routing could not be read, so route NONE is not a
+      // confirmed absence of a bridge.
+      ...(shared.routeReadFailed ? { routeReadFailed: true } : {}),
       lastHeartbeatAt: null,
       secondsSinceHeartbeat: null,
       accountType: "NONE",
@@ -1616,7 +1619,9 @@ router.get("/mt5/status", requireUser, async (req, res) => {
       accountSnapshot: null,
       userSafeMessage: shared.sharedMasterBridge
         ? `You trade through the shared MT5 bridge. ${shared.sharedMasterBridge.message}`
-        : "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
+        : shared.routeReadFailed
+          ? "You have no MT5 connection of your own. Whether you trade through the shared MT5 bridge could not be read right now."
+          : "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
     });
     return;
   }
@@ -2003,7 +2008,9 @@ router.get("/mt5/state", requireUser, async (req, res) => {
   }
   res.json({
     scope: "none",
-    scopeNote: "You have no MT5 bridge connection. Set one up in MT5 Bridge settings.",
+    scopeNote: shared.routeReadFailed
+      ? "You have no MT5 connection of your own. Whether you trade through the shared MT5 bridge could not be read right now."
+      : "You have no MT5 bridge connection. Set one up in MT5 Bridge settings.",
     connected: false,
     heartbeatFreshness: classifyHeartbeatAt(null, now),
     ...emptyAccount,
