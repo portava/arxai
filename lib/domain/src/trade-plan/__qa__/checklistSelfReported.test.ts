@@ -54,3 +54,19 @@ test("the plan review does not say every check passed when some are the user's i
   assert.doesNotMatch(text, /All pre-trade checks pass/);
   assert.match(text, /not checked by ARX/i);
 });
+
+// confidenceLevel is the number the user typed in "Confidence (0-100)": ARX
+// derives nothing from it. "Confidence is strong." read as ARX's own finding.
+test("the plan review states the confidence number as the user's input, not ARX's assessment", () => {
+  for (const confidenceLevel of [80, 65, 40]) {
+    const r = evaluateChecklist(inputs({ confidenceLevel }));
+    const text = summarizePlan({
+      symbol: "EURUSD", directionBias: "BUY", strategyId: null,
+      rewardToRisk: r.rewardToRisk, rewardToRiskTarget: null, confidenceLevel,
+    }, r, "2026-10-28T12:00:00.000Z");
+    assert.doesNotMatch(text, /Confidence is (strong|acceptable|low)/, text);
+    assert.match(text, new RegExp(`You set confidence to ${confidenceLevel}% \\(your input, not checked by ARX\\)`), text);
+    if (confidenceLevel < 60) assert.match(text, /wait for a cleaner setup/i, text);
+    else assert.doesNotMatch(text, /wait for a cleaner setup/i, text);
+  }
+});

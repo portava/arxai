@@ -296,10 +296,12 @@ export function summarizePlan(plan: PlanForReview, checklist: ChecklistResult, _
     parts.push("Reward-to-risk cannot be computed — entry, stop, and take-profit are required.");
   }
 
+  // confidenceLevel is the number the user typed: restate it as their input,
+  // never as ARX's assessment of the setup.
   if (plan.confidenceLevel != null) {
-    parts.push(plan.confidenceLevel >= 75 ? "Confidence is strong."
-      : plan.confidenceLevel >= 60 ? "Confidence is acceptable."
-      : "Confidence is low — wait for a cleaner setup.");
+    const typed = `You set confidence to ${plan.confidenceLevel}% (your input, not checked by ARX)`;
+    parts.push(plan.confidenceLevel >= 60 ? `${typed}.`
+      : `${typed} — that is low; wait for a cleaner setup.`);
   }
 
   const fails = checklist.items.filter((i) => i.status === "FAIL");
