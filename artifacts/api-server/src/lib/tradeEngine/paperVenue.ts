@@ -243,11 +243,13 @@ export interface PaperValuation {
   openPricedBySimulator: number;
   /**
    * Closed orders opened at the simulator's synthetic price (not booked at a
-   * market quote). Their entry came from the simulator. Their exit may have
-   * been the simulator's price (mark-to-market, the trader's close) or a
-   * market price: the paper execution monitor checks every open order's stop
-   * and target against market data and settles at a market price, and an EE
-   * manual close prices at market data. The order row does not record which.
+   * market quote). Their entry came from the simulator. A stop or target hit
+   * may have been triggered by the synthetic price (mark-to-market) or by
+   * market data (the paper execution monitor checks every open order's stop
+   * and target), and either way is booked at the order's stop or target
+   * level. A trader's close is booked at the simulator's price; an EE manual
+   * close at a market price, or at the price given with the close request.
+   * The order row does not record which path closed it.
    */
   closedSimulatorPriced: number;
   /**
@@ -270,8 +272,9 @@ export function describePaperValuation(a: { openOrders: number; openPricedBySimu
   // Stops and targets of simulator-priced orders are checked against the
   // synthetic price here, and also against market data by the paper execution
   // monitor whenever it runs (paperExecutionMonitor.runPaperMonitor scans every
-  // open order), so either can settle them.
-  const settledBy = "Stops and targets are checked against that price, and also against market data by the paper execution monitor when it runs, which settles at a market price.";
+  // open order), so either can trigger them. Both book the exit at the order's
+  // own stop or target level, not at the price that triggered it.
+  const settledBy = "Stops and targets are checked against that price, and also against market data by the paper execution monitor when it runs; either way a stop or target is booked at the order's stop or target level.";
   if (priceSource === "SIMULATOR") {
     parts.push(`${a.openOrders === 1 ? "The open order is" : `All ${a.openOrders} open orders are`} valued at the simulator's synthetic price (generated, not a market quote). ${settledBy}`);
   } else if (priceSource === "MIXED") {
@@ -281,7 +284,7 @@ export function describePaperValuation(a: { openOrders: number; openPricedBySimu
   }
   if (a.closedSimulatorPriced > 0) {
     const one = a.closedSimulatorPriced === 1;
-    parts.push(`${a.closedSimulatorPriced} closed order${one ? " was" : "s were"} opened at the simulator's synthetic price, not a market quote, so the balance includes synthetic results. ${one ? "Its exit" : "Each exit"} may have been the simulator's price or a market price (the paper execution monitor or an EE manual close); the order does not record which.`);
+    parts.push(`${a.closedSimulatorPriced} closed order${one ? " was" : "s were"} opened at the simulator's synthetic price, not a market quote, so the balance includes synthetic results. A stop or target exit may have been triggered by the simulator's price or by market data (the paper execution monitor) and is booked at the stop or target level; a trader's close is booked at the simulator's price, and an EE manual close at a market price or the price given with the close request; the order does not record which path closed it.`);
   }
   parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount, except that a closed trade that won is not added to the balance and an open position in profit is not added to equity. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
   return {
