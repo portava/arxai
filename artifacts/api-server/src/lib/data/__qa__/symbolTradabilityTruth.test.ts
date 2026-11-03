@@ -22,10 +22,34 @@ let settings: () => Promise<{ allowedSymbols: string[] | null }> = async () => (
 mock.module("../../live/liveCommandPipeline.js", { namedExports: {
   getOrCreateUserSettings: async () => settings(),
 } });
+// The Risk Governor's limits in force and the owner/admin governance, as the
+// order path reads them. Defaults: nothing restricts the symbol.
+type Limits = {
+  liveAllowed: boolean; allowedSymbols: string[] | null;
+  symbolLimits: Record<string, { maxLots: number | null; blocked: boolean }>;
+};
+const OPEN_LIMITS: Limits = { liveAllowed: true, allowedSymbols: null, symbolLimits: {} };
+let limits: () => Promise<Limits> = async () => OPEN_LIMITS;
+mock.module("../../riskGovernor/limitSettings.js", { namedExports: {
+  loadEffectiveLimits: async () => limits(),
+} });
+type Gov = {
+  isPrivileged: boolean; ownerLiveControlMode: boolean;
+  allowedSymbols: string[] | null; blockedSymbols: string[]; enforceSymbolAllowlist: boolean;
+};
+const NORMAL_USER: Gov = { isPrivileged: false, ownerLiveControlMode: false, allowedSymbols: null, blockedSymbols: [], enforceSymbolAllowlist: false };
+let governance: () => Promise<Gov> = async () => NORMAL_USER;
+mock.module("../../governance/effectiveGovernance.js", { namedExports: {
+  getEffectiveTradingGovernance: async () => governance(),
+} });
 
 const { getSymbolTradability } = await import("../symbolTradability.js");
 
-beforeEach(() => { settings = async () => ({ allowedSymbols: null }); });
+beforeEach(() => {
+  settings = async () => ({ allowedSymbols: null });
+  limits = async () => OPEN_LIMITS;
+  governance = async () => NORMAL_USER;
+});
 
 test("a default-list symbol outside ARX Focus is not shown as tradable (the pipeline refuses it)", async () => {
   assert.equal(isApprovedArxMarket("NAS100"), false, "fixture: NAS100 is outside ARX Focus");
@@ -95,4 +119,83 @@ test("synthetic not on the list: the label/copy do not name Deriv (the router ma
   assert.match(t.userMessage, /not on your live market list/);
   // The class-derived route label the live pipeline's synthetic floor reads stays.
   assert.equal(t.dataProvider, "deriv");
+});
+
+// ── The governor's and governance's own refusals ───────────────────────────
+// "Allowed for MT5 live" came from the live list and ARX Focus only. The Risk
+// Governor also refuses every live order when the operator limited the
+// account to demo, the symbol is off the operator's instruments, or the
+// trader switched it off; owner/admin governance refuses its blocklist and,
+// when enforced, anything off its allowlist (and then the live list is not
+// read at all). All are stored facts, so the badge now says so.
+
+test("an account the operator limited to demo is not shown as allowed for MT5 live", async () => {
+  limits = async () => ({ ...OPEN_LIMITS, liveAllowed: false });
+  const t = await getSymbolTradability("EURUSD", 1);
+  assert.equal(t.mt5Tradable, "no");
+  assert.equal(t.liveExecutionAllowed, false);
+  assert.equal(t.badgeLabel, "Analysis only");
+  assert.match(t.userMessage, /operator limited your account to demo/);
+});
+
+test("a symbol off the operator's instruments or switched off in the trader's limits is not allowed", async () => {
+  limits = async () => ({ ...OPEN_LIMITS, allowedSymbols: ["GBPUSD"] });
+  const off = await getSymbolTradability("EURUSD", 1);
+  assert.equal(off.mt5Tradable, "no");
+  assert.equal(off.badgeLabel, "Analysis only");
+  assert.match(off.userMessage, /not on the instruments your operator allowed/);
+
+  limits = async () => ({ ...OPEN_LIMITS, symbolLimits: { EURUSD: { maxLots: null, blocked: true } } });
+  const blocked = await getSymbolTradability("eurusd", 1);
+  assert.equal(blocked.mt5Tradable, "no");
+  assert.match(blocked.userMessage, /switched off in your risk limits/);
+});
+
+test("risk limits that could not be read leave tradability unverified, never allowed", async () => {
+  limits = async () => { throw new Error("db offline"); };
+  const t = await getSymbolTradability("EURUSD", 1);
+  assert.equal(t.mt5Tradable, "unknown");
+  assert.equal(t.badgeLabel, "Tradability not verified");
+  assert.equal(t.liveExecutionAllowed, false);
+  assert.match(t.userMessage, /risk limits could not be loaded/);
+});
+
+test("governance users: the governance lists decide, and the live market list is not named", async () => {
+  // The pipeline does not read the live market list under governance, so a
+  // symbol off that list is not "refused because it is not on your list".
+  settings = async () => ({ allowedSymbols: ["GBPUSD"] });
+  governance = async () => ({ ...NORMAL_USER, isPrivileged: true, ownerLiveControlMode: true });
+  const open = await getSymbolTradability("EURUSD", 1);
+  assert.equal(open.mt5Tradable, "yes");
+  assert.equal(open.badgeLabel, "Allowed for MT5 live");
+  assert.doesNotMatch(open.userMessage, /live market list/);
+  assert.match(open.userMessage, /governance/);
+
+  governance = async () => ({ ...NORMAL_USER, isPrivileged: true, ownerLiveControlMode: true, blockedSymbols: ["EURUSD"] });
+  const blocked = await getSymbolTradability("EURUSD", 1);
+  assert.equal(blocked.mt5Tradable, "no");
+  assert.equal(blocked.badgeLabel, "Analysis only");
+  assert.match(blocked.userMessage, /governance blocklist/);
+  assert.doesNotMatch(blocked.userMessage, /live market list/);
+
+  governance = async () => ({ ...NORMAL_USER, isPrivileged: true, ownerLiveControlMode: true, enforceSymbolAllowlist: true, allowedSymbols: ["GBPUSD"] });
+  const offAllow = await getSymbolTradability("EURUSD", 1);
+  assert.equal(offAllow.mt5Tradable, "no");
+  assert.match(offAllow.userMessage, /governance symbol allowlist/);
+});
+
+test("governance that could not be read leaves tradability unverified", async () => {
+  governance = async () => { throw new Error("db offline"); };
+  const t = await getSymbolTradability("EURUSD", 1);
+  assert.equal(t.mt5Tradable, "unknown");
+  assert.equal(t.liveExecutionAllowed, false);
+  assert.match(t.userMessage, /could not be loaded/);
+});
+
+test("the pipeline's synthetic-floor inputs do not depend on the new reads", async () => {
+  limits = async () => { throw new Error("db offline"); };
+  governance = async () => { throw new Error("db offline"); };
+  const v = await getSymbolTradability("V75", 1);
+  assert.equal(v.assetClass, "synthetic");
+  assert.equal(v.dataProvider, "deriv");
 });
