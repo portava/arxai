@@ -1333,7 +1333,7 @@ export default function RiskSettings() {
           {/* Quick Actions Grid */}
           <div className="grid md:grid-cols-3 gap-4">
             {/* Pause / Resume */}
-            <Card className="border-yellow-500/30">
+            <Card className="border-yellow-500/30" data-testid="pause-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2 text-yellow-400">
                   <PauseCircle size={16} /> Pause Trading
@@ -1343,7 +1343,14 @@ export default function RiskSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {botStatus?.isPaused ? (
+                {/* No current bot status read: no paused / not-paused state is
+                    shown, and only the stricter pause request is offered. */}
+                {!botStatusCurrent ? (
+                  <p className="text-xs text-muted-foreground" data-testid="pause-state-unread">
+                    Pause state {botStatusFailed ? "could not be loaded" : "is not loaded yet"}: it is not shown as
+                    paused or running, because the bot status was not read.
+                  </p>
+                ) : botStatusCurrent.isPaused ? (
                   <Alert className="border-yellow-500/30 bg-yellow-500/5 py-2">
                     <PauseCircle className="h-3 w-3 text-yellow-400" />
                     <AlertDescription className="text-xs text-yellow-300 ml-1">Bot is currently paused</AlertDescription>
@@ -1353,27 +1360,31 @@ export default function RiskSettings() {
                   variant="outline"
                   className={cn(
                     "w-full gap-2 border",
-                    botStatus?.isPaused
+                    botStatusCurrent?.isPaused
                       ? "border-success/40 text-success hover:bg-success/10"
                       : "border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
                   )}
-                  onClick={botStatus?.isPaused ? handleResumeTrading : handlePauseTrading}
+                  onClick={botStatusCurrent?.isPaused ? handleResumeTrading : handlePauseTrading}
                   disabled={updateBotStatus.isPending}
                 >
-                  {botStatus?.isPaused ? (
+                  {botStatusCurrent?.isPaused ? (
                     <><Activity size={14} /> Resume Trading</>
-                  ) : (
+                  ) : botStatusCurrent ? (
                     <><PauseCircle size={14} /> Pause All Trading</>
+                  ) : (
+                    <><PauseCircle size={14} /> Pause (current state not read)</>
                   )}
                 </Button>
               </CardContent>
             </Card>
 
             {/* Live Bridge Lock */}
-            <Card className={cn("border", settings?.liveLocked ? "border-red-500/40" : "border-border/50")}>
+            <Card className={cn("border", settings?.liveLocked ? "border-red-500/40" : "border-border/50")} data-testid="live-lock-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  {settings?.liveLocked
+                  {!settings
+                    ? <><AlertTriangle size={16} className="text-muted-foreground" /> <span>Live Mode Lock</span></>
+                    : settings.liveLocked
                     ? <><Lock size={16} className="text-red-400" /> <span className="text-red-400">Live Locked</span></>
                     : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock</span></>}
                 </CardTitle>
@@ -1382,6 +1393,14 @@ export default function RiskSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
+                {/* Settings unread: the lock is neither locked nor open on this
+                    page, and only the stricter Lock request is offered. */}
+                {!settings && (
+                  <p className="text-xs text-muted-foreground" data-testid="live-lock-unread">
+                    Live lock state {SETTINGS_UNREAD}: it is not shown as locked or unlocked, because your risk
+                    settings were not read.
+                  </p>
+                )}
                 {settings?.liveLocked && (
                   <Alert className="border-red-500/30 bg-red-500/5 py-2">
                     <Lock className="h-3 w-3 text-red-400" />
@@ -1401,8 +1420,10 @@ export default function RiskSettings() {
                 >
                   {settings?.liveLocked ? (
                     <><Unlock size={14} /> Unlock Live Mode</>
-                  ) : (
+                  ) : settings ? (
                     <><Lock size={14} /> Lock Live Mode</>
+                  ) : (
+                    <><Lock size={14} /> Lock Live Mode (current state not read)</>
                   )}
                 </Button>
 

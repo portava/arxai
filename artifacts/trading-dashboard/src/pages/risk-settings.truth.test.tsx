@@ -299,6 +299,56 @@ describe("System Status never colours an unread bot status green", () => {
   });
 });
 
+describe("the Emergency tab controls do not show a lock or pause state that was not read", () => {
+  const FAILED = { data: undefined, isLoading: false, isError: true };
+  const BOT = { mode: "AUTO", symbol: "EURUSD", strategy: "x", riskMode: "Balanced", isRunning: true, isPaused: false, lastScanAt: null };
+  const openIcon = (el: HTMLElement) => el.querySelector('[class*="lucide-unlock"], [class*="lucide-lock-open"]');
+
+  it("with settings unread, the Live Mode Lock card says the lock state could not be loaded, not unlocked", () => {
+    renderPage({ tab: "emergency", settings: FAILED, bot: { data: BOT } });
+    const card = screen.getByTestId("live-lock-card");
+    expect(within(card).getByTestId("live-lock-unread").textContent).toMatch(/Live lock state could not be loaded/);
+    expect(openIcon(card)).toBeNull();
+    // Only the stricter action is offered, and it does not imply the current state.
+    expect(within(card).queryByRole("button", { name: /Unlock Live Mode/ })).toBeNull();
+    expect(within(card).queryByRole("button", { name: /^Lock Live Mode$/ })).toBeNull();
+    expect(within(card).getByRole("button", { name: /Lock Live Mode \(current state not read\)/ })).toBeTruthy();
+  });
+
+  it("with settings read, the Live Mode Lock card shows the read state as before", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT } });
+    const card = screen.getByTestId("live-lock-card");
+    expect(within(card).queryByTestId("live-lock-unread")).toBeNull();
+    expect(within(card).getByRole("button", { name: /^Lock Live Mode$/ })).toBeTruthy();
+    cleanup();
+    renderPage({ tab: "emergency", settings: { data: { ...BALANCED_APPLIED, liveLocked: true } }, bot: { data: BOT } });
+    expect(within(screen.getByTestId("live-lock-card")).getByRole("button", { name: /Unlock Live Mode/ })).toBeTruthy();
+  });
+
+  it("with the bot status unread, the Pause card says the pause state could not be loaded instead of offering 'Pause All Trading'", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: FAILED });
+    const card = screen.getByTestId("pause-card");
+    expect(within(card).getByTestId("pause-state-unread").textContent).toMatch(/Pause state could not be loaded/);
+    expect(within(card).queryByRole("button", { name: /^Pause All Trading$/ })).toBeNull();
+    expect(within(card).queryByRole("button", { name: /Resume Trading/ })).toBeNull();
+    expect(within(card).getByRole("button", { name: /Pause \(current state not read\)/ })).toBeTruthy();
+  });
+
+  it("a bot status whose latest poll failed is not used as the pause state either", () => {
+    renderPage({ tab: "emergency", settings: { data: BALANCED_APPLIED }, bot: { data: BOT, isError: true } });
+    const card = screen.getByTestId("pause-card");
+    expect(within(card).getByTestId("pause-state-unread").textContent).toMatch(/could not be loaded/);
+    expect(within(card).queryByRole("button", { name: /^Pause All Trading$/ })).toBeNull();
+  });
+
+  it("the unknown-state buttons send the stricter request: lock, and pause", () => {
+    renderPage({ tab: "emergency", settings: FAILED, bot: FAILED });
+    fireEvent.click(within(screen.getByTestId("pause-card")).getByRole("button", { name: /Pause \(current state not read\)/ }));
+    expect(h.botMutate).toHaveBeenCalledTimes(1);
+    expect(h.botMutate.mock.calls[0]![0]).toEqual({ data: { isPaused: true } });
+  });
+});
+
 describe("the page re-reads what its own actions changed", () => {
   type Opts = { onSuccess?: (d: unknown) => void };
   const keyed = (calls: unknown[][]) => calls.map((c) => JSON.stringify((c[0] as { queryKey?: unknown })?.queryKey));
