@@ -7,17 +7,28 @@ import { Trophy } from "lucide-react";
 
 type Status = {
   config: { enabled: boolean; startingBalance: number; profitTarget: number; maxDailyDrawdownUsd: number; maxTotalDrawdownUsd: number; minTradingDays: number; maxLotSize: number; maxPositions: number; newsTradingAllowed: boolean; weekendHoldingAllowed: boolean; consistencyRulePctOfTotal: number };
-  profitUsd: number; profitTargetProgress: number;
-  dailyDrawdownRemainingUsd: number; totalDrawdownRemainingUsd: number;
-  passed: string[]; failed: string[]; status: "OFF" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
-  /** False while the mode is off: no rule was checked. Older servers omit it. */
+  // null = not measured (e.g. no active paper account); never shown as $0.
+  profitUsd: number | null; profitTargetProgress: number | null;
+  dailyDrawdownRemainingUsd: number | null; totalDrawdownRemainingUsd: number | null;
+  measured?: boolean; notMeasuredReason?: string | null;
+  // What the figures are measured from: the paper account's last stored equity
+  // mark, and its equity when the challenge started (turned on, or restarted).
+  paperAccountId?: number | null; equityUsd?: number | null; equityAsOf?: string | null;
+  challengeStartedAt?: string | null; startEquityUsd?: number | null; dailyDrawdownSince?: string | null;
+  notes?: string[];
+  passed: string[]; failed: string[]; notChecked?: Array<{ rule: string; reason: string }>;
+  // TARGET_REACHED: profit target met, but some rules are not checked, so it
+  // is not a confirmed pass.
+  status: "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "TARGET_REACHED" | "PASSED";
+  /** False when no rule was checked (mode off, or nothing measured). Older servers omit it. */
   rulesEvaluated?: boolean;
-  /** Rules not checked because the paper equity could not be read. */
+  /** Rules not checked because they could not be measured (an older server: the paper equity could not be read). */
   notEvaluated?: string[];
   equityMeasured?: boolean;
 };
 type NumericKey = "startingBalance" | "profitTarget" | "maxDailyDrawdownUsd" | "maxTotalDrawdownUsd" | "minTradingDays" | "maxLotSize" | "maxPositions" | "consistencyRulePctOfTotal";
-const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
+const STATUS_LABEL: Record<string, string> = { NOT_MEASURED: "NOT MEASURED", TARGET_REACHED: "TARGET REACHED" };
+const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", NOT_MEASURED: "bg-amber-500/20 text-amber-400", TARGET_REACHED: "bg-blue-500/20 text-blue-400", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
 
 // A failed request throws with the server's reason (or the HTTP status), so a
 // failed save or read is never silent and an error body is never read as data.
@@ -64,8 +75,9 @@ export default function PropFirmMode() {
     void load();
   }
   const save = () => run("Save & enable", "/api/prop-firm/configure", { enabled: true, ...edit });
-  // POST /prop-firm/reset turns the mode on with the values already saved; it
-  // does not reset any value, so the button says what it does.
+  // POST /prop-firm/reset turns the mode on with the values already saved and
+  // restarts the challenge (progress is measured again from the paper
+  // account's equity now); no saved value is changed. The button says so.
   const enableSaved = () => run("Turn on with saved values", "/api/prop-firm/reset");
   const disable = () => run("Disable mode", "/api/prop-firm/configure", { enabled: false });
   // A cleared field is "no change", never 0 (Number("") is 0, which the server rejects).
@@ -75,8 +87,12 @@ export default function PropFirmMode() {
     else next[key] = Number(raw);
     setEdit(next);
   };
-  const rulesOff = s != null && (s.rulesEvaluated === false || s.status === "OFF");
-  const unmeasured = s?.equityMeasured === false;
+  // Rules are listed only while the mode is on. With the mode on, a server
+  // that checked no rule (rulesEvaluated false: nothing could be measured)
+  // lists them as not checked, and no rule shows a tick or a cross.
+  const rulesOff = s != null && (s.status === "OFF" || s.config.enabled === false);
+  const nothingChecked = s?.rulesEvaluated === false;
+  const unmeasured = s?.equityMeasured === false || s?.measured === false;
 
   return (
     <div className="space-y-4">
@@ -94,7 +110,7 @@ export default function PropFirmMode() {
         </div>
         <Badge variant="outline" title="Profit, drawdown and rule progress are read from your paper account.">Progress: PAPER</Badge>
         <Badge variant="outline" className="border-amber-500/50 text-amber-500" title="Saved caps apply to paper, demo and live orders.">Limits: ALL VENUES</Badge>
-        {s && <Badge className={STATUS_COLOR[s.status]}>{s.status}</Badge>}
+        {s && <Badge className={STATUS_COLOR[s.status]} data-testid="prop-status-badge">{STATUS_LABEL[s.status] ?? s.status}</Badge>}
       </div>
 
       {!s && loadError && (
@@ -114,22 +130,45 @@ export default function PropFirmMode() {
         <p className={`text-xs ${actionResult.ok ? "text-muted-foreground" : "text-destructive"}`} data-testid="prop-firm-action-result">{actionResult.text}</p>
       )}
 
+      {s && s.measured === false && (
+        <p className="text-sm rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-300" data-testid="prop-not-measured">
+          Not measured: {s.notMeasuredReason ?? "paper equity could not be read."} No challenge rule has been checked.
+        </p>
+      )}
+
+      {s && s.measured && s.equityUsd != null && s.startEquityUsd != null && (
+        <p className="text-xs text-muted-foreground" data-testid="prop-measured-from">
+          Measured on paper account #{s.paperAccountId}: equity ${s.equityUsd} as of {when(s.equityAsOf)} (the account's last stored mark),
+          against ${s.startEquityUsd} when the challenge started {when(s.challengeStartedAt)}.
+          {s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
+        </p>
+      )}
+      {s && s.status === "TARGET_REACHED" && (
+        <p className="text-sm rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-blue-300" data-testid="prop-target-reached">
+          Profit target reached. {s.notChecked?.length ?? 0} challenge rule{(s.notChecked?.length ?? 0) === 1 ? " is" : "s are"} not checked, so this is not a confirmed pass.
+        </p>
+      )}
+      {s && (s.notes ?? []).map((n) => (
+        <p key={n} className="text-xs rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-300" data-testid="prop-note">{n}</p>
+      ))}
+
       {s && (
         <div className="grid gap-2 md:grid-cols-4">
           <Stat label="Enabled" value={s.config.enabled ? "YES" : "NO"} />
-          <Stat label="Profit USD" value={unmeasured ? "Not measured" : `$${s.profitUsd}`} />
-          <Stat label="Target progress" value={unmeasured ? "Not measured" : `${s.profitTargetProgress}%`} />
-          <Stat label="Daily DD left" value={`$${s.dailyDrawdownRemainingUsd}`} />
-          <Stat label="Total DD left" value={unmeasured ? "Not measured" : `$${s.totalDrawdownRemainingUsd}`} />
+          <Stat label="Profit USD" value={unmeasured ? NOT_MEASURED : money(s.profitUsd)} />
+          <Stat label="Target progress" value={unmeasured || s.profitTargetProgress == null ? NOT_MEASURED : `${s.profitTargetProgress}%`} />
+          <Stat label="Daily DD left" value={s.measured === false ? NOT_MEASURED : money(s.dailyDrawdownRemainingUsd)} />
+          <Stat label="Total DD left" value={unmeasured ? NOT_MEASURED : money(s.totalDrawdownRemainingUsd)} />
           <Stat label="Passed rules" value={String(s.passed.length)} />
           <Stat label="Failed rules" value={String(s.failed.length)} />
-          <Stat label="Account status" value={s.status} />
+          <Stat label="Not checked" value={String(s.notChecked?.length ?? s.notEvaluated?.length ?? 0)} />
+          <Stat label="Account status" value={STATUS_LABEL[s.status] ?? s.status} />
         </div>
       )}
 
       {s && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Configure</CardTitle><CardDescription>Defaults reflect a typical $100k challenge. Saving or turning the mode on changes your risk limits for paper, demo and live orders.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Configure</CardTitle><CardDescription>Defaults reflect a typical $100k challenge. Saving or turning the mode on changes your risk limits for paper, demo and live orders. Progress is measured in dollars from your paper account's equity when the challenge starts (turning the mode on, or "Turn on with saved values", which restarts it); the challenge size is not applied to it.</CardDescription></CardHeader>
           <CardContent className="grid gap-2 md:grid-cols-3">
             <Input type="number" placeholder={`Starting balance (${s.config.startingBalance})`} onChange={(e) => setNum("startingBalance", e.target.value)} />
             <Input type="number" placeholder={`Profit target (${s.config.profitTarget})`} onChange={(e) => setNum("profitTarget", e.target.value)} />
@@ -143,7 +182,7 @@ export default function PropFirmMode() {
             <Input type="number" placeholder={`Consistency rule % (${s.config.consistencyRulePctOfTotal})`} onChange={(e) => setNum("consistencyRulePctOfTotal", e.target.value)} />
             <div className="md:col-span-3 flex gap-2">
               <Button onClick={save}>Save & enable</Button>
-              <Button variant="outline" onClick={enableSaved} title="Turns the mode on with the values already saved. It does not reset any value.">Turn on with saved values</Button>
+              <Button variant="outline" onClick={enableSaved} title="Turns the mode on with the values already saved and restarts the challenge: progress is measured again from your paper account's equity now. No saved value is changed.">Turn on with saved values</Button>
               <Button variant="ghost" onClick={disable}>Disable mode</Button>
             </div>
           </CardContent>
@@ -153,14 +192,26 @@ export default function PropFirmMode() {
       {s && (
         <Card>
           <CardHeader><CardTitle className="text-base">Rule status</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-1" data-testid="prop-firm-rules">
+          <CardContent className="space-y-2" data-testid="prop-firm-rules">
             {rulesOff ? (
               <p className="text-sm text-muted-foreground">Rules are not checked while the mode is off.</p>
             ) : (
               <>
-                {s.passed.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
-                {s.failed.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
-                {(s.notEvaluated ?? []).map((n) => <Badge key={n} variant="outline">{n}: not checked (paper equity could not be read)</Badge>)}
+                <div className="flex flex-wrap gap-1">
+                  {!nothingChecked && s.passed.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
+                  {!nothingChecked && s.failed.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
+                  {(s.notEvaluated ?? []).filter((n) => !(s.notChecked ?? []).some((c) => c.rule === n)).map((n) => (
+                    <Badge key={n} variant="outline">{n}: not checked (paper equity could not be read)</Badge>
+                  ))}
+                  {(s.notChecked ?? []).map((n) => (
+                    <Badge key={n.rule} variant="outline" title={n.reason} data-testid={`prop-rule-not-checked-${n.rule}`}>– {n.rule} not checked</Badge>
+                  ))}
+                </div>
+                {(s.notChecked ?? []).length > 0 && (
+                  <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5" data-testid="prop-not-checked-reasons">
+                    {(s.notChecked ?? []).map((n) => <li key={n.rule}><span className="font-mono">{n.rule}</span>: {n.reason}</li>)}
+                  </ul>
+                )}
               </>
             )}
           </CardContent>
@@ -169,6 +220,13 @@ export default function PropFirmMode() {
     </div>
   );
 }
+
+const NOT_MEASURED = "Not measured";
+const money = (v: number | null) => (v == null ? NOT_MEASURED : `$${v}`);
+const when = (iso: string | null | undefined) => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : "at an unknown time";
+};
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <Card><CardContent className="p-2"><p className="text-[10px] text-muted-foreground uppercase">{label}</p><p className="text-sm font-mono font-semibold">{value}</p></CardContent></Card>;

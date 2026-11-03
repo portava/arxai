@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { GetRiskSettingsResponse, UpdateRiskSettingsBody } from "@workspace/api-zod";
 import { z } from "zod/v4";
-import { computeRiskAudit, riskAuditHaltFrom } from "../lib/riskAudit.js";
+import { computeRiskAudit, riskAuditBasis, riskAuditHaltFrom } from "../lib/riskAudit.js";
 import { loadTradingHalt } from "../lib/safety/tradingHalt.js";
 import { calculatePositionSize } from "../lib/riskGovernor/positionSizer.js";
 import {
@@ -11,6 +11,7 @@ import {
 import { shadowCapture } from "../lib/auditVault.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getOrCreateUserRiskSettings, updateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
+import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
 
 const router = Router();
 
@@ -107,6 +108,12 @@ router.post("/risk/mode", requireUser, async (req, res) => {
 });
 
 // ── POST /risk/lock-live ───────────────────────────────────────────────────
+// Writes the trader's risk_settings.liveLocked. It is a stored preference:
+// the permission evaluator (/permission/status, trade-plan and confirmation
+// checklists) lists it as a blocker, but no order path reads it — live
+// dispatch is gated by live arming and the Risk Governor, and the legacy
+// /mt5 mode is always LIVE_LOCKED. Wiring it into a gate is a product
+// decision; the reply says what the toggle does and does not do.
 
 const RiskLockBody = z.object({ locked: z.boolean() });
 
@@ -117,8 +124,8 @@ router.post("/risk/lock-live", requireUser, async (req, res) => {
     return res.json({
       locked,
       message: locked
-        ? "Live trading locked. Manual unlock required before going live."
-        : "Live trading lock removed.",
+        ? "Live mode lock saved. It is a preference: your permission status and checklists list it as a blocker, but orders are not checked against it."
+        : "Live mode lock removed. This does not enable live trading: live orders still need live arming and must pass the Risk Governor.",
     });
   } catch (err) {
     req.log.error(err);
@@ -139,8 +146,9 @@ router.get("/risk/audit", requireUser, async (req, res) => {
     const query = RiskAuditQuery.parse(req.query);
     const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
     // Placeholder account balance (1000 USD) — no MT5 sync feeds this yet.
-    // balanceSource below marks the figure so no consumer can mistake it for
-    // a real account balance.
+    // The response says so (balanceSource, accountBalanceUsed) along with
+    // what the audit read (riskAuditBasis), so no consumer can mistake it
+    // for the trader's live balance or current book.
     const accountBalance = 1000;
     // The trader's stop switches, read as the pre-trade Risk Governor reads
     // them (fail closed: an unreadable switch counts as engaged). Read only
@@ -166,7 +174,19 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       forexBlockEvents:    settings.forexBlockEvents,
       vol75ExtraConfidence: settings.vol75ExtraConfidence,
     }, { countClosedRows: true, userId, halt: riskAuditHaltFrom(paperHalt, liveHalt) });
-    return res.json({ ...audit, balanceSource: "PLACEHOLDER_1000" });
+    // tradeScope / notMeasured follow what this result says it read (scope,
+    // closedTradesMeasured); a result that does not say is unscoped and
+    // unmeasured.
+    const basis = riskAuditBasis(audit);
+    return res.json({
+      ...audit,
+      balanceSource: "PLACEHOLDER_1000",
+      accountBalanceUsed: accountBalance,
+      tradeSource: basis.tradeSource,
+      tradeScope: basis.tradeScope,
+      notMeasured: basis.notMeasured,
+      evaluatedAt: new Date().toISOString(),
+    });
   } catch (err) {
     req.log.error(err);
     return res.status(500).json({ error: "Failed to compute risk audit" });
@@ -186,10 +206,16 @@ const PositionSizeQuery = z.object({
 router.get("/risk/position-size", requireUser, async (req, res) => {
   try {
     const query = PositionSizeQuery.parse(req.query);
-    const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
+    // The lot cap in force, as the Risk Governor applies it: the strictest of
+    // the trader's own cap, the operator's account limit and the platform
+    // ceiling, then the trader's per-symbol cap. (The trader's saved cap
+    // alone could show a lot the governor refuses.) The broker's own maximum
+    // volume is not known here.
+    const limits = await loadEffectiveLimits(req.authUser!.id);
+    const symbolCap = limits.symbolLimits[query.symbol.trim().toUpperCase()]?.maxLots ?? null;
     const result = calculatePositionSize({
       ...query,
-      maxLotSize: settings.maxLotSize,
+      maxLotSize: symbolCap == null ? limits.maxLotSize : Math.min(limits.maxLotSize, symbolCap),
     });
     return res.json(result);
   } catch (err) {

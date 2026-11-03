@@ -4279,7 +4279,7 @@ export const ApplyRiskModeResponse = zod.object({
 });
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const SetLiveLockBody = zod.object({
   locked: zod.boolean(),
@@ -4291,7 +4291,7 @@ export const SetLiveLockResponse = zod.object({
 });
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 export const GetRiskAuditQueryParams = zod.object({
   symbol: zod.coerce.string().optional(),
@@ -4336,6 +4336,34 @@ export const GetRiskAuditResponse = zod.object({
     .describe(
       "USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.",
     ),
+  accountBalanceUsed: zod
+    .number()
+    .optional()
+    .describe(
+      "The balance (USD) the loss percentages and projectedLoss were computed against.",
+    ),
+  tradeSource: zod
+    .string()
+    .optional()
+    .describe(
+      "The trade book the counts were read from. LEGACY_TRADES_TABLE = the retired legacy trades log, which takes no new trades; it is not the book the Risk Governor enforces.",
+    ),
+  tradeScope: zod
+    .string()
+    .optional()
+    .describe(
+      "Whose rows the trade read counted. USER = only the signed-in trader's rows (same as scope USER). ALL_ACCOUNTS = the trade read is not limited to the signed-in trader.",
+    ),
+  notMeasured: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. Empty when closedTradesMeasured is true.",
+    ),
+  evaluatedAt: zod.coerce
+    .date()
+    .optional()
+    .describe("When the server computed this audit."),
   tradingHalt: zod
     .union([
       zod.object({
@@ -4383,6 +4411,30 @@ export const GetPositionSizeResponse = zod.object({
   maxLotAllowed: zod.number(),
   finalLot: zod.number(),
   warning: zod.string().nullish(),
+  valueModel: zod
+    .enum([
+      "forex_usd_quote",
+      "forex_other_quote",
+      "synthetic_per_point",
+      "per_point",
+      "unknown_contract",
+    ])
+    .optional()
+    .describe(
+      "Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable.",
+    ),
+  estimate: zod
+    .boolean()
+    .optional()
+    .describe("true unless the model is the standard USD-quoted forex lot."),
+  valuePerUnitPerLot: zod
+    .number()
+    .optional()
+    .describe("The assumed money per 1.0 price move per 1.0 lot."),
+  basis: zod
+    .string()
+    .optional()
+    .describe("Plain-English statement of the sizing assumption, for display."),
 });
 
 /**

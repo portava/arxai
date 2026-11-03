@@ -1363,6 +1363,7 @@ export * from "./positionEvent";
 export * from "./positionEventList";
 export * from "./positionEventSeverity";
 export * from "./positionSizeResult";
+export * from "./positionSizeResultValueModel";
 export * from "./postAdminOneClickUsersGrant200";
 export * from "./postAdminOneClickUsersGrantBody";
 export * from "./postAdminOneClickUsersRevoke200";

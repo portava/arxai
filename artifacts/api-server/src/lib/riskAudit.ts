@@ -114,6 +114,36 @@ export interface RiskAuditResult {
   tradingHalt: RiskAuditHalt | null;
 }
 
+/** The figures that are only measured when closed rows are counted. */
+export const RISK_AUDIT_CLOSED_ROW_FIELDS = ["dailyLossUsed", "weeklyLossUsed", "losingStreak", "cooldownActive"] as const;
+
+/**
+ * What a computeRiskAudit result actually read, reported by GET /risk/audit
+ * so the page can say plainly that the audit is not the trader's account:
+ *  - tradeSource: the legacy trades table, which takes no new rows
+ *    (/execute-trade was retired);
+ *  - tradeScope: USER only when the result says only the trader's rows were
+ *    counted (RiskAuditOptions.userId); otherwise ALL_ACCOUNTS (no user
+ *    filter, as the legacy /mt5/execute pre-check still reads it);
+ *  - notMeasured: daily / weekly loss, the losing streak and the cooldown
+ *    unless the result says closed rows were counted (closedTradesMeasured).
+ *    The old "CLOSED" status filter matches no row (closed rows are
+ *    CLOSED_WIN / CLOSED_LOSS), so without countClosedRows they come out 0 —
+ *    not measurements.
+ * A result that does not say is read as the unscoped, unmeasured case.
+ */
+export function riskAuditBasis(audit: { closedTradesMeasured?: boolean; scope?: string }): {
+  tradeSource: "LEGACY_TRADES_TABLE";
+  tradeScope: "USER" | "ALL_ACCOUNTS";
+  notMeasured: string[];
+} {
+  return {
+    tradeSource: "LEGACY_TRADES_TABLE",
+    tradeScope: audit.scope === "USER" ? "USER" : "ALL_ACCOUNTS",
+    notMeasured: audit.closedTradesMeasured === true ? [] : [...RISK_AUDIT_CLOSED_ROW_FIELDS],
+  };
+}
+
 export async function computeRiskAudit(
   accountBalance: number,
   input: RiskAuditInput,

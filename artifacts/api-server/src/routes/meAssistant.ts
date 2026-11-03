@@ -68,7 +68,7 @@ import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.j
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
-import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
+import { buildRubyChartContext, buildGatedTrustLine, gatedReadReason } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
 import { buildRubyDraftRead, type RubyDraftIntent } from "../lib/assistant/rubyDraftRead.js";
@@ -77,6 +77,7 @@ import { classifySymbol } from "../lib/data/marketDataRouter.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   buildSetupPreview,
+  setupPreviewProviderSource,
   type SetupSide,
   type SetupPreviewProviderSource,
 } from "../lib/assistant/setupPreview.js";
@@ -739,18 +740,29 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const basis = rubyCtx?.basis ?? "INSUFFICIENT";
-  const trustLine = rubyCtx?.trustLine ?? `${timeframe} candles syncing`;
-  const blockReason = rubyCtx?.blockReason ?? null;
+  // HONESTY (same rule as draft-read and read-chart): a gated read never shows
+  // the success-path "Verified … · Live feed …" line, which is composed from
+  // raw gate flags and can disagree with the feed state that set the basis.
+  const trustLine = rubyCtx && basis === "VERIFIED"
+    ? rubyCtx.trustLine
+    : buildGatedTrustLine(timeframe, {
+        available: rubyCtx != null,
+        stale: rubyCtx?.state.stale ?? false,
+        aiUsable: rubyCtx?.state.aiUsable ?? false,
+        basis,
+      });
+  // Name what is actually not confirmed (feed, candles, or the specific chart
+  // check) so the refusal never says "the feed isn't confirmed" when it is.
+  const blockReason = gatedReadReason(rubyCtx);
 
-  // Provider honesty: no broker-native quote feed is active yet
-  // (MT5_BROKER_FEED_NOT_ACTIVE), so every current feed is a composite /
-  // synthetic source — the producer must never use broker-native language.
+  // Provider honesty: name the source that actually served this series. Only
+  // the MetaTrader 5 broker bridge is broker-native; any other (or unreported)
+  // source is composite, and the producer then never uses broker-native language.
   const assetClass = classifySymbol(symbol);
-  const providerSource: SetupPreviewProviderSource = {
+  const providerSource: SetupPreviewProviderSource = setupPreviewProviderSource(
     assetClass,
-    composite: true,
-    label: assetClass === "synthetic" ? "synthetic index" : "composite market-data",
-  };
+    rubyCtx?.state.truthState.source ?? null,
+  );
 
   // Bridge + allocation truth (per-user). Allocation is used only to decide
   // whether account-currency risk can be shown — never to fabricate a number.
@@ -871,6 +883,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
       direction: (side ?? draft?.side) ?? null,
       symbol,
       timeframe,
+      // The state this drawing was built from (enriched with the user's own
+      // broker quote), so the receipt records the read the user saw.
+      state: rubyCtx?.state,
     });
   }
 

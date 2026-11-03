@@ -22,12 +22,21 @@ type ShellResponse = {
   userId: number;
   accountMode: "DEMO" | "PERSONAL_MT5" | "SHARED_MASTER_MT5";
   approvalStatus: string;
+  // Platform + approval status only (it ignores the user's own mode and an
+  // allocation freeze). The badge shows accountTradingStatus when present.
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  accountTradingStatus?: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  accountTradingStatusReason?: string;
   allocation: {
     assignedStartingBalance: number | null;
-    currentBalance: number;
-    equity: number;
-    marginUsed: number;
+    // null = not available / not measured (see balanceNote / marginNote).
+    currentBalance: number | null;
+    equity: number | null;
+    equityNote?: string;
+    marginUsed: number | null;
+    balanceSource?: "user_slot_allocation" | "virtual_trading_accounts" | null;
+    balanceNote?: string;
+    marginNote?: string;
     totalAllocation?: number | null;
     manualAllocation?: number | null;
     aiSleeveAllocation?: number | null;
@@ -41,18 +50,28 @@ type ShellResponse = {
     freezeMessage?: string | null;
   };
   pnl: {
-    openPnl: number;
-    closedPnlToday: number;
-    closedPnlWeek: number;
-    closedPnlTotal: number;
-    tradesToday: number;
-    winsToday: number;
-    lossesToday: number;
+    // Floating P/L of open positions; null = not measured / not current (see openPnlNote).
+    openPnl: number | null;
+    openPnlSource?: "live_shared_positions" | null;
+    openPnlNote?: string;
+    // null = not measured (the server has no closed-trade source for this view).
+    closedPnlToday: number | null;
+    closedPnlWeek: number | null;
+    closedPnlTotal: number | null;
+    tradesToday: number | null;
+    winsToday: number | null;
+    lossesToday: number | null;
+    closedMeasured?: boolean;
+    closedNote?: string | null;
   };
   risk: {
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;
-    openExposureLots: number;
+    dailyLossRemainingNote?: string | null;
+    // null = not measured (see openExposureNote).
+    openExposureLots: number | null;
+    openExposureSource?: "shared_trade_attribution" | "paper_trades" | null;
+    openExposureNote?: string;
     maxLotSize: number | null;
     maxOpenTrades: number | null;
     maxDailyLossAmount: number | null;
@@ -73,7 +92,10 @@ function fmtMoney(v: number | null | undefined): string {
   const sign = n < 0 ? "-" : "";
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
-function fmtPnl(v: number): string {
+const NOT_MEASURED = "Not measured";
+const NOT_AVAILABLE = "Not available";
+function fmtPnl(v: number | null | undefined): string {
+  if (v == null || !isFinite(Number(v))) return NOT_MEASURED;
   const sign = v > 0 ? "+" : v < 0 ? "-" : "";
   return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
@@ -157,7 +179,11 @@ export default function MyAccountPage() {
   }
 
   const s = q.data;
-  const pnlClass = (v: number) => v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
+  // The badge shows the user's own status (their trading mode and an
+  // allocation freeze included), not the platform-only tradingStatus.
+  const badgeStatus: ShellResponse["tradingStatus"] = s.accountTradingStatus ?? s.tradingStatus;
+  const pnlClass = (v: number | null | undefined) => v == null ? "text-txt-secondary" : v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
+  const fmtCount = (v: number | null | undefined) => v == null ? NOT_MEASURED : String(v);
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="my-account-page">
@@ -182,8 +208,12 @@ export default function MyAccountPage() {
               {mode.cleanModeLabel}
             </Badge>
           )}
-          <Badge variant={statusVariant[s.tradingStatus]} data-testid="trading-status-badge">
-            {safeLabel(s.tradingStatus)}
+          <Badge
+            variant={statusVariant[badgeStatus]}
+            data-testid="trading-status-badge"
+            title={s.accountTradingStatusReason}
+          >
+            {safeLabel(badgeStatus)}
           </Badge>
           {s.accountMode === "SHARED_MASTER_MT5" && (
             <Badge variant="outline" data-testid="approval-status-badge">
@@ -192,6 +222,11 @@ export default function MyAccountPage() {
           )}
         </div>
       </div>
+      {s.accountTradingStatusReason && (
+        <p className="text-xs text-txt-secondary" data-testid="trading-status-reason">
+          {s.accountTradingStatusReason}
+        </p>
+      )}
 
       {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
           Open Trades, risk panel, wallet and admin. The panel uses this
@@ -207,9 +242,9 @@ export default function MyAccountPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Stat label="My Balance" value={fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
-          <Stat label="My Equity" value={fmtMoney(s.allocation.equity)} testid="my-equity" />
-          <Stat label="Margin Used" value={fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
+          <Stat label="My Balance" value={s.allocation.currentBalance == null ? NOT_AVAILABLE : fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
+          <Stat label="My Equity" value={s.allocation.equity == null ? NOT_AVAILABLE : fmtMoney(s.allocation.equity)} testid="my-equity" />
+          <Stat label="Margin Used" value={s.allocation.marginUsed == null ? NOT_MEASURED : fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
           {/* Only an operator's allocation row (totalAllocation) is an
               assignment. assignedStartingBalance falls back to the running
               balance when no row exists, so it is never shown here. */}
@@ -219,6 +254,13 @@ export default function MyAccountPage() {
             testid="my-allocation"
           />
         </CardContent>
+        {(s.allocation.balanceNote || s.allocation.equityNote || s.allocation.marginNote) && (
+          <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-balance-source">
+            {s.allocation.balanceNote && <div>{s.allocation.balanceNote}</div>}
+            {s.allocation.equityNote && <div data-testid="my-equity-note">Equity: {s.allocation.equityNote}</div>}
+            {s.allocation.marginNote && <div>{s.allocation.marginNote}</div>}
+          </CardContent>
+        )}
         {/* Manual / AI sleeve split — shown when the user has any admin
             allocation. AI fields are display-only here; toggles live on
             the admin Allocations page. */}
@@ -284,19 +326,32 @@ export default function MyAccountPage() {
       <Card data-testid="my-pnl-card" className="rounded-2xl border-border bg-card">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            {s.pnl.closedPnlToday >= 0 ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-danger" />}
+            {s.pnl.closedPnlToday == null
+              ? <Activity className="h-4 w-4" />
+              : s.pnl.closedPnlToday >= 0 ? <TrendingUp className="h-4 w-4 text-success" /> : <TrendingDown className="h-4 w-4 text-danger" />}
             My P/L
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Today's P/L" valueClass={pnlClass(s.pnl.closedPnlToday)} value={fmtPnl(s.pnl.closedPnlToday)} testid="my-pnl-today" />
-          <Stat label="Open P/L" valueClass={pnlClass(s.pnl.openPnl)} value={fmtPnl(s.pnl.openPnl)} testid="my-pnl-open" />
+          <Stat
+            label="Open P/L"
+            valueClass={pnlClass(s.pnl.openPnl)}
+            value={s.pnl.openPnl == null && s.pnl.openPnlSource ? NOT_AVAILABLE : fmtPnl(s.pnl.openPnl)}
+            testid="my-pnl-open"
+          />
           <Stat label="Closed P/L (7d)" valueClass={pnlClass(s.pnl.closedPnlWeek)} value={fmtPnl(s.pnl.closedPnlWeek)} testid="my-pnl-week" />
           <Stat label="Closed P/L (total)" valueClass={pnlClass(s.pnl.closedPnlTotal)} value={fmtPnl(s.pnl.closedPnlTotal)} testid="my-pnl-total" />
-          <Stat label="Trades Today" value={String(s.pnl.tradesToday)} testid="my-trades-today" />
-          <Stat label="Wins Today" value={String(s.pnl.winsToday)} testid="my-wins-today" />
-          <Stat label="Losses Today" value={String(s.pnl.lossesToday)} testid="my-losses-today" />
+          <Stat label="Trades Today" value={fmtCount(s.pnl.tradesToday)} testid="my-trades-today" />
+          <Stat label="Wins Today" value={fmtCount(s.pnl.winsToday)} testid="my-wins-today" />
+          <Stat label="Losses Today" value={fmtCount(s.pnl.lossesToday)} testid="my-losses-today" />
         </CardContent>
+        {(s.pnl.openPnlNote || s.pnl.closedNote) && (
+          <CardContent className="pt-0 text-xs text-txt-secondary space-y-1">
+            {s.pnl.openPnlNote && <div data-testid="my-pnl-open-note">Open P/L: {s.pnl.openPnlNote}</div>}
+            {s.pnl.closedNote && <div data-testid="my-pnl-closed-note">{s.pnl.closedNote}</div>}
+          </CardContent>
+        )}
       </Card>
 
       {/* My Risk */}
@@ -308,8 +363,16 @@ export default function MyAccountPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Available Risk" value={fmtMoney(s.risk.availableRiskAmount)} testid="my-available-risk" />
-          <Stat label="Daily Loss Remaining" value={fmtMoney(s.risk.dailyLossRemaining)} testid="my-daily-loss-remaining" />
-          <Stat label="Open Exposure (lots)" value={s.risk.openExposureLots.toFixed(2)} testid="my-open-exposure" />
+          <Stat
+            label="Daily Loss Remaining"
+            value={s.risk.dailyLossRemaining == null && s.risk.dailyLossRemainingNote ? NOT_MEASURED : fmtMoney(s.risk.dailyLossRemaining)}
+            testid="my-daily-loss-remaining"
+          />
+          <Stat
+            label={s.risk.openExposureSource === "paper_trades" ? "Open Exposure (journal lots)" : "Open Exposure (lots)"}
+            value={s.risk.openExposureLots == null ? NOT_MEASURED : s.risk.openExposureLots.toFixed(2)}
+            testid="my-open-exposure"
+          />
           <Stat label="Max Lot Size" value={s.risk.maxLotSize != null ? s.risk.maxLotSize.toFixed(2) : "—"} testid="my-max-lot" />
           <Stat label="Max Open Trades" value={s.risk.maxOpenTrades != null ? String(s.risk.maxOpenTrades) : "—"} testid="my-max-open" />
           <Stat label="Max Daily Loss" value={fmtMoney(s.risk.maxDailyLossAmount)} testid="my-max-daily-loss" />
@@ -322,6 +385,8 @@ export default function MyAccountPage() {
         </CardContent>
         <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-risk-limits-in-force">
           <div>Limits shown are the ones enforced on every order. Your saved preferences are edited in Risk settings.</div>
+          {s.risk.dailyLossRemainingNote && <div data-testid="my-daily-loss-remaining-note">{s.risk.dailyLossRemainingNote}</div>}
+          {s.risk.openExposureNote && <div data-testid="my-open-exposure-note">Open exposure: {s.risk.openExposureNote}</div>}
           {Object.entries(s.risk.limits ?? {})
             .filter(([k, v]) => ["maxLotSize", "maxOpenTrades", "maxDailyLossAmount", "maxRiskPerTradePercent"].includes(k) && v.reason && v.overriddenBy !== "default")
             .map(([k, v]) => <div key={k} data-testid={`my-risk-override-${k}`}>{v.label}: {v.reason}</div>)}

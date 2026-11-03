@@ -13,6 +13,7 @@ import {
   getGetRiskAuditQueryKey,
   getGetPositionSizeQueryKey,
   getGetBotStatusQueryKey,
+  type RiskAudit,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -189,19 +190,70 @@ function StatRow({ label, value, sub }: { label: string; value: React.ReactNode;
   );
 }
 
-// ── Live Audit Banner ────────────────────────────────────────────────────────
+// ── Live mode lock copy ──────────────────────────────────────────────────────
+// risk_settings.liveLocked is a stored preference: the permission status and
+// checklists list it as a blocker, but no order path reads it.
 
-/**
- * What the legacy risk audit reads. Loss percentages and the losing streak
- * are only real when the server says it measured closed rows.
- */
-function riskAuditSourceNote(scope: string | undefined): string {
-  const whose = scope === "USER" ? "your rows in" : scope === "ALL_USERS" ? "every user's rows in" : "rows in";
-  return `Counted from ${whose} the legacy simulated trades table, which takes no new rows: trades you place now are not in it. ` +
-    "Loss percentages are of a placeholder $1,000 balance, not your account. Shown for review only; orders are checked separately when placed.";
+const LIVE_LOCK_ON_NOTE =
+  "Saved as a preference. Your permission status and checklists now list it as a blocker, but orders are not checked against it. To stop new orders, use \"Pause my trading\" in Risk Command Center.";
+const LIVE_LOCK_OFF_NOTE =
+  "This does not enable live trading: live orders still need live arming and must pass the Risk Governor.";
+
+// ── What the risk audit read ─────────────────────────────────────────────────
+// GET /risk/audit is the legacy audit: it measures loss % against a $1,000
+// placeholder balance (balanceSource) and counts trades in the retired legacy
+// trades table (tradeSource / measuredFrom), the trader's own rows or every
+// account's (scope / tradeScope). Daily / weekly loss, the losing streak and
+// the cooldown are measurements only when the server says it counted closed
+// rows (closedTradesMeasured) and does not list them in notMeasured. A server
+// that does not say what it read is treated as the unscoped, unmeasured case:
+// the page only ever downgrades.
+
+const LEGACY_AUDIT_NOT_MEASURED = ["dailyLossUsed", "weeklyLossUsed", "losingStreak", "cooldownActive"];
+
+function auditBasis(a: RiskAudit) {
+  const placeholder = !a.balanceSource || a.balanceSource.startsWith("PLACEHOLDER");
+  const source = a.tradeSource ?? a.measuredFrom;
+  const legacyLog = !source || source === "LEGACY_TRADES_TABLE";
+  // Own rows only when the server says so and nothing it says contradicts it.
+  const ownRowsOnly =
+    (a.scope === "USER" || a.tradeScope === "USER") && a.scope !== "ALL_USERS" && a.tradeScope !== "ALL_ACCOUNTS";
+  const scopeReported = a.scope != null || a.tradeScope != null;
+  const allAccounts = !ownRowsOnly;
+  const notMeasured = new Set(a.notMeasured ?? []);
+  if (a.closedTradesMeasured !== true) for (const f of LEGACY_AUDIT_NOT_MEASURED) notMeasured.add(f);
+  const lossMeasured = !LEGACY_AUDIT_NOT_MEASURED.some((f) => notMeasured.has(f));
+  const balance = a.accountBalanceUsed ?? 1000;
+  const notes: string[] = [];
+  if (placeholder) notes.push(`Loss % is measured against a $${balance.toLocaleString("en-US")} placeholder balance, not your live balance.`);
+  if (legacyLog) {
+    const whose = ownRowsOnly
+      ? "your rows in the legacy simulated trades table"
+      : scopeReported
+        ? "every user's rows in the legacy simulated trades table (not only yours)"
+        : "the legacy simulated trades table (whose rows was not reported, so not only yours)";
+    notes.push(`Trade counts come from ${whose}, which takes no new trades: trades you place now are not in it.`);
+  }
+  if (notMeasured.has("dailyLossUsed") || notMeasured.has("losingStreak")) {
+    notes.push("Daily loss, weekly loss and losing streak are not measured: no closed trade in that log is counted.");
+  }
+  if (placeholder || legacyLog) {
+    notes.push("Shown for review only: the Risk Governor checks your orders against your own book when they are placed; see Risk Command Center.");
+  }
+  const evaluated = a.evaluatedAt ? new Date(a.evaluatedAt) : null;
+  const asOf = evaluated && !Number.isNaN(evaluated.getTime()) ? evaluated.toLocaleTimeString() : null;
+  return {
+    legacy: placeholder || legacyLog, placeholder, legacyLog, ownRowsOnly, scopeReported, allAccounts,
+    notMeasured, lossMeasured, balance, notes, asOf,
+  };
 }
 
-type AuditVerdict = { tone: "pass" | "unmeasured" | "tripped"; headline: string };
+type AuditBasis = ReturnType<typeof auditBasis>;
+
+// ── Risk Audit Banner ────────────────────────────────────────────────────────
+
+/** pass: a verified pass (green). legacy: no rule tripped on the legacy basis (neutral, never green). */
+type AuditVerdict = { tone: "pass" | "legacy" | "unmeasured" | "tripped"; headline: string };
 
 type HaltRead = { engaged: boolean; sources: string[]; reason: string | null; venues: string[] } | null | undefined;
 
@@ -217,14 +269,20 @@ export function haltReleaseHint(sources: string[]): string {
   return parts.join(" ");
 }
 
-/** The banner may say a check passed only when the server measured it. */
-function riskAuditVerdict(audit: { passed: boolean; closedTradesMeasured?: boolean; tradingHalt?: HaltRead }): AuditVerdict {
+/**
+ * The banner may say a check passed only when the server measured it, and a
+ * pass on a placeholder balance / legacy log is not a verified pass: it is
+ * shown neutral, never green.
+ */
+function riskAuditVerdict(audit: { passed: boolean; tradingHalt?: HaltRead }, basis: AuditBasis): AuditVerdict {
   if (audit.tradingHalt?.engaged) return { tone: "tripped", headline: "New trades are halted: a stop switch is engaged" };
-  if (!audit.passed) return { tone: "tripped", headline: "Legacy risk audit: a rule is tripped" };
-  if (audit.closedTradesMeasured !== true) {
-    return { tone: "unmeasured", headline: "Legacy risk audit: daily / weekly loss and losing streak were not measured" };
+  const name = basis.legacy ? "Legacy risk audit" : "Risk audit";
+  if (!audit.passed) return { tone: "tripped", headline: `${name}: a rule is tripped` };
+  if (!basis.lossMeasured) {
+    return { tone: "unmeasured", headline: `${name}: daily / weekly loss and losing streak were not measured` };
   }
-  return { tone: "pass", headline: "Legacy risk audit: no rule tripped" };
+  if (basis.legacy) return { tone: "legacy", headline: "Legacy risk audit: no rule tripped — not a check of your live account" };
+  return { tone: "pass", headline: "Risk audit: no rule tripped" };
 }
 
 export function AuditBanner({ symbol }: { symbol?: string }) {
@@ -245,7 +303,7 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
       >
         <AlertTriangle className="h-6 w-6 shrink-0 text-yellow-400" />
         <div className="min-w-0" data-testid="risk-audit-banner-unavailable">
-          <p className="font-semibold text-sm text-yellow-300">Risk audit could not be loaded</p>
+          <p className="font-semibold text-sm text-yellow-300" data-testid="risk-audit-banner-error">Risk audit could not be loaded</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             No risk verdict is shown, because no current one was read. It is retried every 30 seconds.
           </p>
@@ -253,8 +311,8 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
       </div>
     );
   }
-  const verdict = riskAuditVerdict(audit);
-  const measured = audit.closedTradesMeasured === true;
+  const basis = auditBasis(audit);
+  const verdict = riskAuditVerdict(audit, basis);
 
   return (
     <div
@@ -263,21 +321,31 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
         "flex items-center gap-4 rounded-lg border px-5 py-3",
         verdict.tone === "pass"
           ? "border-success/30 bg-success/10"
-          : verdict.tone === "unmeasured"
-            ? "border-amber-500/30 bg-amber-500/5"
-            : "border-red-500/30 bg-red-500/5"
+          : verdict.tone === "legacy"
+            ? "border-border/50 bg-muted/20"
+            : verdict.tone === "unmeasured"
+              ? "border-amber-500/30 bg-amber-500/5"
+              : "border-red-500/30 bg-red-500/5"
       )}
     >
       <div className="shrink-0">
         {verdict.tone === "pass"
           ? <ShieldCheck className="h-8 w-8 text-success" />
-          : verdict.tone === "unmeasured"
-            ? <ShieldAlert className="h-8 w-8 text-amber-400" />
-            : <ShieldX className="h-8 w-8 text-red-400" />}
+          : verdict.tone === "legacy"
+            ? <ShieldAlert className="h-8 w-8 text-muted-foreground" />
+            : verdict.tone === "unmeasured"
+              ? <ShieldAlert className="h-8 w-8 text-amber-400" />
+              : <ShieldX className="h-8 w-8 text-red-400" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={cn("font-semibold text-sm",
-          verdict.tone === "pass" ? "text-success" : verdict.tone === "unmeasured" ? "text-amber-300" : "text-red-300")}>
+        <p
+          className={cn("font-semibold text-sm",
+            verdict.tone === "pass" ? "text-success"
+              : verdict.tone === "legacy" ? "text-foreground"
+              : verdict.tone === "unmeasured" ? "text-amber-300"
+              : "text-red-300")}
+          data-testid="risk-audit-headline"
+        >
           {verdict.headline}
         </p>
         {!audit.passed && (
@@ -296,19 +364,25 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
             ⚠ {audit.warnings[0]}
           </p>
         )}
-        <p className="text-xs text-muted-foreground mt-0.5">{riskAuditSourceNote(audit.scope)}</p>
+        {basis.notes.length > 0 && (
+          <p className="text-xs text-muted-foreground mt-0.5" data-testid="risk-audit-basis">
+            {basis.notes.join(" ")}
+          </p>
+        )}
       </div>
       <div className="hidden md:flex gap-6 shrink-0 text-center">
         <div>
-          <div className="text-xs text-muted-foreground">Daily Loss</div>
-          <div className="font-mono font-bold text-sm">{measured ? `${audit.dailyLossUsed.toFixed(1)}%` : "not measured"}</div>
+          <div className="text-xs text-muted-foreground">{basis.placeholder ? `Daily loss (vs $${basis.balance.toLocaleString("en-US")})` : "Daily Loss"}</div>
+          <div className="font-mono font-bold text-sm" data-testid="risk-audit-banner-daily-loss">
+            {basis.notMeasured.has("dailyLossUsed") ? "Not measured" : `${audit.dailyLossUsed.toFixed(1)}%`}
+          </div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Trades Left</div>
+          <div className="text-xs text-muted-foreground">{basis.legacyLog ? "Trades left (legacy log)" : "Trades Left"}</div>
           <div className="font-mono font-bold text-sm">{audit.tradesRemaining}</div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">Open</div>
+          <div className="text-xs text-muted-foreground">{basis.legacyLog ? "Open (legacy log)" : "Open"}</div>
           <div className="font-mono font-bold text-sm">{audit.openTradesCount}</div>
         </div>
         {audit.cooldownActive && (
@@ -447,6 +521,9 @@ export default function RiskSettings() {
   const [calcResult, setCalcResult] = useState<null | {
     riskAmount: number; stopDistance: number; suggestedLot: number;
     maxLotAllowed: number; finalLot: number; warning?: string | null;
+    // Which instrument-class value model sized the lot. Missing = not
+    // reported, so the lot is treated as an estimate.
+    valueModel?: string; estimate?: boolean; valuePerUnitPerLot?: number; basis?: string;
   }>(null);
   const [calcParams, setCalcParams] = useState<null | {
     symbol: string; accountBalance: number; riskPercent: number;
@@ -534,11 +611,12 @@ export default function RiskSettings() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetRiskSettingsQueryKey() });
+          // The lock is a stored preference: no order path reads it (live
+          // dispatch is gated by live arming and the Risk Governor), so the
+          // toast never says live trading is now permitted or stopped.
           toast({
-            title: next ? "Live mode LOCKED" : "Live mode unlocked",
-            description: next
-              ? "Manual unlock required before going live."
-              : "Live trading is now permitted.",
+            title: next ? "Live mode lock saved" : "Live mode lock removed",
+            description: next ? LIVE_LOCK_ON_NOTE : LIVE_LOCK_OFF_NOTE,
           });
         },
         onError: () => toast({ title: "Failed to toggle lock", variant: "destructive" }),
@@ -642,8 +720,8 @@ export default function RiskSettings() {
             </Badge>
           )}
           {settings?.liveLocked && (
-            <Badge className="bg-red-500/20 text-red-300 border-red-500/30 px-3 py-1 border">
-              <Lock size={12} className="mr-1.5" /> Live Locked
+            <Badge className="bg-muted/40 text-muted-foreground border-border/50 px-3 py-1 border" data-testid="live-lock-badge">
+              <Lock size={12} className="mr-1.5" /> Live lock on (preference)
             </Badge>
           )}
           {halt?.engaged && (
@@ -659,12 +737,13 @@ export default function RiskSettings() {
         </div>
       </div>
 
-      {/* Canonical balance (Task #430) — risk caps are evaluated against this
-          same live equity, so the panel matches the Dashboard, account,
-          Open Trades, wallet and admin. */}
+      {/* Canonical balance (Task #430) — the same live equity as the
+          Dashboard, account, Open Trades, wallet and admin. The legacy risk
+          audit below is NOT measured against it (it uses a placeholder
+          balance and says so). */}
       <CanonicalBalancePanel live={liveAcct.live} title="Live balance" />
 
-      {/* ── Compliance + Live Audit Banner ── */}
+      {/* ── Compliance + Risk Audit Banner ── */}
       <DisclaimerBanner kind="riskCenter" />
       <AuditBanner />
 
@@ -1186,7 +1265,7 @@ export default function RiskSettings() {
                   <CalculatorIcon size={16} /> Position Sizing Calculator
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Calculate optimal lot size based on your account and risk parameters.
+                  Estimate a lot size from your balance, risk % and stop distance. It uses an instrument-class value model, not your broker&apos;s contract specification.
                 </CardDescription>
               </CardHeader>
               <Form {...calcForm}>
@@ -1270,15 +1349,24 @@ export default function RiskSettings() {
                   <div className="space-y-1">
                     <StatRow label="Risk Amount" value={`$${calcResult.riskAmount.toFixed(2)}`} />
                     <StatRow label="Stop Distance" value={calcResult.stopDistance.toFixed(4)} />
-                    <StatRow label="Suggested Lot" value={calcResult.suggestedLot.toFixed(2)} />
-                    <StatRow label="Max Allowed Lot" value={calcResult.maxLotAllowed.toFixed(2)} />
+                    <StatRow label="Suggested Lot" value={calcResult.valueModel === "unknown_contract" ? "—" : calcResult.suggestedLot.toFixed(2)} />
+                    <StatRow
+                      label="Max Allowed Lot"
+                      value={calcResult.maxLotAllowed.toFixed(2)}
+                      sub="Lot cap in force: the strictest of your cap, your operator's limit, the platform cap and any cap you set for this symbol. Your broker may allow less."
+                    />
                     <div className="mt-3 pt-3 border-t border-border/50">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold">Final Lot Size</span>
-                        <span className="text-xl font-mono font-bold text-primary">
-                          {calcResult.finalLot.toFixed(2)}
+                        <span className="text-sm font-semibold" data-testid="sizer-final-label">
+                          {calcResult.estimate === false ? "Final Lot Size" : "Estimated Lot Size"}
+                        </span>
+                        <span className="text-xl font-mono font-bold text-primary" data-testid="sizer-final-lot">
+                          {calcResult.valueModel === "unknown_contract" ? "Not sized" : calcResult.finalLot.toFixed(2)}
                         </span>
                       </div>
+                      <p className="mt-2 text-xs text-muted-foreground" data-testid="sizer-basis">
+                        {calcResult.basis ?? "The sizing basis was not reported, so treat this lot as an estimate."}
+                      </p>
                     </div>
                     {calcResult.warning && (
                       <Alert className="mt-3 border-yellow-500/30 bg-yellow-500/5 py-2">
@@ -1463,48 +1551,36 @@ export default function RiskSettings() {
               </CardContent>
             </Card>
 
-            {/* Live Bridge Lock */}
-            <Card className={cn("border", settings?.liveLocked ? "border-red-500/40" : "border-border/50")}>
+            {/* Live mode lock — a stored preference (risk_settings.liveLocked).
+                The permission status and checklists list it as a blocker; no
+                order path reads it, so the card never claims it stops or
+                permits live trading. */}
+            <Card className="border border-border/50">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   {settings?.liveLocked
-                    ? <><Lock size={16} className="text-red-400" /> <span className="text-red-400">Live Locked</span></>
-                    : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock</span></>}
+                    ? <><Lock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: on</span></>
+                    : <><Unlock size={16} className="text-muted-foreground" /> <span>Live Mode Lock: off</span></>}
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  When locked, switching to LIVE trading mode is disabled until manually unlocked.
+                <CardDescription className="text-xs" data-testid="live-lock-description">
+                  A preference saved on your account. While it is on, your permission status and the trade-plan and
+                  confirmation checklists list it as a blocker. Orders are not checked against it: live orders are
+                  controlled by live arming and the Risk Governor, so turning it off does not enable live trading.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {settings?.liveLocked && (
-                  <Alert className="border-red-500/30 bg-red-500/5 py-2">
-                    <Lock className="h-3 w-3 text-red-400" />
-                    <AlertDescription className="text-xs text-red-300 ml-1">Live trading is locked</AlertDescription>
-                  </Alert>
-                )}
                 <Button
                   variant="outline"
-                  className={cn(
-                    "w-full gap-2 border",
-                    settings?.liveLocked
-                      ? "border-success/40 text-success hover:bg-success/10"
-                      : "border-red-500/40 text-red-400 hover:bg-red-500/10"
-                  )}
+                  className="w-full gap-2 border"
                   onClick={handleToggleLiveLock}
                   disabled={setLiveLock.isPending}
                 >
                   {settings?.liveLocked ? (
-                    <><Unlock size={14} /> Unlock Live Mode</>
+                    <><Unlock size={14} /> Turn live mode lock off</>
                   ) : (
-                    <><Lock size={14} /> Lock Live Mode</>
+                    <><Lock size={14} /> Turn live mode lock on</>
                   )}
                 </Button>
-
-                {settings?.liveLocked && (
-                  <div className="mt-3">
-                    <DisclaimerBanner kind="liveUnlock" compact />
-                  </div>
-                )}
               </CardContent>
             </Card>
 
@@ -1521,7 +1597,7 @@ export default function RiskSettings() {
                   // A row nobody read is grey "could not be loaded", never a green "NO".
                   const botUnread = botStatusFailed ? "could not be loaded" : "not loaded yet";
                   // id keeps each row's stable test id; label is what the row says.
-                  const rows: { id: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread" }[] = [
+                  const rows: { id: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread"; testId?: string }[] = [
                     halt
                       ? {
                           id: "Stop switch", label: "Stop switch",
@@ -1543,9 +1619,10 @@ export default function RiskSettings() {
                     botStatus
                       ? { id: "Is Paused", label: "Paused flag", value: botStatus.isPaused ? "SET" : "NOT SET", tone: botStatus.isPaused ? "warn" : "neutral" }
                       : { id: "Is Paused", label: "Paused flag", value: botUnread, tone: "unread" },
+                    // The live mode lock is a preference, not a gate: shown neutral, never green/amber.
                     !settings
-                      ? { id: "Live Locked", label: "Live Locked", value: SETTINGS_UNREAD, tone: "unread" }
-                      : { id: "Live Locked", label: "Live Locked", value: settings.liveLocked ? "LOCKED" : "OPEN", tone: settings.liveLocked ? "ok" : "warn" },
+                      ? { id: "Live Locked", label: "Live lock (preference)", value: SETTINGS_UNREAD, tone: "unread", testId: "live-lock-status" }
+                      : { id: "Live Locked", label: "Live lock (preference)", value: settings.liveLocked ? "ON" : "OFF", tone: "neutral", testId: "live-lock-status" },
                     !settings
                       ? { id: "Risk Mode", label: "Risk Mode", value: SETTINGS_UNREAD, tone: "unread" }
                       : {
@@ -1559,7 +1636,7 @@ export default function RiskSettings() {
                     <div key={row.id} className="flex items-center justify-between text-xs" data-testid={`system-status-${row.id}`}>
                       <span className="text-muted-foreground">{row.label}</span>
                       <span
-                        data-testid={`risk-status-row-${row.label}`}
+                        data-testid={row.testId ?? `risk-status-row-${row.label}`}
                         className={cn("font-mono font-semibold",
                           row.tone === "ok" ? "text-success"
                             : row.tone === "warn" ? "text-yellow-400"
@@ -1598,9 +1675,9 @@ export function RiskAuditDetail() {
         <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
           <div>
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity size={16} /> Live Risk Audit
+              <Activity size={16} /> Legacy Risk Audit
             </CardTitle>
-            <CardDescription className="text-xs">The risk audit could not be loaded</CardDescription>
+            <CardDescription className="text-xs" data-testid="risk-audit-detail-error">The risk audit could not be loaded</CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Retry</Button>
         </CardHeader>
@@ -1612,17 +1689,23 @@ export function RiskAuditDetail() {
       </Card>
     );
   }
-  const measured = audit.closedTradesMeasured === true;
-  const notMeasured = <span className="text-muted-foreground">not measured</span>;
+  const basis = auditBasis(audit);
+  const unmeasured = (field: string) => basis.notMeasured.has(field);
+  const NOT_MEASURED = <span className="text-muted-foreground">Not measured</span>;
 
   return (
     <Card className="border-border/50">
       <CardHeader className="bg-muted/20 border-b border-border/50 flex-row items-center justify-between">
         <div>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Activity size={16} /> Live Risk Audit
+          <CardTitle className="text-base flex items-center gap-2" data-testid="risk-audit-detail-title">
+            <Activity size={16} /> {basis.legacy ? "Legacy Risk Audit" : "Risk Audit"}
           </CardTitle>
-          <CardDescription className="text-xs">{riskAuditSourceNote(audit.scope)} Refreshes every 30s.</CardDescription>
+          <CardDescription className="text-xs" data-testid="risk-audit-detail-asof">
+            Re-run on the server every 30s{basis.asOf ? ` · last run ${basis.asOf}` : ""}
+          </CardDescription>
+          {basis.notes.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1" data-testid="risk-audit-detail-basis">{basis.notes.join(" ")}</p>
+          )}
         </div>
         <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-xs">Refresh</Button>
       </CardHeader>
@@ -1633,16 +1716,26 @@ export function RiskAuditDetail() {
           </h4>
           <div className="space-y-1">
             <StatRow label="Risk Per Trade" value={`${audit.riskPercent}%`} />
-            <StatRow label="Daily Loss Used" value={measured ? `${audit.dailyLossUsed.toFixed(2)}%` : notMeasured} />
-            <StatRow label="Weekly Loss Used" value={measured ? `${audit.weeklyLossUsed.toFixed(2)}%` : notMeasured} />
-            <StatRow label="Trades Remaining Today" value={audit.tradesRemaining} />
-            <StatRow label="Open Trades" value={audit.openTradesCount} sub={audit.scope === "USER" ? "yours" : audit.scope === "ALL_USERS" ? "all users" : "scope not reported"} />
-            <StatRow label="Current Losing Streak" value={measured ? audit.losingStreak : notMeasured} />
+            <StatRow
+              label={basis.placeholder ? `Daily Loss Used (vs $${basis.balance.toLocaleString("en-US")})` : "Daily Loss Used"}
+              value={unmeasured("dailyLossUsed") ? NOT_MEASURED : `${audit.dailyLossUsed.toFixed(2)}%`}
+            />
+            <StatRow
+              label={basis.placeholder ? `Weekly Loss Used (vs $${basis.balance.toLocaleString("en-US")})` : "Weekly Loss Used"}
+              value={unmeasured("weeklyLossUsed") ? NOT_MEASURED : `${audit.weeklyLossUsed.toFixed(2)}%`}
+            />
+            <StatRow label={basis.legacyLog ? "Trades Remaining Today (legacy log)" : "Trades Remaining Today"} value={audit.tradesRemaining} />
+            <StatRow
+              label={basis.legacyLog ? `Open Trades (legacy log${basis.allAccounts && basis.scopeReported ? ", all accounts" : ""})` : "Open Trades"}
+              value={audit.openTradesCount}
+              sub={basis.ownRowsOnly ? "yours" : basis.scopeReported ? "all users" : "scope not reported"}
+            />
+            <StatRow label="Current Losing Streak" value={unmeasured("losingStreak") ? NOT_MEASURED : audit.losingStreak} />
             <StatRow
               label="Cooldown"
               value={audit.cooldownActive
                 ? <span className="text-red-400">ACTIVE</span>
-                : measured ? <span className="text-success">Clear</span> : notMeasured}
+                : unmeasured("cooldownActive") ? NOT_MEASURED : <span className="text-success">Clear</span>}
             />
           </div>
         </div>
@@ -1680,18 +1773,27 @@ export function RiskAuditDetail() {
             </div>
           )}
 
-          {audit.passed && audit.warnings.length === 0 && measured && (
-            <div className="flex flex-col items-center justify-center h-full gap-2 py-6">
+          {audit.passed && audit.warnings.length === 0 && basis.lossMeasured && (basis.legacy ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-detail-clear">
+              <ShieldAlert size={32} className="text-muted-foreground" />
+              <p className="text-sm font-semibold">No legacy rule tripped</p>
+              <p className="text-xs text-muted-foreground text-center">This does not check your live account or your current trades.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-detail-clear">
               <ShieldCheck size={32} className="text-success" />
               <p className="text-sm text-success font-semibold">No rule tripped</p>
-              <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings in the legacy audit</p>
+              <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings</p>
             </div>
-          )}
-          {audit.passed && !measured && (
+          ))}
+          {audit.passed && !basis.lossMeasured && (
             <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-unmeasured">
               <ShieldAlert size={32} className="text-amber-400" />
               <p className="text-sm text-amber-300 font-semibold">Not all rules were measured</p>
-              <p className="text-xs text-muted-foreground text-center">Daily / weekly loss, losing streak and cooldown were not measured, so they are not shown as passing.</p>
+              <p className="text-xs text-muted-foreground text-center">
+                Daily / weekly loss, losing streak and cooldown were not measured, so they are not shown as passing.
+                {basis.legacy && " This does not check your live account or your current trades."}
+              </p>
             </div>
           )}
         </div>

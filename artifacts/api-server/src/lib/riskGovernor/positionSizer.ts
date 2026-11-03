@@ -27,6 +27,17 @@ export interface PositionSizeInput {
   maxLotSize?: number;
 }
 
+/**
+ * Which value model sized the lot (money per 1.0 price move per 1.0 lot).
+ * This is an instrument-class heuristic, not the broker's contract spec:
+ *   forex_usd_quote      XXXUSD currency pair: $10 per 0.0001 pip (standard lot, USD account)
+ *   forex_other_quote    other currency pair: pip value is in the quote currency, $10 assumed
+ *   synthetic_per_point  synthetic index: $1 per point per lot assumed
+ *   per_point            index / stock CFD: $1 per point per lot assumed
+ *   unknown_contract     not a known currency pair but sized as one (XAUUSD, BTCUSD…): not usable
+ */
+export type SizingValueModel = "forex_usd_quote" | "forex_other_quote" | "synthetic_per_point" | "per_point" | "unknown_contract";
+
 export interface PositionSizeResult {
   riskAmount: number;
   stopDistance: number;
@@ -34,6 +45,14 @@ export interface PositionSizeResult {
   maxLotAllowed: number;
   finalLot: number;
   warning: string | null;
+  /** The value model behind the lot (see SizingValueModel). */
+  valueModel: SizingValueModel;
+  /** true unless the model is the standard USD-quoted forex lot. */
+  estimate: boolean;
+  /** The assumed money per 1.0 price move per 1.0 lot. */
+  valuePerUnitPerLot: number;
+  /** Plain-English statement of the assumption, for display. */
+  basis: string;
 }
 
 function isSynthetic(symbol: string): boolean {
@@ -42,6 +61,36 @@ function isSynthetic(symbol: string): boolean {
 
 function isForex(symbol: string): boolean {
   return /^[A-Z]{6}$/.test(symbol.replace(/\s/g, "")) || symbol.includes("USD") || symbol.includes("EUR") || symbol.includes("GBP");
+}
+
+const ISO_CURRENCIES = new Set([
+  "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "SEK", "NOK", "DKK", "SGD", "HKD", "ZAR", "MXN", "TRY", "PLN", "CNH", "HUF", "CZK",
+]);
+
+/**
+ * Which model valuePerUnitPerLot() applies, classified by the same tests it
+ * uses, so the label always describes the number that was computed.
+ */
+function sizingModelOf(symbol: string, unitValue: number): { model: SizingValueModel; basis: string } {
+  if (isSynthetic(symbol)) {
+    return { model: "synthetic_per_point", basis: `Synthetic index: assumes $${unitValue} per 1.0 price move per lot. Your broker's contract size may differ, so the lot is an estimate.` };
+  }
+  if (!isForex(symbol)) {
+    return { model: "per_point", basis: `${symbol} is not a currency pair: assumes $${unitValue} per 1.0 price move per lot (index or stock CFD). Contract sizes vary by broker, so the lot is an estimate.` };
+  }
+  const compact = symbol.replace(/\s/g, "");
+  const base = compact.slice(0, 3); const quote = compact.slice(3);
+  if (/^[A-Z]{6}$/.test(compact) && ISO_CURRENCIES.has(base) && ISO_CURRENCIES.has(quote)) {
+    const pip = symbol.includes("JPY") ? "0.01" : "0.0001";
+    return quote === "USD"
+      ? { model: "forex_usd_quote", basis: `Standard forex lot (100,000 units) of a USD-quoted pair: $10 per ${pip} pip, with the balance in USD.` }
+      : { model: "forex_other_quote", basis: `${compact}'s pip value is in ${quote}, not USD. The calculator assumes $10 per ${pip} pip, so the lot is an estimate.` };
+  }
+  return {
+    model: "unknown_contract",
+    basis: `${symbol} is not a currency pair this calculator knows (metals, crypto and similar), but it was sized as one at $10 per pip. `
+      + "That can be wrong by a factor of 1,000 or more, so the lot is not usable. Use your broker's contract specification.",
+  };
 }
 
 /** Money per 1.0 price move per 1.0 lot for a symbol class. */
@@ -56,21 +105,24 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizeRes
   const { accountBalance, riskPercent, entry, stopLoss, symbol, maxLotSize = 10 } = input;
   const riskAmount = accountBalance * (riskPercent / 100);
   const stopDistance = Math.abs(entry - stopLoss);
+  // V75 (1s) requires a smaller lot: halve it by doubling the value per unit.
+  const isV75_1s = symbol.includes("(1s)") || symbol.toLowerCase().includes("1s");
+  const unitValue = valuePerUnitPerLot(symbol) * (isV75_1s ? 2 : 1);
+  const { model, basis } = sizingModelOf(symbol, unitValue);
+  const disclosure = { valueModel: model, estimate: model !== "forex_usd_quote", valuePerUnitPerLot: unitValue, basis };
 
   if (stopDistance === 0) {
     return {
       riskAmount: round2(riskAmount), stopDistance: 0, suggestedLot: 0, maxLotAllowed: maxLotSize, finalLot: 0,
-      warning: "Stop loss distance is zero — cannot calculate lot size.",
+      warning: "Stop loss distance is zero — cannot calculate lot size.", ...disclosure,
     };
   }
 
   let warning: string | null = null;
-  // V75 (1s) requires a smaller lot: halve it by doubling the value per unit.
-  const isV75_1s = symbol.includes("(1s)") || symbol.toLowerCase().includes("1s");
   if (isV75_1s) warning = "V75 (1s): lot size halved due to extreme tick volatility.";
 
   const sized = lotForRisk({
-    riskAmount, stopDistance, valuePerUnitPerLot: valuePerUnitPerLot(symbol) * (isV75_1s ? 2 : 1),
+    riskAmount, stopDistance, valuePerUnitPerLot: unitValue,
     minLot: 0.01, maxLot: NO_MAX, lotStep: 0.01, rounding: "nearest",
   });
   const suggestedLot = sized.invalid ? 0.01 : sized.lot;
@@ -86,6 +138,7 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizeRes
     maxLotAllowed: maxLotSize,
     finalLot,
     warning: warning?.trim() ?? null,
+    ...disclosure,
   };
 }
 

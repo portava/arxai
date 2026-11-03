@@ -31,6 +31,16 @@ export interface RiskAudit {
   balanceSource?: RiskAuditBalanceSource;
   /** USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted. */
   scope?: RiskAuditScope;
+  /** The balance (USD) the loss percentages and projectedLoss were computed against. */
+  accountBalanceUsed?: number;
+  /** The trade book the counts were read from. LEGACY_TRADES_TABLE = the retired legacy trades log, which takes no new trades; it is not the book the Risk Governor enforces. */
+  tradeSource?: string;
+  /** Whose rows the trade read counted. USER = only the signed-in trader's rows (same as scope USER). ALL_ACCOUNTS = the trade read is not limited to the signed-in trader. */
+  tradeScope?: string;
+  /** Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. Empty when closedTradesMeasured is true. */
+  notMeasured?: string[];
+  /** When the server computed this audit. */
+  evaluatedAt?: Date;
   /** The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them. */
   tradingHalt?: RiskAuditHalt | null;
 }

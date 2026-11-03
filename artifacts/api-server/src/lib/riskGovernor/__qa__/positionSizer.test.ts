@@ -65,3 +65,38 @@ test("paper calculator keeps its contract", () => {
   assert.equal(noStop.capped_position_size, PAPER_DEFAULTS.minLotSize);
   assert.match(noStop.reason, /stop distance/);
 });
+
+test("the instrument-class calculator says which value model sized the lot, and that it is an estimate", () => {
+  // Gold: 100 oz per lot ≈ $100 per 1.0 move per lot, so $10 at a 5.00 stop is 0.02 lots.
+  // The class model treats XAUUSD as a forex pair (100,000 per 1.0 per lot) and clamps to 0.01.
+  const gold = calculatePositionSize({ symbol: "XAUUSD", accountBalance: 1000, riskPercent: 1, entry: 2000, stopLoss: 1995 });
+  assert.equal(gold.suggestedLot, 0.01, "the sized number itself is unchanged");
+  assert.equal(gold.valueModel, "unknown_contract");
+  assert.equal(gold.estimate, true);
+  assert.equal(gold.valuePerUnitPerLot, 100_000);
+  assert.match(gold.basis, /XAUUSD is not a currency pair this calculator knows/);
+  assert.match(gold.basis, /not usable/);
+  assert.equal(calculatePositionSize({ symbol: "BTCUSD", accountBalance: 1000, riskPercent: 1, entry: 60000, stopLoss: 59000 }).valueModel, "unknown_contract");
+
+  const eurgbp = calculatePositionSize({ symbol: "EURGBP", accountBalance: 10_000, riskPercent: 1, entry: 0.85, stopLoss: 0.845 });
+  assert.equal(eurgbp.valueModel, "forex_other_quote");
+  assert.equal(eurgbp.estimate, true);
+  assert.match(eurgbp.basis, /pip value is in GBP, not USD/);
+
+  const eurusd = calculatePositionSize({ symbol: "EURUSD", accountBalance: 10_000, riskPercent: 1, entry: 1.1, stopLoss: 1.095 });
+  assert.equal(eurusd.valueModel, "forex_usd_quote");
+  assert.equal(eurusd.estimate, false);
+  assert.equal(eurusd.finalLot, 0.2);
+
+  const v75 = calculatePositionSize({ symbol: "Volatility 75 (1s) Index", accountBalance: 1_000, riskPercent: 2, entry: 1000, stopLoss: 990 });
+  assert.equal(v75.valueModel, "synthetic_per_point");
+  assert.equal(v75.estimate, true);
+  assert.match(v75.basis, /\$2 per 1\.0 price move/, "the basis states the halved-lot value actually used");
+
+  const us30 = calculatePositionSize({ symbol: "US30", accountBalance: 10_000, riskPercent: 1, entry: 40000, stopLoss: 39900 });
+  assert.equal(us30.valueModel, "per_point");
+  assert.equal(us30.estimate, true);
+
+  const zero = calculatePositionSize({ symbol: "XAUUSD", accountBalance: 1000, riskPercent: 1, entry: 2000, stopLoss: 2000 });
+  assert.equal(zero.valueModel, "unknown_contract", "a zero-stop result still carries the disclosure");
+});

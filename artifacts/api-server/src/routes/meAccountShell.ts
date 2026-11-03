@@ -21,7 +21,6 @@ import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
   userMasterLiveAccessTable,
-  performanceDailyTable,
   paperTradesTable,
   userTradingPermissionsTable,
   userSlotAllocationTable,
@@ -54,16 +53,40 @@ export type AccountShellResponse = {
     | "SUSPENDED"
     | "RISK_LOCKED"
     | "DISABLED";
+  // Platform-mode + shared-master approval status. Consumed by the account-
+  // mode precedence resolver (computeAccountModePrecedence) and left exactly
+  // as it was. It does NOT look at this user's own trading mode or an
+  // allocation freeze, so it is not what the user-facing badge shows.
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  // What the My Account badge shows: tradingStatus, overridden by this
+  // user's own trading mode (DISABLED → RESTRICTED) and an operator
+  // allocation freeze (→ PAUSED). Display only; the order paths enforce
+  // these themselves. The reason names what was checked.
+  accountTradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  accountTradingStatusReason: string;
   // Money view — user's own slice only.
   allocation: {
     // Legacy: with no user_slot_allocation row but virtual accounts present
     // this is the running balance (P&L included), not an assignment. Use
     // totalAllocation to tell whether an operator assigned anything.
     assignedStartingBalance: number | null;
-    currentBalance: number;
-    equity: number;
-    marginUsed: number;
+    // null = not available: the user has neither an allocation row nor a
+    // virtual trading account, so this view has no balance to report.
+    currentBalance: number | null;
+    // Balance marked to market: currentBalance + the floating P/L of open
+    // positions from the canonical live snapshot. null when that floating
+    // P/L is not read for this user or not current (equityNote says which)
+    // — never the balance repeated as if nothing were open.
+    equity: number | null;
+    equityNote: string;
+    // Always null: nothing records margin for this view (the virtual
+    // account's margin column is only ever seeded at 0).
+    marginUsed: number | null;
+    /** Where currentBalance comes from; null = no source (figures are null). */
+    balanceSource: "user_slot_allocation" | "virtual_trading_accounts" | null;
+    /** Plain English: the source of the balance, or why there is none. */
+    balanceNote: string;
+    marginNote: string;
     // T004: split allocation from user_slot_allocation (the authoritative
     // admin-allocated number). manualAllocation + aiSleeveAllocation
     // <= totalAllocation. All null when user has no allocation row.
@@ -80,18 +103,36 @@ export type AccountShellResponse = {
     freezeMessage: string | null;
   };
   pnl: {
-    openPnl: number;
-    closedPnlToday: number;
-    closedPnlWeek: number;
-    closedPnlTotal: number;
-    tradesToday: number;
-    winsToday: number;
-    lossesToday: number;
+    // Floating P/L of open positions, read from the canonical live snapshot
+    // for live shared-master positions only. null = not measured / not
+    // current (openPnlNote says which). Never realized P/L, never a journal sum.
+    openPnl: number | null;
+    openPnlSource: "live_shared_positions" | null;
+    openPnlNote: string;
+    // Closed P/L and today's trade counts. null = not measured: this view has
+    // no ledger for closed trades (performance_daily, the table it used to
+    // read, has no writer), so it reports them as unknown rather than 0.
+    closedPnlToday: number | null;
+    closedPnlWeek: number | null;
+    closedPnlTotal: number | null;
+    tradesToday: number | null;
+    winsToday: number | null;
+    lossesToday: number | null;
+    closedMeasured: boolean;
+    /** Plain-English reason when closedMeasured is false, else null. */
+    closedNote: string | null;
   };
   risk: {
     availableRiskAmount: number | null;
+    // null when there is no daily-loss cap, or when today's closed P/L is not
+    // measured (then dailyLossRemainingNote says so) — never the whole cap.
     dailyLossRemaining: number | null;
-    openExposureLots: number;
+    dailyLossRemainingNote: string | null;
+    // Lots open, from the ledger named by openExposureSource; null = not
+    // measured (positions on a personal MT5 account are not read here).
+    openExposureLots: number | null;
+    openExposureSource: "shared_trade_attribution" | "paper_trades" | null;
+    openExposureNote: string;
     maxLotSize: number | null;
     maxOpenTrades: number | null;
     maxDailyLossAmount: number | null;
@@ -137,6 +178,12 @@ export type AccountShellResponse = {
     };
   };
 };
+
+/** Loss left under the daily cap; null when there is no cap or today's closed P/L is unknown. */
+function remainingDailyLoss(cap: number | null, closedPnlToday: number | null): number | null {
+  if (cap == null || closedPnlToday == null) return null;
+  return Math.max(0, cap - Math.max(0, -closedPnlToday));
+}
 
 // Exported so Ruby (the assistant) can call it directly without an HTTP
 // round-trip. Same per-user scoping; same shape; never returns other
@@ -217,9 +264,9 @@ export async function computeAccountShell(
       .where(eq(virtualTradingAccountsTable.userId, userId));
 
     const shellBalance = vAccounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0);
-    const shellEquity = vAccounts.reduce((s, a) => s + Number(a.virtualEquity || 0), 0);
     const allocatedMargin = vAccounts.reduce((s, a) => s + Number(a.virtualMarginUsed || 0), 0);
-    const allocatedOpenPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
+    // virtualPnl is realized P/L booked from closed trades (virtualPnlSync).
+    const allocatedRealizedPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
     const sharedMasterAssigned = vAccounts.some(
       (a) => a.sharedMasterAccountId != null && String(a.status ?? "").toLowerCase() === "active"
     );
@@ -264,12 +311,20 @@ export async function computeAccountShell(
     // makes the user view correct even if the legacy shell sync hasn't
     // run yet for this user (T004 backfill case). Falls back to the
     // shell-summed balance for non-allocated users.
-    const allocatedBalance = hasAlloc
-      ? round2(totalAlloc + allocatedOpenPnl)
-      : shellBalance;
-    const allocatedEquity = hasAlloc
-      ? allocatedBalance
-      : (shellEquity || shellBalance);
+    // No allocation row and no virtual account: no balance was observed for
+    // this lane (personal MT5, demo, paper), so it is null — never $0.
+    const balanceSource: AccountShellResponse["allocation"]["balanceSource"] = hasAlloc
+      ? "user_slot_allocation"
+      : vAccounts.length > 0 ? "virtual_trading_accounts" : null;
+    const allocatedBalance: number | null = hasAlloc
+      ? round2(totalAlloc + allocatedRealizedPnl)
+      : balanceSource != null ? shellBalance : null;
+    const balanceNote = balanceSource === "user_slot_allocation"
+      ? "From the allocation your operator assigned you, plus the realized P/L booked to it."
+      : balanceSource === "virtual_trading_accounts"
+        ? "From your shared-master virtual account ledger."
+        : "Not available: no shared-account allocation or virtual account is recorded for you, so this card has no balance to show.";
+    const marginNote = "Not measured: no margin figure is recorded for your account in this view.";
     const availableCapacity = hasAlloc
       ? Math.max(0, round2(totalAlloc - allocatedMargin))
       : null;
@@ -287,35 +342,23 @@ export async function computeAccountShell(
     const rs = storedLimits.userSettings;
     const { limits: L, views: limitViews } = effectiveLimitViews(storedLimits);
 
-    // 5) Performance — closed P/L today / week / total + counts.
-    const today = new Date().toISOString().slice(0, 10);
-    const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
-    const perfRows = await db
-      .select({
-        date: performanceDailyTable.date,
-        pnl: performanceDailyTable.pnl,
-        trades: performanceDailyTable.trades,
-        wins: performanceDailyTable.wins,
-        losses: performanceDailyTable.losses,
-      })
-      .from(performanceDailyTable)
-      .where(eq(performanceDailyTable.userId, userId));
+    // 5) Performance — closed P/L today / week / total + counts. NOT
+    //    MEASURED here. This used to read performance_daily, but nothing in
+    //    the app writes that table, so every user saw $0 and 0 trades. Until a
+    //    real closed-trade ledger feeds this view, the figures are unknown.
+    const closedPnlToday: number | null = null;
+    const closedMeasured = false;
+    const closedNote =
+      "Not measured: this card has no source for your closed trades yet, so today's P/L, " +
+      "closed P/L and trade counts are not shown.";
 
-    const todayRow = perfRows.find((r) => r.date === today);
-    const closedPnlToday = todayRow ? Number(todayRow.pnl || 0) : 0;
-    const tradesToday = todayRow ? Number(todayRow.trades || 0) : 0;
-    const winsToday = todayRow ? Number(todayRow.wins || 0) : 0;
-    const lossesToday = todayRow ? Number(todayRow.losses || 0) : 0;
-    const closedPnlWeek = perfRows
-      .filter((r) => r.date >= weekAgo)
-      .reduce((s, r) => s + Number(r.pnl || 0), 0);
-    const closedPnlTotal = perfRows.reduce((s, r) => s + Number(r.pnl || 0), 0);
-
-    // 6) Open exposure & open P/L (per-user). For SHARED_MASTER_MT5 use
-    //    open attributions; otherwise use open paper trades. Both already
-    //    scoped by userId.
-    let openExposureLots = 0;
-    let openPnl = allocatedOpenPnl;
+    // 6) Open exposure (per-user). SHARED_MASTER_MT5: open attributions.
+    //    Personal live MT5: not read here (null). Otherwise: open entries of
+    //    the paper journal (paper_trades), labelled as such. Open P/L is read
+    //    from the canonical live snapshot below, never from these rows.
+    let openExposureLots: number | null = null;
+    let openExposureSource: AccountShellResponse["risk"]["openExposureSource"] = null;
+    let openExposureNote = "Not measured: positions on your own MT5 account are not read here.";
     if (routingMode === "SHARED_MASTER_MT5") {
       const openAtts = await db
         .select({
@@ -329,11 +372,12 @@ export async function computeAccountShell(
           )
         );
       openExposureLots = openAtts.reduce((s, r) => s + Number(r.lotSize || 0), 0);
-    } else {
+      openExposureSource = "shared_trade_attribution";
+      openExposureNote = "Lots of your open trades on the shared master account.";
+    } else if (accountMode !== "PERSONAL_MT5") {
       const openPapers = await db
         .select({
           lotSize: paperTradesTable.lotSize,
-          pnl: paperTradesTable.pnl,
         })
         .from(paperTradesTable)
         .where(
@@ -343,7 +387,8 @@ export async function computeAccountShell(
           )
         );
       openExposureLots = openPapers.reduce((s, r) => s + Number(r.lotSize || 0), 0);
-      openPnl = openPapers.reduce((s, r) => s + Number(r.pnl || 0), 0);
+      openExposureSource = "paper_trades";
+      openExposureNote = "Lots of the open entries in your trade journal, not positions read from a broker.";
     }
 
     // 7) Approval + trading status.
@@ -407,14 +452,18 @@ export async function computeAccountShell(
       ? gov.requireStopLoss
       : (mla?.requireStopLoss ?? false)) || L.requireStopLoss;
 
-    const dailyLossRemaining = effMaxDailyLossAmount != null
-      ? Math.max(0, effMaxDailyLossAmount - Math.max(0, -closedPnlToday))
+    // The loss left today needs today's closed P/L. When that is not
+    // measured the remainder is unknown — showing the whole cap would
+    // overstate it for anyone who has lost money today.
+    const dailyLossRemaining = remainingDailyLoss(effMaxDailyLossAmount, closedPnlToday);
+    const dailyLossRemainingNote = effMaxDailyLossAmount != null && dailyLossRemaining == null
+      ? "Not measured: today's closed P/L is not available here, so the loss left under your daily limit cannot be worked out."
       : null;
     // Best-effort available risk: per-trade % of current balance, if known.
     // Never fabricate capital. When no real allocated balance is known we
     // cannot compute a dollar risk amount, so report it as unknown (null) —
     // rendered as "—" — rather than deriving it from a placeholder balance.
-    const baseBalance = allocatedBalance > 0 ? allocatedBalance : null;
+    const baseBalance = allocatedBalance != null && allocatedBalance > 0 ? allocatedBalance : null;
     const availableRiskAmount = baseBalance != null
       ? strictest((L.maxRiskPerTradePercent / 100) * baseBalance, L.maxRiskPerTradeAmount)
       : null;
@@ -423,6 +472,25 @@ export async function computeAccountShell(
       const raw = String(permRows[0]?.tradingMode ?? "DISABLED").toUpperCase();
       return (raw === "SIMULATED" || raw === "DEMO" || raw === "LIVE") ? raw : "DISABLED";
     })() as "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
+    // The user-facing status. A per-user DISABLED mode is refused by the
+    // order guards (USER_TRADING_DISABLED) and an allocation freeze by the
+    // live pipeline, so ACTIVE must not be shown over either.
+    const fullFreeze = allocRow?.allocationStatus === "frozen" || Boolean(allocRow?.tradingFrozen);
+    const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
+      tradingStatus !== "ACTIVE" ? tradingStatus
+        : perUserTradingMode === "DISABLED" ? "RESTRICTED"
+        : fullFreeze ? "PAUSED"
+        : "ACTIVE";
+    const accountTradingStatusReason = (() => {
+      if (tradingMode === "DISABLED") return "Trading is switched off for the whole platform.";
+      if (tradingStatus === "WAITING_APPROVAL") return "Your shared-master access is waiting for operator approval.";
+      if (tradingStatus === "PAUSED") return `Your shared-master access is ${String(approvalStatus).toLowerCase()}.`;
+      if (tradingStatus === "RESTRICTED") return "Your shared-master access is risk-locked.";
+      if (perUserTradingMode === "DISABLED") return "Your operator has not enabled trading on your account.";
+      if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
+      return "The platform mode, your trading mode, your approval and your allocation allow trading. " +
+        "Your kill switch and risk limits are checked on every order and are not part of this status.";
+    })();
     const tradingModeLabel = (() => {
       switch (perUserTradingMode) {
         case "SIMULATED": return "Paper Mode — simulated only.";
@@ -443,6 +511,36 @@ export async function computeAccountShell(
       ? null
       : await buildInvestorLiveBalanceSnapshot(userId);
 
+    // Open P/L = floating P/L of open positions. The only per-user source is
+    // the canonical snapshot, which reads positions for live shared-master
+    // users only. virtualPnl (realized closes) and paper_trades.pnl (null
+    // until a journal entry closes) are not open P/L and are not used.
+    const liveShared = inv != null && inv.source === "live_shared" && routingMode === "SHARED_MASTER_MT5";
+    const openPnl: number | null = liveShared && inv!.freshness.status === "fresh" ? inv!.floatingPnL : null;
+    const openPnlSource: AccountShellResponse["pnl"]["openPnlSource"] = liveShared ? "live_shared_positions" : null;
+    const openPnlNote = !liveShared
+      ? "Not measured: floating P/L is only read for live positions on the shared master account, not for your account here."
+      : inv!.freshness.status !== "fresh"
+        ? "Not current: the live position feed is not fresh, so open P/L is not shown here. Live balance above shows the last reported value and its age."
+        : inv!.floatingPnL == null
+          ? "Not available: your open positions have not reported floating P/L yet."
+          : "Floating P/L of your open positions on the shared master account.";
+
+    // Equity = balance + floating P/L. Nothing else marks this view to
+    // market (virtual_equity is only moved with the balance), so without a
+    // current floating P/L there is no equity figure to show.
+    const allocatedEquity: number | null =
+      allocatedBalance != null && openPnl != null ? round2(allocatedBalance + openPnl) : null;
+    const equityNote = allocatedBalance == null
+      ? "Not available: there is no balance to mark to market."
+      : allocatedEquity != null
+        ? "My Balance plus the floating P/L of your open positions."
+        : !liveShared
+          ? "Not marked to market: floating P/L of open positions is not read for your account here, so equity is not shown."
+          : inv!.freshness.status !== "fresh"
+            ? "Not current: the live position feed is not fresh, so equity is not shown here."
+            : "Not available: your open positions have not reported floating P/L yet.";
+
     const response: AccountShellResponse = {
       ok: true,
       userId,
@@ -454,13 +552,19 @@ export async function computeAccountShell(
       previousTradingMode: permRows[0]?.previousTradingMode ?? null,
       approvalStatus,
       tradingStatus,
+      accountTradingStatus,
+      accountTradingStatusReason,
       allocation: {
         assignedStartingBalance: hasAlloc
           ? round2(totalAlloc)
           : (vAccounts.length > 0 ? allocatedBalance : null),
         currentBalance: allocatedBalance,
-        equity: allocatedEquity || allocatedBalance,
-        marginUsed: allocatedMargin,
+        equity: allocatedEquity,
+        equityNote,
+        marginUsed: null,
+        balanceSource,
+        balanceNote,
+        marginNote,
         totalAllocation: hasAlloc ? round2(totalAlloc) : null,
         manualAllocation: hasAlloc ? round2(manualAlloc) : null,
         aiSleeveAllocation: hasAlloc ? round2(aiAlloc) : null,
@@ -475,17 +579,24 @@ export async function computeAccountShell(
       },
       pnl: {
         openPnl,
+        openPnlSource,
+        openPnlNote,
         closedPnlToday,
-        closedPnlWeek,
-        closedPnlTotal,
-        tradesToday,
-        winsToday,
-        lossesToday,
+        closedPnlWeek: null,
+        closedPnlTotal: null,
+        tradesToday: null,
+        winsToday: null,
+        lossesToday: null,
+        closedMeasured,
+        closedNote,
       },
       risk: {
         availableRiskAmount,
         dailyLossRemaining,
+        dailyLossRemainingNote,
         openExposureLots,
+        openExposureSource,
+        openExposureNote,
         maxLotSize: effMaxLotSize,
         maxOpenTrades: effMaxOpenTrades,
         maxDailyLossAmount: effMaxDailyLossAmount,

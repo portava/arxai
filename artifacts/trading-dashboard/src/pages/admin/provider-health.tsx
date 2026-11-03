@@ -21,7 +21,10 @@ interface ProviderEntry {
   usedBy: string[];
   selectedForAssetClasses: AssetClass[];
   configuredButUnused: boolean;
-  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved";
+  // "unverified" = configured, but nothing in this snapshot checked it.
+  // "offline" = the MT5 bridge pushed nothing within the freshness window
+  // (older servers sent "reserved" for the same state).
+  status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved" | "unverified" | "offline";
   statusReason: string;
   features: { liveQuote: boolean; historicalCandles: boolean; news: boolean; symbolSearch: boolean };
   rateLimitNote: string | null;
@@ -54,6 +57,20 @@ interface FeedsHealth {
       accountType: string | null;
       masterLiveCapable: boolean;
       blockReason: string | null;
+      // The bridge the master-live detector evaluated (LIVE-mode first) —
+      // not necessarily the freshest bridge. Absent on older servers.
+      subject?: "master_live_candidate";
+      readOk?: boolean;
+    };
+    // Freshest heartbeat of any non-revoked bridge (absent on older servers).
+    freshestBridge?: {
+      readOk: boolean;
+      present: boolean;
+      status: "live" | "stale" | "offline" | "none";
+      ageSec: number | null;
+      mode: string | null;
+      accountType: string | null;
+      eaVersion: string | null;
     };
     quotePush: { active: boolean; symbolsWithFreshQuote: number; symbolsProbed: number; note: string };
     candlePush: { active: boolean; totalSeries: number; contributing: number; stale: number; nonContributing: number };
@@ -102,6 +119,8 @@ interface Snapshot {
   feeds: FeedsHealth;
   assetClassActivity: AssetClassActivity[];
   activeConsumers: ActiveConsumer[];
+  // What activeConsumers is built from (absent on older servers).
+  activeConsumersBasis?: string;
   summary: {
     totalProviders: number;
     healthy: number;
@@ -109,6 +128,9 @@ interface Snapshot {
     failing: number;
     notConfigured: number;
     reserved: number;
+    // Absent from servers older than the observed-status change.
+    unverified?: number;
+    offline?: number;
     configuredButUnused: number;
   };
 }
@@ -143,7 +165,10 @@ function statusBadge(s: ProviderEntry["status"]) {
     case "degraded":       return <Badge className="bg-warning/20 text-warning">degraded</Badge>;
     case "failing":        return <Badge className="bg-danger/20 text-danger">failing</Badge>;
     case "not_configured": return <Badge className="bg-secondary/20 text-txt-secondary">not configured</Badge>;
-    case "reserved":       return <Badge className="bg-primary/20 text-primary">reserved</Badge>;
+    // Older servers' "reserved" meant the same thing: no MT5 push in the window.
+    case "reserved":
+    case "offline":        return <Badge className="bg-danger/20 text-danger">offline</Badge>;
+    case "unverified":     return <Badge className="bg-secondary/20 text-txt-secondary">not checked</Badge>;
   }
 }
 
@@ -651,14 +676,15 @@ export default function ProviderHealthPage() {
       {snap && (
         <>
           {/* Summary tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {[
               ["Total", snap.summary.totalProviders, "bg-secondary/20 text-foreground"],
               ["Healthy", snap.summary.healthy, "bg-success/20 text-success"],
               ["Degraded", snap.summary.degraded, "bg-warning/20 text-warning"],
               ["Failing", snap.summary.failing, "bg-danger/20 text-danger"],
+              ["Not checked", snap.summary.unverified ?? "—", "bg-secondary/20 text-txt-secondary"],
               ["Not configured", snap.summary.notConfigured, "bg-secondary/20 text-txt-secondary"],
-              ["Reserved", snap.summary.reserved, "bg-primary/20 text-primary"],
+              ["Offline", snap.summary.offline ?? snap.summary.reserved, "bg-danger/20 text-danger"],
               ["Configured but unused", snap.summary.configuredButUnused, "bg-fuchsia-500/20 text-fuchsia-300"],
             ].map(([label, val, cls]) => (
               <Card key={label as string} className="border-border/40">
@@ -685,11 +711,43 @@ export default function ProviderHealthPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-              {/* MT5 heartbeat */}
+              {/* Freshest MT5 bridge heartbeat (any mode) */}
+              {snap.feeds.mt5.freshestBridge && (
+                <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-mt5-freshest-bridge">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">Freshest MT5 bridge heartbeat</span>
+                    {snap.feeds.mt5.freshestBridge.readOk ? (
+                      <Badge className={feedStatusCls(snap.feeds.mt5.freshestBridge.status)}>
+                        {snap.feeds.mt5.freshestBridge.present ? snap.feeds.mt5.freshestBridge.status : "no bridge registered"}
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-warning/20 text-warning">could not be loaded</Badge>
+                    )}
+                  </div>
+                  {snap.feeds.mt5.freshestBridge.readOk && snap.feeds.mt5.freshestBridge.present && (
+                    <div className="text-muted-foreground font-mono">
+                      age {snap.feeds.mt5.freshestBridge.ageSec == null ? "—" : `${snap.feeds.mt5.freshestBridge.ageSec}s`}
+                      {" · "}mode {snap.feeds.mt5.freshestBridge.mode ?? "—"}
+                      {" · "}EA {snap.feeds.mt5.freshestBridge.eaVersion ?? "—"}
+                      {" · "}{snap.feeds.mt5.freshestBridge.accountType ?? "—"}
+                    </div>
+                  )}
+                  <div className="text-muted-foreground">Any non-revoked bridge, demo included.</div>
+                </div>
+              )}
+
+              {/* Master-live candidate heartbeat */}
               <div className="border border-border/40 rounded p-3 space-y-1" data-testid="feed-mt5-heartbeat">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">MT5 heartbeat</span>
-                  <Badge className={feedStatusCls(snap.feeds.mt5.heartbeat.status)}>{snap.feeds.mt5.heartbeat.status}</Badge>
+                  <span className="font-semibold">MT5 master-live candidate heartbeat</span>
+                  {snap.feeds.mt5.heartbeat.readOk === false ? (
+                    <Badge className="bg-warning/20 text-warning">could not be loaded</Badge>
+                  ) : (
+                    <Badge className={feedStatusCls(snap.feeds.mt5.heartbeat.status)}>{snap.feeds.mt5.heartbeat.status}</Badge>
+                  )}
+                </div>
+                <div className="text-muted-foreground">
+                  The bridge the master-live check evaluated (LIVE-mode bridges first) — not necessarily the freshest bridge.
                 </div>
                 <div className="text-muted-foreground font-mono">
                   age {snap.feeds.mt5.heartbeat.ageSec == null ? "—" : `${snap.feeds.mt5.heartbeat.ageSec}s`}
@@ -847,17 +905,24 @@ export default function ProviderHealthPage() {
             </CardContent>
           </Card>
 
-          {/* Active consumers — inverse of provider.usedBy over live providers */}
+          {/* Surfaces wired to providers something observed answering — the
+              usedBy wiring of "healthy" providers, not a trace of live reads. */}
           <Card data-testid="card-active-consumers">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Database className="h-4 w-4" />
-                Active consumers (what each surface reads right now)
+                Surfaces wired to providers that answered
               </CardTitle>
+              <p className="text-[11px] text-muted-foreground">
+                {snap.activeConsumersBasis ??
+                  "Providers that answered this snapshot's self-test (or, for MT5 and Deriv, reported live data), mapped to the surfaces wired to them. Not a trace of what each surface read."}
+              </p>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               {snap.activeConsumers.length === 0 ? (
-                <div className="text-muted-foreground italic">No live providers — every surface is on a fallback or awaiting feed.</div>
+                <div className="text-muted-foreground italic">
+                  No provider answered this snapshot's self-test or reported live data, so no surface can be shown as reading one.
+                </div>
               ) : (
                 snap.activeConsumers.map((c) => (
                   <div key={c.consumer} className="font-mono flex gap-2 items-baseline" data-testid={`consumer-${c.consumer}`}>

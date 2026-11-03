@@ -5067,7 +5067,7 @@ export const useApplyRiskMode = <
 };
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const getSetLiveLockUrl = () => {
   return `/api/risk/lock-live`;
@@ -5130,7 +5130,7 @@ export type SetLiveLockMutationBody = BodyType<RiskLockInput>;
 export type SetLiveLockMutationError = ErrorType<unknown>;
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const useSetLiveLock = <
   TError = ErrorType<unknown>,
@@ -5153,7 +5153,7 @@ export const useSetLiveLock = <
 };
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 export const getGetRiskAuditUrl = (params?: GetRiskAuditParams) => {
   const normalizedParams = new URLSearchParams();
@@ -5220,7 +5220,7 @@ export type GetRiskAuditQueryResult = NonNullable<
 export type GetRiskAuditQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 
 export function useGetRiskAudit<

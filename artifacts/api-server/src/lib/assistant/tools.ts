@@ -186,9 +186,11 @@ export async function getCurrentUserContext(userId: number) {
     accountMode: string;
     approvalStatus: string;
     tradingStatus: string;
+    tradingStatusReason: string;
     accountStatus: string;
-    currentBalance: number;
-    equity: number;
+    // null = not available / not measured (the shell never reports a missing figure as 0).
+    currentBalance: number | null;
+    equity: number | null;
     availableRisk: number | null;
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;
@@ -198,8 +200,11 @@ export async function getCurrentUserContext(userId: number) {
     accountShellSummary = {
       accountMode: shell.accountMode,
       approvalStatus: shell.approvalStatus,
-      tradingStatus: shell.tradingStatus,
-      accountStatus: `${shell.approvalStatus}/${shell.tradingStatus}`,
+      // The user's own status (their trading mode and an allocation freeze
+      // included) — the same one My Account's badge shows.
+      tradingStatus: shell.accountTradingStatus,
+      tradingStatusReason: shell.accountTradingStatusReason,
+      accountStatus: `${shell.approvalStatus}/${shell.accountTradingStatus}`,
       currentBalance: shell.allocation.currentBalance,
       equity: shell.allocation.equity,
       availableRisk: shell.risk.availableRiskAmount,

@@ -16,7 +16,34 @@ type Money = number | null;
 // the cap cannot be valued in money. Absent on an older server.
 type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null };
 type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
-type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: Permissions; propFirm: { status: string; profitTargetProgress: number | null } | null };
+
+// permissions.trading is false when a stop switch is engaged or a loss limit
+// is reached; blockedBy names which (older servers sent only trading +
+// pauseReason, where trading reflected the stop switches alone).
+type Permissions = { trading: boolean; pauseReason: string | null; stopSwitchEngaged?: boolean; blockedBy?: string[] };
+
+const BLOCK_REASON: Record<string, string> = {
+  stop_switch: "A stop switch is engaged",
+  daily_loss_limit: "Your daily loss limit is reached",
+  weekly_loss_limit: "Your weekly loss limit is reached",
+};
+
+/**
+ * What stops new trades, in plain words. Only ever downgrades the server's
+ * answer: a BLOCK status or an active halt reads blocked even if an older
+ * server said trading: true.
+ */
+function newTradesVerdict(c: Pick<Cards, "permissions" | "riskStatus" | "activeHalts">): { blocked: boolean; reasons: string[] } {
+  const p = c.permissions;
+  const reasons = (p.blockedBy ?? []).map((b) => (b === "stop_switch" && p.pauseReason ? `${BLOCK_REASON[b]}: ${p.pauseReason}` : BLOCK_REASON[b] ?? b));
+  if (!p.blockedBy) {
+    if (p.pauseReason || c.activeHalts.length > 0) reasons.push(`A stop switch is engaged${p.pauseReason ? `: ${p.pauseReason}` : ""}`);
+    if (c.riskStatus === "BLOCK" && reasons.length === 0) reasons.push("A loss limit is reached (risk status BLOCK)");
+  }
+  if (reasons.length === 0 && (!p.trading || c.riskStatus === "BLOCK" || c.activeHalts.length > 0)) reasons.push("Blocked (risk status " + c.riskStatus + ")");
+  return { blocked: reasons.length > 0, reasons };
+}
 
 // A null money value is "no cap set" only when the server says no cap is
 // configured (flag false). A percent cap with unknown equity cannot be
@@ -33,6 +60,12 @@ function capText(v: Money, unvalued: boolean | undefined, kind: "limit" | "left"
 }
 
 const equityText = (v: Money) => (v == null ? "unknown (no account equity read)" : `$${v}`);
+
+/**
+ * UNKNOWN means the server could not read your trading activity, so there is
+ * no overtrading verdict to show (an older server sent NORMAL here).
+ */
+const overtradingLabel = (v: string) => (v === "UNKNOWN" ? "Not measured — activity could not be read" : v);
 
 const STATUS_COLOR: Record<string, string> = {
   OK: "bg-success/20 text-success",
@@ -150,7 +183,7 @@ export default function RiskCommandCenter() {
           <Stat label="Open positions" value={String(cards.openPositions)} />
           <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
           <Stat label="Losses in a row" value={cards.consecutiveLosses == null ? "—" : String(cards.consecutiveLosses)} />
-          <Stat label="Overtrading" value={cards.overtrading} />
+          <Stat label="Overtrading" value={overtradingLabel(cards.overtrading)} />
           <Stat label="Active halts" value={cards.activeHalts.length === 0 ? "none" : String(cards.activeHalts.length)} />
         </div>
       )}
@@ -210,14 +243,30 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-rules-tab">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Permissions</CardTitle>
-          <CardDescription>Whether your account can open new trades right now. Every order is still checked by the Risk Governor.</CardDescription>
+          <CardDescription>What stops new trades on your account right now: your stop switches and your daily and weekly loss limits. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-1">
-          {cards && Object.entries(cards.permissions).filter(([k]) => k !== "pauseReason").map(([k, v]) => (
-            <Badge key={k} variant={v ? "default" : "destructive"} data-testid={`risk-perm-${k}`}>
-              {k}: {String(v)}
-            </Badge>
-          ))}
+        <CardContent className="space-y-1">
+          {cards && (() => {
+            const v = newTradesVerdict(cards);
+            return v.blocked ? (
+              <div data-testid="risk-perm-new-trades">
+                <Badge variant="destructive">New trades: blocked</Badge>
+                <ul className="mt-1 text-xs text-muted-foreground list-disc pl-4">{v.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+              </div>
+            ) : cards.riskStatus === "UNKNOWN" || cards.riskStatusReason ? (
+              // A loss limit that could not be valued or measured is not "not
+              // reached": say only what was checked.
+              <div data-testid="risk-perm-new-trades">
+                <Badge variant="outline">New trades: not blocked by a stop switch; a loss limit could not be checked</Badge>
+                <p className="mt-1 text-xs text-muted-foreground">{cards.riskStatusReason ?? "Risk status is UNKNOWN."} Each order is still checked by the Risk Governor when you place it.</p>
+              </div>
+            ) : (
+              <div data-testid="risk-perm-new-trades">
+                <Badge variant="outline">New trades: not blocked by a stop switch or loss limit</Badge>
+                <p className="mt-1 text-xs text-muted-foreground">This is not an approval: each order is still checked by the Risk Governor when you place it.</p>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -230,7 +279,7 @@ export default function RiskCommandCenter() {
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
             <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress}%</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress == null ? "not measured" : `${cards.propFirm.profitTargetProgress}%`}</span></div>
             <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
           </div>
         ) : (
