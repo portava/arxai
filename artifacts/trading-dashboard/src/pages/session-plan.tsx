@@ -27,10 +27,10 @@ function isPlan(v: unknown): v is Plan {
     && Array.isArray(p.rules) && Array.isArray(p.warningZones) && Array.isArray(p.focusAreas);
 }
 
-function sweepAge(iso: string): string | null {
+function sweepAge(iso: string, now: number): string | null {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
-  const min = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  const min = Math.max(0, Math.round((now - t) / 60_000));
   if (min < 1) return "under a minute ago";
   if (min < 60) return `${min} min ago`;
   return `${Math.floor(min / 60)} h ${min % 60} min ago`;
@@ -40,6 +40,13 @@ export default function SessionPlanPage() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Client clock for the sweep age. It ticks while the page is open so the
+  // age keeps counting instead of keeping the value from the last render.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   async function load() {
     setBusy(true);
@@ -48,6 +55,7 @@ export default function SessionPlanPage() {
       const body: unknown = await res.json().catch(() => null);
       if (res.ok && isPlan(body)) {
         setPlan(body);
+        setNow(Date.now());
         setFailed(false);
       } else {
         setPlan(null);
@@ -62,7 +70,7 @@ export default function SessionPlanPage() {
 
   const withheld = plan?.withheld === true;
   const sweptAt = plan ? safeDate(plan.generatedAt, "datetime", "") : "";
-  const age = plan ? sweepAge(plan.generatedAt) : null;
+  const age = plan ? sweepAge(plan.generatedAt, now) : null;
   const held = <span className="text-sm text-muted-foreground">{WITHHELD}</span>;
 
   return (
@@ -85,11 +93,13 @@ export default function SessionPlanPage() {
         <>
           {withheld && (
             <p className="text-sm text-yellow-300" data-testid="session-plan-withheld">
-              This plan's values are withheld for your account until a verified feed is available. Withheld values are not zero.
+              This plan is built from simulator scanner data, and simulator-based plans are shown only to platform operators, so its values are withheld for your account. Withheld values are not zero.
             </p>
           )}
-          <Card><CardHeader><CardTitle>Today's plan</CardTitle><CardDescription>{plan.marketConditions}</CardDescription></CardHeader>
-            <CardContent><p className="text-sm">{plan.summary}</p></CardContent></Card>
+          {/* A withheld plan's text fields carry the server's mask text, which
+              the note above already states; they show "Withheld" like the rest. */}
+          <Card><CardHeader><CardTitle>Today's plan</CardTitle><CardDescription>{withheld ? WITHHELD : plan.marketConditions}</CardDescription></CardHeader>
+            <CardContent>{withheld ? held : <p className="text-sm">{plan.summary}</p>}</CardContent></Card>
 
           <div className="grid gap-3 md:grid-cols-3">
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1 text-emerald-400"><Target className="h-4 w-4" /> Best symbols</CardTitle></CardHeader>
@@ -97,7 +107,7 @@ export default function SessionPlanPage() {
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1 text-rose-400"><AlertTriangle className="h-4 w-4" /> Avoid</CardTitle></CardHeader>
               <CardContent>{withheld ? held : plan.symbolsToAvoid.length ? plan.symbolsToAvoid.map((s) => <Badge key={s} variant="destructive" className="mr-1 mb-1">{s}</Badge>) : <span className="text-sm text-muted-foreground">none</span>}</CardContent></Card>
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Preferred strategy</CardTitle></CardHeader>
-              <CardContent><p className="font-semibold">{plan.preferredStrategy}</p></CardContent></Card>
+              <CardContent>{withheld ? held : <p className="font-semibold">{plan.preferredStrategy}</p>}</CardContent></Card>
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -130,7 +140,7 @@ export default function SessionPlanPage() {
 
           <Card>
             <CardHeader><CardTitle>Recommended first test</CardTitle></CardHeader>
-            <CardContent><p className="text-sm">{plan.recommendedFirstTest}</p></CardContent>
+            <CardContent>{withheld ? held : <p className="text-sm">{plan.recommendedFirstTest}</p>}</CardContent>
           </Card>
 
           <p className="text-xs text-muted-foreground" data-testid="session-plan-sweep-time">

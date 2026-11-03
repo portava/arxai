@@ -183,7 +183,7 @@ export interface SelectedMarketResult {
      *  - "date_only": the nearest scored event publishes only its date (FRED),
      *    so the level was measured to its midnight-UTC date marker, not to a
      *    release time.
-     *  - "unscored": a listed release dated today has no published release
+     *  - "unscored": a listed release dated today (UTC) has no published release
      *    time and could not be scored, so riskLevel leaves it out.
      * null when the calendar was not checked or scheduled events do not apply.
      */
@@ -501,12 +501,12 @@ export function newsLevelBasis(
 /**
  * The news-risk line for a date-only release. The scorer measures minutes to
  * the event's midnight date marker, which is not a release time, so the line
- * names the date instead of a countdown; and a release dated today whose
- * marker has passed (listed, but not timeable) is named rather than silently
- * dropped. When the scorer found no timed event at all, "No relevant
- * high-impact news" would be false beside that listed release, so the line
- * says the risk could not be scored instead. Risk level and blockTrading are
- * left exactly as scored.
+ * names the date instead of a countdown; and a release dated today (UTC) whose
+ * marker has passed (listed, but not timeable) is named, by its date, rather
+ * than silently dropped. When the scorer found no timed event at all, "No
+ * relevant high-impact news" would be false beside that listed release, so the
+ * line says the risk could not be scored instead. Risk level and blockTrading
+ * are left exactly as scored.
  */
 function dateOnlyAwareNewsReason(
   news: { reason: string; blockTrading: boolean; upcomingEvent: EconomicEvent | null },
@@ -519,10 +519,13 @@ function dateOnlyAwareNewsReason(
   const untimed = untimedTodayEvents(listed, nowMs);
   if (untimed.length === 0) return base ?? news.reason;
   const subject = untimedSubject(untimed);
+  // Name the date (the UTC date these rows were selected by), never "today":
+  // a viewer's local "today" can be a different date.
+  const dates = Array.from(new Set(untimed.map((e) => e.eventTime.slice(0, 10)))).join(", ");
   if (base === null) {
-    return `${subject} dated today with no published release time, so news risk for ${symbol} could not be scored.`;
+    return `${subject} dated ${dates} with no published release time, so news risk for ${symbol} could not be scored.`;
   }
-  return `${base} ${subject} also dated today with no published release time, so ${untimed.length === 1 ? "it is" : "they are"} not in this risk level.`;
+  return `${base} ${subject} also dated ${dates} with no published release time, so ${untimed.length === 1 ? "it is" : "they are"} not in this risk level.`;
 }
 
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{

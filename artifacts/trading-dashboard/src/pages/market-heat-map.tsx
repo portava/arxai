@@ -503,22 +503,35 @@ export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefin
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {multiData.map((r) => (
+              {multiData.map((r) => {
+                // Same rule as the Now and By Symbol tabs: a read with no
+                // current candles has session-constant heat, not a measured one.
+                const measured = isMeasuredRead(r);
+                return (
                 <div key={r.symbol} className="flex items-center gap-3">
                   <span className="text-xs font-medium w-16 shrink-0">{r.symbol}</span>
                   <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full", heatBar(r.heatScore))}
-                      style={{ width: `${r.heatScore}%` }}
-                    />
+                    {measured && (
+                      <div
+                        className={cn("h-full rounded-full", heatBar(r.heatScore))}
+                        style={{ width: `${r.heatScore}%` }}
+                      />
+                    )}
                   </div>
-                  <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.heatScore)}</span>
+                  <span
+                    className="text-xs font-mono tabular-nums w-8 text-right"
+                    data-testid={`today-heat-${r.symbol}`}
+                    title={measured ? undefined : `${NOT_MEASURED} — no current candles, so heat was not read`}
+                  >
+                    {measured ? Math.round(r.heatScore) : "—"}
+                  </span>
                   {r.dataQuality.label !== "real" && <DataQualityBadge label={r.dataQuality.label} />}
                   <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5", actionColor(r.bestAction))}>
                     {humanizeAction(r.bestAction)}
                   </Badge>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

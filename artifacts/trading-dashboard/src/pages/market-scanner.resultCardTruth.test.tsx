@@ -150,7 +150,12 @@ vi.mock("@/components/ui/select", () => ({
 
 // ---- Heavy scanner / live child surfaces → inert stubs ---------------------
 vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: () => null }));
-vi.mock("@/components/scanner/RubySetupReason", () => ({ RubySetupReason: () => null }));
+// Records the signal each card hands Ruby's Setup Reason, so a test can see
+// what the panel would be asked to explain.
+const rubySignals: Array<Record<string, unknown>> = [];
+vi.mock("@/components/scanner/RubySetupReason", () => ({
+  RubySetupReason: ({ signal }: { signal: Record<string, unknown> }) => { rubySignals.push(signal); return null; },
+}));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
 vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => null }));
 vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
@@ -183,7 +188,7 @@ beforeEach(() => {
   globalFeed = envelope("all", ["EURUSD"]);
   pendingRead = null;
   mockRealIsAdmin = false;
-  fetchMock.mockReset(); safeJsonMock.mockClear(); pickCallbacks.length = 0; mapGroups.length = 0;
+  fetchMock.mockReset(); safeJsonMock.mockClear(); pickCallbacks.length = 0; mapGroups.length = 0; rubySignals.length = 0;
   vi.stubGlobal("fetch", fetchMock);
   Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
 });
@@ -198,6 +203,28 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     expect(screen.getByTestId("scanner-grade-withheld-EURUSD").textContent).toMatch(/87/);
   });
 
+  it("does not ask Ruby to explain a buy setup under 'No trade'; shows the final read's reasons", async () => {
+    rowOverrides = { finalRead: { label: "NO_TRADE", headline: "No trade", reasons: ["Major event nearby. Volatility may spike."] } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    render(<MarketScanner />); await settle();
+    expect(screen.getByTestId("scanner-action-EURUSD").textContent).toBe("No trade");
+    // Ruby's Setup Reason would be sent recommendedAction BUY + HOT_SETUP and
+    // answer "This looks like a possible buy setup." in a green box.
+    expect(rubySignals.filter((s) => s.symbol === "EURUSD")).toEqual([]);
+    const note = screen.getByTestId("scanner-final-read-note-EURUSD").textContent ?? "";
+    expect(note).toMatch(/No trade/);
+    expect(note).toMatch(/Major event nearby/);
+    expect(note).not.toMatch(/buy setup/i);
+  });
+
+  it("a withheld row with no final-read reasons still says why the setup reason is not shown", async () => {
+    rowOverrides = { finalRead: { label: "AVOID_FOR_NOW" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    render(<MarketScanner />); await settle();
+    expect(rubySignals.filter((s) => s.symbol === "EURUSD")).toEqual([]);
+    expect(screen.getByTestId("scanner-final-read-note-EURUSD").textContent).toMatch(/Avoid for now/);
+  });
+
   it("a row the final read allows keeps its grade and status badge", async () => {
     rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
     globalFeed = envelope("all", ["EURUSD"]);
@@ -205,6 +232,11 @@ describe("legacy scanner result card — final read NO_TRADE", () => {
     expect(screen.getByTestId("scanner-action-EURUSD").textContent).toBe("BUY");
     expect(screen.getByText("Hot setup")).toBeTruthy();
     expect(screen.getByText("ELITE 87")).toBeTruthy();
+    expect(screen.queryByTestId("scanner-final-read-note-EURUSD")).toBeNull();
+    const sent = rubySignals.filter((s) => s.symbol === "EURUSD");
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent[sent.length - 1].recommendedAction).toBe("BUY");
+    expect(sent[sent.length - 1].statusBadge).toBe("HOT_SETUP");
   });
 });
 
@@ -260,5 +292,21 @@ describe("legacy scanner result card — Live Intent reports the server's verdic
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatch(/could not be submitted/i);
     expect(alerts[0]).toMatch(/Failed to capture live intent/);
+    // The route writes its safety-log event before the intent row, so a 500
+    // can follow a partial write: the client cannot say nothing was recorded.
+    expect(alerts[0]).not.toMatch(/Nothing was recorded/i);
+    expect(alerts[0]).toMatch(/whether the server recorded .* could not be confirmed/i);
+  });
+
+  it("a dropped connection does not claim nothing was recorded", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    const alerts = submitWith(new TypeError("Failed to fetch"));
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Live Intent")); await settle();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatch(/could not be submitted: Failed to fetch/);
+    expect(alerts[0]).not.toMatch(/Nothing was recorded/i);
+    expect(alerts[0]).toMatch(/could not be confirmed/i);
   });
 });

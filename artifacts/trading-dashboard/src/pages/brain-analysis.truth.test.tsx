@@ -189,3 +189,33 @@ describe("Market Brain truth — withheld macro and the risk badge", () => {
     }
   });
 });
+
+// Review finding: the provenance footer said "Entry, stop loss and take profit
+// are derived from the 1-minute ATR." marketBrain.ts sets entry to the last
+// 1-minute close (never ATR-derived) and uses `technical.atrValue || price *
+// 0.001`, so with an ATR of 0 (rounded to 4 decimals — a quiet EURUSD minute)
+// the levels sit on a 0.1%-of-price placeholder distance, not the ATR.
+describe("Market Brain truth — how entry, stop loss and take profit were set", () => {
+  it("entry is the last 1-minute close; SL/TP are 1.5x and 2.5x the measured ATR", async () => {
+    await run(FULL);
+    const prov = (await screen.findByTestId("brain-provenance")).textContent ?? "";
+    expect(prov).toMatch(/Entry is the last 1-minute close/);
+    expect(prov).toMatch(/stop loss and take profit are 1\.5× and 2\.5× the 1-minute ATR/);
+    expect(prov).not.toMatch(/Entry, stop loss and take profit are derived from the\s+1-minute ATR/);
+  });
+
+  it("with no measured ATR it names the 0.1%-of-price placeholder instead of the ATR", async () => {
+    await run({ ...FULL, technicalDetails: { ...FULL.technicalDetails, atrValue: 0 } });
+    const prov = (await screen.findByTestId("brain-provenance")).textContent ?? "";
+    expect(prov).toMatch(/no 1-minute ATR was measured/);
+    expect(prov).toMatch(/0\.1% of price/);
+    expect(prov).not.toMatch(/the 1-minute ATR\.|derived from the\s+1-minute ATR/);
+  });
+
+  it("a WAIT decision does not describe levels it does not show", async () => {
+    await run({ ...FULL, direction: "WAIT", stopLoss: 0, takeProfit: 0, riskReward: 0 });
+    const prov = (await screen.findByTestId("brain-provenance")).textContent ?? "";
+    expect(prov).not.toMatch(/derived from|1\.5× and 2\.5×/);
+    expect(prov).toMatch(/No entry, stop loss or take profit is given for a WAIT decision/);
+  });
+});

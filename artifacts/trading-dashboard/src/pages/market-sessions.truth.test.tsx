@@ -2,8 +2,8 @@
 // on the weekend (server `marketClosed`) and must not show any session OPEN.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
-import MarketSessionsPage from "./market-sessions";
+import { render, screen, cleanup, act } from "@testing-library/react";
+import MarketSessionsPage, { nextOpenText } from "./market-sessions";
 
 afterEach(() => {
   cleanup();
@@ -69,3 +69,54 @@ describe("Market Sessions — weekend next open", () => {
   });
 });
 
+
+// The weekend countdown was measured from the server time in the last
+// successful response. When later polls failed the page kept that response,
+// so "(in 32h 30m)" stayed on screen for hours as the current wait, and the
+// error line never said the figures were from an earlier read.
+describe("Market Sessions — weekend countdown keeps time when polls fail", () => {
+  const sessions = [
+    { id: "Sydney", isActive: false, nextOpenInHours: 33, nextCloseInHours: 42 },
+    { id: "Tokyo", isActive: false, nextOpenInHours: 35, nextCloseInHours: 44 },
+    { id: "London", isActive: false, nextOpenInHours: 42, nextCloseInHours: 51 },
+    { id: "NewYork", isActive: false, nextOpenInHours: 48, nextCloseInHours: 57 },
+  ];
+  const body = {
+    nowUTC: "2026-10-31T13:30:00.000Z", marketClosed: true, activeSessions: [], overlap: false,
+    sessionLabel: "CLOSED", recommendation: "Interbank FX is closed for the weekend.", sessions,
+  };
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("counts down from the elapsed time and names the last read once polls fail", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-31T13:30:00.000Z"));
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return { ok: true, status: 200, json: async () => body } as unknown as Response;
+      return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+    }));
+    render(<MarketSessionsPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    // Sat 13:30 UTC → Sun 22:00 UTC.
+    expect(screen.getByTestId("session-next-open-Sydney").textContent).toMatch(/Sun 22:00 UTC \(in 32h 30m\)/);
+    // Two hours of failed polls.
+    await act(async () => { await vi.advanceTimersByTimeAsync(2 * 3_600_000); });
+    expect(calls).toBeGreaterThan(1);
+    const sydney = screen.getByTestId("session-next-open-Sydney").textContent ?? "";
+    expect(sydney).toMatch(/Sun 22:00 UTC/);
+    expect(sydney).not.toMatch(/in 32h 30m/);
+    expect(sydney).toMatch(/in 30h 30m/);
+    const errLine = screen.getByText(/Could not load the session clock/).textContent ?? "";
+    expect(errLine).toMatch(/last successful read/i);
+    expect(errLine).toMatch(/13:30 UTC/);
+  });
+
+  it("a countdown that runs past the open time does not show a negative or zero wait", () => {
+    // The open time is passed by 1 hour of elapsed client time with no fresh read.
+    const text = nextOpenText("2026-11-01T21:30:00.000Z", 1, 3_600_000) ?? "";
+    expect(text).toMatch(/^Sun 22:00 UTC/);
+    expect(text).not.toMatch(/in -|in 0h 0m/);
+    expect(text).toMatch(/not confirmed/i);
+  });
+});

@@ -146,3 +146,59 @@ describe("RubyTimingChip — no grade without a current read (same rules as the 
     expect(rubyCall![1]).toEqual(chartCall![1]);
   });
 });
+
+// Review finding (bin 15.1 on the shared hook): the poll interval and the
+// read's advice lifetime are both 30 s and React Query restarts the interval
+// after each response, so without an early refresh every healthy cycle
+// expired the read first and the Ruby chip flashed "<symbol> · <tf> · no
+// current read". The early refetch lives in useTimingChipRead, so the Ruby
+// chip gets it too. Simulated: React Query's polling (interval restarted on
+// every update, as configured by the hook), 1 s request latency, generatedAt
+// stamped when the request starts.
+describe("RubyTimingChip — a healthy poll never shows 'no current read'", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(Date.parse("2026-10-28T10:00:00.000Z"));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("keeps the grade on screen past 29.5 s and across several polling cycles", async () => {
+    const { useEffect, useState } = await import("react");
+    const { act } = await import("@testing-library/react");
+    const LATENCY_MS = 1_000;
+    let requests = 0;
+    mockUseGetTimingBrain.mockImplementation(
+      (_symbol: string, _params: unknown, options: { query: { refetchInterval?: number } }) => {
+        const [data, setData] = useState(() => read({ timeframe: "M1", generatedAt: new Date(Date.now() - 1_000).toISOString() }).data);
+        const fetchNow = () => {
+          requests += 1;
+          const startedAt = Date.now();
+          return new Promise<void>((resolve) => {
+            setTimeout(() => {
+              setData(read({ timeframe: "M1", generatedAt: new Date(startedAt).toISOString() }).data);
+              resolve();
+            }, LATENCY_MS);
+          });
+        };
+        const interval = options.query.refetchInterval;
+        useEffect(() => {
+          if (typeof interval !== "number") return;
+          const id = setTimeout(() => { void fetchNow(); }, interval);
+          return () => clearTimeout(id);
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [data, interval]);
+        return { data, isError: false, isFetching: false, refetch: fetchNow };
+      },
+    );
+    render(<RubyTimingChip symbol="EURUSD" chartTimeframe="1m" />);
+    expect(screen.getByTestId("ruby-timing-chip").textContent).toBe("EURUSD · 1m · B · Wait");
+    for (let elapsed = 0; elapsed < 3 * 60_000; elapsed += 250) {
+      act(() => { vi.advanceTimersByTime(250); });
+      if (screen.queryByTestId("ruby-timing-chip-unavailable")) {
+        throw new Error(`'no current read' shown at +${elapsed + 250} ms on a healthy poll`);
+      }
+      expect(screen.getByTestId("ruby-timing-chip")).toBeTruthy();
+    }
+    expect(requests).toBeGreaterThan(3);
+  });
+});

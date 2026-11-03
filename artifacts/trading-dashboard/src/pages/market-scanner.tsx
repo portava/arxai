@@ -63,7 +63,7 @@ type Opp = {
   tradeable?: boolean;
   timingContext?: ScannerTimingContext;
   /** The server's fused final read; the card may only downgrade with it. */
-  finalRead?: { label?: string | null } | null;
+  finalRead?: { label?: string | null; reasons?: unknown } | null;
 };
 
 // Mirrors the server's `MANUAL_SCAN_COOLDOWN_MS` (per-user manual-scan cooldown
@@ -591,7 +591,10 @@ export default function MarketScanner() {
         }),
       })) as typeof res;
     } catch (e) {
-      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Nothing was recorded as captured.`);
+      // A 500 can follow a partial server write (the safety-log event is
+      // written before the intent row), and a dropped connection can follow a
+      // full one, so the client cannot say nothing was recorded.
+      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Whether the server recorded any part of it could not be confirmed.`);
       return;
     }
     alert(liveIntentResultMessage(o.symbol, res));
@@ -809,18 +812,44 @@ export default function MarketScanner() {
                 </div>
                 <div className="text-xs text-muted-foreground italic">"{o.reasonForTrade}"</div>
                 {o.reasonToAvoid && <div className="text-xs text-rose-400">⚠ {o.reasonToAvoid}</div>}
-                <RubySetupReason
-                  signal={{
-                    symbol: o.symbol, timeframe: o.timeframe,
-                    recommendedAction: o.recommendedAction, bias: o.bias,
-                    confidenceScore: o.confidenceScore, riskScore: o.riskScore,
-                    entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
-                    reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
-                    entry: o.entry, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-                    statusBadge: o.statusBadge,
-                  }}
-                  dense
-                />
+                {chip.withheld ? (
+                  // Ruby's Setup Reason explains the raw BUY / SELL action. Under
+                  // a withheld final read it would describe a buy or sell setup
+                  // beside "No trade", so the final read's own reasons show here.
+                  <div
+                    className="rounded border border-slate-500/40 bg-slate-500/5 p-2 text-[11px] leading-snug space-y-1"
+                    data-testid={`scanner-final-read-note-${o.symbol}`}
+                  >
+                    <div>
+                      Setup reason not shown: the server's final read for this row is "{chip.text}".
+                    </div>
+                    {(() => {
+                      const reasons = Array.isArray(o.finalRead?.reasons)
+                        ? (o.finalRead!.reasons as unknown[]).filter((r): r is string => typeof r === "string" && r.trim() !== "")
+                        : [];
+                      return reasons.length > 0 ? (
+                        <ul className="list-disc pl-4 text-muted-foreground">
+                          {reasons.map((r, idx) => <li key={idx}>{r}</li>)}
+                        </ul>
+                      ) : (
+                        <div className="text-muted-foreground">The server did not send a reason with this final read.</div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <RubySetupReason
+                    signal={{
+                      symbol: o.symbol, timeframe: o.timeframe,
+                      recommendedAction: o.recommendedAction, bias: o.bias,
+                      confidenceScore: o.confidenceScore, riskScore: o.riskScore,
+                      entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
+                      reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
+                      entry: o.entry, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+                      statusBadge: o.statusBadge,
+                    }}
+                    dense
+                  />
+                )}
                 {o.timingContext && (
                   <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} rowTimeframe={o.timeframe} />
                 )}
@@ -994,7 +1023,7 @@ export default function MarketScanner() {
 
       <CollapsibleSection
         title="Recent scanner trades"
-        description="Scanner-generated trades will appear here once orders are placed."
+        description="Lists MT5 demo orders sent from the scanner only."
         storageKey="scanner.recentTrades"
         testId="scanner-recent-trades"
         defaultOpen

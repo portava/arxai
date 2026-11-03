@@ -463,12 +463,14 @@ export function SelectedMarketPanel() {
                         <span
                           className="text-txt-muted"
                           data-testid="text-selected-event-countdown"
-                          title={isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, nowTs).display : undefined}
+                          title={isDateOnlyCalendarSource(e.source) ? "The calendar source publishes only this release's date, not its time." : undefined}
                         >
-                          {/* A date-only source (FRED) publishes no release time: say
-                              the day, as the calendar page does — never a countdown
-                              to its midnight date marker. */}
-                          {isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, nowTs).label : eventCountdownFromIso(e.eventTime, nowTs)}
+                          {/* A date-only source (FRED) publishes no release time: name
+                              the date itself — never a countdown to its midnight
+                              date marker. The server lists and counts these rows by
+                              the UTC date, so a relative "today / tomorrow / 1d ago"
+                              from the viewer's local date could contradict it. */}
+                          {isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, nowTs).display : eventCountdownFromIso(e.eventTime, nowTs)}
                         </span>
                       </li>
                     ))}

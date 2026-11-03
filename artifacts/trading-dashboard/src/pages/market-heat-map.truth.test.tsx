@@ -143,6 +143,24 @@ describe("Unmeasured timing reads (no candles, no quote)", () => {
     render(<TodayTab data={undefined} multiData={[makeRead({ symbol: "GBPUSD", dataQuality: UNMEASURED_DQ })]} />);
     expect(screen.getByText("Basic timing estimate")).toBeTruthy();
   });
+
+  // Review finding: the Now and By Symbol tabs show "—" for a no-candle read,
+  // but Today's Symbol Heat still drew a 37% bar and printed "37" for the same
+  // read, so one page described it two ways.
+  it("Today's Symbol Heat does not print or bar the session-constant heat of an unmeasured read", () => {
+    const { container } = render(<TodayTab data={undefined} multiData={[{ ...unmeasured(), symbol: "GBPUSD" }]} />);
+    expect(screen.queryByText("37")).toBeNull();
+    expect(container.querySelector('[style*="width: 37%"]')).toBeNull();
+    const cell = screen.getByTestId("today-heat-GBPUSD");
+    expect(cell.textContent).toBe("—");
+    expect(cell.getAttribute("title")).toMatch(/not measured/i);
+  });
+
+  it("Today's Symbol Heat keeps a measured read's number and bar", () => {
+    const { container } = render(<TodayTab data={undefined} multiData={[makeRead({ symbol: "GBPUSD", heatScore: 37 })]} />);
+    expect(screen.getByTestId("today-heat-GBPUSD").textContent).toBe("37");
+    expect(container.querySelector('[style*="width: 37%"]')).not.toBeNull();
+  });
 });
 
 describe("News Heat — provider copy", () => {

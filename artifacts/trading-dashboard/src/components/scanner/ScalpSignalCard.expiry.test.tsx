@@ -152,3 +152,57 @@ describe("buildReasoningFromScalp — expired input", () => {
     expect(current.decision).toBe("BUY scalp setup");
   });
 });
+
+// Review finding: once expired, the block's Why line read "When it was read:
+// …", but Momentum still printed the flame's whyNow (or "Flame momentum read
+// 81/100", the score the flame row withholds) as a present-tense claim, the
+// card still passed the flame's pattern label, and Confirmation (the flame's
+// "Enter on…" trigger), Invalidation and Risk Note (its decay note) were the
+// expired read's own lines with no qualifier.
+describe("ScalpSignalCard — an expired read's reasoning does not describe the expired flame as current", () => {
+  const flame = {
+    blind: false, scalpStatus: "STRONG", flameStage: "ACTIVE", scalpScore: 81, freshness: "FRESH",
+    flameAgeCandles: 2, entryTiming: "CLEAN", chaseRisk: "LOW", runway: "CLEAR", executionQuality: "GOOD",
+    htfContext: "ALIGNED", setupType: "BREAKOUT",
+    whyNow: "Momentum just broke the range high.",
+    entryTrigger: "Enter on a retest of 1.1003.",
+    invalidationIdea: "Cancel below 1.0990.",
+    decayNote: "Momentum fades after 3 candles.",
+  };
+  const expiredWith = (f: Record<string, unknown>) => makeResult({
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    generatedAt: new Date(Date.now() - 120_000).toISOString(),
+    flame: f as unknown as ScalpResult["flame"],
+  });
+  const row = (id: string) => screen.getByTestId(`scalp-reasoning-EURUSD-${id}`).textContent ?? "";
+
+  it("momentum, pattern, confirmation, invalidation and risk note are labelled as at-read or withheld", () => {
+    render(<ScalpSignalCard result={expiredWith(flame)} onBuild={() => {}} />);
+    expect(row("evidence-momentum")).not.toMatch(/^Momentum just broke the range high\./);
+    expect(row("evidence-momentum")).not.toMatch(/\d+\/100/);
+    expect(row("evidence-pattern")).not.toMatch(/^Breakout$/);
+    expect(row("confirmation")).not.toMatch(/^Enter on/);
+    expect(row("invalidation")).not.toMatch(/^Cancel below 1\.0990\.$/);
+    expect(row("risk-note")).not.toBe("Momentum fades after 3 candles.");
+    expect(row("risk-note")).toMatch(/expired/i);
+    for (const id of ["evidence-momentum", "evidence-pattern", "confirmation", "invalidation", "risk-note"]) {
+      const text = row(id);
+      if (/Momentum just broke|Breakout|Enter on|Cancel below|fades after/.test(text)) {
+        expect(text, id).toMatch(/When it was read:/);
+      }
+    }
+  });
+
+  it("with no whyNow, momentum does not show the score the flame row withholds", () => {
+    render(<ScalpSignalCard result={expiredWith({ ...flame, whyNow: null })} onBuild={() => {}} />);
+    expect(row("evidence-momentum")).not.toMatch(/81\/100|\d+\/100/);
+    expect(row("evidence-momentum")).toMatch(/expired/i);
+  });
+
+  it("a current read keeps the flame's own lines", () => {
+    render(<ScalpSignalCard result={makeResult({ expiresAt: new Date(Date.now() + 60_000).toISOString(), flame: flame as unknown as ScalpResult["flame"] })} onBuild={() => {}} />);
+    expect(row("evidence-momentum")).toBe("Momentum just broke the range high.");
+    expect(row("evidence-pattern")).toBe("Breakout");
+    expect(row("confirmation")).toBe("Enter on a retest of 1.1003.");
+  });
+});

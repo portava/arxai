@@ -4,7 +4,7 @@
 // not be loaded", never a crash. The footer names the scanner sweep the
 // plan came from and how old it is.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import SessionPlanPage from "./session-plan";
 
 const PLAN = {
@@ -18,14 +18,23 @@ const PLAN = {
 };
 
 // The exact shape maskSimulatorSessionPlan returns for a non-admin viewer.
+const MASK_TEXT = "Not shown: this session plan is built from simulator scanner data, and simulator-based plans are shown only to platform operators.";
 const MASKED = {
   ...PLAN,
   bestSymbols: [], symbolsToAvoid: [],
-  preferredStrategy: "Withheld until a verified feed is available",
+  preferredStrategy: "Withheld (simulator-based plans are shown only to platform operators)",
   maxTrades: 0, maxRiskPerTradeUsd: 0, maxRiskPerSessionUsd: 0,
-  marketConditions: "Waiting for a verified feed", rules: [], warningZones: [], focusAreas: [],
-  recommendedFirstTest: "Waiting for a verified feed", summary: "Waiting for a verified feed",
+  marketConditions: MASK_TEXT, rules: [], warningZones: [], focusAreas: [],
+  recommendedFirstTest: MASK_TEXT, summary: MASK_TEXT,
   withheld: true,
+};
+// What an older server sent: masked text that promised a feed-based release.
+const MASKED_OLD_COPY = {
+  ...MASKED,
+  preferredStrategy: "Withheld until a verified feed is available",
+  marketConditions: "Live market data isn't confirmed yet — analysis is hidden until a verified feed is available.",
+  recommendedFirstTest: "Live market data isn't confirmed yet — analysis is hidden until a verified feed is available.",
+  summary: "Live market data isn't confirmed yet — analysis is hidden until a verified feed is available.",
 };
 
 function mockFetch(status: number, body: unknown) {
@@ -35,6 +44,7 @@ function mockFetch(status: number, body: unknown) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Session Plan truth", () => {
@@ -47,6 +57,22 @@ describe("Session Plan truth", () => {
     expect(text).not.toMatch(/Max trades\s*0/);
     expect(screen.queryAllByText("none")).toHaveLength(0);
     expect(screen.getAllByText("Withheld").length).toBeGreaterThanOrEqual(5);
+  });
+
+  // The server masks the plan by the viewer's role alone (admin/owner see it),
+  // and the plan is always simulator-built, so no verified feed ever lifts the
+  // mask. The note promised "until a verified feed is available".
+  it("the withheld note names the role mask and promises no feed-based release", async () => {
+    mockFetch(200, MASKED_OLD_COPY);
+    render(<SessionPlanPage />);
+    const note = (await screen.findByTestId("session-plan-withheld")).textContent ?? "";
+    expect(note).not.toMatch(/until a verified feed/i);
+    expect(note).toMatch(/simulator/i);
+    expect(note).toMatch(/only to (platform )?operators/i);
+    expect(note).toMatch(/not zero/i);
+    // The masked text fields from a server that still sends the feed promise
+    // are not repeated on the page.
+    expect(document.body.textContent ?? "").not.toMatch(/verified feed/i);
   });
 
   it("a failed request says the plan could not be loaded instead of crashing", async () => {
@@ -69,6 +95,22 @@ describe("Session Plan truth", () => {
     const footer = await screen.findByTestId("session-plan-sweep-time");
     expect(footer.textContent).toMatch(/scanner sweep at .+ \(3 h 5 min ago\)/);
     expect(footer.textContent).not.toMatch(/^Generated /);
+  });
+
+  // sweepAge read Date.now() during render and nothing re-rendered the page,
+  // so a plan loaded from a fresh sweep said "(under a minute ago)" for as
+  // long as the page stayed open.
+  it("the sweep age keeps counting while the page stays open", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-03T09:00:00.000Z"));
+    mockFetch(200, { ...PLAN, generatedAt: "2026-11-03T09:00:00.000Z" });
+    render(<SessionPlanPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId("session-plan-sweep-time").textContent).toMatch(/\(under a minute ago\)/);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2 * 3_600_000); });
+    const footer = screen.getByTestId("session-plan-sweep-time").textContent ?? "";
+    expect(footer).not.toMatch(/under a minute ago/);
+    expect(footer).toMatch(/\(2 h 0 min ago\)/);
   });
 
   it("the plan's caps and rules are labelled as fixed plan text, not the trader's risk settings", async () => {

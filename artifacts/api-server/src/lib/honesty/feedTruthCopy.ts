@@ -280,6 +280,15 @@ interface SimulatorSessionPlan {
   generatedAt: string;
 }
 
+/**
+ * Why a session plan is withheld. The plan is always built from simulator
+ * scanner data and the routes mask it by the viewer's role alone, so no
+ * verified feed will ever un-hide it; the text says so instead of promising a
+ * feed-based release.
+ */
+export const SIMULATOR_SESSION_PLAN_WITHHELD_REASON =
+  "Not shown: this session plan is built from simulator scanner data, and simulator-based plans are shown only to platform operators.";
+
 /** Mask a simulator-derived session plan (best/avoid symbols, risk zones …). */
 export function maskSimulatorSessionPlan<T extends SimulatorSessionPlan>(
   plan: T,
@@ -288,16 +297,16 @@ export function maskSimulatorSessionPlan<T extends SimulatorSessionPlan>(
     ...plan,
     bestSymbols: [],
     symbolsToAvoid: [],
-    preferredStrategy: "Withheld until a verified feed is available",
+    preferredStrategy: "Withheld (simulator-based plans are shown only to platform operators)",
     maxTrades: 0,
     maxRiskPerTradeUsd: 0,
     maxRiskPerSessionUsd: 0,
-    marketConditions: WAITING_FOR_FEED_REASON,
+    marketConditions: SIMULATOR_SESSION_PLAN_WITHHELD_REASON,
     rules: [],
     warningZones: [],
     focusAreas: [],
-    recommendedFirstTest: WAITING_FOR_FEED_REASON,
-    summary: WAITING_FOR_FEED_REASON,
+    recommendedFirstTest: SIMULATOR_SESSION_PLAN_WITHHELD_REASON,
+    summary: SIMULATOR_SESSION_PLAN_WITHHELD_REASON,
     withheld: true,
   };
 }

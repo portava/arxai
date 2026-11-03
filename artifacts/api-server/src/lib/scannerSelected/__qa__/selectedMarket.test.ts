@@ -771,7 +771,12 @@ test("a FRED release dated today that the scorer cannot time is named in the new
   assert.ok(env.ok);
   if (!env.ok) return;
   assert.equal(env.upcomingEvents.length, 1);
-  assert.match(env.newsRisk.summary, /dated today with no published release time/);
+  // The sentence names the UTC date it counted by, never "today": the
+  // viewer's local "today" can be another date (review finding). With no timed
+  // event beside it, the line says the risk could not be scored (merged with
+  // the "could not be scored" fix).
+  assert.match(env.newsRisk.summary, new RegExp(`A HIGH-impact release \\(GDP\\) is dated ${todayMarker.slice(0, 10)} with no published release time, so news risk for EURUSD could not be scored\\.`));
+  assert.doesNotMatch(env.newsRisk.summary, /dated today/);
 });
 
 // ── News risk that could not be scored is never "none" ─────────────────────
@@ -805,7 +810,9 @@ test("a HIGH release dated today with no release time is 'could not be scored', 
   assert.ok(env.ok);
   if (!env.ok) return;
   assert.doesNotMatch(env.newsRisk.summary, /No relevant high-impact news/);
-  assert.match(env.newsRisk.summary, /HIGH-impact release \(CPI\) is dated today with no published release time/);
+  // Named by its UTC date, never "today" (a viewer's local today can differ).
+  assert.match(env.newsRisk.summary, new RegExp(`HIGH-impact release \\(CPI\\) is dated ${todayMarker.slice(0, 10)} with no published release time`));
+  assert.doesNotMatch(env.newsRisk.summary, /dated today/);
   assert.match(env.newsRisk.summary, /news risk for EURUSD could not be scored/);
   assert.equal(env.newsRisk.levelBasis, "unscored");
   // Verdict untouched: exactly as scored.
@@ -823,7 +830,8 @@ test("a timed event beside an untimed release keeps its line and says the untime
   assert.ok(env.ok);
   if (!env.ok) return;
   assert.match(env.newsRisk.summary, /^MEDIUM impact Retail Sales in \d+m — proceed with caution\./);
-  assert.match(env.newsRisk.summary, /HIGH-impact release \(CPI\) is also dated today with no published release time, so it is not in this risk level\./);
+  assert.match(env.newsRisk.summary, new RegExp(`HIGH-impact release \\(CPI\\) is also dated ${todayMarker.slice(0, 10)} with no published release time, so it is not in this risk level\\.`));
+  assert.doesNotMatch(env.newsRisk.summary, /dated today/);
   assert.equal(env.newsRisk.levelBasis, "unscored");
   assert.equal(env.newsRisk.riskLevel, "low");
 });

@@ -154,6 +154,27 @@ function SectionCard({ title, icon: Icon, children, className }: { title: string
 
 // Levels carry no instrument precision here: each is printed at its
 // magnitude's precision (indices 2, JPY-style 3, FX 5), never a blanket 5.
+/**
+ * How the shown levels were set, as api-server brain/marketBrain.ts sets
+ * them: entry = the last 1-minute close; stop loss / take profit = 1.5x /
+ * 2.5x `technical.atrValue || price * 0.001`. An ATR of 0 (it is rounded to 4
+ * decimals, so a quiet minute reads 0) means the 0.1%-of-price placeholder.
+ */
+export function brainLevelsProvenance(result: {
+  direction?: string | null;
+  technicalDetails?: unknown;
+}): string {
+  if (result.direction !== "BUY" && result.direction !== "SELL") {
+    return "No entry, stop loss or take profit is given for a WAIT decision.";
+  }
+  const details = result.technicalDetails as { atrValue?: unknown } | null | undefined;
+  const atr = details?.atrValue;
+  if (typeof atr === "number" && Number.isFinite(atr) && atr > 0) {
+    return "Entry is the last 1-minute close; stop loss and take profit are 1.5× and 2.5× the 1-minute ATR.";
+  }
+  return "Entry is the last 1-minute close; no 1-minute ATR was measured, so stop loss and take profit are 1.5× and 2.5× a placeholder distance of 0.1% of price.";
+}
+
 export function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] }) {
   const d = data as any;
   return (
@@ -624,8 +645,7 @@ export default function BrainAnalysis() {
           <p data-testid="brain-provenance" className="text-center text-xs text-zinc-500">
             Analysis generated at {safeDate(result.timestamp, "time", "an unreported time")} from{" "}
             {typeof result.candleCount === "number" ? `${result.candleCount} ` : ""}1-minute candles served by{" "}
-            {candleSourceLabel(result.candleSource)}. Entry, stop loss and take profit are derived from the
-            1-minute ATR.
+            {candleSourceLabel(result.candleSource)}. {brainLevelsProvenance(result)}
           </p>
         </div>
       )}

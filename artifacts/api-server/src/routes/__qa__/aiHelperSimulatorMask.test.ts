@@ -197,3 +197,18 @@ test("/ai/session-plan masks for TESTER, raw for OWNER (POST + GET)", async () =
   const getMasked = (await getMaskedRes.json()) as Record<string, unknown>;
   assert.equal(getMasked.withheld, true, "GET session-plan must mask for non-admin too");
 });
+
+// The plan is masked by the viewer's role alone (sessionPlanFromSnapshot always
+// tags it SIMULATOR and maskSimulatorSessionPlan never checks a feed), so no
+// verified feed will ever un-hide it. Its text must say that, not "hidden
+// until a verified feed is available".
+test("/ai/session-plan withheld text names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/session-plan", "TESTER", {});
+  const texts = ["summary", "marketConditions", "recommendedFirstTest", "preferredStrategy"]
+    .map((k) => String(masked[k]));
+  for (const t of texts) {
+    assert.doesNotMatch(t, /verified feed|isn't confirmed yet/i, `a feed will not un-hide a role-masked plan: ${t}`);
+  }
+  assert.match(String(masked.summary), /simulator/i, "the text says the plan is built from simulator data");
+  assert.match(String(masked.summary), /operator/i, "the text says who may see simulator-based plans");
+});
