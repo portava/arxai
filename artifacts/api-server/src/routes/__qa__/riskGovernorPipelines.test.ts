@@ -625,27 +625,32 @@ test("demo/live boundary: a stopless live position blocks live entries but not p
     userId: u.a, bridgeConnectionId: conn, brokerTicket: "QA-RG-1", symbol: "GBPUSD", side: "BUY",
     volume: 0.01, entryPrice: 1.3, stopLoss: null, openedAt: new Date(Date.now() - 3_600_000),
   });
-  const live = await enforcePreTradeRisk({
-    userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
-    symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
-  }, RELEASED);
-  assert.deepEqual(live.blockedBy, ["max_portfolio_exposure"]);
-  const px = paperPrice();
-  // The governor prices a paper EURUSD order at the 100,000-unit lot the venue
-  // books (b881e342), so the old 2% stop on 0.1 lot (~$217) is over the $100
-  // per-trade cap. A 0.5% stop (~$54) keeps the same 0.1 lot inside every cap,
-  // so ALLOW still proves the stopless live position never reaches paper.
-  const paper = await enforcePreTradeRisk({
-    userId: u.a, venue: "PAPER", origin: "manual", action: "OPEN",
-    symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: px * 0.995, takeProfit: px * 1.04,
-  }, { facts: { quote: { bid: px, ask: px, at: new Date(), source: "qa" } } });
-  assert.equal(paper.decision, "ALLOW", JSON.stringify(paper.rules.filter((r) => r.outcome === "BLOCK")));
-  const demo = await enforcePreTradeRisk({
-    userId: u.a, venue: "DEMO", origin: "manual", action: "OPEN",
-    symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
-  }, RELEASED);
-  assert.equal(demo.decision, "ALLOW", JSON.stringify(demo.rules.filter((r) => r.outcome === "BLOCK")));
-  await db.delete(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, u.a));
+  // Removed in finally: left behind by a failure, this stopless position would
+  // block A's live entry in the isolation test below and hide that test's own result.
+  try {
+    const live = await enforcePreTradeRisk({
+      userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
+      symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
+    }, RELEASED);
+    assert.deepEqual(live.blockedBy, ["max_portfolio_exposure"]);
+    const px = paperPrice();
+    // The governor prices a paper EURUSD order at the 100,000-unit lot the venue
+    // books (b881e342), so the old 2% stop on 0.1 lot (~$217) is over the $100
+    // per-trade cap. A 0.5% stop (~$54) keeps the same 0.1 lot inside every cap,
+    // so ALLOW still proves the stopless live position never reaches paper.
+    const paper = await enforcePreTradeRisk({
+      userId: u.a, venue: "PAPER", origin: "manual", action: "OPEN",
+      symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: px * 0.995, takeProfit: px * 1.04,
+    }, { facts: { quote: { bid: px, ask: px, at: new Date(), source: "qa" } } });
+    assert.equal(paper.decision, "ALLOW", JSON.stringify(paper.rules.filter((r) => r.outcome === "BLOCK")));
+    const demo = await enforcePreTradeRisk({
+      userId: u.a, venue: "DEMO", origin: "manual", action: "OPEN",
+      symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
+    }, RELEASED);
+    assert.equal(demo.decision, "ALLOW", JSON.stringify(demo.rules.filter((r) => r.outcome === "BLOCK")));
+  } finally {
+    await db.delete(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, u.a));
+  }
 });
 
 test("isolation: another trader's losses, positions and bridge never decide this trader's order", async () => {
