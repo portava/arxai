@@ -139,8 +139,10 @@ export default function TradingCalendarPage() {
       return { ...paper, notShownHere: paper?.currentAccountMode === "LIVE_SHARED" };
     },
   });
-  // A failed (re)load is shown as a failure, never over older data.
-  const calData = cal.isError ? undefined : cal.data;
+  // A failed (re)load is shown as a failure, never over older data. That
+  // includes a failed mode re-check: the calendar query is then disabled and
+  // keeps its earlier data, which can no longer be placed as live or demo.
+  const calData = cal.isError || !mode.isSuccess ? undefined : cal.data;
   const notShownHere = calData?.notShownHere === true;
 
   const day = useQuery<DayDetailResp>({
@@ -336,7 +338,7 @@ export default function TradingCalendarPage() {
         </CardContent>
       </Card>}
 
-      {selectedDate && (
+      {selectedDate && mode.isSuccess && (
         <Card data-testid="day-detail-card">
           <CardHeader><CardTitle className="flex items-center gap-2"><CalIcon className="h-4 w-4" /> {selectedDate} — Day Detail</CardTitle></CardHeader>
           <CardContent>

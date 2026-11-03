@@ -23,8 +23,10 @@ function serve(r: Record<string, Route>) {
   vi.stubGlobal("fetch", fetchMock);
 }
 
+let lastClient: QueryClient;
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastClient = qc;
   return render(<QueryClientProvider client={qc}><TradingCalendarPage /></QueryClientProvider>);
 }
 
@@ -134,6 +136,41 @@ describe("Trading Calendar failed loads", () => {
     expect(body).not.toMatch(/from your live trades/);
     expect(screen.queryByTestId("btn-rebuild")).toBeNull();
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
+  });
+
+  it("a failed mode re-check hides the month cards and day detail it can no longer place as live or demo", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("DEMO") },
+      "/api/performance/calendar": { body: paperCal },
+      "/api/performance/day": { body: { day: { date: `${month}-02`, stats: { net_pnl: 4, total_trades: 1, win_rate: 100, profit_factor: "—", day_rating: "B", top_lesson: null }, trades: [] } } },
+    });
+    renderPage();
+    (await screen.findByTestId(`day-${month}-02`)).click();
+    await screen.findByText(/No trades on this day/);
+    expect(document.body.textContent).toMatch(/Net P&L \(month\)/);
+    // Only the mode read fails on the re-check; the calendar and day reads
+    // are not repeated, so React Query still holds their earlier data.
+    routes["/api/me/trading/mode"] = { status: 500, body: { error: "boom" } };
+    await lastClient.refetchQueries({ queryKey: ["trading-mode-for-calendar"] });
+    expect((await screen.findByTestId("calendar-mode-error")).textContent).toMatch(/Nothing is shown until it loads/);
+    const body = document.body.textContent ?? "";
+    expect(body).not.toMatch(/Net P&L \(month\)/);
+    expect(body).not.toMatch(/Winning Days|Losing Days|Total Trades/);
+    expect(screen.queryByTestId("day-detail-card")).toBeNull();
+    expect(screen.queryByTestId(`day-${month}-02`)).toBeNull();
+  });
+
+  it("a failed live mode re-check also hides 'No live trades recorded yet'", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("LIVE") },
+      "/api/me/performance-calendar": { body: { days: [], isEmpty: true, currentAccountMode: "PAPER", modeScopeApplied: true } },
+    });
+    renderPage();
+    expect(await screen.findByText(/No live trades recorded yet/)).toBeTruthy();
+    routes["/api/me/trading/mode"] = { status: 500, body: { error: "boom" } };
+    await lastClient.refetchQueries({ queryKey: ["trading-mode-for-calendar"] });
+    await screen.findByTestId("calendar-mode-error");
+    expect(document.body.textContent).not.toMatch(/No live trades recorded yet/);
   });
 
   it("a 500 from the day route says the day could not be loaded", async () => {
