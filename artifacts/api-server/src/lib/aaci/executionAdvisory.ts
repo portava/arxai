@@ -19,7 +19,12 @@ import { buildAaciSnapshot } from "./snapshotService.js";
 import { buildAaciDecision } from "./decisionService.js";
 import { consultSecurityHandshake } from "../security/handshake.js";
 import { logger } from "../logger.js";
-import type { AaciDecision, AaciSharedTruthSnapshot } from "@workspace/domain/aaci";
+import {
+  AACI_FRESHNESS_THRESHOLDS_MS,
+  scoreFreshness,
+  type AaciDecision,
+  type AaciSharedTruthSnapshot,
+} from "@workspace/domain/aaci";
 import type { SecurityAutonomyEffect } from "@workspace/domain/security";
 
 // An agent dispatch needs a genuinely healthy cohesion verdict. The recommended
@@ -216,10 +221,18 @@ export function applySecurityAutonomyToAdvisory(
  * drops a low input it used to count, and a trending market can never lift
  * the dispatch score above what the data-quality score allowed.
  *
- * Pure: returns a new snapshot, never mutates its input.
+ * Candle freshness (F): this path used to have no candle close time, so the
+ * candle source always scored the honest-unknown value and always counted as
+ * stale. The close time is kept only when it scores the candle LOWER than that
+ * (an old bar); a just-closed bar is scored as unknown, so it can neither
+ * raise F nor drop out of the stale sources. Scores only fall as the decision
+ * is composed a moment after `nowMs`, so the kept case stays the lower one.
+ *
+ * Pure given `nowMs`: returns a new snapshot, never mutates its input.
  */
 export function holdDispatchChartInputsCautious(
   snapshot: AaciSharedTruthSnapshot,
+  nowMs: number = Date.now(),
 ): AaciSharedTruthSnapshot {
   const chart = snapshot.smartChart;
   if (!chart) return snapshot;
@@ -232,9 +245,20 @@ export function holdDispatchChartInputsCautious(
         ? Math.min(structure, dataQuality)
         : dataQuality
       : structure;
+  const { lastCandleTime, ...rest } = chart;
+  const candleMs = lastCandleTime ? Date.parse(lastCandleTime) : NaN;
+  const threshold = AACI_FRESHNESS_THRESHOLDS_MS.candle;
+  const candleScoresBelowUnknown =
+    Number.isFinite(candleMs) &&
+    nowMs - candleMs > threshold &&
+    scoreFreshness(nowMs - candleMs, threshold) < scoreFreshness(null, threshold);
   return {
     ...snapshot,
-    smartChart: { ...chart, structureScore: cautiousStructure },
+    smartChart: {
+      ...rest,
+      ...(candleScoresBelowUnknown ? { lastCandleTime } : {}),
+      structureScore: cautiousStructure,
+    },
   };
 }
 

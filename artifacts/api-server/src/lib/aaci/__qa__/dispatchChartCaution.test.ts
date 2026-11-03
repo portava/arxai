@@ -14,7 +14,11 @@
 
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { computeMarketTruth, type AaciSharedTruthSnapshot } from "@workspace/domain/aaci";
+import {
+  computeFreshness,
+  computeMarketTruth,
+  type AaciSharedTruthSnapshot,
+} from "@workspace/domain/aaci";
 import { smartChartFromState as realSmartChartFromState } from "../snapshotService.js";
 import type { ChartIntelligenceState } from "../../data/chart/chartIntelligence.js";
 
@@ -180,4 +184,48 @@ test("the dispatch path never scores a structure input above the old one, across
 test("the user-facing snapshot keeps the truthful structure read", () => {
   const state = chartState({ chartTruthScore: 75, structureClarity: 100 });
   assert.equal(realSmartChartFromState(state).structureScore, 100);
+});
+
+// ── Candle freshness (6ac9000a) ─────────────────────────────────────────────
+// At 16c8a1a0 the snapshot never carried a candle close time, so the candle
+// source always scored the honest-unknown 25 and always counted as stale. The
+// truthful close time may now lower that on the dispatch path (an old bar),
+// but a just-closed bar must not raise F or drop out of the stale sources.
+
+const candle = (snap: AaciSharedTruthSnapshot, nowMs: number) =>
+  computeFreshness(snap, nowMs).records.find((r) => r.source === "candle")!;
+
+test("a just-closed bar does not raise the dispatch freshness score or leave the stale sources", async () => {
+  for (const closedAgoMs of [0, 500, 2_000, 2_999, 4_000]) {
+    const state = chartState({
+      chartTruthScore: 75,
+      structureClarity: 60,
+      latestClosedCloseTime: iso(NOW - closedAgoMs),
+    });
+    // The user-facing snapshot carries the real close time.
+    assert.equal(realSmartChartFromState(state).lastCandleTime, iso(NOW - closedAgoMs));
+    const snap = await scoredSnapshotFor(state);
+    const legacy = legacySnapshot(snapshotFromState(state), state);
+    const nowMs = Date.now();
+    const rec = candle(snap, nowMs);
+    const old = candle(legacy, nowMs);
+    assert.ok(rec.score <= old.score, `closed ${closedAgoMs}ms ago: candle ${rec.score} > old ${old.score}`);
+    assert.equal(rec.stale, true, `closed ${closedAgoMs}ms ago: candle must stay stale on the dispatch path`);
+    const f = computeFreshness(snap, nowMs);
+    const fOld = computeFreshness(legacy, nowMs);
+    assert.ok(f.score <= fOld.score, `F ${f.score} > old F ${fOld.score}`);
+    assert.ok(f.staleSources.length >= fOld.staleSources.length);
+  }
+});
+
+test("an old closed bar keeps its lower candle score on the dispatch path", async () => {
+  const state = chartState({
+    chartTruthScore: 75,
+    structureClarity: 60,
+    latestClosedCloseTime: iso(NOW - 60_000),
+  });
+  const snap = await scoredSnapshotFor(state);
+  const rec = candle(snap, Date.now());
+  assert.equal(rec.stale, true);
+  assert.equal(rec.score, 0, "a bar a minute old scores below the old unknown 25");
 });
