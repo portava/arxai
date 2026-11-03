@@ -4,7 +4,7 @@
 // measured on old bars as the current alignment or a bias, and every timeframe
 // tile must say how old its newest bar is (or that it was not recorded).
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MultiTimeframeAlignmentCard, type MultiTimeframeReport } from "./MultiTimeframeAlignmentCard";
 
@@ -136,6 +136,28 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     const block = await screen.findByTestId("mtf-insufficient");
     expect(block.textContent).toMatch(/NOT ENOUGH DATA/);
     expect(document.body.textContent).toMatch(/Not enough candles were received for H4 \(4\)/);
+  });
+
+  it("in the not-enough-data block, trends from stale bars are not shown as plain current reads", async () => {
+    // H4 is short of candles; M5 and H1 were read from 120 candles each, but
+    // their newest bars (Saturday) were stale when the report was generated.
+    const short = { ...snap("SIDEWAYS", "2026-10-24T20:00:00.000Z", "STALE"), candlesUsed: 4 };
+    renderWith(report({ higherTrend: short }));
+    const block = await screen.findByTestId("mtf-insufficient");
+    expect(block.textContent).toMatch(/NOT ENOUGH DATA/);
+    const tiles = screen.getAllByTestId("mtf-tile");
+    for (const tile of tiles.slice(0, 2)) {
+      expect(tile.textContent).toMatch(/UP on these bars/);
+      expect(tile.querySelector(".text-green-400")).toBeNull();
+      expect(within(tile).getByTestId("mtf-bar-time").textContent).toMatch(/· stale$/);
+    }
+    expect(tiles[2]!.textContent).toMatch(/No read/);
+    const note = screen.getByTestId("mtf-insufficient-reason").textContent ?? "";
+    // Two trends are shown, so the note does not say "no trend ... is shown".
+    expect(note).not.toMatch(/no trend, alignment or bias is shown/);
+    expect(note).toMatch(/Not enough candles were received for H4 \(4\) when this report was generated, so no trend is shown for it, and no alignment or bias is shown\./);
+    expect(note).toMatch(/M5 newest bar is not current \(newest bar Sat 2026-10-24 20:55 UTC · stale\)/);
+    expect(note).toMatch(/H1 newest bar is not current/);
   });
 
   it("a report scanned days ago is not shown as a current alignment or bias", async () => {

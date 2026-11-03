@@ -235,6 +235,26 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
   const tileNotCurrentNow = (tf: (typeof tiles)[number]) =>
     snapNotCurrent(tf.s) || isAged(tf) || uncheckedTiles.includes(tf) || legacyOldTiles.includes(tf) || legacyUncheckedTiles.includes(tf);
   const labelsOf = (list: (typeof tiles)) => list.map((tf) => tf.label).join(", ");
+  // Why each kept timeframe is not a current read (or was not re-checked).
+  const notCurrentReasons = (keep: (tf: (typeof tiles)[number]) => boolean): string[] => {
+    const legacyOld = legacyOldTiles.filter(keep);
+    const legacyUnchecked = legacyUncheckedTiles.filter(keep);
+    return [
+      ...staleTiles.filter(keep).map((tf) => `${tf.label} newest bar is not current (${barTimeText(tf.s)})`),
+      ...agedTiles.filter(keep).map((tf) => `${tf.label} newest bar is no longer current (${barTimeText(tf.s, "aged")})`),
+      ...uncheckedTiles.filter(keep).map((tf) => `${tf.label} newest bar was current when scanned; whether it still is was not checked`),
+      ...(legacyOld.length > 0
+        ? [`${labelsOf(legacyOld)} bar times were not recorded, and this report is older than two ${legacyOld[legacyOld.length - 1]!.label} bars`]
+        : []),
+      ...(legacyUnchecked.length > 0
+        ? [`${labelsOf(legacyUnchecked)} bar times were not recorded, and this report's age was not checked`]
+        : []),
+    ];
+  };
+  // Trends the not-enough-data block still shows whose bars are not a current read.
+  const shownNotCurrent = tiles.filter((tf) => snapObserved(tf.s) && tileNotCurrentNow(tf));
+  const shownNotCurrentReasons = notCurrentReasons((tf) => shownNotCurrent.includes(tf));
+  const NO_SERVER_TIME = " No server time came with this report, and this device's clock is not used to judge its age.";
   const scanStamp = r ? utcStamp(r.createdAt) : null;
   const measured = observed && !notCurrent;
   const legacyFreshness = (measured || notCurrent) && tiles.some((tf) => freshnessUnrecorded(tf.s));
@@ -273,25 +293,40 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
             <span className="text-sm text-slate-300">Alignment not measured</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
+            {/* A trend read from enough candles is shown, but in a neutral
+                tone ("on these bars") when its bars are not a current read,
+                and every tile says when its newest bar opened. */}
             {tiles.map((tf) => (
-              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
+              <div key={tf.tag} className="rounded-md border border-slate-800 bg-slate-950/60 p-2" data-testid="mtf-tile">
                 <div className="text-[10px] uppercase tracking-wide text-slate-500">{tf.tag} · {tf.label}</div>
-                {snapObserved(tf.s) ? (
-                  <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
-                ) : (
+                {!snapObserved(tf.s) ? (
                   <div className={`text-sm font-semibold ${TREND_STYLES.INSUFFICIENT_DATA}`}>No read</div>
+                ) : tileNotCurrentNow(tf) ? (
+                  <div className="text-sm font-semibold text-slate-400">{tf.s.trend} on these bars</div>
+                ) : (
+                  <div className={`text-sm font-semibold ${TREND_STYLES[tf.s.trend]}`}>{tf.s.trend}</div>
                 )}
                 <div className="text-xs text-slate-400" data-testid="mtf-candles-used">
                   {tf.s.candlesUsed} of {MIN_CANDLES_FOR_TREND}+ candles
                 </div>
+                <div
+                  className={`text-[10px] ${tileNotCurrentNow(tf) ? "text-amber-400/90" : "text-slate-500"}`}
+                  data-testid="mtf-bar-time"
+                >
+                  {barTimeText(tf.s, recheck(tf))}
+                </div>
               </div>
             ))}
           </div>
-          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
+          <p className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300" data-testid="mtf-insufficient-reason">
             Not enough candles were received for{" "}
             {unobserved.map((tf) => `${tf.label} (${tf.s.candlesUsed})`).join(", ") || "one or more timeframes"}
-            {" "}when this report was generated, so no trend, alignment or bias is shown. Run the scan again once
-            market data is available.
+            {" "}when this report was generated, so{" "}
+            {unobserved.length > 0 ? `no trend is shown for ${unobserved.length === 1 ? "it" : "them"}, and ` : ""}
+            no alignment or bias is shown.
+            {shownNotCurrent.length > 0 && ` For the trends shown: ${shownNotCurrentReasons.join("; ")}.`}
+            {shownNotCurrent.some((tf) => uncheckedTiles.includes(tf) || legacyUncheckedTiles.includes(tf)) && clock == null && NO_SERVER_TIME}
+            {" "}Run the scan again once market data is available.
           </p>
         </>
       )}
@@ -333,19 +368,8 @@ export function MultiTimeframeAlignmentCard({ symbol }: { symbol: string | null 
               {(agedTiles.length > 0 || uncheckedTiles.length > 0 || legacyOldTiles.length > 0 || legacyUncheckedTiles.length > 0) &&
                 `This scan is from ${scanStamp ?? "a time that was not recorded"}. `}
               {provenNotCurrent ? "Not a current read" : "Not shown as a current read"}:{" "}
-              {[
-                ...staleTiles.map((tf) => `${tf.label} newest bar is not current (${barTimeText(tf.s)})`),
-                ...agedTiles.map((tf) => `${tf.label} newest bar is no longer current (${barTimeText(tf.s, "aged")})`),
-                ...uncheckedTiles.map((tf) => `${tf.label} newest bar was current when scanned; whether it still is was not checked`),
-                ...(legacyOldTiles.length > 0
-                  ? [`${labelsOf(legacyOldTiles)} bar times were not recorded, and this report is older than two ${legacyOldTiles[legacyOldTiles.length - 1]!.label} bars`]
-                  : []),
-                ...(legacyUncheckedTiles.length > 0
-                  ? [`${labelsOf(legacyUncheckedTiles)} bar times were not recorded, and this report's age was not checked`]
-                  : []),
-              ].join("; ")}.
-              {(uncheckedTiles.length > 0 || legacyUncheckedTiles.length > 0) && clock == null &&
-                " No server time came with this report, and this device's clock is not used to judge its age."}
+              {notCurrentReasons(() => true).join("; ")}.
+              {(uncheckedTiles.length > 0 || legacyUncheckedTiles.length > 0) && clock == null && NO_SERVER_TIME}
               {" "}No alignment score or bias is shown.{" "}
               {staleTiles.length > 0 ? "Run the scan again once market data is current." : "Run the scan again for a current read."}
             </p>
