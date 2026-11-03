@@ -192,11 +192,20 @@ export function buildGatedTrustLine(
     available: boolean; stale: boolean; aiUsable: boolean; basis: RubyChartReadBasis;
     /** The served feed's quality grade; names why a non-stale feed is not usable. */
     quality?: string | null;
+    /** The chart's own reason the series is not live (ChartFeedStatus.notLiveReason). */
+    notLiveReason?: "market_closed" | "stored_history" | null;
   },
 ): string {
   let feedPart: string;
   if (!feed.available) {
     feedPart = "feed unavailable";
+  } else if ((feed.stale || !feed.aiUsable) && feed.notLiveReason === "market_closed") {
+    // The chart says "Market closed ... Not a feed fault": the candles are not
+    // syncing and the feed is not stale or delayed — the market is shut.
+    return `${timeframe} candles from before the weekend close · market closed · read gated`;
+  } else if ((feed.stale || !feed.aiUsable) && feed.notLiveReason === "stored_history") {
+    // The chart says "Showing stored MetaTrader 5 broker candles ... not a live feed".
+    return `${timeframe} stored candles · not live · read gated`;
   } else if (feed.stale) {
     feedPart = "feed stale";
   } else if (!feed.aiUsable) {
@@ -304,6 +313,17 @@ export function gatedReadReason(
   if (ctx.blockReason) return ctx.blockReason;
   if (ctx.basis === "VERIFIED") return null;
   const { state, gateOutput: gate } = ctx;
+  // A closed market or a stored series is what the chart says it is — never a
+  // "stale" or "delayed" feed (same reason the chart message and warning use).
+  if (state.stale || !state.aiUsable) {
+    const notLive = state.truthState?.notLiveReason ?? null;
+    if (notLive === "market_closed") {
+      return "The market is in its scheduled weekend close, so there is no live data to draw a tradeable setup from. I'll mark levels once it reopens.";
+    }
+    if (notLive === "stored_history") {
+      return "The chart is showing stored broker candles with no bridge pushing them, so there is no live data to draw a tradeable setup from.";
+    }
+  }
   if (state.stale) return "The chart feed is stale, so I won't draw a tradeable setup. I'll mark levels once it is live again.";
   if (!state.aiUsable) return unusableFeedReason(state);
   if (!gate.confidentReadAllowed) {
