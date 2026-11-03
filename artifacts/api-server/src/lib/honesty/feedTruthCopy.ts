@@ -170,8 +170,24 @@ export function projectOpportunitiesForViewer(
 // viewerSeesSimulatorDetail(readRoleFromRequest(req)) exactly like the scanner
 // rows do, then chooses the masked payload here.
 
-/** Honest reason copy shared by every withheld simulator-scored payload. */
+/**
+ * The waiting-for-feed reason (scanner rows a live feed can replace). Payloads
+ * masked by the viewer's role alone use the role reasons below instead.
+ */
 export const SIMULATOR_DETAIL_WITHHELD_REASON = WAITING_FOR_FEED_REASON;
+
+/**
+ * Why a simulator market analysis / trade card is withheld. analyzeMarket and
+ * generateTradeCard always run on simulator prices and the routes mask them by
+ * the viewer's role alone, so no verified feed will ever un-hide them; the text
+ * says what hides them and who may see them instead of promising a feed.
+ */
+export const SIMULATOR_ANALYSIS_WITHHELD_REASON =
+  "Not shown: this analysis is built from simulator prices, not a live market feed, and simulator-based analysis is shown only to platform operators.";
+const SIMULATOR_READ_WITHHELD_AVOID =
+  "Read withheld: it is built from simulator prices, and simulator-based reads are shown only to platform operators.";
+export const SIMULATOR_TRADE_CARD_WITHHELD_REASON =
+  "Not shown: this trade card is built from simulator prices, not a live market feed, and simulator-based trade cards are shown only to platform operators.";
 
 /** Mask a simulator-derived market analysis: strip every score + level. */
 export function maskSimulatorMarketAnalysis(
@@ -190,8 +206,8 @@ export function maskSimulatorMarketAnalysis(
     stopLoss: 0,
     takeProfit: 0,
     riskRewardRatio: 0,
-    reasonForTrade: WAITING_FOR_FEED_REASON,
-    reasonToAvoid: "Read withheld until a verified live feed is available.",
+    reasonForTrade: SIMULATOR_ANALYSIS_WITHHELD_REASON,
+    reasonToAvoid: SIMULATOR_READ_WITHHELD_AVOID,
     invalidationReason: "",
     rulesPassed: [],
     rulesFailed: [],
@@ -207,7 +223,7 @@ export function maskSimulatorTradeCard(
     ...maskSimulatorMarketAnalysis(card),
     cardId: card.cardId,
     positionSizingHint: { maxRiskUsd: card.positionSizingHint.maxRiskUsd, suggestedLot: 0 },
-    notes: WAITING_FOR_FEED_REASON,
+    notes: SIMULATOR_TRADE_CARD_WITHHELD_REASON,
     withheld: true,
   };
 }
