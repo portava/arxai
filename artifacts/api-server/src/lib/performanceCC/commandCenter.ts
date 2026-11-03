@@ -31,7 +31,7 @@ import { bookedPnlOf, outcomeOf, unsizedPnlNote } from "./aggregator.js";
  * size holds a 0 placeholder: it is left out of netPnl (bookedPnlOf), counted
  * in unsizedClosedTrades and named in the line built from this basis. The
  * demo balance counts such a close at the paper risk model when it lost and
- * as 0 when it won (paperBookReader.realizedOf). Analytics recomputes each
+ * as 0 when it won (paperBookReader.bookedRealizedOf). Analytics recomputes each
  * trade from its fill prices and leaves out trades it cannot size, so the two
  * boards' Net P&L can differ for the same trades.
  */

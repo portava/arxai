@@ -36,7 +36,7 @@ import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
 import { currentQuote } from "./marketQuote.js";
-import { realizedOf } from "./paperBookReader.js";
+import { bookedRealizedOf } from "./paperBookReader.js";
 import {
   isUnsizedPaperClose, paperLedgerModelPnl, paperMoveSign, resolvePaperContract, sizePaperOrderPnl, type PaperPnlResult,
 } from "../paperExecution/paperPnl.js";
@@ -151,9 +151,10 @@ export function getMockPrice(symbol: string, atMs: number): number {
 // valued in one unit whichever path values or closes it. The old
 // `move × lots × 100` mis-sized every instrument (EURUSD 1,000×). A close that
 // cannot be sized stores 0 in the NOT NULL profit_loss as a placeholder and
-// its event says so; the read side (paperBookReader.realizedOf) and the
-// balance count it only when it lost, at the governor's paper model; a win of
-// unknown size adds nothing.
+// its event says so; the balance (paperBookReader.bookedRealizedOf) counts it
+// only when it lost, at the governor's paper model; a win of unknown size adds
+// nothing. Risk readers count every close at the lower of this and the paper
+// risk model (paperBookReader.realizedOf); the balance stays the booked sum.
 
 /** Event text for a close whose amount could not be sized. */
 function notSizedText(r: PaperPnlResult): string {
@@ -295,9 +296,11 @@ function governorRefusal(risk: { primaryReason?: string | null; blockedBy: strin
 // runs. Equity = balance + unrealized; margin = Σ open lot. An SL/TP hit is
 // the simulator venue's own fill, not a new order, so it is not re-governed.
 // A close whose amount could not be sized (stored 0 placeholder) counts the
-// way the paper book's read side counts it (realizedOf): a stop-out lowers the
-// balance at the paper risk model, and a win of unknown size adds nothing, so
-// an estimate never raises the balance or equity the Risk Governor reads.
+// way the paper book's booked figure counts it (bookedRealizedOf): a stop-out
+// lowers the balance at the paper risk model, and a win of unknown size adds
+// nothing, so an estimate never raises the balance or equity the Risk Governor
+// reads. The balance is the booked sum; the governor lowers the equity it caps
+// against to the risk count (paperBookReader.realizedOf) itself.
 // pnlSizing says how many closes that covers.
 export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing; valuation: PaperValuation }) | null> {
   const account = (await db.select().from(paperAccountsTable)
@@ -382,7 +385,7 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
   const closed = (await db.select().from(paperOrdersTable)
     .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy)))
     .filter((o) => o.status !== "OPEN");
-  const realizedTotal = closed.reduce((s, o) => s + realizedOf(o), 0);
+  const realizedTotal = closed.reduce((s, o) => s + bookedRealizedOf(o), 0);
   const unsizedClosed = closed.filter((o) => isUnsizedPaperClose(o));
   const unsizedClosedOrders = unsizedClosed.length;
   const unsizedClosedWins = unsizedClosed

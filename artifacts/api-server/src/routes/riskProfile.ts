@@ -65,6 +65,9 @@ router.get("/risk/dashboard-cards", requireUser, async (req, res) => {
     dailyRiskUsedUnknownReason: ov.budget.dailyRiskUsedUnknownReason,
     weeklyRiskUsedKnown: ov.budget.weeklyRiskUsedKnown,
     weeklyRiskUsedUnknownReason: ov.budget.weeklyRiskUsedUnknownReason,
+    // Additive: set when the paper loss count or equity behind *RiskRemaining
+    // is below the booked figures, with both figures in plain words.
+    riskCountNote: ov.budget.riskCountNote,
     openRisk: ov.budget.openRisk,
     openPositions: ov.budget.openPositions,
     tradesToday: ov.activity?.tradesToday ?? null,

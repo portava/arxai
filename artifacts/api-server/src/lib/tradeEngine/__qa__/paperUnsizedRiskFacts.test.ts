@@ -96,26 +96,31 @@ test("sumPaperRealizedSince: an unsized target hit cannot cancel measured losses
   assert.equal(tp.profitLoss, 0, "stored as the not-sized placeholder");
   fake = createFakeDb({ paper_orders: [tp, { ...tp, id: 56, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -500 }, { ...tp, id: 57, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -300 }] });
   const total = await sumPaperRealizedSince({ owner: null, strategyId: "build_ee_paper_execution" }, minsAgo(60));
-  // Was −800 + 10,000 = +9,200: neither daily-loss stop could trip.
-  assert.equal(total, -800);
+  // Was −800 + 10,000 = +9,200: neither daily-loss stop could trip. The two
+  // sized losses now count at no less than the paper risk model (each close at
+  // the lower of its booked amount and move × lots × 100): the −300 booked at
+  // 17,990 counts (17990 − 18000) × 0.5 × 100 = −500, so the total is −1,000.
+  assert.equal(total, -500 + (17990 - 18000) * 0.5 * 100);
 });
 
 test("readPaperCloses → summarizeActivity: an unsized target hit ends a losing streak by its sign but adds no money to the week's P/L", async () => {
   const tp = await settleThroughMonitor(openOrder({ id: 58 }), 18110);
   fake = createFakeDb({ paper_orders: [tp, { ...tp, id: 59, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -5, closedAt: minsAgo(10) }] });
   const closes = await readPaperCloses({ account: 1 }, { limit: 20 });
-  assert.deepEqual(closes.map((c) => c.pnl), [0, -5]);
+  // The −5 booked at 17,990 counts at the paper risk model, (17990 − 18000) × 0.5 × 100 = −500.
+  assert.deepEqual(closes.map((c) => c.pnl), [0, (17990 - 18000) * 0.5 * 100]);
   const act = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })), 0, NOW, "paper_orders:account:1");
   assert.equal(act.consecutiveLosses, 0, "the newest close was a win");
   assert.equal(act.lastClosedWasLoss, false);
-  assert.equal(act.weekRealizedPnl, -5, "was +4,995: the estimated win offset the measured loss");
+  assert.equal(act.weekRealizedPnl, -500, "was +4,995: the estimated win offset the measured loss");
 });
 
 test("sumPaperRealizedSince: the daily total includes the unsized stop-out", async () => {
   const sl = await settleThroughMonitor(openOrder(), 17940);
   fake = createFakeDb({ paper_orders: [sl, { ...sl, id: 53, profitLoss: -40 }] });
   const total = await sumPaperRealizedSince({ owner: null, strategyId: "build_ee_paper_execution" }, minsAgo(60));
-  assert.equal(total, -40 + (17950 - 18000) * 0.5 * 100, "was -40: the unsized loss was dropped from the daily total");
+  // The −40 booked at the 17,950 stop counts at the paper risk model too (the lower figure).
+  assert.equal(total, 2 * (17950 - 18000) * 0.5 * 100, "was -40: the unsized loss was dropped from the daily total");
 });
 
 test("readPaperCloses → summarizeActivity: an unsized stop-out keeps the losing streak and reads as the last loss", async () => {

@@ -9,9 +9,13 @@
 //   settled   status <> 'OPEN' with a closed_at (CLOSED_SL / CLOSED_TP /
 //             CLOSED_MANUAL, and a CANCELLED the venue settled); a voided
 //             order (CANCELLED, no closed_at) never counts
-//   realized  sum of realizedOf() over settled orders (profit_loss; an
-//             amount not sized counts only when it lost, at the governor's
-//             paper model, and a win of unknown size counts 0)
+//   realized  sum of realizedOf() over settled orders: the RISK count,
+//             each close at the lower of its booked amount and the paper
+//             risk model (move × lots × 100), so no loss total, streak or
+//             equity cap reads looser than either figure
+//   booked    bookedRealizedOf(): profit_loss as booked (an amount not sized
+//             counts only when it lost, at the governor's paper model, and a
+//             win of unknown size counts 0); the account balance adds it up
 //
 // The other two tables are NOT paper facts and are never mixed in here:
 // paper_trades is the trader's hand-entered journal (lib/riskGovernor/
@@ -22,7 +26,7 @@
 
 import { db, paperAccountsTable, paperOrdersTable } from "@workspace/db";
 import { and, desc, eq, gte, isNull, ne, sql, type SQL } from "drizzle-orm";
-import { isUnsizedPaperClose, paperLedgerModelPnl } from "../paperExecution/paperPnl.js";
+import { paperBookedRealized, paperRiskRealized, type PaperCloseFigures } from "../paperExecution/paperPnl.js";
 
 export type PaperOrderRow = typeof paperOrdersTable.$inferSelect;
 export type PaperAccountRow = typeof paperAccountsTable.$inferSelect;
@@ -58,23 +62,32 @@ export function isSettledPaperStatus(status: string): boolean {
 }
 
 /**
- * Realized P/L of one settled order, as the paper book's risk count: the
- * stored profit_loss when it is a sized amount. An order whose amount could
- * not be sized (the 0 placeholder on an exit that moved from entry, see
- * isUnsizedPaperClose) or that has no recorded profit_loss counts only when
- * it lost: at the Risk Governor's paper ledger model (move × lots × 100, the
- * size the governor priced it at), signed by the fills. So a stop-out of
- * unknown size is never dropped from the daily loss total, never resets a
- * losing streak and never reads as a win. A win of unknown size counts 0: an
- * estimated amount never offsets a measured loss in the daily loss total, the
- * autopilot's daily stop or the balance. The figure is a risk count, not a
- * measured result.
+ * Realized P/L of one settled order, as the paper book's RISK count
+ * (paperExecution/paperPnl.ts paperRiskRealized): the lower of its booked
+ * amount (bookedRealizedOf) and the paper risk model (move × lots × 100, the
+ * size the governor priced every paper order at before contract sizing and
+ * the figure every close was counted at then). So a loss booked below the
+ * model on a small contract (an index at 1 unit per lot) still counts at the
+ * model, a win booked above it (a currency pair at 100,000 units) counts only
+ * at the model, a stop-out of unknown size is never dropped from the daily
+ * loss total or the losing streak, and a win of unknown size counts 0. Every
+ * risk reader uses it: the Risk Governor's daily loss total, weekly P/L and
+ * losing streak, the autopilot's daily stop, the risk overview, trade
+ * decisions and trader readiness. It is a risk count, not a measured result:
+ * the booked amount (bookedRealizedOf) is the P&L shown and the balance.
  */
-export function realizedOf(o: Pick<PaperOrderRow, "exitPrice" | "entryPrice" | "direction" | "lotSize"> & { profitLoss: number | null }): number {
-  if (o.profitLoss != null && !isUnsizedPaperClose(o)) return Number(o.profitLoss);
-  if (o.exitPrice == null) return 0;
-  const model = paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
-  return model < 0 ? model : 0;
+export function realizedOf(o: PaperCloseFigures): number {
+  return paperRiskRealized(o);
+}
+
+/**
+ * Booked P/L of one settled order (paperPnl.paperBookedRealized): the stored
+ * profit_loss when it is a sized amount; an amount that could not be sized
+ * counts only when it lost (at the paper risk model) and a win of unknown
+ * size counts 0. The paper account's balance adds this up.
+ */
+export function bookedRealizedOf(o: PaperCloseFigures): number {
+  return paperBookedRealized(o);
 }
 
 /** The trader's paper account: the given id (if theirs), else the newest active one. */

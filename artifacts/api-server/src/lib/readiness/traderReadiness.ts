@@ -38,7 +38,7 @@ import {
   readActivePaperAccount, readOpenPaperOrders, readPaperCloses, readPaperOrders, sumPaperRealizedSince,
   isSettledPaperStatus, realizedOf, type PaperBookScope,
 } from "../tradeEngine/paperBookReader.js";
-import { isUnsizedPaperClose } from "../paperExecution/paperPnl.js";
+import { isUnsizedPaperClose, paperRiskShortfall } from "../paperExecution/paperPnl.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -53,10 +53,13 @@ export interface Cooldown { symbol: string; reason: string | null; until: string
 export interface GovernorMetrics {
   /**
    * dailyPnl, weeklyPnl, maxDrawdown and winRate30d are the paper book's risk
-   * count (paperBookReader.realizedOf): each sized close at its booked amount;
-   * a close whose amount could not be sized counts only if it lost (at the
-   * paper risk model, price move × lots × 100) and a win of unknown size
-   * counts 0. unsizedPaperCloses30d says how many closes that covers.
+   * count (paperBookReader.realizedOf), the Risk Governor's own: each close at
+   * the lower of its booked amount and the paper risk model (price move ×
+   * lots × 100), so a loss is never counted smaller, nor a win larger, than
+   * either figure; a close whose amount could not be sized counts only if it
+   * lost (at the paper risk model) and a win of unknown size counts 0. They
+   * can differ from the booked P&L shown on the paper account.
+   * unsizedPaperCloses30d says how many closes could not be sized.
    */
   dailyPnl: number;
   /** Enforced daily loss cap in money (Risk Governor); null = none enforced. */
@@ -292,7 +295,11 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   try {
     const L = userId == null ? resolveEffectiveLimits({}) : await loadEffectiveLimits(userId);
     maxOpenPaperTrades = L.discipline.maxOpenTrades;
-    const equity = userId == null ? null : (await readActivePaperAccount(userId))?.equity ?? null;
+    // The equity the governor values a percent cap on: the booked equity
+    // lowered to the risk count of every settled order on the account
+    // (riskGovernor/enforce.ts loadPaperFacts), never the larger booked one.
+    const acct = userId == null ? null : await readActivePaperAccount(userId);
+    const equity = acct ? acct.equity + paperRiskShortfall(await readPaperCloses({ account: acct.id })) : null;
     dailyLossLimit = dailyLossCapAmount(L, equity);
     dataSourcesRead.push("user_risk_settings");
   } catch { missingDataSources.push("user_risk_settings"); }
@@ -363,7 +370,7 @@ function evaluateStatus(
     hardBlocks.push({ code: "MAX_OPEN_PAPER_TRADES_EXCEEDED", severity: "BLOCK", message: `Open paper trades ${m.openPaperTrades} exceed configured max ${m.maxOpenPaperTrades}.`, details: { open: m.openPaperTrades, max: m.maxOpenPaperTrades } });
   }
   if (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
-    hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily P&L ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit}.`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit } });
+    hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily paper loss count ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit} (each close counted at the lower of its booked P&L and the paper risk model).`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit } });
   }
   for (const [sym, n] of Object.entries(m.sameSymbolExposure)) {
     if (n >= 3) hardBlocks.push({ code: "SAME_SYMBOL_CONFLICT", severity: "BLOCK", message: `Symbol ${sym} has ${n} concurrent open paper positions.`, details: { symbol: sym, count: n } });
@@ -388,7 +395,7 @@ function evaluateStatus(
   // ── PAUSE conditions ─────────────────────────────────────────────────────
   let pauseReasons = 0;
   if (m.dailyLossLimit != null && m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
-    softWarnings.push({ code: "DAILY_LOSS_NEAR_LIMIT", message: `Daily P&L ${m.dailyPnl} is within 30% of loss limit -${m.dailyLossLimit}.` }); pauseReasons += 1;
+    softWarnings.push({ code: "DAILY_LOSS_NEAR_LIMIT", message: `Daily paper loss count ${m.dailyPnl} is within 30% of loss limit -${m.dailyLossLimit} (each close counted at the lower of its booked P&L and the paper risk model).` }); pauseReasons += 1;
   }
   if (cooldowns.some(c => (c.reason ?? "").toUpperCase().includes("REVENGE"))) {
     softWarnings.push({ code: "REVENGE_COOLDOWN_ACTIVE", message: "Active revenge-trade cooldown detected." }); pauseReasons += 1;

@@ -24,7 +24,11 @@ type ValuationFlags = {
   // false when the server's *RiskUsed (and so *RiskRemaining) was not measured
   // (an older server sent a placeholder there), with the plain reason. Absent
   // on an older server.
-  & { dailyRiskUsedKnown?: boolean; dailyRiskUsedUnknownReason?: string | null; weeklyRiskUsedKnown?: boolean; weeklyRiskUsedUnknownReason?: string | null };
+  & { dailyRiskUsedKnown?: boolean; dailyRiskUsedUnknownReason?: string | null; weeklyRiskUsedKnown?: boolean; weeklyRiskUsedUnknownReason?: string | null }
+  // Set when the Risk Governor counts paper losses or equity below the booked
+  // figures (each closed paper trade at the lower of its booked P&L and the
+  // paper risk model), with both figures. Absent on an older server.
+  & { riskCountNote?: string | null };
 type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: Money; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: Money; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
 type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: Permissions; propFirm: PropFirmCard | null };
 
@@ -280,6 +284,9 @@ export default function RiskCommandCenter() {
             <Stat label="Equity" value={equityText(budget.equity)} />
             <Stat label="Venue" value={budget.venue} />
             <Stat label="Status" value={budget.riskStatus} />
+            {budget.riskCountNote && (
+              <p className="col-span-2 md:col-span-4 text-xs text-muted-foreground" data-testid="risk-budget-count-note">{budget.riskCountNote}</p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -392,6 +399,9 @@ export default function RiskCommandCenter() {
       {actionError && <CompactAlert tone="danger" title={actionError} testId="risk-action-error" />}
       {cards?.riskStatusReason && (
         <p className="text-xs text-muted-foreground" data-testid="risk-status-reason">{cards.riskStatusReason}</p>
+      )}
+      {cards?.riskCountNote && (
+        <p className="text-xs text-muted-foreground" data-testid="risk-count-note">{cards.riskCountNote}</p>
       )}
 
       <PageTabs

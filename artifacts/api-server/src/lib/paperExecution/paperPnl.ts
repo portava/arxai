@@ -65,6 +65,59 @@ export function isUnsizedPaperClose(o: { profitLoss: number | null; entryPrice: 
   return o.profitLoss === 0 && o.exitPrice != null && o.exitPrice !== o.entryPrice;
 }
 
+/** The fields of a settled paper order that its realized P/L is read from. */
+export interface PaperCloseFigures {
+  profitLoss: number | null;
+  exitPrice: number | null;
+  entryPrice: number;
+  direction: string;
+  lotSize: number;
+}
+
+/**
+ * Booked P/L of one settled paper order: the figure the paper account's
+ * balance adds up (tradeEngine/paperVenue.markToMarket). The stored
+ * profit_loss when it is a sized amount. An amount that could not be sized
+ * (the 0 placeholder on an exit that moved from entry, see
+ * isUnsizedPaperClose) or that has no recorded profit_loss counts only when
+ * it lost, at the paper risk model (move × lots × 100) signed by the fills; a
+ * win of unknown size counts 0.
+ */
+export function paperBookedRealized(o: PaperCloseFigures): number {
+  if (o.profitLoss != null && !isUnsizedPaperClose(o)) return Number(o.profitLoss);
+  if (o.exitPrice == null) return 0;
+  const model = paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
+  return model < 0 ? model : 0;
+}
+
+/**
+ * Realized P/L of one settled paper order as a RISK input (daily and weekly
+ * loss totals, the autopilot's daily stop, the equity the Risk Governor caps
+ * against): the lower of its booked amount (paperBookedRealized) and the paper
+ * risk model (move × lots × 100), the figure every paper close was counted at
+ * before the venue sized P&L at the instrument's contract size. A loss booked
+ * smaller than the model (a broker contract under 100 units, e.g. an index)
+ * still counts at the model, and a win booked larger than the model (a
+ * currency pair at 100,000 units) counts only at the model, so no risk count
+ * is ever looser than either figure. Its sign is the booked amount's sign, so
+ * a losing streak reads the same. A risk count, not a measured result: the
+ * booked amount stays the figure shown as P&L.
+ */
+export function paperRiskRealized(o: PaperCloseFigures): number {
+  const booked = paperBookedRealized(o);
+  if (o.exitPrice == null) return booked;
+  return Math.min(booked, paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice));
+}
+
+/**
+ * How far the risk count of these settled orders falls below their booked
+ * P/L: Σ (paperRiskRealized − paperBookedRealized). Always 0 or less. The Risk
+ * Governor lowers the booked paper equity by it before checking a cap.
+ */
+export function paperRiskShortfall(rows: readonly PaperCloseFigures[]): number {
+  return rows.reduce((s, o) => s + (paperRiskRealized(o) - paperBookedRealized(o)), 0);
+}
+
 export function paperPnl(a: {
   symbol: string;
   direction: string;
