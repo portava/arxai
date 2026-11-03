@@ -10,7 +10,7 @@
 // The generated mutation hook is replaced by a stub that returns fixed data.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type { MeScalpAddOnCheckResp } from "@workspace/api-client-react";
 
 let checkData: MeScalpAddOnCheckResp | undefined;
@@ -50,6 +50,7 @@ function resp(over: Partial<MeScalpAddOnCheckResp>): MeScalpAddOnCheckResp {
 afterEach(() => {
   cleanup();
   checkData = undefined;
+  mutate.mockClear();
 });
 
 describe("LiveScalpAddOnPanel reading age", () => {
@@ -80,5 +81,49 @@ describe("LiveScalpAddOnPanel reading age", () => {
     expect(screen.queryByTestId("ls-scalp-addon-stale")).toBeNull();
     expect(screen.queryByTestId("ls-scalp-addon-not-live")).toBeNull();
     expect(screen.getByTestId("ls-scalp-addon-as-of").textContent).toContain(new Date(justNow).toLocaleString());
+  });
+
+  // Pass 3 review: the check runs once per symbol/side and never refetches,
+  // so a reading that was current when the ticket opened kept reading as
+  // current ("(5s ago)", no "Not live") after the bridge stopped syncing.
+  // The panel now ages the reading against a ticking clock and downgrades it
+  // past the server's 90s freshness window.
+  it("a reading that was current when the ticket opened is shown as not live once it ages past 90s", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-03T10:00:10.000Z"));
+      const asOf = "2026-11-03T10:00:05.000Z";
+      checkData = resp({ positionsStale: false, positionsAsOf: asOf });
+      render(<LiveScalpAddOnPanel symbol="EURUSD" side="BUY" />);
+      expect(screen.getByTestId("ls-scalp-addon").getAttribute("data-stale")).toBe("false");
+      expect(screen.getByTestId("ls-scalp-addon-as-of").textContent).toMatch(/\(5s ago\)/);
+
+      // Ten minutes later, nothing re-rendered the ticket and no refetch ran.
+      act(() => { vi.advanceTimersByTime(10 * 60_000); });
+      expect(screen.getByTestId("ls-scalp-addon").getAttribute("data-stale")).toBe("true");
+      expect(screen.getByTestId("ls-scalp-addon-not-live").textContent).toMatch(/not live/i);
+      expect(screen.queryByTestId("ls-scalp-addon-as-of")).toBeNull();
+      const note = screen.getByTestId("ls-scalp-addon-stale").textContent ?? "";
+      expect(note).toContain(new Date(asOf).toLocaleString());
+      expect(note).toMatch(/10 min ago/);
+      expect(note).not.toMatch(/5s ago/);
+      expect(mutate).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the age of a current reading keeps moving while the ticket is open", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-03T10:00:10.000Z"));
+      checkData = resp({ positionsStale: false, positionsAsOf: "2026-11-03T10:00:05.000Z" });
+      render(<LiveScalpAddOnPanel symbol="EURUSD" side="BUY" />);
+      act(() => { vi.advanceTimersByTime(40_000); });
+      expect(screen.getByTestId("ls-scalp-addon").getAttribute("data-stale")).toBe("false");
+      expect(screen.getByTestId("ls-scalp-addon-as-of").textContent).toMatch(/\(45s ago\)/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

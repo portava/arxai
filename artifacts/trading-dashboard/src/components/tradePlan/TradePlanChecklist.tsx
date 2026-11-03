@@ -26,6 +26,16 @@ const ICON: Record<ChecklistItem["status"], React.ReactNode> = {
   UNKNOWN: <HelpCircle className="h-4 w-4 text-slate-400" />,
 };
 
+/**
+ * The latest validate of a plan in this session that did not produce a
+ * result. atIso is when it came back; the copy speaks as of that time.
+ */
+export interface ValidateFailure {
+  refused: boolean;
+  message: string;
+  atIso: string;
+}
+
 interface Props {
   checklist: Checklist | null | undefined;
   /** The plan's current status. A checklist only says "ready" for a READY plan. */
@@ -38,7 +48,7 @@ interface Props {
    * checklist is from the earlier, passing check) or with an unknown outcome
    * (5xx / lost response, so whether it passes now is not known).
    */
-  latestValidateFailure?: { refused: boolean; message: string } | null;
+  latestValidateFailure?: ValidateFailure | null;
 }
 
 // The footer only claims what this checklist proves about the plan as it is
@@ -59,11 +69,14 @@ function footer(
   if (!checklist.isReady) return { text: "Not ready — resolve blocking items above.", tone: "text-amber-400" };
   if (failure && (planStatus == null || planStatus === "READY")) {
     const at = checklist.checkedAtIso ? ` (${safeDate(checklist.checkedAtIso)})` : "";
+    const failedAt = safeDate(failure.atIso);
     return {
-      // The reason itself is shown with the Validate button.
+      // The reason itself is shown with the Validate button. A refusal is a
+      // reading from when it came back (its reason may say "in 12 minutes"),
+      // so it says READY did not hold then, not that it fails now.
       text: failure.refused
-        ? `Passed all blocking checks when it was last validated${at}. The latest validation did not pass (reason shown above), so that does not hold now.`
-        : `Passed all blocking checks when it was last validated${at}. ARX could not confirm the latest validation, so whether it passes now is not known.`,
+        ? `Passed all blocking checks when it was last validated${at}. The latest validation, at ${failedAt}, did not pass (reason shown above), so READY did not hold then. Validate again to check now.`
+        : `Passed all blocking checks when it was last validated${at}. ARX could not confirm the latest validation, at ${failedAt}, so whether it passes now is not known.`,
       tone: "text-amber-400",
     };
   }

@@ -357,7 +357,11 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         try {
           const coverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
           if (!coverage.windowCovered) {
-            const partly = coverage.storedEventCount > 0 && coverage.coveredThrough != null;
+            // "Partly" only when the stored calendar reaches past now, i.e.
+            // some of the upcoming window was checked. A calendar whose last
+            // event is already in the past covered none of it: not checked.
+            const throughMs = coverage.coveredThrough != null ? Date.parse(coverage.coveredThrough) : NaN;
+            const partly = coverage.storedEventCount > 0 && Number.isFinite(throughMs) && throughMs > Date.now();
             notChecked.push({
               key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
               detail: `${partly ? "Only partly checked" : "Not checked"} — ${coverage.note ?? "the stored economic calendar does not cover the next 24 hours, so upcoming events cannot be ruled out."}`,

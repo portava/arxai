@@ -230,8 +230,8 @@ describe("Trade Plan Builder — a refused validate is shown, not swallowed", ()
     expect(screen.getByTestId("trade-plan-status-12").textContent).toBe("READY");
     expect(screen.queryByText(/Ready — plan passes all blocking checks/)).toBeNull();
     const foot = screen.getByTestId("trade-plan-checklist-footer").textContent ?? "";
-    expect(foot).toMatch(/^Passed all blocking checks when it was last validated \(.+\)\. The latest validation did not pass/);
-    expect(foot).toMatch(/does not hold now/);
+    expect(foot).toMatch(/^Passed all blocking checks when it was last validated \(.+\)\. The latest validation, at .+, did not pass/);
+    expect(foot).toMatch(/so READY did not hold then/);
 
     // Validating another plan does not clear plan 11's refusal.
     fireEvent.click(screen.getByRole("button", { name: /GBPUSD/ }));
@@ -244,6 +244,50 @@ describe("Trade Plan Builder — a refused validate is shown, not swallowed", ()
     await screen.findByText("Plan #11");
     expect(screen.getByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
     expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // Pass 3 review: the refusal entry had no time, so 90 minutes later the
+  // footer and alert still said READY "does not hold now", citing a reason
+  // ("in 12 minutes") that was itself out of date. They now say when the
+  // refusal happened and claim only that READY did not hold then.
+  it("a refusal says when it happened and does not claim it still holds later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const refusedAt = new Date("2026-11-03T12:00:00.000Z");
+      vi.setSystemTime(refusedAt);
+      routes["GET /api/trade-plans?limit=20"] = () => ({
+        status: 200,
+        body: { plans: [plan({ status: "READY", checklist: {
+          items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true,
+          checkedAtIso: new Date(refusedAt.getTime() - 3_600_000).toISOString(),
+        } })] },
+      });
+      routes["POST /api/trade-plans/11/validate"] = () => ({
+        status: 409, body: { error: "NEWS_NO_TRADE_WINDOW", reason: "US Non-Farm Payrolls in 12 minutes." },
+      });
+      renderPanel();
+      await screen.findByText("Plan #11");
+      fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+      expect(await screen.findByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
+
+      // 90 minutes later the plans are re-read; the refusal is still the latest.
+      vi.setSystemTime(new Date(refusedAt.getTime() + 90 * 60_000));
+      await client.invalidateQueries({ queryKey: ["trade-plans"] });
+      const when = refusedAt.toLocaleString();
+      const foot = screen.getByTestId("trade-plan-checklist-footer").textContent ?? "";
+      expect(foot).not.toMatch(/does not hold now/);
+      expect(foot).toContain(`The latest validation, at ${when}, did not pass`);
+      expect(foot).toMatch(/so READY did not hold then\. Validate again to check now\./);
+      const alert = screen.getByTestId("trade-plan-action-error").textContent ?? "";
+      expect(alert).not.toMatch(/does not hold now/);
+      expect(alert).toContain(`refused to validate this plan at ${when}`);
+      expect(alert).toMatch(/did not hold at .+, when this validation ran/);
+      // Still amber and still not sendable until a validate passes.
+      expect(screen.getByTestId("trade-plan-status-active").textContent).toBe("READY (earlier check)");
+      expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a validate that did not finish on a READY plan does not claim the READY fails or holds", async () => {
