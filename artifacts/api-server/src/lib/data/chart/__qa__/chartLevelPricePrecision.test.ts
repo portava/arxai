@@ -77,8 +77,10 @@ test("EURUSD levels keep 5 decimals (1.08523, not 1.0852)", () => {
 });
 
 function sentenceState(symbol: string, assetClass: string, support: number, close: number): ChartIntelligenceState {
+  // levelPersonality sets retest_pending only when the level has broken AND
+  // price has come back to it (breaks > 0 && retests > 0).
   const level = { kind: "support", price: support, personality: "retest_pending", touchCount: 3, rejectionCount: 1,
-    breakCount: 0, retestCount: 1, strengthScore: 70, weaknessScore: 20, trapScore: 0, distancePct: -0.1 };
+    breakCount: 1, retestCount: 1, strengthScore: 70, weaknessScore: 20, trapScore: 0, distancePct: -0.1 };
   const candle = { open: close, high: close, low: close, close, isComplete: true };
   return {
     symbol, displaySymbol: symbol, timeframe: "M5", assetClass,
@@ -122,7 +124,10 @@ test("sentences print V10 (3 dp) and XAGUSD (4 dp) levels at instrument precisio
 });
 
 test("level personality reads as words, not the raw token", () => {
-  assert.equal(chartLevelPersonalityWords("retest_pending"), "waiting for a retest");
+  // retest_pending means the break AND the retest were already observed — it
+  // is not "waiting for a retest".
+  assert.equal(chartLevelPersonalityWords("retest_pending"), "broken, and price has come back to retest it");
+  assert.doesNotMatch(chartLevelPersonalityWords("retest_pending"), /waiting/);
   assert.equal(chartLevelPersonalityWords("trap_zone"), "a possible trap zone");
   assert.equal(chartLevelPersonalityWords("scalp_only"), "scalp-only");
   assert.equal(chartLevelPersonalityWords("defended"), "defended");
@@ -130,7 +135,7 @@ test("level personality reads as words, not the raw token", () => {
 
 test("Ruby's nearest-level line uses instrument precision and plain personality words", () => {
   const line = activeLevelLine(sentenceState("XAUUSD", "metals", 2400.5, 2405.1));
-  assert.equal(line, "Nearest level: support at 2400.50 (0.10% away), waiting for a retest.");
+  assert.equal(line, "Nearest level: support at 2400.50 (0.10% away), broken, and price has come back to retest it.");
   const eur = activeLevelLine(sentenceState("EURUSD", "forex", 1.08523, 1.0861));
   assert.match(eur ?? "", /support at 1\.08523 /);
 });

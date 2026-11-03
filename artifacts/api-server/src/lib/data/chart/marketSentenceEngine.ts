@@ -99,8 +99,10 @@ export function chartLevelPersonalityWords(p: ChartLevelPersonality | string): s
       return "weakening";
     case "broken":
       return "broken";
+    // levelPersonality sets retest_pending only after the level broke AND
+    // price came back to it: the retest was observed, not awaited.
     case "retest_pending":
-      return "waiting for a retest";
+      return "broken, and price has come back to retest it";
     case "trap_zone":
       return "a possible trap zone";
     case "scalp_only":

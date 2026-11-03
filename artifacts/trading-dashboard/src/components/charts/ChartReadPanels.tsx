@@ -36,8 +36,10 @@ function personalityWords(p: string): string {
   switch (p) {
     case "fresh":
       return "fresh (not yet tested)";
+    // The engine sets retest_pending only after the level broke AND price
+    // came back to it: the retest was observed, not awaited.
     case "retest_pending":
-      return "waiting for a retest";
+      return "broken, and price has come back to retest it";
     case "trap_zone":
       return "possible trap zone";
     case "scalp_only":
