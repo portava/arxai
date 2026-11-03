@@ -107,15 +107,28 @@ export async function buildAaciSnapshot(
   // ── Risk Governor (R + risk gate inputs) ──────────────────────────────────
   try {
     const gov = await evaluateReadiness({ persist: false, userId });
-    const dailyLossHit = dailyLossHitOf(gov.metrics);
+    const m = gov.metrics;
+    // Readiness could not read the trader's paper book (today's loss count
+    // and open positions are placeholder 0s), the risk-count equity (a
+    // percent cap has no value) or the limits themselves.
+    const unreadParts = m.paperRiskCountUnreadable ?? [];
+    const bookUnread = unreadParts.includes("paper_book");
+    const lossFactsUnread = unreadParts.length > 0 || m.riskLimitsUnreadable === true;
+    // A reached cap stands (a used-up 0 cap, or a read count past the cap: a
+    // placeholder 0 count never reaches a cap above 0); anything else on
+    // unread facts is unknown, never "under the cap".
+    const hit = dailyLossHitOf(m);
+    const dailyLossHit = hit === true ? true : lossFactsUnread ? undefined : hit;
     snapshot.risk = {
       hardPass: gov.hardBlocks.length === 0,
       riskMode: gov.overallStatus,
       dailyLossHit,
+      ...(lossFactsUnread ? { lossFactsUnread: true } : {}),
       marginHealth: clamp100(gov.readinessScore),
       lastUpdated: gov.generatedAt,
     };
-    snapshot.positions.appOpenCount = gov.metrics.openPaperTrades;
+    // An unread paper book's open count is a placeholder 0: leave it unset.
+    if (!bookUnread) snapshot.positions.appOpenCount = m.openPaperTrades;
   } catch (err) {
     logger.warn({ err }, "aaci: risk governor read failed");
     unavailable.push("RiskGovernor");
