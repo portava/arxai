@@ -455,3 +455,55 @@ test("a model-basis refusal shows the booked equity with every settled close cou
   assert.equal(r.measured?.["storedBalance"], 10_000);
   assert.match(r.reason!, /^At the paper risk model \(price move × lots × 100\), the account's equity 9500 is 5% below its peak of 10000 on the same basis \(drawdown limit 5%\); the paper account's booked equity is 9995 with every settled close counted and its open positions at the current price \(it stores 10000 with a balance of 10000\)\. /);
 });
+
+// ── Fourth safety review (s4-governor): the booked peak is the higher of the
+// recorded peak and the stored equity. When the stored equity is the higher
+// one (a page view revalued an open gain after the last governor run that
+// recorded a peak, or no peak is recorded yet), the refusal names it as the
+// stored equity, never as the recorded peak, and peakSince is its time.
+test("a booked-basis refusal measured from the stored equity names it, not the recorded peak, and peakSince is the stored equity's time", async () => {
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  state.closes = [];
+  // Recorded peak 10,000; a later revaluation stored 10,500 (an open +500).
+  // The position is now −600 at the mark: booked equity 9,400.
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_500, updatedAt: hoursAgo(5) };
+  state.open = [fxOpen({ entryPrice: px + 0.006, stopLoss: px - 0.02, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["bookedEquity"], 9_400);
+  assert.equal(r.measured?.["bookedPeakEquity"], 10_500);
+  assert.equal(r.measured?.["peakEquity"], 10_500);
+  assert.equal(r.measured?.["bookedPeakSource"], "stored_equity");
+  assert.equal(r.measured?.["peakSince"], hoursAgo(5).toISOString(), "peakSince names the figure the drawdown was measured from");
+  assert.doesNotMatch(r.reason!, /recorded peak of 10500/);
+  assert.equal(r.reason, "The paper account's booked equity is 9400 with its open positions valued at the paper venue's current price "
+    + `(booked balance 10000, open positions -600); the account stores 10500 from its last revaluation at ${hoursAgo(5).toISOString()}. `
+    + "That is 10.48% below that stored equity, which is above its recorded peak of 10000 (drawdown limit 10%). New trades are blocked; closing is allowed.");
+});
+
+test("with no recorded peak, a booked-basis refusal measured from the stored equity says no peak is recorded yet", async () => {
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  state.closes = [];
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_500, updatedAt: hoursAgo(5) };
+  state.open = [fxOpen({ entryPrice: px + 0.006, stopLoss: px - 0.02, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["bookedPeakSource"], "stored_equity");
+  assert.equal(r.measured?.["peakSince"], hoursAgo(5).toISOString());
+  assert.match(r.reason!, /That is 10\.48% below that stored equity; no equity peak has been recorded for this account yet \(drawdown limit 10%\)\. New trades are blocked; closing is allowed\.$/);
+});
+
+test("a booked-basis refusal measured from the recorded peak keeps naming it, with the recorded peak's own time", async () => {
+  const px = getMockPrice("EURUSD", NOW.getTime());
+  state.closes = [fxClose(-80, 1, hoursAgo(48))];
+  state.account = { ...ACCOUNT, currentBalance: 9_200, equity: 9_200, updatedAt: hoursAgo(3) };
+  state.open = [fxOpen({ entryPrice: px + 0.003, stopLoss: px - 0.01, takeProfit: px + 0.02 })];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["bookedPeakSource"], "recorded_peak");
+  assert.equal(r.measured?.["peakSince"], hoursAgo(300).toISOString());
+  assert.match(r.reason!, /That is 11% below its recorded peak of 10000 \(drawdown limit 10%\)\./);
+});

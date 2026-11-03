@@ -1247,7 +1247,10 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
  *     the peak the governor recorded from the stored equity
  *     (user_equity_peaks) and the stored equity itself. When the stored
  *     equity is higher (its last revaluation is older than the price), the
- *     refusal shows both;
+ *     refusal shows both, and it names the peak it measured from: the
+ *     recorded peak, or the stored equity when that is above the recorded
+ *     peak or none is recorded (measured.bookedPeakSource; peakSince is that
+ *     figure's time);
  *   - paper risk model: the equity at price move × lots × 100 against the
  *     highest equity at that model (starting balance, after each settled
  *     close, now).
@@ -1284,6 +1287,28 @@ function paperDrawdown(
     drawdownBasis: bookedBreach && modelBreach ? "booked_and_paper_risk_model" : bookedBreach ? "booked" : modelBreach ? "paper_risk_model" : null,
     equityBasesSource: b.source,
   });
+  // Which figure the booked peak is: the recorded peak (user_equity_peaks)
+  // when it is the highest; else the stored equity, when a revaluation after
+  // the last governor run that recorded a peak stored a higher equity (the
+  // peak is recorded only after a decision, never in preview) or no peak is
+  // recorded yet; else the booked equity now. peakSince is that figure's
+  // time: the recorded peak's, the stored equity's, or none.
+  const bookedPeakSource = peakFact != null && peakFact.peakEquity >= bookedPeak ? "recorded_peak"
+    : b.storedEquity != null && b.storedEquity >= bookedPeak ? "stored_equity" : "booked_equity";
+  m["bookedPeakSource"] = bookedPeakSource;
+  if (bookedPeakSource === "stored_equity") m["peakSince"] = b.storedAt?.toISOString() ?? null;
+  else if (bookedPeakSource === "booked_equity") m["peakSince"] = null;
+  const recordedNote = peakFact != null
+    ? `, which is above its recorded peak of ${round(peakFact.peakEquity)}`
+    : "; no equity peak has been recorded for this account yet";
+  // The peak the booked drawdown is measured from, named for what it is.
+  // `storedNamed`: the sentence already gave the stored equity and its time.
+  const bookedPeakText = (storedNamed: boolean): string =>
+    bookedPeakSource === "recorded_peak" ? `its recorded peak of ${round(bookedPeak)}`
+    : bookedPeakSource === "stored_equity"
+      ? (storedNamed ? `that stored equity${recordedNote}`
+        : `the equity the account stored at its last revaluation, ${round(bookedPeak)}${b.storedAt ? ` at ${b.storedAt.toISOString()}` : ""}${recordedNote}`)
+    : `its booked equity now${recordedNote}`;
   // The stored equity is disclosed when it is at least half a cent above the
   // booked equity at the current price (the figures are float sums).
   const stored = b.storedEquity != null && b.storedEquity - b.bookedEquity >= 0.005 ? b.storedEquity : null;
@@ -1306,7 +1331,7 @@ function paperDrawdown(
     if (stored == null) {
       parts.push(b.bookedEquity <= 0
         ? `The paper account's booked equity is ${round(b.bookedEquity)}, at or below zero, so your ${limit}% drawdown limit is used up.`
-        : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`);
+        : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below ${bookedPeakText(false)} (drawdown limit ${limit}%).`);
     } else {
       const counted = b.bookedBalance != null
         ? ` (booked balance ${round(b.bookedBalance)}, open positions ${round(b.bookedEquity - b.bookedBalance)}${stopValuedList(b.bookedOpenValuedAtStop ?? [])})`
@@ -1315,7 +1340,7 @@ function paperDrawdown(
         + `the account stores ${round(stored)}${storedBalanceNote} from its last revaluation${b.storedAt ? ` at ${b.storedAt.toISOString()}` : ""}${closesNote}. `
         + (b.bookedEquity <= 0
           ? `That is at or below zero, so your ${limit}% drawdown limit is used up.`
-          : `That is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`));
+          : `That is ${round(bookedDd!)}% below ${bookedPeakText(true)} (drawdown limit ${limit}%).`));
     }
   }
   if (modelBreach) {
