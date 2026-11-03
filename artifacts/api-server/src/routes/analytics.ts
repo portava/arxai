@@ -206,8 +206,14 @@ export async function computeSnapshot(userId: number) {
   const weakestEdgeSlice = negative[0] ? describeEdgeSlice(negative[0]) : null;
   // Stored columns keep their names (no schema change): the "strategy"
   // columns have always held a symbol, the "market condition" columns a slice.
-  const strongestStrategy = strongestSymbol;
-  const weakestStrategy = weakestSymbol;
+  // The "strategy" columns also keep their meaning — the plain top and bottom
+  // symbol by net P&L, so one traded symbol is both — because
+  // tradeDecision.orchestrate (the paper autopilot's decision) reads them:
+  // weakest === symbol is a WARN, strongest === symbol a +10 PASS. The
+  // sign-gated strongestSymbol / weakestSymbol above are display-only, so the
+  // truthful cards can never loosen that decision input.
+  const strongestStrategy = top?.[0] ?? null;
+  const weakestStrategy = bottom?.[0] ?? null;
   const strongestMarketCondition = strongestEdgeSlice?.edgeName ?? null;
   const weakestMarketCondition = weakestEdgeSlice?.edgeName ?? null;
 

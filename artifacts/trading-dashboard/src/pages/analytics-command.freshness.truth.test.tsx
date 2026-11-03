@@ -80,6 +80,24 @@ describe("Analytics Command Center highlights", () => {
   });
 });
 
+describe("Analytics Command Center saved symbol highlights", () => {
+  // The stored "strategy" columns are the plain top and bottom symbol by net
+  // P&L (the trade decision reads them), so a saved row can name a losing
+  // symbol as the top one, and one traded symbol as both.
+  it("a saved snapshot's best / worst symbol says it is a ranking, not a profit or loss", async () => {
+    serve({ snapshot: { ...SAVED, strongestStrategy: "EURUSD", weakestStrategy: "EURUSD" } });
+    renderPage();
+    const best = await screen.findByTestId("analytics-highlight-best-symbol");
+    expect(best.textContent).toContain("EURUSD");
+    expect(best.textContent).toContain("highest net P&L when the snapshot was saved");
+    expect(best.textContent).toContain("does not record whether it was net profitable");
+    const worst = screen.getByTestId("analytics-highlight-worst-symbol").textContent ?? "";
+    expect(worst).toContain("lowest net P&L when the snapshot was saved");
+    expect(worst).toContain("does not record whether it was net losing");
+    expect(worst).toContain("with one traded symbol it is also the best");
+  });
+});
+
 describe("Analytics Command Center unmeasured figures", () => {
   it("a new user's tiles read — with the reason, not 0 / 0% / $0 in red", async () => {
     serve({

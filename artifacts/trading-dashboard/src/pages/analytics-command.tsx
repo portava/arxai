@@ -35,6 +35,13 @@ const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "
 
 const NOT_MEASURED = "not measured";
 
+// A saved snapshot stores the plain top and bottom symbol by net P&L (the
+// trade decision reads those columns), not the live, sign-checked best/worst.
+const SAVED_BEST_SYMBOL_BASIS =
+  "The symbol with the highest net P&L when the snapshot was saved. The saved snapshot does not record whether it was net profitable.";
+const SAVED_WORST_SYMBOL_BASIS =
+  "The symbol with the lowest net P&L when the snapshot was saved. The saved snapshot does not record whether it was net losing, and with one traded symbol it is also the best.";
+
 /** GET /analytics/snapshot: the last saved snapshot and the figures computed now. */
 interface SnapshotResponse {
   snapshot: AnalyticsSnapshot | null;
@@ -226,9 +233,9 @@ export default function AnalyticsCommandCenter() {
                 Best / worst symbol rank by money, so they are "not measured"
                 when no closed trade could be sized. */}
             <Highlight id="best-symbol"  label="Best symbol (net P&L)"  v={pnlNotMeasured ? NOT_MEASURED : live ? live.strongestSymbol ?? null : s.strongestStrategy} tone="emerald" empty="No symbol is net profitable"
-              sub={live?.highlightBasis?.symbols ?? "Highest net P&L among symbols when the snapshot was saved."} />
+              sub={live?.highlightBasis?.symbols ?? SAVED_BEST_SYMBOL_BASIS} />
             <Highlight id="worst-symbol" label="Worst symbol (net P&L)" v={pnlNotMeasured ? NOT_MEASURED : live ? live.weakestSymbol ?? null : s.weakestStrategy} tone="red" empty="No symbol is net losing"
-              sub={live?.highlightBasis?.symbols ?? "Lowest net P&L among symbols when the snapshot was saved."} />
+              sub={live?.highlightBasis?.symbols ?? SAVED_WORST_SYMBOL_BASIS} />
             <Highlight id="strongest-edge" label="Strongest edge slice" v={live ? edgeSliceText(live.strongestEdgeSlice) : s.strongestMarketCondition} tone="emerald" empty="No slice is rated a strong or developing edge"
               sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the highest confidence score when the snapshot was saved — not your results in a market condition."} />
             <Highlight id="weakest-edge" label="Weakest edge slice" v={live ? edgeSliceText(live.weakestEdgeSlice) : s.weakestMarketCondition} tone="red" empty="No slice is rated a weak or no edge"

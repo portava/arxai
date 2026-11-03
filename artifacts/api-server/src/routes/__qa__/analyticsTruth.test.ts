@@ -174,6 +174,56 @@ test("highlights: one profitable symbol is the best and not also the worst", asy
   assert.equal(s.weakestSymbol, null);
 });
 
+// The stored "strategy" columns are read by tradeDecision.orchestrate (the
+// paper autopilot's decision): weakest === symbol is a WARN (+10 risk, no
+// confidence), strongest === symbol a +10 PASS. They keep their 16c8a1a0
+// meaning, plain top and bottom symbol by net P&L of sized trades, so the
+// sign-gated display highlights can never loosen that input.
+test("highlights: the stored columns keep the plain top/bottom ranking the trade decision reads", async () => {
+  // One profitable symbol: it is both the stored strongest and weakest (WARN in
+  // the trade decision, as before), while the card shows no worst symbol.
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  let s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "EURUSD");
+  assert.equal(s.weakestSymbol, null);
+
+  // Two profitable symbols: the less profitable one is the stored weakest.
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD" }),
+      order({ id: 2, symbol: "GBPUSD", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.301, exitPrice: 1.301 }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "GBPUSD");
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, null, "the card names no worst symbol when none is net losing");
+
+  // Every symbol losing: the stored ranking is unchanged from 16c8a1a0 too.
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD", exitPrice: 1.084, status: "CLOSED_SL" }),
+      order({ id: 2, symbol: "GBPUSD", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.32, exitPrice: 1.29, status: "CLOSED_SL" }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "GBPUSD");
+  assert.equal(s.strongestSymbol, null);
+
+  // No sized closed trade: nothing ranks, as before.
+  setRows({ paper_orders: [order({ id: 1, symbol: "US30", entryPrice: 42000, stopLoss: 41900, takeProfit: 42200, exitPrice: 42200 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  s = await mod.computeSnapshot(7);
+  assert.equal(s.pnlCoverage.sizedTrades, 0);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, null);
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, null);
+});
+
 test("highlights: edge slices come from the edge board's current, re-derived reports", async () => {
   setRows({
     paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [],
