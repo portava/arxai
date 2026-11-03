@@ -50,10 +50,14 @@ test("a DEMO-venue row near its stop is never called a 'Live position'", async (
   assert.doesNotMatch(text, /\blive position\b/i);
   assert.match(String(alert["message"]), /^Demo position #41 \(BUY EURUSD\)/);
   assert.match(String(alert["message"]), /10% of its stop-loss distance left/);
-  assert.match(String(alert["message"]), /last recorded price 1\.091 \(sync time not recorded\)\.$/);
+  assert.match(String(alert["message"]), /last recorded price 1\.091 \(the time of that price was not recorded, so it may not be current\)\.$/);
   assert.equal(alert["userId"], 7);
   assert.equal(alert["relatedPositionId"], 41);
   const synced = created.find((a) => a["relatedPositionId"] === 42)!;
   assert.match(String(synced["title"]), /^Demo position near stop loss: GBPUSD$/);
-  assert.match(String(synced["message"]), /last recorded price 1\.3095, last synced 2026-10-28 11:40 UTC\.$/);
+  // last_synced_at is stamped by syncs that never write current_price (the P/L
+  // and SL push, partial closes, MODIFY results), so it does not date the
+  // price: the alert must not pair them.
+  assert.match(String(synced["message"]), /last recorded price 1\.3095 \(the time of that price was not recorded, so it may not be current\)\.$/);
+  assert.doesNotMatch(String(synced["message"]), /last synced|2026-10-28/);
 });

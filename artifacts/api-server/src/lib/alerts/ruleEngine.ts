@@ -150,11 +150,11 @@ async function positionNearStopLossRule() {
     if (pctOfSlRemaining <= 0.25) {
       // live_positions is the DEMO / legacy EA mirror, never the LIVE venue
       // (arx_live_positions): say so, and say which price the distance was
-      // measured from and when that row was last synced.
-      const syncedMs = p.lastSyncedAt ? new Date(p.lastSyncedAt).getTime() : NaN;
-      const asOf = Number.isFinite(syncedMs)
-        ? `, last synced ${new Date(syncedMs).toISOString().slice(0, 16).replace("T", " ")} UTC`
-        : " (sync time not recorded)";
+      // measured from. The row records no time for current_price, and
+      // last_synced_at does not date it: the P/L and SL push, partial closes
+      // and MODIFY results stamp last_synced_at without writing the price
+      // (executionReconciler.ts). So the price is never paired with a sync time.
+      const asOf = " (the time of that price was not recorded, so it may not be current)";
       const r = await createAlert({
         userId: p.userId,
         type: "POSITION_WARNING",
