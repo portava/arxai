@@ -16,7 +16,7 @@
 //
 // Mount path: /api/me/live/*
 
-import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAgeMs, heartbeatAgeSecondsFrom, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
@@ -783,9 +783,9 @@ router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
     };
   };
   const ea = (caps.eaInputs ?? {}) as Record<string, unknown>;
-  const hbAgeSec = picked.lastHeartbeat
-    ? Math.max(0, Math.floor((Date.now() - new Date(picked.lastHeartbeat).getTime()) / 1000))
-    : null;
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age (null, not fresh), never clamped to 0s.
+  const hbAgeSec = heartbeatAgeSecondsFrom(picked.lastHeartbeat ?? null, Date.now());
   const bridgeKind = picked.mode === "LIVE" ? ("REAL_LIVE" as const)
     : picked.mode === "DEMO" ? ("REAL_DEMO" as const)
     : ("MOCK" as const);

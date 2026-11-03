@@ -39,6 +39,22 @@ export {
   isHeartbeatAgeMsOnline,
   isHeartbeatAgeSecondsOnline,
 } from "@workspace/domain/broker-health/heartbeatPolicy";
+import { heartbeatAgeMsFrom as policyHeartbeatAgeMsFrom } from "@workspace/domain/broker-health/heartbeatPolicy";
+
+/**
+ * Whole-second age of a heartbeat observation, or null when it is missing,
+ * unparseable or dated after `nowMs`. Shared policy: a future-dated
+ * heartbeat's age cannot be verified (clock stepped back, skew between
+ * instances), so it is unknown — never fresh, never shown as "0s". Use this
+ * instead of clamping (now - lastHeartbeat) to 0.
+ */
+export function heartbeatAgeSecondsFrom(
+  lastHeartbeatAt: Date | string | number | null | undefined,
+  nowMs: number,
+): number | null {
+  const ageMs = policyHeartbeatAgeMsFrom(lastHeartbeatAt, nowMs);
+  return ageMs == null || !Number.isFinite(ageMs) || ageMs < 0 ? null : Math.floor(ageMs / 1000);
+}
 
 // ── Bridge v2 stream health (stream-specific, not the heartbeat policy) ─────
 

@@ -18,6 +18,7 @@
 //  without anyone dispatching a trade.
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
+import { heartbeatAgeSecondsFrom } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -128,9 +129,9 @@ async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
   }
   const caps = (picked.capabilities ?? {}) as { eaInputs?: Record<string, unknown> };
   const ea = (caps.eaInputs ?? {}) as Record<string, unknown>;
-  const hbAgeSec = picked.lastHeartbeat
-    ? Math.max(0, Math.floor((Date.now() - new Date(picked.lastHeartbeat).getTime()) / 1000))
-    : null;
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age (null, so the preflight's gate 7 fails), never a fresh 0s.
+  const hbAgeSec = heartbeatAgeSecondsFrom(picked.lastHeartbeat ?? null, Date.now());
   const bridgeKind: BridgeFacts["bridgeKind"] =
     picked.mode === "LIVE" ? "REAL_LIVE" : picked.mode === "DEMO" ? "REAL_DEMO" : "MOCK";
   return {
@@ -298,6 +299,7 @@ async function runControlledDryRun(
     killSwitchEngaged: (opAccess.arming?.killSwitchEngaged ?? false) || master.platformStopEngaged,
     bridgeAccountType: bridge.accountType,
     bridgeHeartbeatAgeSec: bridge.heartbeatAgeSeconds,
+    bridgeLastHeartbeatAt: bridge.lastHeartbeatAt,
     bridgeEaVersion: bridge.eaVersion,
     bridgeEnableLiveExecution: bridge.enableLiveExecution,
     bridgeReadOnlyMode: bridge.readOnlyMode,
