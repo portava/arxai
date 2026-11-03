@@ -25,6 +25,7 @@ import {
 import { requireUser } from "../lib/auth/middleware.js";
 import { buildRubyMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
+import { chartLevelPersonalityWords } from "../lib/data/chart/marketSentenceEngine.js";
 import { buildMarketImpactRadar } from "../lib/news/marketImpactRadar.js";
 import { buildExecutionPreviewForUser } from "../lib/execution/executionPreviewService.js";
 
@@ -36,28 +37,14 @@ const SAFETY_ENVELOPE = {
   allowOrderExecution: false as const,
 };
 
-/** Plain-English rendering of a chart-level personality (no internal tokens). */
+/**
+ * Plain-English rendering of a chart-level personality (no internal tokens).
+ * Uses the same words as Ruby's nearest-level line so the scanner chart's
+ * structure lines never contradict it: retest_pending means the level broke
+ * AND price came back to retest it (observed), not a retest still awaited.
+ */
 function humanizeLevelPersonality(p: string): string {
-  switch (p) {
-    case "fresh":
-      return "fresh";
-    case "defended":
-      return "defended";
-    case "weakening":
-      return "weakening";
-    case "broken":
-      return "broken";
-    case "retest_pending":
-      return "retest pending";
-    case "trap_zone":
-      return "trap zone";
-    case "scalp_only":
-      return "scalp only";
-    case "invalidated":
-      return "invalidated";
-    default:
-      return p.replace(/_/g, " ");
-  }
+  return chartLevelPersonalityWords(p);
 }
 
 /** Plain-English rendering of a signal lifecycle stage (no internal tokens). */
