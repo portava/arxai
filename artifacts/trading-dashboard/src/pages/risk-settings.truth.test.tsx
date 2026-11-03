@@ -394,6 +394,11 @@ describe("the Emergency tab controls do not show a lock or pause state that was 
 
   it("the unknown-state buttons send the stricter request: lock, and pause", () => {
     renderPage({ tab: "emergency", settings: FAILED, bot: FAILED });
+    // Lock: an unread lock is never toggled (!undefined); "on" is sent explicitly.
+    fireEvent.click(within(screen.getByTestId("live-lock-card")).getByRole("button", { name: /Turn live mode lock on \(current state not read\)/ }));
+    expect(h.lockMutate).toHaveBeenCalledTimes(1);
+    expect(h.lockMutate.mock.calls[0]![0]).toEqual({ data: { locked: true } });
+    // Pause: the stricter "set" is sent, never "clear".
     fireEvent.click(within(screen.getByTestId("pause-card")).getByRole("button", { name: /Set Paused Flag \(current state not read\)/ }));
     expect(h.botMutate).toHaveBeenCalledTimes(1);
     expect(h.botMutate.mock.calls[0]![0]).toEqual({ data: { isPaused: true } });
