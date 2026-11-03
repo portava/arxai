@@ -75,17 +75,34 @@ test("no snapshot at all says no broker health check is on record, not 'last hea
 // DEGRADED are written only while the MT5 heartbeat is under 60 s old, so the
 // link was up; PRICE_FEED_DELAYED likewise. Readiness said "Broker not
 // connected (EXECUTION_DISABLED)" and LOCKED, with no age on the blocker.
+//
+// The wording is fixed, but the verdict stays as strict as it was: the stored
+// readiness status is read by tradeDecision.orchestrate() (LOCKED/NOT_READY is
+// a blocker that forces HOLD) and through it by the paper autopilot, so these
+// statuses still LOCK readiness, fresh or stale, exactly as before.
 for (const status of ["EXECUTION_DISABLED", "DEGRADED"]) {
-  test(`a fresh ${status} verdict is not 'Broker not connected' and does not lock readiness on its own`, () => {
+  test(`a fresh ${status} verdict is not 'Broker not connected', and still locks readiness as before`, () => {
     const out = evaluateReadiness(signals(log(status, 20_000)), INPUT);
     const item = out.checklist.find((c) => c.id === "broker")!;
     assert.doesNotMatch(item.detail, /not connected/i);
     for (const text of [...out.blockers, ...out.warnings, out.aiSummary]) assert.doesNotMatch(text, /not connected/i);
-    assert.equal(item.status, "WARN", "the link was up but not ready for broker execution: a warning, not a pass");
+    assert.equal(item.status, "FAIL", "not ready for broker execution: the check does not pass");
     assert.match(item.detail, /connected/i);
     assert.match(item.detail, /\d+s ago/, "says when the check was made");
-    assert.notEqual(out.status, "LOCKED");
-    assert.equal(out.blockers.length, 0);
+    assert.equal(out.status, "LOCKED", "the stored status an autopilot path reads is not loosened");
+    assert.equal(out.brokerStatus, status);
+    const blocker = out.blockers.find((b) => b.includes(status));
+    assert.ok(blocker, "the verdict is a named blocker");
+    assert.match(blocker!, /\d+s ago/);
+  });
+
+  test(`a stale ${status} verdict still locks readiness (age never weakens it) and says no newer check is on record`, () => {
+    const out = evaluateReadiness(signals(log(status, 3 * 24 * 3600_000)), INPUT);
+    assert.equal(out.status, "LOCKED");
+    assert.equal(out.checklist.find((c) => c.id === "broker")!.status, "FAIL");
+    assert.equal(out.brokerStatus, status);
+    const blocker = out.blockers.find((b) => b.includes(status))!;
+    assert.match(blocker, /3d ago — no newer check on record/);
   });
 }
 
@@ -94,7 +111,7 @@ test("EXECUTION_DISABLED says the operator turned broker execution off and what 
   const item = out.checklist.find((c) => c.id === "broker")!;
   assert.match(item.detail, /execution was turned off by the operator/i);
   assert.match(item.detail, /DEMO or LIVE/);
-  assert.ok(out.warnings.some((w) => /execution (was )?turned off/i.test(w)), "the warning names the operator switch");
+  assert.ok(out.blockers.some((w) => /execution (was )?turned off/i.test(w)), "the blocker names the operator switch");
 });
 
 test("PRICE_FEED_DELAYED still blocks but says the feed was delayed, not that the broker was disconnected", () => {
