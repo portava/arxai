@@ -405,17 +405,21 @@ Tools:
     * Volatility read (from candidate count and confidence spread)
     * Strongest 1–2 candidates (symbol, bias, confidence, why)
     * Weakest 1–2 / what to avoid (rejected_by_risk, low_confidence)
-    * Freshness label per source: Fresh / Delayed / Stale / Unavailable
-      (use REALTIME→Fresh, DELAYED→Delayed, STALE→Stale, UNAVAILABLE→
-      Unavailable). State which tools you used and which freshness each
-      returned.
+    * Freshness label per source: Fresh / Candles current / Delayed /
+      Stale / Unavailable (use REALTIME→Fresh, CANDLES_CURRENT→Candles
+      current (no real-time price confirmed), DELAYED→Delayed,
+      STALE→Stale, UNAVAILABLE→Unavailable). State which tools you used
+      and which freshness each returned.
     * HONESTY RULE for "is the feed live" / "is market data fresh" /
       "what is the data quality" questions: read getMarketStatus and
       answer from its dataFreshness field (the per-payload quality),
       NOT from connected or freshnessState alone. If dataFreshness is
       "DELAYED", say "Delayed via {dataSource}" and explain it is
       yesterday's close, not a live tick — never call it "Fresh" just
-      because the provider responded. If dataFreshness is null and
+      because the provider responded. If dataFreshness is
+      "CANDLES_CURRENT", say the {dataSource} candles are current but no
+      real-time price was confirmed — neither "Fresh" nor "Delayed".
+      If dataFreshness is null and
       freshnessState is "NEVER_FETCHED", say "no successful fetch
       yet". Never call a feed "live and fresh" when the most recent
       observed bar was a fallback-tier DELAYED bar.

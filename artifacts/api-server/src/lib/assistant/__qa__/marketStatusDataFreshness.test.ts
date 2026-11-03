@@ -5,7 +5,7 @@
 // just succeeded; the last quote, hours ago, was real-time". dataFreshnessAt
 // stamps when that quote quality was observed, so the page can require a recent
 // real-time quote before it says FRESH.
-import { test, afterEach } from "node:test";
+import { test, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import {
   _markMarketFetchSuccessForTests,
@@ -178,4 +178,46 @@ test("a candle series whose newest bar is stamped seconds ago is recorded as rea
     assert.equal(s.dataKind, "candles");
     assert.equal(s.dataFreshness, "REALTIME");
   } finally { restore(); }
+});
+
+// Truth: Twelve Data stamps each bar with its OPEN time and includes the bar
+// still forming. At 14:07 UTC an M15 fetch's newest bar is the 14:00 bar, 7
+// minutes "old" — past the 15 s real-time window, so not REALTIME — yet the
+// shared trailing-interval rule (the one the chart router applies to the same
+// bars) calls the series clean. The observation was recorded DELAYED anyway,
+// so Market Health showed an amber DELAYED badge ("Last candles: delayed from
+// twelve_data") while the chart called the same feed current, and the M1
+// verdict flipped with the wall-clock second of the fetch. DELAYED is now
+// recorded only when the shared rule says delayed; a clean series that is not
+// stamped within the real-time window is recorded as CANDLES_CURRENT (the
+// candles are current, no real-time price was confirmed).
+const WED_1400 = Date.UTC(2026, 10, 4, 14, 0);
+
+async function observedAt(nowMs: number, tf: string, values: unknown[]): Promise<Status> {
+  mock.timers.enable({ apis: ["Date"], now: nowMs });
+  const restore = withOnlyKeys({ TWELVEDATA_API_KEY: "offline-fixture" }, () => ({ status: "ok", values }));
+  try {
+    const r = await getMarketProvider().getCandles("EURUSD", tf, 12);
+    assert.ok(r.candles.length > 0);
+    return getMarketStatus() as Status;
+  } finally { restore(); mock.timers.reset(); }
+}
+
+test("a clean Twelve Data M15 series whose forming bar opened 7 minutes ago is current candles, not DELAYED", async () => {
+  const s = await observedAt(WED_1400 + 7 * 60_000, "M15", tdValues(WED_1400, 900_000));
+  assert.equal(s.dataKind, "candles");
+  assert.notEqual(s.dataFreshness, "DELAYED");
+  assert.notEqual(s.dataFreshness, "REALTIME");
+  assert.equal(s.dataFreshness, "CANDLES_CURRENT");
+});
+
+test("an M1 fetch 40 seconds into the minute is current candles, not DELAYED", async () => {
+  const s = await observedAt(WED_1400 + 7 * 60_000 + 40_000, "M1", tdValues(WED_1400 + 7 * 60_000, 60_000));
+  assert.notEqual(s.dataFreshness, "DELAYED");
+  assert.equal(s.dataFreshness, "CANDLES_CURRENT");
+});
+
+test("a Twelve Data M15 series one bar overdue under the shared rule is still DELAYED", async () => {
+  const s = await observedAt(WED_1400 + 7 * 60_000, "M15", tdValues(WED_1400 - 900_000, 900_000));
+  assert.equal(s.dataFreshness, "DELAYED");
 });

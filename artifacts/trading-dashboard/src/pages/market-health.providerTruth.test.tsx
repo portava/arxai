@@ -92,6 +92,21 @@ describe("Market Health provider card truth", () => {
     expect(screen.getByTestId("provider-last-quote").textContent).toMatch(/stale/);
   });
 
+  // A clean candle series whose newest bar is not stamped within the
+  // real-time window (Twelve Data's forming M15 bar opened 7 minutes ago) is
+  // current, but no real-time price was confirmed: neither FRESH nor DELAYED.
+  it("current candles with no real-time price confirmed read neither FRESH nor DELAYED", async () => {
+    stubFetch({ ok: true, status: 200, body: { status: status({ dataFreshness: "CANDLES_CURRENT", dataKind: "candles", dataSource: "twelve_data" }) } });
+    render(<MarketHealthPage />);
+    const badge = await screen.findByTestId("badge-provider-freshness");
+    expect(badge.textContent).not.toBe("FRESH");
+    expect(badge.textContent).not.toMatch(/DELAYED/);
+    expect(badge.textContent).toBe("CANDLES CURRENT");
+    const line = screen.getByTestId("provider-last-quote").textContent ?? "";
+    expect(line).not.toMatch(/delayed|real-time from/);
+    expect(line).toMatch(/candles current, no real-time quote seen from twelve_data/);
+  });
+
   it("does not present the adapter's constant connected flag as a measured connection", async () => {
     stubFetch({ ok: true, status: 200, body: { status: status({ freshnessState: "ERROR", lastSuccessfulFetchAt: null, lastError: "ECONNREFUSED", lastErrorAt: nowIso(), dataFreshness: null, dataFreshnessAt: null }) } });
     render(<MarketHealthPage />);

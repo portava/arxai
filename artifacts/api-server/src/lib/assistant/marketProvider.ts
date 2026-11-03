@@ -265,7 +265,10 @@ const providerLiveness = {
 };
 // STALE: a quote was served but its own timestamp is past the stale cutoff
 // (for example Friday's close read at the weekend).
-type ObservedDataFreshness = "REALTIME" | "DELAYED" | "STALE" | "UNAVAILABLE";
+// CANDLES_CURRENT: a candle fetch only — the shared trailing-interval rule
+// calls the series current (clean), but its newest bar is not stamped within
+// the real-time window, so no real-time price was confirmed. Never a quote.
+type ObservedDataFreshness = "REALTIME" | "CANDLES_CURRENT" | "DELAYED" | "STALE" | "UNAVAILABLE";
 type ObservedDataKind = "quote" | "candles";
 function markChecked() {
   const n = new Date().toISOString();
@@ -320,15 +323,18 @@ function quoteObservedRecently(nowMs: number): boolean {
 // real-time window. A series the shared candle rule calls stale (read on the
 // close basis the chart router uses for these candles), or whose timestamps
 // cannot be checked (unknown timeframe, unparseable or future-stamped bar), is
-// STALE; anything else is DELAYED. Yesterday's closed daily bar, or Friday's
-// bars read at the weekend, are therefore never "real-time".
+// STALE; one the rule calls delayed is DELAYED; one the rule calls clean is
+// CANDLES_CURRENT (current bars, no real-time price confirmed) — never
+// DELAYED, which the rule did not observe. Yesterday's closed daily bar, or
+// Friday's bars read at the weekend, are therefore never "real-time".
 function candleObservationFreshness(candles: readonly Candle[], timeframe: string, nowMs = Date.now()): ObservedDataFreshness {
   const newest = candles.length ? Date.parse(candles[candles.length - 1]!.t) : NaN;
   const intervalMs = candleIntervalMs(timeframe);
   if (!Number.isFinite(newest) || intervalMs == null || newest - nowMs > MAX_FUTURE_CLOCK_SKEW_MS) return "STALE";
   if (classifyQuoteFreshness(Math.max(0, nowMs - newest)).fresh) return "REALTIME";
   const series = classifyTrailingIntervals(trailingIntervalsFromOpen(newest - intervalMs, intervalMs, nowMs));
-  return series == null || series === "stale" ? "STALE" : "DELAYED";
+  if (series == null || series === "stale") return "STALE";
+  return series === "delayed" ? "DELAYED" : "CANDLES_CURRENT";
 }
 function markError(msg: string) {
   const n = new Date().toISOString();
@@ -1398,7 +1404,9 @@ export function getMarketStatus() {
     // DELAYED-only fallback as "Fresh"). `dataFreshness` reflects the
     // *quality* of the most recent successful payload, NOT whether the
     // provider responded. `dataSource` names the provider that produced it.
-    // Null until the first successful fetch is observed.
+    // Null until the first successful fetch is observed. CANDLES_CURRENT
+    // (candle fetches only): the bars are current under the shared rule but
+    // no real-time price was confirmed — neither REALTIME nor DELAYED.
     dataFreshness: providerLiveness.lastObservedDataFreshness,
     dataSource: providerLiveness.lastObservedDataSource,
     // When `dataFreshness` was observed (null until a quote quality is seen).
