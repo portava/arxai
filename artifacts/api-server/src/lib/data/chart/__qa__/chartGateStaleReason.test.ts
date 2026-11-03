@@ -79,13 +79,57 @@ test("a boolean stale flag (no feed wording) still blocks with the generic reaso
   staleReason(gate.blockedReasons);
 });
 
+// A complete engine state (A-grade bullish read). The enrichment re-derives the
+// decision summary and sentences from these engine outputs under the rebuilt
+// gate, so a bare { chartReadScore } is no longer a usable state.
+function engineState(status: ChartFeedStatus): ChartIntelligenceState {
+  const level = (kind: "support" | "resistance", price: number, distancePct: number) => ({
+    kind, price, touches: 3, firstTouchAt: null, lastTouchAt: null, strengthScore: 80, weaknessScore: 10,
+    trapScore: 0, distancePct,
+  });
+  const evidence = { populated: true, direction: "bullish", evidenceFor: [], evidenceAgainst: [], contradictions: [], note: "" };
+  const readiness = { populated: true, score: 84, quality: "A", gates: [], vetoed: false, vetoReason: null, note: "Readiness 84 (A)." };
+  return {
+    symbol: "TESTFX_FIXTURE", displaySymbol: "Offline fixture", timeframe: "M5", assetClass: "forex",
+    aiUsable: false, stale: true, truthState: status,
+    currentCandle: null, latestClosedCandle: null,
+    candleStats: { barsAnalyzed: 200, direction: "flat", lastClose: 1.1, changeAbs: 0, changePct: 0,
+      range: 0.002, body: 0, avgRange: 0.002, atr: 0.002 },
+    fastFlags: { populated: true, momentumBurst: false, nearRecentHigh: false, nearRecentLow: false, note: null },
+    marketUnderstanding: {
+      populated: true,
+      trend: { populated: true, regime: "trending", direction: "bullish" },
+      levels: { populated: true, levels: [level("support", 1.0992, -0.07), level("resistance", 1.102, 0.18)],
+        nearestSupport: level("support", 1.0992, -0.07), nearestResistance: level("resistance", 1.102, 0.18),
+        eventsRemembered: 0, note: "" },
+      candleIntent: { populated: true, latestIntent: "pushing", dominantPressure: "buyers" },
+      timeframeAgreement: { populated: true, agreementScore: 80, alignedDirection: "bullish", scalpOnlyWarning: false },
+      evidence, readiness, note: "",
+    },
+    setupState: { populated: true, stage: "entry_valid", direction: "bullish", ageBars: 2, decayScore: 10, freshness: 90,
+      invalidationPrice: 1.0985, invalidationCondition: null },
+    decisionState: { populated: true, bias: "bullish", quality: "A", actionability: "ready", vetoed: false,
+      decision: "ready — long bias, quality A", note: "Read-only summary of the engine outputs." },
+    decisionReasoning: { populated: false },
+    decisionFork: { populated: true, downgrade: false, downgradeReason: null },
+    agentConsensus: { populated: false, note: "shadow", cautions: [] },
+    trendlineOverlay: { visible: false },
+    speedState: {},
+    lastUpdated: new Date(epoch).toISOString(),
+    chartReadScore: read,
+  } as unknown as ChartIntelligenceState;
+}
+
 test("broker-alignment enrichment rebuilds the gate with the same feed wording", () => {
   const status = feed({});
-  const state = { chartReadScore: read } as unknown as ChartIntelligenceState;
+  const state = engineState(status);
   const enriched = enrichStateWithBrokerAlignment(state, truth, status, {
     chartPrice: 1.1, chartPriceBasis: "MID", assetClass: "forex", brokerBid: null, brokerAsk: null, spreadPoints: null,
   });
   assert.match(staleReason(enriched.gateOutput.blockedReasons), /Market closed/);
+  // The closed-market stale gate also keeps the A-grade summary off "ready".
+  assert.equal(enriched.gateOutput.autonomousChartActionAllowed, false);
+  assert.equal(enriched.decisionState.actionability, "watch");
 });
 
 test("every chart-intelligence gate build passes the feed status, not only its stale flag", () => {
