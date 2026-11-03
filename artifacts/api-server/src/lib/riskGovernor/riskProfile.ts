@@ -290,8 +290,9 @@ function uncheckedChallengeRules(
  * started, and today's drawdown counts paper P/L settled since the later of
  * the trading day's start and the challenge start, plus the current floating
  * loss. On the day the challenge started, a floating loss already open at the
- * start is in the start equity, so only floating loss beyond it counts (with
- * no balance recorded at the start: the drop in equity since the start).
+ * start is in the start equity, so only floating loss beyond it counts, and
+ * the figure is never less than the drop in equity since the start (with no
+ * balance recorded at the start: that drop alone).
  * Equity is the account's last stored mark (equityAsOf).
  *
  * A rule is scored (passed / failed) only when that measurement exists. With
@@ -359,14 +360,17 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const earlierDays = !(Date.parse(start.at) >= dayStart);
   // On the start day the loss is measured from the start: a floating loss
   // already open then is in start.equity and is not a loss since the start.
+  // It is never less than the drop in equity since the start, so a floating
+  // GAIN open at the start and given back (closed or not) counts as a loss.
   // A start recorded without its balance has no known floating P/L at the
-  // start, so it falls back to the drop in equity since the start.
+  // start, so it is the drop in equity since the start alone.
   const startBalance = typeof start.balance === "number" && Number.isFinite(start.balance) ? start.balance : null;
+  const equityDropSinceStart = Math.max(0, start.equity - acct.equity);
   const dailyDD = earlierDays
     ? Math.max(0, -(realizedToday + Math.min(0, floating)))
     : startBalance != null
-      ? Math.max(0, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
-      : Math.max(0, start.equity - acct.equity);
+      ? Math.max(equityDropSinceStart, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
+      : equityDropSinceStart;
   const totalDD = Math.max(0, -profit);
   if (Math.abs(cfg.startingBalance - start.equity) >= 0.01) {
     notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `
