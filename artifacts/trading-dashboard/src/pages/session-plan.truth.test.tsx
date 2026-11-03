@@ -18,11 +18,11 @@ const PLAN = {
 };
 
 // The exact shape maskSimulatorSessionPlan returns for a non-admin viewer.
-const MASK_TEXT = "Not shown: this session plan is built from simulator scanner data, and simulator-based plans are shown only to platform operators.";
+const MASK_TEXT = "Not shown: session plans are shown only to platform operators, so this plan's values are withheld for your account.";
 const MASKED = {
   ...PLAN,
   bestSymbols: [], symbolsToAvoid: [],
-  preferredStrategy: "Withheld (simulator-based plans are shown only to platform operators)",
+  preferredStrategy: "Withheld (session plans are shown only to platform operators)",
   maxTrades: 0, maxRiskPerTradeUsd: 0, maxRiskPerSessionUsd: 0,
   marketConditions: MASK_TEXT, rules: [], warningZones: [], focusAreas: [],
   recommendedFirstTest: MASK_TEXT, summary: MASK_TEXT,
@@ -67,8 +67,11 @@ describe("Session Plan truth", () => {
     render(<SessionPlanPage />);
     const note = (await screen.findByTestId("session-plan-withheld")).textContent ?? "";
     expect(note).not.toMatch(/until a verified feed/i);
-    expect(note).toMatch(/simulator/i);
-    expect(note).toMatch(/only to (platform )?operators/i);
+    // The plan is built from the scanner's latest sweep (rows can be live
+    // feed); the server never checks that its input is simulated, so the
+    // note does not claim it — it states the operator-only rule.
+    expect(note).not.toMatch(/built from simulator|simulator scanner data/i);
+    expect(note).toMatch(/session plans are shown only to platform operators/i);
     expect(note).toMatch(/not zero/i);
     // The masked text fields from a server that still sends the feed promise
     // are not repeated on the page.

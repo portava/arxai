@@ -93,7 +93,7 @@ export default function SessionPlanPage() {
         <>
           {withheld && (
             <p className="text-sm text-yellow-300" data-testid="session-plan-withheld">
-              This plan is built from simulator scanner data, and simulator-based plans are shown only to platform operators, so its values are withheld for your account. Withheld values are not zero.
+              Session plans are shown only to platform operators, so this plan's values are withheld for your account. Withheld values are not zero.
             </p>
           )}
           {/* A withheld plan's text fields carry the server's mask text, which

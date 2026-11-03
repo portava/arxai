@@ -281,13 +281,14 @@ interface SimulatorSessionPlan {
 }
 
 /**
- * Why a session plan is withheld. The plan is always built from simulator
- * scanner data and the routes mask it by the viewer's role alone, so no
- * verified feed will ever un-hide it; the text says so instead of promising a
- * feed-based release.
+ * Why a session plan is withheld. The routes mask it by the viewer's role
+ * alone, so no verified feed will ever un-hide it. The plan is built from the
+ * scanner's latest sweep, whose rows carry their own dataSource (they can be
+ * live-feed rows); nothing checks that its input is simulated, so the text
+ * states only the rule the server applies and names no data source.
  */
 export const SIMULATOR_SESSION_PLAN_WITHHELD_REASON =
-  "Not shown: this session plan is built from simulator scanner data, and simulator-based plans are shown only to platform operators.";
+  "Not shown: session plans are shown only to platform operators, so this plan's values are withheld for your account.";
 
 /** Mask a simulator-derived session plan (best/avoid symbols, risk zones …). */
 export function maskSimulatorSessionPlan<T extends SimulatorSessionPlan>(
@@ -297,7 +298,7 @@ export function maskSimulatorSessionPlan<T extends SimulatorSessionPlan>(
     ...plan,
     bestSymbols: [],
     symbolsToAvoid: [],
-    preferredStrategy: "Withheld (simulator-based plans are shown only to platform operators)",
+    preferredStrategy: "Withheld (session plans are shown only to platform operators)",
     maxTrades: 0,
     maxRiskPerTradeUsd: 0,
     maxRiskPerSessionUsd: 0,
