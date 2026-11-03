@@ -122,4 +122,44 @@ describe("Provider Health — a failed refresh never leaves the last answer look
     expect(screen.getByTestId("alert-provider-health-err")).toBeTruthy();
     expect(screen.getByTestId("alert-provider-health-stale").textContent).toContain("5s ago");
   });
+
+  // The relative age is not frozen at the moment the refresh failed: the
+  // snapshot and coverage cards do not poll, so the note keeps its own clock.
+  it("main snapshot: the 'Not current' age keeps growing after the failed Refresh", async () => {
+    render(<ProviderHealthPage />); await settle();
+    modes.health = "fail";
+    await act(async () => { vi.advanceTimersByTime(5_000); });
+    fireEvent.click(screen.getByTestId("btn-refresh-provider-health"));
+    await settle();
+    expect(screen.getByTestId("alert-provider-health-stale").textContent).toContain("5s ago");
+    await act(async () => { vi.advanceTimersByTime(30 * 60_000); });
+    await settle();
+    const note = screen.getByTestId("alert-provider-health-stale").textContent ?? "";
+    expect(note).not.toContain("(5s ago)");
+    expect(note).toContain("30m 5s ago");
+  });
+
+  it("broker coverage: the 'Not current' age keeps growing after the failed Refresh", async () => {
+    render(<ProviderHealthPage />); await settle();
+    modes.coverage = "fail";
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    fireEvent.click(screen.getByTestId("btn-refresh-broker-coverage"));
+    await settle();
+    expect(screen.getByTestId("alert-broker-coverage-stale").textContent).toContain("10s ago");
+    await act(async () => { vi.advanceTimersByTime(5 * 60_000); });
+    await settle();
+    expect(screen.getByTestId("alert-broker-coverage-stale").textContent).toContain("5m 10s ago");
+  });
+
+  it("MT5 feed: the 'status unknown — last load' age updates between polls", async () => {
+    render(<ProviderHealthPage />); await settle();
+    modes.feed = "fail";
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await settle();
+    expect(screen.getByTestId("badge-mt5-feed-active").textContent).toContain("30s ago");
+    await act(async () => { vi.advanceTimersByTime(15_000); });
+    await settle();
+    expect(screen.getByTestId("badge-mt5-feed-active").textContent).toContain("45s ago");
+    expect(screen.getByTestId("alert-mt5-feed-stale").textContent).toContain("45s ago");
+  });
 });
