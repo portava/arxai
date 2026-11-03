@@ -276,6 +276,8 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   // settles an order, so preview mode reads the same figure.
   let risk: PaperRiskEquity | null = null;
   let todayBooked: number | null = null;
+  // Every settled order on the account, newest close first.
+  let allCloses: Awaited<ReturnType<typeof readPaperCloses>> = [];
   if (acct) {
     const book = { account: acct.id };
     const open = await readOpenPaperOrders(book);
@@ -291,7 +293,7 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     }
     realized = await sumPaperRealizedSince(book, startOfTodayUtc(now));
     const dayStart = startOfTodayUtc(now).getTime();
-    const closes = await readPaperCloses(book);
+    const closes = allCloses = await readPaperCloses(book);
     const today = paperRiskTotals(closes.filter((c) => c.closedAt.getTime() >= dayStart));
     if (today.risk < today.booked - DISCLOSE_DIFFERENCE) todayBooked = today.booked;
     const openValue = await valueOpenPaperPositions(open, {
@@ -313,15 +315,21 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   if (acct) {
     try {
       const book = { account: acct.id };
-      const closes = await readPaperCloses(book, { limit: ACTIVITY_CLOSES });
-      // The losing streak and cooldown read each close's sign (pnl); the
-      // week's P/L is the lower of the week's booked and model totals.
-      const summary = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
-        positions.length ? await countPaperOpenedSinceStillOpen(book, startOfTodayUtc(now)) : 0,
-        now, `paper_orders:account:${acct.id}`);
-      const week = paperRiskTotals(closes.filter((c) => c.closedAt.getTime() >= now.getTime() - 7 * 86_400_000));
+      const recentCloses = await readPaperCloses(book, { limit: ACTIVITY_CLOSES });
+      const openedToday = positions.length ? await countPaperOpenedSinceStillOpen(book, startOfTodayUtc(now)) : 0;
+      // The losing streak, the cooldown and the last-hour checks read the
+      // newest closes' signs (pnl). Today's trade count and the week's P/L
+      // cover every close in their window, from the full close list read
+      // above (never only the newest ACTIVITY_CLOSES): the week's P/L is the
+      // lower of the week's booked and model totals.
+      const summary = summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
+        openedToday, now, `paper_orders:account:${acct.id}`);
+      const dayStart = startOfTodayUtc(now).getTime();
+      const weekStart = now.getTime() - 7 * 86_400_000;
+      const week = paperRiskTotals(allCloses.filter((c) => c.closedAt.getTime() >= weekStart));
       activity = {
         ...summary,
+        tradesToday: openedToday + allCloses.filter((c) => c.closedAt.getTime() >= dayStart).length,
         weekRealizedPnl: Number(week.risk.toFixed(2)),
         ...(week.risk < week.booked - DISCLOSE_DIFFERENCE ? { bookedWeekRealizedPnl: Number(week.booked.toFixed(2)) } : {}),
       };
