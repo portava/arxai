@@ -520,3 +520,47 @@ describe("the stale chip names the cause the evidence supports", () => {
     expect(staleChip()).toBe("Feed is stale");
   });
 });
+
+// buildFeedStatus sets `stale` from the trailing gap independently of
+// `quality`, so a series with a missing bar plus a weekend gap arrives as
+// quality "partial", stale true. The server never calls a partial feed closed
+// or fault-free (its lagWarning is null for partial; its gate reason stays
+// generic). The chip said "Market closed for the weekend — no new bars, not a
+// feed fault" next to the "Partial" label — a client-added all-clear on a feed
+// with a measured sequence fault. Cause wording is now for a "stale" grade only.
+describe("a stale flag on a partial feed never earns the closed-market all-clear", () => {
+  const staleChip = () => screen.getByTestId("arx-mirror-stale").textContent ?? "";
+  function partialStaleResponse(newestOpenMs: number): ChartCandlesResponse {
+    const base = makeResponse({
+      quality: "partial", stale: true, isLive: false, aiUsable: false, assetClass: "forex",
+      missingCandleCount: 1, warning: "Incomplete sequence: 1 missing candle(s).",
+    } as Partial<ChartFeedStatus>);
+    return {
+      ...base,
+      candles: [
+        makeCandle(newestOpenMs - 3 * M5_MS, 1.1, "mt5_broker"),
+        makeCandle(newestOpenMs - M5_MS, 1.101, "mt5_broker"),
+        makeCandle(newestOpenMs, 1.102, "mt5_broker"),
+      ],
+    } as unknown as ChartCandlesResponse;
+  }
+
+  it("inside the weekend close: no 'not a feed fault' and no 'market closed'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    setResponse(partialStaleResponse(Date.UTC(2026, 9, 30, 21, 55))); // Fri 21:55, before the close
+    renderChart();
+    expect(staleChip()).not.toMatch(/not a feed fault/i);
+    expect(staleChip()).not.toMatch(/market closed/i);
+    expect(staleChip()).toMatch(/not current/i);
+  });
+
+  it("on a weekday: no 'may be closed' cause either", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 28, 12, 0)); // Wednesday
+    setResponse(partialStaleResponse(Date.UTC(2026, 9, 28, 9, 0)));
+    renderChart();
+    expect(staleChip()).not.toMatch(/may be closed/i);
+    expect(staleChip()).toMatch(/not current/i);
+  });
+});
