@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { TradePlanChecklist } from "./TradePlanChecklist";
+import { TradePlanChecklist, type ValidateFailure } from "./TradePlanChecklist";
 import { AIPlanReviewCard } from "./AIPlanReviewCard";
 import { RiskPreviewCard } from "./RiskPreviewCard";
 import { StrategyFitPreview, type PlanChartCheck } from "./StrategyFitPreview";
 import { ConvertToLiveExecutionButton, SentToConfirmationStatus } from "./ConvertToLiveExecutionButton";
 import { MultiTimeframeAlignmentCard } from "../multiTimeframe";
 import { NewsRiskCard } from "../news";
+import { safeDate } from "@/lib/safeFormat";
 
 type Status = "DRAFT" | "READY" | "INVALIDATED" | "EXECUTED" | "CANCELED";
 
@@ -151,8 +152,10 @@ export function TradePlanBuilderPanel() {
   // whose outcome is unknown (5xx / lost response) a READY is labelled as
   // unconfirmed. Either way it cannot be sent from here until a validate
   // passes again. Validating one plan clears only that plan's entry. Nothing
-  // is stored on the server, so a reload loses it.
-  const [validateFailures, setValidateFailures] = useState<Record<number, { refused: boolean; message: string }>>({});
+  // is stored on the server, so a reload loses it. atIso is when the failure
+  // came back: the copy says what held then, never "now", since the reason
+  // (e.g. "in 12 minutes") is a reading from that moment.
+  const [validateFailures, setValidateFailures] = useState<Record<number, ValidateFailure>>({});
   // What the latest successful validate said about Chart Truth, per plan. GET
   // does not carry it (it is a reading of the chart at that moment), so it is
   // kept from the validate response and dropped when the plan is saved again.
@@ -248,8 +251,8 @@ export function TradePlanBuilderPanel() {
       setValidateFailures((m) => ({
         ...m,
         [planId]: e instanceof ValidateError
-          ? { refused: e.refused, message: e.message }
-          : { refused: false, message: `The validate request failed (${failureDetail(e)}).` },
+          ? { refused: e.refused, message: e.message, atIso: new Date().toISOString() }
+          : { refused: false, message: `The validate request failed (${failureDetail(e)}).`, atIso: new Date().toISOString() },
       }));
     },
     // Re-read on failure too: a failed answer does not say what the server stored.
@@ -460,15 +463,16 @@ export function TradePlanBuilderPanel() {
                         "not validated" nor "unchanged" can be said there. */}
                     <p>
                       {activeValidateFailure.refused
-                        ? "The server refused to validate this plan; it was not validated."
-                        : "ARX could not confirm whether the plan was validated."}{" "}
+                        ? `The server refused to validate this plan at ${safeDate(activeValidateFailure.atIso)}; it was not validated.`
+                        : `ARX could not confirm whether the plan was validated (request at ${safeDate(activeValidateFailure.atIso)}).`}{" "}
                       {activeValidateFailure.message}
                     </p>
                     {activeValidateFailure.refused ? (
                       active.status === "READY" ? (
                         <p className="mt-1 text-xs text-amber-300">
-                          The plan&apos;s status was not changed: READY is from an earlier check and does not hold now.
-                          It cannot be sent from here until a validation passes again.
+                          The plan&apos;s status was not changed: READY is from an earlier check, and it did not hold
+                          at {safeDate(activeValidateFailure.atIso)}, when this validation ran. Validate again to check now;
+                          it cannot be sent from here until a validation passes again.
                         </p>
                       ) : (
                         <p className="mt-1 text-xs text-amber-300">Its status and checklist below are unchanged.</p>
