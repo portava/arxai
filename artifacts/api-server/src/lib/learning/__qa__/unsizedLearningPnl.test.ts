@@ -120,3 +120,38 @@ test("a sized P&L is still added to the edge and shown in the summary", async ()
     assert.equal(set.avgPnl, 14);
   }
 });
+
+// Review pass 3: the unsized sample used to be kept out of avgPnl only until
+// the next sized close, which divided the new netPnl by every sample, the
+// unsized ones included (42 / 4 = 10.5 below, where the sized mean is 14).
+test("after an unsized sample, the next sized close averages the sized trades only", async () => {
+  // The fixture after the unsized WIN above: 3 samples, 2 of them sized (net 30).
+  state.edges = [{ ...EDGE, sampleCount: 3, winCount: 2, netPnl: 30, avgPnl: 15 }];
+  await processLearningPayload(payload(12), { ownerUserId: 7 });
+  for (const set of edgeUpdates()) {
+    assert.equal(set.sampleCount, 4);
+    assert.equal(set.netPnl, 42);
+    assert.equal(set.avgPnl, 14, "was 10.5: the unsized sample counted as a 0 in the average");
+  }
+});
+
+test("an edge first seen on an unsized trade averages only the sized trades that follow", async () => {
+  // Inserted on an unsized WIN: netPnl and avgPnl start at 0 with 1 sample.
+  state.edges = [{ ...EDGE, sampleCount: 1, winCount: 1, lossCount: 0, netPnl: 0, avgPnl: 0 }];
+  await processLearningPayload(payload(12), { ownerUserId: 7 });
+  for (const set of edgeUpdates()) {
+    assert.equal(set.sampleCount, 2);
+    assert.equal(set.netPnl, 12);
+    assert.equal(set.avgPnl, 12, "was 6: the unsized first sample counted as a 0");
+  }
+});
+
+test("when the row cannot tell how many samples were sized, the average is never inflated", async () => {
+  // A win and a loss with netPnl 0: both unsized, or sized and exactly offsetting.
+  state.edges = [{ ...EDGE, sampleCount: 2, winCount: 1, lossCount: 1, netPnl: 0, avgPnl: 0 }];
+  await processLearningPayload(payload(12), { ownerUserId: 7 });
+  for (const set of edgeUpdates()) {
+    assert.equal(set.netPnl, 12);
+    assert.equal(set.avgPnl, 4, "divided by every sample: can only pull the average toward 0");
+  }
+});
