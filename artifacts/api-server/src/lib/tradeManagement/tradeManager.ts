@@ -1,6 +1,6 @@
 import type { Trade } from "@workspace/db";
 import { getLatestQuote } from "../data/dataManager.js";
-import { quoteObservationFreshness } from "../data/quoteObservationFreshness.js";
+import { quoteObservationFreshness, type QuoteObservation, type QuoteTimeBasis } from "../data/quoteObservationFreshness.js";
 import { decideContractSize, resolveContractSize, type ResolvedContractSize } from "../mt5/contractSize.js";
 import { paperPnl } from "../paperExecution/paperPnl.js";
 import { PNL_DATA_QUALITY_MISSING_CONTRACT_SIZE, PNL_DATA_QUALITY_MISSING_FX } from "../live/realizedPnl.js";
@@ -26,6 +26,19 @@ export interface TradeManagementSnapshot {
   quoteAt: string | null;
   /** Why currentPrice (and everything derived from it) is null; null when priced. */
   priceUnavailableReason: string | null;
+  /**
+   * The quote's own freshness verdict (quoteObservationFreshness). Only
+   * "fresh" — a producer tick inside the fresh window — confirms the price is
+   * current; a priced snapshot can also be "delayed" (a receive-time stamp, or
+   * a tick older than the fresh window): a last price, not confirmed current.
+   * stale / unknown / unavailable come with currentPrice null. Reporting only:
+   * nothing in this module decides on it.
+   */
+  quoteFreshness: QuoteObservation["freshness"];
+  /** What the quote's time means: the producer's tick time, the time ARX received it, etc. */
+  quoteTimeBasis: QuoteTimeBasis;
+  /** One plain-English sentence: source, age, time basis and whether current; null when there was no quote. */
+  quoteNote: string | null;
   rMultiple: number | null;
   /**
    * Floating P&L in USD, contract-size aware (price move x lots x contract
@@ -52,13 +65,16 @@ function isPrice(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x) && x > 0;
 }
 
-function unpricedSnapshot(trade: Trade, reason: string): TradeManagementSnapshot {
+function unpricedSnapshot(trade: Trade, reason: string, obs: QuoteObservation | null = null): TradeManagementSnapshot {
   const unavailable = { recommended: false as const, reason };
   return {
     tradeId: trade.id,
     currentPrice: null,
     quoteAt: null,
     priceUnavailableReason: reason,
+    quoteFreshness: obs?.freshness ?? "unavailable",
+    quoteTimeBasis: obs?.timeBasis ?? "none",
+    quoteNote: obs?.plainEnglish ?? null,
     rMultiple: null,
     floatingPnl: null,
     pnlUnavailableReason: reason,
@@ -105,6 +121,7 @@ export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapsh
     return unpricedSnapshot(
       trade,
       `${obs.plainEnglish} Current price, P&L, R and health for ${trade.symbol} are not measured from it.`,
+      obs,
     );
   }
   const currentPrice = quote.last;
@@ -158,6 +175,11 @@ export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapsh
     currentPrice,
     quoteAt: quote.timestamp,
     priceUnavailableReason: null,
+    // "delayed" here is a last price, not confirmed current (a receive-time
+    // stamp or a tick past the fresh window); the card labels it so.
+    quoteFreshness: obs.freshness,
+    quoteTimeBasis: obs.timeBasis,
+    quoteNote: obs.plainEnglish,
     rMultiple,
     floatingPnl,
     pnlUnavailableReason,

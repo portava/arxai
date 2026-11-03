@@ -10228,6 +10228,33 @@ export interface TradeHealth {
 }
 
 /**
+ * The quote's own freshness verdict. Only fresh (a producer tick inside the fresh window) confirms currentPrice is current. A priced snapshot can also be delayed (stamped with the time ARX received it, or a tick older than the fresh window): a last price, not confirmed current. stale, unknown and unavailable come with currentPrice null.
+ */
+export type TradeSnapshotQuoteFreshness =
+  (typeof TradeSnapshotQuoteFreshness)[keyof typeof TradeSnapshotQuoteFreshness];
+
+export const TradeSnapshotQuoteFreshness = {
+  fresh: "fresh",
+  delayed: "delayed",
+  stale: "stale",
+  unknown: "unknown",
+  unavailable: "unavailable",
+} as const;
+
+/**
+ * What the quote's time means (producer tick time, provider time, the time ARX received it, or none).
+ */
+export type TradeSnapshotQuoteTimeBasis =
+  (typeof TradeSnapshotQuoteTimeBasis)[keyof typeof TradeSnapshotQuoteTimeBasis];
+
+export const TradeSnapshotQuoteTimeBasis = {
+  producer_tick: "producer_tick",
+  provider_as_of: "provider_as_of",
+  server_receive: "server_receive",
+  none: "none",
+} as const;
+
+/**
  * Which input was missing when a priced trade's P&L could not be sized.
  * @nullable
  */
@@ -10290,6 +10317,15 @@ export interface TradeSnapshot {
    * @nullable
    */
   priceUnavailableReason?: string | null;
+  /** The quote's own freshness verdict. Only fresh (a producer tick inside the fresh window) confirms currentPrice is current. A priced snapshot can also be delayed (stamped with the time ARX received it, or a tick older than the fresh window): a last price, not confirmed current. stale, unknown and unavailable come with currentPrice null. */
+  quoteFreshness?: TradeSnapshotQuoteFreshness;
+  /** What the quote's time means (producer tick time, provider time, the time ARX received it, or none). */
+  quoteTimeBasis?: TradeSnapshotQuoteTimeBasis;
+  /**
+   * One plain-English sentence on the quote - source, age, time basis and whether it is current; null when there was no quote.
+   * @nullable
+   */
+  quoteNote?: string | null;
   /** @nullable */
   rMultiple: number | null;
   /**

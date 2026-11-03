@@ -242,3 +242,49 @@ test("an unavailable-price reason names the source in plain English, not a raw p
   assert.doesNotMatch(unknownTime.priceUnavailableReason ?? "", /deriv_public/);
   assert.match(unknownTime.priceUnavailableReason ?? "", /the Deriv feed/);
 });
+
+// A quote that is not stale but not confirmed current — stamped with the time
+// ARX received it (MT5 push without a tick time), or a producer tick older
+// than the fresh window — was priced and shown under "Current" with only
+// "Quote as of"; the helper's own "not confirmed as current" verdict was
+// thrown away. The snapshot now carries that verdict so the card can say so.
+// Reporting only: what is computed from the price is unchanged.
+test("the snapshot carries the quote's freshness, time basis and plain-English note", async () => {
+  const recent = new Date(Date.now() - 2_000).toISOString();
+  nextQuote = { symbol: "EURUSD", timestamp: recent, last: 1.101, source: "mt5_broker", tickTimeObserved: false };
+  const received = await evaluateTrade(trade());
+  assert.equal(received.currentPrice, 1.101, "the price and what is measured from it are unchanged");
+  assert.ok(received.rMultiple != null && received.health != null);
+  assert.equal(received.quoteFreshness, "delayed", "a receive-time stamp can never confirm current");
+  assert.equal(received.quoteTimeBasis, "server_receive");
+  assert.match(received.quoteNote ?? "", /not confirmed as current/);
+  assert.match(received.quoteNote ?? "", /time ARX received it/);
+  assert.match(received.quoteNote ?? "", /the MT5 broker feed/);
+
+  nextQuote = { symbol: "EURUSD", timestamp: recent, last: 1.101, source: "mt5_broker", tickTimeObserved: true };
+  const tick = await evaluateTrade(trade());
+  assert.equal(tick.quoteFreshness, "fresh");
+  assert.equal(tick.quoteTimeBasis, "producer_tick");
+  assert.match(tick.quoteNote ?? "", /— current\./);
+
+  const minuteOld = new Date(Date.now() - 60_000).toISOString();
+  nextQuote = { symbol: "EURUSD", timestamp: minuteOld, last: 1.101, source: "mt5_broker", tickTimeObserved: true };
+  const delayedTick = await evaluateTrade(trade());
+  assert.equal(delayedTick.currentPrice, 1.101);
+  assert.equal(delayedTick.quoteFreshness, "delayed");
+
+  const oldAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+  nextQuote = { symbol: "EURUSD", timestamp: oldAt, last: 1.101, source: "mt5_broker", tickTimeObserved: true };
+  const stale = await evaluateTrade(trade());
+  assert.equal(stale.currentPrice, null);
+  assert.equal(stale.quoteFreshness, "stale");
+
+  nextQuoteIsNull = true;
+  try {
+    const none = await evaluateTrade(trade());
+    assert.equal(none.quoteFreshness, "unavailable");
+    assert.equal(none.quoteTimeBasis, "none");
+  } finally {
+    nextQuoteIsNull = false;
+  }
+});

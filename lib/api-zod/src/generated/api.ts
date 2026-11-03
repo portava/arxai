@@ -10056,6 +10056,24 @@ export const GetTradeSnapshotResponse = zod.object({
     .describe(
       "Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.",
     ),
+  quoteFreshness: zod
+    .enum(["fresh", "delayed", "stale", "unknown", "unavailable"])
+    .optional()
+    .describe(
+      "The quote's own freshness verdict. Only fresh (a producer tick inside the fresh window) confirms currentPrice is current. A priced snapshot can also be delayed (stamped with the time ARX received it, or a tick older than the fresh window): a last price, not confirmed current. stale, unknown and unavailable come with currentPrice null.",
+    ),
+  quoteTimeBasis: zod
+    .enum(["producer_tick", "provider_as_of", "server_receive", "none"])
+    .optional()
+    .describe(
+      "What the quote's time means (producer tick time, provider time, the time ARX received it, or none).",
+    ),
+  quoteNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "One plain-English sentence on the quote - source, age, time basis and whether it is current; null when there was no quote.",
+    ),
   rMultiple: zod.number().nullable(),
   floatingPnl: zod
     .number()

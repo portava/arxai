@@ -66,6 +66,7 @@ describe("LiveTradeCard snapshot truth", () => {
   it("priced: shows the measured values and the quote time", () => {
     h.snap = {
       tradeId: 1, currentPrice: 1.101, quoteAt: "2026-10-28T09:00:00.000Z", priceUnavailableReason: null,
+      quoteFreshness: "fresh", quoteTimeBasis: "producer_tick",
       rMultiple: 0.1, floatingPnl: 100, health: { score: 72, state: "healthy", factors: {} },
       suggestions: { breakEven: { recommended: false, reason: "x" }, trail: { recommended: false, reason: "x" }, partial: { recommended: false, reason: "x" }, earlyExit: { recommended: false, reason: "x" } },
       primarySuggestion: "Hold — no action recommended.", invalidated: false,
@@ -75,6 +76,41 @@ describe("LiveTradeCard snapshot truth", () => {
     expect(screen.getByTestId("snap-pnl-1").textContent).toBe("$100.00");
     expect(screen.getByTestId("snap-r-1").textContent).toBe("0.10R");
     expect(screen.getByTestId("snap-quote-at-1").textContent).toMatch(/^Quote as of /);
+    expect(screen.getByTestId("snap-price-label-1").textContent).toBe("Current");
+  });
+
+  // A receive-time stamp (MT5 push without a tick time) or a tick past the
+  // fresh window is a last price, not a confirmed current one: the server's
+  // verdict is "delayed" and the card must not head it "Current".
+  it("priced but not confirmed current: labelled 'Last price', with the server's note in place of 'Quote as of'", () => {
+    const note = "Price from the MT5 broker feed observed 2s ago (time ARX received it (the market tick may be older) 2026-10-28T09:00:00.000Z) — not confirmed as current.";
+    h.snap = {
+      tradeId: 1, currentPrice: 1.101, quoteAt: "2026-10-28T09:00:00.000Z", priceUnavailableReason: null,
+      quoteFreshness: "delayed", quoteTimeBasis: "server_receive", quoteNote: note,
+      rMultiple: 0.1, floatingPnl: 100, health: { score: 72, state: "healthy", factors: {} },
+      suggestions: { breakEven: { recommended: false, reason: "x" }, trail: { recommended: false, reason: "x" }, partial: { recommended: false, reason: "x" }, earlyExit: { recommended: false, reason: "x" } },
+      primarySuggestion: "Hold — no action recommended.", invalidated: false,
+    };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("snap-price-label-1").textContent).toBe("Last price");
+    expect(screen.getByTestId("snap-current-1").textContent).toBe("1.10100");
+    expect(screen.queryByTestId("snap-quote-at-1")).toBeNull();
+    const unconfirmed = screen.getByTestId("snap-quote-unconfirmed-1").textContent ?? "";
+    expect(unconfirmed).toMatch(/not confirmed current/i);
+    expect(unconfirmed).toContain(note);
+    expect(unconfirmed).toMatch(/P&L, R and health are measured from this last price/);
+  });
+
+  it("a snapshot that does not say the quote is fresh is never headed 'Current' (client only downgrades)", () => {
+    h.snap = {
+      tradeId: 1, currentPrice: 1.101, quoteAt: "2026-10-28T09:00:00.000Z", priceUnavailableReason: null,
+      rMultiple: 0.1, floatingPnl: 100, health: { score: 72, state: "healthy", factors: {} },
+      suggestions: { breakEven: { recommended: false, reason: "x" }, trail: { recommended: false, reason: "x" }, partial: { recommended: false, reason: "x" }, earlyExit: { recommended: false, reason: "x" } },
+      primarySuggestion: "Hold — no action recommended.", invalidated: false,
+    };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("snap-price-label-1").textContent).toBe("Last price");
+    expect(screen.getByTestId("snap-quote-unconfirmed-1").textContent).toMatch(/Quote as of /);
   });
 
   it("priced but P&L not sizable: P&L reads Unavailable with the server's reason, never $0.00", () => {
