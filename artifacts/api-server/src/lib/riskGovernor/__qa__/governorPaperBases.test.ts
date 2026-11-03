@@ -15,6 +15,11 @@
 //     (round-3 safety review): the stored paper equity is only as new as its
 //     last revaluation, so an open loss it has not stored still counts, and
 //     the booked basis is never above the stored equity;
+//   - the booked basis counts every settled close (fourth safety review): the
+//     stored balance is as old as the stored equity, and the Build EE
+//     monitor and the autopilot settle closes without a revaluation, so a
+//     loss settled since then still counts; it is never above the stored
+//     balance and nothing is counted twice;
 //
 // The REAL governor and fact loader run; the paper book read side is stubbed
 // with a store that honours the reads' `since` and `limit` (newest close
@@ -372,4 +377,81 @@ test("a model-basis refusal shows the booked equity at the current price beside 
   assert.equal(r.measured?.["drawdownBasis"], "paper_risk_model");
   assert.equal(r.measured?.["bookedEquity"], 9_965);
   assert.match(r.reason!, /^At the paper risk model \(price move × lots × 100\), the account's equity 9499\.97 is 5% below its peak of 10000 on the same basis \(drawdown limit 5%\); the paper account's booked equity is 9965 with its open positions at the current price \(it stores 9995\)\. /);
+});
+
+// ── Fourth safety review (s4-governor): the booked balance counts every
+// settled close. The stored balance (paper_accounts.current_balance) is only
+// as new as the account's last revaluation (markToMarket), and the Build EE
+// monitor, the autopilot and the EE manual close settle orders without one.
+test("the reviewer's case: stored 10,000/10,000, a −1,100 EURUSD close the monitor settled after the last revaluation, no open position, 10% limit: BLOCK on the booked basis (8,900, 11%)", async () => {
+  state.closes = [fxClose(-110, 1, hoursAgo(20))];
+  // Last revalued before that close settled: the stored balance does not have it.
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_000, updatedAt: hoursAgo(30) };
+  state.open = [];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK", `an account 11% below its peak after a settled close was allowed: ${JSON.stringify(r.measured)}`);
+  assert.equal(r.measured?.["drawdownBasis"], "booked");
+  assert.equal(r.measured?.["bookedEquity"], 8_900);
+  assert.equal(r.measured?.["bookedBalance"], 8_900, "the booked balance is the starting balance plus every settled close");
+  assert.equal(r.measured?.["storedBalance"], 10_000, "the stored balance is shown beside it");
+  assert.equal(r.measured?.["storedEquity"], 10_000);
+  assert.equal(r.measured?.["bookedDrawdownPercent"], 11);
+  assert.ok((r.measured?.["modelDrawdownPercent"] as number) < 0.02, "the model basis alone cannot see an FX loss of this size");
+  assert.equal(r.reason, "The paper account's booked equity is 8900 with its open positions valued at the paper venue's current price "
+    + `(booked balance 8900, open positions 0); the account stores 10000 with a balance of 10000 from its last revaluation at ${hoursAgo(30).toISOString()}, `
+    + "and the booked balance here adds up every settled close, so it counts closes settled since that revaluation. "
+    + "That is 11% below its recorded peak of 10000 (drawdown limit 10%). New trades are blocked; closing is allowed.");
+});
+
+test("a close settled after the last revaluation is not counted twice: its stored floating loss is not added again", async () => {
+  // The last revaluation stored the position at −1,100 floating; the monitor
+  // then settled it at −1,100. Booked equity 8,900, not 7,800.
+  state.closes = [fxClose(-110, 1, hoursAgo(20))];
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 8_900, updatedAt: hoursAgo(30) };
+  state.open = [];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["bookedEquity"], 8_900);
+  assert.equal(r.measured?.["bookedDrawdownPercent"], 11);
+});
+
+test("a win settled after the last revaluation never raises the booked balance above the stored one", async () => {
+  // Stored 9,000 (a −1,000 close counted), then a +1,500 win the account has
+  // not stored: the booked basis stays at the stored 9,000 (10% below 10,000).
+  state.closes = [fxClose(-100, 1, hoursAgo(40)), fxClose(150, 1, hoursAgo(20))];
+  state.account = { ...ACCOUNT, currentBalance: 9_000, equity: 9_000, updatedAt: hoursAgo(30) };
+  state.open = [];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.outcome, "BLOCK", `a win the stored balance does not have raised the booked basis: ${JSON.stringify(r.measured)}`);
+  assert.equal(r.measured?.["bookedEquity"], 9_000);
+  assert.equal(r.measured?.["storedBalance"], undefined, "the stored balance is the one counted");
+  assert.equal(r.reason, "The paper account's booked equity 9000 is 10% below its recorded peak of 10000 (drawdown limit 10%). New trades are blocked; closing is allowed.");
+});
+
+test("the booked balance from the closes counts only the account owner's orders, as the stored balance does", async () => {
+  // A stray −1,100 row stamped with another user id on this account: markToMarket never counts it.
+  state.closes = [{ ...fxClose(-110, 1, hoursAgo(20)), userId: 8 }];
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_000 };
+  state.open = [];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(10, () => ddRule());
+  assert.equal(r.measured?.["bookedEquity"], 10_000);
+  assert.equal(r.measured?.["bookedDrawdownPercent"], 0);
+});
+
+test("a model-basis refusal shows the booked equity with every settled close counted beside the stored balance", async () => {
+  // A US30 0.1-lot 50-point close (booked −5, −500 at the model) settled after the last revaluation.
+  state.closes = [indexClose(-50, 0.1, hoursAgo(3))];
+  state.account = { ...ACCOUNT, currentBalance: 10_000, equity: 10_000, updatedAt: hoursAgo(4) };
+  state.open = [];
+  fake = createFakeDb({ user_equity_peaks: [peakRow(10_000)] });
+  const r = await withDrawdownLimit(5, () => ddRule());
+  assert.equal(r.outcome, "BLOCK");
+  assert.equal(r.measured?.["drawdownBasis"], "paper_risk_model");
+  assert.equal(r.measured?.["bookedEquity"], 9_995);
+  assert.equal(r.measured?.["storedBalance"], 10_000);
+  assert.match(r.reason!, /^At the paper risk model \(price move × lots × 100\), the account's equity 9500 is 5% below its peak of 10000 on the same basis \(drawdown limit 5%\); the paper account's booked equity is 9995 with every settled close counted and its open positions at the current price \(it stores 10000 with a balance of 10000\)\. /);
 });
