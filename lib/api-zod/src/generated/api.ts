@@ -5046,8 +5046,61 @@ export const GetMt5StateResponse = zod.object({
  * @summary Combined MT5 bridge status (connection, mode, queue, account)
  */
 export const GetMt5StatusResponse = zod.object({
-  connected: zod.boolean(),
-  mode: zod.enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE"]),
+  connected: zod
+    .boolean()
+    .describe(
+      "The user's OWN MT5 connection heartbeated recently. False for a user routed through the shared master bridge; see route and sharedMasterBridge.",
+    ),
+  mode: zod
+    .enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE", "NOT_CONNECTED", "STALE"])
+    .describe(
+      "The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old.",
+    ),
+  route: zod
+    .enum(["OWN_CONNECTION", "SHARED_MASTER", "NONE"])
+    .optional()
+    .describe(
+      "How this user reaches MT5. NONE with routeReadFailed true means the routing could not be read, not a confirmed absence of a bridge.",
+    ),
+  routeReadFailed: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the user's routing could not be read; route NONE is then not a confirmed absence of a bridge. Absent when the routing was read.",
+    ),
+  sharedMasterBridge: zod
+    .union([
+      zod.object({
+        availability: zod
+          .enum(["HEALTHY", "RECONCILING", "UNAVAILABLE", "STALE", "UNKNOWN"])
+          .describe(
+            "HEALTHY only when the allocation view says so AND the master snapshot is fresh now. UNKNOWN when the allocation view could not be read.",
+          ),
+        connected: zod
+          .boolean()
+          .describe("True only when availability is HEALTHY."),
+        message: zod.string(),
+        lastSnapshotAt: zod
+          .string()
+          .nullable()
+          .describe(
+            "When the master bridge last reported a snapshot (ISO); null when never or unread.",
+          ),
+        snapshotAgeSeconds: zod.number().nullable(),
+        source: zod.enum(["shared_master_bridge_pool"]),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "For a user routed through the shared master bridge (route SHARED_MASTER), that bridge as read now; null otherwise.",
+    ),
+  userSafeMessage: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain-English summary of the user's bridge state; null when there is nothing to add.",
+    ),
   lastHeartbeatAt: zod.string().nullable(),
   secondsSinceHeartbeat: zod.number().nullable(),
   pendingCommands: zod.number(),

@@ -19261,8 +19261,26 @@ components:
       type: object
       required: [connected, mode, lastHeartbeatAt, pendingCommands, completedCommands, failedCommands, openPositions, accountSnapshot, liveLocked, secondsSinceHeartbeat, executionMode, placementLayer, liveExecutionEnabled, liveBrokerExecutionAvailable, readOnlyGuardActive, paperTradingEnabled, brokerPlacementImplemented, demoExecutionEnabled, accountType, maxDemoLot]
       properties:
-        connected: { type: boolean }
-        mode: { type: string, enum: [MOCK, DEMO, LIVE_LOCKED, LIVE] }
+        connected: { type: boolean, description: "The user's OWN MT5 connection heartbeated recently. False for a user routed through the shared master bridge; see route and sharedMasterBridge." }
+        mode:
+          type: string
+          enum: [MOCK, DEMO, LIVE_LOCKED, LIVE, NOT_CONNECTED, STALE]
+          description: The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old.
+        route:
+          type: string
+          enum: [OWN_CONNECTION, SHARED_MASTER, NONE]
+          description: How this user reaches MT5. NONE with routeReadFailed true means the routing could not be read, not a confirmed absence of a bridge.
+        routeReadFailed:
+          type: boolean
+          description: True when the user's routing could not be read; route NONE is then not a confirmed absence of a bridge. Absent when the routing was read.
+        sharedMasterBridge:
+          description: For a user routed through the shared master bridge (route SHARED_MASTER), that bridge as read now; null otherwise.
+          oneOf:
+            - $ref: "#/components/schemas/Mt5SharedMasterBridge"
+            - type: "null"
+        userSafeMessage:
+          type: ["string", "null"]
+          description: Plain-English summary of the user's bridge state; null when there is nothing to add.
         lastHeartbeatAt: { type: ["string", "null"] }
         secondsSinceHeartbeat: { type: ["integer", "null"] }
         pendingCommands: { type: integer }
@@ -19305,6 +19323,20 @@ components:
             syncedAt:
               type: ["string", "null"]
               description: When the EA last pushed these account figures (ISO). Null when never synced.
+
+    Mt5SharedMasterBridge:
+      type: object
+      required: [availability, connected, message, lastSnapshotAt, snapshotAgeSeconds, source]
+      properties:
+        availability:
+          type: string
+          enum: [HEALTHY, RECONCILING, UNAVAILABLE, STALE, UNKNOWN]
+          description: HEALTHY only when the allocation view says so AND the master snapshot is fresh now. UNKNOWN when the allocation view could not be read.
+        connected: { type: boolean, description: "True only when availability is HEALTHY." }
+        message: { type: string }
+        lastSnapshotAt: { type: ["string", "null"], description: "When the master bridge last reported a snapshot (ISO); null when never or unread." }
+        snapshotAgeSeconds: { type: ["integer", "null"] }
+        source: { type: string, enum: [shared_master_bridge_pool] }
 
     Mt5BridgeInfo:
       type: object

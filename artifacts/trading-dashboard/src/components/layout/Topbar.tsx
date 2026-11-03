@@ -107,8 +107,8 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
   const modeMeta =
     !mt5 ? (mt5LoadFailed ? UNKNOWN_MODE_META : CHECKING_MODE_META)
     : mt5RefreshFailed ? UNKNOWN_MODE_META
-    : (mt5 as { route?: string }).route === "SHARED_MASTER" && !mt5.connected ? SHARED_MODE_META
-    : (mt5 as { routeReadFailed?: boolean }).routeReadFailed === true && !mt5.connected ? UNKNOWN_MODE_META
+    : mt5.route === "SHARED_MASTER" && !mt5.connected ? SHARED_MODE_META
+    : mt5.routeReadFailed === true && !mt5.connected ? UNKNOWN_MODE_META
     : MODE_META[mt5.mode as keyof typeof MODE_META] ?? UNKNOWN_MODE_META;
   const SessionIcon = sessionMeta.icon;
   const ModeIcon = modeMeta.icon;

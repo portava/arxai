@@ -188,3 +188,65 @@ test("a confirmed no-bridge read carries no routeReadFailed flag", async () => {
   assert.equal("routeReadFailed" in s, false);
   assert.match(String(s["userSafeMessage"]), /not connected/);
 });
+
+// GET /mt5/status answered fields (routeReadFailed, route, sharedMasterBridge,
+// userSafeMessage) and modes (NOT_CONNECTED, STALE) that the Mt5Status schema
+// in lib/api-spec/openapi.yaml did not declare, so the generated client types
+// disagreed with the response and the Topbar read them through casts.
+const { readFileSync } = await import("node:fs");
+const { fileURLToPath } = await import("node:url");
+const { dirname, resolve } = await import("node:path");
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
+
+/** Top-level property names and the mode enum of `Mt5Status` in openapi.yaml. */
+function specMt5Status(): { props: Set<string>; modes: string[] } {
+  const lines = readFileSync(resolve(REPO, "lib/api-spec/openapi.yaml"), "utf8").split("\n");
+  const start = lines.findIndex((l) => l === "    Mt5Status:");
+  assert.ok(start > 0, "Mt5Status schema not found in openapi.yaml");
+  const props = new Set<string>();
+  let modes: string[] = [];
+  let current = "";
+  for (let i = start + 1; i < lines.length && !/^ {4}\S/.test(lines[i]!); i++) {
+    const m = /^ {8}(\w+):/.exec(lines[i]!);
+    if (m) { current = m[1]!; props.add(current); }
+    // `mode: { type: string, enum: [...] }` or a nested `enum: [...]` line under `mode:`.
+    const e = current === "mode" ? /enum: \[([^\]]*)\]/.exec(lines[i]!) : null;
+    if (e) modes = e[1]!.split(",").map((s) => s.trim());
+  }
+  return { props, modes };
+}
+
+function assertDeclared(body: Record<string, unknown>, label: string): void {
+  const { props, modes } = specMt5Status();
+  const undeclared = Object.keys(body).filter((k) => !props.has(k));
+  assert.deepEqual(undeclared, [], `${label}: /mt5/status fields missing from the openapi Mt5Status schema`);
+  assert.ok(modes.includes(String(body["mode"])), `${label}: mode ${String(body["mode"])} is not in the Mt5Status mode enum`);
+}
+
+test("every field and mode /mt5/status answers is declared in the openapi Mt5Status schema", async () => {
+  connection = null;
+  shared = { route: "NONE", sharedMasterBridge: null, routeReadFailed: true };
+  assertDeclared(await getStatus({ id: 35, role: "USER" }), "routing unreadable");
+
+  shared = {
+    route: "SHARED_MASTER",
+    sharedMasterBridge: { availability: "UNKNOWN", connected: false, message: "Shared MT5 bridge status could not be read.", lastSnapshotAt: null, snapshotAgeSeconds: null, source: "shared_master_bridge_pool" },
+  };
+  assertDeclared(await getStatus({ id: 35, role: "USER" }), "shared master");
+
+  connection = {
+    id: 6, userId: 35, mode: "DEMO", lastHeartbeat: new Date(Date.now() - 10 * 60_000), accountSyncedAt: null,
+    accountNumber: "7654321", brokerName: "QA Broker", serverName: "QA-Demo", accountBalance: 1_000,
+    accountEquity: 1_000, margin: 0, freeMargin: 1_000, accountCurrency: "USD",
+  };
+  assertDeclared(await getStatus({ id: 35, role: "USER" }), "own connection, stale");
+  connection = null;
+});
+
+test("the generated client type carries routeReadFailed, route and sharedMasterBridge", () => {
+  const generated = readFileSync(resolve(REPO, "lib/api-client-react/src/generated/api.schemas.ts"), "utf8");
+  const body = /export interface Mt5Status \{([\s\S]*?)\n\}/.exec(generated)?.[1] ?? "";
+  assert.match(body, /\brouteReadFailed\?: boolean;/);
+  assert.match(body, /\broute\?: /);
+  assert.match(body, /\bsharedMasterBridge\?: /);
+});
