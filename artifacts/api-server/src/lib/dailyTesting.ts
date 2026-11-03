@@ -469,7 +469,32 @@ export async function exportDailyReport(sessionId?: string) {
     generatedAt: nowIso(),
     session: target,
     performanceReview: review,
-    note: "MT5 deferred. No real broker orders placed. Simulator + tester intents only.",
+    // The MT5 part is the readiness observation now, not a fixed "deferred".
+    // No live order or command table is read here, so real broker orders are
+    // named as not checked, never as "none placed".
+    note: `${mt5SetupStatusFrom(await readinessReport().catch(() => null)).note} ${EXPORT_SCOPE_NOTE}`,
+  };
+}
+
+/** What the testing exports cover — they read no live order or command table. */
+const EXPORT_SCOPE_NOTE = "This report covers simulator and tester intents only; real broker orders were not checked.";
+
+/**
+ * Daily-testing status payload. mt5Deferred / mt5Connected follow the MT5
+ * feed observed by the readiness report (could not be read → not connected,
+ * deferred, and said so), never a literal.
+ */
+export async function dailyTestingStatus() {
+  const mt5 = mt5SetupStatusFrom(await readinessReport().catch(() => null));
+  return {
+    active: getActive(),
+    stepTemplate: STEP_TEMPLATE,
+    lastSession: listSessionsAll(1)[0] ?? null,
+    mt5Deferred: mt5.deferred,
+    mt5Connected: mt5.connected,
+    mt5CheckedAt: mt5.checkedAt,
+    realBrokerExecutionAvailable: false,
+    note: `Daily testing mode — simulator + tester intents only. ${mt5.note}`,
   };
 }
 
@@ -482,7 +507,7 @@ export async function exportWeeklyReport() {
     generatedAt: nowIso(),
     summary,
     // The MT5 part is the week's readiness observation, not a fixed "deferred".
-    note: `${summary.mt5SetupStatus.note} No real broker orders placed. Simulator + tester intents only.`,
+    note: `${summary.mt5SetupStatus.note} ${EXPORT_SCOPE_NOTE}`,
   };
 }
 
