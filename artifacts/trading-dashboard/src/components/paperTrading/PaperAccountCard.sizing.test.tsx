@@ -44,6 +44,19 @@ describe("PaperAccountCard balance sizing note", () => {
     expect(units).toMatch(/could not be sized counts at the paper risk model \(price move × lots × 100\), except that a closed trade that won is not added to the balance/);
   });
 
+  it("a server that leaves unsized open gains out of equity: the units line says an open position in profit is not added", async () => {
+    const valuation = {
+      priceSource: "SIMULATOR", openOrders: 1, openPricedBySimulator: 1, closedSimulatorPriced: 0,
+      units: "PAPER_USD", pnlMultiplier: 100, marginPerLot: 1000, note: "",
+    };
+    renderWith({ account: { ...account, valuation, pnlSizing: { unsizedClosedOrders: 0, unsizedClosedWins: 0, unsizedOpenPositions: 1, unsizedOpenGains: 1, note: "x" } } });
+    await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
+    const units = screen.getByTestId("paper-account-units").textContent ?? "";
+    // Was "...except that a closed trade that won is not added to the balance." while equity
+    // no longer adds an open gain of unknown size either.
+    expect(units).toMatch(/except that a closed trade that won is not added to the balance and an open position in profit is not added to equity/);
+  });
+
   it("an older server that does not report unsizedClosedWins: the units line makes no claim that wins are left out", async () => {
     const valuation = {
       priceSource: "NO_OPEN_ORDERS", openOrders: 0, openPricedBySimulator: 0, closedSimulatorPriced: 0,
@@ -52,6 +65,7 @@ describe("PaperAccountCard balance sizing note", () => {
     renderWith({ account: { ...account, valuation, pnlSizing: { unsizedClosedOrders: 1, unsizedOpenPositions: 0, note: "x" } } });
     await waitFor(() => expect(screen.getByText("Practice")).toBeTruthy());
     expect(screen.getByTestId("paper-account-units").textContent ?? "").not.toMatch(/not added to the balance/);
+    expect(screen.getByTestId("paper-account-units").textContent ?? "").not.toMatch(/not added to equity/);
   });
 
   it("shows no note when every close was sized", async () => {

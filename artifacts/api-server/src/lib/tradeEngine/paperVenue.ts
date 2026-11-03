@@ -173,11 +173,17 @@ export interface PaperPnlSizing {
   unsizedClosedWins: number;
   /** Open positions whose unrealized P&L could not be sized. */
   unsizedOpenPositions: number;
+  /**
+   * Of those, the ones in profit on price. Their gain is not added to equity
+   * (counted 0); one at a loss counts at the paper risk model. An open gain of
+   * unknown size never raises the equity the Risk Governor reads.
+   */
+  unsizedOpenGains: number;
   /** Plain-English note for the account; null when everything was sized. */
   note: string | null;
 }
 
-export function paperPnlSizingNote(unsizedClosed: number, unsizedOpen = 0, unsizedClosedWins = 0): string | null {
+export function paperPnlSizingNote(unsizedClosed: number, unsizedOpen = 0, unsizedClosedWins = 0, unsizedOpenGains = 0): string | null {
   if (unsizedClosed <= 0 && unsizedOpen <= 0) return null;
   const parts: string[] = [];
   if (unsizedClosed > 0) parts.push(`Balance includes ${unsizedClosed} closed trade${unsizedClosed === 1 ? "" : "s"}`);
@@ -194,7 +200,15 @@ export function paperPnlSizingNote(unsizedClosed: number, unsizedOpen = 0, unsiz
     }
   }
   if (unsizedOpen > 0) {
-    how.push(`${unsizedOpen === 1 ? "The open position is" : "The open positions are"} counted at the paper risk model (price move × lots × 100), not a measured amount.`);
+    const gains = Math.min(Math.max(0, unsizedOpenGains), unsizedOpen);
+    const rest = unsizedOpen - gains;
+    if (rest > 0) {
+      const all = gains === 0;
+      how.push(`${rest === 1 ? (all ? "The open position is" : "An open position at a loss is") : (all ? "The open positions are" : `${rest} open positions at a loss are`)} counted at the paper risk model (price move × lots × 100), not a measured amount.`);
+    }
+    if (gains > 0) {
+      how.push(`${gains === 1 ? "An open position in profit is" : `${gains} open positions in profit are`} not added to equity (counted as 0), so equity can be lower than the positions' real value.`);
+    }
   }
   return `${parts.join("; ")} whose P&L could not be sized for the instrument `
     + `(no contract size or currency conversion). ${how.join(" ")}`;
@@ -269,7 +283,7 @@ export function describePaperValuation(a: { openOrders: number; openPricedBySimu
     const one = a.closedSimulatorPriced === 1;
     parts.push(`${a.closedSimulatorPriced} closed order${one ? " was" : "s were"} opened at the simulator's synthetic price, not a market quote, so the balance includes synthetic results. ${one ? "Its exit" : "Each exit"} may have been the simulator's price or a market price (the paper execution monitor or an EE manual close); the order does not record which.`);
   }
-  parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount, except that a closed trade that won is not added to the balance. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
+  parts.push(`Figures are simulated USD, not money in a broker account: P&L is sized in USD from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER}), not a measured amount, except that a closed trade that won is not added to the balance and an open position in profit is not added to equity. Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${PAPER_SIMULATOR_PNL_MULTIPLIER} for every symbol), so an older balance can mix the two scales. Margin is lots × ${PAPER_SIMULATOR_MARGIN_PER_LOT.toLocaleString("en-US")}, not a broker margin.`);
   return {
     priceSource,
     openOrders: a.openOrders,
@@ -298,10 +312,12 @@ function governorRefusal(risk: { primaryReason?: string | null; blockedBy: strin
 // A close whose amount could not be sized (stored 0 placeholder) counts the
 // way the paper book's booked figure counts it (bookedRealizedOf): a stop-out
 // lowers the balance at the paper risk model, and a win of unknown size adds
-// nothing, so an estimate never raises the balance or equity the Risk Governor
-// reads. The balance is the booked sum; the governor lowers the equity it caps
-// against to the risk count (paperBookReader.realizedOf) itself.
-// pnlSizing says how many closes that covers.
+// nothing. An open position that could not be sized counts the same way in
+// equity: a floating loss at the paper risk model, a floating gain as 0. So an
+// estimate never raises the balance or equity the Risk Governor reads. The
+// balance is the booked sum; the governor lowers the equity it caps against to
+// the risk count (paperBookReader.realizedOf) itself.
+// pnlSizing says how many closes and open positions that covers.
 export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing; valuation: PaperValuation }) | null> {
   const account = (await db.select().from(paperAccountsTable)
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
@@ -328,6 +344,7 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
   let unrealized = 0;
   let margin = 0;
   let unsizedOpenPositions = 0;
+  let unsizedOpenGains = 0;
   // Every order here has the account's owner, so one contract read per symbol.
   const contracts = new Map<string, Promise<ResolvedContractSize>>();
   const sized = (o: PaperOrderRow, price: number): Promise<PaperPnlResult> => {
@@ -370,10 +387,14 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
       const u = await sized(o, px);
       if (u.amount != null) unrealized += u.amount;
       else {
-        // Not sized: counted at the governor's paper model so a floating
-        // loss never drops out of equity; pnlSizing says so.
-        unrealized += paperLedgerModelPnl(o.direction, o.lotSize, o.entryPrice, px);
+        // Not sized: a floating loss is counted at the governor's paper model
+        // so it never drops out of equity; a floating gain of unknown size
+        // adds nothing (counted 0), so an estimate never raises the equity
+        // the Risk Governor reads. pnlSizing says so.
+        const model = paperLedgerModelPnl(o.direction, o.lotSize, o.entryPrice, px);
+        unrealized += Math.min(0, model);
         unsizedOpenPositions++;
+        if (model > 0) unsizedOpenGains++;
       }
       margin += o.lotSize * PAPER_SIMULATOR_MARGIN_PER_LOT;
       stillOpen++;
@@ -408,8 +429,8 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
   return {
     ...row,
     pnlSizing: {
-      unsizedClosedOrders, unsizedClosedWins, unsizedOpenPositions,
-      note: paperPnlSizingNote(unsizedClosedOrders, unsizedOpenPositions, unsizedClosedWins),
+      unsizedClosedOrders, unsizedClosedWins, unsizedOpenPositions, unsizedOpenGains,
+      note: paperPnlSizingNote(unsizedClosedOrders, unsizedOpenPositions, unsizedClosedWins, unsizedOpenGains),
     },
     valuation,
   };

@@ -19972,10 +19972,11 @@ components:
         unrealized P&L. The balance counts such a close only when it lost, at
         the paper risk model (price move x lots x 100); a close that won adds
         nothing (unsizedClosedWins), so an estimate never raises the balance.
-        Equity counts such an open position at the paper risk model. None of
-        these is a measured amount; this says how many closes and open
-        positions that covers, with a plain-English note (null when
-        everything was sized).
+        Equity counts such an open position at the paper risk model when it
+        is at a loss, and adds nothing for one in profit (unsizedOpenGains),
+        so an estimate never raises equity either. None of these is a
+        measured amount; this says how many closes and open positions that
+        covers, with a plain-English note (null when everything was sized).
       required: [unsizedClosedOrders, unsizedOpenPositions, note]
       properties:
         unsizedClosedOrders:  { type: integer }
@@ -19985,6 +19986,11 @@ components:
             Of unsizedClosedOrders, the closes that won. Their gain is not
             added to the balance (counted as 0). Absent from older servers.
         unsizedOpenPositions: { type: integer }
+        unsizedOpenGains:
+          type: integer
+          description: >-
+            Of unsizedOpenPositions, the positions in profit. Their gain is
+            not added to equity (counted as 0). Absent from older servers.
         note:                 { type: ["string","null"] }
 
     PaperOrder:
