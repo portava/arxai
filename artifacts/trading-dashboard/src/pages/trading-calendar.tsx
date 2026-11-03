@@ -53,9 +53,9 @@ function num(v: unknown): number | null {
 
 // Which ledger this page reads, for a server that does not send its note.
 // The demo calendar reads simulated orders, not the demo trades a trader
-// logs by hand on My Performance, so the two pages differ for a date.
+// logs by hand on My Demo Trades (/my-performance), so the two pages differ for a date.
 const DEMO_SOURCE_NOTE =
-  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Demo Trades are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
 const LIVE_SOURCE_NOTE = "From your closed live trades recorded against your account.";
 
 /**

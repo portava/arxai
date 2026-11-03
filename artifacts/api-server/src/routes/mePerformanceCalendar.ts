@@ -69,7 +69,7 @@ type LedgerSource = Exclude<CalendarSource, "withheld_live_shared">;
 const SOURCE_NOTE: Record<LedgerSource, string> = {
   live_trades: "From your closed live trades recorded against your account.",
   paper_trades:
-    "From the demo trades you log by hand on My Performance. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.",
+    "From the demo trades you log by hand on My Demo Trades. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.",
 };
 function sourceFields(source: LedgerSource) {
   return { source, sourceNote: SOURCE_NOTE[source] };

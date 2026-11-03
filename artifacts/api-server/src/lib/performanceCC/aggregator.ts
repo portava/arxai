@@ -373,12 +373,12 @@ export async function computeDecisionQuality(userId: number, range: RangeKey) {
 
 /**
  * The ledger the Trading Calendar reads. It is not the demo-trade journal
- * behind My Performance (paper_trades): the two record different trades and
+ * behind My Demo Trades (/my-performance, paper_trades): the two record different trades and
  * compute P&L differently, so their figures for the same date differ.
  */
 export const CALENDAR_SOURCE = "PAPER_ORDERS" as const;
 export const CALENDAR_SOURCE_NOTE =
-  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Demo Trades are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
 
 /** Build calendar grid for a month YYYY-MM. */
 export async function computeCalendarMonth(userId: number, month: string) {

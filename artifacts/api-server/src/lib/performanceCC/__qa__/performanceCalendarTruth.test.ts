@@ -96,7 +96,9 @@ test("the Trading Calendar names its ledger (simulated orders) and says hand-log
   const cal = await computeCalendarMonth(7, "2020-02") as Record<string, unknown>;
   assert.equal(cal.source, "PAPER_ORDERS");
   assert.match(String(cal.source_note), /simulated orders/i);
-  assert.match(String(cal.source_note), /My Performance/);
+  // The hand-logged page is titled "My Demo Trades" on screen.
+  assert.match(String(cal.source_note), /My Demo Trades/);
+  assert.doesNotMatch(String(cal.source_note), /My Performance/);
   assert.match(String(cal.source_note), /not included/i);
 });
 

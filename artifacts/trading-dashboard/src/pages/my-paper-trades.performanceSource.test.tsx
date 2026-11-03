@@ -96,4 +96,29 @@ describe("My Demo Trades — Performance tab names the book it shows", () => {
     expect(screen.queryByTestId("performance-not-demo")).toBeNull();
     expect(document.body.textContent).toContain("Close a demo trade to see your day appear here");
   });
+
+  // /me/performance-calendar and /me/performance-summary send sourceNote; the
+  // tab names its ledger so a reader comparing it with the Trading Calendar
+  // sees that the two pages read different records.
+  it("demo record: names its ledger with the server's source note", async () => {
+    const note = "From the demo trades you log by hand on My Demo Trades. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.";
+    stub({ days: [], isEmpty: true, source: "paper_trades", sourceNote: note }, { ...emptySummary("paper_trades"), sourceNote: note });
+    await openPerformance();
+    expect(screen.getByTestId("performance-source-note").textContent).toBe(note);
+  });
+
+  it("demo record from a server with no source note: names the ledger with local copy", async () => {
+    stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"));
+    await openPerformance();
+    const text = screen.getByTestId("performance-source-note").textContent ?? "";
+    expect(text).toMatch(/demo trades you log by hand on this page/i);
+    expect(text).toMatch(/Trading Calendar/);
+    expect(text).toMatch(/not included/);
+  });
+
+  it("a book that is not the demo record shows no demo source note", async () => {
+    stub({ days: [], isEmpty: true, source: "live_trades", sourceNote: "From your closed live trades recorded against your account." }, emptySummary("live_trades"));
+    await openPerformance();
+    expect(screen.queryByTestId("performance-source-note")).toBeNull();
+  });
 });

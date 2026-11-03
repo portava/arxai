@@ -123,6 +123,13 @@ function performanceSource(calendar: string | undefined, summary: string | undef
   if (c === "unknown" || s === "unknown") return "unknown";
   return c === s ? c : "mixed";
 }
+/**
+ * Which ledger the demo Performance tab reads, for a server that sends no
+ * sourceNote. It is not the Trading Calendar's simulated orders (paper_orders),
+ * so the two pages' figures for a date differ.
+ */
+const PAPER_TRADES_SOURCE_NOTE =
+  "From the demo trades you log by hand on this page. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.";
 const PERFORMANCE_SOURCE_COPY: Record<Exclude<PerformanceSource, "paper_trades">, string> = {
   live_trades: "Your account is in live trading mode, so the performance calendar reads your closed live trades, not the demo trades on the Trades tab.",
   withheld_live_shared: "Your account is in live-shared mode, so the server does not return a demo-trade performance calendar for it. The demo trades on the Trades tab are not summarised here.",
@@ -198,6 +205,8 @@ export default function MyPaperTradesPage() {
   const [summary, setSummary] = useState<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean } | null>(null);
   // Which book the performance endpoints read (see PerformanceSource).
   const [perfSource, setPerfSource] = useState<PerformanceSource>("unknown");
+  // The server's note naming that book (sourceNote), when it sends one.
+  const [perfSourceNote, setPerfSourceNote] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<number, Review>>({});
   const [insights, setInsights] = useState<Insights | null>(null);
   const [coaching, setCoaching] = useState<Coaching | null>(null);
@@ -238,8 +247,8 @@ export default function MyPaperTradesPage() {
     const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
       read<{ trades: PaperTrade[] }>("trades", "/me/paper-trades"),
       read<{ entries: Journal[] }>("journal", "/me/trade-journal"),
-      read<{ days: Day[]; source?: string }>("calendar", "/me/performance-calendar"),
-      read<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean; source?: string }>("summary", "/me/performance-summary"),
+      read<{ days: Day[]; source?: string; sourceNote?: string }>("calendar", "/me/performance-calendar"),
+      read<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean; source?: string; sourceNote?: string }>("summary", "/me/performance-summary"),
       read<{ reviews: Review[] }>("reviews", "/me/ai-trade-reviews"),
       read<Insights>("insights", "/me/performance-insights"),
       read<Coaching>("coaching", "/me/coaching-plan"),
@@ -251,6 +260,8 @@ export default function MyPaperTradesPage() {
     // Demo figures need both reads to name the demo record; a failed one leaves
     // the book unconfirmed, so the tab says it could not be loaded.
     setPerfSource(cal && sum ? performanceSource(cal.source, sum.source) : "load_failed");
+    const note = [sum?.sourceNote, cal?.sourceNote].find((v): v is string => typeof v === "string" && v.length > 0);
+    setPerfSourceNote(note ?? null);
     const rmap: Record<number, Review> = {};
     for (const r of rv?.reviews ?? []) rmap[r.paperTradeId] = r;
     setReviews(rmap); setInsights(ins); setCoaching(co);
@@ -600,6 +611,9 @@ export default function MyPaperTradesPage() {
               {PERFORMANCE_SOURCE_COPY[perfSource]}
             </CardContent></Card>
           ) : (<>
+          <p className="text-xs text-muted-foreground" data-testid="performance-source-note">
+            {perfSourceNote ?? PAPER_TRADES_SOURCE_NOTE}
+          </p>
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>

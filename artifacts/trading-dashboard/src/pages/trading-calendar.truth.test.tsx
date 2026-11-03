@@ -309,7 +309,7 @@ describe("trading calendar: day detail P&L", () => {
 });
 
 describe("trading calendar: source", () => {
-  it("names its ledger (simulated orders) and says My Performance's hand-logged trades are separate", async () => {
+  it("names its ledger (simulated orders) and says My Demo Trades' hand-logged trades are separate", async () => {
     mockFetch({
       "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
       // An older server sends no source note: the page still names its source.
@@ -322,7 +322,9 @@ describe("trading calendar: source", () => {
     expect(screen.queryByText(/from your demo trades/)).toBeNull();
     const note = screen.getByTestId("calendar-source-note");
     expect(note.textContent).toMatch(/simulated orders/i);
-    expect(note.textContent).toMatch(/My Performance/);
+    // Named by the page's visible title, "My Demo Trades".
+    expect(note.textContent).toMatch(/My Demo Trades/);
+    expect(note.textContent).not.toMatch(/My Performance/);
   });
 
   it("live mode shows the server's source note", async () => {
