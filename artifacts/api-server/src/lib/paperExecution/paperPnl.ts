@@ -38,7 +38,8 @@ export function paperMoveSign(direction: string, entry: number, price: number): 
 
 export {
   PAPER_LEDGER_MODEL_CONTRACT_SIZE, paperLedgerModelPnl, isUnsizedPaperClose,
-  paperBookedRealized, paperRiskRealized, paperRiskShortfall, type PaperCloseFigures,
+  paperBookedRealized, paperModelRealized, paperRiskRealized, paperRiskShortfall, paperRiskTotals,
+  type PaperCloseFigures, type PaperRiskTotals,
 } from "./paperRiskCount.js";
 
 export function paperPnl(a: {

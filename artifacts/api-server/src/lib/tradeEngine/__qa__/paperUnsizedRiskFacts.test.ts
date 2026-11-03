@@ -38,6 +38,7 @@ mock.module("../pipeline.js", {
 
 const { runPaperMonitor } = await import("../../paperExecution/paperExecutionMonitor.js");
 const { realizedOf, readPaperCloses, sumPaperRealizedSince } = await import("../paperBookReader.js");
+const { paperRiskTotals } = await import("../../paperExecution/paperPnl.js");
 const { summarizeActivity } = await import("../../riskGovernor/preTrade.js");
 const { PAPER_LEDGER_INSTRUMENT } = await import("../../riskGovernor/enforce.js");
 
@@ -96,31 +97,46 @@ test("sumPaperRealizedSince: an unsized target hit cannot cancel measured losses
   assert.equal(tp.profitLoss, 0, "stored as the not-sized placeholder");
   fake = createFakeDb({ paper_orders: [tp, { ...tp, id: 56, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -500 }, { ...tp, id: 57, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -300 }] });
   const total = await sumPaperRealizedSince({ owner: null, strategyId: "build_ee_paper_execution" }, minsAgo(60));
-  // Was −800 + 10,000 = +9,200: neither daily-loss stop could trip. The two
-  // sized losses now count at no less than the paper risk model (each close at
-  // the lower of its booked amount and move × lots × 100): the −300 booked at
-  // 17,990 counts (17990 − 18000) × 0.5 × 100 = −500, so the total is −1,000.
-  assert.equal(total, -500 + (17990 - 18000) * 0.5 * 100);
+  // Was −800 + 10,000 = +9,200: neither daily-loss stop could trip. The risk
+  // count is the lower of two full totals over the same closes (round-3
+  // s-exec: never a sum of per-close minimums, which drifts below both):
+  //   booked total  0 (the win of unknown size) − 500 − 300 = −800
+  //   model total   +10,000 (200 points × 0.5 × 100) − 500 − 500 = +9,000
+  // so the total is −800, the lower of the two.
+  const booked = 0 - 500 - 300;
+  const model = (18200 - 18000) * 0.5 * 100 + 2 * (17990 - 18000) * 0.5 * 100;
+  assert.equal(total, Math.min(booked, model));
+  assert.equal(total, -800);
+  assert.ok(total <= booked && total <= model, "never above either total");
 });
 
 test("readPaperCloses → summarizeActivity: an unsized target hit ends a losing streak by its sign but adds no money to the week's P/L", async () => {
   const tp = await settleThroughMonitor(openOrder({ id: 58 }), 18110);
   fake = createFakeDb({ paper_orders: [tp, { ...tp, id: 59, status: "CLOSED_SL", exitPrice: 17990, profitLoss: -5, closedAt: minsAgo(10) }] });
   const closes = await readPaperCloses({ account: 1 }, { limit: 20 });
-  // The −5 booked at 17,990 counts at the paper risk model, (17990 − 18000) × 0.5 × 100 = −500.
+  // Each close's own count, whose sign the streak reads: the unsized win 0,
+  // the −5 booked at 17,990 alone (17990 − 18000) × 0.5 × 100 = −500.
   assert.deepEqual(closes.map((c) => c.pnl), [0, (17990 - 18000) * 0.5 * 100]);
   const act = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })), 0, NOW, "paper_orders:account:1");
   assert.equal(act.consecutiveLosses, 0, "the newest close was a win");
   assert.equal(act.lastClosedWasLoss, false);
-  assert.equal(act.weekRealizedPnl, -500, "was +4,995: the estimated win offset the measured loss");
+  // The week's P/L the governor reads is the lower of the week's two totals
+  // (enforce.loadPaperFacts): booked 0 − 5 = −5, model +5,000 − 500 = +4,500.
+  const week = paperRiskTotals(closes);
+  assert.equal(week.booked, -5);
+  assert.equal(week.model, (18100 - 18000) * 0.5 * 100 + (17990 - 18000) * 0.5 * 100);
+  assert.equal(week.risk, -5, "was +4,995: the estimated win offset the measured loss");
+  assert.ok(week.risk <= week.booked && week.risk <= week.model);
 });
 
 test("sumPaperRealizedSince: the daily total includes the unsized stop-out", async () => {
   const sl = await settleThroughMonitor(openOrder(), 17940);
   fake = createFakeDb({ paper_orders: [sl, { ...sl, id: 53, profitLoss: -40 }] });
   const total = await sumPaperRealizedSince({ owner: null, strategyId: "build_ee_paper_execution" }, minsAgo(60));
-  // The −40 booked at the 17,950 stop counts at the paper risk model too (the lower figure).
+  // Booked total −2,500 (the unsized stop-out at the model) − 40 = −2,540;
+  // model total 2 × −2,500 = −5,000: the lower total is the model's.
   assert.equal(total, 2 * (17950 - 18000) * 0.5 * 100, "was -40: the unsized loss was dropped from the daily total");
+  assert.ok(total <= (17950 - 18000) * 0.5 * 100 - 40, "never above the booked total");
 });
 
 test("readPaperCloses → summarizeActivity: an unsized stop-out keeps the losing streak and reads as the last loss", async () => {

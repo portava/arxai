@@ -58,29 +58,68 @@ export function paperBookedRealized(o: PaperCloseFigures): number {
 }
 
 /**
- * Realized P/L of one settled paper order as a RISK input (daily and weekly
- * loss totals, the autopilot's daily stop, the equity the Risk Governor caps
- * against): the lower of its booked amount (paperBookedRealized) and the paper
- * risk model (move × lots × 100), the figure every paper close was counted at
- * before the venue sized P&L at the instrument's contract size. A loss booked
- * smaller than the model (a broker contract under 100 units, e.g. an index)
- * still counts at the model, and a win booked larger than the model (a
- * currency pair at 100,000 units) counts only at the model, so no risk count
- * is ever looser than either figure. Its sign is the booked amount's sign, so
- * a losing streak reads the same. A risk count, not a measured result: the
- * booked amount stays the figure shown as P&L.
+ * The x100 model figure of one settled paper order: move × lots × 100 signed
+ * by the fills (paperLedgerModelPnl), the figure every paper close was counted
+ * at before the venue sized P&L at the instrument's contract size (16c8a1a0).
+ * A row with no exit price has no move to price, so its booked figure stands
+ * (16c8a1a0 read the stored figure for it too).
+ */
+export function paperModelRealized(o: PaperCloseFigures): number {
+  if (o.exitPrice == null) return paperBookedRealized(o);
+  return paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
+}
+
+/** The two full bases of a set of settled paper orders, and the risk count taken from them. */
+export interface PaperRiskTotals {
+  /** Σ paperBookedRealized: the figure the paper balance adds up. */
+  booked: number;
+  /** Σ paperModelRealized: the figure 16c8a1a0 counted the same closes at. */
+  model: number;
+  /** The lower of the two totals. */
+  risk: number;
+}
+
+/**
+ * The paper risk count of a set of settled orders (today's closes, the week's,
+ * every close on the account): the LOWER OF TWO FULL TOTALS over the same
+ * closes, the booked total and the x100 model total. It is never above either
+ * total and always equals one of them, so it can never drift below both. A
+ * risk input (the Risk Governor's daily loss total, weekly P/L and the equity
+ * every cap is valued on, the autopilot's daily stop, trader readiness, the
+ * risk overview) reads this, never a sum of per-close figures: a sum of
+ * per-close minimums takes every win at the smaller figure and every loss at
+ * the larger one, so it falls below both totals and keeps falling.
+ */
+export function paperRiskTotals(rows: readonly PaperCloseFigures[]): PaperRiskTotals {
+  let booked = 0;
+  let model = 0;
+  for (const o of rows) {
+    booked += paperBookedRealized(o);
+    model += paperModelRealized(o);
+  }
+  return { booked, model, risk: Math.min(booked, model) };
+}
+
+/**
+ * The paper risk count of ONE settled order: the lower of its booked figure
+ * and its x100 model figure (paperRiskTotals over that one close). Its sign is
+ * the sign of its move whenever it was sized, so a losing streak reads each
+ * close by it. Never add these up for a total over several closes: use
+ * paperRiskTotals (see there why).
  */
 export function paperRiskRealized(o: PaperCloseFigures): number {
-  const booked = paperBookedRealized(o);
-  if (o.exitPrice == null) return booked;
-  return Math.min(booked, paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice));
+  return paperRiskTotals([o]).risk;
 }
 
 /**
  * How far the risk count of these settled orders falls below their booked
- * P/L: Σ (paperRiskRealized − paperBookedRealized). Always 0 or less. The Risk
- * Governor lowers the booked paper equity by it before checking a cap.
+ * total: min(0, Σ model − Σ booked), i.e. paperRiskTotals(rows).risk − booked.
+ * Always 0 or less. The Risk Governor lowers the booked paper equity by it
+ * (over every settled order on the account) before checking a cap, so that
+ * equity is never above the booked equity nor above the equity the same
+ * closes gave when every close was counted at the x100 model.
  */
 export function paperRiskShortfall(rows: readonly PaperCloseFigures[]): number {
-  return rows.reduce((s, o) => s + (paperRiskRealized(o) - paperBookedRealized(o)), 0);
+  const t = paperRiskTotals(rows);
+  return t.risk - t.booked;
 }

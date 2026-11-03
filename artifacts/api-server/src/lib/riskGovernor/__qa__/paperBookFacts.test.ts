@@ -77,11 +77,17 @@ after(async () => {
   await db.delete(usersTable).where(inArray(usersTable.id, ids));
 });
 
-// The ownerless EE win booked +7 counts at the paper risk model in every risk
-// total (each close at the lower of its booked amount and move × lots × 100):
-// (1.12 − 1.1) × 0.1 lots × 100 = 0.2. The columns are float4, so compare to
-// within a millionth.
+// Every risk total is the lower of two full totals over the same closes
+// (round-3 s-exec): the booked total and the paper risk model total
+// (move × lots × 100). The ownerless EE win booked +7 is (1.12 − 1.1) × 0.1
+// lots × 100 = 0.2 at the model, so alone it counts 0.2. Alice's account
+// also holds her −50 loss at (1.095 − 1.1) × 0.1 × 100 = −0.05 at the model:
+// booked total −43, model total +0.15, so the account's day counts −43 (was
+// −49.8, the per-close sum, below both totals). The columns are float4, so
+// compare to within a millionth.
 const EE_WIN_RISK = (1.12 - 1.1) * 0.1 * 100;
+const ALICE_ACCOUNT_BOOKED = -50 + 7;
+const ALICE_ACCOUNT_MODEL = (1.095 - 1.1) * 0.1 * 100 + EE_WIN_RISK;
 const near = (a: number | null | undefined, b: number, msg: string) =>
   assert.ok(a != null && Math.abs(a - b) < 1e-6, `${msg} (got ${a}, expected ${b})`);
 
@@ -90,7 +96,9 @@ const intent = (userId: number, venue: "PAPER" | "DEMO") =>
 
 test("no double count: the governor's PAPER P/L is paper_orders only (not the journal, not trades)", async () => {
   const ctx = await buildRiskContext(intent(u.alice, "PAPER"), { facts: { quote: null, halt: null } });
-  near(ctx.daily.realizedPnl, -50 + EE_WIN_RISK, "alice's account: her settled loss plus the ownerless EE row booked on it (its +7 win at the 0.2 paper risk model); journal -500 and trades -300 not added");
+  near(ctx.daily.realizedPnl, Math.min(ALICE_ACCOUNT_BOOKED, ALICE_ACCOUNT_MODEL), "alice's account: her settled loss plus the ownerless EE row booked on it, at the lower of the booked (−43) and model (+0.15) totals; journal -500 and trades -300 not added");
+  assert.ok(ctx.daily.realizedPnl! <= ALICE_ACCOUNT_BOOKED + 1e-6 && ctx.daily.realizedPnl! <= ALICE_ACCOUNT_MODEL + 1e-6, "never above either total");
+  assert.ok(ctx.daily.realizedPnl! >= Math.min(ALICE_ACCOUNT_BOOKED, ALICE_ACCOUNT_MODEL) - 1e-6, "never below both (no per-close drift)");
   assert.equal(ctx.positions.length, 1, "one open order; the voided order never counts");
   const act = await loadTradingActivity(u.alice, "PAPER");
   assert.equal(act!.source, `paper_orders:account:${acct.alice}`);
