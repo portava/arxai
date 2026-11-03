@@ -3,6 +3,11 @@
 // floating P&L is never read, so a challenge with open positions down 12% and
 // flat closed P&L reports 0.00% drawdown. The evaluation must say so: which
 // basis the figures use and how many open positions were not counted.
+//
+// It also checks "max risk per trade" as each closed trade's REALISED loss vs
+// the day's starting balance; risk at entry (stop-loss distance) is never
+// measured. The evaluation and the violation message must say that, not
+// present it as a risk-at-entry check.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createFakeDb, withRouter } from "./_fakeRouteDb.js";
@@ -67,4 +72,16 @@ test("drawdown and daily-loss violations name the closed-trade basis", async () 
   } finally {
     Object.assign(challenge, saved);
   }
+});
+
+test("max risk per trade is reported as a realised-loss check, not risk at entry", async () => {
+  const { summary, violations } = await evaluate();
+  assert.equal(summary.riskPerTradeBasis, "REALISED_LOSS_AFTER_CLOSE");
+  assert.match(String(summary.riskPerTradeNote), /realised loss/i);
+  assert.match(String(summary.riskPerTradeNote), /stop-loss distance\) is not measured/i);
+  const v = (violations as Array<{ type: string; severity: string; message: string }>)
+    .find((x) => x.type === "MAX_RISK_PER_TRADE" && x.severity === "WARN");
+  assert.ok(v, "the -150 trade breaches the 1% limit");
+  assert.match(v.message, /realised loss/i);
+  assert.match(v.message, /risk at entry is not measured/i);
 });

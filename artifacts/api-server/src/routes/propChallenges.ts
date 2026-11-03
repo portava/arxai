@@ -117,6 +117,10 @@ interface Eval {
   openPositionsNotCounted: number;
 }
 
+const RISK_PER_TRADE_NOTE =
+  "Max risk per trade is checked on each closed trade's realised loss against that day's starting balance. " +
+  "Risk at entry (stop-loss distance) is not measured, so a trade that risked more but closed at a small loss or a profit is not flagged.";
+
 /** Drawdown and daily loss are a running balance of realised P&L from
  *  closed paper orders; open positions are not marked to market. */
 function closedTradeDrawdownNote(openPositions: number): string {
@@ -176,6 +180,9 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
 
     // Phase 27-B: Max risk per trade (per-trade loss vs day-start balance).
     // Per-trade, never fabricated — uses actual paper-order profitLoss.
+    // This is the REALISED loss after close; risk at entry (stop-loss
+    // distance) is not measured, so a trade that risked more but closed at a
+    // small loss or a profit raises nothing. Messages and the summary say so.
     if (startBal > 0) {
       for (const o of dayOrders) {
         if (o.profitLoss < 0) {
@@ -184,12 +191,12 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
             dayRules.push("MAX_RISK_PER_TRADE");
             violations.push({
               type: "MAX_RISK_PER_TRADE", severity: "WARN",
-              message: `Trade #${o.id} loss ${(tradeLossPct*100).toFixed(2)}% exceeds max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date}`,
+              message: `Trade #${o.id} realised loss ${(tradeLossPct*100).toFixed(2)}% of the day's starting balance exceeds the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date} (checked after close; risk at entry is not measured)`,
             });
           } else if (tradeLossPct > ch.maxRiskPerTrade * 0.8) {
             violations.push({
               type: "MAX_RISK_PER_TRADE", severity: "INFO",
-              message: `Trade #${o.id} loss ${(tradeLossPct*100).toFixed(2)}% approaching max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date}`,
+              message: `Trade #${o.id} realised loss ${(tradeLossPct*100).toFixed(2)}% of the day's starting balance is approaching the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date} (checked after close; risk at entry is not measured)`,
             });
           }
         }
@@ -538,6 +545,10 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
         drawdownBasis: "CLOSED_TRADES_ONLY",
         openPositionsNotCounted: ev.openPositionsNotCounted,
         drawdownNote: closedTradeDrawdownNote(ev.openPositionsNotCounted),
+        // What the max-risk-per-trade rule actually checks.
+        maxRiskPerTrade: ch.maxRiskPerTrade,
+        riskPerTradeBasis: "REALISED_LOSS_AFTER_CLOSE",
+        riskPerTradeNote: RISK_PER_TRADE_NOTE,
       },
       days: ev.days,
       violations: ev.violations,
