@@ -46,37 +46,60 @@ export function isFxWeekendClosed(nowUtcIso: string): boolean | null {
 const HOUR_MS = 3_600_000;
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function utcDayTime(d: Date): string {
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${WEEKDAY[d.getUTCDay()]} ${hh}:${mm} UTC`;
+}
+
 /**
  * When a session next opens, as "Sun 22:00 UTC (in 32h 30m)". The server
  * counts whole hours from the start of the current UTC hour, so the absolute
- * time is that hour start plus `hours`. Null when the inputs are unusable.
+ * time is that hour start plus `hours`. `elapsedMs` is how long ago, on the
+ * client clock, that server time was received: the wait is measured from the
+ * server time plus that, so it keeps counting down when later reads fail.
+ * Once the open time has passed with no fresh read, no wait is shown. Null
+ * when the inputs are unusable.
  */
-export function nextOpenText(nowUtcIso: string, hours: number): string | null {
+export function nextOpenText(nowUtcIso: string, hours: number, elapsedMs = 0): string | null {
   const now = Date.parse(nowUtcIso);
   if (!Number.isFinite(now) || !Number.isFinite(hours) || hours <= 0) return null;
   const at = new Date(Math.floor(now / HOUR_MS) * HOUR_MS + hours * HOUR_MS);
-  const mins = Math.max(0, Math.round((at.getTime() - now) / 60_000));
-  const hh = String(at.getUTCHours()).padStart(2, "0");
-  const mm = String(at.getUTCMinutes()).padStart(2, "0");
-  return `${WEEKDAY[at.getUTCDay()]} ${hh}:${mm} UTC (in ${Math.floor(mins / 60)}h ${mins % 60}m)`;
+  const current = now + (Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0);
+  const mins = Math.round((at.getTime() - current) / 60_000);
+  if (mins <= 0) return `${utcDayTime(at)} (that time has passed; the reopen is not confirmed until the session clock is read again)`;
+  return `${utcDayTime(at)} (in ${Math.floor(mins / 60)}h ${mins % 60}m)`;
 }
 
 export default function MarketSessionsPage() {
   const [c, setC] = useState<Clock | null>(null);
+  // Client clock (ms) when `c` arrived, and a client clock that ticks with the
+  // poll, so the weekend countdown keeps time while later reads fail.
+  const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [clientNow, setClientNow] = useState(() => Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     const load = async () => {
       try {
         const r = await fetch("/api/market/session-clock");
         if (!r.ok) { setLoadError(`Could not load the session clock (HTTP ${r.status}).`); return; }
-        setC((await r.json()) as Clock);
+        const body = (await r.json()) as Clock;
+        const at = Date.now();
+        setC(body);
+        setReceivedAt(at);
+        setClientNow(at);
         setLoadError(null);
       } catch {
         setLoadError("Could not load the session clock — the request did not complete.");
       }
     };
-    void load(); const id = setInterval(() => { void load(); }, 30_000); return () => clearInterval(id);
+    void load();
+    const id = setInterval(() => { setClientNow(Date.now()); void load(); }, 30_000);
+    return () => clearInterval(id);
   }, []);
+  const elapsedMs = receivedAt == null ? 0 : Math.max(0, clientNow - receivedAt);
+  const lastReadAt = c ? new Date(c.nowUTC) : null;
+  const lastReadText = lastReadAt && !Number.isNaN(lastReadAt.getTime()) ? utcDayTime(lastReadAt) : null;
 
   const weekendState = c ? isFxWeekendClosed(c.nowUTC) : null;
   // The server's marketClosed flag wins when present; the client weekday check
@@ -97,7 +120,14 @@ export default function MarketSessionsPage() {
         {c && weekend && <Badge className="bg-zinc-500/20 text-zinc-400">WEEKEND</Badge>}
       </div>
 
-      {loadError && <p className="text-sm text-rose-400">{loadError}</p>}
+      {loadError && (
+        <p className="text-sm text-rose-400">
+          {loadError}
+          {c && (lastReadText
+            ? ` The figures below are from the last successful read, at ${lastReadText} (server time).`
+            : " The figures below are from an earlier successful read.")}
+        </p>
+      )}
       {!c ? (!loadError && <p className="text-sm text-muted-foreground">Loading…</p>) : (
         <>
           <Card>
@@ -138,7 +168,7 @@ export default function MarketSessionsPage() {
                           weekend-aware next-open times; an older hour-only
                           figure is not shown at the weekend. */}
                       {c.marketClosed === true && (() => {
-                        const text = nextOpenText(c.nowUTC, s.nextOpenInHours);
+                        const text = nextOpenText(c.nowUTC, s.nextOpenInHours, elapsedMs);
                         return text ? (
                           <p className="text-xs text-muted-foreground" data-testid={`session-next-open-${s.id}`}>Next open {text}</p>
                         ) : null;
