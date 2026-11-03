@@ -147,4 +147,38 @@ describe("Operator Command Center — capped lists", () => {
     expect(panel.textContent).not.toContain("High: 25+");
     expect(panel.textContent).toMatch(/ORPHAN_BROKER_POSITION/);
   });
+
+  // The per-type counts used to be a raw JSON dump: an unchecked type printed
+  // 0 and a capped list printed its cap as if exact. They now read like the
+  // Reconciliation Center: "not checked" and "N+".
+  it("per-type counts: unchecked types read 'not checked', capped types 'N+', never a raw 0 / exact cap", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      ok: true, generatedAt: COMPUTED_AT, tookMs: 1,
+      systemStatus: { appOnline: true, apiOk: true, databaseOk: true, cacheMode: "x", activeUserCount: 0, currentAppMode: "PAPER", latestQaStatus: "x" },
+      bridgeStatus: null,
+      tradingMode: { modeLabel: "PAPER", platformMasterBridgeConnectionId: null, sharedLiveTradingEnabled: false, masterLiveUserApprovalRequired: true, liveBrokerExecutionEnabled: false },
+      safetyControls: { platformMode: "PAPER", killSwitchEngaged: false, killSwitchReason: null, liveBrokerExecutionEnabled: false, paperOnlyHardLockActive: true, sharedLiveTradingEnabled: false, oneClickPolicy: "off", stopLossRequiredDefault: true, maxLotDefault: 0.01, queueDepth: 0, openLiveCommandsNonTerminal: 0 },
+      userApprovals: { total: 0, approvedForMasterLive: 0, pendingReview: 0, disabled: 0, suspended: 0, riskLocked: 0, notApproved: 0, withDisclosureAccepted: 0, sample: [] },
+      liveTestReadiness: { currentLiveBridgeDetected: false, currentLiveBridgePrimaryReason: null, operatorDisclosureAccepted: false, operatorArmed: false, operatorKillSwitchEngaged: false, preflightOnly: true, autoFireDisabled: true, preflightEndpoint: "/x" },
+      reconciliationSummary: {
+        total: 50, critical: 50, high: 0, medium: 0, low: 0,
+        byType: { ORPHAN_BROKER_POSITION: 50, STALE_COMMAND: 0, MISSING_ATTRIBUTION: 0 },
+        complete: false, uncheckedTypes: ["STALE_COMMAND"],
+        truncated: true, truncatedTypes: ["ORPHAN_BROKER_POSITION"], truncatedSeverities: ["critical"],
+      },
+    })));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><OperatorCommandCenter /></QueryClientProvider>); await settle();
+    const panel = await screen.findByTestId("panel-reconciliation");
+    expect(panel.querySelector("pre")).toBeNull();
+    expect(panel.textContent).not.toContain('"STALE_COMMAND": 0');
+    expect(panel.textContent).not.toContain('"ORPHAN_BROKER_POSITION": 50');
+    const unchecked = screen.getByTestId("occ-recon-type-STALE_COMMAND");
+    expect(unchecked.textContent).toContain("not checked");
+    expect(unchecked.textContent).not.toMatch(/\b0\b/);
+    expect(screen.getByTestId("occ-recon-type-ORPHAN_BROKER_POSITION").textContent).toMatch(/50\+/);
+    const clean = screen.getByTestId("occ-recon-type-MISSING_ATTRIBUTION");
+    expect(clean.textContent).toMatch(/0$/);
+    expect(clean.textContent).not.toMatch(/\+/);
+  });
 });

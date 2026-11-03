@@ -221,6 +221,23 @@ function fmtAge(ageMs: number | null): string {
 
 // Compact UTC date+time (minute precision) for broker-candle oldest/newest,
 // which can span days — a time-only label would be ambiguous.
+// The current time, re-read every `intervalMs` while mounted (cleared on
+// unmount), so an age shown on a card that does not poll keeps growing.
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+// "Ns ago" since `since`, kept current by its own 1 s clock.
+function LiveAge({ since }: { since: number }) {
+  const now = useNow(1000);
+  return <>{fmtAge(now - since)}</>;
+}
+
 // Shown when a refresh failed and the card is still displaying the data of an
 // earlier successful load: says how old it is and that it is not current.
 function StaleDataNote({ loadedAt, what, testId }: { loadedAt: number; what: string; testId: string }) {
@@ -230,7 +247,7 @@ function StaleDataNote({ loadedAt, what, testId }: { loadedAt: number; what: str
       <AlertTitle>Not current — the latest refresh failed</AlertTitle>
       <AlertDescription className="text-xs">
         The {what} below is from the last successful load at{" "}
-        {new Date(loadedAt).toLocaleTimeString()} ({fmtAge(Date.now() - loadedAt)}). It may no
+        {new Date(loadedAt).toLocaleTimeString()} (<LiveAge since={loadedAt} />). It may no
         longer describe what is happening now.
       </AlertDescription>
     </Alert>
@@ -558,7 +575,7 @@ function Mt5CandleFeedCard() {
           )}
           {feed && err && (
             <Badge className="bg-warning/20 text-warning" data-testid="badge-mt5-feed-active">
-              status unknown — last load {feedAt != null ? fmtAge(Date.now() - feedAt) : ""}: {feed.feedActive ? "connected" : "offline"}
+              status unknown — last load {feedAt != null ? <LiveAge since={feedAt} /> : ""}: {feed.feedActive ? "connected" : "offline"}
             </Badge>
           )}
           <span className="ml-auto flex items-center gap-2">

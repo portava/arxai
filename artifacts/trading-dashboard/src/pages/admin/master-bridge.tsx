@@ -60,7 +60,11 @@ type LiveExecutionState = {
   platformStopEngaged: boolean;
   platformStopSources: string[];
   platformStopReason: string | null;
+  /** Each engaged source's stored reason; "state unreadable" / "settings missing" = this read could not read it (newer servers). */
+  platformStopDetail?: Record<string, string | null | undefined>;
 };
+/** The server's fail-closed reasons for a stop it could not read. */
+const STOP_NOT_READ = new Set(["state unreadable", "settings missing"]);
 const STOP_SOURCE_LABEL: Record<string, string> = {
   platform_emergency_stop: "platform emergency stop",
   safety_core_kill_switch: "safety-core kill switch",
@@ -74,14 +78,45 @@ export function liveDispatchBlockers(main: Pick<MainBridge, "liveBrokerExecution
       ? ["the server switch ARX_LIVE_BROKER_EXECUTION_ENABLED is off"]
       : ["the operator arm and platform stops were not reported"];
   }
+  // A stop this read could not read fails closed (counted as engaged here),
+  // but nothing was observed engaged: it is named "could not be read", with
+  // the server's reason, never "<stop> engaged". Without per-source detail
+  // (older server) an unreadable answer cannot say which source was read.
+  const stopLines: string[] = [];
+  let stopUnreadNamed = false;
+  if (x.platformStopEngaged) {
+    const detail = x.platformStopDetail;
+    const engaged: string[] = [];
+    const unsure: string[] = [];
+    for (const s of x.platformStopSources) {
+      const name = STOP_SOURCE_LABEL[s] ?? s;
+      const why = detail ? detail[s] : undefined;
+      if (!x.readable && detail && STOP_NOT_READ.has(String(why ?? ""))) {
+        stopLines.push(`${name} could not be read (${why}); this report treats it as engaged`);
+        stopUnreadNamed = true;
+      } else if (!x.readable && !detail) {
+        unsure.push(name);
+      } else {
+        engaged.push(name);
+      }
+    }
+    if (engaged.length) stopLines.unshift(`${engaged.join(" and ")} engaged`);
+    if (unsure.length) {
+      stopLines.push(`${unsure.join(" and ")} engaged or could not be read (the stop state was not fully readable)`);
+      stopUnreadNamed = true;
+    }
+    if (!x.platformStopSources.length) {
+      stopLines.push(x.readable ? "a platform stop engaged" : "the platform stops could not be read; this report treats them as engaged");
+      stopUnreadNamed = !x.readable;
+    }
+  }
   const out: string[] = [];
-  if (!x.readable) out.push("the live execution switches could not be read");
+  // operatorArmed is null only when the switches row itself was not read; an
+  // unread stop alone is named by its own line below.
+  if (!x.readable && (x.operatorArmed === null || !stopUnreadNamed)) out.push("the live execution switches could not be read");
   if (!x.envEnabled) out.push("the server switch ARX_LIVE_BROKER_EXECUTION_ENABLED is off");
   if (x.operatorArmed === false) out.push("live execution is not armed by an operator");
-  if (x.platformStopEngaged) {
-    const names = x.platformStopSources.map((s) => STOP_SOURCE_LABEL[s] ?? s);
-    out.push(`${names.length ? names.join(" and ") : "a platform stop"} engaged`);
-  }
+  out.push(...stopLines);
   if (!out.length && !x.effectiveEnabled) out.push("the effective live execution switch is off");
   return out;
 }

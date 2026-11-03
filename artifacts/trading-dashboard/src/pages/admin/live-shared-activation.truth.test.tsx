@@ -305,6 +305,100 @@ describe("live shared activation — install-wide stops", () => {
   });
 });
 
+// A stop this report could not read (safety_core read threw, or the settings
+// row could not be read / is missing) fails closed as engaged, but nothing was
+// observed: the page says "could not be read — treated as engaged", never
+// "engaged" / "true" or "release it".
+describe("live shared activation — an install-wide stop that could not be read", () => {
+  it("an unreadable safety-core switch reads 'could not be read — treated as engaged', not engaged / release it", async () => {
+    await renderWith(readiness({
+      globalSwitches: {
+        platformStopEngaged: true,
+        platformStopSources: ["safety_core_kill_switch"],
+        platformStopReason: "The safety-core kill switch is engaged. (state unreadable)",
+        platformStopReadable: false,
+        platformStopDetail: { safety_core_kill_switch: "state unreadable" },
+      },
+    }));
+    // Still fail-closed: never READY TO ARM.
+    expect(screen.queryByTestId("banner-ready-to-arm")).toBeNull();
+    const row = screen.getByTestId("safety-core-kill-row");
+    expect(row.textContent).toMatch(/could not be read — treated as engaged/);
+    expect(row.textContent).not.toContain("true");
+    const banner = screen.getByTestId("banner-kill-switch");
+    expect(banner.textContent).toMatch(/safety-core kill switch could not be read/i);
+    expect(banner.textContent).not.toMatch(/safety-core kill switch is engaged/i);
+    expect(banner.textContent).not.toMatch(/release it on the Emergency page/i);
+    expect(checkRow("kill_released").dataset.state).toBe("fail");
+    expect(checkRow("kill_released").textContent).toMatch(/safety-core kill switch could not be read — treated as engaged/);
+    expect(checkRow("kill_released").textContent).not.toMatch(/release on the Emergency page/);
+    const arm = screen.getByTestId("arm-safety-core-stop");
+    expect(arm.textContent).toMatch(/could not be read — treated as engaged/);
+    expect(arm.textContent).not.toMatch(/Release it on the Emergency page/);
+    expect(screen.getByTestId("mode-chip-kill").textContent).toMatch(/could not be read/i);
+  });
+
+  it("with the platform emergency stop also engaged, the unread safety-core switch is still named as unread", async () => {
+    await renderWith(readiness({
+      globalSwitches: {
+        emergencyKillSwitch: true,
+        killSwitchReason: "operator drill",
+        platformStopEngaged: true,
+        platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+        platformStopReason: "The platform emergency stop is engaged by an operator. (operator drill)",
+        platformStopReadable: false,
+        platformStopDetail: { platform_emergency_stop: "operator drill", safety_core_kill_switch: "state unreadable" },
+      },
+    }));
+    const banner = screen.getByTestId("banner-kill-switch");
+    expect(banner.textContent).toMatch(/platform emergency stop is engaged/i);
+    expect(banner.textContent).toMatch(/safety-core kill switch could not be read/i);
+    expect(screen.getByTestId("safety-core-kill-row").textContent).toMatch(/could not be read — treated as engaged/);
+    expect(checkRow("kill_released").textContent).toMatch(/platform emergency stop engaged/);
+    expect(checkRow("kill_released").textContent).toMatch(/safety-core kill switch could not be read/);
+  });
+
+  it("unreadable or missing settings: the platform emergency stop reads 'could not be read', not engaged", async () => {
+    await renderWith(readiness({
+      globalSwitches: {
+        emergencyKillSwitch: true,
+        killSwitchReason: "settings missing",
+        platformStopEngaged: true,
+        platformStopSources: ["platform_emergency_stop"],
+        platformStopReason: "The platform emergency stop is engaged by an operator. (settings missing)",
+        platformStopReadable: false,
+        platformStopDetail: { platform_emergency_stop: "settings missing" },
+      },
+    }));
+    const stopRow = screen.getByTestId("safety-emergency-stop-row");
+    expect(stopRow.textContent).toMatch(/could not be read — treated as engaged/);
+    expect(stopRow.textContent).toContain("settings missing");
+    expect(stopRow.textContent).not.toContain("true");
+    const banner = screen.getByTestId("banner-kill-switch");
+    expect(banner.textContent).toMatch(/platform emergency stop could not be read/i);
+    expect(banner.textContent).not.toMatch(/release it with Wizard step 9/i);
+    expect(checkRow("kill_released").textContent).toMatch(/platform emergency stop could not be read — treated as engaged/);
+    const arm = screen.getByTestId("arm-emergency-stop");
+    expect(arm.textContent).toMatch(/could not be read/);
+    expect(arm.textContent).not.toMatch(/Release it \(Wizard step 9\)/);
+  });
+
+  it("a read, engaged safety-core switch still says engaged and where to release it", async () => {
+    await renderWith(readiness({
+      globalSwitches: {
+        platformStopEngaged: true,
+        platformStopSources: ["safety_core_kill_switch"],
+        platformStopReason: "The safety-core kill switch is engaged. (drawdown breach)",
+        platformStopReadable: true,
+        platformStopDetail: { safety_core_kill_switch: "drawdown breach" },
+      },
+    }));
+    expect(screen.getByTestId("safety-core-kill-row").textContent).toContain("true");
+    expect(screen.getByTestId("banner-kill-switch").textContent).toMatch(/release it on the Emergency page/);
+    expect(screen.getByTestId("mode-chip-kill").textContent).toBe("KILL SWITCH ACTIVE");
+  });
+});
+
 describe("live shared activation — EA-reported inputs", () => {
   it("reads the flat EA-input fields the readiness route sends (maskBridgeEvidenceForUser)", async () => {
     await renderWith(readiness());
@@ -390,6 +484,53 @@ describe("live shared activation — master switch labels", () => {
     const eff = screen.getByTestId("safety-master-switch-effective");
     expect(eff.textContent).toMatch(/effective: env AND operator arm/);
     expect(eff.textContent).toContain("false");
+  });
+});
+
+// Effective live broker execution = env ARX_LIVE_BROKER_EXECUTION_ENABLED AND
+// the operator arm (platformSwitches; an unset env is false). The Arm card
+// must not advise leaving the env unset, and an operator arm with the env off
+// is not "ready to arm": arming again changes nothing.
+describe("live shared activation — env AND operator arm", () => {
+  it("the Arm card describes the env var as required (AND), not as a hard-kill override to leave unset", async () => {
+    await renderWith(readiness());
+    const card = screen.getByTestId("arm-execution-card");
+    expect(card.textContent).not.toMatch(/leave unset in normal operation/);
+    expect(card.textContent).not.toMatch(/hard-kill override/);
+    expect(screen.getByTestId("arm-env-line").textContent).toMatch(/must be true for live execution/);
+    expect(screen.getByTestId("arm-env-line").textContent).toMatch(/env AND operator arm/);
+  });
+
+  it("operator armed but env not set: not READY TO ARM; says the env var keeps live execution off", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: false, liveBrokerExecutionArmedDb: true },
+    }));
+    expect(screen.queryByTestId("banner-ready-to-arm")).toBeNull();
+    expect(screen.queryByTestId("banner-armed")).toBeNull();
+    const banner = screen.getByTestId("banner-armed-env-off");
+    expect(banner.textContent).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED/);
+    expect(banner.textContent).toMatch(/live execution stays off/i);
+    expect(banner.textContent).not.toMatch(/Arm live execution below/);
+    expect(screen.queryByTestId("mode-chip-ready-to-arm")).toBeNull();
+    expect(screen.getByTestId("mode-chip-armed-env-off")).toBeTruthy();
+    expect(screen.getByTestId("arm-env-off").textContent).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED/);
+  });
+
+  it("neither armed nor env set: ready to arm, and says arming alone will not enable live execution", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: false, liveBrokerExecutionArmedDb: false },
+    }));
+    const banner = screen.getByTestId("banner-ready-to-arm");
+    expect(banner.textContent).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED is not set/);
+    expect(banner.textContent).toMatch(/arming alone will not enable live execution/i);
+  });
+
+  it("env set, not armed: ready to arm without the env warning", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: true, liveBrokerExecutionArmedDb: false },
+    }));
+    const banner = screen.getByTestId("banner-ready-to-arm");
+    expect(banner.textContent).not.toMatch(/is not set/);
   });
 });
 

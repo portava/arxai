@@ -78,6 +78,8 @@ export interface LiveExecutionView {
   platformStopEngaged: boolean;
   platformStopSources: PlatformStopSource[];
   platformStopReason: string | null;
+  /** Each engaged source's stored reason; "state unreadable" / "settings missing" when this read could not read it. */
+  platformStopDetail: Partial<Record<PlatformStopSource, string | null>>;
 }
 async function masterLivePosture(): Promise<{
   masterLiveSettings: MasterLiveSettingsView;
@@ -94,6 +96,7 @@ async function masterLivePosture(): Promise<{
     platformStopEngaged: stop.engaged,
     platformStopSources: [...stop.sources],
     platformStopReason: stop.reason,
+    platformStopDetail: { ...stop.detail },
   };
   if (!sw.readable || !config) {
     return {

@@ -261,8 +261,22 @@ export default function OperatorCommandCenter() {
             <div>Medium: <strong>{d.reconciliationSummary.medium}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("medium") ? "+" : ""}</strong></div>
             <div>Low: <strong>{d.reconciliationSummary.low}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("low") ? "+" : ""}</strong></div>
           </div>
+          {/* Per-type counts, as the Reconciliation Center shows them: a type
+              whose check did not run is "not checked" (its 0 is not a
+              reading) and a capped list's count is a lower bound ("N+"). */}
           {Object.keys(d.reconciliationSummary.byType).length > 0 && (
-            <pre className="rounded-xl border border-border bg-background/40 p-2 text-xs text-txt-secondary">{JSON.stringify(d.reconciliationSummary.byType, null, 2)}</pre>
+            <div className="grid gap-1 md:grid-cols-2 rounded-xl border border-border bg-background/40 p-2 text-xs text-txt-secondary" data-testid="occ-recon-by-type">
+              {Object.entries(d.reconciliationSummary.byType).map(([k, v]) => (
+                <div key={k} className="flex justify-between border-b border-border/40 py-0.5" data-testid={`occ-recon-type-${k}`}>
+                  <span className="font-mono">{k}</span>
+                  <span>
+                    {(d.reconciliationSummary.uncheckedTypes ?? []).includes(k)
+                      ? <span className="text-warning">not checked</span>
+                      : `${v}${(d.reconciliationSummary.truncatedTypes ?? []).includes(k) ? "+" : ""}`}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
           <Link href="/admin/reconciliation-center" className="text-xs text-primary underline">Open Reconciliation Center →</Link>
         </div>

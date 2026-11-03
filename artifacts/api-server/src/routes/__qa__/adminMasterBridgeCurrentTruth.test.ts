@@ -147,3 +147,33 @@ test("unreadable switches: arm unknown, effective switch off, readable false", a
   assert.equal(x["operatorArmed"], null);
   assert.equal(x["effectiveEnabled"], false);
 });
+
+// A stop this report could not read fails closed as engaged. The response
+// also carries each engaged source's stored reason (additive), so the page can
+// say "could not be read (state unreadable / settings missing)" instead of
+// "platform emergency stop engaged".
+test("unreadable settings: the per-source stop detail says 'state unreadable'", async () => {
+  process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"] = "true";
+  const failed = switchesWith({
+    readable: false, unreadableReason: "error",
+    emergencyStop: { engaged: true, reason: "state unreadable", engagedAt: null },
+  });
+  settings = { switches: failed, config: null };
+  stop = realSwitches.platformStopFrom(failed, { readable: true, engaged: false, reason: null });
+  const x = (await current())["liveExecution"] as Record<string, unknown>;
+  assert.equal(x["readable"], false);
+  assert.equal(x["platformStopEngaged"], true);
+  assert.deepEqual(x["platformStopSources"], ["platform_emergency_stop"]);
+  assert.deepEqual(x["platformStopDetail"], { platform_emergency_stop: "state unreadable" });
+});
+
+test("a read, engaged stop carries its stored reason as detail", async () => {
+  process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"] = "true";
+  settings = { switches: armedSwitches(true), config: config({}) };
+  stop = realSwitches.platformStopFrom(
+    { readable: true, emergencyStop: { engaged: false, reason: null, engagedAt: null } },
+    { readable: true, engaged: true, reason: "operator halt" },
+  );
+  const x = (await current())["liveExecution"] as Record<string, unknown>;
+  assert.deepEqual(x["platformStopDetail"], { safety_core_kill_switch: "operator halt" });
+});
