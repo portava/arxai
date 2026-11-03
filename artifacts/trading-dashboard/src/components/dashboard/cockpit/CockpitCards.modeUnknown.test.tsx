@@ -12,6 +12,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
   mode: {} as Record<string, unknown>,
+  accountStatus: "pending",
 }));
 
 vi.mock("wouter", () => ({
@@ -25,7 +26,7 @@ vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby"
 vi.mock("@/lib/symbol-context", () => ({ useActiveSymbol: () => ({ active: "EURUSD" }) }));
 vi.mock("@/hooks/useLiveAccountSnapshotContext", () => ({ useLiveAccountSnapshotCtx: () => ({ snapshot: null, live: null, freshness: "unavailable", connectionStatus: "unavailable", lastUpdatedMs: null, notLiveReason: null, isEstimate: false, isStale: false, isUnavailable: true, warnings: [], reload: () => {} }) }));
 vi.mock("@workspace/api-client-react", () => ({
-  useGetMeSharedAccountSummary: () => ({ data: { ok: true, accounts: [{ status: "pending", masterBrokerName: "Broker", masterAccountNumberMasked: "****12" }], allocationView: null, masterMt5: null }, isLoading: false }),
+  useGetMeSharedAccountSummary: () => ({ data: { ok: true, accounts: [{ status: h.accountStatus, masterBrokerName: "Broker", masterAccountNumberMasked: "****12" }], allocationView: null, masterMt5: null }, isLoading: false }),
   getGetMeSharedAccountSummaryQueryKey: () => ["/api/me/shared-account/summary"],
 }));
 
@@ -62,6 +63,7 @@ function rowValue(testId: string): string {
 
 beforeEach(() => {
   h.mode = unknownMode();
+  h.accountStatus = "pending";
 });
 afterEach(() => cleanup());
 
@@ -125,5 +127,42 @@ describe("Account snapshot footer — account-mode check failed", () => {
     h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isDemo: true, cleanModeLabel: "Demo Mode" });
     render(<AccountSnapshotCard />);
     expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("DEMO");
+  });
+});
+
+// The shared-account summary is a separate query, so it can load an 'active'
+// allocation row while /me/account-mode failed. "Active" needs the server
+// blocker to have been read (a blocker overrides it), so with no envelope the
+// pill must not say "Active".
+describe("Account snapshot Active pill — account-mode check failed", () => {
+  function pill(): string {
+    return screen.getByTestId("cockpit-account-active-pill").textContent ?? "";
+  }
+
+  it("does not show 'Active' beside 'Mode unknown' when the blocker was never read", () => {
+    h.accountStatus = "active";
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("Mode unknown");
+    expect(pill()).not.toBe("Active");
+    expect(pill()).toBe("Not checked");
+    expect(screen.getByTestId("cockpit-account-active-pill").getAttribute("title") ?? "").toMatch(/could not be checked/);
+  });
+
+  it("says 'Checking' while the mode is still loading", () => {
+    h.accountStatus = "active";
+    h.mode = unknownMode({ isLoading: true, isError: false, isModeUnknown: false, cleanModeLabel: "Loading…", cleanUserMessage: "" });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Checking");
+  });
+
+  it("a read envelope with no blocker and an active allocation still says 'Active'; a blocker says 'Blocked'", () => {
+    h.accountStatus = "active";
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live" });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Active");
+    cleanup();
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live", cleanBlockedReason: "Live execution is paused by an operator." });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Blocked");
   });
 });

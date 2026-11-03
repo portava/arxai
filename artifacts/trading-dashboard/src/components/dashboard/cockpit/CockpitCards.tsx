@@ -225,11 +225,24 @@ export function AccountSnapshotCard() {
   // admin) a LIVE master sync. The LIVE_SHARED mode label is not one — the
   // server also sets it for display on an approved-but-unconfirmed account
   // whose execution is blocked — and a server blocker overrides both.
+  // With no envelope (still loading, or the check failed) the blocker was not
+  // read, so neither "Active" nor "Inactive" is claimed: the pill says
+  // "Checking" / "Not checked" instead.
+  const blockerRead = mode.envelope != null;
   const executionBlocked = Boolean(mode.cleanBlockedReason);
-  const isActive = !executionBlocked && (
+  const isActive = blockerRead && !executionBlocked && (
     (accounts[0]?.status ?? "").toString().toLowerCase() === "active"
     || master?.syncStatus === "LIVE"
   );
+  const pill: { label: string; tone: "success" | "warning" | "muted"; title?: string } = !blockerRead
+    ? mode.isModeUnknown
+      ? { label: "Not checked", tone: "muted", title: "Your account mode could not be checked, so whether a server blocker (such as an operator pause) applies is unknown." }
+      : { label: "Checking", tone: "muted", title: "Reading your account mode and any server blocker…" }
+    : isActive
+      ? { label: "Active", tone: "success" }
+      : executionBlocked
+        ? { label: "Blocked", tone: "warning", title: mode.cleanBlockedReason ?? undefined }
+        : { label: "Inactive", tone: "muted" };
 
   return (
     <CockpitCard
@@ -360,8 +373,8 @@ export function AccountSnapshotCard() {
               compact
             />
           )}
-          <span data-testid="cockpit-account-active-pill" title={executionBlocked ? mode.cleanBlockedReason ?? undefined : undefined}>
-            <Pill tone={isActive ? "success" : executionBlocked ? "warning" : "muted"}>{isActive ? "Active" : executionBlocked ? "Blocked" : "Inactive"}</Pill>
+          <span data-testid="cockpit-account-active-pill" title={pill.title}>
+            <Pill tone={pill.tone}>{pill.label}</Pill>
           </span>
         </div>
       </div>
