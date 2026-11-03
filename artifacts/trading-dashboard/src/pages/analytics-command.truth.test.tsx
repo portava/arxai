@@ -112,3 +112,45 @@ describe("Analytics Command Center failure states", () => {
     expect(screen.getByTestId("analytics-pnl-coverage").textContent).toMatch(/could not be loaded/i);
   });
 });
+
+// Regression: React Query keeps the last good snapshot when a reload fails.
+// After a successful Recompute the reload of the snapshot returned 500, and the
+// page showed the previous snapshot's figures as if they were the new ones,
+// with no notice: the error copy rendered only when there was no snapshot.
+describe("Analytics Command Center when a snapshot reload fails", () => {
+  it("a successful recompute whose reload fails says the figures are the earlier snapshot, not the new one", async () => {
+    const OLD = { ...SNAPSHOT, id: 7, createdAt: "2026-10-30T08:15:00.000Z" };
+    routes.snapshot = { status: 200, body: { snapshot: OLD } };
+    routes.post = { status: 200, body: { snapshot: { ...OLD, id: 8, createdAt: "2026-11-03T09:00:00.000Z" } } };
+    renderPage();
+    await flush();
+    expect(screen.getByTestId("stat-trades")).toBeTruthy();
+    expect(screen.queryByTestId("analytics-snapshot-reload-failed")).toBeNull();
+
+    routes.snapshot = { status: 500, body: { error: "Failed to load snapshot" } };
+    await act(async () => { screen.getByText("Recompute snapshot").click(); });
+    await flush();
+    expect(postCalls).toBe(1);
+    const notice = screen.getByTestId("analytics-snapshot-reload-failed");
+    expect(notice.getAttribute("role")).toBe("alert");
+    expect(notice.textContent).toMatch(/could not be loaded/i);
+    expect(notice.textContent).toContain("Failed to load snapshot");
+    expect(notice.textContent).toContain(new Date(OLD.createdAt).toLocaleString());
+    expect(notice.textContent).toMatch(/not the one just computed/);
+  });
+
+  it("a failed background reload with no recompute says the figures are from the snapshot last loaded", async () => {
+    const OLD = { ...SNAPSHOT, id: 7, createdAt: "2026-10-30T08:15:00.000Z" };
+    routes.snapshot = { status: 200, body: { snapshot: OLD } };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={qc}><AnalyticsCommandCenter /></QueryClientProvider>);
+    await flush();
+    routes.snapshot = { status: 500, body: { error: "Failed to load snapshot" } };
+    await act(async () => { await qc.invalidateQueries({ queryKey: ["analytics-snapshot"] }); });
+    await flush();
+    const notice = screen.getByTestId("analytics-snapshot-reload-failed");
+    expect(notice.textContent).toMatch(/could not be reloaded/i);
+    expect(notice.textContent).toContain(new Date(OLD.createdAt).toLocaleString());
+    expect(notice.textContent).not.toMatch(/just computed/);
+  });
+});

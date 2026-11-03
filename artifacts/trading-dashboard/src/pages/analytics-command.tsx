@@ -32,6 +32,12 @@ async function getAnalyticsJson<T>(url: string, action: string, init?: RequestIn
 
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
 
+// "saved <date, time>" from a stored row's timestamp, or says it was not reported.
+const savedAt = (iso: unknown): string => {
+  const ms = typeof iso === "string" ? Date.parse(iso) : NaN;
+  return Number.isFinite(ms) ? `saved ${new Date(ms).toLocaleString()}` : "whose save time was not reported";
+};
+
 const NOT_MEASURED = "not measured";
 
 export default function AnalyticsCommandCenter() {
@@ -85,6 +91,10 @@ export default function AnalyticsCommandCenter() {
           ? `Your analytics snapshot could not be computed. ${errorMessage(generate.error)}. Nothing is computing; use Recompute snapshot to try again.`
           : "No analytics snapshot yet. Use Recompute snapshot to compute one.";
   const snapshotFailed = snap.isError || generate.isError;
+  // A failed reload keeps the last snapshot on screen (React Query keeps the
+  // last good data). Say so, and whether a newer one was just computed.
+  const computedId = (generate.data as { snapshot?: { id?: unknown } } | undefined)?.snapshot?.id;
+  const newerComputed = generate.isSuccess && computedId != null && s != null && computedId !== s.id;
 
   // The stored snapshot's money columns are NOT NULL, so a snapshot with no
   // sizable trade holds 0 (or an older Δprice × lots × 100 figure). The
@@ -113,6 +123,14 @@ export default function AnalyticsCommandCenter() {
       {generate.isError && s && (
         <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
           The snapshot could not be recomputed. {errorMessage(generate.error)}. The figures below are from the previous snapshot.
+        </p>
+      )}
+
+      {snap.isError && s && (
+        <p role="alert" data-testid="analytics-snapshot-reload-failed" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
+          {newerComputed
+            ? `A new snapshot was computed, but it could not be loaded. ${errorMessage(snap.error)}. The figures below are from the earlier snapshot ${savedAt(s.createdAt)}, not the one just computed.`
+            : `Your analytics snapshot could not be reloaded. ${errorMessage(snap.error)}. The figures below are from the snapshot ${savedAt(s.createdAt)}; a newer one may exist.`}
         </p>
       )}
 
