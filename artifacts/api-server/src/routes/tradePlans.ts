@@ -17,7 +17,7 @@ import { readBrokerHealthState } from "../lib/brokerHub/brokerHealthState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
-import { evaluateChecklist, summarizePlan, type ChecklistInputs } from "@workspace/domain/trade-plan";
+import { evaluateChecklist, summarizePlan, type ChecklistInputs, type ChecklistItem } from "@workspace/domain/trade-plan";
 import { gatherInputsAndEvaluate } from "./permission.js";
 import { getCachedIntelligenceContext } from "../lib/data/chart/chartIntelligence.js";
 import type { ChartTimeframe } from "../lib/data/chart/timeframes.js";
@@ -233,6 +233,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // (O) Portfolio-risk gate — also runs before the validate transaction.
     // Blocks ONLY when overall portfolio risk is CRITICAL (rule per spec).
     // HIGH/MODERATE warnings flow through to the user but do not block.
+    //
+    // Either check may fail (throw) or not run (no symbol). Validate carries
+    // on, as before, but those risks were NOT checked: each one adds a WARN
+    // item that says so. A WARN does not change readiness (isReady counts
+    // FAILs only), so no gate moves; the checklist, summary and alert simply
+    // stop implying the risk was considered.
+    const notChecked: ChecklistItem[] = [];
     try {
       const port = await getLatestPortfolioRiskOrCompute(req.authUser);
       if (port.portfolioRiskLevel === "CRITICAL") {
@@ -250,6 +257,10 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
       }
     } catch (err) {
       req.log.warn({ err: String(err) }, "portfolio-risk check failed (non-fatal); continuing validate");
+      notChecked.push({
+        key: "PORTFOLIO_RISK", label: "Portfolio risk (critical exposure)", status: "WARN",
+        detail: "Could not be checked — the portfolio-risk check failed, so your open positions and total exposure were not considered.",
+      });
     }
 
     const preRow = await db.select().from(tradePlansTable)
@@ -274,7 +285,16 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         }
       } catch (err) {
         req.log.warn({ err: String(err) }, "news-risk check failed (non-fatal); continuing validate");
+        notChecked.push({
+          key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+          detail: "Could not be checked — the news-risk check failed, so upcoming economic events were not considered.",
+        });
       }
+    } else {
+      notChecked.push({
+        key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+        detail: "Not checked — the plan has no symbol, so upcoming economic events could not be matched to it.",
+      });
     }
 
     const result = await db.transaction(async (tx) => {
@@ -296,7 +316,14 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         brokerStatus, hasActiveRiskLock: perm.hasActiveRiskLock,
       };
       const checkedAtIso = new Date().toISOString();
-      const checklist = { ...evaluateChecklist(inputs), checkedAtIso };
+      const evaluated = evaluateChecklist(inputs);
+      const items = [...evaluated.items, ...notChecked];
+      const checklist = {
+        ...evaluated,
+        items,
+        warnCount: items.filter((i) => i.status === "WARN").length,
+        checkedAtIso,
+      };
       const aiSummary = summarizePlan({
         symbol: plan.symbol, directionBias: plan.directionBias, strategyId: plan.strategyId,
         rewardToRisk: checklist.rewardToRisk, rewardToRiskTarget: plan.rewardToRiskTarget,
@@ -330,7 +357,11 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         userId: plan.userId,
         type: "TRADE_PLAN_READY", priority: "MEDIUM", severity: "success",
         title: `Trade plan ready: ${plan.symbol ?? `#${plan.id}`}`,
-        message: `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
+        message: `Plan #${plan.id} passed every blocking check` +
+          (checklist.warnCount > 0 ? ` (${checklist.warnCount} warning${checklist.warnCount === 1 ? "" : "s"} to review)` : "") +
+          "." +
+          (notChecked.length > 0 ? ` Not checked: ${notChecked.map((i) => i.label.toLowerCase()).join("; ")}.` : "") +
+          " Final execution remains gated by the live-execution safety layer.",
         symbol: plan.symbol ?? undefined, relatedTradePlanId: plan.id, actionRequired: true,
         dedupeKey: `plan-ready:${plan.id}:${revision}`,
       });

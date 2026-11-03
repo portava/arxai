@@ -5,6 +5,11 @@
 //    current plan, so the plan is a DRAFT and the response flags the
 //    checklist as out of date (it is kept, not erased, and not called ready).
 //
+//  - Validate when the news-risk or portfolio-risk check crashes: the route
+//    carries on (non-fatal), but those risks were not checked. The checklist
+//    must say so (a WARN "could not be checked" item, so readiness is not
+//    changed) and the summary / alert must not claim every check passed.
+//
 // Stubbed: the database handle, the permission verdict, the broker health
 // cache, news / portfolio risk, the chart cache and alerts. The real route
 // and the real checklist domain run. No network, no broker.
@@ -157,4 +162,50 @@ test("a freshly validated plan's checklist is current and says when it was check
   assert.equal(status, 200);
   assert.equal(body.checklistStale, false);
   assert.equal(typeof body.checklist.checkedAtIso, "string");
+});
+
+test("validate with a crashing news-risk check: READY is unchanged, but the checklist says news was not checked", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  newsImpl = async () => { throw new Error("calendar table missing"); };
+  try {
+    const { status, body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(status, 200);
+    assert.equal(body.status, "READY", "a WARN does not change readiness (no gate is moved)");
+    const item = body.checklist.items.find((i: any) => i.key === "NEWS_RISK");
+    assert.ok(item, "an item says news risk was not checked");
+    assert.equal(item.status, "WARN");
+    assert.match(item.detail, /could not be checked/i);
+    assert.equal(body.checklist.warnCount, body.checklist.items.filter((i: any) => i.status === "WARN").length);
+    assert.doesNotMatch(body.aiSummary, /All pre-trade checks pass/);
+  } finally {
+    newsImpl = async () => ({ result: { blockTrading: false, riskLevel: "LOW", event: null, tradeWarning: null, aiSummary: "" } });
+  }
+});
+
+test("validate with a crashing portfolio-risk check says portfolio risk was not checked", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  portfolioImpl = async () => { throw new Error("positions unavailable"); };
+  try {
+    const { status, body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(status, 200);
+    const item = body.checklist.items.find((i: any) => i.key === "PORTFOLIO_RISK");
+    assert.ok(item, "an item says portfolio risk was not checked");
+    assert.equal(item.status, "WARN");
+    assert.match(item.detail, /could not be checked/i);
+    assert.doesNotMatch(body.aiSummary, /All pre-trade checks pass/);
+  } finally {
+    portfolioImpl = async () => ({ portfolioRiskLevel: "LOW", blockers: [], warnings: [], aiSummary: "" });
+  }
+});
+
+test("a plan with no symbol was not checked against news risk, and says so", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null, symbol: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  const item = body.checklist.items.find((i: any) => i.key === "NEWS_RISK");
+  assert.ok(item);
+  assert.equal(item.status, "WARN");
+  assert.match(item.detail, /no symbol/i);
 });

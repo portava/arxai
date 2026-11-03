@@ -59,6 +59,20 @@ const STATUS_LABEL: Record<Status, string> = {
   CANCELED: "CANCELED",
 };
 
+/** A validate the server refused (409) or could not complete. */
+class ValidateError extends Error {
+  readonly refused: boolean;
+  constructor(message: string, refused: boolean) {
+    super(message);
+    this.refused = refused;
+  }
+}
+
+const REFUSAL_TITLE: Record<string, string> = {
+  NEWS_NO_TRADE_WINDOW: "a news no-trade window",
+  PORTFOLIO_RISK_CRITICAL: "critical portfolio risk",
+};
+
 function asNum(v: string): number | null {
   if (v === "" || v == null) return null;
   const n = Number(v);
@@ -112,14 +126,32 @@ export function TradePlanBuilderPanel() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
+  // The latest validate attempt that did not produce a result, per plan. A
+  // refusal (409) leaves the stored status as it was, so an earlier READY is
+  // still on the row: it is labelled as from an earlier check and cannot be
+  // sent from here until a validate passes again.
+  const [validateFailure, setValidateFailure] = useState<{ planId: number; refused: boolean; message: string } | null>(null);
+
   const validate = useMutation({
     mutationFn: async () => {
       if (!active) return;
       const r = await fetch(`/api/trade-plans/${active.id}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error("validate failed");
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))) as { error?: string; reason?: string };
+        if (r.status === 409) {
+          const what = err.error ? REFUSAL_TITLE[err.error] : undefined;
+          const reason = err.reason ?? err.error ?? `HTTP ${r.status}`;
+          throw new ValidateError(what ? `Refused because of ${what}: ${reason}` : `Refused: ${reason}`, true);
+        }
+        throw new ValidateError(`Validation could not be completed (${err.error ?? `HTTP ${r.status}`}). Nothing was checked.`, false);
+      }
       return r.json();
     },
+    onMutate: () => setValidateFailure(null),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    onError: (e: Error) => {
+      if (active) setValidateFailure({ planId: active.id, refused: e instanceof ValidateError && e.refused, message: e.message });
+    },
   });
 
   const cancel = useMutation({
@@ -133,6 +165,7 @@ export function TradePlanBuilderPanel() {
   });
 
   const editable = active && active.status !== "EXECUTED" && active.status !== "CANCELED";
+  const activeValidateFailure = active && validateFailure?.planId === active.id ? validateFailure : null;
   // A DRAFT carrying a checklist was saved after it was validated; the server
   // flags it, and plans edited before that flag existed read the same way.
   const checklistStale = active != null && (active.checklistStale === true || (active.status === "DRAFT" && active.checklist != null));
@@ -247,6 +280,17 @@ export function TradePlanBuilderPanel() {
                 Cancel plan
               </button>
             </div>
+            {activeValidateFailure && (
+              <div role="alert" className="sm:col-span-2 rounded-md border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">
+                <p>The latest validation {activeValidateFailure.refused ? "refused this plan" : "did not finish"}. {activeValidateFailure.message}</p>
+                {active.status === "READY" && (
+                  <p className="mt-1 text-xs text-amber-300">
+                    The plan&apos;s status was not changed: READY is from an earlier check and does not hold now.
+                    It cannot be sent from here until a validation passes again.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -264,7 +308,7 @@ export function TradePlanBuilderPanel() {
           <TradePlanChecklist checklist={active.checklist} planStatus={active.status} stale={checklistStale} />
 
           {active.executionConfirmationId == null
-            ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY"} />
+            ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY" && activeValidateFailure == null} />
             : <SentToConfirmationStatus confirmationId={active.executionConfirmationId} />
           }
         </section>

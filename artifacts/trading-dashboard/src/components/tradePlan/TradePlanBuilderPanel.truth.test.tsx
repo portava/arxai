@@ -11,11 +11,16 @@
 //    never "Ready — plan passes all blocking checks" / "All pre-trade checks
 //    pass" next to the new prices.
 //
+//  - A validate the server refuses (409 news no-trade window / critical
+//    portfolio risk) leaves the stored status unchanged. The refusal must be
+//    shown, and an earlier READY must not keep presenting the plan as ready
+//    to send.
+//
 // Real QueryClient and the real panel. fetch is stubbed per URL; the news and
 // multi-timeframe cards (their own fetches, their own tests) are stubbed out.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("../multiTimeframe", () => ({ MultiTimeframeAlignmentCard: () => null }));
@@ -167,5 +172,36 @@ describe("Trade Plan Builder — a checklist from before an edit is out of date"
     await screen.findByText("Plan #11");
     expect(screen.getByText(/Ready — plan passes all blocking checks/)).toBeTruthy();
     expect(screen.getByText(/^Checked /)).toBeTruthy();
+  });
+});
+
+describe("Trade Plan Builder — a refused validate is shown, not swallowed", () => {
+  it("a 409 news no-trade window says the check refused the plan and the old READY no longer holds", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200, body: { plans: [plan({ status: "READY", checklist: { items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true } })] },
+    });
+    routes["POST /api/trade-plans/11/validate"] = () => ({
+      status: 409, body: { error: "NEWS_NO_TRADE_WINDOW", reason: "US Non-Farm Payrolls in 12 minutes.", riskLevel: "NO_TRADE_WINDOW" },
+    });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    const send = await screen.findByRole("button", { name: /pre-trade confirmation/i });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    expect(await screen.findByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
+    expect(screen.getByText(/refused/i)).toBeTruthy();
+    expect(screen.getByText(/from an earlier check/i)).toBeTruthy();
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it("a failed validate request says it could not be completed", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({ status: 200, body: { plans: [plan({ status: "DRAFT" })] } });
+    routes["POST /api/trade-plans/11/validate"] = () => ({ status: 500, body: { error: "Failed to validate trade plan" } });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    expect(await screen.findByText(/could not be completed/i)).toBeTruthy();
   });
 });
