@@ -77,6 +77,40 @@ export function sniperEvaluation(c: Coverage | null): { fullyEvaluated: boolean 
 
 const POLL_MS = 15_000;
 
+// The signals the empty state names as watched. Each is named only when it ran
+// on at least one evaluated trade: in production no candles reach the scorer,
+// so reversal risk is never scored and its reason can never fire.
+const WATCHED_SIGNALS: Array<[keyof SignalGaps, string]> = [
+  ["profitGiveback", "profit-giveback"],
+  ["reversalRisk", "reversal"],
+  ["closeUrgency", "close-urgency"],
+];
+
+function joinOr(words: string[]): string {
+  if (words.length <= 1) return words.join("");
+  if (words.length === 2) return `${words[0]} or ${words[1]}`;
+  return `${words.slice(0, -1).join(", ")}, or ${words[words.length - 1]}`;
+}
+
+/**
+ * The empty state's re-scan sentence, built from the checks that actually ran.
+ * A check whose gap is not reported, or equals the evaluated count, did not
+ * run on any trade and is not named. With no evaluated trade, no particular
+ * signal is named.
+ */
+export function sniperRescanText(c: Coverage | null): string {
+  const head = `This page re-scans every ${POLL_MS / 1000} seconds while it is open`;
+  const ev = c?.evaluatedCount;
+  const gaps = c?.signalGaps;
+  const ran = typeof ev === "number" && ev > 0 && gaps
+    ? WATCHED_SIGNALS
+        .filter(([k]) => { const g = gaps[k]; return typeof g === "number" && g < ev; })
+        .map(([, label]) => label)
+    : [];
+  if (ran.length === 0) return `${head}; if a check that runs flags a scanned trade, it will appear here.`;
+  return `${head} — if a ${joinOr(ran)} signal fires on a scanned trade, it will appear here.`;
+}
+
 /** What the scan covered, in plain words (server-reported; absent → unknown). */
 export function sniperCoverage(c: Coverage | null): { scanned: string; gap: string | null } {
   if (!c || !c.scannedVenues) {
@@ -182,8 +216,7 @@ export default function SniperWatchlistPage() {
               if (evaluation.evaluatedCount === 0) return "None of the scanned trades could be read, so none was evaluated.";
               return "No trade is flagged by the checks that could run. Some trades or checks were not evaluated (see above), so this is not an all-clear.";
             })()}{" "}
-            This page re-scans every {POLL_MS / 1000} seconds while it is open — if a profit-giveback,
-            reversal, or close-urgency signal fires on a scanned trade, it will appear here.
+            {sniperRescanText(coverage)}
           </CardContent>
         </Card>
       ) : (
