@@ -496,10 +496,14 @@ export interface ScalpReasoningInput {
   patternLabel?: string | null;
   /**
    * True once the read is past its own server-declared expiresAt (or has no
-   * valid one). The decision is then not stated as current.
+   * valid one). The decision is then not stated as current, every line built
+   * from the read is labelled "When it was read:", and the flame's score and
+   * entry trigger are withheld (as the card's flame row withholds them).
    */
   expired?: boolean;
 }
+
+const AT_READ = "When it was read:";
 
 export function buildReasoningFromScalp(
   input: ScalpReasoningInput,
@@ -536,8 +540,17 @@ export function buildReasoningFromScalp(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(r.plainEnglishReason, NOT_ENOUGH);
-  const momentum = flame
+  // An expired read's own lines describe the market when it was read: each is
+  // labelled so, and nothing from it is stated in the present tense.
+  const expired = input.expired === true;
+  const atRead = (line: string): string => (expired ? `${AT_READ} ${line}` : line);
+  const structure = clean(r.plainEnglishReason) ? atRead(clean(r.plainEnglishReason)) : NOT_ENOUGH;
+  const momentum = flame && expired
+    ? clean(flame.whyNow)
+      ? atRead(clean(flame.whyNow))
+      // The card's flame row withholds the expired read's score; so does this row.
+      : "Momentum withheld — this scalp read has expired, so its flame read is not current."
+    : flame
     ? orElse(flame.whyNow, `Flame momentum read ${flame.scalpScore}/100.`)
     : awaiting
       ? "Awaiting live candles before judging momentum."
@@ -548,7 +561,9 @@ export function buildReasoningFromScalp(
     ? "Pattern read withheld until live candles confirm."
     : noSpecs
       ? "No scalp pattern read — the broker's symbol details are needed first."
-      : orElse(input.patternLabel, "No specific scalp pattern called out.");
+      : clean(input.patternLabel)
+        ? atRead(clean(input.patternLabel))
+        : "No specific scalp pattern called out.";
   const trendline = awaiting
     ? "Trendline read withheld until live candles confirm."
     : "No specific trendline called out.";
@@ -565,7 +580,7 @@ export function buildReasoningFromScalp(
     if (r.stopLoss != null) parts.push(`stop ${fmtNum(r.stopLoss)}`);
     if (r.takeProfit?.main != null) parts.push(`main TP ${fmtNum(r.takeProfit.main)}`);
     supportResistance = parts.length
-      ? `Plan — ${parts.join(", ")}. Watch room into nearby support/resistance.`
+      ? atRead(`Plan — ${parts.join(", ")}. Watch room into nearby support/resistance.`)
       : "No clean level marked yet — be cautious entering blind.";
   }
 
@@ -593,43 +608,43 @@ export function buildReasoningFromScalp(
   if (!newsLabel) evidenceRisk = `${evidenceRisk} ${NEWS_UNAVAILABLE_NOTE}`;
   const rWarn = clean(r.riskWarning);
   if (rWarn) evidenceRisk = `${evidenceRisk} ${rWarn}`;
+  if (riskBits.length || rWarn) evidenceRisk = atRead(evidenceRisk);
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
-  const confirmation = orElse(
-    flame?.entryTrigger,
-    dir
-      ? "Confirms on a clean trigger in your direction with momentum follow-through."
-      : "Wait for a clear directional trigger first.",
-  );
-  const invalidation = orElse(
-    flame?.invalidationIdea,
-    r.stopLoss != null
-      ? `Cancel if price breaks your stop ${fmtNum(r.stopLoss)}.`
-      : NOT_ENOUGH,
-  );
-  const traderTest =
-    r.stopLoss != null
+  // An expired read's entry trigger ("Enter on…") is an instruction for a
+  // market that has moved on: withheld, never restated as current.
+  const confirmation = expired
+    ? "Refresh for a current scalp read first — this expired read's entry trigger no longer applies."
+    : orElse(
+        flame?.entryTrigger,
+        dir
+          ? "Confirms on a clean trigger in your direction with momentum follow-through."
+          : "Wait for a clear directional trigger first.",
+      );
+  const invalidationLine = clean(flame?.invalidationIdea)
+    || (r.stopLoss != null ? `Cancel if price breaks your stop ${fmtNum(r.stopLoss)}.` : "");
+  const invalidation = invalidationLine ? atRead(invalidationLine) : NOT_ENOUGH;
+  const traderTest = expired
+    ? "Refresh the scalp read and check it is current before trusting its stop, entry or direction."
+    : r.stopLoss != null
       ? `Mark ${fmtNum(r.stopLoss)} (your stop) and watch whether price respects or breaks it. Don't chase if it has already run.`
       : "Mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   // ── Risk Note ───────────────────────────────────────────────────────────────
-  const riskNote = orElse(
-    r.noTradeReason,
-    orElse(
-      chase,
-      orElse(
-        flame?.decayNote,
+  const readNote = clean(r.noTradeReason) || chase || clean(flame?.decayNote);
+  const riskNote = expired
+    ? `This scalp read has expired — it is not a current trade call.${readNote ? ` ${AT_READ} ${readNote}` : ""}`
+    : orElse(
+        readNote,
         awaiting
           ? "No confirmed feed yet — wait for live candles before committing."
           : "Scalps move fast — don't chase; stick to your stop.",
-      ),
-    ),
-  );
+      );
 
   return {
     decision,
-    why: input.expired
-      ? `When it was read: ${orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH))}`
+    why: expired
+      ? `${AT_READ} ${orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH))}`
       : orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH)),
     evidence: { structure, momentum, pattern, trendline, supportResistance, feedData, risk: evidenceRisk },
     confirmation,
