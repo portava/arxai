@@ -25,6 +25,9 @@ export function alertDataSource(ds: string | null | undefined): { text: string; 
     case "LIVE_FEED":
       return { text: "Scan data: live feed.", nonLive: false };
     case "LIVE_DELAYED":
+      // The scanner sets this only for rows with a recent live tick and a
+      // lagging candle ("Live tick is active but the latest candle is delayed").
+      return { text: "Scan data: the live tick was current, but the latest candle was delayed, so the read used the last completed candles. Analysis only.", nonLive: true };
     case "STALE_FEED":
       return { text: "Scan data: delayed feed. The read used the last available candles, not current prices, so it is analysis only.", nonLive: true };
     case "SIMULATOR":

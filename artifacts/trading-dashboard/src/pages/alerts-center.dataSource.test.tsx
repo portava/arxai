@@ -34,6 +34,27 @@ describe("Alerts Center scan data source", () => {
     expect(card.textContent).not.toContain("Recommended:");
   });
 
+  it("an alert from a live-delayed scan says the tick was live and the candle delayed, not 'not current prices'", async () => {
+    // The scanner sets LIVE_DELAYED only for rows with a recent live tick and
+    // a lagging candle ("Live tick is active but the latest candle is delayed").
+    serve([alert({ dataSource: "LIVE_DELAYED" })]);
+    render(<AlertsCenter />);
+    const card = await screen.findByTestId("alert-a1");
+    const text = screen.getByTestId("alert-data-source").textContent ?? "";
+    expect(text).not.toMatch(/not current prices/i);
+    expect(text).toMatch(/live tick was current/i);
+    expect(text).toMatch(/latest candle was delayed/i);
+    expect(text).toMatch(/analysis only/i);
+    expect(card.textContent).not.toContain("Recommended:");
+  });
+
+  it("a stale-feed scan keeps the 'not current prices' wording", async () => {
+    serve([alert({ dataSource: "STALE_FEED" })]);
+    render(<AlertsCenter />);
+    await screen.findByTestId("alert-a1");
+    expect(screen.getByTestId("alert-data-source").textContent).toMatch(/not current prices/i);
+  });
+
   it("an alert from a simulated scan says it ran on simulated data", async () => {
     serve([alert({ dataSource: "SIMULATOR" })]);
     render(<AlertsCenter />);
