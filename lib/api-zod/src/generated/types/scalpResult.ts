@@ -58,6 +58,8 @@ export interface ScalpResult {
   newsRisk: ScalpResultNewsRisk;
   /** True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW. */
   newsRiskUnchecked?: boolean;
+  /** True when no economic calendar is connected, so scheduled events for this market were not looked at. Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked. */
+  newsRiskNotChecked?: boolean;
   timingStatus: ScalpResultTimingStatus;
   validForSeconds: number;
   expiresAt: string;

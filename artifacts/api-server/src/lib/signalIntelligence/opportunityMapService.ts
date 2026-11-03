@@ -101,6 +101,9 @@ export function toInput(
     entryQuality: Math.round(opp.entrySniperScore),
     executionQuality: executionQualityFor(opp.dataSource),
     newsRisk: newsRiskFor(opp),
+    // No calendar looked at scheduled events (display only — the category is
+    // unchanged): the map says "news not checked" instead of showing nothing.
+    ...(opp.newsContext?.scheduledEventRisk === "not_checked" ? { newsRiskNotChecked: true } : {}),
     // Honest live-data flag: a row tagged LIVE_FEED but with too few closed bars
     // to analyse has its dataStatus forced to "no_data" upstream. Key off the
     // resolved dataStatus (not the raw feed tag) so an unanalysable row never

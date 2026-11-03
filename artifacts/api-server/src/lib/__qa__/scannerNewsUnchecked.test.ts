@@ -20,6 +20,8 @@ let mode: Mode = "throw";
 function pack(calendar: { connected: boolean; provider: string; providerState: string }) {
   return {
     riskLevel: "none", bias: "unclear", timing: "quiet", recommendation: "watch",
+    // Mirrors newsIntelligenceService: only a connected calendar is "checked".
+    scheduledEventRisk: calendar.connected ? "checked" : "not_checked",
     upcomingEvent: null, warningSummary: "No major scheduled news for EURUSD in the current window.",
     dataSources: {
       headlines: { connected: false, provider: "none", count: 0 },
@@ -148,4 +150,78 @@ test("control: a calendar that is not configured is not reported as a failed che
 test("synthetic instruments are not held back by an unchecked calendar", async () => {
   const row = await decorated("fetch_error", "Volatility 75 Index");
   assert.notEqual(row.newsContext?.eventRiskUnchecked, true);
+});
+
+// No economic calendar is connected: that is not a FAILED check (gating stays
+// as it is), but nothing scheduled was looked at either. riskLevel "none" was
+// mapped to a green "News LOW" on every scalp card. The row now carries the
+// pack's scheduledEventRisk and the scalp result / map row say "not checked" —
+// display only: eventRiskUnchecked, riskLevel and every decision are unchanged.
+const scalpSpec = {
+  hasBrokerTruth: true, tradeMode: "FULL" as const, tradeAllowed: true, visible: true, marketOpen: true,
+  digits: 5, point: 0.00001, minLot: 0.01, maxLot: 10, lotStep: 0.01, contractSize: 100000,
+  tickSize: 0.00001, tickValue: 1, stopsLevelPoints: 0, spreadPoints: 10, category: "forex",
+  displayName: "EURUSD",
+};
+function scalpFor(row: ScannerOpportunity) {
+  return evaluateScalp({
+    symbol: row.symbol,
+    currentPrice: 1.1,
+    spec: scalpSpec,
+    scanner: {
+      ...oppToScannerInput(row),
+      sufficiency: evaluateMarketDataSufficiency({
+        symbol: row.symbol, timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300,
+      }),
+    },
+    account: { balance: 1000, equity: 1000, freeMargin: 1000, leverage: 100 },
+    mode: "ANY",
+    riskAmount: 10,
+  });
+}
+
+test("no calendar connected: the row carries 'not_checked' and scalp/map say news was not checked", async () => {
+  const row = await decorated("not_configured", "EURCHF");
+  assert.equal(row.newsContext?.scheduledEventRisk, "not_checked");
+  assert.notEqual(row.newsContext?.eventRiskUnchecked, true, "gating input unchanged");
+  assert.equal(row.newsContext?.riskLevel, "none", "riskLevel unchanged");
+
+  const scanner = oppToScannerInput(row);
+  assert.equal(scanner.newsRiskNotChecked, true);
+  assert.equal(scanner.newsRiskUnchecked, undefined, "not a failed check: the engine does not fail closed on it");
+
+  const r = scalpFor(row);
+  assert.equal(r.newsRiskNotChecked, true, "the card can say 'Not checked' instead of LOW");
+
+  const input = toInput({ ...row, finalRead: computeFinalRead(row) } as ScannerOpportunity, notLate);
+  assert.equal(input.newsRiskNotChecked, true);
+  const mapRow = categorizeOpportunities([input]).rows[0];
+  assert.equal(mapRow?.newsRiskNotChecked, true);
+});
+
+test("no calendar connected: decisions are identical to a connected, quiet calendar (display only)", async () => {
+  const quiet = await decorated("connected_quiet", "EURAUD");
+  const unconnected = await decorated("not_configured", "EURAUD");
+  assert.equal(quiet.newsContext?.scheduledEventRisk, "checked");
+  const a = scalpFor(quiet);
+  const b = scalpFor(unconnected);
+  assert.equal(a.newsRiskNotChecked, undefined, "a calendar that answered was checked");
+  for (const k of ["status", "canBuildTrade", "userAction", "newsRisk", "qualityScore"] as const) {
+    assert.deepEqual(b[k], a[k], `${k} must not change`);
+  }
+  const qa = categorizeOpportunities([toInput({ ...quiet, finalRead: computeFinalRead(quiet) } as ScannerOpportunity, notLate)]);
+  const qb = categorizeOpportunities([toInput({ ...unconnected, finalRead: computeFinalRead(unconnected) } as ScannerOpportunity, notLate)]);
+  assert.equal(qb.rows[0]?.category, qa.rows[0]?.category);
+});
+
+test("synthetic instruments: scheduled events do not apply, so nothing is flagged as not checked", async () => {
+  const row = await decorated("not_configured", "Volatility 100 Index");
+  assert.equal(row.newsContext?.scheduledEventRisk, "not_applicable");
+  assert.equal(oppToScannerInput(row).newsRiskNotChecked, undefined);
+});
+
+test("news lookup throws: the row says scheduled risk was not checked (and stays a failed check)", async () => {
+  const row = await decorated("throw", "GBPJPY");
+  assert.equal(row.newsContext?.eventRiskUnchecked, true);
+  assert.equal(row.newsContext?.scheduledEventRisk, "not_checked");
 });

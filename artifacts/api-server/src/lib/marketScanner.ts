@@ -925,6 +925,14 @@ export interface ScannerNewsContext {
    * not move them) or when no calendar is configured (technicals-only by design).
    */
   eventRiskUnchecked?: boolean;
+  /**
+   * Whether scheduled (economic-calendar) event risk was looked at, copied from
+   * the news pack: "checked" — a live calendar answered; "not_checked" — no
+   * calendar is connected (or the lookup failed), so `riskLevel` "none" was not
+   * observed; "not_applicable" — a synthetic instrument. Display only: gating
+   * keys off `eventRiskUnchecked`, which this does not change.
+   */
+  scheduledEventRisk?: "checked" | "not_checked" | "not_applicable";
 }
 
 /** Plain-English reason shown when scheduled event risk could not be checked. */
@@ -966,6 +974,9 @@ export async function decorateOpportunitiesWithNewsRisk(
           warning: pack.warningSummary,
           alignsWithScanner: null,
           eventRiskUnchecked: !isSyntheticInstrument(sym) && scannerCalendarCheckFailed(pack.dataSources?.calendar),
+          scheduledEventRisk: isSyntheticInstrument(sym)
+            ? "not_applicable"
+            : pack.scheduledEventRisk === "checked" ? "checked" : "not_checked",
         });
       } catch {
         // The lookup failed: nothing was observed. riskLevel "none" here means
@@ -986,6 +997,7 @@ export async function decorateOpportunitiesWithNewsRisk(
             : "News intelligence temporarily unavailable — scheduled news risk could not be checked.",
           alignsWithScanner: null,
           eventRiskUnchecked: !synthetic,
+          scheduledEventRisk: synthetic ? "not_applicable" : "not_checked",
         });
       }
     });

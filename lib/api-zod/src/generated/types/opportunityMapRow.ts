@@ -22,6 +22,8 @@ export interface OpportunityMapRow {
   entryQuality: number;
   executionQuality: number;
   newsRisk: OpportunityMapRowNewsRisk;
+  /** True when no economic calendar is connected, so scheduled events for this market were not looked at and a newsRisk of none is a default, not an observation. Display only; the category does not read it. */
+  newsRiskNotChecked?: boolean;
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;

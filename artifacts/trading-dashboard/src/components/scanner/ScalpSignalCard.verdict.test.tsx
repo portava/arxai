@@ -327,4 +327,24 @@ describe("ScalpSignalCard — unchecked news risk", () => {
     expect(container.querySelector('[data-testid="scalp-news-unchecked"]')?.textContent).toBe("Unchecked");
     expect(textOf(container)).not.toMatch(/News\s*LOW/);
   });
+
+  // No economic calendar is connected: the engine's LOW band is a default, not
+  // an observation. The card said "News LOW" in green for every market.
+  it("renders 'Not checked' and never a green 'LOW' when no calendar looked at scheduled news", () => {
+    const { container } = render(
+      <ScalpSignalCard result={makeResult({ newsRisk: "LOW", newsRiskNotChecked: true })} />,
+    );
+    const chip = container.querySelector('[data-testid="scalp-news-not-checked"]');
+    expect(chip?.textContent).toBe("Not checked");
+    expect(chip?.className ?? "").not.toMatch(/emerald/);
+    expect(textOf(container)).not.toMatch(/News\s*LOW/);
+  });
+
+  it("an observed MEDIUM/HIGH band still shows even when the calendar was not checked", () => {
+    const { container } = render(
+      <ScalpSignalCard result={makeResult({ newsRisk: "MEDIUM", newsRiskNotChecked: true })} />,
+    );
+    expect(container.querySelector('[data-testid="scalp-news-not-checked"]')).toBeNull();
+    expect(textOf(container)).toMatch(/News\s*MEDIUM/);
+  });
 });
