@@ -11,7 +11,9 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { db, userRiskEventsTable, userRiskSettingsTable } from "@workspace/db";
 import { buildRiskContext } from "./enforce.js";
 import { tradingDayStart, type RiskContext, type RiskVenue } from "./preTrade.js";
-import { readActivePaperAccount, sumPaperRealizedSince } from "../tradeEngine/paperBookReader.js";
+import { readActivePaperAccount, readOpenPaperOrders, readPaperCloses } from "../tradeEngine/paperBookReader.js";
+import { paperRiskTotals } from "../paperExecution/paperRiskCount.js";
+import { paperRiskEquity, valueOpenPaperPositions } from "../paperExecution/paperOpenRisk.js";
 import { getOrCreateRiskSettings } from "./riskEvents.js";
 import { loadEffectiveLimits } from "./limitSettings.js";
 import { loadPlatformHalt } from "../safety/tradingHalt.js";
@@ -156,12 +158,19 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     : ctx.activity == null ? "this week's trading activity could not be read" : null;
   const floatingLoss = ctx.daily.floatingPnl != null && ctx.daily.floatingPnl < 0 ? ctx.daily.floatingPnl : 0;
   const dailyUsed = dailyRiskUsedUnknownReason == null ? Math.max(0, -(ctx.daily.realizedPnl! + floatingLoss)) : null;
-  const caps = [L.maxDailyLossAmount, L.maxDailyLossPercent != null && equity != null ? (equity * L.maxDailyLossPercent) / 100 : null]
+  // An equity that was read and is at or below 0 (on PAPER, the paper risk
+  // count's equity) leaves no room under any percent cap: the Risk Governor
+  // refuses every new order (its per-trade rule, and its daily and weekly
+  // percent caps read used up). Each percent cap is then valued at 0, never
+  // at a negative amount.
+  const equityExhausted = ctx.account != null && equity != null && Number.isFinite(equity) && equity <= 0;
+  const pctCap = (pct: number | null) => (pct == null || equity == null ? null : equityExhausted ? 0 : (equity * pct) / 100);
+  const caps = [L.maxDailyLossAmount, pctCap(L.maxDailyLossPercent)]
     .filter((v): v is number => v != null);
   const dailyLimit = caps.length ? Math.min(...caps) : null;
   // This week's loss needs the activity facts; without them it is unknown.
   const weekUsed = weeklyRiskUsedUnknownReason == null && ctx.activity != null ? Math.max(0, -ctx.activity.weekRealizedPnl) : null;
-  const wcaps = [L.discipline.maxWeeklyLossAmount, L.discipline.maxWeeklyLossPercent != null && equity != null ? (equity * L.discipline.maxWeeklyLossPercent) / 100 : null]
+  const wcaps = [L.discipline.maxWeeklyLossAmount, pctCap(L.discipline.maxWeeklyLossPercent)]
     .filter((v): v is number => v != null);
   const weeklyLimit = wcaps.length ? Math.min(...wcaps) : null;
   const openRisk = ctx.positions.reduce((s, p) => {
@@ -207,10 +216,15 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
       ? `there is no active paper account, so ${list} cannot be checked and the Risk Governor refuses new orders until one is active`
       : `your recent trading activity could not be read, so ${list} cannot be checked and the Risk Governor refuses new orders until it can be read`);
   }
-  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
+  // What an exhausted equity blocks, with the figure the governor reads (and,
+  // on PAPER, the booked equity beside the risk count), first in the reason.
+  const exhaustedReason = equityExhausted ? equityExhaustedReason(ctx, L) : null;
+  const reasons = [...(exhaustedReason ? [exhaustedReason] : []), ...unknowns];
+  const riskStatusReason = reasons.length ? `${reasons.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   // Unread activity with such a cap set blocks like a reached limit
-  // (blockedBy activity_unread), so the status is BLOCK, never OK / UNKNOWN.
-  const status = halt.engaged || dailyReached || weeklyReached || activityUnread
+  // (blockedBy activity_unread), so the status is BLOCK, never OK / UNKNOWN;
+  // so does an exhausted equity (blockedBy equity_exhausted).
+  const status = halt.engaged || dailyReached || weeklyReached || activityUnread || equityExhausted
     ? "BLOCK" : dailyLimit != null && dailyUsed != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   // What stops new trades, as this view measures it. A read model only: the
   // Risk Governor decides each order. trading is false whenever anything here
@@ -220,6 +234,7 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     ...(dailyReached ? ["daily_loss_limit" as const] : []),
     ...(weeklyReached ? ["weekly_loss_limit" as const] : []),
     ...(activityUnread ? ["activity_unread" as const] : []),
+    ...(equityExhausted ? ["equity_exhausted" as const] : []),
   ];
   return {
     venue,
@@ -261,16 +276,41 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
 const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(r2(n)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
- * Plain-English note for a paper risk count that differs from the booked
- * figures (RiskContext.daily.bookedRealizedPnl / bookedFloatingPnl and
- * account.bookedEquity are set only then). null when the governor counts
- * exactly what was booked.
+ * Why an equity read at or below 0 blocks new trades, in the words the Risk
+ * Governor's refusals use (preTrade nonPositiveEquity): the equity it reads
+ * (on PAPER, the paper risk count, with the booked equity beside it when they
+ * differ), and the percent limits it uses up.
  */
-export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account">): string | null {
+function equityExhaustedReason(ctx: Pick<RiskContext, "account">, L: RiskContext["limits"]): string {
+  const a = ctx.account!;
+  const figure = a.bookedEquity != null
+    ? `the paper risk count puts account equity at ${usd(a.equity!)}, at or below zero (the paper account shows ${usd(a.bookedEquity)} booked)`
+    : `account equity is ${usd(a.equity!)}, at or below zero`;
+  const perTrade = L.maxRiskPerTradePercent != null ? `your ${L.maxRiskPerTradePercent}% per-trade limit` : "your per-trade limit";
+  const usedUp = [
+    ...(L.maxDailyLossPercent != null ? [`your ${L.maxDailyLossPercent}% daily loss cap`] : []),
+    ...(L.discipline.maxWeeklyLossPercent != null ? [`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap`] : []),
+  ];
+  const caps = usedUp.length ? `, and ${usedUp.join(" and ")} ${usedUp.length > 1 ? "are" : "is"} used up` : "";
+  return `${figure}, so ${perTrade} leaves no risk for a new trade${caps}. The Risk Governor refuses new trades until equity is above zero`;
+}
+
+/**
+ * Plain-English note for a paper risk count that differs from the booked
+ * figures (RiskContext.daily.bookedRealizedPnl / bookedFloatingPnl,
+ * account.bookedEquity and activity.bookedWeekRealizedPnl are set only then).
+ * null when the governor counts exactly what was booked.
+ */
+export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account"> & { activity?: RiskContext["activity"] }): string | null {
   const parts: string[] = [];
   const booked = ctx.daily.bookedRealizedPnl;
   if (booked != null && ctx.daily.realizedPnl != null) {
     parts.push(`today's realized paper P&L is counted as ${usd(ctx.daily.realizedPnl)} (booked ${usd(booked)})`);
+  }
+  // The week's figure (weekly used, the weekly caps) is the risk count too.
+  const bookedWeek = ctx.activity?.bookedWeekRealizedPnl;
+  if (bookedWeek != null && ctx.activity != null) {
+    parts.push(`this week's (the last 7 days') realized paper P&L is counted as ${usd(ctx.activity.weekRealizedPnl)} (booked ${usd(bookedWeek)})`);
   }
   const bookedFloating = ctx.daily.bookedFloatingPnl;
   if (bookedFloating != null && ctx.daily.floatingPnl != null) {
@@ -326,6 +366,42 @@ function uncheckedChallengeRules(
   return out;
 }
 
+/** Why today's drawdown on the paper risk count is only bounded on a start day with positions open at the start. */
+function propDailyRiskCountBoundReason(atMost: number, booked: number, cap: number): string {
+  return "Positions were open when the challenge started, and the start recorded only their booked P&L, so today's drawdown since the start "
+    + `cannot be measured on the paper risk count the Risk Governor's daily loss cap reads: it is at most ${usd(atMost)} there, and ${usd(booked)} on the paper account's booked figures, against the ${usd(cap)} cap.`;
+}
+
+/**
+ * The prop status note for a day whose drawdown the paper risk count puts
+ * above the booked figures: both figures, which one DAILY_DD is checked
+ * against, what differs and how the risk count is taken. `bound`: the risk
+ * count's figure is only the most it can be (propDailyRiskCountBoundReason),
+ * and `bookedFailed` says whether the booked figure alone fails DAILY_DD.
+ */
+function propDailyRiskCountNote(
+  riskCountDD: number, bookedDD: number,
+  realized: { booked: number; risk: number },
+  open: { floating: number; bookedFloating: number; openValuedAtStop: string[] },
+  bound: { bookedFailed: boolean; cap: number } | null = null,
+): string {
+  const parts: string[] = [];
+  if (realized.risk < realized.booked - 0.005) parts.push(`the paper trades closed since then count ${usd(realized.risk)} (booked ${usd(realized.booked)})`);
+  if (open.floating < open.bookedFloating - 0.005) parts.push(`open positions count ${usd(open.floating)} (the paper account shows ${usd(open.bookedFloating)} floating)`);
+  const at = open.openValuedAtStop;
+  const list = at.length > 1 ? `${at.slice(0, -1).join(", ")} and ${at[at.length - 1]}` : at[0];
+  const stop = !at.length ? ""
+    : at.length === 1
+      ? ` The open ${list} position could not be valued at a current price here (no market quote for it was read), so it is counted at its stop, the most it can lose through its stop.`
+      : ` The open ${list} positions could not be valued at a current price here (no market quote for them was read), so they are counted at their stops, the most they can lose through their stops.`;
+  const head = bound
+    ? `${propDailyRiskCountBoundReason(riskCountDD, bookedDD, bound.cap)} ${bound.bookedFailed ? "DAILY_DD fails on the booked figures alone." : "DAILY_DD is not confirmed."}`
+    : `Today's drawdown is ${usd(riskCountDD)} on the paper risk count, the figure the Risk Governor's daily loss cap reads, and ${usd(bookedDD)} on the paper account's booked figures; DAILY_DD is checked against the larger, ${usd(riskCountDD)}.`;
+  return head
+    + (parts.length ? ` On the risk count ${parts.join(", and ")}.` : "")
+    + ` The risk count takes closed paper trades at the lower of their booked total and their price move × lots × 100 total, and each open position at the lower of its sized and its price move × lots × 100 value at the paper venue's current price, never above the floating P&L the account shows.${stop}`;
+}
+
 /**
  * Prop-firm progress on the paper ledger, against the trader's stored challenge.
  *
@@ -336,7 +412,10 @@ function uncheckedChallengeRules(
  * loss. On the day the challenge started, a floating loss already open at the
  * start is in the start equity, so only floating loss beyond it counts, and
  * the figure is never less than the drop in equity since the start (with no
- * balance recorded at the start: that drop alone).
+ * balance recorded at the start: that drop alone). Today's drawdown is taken
+ * on the booked figures and on the Risk Governor's paper risk count, and
+ * DAILY_DD is checked against the larger (dailyDrawdownBasis says which; a
+ * note gives both when they differ).
  * Equity is the account's last stored mark (equityAsOf).
  *
  * A rule is scored (passed / failed) only when that measurement exists. With
@@ -393,28 +472,66 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
       notEvaluatedReasons: (cfg.enabled ? { PROFIT_TARGET: reason, DAILY_DD: reason, TOTAL_DD: reason } : {}) as Record<string, string>,
       /** Additive: false when the day's drawdown (and dailyDrawdownRemainingUsd) was not measured. */
       dailyDrawdownMeasured: false,
+      dailyDrawdownUsd: null as number | null, dailyDrawdownBookedUsd: null as number | null,
+      dailyDrawdownRiskCountUsd: null as number | null, dailyDrawdownBasis: null as "booked" | "paper_risk_count" | null,
     };
   }
 
   const profit = acct.equity - start.equity;
   const dayStart = tradingDayStart(now).getTime();
   const since = new Date(Math.max(dayStart, Date.parse(start.at) || 0));
-  const realizedToday = await sumPaperRealizedSince({ account: acct.id }, since);
-  const floating = acct.equity - acct.currentBalance;
   const earlierDays = !(Date.parse(start.at) >= dayStart);
+  // Today's drawdown is measured on both bases over the same closes and open
+  // positions, and DAILY_DD fails on either (read-only; nothing is settled):
+  //   booked      the paper P/L settled since `since` as booked, and the
+  //               floating P&L the account stores (equity − balance);
+  //   risk count  what the Risk Governor's daily loss cap reads
+  //               (enforce.ts loadPaperFacts): the settled P/L at the lower of
+  //               its booked and price move × lots × 100 totals, and the open
+  //               positions at the lower of their sized and ×100 value at the
+  //               paper venue's mark (paperOpenRisk.ts), never above the
+  //               stored floating P&L. No market quote is read here, so a
+  //               market-priced open position is counted at its stop (named).
+  const book = { account: acct.id };
+  const realized = paperRiskTotals(await readPaperCloses(book, { since }));
+  const open = paperRiskEquity(acct, [], await valueOpenPaperPositions(await readOpenPaperOrders(book), { now, userId, quote: null }));
   // On the start day the loss is measured from the start: a floating loss
   // already open then is in start.equity and is not a loss since the start.
   // It is never less than the drop in equity since the start, so a floating
   // GAIN open at the start and given back (closed or not) counts as a loss.
   // A start recorded without its balance has no known floating P/L at the
-  // start, so it is the drop in equity since the start alone.
+  // start, so it is the drop in equity since the start alone. On the risk
+  // count the drop since the start is the booked drop plus how much lower the
+  // risk count puts the P/L settled since the start and the open positions
+  // now. The start recorded only booked figures, so on a start day with
+  // positions open at the start (or no balance recorded) the risk count's
+  // figure is the most it can be, not a measure (riskCountBound): DAILY_DD
+  // then fails on the booked figure alone, and is otherwise not confirmed.
   const startBalance = typeof start.balance === "number" && Number.isFinite(start.balance) ? start.balance : null;
-  const equityDropSinceStart = Math.max(0, start.equity - acct.equity);
-  const dailyDD = earlierDays
-    ? Math.max(0, -(realizedToday + Math.min(0, floating)))
-    : startBalance != null
-      ? Math.max(equityDropSinceStart, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
-      : equityDropSinceStart;
+  const flatAtStart = startBalance != null && Math.abs(start.equity - startBalance) < 0.005;
+  const dayDrawdown = (settled: number, floating: number) => {
+    const dropSinceStart = Math.max(0, start.equity - acct.equity + (realized.booked - settled) + (open.bookedFloating - floating));
+    return earlierDays
+      ? Math.max(0, -(settled + Math.min(0, floating)))
+      : startBalance != null
+        ? Math.max(dropSinceStart, -(settled + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
+        : dropSinceStart;
+  };
+  const bookedDD = dayDrawdown(realized.booked, open.bookedFloating);
+  const riskCountDD = dayDrawdown(realized.risk, open.floating);
+  const riskCountAbove = riskCountDD > bookedDD + 0.005;
+  const riskCountBound = riskCountAbove && !earlierDays && !flatAtStart;
+  const dailyDD = Math.max(bookedDD, riskCountDD);
+  const dailyCap = cfg.maxDailyDrawdownUsd;
+  const dailyFailed = riskCountBound ? bookedDD >= dailyCap : dailyDD >= dailyCap;
+  // Not confirmed: only a bound on the risk count's figure, and the booked figure does not fail it.
+  const dailyUnconfirmed = riskCountBound && !dailyFailed;
+  const dailyBasis: "booked" | "paper_risk_count" = riskCountAbove ? "paper_risk_count" : "booked";
+  if (riskCountAbove) {
+    notes.push(propDailyRiskCountNote(r2(riskCountDD), r2(bookedDD), realized, open, riskCountBound ? { bookedFailed: dailyFailed, cap: dailyCap } : null));
+  }
+  const dailyNotConfirmedReason = dailyUnconfirmed ? `${propDailyRiskCountBoundReason(r2(riskCountDD), r2(bookedDD), dailyCap)} DAILY_DD is not confirmed.` : null;
+  if (cfg.enabled && dailyNotConfirmedReason) notChecked.push({ rule: "DAILY_DD", reason: dailyNotConfirmedReason });
   const totalDD = Math.max(0, -profit);
   if (Math.abs(cfg.startingBalance - start.equity) >= 0.01) {
     notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `
@@ -429,7 +546,7 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   // notChecked; a breach of the measured part fails the rule itself.
   if (cfg.enabled) {
     if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
-    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push(earlierDays ? "DAILY_DD_TODAY" : "DAILY_DD");
+    if (dailyFailed) failed.push("DAILY_DD"); else if (!dailyUnconfirmed) passed.push(earlierDays ? "DAILY_DD_TODAY" : "DAILY_DD");
     if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD_CURRENT");
   }
   notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays, lowestEquity: true }));
@@ -441,18 +558,32 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
     ...base, measured: true, notMeasuredReason: null as string | null,
     profitUsd: r2(profit) as number | null,
     profitTargetProgress: (cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0) as number | null,
-    dailyDrawdownRemainingUsd: r2(cfg.maxDailyDrawdownUsd - dailyDD) as number | null,
+    // null when the risk count's figure is only a bound (riskCountBound).
+    dailyDrawdownRemainingUsd: (riskCountBound ? null : r2(cfg.maxDailyDrawdownUsd - dailyDD)) as number | null,
     totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD) as number | null,
     /** Today's drawdown counts paper P/L settled from here (trading-day start or challenge start, whichever is later). */
     dailyDrawdownSince: since.toISOString() as string | null,
     passed, failed, notChecked, notes, status,
     rulesEvaluated: cfg.enabled,
-    notEvaluated: [] as string[],
-    /** Additive: why each rule in notEvaluated was not checked (none here: every core rule was measured). */
-    notEvaluatedReasons: {} as Record<string, string>,
+    notEvaluated: (cfg.enabled && dailyUnconfirmed ? ["DAILY_DD"] : []) as string[],
+    /** Additive: why each rule in notEvaluated was not checked. */
+    notEvaluatedReasons: (cfg.enabled && dailyNotConfirmedReason ? { DAILY_DD: dailyNotConfirmedReason } : {}) as Record<string, string>,
     equityMeasured: true,
     /** Additive: false when the day's drawdown (and dailyDrawdownRemainingUsd) was not measured. */
-    dailyDrawdownMeasured: true,
+    dailyDrawdownMeasured: !riskCountBound,
+    /**
+     * Additive: today's drawdown as DAILY_DD checks it (the larger of the two
+     * bases), each basis, and which one it is: "paper_risk_count" when the
+     * Risk Governor's paper risk count puts it higher than the booked figures
+     * (a note then gives both), else "booked". The risk count's figure (and
+     * so the larger one and the basis) is null when it could not be measured
+     * from the start (a start day with positions open at the start; the note
+     * gives the most it can be).
+     */
+    dailyDrawdownUsd: (riskCountBound ? null : r2(dailyDD)) as number | null,
+    dailyDrawdownBookedUsd: r2(bookedDD) as number | null,
+    dailyDrawdownRiskCountUsd: (riskCountBound ? null : r2(riskCountDD)) as number | null,
+    dailyDrawdownBasis: (riskCountBound ? null : dailyBasis) as "booked" | "paper_risk_count" | null,
   };
 }
 

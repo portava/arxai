@@ -96,6 +96,17 @@ export interface GovernorMetrics {
   paperBookedEquity: number | null;
   /** Symbols of open positions counted at their stop in paperRiskCountEquity (no market quote read for them). */
   paperOpenValuedAtStop: string[];
+  /**
+   * Which part of the trader's paper risk count could not be read:
+   * "paper_book" (today's paper loss count, open paper positions and the 30d
+   * closes, so dailyPnl, openPaperTrades and the closes figures are
+   * placeholders), "risk_count_equity" (the active paper account's
+   * risk-count equity, so paperRiskCountEquity is null and a percent cap has
+   * no value). Empty when everything was read or no trader is in scope.
+   * Readiness hard-blocks on it (PAPER_RISK_COUNT_UNREADABLE), as the Risk
+   * Governor refuses every order when it cannot load its facts.
+   */
+  paperRiskCountUnreadable: Array<"paper_book" | "risk_count_equity">;
   weeklyPnl: number;
   maxDrawdown: number;
   /** Closes in the last 30 days whose P&L could not be sized (counted as above, not measured). */
@@ -361,6 +372,10 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   let paperRiskCountEquity: number | null = null;
   let paperBookedEquity: number | null = null;
   let paperOpenValuedAtStop: string[] = [];
+  // A trader's paper reads that failed: every check against them would run
+  // on a placeholder (a 0 loss, no open trades, no equity), never a pass.
+  const paperRiskCountUnreadable: GovernorMetrics["paperRiskCountUnreadable"] = [];
+  if (userId != null && missingDataSources.includes("paper_orders")) paperRiskCountUnreadable.push("paper_book");
   if (userId != null) {
     try {
       const acct = await readActivePaperAccount(userId);
@@ -384,6 +399,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
       const i = dataSourcesRead.indexOf("paper_orders");
       if (i >= 0) dataSourcesRead.splice(i, 1);
       if (!missingDataSources.includes("paper_orders")) missingDataSources.push("paper_orders");
+      paperRiskCountUnreadable.push("risk_count_equity");
     }
   }
 
@@ -406,6 +422,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
       paperRiskCountEquity,
       paperBookedEquity,
       paperOpenValuedAtStop,
+      paperRiskCountUnreadable,
       weeklyPnl: Number(weeklyPnl.toFixed(2)),
       maxDrawdown,
       unsizedPaperCloses30d,
@@ -453,6 +470,17 @@ function paperRiskCountExhaustedMessage(m: GovernorMetrics): string {
   return `${figures}, so ${perTrade} leaves no risk for a new trade${daily}. New paper trades are blocked${ownQuote}; closing is allowed.`;
 }
 
+/** The PAPER_RISK_COUNT_UNREADABLE message: what could not be read, which limits that leaves unchecked, and what the Risk Governor does. */
+function paperRiskCountUnreadableMessage(m: GovernorMetrics): string {
+  const book = m.paperRiskCountUnreadable.includes("paper_book");
+  const equity = m.paperRiskCountUnreadable.includes("risk_count_equity");
+  const what = book && equity ? "Today's paper loss count, your open paper positions and the paper account's risk-count equity"
+    : book ? "Today's paper loss count and your open paper positions" : "The paper account's risk-count equity";
+  const limits = book && equity ? "your daily loss limit, open-trade limits and percent risk limits (per-trade and daily loss)"
+    : book ? "your daily loss limit and open-trade limits" : "your percent risk limits (per-trade and daily loss)";
+  return `${what} could not be loaded, so ${limits} cannot be checked. The Risk Governor refuses new trades while it cannot load these facts, so new paper trades are blocked here until they can be read.`;
+}
+
 function evaluateStatus(
   m: GovernorMetrics,
   cooldowns: Cooldown[],
@@ -484,6 +512,11 @@ function evaluateStatus(
   // A risk-count equity at or below 0 uses up every percent cap; that block
   // names the figures, so the daily loss check against a used-up (0) cap is
   // not repeated next to it.
+  // A failed paper risk-count read is never a pass: the governor refuses
+  // every order when it cannot load its facts.
+  if (m.paperRiskCountUnreadable.length > 0) {
+    hardBlocks.push({ code: "PAPER_RISK_COUNT_UNREADABLE", severity: "BLOCK", message: paperRiskCountUnreadableMessage(m), details: { unreadable: m.paperRiskCountUnreadable } });
+  }
   const riskCountExhausted = paperRiskCountExhausted(m);
   if (riskCountExhausted) {
     hardBlocks.push({ code: "PAPER_RISK_COUNT_EQUITY_EXHAUSTED", severity: "BLOCK", message: paperRiskCountExhaustedMessage(m), details: { paperRiskCountEquity: m.paperRiskCountEquity, paperBookedEquity: m.paperBookedEquity, openValuedAtStop: m.paperOpenValuedAtStop } });
@@ -560,8 +593,8 @@ function evaluateStatus(
 
 // ── Readiness scoring (0–100, mapped to grade + level) ───────────────────
 function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGrade; level: ReadinessLevel; breakdown: Record<string, number> } {
-  // A. Risk discipline (25)
-  let a = 25;
+  // A. Risk discipline (25): no points from risk facts that were not read.
+  let a = m.paperRiskCountUnreadable.length > 0 ? 0 : 25;
   if (paperRiskCountExhausted(m) || (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit))) a -= 15;
   else if (m.dailyLossLimit != null && m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
   if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
@@ -649,6 +682,9 @@ function buildNextBestActions(status: OverallStatus, m: GovernorMetrics, hardBlo
   if (hardBlocks.some(b => b.code === "MARKET_DATA_MODE_NOT_READ_ONLY")) {
     out.push('Set MARKET_DATA_MODE="read_only" before resuming any paper activity.');
   }
+  if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_UNREADABLE")) {
+    out.push("Re-check once your paper account can be read: until then its risk count is unknown and the Risk Governor refuses new trades.");
+  }
   if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_EQUITY_EXHAUSTED")) {
     out.push("Open no new paper trades: the paper risk count leaves no equity for new risk. Review the open positions and the losses behind it.");
   }
@@ -658,7 +694,8 @@ function buildNextBestActions(status: OverallStatus, m: GovernorMetrics, hardBlo
   if (soft.some(s => s.code === "REVENGE_COOLDOWN_ACTIVE")) {
     out.push("Wait out the revenge-trade cooldown before opening any new paper trade.");
   }
-  if (m.sampleSize < 30) {
+  // The sample size is a placeholder 0 when the paper book was not read.
+  if (m.sampleSize < 30 && !m.paperRiskCountUnreadable.includes("paper_book")) {
     out.push("Continue paper trading to grow the sample size before changing strategies.");
   }
   if (m.repeatedMistakeCount >= 3) {

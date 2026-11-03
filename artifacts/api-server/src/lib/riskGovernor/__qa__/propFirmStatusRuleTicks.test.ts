@@ -37,13 +37,15 @@ mock.module("../enforce.js", {
 mock.module("../../safety/tradingHalt.js", {
   namedExports: { loadPlatformHalt: async () => ({ engaged: false, sources: [], reason: null }) },
 });
-mock.module("@workspace/db", { namedExports: { db: {}, userRiskEventsTable: {}, userRiskSettingsTable: {} } });
+mock.module("@workspace/db", { namedExports: { db: {}, userRiskEventsTable: {}, userRiskSettingsTable: {}, arxSymbolSpecsTable: {} } });
 // The active paper account carries the equity (null equity = no account).
 mock.module("../../tradeEngine/paperBookReader.js", {
   namedExports: {
     readActivePaperAccount: async () => (equity == null ? null
       : { id: 3, equity, currentBalance: equity, startingBalance: 100_000, updatedAt: new Date("2026-10-28T11:59:00Z") }),
     sumPaperRealizedSince: async () => 0,
+    readPaperCloses: async () => [],
+    readOpenPaperOrders: async () => [],
   },
 });
 mock.module("../limitSettings.js", {

@@ -39,13 +39,13 @@ function ctxWith(over: Record<string, unknown>): Record<string, unknown> {
 
 const table = () => ({ id: {}, userId: {}, createdAt: {} });
 mock.module("@workspace/db", {
-  namedExports: { db: { select: () => { throw new Error("not used"); } }, userRiskSettingsTable: table(), userRiskEventsTable: table() },
+  namedExports: { db: { select: () => { throw new Error("not used"); } }, userRiskSettingsTable: table(), userRiskEventsTable: table(), arxSymbolSpecsTable: table() },
 });
 mock.module("../enforce.js", { namedExports: { buildRiskContext: async () => state.ctx } });
 mock.module("../riskEvents.js", { namedExports: { getOrCreateRiskSettings: async () => ({ riskPreset: null }) } });
 mock.module("../limitSettings.js", { namedExports: { loadEffectiveLimits: async () => LIMITS } });
 mock.module("../../tradeEngine/paperBookReader.js", {
-  namedExports: { readActivePaperAccount: async () => null, sumPaperRealizedSince: async () => 0 },
+  namedExports: { readActivePaperAccount: async () => null, sumPaperRealizedSince: async () => 0, readPaperCloses: async () => [], readOpenPaperOrders: async () => [] },
 });
 mock.module("../../safety/tradingHalt.js", {
   namedExports: { loadPlatformHalt: async () => ({ engaged: false, sources: [], reason: null }) },
