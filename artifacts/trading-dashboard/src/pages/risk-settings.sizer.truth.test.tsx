@@ -76,4 +76,20 @@ describe("Position sizer — estimate disclosure", () => {
     const sub = screen.getByText(/Lot cap in force: the strictest of your cap, your operator's limit/);
     expect(sub.parentElement?.textContent).toMatch(/^0\.50Lot cap in force/);
   });
+
+  // For a symbol the Risk Governor refuses whatever the lot (off the
+  // operator's allow-list, a restricted side, switched off in the trader's
+  // limits) the server sends refusedReason and no lot; the card showed
+  // "Max Allowed Lot 0.50 / Final Lot Size 0.50" for an order that is refused.
+  it("a refused symbol shows the reason instead of an allowed or final lot", async () => {
+    const refusedReason = "Trading EURUSD is switched off in your risk limits, so the Risk Governor refuses every order on it.";
+    stub({ ...BASE, warning: null, maxLotAllowed: 0, finalLot: 0, suggestedLot: 2, valueModel: "forex_usd_quote", estimate: false, valuePerUnitPerLot: 100000, basis: "x", refusedReason });
+    const lot = await calculate("EURUSD");
+    expect(lot.textContent).toBe("Refused");
+    expect(screen.getByTestId("sizer-refused").textContent).toBe(refusedReason);
+    const sub = screen.getByText(/Lot cap in force: the strictest of your cap, your operator's limit/);
+    expect(sub.parentElement?.textContent).toMatch(/^None/);
+    expect(screen.queryByText("0.00")).toBeNull();
+    expect(screen.queryByText("Final Lot Size")).toBeNull();
+  });
 });

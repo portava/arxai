@@ -9588,6 +9588,11 @@ export interface PositionSizeResult {
   valuePerUnitPerLot?: number;
   /** Plain-English statement of the sizing assumption, for display. */
   basis?: string;
+  /**
+   * Set when the Risk Governor refuses every order on this symbol (or on this side, read from the stop: below the entry is a BUY) whatever the lot: not on the operator's instrument allow-list, a direction the operator restricted, or the symbol switched off in the trader's risk limits. maxLotAllowed and finalLot are then 0 and no lot may be shown. Null when none of these applies. Missing = an older server that did not check.
+   * @nullable
+   */
+  refusedReason?: string | null;
 }
 
 export type StrategyParameters = { [key: string]: unknown };

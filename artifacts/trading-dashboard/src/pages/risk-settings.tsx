@@ -524,6 +524,9 @@ export default function RiskSettings() {
     // Which instrument-class value model sized the lot. Missing = not
     // reported, so the lot is treated as an estimate.
     valueModel?: string; estimate?: boolean; valuePerUnitPerLot?: number; basis?: string;
+    // Set when the Risk Governor refuses every order on this symbol (or
+    // side) whatever the lot: no allowed or final lot is shown, only this.
+    refusedReason?: string | null;
   }>(null);
   const [calcParams, setCalcParams] = useState<null | {
     symbol: string; accountBalance: number; riskPercent: number;
@@ -1352,18 +1355,21 @@ export default function RiskSettings() {
                     <StatRow label="Suggested Lot" value={calcResult.valueModel === "unknown_contract" ? "—" : calcResult.suggestedLot.toFixed(2)} />
                     <StatRow
                       label="Max Allowed Lot"
-                      value={calcResult.maxLotAllowed.toFixed(2)}
+                      value={calcResult.refusedReason ? "None" : calcResult.maxLotAllowed.toFixed(2)}
                       sub="Lot cap in force: the strictest of your cap, your operator's limit, the platform cap and any cap you set for this symbol. Your broker may allow less."
                     />
                     <div className="mt-3 pt-3 border-t border-border/50">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold" data-testid="sizer-final-label">
-                          {calcResult.estimate === false ? "Final Lot Size" : "Estimated Lot Size"}
+                          {calcResult.refusedReason ? "Lot Size" : calcResult.estimate === false ? "Final Lot Size" : "Estimated Lot Size"}
                         </span>
                         <span className="text-xl font-mono font-bold text-primary" data-testid="sizer-final-lot">
-                          {calcResult.valueModel === "unknown_contract" ? "Not sized" : calcResult.finalLot.toFixed(2)}
+                          {calcResult.refusedReason ? "Refused" : calcResult.valueModel === "unknown_contract" ? "Not sized" : calcResult.finalLot.toFixed(2)}
                         </span>
                       </div>
+                      {calcResult.refusedReason && (
+                        <p className="mt-2 text-xs text-red-300" data-testid="sizer-refused">{calcResult.refusedReason}</p>
+                      )}
                       <p className="mt-2 text-xs text-muted-foreground" data-testid="sizer-basis">
                         {calcResult.basis ?? "The sizing basis was not reported, so treat this lot as an estimate."}
                       </p>

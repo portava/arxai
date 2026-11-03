@@ -221,7 +221,22 @@ router.get("/risk/position-size", requireUser, async (req, res) => {
       ...query,
       maxLotSize: symbolCap == null ? limits.maxLotSize : Math.min(limits.maxLotSize, symbolCap),
     });
-    return res.json(result);
+    // The governor's max_position_size check also refuses some orders
+    // outright, whatever the lot (same order as preTrade.ts). The side is
+    // read from the stop: below the entry is a BUY, above it a SELL. For
+    // such an order there is no allowed lot to show, only the reason.
+    const side = query.stopLoss < query.entry ? "BUY" : query.stopLoss > query.entry ? "SELL" : null;
+    const refusedReason = limits.allowedSymbols && !limits.allowedSymbols.includes(query.symbol)
+      ? `${query.symbol} is not on the instruments your operator allowed for your account, so the Risk Governor refuses every order on it.`
+      : limits.allowedDirection && side && side !== limits.allowedDirection
+        ? `Your account is restricted to ${limits.allowedDirection} trades only. A stop ${side === "BUY" ? "below" : "above"} the entry is a ${side} trade, so the Risk Governor refuses it.`
+        : limits.symbolLimits[query.symbol]?.blocked
+          ? `Trading ${query.symbol} is switched off in your risk limits, so the Risk Governor refuses every order on it.`
+          : null;
+    if (refusedReason) {
+      return res.json({ ...result, maxLotAllowed: 0, finalLot: 0, warning: null, refusedReason });
+    }
+    return res.json({ ...result, refusedReason: null });
   } catch (err) {
     req.log.error(err);
     return res.status(400).json({ error: "Failed to calculate position size" });

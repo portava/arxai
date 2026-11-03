@@ -44,8 +44,11 @@ mock.module("../../lib/risk/userRiskSettings.js", {
 });
 // The limits in force (strictest of trader, operator and platform), as the
 // Risk Governor resolves them. Default: the operator capped the lot at 0.5.
-const effective: { maxLotSize: number; symbolLimits: Record<string, { maxLots: number | null; blocked: boolean }> } = {
-  maxLotSize: 0.5, symbolLimits: {},
+const effective: {
+  maxLotSize: number; symbolLimits: Record<string, { maxLots: number | null; blocked: boolean }>;
+  allowedSymbols: string[] | null; allowedDirection: "BUY" | "SELL" | null;
+} = {
+  maxLotSize: 0.5, symbolLimits: {}, allowedSymbols: null, allowedDirection: null,
 };
 mock.module("../../lib/riskGovernor/limitSettings.js", {
   namedExports: { loadEffectiveLimits: async () => ({ ...effective, sources: { maxLotSize: "user_risk_limits.max_lot_size" } }) },
@@ -195,4 +198,48 @@ test("GET /risk/position-size sizes a lowercase pair as the pair", async () => {
   assert.equal(body.finalLot, 0.2);
   assert.doesNotMatch(body.basis, /not a currency pair/);
   effective.maxLotSize = 0.5;
+});
+
+// The governor's max_position_size check also refuses a symbol outright: off
+// the operator's instrument allow-list, a BUY/SELL the operator restricted,
+// or a symbol the trader switched off (a per-symbol cap of 0 is stored as
+// blocked with no cap). The sizer still showed "Max Allowed Lot 0.50 / Final
+// Lot Size 0.50" for an order the governor refuses; it now gives no lot and
+// says why, from the same limits read.
+async function sizeQ(params: Record<string, string>) {
+  const q = new URLSearchParams({ accountBalance: "100000", riskPercent: "2", entry: "1.1", stopLoss: "1.09", ...params });
+  const r = await fetch(`${base}/risk/position-size?${q}`);
+  assert.equal(r.status, 200);
+  return r.json() as Promise<{ maxLotAllowed: number; finalLot: number; refusedReason: string | null; warning: string | null }>;
+}
+
+test("GET /risk/position-size gives no lot for a symbol the governor refuses outright", async () => {
+  try {
+    effective.maxLotSize = 0.5; effective.symbolLimits = { EURUSD: { maxLots: null, blocked: true } };
+    const blocked = await sizeQ({ symbol: "eurusd" });
+    assert.equal(blocked.finalLot, 0);
+    assert.equal(blocked.maxLotAllowed, 0);
+    assert.match(blocked.refusedReason ?? "", /Trading EURUSD is switched off in your risk limits/);
+    assert.doesNotMatch(blocked.warning ?? "", /capped/, "no cap warning for a lot that is refused");
+
+    effective.symbolLimits = {}; effective.allowedSymbols = ["GBPUSD"];
+    const offList = await sizeQ({ symbol: "EURUSD" });
+    assert.equal(offList.finalLot, 0);
+    assert.match(offList.refusedReason ?? "", /EURUSD is not on the instruments your operator allowed/);
+
+    effective.allowedSymbols = null; effective.allowedDirection = "SELL";
+    const wrongSide = await sizeQ({ symbol: "EURUSD" }); // stop below entry: a BUY
+    assert.equal(wrongSide.finalLot, 0);
+    assert.match(wrongSide.refusedReason ?? "", /restricted to SELL trades only/);
+    const rightSide = await sizeQ({ symbol: "EURUSD", stopLoss: "1.11" }); // stop above entry: a SELL
+    assert.equal(rightSide.refusedReason, null);
+    assert.equal(rightSide.finalLot, 0.5);
+
+    effective.allowedDirection = null; effective.allowedSymbols = ["EURUSD"];
+    const allowed = await sizeQ({ symbol: "EURUSD" });
+    assert.equal(allowed.refusedReason, null, "an allowed symbol is sized as before");
+    assert.equal(allowed.finalLot, 0.5);
+  } finally {
+    effective.maxLotSize = 0.5; effective.symbolLimits = {}; effective.allowedSymbols = null; effective.allowedDirection = null;
+  }
 });
