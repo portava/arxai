@@ -81,9 +81,11 @@ describe("Strategy Tournament", () => {
   });
 
   it("running with only placeholder scans does not tell the admin to start what is already running", async () => {
+    // Shadow mode started with the tournament and has run since, so "running
+    // since" the tournament start is true.
     bodies["/api/strategy-tournament/results"] = {
-      running: true, idleReason: null, startedAt: "2026-11-03T09:30:00.000Z", ranked: [], unranked: [],
-      leaderboard: { bestOverall: null, worst: null },
+      running: true, idleReason: null, startedAt: "2026-11-03T09:30:00.000Z", shadowStartedAt: "2026-11-03T09:30:00.004Z",
+      ranked: [], unranked: [], leaderboard: { bestOverall: null, worst: null },
     };
     await show(<StrategyTournament />);
     expect(screen.getByText("RUNNING")).toBeTruthy();
@@ -92,6 +94,37 @@ describe("Strategy Tournament", () => {
     expect(empty).not.toMatch(/No data yet/);
     expect(empty).toMatch(/^Running since 2026-11-03 09:30 UTC\. No strategy has proposed a trade since it started/);
     expect(empty).toMatch(/found no actionable signal, or no scan has run yet/);
+  });
+
+  // startedAt is when the tournament was started; shadow mode (which it
+  // collects decisions from) can be stopped and restarted without changing
+  // it. Started 09:30, shadow stopped 10:00 and restarted 14:00: at 14:05 the
+  // table must not say "Running since 09:30" or put four unscanned hours down
+  // to "no actionable signal".
+  it("shadow mode restarted after the tournament started: no 'running since' the tournament start", async () => {
+    bodies["/api/strategy-tournament/results"] = {
+      running: true, idleReason: null, startedAt: "2026-11-03T09:30:00.000Z", shadowStartedAt: "2026-11-03T14:00:00.000Z",
+      ranked: [], unranked: [], leaderboard: { bestOverall: null, worst: null },
+    };
+    await show(<StrategyTournament />);
+    const empty = screen.getByTestId("tournament-empty").textContent ?? "";
+    expect(empty).not.toMatch(/Running since 2026-11-03 09:30/);
+    expect(empty).toMatch(/Tournament started 2026-11-03 09:30 UTC/);
+    expect(empty).toMatch(/shadow mode, which it collects decisions from, has run since 2026-11-03 14:00 UTC/);
+    expect(empty).toMatch(/nothing was collected while it was stopped/);
+  });
+
+  it("an older server that does not say when shadow mode started: no 'running since' claim", async () => {
+    bodies["/api/strategy-tournament/results"] = {
+      running: true, idleReason: null, startedAt: "2026-11-03T09:30:00.000Z",
+      ranked: [], unranked: [], leaderboard: { bestOverall: null, worst: null },
+    };
+    await show(<StrategyTournament />);
+    const empty = screen.getByTestId("tournament-empty").textContent ?? "";
+    expect(empty).not.toMatch(/Running since/);
+    expect(empty).toMatch(/Tournament started 2026-11-03 09:30 UTC/);
+    expect(empty).toMatch(/only while shadow mode runs/);
+    expect(empty).not.toMatch(/start shadow mode/i);
   });
 
   it("an empty table names the specific reason the tournament is idle", async () => {

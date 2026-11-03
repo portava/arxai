@@ -569,7 +569,14 @@ export function tournamentResults() {
   // A tournament only observes while shadow mode produces decisions.
   const running = tournamentEnabled && shadowEnabled;
   const idleReason = running ? null : !tournamentEnabled ? "NOT_STARTED" as const : "SHADOW_STOPPED" as const;
-  return { running, idleReason, startedAt: tournamentStartedAt, ranked: rows, unranked, leaderboard, dataSource: "SHADOW" as const };
+  // startedAt is when the tournament was started; shadow mode can be stopped
+  // and restarted after that without changing it, so the last shadow start is
+  // returned too (null when shadow mode is not running).
+  return {
+    running, idleReason, startedAt: tournamentStartedAt,
+    shadowStartedAt: shadowEnabled ? shadowStartedAt : null,
+    ranked: rows, unranked, leaderboard, dataSource: "SHADOW" as const,
+  };
 }
 
 // ── Confidence Calibration ────────────────────────────────────────────────
