@@ -82,11 +82,28 @@ export function diagnose(ctx: RuntimeContext): DoctorDiagnosis[] {
     priority: 3,
   });
 
+  // 4a) EA connection unread. bridgeMode "unknown" means the server could not
+  // read the EA connection; mt5Deferred stays true (fail-closed), but nobody
+  // observed a deferred or disconnected bridge, so the copy says it is unread.
+  const bridgeUnread = ctx.bridge?.bridgeMode === "unknown";
+  pushIf(out, bridgeUnread, {
+    category: "mt5-bridge",
+    id: "doc-bridge-unread",
+    explanation: "Your EA connection could not be read, so the MT5 bridge state is unknown. It is treated as deferred for safety.",
+    evidence: ["bridgeMode=unknown"],
+    likelyCause: "The server could not read your EA connection record when it built the bridge summary.",
+    safeNextStep: "Refresh the page. If it stays unknown, open the MT5 Bridge page to check your EA connection. Execution stays server-gated either way.",
+    relatedRoute: safeRoute("/mt5-bridge"),
+    doNotDo: "Do not assume the bridge is deferred, disconnected or connected while its state is unread.",
+    liveTradingStillUnavailable: true,
+    priority: 4,
+  });
+
   // 4) Bridge deferred / disconnected
   // When the summary did not read the execution posture, the caller's own
   // bridge state says nothing about the account mode (a Live Shared account
   // trades through the shared master), so no "simulator mode" claim.
-  pushIf(out, ctx.mt5Deferred || ctx.bridge?.bridgeMode === "disconnected", {
+  pushIf(out, !bridgeUnread && (ctx.mt5Deferred || ctx.bridge?.bridgeMode === "disconnected"), {
     category: "mt5-bridge",
     id: "doc-bridge-deferred",
     explanation: ctx.executionPostureUnmeasured

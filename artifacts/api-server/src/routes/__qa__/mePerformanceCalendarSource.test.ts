@@ -64,6 +64,9 @@ for (const path of ["/me/performance-calendar", "/me/performance-calendar/2026-0
     assert.equal(r.source, "paper_trades");
     assert.match(String(r.sourceNote), /demo trades you log/i);
     assert.match(String(r.sourceNote), /Trading Calendar/);
+    // The page that reads it is titled "My Demo Trades" (route /my-performance).
+    assert.match(String(r.sourceNote), /on My Demo Trades/);
+    assert.doesNotMatch(String(r.sourceNote), /My Performance/);
   });
 
   test(`${path} (live): names the live-trade ledger`, async () => {

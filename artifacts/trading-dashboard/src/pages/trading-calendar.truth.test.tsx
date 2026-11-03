@@ -262,6 +262,28 @@ describe("Trading Calendar failed loads", () => {
     expect(document.body.textContent).not.toMatch(/No live trades recorded yet/);
   });
 
+  // The review scenario: the mode read rejects (network error) or returns a
+  // non-JSON proxy 502. The calendar query never runs, so the page must still
+  // say the mode could not be loaded rather than a header over an empty grid.
+  for (const [label, impl] of [
+    ["a network error", () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["a non-JSON 502", () => Promise.resolve(new Response("<html>Bad Gateway</html>", { status: 502 }))],
+  ] as const) {
+    it(`a mode read that fails with ${label} says it could not be loaded, not a blank calendar`, async () => {
+      fetchMock = vi.fn(async (input: string) => {
+        const url = String(input);
+        if (url.startsWith("/api/me/trading/mode")) return impl();
+        return new Response(JSON.stringify(paperCal), { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      renderPage();
+      expect((await screen.findByTestId("calendar-mode-error")).textContent).toMatch(/could not be loaded/);
+      expect(screen.queryByText("Sun")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/from your (demo trades|simulated orders)/);
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
+    });
+  }
+
   it("a 500 from the day route says the day could not be loaded", async () => {
     serve({
       "/api/me/trading/mode": { body: modeResp("DEMO") },
@@ -431,7 +453,7 @@ describe("trading calendar: day detail P&L", () => {
 });
 
 describe("trading calendar: source", () => {
-  it("names its ledger (simulated orders) and says My Performance's hand-logged trades are separate", async () => {
+  it("names its ledger (simulated orders) and says My Demo Trades' hand-logged trades are separate", async () => {
     mockFetch({
       "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
       // An older server sends no source note: the page still names its source.
@@ -444,7 +466,9 @@ describe("trading calendar: source", () => {
     expect(screen.queryByText(/from your demo trades/)).toBeNull();
     const note = screen.getByTestId("calendar-source-note");
     expect(note.textContent).toMatch(/simulated orders/i);
-    expect(note.textContent).toMatch(/My Performance/);
+    // Named by the page's visible title, "My Demo Trades".
+    expect(note.textContent).toMatch(/My Demo Trades/);
+    expect(note.textContent).not.toMatch(/My Performance/);
   });
 
   it("live mode shows the server's source note", async () => {

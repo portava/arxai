@@ -146,7 +146,9 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
   if (liveTradingDisabled === true) activeSafetyLocks.push("LIVE TRADING DISABLED");
   if (brokerExecutionDisabled === true) activeSafetyLocks.push("BROKER EXECUTION DISABLED");
   if (brokerReadOnly === true) activeSafetyLocks.push("BROKER READ-ONLY");
-  if (mt5Deferred) activeSafetyLocks.push("MT5 DEFERRED");
+  // An unread EA connection is treated as deferred (mt5Deferred) but is not
+  // an observed deferred bridge, so its lock says it is unread.
+  if (mt5Deferred) activeSafetyLocks.push(bridgeUnread ? "MT5 BRIDGE UNREAD (TREATED AS DEFERRED)" : "MT5 DEFERRED");
   if (paperOnly === true) activeSafetyLocks.push("DEMO ONLY");
   if (simulatorMode === true) activeSafetyLocks.push("SIMULATOR MODE");
 

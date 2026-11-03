@@ -566,13 +566,13 @@ export function MemoryTab() {
     );
   }
   // The server withheld the paper book for a live account (the same rule as
-  // the Trading Calendar): show its note, not demo figures under a LIVE strip.
+  // the Trading Calendar): show its note, not paper figures under a LIVE strip.
   if (cc.data?.currentAccountMode === "LIVE_SHARED") {
     return (
       <Card className="rounded-2xl border-border bg-card">
         <CardContent className="p-5 text-sm text-txt-secondary" data-testid="memory-mode-note">
           {cc.data.modeNote ??
-            `This is a live account. ${name}'s memory is built from demo trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.`}
+            `This is a live account. ${name}'s memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.`}
         </CardContent>
       </Card>
     );
@@ -583,7 +583,7 @@ export function MemoryTab() {
     return (
       <Card className="rounded-2xl border-border bg-card">
         <CardContent className="p-5 text-sm text-txt-secondary">
-          No memory snapshot yet. Try a few demo trades and {name} will
+          No memory snapshot yet. Try a few paper trades and {name} will
           start building her record.
         </CardContent>
       </Card>
@@ -614,7 +614,7 @@ export function MemoryTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Demo Win Rate</CardTitle>
+            <CardTitle className="text-xs">Paper Win Rate</CardTitle>
           </CardHeader>
           <CardContent>
             {/* No closed trade = no win rate measured, not 0%. */}
@@ -622,13 +622,13 @@ export function MemoryTab() {
               {hasClosed ? `${c.winRate.toFixed(1)}%` : "—"}
             </div>
             <div className="text-[11px] text-txt-secondary mt-1">
-              {hasClosed ? "All closed demo trades" : "No closed demo trades yet"}
+              {hasClosed ? "All closed paper trades" : "No closed paper trades yet"}
             </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Net Demo P&amp;L</CardTitle>
+            <CardTitle className="text-xs">Net Paper P&amp;L</CardTitle>
           </CardHeader>
           <CardContent>
             {/* No figure when none of the closed trades could be sized: the
@@ -646,13 +646,13 @@ export function MemoryTab() {
             <div className="text-[11px] text-txt-secondary mt-1" data-testid="memory-net-pnl-scope">
               {typeof c.netPnlBasis === "string" && c.netPnlBasis
                 ? c.netPnlBasis
-                : "All closed demo trades, as booked by the paper venue"}
+                : "All closed paper trades, as booked by the ARX paper simulator (not an MT5 demo or live account)"}
             </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Closed Demo Trades</CardTitle>
+            <CardTitle className="text-xs">Closed Paper Trades</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold">{c.totalClosedTrades}</div>
@@ -690,11 +690,11 @@ export function MemoryTab() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-4 w-4" /> Demo Equity Curve (last 30 days)
+              <Activity className="h-4 w-4" /> Paper Equity Curve (last 30 days)
             </CardTitle>
             <div className="text-[11px] text-txt-secondary">
-              Cumulative P&amp;L of demo trades closed in the last 30 days. The
-              tiles above cover all closed demo trades.
+              Cumulative P&amp;L of paper trades closed in the last 30 days. The
+              tiles above cover all closed paper trades.
             </div>
           </CardHeader>
           <CardContent>
@@ -720,7 +720,7 @@ export function MemoryTab() {
               </ResponsiveContainer>
             ) : (eq.data?.equityCurve?.unsized_trades ?? 0) > 0 ? null : (
               <div className="text-txt-secondary text-sm">
-                No closed demo trades in this range yet.
+                No closed paper trades in this range yet.
               </div>
             )}
             {/* Closes the paper venue could not size have no point on the
@@ -787,7 +787,7 @@ export function MemoryTab() {
                 decision, so a trade call with no order may have been
                 refused, filtered by a setting, or never sent. */}
             <div data-testid="decision-calls-without-order">
-              Trade calls with no demo order:{" "}
+              Trade calls with no paper order:{" "}
               {typeof c.aiDecisionStats.tradeCallsWithoutOrder === "number"
                 ? `${c.aiDecisionStats.tradeCallsWithoutOrder}${typeof c.aiDecisionStats.tradeCalls === "number" ? ` of ${c.aiDecisionStats.tradeCalls}` : ""}`
                 : "—"}{" "}
@@ -886,6 +886,12 @@ export function MemoryTab() {
   );
 }
 
+/** What the paper autopilot's "not opened" count is, for a server that sends
+ *  no safety_blocks_today_basis. "(UTC)" only when the summary reports that
+ *  day basis, as the tiles do. */
+const notOpenedTodayBasis = (utc: boolean) =>
+  `Counts each symbol a paper autopilot cycle did not open a trade for today${utc ? " (UTC)" : ""}: the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks.`;
+
 /** The paper autopilot (autopilot_cycles, lib/paperAutopilot) — a different
  *  engine from the in-memory simulator autopilot that the Autopilot Control
  *  Center reports. Each surface names the engine it reports. */
@@ -939,11 +945,24 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         </div>
         <div>
+          {/* safety_blocks_today sums paper_trades_rejected, which counts
+              every symbol a cycle did not open a trade for, ordinary AI
+              holds included. It is not a count of safety blocks. */}
           <div className="text-txt-secondary text-xs">
-            {today("Safety blocks")}
+            {today("Not opened")}
           </div>
-          <div className="font-bold">{n(a?.safety_blocks_today)}</div>
+          <div className="font-bold" data-testid="autopilot-not-opened-today">{n(a?.safety_blocks_today)}</div>
         </div>
+        {loaded && (
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
+            data-testid="autopilot-not-opened-basis"
+          >
+            {typeof a.safety_blocks_today_basis === "string"
+              ? a.safety_blocks_today_basis
+              : notOpenedTodayBasis(utc)}
+          </div>
+        )}
         {!loaded ? (
           <div
             className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
@@ -966,7 +985,7 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
             </div>
             {a.cycles_today === 0 && (
               <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
-                No autopilot cycle has run today{utc ? " (UTC)" : ""}, so it has opened, closed and blocked nothing today.
+                No autopilot cycle has run today{utc ? " (UTC)" : ""}, so it has not opened, closed or passed on any trade today.
               </div>
             )}
           </>
@@ -991,7 +1010,7 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
             {safeDate(a.last_cycle.started_at, "datetime", "time not reported")}):{" "}
             {a.last_cycle.autopilot_cycle_id} —{" "}
             {a.last_cycle.status} · opened{" "}
-            {a.last_cycle.paper_trades_opened} · rejected{" "}
+            {a.last_cycle.paper_trades_opened} · not opened{" "}
             {a.last_cycle.paper_trades_rejected}
           </div>
         )}

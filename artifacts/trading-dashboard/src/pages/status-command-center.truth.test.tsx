@@ -12,6 +12,7 @@ import { collectRuntimeContext } from "@/assistant/runtimeContext";
 import type { BridgeDiagnosticSummary, RuntimeContext } from "@/assistant/runtimeContextTypes";
 import { buildSetupWizard } from "@/statusCommand/setupWizard";
 import { computeReadinessScore } from "@/statusCommand/readinessScore";
+import { diagnose, fixFirst } from "@/assistant/appDoctor";
 
 const holder: { ctx: RuntimeContext | null } = { ctx: null };
 
@@ -129,6 +130,49 @@ describe("failed diagnostic fetch is unknown, not a default safe posture", () =>
     holder.ctx = ctx;
     render(<StatusCommandCenter />);
     expect(runtimeRow("Heartbeat")).toMatch(/^not checked — your EA connection could not be read/);
+  });
+
+  // App Doctor and the safety-lock list must not call an unread EA connection
+  // "deferred" (or claim simulator mode): nobody observed that state. The
+  // fail-closed mt5Deferred flag stays set; only the copy says what was read.
+  it("App Doctor and the lock list say an unreadable EA connection could not be read, not 'deferred'", () => {
+    const unreadBridge: BridgeDiagnosticSummary = {
+      ...connectedBridge, bridgeMode: "unknown", heartbeatPresent: false, heartbeatScope: "your_connection",
+      lastHeartbeatAt: null, heartbeatAgeSeconds: null, paperOnly: true,
+      reason: "The bridge heartbeat status could not be read, so the bridge state is unknown; treating as deferred for safety.",
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: unreadBridge });
+    expect(ctx.mt5Deferred).toBe(true); // still fail-closed
+    const ds = diagnose(ctx);
+    expect(ds.some((d) => d.id === "doc-bridge-deferred")).toBe(false);
+    const unread = ds.find((d) => d.id === "doc-bridge-unread")!;
+    expect(unread).toBeTruthy();
+    expect(unread.explanation).toMatch(/could not be read/i);
+    expect(unread.explanation).toMatch(/unknown/i);
+    expect(unread.explanation).toMatch(/treated as deferred for safety/i);
+    expect(unread.explanation).not.toMatch(/simulator mode/i);
+    expect(unread.evidence).toContain("bridgeMode=unknown");
+    expect(ctx.activeSafetyLocks).not.toContain("MT5 DEFERRED");
+    expect(ctx.activeSafetyLocks.join(" ")).toMatch(/MT5 BRIDGE UNREAD/);
+    const ff = fixFirst(ctx);
+    const shown = [ff.primary, ...ff.alternates].filter(Boolean).map((d) => d!.explanation).join("\n");
+    expect(shown).not.toMatch(/bridge is deferred or disconnected/i);
+    holder.ctx = ctx;
+    render(<StatusCommandCenter />);
+    const page = document.body.textContent ?? "";
+    expect(page).not.toMatch(/The MT5 bridge is deferred or disconnected/);
+    expect(page).not.toMatch(/MT5 DEFERRED/);
+  });
+
+  it("a bridge the server read as deferred is still diagnosed as deferred", () => {
+    const deferredBridge: BridgeDiagnosticSummary = {
+      ...connectedBridge, bridgeMode: "deferred", heartbeatPresent: false, lastHeartbeatAt: null, heartbeatAgeSeconds: null, paperOnly: true,
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: deferredBridge });
+    const ds = diagnose(ctx);
+    expect(ds.some((d) => d.id === "doc-bridge-deferred")).toBe(true);
+    expect(ds.some((d) => d.id === "doc-bridge-unread")).toBe(false);
+    expect(ctx.activeSafetyLocks).toContain("MT5 DEFERRED");
   });
 
   it("a bridge summary that was never read scores the MT5 Bridge section 0, not 5", () => {

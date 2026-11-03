@@ -1,5 +1,5 @@
 // Truth: the Prop Challenge evaluator measures drawdown and daily loss from
-// closed demo trades only; open positions' floating P&L is not read. The
+// closed paper trades only (paper_orders, not an MT5 demo account); open positions' floating P&L is not read. The
 // meters must say "closed-trade" and how many open positions were left out,
 // so "0.00% / 10%" is not read as equity drawdown while open trades are down.
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,7 +15,8 @@ describe("Prop drawdown / daily-loss meters — measurement basis", () => {
     expect(screen.getByText("Closed-trade drawdown")).toBeTruthy();
     expect(screen.queryByText("Total drawdown")).toBeNull();
     const basis = screen.getByTestId("prop-drawdown-basis").textContent ?? "";
-    expect(basis).toMatch(/closed demo trades only/i);
+    expect(basis).toMatch(/closed paper trades only/i);
+    expect(basis).not.toMatch(/demo/i);
     expect(basis).toMatch(/floating P&L is not counted/i);
     expect(basis).toMatch(/3 open positions are not counted/);
   });

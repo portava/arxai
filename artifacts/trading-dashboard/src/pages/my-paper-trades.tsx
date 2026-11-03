@@ -123,6 +123,13 @@ function performanceSource(calendar: string | undefined, summary: string | undef
   if (c === "unknown" || s === "unknown") return "unknown";
   return c === s ? c : "mixed";
 }
+/**
+ * Which ledger the demo Performance tab reads, for a server that sends no
+ * sourceNote. It is not the Trading Calendar's simulated orders (paper_orders),
+ * so the two pages' figures for a date differ.
+ */
+const PAPER_TRADES_SOURCE_NOTE =
+  "From the demo trades you log by hand on this page. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.";
 const PERFORMANCE_SOURCE_COPY: Record<Exclude<PerformanceSource, "paper_trades">, string> = {
   live_trades: "Your account is in live trading mode, so the performance calendar reads your closed live trades, not the demo trades on the Trades tab.",
   withheld_live_shared: "Your account is in live-shared mode, so the server does not return a demo-trade performance calendar for it. The demo trades on the Trades tab are not summarised here.",
@@ -203,6 +210,8 @@ export default function MyPaperTradesPage() {
   const [summary, setSummary] = useState<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean } | null>(null);
   // Which book the performance endpoints read (see PerformanceSource).
   const [perfSource, setPerfSource] = useState<PerformanceSource>("unknown");
+  // The server's note naming that book (sourceNote), when it sends one.
+  const [perfSourceNote, setPerfSourceNote] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<number, Review>>({});
   const [insights, setInsights] = useState<Insights | null>(null);
   const [coaching, setCoaching] = useState<Coaching | null>(null);
@@ -243,8 +252,8 @@ export default function MyPaperTradesPage() {
     const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
       read<{ trades: PaperTrade[] }>("trades", "/me/paper-trades"),
       read<{ entries: Journal[] }>("journal", "/me/trade-journal"),
-      read<{ days: Day[]; source?: string }>("calendar", "/me/performance-calendar"),
-      read<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean; source?: string }>("summary", "/me/performance-summary"),
+      read<{ days: Day[]; source?: string; sourceNote?: string }>("calendar", "/me/performance-calendar"),
+      read<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean; source?: string; sourceNote?: string }>("summary", "/me/performance-summary"),
       read<{ reviews: Review[] }>("reviews", "/me/ai-trade-reviews"),
       read<Insights>("insights", "/me/performance-insights"),
       read<Coaching>("coaching", "/me/coaching-plan"),
@@ -256,6 +265,8 @@ export default function MyPaperTradesPage() {
     // Demo figures need both reads to name the demo record; a failed one leaves
     // the book unconfirmed, so the tab says it could not be loaded.
     setPerfSource(cal && sum ? performanceSource(cal.source, sum.source) : "load_failed");
+    const note = [sum?.sourceNote, cal?.sourceNote].find((v): v is string => typeof v === "string" && v.length > 0);
+    setPerfSourceNote(note ?? null);
     const rmap: Record<number, Review> = {};
     for (const r of rv?.reviews ?? []) rmap[r.paperTradeId] = r;
     setReviews(rmap); setInsights(ins); setCoaching(co);
@@ -607,6 +618,9 @@ export default function MyPaperTradesPage() {
               {PERFORMANCE_SOURCE_COPY[perfSource]}
             </CardContent></Card>
           ) : (<>
+          <p className="text-xs text-muted-foreground" data-testid="performance-source-note">
+            {perfSourceNote ?? PAPER_TRADES_SOURCE_NOTE}
+          </p>
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
@@ -660,12 +674,14 @@ export default function MyPaperTradesPage() {
             </CardContent></Card>
           ) : (
             <>
+              {/* Computed from the same demo-trade P/L (price move × lots) as the Trades tab. */}
+              <p className="text-xs text-muted-foreground" data-testid="insights-pnl-unit-note">{PNL_UNIT_NOTE}</p>
               <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4"/>Performance Insights</CardTitle><CardDescription>Across {insights.sampleSize} trades · educational only</CardDescription></CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div><div className="text-muted-foreground">Avg win</div><div className="text-emerald-500 font-semibold">{insights.averages.avgWin}</div></div>
-                  <div><div className="text-muted-foreground">Avg loss</div><div className="text-red-500 font-semibold">{insights.averages.avgLoss}</div></div>
-                  <div><div className="text-muted-foreground">Expectancy</div><div className={`font-semibold ${insights.averages.expectancy >= 0 ? "text-emerald-500" : "text-red-500"}`}>{insights.averages.expectancy}</div></div>
-                  <div><div className="text-muted-foreground">Best day</div><div>{insights.bestDay ? `${insights.bestDay.date} (${insights.bestDay.pnl})` : "—"}</div></div>
+                  <div data-testid="insights-avg-win"><div className="text-muted-foreground">Avg win ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgWin)}`}>{formatPriceMovePnl(insights.averages.avgWin)}</div></div>
+                  <div data-testid="insights-avg-loss"><div className="text-muted-foreground">Avg loss ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgLoss)}`}>{formatPriceMovePnl(insights.averages.avgLoss)}</div></div>
+                  <div data-testid="insights-expectancy"><div className="text-muted-foreground">Expectancy ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.expectancy)}`}>{formatPriceMovePnl(insights.averages.expectancy)}</div></div>
+                  <div data-testid="insights-best-day"><div className="text-muted-foreground">Best day ({PNL_UNIT_SHORT})</div><div>{insights.bestDay ? `${insights.bestDay.date} (${formatPriceMovePnl(insights.bestDay.pnl)})` : "—"}</div></div>
                 </CardContent>
               </Card>
               {insights.insights.length > 0 && (
@@ -683,7 +699,7 @@ export default function MyPaperTradesPage() {
               {insights.byStrategy.length > 0 && (
                 <Card><CardHeader className="pb-2"><CardTitle className="text-base">By strategy</CardTitle></CardHeader>
                   <CardContent className="space-y-1 text-sm">{insights.byStrategy.map((s) => (
-                    <div key={s.strategy} className="flex justify-between"><span>{s.strategy}</span><span className="text-muted-foreground">{s.count} trades · {s.winRate}% win · avg {s.avgPnl}</span></div>
+                    <div key={s.strategy} className="flex justify-between" data-testid={`insights-strategy-${s.strategy}`}><span>{s.strategy}</span><span className="text-muted-foreground">{s.count} trades · {s.winRate}% win · avg {formatPriceMovePnl(s.avgPnl)} ({PNL_UNIT_SHORT})</span></div>
                   ))}</CardContent>
                 </Card>
               )}

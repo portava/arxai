@@ -19,10 +19,11 @@ const CLOSED = {
   strategyTag: null, setupGrade: null, reasonForEntry: null, notes: null, createdAt: "2026-10-27T09:00:00.000Z",
 };
 
-function stub(calendar: Record<string, unknown> | null, summary: Record<string, unknown>) {
+function stub(calendar: Record<string, unknown> | null, summary: Record<string, unknown>, failing: string[] = []) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const u = String(url);
     const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b }) as Response;
+    if (failing.some((p) => u.endsWith(p))) return { ok: false, status: 500, json: async () => ({ error: "boom" }) } as Response;
     if (u.endsWith("/api/me/paper-trades")) return ok({ trades: [CLOSED] });
     if (u.endsWith("/api/me/trade-journal")) return ok({ entries: [] });
     if (u.endsWith("/api/me/performance-calendar")) {
@@ -70,10 +71,54 @@ describe("My Demo Trades — Performance tab names the book it shows", () => {
     expect(document.body.textContent).not.toContain("will populate after your first closed trade");
   });
 
+  // Each read has its own catch (2c56a512): an unrelated failed request is
+  // named on its own section, and the Performance tab does not blame "the
+  // request for your demo-trade performance" when calendar and summary loaded.
+  it("a failed playbooks or reviews request does not make the Performance tab say its request failed", async () => {
+    stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"), ["/api/me/playbooks", "/api/me/ai-trade-reviews"]);
+    await openPerformance();
+    expect(screen.queryByTestId("performance-not-demo")).toBeNull();
+    expect(document.body.textContent).not.toContain("The request for your demo-trade performance failed");
+    expect(document.body.textContent).toContain("Close a demo trade to see your day appear here");
+  });
+
+  it("a failed summary request (calendar loaded) names the summary as the failed read", async () => {
+    stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"), ["/api/me/performance-summary"]);
+    await openPerformance();
+    expect(screen.getByTestId("performance-not-demo").textContent).toContain("could not be loaded");
+    expect(screen.getByTestId("load-error-summary").textContent).toMatch(/Your performance summary could not be loaded/);
+    expect(screen.queryByTestId("load-error-calendar")).toBeNull();
+  });
+
   it("demo record: shows the demo calendar", async () => {
     stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"));
     await openPerformance();
     expect(screen.queryByTestId("performance-not-demo")).toBeNull();
     expect(document.body.textContent).toContain("Close a demo trade to see your day appear here");
+  });
+
+  // /me/performance-calendar and /me/performance-summary send sourceNote; the
+  // tab names its ledger so a reader comparing it with the Trading Calendar
+  // sees that the two pages read different records.
+  it("demo record: names its ledger with the server's source note", async () => {
+    const note = "From the demo trades you log by hand on My Demo Trades. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.";
+    stub({ days: [], isEmpty: true, source: "paper_trades", sourceNote: note }, { ...emptySummary("paper_trades"), sourceNote: note });
+    await openPerformance();
+    expect(screen.getByTestId("performance-source-note").textContent).toBe(note);
+  });
+
+  it("demo record from a server with no source note: names the ledger with local copy", async () => {
+    stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"));
+    await openPerformance();
+    const text = screen.getByTestId("performance-source-note").textContent ?? "";
+    expect(text).toMatch(/demo trades you log by hand on this page/i);
+    expect(text).toMatch(/Trading Calendar/);
+    expect(text).toMatch(/not included/);
+  });
+
+  it("a book that is not the demo record shows no demo source note", async () => {
+    stub({ days: [], isEmpty: true, source: "live_trades", sourceNote: "From your closed live trades recorded against your account." }, emptySummary("live_trades"));
+    await openPerformance();
+    expect(screen.queryByTestId("performance-source-note")).toBeNull();
   });
 });

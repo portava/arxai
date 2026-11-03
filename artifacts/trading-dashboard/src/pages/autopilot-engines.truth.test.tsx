@@ -111,6 +111,45 @@ describe("Autopilot boards name their engine", () => {
     expect(screen.getByTestId("paper-autopilot-last-cycle").textContent).toMatch(/time not reported/);
   });
 
+  // autopilot_cycles.paper_trades_rejected (summed into safety_blocks_today)
+  // counts every symbol a cycle did not open a trade for: AI HOLD, the daily
+  // paper loss limit, any sniper skip and any paper-execution refusal. A day
+  // of ordinary HOLDs is not "safety blocks".
+  it("the not-opened count is not called safety blocks and says AI holds are included", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 1440, paper_trades_opened_today: 2, paper_trades_closed_today: 1,
+      safety_blocks_today: 7198, last_cycle: { autopilot_cycle_id: "c9", status: "COMPLETED", paper_trades_opened: 0, paper_trades_rejected: 5 },
+      today_counts_capped: false, cycles_read_limit: null, today_basis: "UTC",
+    }} />);
+    expect(screen.queryByText(/Safety blocks today/i)).toBeNull();
+    expect(screen.getByText("Not opened today (UTC)")).toBeTruthy();
+    expect(screen.getByText("7198")).toBeTruthy();
+    const basis = screen.getByTestId("autopilot-not-opened-basis").textContent ?? "";
+    expect(basis).toMatch(/AI decided to hold/i);
+    expect(basis).toMatch(/sniper/i);
+    expect(basis).toMatch(/not a count of safety blocks/i);
+    expect(document.body.textContent).toMatch(/not opened 5/);
+    expect(document.body.textContent).not.toMatch(/rejected 5/);
+  });
+
+  it("the server's basis for the not-opened count is shown when it sends one", () => {
+    const serverBasis = "Server basis: each symbol a cycle did not open a trade for.";
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 3, paper_trades_opened_today: 0, paper_trades_closed_today: 0,
+      safety_blocks_today: 15, safety_blocks_today_basis: serverBasis, last_cycle: null,
+    }} />);
+    expect(screen.getByTestId("autopilot-not-opened-basis").textContent).toBe(serverBasis);
+  });
+
+  it("no cycle today: does not say the autopilot 'blocked' anything", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 0, paper_trades_opened_today: 0, paper_trades_closed_today: 0,
+      safety_blocks_today: 0, last_cycle: null, today_basis: "UTC",
+    }} />);
+    expect(screen.getByTestId("autopilot-today-note").textContent).toMatch(/No autopilot cycle has run today \(UTC\)/);
+    expect(screen.getByTestId("autopilot-today-note").textContent).not.toMatch(/blocked/i);
+  });
+
   it("uncapped counts are shown as totals", () => {
     render(<PaperAutopilotSummaryCard a={{
       cycles_today: 12, paper_trades_opened_today: 3, paper_trades_closed_today: 2,

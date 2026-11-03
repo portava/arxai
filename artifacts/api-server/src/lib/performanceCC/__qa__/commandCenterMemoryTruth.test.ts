@@ -173,3 +173,21 @@ test("an unsized manual V75 loss (stored 0) counts as a loss, adds nothing to Ne
   assert.equal(cc.aiDecisionStats.decisionToWinRate, 50);
   assert.doesNotMatch(cc.insights.join("\n"), /positive net P&L/, "the unsized loss could take the net below zero");
 });
+
+// autopilot_cycles.paper_trades_rejected counts every symbol a cycle did not
+// open a trade for: AI HOLD, the daily paper loss limit, any sniper skip and
+// any paper-execution refusal. riskStats.highRiskBlocks sums it, so the field
+// says it is not a count of high-risk (safety) blocks.
+test("riskStats.highRiskBlocks says it counts every not-opened symbol, AI holds included, not high-risk blocks", async () => {
+  rows.set(database.autopilotCyclesTable, [
+    { id: 2, autopilotCycleId: "c2", userId: 7, status: "COMPLETED", startedAt: new Date(), finishedAt: new Date(),
+      paperTradesOpened: 0, paperTradesRejected: 5, paperTradesClosed: 0, debriefsTriggered: 0, learningEventsTriggered: 0 },
+  ]);
+  const cc = await buildCommandCenter(7) as unknown as { riskStats: Record<string, unknown> };
+  assert.equal(cc.riskStats.highRiskBlocks, 5);
+  const basis = String(cc.riskStats.highRiskBlocksBasis);
+  assert.match(basis, /AI (decided to )?hold/i);
+  assert.match(basis, /sniper/i);
+  assert.match(basis, /not a count of (high-risk|safety) blocks/i);
+  assert.match(basis, /latest 20/);
+});

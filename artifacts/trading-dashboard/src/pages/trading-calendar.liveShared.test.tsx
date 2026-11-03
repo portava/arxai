@@ -48,6 +48,39 @@ describe("trading calendar — LIVE_SHARED", () => {
     expect(screen.queryByTestId("btn-rebuild")).toBeNull();
   });
 
+  // The LIVE_SHARED placeholder read no ledger and sends no source_note. The
+  // page's fallback notes ("From your simulated orders…", "From your closed
+  // live trades…") name a ledger the server never read, so neither is shown.
+  it("names no ledger it did not read: no source note for the placeholder month (paper route)", async () => {
+    renderPage((url) => {
+      if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "DEMO" } });
+      if (url.startsWith("/api/performance/calendar")) {
+        return json({
+          calendar: { month: "2026-10", days: [], total_pnl: null, total_trades: null, winning_days: null, losing_days: null, no_trade_days: null },
+          currentAccountMode: "LIVE_SHARED", modeScopeApplied: true, liveAggregation: "NOT_AVAILABLE", modeNote: LIVE_NOTE,
+        });
+      }
+      return json({}, 404);
+    });
+    await waitFor(() => expect(screen.getByTestId("calendar-mode-note").textContent).toBe(LIVE_NOTE));
+    expect(screen.queryByTestId("calendar-source-note")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Paper Autopilot and simulated trade tickets/);
+    expect(document.body.textContent).not.toMatch(/simulated orders/i);
+  });
+
+  it("names no ledger it did not read: no source note for the placeholder month (live route)", async () => {
+    renderPage((url) => {
+      if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "LIVE" } });
+      if (url.startsWith("/api/me/performance-calendar")) {
+        return json({ days: [], isEmpty: true, source: "withheld_live_shared", currentAccountMode: "LIVE_SHARED", modeScopeApplied: true });
+      }
+      return json({}, 404);
+    });
+    expect(await screen.findByTestId("calendar-not-shown")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-source-note")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/closed live trades recorded against your account/i);
+  });
+
   it("day detail: no invented rating, profit factor or win rate", async () => {
     renderPage((url) => {
       if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "DEMO" } });

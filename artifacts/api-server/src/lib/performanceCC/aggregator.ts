@@ -476,12 +476,12 @@ export async function computeDecisionQuality(userId: number, range: RangeKey) {
 
 /**
  * The ledger the Trading Calendar reads. It is not the demo-trade journal
- * behind My Performance (paper_trades): the two record different trades and
+ * behind My Demo Trades (/my-performance, paper_trades): the two record different trades and
  * compute P&L differently, so their figures for the same date differ.
  */
 export const CALENDAR_SOURCE = "PAPER_ORDERS" as const;
 export const CALENDAR_SOURCE_NOTE =
-  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Performance are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
+  "From your simulated orders (Paper Autopilot and simulated trade tickets). Demo trades you log by hand on My Demo Trades are a separate record and are not included; their P&L is computed differently, so the two pages will not match.";
 
 /** Build calendar grid for a month YYYY-MM. */
 export async function computeCalendarMonth(userId: number, month: string) {
@@ -786,6 +786,17 @@ export async function computeAutopilotSummary(userId: number) {
 type AutopilotCycleRow = typeof autopilotCyclesTable.$inferSelect;
 
 /**
+ * What safety_blocks_today counts. It sums autopilot_cycles.paper_trades_rejected,
+ * which the paper autopilot increments for every symbol a cycle did not open
+ * a trade for (autopilotService: DAILY_LOSS_LIMIT, AA_HOLD, any sniper result
+ * other than PASS, any paper-execution refusal). Ordinary AI holds are the
+ * bulk of it, so the field name is kept for compatibility and this says what
+ * it is.
+ */
+export const SAFETY_BLOCKS_TODAY_BASIS =
+  "Counts each symbol a paper autopilot cycle did not open a trade for today (UTC): the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks.";
+
+/**
  * Summarise autopilot cycles. `wholeDay: true` means `recent` is every cycle
  * started today (UTC), so the counts are totals. Otherwise `recent` is a window
  * of the latest AUTOPILOT_SUMMARY_READ_LIMIT cycles, and when every cycle in it
@@ -823,6 +834,8 @@ export function summarizeAutopilotCycles(
     paper_trades_opened_today: todayCycles.reduce((a, c) => a + c.paperTradesOpened, 0),
     paper_trades_closed_today: todayCycles.reduce((a, c) => a + c.paperTradesClosed, 0),
     safety_blocks_today: todayCycles.reduce((a, c) => a + c.paperTradesRejected, 0),
+    /** safety_blocks_today counts every not-opened symbol, AI holds included. */
+    safety_blocks_today_basis: SAFETY_BLOCKS_TODAY_BASIS,
     /** True when the today counts may be undercounted by the read window (never for a whole-day read). */
     today_counts_capped: todayCountsCapped,
     /** The read window's size, or null when every cycle started today was read. */
