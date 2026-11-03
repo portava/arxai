@@ -24,15 +24,19 @@ import { bookedPnlOf, outcomeOf, unsizedPnlNote } from "./aggregator.js";
 
 /**
  * What netPnl is. It sums the P&L the paper venue booked on each closed demo
- * order (profit_loss). The venue now books a close in USD at the contract
- * size, but older rows may hold the earlier move × lots × 100 figure, and a
- * close it could not size holds a 0 placeholder that the demo balance counts
- * at the paper risk model instead (paperBookReader.realizedOf). Analytics
- * recomputes every trade in USD at contract size from the fill prices, so the
- * two boards' Net P&L can differ for the same trades.
+ * order (profit_loss). Every close path (ticket, manual, stop/target
+ * settlement, the paper execution monitor) now books in USD at the contract
+ * size; rows booked before contract sizing may hold the earlier move × lots ×
+ * 100 figure, and the row does not record which. A close the venue could not
+ * size holds a 0 placeholder: it is left out of netPnl (bookedPnlOf), counted
+ * in unsizedClosedTrades and named in the line built from this basis. The
+ * demo balance counts such a close at the paper risk model when it lost and
+ * as 0 when it won (paperBookReader.realizedOf). Analytics recomputes each
+ * trade from its fill prices and leaves out trades it cannot size, so the two
+ * boards' Net P&L can differ for the same trades.
  */
 export const NET_PNL_BASIS =
-  "Sum of the P&L the paper venue booked on each closed demo trade. New closes are booked in USD at the instrument's contract size; older closes may carry the earlier price move × lots × 100 figure, and a close that could not be sized adds its stored 0 placeholder here (your demo balance counts that close at the paper risk model instead). Analytics recomputes every trade in USD at contract size from entry and exit prices, so its Net P&L can differ.";
+  "Sum of the P&L the paper venue booked on each closed demo trade. Closes are now booked in USD at the instrument's contract size; closes booked before that may carry the earlier price move × lots × 100 figure (the trade does not record which). A close that could not be sized for the instrument is left out of this sum, because its P&L is not known; your demo balance counts such a close at the paper risk model when it lost and as 0 when it won. Analytics recomputes each trade in USD at contract size from its entry and exit prices, so its Net P&L can differ.";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.

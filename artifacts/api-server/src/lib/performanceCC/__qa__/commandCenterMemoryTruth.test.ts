@@ -136,10 +136,15 @@ test("Net P&L names its basis: booked demo P&L (older and unsized closes disclos
   ]);
   const cc = await buildCommandCenter(7) as unknown as { netPnl: number; netPnlBasis: string };
   assert.equal(cc.netPnl, 2);
-  assert.match(cc.netPnlBasis, /booked on each closed demo trade\. New closes are booked in USD at the instrument's contract size/);
-  assert.match(cc.netPnlBasis, /older closes may carry the earlier price move × lots × 100 figure/);
-  assert.match(cc.netPnlBasis, /could not be sized adds its stored 0 placeholder/);
-  assert.match(cc.netPnlBasis, /Analytics recomputes every trade in USD/);
+  assert.match(cc.netPnlBasis, /booked on each closed demo trade\. Closes are now booked in USD at the instrument's contract size/);
+  assert.match(cc.netPnlBasis, /closes booked before that may carry the earlier price move × lots × 100 figure/);
+  // An unsized close is left out (it used to say its 0 placeholder was added),
+  // and the balance's treatment is stated as it is now: loss at the model, win 0.
+  assert.match(cc.netPnlBasis, /could not be sized for the instrument is left out of this sum/);
+  assert.match(cc.netPnlBasis, /paper risk model when it lost and as 0 when it won/);
+  assert.doesNotMatch(cc.netPnlBasis, /adds its stored 0 placeholder/);
+  assert.doesNotMatch(cc.netPnlBasis, /demo account units/);
+  assert.match(cc.netPnlBasis, /Analytics recomputes each trade in USD/);
   assert.match(cc.netPnlBasis, /can differ/);
   assert.doesNotMatch(cc.netPnlBasis, /what your demo balance moves by/);
 });
