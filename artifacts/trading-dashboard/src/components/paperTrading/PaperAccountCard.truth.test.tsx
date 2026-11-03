@@ -84,7 +84,11 @@ describe("PaperAccountCard truth", () => {
     expect(source).not.toMatch(/settled against it/);
     expect(source).not.toMatch(/priced by the simulator/);
     expect(source).toMatch(/also against market data by the paper execution monitor when it runs/);
-    expect(source).toMatch(/an exit may have been the simulator's price or a market price \(the order does not record which\)/);
+    // Review pass 3: the monitor books a stop or target at the order's level, not at a
+    // market price; only an EE manual close books a market price.
+    expect(source).not.toMatch(/an exit may have been the simulator's price or a market price/);
+    expect(source).toMatch(/either way a stop or target is booked at the order's stop or target level/);
+    expect(source).toMatch(/a stop or target exit may have been triggered by the simulator's price or by market data and is booked at the stop or target level; a trader's close is booked at the simulator's price and an EE manual close at a market price \(the order does not record which path closed it\)/);
     const units = screen.getByTestId("paper-account-units").textContent ?? "";
     expect(units).toMatch(/simulated USD, not money/);
     expect(units).toMatch(/sized from the instrument's contract size/);

@@ -17,9 +17,10 @@ interface PaperAccount {
   /**
    * Server note when the balance or equity counts P&L that could not be sized.
    * unsizedClosedWins (newer servers): closes of unknown size that won, which
-   * the balance does not add.
+   * the balance does not add. unsizedOpenGains (newer servers): open positions
+   * of unknown size in profit, which equity does not add.
    */
-  pnlSizing?: { unsizedClosedOrders: number; unsizedClosedWins?: number; unsizedOpenPositions: number; note: string | null };
+  pnlSizing?: { unsizedClosedOrders: number; unsizedClosedWins?: number; unsizedOpenPositions: number; unsizedOpenGains?: number; note: string | null };
   valuation?: PaperValuation;
 }
 
@@ -52,9 +53,10 @@ function readFailureCopy(err: unknown): string {
 export function paperPriceSourceLine(v: PaperValuation | undefined): string {
   if (!v) return "Price source not reported by the server. Orders opened without a market quote are valued at the simulator's synthetic price, not a market quote.";
   // The paper execution monitor also checks every open order's stop and target
-  // against market data and settles at a market price, so a simulator-priced
-  // order's exit is not necessarily the simulator's price.
-  const monitor = " Stops and targets are checked against it, and also against market data by the paper execution monitor when it runs.";
+  // against market data, so either feed can trigger a stop or target; both book
+  // the exit at the order's stop or target level. Only an EE manual close
+  // books a market price.
+  const monitor = " Stops and targets are checked against it, and also against market data by the paper execution monitor when it runs; either way a stop or target is booked at the order's stop or target level.";
   const open = v.priceSource === "SIMULATOR"
     ? `Prices: simulator (synthetic, generated — not a market quote).${monitor}`
     : v.priceSource === "MIXED"
@@ -63,7 +65,7 @@ export function paperPriceSourceLine(v: PaperValuation | undefined): string {
     ? "Prices: open orders valued at a current market quote."
     : "No open orders.";
   const closed = v.closedSimulatorPriced > 0
-    ? ` ${v.closedSimulatorPriced} closed order${v.closedSimulatorPriced === 1 ? " was" : "s were"} opened at the simulator's synthetic price, so the balance includes synthetic results; an exit may have been the simulator's price or a market price (the order does not record which).`
+    ? ` ${v.closedSimulatorPriced} closed order${v.closedSimulatorPriced === 1 ? " was" : "s were"} opened at the simulator's synthetic price, so the balance includes synthetic results; a stop or target exit may have been triggered by the simulator's price or by market data and is booked at the stop or target level; a trader's close is booked at the simulator's price and an EE manual close at a market price (the order does not record which path closed it).`
     : "";
   return open + closed;
 }
@@ -78,10 +80,12 @@ export function paperUnitsLine(v: PaperValuation | undefined, sizing?: PaperAcco
     return "Units not reported by the server. These are simulated figures, not money in a broker account, and margin is not a broker margin.";
   }
   // A server that reports unsizedClosedWins adds nothing for a closed win of
-  // unknown size; an older one counted it at the model like a loss.
-  const winsRule = typeof sizing?.unsizedClosedWins === "number"
-    ? ", except that a closed trade that won is not added to the balance"
-    : "";
+  // unknown size, and one that reports unsizedOpenGains adds nothing for an
+  // open gain of unknown size; an older one counted them at the model like a loss.
+  const exceptions: string[] = [];
+  if (typeof sizing?.unsizedClosedWins === "number") exceptions.push("a closed trade that won is not added to the balance");
+  if (typeof sizing?.unsizedOpenGains === "number") exceptions.push("an open position in profit is not added to equity");
+  const winsRule = exceptions.length ? `, except that ${exceptions.join(" and ")}` : "";
   return `Figures are simulated USD, not money in a broker account: P&L is sized from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${v.pnlMultiplier})${winsRule}. `
     + `Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${v.pnlMultiplier}), so an older balance can mix the two scales. `
     + `Margin is lots × ${v.marginPerLot.toLocaleString("en-US")}, not a broker margin.`;

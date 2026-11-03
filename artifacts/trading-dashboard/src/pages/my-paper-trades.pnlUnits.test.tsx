@@ -145,4 +145,38 @@ describe("My Demo Trades — P/L says what unit it is in", () => {
     expect(screen.getByTestId("insights-best-day").textContent).toMatch(/Best day \(price move × lots\).*2026-10-27 \(\+0\.007\)/);
     expect(screen.getByTestId("insights-strategy-breakout").textContent).toMatch(/avg \+0\.0025 \(price move × lots\)/);
   });
+
+  // Review pass 3: detectPatterns returns avgLoss 0 when no closed trade lost and
+  // avgWin 0 when none won. The tile read "Avg loss (price move × lots): 0", an
+  // average over an empty set shown as a measured value.
+  async function openInsights(trades: unknown[], averages: { avgWin: number; avgLoss: number; expectancy: number }) {
+    stub(trades, [], 0, {
+      isEmpty: false, sampleSize: trades.length, insights: [], topSymbols: [], topMistakes: [], byStrategy: [],
+      averages, bestDay: null, worstDay: null,
+    });
+    await renderPage();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /Insights/ }), { button: 0, ctrlKey: false });
+    await act(async () => { await Promise.resolve(); });
+  }
+
+  it("Insights with no losing trade says so instead of a measured 0 average loss", async () => {
+    await openInsights([trade(11, 0.005), trade(12, 0.004), trade(13, 0.006)], { avgWin: 0.005, avgLoss: 0, expectancy: 0.005 });
+    const loss = screen.getByTestId("insights-avg-loss").textContent ?? "";
+    expect(loss).toMatch(/Avg loss \(price move × lots\)/);
+    expect(loss).toContain("No losing trades yet");
+    expect(loss).not.toMatch(/\)0$/);
+    expect(screen.getByTestId("insights-avg-win").textContent).toContain("+0.005");
+  });
+
+  it("Insights with no winning trade says so instead of a measured 0 average win", async () => {
+    await openInsights([trade(14, -0.003)], { avgWin: 0, avgLoss: -0.003, expectancy: -0.003 });
+    expect(screen.getByTestId("insights-avg-win").textContent).toContain("No winning trades yet");
+    expect(screen.getByTestId("insights-avg-loss").textContent).toContain("-0.003");
+  });
+
+  it("Insights says when closed trades with no recorded P/L are counted as 0 in its figures", async () => {
+    await openInsights([trade(15, 0.005), trade(16, null)], { avgWin: 0.005, avgLoss: 0, expectancy: 0.0025 });
+    expect(screen.getByTestId("insights-pnl-unrecorded-note").textContent)
+      .toMatch(/1 closed demo trade has no recorded P\/L; these figures count it as 0/);
+  });
 });

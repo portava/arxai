@@ -130,6 +130,9 @@ async function loadPaperOrders(userId: number) {
 // ── Compute snapshot from current data ──────────────────────────────────────
 // EXPORTED so Build BB's auto-debrief service can recompute analytics
 // in-process after a closed-trade event without an internal HTTP hop.
+/** Debrief questions whose answers set a user debrief's followed_plan flag (postTradeDebriefs followedPlanFlag). */
+const PLAN_QUESTIONS = new Set(["followed_plan", "respected_stop", "exited_per_plan"]);
+
 export async function computeSnapshot(userId: number) {
   const [orders, skill, debriefs, edges] = await Promise.all([
     loadPaperOrders(userId),
@@ -224,10 +227,12 @@ export async function computeSnapshot(userId: number) {
   // pillar counts as measured only from its own evidence, as Trader Skill
   // (computeSubScores) scores it, and only from debriefs that existed when the
   // profile was computed — a profile computed before them stored 0 for want
-  // of data. Discipline reads every debrief's followed-plan flag; execution
-  // only checklist answers; emotional control only a recorded emotion. An
-  // automatic debrief (written on every paper close) has an empty checklist
-  // and no emotion. Consistency is measured only from edge reports.
+  // of data. Discipline reads a debrief's followed-plan flag only where it was
+  // observed (recordsPlanFollowing); execution only checklist answers;
+  // emotional control only a recorded emotion. An automatic debrief (written
+  // on every paper close) has an empty checklist and no emotion, and its
+  // followed-plan flag is a placeholder 0 when the trade had no orchestrator
+  // decision. Consistency is measured only from edge reports.
   const sk = skill[0] ?? null;
   const msOf = (v: unknown): number =>
     v instanceof Date ? v.getTime() : typeof v === "string" ? Date.parse(v) : NaN;
@@ -237,6 +242,21 @@ export async function computeSnapshot(userId: number) {
     return Number.isFinite(at) && Number.isFinite(profileMs) && at <= profileMs;
   });
   const hasDebriefs = debriefsBeforeProfile.length > 0;
+  // followed_plan is observed on a user debrief that answered a plan question
+  // (postTradeDebriefs followedPlanFlag: followed_plan, respected_stop,
+  // exited_per_plan), and on an automatic debrief of a trade with an
+  // orchestrator decision (autoMeta.did_follow_decision true or false). An
+  // automatic debrief of a manual or scanner paper trade (no decision_id)
+  // stores 0 as a placeholder, not an observation.
+  const recordsPlanFollowing = (d: (typeof debriefs)[number]): boolean => {
+    if (d.createdBy === "SYSTEM_AUTO_DEBRIEF") {
+      const meta = d.autoMeta && typeof d.autoMeta === "object" ? d.autoMeta as Record<string, unknown> : {};
+      return d.decisionId != null && typeof meta["did_follow_decision"] === "boolean";
+    }
+    return Array.isArray(d.checklist) && d.checklist.some((c) =>
+      c != null && typeof c === "object" && PLAN_QUESTIONS.has(String((c as { id?: unknown }).id)));
+  };
+  const hasPlanEvidence = debriefsBeforeProfile.some(recordsPlanFollowing);
   const hasChecklistAnswers = debriefsBeforeProfile.some((d) => Array.isArray(d.checklist) && d.checklist.length > 0);
   const hasRecordedEmotion = debriefsBeforeProfile.some((d) => typeof d.traderEmotionAfter === "string" && d.traderEmotionAfter !== "");
   const hasEdgeReports = edges.length > 0;
@@ -251,7 +271,7 @@ export async function computeSnapshot(userId: number) {
   const measured = (score: number, evidence: boolean): boolean => score > 0 || evidence;
   const emotionalScoreAvg: number | null =
     sk && measured(sk.emotionalControlScore, hasRecordedEmotion) ? sk.emotionalControlScore : null;
-  const disciplineScoreAvg: number | null = sk && measured(sk.disciplineScore, hasDebriefs) ? sk.disciplineScore : null;
+  const disciplineScoreAvg: number | null = sk && measured(sk.disciplineScore, hasPlanEvidence) ? sk.disciplineScore : null;
   const executionScoreAvg: number | null = sk && measured(sk.executionScore, hasChecklistAnswers) ? sk.executionScore : null;
   const consistencyScoreAvg: number | null = sk && hasEdgeReports ? sk.consistencyScore : null;
   const noProfile = "No Trader Skill profile has been computed yet.";
@@ -274,7 +294,10 @@ export async function computeSnapshot(userId: number) {
       : "No winning or losing trade yet (every sized trade broke even).";
   }
   if (averageRr == null) unmeasured["averageRr"] = totalTrades ? "No closed trade has a stop distance to measure R from." : "No closed paper trades yet.";
-  if (disciplineScoreAvg == null) unmeasured["disciplineScoreAvg"] = !sk ? noProfile : debriefWhy("records whether you followed your plan");
+  if (disciplineScoreAvg == null) {
+    unmeasured["disciplineScoreAvg"] = !sk ? noProfile
+      : debriefWhy("records whether you followed your plan (automatic debriefs of trades with no orchestrator decision do not)");
+  }
   if (executionScoreAvg == null) {
     unmeasured["executionScoreAvg"] = !sk ? noProfile : debriefWhy("has checklist answers (automatic debriefs have none)");
   }

@@ -311,8 +311,62 @@ test("unmeasured: automatic debriefs alone do not measure execution or emotional
   assert.equal(s.emotionalScoreAvg, null, "no recorded emotion: emotional control was not measured");
   assert.match(s.unmeasured["executionScoreAvg"]!, /checklist answers/);
   assert.match(s.unmeasured["emotionalScoreAvg"]!, /records how you felt/);
-  // Discipline is scored from every debrief's followed-plan flag.
+  // The profile scored discipline above 0, so some followed-plan flag was observed.
   assert.equal(s.disciplineScoreAvg, 40);
+});
+
+// Review pass 3: an automatic debrief writes followedPlan = didFollowDecision === true ? 1 : 0,
+// and didFollowDecision is null when the paper order has no orchestrator decision (manual
+// and scanner paper trades). That 0 is a placeholder, not an observation, yet any debrief
+// before the profile counted Discipline as measured: Trader Skill stored 0 (0 followed of N)
+// and the board showed Discipline 0/100 with nothing about plan-following observed.
+test("unmeasured: automatic debriefs of trades with no orchestrator decision do not measure discipline", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [
+      { ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), followedPlan: 0, decisionId: null, autoMeta: { did_follow_decision: null } },
+      { ...autoDebrief(2, new Date("2026-10-26T10:00:00Z")), followedPlan: 0, decisionId: null, autoMeta: {} },
+    ],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, null, "was 0: a placeholder followed-plan 0 read as a measured failing score");
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /records whether you followed your plan/);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /automatic debriefs of trades with no orchestrator decision do not/);
+  assert.equal(mod.toSnapshotRow(s).disciplineScoreAvg, 0, "the stored row is as before");
+});
+
+test("measured: an automatic debrief that recorded whether the orchestrator's decision was followed measures discipline", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [
+      { ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), followedPlan: 0, decisionId: 31, autoMeta: { did_follow_decision: false } },
+    ],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, 0, "observed: the trade went against the decision");
+  assert.equal(s.unmeasured["disciplineScoreAvg"], undefined);
+});
+
+test("measured: a user debrief that answered a plan question measures discipline; one with no plan answers does not", async () => {
+  const user = (checklist: unknown[]) => ({ ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), createdBy: "USER", followedPlan: 0, checklist });
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [user([{ id: "followed_plan", answer: "NO" }])],
+    edge_discovery_reports: [],
+  });
+  assert.equal((await mod.computeSnapshot(7)).disciplineScoreAvg, 0);
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [user([{ id: "patient_entry", answer: "YES" }])],
+    edge_discovery_reports: [],
+  });
+  assert.equal((await mod.computeSnapshot(7)).disciplineScoreAvg, null, "no plan question answered: the 0 is the default");
 });
 
 test("unmeasured: a profile computed before any debrief does not count later debriefs as its evidence", async () => {

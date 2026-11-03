@@ -129,7 +129,12 @@ test("the trader's close of a real-priced order books the contract-size amount a
   assert.equal(orderSet()["profitLoss"], 1000, "was 1.00");
 });
 
-test("an unsized open position (V75, no broker spec): equity counts it at the paper risk model and the account says so", async () => {
+// Review pass 3: an unsized open position in profit added its ×100 estimate to
+// the stored equity the Risk Governor reads (loadPaperFacts: the per-trade
+// cap, exposure, leverage, buying power and floating P&L). Now an open gain of
+// unknown size adds nothing (counted 0), the same rule as a closed win; an
+// open loss of unknown size still counts at the paper risk model.
+test("an unsized open position in profit (V75, no broker spec): equity adds nothing for the estimated gain and the account says so", async () => {
   quote = { bid: 105, ask: 105.5 };
   book([eeOrder({ symbol: "V75", lotSize: 0.01, entryPrice: 100, stopLoss: 90, takeProfit: 120 })]);
   const s = await runPaperMonitor({ forcePrice: 105 });
@@ -138,8 +143,22 @@ test("an unsized open position (V75, no broker spec): equity counts it at the pa
   const acct = await markToMarket(9);
   assert.ok(acct);
   assert.equal(acct.pnlSizing.unsizedOpenPositions, 1);
-  assert.ok(Math.abs(acct.equity - acct.currentBalance - 5) < 1e-9, "(105 − 100) × 0.01 × 100 at the paper risk model");
+  assert.equal(acct.pnlSizing.unsizedOpenGains, 1);
+  assert.equal(acct.equity - acct.currentBalance, 0, "was +5: (105 − 100) × 0.01 × 100, an estimated gain in the equity the governor reads");
   assert.match(String(acct.pnlSizing.note), /1 open position whose P&L could not be sized/);
+  assert.match(String(acct.pnlSizing.note), /open position in profit is not added to equity \(counted as 0\)/);
+  assert.doesNotMatch(String(acct.pnlSizing.note), /The open position is counted at the paper risk model/);
+});
+
+test("an unsized open position at a loss (V75, no broker spec): equity counts the loss at the paper risk model", async () => {
+  quote = { bid: 95, ask: 95.5 };
+  book([eeOrder({ symbol: "V75", lotSize: 0.01, entryPrice: 100, stopLoss: 90, takeProfit: 120 })]);
+  const acct = await markToMarket(9);
+  assert.ok(acct);
+  assert.equal(acct.pnlSizing.unsizedOpenPositions, 1);
+  assert.equal(acct.pnlSizing.unsizedOpenGains, 0);
+  assert.ok(Math.abs(acct.equity - acct.currentBalance + 5) < 1e-9, "(95 − 100) × 0.01 × 100 at the paper risk model");
+  assert.match(String(acct.pnlSizing.note), /The open position is counted at the paper risk model/);
   assert.match(String(acct.pnlSizing.note), /not a measured amount/);
 });
 

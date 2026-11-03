@@ -120,6 +120,12 @@ test("a simulator-priced order's stop or target may be settled by the paper exec
   // target hit at market data, and the order row does not record which settled it.
   assert.doesNotMatch(note, /settled against it/);
   assert.doesNotMatch(note, /priced by the simulator, not the market/);
-  assert.match(note, /also against market data by the paper execution monitor when it runs, which settles at a market price/);
-  assert.match(note, /Its exit may have been the simulator's price or a market price \(the paper execution monitor or an EE manual close\); the order does not record which\./);
+  // Review pass 3: the monitor detects a hit from market data but books the exit at the
+  // order's own stop or target level (paperExecutionMonitor: exitPrice = stopLoss or
+  // takeProfit), like mark-to-market. Only an EE manual close books a market price.
+  assert.doesNotMatch(note, /settles at a market price/, "the monitor books the order's stop or target level");
+  assert.doesNotMatch(note, /a market price \(the paper execution monitor or an EE manual close\)/);
+  assert.match(note, /also against market data by the paper execution monitor when it runs; either way a stop or target is booked at the order's stop or target level\./);
+  assert.match(note, /A stop or target exit may have been triggered by the simulator's price or by market data \(the paper execution monitor\) and is booked at the stop or target level/);
+  assert.match(note, /a trader's close is booked at the simulator's price, and an EE manual close at a market price or the price given with the close request; the order does not record which path closed it\./);
 });

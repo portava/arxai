@@ -159,6 +159,19 @@ function pnlTone(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
   return v > 0 ? "text-emerald-500" : v < 0 ? "text-red-500" : "text-muted-foreground";
 }
+/**
+ * The Insights avg win / avg loss. detectPatterns returns 0 when no closed trade
+ * won (or lost): an average over no trades, not a measured 0. The server's
+ * average covers every demo trade; the trades list here is the newest 500, so
+ * it confirms "none yet" only when it loaded and is not cut off. Otherwise a 0
+ * the list cannot explain reads "—".
+ */
+function insightsAverageText(avg: number, trades: PaperTrade[], listLoaded: boolean, kind: "win" | "loss"): string {
+  const any = trades.some((t) => t.status === "closed" && t.pnl != null && (kind === "win" ? t.pnl > 0 : t.pnl < 0));
+  if (avg !== 0 || any) return formatPriceMovePnl(avg);
+  if (listLoaded && trades.length < 500) return kind === "win" ? "No winning trades yet" : "No losing trades yet";
+  return "—";
+}
 /** How many of `trades` closed trades have no recorded P/L (server pnlNotRecorded; 0 when not sent). */
 function notRecordedOf(pnlNotRecorded: unknown, trades: number): number {
   const n = Number(pnlNotRecorded ?? 0);
@@ -711,10 +724,20 @@ export default function MyPaperTradesPage() {
             <>
               {/* Computed from the same demo-trade P/L (price move × lots) as the Trades tab. */}
               <p className="text-xs text-muted-foreground" data-testid="insights-pnl-unit-note">{PNL_UNIT_NOTE}</p>
+              {(() => {
+                // detectPatterns adds a closed trade with no recorded P/L as 0
+                // to the strategy averages, best day and expectancy; say so.
+                const n = trades.filter((t) => t.status === "closed" && t.pnl == null).length;
+                return n > 0 && !loadErrors.trades ? (
+                  <p className="text-xs text-muted-foreground" data-testid="insights-pnl-unrecorded-note">
+                    {trades.length >= 500 ? "At least " : ""}{n} closed demo trade{n === 1 ? " has" : "s have"} no recorded P/L; these figures count {n === 1 ? "it" : "them"} as 0.
+                  </p>
+                ) : null;
+              })()}
               <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4"/>Performance Insights</CardTitle><CardDescription>Across {insights.sampleSize} trades · educational only</CardDescription></CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div data-testid="insights-avg-win"><div className="text-muted-foreground">Avg win ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgWin)}`}>{formatPriceMovePnl(insights.averages.avgWin)}</div></div>
-                  <div data-testid="insights-avg-loss"><div className="text-muted-foreground">Avg loss ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgLoss)}`}>{formatPriceMovePnl(insights.averages.avgLoss)}</div></div>
+                  <div data-testid="insights-avg-win"><div className="text-muted-foreground">Avg win ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgWin)}`}>{insightsAverageText(insights.averages.avgWin, trades, loadErrors.trades == null, "win")}</div></div>
+                  <div data-testid="insights-avg-loss"><div className="text-muted-foreground">Avg loss ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgLoss)}`}>{insightsAverageText(insights.averages.avgLoss, trades, loadErrors.trades == null, "loss")}</div></div>
                   <div data-testid="insights-expectancy"><div className="text-muted-foreground">Expectancy ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.expectancy)}`}>{formatPriceMovePnl(insights.averages.expectancy)}</div></div>
                   <div data-testid="insights-best-day"><div className="text-muted-foreground">Best day ({PNL_UNIT_SHORT})</div><div>{insights.bestDay ? `${insights.bestDay.date} (${formatPriceMovePnl(insights.bestDay.pnl)})` : "—"}</div></div>
                 </CardContent>
