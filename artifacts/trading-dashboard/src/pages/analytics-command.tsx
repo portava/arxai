@@ -4,16 +4,30 @@ import {
   EquityCurveChart, DrawdownChart, StrategyAnalyticsTable,
   SessionHeatmap, EmotionalTrendGraph, RiskExposureGraph, ConsistencyTrendCard,
 } from "@/components/analytics";
-import type { AnalyticsSnapshot, StrategyRow, EquityPoint } from "@/components/analytics";
+import type { AnalyticsSnapshot, AnalyticsCurrent, StrategyRow, EquityPoint } from "@/components/analytics";
 
 interface DrawdownResponse { equityCurve: EquityPoint[]; maxDrawdown: number }
 interface SessionBucket { trades: number; pnl: number; wins: number; sizedTrades?: number }
 type SessionData = Record<"ASIA"|"LONDON"|"NEWYORK", SessionBucket>;
 interface EmotionalResponse { trend: Array<{ idx:number; isCalm:number; followedPlan:number; emotion:string }>; totalDebriefs: number }
 
+/** GET /analytics/snapshot: the last saved snapshot and the figures computed now. */
+interface SnapshotResponse {
+  snapshot: AnalyticsSnapshot | null;
+  /** Absent on older servers; null with currentError when the live computation failed. */
+  current?: AnalyticsCurrent | null;
+  currentError?: string | null;
+}
+
+function when(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+}
+
 export default function AnalyticsCommandCenter() {
   const qc = useQueryClient();
-  const snap = useQuery<{ snapshot: AnalyticsSnapshot | null }>({
+  const snap = useQuery<SnapshotResponse>({
     queryKey: ["analytics-snapshot"],
     queryFn: async () => (await fetch("/api/analytics/snapshot")).json(),
   });
@@ -44,7 +58,19 @@ export default function AnalyticsCommandCenter() {
     if (snap.isSuccess && snap.data?.snapshot == null && !generate.isPending) generate.mutate();
   }, [snap.isSuccess, snap.data?.snapshot, generate]);
 
-  const s = snap.data?.snapshot ?? null;
+  // The tiles use the figures computed now from every paper order when the
+  // server sent them, so they agree with the tables below (always computed
+  // live). Otherwise they fall back to the last saved snapshot, which can miss
+  // trades closed after it was computed, and the page says so.
+  const saved = snap.data?.snapshot ?? null;
+  const live = snap.data?.current ?? null;
+  const s = live ?? saved;
+  const savedAt = when(saved?.createdAt);
+  const asOfLine = live
+    ? `Computed from all your paper orders at ${when(live.asOf) ?? "an unknown time"}.${savedAt ? ` Last saved snapshot: ${savedAt}.` : ""}`
+    : saved
+      ? `Saved snapshot computed ${savedAt ?? "at an unknown time"} — trades closed after it are not included${snap.data?.currentError ? ` (${snap.data.currentError})` : ""}. Recompute to refresh.`
+      : null;
 
   return (
     <div className="space-y-4 p-4">
@@ -67,8 +93,10 @@ export default function AnalyticsCommandCenter() {
         </p>
       ) : (
         <>
+          <p className={`text-[11px] ${live ? "text-slate-400" : "text-amber-300"}`} data-testid="analytics-asof">{asOfLine}</p>
+
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-            <Stat label="Trades"        v={s.totalTrades.toString()} />
+            <Stat id="trades"        label="Trades"        v={s.totalTrades.toString()} />
             <Stat label="Net P&L"       v={`$${s.netProfitLoss.toFixed(0)}`} tone={s.netProfitLoss >= 0 ? "emerald" : "red"} />
             <Stat label="Win rate"      v={`${(s.winRate*100).toFixed(1)}%`} />
             <Stat label="Avg RR"        v={`${s.averageRr.toFixed(2)}R`} />
@@ -111,10 +139,10 @@ export default function AnalyticsCommandCenter() {
   );
 }
 
-function Stat({ label, v, tone }: { label: string; v: string; tone?: "emerald"|"red" }) {
+function Stat({ id, label, v, tone }: { id?: string; label: string; v: string; tone?: "emerald"|"red" }) {
   const t = tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";
   return (
-    <div className="rounded border border-slate-700 bg-slate-900/50 p-2 text-center">
+    <div className="rounded border border-slate-700 bg-slate-900/50 p-2 text-center" data-testid={id ? `analytics-stat-${id}` : undefined}>
       <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
       <div className={`text-base font-bold ${t}`}>{v}</div>
     </div>

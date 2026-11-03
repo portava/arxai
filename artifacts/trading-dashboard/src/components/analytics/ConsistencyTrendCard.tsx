@@ -1,6 +1,6 @@
-import type { AnalyticsSnapshot } from "./types";
+import type { AnalyticsFigures } from "./types";
 
-export function ConsistencyTrendCard({ snapshot }: { snapshot: AnalyticsSnapshot }) {
+export function ConsistencyTrendCard({ snapshot }: { snapshot: AnalyticsFigures }) {
   const items = [
     { label: "Discipline",  v: snapshot.disciplineScoreAvg },
     { label: "Execution",   v: snapshot.executionScoreAvg },

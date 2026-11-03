@@ -4,6 +4,7 @@
 // in-memory db fake. No database, no broker, no network.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { getTableName, type Table } from "drizzle-orm";
 import { createFakeDb, withRouter, type FakeRows } from "./_fakeRouteDb.js";
 
 const realDb = await import("@workspace/db");
@@ -64,4 +65,76 @@ test("session: GET /analytics/session buckets a 22:30Z trade in ASIA and states 
   assert.equal(session["NEWYORK"]!.trades, 1);
   assert.match(String(body["sessionBasis"]), /NEWYORK 13:00–21:00/);
   assert.match(String(body["sessionBasis"]), /ASIA 21:00–07:00/);
+});
+
+// ── Snapshot freshness and coverage ─────────────────────────────────────────
+// A fake whose select chain honours .limit(n), as Postgres does, so a read
+// capped at 1000 rows is observable. Rows come back in fixture order.
+function setRowsWithLimits(rows: FakeRows) {
+  const base = createFakeDb(rows);
+  const chainFor = (all: unknown[]) => {
+    let out = [...all];
+    const self: Record<string, unknown> = new Proxy({}, {
+      get(_t, prop) {
+        if (prop === "then") return (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(out).then(ok, bad);
+        if (prop === "catch") return (bad: (e: unknown) => unknown) => Promise.resolve(out).catch(bad);
+        if (prop === "limit") return (n: number) => { out = out.slice(0, n); return self; };
+        return () => self;
+      },
+    });
+    return self;
+  };
+  fake = { ...base, db: { ...base.db, select: () => ({ from: (table: Table) => chainFor(rows[getTableName(table)] ?? []) }) } };
+}
+
+// 1001 closed EURUSD trades in open-time order; only the NEWEST is a loser.
+function thousandAndOne() {
+  return Array.from({ length: 1001 }, (_, i) => order({
+    id: i + 1,
+    openedAt: new Date(Date.UTC(2026, 0, 1) + i * 3_600_000),
+    ...(i === 1000 ? { exitPrice: 1.08, status: "CLOSED_SL" } : {}),
+  }));
+}
+
+test("snapshot: the figures cover every closed trade, not the oldest 1000", async () => {
+  setRowsWithLimits({
+    paper_orders: thousandAndOne(),
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.totalTrades, 1001);
+  // 1000 winners of +$1,000 and the newest trade a −$500 loser.
+  assert.equal(Math.round(s.netProfitLoss as number), 1000 * 1000 - 500);
+});
+
+test("strategy, drawdown and session panels read the same 1001 trades", async () => {
+  setRowsWithLimits({ paper_orders: thousandAndOne(), post_trade_debriefs: [] });
+  const strat = await getJson("/analytics/strategy");
+  assert.equal((strat["strategies"] as Array<{ trades: number }>)[0]!.trades, 1001);
+  const dd = await getJson("/analytics/drawdown");
+  assert.equal((dd["equityCurve"] as unknown[]).length, 1001);
+  assert.equal(dd["maxDrawdown"], 500);
+  const sess = await getJson("/analytics/session");
+  const buckets = Object.values(sess["session"] as Record<string, { trades: number }>);
+  assert.equal(buckets.reduce((a, b) => a + b.trades, 0), 1001);
+});
+
+test("GET /analytics/snapshot: the saved snapshot keeps its time; current figures are computed now with asOf", async () => {
+  const savedAt = new Date("2026-10-20T10:00:00Z");
+  setRows({
+    analytics_snapshots: [{ id: 3, userId: 7, totalTrades: 3, netProfitLoss: 3000, winRate: 1, createdAt: savedAt }],
+    paper_orders: [1, 2, 3, 4, 5].map((id) => order({ id })),
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const before = Date.now();
+  const body = await getJson("/analytics/snapshot");
+  const saved = body["snapshot"] as Record<string, unknown>;
+  assert.equal(saved["totalTrades"], 3);
+  assert.equal(saved["createdAt"], savedAt.toISOString());
+  const current = body["current"] as Record<string, unknown>;
+  assert.ok(current, "live figures are returned");
+  assert.equal(current["totalTrades"], 5);
+  const asOf = Date.parse(String(current["asOf"]));
+  assert.ok(Number.isFinite(asOf) && asOf >= before - 1000, `asOf ${String(current["asOf"])} is the time of this read`);
+  assert.equal(body["currentError"], null);
 });

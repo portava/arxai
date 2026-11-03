@@ -1,6 +1,6 @@
-import type { AnalyticsSnapshot } from "./types";
+import type { AnalyticsFigures } from "./types";
 
-export function RiskExposureGraph({ snapshot }: { snapshot: AnalyticsSnapshot }) {
+export function RiskExposureGraph({ snapshot }: { snapshot: AnalyticsFigures }) {
   const items: Array<{ label: string; value: number; max: number; tone: string; suffix: string }> = [
     { label: "Profit factor", value: Math.min(snapshot.profitFactor, 3), max: 3, tone: "bg-emerald-500", suffix: snapshot.profitFactor === 999 ? "∞" : snapshot.profitFactor.toFixed(2) },
     { label: "Avg R-multiple", value: Math.max(0, Math.min(snapshot.averageRr, 3)), max: 3, tone: "bg-sky-500", suffix: snapshot.averageRr.toFixed(2) + "R" },

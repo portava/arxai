@@ -17,7 +17,7 @@ import {
   traderSkillProfilesTable, weeklyPerformanceReviewsTable,
   edgeDiscoveryReportsTable, vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { paperMoveSign, paperPnl } from "../lib/paperExecution/paperPnl.js";
 
@@ -108,14 +108,23 @@ export function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK" {
   return "ASIA";
 }
 
+// Every analytics board reads ALL of the caller's paper orders, oldest first
+// (chronological order is needed for the peak-to-trough drawdown math). They
+// used to read `.limit(1000)`: the OLDEST 1000 for the snapshot tiles and the
+// drawdown, an unordered 1000 for the strategy table and the newest 1000 by id
+// for the heatmaps, so past 1000 orders the newest trades fell out of some
+// panels while others counted them.
+async function loadPaperOrders(userId: number) {
+  return db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
+    .orderBy(asc(paperOrdersTable.openedAt), asc(paperOrdersTable.id));
+}
+
 // ── Compute snapshot from current data ──────────────────────────────────────
 // EXPORTED so Build BB's auto-debrief service can recompute analytics
 // in-process after a closed-trade event without an internal HTTP hop.
 export async function computeSnapshot(userId: number) {
   const [orders, skill, debriefs, edges] = await Promise.all([
-    // Chronological order — required for correct peak-to-trough drawdown math.
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
-      .orderBy(paperOrdersTable.openedAt).limit(1000),
+    loadPaperOrders(userId),
     db.select().from(traderSkillProfilesTable).where(eq(traderSkillProfilesTable.userId, userId))
       .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
@@ -201,12 +210,27 @@ router.post("/analytics/snapshot", requireUser, async (req, res): Promise<void> 
 });
 
 // ── GET /analytics/snapshot — latest ────────────────────────────────────────
+// `snapshot` is the last SAVED snapshot (Recompute, or the auto-debrief after a
+// close); a trade closed without a debrief is not in it, and its createdAt is
+// when it was computed. `current` is the same figures computed now from every
+// paper order, stamped with `asOf`, so the page's tiles agree with the tables
+// below them (which are always computed live). `current` is null, with
+// `currentError`, when that computation failed — never a stand-in of zeros.
 router.get("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const row = (await db.select().from(analyticsSnapshotsTable)
-      .where(eq(analyticsSnapshotsTable.userId, req.authUser!.id))
+      .where(eq(analyticsSnapshotsTable.userId, userId))
       .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1))[0] ?? null;
-    ok(res, { snapshot: row });
+    let current: (Awaited<ReturnType<typeof computeSnapshot>> & { asOf: string }) | null = null;
+    let currentError: string | null = null;
+    try {
+      current = { ...(await computeSnapshot(userId)), asOf: new Date().toISOString() };
+    } catch (err) {
+      req.log?.error?.({ err: String(err) }, "GET /analytics/snapshot: live figures failed");
+      currentError = "The figures could not be computed from your paper orders just now.";
+    }
+    ok(res, { snapshot: row, current, currentError });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/snapshot failed");
     fail(res, 500, "Failed to load snapshot");
@@ -228,8 +252,7 @@ router.get("/analytics/heatmaps", requireUser, async (req, res): Promise<void> =
 
 async function buildAllHeatmaps(userId: number): Promise<Array<{ heatmapType: string; dataset: unknown }>> {
   const [orders, debriefs] = await Promise.all([
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
-      .orderBy(desc(paperOrdersTable.id)).limit(1000),
+    loadPaperOrders(userId),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
       .orderBy(desc(postTradeDebriefsTable.id)).limit(500),
   ]);
@@ -275,8 +298,7 @@ async function buildAllHeatmaps(userId: number): Promise<Array<{ heatmapType: st
 // ── GET /analytics/strategy ─────────────────────────────────────────────────
 router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> => {
   try {
-  const orders = await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.userId, req.authUser!.id)).limit(1000);
+  const orders = await loadPaperOrders(req.authUser!.id);
   const closed = orders.filter((o) => isClosed(o));
   const groups = new Map<string, { trades: number; wins: number; pnl: number; sized: number; rrSum: number; rrN: number }>();
   for (const o of closed) {
@@ -339,9 +361,7 @@ router.get("/analytics/emotional", requireUser, async (req, res): Promise<void> 
 // ── GET /analytics/drawdown ─────────────────────────────────────────────────
 router.get("/analytics/drawdown", requireUser, async (req, res): Promise<void> => {
   try {
-    const orders = await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.userId, req.authUser!.id))
-      .orderBy(paperOrdersTable.openedAt).limit(1000);
+    const orders = await loadPaperOrders(req.authUser!.id);
     const closed = orders.filter((o) => isClosed(o));
     let peak = 0, cum = 0;
     // The curve steps only on trades whose P&L could be sized.
