@@ -44,7 +44,7 @@ import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel"
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
-import { scannerResultActionChip, scannerResultCardClaims } from "@/components/scanner/scannerResultAction";
+import { scannerFinalReadReasons, scannerResultActionChip, scannerResultCardClaims, scannerSetupReasonWithheld } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
 
 type Opp = {
@@ -824,9 +824,7 @@ export default function MarketScanner() {
                       Setup reason not shown: the server's final read for this row is "{chip.text}".
                     </div>
                     {(() => {
-                      const reasons = Array.isArray(o.finalRead?.reasons)
-                        ? (o.finalRead!.reasons as unknown[]).filter((r): r is string => typeof r === "string" && r.trim() !== "")
-                        : [];
+                      const reasons = scannerFinalReadReasons(o.finalRead);
                       return reasons.length > 0 ? (
                         <ul className="list-disc pl-4 text-muted-foreground">
                           {reasons.map((r, idx) => <li key={idx}>{r}</li>)}
@@ -1102,6 +1100,14 @@ export default function MarketScanner() {
             entry: tradeTarget.opp.entry, stopLoss: tradeTarget.opp.stopLoss, takeProfit: tradeTarget.opp.takeProfit,
             statusBadge: tradeTarget.opp.statusBadge,
           }}
+          // The card withheld the raw action under the server's final read
+          // ("No trade" / "Avoid for now"); the ticket's Summary shows the
+          // same note instead of explaining a buy or sell setup. Display only:
+          // the signal above (what an order records) is unchanged.
+          setupReasonWithheld={scannerSetupReasonWithheld(
+            scannerResultActionChip(tradeTarget.opp.recommendedAction, tradeTarget.opp.finalRead?.label),
+            tradeTarget.opp.finalRead,
+          )}
           defaultSide={tradeTarget.side}
         />
         </SectionErrorBoundary>

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, Loader2, ShieldCheck, Info, Radio, RadioTower } from "lucide-react";
 import { RubySetupReason, type SignalContext } from "./RubySetupReason";
+import type { ScannerSetupReasonWithheld } from "./scannerResultAction";
 import {
   assessStopLoss,
   computeValidatedRR,
@@ -254,12 +255,19 @@ type DemoExecutionState =
 // saved draft carries the server's reading of the bridge's pending support. Live mode is structurally blocked unless the user's live envelope
 // allows it AND they go through a separate protected confirm step.
 export function ScannerTradeModal({
-  open, onClose, signal, defaultSide,
+  open, onClose, signal, defaultSide, setupReasonWithheld = null,
 }: {
   open: boolean;
   onClose: () => void;
   signal: SignalContext;
   defaultSide: "BUY" | "SELL";
+  /**
+   * Set when the server's final read for the source row withheld its raw
+   * action ("No trade" / "Avoid for now"). The Summary then shows that note
+   * and the final read's reasons instead of asking Ruby to explain the raw
+   * BUY / SELL signal. Display only: nothing an order sends reads it.
+   */
+  setupReasonWithheld?: ScannerSetupReasonWithheld | null;
 }) {
   const { name } = useAssistantName();
   const [orderType, setOrderType] = useState<OrderType>(defaultSide === "BUY" ? "BUY_MARKET" : "SELL_MARKET");
@@ -866,7 +874,25 @@ export function ScannerTradeModal({
           </div>
 
           <SectionLabel>{name} Summary</SectionLabel>
-          <RubySetupReason signal={signal} dense />
+          {setupReasonWithheld ? (
+            <div
+              className="rounded border border-slate-500/40 bg-slate-500/5 p-2 text-[11px] leading-snug space-y-1"
+              data-testid="scanner-trade-final-read-note"
+            >
+              <div>
+                Setup reason not shown: the server's final read for this setup is "{setupReasonWithheld.label}".
+              </div>
+              {setupReasonWithheld.reasons.length > 0 ? (
+                <ul className="list-disc pl-4 text-muted-foreground">
+                  {setupReasonWithheld.reasons.map((r, idx) => <li key={idx}>{r}</li>)}
+                </ul>
+              ) : (
+                <div className="text-muted-foreground">The server did not send a reason with this final read.</div>
+              )}
+            </div>
+          ) : (
+            <RubySetupReason signal={signal} dense />
+          )}
 
           <SectionLabel>Historical Check</SectionLabel>
           <HistoricalCheckPanel symbol={signal.symbol} timeframe={signal.timeframe ?? "1d"} defaultOpen />

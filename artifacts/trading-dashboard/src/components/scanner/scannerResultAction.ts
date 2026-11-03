@@ -26,6 +26,31 @@ export function scannerResultActionChip(
   return { text: recommendedAction, variant, withheld: false };
 }
 
+/** The non-empty string reasons a server final read carries ([] when none). */
+export function scannerFinalReadReasons(finalRead: { reasons?: unknown } | null | undefined): string[] {
+  const reasons = finalRead?.reasons;
+  return Array.isArray(reasons)
+    ? reasons.filter((r): r is string => typeof r === "string" && r.trim() !== "")
+    : [];
+}
+
+/**
+ * What a surface that would explain the raw BUY / SELL setup (Ruby's Setup
+ * Reason) shows instead when the server's final read withheld the action:
+ * the chip's words and the final read's own reasons. Null when not withheld.
+ */
+export interface ScannerSetupReasonWithheld {
+  label: string;
+  reasons: string[];
+}
+
+export function scannerSetupReasonWithheld(
+  chip: ScannerResultActionChip,
+  finalRead: { reasons?: unknown } | null | undefined,
+): ScannerSetupReasonWithheld | null {
+  return chip.withheld ? { label: chip.text, reasons: scannerFinalReadReasons(finalRead) } : null;
+}
+
 // Status badges that describe the row as a setup to act on. Beside a withheld
 // action ("No trade" / "Avoid for now") they would contradict the final read.
 const POSITIVE_STATUS_BADGES = new Set(["HOT_SETUP"]);

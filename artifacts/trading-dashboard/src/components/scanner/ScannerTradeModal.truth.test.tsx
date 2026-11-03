@@ -17,7 +17,9 @@ vi.mock("@/hooks/useTradingMode", () => ({
 }));
 vi.mock("@/components/trading/HistoricalCheckPanel", () => ({ HistoricalCheckPanel: () => null }));
 vi.mock("@/components/trading/NewsRiskCheckPanel", () => ({ NewsRiskCheckPanel: () => null }));
-vi.mock("./RubySetupReason", () => ({ RubySetupReason: () => null }));
+// Counts the times the Summary asks Ruby to explain the raw signal.
+let rubySetupReasonRenders = 0;
+vi.mock("./RubySetupReason", () => ({ RubySetupReason: () => { rubySetupReasonRenders += 1; return null; } }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: () => {} }) }));
 vi.mock("@/lib/trade-affordance", () => ({
@@ -84,6 +86,7 @@ function ui(open: boolean, client: QueryClient, signal: Record<string, unknown> 
 }
 
 beforeEach(() => {
+  rubySetupReasonRenders = 0;
   truth = null;
   bridgeReplies = [];
   lastBridgeReply = { kind: "pending" };
@@ -252,5 +255,40 @@ describe("ScannerTradeModal — pending-order disclosure comes from the server",
     const reason = await screen.findByTestId("scanner-trade-draft-reason");
     expect(reason.textContent).toContain("reports pending-order support");
     expect(screen.getByTestId("scanner-trade-result").textContent).toContain("BLOCKED_BY_PAPER_LOCK");
+  });
+});
+
+// Review pass 2: a scanner row whose server final read is NO_TRADE / AVOID
+// opens this ticket from its Trade Setup / BUY / SELL buttons. The Summary
+// must not ask Ruby to explain the raw BUY signal as "a possible buy setup".
+describe("ScannerTradeModal — Summary under a withheld final read", () => {
+  function render2(extra: Record<string, unknown>) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ScannerTradeModal open onClose={() => {}} signal={SIGNAL as never} defaultSide="BUY" {...extra} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("shows the final read's note and reasons instead of Ruby's setup reason", () => {
+    render2({ setupReasonWithheld: { label: "No trade", reasons: ["Major event nearby. Volatility may spike."] } });
+    expect(rubySetupReasonRenders).toBe(0);
+    const note = screen.getByTestId("scanner-trade-final-read-note").textContent ?? "";
+    expect(note).toMatch(/Setup reason not shown: the server's final read for this setup is "No trade"/);
+    expect(note).toMatch(/Major event nearby/);
+    expect(note).not.toMatch(/buy setup/i);
+  });
+
+  it("says the server sent no reason when the final read carries none", () => {
+    render2({ setupReasonWithheld: { label: "Avoid for now", reasons: [] } });
+    expect(rubySetupReasonRenders).toBe(0);
+    expect(screen.getByTestId("scanner-trade-final-read-note").textContent).toMatch(/did not send a reason/);
+  });
+
+  it("without a withheld final read the Summary still asks Ruby", () => {
+    render2({});
+    expect(rubySetupReasonRenders).toBeGreaterThan(0);
+    expect(screen.queryByTestId("scanner-trade-final-read-note")).toBeNull();
   });
 });
