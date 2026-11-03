@@ -231,7 +231,7 @@ function auditBasis(a: RiskAudit) {
       ? "your rows in the legacy simulated trades table"
       : scopeReported
         ? "every user's rows in the legacy simulated trades table (not only yours)"
-        : "the legacy simulated trades table (whose rows was not reported, so not only yours)";
+        : "the legacy simulated trades table (the server did not say whose rows were counted, so they may not be only yours)";
     notes.push(`Trade counts come from ${whose}, which takes no new trades: trades you place now are not in it.`);
   }
   if (notMeasured.has("dailyLossUsed") || notMeasured.has("losingStreak")) {

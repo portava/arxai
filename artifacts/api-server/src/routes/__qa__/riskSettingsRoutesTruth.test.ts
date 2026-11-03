@@ -50,15 +50,28 @@ const effective: { maxLotSize: number; symbolLimits: Record<string, { maxLots: n
 mock.module("../../lib/riskGovernor/limitSettings.js", {
   namedExports: { loadEffectiveLimits: async () => ({ ...effective, sources: { maxLotSize: "user_risk_limits.max_lot_size" } }) },
 });
+// The trader's stop switches (read by /risk/audit since the merge with the
+// halt fix): released, so no database is reached.
+mock.module("../../lib/safety/tradingHalt.js", {
+  namedExports: { loadTradingHalt: async () => ({ engaged: false, sources: [], reason: null }) },
+});
+// By default the stubbed audit result does not say what it read (no scope,
+// no closedTradesMeasured). With `reportsBasis` it reports what the real
+// computeRiskAudit reports for the options the route passes.
+let reportsBasis = false;
 const realAudit = await import("../../lib/riskAudit.js");
 mock.module("../../lib/riskAudit.js", {
   namedExports: {
     ...realAudit,
-    computeRiskAudit: async (balance: number) => {
+    computeRiskAudit: async (balance: number, _input: unknown, opts: { countClosedRows?: boolean; userId?: number } = {}) => {
       auditBalances.push(balance);
       return {
         passed: true, reasonsBlocked: [], warnings: [], riskPercent: 0.5, projectedLoss: 5, riskReward: 2,
         dailyLossUsed: 0, weeklyLossUsed: 0, tradesRemaining: 5, openTradesCount: 0, losingStreak: 0, cooldownActive: false,
+        ...(reportsBasis ? {
+          closedTradesMeasured: opts.countClosedRows === true, measuredFrom: "LEGACY_TRADES_TABLE",
+          scope: opts.userId != null ? "USER" : "ALL_USERS", tradingHalt: null,
+        } : {}),
       };
     },
   },
@@ -86,16 +99,36 @@ test("GET /risk/audit says it used a $1,000 placeholder and the legacy trades lo
   assert.equal(body["accountBalanceUsed"], auditBalances.at(-1), "the balance reported is the one the audit was sized against");
   assert.equal(body["accountBalanceUsed"], 1000);
   assert.equal(body["tradeSource"], "LEGACY_TRADES_TABLE");
-  assert.equal(body["tradeScope"], "ALL_ACCOUNTS", "the legacy read has no user filter");
+  assert.equal(body["tradeScope"], "ALL_ACCOUNTS", "a result that does not say whose rows it counted is not reported as yours");
   assert.deepEqual(
     [...(body["notMeasured"] as string[])].sort(),
     ["cooldownActive", "dailyLossUsed", "losingStreak", "weeklyLossUsed"],
-    "loss and streak figures count no legacy close, so they are not measurements",
+    "a result that does not say it counted closed rows has no loss or streak measurement",
   );
   assert.ok(!Number.isNaN(Date.parse(String(body["evaluatedAt"]))), "the audit says when it ran");
   // The audit result itself is passed through unchanged.
   assert.equal(body["passed"], true);
   assert.equal(body["tradesRemaining"], 5);
+});
+
+// Since the merge with the user-scope / closed-row fixes, the route counts
+// only the caller's rows and their closed rows; the basis fields follow what
+// the result says instead of a fixed "every account, nothing measured".
+test("GET /risk/audit reports the caller's own rows and measured closes when the audit counted them", async () => {
+  reportsBasis = true;
+  try {
+    const r = await fetch(`${base}/risk/audit`);
+    assert.equal(r.status, 200);
+    const body = await r.json() as Record<string, unknown>;
+    assert.equal(body["scope"], "USER");
+    assert.equal(body["tradeScope"], "USER", "tradeScope agrees with scope");
+    assert.equal(body["closedTradesMeasured"], true);
+    assert.deepEqual(body["notMeasured"], [], "closed rows were counted, so nothing is listed as unmeasured");
+    assert.equal(body["balanceSource"], "PLACEHOLDER_1000", "still a placeholder balance");
+    assert.equal(body["tradeSource"], "LEGACY_TRADES_TABLE");
+  } finally {
+    reportsBasis = false;
+  }
 });
 
 // POST /risk/lock-live writes risk_settings.liveLocked, a preference no live
@@ -147,4 +180,3 @@ test("GET /risk/position-size applies a stricter per-symbol cap", async () => {
   assert.equal(r.finalLot, 0.2);
   effective.symbolLimits = {};
 });
-

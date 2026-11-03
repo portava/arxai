@@ -52,12 +52,15 @@ describe("Risk Control Center — risk audit basis", () => {
     stub({ ...AUDIT, ...BASIS });
     renderAt("emergency");
     const headline = await screen.findByTestId("risk-audit-headline");
-    expect(headline.textContent).toBe("Legacy risk audit: no rule tripped — not a check of your live account");
+    // Merged with HEAD's measured-only verdict: these loss figures are listed
+    // in notMeasured, so the pass is not "no rule tripped" but "not measured".
+    expect(headline.textContent).toBe("Legacy risk audit: daily / weekly loss and losing streak were not measured");
     expect(screen.queryByText(/all risk checks passed/i)).toBeNull();
     expect(screen.getByTestId("risk-audit-banner").className).not.toMatch(/success/);
     const note = screen.getByTestId("risk-audit-basis").textContent ?? "";
     expect(note).toMatch(/\$1,000 placeholder balance, not your live balance/);
-    expect(note).toMatch(/legacy trades log \(every account's rows, not only yours\), which takes no new trades/);
+    // Merged wording (HEAD's "legacy simulated trades table", fix-2's "not only yours").
+    expect(note).toMatch(/every user's rows in the legacy simulated trades table \(not only yours\), which takes no new trades/);
     expect(screen.getByTestId("risk-audit-banner-daily-loss").textContent).toBe("Not measured");
     expect(screen.getByText("Trades left (legacy log)")).toBeTruthy();
 
@@ -72,7 +75,27 @@ describe("Risk Control Center — risk audit basis", () => {
     expect(screen.getAllByText("Not measured").length).toBeGreaterThanOrEqual(4);
     expect(screen.queryByText("Clear")).toBeNull();
     expect(screen.queryByText("All clear")).toBeNull();
+    // Merged with HEAD: an unmeasured pass is the "not all rules were measured" block, not a clear one.
+    expect(screen.queryByTestId("risk-audit-detail-clear")).toBeNull();
+    expect(screen.getByTestId("risk-audit-unmeasured").textContent).toMatch(/does not check your live account/);
+  });
+
+  // What the merged server sends: only this trader's rows, closed rows
+  // counted (notMeasured empty), still a $1,000 placeholder and the legacy log.
+  it("a measured legacy pass says no rule tripped, never green, and is not a check of your live account", async () => {
+    stub({ ...AUDIT, ...BASIS, tradeScope: "USER", scope: "USER", closedTradesMeasured: true, measuredFrom: "LEGACY_TRADES_TABLE", notMeasured: [] });
+    renderAt("emergency");
+    const headline = await screen.findByTestId("risk-audit-headline");
+    expect(headline.textContent).toBe("Legacy risk audit: no rule tripped — not a check of your live account");
+    expect(screen.getByTestId("risk-audit-banner").className).not.toMatch(/success/);
+    const note = screen.getByTestId("risk-audit-basis").textContent ?? "";
+    expect(note).toMatch(/\$1,000 placeholder balance, not your live balance/);
+    expect(note).toMatch(/your rows in the legacy simulated trades table/);
+    expect(note).not.toMatch(/not measured/);
+    expect(screen.getByTestId("risk-audit-banner-daily-loss").textContent).toBe("0.0%");
+    expect(await screen.findByText("Open Trades (legacy log)")).toBeTruthy();
     expect(screen.getByTestId("risk-audit-detail-clear").textContent).toMatch(/does not check your live account/);
+    expect(screen.queryByTestId("risk-audit-unmeasured")).toBeNull();
   });
 
   it("an older server that does not say what it read gets the same disclosure", async () => {

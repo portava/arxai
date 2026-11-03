@@ -57,6 +57,20 @@ describe("Risk Command Center — Rules tab permissions", () => {
     expect(row.textContent).toMatch(/not blocked by a stop switch or loss limit/);
     expect(row.textContent).toMatch(/still checked by the Risk Governor/);
   });
+
+  // Merged with the UNKNOWN risk status: a loss limit that could not be
+  // valued or measured is not "not reached".
+  it("an UNKNOWN risk status never says new trades are not blocked by a loss limit", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    const reason = "Your 2% daily loss cap cannot be valued because account equity is unknown.";
+    stub(cards({ riskStatus: "UNKNOWN", riskStatusReason: reason, dailyRiskRemaining: null,
+      permissions: { trading: true, pauseReason: null, stopSwitchEngaged: false, blockedBy: [] } }));
+    render(<RiskCommandCenter />);
+    const row = await screen.findByTestId("risk-perm-new-trades");
+    expect(row.textContent).not.toMatch(/not blocked by a stop switch or loss limit/);
+    expect(row.textContent).toMatch(/a loss limit could not be checked/);
+    expect(row.textContent).toContain(reason);
+  });
 });
 
 // The Summary tab's Overtrading stat read NORMAL when the trader's activity

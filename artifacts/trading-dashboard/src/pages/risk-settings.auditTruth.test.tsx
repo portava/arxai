@@ -45,7 +45,8 @@ describe("risk audit banner", () => {
     const t = screen.getByTestId("risk-audit-banner").textContent ?? "";
     expect(t).toMatch(/no rule tripped/);
     expect(t).toMatch(/legacy simulated trades table/);
-    expect(t).toMatch(/placeholder \$1,000 balance/);
+    // Merged with fix-2's basis note: "a $1,000 placeholder balance, not your live balance".
+    expect(t).toMatch(/\$1,000 placeholder balance/);
   });
 
   it("a measured breach names the rule", () => {
@@ -68,7 +69,8 @@ describe("risk audit detail", () => {
   it("unmeasured loss, streak and cooldown read 'not measured', never 0.00% / green Clear / All clear", () => {
     set({ ...BASE });
     render(<RiskAuditDetail />);
-    expect(screen.getAllByText("not measured").length).toBeGreaterThanOrEqual(4);
+    // Merged with fix-2: one casing, "Not measured", for every unmeasured cell.
+    expect(screen.getAllByText("Not measured").length).toBeGreaterThanOrEqual(4);
     expect(screen.queryByText("Clear")).toBeNull();
     expect(screen.queryByText("All clear")).toBeNull();
     expect(screen.queryByText("0.00%")).toBeNull();
