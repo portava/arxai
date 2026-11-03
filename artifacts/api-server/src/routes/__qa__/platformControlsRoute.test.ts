@@ -158,8 +158,20 @@ test("an operator's emergency stop engages the global safety-core switch", async
   try {
     const res = await post("/bot/emergency-stop", c.op);
     assert.equal(res.status, 200, await res.clone().text());
-    assert.match((await res.json() as { message: string }).message, /Platform emergency stop engaged/);
-    assert.equal((await safetyCore())?.killSwitchEngaged, true);
+    // ebbe4c1b rewrote the copy from what the stop did ("Platform emergency stop
+    // engaged. Your trades cancelled." claimed cancels that may not have
+    // happened). Assert the new message's key facts, each checked below
+    // against stored state, plus the additive scope field.
+    const body = await res.json() as { message: string; scope?: string; closedTrades: number };
+    assert.match(body.message, /^Platform-wide stop engaged: the safety-core kill switch now halts new trades for every trader on every venue/);
+    assert.match(body.message, /platform mode is OBSERVE_ONLY/);
+    assert.match(body.message, /Open paper-book and broker positions were not closed/);
+    assert.equal(body.scope, "PLATFORM");
+    assert.equal(body.closedTrades, 0);
+    assert.match(body.message, /No open rows in the legacy simulated trades table needed cancelling/);
+    const core = await safetyCore();
+    assert.equal(core?.killSwitchEngaged, true);
+    assert.equal(core?.operationalMode, "OBSERVE_ONLY", "the mode the message names is the stored mode");
     const other = await loadTradingHalt({ userId: u.other, venue: "PAPER" });
     assert.deepEqual(other.sources, ["safety_core_kill_switch"], "every trader is halted");
   } finally {
