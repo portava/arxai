@@ -54,7 +54,7 @@ mock.module("@workspace/db", {
         },
       }),
     },
-    userRiskSettingsTable: table(), userRiskEventsTable: table(),
+    userRiskSettingsTable: table(), userRiskEventsTable: table(), arxSymbolSpecsTable: table(),
   },
 });
 mock.module("../enforce.js", { namedExports: { buildRiskContext: async () => state.ctx } });
@@ -67,7 +67,22 @@ mock.module("../limitSettings.js", {
 mock.module("../../tradeEngine/paperBookReader.js", {
   namedExports: {
     readActivePaperAccount: async () => state.acct,
-    sumPaperRealizedSince: async (_scope: unknown, since: Date) => { state.realizedSince.push(since); return state.realized; },
+    // Today's settled P/L since the given time: one close booked at state.realized,
+    // with no exit price, so its booked and risk-count totals agree.
+    readPaperCloses: async (_scope: unknown, opts: { since?: Date } = {}) => {
+      state.realizedSince.push(opts.since!);
+      return state.realized === 0 ? [] : [{ profitLoss: state.realized, exitPrice: null, entryPrice: 1, direction: "BUY", lotSize: 1, closedAt: opts.since, pnl: state.realized }];
+    },
+    readOpenPaperOrders: async () => [],
+  },
+});
+// The open positions' risk count equals the floating P&L the account stores
+// here (no basis difference); propFirmStatusRiskCount.test.ts covers one.
+const realOpenRisk = await import("../../paperExecution/paperOpenRisk.js");
+mock.module("../../paperExecution/paperOpenRisk.js", {
+  namedExports: {
+    ...realOpenRisk,
+    valueOpenPaperPositions: async () => ({ total: state.acct ? state.acct.equity - state.acct.currentBalance : 0, valuedAtStop: [] }),
   },
 });
 mock.module("../../safety/tradingHalt.js", {
