@@ -102,7 +102,8 @@ export function LiveSharedTradeTicket({
   feedWarning?: { warningTitle: string; warningDetail: string } | null;
 }) {
   const { name } = useAssistantName();
-  const access = useMasterLiveAccess();
+  // Re-read access each time the ticket is reopened ("Reopen the ticket to retry").
+  const access = useMasterLiveAccess({ open });
   const mode = useTradingMode();
   const isPreviewing = mode.isAdminPreviewingUserMode === true;
   // Treat the mode-resolver loading window as preview-safe: until we know

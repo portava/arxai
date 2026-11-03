@@ -170,7 +170,8 @@ export function LiveTradeTicket({
   const { toast } = useToast();
   const qc = useQueryClient();
   const { name } = useAssistantName();
-  const access = useMasterLiveAccess();
+  // Re-read access each time the ticket is reopened ("Reopen the ticket to retry").
+  const access = useMasterLiveAccess({ open });
 
   const arming = useQuery<ArmingResp>({
     queryKey: ["live", "arming"],
