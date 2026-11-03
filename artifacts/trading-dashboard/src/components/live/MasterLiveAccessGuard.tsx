@@ -21,7 +21,7 @@
 // SECURITY: this is a UI convenience only. The server re-evaluates the
 // access gate on every dispatch — hiding the ticket here cannot bypass
 // the block.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ShieldAlert } from "lucide-react";
 
@@ -48,7 +48,13 @@ const UNCHECKED_ACCESS: Omit<MasterLiveAccessVerdict, "loaded" | "error"> = {
   canTrade: false, status: null, blockReason: null, message: null, requireStopLoss: true, scannerLiveEnabled: false,
 };
 
-export function useMasterLiveAccess(): MasterLiveAccessVerdict {
+/**
+ * `opts.open`: a ticket that stays mounted and only toggles its dialog passes
+ * its `open` flag, and access is re-read each time the dialog is reopened (so
+ * "Reopen the ticket to retry" is true). Without it, access is read on mount
+ * and when the window regains focus or becomes visible.
+ */
+export function useMasterLiveAccess(opts?: { open?: boolean }): MasterLiveAccessVerdict {
   const [v, setV] = useState<MasterLiveAccessVerdict>({ ...UNCHECKED_ACCESS, loaded: false, error: null });
   const refetch = useCallback((signal?: AbortSignal) => {
     // A failed read never keeps an earlier verdict as if it were current and
@@ -99,6 +105,18 @@ export function useMasterLiveAccess(): MasterLiveAccessVerdict {
       window.removeEventListener("focus", onFocus);
     };
   }, [refetch]);
+  // Re-read on reopen (closed → open), not on first mount (the effect above
+  // already reads then) and not on every render.
+  const open = opts?.open;
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    const prev = wasOpen.current;
+    wasOpen.current = open;
+    if (open !== true || prev !== false) return;
+    const controller = new AbortController();
+    refetch(controller.signal);
+    return () => controller.abort();
+  }, [open, refetch]);
   return v;
 }
 

@@ -31,9 +31,10 @@ describe("ScannerChartPanel — time zone + countdown clock", () => {
 
   it("no local, unlabelled clock strings remain on the panel or the scanner page", () => {
     expect(panel).not.toMatch(/toLocaleTimeString\(\)/);
-    // The strip's last-candle note is a UTC clock of the newest CLOSED candle
-    // (ScannerChartPanel.lastClosedCandle.test.ts locks why it is not lastCandleTime).
-    expect(panel).toContain("formatUtcClock(lastClosedCloseMs)");
+    // The strip's last-candle note is a UTC clock (with its date when not
+    // today) of the newest CLOSED candle (ScannerChartPanel.lastClosedCandle.test.ts
+    // locks why it is not lastCandleTime and why it carries a date).
+    expect(panel).toContain("formatUtcCandleClose(lastClosedCloseMs,");
     expect(page).not.toMatch(/Last scan \{new Date\(resultTimestamp\)\.toLocaleTimeString\(\)\}/);
     expect(page).toContain("Last scan {formatUtcClock(resultTimestamp)");
   });

@@ -42,6 +42,20 @@ export interface NewsRiskResult {
   tradeWarning: string | null;
   aiSummary: string;
   reasons: string[];
+  /**
+   * True when the block is ARX's 24h critical-event trade-plan hold (a CRITICAL
+   * event outside its ±15-minute release window), not a live release window.
+   * riskLevel / blockTrading are unchanged by it; it only changes the words.
+   */
+  criticalHold: boolean;
+}
+
+/**
+ * The words for a report's risk level. A critical-event hold outside the
+ * release window is a trade-plan hold, not a live no-trade window.
+ */
+export function newsRiskDisplayLabel(r: Pick<NewsRiskResult, "riskLevel" | "criticalHold">): string {
+  return r.criticalHold ? "TRADE PLAN HOLD" : r.riskLevel.replace(/_/g, " ");
 }
 
 // ── Symbol → currency map ────────────────────────────────────────────────
@@ -141,6 +155,7 @@ export function scoreNewsRisk(args: {
       tradeWarning: null,
       aiSummary: `${symbol} is a synthetic volatility index — unaffected by macro news. Risk: CLEAR. This is not a guarantee, gated by live-execution safety layer.`,
       reasons: ["Synthetic index — macro news does not apply."],
+      criticalHold: false,
     };
   }
 
@@ -180,6 +195,7 @@ export function scoreNewsRisk(args: {
       event: null, tradeWarning: null,
       aiSummary: `No ${currencies.join(" or ")} economic events in the next 24h or last 2h for ${symbol}. Risk: CLEAR. This is not a guarantee, gated by live-execution safety layer.`,
       reasons: [...reasons, `No ${currencies.join(" or ")} events in window.`],
+      criticalHold: false,
     };
   }
 
@@ -230,7 +246,7 @@ export function scoreNewsRisk(args: {
   const blockTrading = label === "NO_TRADE_WINDOW";
   const tradeWarning = label === "CLEAR"
     ? null
-    : `${criticalHold ? "TRADE PLAN HOLD" : label.replace(/_/g, " ")}: ${event.impactLevel} impact ${event.eventName} (${event.currency}) ${directionWord}. ${
+    : `${newsRiskDisplayLabel({ riskLevel: label, criticalHold })}: ${event.impactLevel} impact ${event.eventName} (${event.currency}) ${directionWord}. ${
       criticalHold
         ? `ARX does not validate trade plans on ${symbol} from 24 hours before a critical event until 2 hours after it; orders placed outside a trade plan are not held by this check. ${
             deltaMin >= 0
@@ -243,7 +259,7 @@ export function scoreNewsRisk(args: {
     }`;
 
   // AI summary always carries the disclaimer.
-  const aiSummary = `${symbol}: ${event.impactLevel} impact "${event.eventName}" (${event.currency}) ${directionWord}. Risk: ${label.replace(/_/g, " ")}.${tradeWarning ? ` ${tradeWarning}` : ""} This is not a guarantee, gated by live-execution safety layer.`;
+  const aiSummary = `${symbol}: ${event.impactLevel} impact "${event.eventName}" (${event.currency}) ${directionWord}. Risk: ${newsRiskDisplayLabel({ riskLevel: label, criticalHold })}.${tradeWarning ? ` ${tradeWarning}` : ""} This is not a guarantee, gated by live-execution safety layer.`;
 
   return {
     symbol,
@@ -255,5 +271,6 @@ export function scoreNewsRisk(args: {
     tradeWarning,
     aiSummary,
     reasons,
+    criticalHold,
   };
 }

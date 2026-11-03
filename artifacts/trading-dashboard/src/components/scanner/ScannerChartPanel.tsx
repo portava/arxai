@@ -19,7 +19,7 @@ import {
   computeCandleRemainingMs,
   CHART_TIME_AXIS_LABEL,
   CHART_TIME_AXIS_TITLE,
-  formatUtcClock,
+  formatUtcCandleClose,
   lastClosedCandleCloseMs,
   type ServerClockSample,
   NEWS_MARKER_LOOKAHEAD_BARS,
@@ -2833,7 +2833,7 @@ export function ScannerChartPanel() {
               <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-market-closed">
                 <span className="font-medium">Market closed · last session's candles</span>
                 {lastClosedCloseMs != null && (
-                  <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcClock(lastClosedCloseMs)}</span>
+                  <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcCandleClose(lastClosedCloseMs, Date.now())}</span>
                 )}
                 <span className="ml-auto text-amber-400/50 text-[10px]">No live price until the market reopens</span>
               </div>
@@ -2848,7 +2848,7 @@ export function ScannerChartPanel() {
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {lastClosedCloseMs != null && (
-                  <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcClock(lastClosedCloseMs)}</span>
+                  <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcCandleClose(lastClosedCloseMs, Date.now())}</span>
                 )}
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>

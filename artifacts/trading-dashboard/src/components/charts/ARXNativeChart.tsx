@@ -999,8 +999,16 @@ export function ARXNativeChart({
   const stripAssetClass = feedStatus?.assetClass ?? null;
   const stripClosure = stripStale ? scheduledWeekendClosureFor(stripAssetClass, stripNowMs) : null;
   const stripNewestOpenMs = hasCandles ? Date.parse(candles[candles.length - 1]!.openTime) : Number.NaN;
+  // Cause wording (closed / may be closed) is only for a "stale" grade, as the
+  // server's own wording is: a stale flag on a partial feed (missing or
+  // duplicate bars plus a trailing gap) has a measured sequence fault, and the
+  // server never calls it closed or fault-free — it says only that the newest
+  // bars are not current.
+  const stripStaleGraded = feedStatus?.quality === "stale";
   const stripStaleText = !stripStale
     ? null
+    : !stripStaleGraded
+      ? "Newest bars are not current"
     : stripClosure != null && Number.isFinite(stripNewestOpenMs) && stripNewestOpenMs < stripClosure.closedAtMs
       ? "Market closed for the weekend — no new bars, not a feed fault"
       : nextWeekendClosureBoundaryMs(stripAssetClass, stripNowMs) != null

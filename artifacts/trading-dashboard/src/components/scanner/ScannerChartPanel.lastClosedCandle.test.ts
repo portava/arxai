@@ -14,7 +14,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { lastClosedCandleCloseMs, formatUtcClock } from "@/components/scanner/scannerChartFormat";
+import { lastClosedCandleCloseMs, formatUtcClock, formatUtcCandleClose } from "@/components/scanner/scannerChartFormat";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -77,8 +77,51 @@ describe("ScannerChartPanel notice strip — last candle time", () => {
       const start = panel.indexOf(`data-testid="${id}"`);
       expect(start).toBeGreaterThan(-1);
       const block = panel.slice(start, panel.indexOf("</div>", start));
-      expect(block).toContain("formatUtcClock(lastClosedCloseMs)");
+      // With its date when it is not today (UTC): a bare clock reads as today.
+      expect(block).toContain("formatUtcCandleClose(lastClosedCloseMs,");
+      expect(block).not.toContain("formatUtcClock(lastClosedCloseMs)");
       expect(block).toMatch(/last candle closed/);
     }
+  });
+});
+
+// The strip shows the newest CLOSED bar's close exactly when that bar is old
+// (Market closed on a weekend, Stale). A bare "00:00 UTC" for a W1 bar that
+// closed Monday, read on Saturday, implies today. The close now carries its
+// date whenever it is not today (UTC).
+describe("formatUtcCandleClose — the close time says which day", () => {
+  const SAT = Date.parse("2026-10-31T10:00:00Z");
+
+  it("1W on Saturday: Monday's close names Monday's date", () => {
+    const forming = Date.parse("2026-10-26T00:00:00Z");
+    const close = lastClosedCandleCloseMs([{ time: forming - 7 * DAY, isComplete: true }, { time: forming, isComplete: false }], "1w", SAT);
+    expect(formatUtcCandleClose(close, SAT)).toBe("Mon 26 Oct 00:00 UTC");
+  });
+
+  it("1D on Saturday: Friday's bar closed at Saturday 00:00, which is today (UTC)", () => {
+    const fri = Date.parse("2026-10-30T00:00:00Z");
+    const close = lastClosedCandleCloseMs([{ time: fri, isComplete: true }], "1d", SAT);
+    expect(close).toBe(Date.parse("2026-10-31T00:00:00Z"));
+    expect(formatUtcCandleClose(close, SAT)).toBe("00:00 UTC");
+  });
+
+  it("1D on Sunday: the same close is yesterday and carries its date", () => {
+    const sun = Date.parse("2026-11-01T10:00:00Z");
+    expect(formatUtcCandleClose(Date.parse("2026-10-31T00:00:00Z"), sun)).toBe("Sat 31 Oct 00:00 UTC");
+  });
+
+  it("H1 mid-week Stale: a bar closed days earlier names its day", () => {
+    const wed = Date.parse("2026-10-28T14:07:00Z");
+    expect(formatUtcCandleClose(Date.parse("2026-10-26T22:00:00Z"), wed)).toBe("Mon 26 Oct 22:00 UTC");
+  });
+
+  it("a close in another year names the year", () => {
+    const jan = Date.parse("2027-01-02T10:00:00Z");
+    expect(formatUtcCandleClose(Date.parse("2026-12-31T22:00:00Z"), jan)).toBe("Thu 31 Dec 2026 22:00 UTC");
+  });
+
+  it("is null for a missing or unparseable time", () => {
+    expect(formatUtcCandleClose(null, SAT)).toBeNull();
+    expect(formatUtcCandleClose(Number.NaN, SAT)).toBeNull();
   });
 });
