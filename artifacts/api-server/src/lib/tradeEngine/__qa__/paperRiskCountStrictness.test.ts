@@ -28,11 +28,12 @@
 //     count, a daily loss that 16c8a1a0 blocked is blocked again (dbefac1c
 //     let it through), and the losing streak still reads each close's sign;
 //   - a risk-count equity at or below 0 is refused with the paper risk count
-//     and the booked equity named, never as "equity is unknown"; the drawdown
-//     and daily-loss refusals say they read the risk count, with the booked
-//     figures;
-//   - the equity high-water mark still records the booked equity, so the
-//     drawdown rule never reads a smaller drawdown than before;
+//     and the booked equity named, never as "equity is unknown"; the
+//     daily-loss refusal says it reads the risk count, with the booked
+//     figures; the drawdown refusal names the basis it measured (each basis
+//     against its own peak, r2-governor), with the booked equity;
+//   - the equity high-water mark still records the booked equity (the
+//     drawdown rule's booked basis);
 //   - the risk overview says, with both figures, when the count differs.
 //
 // Offline: the REAL read side and governor run over an in-memory db fake.
@@ -222,22 +223,31 @@ test("a risk-count equity at or below 0 is refused with the paper risk count and
   }
 });
 
-test("the drawdown refusal says it compares the risk-count equity with the peak recorded from the booked equity, and shows the booked equity", async () => {
+test("the drawdown refusal names the basis it measured (the paper risk model against its own peak), and shows the booked equity", async () => {
   const saved = { daily: LIMITS.maxDailyLossPercent, dd: LIMITS.maxDrawdownPercent };
   LIMITS.maxDailyLossPercent = null as never;
-  LIMITS.maxDrawdownPercent = 5 as never;
   try {
     fake = createFakeDb({
       paper_accounts: [ACCOUNT], paper_orders: [INDEX_LOSS, FX_WIN],
       user_equity_peaks: [{ id: 4, peakEquity: 10_095, firstSeenAt: minsAgo(600) }],
     });
+    // Booked: 10,095 at its recorded peak (0%). At the paper risk model:
+    // 10,000 → 9,500 → 9,500.10, 4.999% below its peak of 10,000. The 5.89%
+    // this rule read before (the risk-count equity 9,500.10 against the
+    // booked peak 10,095) is a figure neither basis has.
+    LIMITS.maxDrawdownPercent = 5 as never;
+    const at5 = (await enforcePreTradeRisk(intent, { paperAccountId: 3, facts: { quote, now: NOW } })).rules.find((r) => r.rule === "daily_loss_limit")!;
+    assert.equal(at5.outcome, "PASS", at5.reason ?? "");
+    assert.equal(at5.measured?.["bookedDrawdownPercent"], 0);
+    assert.equal(at5.measured?.["modelDrawdownPercent"], 5);
+    LIMITS.maxDrawdownPercent = 4.99 as never;
     const res = await enforcePreTradeRisk(intent, { paperAccountId: 3, facts: { quote, now: NOW } });
     const dd = res.rules.find((r) => r.rule === "daily_loss_limit")!;
     assert.equal(dd.outcome, "BLOCK");
-    // 9,500.10 is 5.89% below 10,095.
-    assert.match(dd.reason!, /^Paper risk-count equity 9500\.1 is 5\.89% below its peak equity of 10095 \(drawdown limit 5%\)/);
-    assert.match(dd.reason!, /peak is recorded from the booked equity, and the paper account shows 10095 booked/);
+    assert.match(dd.reason!, /^At the paper risk model \(price move × lots × 100\), the account's equity 9500\.1 is 5% below its peak of 10000 on the same basis \(drawdown limit 4\.99%\); the paper account shows 10095 booked\./);
+    assert.doesNotMatch(dd.reason!, /10095 \(drawdown|5\.89%/, "never the risk-count equity against the booked peak");
     assert.equal(dd.measured?.["bookedEquity"], 10_095);
+    assert.equal(dd.measured?.["drawdownBasis"], "paper_risk_model");
   } finally {
     LIMITS.maxDailyLossPercent = saved.daily;
     LIMITS.maxDrawdownPercent = saved.dd;

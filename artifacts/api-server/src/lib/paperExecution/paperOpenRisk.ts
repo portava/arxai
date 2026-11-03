@@ -26,7 +26,7 @@
 
 import { getMockPrice, isMarketPricedPaperOrder, PAPER_SIMULATOR_PRICE_SOURCE, simulatorExitLevel } from "../tradeEngine/paperMark.js";
 import type { ResolvedContractSize } from "../mt5/contractSize.js";
-import { paperLedgerModelPnl, paperRiskShortfall, type PaperCloseFigures } from "./paperRiskCount.js";
+import { paperLedgerModelPnl, paperModelRealized, paperRiskShortfall, type PaperCloseFigures } from "./paperRiskCount.js";
 import { resolvePaperContract, sizePaperOrderPnl } from "./paperPnl.js";
 
 /** The fields of an open paper order its value is read from. */
@@ -52,6 +52,11 @@ export interface PaperMarkQuote {
 export interface PaperOpenRiskValue {
   /** Σ over open positions of min(sized, price move × lots × 100) at the venue's mark. */
   total: number;
+  /**
+   * Σ over open positions of price move × lots × 100 at the same mark: the
+   * open positions on the paper risk model alone (paperModelEquity reads it).
+   */
+  model: number;
   /** Symbols of the positions counted at their stop because no market quote for them was read here. */
   valuedAtStop: string[];
 }
@@ -75,6 +80,7 @@ export async function valueOpenPaperPositions(
 ): Promise<PaperOpenRiskValue> {
   const contracts = new Map<string, Promise<ResolvedContractSize>>();
   let total = 0;
+  let modelTotal = 0;
   const valuedAtStop: string[] = [];
   for (const o of rows) {
     const mark = markOf(o, opts.now, opts.quote ?? null);
@@ -89,8 +95,9 @@ export async function valueOpenPaperPositions(
     // An open position that cannot be sized counts as markToMarket stores it:
     // a loss at the model, a gain as 0.
     total += Math.min(sized ?? Math.min(0, model), model);
+    modelTotal += model;
   }
-  return { total, valuedAtStop };
+  return { total, model: modelTotal, valuedAtStop };
 }
 
 /** The paper risk-count equity and the booked figures it was taken from. */
@@ -129,4 +136,47 @@ export function paperRiskEquity(
     bookedFloating,
     openValuedAtStop: floating < bookedFloating ? open.valuedAtStop : [],
   };
+}
+
+/**
+ * The account's equity on the paper risk model alone (price move × lots ×
+ * 100, quoted 1:1 in USD), and its peak on the same basis, for the Risk
+ * Governor's drawdown rule. Read-only: nothing is stored.
+ *   - equity: the starting balance, plus every settled close at the model
+ *     (paperModelRealized), plus each open position at the model at the
+ *     venue's mark (PaperOpenRiskValue.model; a position with no market quote
+ *     for it is counted at its stop and named in openValuedAtStop);
+ *   - peak: the highest of the starting balance, the equity after each
+ *     settled close in close order (no open positions are recorded between
+ *     closes, so a gain an open position showed in the past is not in it),
+ *     and the equity now.
+ * The booked basis is the paper account's own equity against the peak the
+ * governor records from it (user_equity_peaks).
+ */
+export interface PaperModelEquity {
+  equity: number;
+  peakEquity: number;
+  /** When the peak was reached: a close's time, `now` for the equity now, null for the starting balance. */
+  peakAt: Date | null;
+  /** Open positions counted at their stop in `equity` (no market quote for them was read). */
+  openValuedAtStop: string[];
+}
+
+export function paperModelEquity(
+  acct: { startingBalance: number },
+  closes: ReadonlyArray<PaperCloseFigures & { closedAt: Date; id?: number }>,
+  open: PaperOpenRiskValue,
+  now: Date,
+): PaperModelEquity {
+  const ordered = [...closes].sort((a, b) => a.closedAt.getTime() - b.closedAt.getTime() || (a.id ?? 0) - (b.id ?? 0));
+  let running = acct.startingBalance;
+  let peakEquity = running;
+  let peakAt: Date | null = null;
+  for (const c of ordered) {
+    running += paperModelRealized(c);
+    if (running > peakEquity) { peakEquity = running; peakAt = c.closedAt; }
+  }
+  const equity = running + open.model;
+  if (equity > peakEquity) { peakEquity = equity; peakAt = now; }
+  return { equity, peakEquity, peakAt, openValuedAtStop: [...open.valuedAtStop] };
 }

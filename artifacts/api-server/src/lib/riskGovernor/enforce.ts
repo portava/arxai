@@ -42,7 +42,7 @@ import {
 } from "../tradeEngine/paperBookReader.js";
 import { decideContractSize, resolveQuoteToAccountFx, type ResolvedContractSize } from "../mt5/contractSize.js";
 import { PAPER_ACCOUNT_CURRENCY, paperRiskTotals, resolvePaperContract } from "../paperExecution/paperPnl.js";
-import { paperRiskEquity, valueOpenPaperPositions, type PaperRiskEquity } from "../paperExecution/paperOpenRisk.js";
+import { paperModelEquity, paperRiskEquity, valueOpenPaperPositions, type PaperRiskEquity } from "../paperExecution/paperOpenRisk.js";
 import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
@@ -52,6 +52,7 @@ import {
   type AccountSnapshotFacts,
   type EffectiveLimits,
   type InstrumentModel,
+  type PaperEquityBases,
   type RiskAccount,
   type RiskContext,
   type RiskDecision,
@@ -146,6 +147,8 @@ export interface RiskFacts {
   daily?: RiskContext["daily"];
   halt?: RiskContext["halt"];
   equityPeak?: RiskContext["equityPeak"];
+  /** Defaults to the loaded paper account's bases, or none when `account` is supplied. */
+  paperEquityBases?: PaperEquityBases | null;
   activity?: TradingActivity | null;
   market?: RiskContext["market"];
   venueRules?: RiskContext["venueRules"];
@@ -278,6 +281,8 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   let todayBooked: number | null = null;
   // Every settled order on the account, newest close first.
   let allCloses: Awaited<ReturnType<typeof readPaperCloses>> = [];
+  // The drawdown rule's two full bases (booked, and the paper risk model).
+  let paperEquityBases: PaperEquityBases | null = null;
   if (acct) {
     const book = { account: acct.id };
     const open = await readOpenPaperOrders(book);
@@ -301,6 +306,17 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
       quote: quote && intent.symbol ? { symbol: intent.symbol, bid: quote.bid, ask: quote.ask, source: quote.source } : null,
     });
     risk = paperRiskEquity(acct, closes, openValue);
+    // The drawdown rule measures each full basis against a peak on the same
+    // basis: the booked equity against the peak recorded from it, and the
+    // equity at the paper risk model against the highest equity at that
+    // model, read from the same closes (never stored).
+    const model = paperModelEquity(acct, closes, openValue, now);
+    paperEquityBases = {
+      bookedEquity: acct.equity,
+      modelEquity: model.equity, modelPeakEquity: model.peakEquity, modelPeakAt: model.peakAt,
+      modelOpenValuedAtStop: model.openValuedAtStop,
+      source: `paper_account:${acct.id}`,
+    };
   }
   inFlight.push(...await loadActionInFlight(intent.userId, "PAPER", now));
   const riskEquity = risk ? risk.equity : null;
@@ -360,6 +376,7 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     broker: acct
       ? { status: "CONNECTED", lastSeenAt: now, detail: "internal paper simulator" }
       : { status: "DISCONNECTED", lastSeenAt: null, detail: "no active paper account" },
+    paperEquityBases,
     daily: {
       realizedPnl: realized, floatingPnl: risk ? risk.floating : null,
       ...(todayBooked != null && realized != null ? { bookedRealizedPnl: todayBooked } : {}),
@@ -591,8 +608,10 @@ async function loadEquityPeak(intent: TradeIntent, account: RiskAccount): Promis
 /** Raise the account's recorded equity high-water mark; it never falls. */
 // The high-water mark keeps recording the account's booked equity: a paper
 // account whose caps are checked against a lower risk-count equity
-// (bookedEquity set) still raises its mark from the booked figure, so the
-// drawdown from it is measured to the lower equity and never reads smaller.
+// (bookedEquity set) still raises its mark from the booked figure. On PAPER
+// the drawdown rule measures the booked equity against it, and the equity at
+// the paper risk model against that model's own peak (PaperEquityBases), so
+// no figure on one basis is compared with a peak on the other.
 async function recordEquityPeak(intent: TradeIntent, account: RiskAccount | null): Promise<void> {
   const equity = account?.bookedEquity ?? account?.equity ?? null;
   if (!account || equity == null || !Number.isFinite(equity) || equity <= 0) return;
@@ -655,6 +674,9 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     market: f.market ?? null,
     venueRules: f.venueRules ?? null,
     allocation: f.allocation !== undefined ? f.allocation : loaded.allocation ?? null,
+    // The loaded paper account's bases belong to the loaded account only.
+    paperEquityBases: f.paperEquityBases !== undefined ? f.paperEquityBases
+      : f.account !== undefined ? null : loaded.paperEquityBases ?? null,
   };
 }
 
@@ -700,6 +722,9 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
             account: ctx.account,
             equityPeak: ctx.equityPeak
               ? { ...ctx.equityPeak, since: ctx.equityPeak.since?.toISOString() ?? null }
+              : null,
+            paperEquityBases: ctx.paperEquityBases
+              ? { ...ctx.paperEquityBases, modelPeakAt: ctx.paperEquityBases.modelPeakAt?.toISOString() ?? null }
               : null,
             accountSnapshot: ctx.accountSnapshot
               ? { ...ctx.accountSnapshot, observedAt: ctx.accountSnapshot.observedAt?.toISOString() ?? null }

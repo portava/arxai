@@ -471,9 +471,17 @@ export interface RiskContext {
   };
   /**
    * Highest equity the governor has recorded for this account (user_equity_peaks).
-   * Needed only when a drawdown limit is set; null = none recorded yet.
+   * Needed only when a drawdown limit is set; null = none recorded yet. On
+   * PAPER it records the booked equity (the paper account's own figure).
    */
   equityPeak?: { peakEquity: number; since: Date | null; source: string } | null;
+  /**
+   * PAPER only (the active paper account the fact loader read): the account's
+   * equity on each full basis, for the drawdown rule. Absent for a broker
+   * account and when a caller supplies the account itself; the rule then
+   * reads `account.equity` against `equityPeak`.
+   */
+  paperEquityBases?: PaperEquityBases | null;
   /** Stop switches (lib/safety/tradingHalt). Engaged halts new risk; closes stay open. */
   halt?: RiskHalt | null;
   /**
@@ -496,6 +504,39 @@ export interface RiskContext {
    * P/L could not be sized yet. Checked by rule 3 (buying power).
    */
   allocation?: { status: string; blown: boolean; pendingSizing: boolean; source: string } | null;
+}
+
+/**
+ * A paper account's equity on its two full bases (Risk Governor drawdown
+ * rule). The rule measures the drawdown on each basis against a peak on the
+ * same basis and blocks when either reaches the limit, naming the basis; it
+ * never compares a figure on one basis with a peak on the other.
+ */
+export interface PaperEquityBases {
+  /**
+   * The equity the paper account shows (paper_accounts.equity: the booked
+   * balance plus the booked floating P&L). Its peak is RiskContext.equityPeak,
+   * which the governor records from this figure.
+   */
+  bookedEquity: number;
+  /**
+   * The equity at the paper risk model (price move × lots × 100): the
+   * starting balance plus every settled close and each open position at the
+   * paper venue's mark at that model (paperExecution/paperOpenRisk.ts
+   * paperModelEquity).
+   */
+  modelEquity: number;
+  /**
+   * The highest equity at the model known, read from the closes and never
+   * stored: the starting balance, the equity after each settled close in
+   * close order, and the equity now. Open positions' past gains are not in it.
+   */
+  modelPeakEquity: number;
+  /** When modelPeakEquity was reached: a close's time, now, or null for the starting balance. */
+  modelPeakAt: Date | null;
+  /** Open positions counted at their stop in modelEquity because no market quote for them was read. */
+  modelOpenValuedAtStop: string[];
+  source: string;
 }
 
 export interface VenueRules {
@@ -632,7 +673,11 @@ function nonPositiveEquity(ctx: Pick<RiskContext, "account" | "daily">): string 
 
 /** PAPER: "; the open X position is counted at its stop because no market quote for it was read with this order". "" when none. */
 function stopValuedClause(ctx: Pick<RiskContext, "daily">): string {
-  const at = ctx.daily.openValuedAtStop ?? [];
+  return stopValuedList(ctx.daily.openValuedAtStop ?? []);
+}
+
+/** stopValuedClause for a given list of symbols. */
+function stopValuedList(at: readonly string[]): string {
   if (!at.length) return "";
   const list = at.length > 1 ? `${at.slice(0, -1).join(", ")} and ${at[at.length - 1]}` : at[0]!;
   return at.length === 1
@@ -1018,7 +1063,10 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
       const peakFact = ctx.equityPeak ?? null;
       const m: RiskRuleResult["measured"] = { ...(prior.measured ?? {}), maxDrawdownPercent: L.maxDrawdownPercent,
         peakEquity: peakFact?.peakEquity ?? null, peakSince: peakFact?.since?.toISOString() ?? null };
-      if (equity == null) {
+      const bases = ctx.paperEquityBases ?? null;
+      if (bases) {
+        paperDrawdown(bases, peakFact, L.maxDrawdownPercent, m, set);
+      } else if (equity == null) {
         set("daily_loss_limit", "BLOCK", nonPosEquity
           ? `${sentenceCase(nonPosEquity)}, so your ${L.maxDrawdownPercent}% drawdown limit is used up. New trades are blocked; closing is allowed.`
           : "Account equity is unknown, so your drawdown limit cannot be checked.", m);
@@ -1030,9 +1078,11 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
         const booked = ctx.account?.bookedEquity;
         if (booked != null) m["bookedEquity"] = round(booked);
         if (dd >= L.maxDrawdownPercent) {
-          // PAPER with a risk count below the booked equity: the drawdown is
-          // the risk-count equity against the peak recorded from the booked
-          // equity, so the refusal says so and shows the booked equity.
+          // A supplied PAPER account with a risk count below the booked
+          // equity and no per-basis facts (the fact loader always sets
+          // paperEquityBases for the paper account it reads): the comparison
+          // is the risk-count equity against the peak recorded from the
+          // booked equity, so the refusal says so and shows the booked equity.
           set("daily_loss_limit", "BLOCK", booked != null
             ? `Paper risk-count equity ${round(equity)} is ${round(dd)}% below its peak equity of ${round(peak)} (drawdown limit ${L.maxDrawdownPercent}%). The peak is recorded from the booked equity, and the paper account shows ${round(booked)} booked; the risk count takes ${PAPER_EQUITY_COUNT_BASIS}${stopValuedClause(ctx)}. New trades are blocked; closing is allowed.`
             : `Account is ${round(dd)}% below its peak equity of ${round(peak)} (drawdown limit ${L.maxDrawdownPercent}%). New trades are blocked; closing is allowed.`, m);
@@ -1133,6 +1183,63 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   }
 
   return finish(results, ctx);
+}
+
+/**
+ * The drawdown rule on a paper account (PaperEquityBases): the drawdown on
+ * each full basis against a peak on the same basis, blocking when either
+ * reaches the limit and naming the basis that did.
+ *   - booked: the equity the paper account shows against the peak the
+ *     governor recorded from it (user_equity_peaks);
+ *   - paper risk model: the equity at price move × lots × 100 against the
+ *     highest equity at that model (starting balance, after each settled
+ *     close, now).
+ * An equity at or below 0 on either basis uses the limit up. Never more
+ * lenient than the booked basis alone, and never a drawdown that no basis
+ * has (the risk-count equity, which mixes the two, is not compared with a
+ * peak here).
+ */
+function paperDrawdown(
+  b: PaperEquityBases,
+  peakFact: RiskContext["equityPeak"] | null,
+  limit: number,
+  m: NonNullable<RiskRuleResult["measured"]>,
+  set: (rule: RiskRuleId, outcome: RuleOutcome, reason: string | null, measured?: RiskRuleResult["measured"]) => void,
+): void {
+  const ddOf = (eq: number, peak: number) => (peak > 0 ? Math.max(0, ((peak - eq) / peak) * 100) : null);
+  const bookedPeak = Math.max(b.bookedEquity, peakFact?.peakEquity ?? b.bookedEquity);
+  const bookedDd = ddOf(b.bookedEquity, bookedPeak);
+  const modelPeak = Math.max(b.modelEquity, b.modelPeakEquity);
+  const modelDd = ddOf(b.modelEquity, modelPeak);
+  const bookedBreach = b.bookedEquity <= 0 || (bookedDd != null && bookedDd >= limit);
+  const modelBreach = b.modelEquity <= 0 || (modelDd != null && modelDd >= limit);
+  Object.assign(m, {
+    peakEquity: round(bookedPeak),
+    drawdownPercent: bookedDd != null || modelDd != null ? round(Math.max(bookedDd ?? 0, modelDd ?? 0)) : null,
+    bookedEquity: round(b.bookedEquity), bookedPeakEquity: round(bookedPeak),
+    bookedDrawdownPercent: bookedDd != null ? round(bookedDd) : null,
+    modelEquity: round(b.modelEquity), modelPeakEquity: round(modelPeak),
+    modelPeakAt: b.modelPeakAt?.toISOString() ?? null,
+    modelDrawdownPercent: modelDd != null ? round(modelDd) : null,
+    drawdownBasis: bookedBreach && modelBreach ? "booked_and_paper_risk_model" : bookedBreach ? "booked" : modelBreach ? "paper_risk_model" : null,
+    equityBasesSource: b.source,
+  });
+  if (!bookedBreach && !modelBreach) { set("daily_loss_limit", "PASS", null, m); return; }
+  const parts: string[] = [];
+  if (bookedBreach) {
+    parts.push(b.bookedEquity <= 0
+      ? `The paper account's booked equity is ${round(b.bookedEquity)}, at or below zero, so your ${limit}% drawdown limit is used up.`
+      : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`);
+  }
+  if (modelBreach) {
+    const what = b.modelEquity <= 0
+      ? `the account's equity is ${round(b.modelEquity)}, at or below zero, so your ${limit}% drawdown limit is used up`
+      : `the account's equity ${round(b.modelEquity)} is ${round(modelDd!)}% below its peak of ${round(modelPeak)} on the same basis (drawdown limit ${limit}%)`;
+    parts.push(`At the paper risk model (price move × lots × 100), ${what}${bookedBreach ? "" : `; the paper account shows ${round(b.bookedEquity)} booked`}. `
+      + `That equity is the starting balance plus every closed paper trade and each open position at that model${stopValuedList(b.modelOpenValuedAtStop)}; `
+      + `its peak is the highest of the starting balance, the equity after each closed trade, and now.`);
+  }
+  set("daily_loss_limit", "BLOCK", `${parts.join(" ")} New trades are blocked; closing is allowed.`, m);
 }
 
 /** Share of the daily loss cap after which automated origins stop opening. */
