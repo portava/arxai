@@ -178,6 +178,34 @@ describe("Risk Settings: a stop switch that could not be read", () => {
     expect(statusRow("Stop switch")).not.toMatch(/ENGAGED/);
   });
 
+  // The audit's reasonsBlocked repeats the gate's halt reason, which for an
+  // unread switch still read "is engaged ... Release it to trade again. (state
+  // unreadable)". The banner rendered it right under "a stop switch could not
+  // be read", and the Emergency tab's Blocked list rendered it again.
+  it("the banner line and the Blocked list never say an unread switch is engaged or tell the trader to release it", () => {
+    for (const [source, reason] of [
+      ["trader_kill_switch", "Your kill switch is engaged. Release it to trade again. (state unreadable)"],
+      ["platform_emergency_stop", "The platform emergency stop is engaged by an operator. (state unreadable)"],
+    ] as const) {
+      const unread = { engaged: true, sources: [source], venues: ["PAPER", "DEMO", "LIVE"], reason };
+      h.audit = {
+        ...AUDIT, passed: false,
+        reasonsBlocked: [`New trades are halted on PAPER, DEMO, LIVE: ${reason}`, "Max open trades reached (3/3)"],
+        tradingHalt: unread,
+      };
+      render(<RiskSettings />);
+      const banner = screen.getByTestId("risk-audit-banner").textContent ?? "";
+      expect(banner).not.toMatch(/is engaged|Release it/);
+      expect(banner).toMatch(/could not be read, so it is treated as engaged/);
+      const detail = screen.getByTestId("risk-audit-blocked").textContent ?? "";
+      expect(detail).not.toMatch(/is engaged|Release it/);
+      expect(detail).toMatch(/New trades are halted on PAPER, DEMO, LIVE: .*could not be read, so it is treated as engaged/);
+      // The other reasons are kept.
+      expect(detail).toMatch(/Max open trades reached \(3\/3\)/);
+      cleanup();
+    }
+  });
+
   it("a switch whose stored reason was read is still ENGAGED with release instructions", () => {
     h.audit = { ...AUDIT, passed: false, reasonsBlocked: ["x"], tradingHalt: TRADER_KS };
     render(<RiskSettings />);

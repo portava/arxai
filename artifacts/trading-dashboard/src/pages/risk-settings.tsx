@@ -330,6 +330,23 @@ export function haltStatusText(halt: { sources: string[]; reason: string | null;
 }
 
 /**
+ * reasonsBlocked as the page shows them. The server's halt entry ("New trades
+ * are halted on …: <reason>") repeats the gate's reason for the first listed
+ * switch, which for a switch it could not read still says "is engaged …
+ * Release it". When that switch could not be read, the entry says what was
+ * observed instead; every other reason is kept as sent.
+ */
+export function auditBlockedReasons(audit: { reasonsBlocked: string[]; tradingHalt?: HaltRead }): string[] {
+  const halt = audit.tradingHalt;
+  const unread = halt?.engaged ? haltUnreadableSource(halt) : null;
+  if (!halt || !unread) return audit.reasonsBlocked;
+  const name = HALT_SOURCE_NAME[unread] ?? "A stop switch";
+  const line = `New trades are halted on ${halt.venues.join(", ") || "your account"}: `
+    + `${name} could not be read, so it is treated as engaged (fail closed). It was not seen engaged.`;
+  return audit.reasonsBlocked.map((r) => (/^New trades are halted on /.test(r) ? line : r));
+}
+
+/**
  * What to tell the trader about an engaged halt. An unreadable switch gets no
  * release instructions (releasing does not clear a read failure); switches
  * listed after it are each engaged or also unreadable, and are hedged so.
@@ -405,6 +422,7 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
   }
   const basis = auditBasis(audit);
   const verdict = riskAuditVerdict(audit, basis);
+  const blocked = auditBlockedReasons(audit);
 
   return (
     <div
@@ -442,8 +460,8 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
         </p>
         {!audit.passed && (
           <p className="text-xs text-muted-foreground truncate mt-0.5">
-            {audit.reasonsBlocked[0]}
-            {audit.reasonsBlocked.length > 1 && ` (+${audit.reasonsBlocked.length - 1} more)`}
+            {blocked[0]}
+            {blocked.length > 1 && ` (+${blocked.length - 1} more)`}
           </p>
         )}
         {audit.tradingHalt?.engaged && (
@@ -1909,12 +1927,12 @@ export function RiskAuditDetail() {
 
         <div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6 pb-32 md:pb-6">
           {audit.reasonsBlocked.length > 0 && (
-            <div>
+            <div data-testid="risk-audit-blocked">
               <h4 className="text-xs font-semibold text-red-400/80 mb-2 uppercase tracking-wider">
                 Blocked ({audit.reasonsBlocked.length})
               </h4>
               <div className="space-y-1.5">
-                {audit.reasonsBlocked.map((r, i) => (
+                {auditBlockedReasons(audit).map((r, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs text-red-300/90">
                     <XCircle size={12} className="shrink-0 mt-0.5 text-red-400" />
                     {r}
