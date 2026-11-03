@@ -122,14 +122,49 @@ describe("Autopilot boards name their engine", () => {
       today_counts_capped: false, cycles_read_limit: null, today_basis: "UTC",
     }} />);
     expect(screen.queryByText(/Safety blocks today/i)).toBeNull();
-    expect(screen.getByText("Not opened today (UTC)")).toBeTruthy();
+    // Named after what it counts: a check that threw is also "not opened" but
+    // is not in this count.
+    expect(screen.queryByText("Not opened today (UTC)")).toBeNull();
+    expect(screen.getByText("Held, skipped or refused today (UTC)")).toBeTruthy();
     expect(screen.getByText("7198")).toBeTruthy();
     const basis = screen.getByTestId("autopilot-not-opened-basis").textContent ?? "";
     expect(basis).toMatch(/AI decided to hold/i);
     expect(basis).toMatch(/sniper/i);
     expect(basis).toMatch(/not a count of safety blocks/i);
-    expect(document.body.textContent).toMatch(/not opened 5/);
+    expect(basis).toMatch(/symbol\/timeframe check/);
+    expect(basis).toMatch(/failed with an error is not counted here/i);
+    expect(basis).not.toMatch(/Counts each symbol a paper autopilot cycle did not open/);
+    expect(document.body.textContent).toMatch(/held, skipped or refused 5/);
+    expect(document.body.textContent).not.toMatch(/not opened 5/);
     expect(document.body.textContent).not.toMatch(/rejected 5/);
+  });
+
+  // A symbol/timeframe check that throws (the market-data read, orchestrate…)
+  // increments neither opened nor paper_trades_rejected. On a failing day the
+  // held/skipped/refused tile reads 0, so the failed checks are shown beside
+  // it, and the last cycle says how many of its checks failed.
+  it("checks that failed with an error are shown, so a failing day is not read as 0", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 30, paper_trades_opened_today: 0, paper_trades_closed_today: 0,
+      safety_blocks_today: 0, symbol_checks_failed_today: 120, cycles_failed_today: 30,
+      last_cycle: { autopilot_cycle_id: "c30", status: "FAILED", paper_trades_opened: 0, paper_trades_rejected: 0, symbol_checks_failed: 4 },
+      today_counts_capped: false, cycles_read_limit: null, today_basis: "UTC",
+    }} />);
+    const failed = screen.getByTestId("autopilot-failed-checks").textContent ?? "";
+    expect(failed).toMatch(/120 symbol\/timeframe checks failed with an error today \(UTC\)/);
+    expect(failed).toMatch(/30 cycles ended FAILED/);
+    expect(failed).toMatch(/not counted as opened or as held, skipped or refused/);
+    expect(screen.getByTestId("paper-autopilot-last-cycle").textContent).toMatch(/failed checks 4/);
+  });
+
+  it("a summary that does not report failed checks says so instead of implying none failed", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 3, paper_trades_opened_today: 0, paper_trades_closed_today: 0,
+      safety_blocks_today: 0, last_cycle: null, today_basis: "UTC",
+    }} />);
+    const failed = screen.getByTestId("autopilot-failed-checks").textContent ?? "";
+    expect(failed).toMatch(/not counted above/);
+    expect(failed).toMatch(/did not report how many/);
   });
 
   it("the server's basis for the not-opened count is shown when it sends one", () => {

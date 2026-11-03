@@ -891,11 +891,14 @@ export function MemoryTab() {
   );
 }
 
-/** What the paper autopilot's "not opened" count is, for a server that sends
- *  no safety_blocks_today_basis. "(UTC)" only when the summary reports that
- *  day basis, as the tiles do. */
+/** What the paper autopilot's held / skipped / refused count is, for a server
+ *  that sends no safety_blocks_today_basis. "(UTC)" only when the summary
+ *  reports that day basis, as the tiles do. A check that threw increments
+ *  neither this count nor "opened". */
 const notOpenedTodayBasis = (utc: boolean) =>
-  `Counts each symbol a paper autopilot cycle did not open a trade for today${utc ? " (UTC)" : ""}: the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks.`;
+  `Counts each symbol/timeframe check a paper autopilot cycle ran today${utc ? " (UTC)" : ""} that did not open a trade because the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks. A check that failed with an error is not counted here.`;
+
+const plural = (v: unknown, one: string, many: string) => (v === 1 ? one : many);
 
 /** The paper autopilot (autopilot_cycles, lib/paperAutopilot) — a different
  *  engine from the in-memory simulator autopilot that the Autopilot Control
@@ -950,11 +953,12 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         </div>
         <div>
-          {/* safety_blocks_today sums paper_trades_rejected, which counts
-              every symbol a cycle did not open a trade for, ordinary AI
-              holds included. It is not a count of safety blocks. */}
+          {/* safety_blocks_today sums paper_trades_rejected: each
+              symbol/timeframe check the AI held, the loss limit stopped, the
+              sniper skipped or execution refused, ordinary AI holds
+              included. Not safety blocks, and not checks that failed. */}
           <div className="text-txt-secondary text-xs">
-            {today("Not opened")}
+            {today("Held, skipped or refused")}
           </div>
           <div className="font-bold" data-testid="autopilot-not-opened-today">{n(a?.safety_blocks_today)}</div>
         </div>
@@ -966,6 +970,28 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
             {typeof a.safety_blocks_today_basis === "string"
               ? a.safety_blocks_today_basis
               : notOpenedTodayBasis(utc)}
+          </div>
+        )}
+        {loaded && a.cycles_today !== 0 && (
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
+            data-testid="autopilot-failed-checks"
+          >
+            {/* A check that threw is in neither count above; without this a
+                day of failing checks reads as 0. */}
+            {typeof a.symbol_checks_failed_today === "number" ? (
+              <>
+                {n(a.symbol_checks_failed_today)} symbol/timeframe{" "}
+                {plural(a.symbol_checks_failed_today, "check", "checks")} failed with an
+                error today{utc ? " (UTC)" : ""}
+                {typeof a.cycles_failed_today === "number" && a.cycles_failed_today > 0
+                  ? `; ${n(a.cycles_failed_today)} ${plural(a.cycles_failed_today, "cycle", "cycles")} ended FAILED`
+                  : ""}
+                . Failed checks are not counted as opened or as held, skipped or refused.
+              </>
+            ) : (
+              "Checks that failed with an error are not counted above, and this summary did not report how many there were."
+            )}
           </div>
         )}
         {!loaded ? (
@@ -1015,8 +1041,11 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
             {safeDate(a.last_cycle.started_at, "datetime", "time not reported")}):{" "}
             {a.last_cycle.autopilot_cycle_id} —{" "}
             {a.last_cycle.status} · opened{" "}
-            {a.last_cycle.paper_trades_opened} · not opened{" "}
+            {a.last_cycle.paper_trades_opened} · held, skipped or refused{" "}
             {a.last_cycle.paper_trades_rejected}
+            {typeof a.last_cycle.symbol_checks_failed === "number"
+              ? ` · failed checks ${a.last_cycle.symbol_checks_failed}`
+              : ""}
           </div>
         )}
       </CardContent>

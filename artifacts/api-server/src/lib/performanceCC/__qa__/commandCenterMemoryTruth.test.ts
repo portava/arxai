@@ -190,6 +190,11 @@ test("riskStats.highRiskBlocks says it counts every not-opened symbol, AI holds 
   assert.match(basis, /sniper/i);
   assert.match(basis, /not a count of (high-risk|safety) blocks/i);
   assert.match(basis, /latest 20/);
+  // A check that threw is not in paper_trades_rejected, so the basis does not
+  // claim "every symbol a cycle did not open a trade for".
+  assert.match(basis, /symbol\/timeframe check/);
+  assert.match(basis, /failed with an error (is|are) not counted/i);
+  assert.doesNotMatch(basis, /every symbol a cycle did not open a trade for/);
 });
 
 // The Memory tab calls paper_orders "paper" (Paper Win Rate, Net Paper P&L,
