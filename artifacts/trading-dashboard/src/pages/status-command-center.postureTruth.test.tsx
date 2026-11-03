@@ -120,6 +120,45 @@ describe("fixed diagnostic-summary posture is not shown as a reading", () => {
     for (const d of diagnose(ctx)) expect(d.explanation).not.toMatch(/ARX is in simulator mode/i);
   });
 
+  it("an armed LIVE trader whose own EA is connected is not told to stay in simulator/paper or demo mode", () => {
+    // Own EA connected and heartbeating: no bridge diagnosis fires, and the
+    // fixed flags are unread, so diagnose() has nothing to report.
+    const connected: BridgeDiagnosticSummary = {
+      ...serverSummary,
+      bridgeMode: "connected",
+      heartbeatPresent: true,
+      heartbeatScope: "your_connection",
+      lastHeartbeatAt: "2026-10-28T14:05:00.000Z",
+      heartbeatAgeSeconds: 3,
+    };
+    const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: connected });
+    expect(ctx.executionPostureUnmeasured).toBe(true);
+    expect(diagnose(ctx)).toEqual([]);
+    const st = explainAppStatus(ctx);
+    expect(st.safestNextStep).not.toMatch(/simulator|demo mode|paper/i);
+    expect(st.safestNextStep).toMatch(/account mode/i);
+
+    holder.ctx = ctx;
+    render(<StatusCommandCenter />);
+    const empty = screen.getByTestId("scc-fix-first-empty");
+    expect(empty.textContent).not.toMatch(/simulator|paper/i);
+    expect(empty.textContent).toMatch(/does not read your account mode/i);
+    expect(screen.getByTestId("scc-safest-next").textContent).not.toMatch(/simulator|demo mode/i);
+    expect(screen.getByTestId("status-command-center").textContent).not.toMatch(/simulator\/paper|simulator\/demo mode/i);
+  });
+
+  it("with a measured posture, the empty fix-first and default next step keep their existing copy", () => {
+    const { executionPostureMeasured: _m, executionPostureNote: _n, ...legacy } = serverSummary;
+    const ctx = collectRuntimeContext({
+      route: "/status-command-center",
+      bridge: { ...legacy, bridgeMode: "connected", heartbeatPresent: true, heartbeatScope: "your_connection", heartbeatAgeSeconds: 3,
+        liveTradingEnabled: true, brokerExecutionEnabled: true, brokerReadOnly: false, paperOnly: false } as BridgeDiagnosticSummary,
+    });
+    expect(ctx.executionPostureUnmeasured).toBe(false);
+    expect(diagnose(ctx)).toEqual([]);
+    expect(explainAppStatus(ctx).safestNextStep).toMatch(/Continue in simulator\/demo mode/);
+  });
+
   it("a summary without the marker keeps its existing reading", () => {
     const { executionPostureMeasured: _m, executionPostureNote: _n, ...legacy } = serverSummary;
     const ctx = collectRuntimeContext({ route: "/status-command-center", bridge: legacy as BridgeDiagnosticSummary });
