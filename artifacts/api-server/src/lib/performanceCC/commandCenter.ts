@@ -120,7 +120,9 @@ export async function buildCommandCenter(userId: number) {
   const avgRiskScore = decisions.length ? decisions.reduce((a, d) => a + d.riskScore, 0) / decisions.length : 0;
   const avgEdgeScore = edges.length ? edges.reduce((a, e) => a + e.edgeScore, 0) / edges.length : 0;
 
-  // Risk safety stats (count safety-blocked autopilot rejections + cooldowns).
+  // Not-opened symbols over the latest 20 paper autopilot cycles. The cycle's
+  // paper_trades_rejected counts AI holds, the daily loss limit, sniper skips
+  // and execution refusals alike, so this is not a count of safety blocks.
   const safetyBlockTotal = recentCycles.reduce((a, c) => a + c.paperTradesRejected, 0);
 
   // Improvement over time is not measured. A strategy edge keeps only its
@@ -207,6 +209,7 @@ export async function buildCommandCenter(userId: number) {
       wideSpreadBlocks: 0,
       staleDataBlocks: 0,
       highRiskBlocks: safetyBlockTotal,
+      highRiskBlocksBasis: "Not a count of high-risk blocks: it sums, over your latest 20 paper autopilot cycles, every symbol a cycle did not open a trade for (the AI decided to hold, the daily paper loss limit, a sniper-filter skip or a paper-execution refusal). Ordinary AI holds are included, so it is not a count of safety blocks.",
     },
     insights: insightOut.insights,
     nextBestActions: insightOut.nextBestActions,

@@ -648,6 +648,17 @@ export async function computeAutopilotSummary(userId: number) {
 type AutopilotCycleRow = typeof autopilotCyclesTable.$inferSelect;
 
 /**
+ * What safety_blocks_today counts. It sums autopilot_cycles.paper_trades_rejected,
+ * which the paper autopilot increments for every symbol a cycle did not open
+ * a trade for (autopilotService: DAILY_LOSS_LIMIT, AA_HOLD, any sniper result
+ * other than PASS, any paper-execution refusal). Ordinary AI holds are the
+ * bulk of it, so the field name is kept for compatibility and this says what
+ * it is.
+ */
+export const SAFETY_BLOCKS_TODAY_BASIS =
+  "Counts each symbol a paper autopilot cycle did not open a trade for today (UTC): the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks.";
+
+/**
  * Summarise autopilot cycles. `wholeDay: true` means `recent` is every cycle
  * started today (UTC), so the counts are totals. Otherwise `recent` is a window
  * of the latest AUTOPILOT_SUMMARY_READ_LIMIT cycles, and when every cycle in it
@@ -685,6 +696,8 @@ export function summarizeAutopilotCycles(
     paper_trades_opened_today: todayCycles.reduce((a, c) => a + c.paperTradesOpened, 0),
     paper_trades_closed_today: todayCycles.reduce((a, c) => a + c.paperTradesClosed, 0),
     safety_blocks_today: todayCycles.reduce((a, c) => a + c.paperTradesRejected, 0),
+    /** safety_blocks_today counts every not-opened symbol, AI holds included. */
+    safety_blocks_today_basis: SAFETY_BLOCKS_TODAY_BASIS,
     /** True when the today counts may be undercounted by the read window (never for a whole-day read). */
     today_counts_capped: todayCountsCapped,
     /** The read window's size, or null when every cycle started today was read. */

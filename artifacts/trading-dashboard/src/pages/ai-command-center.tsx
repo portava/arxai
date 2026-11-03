@@ -864,6 +864,11 @@ export function MemoryTab() {
   );
 }
 
+/** What the paper autopilot's "not opened" count is, for a server that sends
+ *  no safety_blocks_today_basis. */
+const NOT_OPENED_TODAY_BASIS =
+  "Counts each symbol a paper autopilot cycle did not open a trade for today (UTC): the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks.";
+
 /** The paper autopilot (autopilot_cycles, lib/paperAutopilot) — a different
  *  engine from the in-memory simulator autopilot that the Autopilot Control
  *  Center reports. Each surface names the engine it reports. */
@@ -910,11 +915,24 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         </div>
         <div>
+          {/* safety_blocks_today sums paper_trades_rejected, which counts
+              every symbol a cycle did not open a trade for, ordinary AI
+              holds included. It is not a count of safety blocks. */}
           <div className="text-txt-secondary text-xs">
-            Safety blocks today (UTC)
+            Not opened today (UTC)
           </div>
-          <div className="font-bold">{n(a?.safety_blocks_today)}</div>
+          <div className="font-bold" data-testid="autopilot-not-opened-today">{n(a?.safety_blocks_today)}</div>
         </div>
+        {loaded && (
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
+            data-testid="autopilot-not-opened-basis"
+          >
+            {typeof a.safety_blocks_today_basis === "string"
+              ? a.safety_blocks_today_basis
+              : NOT_OPENED_TODAY_BASIS}
+          </div>
+        )}
         {!loaded ? (
           <div
             className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
@@ -927,7 +945,7 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         ) : a.cycles_today === 0 ? (
           <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary" data-testid="autopilot-today-note">
-            No autopilot cycle has run today (UTC), so it has opened, closed and blocked nothing today.
+            No autopilot cycle has run today (UTC), so it has not opened, closed or passed on any trade today.
           </div>
         ) : null}
         {capped && (
@@ -944,7 +962,7 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
             Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
             {a.last_cycle.status} · opened{" "}
-            {a.last_cycle.paper_trades_opened} · rejected{" "}
+            {a.last_cycle.paper_trades_opened} · not opened{" "}
             {a.last_cycle.paper_trades_rejected}
           </div>
         )}

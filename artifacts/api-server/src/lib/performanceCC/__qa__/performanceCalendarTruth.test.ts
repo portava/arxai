@@ -118,6 +118,19 @@ test("autopilot 'today' counts every cycle started today (UTC), not only the las
   assert.equal(s.today_utc, new Date().toISOString().slice(0, 10));
 });
 
+// paper_trades_rejected (summed into safety_blocks_today) counts every symbol
+// a cycle did not open a trade for, ordinary AI HOLDs included. The summary
+// says so instead of leaving the field name to call them safety blocks.
+test("safety_blocks_today carries a basis: AI holds, loss limit, sniper skips and refusals, not safety blocks", async () => {
+  const s = await computeAutopilotSummary(7) as Record<string, unknown>;
+  const basis = String(s.safety_blocks_today_basis);
+  assert.match(basis, /did not open/i);
+  assert.match(basis, /AI (decided to )?hold/i);
+  assert.match(basis, /daily paper loss limit/i);
+  assert.match(basis, /sniper/i);
+  assert.match(basis, /not a count of safety blocks/i);
+});
+
 test("autopilot with no cycles today: zero counts are labelled as no run today", async () => {
   const s = await computeAutopilotSummary(7) as Record<string, unknown>;
   assert.equal(s.cycles_today, 0);
