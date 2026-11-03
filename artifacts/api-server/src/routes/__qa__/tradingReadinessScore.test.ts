@@ -84,7 +84,7 @@ test("the calendar check is named for the economic calendar, not as a market-con
 
 test("the NOT_READY summary names the items that actually failed", () => {
   const s = signals({ brokerLog: brokerLog("CONNECTED", 20_000), calendarCovered: true });
-  const out = evaluateReadiness({ ...s, activeContract: null } as Signals, INPUT);
+  const out = evaluateReadiness({ ...s, activeContract: null } as unknown as Signals, INPUT);
   assert.equal(out.status, "NOT_READY");
   const failed = out.checklist.filter((c) => c.status === "FAIL").map((c) => c.label);
   assert.deepEqual(failed, ["Trading rules confirmed", "Risk limit confirmed"]);
