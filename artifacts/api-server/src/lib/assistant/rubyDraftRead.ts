@@ -172,7 +172,9 @@ function buildTrustLine(state: ChartIntelligenceState, hasForming: boolean): str
   parts.push(feedTrustSegment(gate.autonomousChartActionAllowed, state.truthState));
   // Honest mirror copy from the real broker-alignment granularity — never claims
   // sync while the price is only drifting (wide) or unverifiable (unknown).
-  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment, gateMirrorBlockCause(gate));
+  // A missing truth result counts as an unobserved seam: never "Mirror synced".
+  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment,
+    gateMirrorBlockCause(gate, state.truthResult ?? null));
   if (mirror) {
     parts.push(mirror);
   }

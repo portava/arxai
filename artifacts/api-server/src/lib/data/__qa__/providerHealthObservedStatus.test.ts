@@ -148,7 +148,9 @@ test("composite chain: members are selected, and one that never answered is not 
   const td = byId(snap, "twelve_data");
   const pg = byId(snap, "polygon");
   assert.equal(pg.status, "healthy");
-  assert.equal(td.status, "unverified");
+  // Twelve Data comes first in the chain, so it was tried on every request
+  // Polygon answered and gave nothing usable: failing, never "not checked".
+  assert.equal(td.status, "failing");
   assert.match(td.statusReason, /did not answer any/i);
   // Both are in the selected chain — neither is "configured but unused".
   assert.equal(td.configuredButUnused, false);
@@ -226,4 +228,82 @@ test("active consumers list an adapter once it answered this snapshot's self-tes
   const snap = await getProviderHealthSnapshot();
   assert.deepEqual(snap.activeConsumers.find((c) => c.consumer === "scanner")?.providers, ["finnhub"]);
   assert.match(snap.activeConsumersBasis, /answered this snapshot's self-test/i);
+});
+
+// ── Composite chain order: what was tried, and what was never called ────────
+// The composite walks its adapters in order and falls through only when one
+// gives no usable answer. An adapter ahead of the one that answered was tried
+// and failed; an adapter behind it was never called.
+
+test("composite: an adapter tried before the one that answered, on every request, is 'failing' (not 'not checked')", async () => {
+  process.env.TWELVEDATA_API_KEY = "td-expired-key-0000";
+  process.env.POLYGON_API_KEY = "pg-key-1111";
+  assistantName = "composite(twelve_data,polygon)";
+  routerPlan = () => ({
+    ok: true, primaryProvider: "assistant_real:polygon",
+    attempts: [mt5Miss, { provider: "assistant_real:polygon", ok: true, reason: null, ms: 25 }],
+  });
+  const snap = await getProviderHealthSnapshot();
+  const td = byId(snap, "twelve_data");
+  assert.equal(td.status, "failing", td.statusReason);
+  assert.match(td.statusReason, /did not answer any of the 12 self-test requests/i);
+  assert.match(td.statusReason, /On 12 of them it was tried before Polygon/i);
+  assert.match(td.statusReason, /no usable answer/i);
+  assert.doesNotMatch(td.statusReason, /not checked|not called/i);
+  assert.equal(td.lastSelfTestOk, false);
+  assert.equal(byId(snap, "polygon").status, "healthy");
+  assert.equal(snap.summary.failing, 1);
+  assert.equal(snap.summary.unverified, 0);
+});
+
+test("composite: an adapter behind the one that answered every request was never called — 'unverified', not 'did not answer'", async () => {
+  process.env.TWELVEDATA_API_KEY = "td-key-0000";
+  process.env.POLYGON_API_KEY = "pg-key-1111";
+  assistantName = "composite(twelve_data,polygon)";
+  routerPlan = () => ({
+    ok: true, primaryProvider: "assistant_real:twelve_data",
+    attempts: [mt5Miss, { provider: "assistant_real:twelve_data", ok: true, reason: null, ms: 20 }],
+  });
+  const snap = await getProviderHealthSnapshot();
+  const pg = byId(snap, "polygon");
+  assert.equal(pg.status, "unverified");
+  assert.doesNotMatch(pg.statusReason, /did not answer/i, pg.statusReason);
+  assert.match(pg.statusReason, /not called/i);
+  assert.match(pg.statusReason, /Twelve Data answered first/i);
+  assert.equal(byId(snap, "twelve_data").status, "healthy");
+});
+
+test("composite: an adapter that answered some requests and was passed over on others says both", async () => {
+  process.env.TWELVEDATA_API_KEY = "td-key-0000";
+  process.env.POLYGON_API_KEY = "pg-key-1111";
+  assistantName = "composite(twelve_data,polygon)";
+  // Twelve Data answers quotes; its candles come back empty, so Polygon serves them.
+  routerPlan = (leg) => leg === "quote"
+    ? { ok: true, primaryProvider: "assistant_real:twelve_data", attempts: [mt5Miss, { provider: "assistant_real:twelve_data", ok: true, reason: null, ms: 20 }] }
+    : { ok: true, primaryProvider: "assistant_real:polygon", attempts: [mt5Miss, { provider: "assistant_real:polygon", ok: true, reason: null, ms: 25 }] };
+  const snap = await getProviderHealthSnapshot();
+  const td = byId(snap, "twelve_data");
+  assert.equal(td.status, "healthy");
+  assert.match(td.statusReason, /answered 6 of the 12/i);
+  assert.match(td.statusReason, /on the other 6 it was tried before Polygon/i);
+  const pg = byId(snap, "polygon");
+  assert.equal(pg.status, "healthy");
+  assert.match(pg.statusReason, /answered 6 of the 12/i);
+});
+
+test("TD + Finnhub hybrid in a composite: a quote Polygon served means Finnhub (the hybrid's quote leg) was tried, not Twelve Data", async () => {
+  process.env.TWELVEDATA_API_KEY = "td-key-0000";
+  process.env.FINNHUB_API_KEY = "fh-key-1234";
+  process.env.POLYGON_API_KEY = "pg-key-1111";
+  assistantName = "composite(twelve_data,polygon)";
+  routerPlan = (leg) => leg === "quote"
+    ? { ok: true, primaryProvider: "assistant_real:polygon", attempts: [mt5Miss, { provider: "assistant_real:polygon", ok: true, reason: null, ms: 25 }] }
+    : { ok: true, primaryProvider: "assistant_real:twelve_data", attempts: [mt5Miss, { provider: "assistant_real:twelve_data", ok: true, reason: null, ms: 20 }] };
+  const snap = await getProviderHealthSnapshot();
+  const fh = byId(snap, "finnhub");
+  assert.equal(fh.status, "failing", fh.statusReason);
+  assert.match(fh.statusReason, /On 6 of them it was tried before Polygon/i);
+  const td = byId(snap, "twelve_data");
+  assert.equal(td.status, "healthy");
+  assert.doesNotMatch(td.statusReason, /tried before/i, td.statusReason);
 });

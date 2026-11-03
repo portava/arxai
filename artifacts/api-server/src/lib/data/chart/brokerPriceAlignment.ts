@@ -244,17 +244,21 @@ export function unboundQuoteDescription(
  *   - `tradeConfirmationAllowed === false` (merge-seam OR alignment "failed")
  *       → "Mirror degraded"  (composes seam AND alignment state)
  *   - aligned (tight/normal) with broker data → "Mirror synced"
+ *   - …but the merge seam was not observed (`cause.seamUnchecked`)
+ *       → "Mirror not confirmed (broker price aligned; seam not checked)",
+ *       matching the Symbol Mirror Accuracy check, which stays unmeasured
  *   - wide drift                             → "Mirror drifting"
  *   - unknown / no broker quote              → null (NO alignment claim)
  *
  * Honesty invariant: NEVER returns "Mirror synced" unless `aligned === true`
- * AND `brokerDataAvailable === true` AND the quote binding is BOUND. Display-copy only — never an execution
+ * AND `brokerDataAvailable === true` AND the quote binding is BOUND AND the
+ * caller has not reported an unobserved merge seam. Display-copy only — never an execution
  * gate, never weakens the 16-gate live pipeline.
  */
 export function mirrorTrustSegment(
   tradeConfirmationAllowed: boolean,
   alignment: Pick<BrokerPriceAlignment, "aligned" | "tolerance" | "brokerDataAvailable" | "quoteBinding">,
-  cause?: { seamFailed: boolean; notChecked: boolean },
+  cause?: { seamFailed: boolean; notChecked: boolean; seamUnchecked?: boolean },
 ): string | null {
   // Nothing observed: the gate is closed for lack of evidence, not a failure.
   if (!tradeConfirmationAllowed && cause?.notChecked) return "Mirror not checked";
@@ -270,6 +274,13 @@ export function mirrorTrustSegment(
   if (!alignment.brokerDataAvailable) return null; // unknown → make no claim
   // A quote not bound to this series' identity/freshness proves nothing.
   if (!isBoundBrokerQuote(alignment.quoteBinding)) return null;
+  // Only the broker half of the mirror check was observed: the merge seam was
+  // not, so the symbol mirror is not confirmed (the gate may still be open).
+  if (cause?.seamUnchecked) {
+    return alignment.aligned
+      ? "Mirror not confirmed (broker price aligned; seam not checked)"
+      : "Mirror drifting (seam not checked)";
+  }
   if (alignment.aligned) return "Mirror synced"; // tight / normal
   return "Mirror drifting"; // wide
 }

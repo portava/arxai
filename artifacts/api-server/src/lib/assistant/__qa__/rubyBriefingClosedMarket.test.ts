@@ -144,3 +144,35 @@ test("A live weekday series has no not-live reason and keeps the live line", asy
   assert.equal(snap.freshness, "REALTIME");
   assert.match(briefingFeedLine(marketFeedFromSnapshot(snap)), /clean right now/);
 });
+
+// A closed market or stored series whose bars FAILED their checks is not
+// "history" to read: the chart says the bars failed (or are incomplete), so
+// the not-live reason is withheld and the briefing does not call them
+// readable history.
+test("Saturday with invalid OHLC bars: no closed-market reason; the briefing does not call the failed bars history", async () => {
+  mt5Bars(M15, FRI + 21 * HOUR + 45 * MIN, SAT_NOON);
+  const bad = route.candles[route.candles.length - 3]!;
+  route.candles[route.candles.length - 3] = { ...bad, high: bad.low - 0.001 };
+  const chart = await withNow(SAT_NOON, () => getChartCandles("EURUSD", "M15", 200));
+  assert.equal(chart.feedStatus.quality, "invalid");
+  assert.match(chart.feedStatus.message, /failed candle integrity checks/);
+  assert.equal(chart.feedStatus.notLiveReason, null);
+  const snap = await withNow(SAT_NOON, () => getSymbolSnapshot("EURUSD"));
+  assert.equal(snap.notLiveReason, null);
+  const line = briefingFeedLine(marketFeedFromSnapshot(snap));
+  assert.doesNotMatch(line, /history/i, line);
+  assert.match(line, /unavailable right now, so I can't read it/, line);
+});
+
+test("Stored MT5 mirror with invalid OHLC bars: no stored-history reason", async () => {
+  const TUE = Date.UTC(2026, 9, 27, 14, 2, 30);
+  mt5Bars(H1, Math.floor(TUE / H1) * H1 - H1, TUE, "durable_mirror");
+  const bad = route.candles[route.candles.length - 3]!;
+  route.candles[route.candles.length - 3] = { ...bad, high: bad.low - 0.001 };
+  const chart = await withNow(TUE, () => getChartCandles("EURUSD", "H1", 200));
+  assert.equal(chart.feedStatus.quality, "invalid");
+  assert.doesNotMatch(chart.feedStatus.message, /stored MetaTrader 5 broker candles/);
+  assert.equal(chart.feedStatus.notLiveReason, null);
+  const snap = await withNow(TUE, () => getSymbolSnapshot("EURUSD", "H1"));
+  assert.doesNotMatch(briefingFeedLine(marketFeedFromSnapshot(snap)), /history/i);
+});

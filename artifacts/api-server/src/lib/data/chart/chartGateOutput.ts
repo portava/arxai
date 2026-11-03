@@ -141,22 +141,34 @@ export function feedTrustSegment(
   return "Feed not confirmed live";
 }
 
-/** The gate's mirror reasons, read back from its own blocked reasons (also for cached gates). */
-export function gateMirrorBlockCause(gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">): {
-  seamFailed: boolean; notChecked: boolean;
+/**
+ * The gate's mirror reasons, read back from its own blocked reasons (also for
+ * cached gates). Pass the series' truth result (null when there is none) to
+ * also report whether the merge seam went unobserved: an open gate can rest on
+ * the broker comparison alone, which does not confirm the symbol mirror.
+ */
+export function gateMirrorBlockCause(
+  gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">,
+  truthResult?: TimeframeTruthResult | null,
+): {
+  seamFailed: boolean; notChecked: boolean; seamUnchecked: boolean;
 } {
   const reasons = Array.isArray(gate.blockedReasons) ? gate.blockedReasons : [];
   return {
     seamFailed: reasons.includes(MERGE_SEAM_FAILED_REASON),
     notChecked: !gate.tradeConfirmationAllowed && reasons.includes(MIRROR_NOT_CHECKED_REASON),
+    seamUnchecked: truthResult !== undefined && !isMergeSeamMeasured(truthResult),
   };
 }
 
 /**
  * Plain-English reason for a Chart Truth Score under the threshold. The score
- * band (e.g. "Degraded") is named only when a MEASURED check found a concern;
- * a score that is low only because checks could not run says exactly that and
- * names them, because unmeasured checks earn no points.
+ * band (e.g. "Degraded") is named only when a MEASURED check found a concern
+ * (under 90); a measured deduction scoring 90-99 is still listed, with its
+ * detail, as a minor deduction. "No measured check found a problem" is said
+ * only when every measured check scored 100. A score that is low only because
+ * checks could not run says exactly that and names them, because unmeasured
+ * checks earn no points.
  */
 function truthShortfallReason(truthScore: ChartTruthScore): string {
   const head = `Chart Truth Score ${truthScore.score} < ${TRUTH_THRESHOLD}`;
@@ -165,11 +177,18 @@ function truthShortfallReason(truthScore: ChartTruthScore): string {
   const measured = (m: ChartTruthScore["subMetrics"][number]) =>
     m.evidenceStatus === "measured" && m.rawScore != null && Number.isFinite(m.rawScore);
   const concerns = metrics.filter(m => measured(m) && m.rawScore! < 90);
+  const minor = metrics.filter(m => measured(m) && m.rawScore! >= 90 && m.rawScore! < 100);
   const unmeasured = metrics.filter(m => !measured(m));
+  const minorText = minor.length
+    ? `Minor measured deductions: ${minor.map(m => {
+      const detail = typeof m.detail === "string" ? m.detail.trim().replace(/\.$/, "") : "";
+      return `${m.label} ${m.rawScore}/100${detail ? ` (${detail})` : ""}`;
+    }).join(", ")}.`
+    : "";
   return (concerns.length ? `${head} (${truthScore.label})` : head) + " — chart-based confirmation blocked. " +
     (concerns.length
-      ? `Measured concerns: ${concerns.map(m => `${m.label} ${m.rawScore}/100`).join(", ")}.`
-      : "No measured check found a problem.") +
+      ? `Measured concerns: ${concerns.map(m => `${m.label} ${m.rawScore}/100`).join(", ")}.${minorText ? ` ${minorText}` : ""}`
+      : minorText ? `No measured check scored below 90. ${minorText}` : "No measured check found a problem.") +
     (unmeasured.length
       ? ` Could not be checked (earn no points): ${unmeasured.map(m => m.label).join(", ")}.` : "");
 }

@@ -6,7 +6,10 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
-type Snap = { providers: Array<{ id: string; category: string; status: string }>; symbolProbes: unknown[]; summary: Record<string, number> };
+type Activity = { assetClass: string; representativeSymbol: string; latestCandleProvider: string | null; latestQuoteProvider: string | null;
+  lastCandleTime: string | null; lastQuoteTime: string | null; aiUsable: boolean; feedQuality: string; staleReason: string | null; fallbackReason: string | null };
+type Snap = { providers: Array<{ id: string; category: string; status: string }>; symbolProbes: unknown[]; summary: Record<string, number>;
+  assetClassActivity?: Activity[] };
 let snap: Snap;
 mock.module("../../data/providerHealth.js", {
   namedExports: { getProviderHealthSnapshot: async () => snap },
@@ -25,7 +28,18 @@ function summary(providers: Snap["providers"]) {
     notConfigured: providers.filter(p => p.status === "not_configured").length, reserved: providers.filter(p => p.status === "reserved").length,
     configuredButUnused: 0 };
 }
-function set(providers: Snap["providers"], probes: unknown[]) { snap = { providers, symbolProbes: probes, summary: summary(providers) }; }
+// The real snapshot always carries the per-asset-class feed truth (the same
+// resolver the chart uses); a clean, current class is what PASS needs.
+const activity = (assetClass: string, symbol: string, feedQuality: string, lastCandleTime: string | null = new Date().toISOString(),
+  lastQuoteTime: string | null = null): Activity => ({
+  assetClass, representativeSymbol: symbol, latestCandleProvider: "assistant_real:twelve_data", latestQuoteProvider: "assistant_real:twelve_data",
+  lastCandleTime, lastQuoteTime, aiUsable: feedQuality === "clean", feedQuality, staleReason: null, fallbackReason: null,
+});
+const cleanForex = [activity("forex", "EURUSD", "clean")];
+// null = a snapshot with no assetClassActivity field at all.
+function set(providers: Snap["providers"], probes: unknown[], assetClassActivity: Activity[] | null = cleanForex) {
+  snap = { providers, symbolProbes: probes, summary: summary(providers), ...(assetClassActivity ? { assetClassActivity } : {}) };
+}
 
 const keysOnly = [
   { id: "mt5_broker", category: "broker", status: "reserved" },
@@ -57,4 +71,45 @@ test("a healthy market-data provider whose probes return nothing is not PASS", a
   assert.equal(all.status, "PASS"); assert.match(all.detail, /candles 2\/2, quotes 2\/2/);
   set(providers, []);
   assert.equal((await adapter()).status, "NOT_AVAILABLE");
+});
+
+// "Some data came back" is not "the data is current": a probe quote that the
+// adapter marked STALE or DELAYED still has ok:true. The per-asset-class feed
+// truth in the same snapshot says whether the data is current.
+test("probes that all returned data on a stale or delayed feed are not PASS", async () => {
+  const providers = [...keysOnly.slice(0, 2), { id: "twelve_data", category: "market_data", status: "healthy" }];
+  const probes = [probe("EURUSD", true, true), probe("XAUUSD", true, true), probe("BTCUSD", true, true)];
+  const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+  set(providers, probes, [
+    activity("forex", "EURUSD", "stale", dayAgo),
+    activity("metals", "XAUUSD", "delayed", hourAgo),
+    activity("crypto", "BTCUSD", "clean"),
+  ]);
+  const r = await adapter();
+  assert.notEqual(r.status, "PASS");
+  assert.equal(r.status, "WARN");
+  assert.match(r.detail, /candles 3\/3, quotes 3\/3/);
+  assert.match(r.detail, /not current/i);
+  assert.match(r.detail, /forex \(EURUSD\) stale/);
+  assert.match(r.detail, /metals \(XAUUSD\) delayed/);
+  assert.doesNotMatch(r.detail, /crypto/);
+  // Age of the oldest not-current class (the stale forex series, about a day).
+  assert.ok(r.ageMs != null && r.ageMs >= 86_000_000 && r.ageMs < 90_000_000, String(r.ageMs));
+});
+
+test("feed freshness that could not be checked is not PASS", async () => {
+  const providers = [...keysOnly.slice(0, 2), { id: "twelve_data", category: "market_data", status: "healthy" }];
+  const probes = [probe("EURUSD", true, true)];
+  set(providers, probes, [activity("forex", "EURUSD", "unknown", null)]);
+  const unknown = await adapter();
+  assert.equal(unknown.status, "WARN");
+  assert.match(unknown.detail, /forex \(EURUSD\) freshness could not be checked/);
+  set(providers, probes, null);
+  assert.equal("assetClassActivity" in snap, false);
+  const missing = await adapter();
+  assert.equal(missing.status, "WARN");
+  assert.match(missing.detail, /feed freshness was not reported/i);
+  set(providers, probes, []);
+  assert.equal((await adapter()).status, "WARN");
 });

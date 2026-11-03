@@ -241,7 +241,9 @@ export function computeChartTruthScore(
   if (!seamMeasured) {
     // Half of this check (seam integrity) was not observed, so it earns no
     // placeholder points: below, only an observed broker FAILURE is scored
-    // (it stays a measured failure); anything else is left unmeasured.
+    // (it stays a measured failure), on the broker half alone at half weight;
+    // anything else is left unmeasured. 100 here is that half's starting
+    // value, never credit for the unobserved seam.
     mirrorRaw = 100;
     mirrorDetail = "Merge seam could not be checked (no closed-to-forming bar pair).";
   } else if (seam.overlapAtSeam) {
@@ -281,6 +283,13 @@ export function computeChartTruthScore(
         alignNote = `Broker alignment ${alignment.tolerance}.`;
     }
     mirrorRaw = clamp(mirrorRaw - alignPenalty - basisPenalty);
+    // Unobserved seam: that half earns nothing, so only the observed broker
+    // failure counts, at half weight — never scored like an observed clean
+    // seam. (Any other comparison with an unobserved seam stays unmeasured.)
+    if (!seamMeasured && alignment.tolerance === "failed") {
+      mirrorRaw = mirrorRaw / 2;
+      alignNote += " Only the broker comparison is scored (half of this check); the unobserved seam earns nothing.";
+    }
     // Preserve the observed failed comparison in the downstream <50 FAIL band.
     if (alignment.tolerance === "failed") mirrorRaw = Math.min(mirrorRaw, 49);
     mirrorDetail = [mirrorDetail, alignNote].filter(Boolean).join(" ");

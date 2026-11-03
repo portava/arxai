@@ -257,42 +257,88 @@ export function assistantAdapterChain(name: string): string[] {
 // What this snapshot's self-test observed on the assistant leg of the router:
 // how many probe requests reached it, which adapter answered each one (the
 // router names the serving adapter as `assistant_real:<id>` on success), and
-// the last failure reason.
+// the last failure reason. Each request keeps its leg (candles / quote), since
+// the composite's adapter order can differ per leg (TD + Finnhub hybrid).
+type AssistantLeg = "candles" | "quote";
 interface AssistantLegEvidence {
   reached: number;
   servedBy: Map<string, number>;
   lastFailure: { reason: string | null; ms: number } | null;
+  requests: Array<{ leg: AssistantLeg; servedBy: string | null }>;
 }
 
 function assistantLegEvidence(probes: SymbolProbe[]): AssistantLegEvidence {
-  const ev: AssistantLegEvidence = { reached: 0, servedBy: new Map(), lastFailure: null };
+  const ev: AssistantLegEvidence = { reached: 0, servedBy: new Map(), lastFailure: null, requests: [] };
   for (const probe of probes) {
-    for (const a of [...probe.candles.attempts, ...probe.quote.attempts]) {
-      if (!a.provider.startsWith("assistant_real:")) continue;
-      ev.reached += 1;
-      if (a.ok) {
-        const id = a.provider.slice("assistant_real:".length);
-        ev.servedBy.set(id, (ev.servedBy.get(id) ?? 0) + 1);
-      } else {
-        ev.lastFailure = { reason: a.reason, ms: a.ms };
+    const legs: Array<[AssistantLeg, SymbolProbe["candles"]["attempts"]]> = [
+      ["candles", probe.candles.attempts], ["quote", probe.quote.attempts],
+    ];
+    for (const [leg, attempts] of legs) {
+      for (const a of attempts) {
+        if (!a.provider.startsWith("assistant_real:")) continue;
+        ev.reached += 1;
+        if (a.ok) {
+          const id = a.provider.slice("assistant_real:".length);
+          ev.servedBy.set(id, (ev.servedBy.get(id) ?? 0) + 1);
+          ev.requests.push({ leg, servedBy: id });
+        } else {
+          ev.lastFailure = { reason: a.reason, ms: a.ms };
+          ev.requests.push({ leg, servedBy: null });
+        }
       }
     }
   }
   return ev;
 }
 
+const plural = (n: number, one: string, many: string = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
 // Status of a keyed market-data adapter that sits in the assistant chain,
 // from the self-test evidence only. A set key is never a health check.
+//
+// The composite walks its adapters in order and falls through only when one
+// gives no usable answer (error, no data, stale quote). So on a request
+// another adapter answered, an adapter AHEAD of it in that leg's chain was
+// tried and gave nothing usable, and one BEHIND it was never called.
+// `legChain` gives that order per leg; an adapter whose place is unknown is
+// never said to have been tried or skipped.
 function observedAdapterStatus(
   id: string,
   label: string,
   ev: AssistantLegEvidence,
+  legChain: (leg: AssistantLeg) => string[],
+  labelOf: (id: string) => string,
 ): { status: "healthy" | "failing" | "unverified"; statusReason: string } {
   const served = ev.servedBy.get(id) ?? 0;
+  const triedBefore = new Map<string, number>();
+  const notCalledBehind = new Map<string, number>();
+  let triedOnCandles = false;
+  let failedEverywhere = 0;
+  for (const r of ev.requests) {
+    if (r.servedBy == null) { failedEverywhere += 1; continue; }
+    if (r.servedBy === id) continue;
+    const chain = legChain(r.leg);
+    const mine = chain.indexOf(id), theirs = chain.indexOf(r.servedBy);
+    if (mine < 0 || theirs < 0) continue;
+    const bucket = mine < theirs ? triedBefore : notCalledBehind;
+    bucket.set(r.servedBy, (bucket.get(r.servedBy) ?? 0) + 1);
+    if (mine < theirs && r.leg === "candles") triedOnCandles = true;
+  }
+  const total = (m: Map<string, number>) => Array.from(m.values()).reduce((a, b) => a + b, 0);
+  const names = (m: Map<string, number>) => Array.from(m.keys()).map(labelOf).join(" / ");
+  const tried = total(triedBefore), skipped = total(notCalledBehind);
+  // Candles come through a 60 s composite cache: a cached answer reflects the
+  // fetch that filled it, which is when the earlier adapter was tried.
+  const cacheNote = triedOnCandles ? "; cached candles reflect the fetch that filled the cache, up to a minute earlier" : "";
+  const triedText = (lead: string) =>
+    `${lead} it was tried before ${names(triedBefore)} and gave no usable answer (an error, no data or a stale quote)${cacheNote}.`;
+
   if (served > 0) {
+    const others = ev.reached - served;
     return {
       status: "healthy",
-      statusReason: `${label} answered ${served} of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot.`,
+      statusReason: `${label} answered ${served} of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot.` +
+        (tried > 0 ? ` ${triedText(tried === others ? `On the other ${tried}` : `On ${plural(tried, "other request")}`)}` : ""),
     };
   }
   if (ev.reached === 0) {
@@ -301,16 +347,33 @@ function observedAdapterStatus(
       statusReason: `Key is set, but no self-test request in this snapshot reached the assistant feed (an earlier provider in the router answered, or the probe could not run), so ${label} was not checked.`,
     };
   }
-  const others = Array.from(ev.servedBy.keys());
-  if (others.length === 0) {
+  if (ev.servedBy.size === 0) {
     return {
       status: "failing",
       statusReason: `All ${ev.reached} self-test requests that reached the assistant feed in this snapshot failed${ev.lastFailure?.reason ? ` — last reason: ${truncate(ev.lastFailure.reason, 200)}` : ""}.`,
     };
   }
+  if (tried > 0 || failedEverywhere > 0) {
+    return {
+      status: "failing",
+      statusReason: `${label} did not answer any of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot.` +
+        (tried > 0 ? ` ${triedText(`On ${tried} of them`)}` : "") +
+        (failedEverywhere > 0
+          ? ` ${plural(failedEverywhere, "request")} failed with no adapter answering${ev.lastFailure?.reason ? ` — last reason: ${truncate(ev.lastFailure.reason, 200)}` : ""}.`
+          : "") +
+        (skipped > 0 ? ` It was not called on ${skipped}, where ${names(notCalledBehind)} answered first.` : ""),
+    };
+  }
+  if (skipped > 0) {
+    return {
+      status: "unverified",
+      statusReason: `${label} was not called on any of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot: ${names(notCalledBehind)} answered first, and the composite only falls through to ${label} when the adapters ahead of it fail. Not checked.`,
+    };
+  }
+  const others = Array.from(ev.servedBy.keys()).map(labelOf);
   return {
     status: "unverified",
-    statusReason: `${label} did not answer any of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot (${others.join(", ")} did), so it was not confirmed working.`,
+    statusReason: `${others.join(" / ")} answered the ${ev.reached} self-test requests that reached the assistant feed in this snapshot; whether ${label} was called is not known, so it was not checked.`,
   };
 }
 
@@ -567,10 +630,17 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
   const ADAPTER_LABELS: Record<string, string> = {
     twelve_data: "Twelve Data", polygon: "Polygon", finnhub: "Finnhub", alpha_vantage: "Alpha Vantage",
   };
+  // The TD + Finnhub hybrid sits in the "twelve_data" slot but serves quotes
+  // from Finnhub, so on the quote leg that slot is Finnhub.
+  const hybridSlot = finnhubConfigured && tdConfigured && assistantChain.includes("twelve_data");
+  const legChain = (leg: AssistantLeg): string[] => leg === "quote" && hybridSlot
+    ? assistantChain.map((id) => (id === "twelve_data" ? "finnhub" : id))
+    : assistantChain;
+  const labelOf = (id: string) => ADAPTER_LABELS[id] ?? id;
   for (const p of providers) {
     const label = ADAPTER_LABELS[p.id];
     if (!label || !p.configured || !inChain(p.id)) continue;
-    const observed = observedAdapterStatus(p.id, label, legEvidence);
+    const observed = observedAdapterStatus(p.id, label, legEvidence, legChain, labelOf);
     p.status = observed.status;
     p.statusReason = observed.statusReason;
     if (observed.status === "failing") {

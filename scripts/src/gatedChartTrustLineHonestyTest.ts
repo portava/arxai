@@ -42,11 +42,13 @@ const hasForbidden = (s: string) => FORBIDDEN.filter((t) => s.includes(t));
 // 1. THE BUG CASE: W1 read whose gate flags all pass but whose feed is delayed
 //    (available, not stale, NOT aiUsable → basis INSUFFICIENT). The old code
 //    could surface "Verified W1 candles · Live feed · …" here.
+// The feed status grades this feed "delayed" (only that grade is a delayed feed).
 const w1 = buildGatedTrustLine("W1", {
   available: true,
   stale: false,
   aiUsable: false,
   basis: "INSUFFICIENT",
+  quality: "delayed",
 });
 rec(
   1,
@@ -65,6 +67,26 @@ rec(
   "W1 gated line is NOT the leaky success-path string",
   w1 !== "Verified W1 candles · Live feed · Mirror synced · AACI verified",
   w1,
+);
+
+// 3b. A current feed that is not usable for another reason is named for that
+//     reason, never "delayed": gaps (partial), failed integrity (invalid), or
+//     an unknown grade.
+const notDelayed: Array<[string | null | undefined, string]> = [
+  ["partial", "W1 candles syncing · candle sequence incomplete · read gated"],
+  ["invalid", "W1 candles syncing · candles failed integrity checks · read gated"],
+  [null, "W1 candles syncing · feed not confirmed · read gated"],
+  [undefined, "W1 candles syncing · feed not confirmed · read gated"],
+];
+const notDelayedBad = notDelayed
+  .map(([quality, want]): [string, string] =>
+    [buildGatedTrustLine("W1", { available: true, stale: false, aiUsable: false, basis: "INSUFFICIENT", quality }), want])
+  .filter(([got, want]) => got !== want || /delayed/.test(got));
+rec(
+  3.5,
+  "non-delayed unusable feed grades are named, never 'feed delayed'",
+  notDelayedBad.length === 0,
+  notDelayedBad.map(([got, want]) => `got "${got}" want "${want}"`).join(" | "),
 );
 
 // 4. Feed unavailable (rubyCtx null) → honest "feed unavailable".

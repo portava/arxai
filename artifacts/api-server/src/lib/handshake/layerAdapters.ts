@@ -57,7 +57,50 @@ function notAvailable(detail: string): LayerReadiness {
 // market data), and a provider's "healthy" flag is partly configuration, so
 // PASS also needs the snapshot's own symbol probes to have returned candles
 // and a quote for every probed symbol. No probe evidence is never a PASS.
+// "Some data came back" is not "the data is current" either: a quote marked
+// STALE or DELAYED still probes ok, so PASS also needs every probed asset
+// class's resolved feed (the same truth the chart shows) to be clean.
 const MARKET_DATA_CATEGORIES: ReadonlySet<string> = new Set(["broker", "synthetic", "market_data"]);
+
+type ActivityRow = {
+  assetClass?: unknown; representativeSymbol?: unknown; aiUsable?: unknown; feedQuality?: unknown;
+  lastCandleTime?: unknown; lastQuoteTime?: unknown;
+};
+const utcMinute = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+const parsedMs = (v: unknown): number | null => {
+  if (typeof v !== "string") return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/**
+ * Asset classes whose resolved feed is not current (anything but a clean,
+ * AI-usable feed), named with their grade and newest observation, plus the
+ * age of the oldest such observation. null when every class is clean.
+ */
+function feedNotCurrent(rows: ActivityRow[], now: number): { detail: string; ageMs: number | null } | null {
+  const notCurrent = rows.filter((r) => r.aiUsable !== true || r.feedQuality !== "clean");
+  if (notCurrent.length === 0) return null;
+  const newestPerClass: number[] = [];
+  const parts: string[] = [];
+  for (const r of notCurrent) {
+    const cls = typeof r.assetClass === "string" ? r.assetClass : "unknown class";
+    const sym = typeof r.representativeSymbol === "string" ? ` (${r.representativeSymbol})` : "";
+    const quality = typeof r.feedQuality === "string" && r.feedQuality !== "unknown" ? r.feedQuality : null;
+    const candleMs = parsedMs(r.lastCandleTime), quoteMs = parsedMs(r.lastQuoteTime);
+    const newest = candleMs == null ? quoteMs : quoteMs == null ? candleMs : Math.max(candleMs, quoteMs);
+    if (newest != null) newestPerClass.push(newest);
+    const seen = [
+      candleMs != null ? `last candle ${utcMinute(candleMs)}` : null,
+      quoteMs != null ? `last tick ${utcMinute(quoteMs)}` : null,
+    ].filter(Boolean).join(", ");
+    parts.push(quality
+      ? `${cls}${sym} ${quality}${seen ? ` (${seen})` : ""}`
+      : `${cls}${sym} freshness could not be checked`);
+  }
+  const ageMs = newestPerClass.length ? Math.max(0, now - Math.min(...newestPerClass)) : null;
+  return { detail: `feed not current for ${parts.join("; ")}`, ageMs };
+}
 const marketDataAdapter: LayerAdapter = async () => {
   try {
     const snap = await getProviderHealthSnapshot();
@@ -75,8 +118,17 @@ const marketDataAdapter: LayerAdapter = async () => {
     if (probes.length === 0) return notAvailable(`no symbol probe results (${counts})`);
     if (candlesOk === 0 && quotesOk === 0) return notAvailable(`no probed symbol returned candles or a quote (${counts})`);
     const missing = probes.filter((p) => p.candles?.ok !== true || p.quote?.ok !== true).map((p) => p.symbol);
-    if (degraded > 0 || failing > 0 || missing.length > 0) {
-      return { status: "WARN", detail: counts + (missing.length ? `; no data for ${missing.join(", ")}` : ""), ageMs: null };
+    const activity = Array.isArray(snap.assetClassActivity) ? (snap.assetClassActivity as ActivityRow[]) : null;
+    const stale = activity && activity.length > 0 ? feedNotCurrent(activity, Date.now()) : null;
+    const freshnessUnreported = !activity || activity.length === 0;
+    if (degraded > 0 || failing > 0 || missing.length > 0 || stale || freshnessUnreported) {
+      return {
+        status: "WARN",
+        detail: counts + (missing.length ? `; no data for ${missing.join(", ")}` : "") +
+          (stale ? `; ${stale.detail}` : "") +
+          (freshnessUnreported ? "; feed freshness was not reported, so the data is not confirmed current" : ""),
+        ageMs: stale?.ageMs ?? null,
+      };
     }
     return { status: "PASS", detail: counts, ageMs: null };
   } catch {
