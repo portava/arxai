@@ -120,6 +120,19 @@ test("EXECUTION_DISABLED says broker execution was not enabled (switch off) and 
   assert.ok(out.blockers.some((w) => /execution not enabled \(operator execution switch off\)/i.test(w)), "the blocker names the switch state");
 });
 
+// EXECUTION_DISABLED locks readiness again, and tradeDecision.orchestrate()
+// turns a stored LOCKED into a blocker (HOLD), which the paper autopilot skips
+// on. The detail still said "paper trading is not affected".
+test("EXECUTION_DISABLED does not say paper trading is unaffected: the LOCKED check stops the paper autopilot", () => {
+  const out = evaluateReadiness(signals(log("EXECUTION_DISABLED", 20_000)), INPUT);
+  const item = out.checklist.find((c) => c.id === "broker")!;
+  assert.equal(out.status, "LOCKED", "the lock is kept");
+  assert.equal(item.status, "FAIL");
+  assert.doesNotMatch(item.detail, /paper trading is not affected/i);
+  assert.match(item.detail, /does not block manual paper orders/);
+  assert.match(item.detail, /AI trade decision holds and the paper autopilot opens no trades/);
+});
+
 test("PRICE_FEED_DELAYED still blocks but says the feed was delayed, not that the broker was disconnected", () => {
   const out = evaluateReadiness(signals(log("PRICE_FEED_DELAYED", 20_000)), INPUT);
   const item = out.checklist.find((c) => c.id === "broker")!;

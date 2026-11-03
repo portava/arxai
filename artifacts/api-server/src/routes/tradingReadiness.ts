@@ -90,8 +90,10 @@ const BROKER_STATUS_MEANING: Record<string, BrokerStatusMeaning> = {
     kind: "block",
     // The observed state of broker_health_state.executionEnabled, which starts
     // false (schema default) and may never have been switched on: never
-    // worded as an operator action nobody observed.
-    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was not enabled (the operator execution switch was off): no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
+    // worded as an operator action nobody observed. The switch never blocks
+    // PAPER orders, but this verdict LOCKS readiness, and a stored LOCKED
+    // makes tradeDecision.orchestrate() hold (so the paper autopilot skips).
+    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was not enabled (the operator execution switch was off): no new DEMO or LIVE positions can be opened while it stays off. The switch does not block manual paper orders, but it locks this check, so while this is your latest check the AI trade decision holds and the paper autopilot opens no trades",
     short: "execution not enabled (operator execution switch off); the link was up",
   },
   PRICE_FEED_DELAYED: {
