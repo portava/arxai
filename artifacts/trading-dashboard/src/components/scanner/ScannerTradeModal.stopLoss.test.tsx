@@ -80,7 +80,9 @@ describe("ScannerTradeModal — stop-loss check uses the broker spec", () => {
     await flush();
     const body = document.body.textContent ?? "";
     expect(body).not.toMatch(/8-pip floor|pip 0\.01 from the broker spec/);
-    expect(body).toContain("distance from entry could not be checked");
+    // The current spread was checked; the pip floor and slippage buffer were not.
+    expect(body).toContain("It was not checked against a pip-based minimum or slippage buffer: the broker spec gives Crypto symbols a 0.01 price step but no pip size");
+    expect(body).not.toContain("distance from entry could not be checked");
     expect(rrText()).not.toMatch(/1000/);
     expect(rrText()).toContain("—");
   });

@@ -154,7 +154,9 @@ describe("non-forex broker specs give a price step, not a pip size", () => {
     });
     expect(r.distanceChecked).toBe(false);
     expect(r.reason).not.toMatch(/8-pip floor|pip 0\.01/);
-    expect(r.reason).toMatch(/could not be checked/);
+    // The current spread was applied; only the pip-based checks were not.
+    expect(r.reason).toMatch(/not checked against a pip-based minimum or slippage buffer/);
+    expect(r.reason).not.toMatch(/could not be checked/);
     expect(r.reason).toMatch(/0\.01 price step but no pip size/);
     expect(computeValidatedRR(65000, 64999.5, 65500, spec.pipSize)).toBeNull();
   });
@@ -193,6 +195,53 @@ describe("non-forex broker specs give a price step, not a pip size", () => {
     expect(r.adjusted).toBe(true);
     expect(r.sl).toBe(64995);
     expect(r.reason).toMatch(/broker's stop level/);
-    expect(r.reason).toMatch(/could not be checked/);
+    // Checked against the stop level and spread; not against a pip floor.
+    expect(r.reason).toMatch(/not checked against a pip-based minimum or slippage buffer: the broker spec gives Crypto symbols a 0\.01 price step but no pip size/);
+    expect(r.reason).not.toMatch(/could not be checked/);
+  });
+
+  // Round 3 review: the reason said the stop was adjusted to the broker's stop
+  // level and spread and, in the same sentence run, that its distance "could
+  // not be checked". Only the pip floor and slippage buffer were left out.
+  it("adjusted to the broker's stop level: the reason names what was and was not checked, without a contradiction", () => {
+    const spec = stopLossInputsFromBrokerSpec({ ...btc, stopsLevel: 500 });
+    const r = assessStopLoss({
+      symbol: "BTCUSD", side: "BUY", entry: 65000, proposedSl: 64999.5,
+      spread: spec.spread, minStopDistance: spec.minStopDistance, freezeLevel: spec.freezeLevel,
+      pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote, priceStep: spec.priceStep,
+    });
+    expect(r.distanceChecked).toBe(false);
+    expect(r.reason).toBe(
+      "Stop loss too close to entry. Adjusted to the minimum safe distance (the broker's stop level and the current spread). "
+      + "It was not checked against a pip-based minimum or slippage buffer: the broker spec gives Crypto symbols a 0.01 price step but no pip size.",
+    );
+  });
+
+  it("a proposed stop beyond the broker's stop level: says so, and names only the pip checks as not applied", () => {
+    const spec = stopLossInputsFromBrokerSpec({ ...btc, stopsLevel: 500 });
+    const r = assessStopLoss({
+      symbol: "BTCUSD", side: "BUY", entry: 65000, proposedSl: 64990,
+      spread: spec.spread, minStopDistance: spec.minStopDistance,
+      pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote, priceStep: spec.priceStep,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.adjusted).toBe(false);
+    expect(r.reason).toBe(
+      "Stop loss is on the correct side of entry and beyond the broker's stop level and the current spread. "
+      + "It was not checked against a pip-based minimum or slippage buffer: the broker spec gives Crypto symbols a 0.01 price step but no pip size.",
+    );
+  });
+
+  it("with no broker figure at all the distance still could not be checked", () => {
+    const spec = stopLossInputsFromBrokerSpec({ digits: 2, point: 0.01, category: "Crypto", freshness: "STALE" });
+    const r = assessStopLoss({
+      symbol: "BTCUSD", side: "BUY", entry: 65000, proposedSl: 64999.5,
+      spread: spec.spread, minStopDistance: spec.minStopDistance,
+      pipSize: spec.pipSize, pipSizeNote: spec.pipSizeNote, priceStep: spec.priceStep,
+    });
+    expect(r.reason).toBe(
+      "Stop loss is on the correct side of entry. Its distance from entry could not be checked: "
+      + "the broker spec gives Crypto symbols a 0.01 price step but no pip size.",
+    );
   });
 });
