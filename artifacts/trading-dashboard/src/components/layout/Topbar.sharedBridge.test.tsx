@@ -181,3 +181,46 @@ describe("Topbar status drawer — what turns MT5 status on, per viewer", () => 
     expect(drawerText()).toMatch(/"Connect MT5" in the welcome checklist.*System Health · Admin/);
   });
 });
+
+// With MT5 off in the header its status query is disabled, but another page
+// (MT5 Bridge polls the same query key) can fill the shared cache. A disabled
+// observer still returns that cached answer and never refreshes it, so the
+// drawer showed Account, Broker and a plain "Last heartbeat" — frozen at
+// whenever that page last read it — right under "MT5 status: not checked".
+describe("Topbar status drawer — cached status while the header does not read it", () => {
+  const CACHED = {
+    connected: true, mode: "LIVE_LOCKED", route: "OWN_CONNECTION",
+    lastHeartbeatAt: "2026-11-03T09:15:00Z",
+    accountSnapshot: { account: "5550123", broker: "QA Broker", server: "QA-Demo", balance: 1000, equity: 1000, currency: "USD" },
+  };
+
+  it("shows no account, broker or heartbeat from a cache the header does not refresh", () => {
+    unlocks = { mt5: false, simulator: false };
+    mt5Reply = { data: CACHED, isError: false, dataUpdatedAt: Date.now() - 3_600_000 };
+    render(<Topbar />);
+    const drawer = drawerText();
+    expect(drawer).toMatch(/MT5 status\s*not checked/);
+    expect(drawer).not.toMatch(/Account/);
+    expect(drawer).not.toContain("5550123");
+    expect(drawer).not.toMatch(/Broker/);
+    expect(drawer).not.toMatch(/Last heartbeat/);
+  });
+
+  it("shows no saved bot setting from a cache the header does not refresh", () => {
+    unlocks = { mt5: false, simulator: false };
+    botReply = { data: { isRunning: true, isPaused: false, lastScanAt: "2026-11-03T09:15:00Z" }, isError: false };
+    render(<Topbar />);
+    expect(screen.queryByTestId("status-pill-bot")).toBeNull();
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/Saved bot setting/);
+    expect(drawer).not.toMatch(/Last scan recorded/);
+  });
+
+  it("with MT5 on, the polled account and heartbeat still show", () => {
+    mt5Reply = { data: CACHED, isError: false, dataUpdatedAt: Date.now() };
+    render(<Topbar />);
+    const drawer = drawerText();
+    expect(drawer).toContain("5550123");
+    expect(drawer).toMatch(/Last heartbeat/);
+  });
+});

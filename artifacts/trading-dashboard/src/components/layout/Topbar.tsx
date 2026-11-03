@@ -247,8 +247,13 @@ function CompactStatusRow(p: CompactStatusRowProps) {
   // scanner, trading loop or execution path reads it, so it is shown as a
   // saved request in a neutral tone — never as a running or stopped engine.
   // When the latest poll failed, the cached request is not shown as current.
-  const savedBot = p.bot ? savedBotRequest(p.bot) : null;
-  if ((p.unlocks.simulator || p.unlocks.mt5) && savedBot) {
+  // A query this header has disabled can still hand back an answer another
+  // page (MT5 Bridge, Bot Control) left in the shared cache. Nothing here
+  // refreshes it, so it is not shown at all while the header does not read it.
+  const botPolled = p.unlocks.simulator || p.unlocks.mt5;
+  const savedBot = botPolled && p.bot ? savedBotRequest(p.bot) : null;
+  const mt5Read = p.unlocks.mt5 ? p.mt5 : null;
+  if (savedBot) {
     pills.push({ id: "bot", label: "Bot (saved)",
       value: p.botRefreshFailed ? "Not refreshed" : savedBot,
       tone: p.botRefreshFailed ? "warning" : "neutral" });
@@ -279,16 +284,16 @@ function CompactStatusRow(p: CompactStatusRowProps) {
           </p>
         </>
       )}
-      {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
-        <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
+      {(mt5Read?.accountSnapshot?.account ?? mt5Read?.account) != null && (
+        <DetailRow label="Account" value={String(mt5Read?.accountSnapshot?.account ?? mt5Read?.account)} />
       )}
-      {(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker) && (
-        <DetailRow label="Broker" value={String(p.mt5?.accountSnapshot?.broker ?? p.mt5?.broker)} />
+      {(mt5Read?.accountSnapshot?.broker ?? mt5Read?.broker) && (
+        <DetailRow label="Broker" value={String(mt5Read?.accountSnapshot?.broker ?? mt5Read?.broker)} />
       )}
-      {p.mt5?.lastHeartbeatAt && (
+      {mt5Read?.lastHeartbeatAt && (
         <DetailRow
           label={p.mt5RefreshFailed ? "Last heartbeat (as of last read)" : "Last heartbeat"}
-          value={new Date(p.mt5.lastHeartbeatAt as string).toLocaleTimeString()}
+          value={new Date(mt5Read.lastHeartbeatAt as string).toLocaleTimeString()}
         />
       )}
       {savedBot && (
