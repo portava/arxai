@@ -112,8 +112,10 @@ export interface GovernorMetrics {
    * install-wide view too): dailyPnl, weeklyPnl, openPaperTrades,
    * sameSymbolExposure, sampleSize, winRate30d, maxDrawdown and the unsized
    * counts are placeholder 0s, not measurements. Readiness then states that
-   * the 30-day closes could not be loaded (PAPER_CLOSES_UNREADABLE) and
-   * scores no edge points from them.
+   * the 30-day closes could not be loaded (PAPER_CLOSES_UNREADABLE), scores
+   * no risk-discipline or edge points from them, and hard-blocks: through
+   * PAPER_RISK_COUNT_UNREADABLE for a trader, PAPER_BOOK_UNREADABLE in the
+   * install-wide view.
    */
   paperBookUnreadable: boolean;
   /**
@@ -512,10 +514,21 @@ function paperRiskCountUnreadableMessage(m: GovernorMetrics): string {
 const RISK_LIMITS_UNREADABLE_MESSAGE =
   "Your risk limits could not be loaded, so none of them (daily loss, open trades, per-trade risk) can be checked. The Risk Governor refuses new trades while it cannot load your limits, so new paper trades are blocked here until they can be read.";
 
+/**
+ * The PAPER_BOOK_UNREADABLE message (install-wide view only; a trader's view
+ * blocks on PAPER_RISK_COUNT_UNREADABLE): what was not read, which checks
+ * that leaves unrun, and what this readiness check then allows.
+ */
+const PAPER_BOOK_UNREADABLE_MESSAGE =
+  "The paper book could not be loaded, so today's paper loss count, the open paper positions and same-symbol exposure across all paper accounts are not known, "
+  + "and the daily loss, open-trade and same-symbol checks cannot be run. This readiness check does not allow paper trading or the paper autopilot until the paper book can be read.";
+
 function evaluateStatus(
   m: GovernorMetrics,
   cooldowns: Cooldown[],
   overrides: SimulateOverrides | undefined,
+  /** No trader in scope: the operator's install-wide view (and the paper-session manager's check). */
+  installWide: boolean,
 ): { status: OverallStatus; hardBlocks: HardBlock[]; softWarnings: SoftWarning[]; riskFlags: RiskFlag[] } {
   const hardBlocks: HardBlock[] = [];
   const softWarnings: SoftWarning[] = [];
@@ -550,6 +563,12 @@ function evaluateStatus(
   }
   if (m.paperRiskCountUnreadable.length > 0) {
     hardBlocks.push({ code: "PAPER_RISK_COUNT_UNREADABLE", severity: "BLOCK", message: paperRiskCountUnreadableMessage(m), details: { unreadable: m.paperRiskCountUnreadable } });
+  }
+  // With no trader in scope the block above never fires, but an unread paper
+  // book leaves today's loss, the open positions and same-symbol exposure at
+  // placeholder 0s, so the checks below could never fire either: never a pass.
+  if (installWide && m.paperBookUnreadable) {
+    hardBlocks.push({ code: "PAPER_BOOK_UNREADABLE", severity: "BLOCK", message: PAPER_BOOK_UNREADABLE_MESSAGE });
   }
   const riskCountExhausted = paperRiskCountExhausted(m);
   if (riskCountExhausted) {
@@ -602,8 +621,14 @@ function evaluateStatus(
   // ── CAUTION conditions (informational, do not pause) ────────────────────
   let cautionReasons = 0;
   // An unread paper book leaves the closes figures at placeholder 0s: say
-  // they could not be loaded, never "Only 0 closed paper trades".
-  if (m.paperBookUnreadable) { riskFlags.push({ code: "PAPER_CLOSES_UNREADABLE", message: "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known." }); cautionReasons += 1; }
+  // they could not be loaded, never "Only 0 closed paper trades". The
+  // install-wide view reads every paper account, not one trader's.
+  if (m.paperBookUnreadable) {
+    riskFlags.push({ code: "PAPER_CLOSES_UNREADABLE", message: installWide
+      ? "The last 30 days of closed paper trades across all paper accounts could not be loaded, so the sample size, win rate and drawdown are not known."
+      : "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known." });
+    cautionReasons += 1;
+  }
   else if (m.sampleSize < 30) { riskFlags.push({ code: "SMALL_SAMPLE_SIZE", message: `Only ${m.sampleSize} closed paper trades in last 30d.` }); cautionReasons += 1; }
   if (!m.paperBookUnreadable && m.winRate30d > 0 && m.winRate30d < 50) {
     // winRate30d is the stricter risk count: a close of unknown size that won
@@ -630,8 +655,10 @@ function evaluateStatus(
 
 // ── Readiness scoring (0–100, mapped to grade + level) ───────────────────
 function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGrade; level: ReadinessLevel; breakdown: Record<string, number> } {
-  // A. Risk discipline (25): no points from risk facts that were not read.
-  let a = m.paperRiskCountUnreadable.length > 0 || m.riskLimitsUnreadable ? 0 : 25;
+  // A. Risk discipline (25): no points from risk facts that were not read,
+  // in any scope (an unread paper book leaves today's loss, the open
+  // positions and same-symbol exposure at placeholder 0s).
+  let a = m.paperRiskCountUnreadable.length > 0 || m.riskLimitsUnreadable || m.paperBookUnreadable ? 0 : 25;
   if (paperRiskCountExhausted(m) || (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit))) a -= 15;
   else if (m.dailyLossLimit != null && m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
   if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
@@ -727,6 +754,9 @@ function buildNextBestActions(status: OverallStatus, m: GovernorMetrics, hardBlo
   if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_UNREADABLE")) {
     out.push("Re-check once your paper account can be read: until then its risk count is unknown and the Risk Governor refuses new trades.");
   }
+  if (hardBlocks.some(b => b.code === "PAPER_BOOK_UNREADABLE")) {
+    out.push("Re-check once the paper book can be read: until then today's paper loss, the open positions and same-symbol exposure across all paper accounts are not known.");
+  }
   if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_EQUITY_EXHAUSTED")) {
     out.push("Open no new paper trades: the paper risk count leaves no equity for new risk. Review the open positions and the losses behind it.");
   }
@@ -801,7 +831,7 @@ export async function evaluateReadiness(opts: EvaluateOpts = {}): Promise<Govern
   if (missingDataSources.length > 0) log.warn("missing data sources", { missing: missingDataSources });
   log.info("metrics calculated", { metrics });
 
-  const { status, hardBlocks, softWarnings, riskFlags } = evaluateStatus(metrics, cooldowns, opts.simulate);
+  const { status, hardBlocks, softWarnings, riskFlags } = evaluateStatus(metrics, cooldowns, opts.simulate, opts.userId == null);
   log.info("hard blocks found", { count: hardBlocks.length });
   log.info("soft warnings found", { count: softWarnings.length });
 

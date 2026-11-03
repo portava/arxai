@@ -318,14 +318,61 @@ test("an unread paper book never states 'Only 0 closed paper trades' and earns n
       assert.ok(!e.riskFlags.some((f) => /Only 0 closed/.test(f.message)));
       const flag = e.riskFlags.find((f) => f.code === "PAPER_CLOSES_UNREADABLE");
       assert.ok(flag, `scope ${userId}: flags ${e.riskFlags.map((f) => f.code).join(", ")}`);
-      assert.equal(flag.message, "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known.");
+      // The install-wide view is not one trader's: no "Your" there.
+      assert.equal(flag.message, userId == null
+        ? "The last 30 days of closed paper trades across all paper accounts could not be loaded, so the sample size, win rate and drawdown are not known."
+        : "Your closed paper trades for the last 30 days could not be loaded, so the sample size, win rate and drawdown are not known.");
       assert.ok(!e.nextBestActions.some((a) => /grow the sample size/.test(a)), `scope ${userId}: the sample size was not read`);
-      // Section A: 25 points off on the trader's unread risk count (that
-      // block is trader-scoped); section B: the 5 placeholder points off.
+      // Section A: no risk-discipline points from today's loss, open
+      // positions and same-symbol exposure that were not read, in either
+      // scope (fourth safety review, s4-views: the install-wide view kept
+      // all 25 and this test pinned a gap of 5 there); section B: the 5
+      // placeholder points off.
       const gap = read.readinessScore - e.readinessScore;
-      assert.equal(gap, userId == null ? 5 : 25 + 5, `scope ${userId}: score unread ${e.readinessScore}, read ${read.readinessScore}`);
+      assert.equal(gap, 25 + 5, `scope ${userId}: score unread ${e.readinessScore}, read ${read.readinessScore}`);
     } finally {
       state.failBookRead = false;
     }
+  }
+});
+
+// Fourth safety review (s4-views): in the install-wide view (an operator's
+// readiness, and the paper-session manager's HH gate) an unread paper book
+// added no block: today's loss, the open positions and same-symbol exposure
+// stayed placeholder 0s, so the daily loss, open-trade and same-symbol checks
+// could never fire, and the status read PAPER_CAUTION with paper trading and
+// the paper autopilot allowed. The trader-scoped view already blocks on it
+// (PAPER_RISK_COUNT_UNREADABLE). The install-wide view now blocks too, in
+// words that are not one trader's.
+test("install-wide: an unread paper book hard-blocks (PAPER_BOOK_UNREADABLE), never PAPER_CAUTION with paper trading allowed", async () => {
+  state.account = account(10_000);
+  state.closes = [];
+  state.open = [];
+  const run = () => evaluateReadiness({ persist: false, userId: null, log: quiet as never });
+  const read = await run();
+  assert.ok(!read.hardBlocks.some((b) => b.code === "PAPER_BOOK_UNREADABLE"));
+  assert.equal(read.paperTradingAllowed, true, `with the book read: ${read.overallStatus} ${read.hardBlocks.map((b) => b.code).join(", ")}`);
+  try {
+    state.failBookRead = true;
+    const e = await run();
+    assert.equal(e.metrics.paperBookUnreadable, true);
+    assert.deepEqual(e.metrics.paperRiskCountUnreadable, [], "no trader is in scope");
+    assert.ok(!e.hardBlocks.some((b) => b.code === "PAPER_RISK_COUNT_UNREADABLE"), "that block speaks for one trader's risk count");
+    const block = e.hardBlocks.find((b) => b.code === "PAPER_BOOK_UNREADABLE");
+    assert.ok(block, `was PAPER_CAUTION with no block: ${e.overallStatus} ${e.hardBlocks.map((b) => b.code).join(", ") || "none"}`);
+    assert.equal(block.severity, "BLOCK");
+    assert.equal(block.message,
+      "The paper book could not be loaded, so today's paper loss count, the open paper positions and same-symbol exposure across all paper accounts are not known, "
+      + "and the daily loss, open-trade and same-symbol checks cannot be run. This readiness check does not allow paper trading or the paper autopilot until the paper book can be read.");
+    assert.doesNotMatch(block.message, /\byour\b/i);
+    assert.equal(e.overallStatus, "WATCH_ONLY", "was PAPER_CAUTION");
+    assert.equal(e.paperTradingAllowed, false, "was true");
+    assert.equal(e.autopilotAllowed, false, "was true");
+    assert.equal(e.allowedActions.canOpenPaperTrade, false);
+    assert.equal(e.allowedActions.canRunPaperAutopilot, false);
+    assert.equal(e.allowedActions.canManualClosePaperTrade, true);
+    assert.ok(e.nextBestActions.some((a) => /paper book can be read/.test(a)), JSON.stringify(e.nextBestActions));
+  } finally {
+    state.failBookRead = false;
   }
 });
