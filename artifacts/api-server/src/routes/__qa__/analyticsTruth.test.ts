@@ -174,6 +174,56 @@ test("highlights: one profitable symbol is the best and not also the worst", asy
   assert.equal(s.weakestSymbol, null);
 });
 
+// The stored "strategy" columns are read by tradeDecision.orchestrate (the
+// paper autopilot's decision): weakest === symbol is a WARN (+10 risk, no
+// confidence), strongest === symbol a +10 PASS. They keep their 16c8a1a0
+// meaning, plain top and bottom symbol by net P&L of sized trades, so the
+// sign-gated display highlights can never loosen that input.
+test("highlights: the stored columns keep the plain top/bottom ranking the trade decision reads", async () => {
+  // One profitable symbol: it is both the stored strongest and weakest (WARN in
+  // the trade decision, as before), while the card shows no worst symbol.
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  let s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "EURUSD");
+  assert.equal(s.weakestSymbol, null);
+
+  // Two profitable symbols: the less profitable one is the stored weakest.
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD" }),
+      order({ id: 2, symbol: "GBPUSD", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.301, exitPrice: 1.301 }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "GBPUSD");
+  assert.equal(s.strongestSymbol, "EURUSD");
+  assert.equal(s.weakestSymbol, null, "the card names no worst symbol when none is net losing");
+
+  // Every symbol losing: the stored ranking is unchanged from 16c8a1a0 too.
+  setRows({
+    paper_orders: [
+      order({ id: 1, symbol: "EURUSD", exitPrice: 1.084, status: "CLOSED_SL" }),
+      order({ id: 2, symbol: "GBPUSD", entryPrice: 1.3, stopLoss: 1.29, takeProfit: 1.32, exitPrice: 1.29, status: "CLOSED_SL" }),
+    ],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  s = await mod.computeSnapshot(7);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, "EURUSD");
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, "GBPUSD");
+  assert.equal(s.strongestSymbol, null);
+
+  // No sized closed trade: nothing ranks, as before.
+  setRows({ paper_orders: [order({ id: 1, symbol: "US30", entryPrice: 42000, stopLoss: 41900, takeProfit: 42200, exitPrice: 42200 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  s = await mod.computeSnapshot(7);
+  assert.equal(s.pnlCoverage.sizedTrades, 0);
+  assert.equal(mod.toSnapshotRow(s).strongestStrategy, null);
+  assert.equal(mod.toSnapshotRow(s).weakestStrategy, null);
+});
+
 test("highlights: edge slices come from the edge board's current, re-derived reports", async () => {
   setRows({
     paper_orders: [], trader_skill_profiles: [], post_trade_debriefs: [],
@@ -235,6 +285,81 @@ test("unmeasured: a skill profile with no debriefs does not score discipline, ex
   assert.equal(mod.toSnapshotRow(s).profitFactor, 999, "stored exactly as before");
 });
 
+// Trader Skill scores execution only from checklist answers and emotional
+// control only from a recorded emotion; with neither it stores 0. Automatic
+// debriefs (written on every paper close) have an empty checklist and no
+// emotion, so they are evidence for discipline only.
+const PROFILE_AT = new Date("2026-10-27T09:00:00Z");
+function skillProfile(over: Record<string, unknown> = {}) {
+  return { id: 1, userId: 7, disciplineScore: 40, executionScore: 0, consistencyScore: 0, emotionalControlScore: 0,
+    updatedAt: PROFILE_AT, ...over };
+}
+function autoDebrief(id: number, createdAt: Date) {
+  return { id, userId: 7, tradeId: id, followedPlan: 1, traderEmotionAfter: null, checklist: [],
+    createdBy: "SYSTEM_AUTO_DEBRIEF", createdAt };
+}
+
+test("unmeasured: automatic debriefs alone do not measure execution or emotional control", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile()],
+    post_trade_debriefs: [autoDebrief(1, new Date("2026-10-26T09:00:00Z")), autoDebrief(2, new Date("2026-10-26T10:00:00Z"))],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.executionScoreAvg, null, "no checklist answers: execution was not measured");
+  assert.equal(s.emotionalScoreAvg, null, "no recorded emotion: emotional control was not measured");
+  assert.match(s.unmeasured["executionScoreAvg"]!, /checklist answers/);
+  assert.match(s.unmeasured["emotionalScoreAvg"]!, /records how you felt/);
+  // Discipline is scored from every debrief's followed-plan flag.
+  assert.equal(s.disciplineScoreAvg, 40);
+});
+
+test("unmeasured: a profile computed before any debrief does not count later debriefs as its evidence", async () => {
+  const after = new Date("2026-10-28T09:00:00Z");
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ disciplineScore: 0 })],
+    post_trade_debriefs: [{ ...autoDebrief(1, after), traderEmotionAfter: "CALM", checklist: [{ id: "q1", answer: "YES" }] }],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.disciplineScoreAvg, null);
+  assert.equal(s.executionScoreAvg, null);
+  assert.equal(s.emotionalScoreAvg, null);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /from before your Trader Skill profile was computed/);
+  assert.match(s.unmeasured["disciplineScoreAvg"]!, /Recalculate/);
+});
+
+test("measured: a pillar the profile scored above 0 was measured, even with its debriefs out of the read window", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ executionScore: 80, emotionalControlScore: 60 })],
+    // Only automatic debriefs written after the profile are in the newest window.
+    post_trade_debriefs: [autoDebrief(1, new Date("2026-10-28T09:00:00Z"))],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.executionScoreAvg, 80);
+  assert.equal(s.emotionalScoreAvg, 60);
+  assert.equal(s.disciplineScoreAvg, 40);
+  assert.equal(mod.toSnapshotRow(s).executionScoreAvg, 80, "the stored row keeps the profile's score");
+});
+
+test("measured: checklist answers and a recorded emotion before the profile measure their pillars", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    trader_skill_profiles: [skillProfile({ executionScore: 100, emotionalControlScore: 100 })],
+    post_trade_debriefs: [{ ...autoDebrief(1, new Date("2026-10-26T09:00:00Z")), createdBy: "USER",
+      traderEmotionAfter: "CALM", checklist: [{ id: "q1", answer: "YES" }] }],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.executionScoreAvg, 100);
+  assert.equal(s.emotionalScoreAvg, 100);
+  assert.equal(s.unmeasured["executionScoreAvg"], undefined);
+});
+
 test("unmeasured: a trade with no stop distance has no R and is not counted as 0R", async () => {
   setRows({
     paper_orders: [order({ id: 1 }), order({ id: 2, stopLoss: 1.085 })],
@@ -255,7 +380,9 @@ test("unmeasured: GET /analytics/snapshot sends the nulls in current", async () 
 
 // ── One paper book, consistent figures across boards ────────────────────────
 function debrief(id: number, emotion: string) {
-  return { id, userId: 7, paperOrderId: id, followedPlan: 1, traderEmotionAfter: emotion, checklist: [] };
+  // Written before the profile below was computed (created_at is NOT NULL).
+  return { id, userId: 7, paperOrderId: id, followedPlan: 1, traderEmotionAfter: emotion, checklist: [],
+    createdAt: new Date("2026-10-26T09:00:00Z") };
 }
 
 test("consistency: Emotional is Trader Skill's emotional control score, not a CALM-only share", async () => {

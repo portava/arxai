@@ -207,30 +207,62 @@ export async function computeSnapshot(userId: number) {
   const weakestEdgeSlice = negative[0] ? describeEdgeSlice(negative[0]) : null;
   // Stored columns keep their names (no schema change): the "strategy"
   // columns have always held a symbol, the "market condition" columns a slice.
-  const strongestStrategy = strongestSymbol;
-  const weakestStrategy = weakestSymbol;
+  // The "strategy" columns also keep their meaning — the plain top and bottom
+  // symbol by net P&L, so one traded symbol is both — because
+  // tradeDecision.orchestrate (the paper autopilot's decision) reads them:
+  // weakest === symbol is a WARN, strongest === symbol a +10 PASS. The
+  // sign-gated strongestSymbol / weakestSymbol above are display-only, so the
+  // truthful cards can never loosen that decision input.
+  const strongestStrategy = top?.[0] ?? null;
+  const weakestStrategy = bottom?.[0] ?? null;
   const strongestMarketCondition = strongestEdgeSlice?.edgeName ?? null;
   const weakestMarketCondition = weakestEdgeSlice?.edgeName ?? null;
 
   // Behavioral averages. Discipline, execution and consistency come from the
   // Trader Skill profile, which is null when none has been computed (they
-  // read 0/100, a failing score, for a user nothing was measured on). The
-  // profile's discipline and execution pillars are measured only from
-  // post-trade debriefs (traderSkill computeSubScores), and consistency only
-  // from edge reports, so with none of those the stored 0 is a placeholder.
+  // read 0/100, a failing score, for a user nothing was measured on). Each
+  // pillar counts as measured only from its own evidence, as Trader Skill
+  // (computeSubScores) scores it, and only from debriefs that existed when the
+  // profile was computed — a profile computed before them stored 0 for want
+  // of data. Discipline reads every debrief's followed-plan flag; execution
+  // only checklist answers; emotional control only a recorded emotion. An
+  // automatic debrief (written on every paper close) has an empty checklist
+  // and no emotion. Consistency is measured only from edge reports.
   const sk = skill[0] ?? null;
-  const hasDebriefs = debriefs.length > 0;
+  const msOf = (v: unknown): number =>
+    v instanceof Date ? v.getTime() : typeof v === "string" ? Date.parse(v) : NaN;
+  const profileMs = msOf(sk?.updatedAt);
+  const debriefsBeforeProfile = debriefs.filter((d) => {
+    const at = msOf(d.createdAt);
+    return Number.isFinite(at) && Number.isFinite(profileMs) && at <= profileMs;
+  });
+  const hasDebriefs = debriefsBeforeProfile.length > 0;
+  const hasChecklistAnswers = debriefsBeforeProfile.some((d) => Array.isArray(d.checklist) && d.checklist.length > 0);
+  const hasRecordedEmotion = debriefsBeforeProfile.some((d) => typeof d.traderEmotionAfter === "string" && d.traderEmotionAfter !== "");
   const hasEdgeReports = edges.length > 0;
   // Emotional control is the Trader Skill profile's own score, so this board
   // and Trader Skill give one number. It used to be the CALM share of the
   // last 200 debriefs (NEUTRAL and RELIEVED counted as not calm, no revenge
   // penalty), which disagreed with Trader Skill's "Emotional control".
-  const emotionalScoreAvg: number | null = sk && hasDebriefs ? sk.emotionalControlScore : null;
-  const disciplineScoreAvg: number | null = sk && hasDebriefs ? sk.disciplineScore : null;
-  const executionScoreAvg: number | null = sk && hasDebriefs ? sk.executionScore : null;
+  // A pillar the profile scored above 0 was measured (Trader Skill stores 0
+  // when it has no evidence), even if its debriefs are older than the newest
+  // 200 read here. So a stored value only ever changes from a measured score
+  // to null when that score is 0, and the stored row is as before.
+  const measured = (score: number, evidence: boolean): boolean => score > 0 || evidence;
+  const emotionalScoreAvg: number | null =
+    sk && measured(sk.emotionalControlScore, hasRecordedEmotion) ? sk.emotionalControlScore : null;
+  const disciplineScoreAvg: number | null = sk && measured(sk.disciplineScore, hasDebriefs) ? sk.disciplineScore : null;
+  const executionScoreAvg: number | null = sk && measured(sk.executionScore, hasChecklistAnswers) ? sk.executionScore : null;
   const consistencyScoreAvg: number | null = sk && hasEdgeReports ? sk.consistencyScore : null;
   const noProfile = "No Trader Skill profile has been computed yet.";
-  const noDebriefs = "No post-trade debriefs yet.";
+  // The debrief read is the newest 200, so say which debriefs were looked at.
+  const debriefScope = debriefs.length >= 200 ? "of your latest 200 post-trade debriefs" : "of your post-trade debriefs";
+  const debriefWhy = (lacking: string): string =>
+    debriefs.length === 0
+      ? "No post-trade debriefs yet."
+      : !hasDebriefs
+        ? `None ${debriefScope} is from before your Trader Skill profile was computed. Recalculate it on Trader Skill to score this.`
+        : `None ${debriefScope} from before your Trader Skill profile was computed ${lacking}.`;
   const unmeasured: Record<string, string> = {};
   if (winRate == null) unmeasured["winRate"] = "No closed paper trades yet.";
   if (!sized) {
@@ -242,9 +274,13 @@ export async function computeSnapshot(userId: number) {
       : "No winning or losing trade yet (every sized trade broke even).";
   }
   if (averageRr == null) unmeasured["averageRr"] = totalTrades ? "No closed trade has a stop distance to measure R from." : "No closed paper trades yet.";
-  if (disciplineScoreAvg == null) unmeasured["disciplineScoreAvg"] = !sk ? noProfile : noDebriefs;
-  if (executionScoreAvg == null) unmeasured["executionScoreAvg"] = !sk ? noProfile : noDebriefs;
-  if (emotionalScoreAvg == null) unmeasured["emotionalScoreAvg"] = !sk ? noProfile : noDebriefs;
+  if (disciplineScoreAvg == null) unmeasured["disciplineScoreAvg"] = !sk ? noProfile : debriefWhy("records whether you followed your plan");
+  if (executionScoreAvg == null) {
+    unmeasured["executionScoreAvg"] = !sk ? noProfile : debriefWhy("has checklist answers (automatic debriefs have none)");
+  }
+  if (emotionalScoreAvg == null) {
+    unmeasured["emotionalScoreAvg"] = !sk ? noProfile : debriefWhy("records how you felt (automatic debriefs do not)");
+  }
   if (consistencyScoreAvg == null) unmeasured["consistencyScoreAvg"] = !sk ? noProfile : "No edge reports yet.";
 
   return {

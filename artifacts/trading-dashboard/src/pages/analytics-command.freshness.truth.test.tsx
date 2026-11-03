@@ -80,6 +80,24 @@ describe("Analytics Command Center highlights", () => {
   });
 });
 
+describe("Analytics Command Center saved symbol highlights", () => {
+  // The stored "strategy" columns are the plain top and bottom symbol by net
+  // P&L (the trade decision reads them), so a saved row can name a losing
+  // symbol as the top one, and one traded symbol as both.
+  it("a saved snapshot's best / worst symbol says it is a ranking, not a profit or loss", async () => {
+    serve({ snapshot: { ...SAVED, strongestStrategy: "EURUSD", weakestStrategy: "EURUSD" } });
+    renderPage();
+    const best = await screen.findByTestId("analytics-highlight-best-symbol");
+    expect(best.textContent).toContain("EURUSD");
+    expect(best.textContent).toContain("highest net P&L when the snapshot was saved");
+    expect(best.textContent).toContain("does not record whether it was net profitable");
+    const worst = screen.getByTestId("analytics-highlight-worst-symbol").textContent ?? "";
+    expect(worst).toContain("lowest net P&L when the snapshot was saved");
+    expect(worst).toContain("does not record whether it was net losing");
+    expect(worst).toContain("with one traded symbol it is also the best");
+  });
+});
+
 describe("Analytics Command Center unmeasured figures", () => {
   it("a new user's tiles read — with the reason, not 0 / 0% / $0 in red", async () => {
     serve({
@@ -128,6 +146,51 @@ describe("Analytics Command Center unmeasured figures", () => {
     const pf = await screen.findByTestId("analytics-stat-profit-factor");
     expect(pf.textContent).toBe("Profit factor—");
     expect(screen.getByTestId("analytics-unmeasured").textContent).toContain("No losing trade");
+  });
+});
+
+describe("Analytics Command Center saved-snapshot fallback", () => {
+  // The saved row's columns are NOT NULL: a figure or score it could not
+  // measure was stored as 0, the same as a measured 0.
+  const SAVED_ZEROS = {
+    ...SAVED, totalTrades: 3, winRate: 0, netProfitLoss: 0, expectancy: 0, averageRr: 0, profitFactor: 0, maxDrawdown: 0,
+    disciplineScoreAvg: 0, executionScoreAvg: 0, emotionalScoreAvg: 0, consistencyScoreAvg: 55,
+    strongestMarketCondition: "symbol=EURUSD", weakestMarketCondition: "symbol=GBPUSD",
+  };
+
+  it("a stored 0 money figure is not shown as $0 — the saved row cannot tell measured from not", async () => {
+    serve({ snapshot: SAVED_ZEROS });
+    renderPage();
+    const pnl = await screen.findByTestId("analytics-stat-net-pnl");
+    expect(pnl.textContent).toBe("Net P&L (USD)—");
+    expect(screen.getByTestId("analytics-stat-expectancy").textContent).toBe("Expectancy—");
+    expect(screen.getByTestId("analytics-stat-max-dd").textContent).toBe("Max DD—");
+    expect(screen.getByTestId("analytics-stat-avg-rr").textContent).toBe("Avg RR—");
+    expect(screen.getByTestId("analytics-stat-profit-factor").textContent).toBe("Profit factor—");
+    // A win rate needs no sizing: 0% of 3 closed trades is a result.
+    expect(screen.getByTestId("analytics-stat-win-rate").textContent).toBe("Win rate0.0%");
+    expect(screen.getByTestId("analytics-unmeasured").textContent).toMatch(/saved snapshot stores 0 both for a measured 0 and for a figure it could not measure/);
+  });
+
+  it("a stored 0 behaviour score is — with the reason, not a red 0/100", async () => {
+    serve({ snapshot: SAVED_ZEROS });
+    renderPage();
+    const disc = await screen.findByTestId("consistency-Discipline");
+    expect(disc.textContent).toContain("—");
+    expect(disc.textContent).toMatch(/saved snapshot stores 0/);
+    expect(disc.querySelector(".text-red-300")).toBeNull();
+    expect(screen.getByTestId("consistency-Consistency").textContent).toContain("55");
+  });
+
+  it("the saved edge-slice cards do not claim a ranking the row does not record", async () => {
+    serve({ snapshot: SAVED_ZEROS });
+    renderPage();
+    const strongest = (await screen.findByTestId("analytics-highlight-strongest-edge")).textContent ?? "";
+    expect(strongest).toContain("symbol=EURUSD");
+    expect(strongest).not.toMatch(/highest confidence score/);
+    expect(strongest).toMatch(/does not record how it was ranked/);
+    const weakest = screen.getByTestId("analytics-highlight-weakest-edge").textContent ?? "";
+    expect(weakest).not.toMatch(/lowest confidence score/);
   });
 });
 

@@ -74,6 +74,18 @@ function snapshotCheckOf(
     ? "matches" : "differs";
 }
 
+// A saved snapshot stores the plain top and bottom symbol by net P&L (the
+// trade decision reads those columns), not the live, sign-checked best/worst.
+const SAVED_BEST_SYMBOL_BASIS =
+  "The symbol with the highest net P&L when the snapshot was saved. The saved snapshot does not record whether it was net profitable.";
+// Snapshots saved before the edge board ranking ranked raw edge reports by
+// confidence alone; later ones by edge status, then confidence. The row does
+// not record which, so the card names the slice without claiming a ranking.
+const SAVED_EDGE_SLICE_BASIS =
+  "The edge slice named in the saved snapshot. The saved snapshot does not record how it was ranked, and it is not your results in a market condition.";
+const SAVED_WORST_SYMBOL_BASIS =
+  "The symbol with the lowest net P&L when the snapshot was saved. The saved snapshot does not record whether it was net losing, and with one traded symbol it is also the best.";
+
 /** GET /analytics/snapshot: the last saved snapshot and the figures computed now. */
 interface SnapshotResponse {
   snapshot: AnalyticsSnapshot | null;
@@ -311,7 +323,7 @@ export default function AnalyticsCommandCenter() {
                 ? <Loading text="Loading session performance…" />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
-                : <SessionHeatmap data={sess.data?.session ?? {}} basis={sess.data?.sessionBasis} />}
+                : <SessionHeatmap data={sess.data?.session ?? null} basis={sess.data?.sessionBasis} loading={sess.isPending} />}
           </div>
 
           {emo.isError
@@ -328,7 +340,7 @@ export default function AnalyticsCommandCenter() {
                 ? <Loading text="Loading strategy analytics…" />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={coverage.note} />
-                : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />}
+                : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} coverage={strat.data?.pnlCoverage ?? null} loading={strat.isPending} />}
           </section>
 
           <section className="grid gap-3 sm:grid-cols-2">
@@ -338,13 +350,13 @@ export default function AnalyticsCommandCenter() {
                 when no closed trade could be sized, and "out of date" when the
                 saved snapshot no longer matches the figures computed now. */}
             <Highlight id="best-symbol"  label="Best symbol (net P&L)"  v={!moneyKnown ? money("") : live ? live.strongestSymbol ?? null : s.strongestStrategy} tone="emerald" empty="No symbol is net profitable"
-              sub={live?.highlightBasis?.symbols ?? "Highest net P&L among symbols when the snapshot was saved."} />
+              sub={live?.highlightBasis?.symbols ?? SAVED_BEST_SYMBOL_BASIS} />
             <Highlight id="worst-symbol" label="Worst symbol (net P&L)" v={!moneyKnown ? money("") : live ? live.weakestSymbol ?? null : s.weakestStrategy} tone="red" empty="No symbol is net losing"
-              sub={live?.highlightBasis?.symbols ?? "Lowest net P&L among symbols when the snapshot was saved."} />
+              sub={live?.highlightBasis?.symbols ?? SAVED_WORST_SYMBOL_BASIS} />
             <Highlight id="strongest-edge" label="Strongest edge slice" v={live ? edgeSliceText(live.strongestEdgeSlice) : s.strongestMarketCondition} tone="emerald" empty="No slice is rated a strong or developing edge"
-              sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the highest confidence score when the snapshot was saved — not your results in a market condition."} />
+              sub={live?.highlightBasis?.edgeSlices ?? SAVED_EDGE_SLICE_BASIS} />
             <Highlight id="weakest-edge" label="Weakest edge slice" v={live ? edgeSliceText(live.weakestEdgeSlice) : s.weakestMarketCondition} tone="red" empty="No slice is rated a weak or no edge"
-              sub={live?.highlightBasis?.edgeSlices ?? "The edge report with the lowest confidence score when the snapshot was saved — not your results in a market condition."} />
+              sub={live?.highlightBasis?.edgeSlices ?? SAVED_EDGE_SLICE_BASIS} />
           </section>
 
           <p className="text-[10px] italic text-slate-500">
@@ -399,22 +411,44 @@ function notMeasuredLine(f: AnalyticsFigures, skip: readonly string[]): string |
 /**
  * A saved snapshot's columns are NOT NULL, so "not measured" was stored as 0
  * (and a profit factor with no losing trade as 999). Downgrade what the row
- * itself shows was not measured; its behaviour scores cannot be told apart.
+ * itself shows was not measured. A stored 0 money figure, R or behaviour score
+ * is ambiguous — a measured 0 and a figure that could not be measured (no
+ * trade sized in USD, no stop distance, no debrief) are stored alike — so it
+ * is "—" with that reason, never a $0 or a red 0/100. A win rate needs no
+ * sizing, so 0% of N closed trades is a result.
  */
+const SAVED_ZERO_WHY =
+  "A saved snapshot stores 0 both for a measured 0 and for a figure it could not measure, so this cannot be told from it. Recompute to see the current figure.";
 function downgradeSaved(r: AnalyticsSnapshot): AnalyticsFigures {
   const noTrades = r.totalTrades === 0;
   const why = "No closed paper trades when this snapshot was saved.";
+  const unmeasured: Record<string, string> = {};
+  const money = (k: string, v: number | null): number | null => {
+    if (noTrades) { unmeasured[k] = why; return null; }
+    if (v === 0) { unmeasured[k] = SAVED_ZERO_WHY; return null; }
+    return v;
+  };
+  const score = (k: string, v: number | null): number | null => {
+    if (v === 0) { unmeasured[k] = SAVED_ZERO_WHY; return null; }
+    return v;
+  };
+  if (noTrades) unmeasured["winRate"] = why;
+  const profitFactor = !noTrades && r.profitFactor === 999
+    ? (unmeasured["profitFactor"] = "No losing trade, so gross win ÷ gross loss is undefined.", null)
+    : money("profitFactor", r.profitFactor);
   return {
     ...r,
-    netProfitLoss: noTrades ? null : r.netProfitLoss,
+    netProfitLoss: money("netProfitLoss", r.netProfitLoss),
     winRate: noTrades ? null : r.winRate,
-    averageRr: noTrades ? null : r.averageRr,
-    expectancy: noTrades ? null : r.expectancy,
-    profitFactor: noTrades || r.profitFactor === 999 ? null : r.profitFactor,
-    maxDrawdown: noTrades ? null : r.maxDrawdown,
-    unmeasured: noTrades
-      ? Object.fromEntries(Object.keys(FIGURE_LABELS).map((k) => [k, why]))
-      : r.profitFactor === 999 ? { profitFactor: "No losing trade, so gross win ÷ gross loss is undefined." } : {},
+    averageRr: money("averageRr", r.averageRr),
+    expectancy: money("expectancy", r.expectancy),
+    profitFactor,
+    maxDrawdown: money("maxDrawdown", r.maxDrawdown),
+    disciplineScoreAvg: score("disciplineScoreAvg", r.disciplineScoreAvg),
+    executionScoreAvg: score("executionScoreAvg", r.executionScoreAvg),
+    emotionalScoreAvg: score("emotionalScoreAvg", r.emotionalScoreAvg),
+    consistencyScoreAvg: score("consistencyScoreAvg", r.consistencyScoreAvg),
+    unmeasured,
   };
 }
 

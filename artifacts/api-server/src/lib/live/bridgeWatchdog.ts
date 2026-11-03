@@ -17,7 +17,7 @@
 // pass — the 16-gate evaluator is the only authority for that and is never
 // bypassed or weakened here.
 
-import { classifyHeartbeatAt } from "../brokerHub/freshness.js";
+import { classifyHeartbeatAt, heartbeatAgeSecondsFrom } from "../brokerHub/freshness.js";
 
 export type BridgeLiveness = "fresh" | "stale" | "offline" | "revoked";
 
@@ -86,9 +86,9 @@ export function classifyBridge(input: BridgeWatchdogInput): BridgeWatchdogVerdic
     };
   }
 
-  const ageSeconds = input.lastHeartbeat
-    ? Math.max(0, Math.floor((now.getTime() - input.lastHeartbeat.getTime()) / 1000))
-    : null;
+  // Null when never seen or dated after the server's clock (age cannot be
+  // verified), never clamped to 0s.
+  const ageSeconds = heartbeatAgeSecondsFrom(input.lastHeartbeat ?? null, now.getTime());
 
   // Shared heartbeat policy (owner decision 17): < 15 s fresh, < 60 s
   // "stale" (the policy's degraded band, watchdog vocabulary kept), >= 60 s,
@@ -121,7 +121,7 @@ export function classifyBridge(input: BridgeWatchdogInput): BridgeWatchdogVerdic
     conditions,
     shouldAlert,
     alertSeverity,
-    summary: buildSummary(liveness, ageSeconds, conditions),
+    summary: buildSummary(liveness, ageSeconds, conditions, input.lastHeartbeat != null),
   };
 }
 
@@ -129,11 +129,17 @@ function buildSummary(
   liveness: BridgeLiveness,
   ageSeconds: number | null,
   conditions: BridgeCondition[],
+  heartbeatSeen: boolean,
 ): string {
   const head =
     liveness === "fresh" ? `Bridge healthy (heartbeat ${ageSeconds}s ago).`
       : liveness === "stale" ? `Bridge heartbeat is stale (${ageSeconds}s ago).`
-      : liveness === "offline" ? (ageSeconds == null ? "Bridge has never sent a heartbeat." : `Bridge is offline (last heartbeat ${ageSeconds}s ago).`)
+      : liveness === "offline"
+        ? (ageSeconds != null
+          ? `Bridge is offline (last heartbeat ${ageSeconds}s ago).`
+          : heartbeatSeen
+            ? "Bridge counts as offline: its last heartbeat is dated after the server's clock, so its age cannot be verified."
+            : "Bridge has never sent a heartbeat.")
       : "Bridge token revoked.";
   if (conditions.length === 0) return head;
   return `${head} Conditions: ${conditions.join(", ")}.`;
