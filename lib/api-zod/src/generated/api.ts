@@ -17734,6 +17734,12 @@ export const GetMePendingOrderDraftsResponse = zod.object({
         status: zod.string().optional(),
         reason: zod.string().nullish(),
         createdAt: zod.coerce.date().optional(),
+        updatedAt: zod.coerce
+          .date()
+          .nullish()
+          .describe(
+            "When the draft row was last written (saved, or its pendingStatus and reason rewritten by submit). pendingStatus and reason are as of this time.",
+          ),
         currentPendingStatus: zod
           .string()
           .nullish()

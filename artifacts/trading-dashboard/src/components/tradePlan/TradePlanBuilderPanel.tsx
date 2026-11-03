@@ -79,6 +79,25 @@ function refusedBeforeChange(e: unknown): boolean {
   return typeof status === "number" && status >= 400 && status < 500;
 }
 
+// A READY plan whose latest validate in this session did not produce a result
+// is never badged as a green READY. A refusal (4xx) does not change the stored
+// status, so that READY is from the earlier check. A validate whose outcome is
+// unknown (5xx / lost response) may have committed READY before it failed, so
+// that READY may be from this request or the earlier check: it is unconfirmed.
+const READY_EARLIER_LABEL = "READY (earlier check)";
+const READY_UNCONFIRMED_LABEL = "READY (unconfirmed)";
+const READY_EARLIER_COLOR = "bg-amber-700 text-amber-50";
+
+function statusBadge(
+  status: Status,
+  validateFailure: { refused: boolean } | null | undefined,
+): { label: string; color: string } {
+  if (status === "READY" && validateFailure) {
+    return { label: validateFailure.refused ? READY_EARLIER_LABEL : READY_UNCONFIRMED_LABEL, color: READY_EARLIER_COLOR };
+  }
+  return { label: STATUS_LABEL[status] ?? status, color: STATUS_COLORS[status] };
+}
+
 /**
  * A validate the server refused (4xx: before any change, e.g. a 409 news /
  * portfolio block) or whose outcome is unknown (5xx: validate may have
@@ -127,10 +146,13 @@ export function TradePlanBuilderPanel() {
   useEffect(() => { setForm(active ?? {}); }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The latest validate attempt that did not produce a result, per plan. A
-  // refusal (409) leaves the stored status as it was, so an earlier READY is
-  // still on the row: it is labelled as from an earlier check and cannot be
-  // sent from here until a validate passes again.
-  const [validateFailure, setValidateFailure] = useState<{ planId: number; refused: boolean; message: string } | null>(null);
+  // refusal (4xx) leaves the stored status as it was, so an earlier READY is
+  // still on the row: it is labelled as from an earlier check. After a failure
+  // whose outcome is unknown (5xx / lost response) a READY is labelled as
+  // unconfirmed. Either way it cannot be sent from here until a validate
+  // passes again. Validating one plan clears only that plan's entry. Nothing
+  // is stored on the server, so a reload loses it.
+  const [validateFailures, setValidateFailures] = useState<Record<number, { refused: boolean; message: string }>>({});
   // What the latest successful validate said about Chart Truth, per plan. GET
   // does not carry it (it is a reading of the chart at that moment), so it is
   // kept from the validate response and dropped when the plan is saved again.
@@ -171,10 +193,13 @@ export function TradePlanBuilderPanel() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
+  // The plan id is the mutation variable: the user can select another plan
+  // while a validate is in flight, and React Query runs onError with the
+  // latest render's closure, so `active` then is a different plan. The result
+  // belongs to the plan that was validated.
   const validate = useMutation({
-    mutationFn: async () => {
-      if (!active) return;
-      const r = await fetch(`/api/trade-plans/${active.id}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    mutationFn: async (planId: number) => {
+      const r = await fetch(`/api/trade-plans/${planId}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       if (!r.ok) {
         const err = (await r.json().catch(() => ({}))) as { error?: string; reason?: string };
         const http = `HTTP ${r.status}`;
@@ -188,7 +213,15 @@ export function TradePlanBuilderPanel() {
       }
       return r.json();
     },
-    onMutate: () => { setValidateFailure(null); setChartCheck(null); },
+    onMutate: (planId: number) => {
+      setValidateFailures((m) => {
+        if (!(planId in m)) return m;
+        const next = { ...m };
+        delete next[planId];
+        return next;
+      });
+      setChartCheck(null);
+    },
     onSuccess: (data: {
       id?: number;
       chartTruthStatus?: PlanChartCheck["status"];
@@ -207,13 +240,13 @@ export function TradePlanBuilderPanel() {
         });
       }
     },
-    onError: (e: Error) => {
-      if (!active) return;
-      setValidateFailure(
-        e instanceof ValidateError
-          ? { planId: active.id, refused: e.refused, message: e.message }
-          : { planId: active.id, refused: false, message: `The validate request failed (${failureDetail(e)}).` },
-      );
+    onError: (e: Error, planId: number) => {
+      setValidateFailures((m) => ({
+        ...m,
+        [planId]: e instanceof ValidateError
+          ? { refused: e.refused, message: e.message }
+          : { refused: false, message: `The validate request failed (${failureDetail(e)}).` },
+      }));
     },
     // Re-read on failure too: a failed answer does not say what the server stored.
     onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
@@ -238,7 +271,7 @@ export function TradePlanBuilderPanel() {
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editable = active && active.status !== "EXECUTED" && active.status !== "CANCELED";
-  const activeValidateFailure = active && validateFailure?.planId === active.id ? validateFailure : null;
+  const activeValidateFailure = active ? validateFailures[active.id] ?? null : null;
   // A DRAFT carrying a checklist was saved after it was validated; the server
   // flags it, and plans edited before that flag existed read the same way.
   const checklistStale = active != null && (active.checklistStale === true || (active.status === "DRAFT" && active.checklist != null));
@@ -307,7 +340,10 @@ export function TradePlanBuilderPanel() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium text-slate-100">{p.symbol ?? "Untitled"}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[p.status]}`}>{STATUS_LABEL[p.status] ?? p.status}</span>
+                {(() => {
+                  const b = statusBadge(p.status, validateFailures[p.id]);
+                  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${b.color}`} data-testid={`trade-plan-status-${p.id}`}>{b.label}</span>;
+                })()}
               </div>
               <div className="text-xs text-slate-400">
                 {p.directionBias ?? "—"} · {p.strategyId ?? "no strategy"}
@@ -337,7 +373,10 @@ export function TradePlanBuilderPanel() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-100">Plan #{active.id}</h2>
-            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[active.status]}`}>{STATUS_LABEL[active.status] ?? active.status}</span>
+            {(() => {
+              const b = statusBadge(active.status, activeValidateFailure);
+              return <span className={`rounded px-2 py-0.5 text-xs font-semibold ${b.color}`} data-testid="trade-plan-status-active">{b.label}</span>;
+            })()}
           </div>
 
           {/* form */}
@@ -398,7 +437,7 @@ export function TradePlanBuilderPanel() {
               <button onClick={() => save.mutate(form)} disabled={!editable || save.isPending} className="rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
                 {save.isPending ? "Saving…" : "Save changes"}
               </button>
-              <button onClick={() => validate.mutate()} disabled={!editable || validate.isPending} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <button onClick={() => validate.mutate(active.id)} disabled={!editable || validate.isPending} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
                 {validate.isPending ? "Validating…" : "Validate plan"}
               </button>
               <button onClick={() => cancel.mutate()} disabled={!editable || cancel.isPending} className="rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm font-semibold text-red-200 disabled:opacity-50">
@@ -432,7 +471,7 @@ export function TradePlanBuilderPanel() {
                       <p className="mt-1 text-xs text-amber-300">
                         Check the plan&apos;s status and checklist once your plans reload.
                         {active.status === "READY"
-                          ? " READY may be from this request or from an earlier check, so it cannot be sent from here until a validation passes again."
+                          ? " READY may be from this request or from an earlier check, and whether it holds now is not known, so it cannot be sent from here until a validation passes again."
                           : ""}
                       </p>
                     )}
@@ -454,7 +493,12 @@ export function TradePlanBuilderPanel() {
           {/* (N) News & economic-event risk — blocks validate when NO_TRADE_WINDOW. */}
           <NewsRiskCard symbol={active.symbol} />
 
-          <TradePlanChecklist checklist={active.checklist} planStatus={active.status} stale={checklistStale} />
+          <TradePlanChecklist
+            checklist={active.checklist}
+            planStatus={active.status}
+            stale={checklistStale}
+            latestValidateFailure={activeValidateFailure}
+          />
 
           {active.executionConfirmationId == null
             ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY" && activeValidateFailure == null} />

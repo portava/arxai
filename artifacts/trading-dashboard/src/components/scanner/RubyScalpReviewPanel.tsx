@@ -28,14 +28,19 @@ import { useAssistantName } from "@/lib/assistant-name";
 // user. 100% read-only: every line is reflection and guidance. No trade
 // buttons, no internal enum tokens visible, plain-English only.
 
+// Only a KNOWN (broker-realised) P/L earns a plain "Win" / "Loss". Every other
+// graded result came from the last floating reading before the close (no
+// commission or swap, and price may have moved after it), so the badge says it
+// is an estimate.
 function resultBadge(entry: ScalpJournalEntry): { label: string; tone: string; icon: typeof CheckCircle2 } {
+  const known = entry.plQuality === "KNOWN";
   switch (entry.result) {
     case "WIN":
-      return { label: "Win", tone: "text-success border-emerald-500/40", icon: CheckCircle2 };
+      return { label: known ? "Win" : "Likely win (estimated)", tone: "text-success border-emerald-500/40", icon: CheckCircle2 };
     case "LOSS":
-      return { label: "Loss", tone: "text-danger border-rose-500/40", icon: XCircle };
+      return { label: known ? "Loss" : "Likely loss (estimated)", tone: "text-danger border-rose-500/40", icon: XCircle };
     case "BREAKEVEN":
-      return { label: "Break-even", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
+      return { label: known ? "Break-even" : "Roughly flat (estimated)", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
     default:
       return { label: "Outcome unclear", tone: "text-warning border-amber-500/40", icon: MinusCircle };
   }
@@ -133,7 +138,9 @@ function PersonalityRow({ p, name }: { p: ScalpSymbolPersonality; name: string }
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {p.tradesClosed} closed
-          {p.winRatePct != null ? ` · ${p.winRatePct}% won` : ""}
+          {/* Wins are graded from the last reading before each close (no
+              broker-realised P/L is recorded), so the share is an estimate. */}
+          {p.winRatePct != null ? ` · ${p.winRatePct}% won (estimated)` : ""}
         </span>
       </div>
 

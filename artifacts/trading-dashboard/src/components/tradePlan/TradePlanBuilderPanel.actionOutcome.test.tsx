@@ -64,7 +64,10 @@ describe("TradePlanBuilderPanel — a 5xx or network failure is an unconfirmed o
     expect(err.textContent).toMatch(/could not confirm whether the plan was validated/i);
     expect(err.textContent).not.toMatch(/not validated/i);
     expect(err.textContent).not.toMatch(/unchanged/i);
-    await waitFor(() => expect(screen.getAllByText("READY").length).toBeGreaterThan(0));
+    // The re-read READY is shown, but not as a green READY: this validate's
+    // outcome is unknown, so the badge says the READY is unconfirmed.
+    await waitFor(() => expect(screen.getByTestId("trade-plan-status-active").textContent).toBe("READY (unconfirmed)"));
+    expect(screen.getByTestId("trade-plan-status-7").textContent).toBe("READY (unconfirmed)");
   });
 
   it("validate with the response lost in transit: could not confirm, status re-read", async () => {

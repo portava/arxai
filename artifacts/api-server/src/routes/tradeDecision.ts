@@ -54,6 +54,7 @@ import {
   getMarketTypeForSymbol,
 } from "../lib/strategyEngine";
 import { getStatus as getSafetyStatus } from "../lib/safetyCore";
+import { LIVE_LOCK_PREFERENCE_NOTE } from "@workspace/domain/safety-permission";
 import { platformStop, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { loadLatestSlices } from "./edgeDiscovery.js";
 import { getMarketData, summarizeForAA, computeBlockers as computeMdBlockers } from "../lib/marketData/marketDataService.js";
@@ -340,7 +341,9 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   } else {
     signalsUsed.push({ source: "riskLocks", status: "PASS", score: 5, detail: "No active locks" });
   }
-  if (risk?.liveLocked) warnings.push("Live trading is locked in risk settings");
+  // A stored preference no live order path reads: say what it is, not that
+  // live trading is locked.
+  if (risk?.liveLocked) warnings.push(LIVE_LOCK_PREFERENCE_NOTE);
 
   // 5) Account + open-position context (paper account is always available).
   // Paper facts through the paper book's read side (owner decision 7).

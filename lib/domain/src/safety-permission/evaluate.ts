@@ -6,6 +6,17 @@ import type {
 } from "./types.js";
 
 /**
+ * risk_settings.liveLocked is a stored preference. This engine lists it as a
+ * blocker, so trade-plan and Pre-Trade Confirmation checks fail while it is
+ * on, but no live order path reads it (live dispatch is gated by live arming
+ * and the Risk Governor). The copy says what it is and does, never that live
+ * trading is locked.
+ */
+export const LIVE_LOCK_PREFERENCE_NOTE =
+  "Your live mode lock preference is on (Risk Settings). Trade-plan and Pre-Trade Confirmation checks fail " +
+  "while it is on, but live orders are not checked against it.";
+
+/**
  * Pure permission engine.
  *
  * Composes existing system state (safetyCore, risk_settings, trader-dna detectors,
@@ -28,7 +39,7 @@ export function evaluatePermission(inputs: PermissionInputs): PermissionVerdict 
   }
 
   if (inputs.liveLocked) {
-    const m = "Live trading is locked by user setting (risk_settings.liveLocked).";
+    const m = LIVE_LOCK_PREFERENCE_NOTE;
     blockers.push(m);
     reasons.push({ code: "LIVE_LOCKED_USER", severity: "BLOCK", message: m });
   }

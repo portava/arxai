@@ -32,6 +32,7 @@ import {
   deriveReview,
   findContinuedEntry,
   higherUrgency,
+  labelEstimatedWinShare,
   storedLegTickets,
   unionLegTickets,
   EMPTY_PERSONALITY_COUNTS,
@@ -461,14 +462,39 @@ function toListItem(r: ScalpJournalEntry): JournalListItem {
   // The stored row is not changed.
   if (r.plQuality === "KNOWN") {
     const item = toListItemAsStored(r);
-    return {
+    return withEstimateReview(r, {
       ...item,
       plQuality: "ESTIMATED",
       lastFloatingPl: item.realizedPl ?? item.lastFloatingPl,
       realizedPl: null,
-    };
+    });
   }
-  return toListItemAsStored(r);
+  return withEstimateReview(r, toListItemAsStored(r));
+}
+
+/**
+ * A closed scalp graded from an estimate gets its review text re-derived from
+ * the row's own stored inputs with the estimate wording. Rows finalized
+ * earlier stored text that states the outcome as fact ("This one worked…",
+ * "it closed at a loss") although the result came from the last floating
+ * reading before the close. The stored row is not changed; the result,
+ * warnedCorrectly and the personality fold are not touched.
+ */
+function withEstimateReview(r: ScalpJournalEntry, item: JournalListItem): JournalListItem {
+  if (item.status !== "CLOSED" || item.plQuality !== "ESTIMATED") return item;
+  const result = item.result as ScalpJournalResult;
+  if (result !== "WIN" && result !== "LOSS" && result !== "BREAKEVEN") return item;
+  const review = deriveReview({
+    result,
+    plQuality: "ESTIMATED",
+    flameStageAtEntry: r.flameStageAtEntry,
+    entryTimingAtEntry: r.entryTimingAtEntry,
+    maxExitUrgency: r.maxExitUrgency as ScalpExitUrgency,
+    flameContinued: r.flameContinued ?? false,
+    addOnCount: r.addOnCount,
+    isSynthetic: r.isSynthetic,
+  });
+  return { ...item, exitReason: review.exitReason, lesson: review.lesson };
 }
 
 function toListItemAsStored(r: ScalpJournalEntry): JournalListItem {
@@ -573,7 +599,9 @@ export async function getSymbolPersonalities(
     avgScoreAtEntry: p.avgScoreAtEntry != null ? Number(p.avgScoreAtEntry) : null,
     // "Cautious" = Ruby is applying a real tightening nudge here.
     cautious: Number(p.qualityBias) < 0 || Number(p.minQualityDelta) > 0,
-    notes: p.notes,
+    // Notes stored earlier say "N% wins"; every result behind that share was
+    // graded from an estimate, so it is reported as estimated.
+    notes: labelEstimatedWinShare(p.notes),
     updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : null,
   }));
   return { symbols, generatedAt: new Date().toISOString() };

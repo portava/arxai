@@ -200,6 +200,70 @@ describe("Trade Plan Builder — a refused validate is shown, not swallowed", ()
     });
   });
 
+  it("after a refusal the READY badges are amber 'earlier check' and the checklist is not green 'Ready'", async () => {
+    const readyChecklist = {
+      items: [{ key: "SL_DEFINED", label: "Stop loss is defined", status: "PASS", detail: "1.095" }],
+      passCount: 9, failCount: 0, warnCount: 0, isReady: true,
+      checkedAtIso: new Date(Date.now() - 3_600_000).toISOString(),
+    };
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200,
+      body: { plans: [
+        plan({ id: 11, symbol: "EURUSD", status: "READY", checklist: readyChecklist }),
+        plan({ id: 12, symbol: "GBPUSD", status: "READY", checklist: readyChecklist }),
+      ] },
+    });
+    routes["POST /api/trade-plans/11/validate"] = () => ({
+      status: 409, body: { error: "NEWS_NO_TRADE_WINDOW", reason: "US Non-Farm Payrolls in 12 minutes." },
+    });
+    routes["POST /api/trade-plans/12/validate"] = () => ({ status: 200, body: plan({ id: 12, status: "READY", checklist: readyChecklist }) });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    expect(screen.getByTestId("trade-plan-status-active").textContent).toBe("READY");
+    expect(screen.getByText(/Ready — plan passes all blocking checks/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    expect(await screen.findByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
+    expect(screen.getByTestId("trade-plan-status-active").textContent).toBe("READY (earlier check)");
+    expect(screen.getByTestId("trade-plan-status-active").className).not.toMatch(/green/);
+    expect(screen.getByTestId("trade-plan-status-11").textContent).toBe("READY (earlier check)");
+    expect(screen.getByTestId("trade-plan-status-12").textContent).toBe("READY");
+    expect(screen.queryByText(/Ready — plan passes all blocking checks/)).toBeNull();
+    const foot = screen.getByTestId("trade-plan-checklist-footer").textContent ?? "";
+    expect(foot).toMatch(/^Passed all blocking checks when it was last validated \(.+\)\. The latest validation did not pass/);
+    expect(foot).toMatch(/does not hold now/);
+
+    // Validating another plan does not clear plan 11's refusal.
+    fireEvent.click(screen.getByRole("button", { name: /GBPUSD/ }));
+    await screen.findByText("Plan #12");
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === "/api/trade-plans/12/validate")).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: /validate plan/i }).textContent).toBe("Validate plan"));
+    expect(screen.getByTestId("trade-plan-status-11").textContent).toBe("READY (earlier check)");
+    fireEvent.click(screen.getByRole("button", { name: /EURUSD/ }));
+    await screen.findByText("Plan #11");
+    expect(screen.getByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a validate that did not finish on a READY plan does not claim the READY fails or holds", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200,
+      body: { plans: [plan({ status: "READY", checklist: { items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true } })] },
+    });
+    routes["POST /api/trade-plans/11/validate"] = () => ({ status: 500, body: { error: "Failed to validate trade plan" } });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    expect(await screen.findByText(/whether it holds now is not known/)).toBeTruthy();
+    expect(screen.queryByText(/does not hold now/)).toBeNull();
+    // The outcome of a 5xx is unknown (validate may have committed READY), so
+    // the READY is badged as unconfirmed rather than as from an earlier check.
+    expect(screen.getByTestId("trade-plan-status-active").textContent).toBe("READY (unconfirmed)");
+    expect(screen.getByTestId("trade-plan-status-active").className).not.toMatch(/green/);
+    expect(screen.getByTestId("trade-plan-checklist-footer").textContent).toMatch(/whether it passes now is not known/);
+  });
+
   it("a failed validate request says it could not be completed", async () => {
     routes["GET /api/trade-plans?limit=20"] = () => ({ status: 200, body: { plans: [plan({ status: "DRAFT" })] } });
     routes["POST /api/trade-plans/11/validate"] = () => ({ status: 500, body: { error: "Failed to validate trade plan" } });
@@ -207,6 +271,47 @@ describe("Trade Plan Builder — a refused validate is shown, not swallowed", ()
     await screen.findByText("Plan #11");
     fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
     expect(await screen.findByText(/could not be completed/i)).toBeTruthy();
+  });
+});
+
+describe("Trade Plan Builder — a validate result belongs to the plan that was validated", () => {
+  it("switching plans while a validate is in flight does not move the refusal to the other plan", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200,
+      body: { plans: [
+        plan({ id: 11, symbol: "EURUSD", status: "READY", checklist: { items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true } }),
+        plan({ id: 12, symbol: "GBPUSD", status: "READY", checklist: { items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true } }),
+      ] },
+    });
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    routes["POST /api/trade-plans/11/validate"] = async () => {
+      await held;
+      return { status: 409, body: { error: "NEWS_NO_TRADE_WINDOW", reason: "US Non-Farm Payrolls in 12 minutes." } };
+    };
+    renderPanel();
+    await screen.findByText("Plan #11");
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === "/api/trade-plans/11/validate")).toBe(true));
+
+    // The user opens plan 12 while plan 11's validate is pending.
+    fireEvent.click(screen.getByRole("button", { name: /GBPUSD/ }));
+    await screen.findByText("Plan #12");
+    release();
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u) === "/api/trade-plans?limit=20").length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Plan 12 was not validated: no refusal on it and its send stays enabled.
+    expect(screen.queryByText(/US Non-Farm Payrolls in 12 minutes/)).toBeNull();
+    expect(screen.queryByText(/server refused to validate this plan/i)).toBeNull();
+    expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(false);
+
+    // Plan 11, the one refused, shows the refusal and cannot be sent.
+    fireEvent.click(screen.getByRole("button", { name: /EURUSD/ }));
+    await screen.findByText("Plan #11");
+    expect(await screen.findByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
+    expect(screen.getByText(/server refused to validate this plan/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

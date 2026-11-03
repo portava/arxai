@@ -84,3 +84,14 @@ test("a placed or cancelled draft gets no 'would submit now' answer", async () =
   const body = await list();
   assert.equal(body.drafts[0].currentPendingStatus, null);
 });
+
+test("each draft carries when its stored status and reason were last written", async () => {
+  connectionsThrow = false;
+  connection = null;
+  const SUBMITTED_AT = new Date("2026-10-28T10:15:00.000Z");
+  fake = createFakeDb({ trade_action_requests: [draftRow({ updatedAt: SUBMITTED_AT, reason: "Your MT5 bridge has not sent a heartbeat in the last minute." })] });
+  const body = await list();
+  const d = body.drafts[0];
+  assert.equal(d.createdAt, SAVED_AT.toISOString(), "createdAt is when it was saved");
+  assert.equal(d.updatedAt, SUBMITTED_AT.toISOString(), "updatedAt is when the recorded status and reason were last rewritten");
+});
