@@ -14,7 +14,7 @@ const profile = {
   settings: { maxRiskPerTradeAmount: null, maxDailyLossAmount: null, maxPositionSize: null, minRewardRiskRatio: 1.5, maxTradesPerDay: 10, maxOpenTrades: 3 },
   effectiveLimits: { maxLotSize: 1, maxDailyLossPercent: 5, maxDailyLossAmount: null, maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null, discipline: { maxTradesPerDay: 10, maxOpenTrades: 3 } },
 };
-const note = "For your loss limits today's realized paper P&L is counted as -$499.90 (booked $95.00), and equity is counted as $9,500.10 (the paper account shows $10,095.00). The Risk Governor counts closed paper trades at the lower of two totals over the same trades, their booked P&L and the paper risk model (price move × lots × 100), so a limit is never checked against a smaller loss or a larger equity than either total gives.";
+const note = "For your loss limits today's realized paper P&L is counted as -$499.90 (booked $95.00), and equity is counted as $9,500.10 (the paper account shows $10,095.00). The Risk Governor counts closed paper trades at the lower of two totals over the same trades, their booked P&L and the paper risk model (price move × lots × 100), and each open position at the lower of its sized value and the paper risk model at the paper venue's current price, never above the floating P&L the account shows, so a limit is never checked against a smaller loss or a larger equity than either basis gives.";
 const budget = {
   venue: "PAPER", dailyRiskLimit: 475.01, dailyRiskUsed: 499.9, dailyRiskRemaining: -24.89, weeklyRiskLimit: null, weeklyRiskUsed: 499.9,
   weeklyRiskRemaining: null, openRisk: 0, openPositions: 0, equity: 9500.1, riskStatus: "BLOCK",

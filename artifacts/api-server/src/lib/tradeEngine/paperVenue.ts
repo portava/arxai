@@ -32,7 +32,9 @@ import {
   db, paperAccountsTable, paperOrdersTable, paperTradeEventsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, eq, isNull } from "drizzle-orm";
-import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
+import {
+  getMockPrice, isMarketPricedPaperOrder, MARKET_PRICED_SIMULATED_OPEN, simulatorExitLevel,
+} from "./paperMark.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
 import { currentQuote } from "./marketQuote.js";
@@ -45,13 +47,10 @@ import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
 
 export const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
-/**
- * strategyId tag of a confirmed SIMULATED open (owner decision 13), booked at
- * a real market quote. Like Build EE orders, mark-to-market never settles it
- * at the synthetic simulator price; its stop/target are settled by the Build
- * EE monitor from real market data.
- */
-export const MARKET_PRICED_SIMULATED_OPEN = "market_priced_simulated_open";
+// The mark price, the market-priced strategy tags and the simulator's exit
+// rule live in ./paperMark.ts, so the Risk Governor reads the same mark
+// without importing this venue.
+export { getMockPrice, MARKET_PRICED_SIMULATED_OPEN };
 
 /** A real market quote with its provenance (source, observation time). */
 export interface PaperQuote { bid: number; ask: number; at: Date; source: string }
@@ -129,20 +128,6 @@ export async function ownPaperOrder(id: number, userId: number) {
   return (await db.select().from(paperOrdersTable)
     .where(and(eq(paperOrdersTable.id, id), eq(paperOrdersTable.userId, userId)))
     .limit(1))[0] ?? null;
-}
-
-// ── Synthetic mark-to-market price ─────────────────────────────────────────
-// Uses the same deterministic candle generator as the backtest engine so the
-// "current" price is reproducible per (symbol, second-bucket) and never
-// requires a real broker quote. Bucket = 60s so prices feel live but stay
-// reproducible within the bucket.
-export function getMockPrice(symbol: string, atMs: number): number {
-  const bucket = Math.floor(atMs / 60_000) * 60_000;
-  const candles = generateDeterministicCandles({
-    symbol, count: 1, timeframe: "M1",
-    seed: `paper-mtm|${bucket}`, baseTimeMs: bucket,
-  });
-  return candles[0]?.close ?? 1;
 }
 
 // ── P&L sizing ───────────────────────────────────────────────────────────
@@ -227,7 +212,7 @@ export const PAPER_SIMULATOR_MARGIN_PER_LOT = 1000;
 
 /** Orders booked at a real market quote; every other order is opened and valued at the simulator's synthetic price. */
 function isMarketPriced(o: Pick<PaperOrderRow, "strategyId">): boolean {
-  return o.strategyId === "build_ee_paper_execution" || o.strategyId === MARKET_PRICED_SIMULATED_OPEN;
+  return isMarketPricedPaperOrder(o);
 }
 
 /**
@@ -365,18 +350,10 @@ export async function markToMarket(accountId: number): Promise<(PaperAccountRow 
     // uses Build DD market data). Mark-to-market must NOT auto-close them
     // with mock prices — refresh unrealized P&L only from a real quote.
     const eeOwned = isMarketPriced(o);
-    let hit: "TP" | "SL" | null = null;
-    if (!eeOwned) {
-      if (o.direction === "BUY") {
-        if (px <= o.stopLoss)         hit = "SL";
-        else if (px >= o.takeProfit)  hit = "TP";
-      } else {
-        if (px >= o.stopLoss)         hit = "SL";
-        else if (px <= o.takeProfit)  hit = "TP";
-      }
-    }
-    if (hit) {
-      const exitPx = hit === "SL" ? o.stopLoss : o.takeProfit;
+    const exit = eeOwned ? null : simulatorExitLevel(o, px);
+    const hit: "TP" | "SL" | null = exit?.hit ?? null;
+    if (exit && hit) {
+      const exitPx = exit.level;
       const r = await sized(o, exitPx);
       const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";
       await settlePaperOrder({

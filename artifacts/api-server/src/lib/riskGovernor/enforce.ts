@@ -41,7 +41,8 @@ import {
   readPaperCloses, countPaperOpenedSinceStillOpen,
 } from "../tradeEngine/paperBookReader.js";
 import { decideContractSize, resolveQuoteToAccountFx, type ResolvedContractSize } from "../mt5/contractSize.js";
-import { PAPER_ACCOUNT_CURRENCY, paperRiskShortfall, paperRiskTotals, resolvePaperContract } from "../paperExecution/paperPnl.js";
+import { PAPER_ACCOUNT_CURRENCY, paperRiskTotals, resolvePaperContract } from "../paperExecution/paperPnl.js";
+import { paperRiskEquity, valueOpenPaperPositions, type PaperRiskEquity } from "../paperExecution/paperOpenRisk.js";
 import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
@@ -269,7 +270,11 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   // closes gave when every close was counted at the model, and equal to one
   // of them (it cannot drift below both). Today's total is taken the same way
   // (sumPaperRealizedSince), with today's booked total carried alongside.
-  let riskShortfall = 0;
+  // Open positions: each at the lower of its sized and its ×100 value at the
+  // price the paper venue marks it at, and never above the floating P&L the
+  // account stores (paperExecution/paperOpenRisk.ts). Read-only: nothing here
+  // settles an order, so preview mode reads the same figure.
+  let risk: PaperRiskEquity | null = null;
   let todayBooked: number | null = null;
   if (acct) {
     const book = { account: acct.id };
@@ -287,17 +292,22 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     realized = await sumPaperRealizedSince(book, startOfTodayUtc(now));
     const dayStart = startOfTodayUtc(now).getTime();
     const closes = await readPaperCloses(book);
-    riskShortfall = paperRiskShortfall(closes);
     const today = paperRiskTotals(closes.filter((c) => c.closedAt.getTime() >= dayStart));
     if (today.risk < today.booked - DISCLOSE_DIFFERENCE) todayBooked = today.booked;
+    const openValue = await valueOpenPaperPositions(open, {
+      now, userId: intent.userId,
+      quote: quote && intent.symbol ? { symbol: intent.symbol, bid: quote.bid, ask: quote.ask, source: quote.source } : null,
+    });
+    risk = paperRiskEquity(acct, closes, openValue);
   }
   inFlight.push(...await loadActionInFlight(intent.userId, "PAPER", now));
-  const riskEquity = acct ? acct.equity + riskShortfall : null;
+  const riskEquity = risk ? risk.equity : null;
   const account: RiskAccount | null = acct ? {
     equity: riskEquity, freeMargin: riskEquity! - acct.marginUsed,
     leverage: PAPER_ACCOUNT_LEVERAGE, currency: "USD", source: `paper_account:${acct.id}`,
-    ...(riskShortfall < -DISCLOSE_DIFFERENCE ? { bookedEquity: acct.equity } : {}),
+    ...(riskEquity! < acct.equity - DISCLOSE_DIFFERENCE ? { bookedEquity: acct.equity } : {}),
   } : null;
+  const floatingLower = risk != null && risk.floating < risk.bookedFloating - DISCLOSE_DIFFERENCE;
 
   let activity: TradingActivity | null = null;
   if (acct) {
@@ -343,8 +353,10 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
       ? { status: "CONNECTED", lastSeenAt: now, detail: "internal paper simulator" }
       : { status: "DISCONNECTED", lastSeenAt: null, detail: "no active paper account" },
     daily: {
-      realizedPnl: realized, floatingPnl: acct ? acct.equity - acct.currentBalance : null,
+      realizedPnl: realized, floatingPnl: risk ? risk.floating : null,
       ...(todayBooked != null && realized != null ? { bookedRealizedPnl: todayBooked } : {}),
+      ...(floatingLower ? { bookedFloatingPnl: risk!.bookedFloating } : {}),
+      ...(floatingLower && risk!.openValuedAtStop.length ? { openValuedAtStop: risk!.openValuedAtStop } : {}),
     },
     activity,
   };

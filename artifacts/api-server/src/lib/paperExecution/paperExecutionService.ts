@@ -93,7 +93,9 @@ async function getActivePaperAccount(ownerUserId: number | null, explicitId?: nu
  *   - equity: the stored equity lowered by the paper risk count of the
  *     account's settled orders (paperRiskShortfall: to the lower of their
  *     booked total and their paper risk model total), as the governor's caps
- *     read it;
+ *     read it for closed trades. The governor also counts open positions no
+ *     higher than their ×100 value (paperOpenRisk), so its equity can be lower
+ *     still; it decides, and its refusal names the figure;
  *   - risk budget: the lower of the percent limit and the money limit.
  * When the contract prices above 100 the lot is floored to the step, so the
  * loss at stop stays inside the budget. The lot is never larger than the

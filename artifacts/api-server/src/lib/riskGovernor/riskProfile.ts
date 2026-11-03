@@ -262,8 +262,9 @@ const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(r2(n)).toLocaleString
 
 /**
  * Plain-English note for a paper risk count that differs from the booked
- * figures (RiskContext.daily.bookedRealizedPnl / account.bookedEquity are set
- * only then). null when the governor counts exactly what was booked.
+ * figures (RiskContext.daily.bookedRealizedPnl / bookedFloatingPnl and
+ * account.bookedEquity are set only then). null when the governor counts
+ * exactly what was booked.
  */
 export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account">): string | null {
   const parts: string[] = [];
@@ -271,12 +272,22 @@ export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account">):
   if (booked != null && ctx.daily.realizedPnl != null) {
     parts.push(`today's realized paper P&L is counted as ${usd(ctx.daily.realizedPnl)} (booked ${usd(booked)})`);
   }
+  const bookedFloating = ctx.daily.bookedFloatingPnl;
+  if (bookedFloating != null && ctx.daily.floatingPnl != null) {
+    parts.push(`open positions are counted at ${usd(ctx.daily.floatingPnl)} (the paper account shows ${usd(bookedFloating)} floating)`);
+  }
   const bookedEq = ctx.account?.bookedEquity;
   if (bookedEq != null && ctx.account?.equity != null) {
     parts.push(`equity is counted as ${usd(ctx.account.equity)} (the paper account shows ${usd(bookedEq)})`);
   }
   if (!parts.length) return null;
-  return `For your loss limits ${parts.join(", and ")}. The Risk Governor counts closed paper trades at the lower of two totals over the same trades, their booked P&L and the paper risk model (price move × lots × 100), so a limit is never checked against a smaller loss or a larger equity than either total gives.`;
+  const at = ctx.daily.openValuedAtStop ?? [];
+  const list = at.length > 1 ? `${at.slice(0, -1).join(", ")} and ${at[at.length - 1]}` : at[0];
+  const stop = !at.length ? ""
+    : at.length === 1
+      ? ` The open ${list} position could not be valued at a current price here (no market quote for it was read), so it is counted at its stop, the most it can lose through its stop.`
+      : ` The open ${list} positions could not be valued at a current price here (no market quote for them was read), so they are counted at their stops, the most they can lose through their stops.`;
+  return `For your loss limits ${parts.join(", and ")}. The Risk Governor counts closed paper trades at the lower of two totals over the same trades, their booked P&L and the paper risk model (price move × lots × 100), and each open position at the lower of its sized value and the paper risk model at the paper venue's current price, never above the floating P&L the account shows, so a limit is never checked against a smaller loss or a larger equity than either basis gives.${stop}`;
 }
 
 export type PropFirmStatusCode = "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "TARGET_REACHED" | "PASSED";
