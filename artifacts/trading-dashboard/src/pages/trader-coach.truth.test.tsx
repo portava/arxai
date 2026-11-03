@@ -20,7 +20,7 @@ function coachReport(checklist: typeof CHECKLIST) {
   return {
     coach_report_id: "c1", generated_at: "2026-10-28T08:00:00.000Z", liveTradingStatus: "DISABLED", reportType: "STATUS",
     traderStatus: {
-      readinessScore: 40, readinessGrade: "D", readinessLevel: "LOW", governorStatus: "PAPER_ALLOWED",
+      readinessScore: 40, readinessGrade: "D", readinessLevel: "LOW", governorStatus,
       paperTradingAllowed: true, autopilotAllowed: false, liveTradingAllowed: false,
     },
     performanceSummary: {}, topStrengths: [], topWeaknesses: [], repeatedMistakes: [], activeRiskFlags: [],
@@ -30,9 +30,11 @@ function coachReport(checklist: typeof CHECKLIST) {
 }
 
 let checklist: typeof CHECKLIST;
+let governorStatus: string;
 
 beforeEach(() => {
   checklist = CHECKLIST;
+  governorStatus = "PAPER_ALLOWED";
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const body = url.includes("/trader-coach/status") ? { coach: coachReport(checklist) }
       : url.includes("/trader-coach/playbook") ? { playbook: [] }
@@ -50,12 +52,61 @@ describe("Trader Coach pre-session checklist", () => {
     render(<TraderCoachPage />);
     const list = await screen.findByTestId("pre-session-checklist");
     expect(list.textContent).not.toMatch(/auto-checked/i);
-    for (const id of ["governor_ok", "daily_loss_ok", "no_cooldown", "data_quality"]) {
+    for (const id of ["daily_loss_ok", "no_cooldown", "data_quality"]) {
       const row = within(list).getByTestId(`checklist-${id}`);
       expect(row.textContent).toMatch(/not checked by this report/i);
       const box = row.querySelector("input[type=checkbox]") as HTMLInputElement;
       expect(box.checked).toBe(false);
     }
+    // The governor row is the one this report did read (see the governor_ok
+    // tests below): it is still unticked, never shown as confirmed.
+    const gov = within(list).getByTestId("checklist-governor_ok").querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(gov.checked).toBe(false);
+  });
+
+  it("governor_ok says which governor status this report read, and when — not 'not checked by this report'", async () => {
+    render(<TraderCoachPage />);
+    const list = await screen.findByTestId("pre-session-checklist");
+    const row = within(list).getByTestId("checklist-governor_ok");
+    expect(row.textContent).not.toMatch(/not checked by this report/i);
+    expect(row.textContent).toMatch(/Risk Governor read as DEMO_ALLOWED/);
+    expect(row.textContent).toMatch(/2026-10-28 08:00 UTC/);
+    // Not LOCKED, so the user may still confirm it (unticked by default).
+    const box = row.querySelector("input[type=checkbox]") as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    expect(box.checked).toBe(false);
+  });
+
+  it("governor_ok keeps 'not checked by this report' when the governor could not be read (UNKNOWN)", async () => {
+    governorStatus = "UNKNOWN";
+    render(<TraderCoachPage />);
+    const list = await screen.findByTestId("pre-session-checklist");
+    const row = within(list).getByTestId("checklist-governor_ok");
+    expect(row.textContent).toMatch(/not checked by this report/i);
+    expect(row.textContent).not.toMatch(/read as/i);
+  });
+
+  it("LOCKED report: governor_ok ('not LOCKED') has no checkbox and does not claim the report never checked it", async () => {
+    governorStatus = "LOCKED";
+    checklist = [
+      { id: "system_locked", label: "STOP — Risk Governor is LOCKED. Do NOT proceed.", required: true, auto: true },
+      ...CHECKLIST,
+    ];
+    render(<TraderCoachPage />);
+    const list = await screen.findByTestId("pre-session-checklist");
+    const row = within(list).getByTestId("checklist-governor_ok");
+    expect(row.querySelector("input")).toBeNull();
+    expect(row.textContent).not.toMatch(/not checked by this report/i);
+    expect(row.textContent).toMatch(/Risk Governor reports LOCKED: this row cannot be confirmed/);
+  });
+
+  it("governorStatus LOCKED without the server's STOP row still leaves governor_ok untickable", async () => {
+    governorStatus = "LOCKED";
+    render(<TraderCoachPage />);
+    const list = await screen.findByTestId("pre-session-checklist");
+    const row = within(list).getByTestId("checklist-governor_ok");
+    expect(row.querySelector("input")).toBeNull();
+    expect(row.textContent).not.toMatch(/not checked by this report/i);
   });
 
   it("the server's LOCKED stop row is shown as a governor finding, not as unchecked", async () => {

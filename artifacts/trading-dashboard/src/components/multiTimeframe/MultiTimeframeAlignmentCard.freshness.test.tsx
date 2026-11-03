@@ -8,7 +8,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MultiTimeframeAlignmentCard, type MultiTimeframeReport } from "./MultiTimeframeAlignmentCard";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+/** Pin the clock the card re-checks stored bar times against (Date only). */
+function atTime(iso: string) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(iso));
+}
 
 type Fresh = "CURRENT" | "STALE" | "UNKNOWN";
 function snap(trend: "UP" | "DOWN" | "SIDEWAYS", newestBarTime: string | null | undefined, freshness: Fresh | undefined) {
@@ -59,22 +65,27 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     expect(text).not.toMatch(/Suggested bias/);
     expect(text).not.toMatch(/is in uptrend/);
     expect(text).toContain(WARNING);
+    // The candles were plentiful (120 per timeframe): not a not-enough-data report.
+    expect(screen.queryByTestId("mtf-insufficient")).toBeNull();
+    expect(text).not.toMatch(/NOT ENOUGH DATA|Not enough candles|Alignment not measured/);
   });
 
   it("each timeframe tile names its newest bar time and whether it is current", async () => {
+    atTime("2026-10-25T10:00:00.000Z");
     renderWith(report({
       lowerTrend: snap("UP", "2026-10-25T09:55:00.000Z", "CURRENT"),
       higherTrend: snap("UP", null, "UNKNOWN"),
     }));
     const times = await screen.findAllByTestId("mtf-bar-time");
     expect(times.map((e) => e.textContent)).toEqual([
-      "newest bar Sun 09:55 UTC · current",
-      "newest bar Sat 20:00 UTC · stale",
+      "newest bar Sun 2026-10-25 09:55 UTC · current when scanned",
+      "newest bar Sat 2026-10-24 20:00 UTC · stale",
       "bars carried no time · age not checked",
     ]);
   });
 
   it("a measured report's tiles also say when their newest bar opened", async () => {
+    atTime("2026-10-28T10:00:00.000Z");
     const fresh = (t: string) => snap("UP", t, "CURRENT");
     renderWith(report({
       lowerTrend: fresh("2026-10-28T09:55:00.000Z"),
@@ -84,10 +95,12 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     }));
     const times = await screen.findAllByTestId("mtf-bar-time");
     expect(times.map((e) => e.textContent)).toEqual([
-      "newest bar Wed 09:55 UTC · current",
-      "newest bar Wed 09:00 UTC · current",
-      "newest bar Wed 08:00 UTC · current",
+      "newest bar Wed 2026-10-28 09:55 UTC · current when scanned",
+      "newest bar Wed 2026-10-28 09:00 UTC · current when scanned",
+      "newest bar Wed 2026-10-28 08:00 UTC · current when scanned",
     ]);
+    // Still current now, so the alignment and bias are shown.
+    expect(document.body.textContent).toMatch(/Alignment\s*82\/100/);
     expect(screen.queryByTestId("mtf-not-current")).toBeNull();
     expect(screen.queryByTestId("mtf-legacy-freshness")).toBeNull();
   });
@@ -104,6 +117,41 @@ describe("MultiTimeframeAlignmentCard data freshness", () => {
     expect(text).not.toMatch(/Best bias/);
     expect(text).not.toMatch(/Alignment\s*82\/100/);
     expect(text).toMatch(/H1 newest bar is not current/);
+    expect(screen.queryByTestId("mtf-insufficient")).toBeNull();
+    expect(text).not.toMatch(/NOT ENOUGH DATA|Not enough candles|Alignment not measured/);
+  });
+
+  it("a not-current report with a timeframe short of candles shows the not-enough-data block", async () => {
+    const short = { ...snap("SIDEWAYS", "2026-10-24T20:00:00.000Z", "STALE"), candlesUsed: 4 };
+    renderWith(report({ higherTrend: short }));
+    const block = await screen.findByTestId("mtf-insufficient");
+    expect(block.textContent).toMatch(/NOT ENOUGH DATA/);
+    expect(document.body.textContent).toMatch(/Not enough candles were received for H4 \(4\)/);
+  });
+
+  it("a report scanned days ago is not shown as a current alignment or bias", async () => {
+    // Generated Monday with every timeframe current; opened on Saturday.
+    atTime("2026-10-31T10:00:00.000Z");
+    const fresh = (t: string) => snap("UP", t, "CURRENT");
+    renderWith(report({
+      lowerTrend: fresh("2026-10-26T09:55:00.000Z"),
+      middleTrend: fresh("2026-10-26T09:00:00.000Z"),
+      higherTrend: fresh("2026-10-26T08:00:00.000Z"),
+      alignmentScore: 82, alignmentLabel: "STRONG_BULLISH_ALIGNMENT", conflictWarning: null, bestBias: "BUY",
+      createdAt: "2026-10-26T10:00:00.000Z",
+    }));
+    await screen.findByTestId("mtf-not-current");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/Best bias/);
+    expect(text).not.toMatch(/Alignment\s*82\/100/);
+    expect(screen.queryByTestId("mtf-insufficient")).toBeNull();
+    const times = screen.getAllByTestId("mtf-bar-time").map((e) => e.textContent);
+    expect(times[0]).toBe("newest bar Mon 2026-10-26 09:55 UTC · current when scanned, not current now");
+    for (const t of times) expect(t).not.toMatch(/· current$/);
+    const reason = screen.getByTestId("mtf-not-current-reason").textContent ?? "";
+    expect(reason).toMatch(/This scan is from Mon 2026-10-26 10:00 UTC/);
+    expect(reason).toMatch(/M5 newest bar is no longer current/);
+    expect(reason).toMatch(/Run the scan again for a current read/);
   });
 
   it("an older report without bar times says their age was not recorded", async () => {

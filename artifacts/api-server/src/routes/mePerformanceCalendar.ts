@@ -28,6 +28,11 @@ type DayAgg = {
   bestTrade: number | null;
   worstTrade: number | null;
   winRate: number;          // 0..100
+  // Closed trades with no recorded P&L yet (pnl NULL: the EA has not reported
+  // it, or sizing is still pending). They are counted in tradesCount and, as
+  // before, as 0 / breakeven in the figures above, so a reader can tell a day
+  // whose P&L is only partly recorded from a measured break-even day.
+  pnlNotRecorded: number;
 };
 
 function dayKey(d: Date): string {
@@ -134,9 +139,10 @@ function aggregate(rows: ClosedRow[]): Record<string, DayAgg> {
   for (const r of rows) {
     if (!r.closedAt) continue;
     const key = dayKey(r.closedAt);
-    const day: DayAgg = out[key] ?? { date: key, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0 };
+    const day: DayAgg = out[key] ?? { date: key, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0, pnlNotRecorded: 0 };
     const pnl = r.pnl ?? 0;
     day.tradesCount += 1;
+    if (r.pnl == null) day.pnlNotRecorded += 1;
     if (pnl > 0) day.wins += 1; else if (pnl < 0) day.losses += 1; else day.breakeven += 1;
     day.totalPnl = Number((day.totalPnl + pnl).toFixed(4));
     day.totalRisk = Number((day.totalRisk + (r.riskAmount ?? 0)).toFixed(4));
@@ -199,7 +205,7 @@ router.get("/me/performance-calendar/:date", requireUser, async (req, res): Prom
     return;
   }
   const { rows, source } = await loadClosedRows(userId, `${date}T00:00:00Z`, `${date}T23:59:59Z`);
-  const agg = aggregate(rows)[date] ?? { date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0 };
+  const agg = aggregate(rows)[date] ?? { date, tradesCount: 0, wins: 0, losses: 0, breakeven: 0, totalPnl: 0, totalRisk: 0, bestTrade: null, worstTrade: null, winRate: 0, pnlNotRecorded: 0 };
   res.json({
     ...agg,
     trades: rows.map((r) => ({

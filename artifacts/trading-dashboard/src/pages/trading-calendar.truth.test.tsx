@@ -23,8 +23,10 @@ function serve(r: Record<string, Route>) {
   vi.stubGlobal("fetch", fetchMock);
 }
 
+let lastClient: QueryClient;
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastClient = qc;
   return render(<QueryClientProvider client={qc}><TradingCalendarPage /></QueryClientProvider>);
 }
 
@@ -98,6 +100,91 @@ describe("Trading Calendar mode", () => {
   });
 });
 
+// A closed live trade whose P&L the EA has not reported yet has pnl NULL in
+// shared_trade_attribution. It must not read as a measured green 0.00 trade,
+// a 0.00 break-even day, or a 0.00 month.
+describe("Trading Calendar live P&L not recorded", () => {
+  const liveDay = (extra: Record<string, unknown>) => ({
+    date: `${month}-03`, tradesCount: 1, wins: 0, losses: 0, breakeven: 1, totalPnl: 0, totalRisk: 0,
+    bestTrade: 0, worstTrade: 0, winRate: 0, ...extra,
+  });
+  const dayDetail = (trades: unknown[], extra: Record<string, unknown> = {}) => ({
+    date: `${month}-03`, tradesCount: trades.length, wins: 0, losses: 0, breakeven: trades.length, totalPnl: 0,
+    totalRisk: 0, bestTrade: 0, worstTrade: 0, winRate: 0, trades, currentAccountMode: "PAPER", modeScopeApplied: true, ...extra,
+  });
+  const nullTrade = { id: 77, symbol: "EURUSD", side: "BUY", pnl: null, lotSize: 1, entryPrice: 1.08, exitPrice: 1.09, strategyTag: null, closedAt: `${month}-03T10:00:00.000Z` };
+
+  it("a closed live trade with no recorded P&L is not a green 0.00, a break-even day or a 0.00 month", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("LIVE") },
+      "/api/me/performance-calendar/": { body: dayDetail([nullTrade], { pnlNotRecorded: 1 }) },
+      "/api/me/performance-calendar?": {
+        body: { days: [liveDay({ pnlNotRecorded: 1 })], isEmpty: false, currentAccountMode: "PAPER", modeScopeApplied: true },
+      },
+    });
+    renderPage();
+    const cell = await screen.findByTestId(`day-${month}-03`);
+    expect(cell.textContent).not.toContain("0.00");
+    expect(cell.textContent).toMatch(/not recorded/);
+    expect(cell.className).not.toMatch(/amber|emerald|rose/);
+    const monthPnl = screen.getByTestId("month-net-pnl");
+    expect(monthPnl.textContent).not.toContain("0.00");
+    expect(monthPnl.textContent).toMatch(/Not recorded/);
+    expect(monthPnl.innerHTML).not.toMatch(/emerald/);
+
+    cell.click();
+    const row = await screen.findByTestId("trade-row-77");
+    expect(row.textContent).toMatch(/P&L not recorded/);
+    expect(row.textContent).not.toContain("0.00");
+    expect(row.innerHTML).not.toMatch(/emerald/);
+    const dayPnl = screen.getByTestId("day-net-pnl");
+    expect(dayPnl.textContent).toMatch(/Not recorded/);
+    expect(dayPnl.innerHTML).not.toMatch(/emerald/);
+    expect(screen.getByTestId("day-pnl-not-recorded").textContent).toMatch(/1 of 1 closed trades/);
+  });
+
+  it("a day with one recorded and one unrecorded P&L shows a partial total, not a measured result", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("LIVE") },
+      "/api/me/performance-calendar/": {
+        body: dayDetail([{ ...nullTrade, id: 78, pnl: 5 }, nullTrade], { tradesCount: 2, wins: 1, breakeven: 1, totalPnl: 5, winRate: 50, pnlNotRecorded: 1 }),
+      },
+      "/api/me/performance-calendar?": {
+        body: { days: [liveDay({ tradesCount: 2, wins: 1, breakeven: 1, totalPnl: 5, winRate: 50, pnlNotRecorded: 1 })], isEmpty: false, currentAccountMode: "PAPER", modeScopeApplied: true },
+      },
+    });
+    renderPage();
+    const cell = await screen.findByTestId(`day-${month}-03`);
+    expect(cell.textContent).toMatch(/1 P&L not recorded/);
+    expect(cell.textContent).not.toMatch(/50%w/);
+    expect(cell.className).not.toMatch(/emerald/);
+    expect(screen.getByTestId("month-net-pnl").textContent).toMatch(/5\.00 \(partial\)/);
+    // A day whose P&L is only partly recorded is not counted as a winning day.
+    expect(document.body.textContent).toMatch(/Winning Days0/);
+
+    cell.click();
+    expect((await screen.findByTestId("trade-row-78")).textContent).toContain("5.00");
+    expect(screen.getByTestId("trade-row-77").textContent).toMatch(/P&L not recorded/);
+    expect(screen.getByTestId("day-net-pnl").textContent).toMatch(/5\.00 \(partial\)/);
+    expect(document.body.textContent).not.toMatch(/50\.0%/);
+  });
+
+  it("an older server without pnlNotRecorded still shows the day detail's null P&L as not recorded", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("LIVE") },
+      "/api/me/performance-calendar/": { body: dayDetail([nullTrade]) },
+      "/api/me/performance-calendar?": {
+        body: { days: [liveDay({})], isEmpty: false, currentAccountMode: "PAPER", modeScopeApplied: true },
+      },
+    });
+    renderPage();
+    (await screen.findByTestId(`day-${month}-03`)).click();
+    const row = await screen.findByTestId("trade-row-77");
+    expect(row.textContent).toMatch(/P&L not recorded/);
+    expect(screen.getByTestId("day-net-pnl").textContent).toMatch(/Not recorded/);
+  });
+});
+
 // A failed request is "could not be loaded" — never a crash, a blank board,
 // or a demo calendar shown in place of an unknown mode.
 describe("Trading Calendar failed loads", () => {
@@ -138,6 +225,41 @@ describe("Trading Calendar failed loads", () => {
     expect(body).not.toMatch(/from your (closed )?live trades/);
     expect(screen.queryByTestId("btn-rebuild")).toBeNull();
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("performance"))).toBe(false);
+  });
+
+  it("a failed mode re-check hides the month cards and day detail it can no longer place as live or demo", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("DEMO") },
+      "/api/performance/calendar": { body: paperCal },
+      "/api/performance/day": { body: { day: { date: `${month}-02`, stats: { net_pnl: 4, total_trades: 1, win_rate: 100, profit_factor: "—", day_rating: "B", top_lesson: null }, trades: [] } } },
+    });
+    renderPage();
+    (await screen.findByTestId(`day-${month}-02`)).click();
+    await screen.findByText(/No trades on this day/);
+    expect(document.body.textContent).toMatch(/Net P&L \(month\)/);
+    // Only the mode read fails on the re-check; the calendar and day reads
+    // are not repeated, so React Query still holds their earlier data.
+    routes["/api/me/trading/mode"] = { status: 500, body: { error: "boom" } };
+    await lastClient.refetchQueries({ queryKey: ["trading-mode-for-calendar"] });
+    expect((await screen.findByTestId("calendar-mode-error")).textContent).toMatch(/Nothing is shown until it loads/);
+    const body = document.body.textContent ?? "";
+    expect(body).not.toMatch(/Net P&L \(month\)/);
+    expect(body).not.toMatch(/Winning Days|Losing Days|Total Trades/);
+    expect(screen.queryByTestId("day-detail-card")).toBeNull();
+    expect(screen.queryByTestId(`day-${month}-02`)).toBeNull();
+  });
+
+  it("a failed live mode re-check also hides 'No live trades recorded yet'", async () => {
+    serve({
+      "/api/me/trading/mode": { body: modeResp("LIVE") },
+      "/api/me/performance-calendar": { body: { days: [], isEmpty: true, currentAccountMode: "PAPER", modeScopeApplied: true } },
+    });
+    renderPage();
+    expect(await screen.findByText(/No live trades recorded yet/)).toBeTruthy();
+    routes["/api/me/trading/mode"] = { status: 500, body: { error: "boom" } };
+    await lastClient.refetchQueries({ queryKey: ["trading-mode-for-calendar"] });
+    await screen.findByTestId("calendar-mode-error");
+    expect(document.body.textContent).not.toMatch(/No live trades recorded yet/);
   });
 
   it("a 500 from the day route says the day could not be loaded", async () => {
