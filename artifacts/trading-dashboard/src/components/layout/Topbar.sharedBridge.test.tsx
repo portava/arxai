@@ -17,7 +17,8 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 vi.mock("./SymbolPicker", () => ({ SymbolPicker: () => null }));
 vi.mock("@/components/alerts/NotificationBell", () => ({ NotificationBell: () => null }));
-vi.mock("@/hooks/useFeatureUnlock", () => ({ useAllUnlocks: () => ({ mt5: true, simulator: false }) }));
+let unlocks = { mt5: true, simulator: false };
+vi.mock("@/hooks/useFeatureUnlock", () => ({ useAllUnlocks: () => unlocks }));
 vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: null }), useLogout: () => ({ mutate: () => {}, isPending: false }) }));
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false, viewMode: "user", setViewMode: () => {} }) }));
 
@@ -29,7 +30,7 @@ const SHARED_HEALTHY = {
   lastHeartbeatAt: null,
 };
 
-afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; });
+afterEach(() => { cleanup(); mt5Reply = {}; botReply = {}; unlocks = { mt5: true, simulator: false }; });
 
 const pill = (id: string) => screen.getByTestId(`status-pill-${id}`).textContent ?? "";
 function drawerText() {
@@ -129,5 +130,28 @@ describe("Topbar MT5 pill — status polls that start failing", () => {
     mt5Reply = { data: SHARED_HEALTHY, isError: false, dataUpdatedAt: READ_AT };
     render(<Topbar />);
     expect(pill("mt5")).toContain("ON");
+  });
+});
+
+// The MT5 status query only runs once MT5 is turned on for the user
+// (useAllUnlocks().mt5, from "Connect MT5" in Getting Started). With it off,
+// no request is made, yet the drawer said "MT5 mode: Checking" / "MT5
+// connected: checking" for a check that never runs.
+describe("Topbar status drawer — MT5 status not requested", () => {
+  it("does not claim a check is in progress when the MT5 query is disabled", () => {
+    unlocks = { mt5: false, simulator: false };
+    mt5Reply = { data: undefined, isError: false };
+    render(<Topbar />);
+    expect(screen.queryByTestId("status-pill-mt5")).toBeNull();
+    const drawer = drawerText();
+    expect(drawer).not.toMatch(/checking/i);
+    expect(drawer).not.toMatch(/MT5 mode/);
+    expect(drawer).toMatch(/MT5 status\s*not checked/);
+  });
+
+  it("with MT5 turned on and the first read in flight, 'checking' is still said", () => {
+    mt5Reply = { data: undefined, isError: false };
+    render(<Topbar />);
+    expect(drawerText()).toMatch(/MT5 connected\s*checking/);
   });
 });

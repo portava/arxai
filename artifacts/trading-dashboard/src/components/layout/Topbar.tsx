@@ -249,8 +249,15 @@ function CompactStatusRow(p: CompactStatusRowProps) {
     <div className="space-y-3 text-xs">
       {/* A session NAME bucketed by UTC hours — not the page's display time zone. */}
       <DetailRow label="Trading session (by UTC hours)" value={p.sessionLabel} />
-      <DetailRow label="MT5 mode" value={p.modeLabel} />
-      <DetailRow label="MT5 connected" value={bridge.connectedText} />
+      {p.unlocks.mt5 ? (
+        <>
+          <DetailRow label="MT5 mode" value={p.modeLabel} />
+          <DetailRow label="MT5 connected" value={bridge.connectedText} />
+        </>
+      ) : (
+        // The status query is disabled until MT5 is turned on, so nothing is being checked.
+        <DetailRow label="MT5 status" value={'not checked (press "Connect MT5" on the dashboard checklist to show it)'} />
+      )}
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
         <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
       )}
