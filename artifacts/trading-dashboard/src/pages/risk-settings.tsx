@@ -269,13 +269,62 @@ export function haltReleaseHint(sources: string[]): string {
   return parts.join(" ");
 }
 
+const HALT_SOURCE_NAME: Record<string, string> = {
+  platform_emergency_stop: "The platform emergency stop",
+  safety_core_kill_switch: "The safety-core kill switch",
+  trader_kill_switch: "Your kill switch",
+  allocation_frozen: "Your shared-account allocation",
+};
+
+/**
+ * The server fails closed: a switch it could not read is listed as halting,
+ * and the reason (which names the first listed switch) ends "(state
+ * unreadable)". That switch was not seen engaged. Returns it, or null.
+ */
+export function haltUnreadableSource(halt: { sources: string[]; reason: string | null }): string | null {
+  if (!halt.sources.length) return null;
+  return /\(state unreadable\)\s*$/i.test(halt.reason ?? "") ? halt.sources[0]! : null;
+}
+
+/** The Stop switch status value: ENGAGED only for a switch that was read as engaged. */
+export function haltStatusText(halt: { sources: string[]; reason: string | null; venues: string[] }): string {
+  const venues = halt.venues.join(", ");
+  return haltUnreadableSource(halt)
+    ? `COULD NOT BE READ — new trades blocked (${venues})`
+    : `ENGAGED (${venues})`;
+}
+
+/**
+ * What to tell the trader about an engaged halt. An unreadable switch gets no
+ * release instructions (releasing does not clear a read failure); switches
+ * listed after it are each engaged or also unreadable, and are hedged so.
+ */
+export function haltReleaseText(halt: { sources: string[]; reason: string | null }): string {
+  const unread = haltUnreadableSource(halt);
+  if (!unread) return haltReleaseHint(halt.sources);
+  const name = HALT_SOURCE_NAME[unread] ?? "A stop switch";
+  const parts = [
+    `${name} could not be read; new trades are blocked until it can be read. It was not seen engaged, so pressing Resume or Release may not clear this.`,
+  ];
+  const restHint = haltReleaseHint(halt.sources.slice(1));
+  if (restHint) parts.push(`Also listed as halting (engaged, or could not be read either): ${restHint}`);
+  return parts.join(" ");
+}
+
 /**
  * The banner may say a check passed only when the server measured it, and a
  * pass on a placeholder balance / legacy log is not a verified pass: it is
  * shown neutral, never green.
  */
 function riskAuditVerdict(audit: { passed: boolean; tradingHalt?: HaltRead }, basis: AuditBasis): AuditVerdict {
-  if (audit.tradingHalt?.engaged) return { tone: "tripped", headline: "New trades are halted: a stop switch is engaged" };
+  if (audit.tradingHalt?.engaged) {
+    return {
+      tone: "tripped",
+      headline: haltUnreadableSource(audit.tradingHalt)
+        ? "New trades are halted: a stop switch could not be read"
+        : "New trades are halted: a stop switch is engaged",
+    };
+  }
   const name = basis.legacy ? "Legacy risk audit" : "Risk audit";
   if (!audit.passed) return { tone: "tripped", headline: `${name}: a rule is tripped` };
   if (!basis.lossMeasured) {
@@ -356,7 +405,7 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
         )}
         {audit.tradingHalt?.engaged && (
           <p className="text-xs text-red-300 mt-0.5" data-testid="risk-halt-release">
-            {haltReleaseHint(audit.tradingHalt.sources)}
+            {haltReleaseText(audit.tradingHalt)}
           </p>
         )}
         {audit.warnings.length > 0 && audit.passed && (
@@ -1610,7 +1659,7 @@ export default function RiskSettings() {
                     halt
                       ? {
                           id: "Stop switch", label: "Stop switch",
-                          value: halt.engaged ? `ENGAGED (${halt.venues.join(", ")})` : "none engaged",
+                          value: halt.engaged ? haltStatusText(halt) : "none engaged",
                           tone: halt.engaged ? "warn" : "ok",
                         }
                       : {

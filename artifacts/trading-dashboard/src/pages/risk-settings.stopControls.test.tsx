@@ -118,6 +118,54 @@ describe("Risk Settings: an engaged kill switch is visible", () => {
   });
 });
 
+// loadTradingHalt fails closed: a switch it cannot read is listed as halting
+// and the reason (which names the first listed switch) ends "(state
+// unreadable)". Before: the page said ENGAGED, "a stop switch is engaged",
+// and told the trader to press Resume, for a switch nobody was seen engaging.
+describe("Risk Settings: a stop switch that could not be read", () => {
+  it("is shown as could not be read (new trades blocked), never ENGAGED, with no release instructions", () => {
+    const unread = {
+      engaged: true, sources: ["trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+      reason: "Your kill switch is engaged. Release it to trade again. (state unreadable)",
+    };
+    h.audit = { ...AUDIT, passed: false, reasonsBlocked: [`New trades are halted on PAPER, DEMO, LIVE: ${unread.reason}`], tradingHalt: unread };
+    render(<RiskSettings />);
+    const headline = screen.getByTestId("risk-audit-headline").textContent ?? "";
+    expect(headline).not.toMatch(/a stop switch is engaged/);
+    expect(headline).toMatch(/New trades are halted: a stop switch could not be read/);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).not.toMatch(/release it with Resume/);
+    expect(release).toMatch(/could not be read; new trades are blocked until it can be read/);
+    expect(statusRow("Stop switch")).not.toMatch(/ENGAGED/);
+    expect(statusRow("Stop switch")).toMatch(/could not be read.*\(PAPER, DEMO, LIVE\)/i);
+    // Fail closed is still true: new trades are halted.
+    expect(screen.getByTestId("risk-halt-badge").textContent).toMatch(/New trades halted/);
+  });
+
+  it("an unreadable platform stop listed before your own switch is not called engaged; the others are hedged", () => {
+    h.audit = {
+      ...AUDIT, passed: false, reasonsBlocked: ["x"],
+      tradingHalt: {
+        engaged: true, sources: ["safety_core_kill_switch", "trader_kill_switch"], venues: ["PAPER", "DEMO", "LIVE"],
+        reason: "The safety-core kill switch is engaged. (state unreadable)",
+      },
+    };
+    render(<RiskSettings />);
+    const release = screen.getByTestId("risk-halt-release").textContent ?? "";
+    expect(release).toMatch(/safety-core kill switch could not be read/);
+    expect(release).not.toMatch(/Platform-wide stop: it halts every trader/);
+    expect(release).toMatch(/engaged, or could not be read.*Resume on Risk Command Center/);
+    expect(statusRow("Stop switch")).not.toMatch(/ENGAGED/);
+  });
+
+  it("a switch whose stored reason was read is still ENGAGED with release instructions", () => {
+    h.audit = { ...AUDIT, passed: false, reasonsBlocked: ["x"], tradingHalt: TRADER_KS };
+    render(<RiskSettings />);
+    expect(statusRow("Stop switch")).toMatch(/ENGAGED \(PAPER, DEMO, LIVE\)/);
+    expect(screen.getByTestId("risk-halt-release").textContent).toMatch(/Resume on Risk Command Center/);
+  });
+});
+
 // Before: "Pause All Trading" PATCHed bot_settings.isPaused, which no order
 // path reads, yet the toast said "Bot will not open new positions", the header
 // showed "Paused" and the card said "Bot is currently paused".
