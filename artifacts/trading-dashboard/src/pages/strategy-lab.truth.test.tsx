@@ -128,6 +128,60 @@ describe("Strategy Lab truth labels", () => {
     expect(recs).not.toMatch(/Only one scenario/);
   });
 
+  // Two replayed scenarios with the same net were shown as "Best scenario: a
+  // with net 0" and "Worst scenario: c with net 0" (a stored summary from the
+  // old server, or a re-rank), picked by input order only, and ranked #1/#2.
+  it("replayed scenarios with the same net are not named best and worst or ranked apart", async () => {
+    stubFetch(200, { experiments: [{ experimentId: "e7", title: "Exp7", status: "COMPLETED", symbol: "EURUSD", resultSummary: {
+      scenariosRun: 2, totalTrades: 0, totalNet: 0, aggregateWinRate: 0,
+      perScenario: [{ scenarioId: "scenario-a", replayRunId: "r1", trades: 0 }, { scenarioId: "scenario-c", replayRunId: "r2", trades: 0 }],
+      ranking: [{ scenarioId: "scenario-a", netPnl: 0, winRate: 0 }, { scenarioId: "scenario-c", netPnl: 0, winRate: 0 }],
+      notReplayed: [],
+      recommendations: [
+        { type: "BEST_SCENARIO", message: "Best scenario: scenario-a with net 0" },
+        { type: "WORST_SCENARIO", message: "Worst scenario: scenario-c with net 0" },
+      ],
+    } }] });
+    render(<StrategyLab />);
+    await screen.findByText("Exp7");
+    const recs = screen.getByTestId("strategy-lab-recommendations").textContent ?? "";
+    expect(recs).not.toMatch(/Best scenario|Worst scenario/);
+    expect(recs).toContain("All 2 replayed scenarios had the same net (0), so none is best or worst.");
+    expect(recs.match(/same net/g)).toHaveLength(1);
+    const rows = Array.from(screen.getByTestId("strategy-lab-ranking").querySelectorAll("li")).map((li) => li.textContent ?? "");
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(r).toMatch(/^#1 /);
+  });
+
+  it("a stored best/worst line that names one of several tied scenarios names them all", async () => {
+    stubFetch(200, { experiments: [{ experimentId: "e8", title: "Exp8", status: "COMPLETED", symbol: "EURUSD", resultSummary: {
+      scenariosRun: 3, totalTrades: 9, totalNet: 23, aggregateWinRate: 33,
+      perScenario: [
+        { scenarioId: "scenario-c", replayRunId: "r1", trades: 3 },
+        { scenarioId: "scenario-d", replayRunId: "r2", trades: 3 },
+        { scenarioId: "scenario-a", replayRunId: "r3", trades: 3 },
+      ],
+      ranking: [
+        { scenarioId: "scenario-c", netPnl: 9, winRate: 33 },
+        { scenarioId: "scenario-d", netPnl: 9, winRate: 33 },
+        { scenarioId: "scenario-a", netPnl: 5, winRate: 33 },
+      ],
+      notReplayed: [],
+      recommendations: [
+        { type: "BEST_SCENARIO", message: "Best scenario: scenario-c with net 9" },
+        { type: "WORST_SCENARIO", message: "Worst scenario: scenario-a with net 5" },
+      ],
+    } }] });
+    render(<StrategyLab />);
+    await screen.findByText("Exp8");
+    const recs = screen.getByTestId("strategy-lab-recommendations").textContent ?? "";
+    expect(recs).toContain("Best scenarios (tied): scenario-c, scenario-d with net 9");
+    expect(recs).toContain("Worst scenario: scenario-a with net 5");
+    expect(recs).not.toContain("Best scenario: scenario-c with net 9");
+    const rows = Array.from(screen.getByTestId("strategy-lab-ranking").querySelectorAll("li")).map((li) => li.textContent ?? "");
+    expect(rows.map((r) => r.split(" ")[0])).toEqual(["#1", "#1", "#3"]);
+  });
+
   it("a replayed scenario with zero trades has no win rate in the ranking", async () => {
     stubFetch(200, { experiments: [{ experimentId: "e4", title: "Exp4", status: "COMPLETED", symbol: "EURUSD", resultSummary: {
       scenariosRun: 1, totalTrades: 0, totalNet: 0, aggregateWinRate: 0,
