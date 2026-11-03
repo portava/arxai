@@ -109,6 +109,26 @@ describe("mode cards: the saved label is not proof of the limits in force", () =
     expect(mismatch.textContent).toMatch(/Max Open: 3 trades stored, preset 2 trades/);
   });
 
+  it("a trader with no lot cap of their own is shown the platform ceiling, not a stored 5 lots", () => {
+    // GET /risk/settings reports a missing user_risk_settings.max_position_size
+    // as the platform ceiling (5 lots).
+    renderPage({ settings: { data: FRESH_USER } });
+    const mismatch = screen.getByTestId("risk-mode-mismatch");
+    expect(mismatch.textContent).not.toMatch(/Max Lot: 5 lots stored/);
+    expect(mismatch.textContent).toMatch(/Max Lot: no lot cap of your own below the platform ceiling \(5 lots\), preset 0\.1 lots/);
+  });
+
+  it("a stored lot cap above the platform ceiling says the ceiling is what applies", () => {
+    renderPage({ settings: { data: { ...FRESH_USER, maxLotSize: 8 } } });
+    expect(screen.getByTestId("risk-mode-mismatch").textContent)
+      .toMatch(/Max Lot: 8 lots stored, above the platform ceiling of 5 lots, preset 0\.1 lots/);
+  });
+
+  it("a stored lot cap below the ceiling is still called stored", () => {
+    renderPage({ settings: { data: { ...FRESH_USER, maxLotSize: 0.5 } } });
+    expect(screen.getByTestId("risk-mode-mismatch").textContent).toMatch(/Max Lot: 0\.5 lots stored, preset 0\.1 lots/);
+  });
+
   it("the preset numbers on every card are labelled as what the preset sets", () => {
     renderPage({ settings: { data: FRESH_USER } });
     for (const mode of ["Conservative", "Balanced", "Aggressive"]) {

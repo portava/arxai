@@ -87,14 +87,28 @@ function isPresetMode(mode: string | null | undefined): mode is PresetMode {
   return mode === "Conservative" || mode === "Balanced" || mode === "Aggressive";
 }
 
+// PLATFORM_RISK_CEILINGS.maxLotSize in the api-server's riskGovernor/preTrade.ts.
+// GET /risk/settings reports a trader with no lot cap of their own as this
+// value, so at or above it the number is not (only) a stored cap.
+const PLATFORM_LOT_CEILING = 5;
+
+/** What the settings read says about one limit, and where the number comes from. */
+function storedText(key: keyof PresetLimits, v: unknown, fmt: (v: number) => string): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "not reported";
+  if (key === "maxLotSize") {
+    if (Math.abs(v - PLATFORM_LOT_CEILING) < 1e-6) return `no lot cap of your own below the platform ceiling (${fmt(v)})`;
+    if (v > PLATFORM_LOT_CEILING) return `${fmt(v)} stored, above the platform ceiling of ${fmt(PLATFORM_LOT_CEILING)}`;
+  }
+  return `${fmt(v)} stored`;
+}
+
 /** Stored limits that are not the preset's value, worded "stored, preset". */
 function presetDiffs(mode: PresetMode, stored: Partial<Record<keyof PresetLimits, unknown>>) {
   const preset = PRESET_LIMITS[mode];
   return PRESET_FIELDS.flatMap((f) => {
     const v = stored[f.key];
     if (typeof v === "number" && Math.abs(v - preset[f.key]) < 1e-6) return [];
-    const shown = typeof v === "number" && Number.isFinite(v) ? f.fmt(v) : "not reported";
-    return [`${f.label}: ${shown} stored, preset ${f.fmt(preset[f.key])}`];
+    return [`${f.label}: ${storedText(f.key, v, f.fmt)}, preset ${f.fmt(preset[f.key])}`];
   });
 }
 
