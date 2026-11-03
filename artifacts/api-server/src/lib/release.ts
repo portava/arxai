@@ -176,9 +176,13 @@ export async function diagnosticsPackage() {
     generatedAt: new Date().toISOString(),
     version: APP_VERSION,
     stage: RELEASE_STAGE,
+    // The MT5 flags are the readiness report's observation (taken at
+    // readiness.evaluatedAt), so this block never contradicts the readiness
+    // object embedded below. mt5Connected is null when the feed could not be read.
     safety: {
-      mt5Connected: false,
-      mt5Deferred: true,
+      mt5Connected: readiness.mt5Connected,
+      mt5Deferred: readiness.mt5Deferred,
+      mt5CheckedAt: readiness.evaluatedAt,
       realBrokerExecutionAvailable: false,
       canPlaceTrades: false,
     },
@@ -197,6 +201,23 @@ export async function diagnosticsPackage() {
     })),
     notes: "Diagnostics package excludes secrets, MT5 tokens, and API keys by construction.",
   };
+}
+
+/**
+ * Whether a diagnostics package's safety block is honest: it claims no real
+ * broker execution, and its MT5 flags agree with the readiness observation the
+ * same package carries (not with fixed values).
+ */
+export function diagnosticsSafetyAgrees(pkg: {
+  safety?: { mt5Connected?: unknown; mt5Deferred?: unknown; realBrokerExecutionAvailable?: unknown };
+  readiness?: { mt5Connected?: unknown; mt5Deferred?: unknown };
+}): boolean {
+  const { safety, readiness } = pkg;
+  if (!safety || !readiness) return false;
+  return safety.realBrokerExecutionAvailable === false
+    && safety.mt5Connected === readiness.mt5Connected
+    && safety.mt5Deferred === readiness.mt5Deferred
+    && safety.mt5Deferred === (readiness.mt5Connected !== true);
 }
 
 export async function listFeedback(opts: { limit?: number; status?: string } = {}) {

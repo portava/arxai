@@ -16,7 +16,7 @@ import { shadowStatus, forwardStatus, readinessScore } from "./shadowMode.js";
 import { omsDashboardSummary, listOrders, listPositions, pnlSummary } from "./oms.js";
 import { getBrokerProvider } from "./broker/registry.js";
 import { dataQuality } from "./marketDataLayer.js";
-import { diagnosticsPackage } from "./release.js";
+import { diagnosticsPackage, diagnosticsSafetyAgrees } from "./release.js";
 
 export type ScenarioStatus = "pass" | "fail" | "needs_review";
 
@@ -179,11 +179,14 @@ async function s10AdminSecurity(): Promise<ScenarioResult> {
     const pkg = await diagnosticsPackage();
     const text = JSON.stringify(pkg);
     const tokenLeak = /MT5_BRIDGE_TOKEN["']?\s*[:=]\s*["']?[A-Za-z0-9_-]{8,}/.test(text);
-    const safety = (pkg as { safety?: { mt5Connected: boolean; realBrokerExecutionAvailable: boolean; mt5Deferred: boolean } }).safety;
-    const safe = !tokenLeak && safety?.mt5Connected === false && safety?.realBrokerExecutionAvailable === false && safety?.mt5Deferred === true;
+    const { safety } = pkg;
+    // Honest = no token, no real broker execution claimed, and the MT5 flags
+    // agree with the readiness observation in the same package.
+    const safe = !tokenLeak && diagnosticsSafetyAgrees(pkg);
     const v = safe
-      ? PASS("Diagnostics package built; secrets absent; safety flags honest.", { mt5Connected: safety!.mt5Connected, mt5Deferred: safety!.mt5Deferred })
-      : FAIL("Diagnostics package failed honesty check.", { tokenLeak, safety });
+      ? PASS(`Diagnostics package built; secrets absent; no real broker execution claimed; MT5 flags match the readiness observation (${safety.mt5Connected === true ? "observed connected" : safety.mt5Connected === false ? "observed not connected" : "could not be checked"}, ${safety.mt5CheckedAt}).`,
+        { mt5Connected: safety.mt5Connected, mt5Deferred: safety.mt5Deferred, mt5CheckedAt: safety.mt5CheckedAt })
+      : FAIL("Diagnostics package failed honesty check.", { tokenLeak, safety, readinessMt5Connected: pkg.readiness.mt5Connected, readinessMt5Deferred: pkg.readiness.mt5Deferred });
     return build("S10", "Admin / security / export",
       "Owner role preserved; secrets hidden; protected actions require permission; audit records admin actions.",
       ["Security Status", "Data Management", "Export diagnostics", "Test reset confirmation"],

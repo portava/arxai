@@ -28,9 +28,14 @@ const updatedAtText = (iso: unknown): string => {
 export default function TraderSkillPage() {
   const qc = useQueryClient();
 
-  // unmeasuredPillars: pillars with no evidence (their 0 was not measured);
-  // null when the server could not check.
-  const profile = useQuery<{ profile: TraderSkillProfile | null; unmeasuredPillars?: SkillPillar[] | null }>({
+  // unmeasuredPillars: pillars with no evidence when the profile was
+  // calculated (their 0 was not measured); null when the server could not
+  // check. unmeasuredPillarsWithNewEvidence: those with evidence since.
+  const profile = useQuery<{
+    profile: TraderSkillProfile | null;
+    unmeasuredPillars?: SkillPillar[] | null;
+    unmeasuredPillarsWithNewEvidence?: SkillPillar[] | null;
+  }>({
     queryKey: ["skill-profile"],
     queryFn: () => getSkillJson("/api/skill/profile", "Loading your skill profile"),
   });
@@ -126,7 +131,7 @@ export default function TraderSkillPage() {
           <LevelProgressMeter total={p.totalScore} level={p.skillLevel} />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="lg:col-span-2"><SkillBreakdownCard profile={p} unmeasured={profile.data?.unmeasuredPillars} /></div>
+            <div className="lg:col-span-2"><SkillBreakdownCard profile={p} unmeasured={profile.data?.unmeasuredPillars} newEvidence={profile.data?.unmeasuredPillarsWithNewEvidence} /></div>
             <div>
               {suggestions.isError ? (
                 <p role="alert" className="rounded border border-dashed border-rose-700 p-3 text-center text-[11px] text-rose-300">

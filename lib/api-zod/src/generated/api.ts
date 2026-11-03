@@ -13282,7 +13282,24 @@ export const GetTraderSkillProfileResponse = zod.object({
     )
     .nullish()
     .describe(
-      "Pillars of this profile with no evidence (no debriefs, edge reports ...) and a stored 0: not measured. They still count as 0 in totalScore. null when the evidence could not be read.",
+      "Pillars of this profile with no evidence (no debriefs, edge reports ...) when the profile was calculated, and a stored 0: not measured. Judged on the rows that existed at the profile's createdAt, not on today's. They still count as 0 in totalScore. null when the evidence could not be read.",
+    ),
+  unmeasuredPillarsWithNewEvidence: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .nullish()
+    .describe(
+      "The unmeasuredPillars that have evidence now (added after the profile was calculated). A recalculation would score them; until then their stored 0 is still not a measurement. null when the evidence could not be read.",
     ),
 });
 
@@ -19677,6 +19694,18 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
     .nullish()
     .describe(
       "Plain statement of why positions were not read; null when they were.",
+    ),
+  positionsAsOf: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the MT5 bridge last reported the positions read for this check (the oldest leg's reading, ISO time). Same rule as the baskets response. Null when no position was read or no reading time is recorded.",
+    ),
+  positionsStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when positions were read but their bridge reading is older than 90 seconds or has no recorded time. The basket and add-on advice then describe that reading, not the account now. Same rule as the baskets response.",
     ),
 });
 

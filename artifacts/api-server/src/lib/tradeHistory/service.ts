@@ -308,6 +308,19 @@ export async function getTradeHistorySummary(userId: number) {
   const imports = await listTradeHistoryImports(userId);
   const sources = [...new Set(imports.map((i) => i.source))];
 
+  // Date range from the rows that record an open time. opened_at is nullable
+  // and DESC ordering puts NULLs first, so trades[0] / trades[last] are not
+  // the range; rows without an open time are counted, not dropped silently.
+  const openTimes = trades
+    .map((t) => (t.openedAt instanceof Date ? t.openedAt : t.openedAt ? new Date(t.openedAt) : null))
+    .filter((d): d is Date => d != null && Number.isFinite(d.getTime()));
+  let dateFrom: Date | null = null;
+  let dateTo: Date | null = null;
+  for (const d of openTimes) {
+    if (dateFrom == null || d.getTime() < dateFrom.getTime()) dateFrom = d;
+    if (dateTo == null || d.getTime() > dateTo.getTime()) dateTo = d;
+  }
+
   return {
     hasTrades: true,
     count: trades.length,
@@ -329,8 +342,11 @@ export async function getTradeHistorySummary(userId: number) {
     /** Sources are uploaded history files, not live connections. */
     sourcesKind: "IMPORTED_FILES" as const,
     importCount: imports.length,
-    dateFrom: trades[trades.length - 1]?.openedAt ?? null,
-    dateTo:   trades[0]?.openedAt ?? null,
+    /** Earliest / latest recorded open time; null only when no row records one. */
+    dateFrom,
+    dateTo,
+    /** Imported rows with no open time; they are not inside dateFrom..dateTo. */
+    withoutOpenTimeCount: trades.length - openTimes.length,
   };
 }
 

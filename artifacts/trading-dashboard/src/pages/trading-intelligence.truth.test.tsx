@@ -77,6 +77,15 @@ describe("Trading Intelligence truth", () => {
     expect(screen.queryByText("Top Symbols")).toBeNull();
   });
 
+  it("names imported trades with no open time instead of hiding them in the date range", async () => {
+    serve({ ...OPEN_ONLY_NEW, withoutOpenTimeCount: 1 });
+    mount(<DnaTab />);
+    await waitFor(() => expect(screen.getByTestId("dna-coverage")).toBeTruthy());
+    const line = screen.getByTestId("dna-coverage").textContent ?? "";
+    expect(line).toMatch(/2026-10-01 to 2026-10-03/);
+    expect(line).toMatch(/1 imported trade has no open time and is not in this range/);
+  });
+
   it("a failed summary read says it could not be loaded, not 'No trading history yet'", async () => {
     serve({ ok: false, error: "SUMMARY_FAILED" }, 500);
     mount(<DnaTab />);

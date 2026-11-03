@@ -70,6 +70,8 @@ type TradeHistorySummary = {
   ok?: boolean; hasTrades?: boolean; count?: number; closedCount?: number; withoutOutcomeCount?: number;
   winRate?: number | null; totalNetPnl?: number | null; avgWin?: number | null; avgLoss?: number | null;
   sources?: string[]; importCount?: number; dateFrom?: string | null; dateTo?: string | null;
+  /** Imported rows with no open time; the server's date range leaves them out. */
+  withoutOpenTimeCount?: number;
   topSymbols?: Array<{ symbol: string; winRate: number; count: number }>;
   sessions?: Record<string, { count: number; netPnl: number }>;
 };
@@ -108,7 +110,11 @@ function coverageLine(s: TradeHistorySummary): string {
   const to = formatDay(s.dateTo);
   const range = from && to ? `Covers trades opened ${from} to ${to}` : "Date range not recorded";
   const srcs = (s.sources ?? []).map(sourceLabel).join(", ");
-  return `${range}, from uploaded ${srcs ? `${srcs} ` : ""}history files (not a live connection).`;
+  const undated = typeof s.withoutOpenTimeCount === "number" && s.withoutOpenTimeCount > 0 ? s.withoutOpenTimeCount : 0;
+  const undatedNote = undated > 0 && from && to
+    ? ` ${undated} imported ${undated === 1 ? "trade has" : "trades have"} no open time and ${undated === 1 ? "is" : "are"} not in this range.`
+    : "";
+  return `${range}, from uploaded ${srcs ? `${srcs} ` : ""}history files (not a live connection).${undatedNote}`;
 }
 
 // ── DNA tab ───────────────────────────────────────────────────────────────────

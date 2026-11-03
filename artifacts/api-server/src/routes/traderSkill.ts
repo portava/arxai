@@ -91,7 +91,7 @@ interface Subs {
   unmeasured: Pillar[];
 }
 
-async function computeSubScores(userId: number): Promise<Subs> {
+async function loadEvidence(userId: number) {
   const [journals, debriefs, reviews, papers, violations, edges, plans] = await Promise.all([
     db.select().from(tradeJournalTable).where(eq(tradeJournalTable.userId, userId)).limit(2000),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId)).limit(2000),
@@ -101,13 +101,45 @@ async function computeSubScores(userId: number): Promise<Subs> {
     db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
     db.select().from(tradePlansTable).where(eq(tradePlansTable.userId, userId)).limit(500),
   ]);
+  return { journals, debriefs, reviews, papers, violations, edges, plans };
+}
+type Evidence = Awaited<ReturnType<typeof loadEvidence>>;
+
+/** True when the row time is known and at or before asOfMs. Unknown time ⇒ not shown to exist then. */
+function atOrBefore(t: unknown, asOfMs: number): boolean {
+  if (t == null) return false;
+  const ms = t instanceof Date ? t.getTime() : new Date(t as string).getTime();
+  return Number.isFinite(ms) && ms <= asOfMs;
+}
+
+async function computeSubScores(userId: number): Promise<Subs> {
+  return scoreEvidence(await loadEvidence(userId));
+}
+
+/**
+ * Score the evidence. With `asOf`, only rows that existed then count (created
+ * by then; paper trades closed by then), so a stored profile's pillars can be
+ * judged on what that snapshot saw, not on today's rows.
+ */
+function scoreEvidence(e: Evidence, asOf?: Date): Subs {
+  const asOfMs = asOf ? asOf.getTime() : null;
+  const keep = <T extends { createdAt?: unknown }>(rows: T[]): T[] =>
+    asOfMs == null ? rows : rows.filter((r) => atOrBefore(r.createdAt, asOfMs));
+  const journals = keep(e.journals);
+  const debriefs = keep(e.debriefs);
+  const reviews = keep(e.reviews);
+  const papers = keep(e.papers);
+  const violations = keep(e.violations);
+  const edges = keep(e.edges);
+  const plans = keep(e.plans);
 
   const journalCount = journals.length;
   const debriefCount = debriefs.length;
   // Practice = paper trades that actually closed (CLOSED_TP / CLOSED_SL /
   // CLOSED_MANUAL). A CANCELLED order was voided or never filled: it is not
   // a practice trade and must not raise Practice or the sample cap.
-  const closedPapers = papers.filter((p) => p.status.startsWith("CLOSED")).length;
+  const closedPapers = papers.filter((p) => p.status.startsWith("CLOSED")
+    && (asOfMs == null || atOrBefore(p.closedAt, asOfMs))).length;
   const totalActivity = journalCount + closedPapers;
 
   // ── Discipline: % of debriefs where the plan was followed ───────────────
@@ -154,7 +186,7 @@ async function computeSubScores(userId: number): Promise<Subs> {
     : (plans.length > 0 ? 50 : 0);
 
   // ── Review: weekly reviews completed in the rolling 12-week window ──────
-  const twelveWeeksAgo = Date.now() - 12 * 7 * 24 * 3600 * 1000;
+  const twelveWeeksAgo = (asOfMs ?? Date.now()) - 12 * 7 * 24 * 3600 * 1000;
   const recentReviews = reviews.filter((r) =>
     new Date(r.createdAt as unknown as string).getTime() >= twelveWeeksAgo).length;
   const reviewRaw = Math.min(100, (recentReviews / 12) * 100);
@@ -207,14 +239,24 @@ const PILLAR_SCORE: Record<Pillar, (p: ProfileRow) => number> = {
 
 /**
  * Pillars of a stored profile that were not measured: no evidence for them
- * now and a stored 0. (A pillar that scored above 0 was measured when the
- * snapshot was taken.) null when the evidence could not be read — the caller
- * then cannot tell a measured 0 from no data, and says so.
+ * when the snapshot was taken (rows that existed at profile.createdAt) and a
+ * stored 0. Judging the snapshot by today's rows would show an old
+ * no-evidence 0 as measured once evidence arrives. `withNewEvidence` names the
+ * ones that have evidence now (a recalculation would score them). null when
+ * the evidence could not be read — the caller then cannot tell a measured 0
+ * from no data, and says so.
  */
-async function unmeasuredPillarsOf(userId: number, profile: ProfileRow): Promise<Pillar[] | null> {
+async function unmeasuredPillarsOf(
+  userId: number, profile: ProfileRow,
+): Promise<{ unmeasured: Pillar[]; withNewEvidence: Pillar[] } | null> {
   try {
-    const now = await computeSubScores(userId);
-    return now.unmeasured.filter((k) => PILLAR_SCORE[k](profile) === 0);
+    const evidence = await loadEvidence(userId);
+    const snapshotAt = profile.createdAt instanceof Date ? profile.createdAt : new Date(profile.createdAt as unknown as string);
+    if (!Number.isFinite(snapshotAt.getTime())) return null;
+    const then = scoreEvidence(evidence, snapshotAt);
+    const nowUnmeasured = new Set(scoreEvidence(evidence).unmeasured);
+    const unmeasured = then.unmeasured.filter((k) => PILLAR_SCORE[k](profile) === 0);
+    return { unmeasured, withNewEvidence: unmeasured.filter((k) => !nowUnmeasured.has(k)) };
   } catch {
     return null;
   }
@@ -278,8 +320,12 @@ router.post("/skill/calculate", requireUser, async (req, res): Promise<void> => 
 // ── GET /skill/profile — most recent profile ───────────────────────────────
 router.get("/skill/profile", requireUser, async (req, res): Promise<void> => {
   const profile = (await latestProfile(req.authUser!.id)) ?? null;
-  const unmeasuredPillars = profile ? await unmeasuredPillarsOf(req.authUser!.id, profile) : [];
-  ok(res, { profile, unmeasuredPillars });
+  const pillars = profile ? await unmeasuredPillarsOf(req.authUser!.id, profile) : { unmeasured: [], withNewEvidence: [] };
+  ok(res, {
+    profile,
+    unmeasuredPillars: pillars ? pillars.unmeasured : null,
+    unmeasuredPillarsWithNewEvidence: pillars ? pillars.withNewEvidence : null,
+  });
 });
 
 // ── GET /skill/history ─────────────────────────────────────────────────────
@@ -322,7 +368,9 @@ router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> =>
   // A pillar with no evidence has no score to show: it is "no data yet",
   // never a measured 0/100. (null = evidence unreadable: scores are shown
   // as stored.)
-  const unmeasured = new Set(await unmeasuredPillarsOf(req.authUser!.id, profile) ?? []);
+  const pillars = await unmeasuredPillarsOf(req.authUser!.id, profile);
+  const unmeasured = new Set(pillars?.unmeasured ?? []);
+  const newEvidence = new Set(pillars?.withNewEvidence ?? []);
 
   const next = nextLevel(profile.skillLevel as Level);
   const need = nextLevelThreshold(profile.skillLevel as Level);
@@ -333,7 +381,9 @@ router.get("/skill/suggestions", requireUser, async (req, res): Promise<void> =>
         message: "You're at Elite Trader on process quality. Maintain the discipline that got you here — past process does not guarantee future outcomes." };
 
   ok(res, {
-    suggestions: [header, ...subs.slice(0, 3).map((s) => (unmeasured.has(s.key)
+    suggestions: [header, ...subs.slice(0, 3).map((s) => (newEvidence.has(s.key)
+      ? { area: s.area, message: `Not measured in this profile — there was no evidence for it when the profile was calculated, and there is some since. Recalculate to score it; until then it counts as 0 in your total. ${s.tip}` }
+      : unmeasured.has(s.key)
       ? { area: s.area, message: `No data yet — this pillar has no evidence and counts as 0 in your total. ${s.tip}` }
       : { area: s.area, score: Math.round(s.score), message: s.tip }))],
   });

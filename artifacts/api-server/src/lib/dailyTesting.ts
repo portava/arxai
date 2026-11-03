@@ -481,7 +481,8 @@ export async function exportWeeklyReport() {
     brand: { name: "ARX AI", tagline: "Analyze. Risk. eXecute.", lockup: "The AI trading fortress built for disciplined decisions." },
     generatedAt: nowIso(),
     summary,
-    note: "MT5 deferred. No real broker orders placed. Simulator + tester intents only.",
+    // The MT5 part is the week's readiness observation, not a fixed "deferred".
+    note: `${summary.mt5SetupStatus.note} No real broker orders placed. Simulator + tester intents only.`,
   };
 }
 

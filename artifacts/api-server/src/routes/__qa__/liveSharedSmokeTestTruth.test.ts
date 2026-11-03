@@ -21,6 +21,8 @@ import { getTableName, type Table } from "drizzle-orm";
 let failingTables = new Set<string>();
 let auditThrows = false;
 let audits: Array<Record<string, unknown>> = [];
+let settingsRows: Array<Record<string, unknown>> = [];
+let pinnedRows: Array<Record<string, unknown>> = [];
 
 function chain(resolve: () => unknown[]): unknown {
   const self: unknown = new Proxy({}, {
@@ -40,6 +42,7 @@ const fakeDb = {
     from: (table: Table) => chain(() => {
       const name = getTableName(table);
       if (failingTables.has(name)) throw new Error(`relation "${name}" is unavailable`);
+      if (!cols && name === "global_trading_settings") return settingsRows;
       // COUNT(*) reads (a column map) answer one row; whole-row reads find nothing.
       return cols ? [{ n: 0 }] : [];
     }),
@@ -60,7 +63,7 @@ mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 
 const connections = await import("../../lib/brokerHub/connections.js");
 mock.module("../../lib/brokerHub/connections.js", {
-  namedExports: { ...connections, listConnections: async () => [] },
+  namedExports: { ...connections, listConnections: async () => pinnedRows },
 });
 const detectorMod = await import("../../lib/mt5/currentConnectedBridgeDetector.js");
 mock.module("../../lib/mt5/currentConnectedBridgeDetector.js", {
@@ -91,7 +94,7 @@ const byId = (b: Body, id: string): Check => {
   return c;
 };
 
-beforeEach(() => { failingTables = new Set(); auditThrows = false; audits = []; });
+beforeEach(() => { failingTables = new Set(); auditThrows = false; audits = []; settingsRows = []; pinnedRows = []; });
 
 test("C5 and C6 run nothing that could fail: not checked, never pass, not counted as passed", async () => {
   const { status, body } = await run();
@@ -165,4 +168,37 @@ test("C6 names the effective master switch (env AND operator arm), not the env f
     if (prev === undefined) delete process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED;
     else process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED = prev;
   }
+});
+
+// Round 3 review: with no pinned bridge loaded (none set, settings or
+// connection unreadable, or not found) C3 said "no heartbeat recorded": a
+// claim about a heartbeat this call never read. It now says it could not be
+// checked and points at C2; "no heartbeat recorded" is kept for a loaded
+// bridge whose heartbeat is empty.
+test("C3: with no pinned bridge loaded it says the heartbeat could not be checked, not 'no heartbeat recorded'", async () => {
+  for (const setup of [
+    () => {},                                                         // no pinned id set
+    () => { failingTables = new Set(["global_trading_settings"]); }, // settings unreadable
+    () => { settingsRows = [{ id: 1, platformMasterBridgeConnectionId: 5 }]; }, // pinned id not found
+  ]) {
+    failingTables = new Set(); settingsRows = []; pinnedRows = [];
+    setup();
+    const { status, body } = await run();
+    assert.equal(status, 200);
+    const c3 = byId(body, "C3_heartbeat");
+    assert.equal(c3.pass, false);
+    assert.equal(c3.status, "fail", "still fail-closed");
+    assert.doesNotMatch(c3.detail, /no heartbeat recorded/, "claimed an observed absence of a heartbeat it never read");
+    assert.match(c3.detail, /could not be checked: no pinned bridge was loaded \(see C2\)/);
+  }
+});
+
+test("C3: a loaded pinned bridge with no heartbeat still says 'no heartbeat recorded'", async () => {
+  settingsRows = [{ id: 1, platformMasterBridgeConnectionId: 5 }];
+  pinnedRows = [{ id: 5, lastHeartbeat: null }];
+  const { body } = await run();
+  assert.equal(byId(body, "C2_pinned_bridge").pass, true);
+  const c3 = byId(body, "C3_heartbeat");
+  assert.equal(c3.pass, false);
+  assert.match(c3.detail, /no heartbeat recorded/);
 });

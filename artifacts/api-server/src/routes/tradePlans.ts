@@ -23,7 +23,7 @@ import { gatherInputsAndEvaluate } from "./permission.js";
 import { getCachedIntelligenceContext } from "../lib/data/chart/chartIntelligence.js";
 import type { ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
-import { generateNewsRiskForSymbol } from "./newsCalendar.js";
+import { generateNewsRiskForSymbol, readStoredCalendarCoverage } from "./newsCalendar.js";
 import { getLatestPortfolioRiskOrCompute } from "./portfolioRisk.js";
 import crypto from "node:crypto";
 
@@ -348,6 +348,27 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
             event: news.result.event,
           });
           return;
+        }
+        // The news check scores only the stored economic_events rows (filled
+        // by a manual sync) in the next 24h. An empty table, or one that ends
+        // before the window does, returns CLEAR without throwing; that is not
+        // "no events" (same rule as the News Risk card's calendarCoverage).
+        // A WARN only: readiness and every gate are unchanged.
+        try {
+          const coverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
+          if (!coverage.windowCovered) {
+            const partly = coverage.storedEventCount > 0 && coverage.coveredThrough != null;
+            notChecked.push({
+              key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+              detail: `${partly ? "Only partly checked" : "Not checked"} — ${coverage.note ?? "the stored economic calendar does not cover the next 24 hours, so upcoming events cannot be ruled out."}`,
+            });
+          }
+        } catch (err) {
+          req.log.warn({ err: String(err) }, "calendar coverage read failed (non-fatal); continuing validate");
+          notChecked.push({
+            key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+            detail: "Could not be checked — the stored economic calendar's coverage could not be read, so it is not known whether every upcoming economic event was considered.",
+          });
         }
       } catch (err) {
         req.log.warn({ err: String(err) }, "news-risk check failed (non-fatal); continuing validate");

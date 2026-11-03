@@ -93,8 +93,16 @@ mock.module("../../lib/brokerHub/brokerHealthState.js", {
 let newsImpl: (symbol: string) => Promise<unknown> = async () => ({
   result: { blockTrading: false, riskLevel: "LOW", event: null, tradeWarning: null, aiSummary: "" },
 });
+// Stored-calendar coverage of the news window; covered unless a test says not.
+const COVERED = { source: "ECONOMIC_EVENTS_TABLE", providerConfigured: true, storedEventCount: 40,
+  coveredThrough: new Date(Date.now() + 7 * 86_400_000).toISOString(), windowEnd: new Date().toISOString(),
+  windowCovered: true, note: null };
+let coverageImpl: (windowEnd: Date) => Promise<unknown> = async () => COVERED;
 mock.module("../newsCalendar.js", {
-  namedExports: { generateNewsRiskForSymbol: (s: string) => newsImpl(s) },
+  namedExports: {
+    generateNewsRiskForSymbol: (s: string) => newsImpl(s),
+    readStoredCalendarCoverage: (end: Date) => coverageImpl(end),
+  },
 });
 let portfolioImpl: () => Promise<unknown> = async () => ({
   portfolioRiskLevel: "LOW", blockers: [], warnings: [], aiSummary: "",
@@ -305,4 +313,74 @@ test("validate with a passing chart says PASSED with its score", async () => {
     assert.equal(body.chartTruthStatus, "PASSED");
     assert.equal(body.chartTruthScore, 82);
   } finally { chartCache = null; }
+});
+
+// Round 3 review: generateNewsRiskForSymbol scores only stored economic_events
+// rows (filled by a manual sync). With the table empty, or ending before the
+// next 24h, it returns CLEAR without throwing, so validate added no NEWS_RISK
+// item and the plan read "All pre-trade checks pass" while the News Risk card
+// on the same panel said events cannot be ruled out.
+test("validate with an empty stored calendar: READY is unchanged, but news risk is reported not checked", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  let askedEnd: Date | null = null;
+  coverageImpl = async (end) => {
+    askedEnd = end;
+    return { ...COVERED, storedEventCount: 0, coveredThrough: null, windowCovered: false,
+      note: "The stored economic calendar is empty (events have never been synced), so upcoming events cannot be ruled out. Sync events on the Economic Calendar page to refresh it." };
+  };
+  try {
+    const { status, body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(status, 200);
+    assert.equal(body.status, "READY", "a WARN does not change readiness (no gate is moved)");
+    const item = body.checklist.items.find((i: any) => i.key === "NEWS_RISK");
+    assert.ok(item, "an empty calendar was read as a clean news check");
+    assert.equal(item.status, "WARN");
+    assert.match(item.detail, /^Not checked — The stored economic calendar is empty/);
+    assert.doesNotMatch(body.aiSummary, /All pre-trade checks pass/);
+    assert.ok(askedEnd && Math.abs((askedEnd as Date).getTime() - (Date.now() + 24 * 3_600_000)) < 60_000,
+      "coverage is asked for the same 24h window the news check scores");
+  } finally {
+    coverageImpl = async () => COVERED;
+  }
+});
+
+test("validate with a stored calendar that ends inside the window says news risk was only partly checked", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  const through = new Date(Date.now() + 3_600_000).toISOString();
+  coverageImpl = async () => ({ ...COVERED, coveredThrough: through, windowCovered: false,
+    note: `The stored economic calendar only runs to ${through}; events after that have not been synced, so they cannot be ruled out.` });
+  try {
+    const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    const item = body.checklist.items.find((i: any) => i.key === "NEWS_RISK");
+    assert.ok(item);
+    assert.equal(item.status, "WARN");
+    assert.match(item.detail, /^Only partly checked — The stored economic calendar only runs to/);
+  } finally {
+    coverageImpl = async () => COVERED;
+  }
+});
+
+test("validate when the calendar coverage cannot be read says so, not a clean news check", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  coverageImpl = async () => { throw new Error("economic_events unavailable"); };
+  try {
+    const { status, body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(status, 200);
+    const item = body.checklist.items.find((i: any) => i.key === "NEWS_RISK");
+    assert.ok(item);
+    assert.equal(item.status, "WARN");
+    assert.match(item.detail, /could not be checked/i);
+  } finally {
+    coverageImpl = async () => COVERED;
+  }
+});
+
+test("validate with a stored calendar covering the window adds no news warning", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  const { body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+  assert.equal(body.checklist.items.find((i: any) => i.key === "NEWS_RISK"), undefined);
 });
