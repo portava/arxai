@@ -33,7 +33,10 @@ interface TradePlan {
   checklist: {
     items: { key: string; label: string; status: "PASS" | "FAIL" | "WARN" | "UNKNOWN"; detail: string }[];
     passCount: number; failCount: number; warnCount: number; isReady: boolean; rewardToRisk?: number | null;
+    checkedAtIso?: string | null;
   } | null;
+  /** The plan was saved after its checklist / AI review were computed. */
+  checklistStale?: boolean;
   executionConfirmationId: number | null;
 }
 
@@ -130,6 +133,9 @@ export function TradePlanBuilderPanel() {
   });
 
   const editable = active && active.status !== "EXECUTED" && active.status !== "CANCELED";
+  // A DRAFT carrying a checklist was saved after it was validated; the server
+  // flags it, and plans edited before that flag existed read the same way.
+  const checklistStale = active != null && (active.checklistStale === true || (active.status === "DRAFT" && active.checklist != null));
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
@@ -246,7 +252,7 @@ export function TradePlanBuilderPanel() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <RiskPreviewCard plan={active} />
             <StrategyFitPreview plan={active} />
-            <AIPlanReviewCard summary={active.aiSummary} />
+            <AIPlanReviewCard summary={active.aiSummary} stale={checklistStale} />
           </div>
 
           {/* (M) Multi-timeframe alignment — non-blocking advisory. */}
@@ -255,7 +261,7 @@ export function TradePlanBuilderPanel() {
           {/* (N) News & economic-event risk — blocks validate when NO_TRADE_WINDOW. */}
           <NewsRiskCard symbol={active.symbol} />
 
-          <TradePlanChecklist checklist={active.checklist} />
+          <TradePlanChecklist checklist={active.checklist} planStatus={active.status} stale={checklistStale} />
 
           {active.executionConfirmationId == null
             ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY"} />

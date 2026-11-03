@@ -1,13 +1,18 @@
 import { Brain } from "lucide-react";
 
-export function AIPlanReviewCard({ summary }: { summary: string | null | undefined }) {
+export function AIPlanReviewCard({ summary, stale }: { summary: string | null | undefined; stale?: boolean }) {
   return (
     <div className="rounded-lg border border-indigo-700/40 bg-indigo-950/30 p-4">
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-indigo-200">
         <Brain className="h-4 w-4" />
         AI Plan Review
       </div>
-      <p className="text-sm leading-relaxed text-slate-200">
+      {stale && summary && (
+        <p className="mb-1 text-xs text-amber-400">
+          Out of date — this review describes the plan before your last save. Validate again for a review of the current plan.
+        </p>
+      )}
+      <p className={`text-sm leading-relaxed ${stale && summary ? "text-slate-400" : "text-slate-200"}`}>
         {summary ?? "Validate the plan to receive an AI review of strengths, gaps, and risk."}
       </p>
       <p className="mt-2 text-xs text-slate-500">

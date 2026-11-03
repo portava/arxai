@@ -6,6 +6,11 @@
 //    EXECUTED, the button must not promise "Live Execution", and the request's
 //    real state (waiting, expired, cancelled ...) must be read, not assumed.
 //
+//  - Editing a validated plan makes it a DRAFT whose stored checklist and AI
+//    review describe the earlier values. They must say they are out of date,
+//    never "Ready — plan passes all blocking checks" / "All pre-trade checks
+//    pass" next to the new prices.
+//
 // Real QueryClient and the real panel. fetch is stubbed per URL; the news and
 // multi-timeframe cards (their own fetches, their own tests) are stubbed out.
 
@@ -117,5 +122,50 @@ describe("Trade Plan Builder — a plan sent to confirmation is not 'executed'",
     await screen.findByText("Plan #11");
     await waitFor(() => expect(screen.getByRole("button", { name: /pre-trade confirmation/i })).toBeTruthy());
     expect(screen.queryByText(/live execution/i)).toBeNull();
+  });
+});
+
+describe("Trade Plan Builder — a checklist from before an edit is out of date", () => {
+  const oldChecklist = {
+    items: [{ key: "SL_DEFINED", label: "Stop loss is defined", status: "PASS", detail: "1.095" }],
+    passCount: 9, failCount: 0, warnCount: 0, isReady: true, rewardToRisk: 2,
+    checkedAtIso: new Date(Date.now() - 86_400_000).toISOString(),
+  };
+
+  it("a DRAFT with the old passing checklist is never called ready", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200,
+      body: { plans: [plan({
+        status: "DRAFT", stopLoss: 1.2, checklist: oldChecklist, checklistStale: true,
+        aiSummary: "BUY plan on EURUSD. All pre-trade checks pass. Final execution remains gated by the live-execution safety layer.",
+      })] },
+    });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    expect(screen.queryByText(/Ready — plan passes all blocking checks/)).toBeNull();
+    expect(screen.getAllByText(/out of date/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/these results describe its earlier values/i)).toBeTruthy();
+    expect(screen.getByText(/describes the plan before your last save/i)).toBeTruthy();
+  });
+
+  it("a plan edited before the server flag existed (DRAFT + old ready checklist) reads the same", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200, body: { plans: [plan({ status: "DRAFT", checklist: { ...oldChecklist, checkedAtIso: undefined } })] },
+    });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    expect(screen.queryByText(/Ready — plan passes all blocking checks/)).toBeNull();
+    expect(screen.getAllByText(/out of date/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/these results describe its earlier values/i)).toBeTruthy();
+  });
+
+  it("a READY plan with its own checklist still says ready, with when it was checked", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200, body: { plans: [plan({ status: "READY", checklist: oldChecklist, checklistStale: false })] },
+    });
+    renderPanel();
+    await screen.findByText("Plan #11");
+    expect(screen.getByText(/Ready — plan passes all blocking checks/)).toBeTruthy();
+    expect(screen.getByText(/^Checked /)).toBeTruthy();
   });
 });

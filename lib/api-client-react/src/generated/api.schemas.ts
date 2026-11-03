@@ -13094,6 +13094,8 @@ export interface TradePlanChecklist {
   warnCount: number;
   isReady: boolean;
   rewardToRisk?: number | null;
+  /** When validate computed this checklist. Absent on plans validated before it was recorded. */
+  checkedAtIso?: string | null;
 }
 
 export type TradePlanStatus =
@@ -13128,6 +13130,8 @@ export interface TradePlan {
   status: TradePlanStatus;
   aiSummary?: string | null;
   checklist?: TradePlanChecklist | null;
+  /** True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result. */
+  checklistStale?: boolean;
   executionConfirmationId?: number | null;
   createdAtIso: string;
   updatedAtIso: string;

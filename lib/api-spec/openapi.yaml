@@ -21458,6 +21458,10 @@ components:
         warnCount: { type: integer }
         isReady: { type: boolean }
         rewardToRisk: { type: number, nullable: true }
+        checkedAtIso:
+          type: string
+          nullable: true
+          description: When validate computed this checklist. Absent on plans validated before it was recorded.
 
     TradePlan:
       type: object
@@ -21486,6 +21490,12 @@ components:
           oneOf:
             - $ref: "#/components/schemas/TradePlanChecklist"
             - type: "null"
+        checklistStale:
+          type: boolean
+          description: >-
+            True when the plan was saved after its checklist and AI review were
+            computed (a DRAFT carrying a checklist). They describe earlier values
+            and must not be shown as the current plan's result.
         executionConfirmationId: { type: integer, nullable: true }
         createdAtIso: { type: string }
         updatedAtIso: { type: string }

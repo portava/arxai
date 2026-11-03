@@ -15658,10 +15658,22 @@ export const ListTradePlansResponse = zod.object({
             warnCount: zod.number(),
             isReady: zod.boolean(),
             rewardToRisk: zod.number().nullish(),
+            checkedAtIso: zod
+              .string()
+              .nullish()
+              .describe(
+                "When validate computed this checklist. Absent on plans validated before it was recorded.",
+              ),
           }),
           zod.null(),
         ])
         .optional(),
+      checklistStale: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+        ),
       executionConfirmationId: zod.number().nullish(),
       createdAtIso: zod.string(),
       updatedAtIso: zod.string(),
@@ -15726,10 +15738,22 @@ export const CreateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
@@ -15775,10 +15799,22 @@ export const GetTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
@@ -15845,10 +15881,22 @@ export const UpdateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
@@ -15894,10 +15942,22 @@ export const ValidateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
@@ -15943,10 +16003,22 @@ export const CancelTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
@@ -15993,10 +16065,22 @@ export const ConvertTradePlanResponse = zod.object({
           warnCount: zod.number(),
           isReady: zod.boolean(),
           rewardToRisk: zod.number().nullish(),
+          checkedAtIso: zod
+            .string()
+            .nullish()
+            .describe(
+              "When validate computed this checklist. Absent on plans validated before it was recorded.",
+            ),
         }),
         zod.null(),
       ])
       .optional(),
+    checklistStale: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+      ),
     executionConfirmationId: zod.number().nullish(),
     createdAtIso: zod.string(),
     updatedAtIso: zod.string(),

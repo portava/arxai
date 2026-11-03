@@ -84,6 +84,12 @@ function serializePlan(row: typeof tradePlansTable.$inferSelect) {
     status: row.status,
     aiSummary: row.aiSummary,
     checklist: row.checklistJson ?? null,
+    // The stored checklist and AI review describe the values they were
+    // computed on. A DRAFT only carries one when it was edited after a
+    // validate (validate always leaves READY or INVALIDATED), so its checklist
+    // describes earlier values: out of date, never "ready". Derived from the
+    // row, so plans edited before this flag existed read the same way.
+    checklistStale: row.status === "DRAFT" && row.checklistJson != null,
     executionConfirmationId: row.executionConfirmationId,
     createdAtIso: row.createdAt.toISOString(),
     updatedAtIso: row.updatedAt.toISOString(),
@@ -188,8 +194,10 @@ router.patch("/trade-plans/:id", requireUser, async (req, res): Promise<void> =>
         ? "Plan was already sent to the Pre-Trade Confirmation flow and cannot be edited."
         : "Plan is CANCELED and cannot be edited." }); return;
     }
-    // Editing a READY plan demotes it to DRAFT — must re-validate.
-    const nextStatus = cur[0].status === "READY" ? "DRAFT" : cur[0].status;
+    // Editing a READY or INVALIDATED plan demotes it to DRAFT — the last
+    // checklist (pass or fail) was computed on the previous values, so the
+    // edited plan is unchecked until validated again.
+    const nextStatus = cur[0].status === "READY" || cur[0].status === "INVALIDATED" ? "DRAFT" : cur[0].status;
     const updated = await db.update(tradePlansTable)
       .set({ ...body, status: nextStatus, updatedAt: new Date() })
       .where(and(eq(tradePlansTable.id, id), eq(tradePlansTable.userId, userId))).returning();
@@ -287,12 +295,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         permissionStatus: perm.status, permissionBlockers: perm.blockers, permissionWarnings: perm.warnings,
         brokerStatus, hasActiveRiskLock: perm.hasActiveRiskLock,
       };
-      const checklist = evaluateChecklist(inputs);
+      const checkedAtIso = new Date().toISOString();
+      const checklist = { ...evaluateChecklist(inputs), checkedAtIso };
       const aiSummary = summarizePlan({
         symbol: plan.symbol, directionBias: plan.directionBias, strategyId: plan.strategyId,
         rewardToRisk: checklist.rewardToRisk, rewardToRiskTarget: plan.rewardToRiskTarget,
         confidenceLevel: plan.confidenceLevel,
-      }, checklist, new Date().toISOString());
+      }, checklist, checkedAtIso);
       const nextStatus = checklist.isReady ? "READY" : "INVALIDATED";
 
       const updated = await tx.update(tradePlansTable).set({
