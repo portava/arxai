@@ -161,7 +161,13 @@ describe("failed diagnostic fetch is unknown, not a default safe posture", () =>
     render(<StatusCommandCenter />);
     const page = document.body.textContent ?? "";
     expect(page).not.toMatch(/The MT5 bridge is deferred or disconnected/);
-    expect(page).not.toMatch(/MT5 DEFERRED/);
+    // Case-insensitive: the Active Blockers card was titled "MT5 Deferred".
+    expect(page).not.toMatch(/MT5 deferred/i);
+    expect(page).not.toMatch(/intentionally deferred/i);
+    const card = screen.getByTestId("scc-blocker-mt5-deferred").textContent ?? "";
+    expect(card).toMatch(/MT5 bridge state unknown/);
+    expect(card).toMatch(/could not be read/);
+    expect(card).toMatch(/treated as deferred for safety/);
   });
 
   it("a bridge the server read as deferred is still diagnosed as deferred", () => {
