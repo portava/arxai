@@ -92,7 +92,7 @@ before(async () => {
   const app = express();
   app.use((req, _res, next) => {
     (req as unknown as { authUser: { id: number } }).authUser = { id: 9 };
-    (req as unknown as { log: unknown }).log = { error: (o: unknown) => console.error(o) };
+    (req as unknown as { log: unknown }).log = { error: () => undefined, warn: () => undefined, info: () => undefined };
     next();
   });
   app.use(router);
