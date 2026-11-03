@@ -66,6 +66,18 @@ const STATUS_LABEL: Record<Status, string> = {
   CANCELED: "CANCELED",
 };
 
+// A READY plan whose latest validate in this session was refused or could not
+// be completed keeps READY on the row (a refusal does not change the stored
+// status), but that READY is from the earlier check: the badge says so, in
+// amber, instead of a green READY.
+const READY_EARLIER_LABEL = "READY (earlier check)";
+const READY_EARLIER_COLOR = "bg-amber-700 text-amber-50";
+
+function statusBadge(status: Status, hasValidateFailure: boolean): { label: string; color: string } {
+  if (status === "READY" && hasValidateFailure) return { label: READY_EARLIER_LABEL, color: READY_EARLIER_COLOR };
+  return { label: STATUS_LABEL[status] ?? status, color: STATUS_COLORS[status] };
+}
+
 /** A validate the server refused (409) or could not complete. */
 class ValidateError extends Error {
   readonly refused: boolean;
@@ -110,8 +122,10 @@ export function TradePlanBuilderPanel() {
   // The latest validate attempt that did not produce a result, per plan. A
   // refusal (409) leaves the stored status as it was, so an earlier READY is
   // still on the row: it is labelled as from an earlier check and cannot be
-  // sent from here until a validate passes again.
-  const [validateFailure, setValidateFailure] = useState<{ planId: number; refused: boolean; message: string } | null>(null);
+  // sent from here until a validate passes again. Validating one plan clears
+  // only that plan's entry. Nothing is stored on the server, so a reload
+  // loses it.
+  const [validateFailures, setValidateFailures] = useState<Record<number, { refused: boolean; message: string }>>({});
   // What the latest successful validate said about Chart Truth, per plan. GET
   // does not carry it (it is a reading of the chart at that moment), so it is
   // kept from the validate response and dropped when the plan is saved again.
@@ -164,7 +178,15 @@ export function TradePlanBuilderPanel() {
       }
       return r.json();
     },
-    onMutate: () => { setValidateFailure(null); setChartCheck(null); },
+    onMutate: (planId: number) => {
+      setValidateFailures((m) => {
+        if (!(planId in m)) return m;
+        const next = { ...m };
+        delete next[planId];
+        return next;
+      });
+      setChartCheck(null);
+    },
     onSuccess: (data: {
       id?: number;
       chartTruthStatus?: PlanChartCheck["status"];
@@ -185,7 +207,7 @@ export function TradePlanBuilderPanel() {
       qc.invalidateQueries({ queryKey: ["trade-plans"] });
     },
     onError: (e: Error, planId: number) => {
-      setValidateFailure({ planId, refused: e instanceof ValidateError && e.refused, message: e.message });
+      setValidateFailures((m) => ({ ...m, [planId]: { refused: e instanceof ValidateError && e.refused, message: e.message } }));
     },
   });
 
@@ -208,7 +230,7 @@ export function TradePlanBuilderPanel() {
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editable = active && active.status !== "EXECUTED" && active.status !== "CANCELED";
-  const activeValidateFailure = active && validateFailure?.planId === active.id ? validateFailure : null;
+  const activeValidateFailure = active ? validateFailures[active.id] ?? null : null;
   // A DRAFT carrying a checklist was saved after it was validated; the server
   // flags it, and plans edited before that flag existed read the same way.
   const checklistStale = active != null && (active.checklistStale === true || (active.status === "DRAFT" && active.checklist != null));
@@ -269,7 +291,10 @@ export function TradePlanBuilderPanel() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium text-slate-100">{p.symbol ?? "Untitled"}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[p.status]}`}>{STATUS_LABEL[p.status] ?? p.status}</span>
+                {(() => {
+                  const b = statusBadge(p.status, validateFailures[p.id] != null);
+                  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${b.color}`} data-testid={`trade-plan-status-${p.id}`}>{b.label}</span>;
+                })()}
               </div>
               <div className="text-xs text-slate-400">
                 {p.directionBias ?? "—"} · {p.strategyId ?? "no strategy"}
@@ -299,7 +324,10 @@ export function TradePlanBuilderPanel() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-100">Plan #{active.id}</h2>
-            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[active.status]}`}>{STATUS_LABEL[active.status] ?? active.status}</span>
+            {(() => {
+              const b = statusBadge(active.status, activeValidateFailure != null);
+              return <span className={`rounded px-2 py-0.5 text-xs font-semibold ${b.color}`} data-testid="trade-plan-status-active">{b.label}</span>;
+            })()}
           </div>
 
           {/* form */}
@@ -378,7 +406,9 @@ export function TradePlanBuilderPanel() {
                     </p>
                     {active.status === "READY" ? (
                       <p className="mt-1 text-xs text-amber-300">
-                        The plan&apos;s status was not changed: READY is from an earlier check and does not hold now.
+                        {activeValidateFailure.refused
+                          ? "The plan's status was not changed: READY is from an earlier check and does not hold now."
+                          : "The plan's status was not changed: READY is from an earlier check, and whether it holds now is not known."}{" "}
                         It cannot be sent from here until a validation passes again.
                       </p>
                     ) : (
@@ -402,7 +432,12 @@ export function TradePlanBuilderPanel() {
           {/* (N) News & economic-event risk — blocks validate when NO_TRADE_WINDOW. */}
           <NewsRiskCard symbol={active.symbol} />
 
-          <TradePlanChecklist checklist={active.checklist} planStatus={active.status} stale={checklistStale} />
+          <TradePlanChecklist
+            checklist={active.checklist}
+            planStatus={active.status}
+            stale={checklistStale}
+            latestValidateFailure={activeValidateFailure}
+          />
 
           {active.executionConfirmationId == null
             ? <ConvertToLiveExecutionButton planId={active.id} isReady={active.status === "READY" && activeValidateFailure == null} />
