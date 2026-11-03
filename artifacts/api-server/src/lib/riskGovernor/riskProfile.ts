@@ -182,7 +182,6 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
   if (dailyCapSet && dailyRiskUsedUnknownReason) unknowns.push(`${dailyRiskUsedUnknownReason}, so daily risk used is unknown`);
   if (weeklyCapSet && weeklyRiskUsedUnknownReason) unknowns.push(`${weeklyRiskUsedUnknownReason}, so weekly risk used is unknown`);
-  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   // PAPER: the governor counts each closed paper trade at the lower of its
   // booked P&L and the paper risk model, so "used" and the equity a percent
   // cap is valued on can differ from the booked figures. Say so, with both.
@@ -195,7 +194,22 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const activityCapSet = D.maxTradesPerDay != null || D.maxWeeklyLossAmount != null || D.maxWeeklyLossPercent != null
     || D.maxConsecutiveLosses != null || D.cooldownAfterLossMinutes != null;
   const activityUnread = ctx.activity == null && activityCapSet;
-  const status = halt.engaged || dailyReached || weeklyReached
+  if (activityUnread) {
+    const needs = [
+      ...(D.maxTradesPerDay != null ? [`your ${D.maxTradesPerDay}-trades-a-day limit`] : []),
+      ...(D.maxConsecutiveLosses != null ? [`your ${D.maxConsecutiveLosses}-losses-in-a-row limit`] : []),
+      ...(D.cooldownAfterLossMinutes != null ? [`your ${D.cooldownAfterLossMinutes}-minute cooldown after a loss`] : []),
+      ...(weeklyCapSet ? ["your weekly loss cap"] : []),
+    ];
+    const list = needs.length > 1 ? `${needs.slice(0, -1).join(", ")} and ${needs[needs.length - 1]}` : needs[0]!;
+    unknowns.push(noPaperAccount
+      ? `there is no active paper account, so ${list} cannot be checked and the Risk Governor refuses new orders until one is active`
+      : `your recent trading activity could not be read, so ${list} cannot be checked and the Risk Governor refuses new orders until it can be read`);
+  }
+  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
+  // Unread activity with such a cap set blocks like a reached limit
+  // (blockedBy activity_unread), so the status is BLOCK, never OK / UNKNOWN.
+  const status = halt.engaged || dailyReached || weeklyReached || activityUnread
     ? "BLOCK" : dailyLimit != null && dailyUsed != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   // What stops new trades, as this view measures it. A read model only: the
   // Risk Governor decides each order. trading is false whenever anything here
@@ -308,8 +322,9 @@ function uncheckedChallengeRules(
  * started, and today's drawdown counts paper P/L settled since the later of
  * the trading day's start and the challenge start, plus the current floating
  * loss. On the day the challenge started, a floating loss already open at the
- * start is in the start equity, so only floating loss beyond it counts (with
- * no balance recorded at the start: the drop in equity since the start).
+ * start is in the start equity, so only floating loss beyond it counts, and
+ * the figure is never less than the drop in equity since the start (with no
+ * balance recorded at the start: that drop alone).
  * Equity is the account's last stored mark (equityAsOf).
  *
  * A rule is scored (passed / failed) only when that measurement exists. With
@@ -377,14 +392,17 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const earlierDays = !(Date.parse(start.at) >= dayStart);
   // On the start day the loss is measured from the start: a floating loss
   // already open then is in start.equity and is not a loss since the start.
+  // It is never less than the drop in equity since the start, so a floating
+  // GAIN open at the start and given back (closed or not) counts as a loss.
   // A start recorded without its balance has no known floating P/L at the
-  // start, so it falls back to the drop in equity since the start.
+  // start, so it is the drop in equity since the start alone.
   const startBalance = typeof start.balance === "number" && Number.isFinite(start.balance) ? start.balance : null;
+  const equityDropSinceStart = Math.max(0, start.equity - acct.equity);
   const dailyDD = earlierDays
     ? Math.max(0, -(realizedToday + Math.min(0, floating)))
     : startBalance != null
-      ? Math.max(0, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
-      : Math.max(0, start.equity - acct.equity);
+      ? Math.max(equityDropSinceStart, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
+      : equityDropSinceStart;
   const totalDD = Math.max(0, -profit);
   if (Math.abs(cfg.startingBalance - start.equity) >= 0.01) {
     notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `

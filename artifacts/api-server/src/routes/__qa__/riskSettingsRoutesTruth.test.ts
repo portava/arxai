@@ -56,7 +56,10 @@ mock.module("../../lib/riskGovernor/limitSettings.js", {
 // The trader's stop switches (read by /risk/audit since the merge with the
 // halt fix): released, so no database is reached.
 mock.module("../../lib/safety/tradingHalt.js", {
-  namedExports: { loadTradingHalt: async () => ({ engaged: false, sources: [], reason: null }) },
+  namedExports: {
+    loadTradingHalt: async () => ({ engaged: false, sources: [], reason: null }),
+    loadTradingHaltReport: async () => ({ halt: { engaged: false, sources: [], reason: null }, reasons: [], unread: [] }),
+  },
 });
 // By default the stubbed audit result does not say what it read (no scope,
 // no closedTradesMeasured). With `reportsBasis` it reports what the real

@@ -58,6 +58,9 @@ test("a second stop that could not be read says so, not that it is engaged or ho
     "Your kill switch could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
   ]);
   assert.doesNotMatch(report.reasons[1]!, /Release it to trade again|is engaged\./);
+  // Which listed sources could not be read, so a status view can tell them
+  // from the read-engaged ones (halt.reason names only the first).
+  assert.deepEqual(report.unread, ["trader_kill_switch"]);
 });
 
 test("an unreadable platform stop is worded as unread in the status view; the gates' halt.reason is unchanged", async () => {
@@ -73,7 +76,9 @@ test("an unreadable platform stop is worded as unread in the status view; the ga
       "The platform emergency stop could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
       "Your kill switch could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
     ]);
+    assert.deepEqual(report.unread, ["platform_emergency_stop", "trader_kill_switch"]);
     const platform = await loadPlatformHaltReport();
+    assert.deepEqual(platform.unread, ["platform_emergency_stop"]);
     assert.deepEqual(platform.reasons, [
       "The platform emergency stop could not be read, so it is treated as engaged (fail closed). No new risk is allowed until it can be read.",
     ]);
@@ -105,6 +110,7 @@ test("a trader's stored reason that happens to read 'state unreadable' is still 
   traderRead = () => [{ on: true, why: "state unreadable" }];
   const report = await loadTradingHaltReport({ userId: 7, venue: "LIVE" });
   assert.deepEqual(report.reasons, ["Your kill switch is engaged. Release it to trade again. (state unreadable)"]);
+  assert.deepEqual(report.unread, [], "read, and engaged: not unread");
 });
 
 test("the install-wide report lists one reason per stop", async () => {

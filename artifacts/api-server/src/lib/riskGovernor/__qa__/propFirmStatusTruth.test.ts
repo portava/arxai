@@ -356,3 +356,30 @@ test("on later days the current floating loss still counts toward today's drawdo
   const s = await propFirmStatus(1, NOW);
   assert.equal(s.dailyDrawdownRemainingUsd, 1_000);
 });
+
+// Reset with a floating GAIN open (balance 10,000, equity 13,000). The same
+// day the winner closes at +3,000 and another trade loses 6,000 settled:
+// equity is 7,000, 6,000 below the start, above the 5,000 daily cap. The
+// start-day formula only discounted a floating LOSS at the start, so the
+// settled -3,000 net read as a 3,000 drawdown, "Daily DD left $2000", DAILY_DD
+// passed and ACTIVE — next to "the loss since the challenge started".
+test("on the start day a floating gain open at the start and given back counts: the drawdown is at least the fall in equity since the start", async () => {
+  state.limitsReadable = true;
+  const startAt = { at: "2026-10-28T08:00:00.000Z", paperAccountId: 3, equityAsOf: "2026-10-28T07:59:00.000Z" };
+  state.settings = { riskPreset: null, propFirm: { enabled: true, startingBalance: 10_000, maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 10_000,
+    challengeStart: { ...startAt, equity: 13_000, balance: 10_000 } } };
+  state.realized = 3_000 - 6_000;
+  state.acct = paper({ equity: 7_000, currentBalance: 7_000 });
+  const s = await propFirmStatus(1, NOW);
+  assert.equal(s.dailyDrawdownSince, startAt.at, "measured from the start on the start day");
+  assert.equal(s.dailyDrawdownRemainingUsd, -1_000, "6,000 lost since the start against a 5,000 cap");
+  assert.ok(s.failed.includes("DAILY_DD"));
+  assert.ok(!s.passed.includes("DAILY_DD"));
+  assert.equal(s.status, "FAILED");
+
+  // Gain still open but smaller: the 2,000 it gave back is today's drawdown.
+  state.realized = 0;
+  state.acct = paper({ equity: 11_000, currentBalance: 10_000 });
+  const open = await propFirmStatus(1, NOW);
+  assert.equal(open.dailyDrawdownRemainingUsd, 3_000);
+});

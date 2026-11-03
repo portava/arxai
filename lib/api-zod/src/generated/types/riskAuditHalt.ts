@@ -18,4 +18,6 @@ export interface RiskAuditHalt {
   reason: string | null;
   /** Venues on which new trades are halted. Empty when none is engaged. */
   venues: RiskAuditHaltVenuesItem[];
+  /** Additive. The entries of sources that could not be read and are counted as engaged (fail closed); every other entry was read as engaged. Absent when the server did not say, in which case reason (which names the first source) is the only per-source detail. */
+  unreadableSources?: string[];
 }

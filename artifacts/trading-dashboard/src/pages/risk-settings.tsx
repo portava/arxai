@@ -290,7 +290,8 @@ type AuditBasis = ReturnType<typeof auditBasis>;
 /** pass: a verified pass (green). legacy: no rule tripped on the legacy basis (neutral, never green). */
 type AuditVerdict = { tone: "pass" | "legacy" | "unmeasured" | "tripped"; headline: string };
 
-type HaltRead = { engaged: boolean; sources: string[]; reason: string | null; venues: string[] } | null | undefined;
+type HaltRead = { engaged: boolean; sources: string[]; reason: string | null; venues: string[]; unreadableSources?: string[] | null } | null | undefined;
+type HaltDetail = { sources: string[]; reason: string | null; unreadableSources?: string[] | null };
 
 /** Where an engaged stop switch is released, by which switch it is. */
 export function haltReleaseHint(sources: string[]): string {
@@ -312,38 +313,98 @@ const HALT_SOURCE_NAME: Record<string, string> = {
 };
 
 /**
- * The server fails closed: a switch it could not read is listed as halting,
- * and the reason (which names the first listed switch) ends "(state
- * unreadable)". That switch was not seen engaged. Returns it, or null.
+ * The server fails closed: a switch it could not read is listed as halting.
+ * A newer server says which (unreadableSources): every other listed switch
+ * was read as engaged. An older one says it only for the first switch, whose
+ * reason then ends "(state unreadable)"; the switches after it are unknown.
  */
-export function haltUnreadableSource(halt: { sources: string[]; reason: string | null }): string | null {
-  if (!halt.sources.length) return null;
-  return /\(state unreadable\)\s*$/i.test(halt.reason ?? "") ? halt.sources[0]! : null;
+function haltReadState(halt: HaltDetail): { readEngaged: string[]; unread: string[]; unknown: string[] } {
+  const listed = halt.unreadableSources;
+  if (Array.isArray(listed)) {
+    return {
+      readEngaged: halt.sources.filter((s) => !listed.includes(s)),
+      unread: halt.sources.filter((s) => listed.includes(s)),
+      unknown: [],
+    };
+  }
+  const [first, ...rest] = halt.sources;
+  if (first == null) return { readEngaged: [], unread: [], unknown: [] };
+  return /\(state unreadable\)\s*$/i.test(halt.reason ?? "")
+    ? { readEngaged: [], unread: [first], unknown: rest }
+    : { readEngaged: [first], unread: [], unknown: rest };
+}
+
+/** The first listed switch when it could not be read (it was not seen engaged), or null. */
+export function haltUnreadableSource(halt: HaltDetail): string | null {
+  const first = halt.sources[0];
+  return first != null && haltReadState(halt).unread.includes(first) ? first : null;
+}
+
+/** True when at least one listed switch was read as engaged. */
+export function haltSeenEngaged(halt: HaltDetail): boolean {
+  return haltReadState(halt).readEngaged.length > 0;
 }
 
 /** The Stop switch status value: ENGAGED only for a switch that was read as engaged. */
-export function haltStatusText(halt: { sources: string[]; reason: string | null; venues: string[] }): string {
+export function haltStatusText(halt: HaltDetail & { venues: string[] }): string {
   const venues = halt.venues.join(", ");
-  return haltUnreadableSource(halt)
-    ? `COULD NOT BE READ — new trades blocked (${venues})`
-    : `ENGAGED (${venues})`;
+  const { readEngaged, unread } = haltReadState(halt);
+  if (readEngaged.length === 0) return `COULD NOT BE READ — new trades blocked (${venues})`;
+  if (unread.length) {
+    return `ENGAGED; ${unread.length === 1 ? "another switch" : `${unread.length} other switches`} could not be read (${venues})`;
+  }
+  return `ENGAGED (${venues})`;
 }
 
 /**
- * What to tell the trader about an engaged halt. An unreadable switch gets no
- * release instructions (releasing does not clear a read failure); switches
- * listed after it are each engaged or also unreadable, and are hedged so.
+ * reasonsBlocked as the page shows them. The server's halt entry ("New trades
+ * are halted on …: <reason>") repeats the gate's reason for the first listed
+ * switch, which for a switch it could not read still says "is engaged …
+ * Release it". When that switch could not be read, the entry says what was
+ * observed instead; every other reason is kept as sent.
  */
-export function haltReleaseText(halt: { sources: string[]; reason: string | null }): string {
-  const unread = haltUnreadableSource(halt);
-  if (!unread) return haltReleaseHint(halt.sources);
+export function auditBlockedReasons(audit: { reasonsBlocked: string[]; tradingHalt?: HaltRead }): string[] {
+  const halt = audit.tradingHalt;
+  const unread = halt?.engaged ? haltUnreadableSource(halt) : null;
+  if (!halt || !unread) return audit.reasonsBlocked;
   const name = HALT_SOURCE_NAME[unread] ?? "A stop switch";
-  const parts = [
-    `${name} could not be read; new trades are blocked until it can be read. It was not seen engaged, so pressing Resume or Release may not clear this.`,
-  ];
-  const restHint = haltReleaseHint(halt.sources.slice(1));
-  if (restHint) parts.push(`Also listed as halting (engaged, or could not be read either): ${restHint}`);
-  return parts.join(" ");
+  const line = `New trades are halted on ${halt.venues.join(", ") || "your account"}: `
+    + `${name} could not be read, so it is treated as engaged (fail closed). It was not seen engaged.`;
+  return audit.reasonsBlocked.map((r) => (/^New trades are halted on /.test(r) ? line : r));
+}
+
+/** "The platform emergency stop and your kill switch". */
+function joinHaltNames(sources: string[]): string {
+  const names = sources.map((s, i) => {
+    const n = HALT_SOURCE_NAME[s] ?? "A stop switch";
+    return i === 0 ? n : n.charAt(0).toLowerCase() + n.slice(1);
+  });
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] ?? "A stop switch";
+}
+
+const PLATFORM_WIDE_STOPS = new Set(["safety_core_kill_switch", "platform_emergency_stop"]);
+
+/**
+ * What to tell the trader about an engaged halt. Release steps go only to a
+ * switch read as engaged. An unreadable switch gets none (releasing does not
+ * clear a read failure). A switch whose state the server did not report (an
+ * older server, listed after the first) is hedged: engaged, or unreadable.
+ */
+export function haltReleaseText(halt: HaltDetail): string {
+  const { readEngaged, unread, unknown } = haltReadState(halt);
+  const releaseHint = haltReleaseHint(readEngaged);
+  const one = unread.length === 1;
+  const unreadLine = unread.length
+    ? `${joinHaltNames(unread)} could not be read; new trades are blocked until ${one ? "it" : "they"} can be read. `
+      + `${one ? "It was" : "They were"} not seen engaged, so pressing Resume or Release may not clear this.`
+    : "";
+  // Lead with what the first listed switch is.
+  const parts = unread.includes(halt.sources[0] ?? "") ? [unreadLine, releaseHint] : [releaseHint, unreadLine];
+  // A platform-wide stop already given its release step is not repeated.
+  const platformCovered = readEngaged.some((s) => PLATFORM_WIDE_STOPS.has(s));
+  const hedgeHint = haltReleaseHint(unknown.filter((s) => !(platformCovered && PLATFORM_WIDE_STOPS.has(s))));
+  if (hedgeHint) parts.push(`Also listed as halting (engaged, or could not be read): ${hedgeHint}`);
+  return parts.filter(Boolean).join(" ");
 }
 
 /**
@@ -355,9 +416,9 @@ function riskAuditVerdict(audit: { passed: boolean; tradingHalt?: HaltRead }, ba
   if (audit.tradingHalt?.engaged) {
     return {
       tone: "tripped",
-      headline: haltUnreadableSource(audit.tradingHalt)
-        ? "New trades are halted: a stop switch could not be read"
-        : "New trades are halted: a stop switch is engaged",
+      headline: haltSeenEngaged(audit.tradingHalt)
+        ? "New trades are halted: a stop switch is engaged"
+        : "New trades are halted: a stop switch could not be read",
     };
   }
   const name = basis.legacy ? "Legacy risk audit" : "Risk audit";
@@ -405,6 +466,7 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
   }
   const basis = auditBasis(audit);
   const verdict = riskAuditVerdict(audit, basis);
+  const blocked = auditBlockedReasons(audit);
 
   return (
     <div
@@ -442,8 +504,8 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
         </p>
         {!audit.passed && (
           <p className="text-xs text-muted-foreground truncate mt-0.5">
-            {audit.reasonsBlocked[0]}
-            {audit.reasonsBlocked.length > 1 && ` (+${audit.reasonsBlocked.length - 1} more)`}
+            {blocked[0]}
+            {blocked.length > 1 && ` (+${blocked.length - 1} more)`}
           </p>
         )}
         {audit.tradingHalt?.engaged && (
@@ -1909,12 +1971,12 @@ export function RiskAuditDetail() {
 
         <div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6 pb-32 md:pb-6">
           {audit.reasonsBlocked.length > 0 && (
-            <div>
+            <div data-testid="risk-audit-blocked">
               <h4 className="text-xs font-semibold text-red-400/80 mb-2 uppercase tracking-wider">
                 Blocked ({audit.reasonsBlocked.length})
               </h4>
               <div className="space-y-1.5">
-                {audit.reasonsBlocked.map((r, i) => (
+                {auditBlockedReasons(audit).map((r, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs text-red-300/90">
                     <XCircle size={12} className="shrink-0 mt-0.5 text-red-400" />
                     {r}

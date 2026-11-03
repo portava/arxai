@@ -2,7 +2,7 @@ import { Router } from "express";
 import { GetRiskSettingsResponse, UpdateRiskSettingsBody } from "@workspace/api-zod";
 import { z } from "zod/v4";
 import { computeRiskAudit, riskAuditBasis, riskAuditHaltFrom } from "../lib/riskAudit.js";
-import { loadTradingHalt } from "../lib/safety/tradingHalt.js";
+import { loadTradingHaltReport } from "../lib/safety/tradingHalt.js";
 import { calculatePositionSize } from "../lib/riskGovernor/positionSizer.js";
 import {
   evaluateDrawdownGuard, evaluateExposureGuard, evaluateMaxLossGuard,
@@ -157,11 +157,15 @@ router.get("/risk/audit", requireUser, async (req, res) => {
     // which the governor also applies to DEMO / LIVE orders; the page says
     // so. Read only for this view; nothing here changes what any order path
     // blocks.
+    // The report is the same reads and the same halt as loadTradingHalt, plus
+    // which listed sources could not be read (tradingHalt.unreadableSources).
     const userId = req.authUser!.id;
-    const [paperHalt, liveHalt] = await Promise.all([
-      loadTradingHalt({ userId, venue: "PAPER" }),
-      loadTradingHalt({ userId, venue: "LIVE" }),
+    const [paperReport, liveReport] = await Promise.all([
+      loadTradingHaltReport({ userId, venue: "PAPER" }),
+      loadTradingHaltReport({ userId, venue: "LIVE" }),
     ]);
+    const paperHalt = { ...paperReport.halt, unread: paperReport.unread };
+    const liveHalt = { ...liveReport.halt, unread: liveReport.unread };
     const audit = await computeRiskAudit(accountBalance, {
       riskPerTradePct:       settings.riskPerTradePct,
       maxDailyLossPct:       settings.maxDailyLossPct,

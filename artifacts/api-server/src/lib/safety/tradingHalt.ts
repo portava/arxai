@@ -81,6 +81,9 @@ export interface HaltReport {
    *  detail (the trader's stored reason). A source that could not be read is
    *  worded as unread and treated as engaged, never as an observed engage. */
   reasons: string[];
+  /** The entries of halt.sources that could not be read (fail closed), in
+   *  order; the rest were read as engaged. Status views only. */
+  unread: HaltSource[];
 }
 
 /** Status-view subject for a source whose state could not be read. */
@@ -113,6 +116,7 @@ function haltReport(
   return {
     halt: haltFrom(sources, detail),
     reasons: sources.map((s) => statusReason(s, detail, unread)),
+    unread: sources.filter((s) => unread.has(s)),
   };
 }
 

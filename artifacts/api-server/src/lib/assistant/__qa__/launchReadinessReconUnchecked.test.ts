@@ -146,3 +146,42 @@ test("env flag off: the existing master-switch blocker names the env flag", asyn
     liveBrokerExecution = ARMED;
   }
 });
+
+// global_trading_settings could not be read: loadPlatformSettings fails closed
+// with operatorArmed false. The tool reported liveBrokerExecutionOperatorArmed
+// as a definite false ("observed: not armed") for an arm nobody read — worst
+// with the env flag off, where the blockers name only the env flag.
+test("settings that could not be read: the operator arm is reported unknown (null), never an observed false", async () => {
+  agg = aggOf({});
+  switchesReadable = false;
+  try {
+    for (const envEnabled of [true, false]) {
+      liveBrokerExecution = { envEnabled, operatorArmed: false, enabled: false };
+      const r = (await summarizeLaunchReadinessForAdminTool(1)) as {
+        tradingMode: { liveBrokerExecutionEnabled: boolean; liveBrokerExecutionEnvFlag: boolean; liveBrokerExecutionOperatorArmed: boolean | null };
+      };
+      assert.equal(r.tradingMode.liveBrokerExecutionOperatorArmed, null, `env ${envEnabled}: the arm was not read`);
+      assert.equal(r.tradingMode.liveBrokerExecutionEnabled, false, "still treated as off (fail closed)");
+      assert.equal(r.tradingMode.liveBrokerExecutionEnvFlag, envEnabled);
+    }
+  } finally {
+    liveBrokerExecution = ARMED;
+    switchesReadable = true;
+  }
+
+  // Read: a real false stays false.
+  liveBrokerExecution = { envEnabled: true, operatorArmed: false, enabled: false };
+  try {
+    const r = (await summarizeLaunchReadinessForAdminTool(1)) as { tradingMode: { liveBrokerExecutionOperatorArmed: boolean | null } };
+    assert.equal(r.tradingMode.liveBrokerExecutionOperatorArmed, false);
+  } finally {
+    liveBrokerExecution = ARMED;
+  }
+});
+
+test("Ruby is told that a null operator arm means it could not be read", async () => {
+  const { TOOL_DEFINITIONS } = await import("../tools.js");
+  const d = String((TOOL_DEFINITIONS as unknown as Array<{ name: string; description: string }>)
+    .find((t) => t.name === "summarizeLaunchReadinessForAdmin")?.description);
+  assert.match(d, /liveBrokerExecutionOperatorArmed is null when the platform settings could not be read/);
+});
