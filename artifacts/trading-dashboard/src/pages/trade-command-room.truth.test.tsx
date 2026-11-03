@@ -9,7 +9,7 @@
 //     could not be read) → "No open positions".
 // Each now says it could not be loaded. Successful empty reads are unchanged.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 vi.mock("wouter", () => ({
@@ -34,7 +34,11 @@ vi.mock("@/components/dashboard/cockpit/bridgeObservation", () => ({
   sharedMasterRouteObserved: () => ({ onSharedRoute: false, routeCheckFailed: false }),
 }));
 vi.mock("@/lib/riskCapsStatus", () => ({ riskCapsStatus: () => ({ label: "—" }) }));
-vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => undefined] }));
+// A real state hook, so a test can switch the symbol the page reads quotes for.
+vi.mock("@/lib/use-chart-symbol", async () => {
+  const { useState } = await import("react");
+  return { useChartSymbol: () => useState("EURUSD") };
+});
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
 vi.mock("@/components/dashboard/cockpit/CockpitHeader", () => ({ CockpitHeader: () => null }));
 vi.mock("@/components/layout/Topbar", () => ({ MobileMenuTrigger: () => null }));
@@ -42,8 +46,10 @@ vi.mock("@/components/layout/AppLayout", () => ({ SidebarContent: () => null }))
 vi.mock("@/components/dashboard/trade/QuickTradePanel", async (orig) => ({
   ...(await orig<typeof import("@/components/dashboard/trade/QuickTradePanel")>()),
   // A probe of what the page hands the panel (the panel's copy is tested on its own).
-  QuickTradePanel: (p: { quote: unknown; quoteLoadFailed?: boolean }) => (
-    <div data-testid="quick-trade-probe" data-quote={JSON.stringify(p.quote ?? null)} data-quote-failed={String(p.quoteLoadFailed === true)} />
+  QuickTradePanel: (p: { quote: unknown; quoteLoadFailed?: boolean; quoteLoading?: boolean; setSymbol: (s: string) => void }) => (
+    <div data-testid="quick-trade-probe" data-quote={JSON.stringify(p.quote ?? null)} data-quote-failed={String(p.quoteLoadFailed === true)} data-quote-loading={String(p.quoteLoading === true)}>
+      <button type="button" data-testid="probe-switch-gbpusd" onClick={() => p.setSymbol("GBPUSD")} />
+    </div>
   ),
 }));
 vi.mock("@/components/dashboard/trade/PreTradeHeatChecklist", () => ({ PreTradeHeatChecklist: () => null }));
@@ -181,5 +187,47 @@ describe("Trade Command Room quote read", () => {
     render(<TradeCommandRoom />);
     await waitFor(() => expect(JSON.parse(probe().dataset.quote ?? "null")).toEqual(q));
     expect(probe().dataset.quoteFailed).toBe("false");
+  });
+});
+
+// Round 3 review: the page stores the quote only after all five reads of a
+// load settle, and starts with quote null and no failure, so the panel said
+// "No quote available for this symbol." before any quote answer arrived. On a
+// symbol change the previous symbol's quote stayed until the next load.
+describe("Trade Command Room quote read not answered yet", () => {
+  const probe = () => screen.getByTestId("quick-trade-probe");
+  const SIM = (symbol: string) => ({ symbol, bid: 1.1, ask: 1.1002, spread: 0.0002, mid: 1.1001, executionEnvironment: "SIMULATOR" });
+
+  function serveQuotes(quoteFor: (symbol: string) => Promise<Response>) {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const m = /\/market\/quote\/([^/?]+)/.exec(url);
+      if (m) return quoteFor(m[1]!);
+      if (url.includes("/market-scanner/opportunities")) return new Response(JSON.stringify({ opportunities: [] }));
+      if (url.includes("/live-intent/queue")) return new Response(JSON.stringify({ counts: { total: 0 } }));
+      if (url.includes("/decision-stream")) return new Response(JSON.stringify({ decisions: [] }));
+      return new Response(JSON.stringify({}));
+    }));
+  }
+
+  it("a quote read that has not answered reaches the panel as loading, not as no quote", async () => {
+    serveQuotes(() => new Promise<Response>(() => {}));
+    render(<TradeCommandRoom />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(probe().dataset.quoteLoading).toBe("true");
+    expect(probe().dataset.quoteFailed).toBe("false");
+    expect(probe().dataset.quote).toBe("null");
+  });
+
+  it("after a symbol change the previous symbol's quote is not handed to the panel while the new one loads", async () => {
+    serveQuotes((symbol) => (symbol === "EURUSD"
+      ? Promise.resolve(new Response(JSON.stringify(SIM("EURUSD"))))
+      : new Promise<Response>(() => {})));
+    render(<TradeCommandRoom />);
+    await waitFor(() => expect(JSON.parse(probe().dataset.quote ?? "null")).toEqual(SIM("EURUSD")));
+    expect(probe().dataset.quoteLoading).toBe("false");
+    fireEvent.click(screen.getByTestId("probe-switch-gbpusd"));
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(probe().dataset.quote).toBe("null");
+    expect(probe().dataset.quoteLoading).toBe("true");
   });
 });

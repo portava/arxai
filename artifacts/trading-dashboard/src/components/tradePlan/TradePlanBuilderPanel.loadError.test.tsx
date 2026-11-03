@@ -150,10 +150,14 @@ describe("TradePlanBuilderPanel — action failures are shown", () => {
     expect(err.textContent).toContain("HTTP 403");
   });
 
-  it("a failed create says no plan was created", async () => {
+  // POST /trade-plans stores the plan before its vault write, which can still
+  // fail: a 500 does not say whether a plan was created.
+  it("a failed create (HTTP 500) says it could not confirm whether a plan was created", async () => {
     mountWithPlan("create");
     fireEvent.click(await screen.findByText("+ New trade plan"));
     const err = await screen.findByTestId("trade-plan-create-error");
-    expect(err.textContent).toMatch(/not created/i);
+    expect(err.textContent).toContain("HTTP 500");
+    expect(err.textContent).toMatch(/could not confirm whether a plan was created/i);
+    expect(err.textContent).not.toMatch(/not created/i);
   });
 });

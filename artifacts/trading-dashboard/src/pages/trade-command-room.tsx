@@ -100,6 +100,9 @@ export default function TradeCommandRoom() {
   // True when the latest quote read failed, so the panel says "could not be
   // loaded" rather than "no quote for this symbol".
   const [quoteLoadFailed, setQuoteLoadFailed] = useState(false);
+  // True until a quote read for the current symbol has answered: the panel
+  // then says the quote is loading, never "no quote for this symbol".
+  const [quoteLoading, setQuoteLoading] = useState(true);
   // null until the queue answers; intentError when it could not be loaded.
   // The queue counts only its newest window (intentAtLeast: older intents
   // exist), and answers non-admins with an admin-only note instead of counts.
@@ -126,7 +129,7 @@ export default function TradeCommandRoom() {
     summaryLoading: summaryQ.isLoading,
   });
 
-  async function load() {
+  async function load(isCurrent: () => boolean = () => true) {
     const bare = symbol.includes(":") ? symbol.split(":")[1] : symbol;
     const [o, d, q, ic, ac] = await Promise.all([
       readJson("/api/market-scanner/opportunities?limit=12"),
@@ -136,6 +139,9 @@ export default function TradeCommandRoom() {
       readJson("/api/live-intent/queue"),
       fetch("/api/alerts/scanner?unackedOnly=true").then((r) => r.json()).catch(() => ({ count: 0 })),
     ]);
+    // A load for a symbol the page has since left is dropped: its quote is
+    // not the current symbol's, and the next load answers for everything.
+    if (!isCurrent()) return;
     const oppsOk = Array.isArray(o?.opportunities);
     setOpps(oppsOk ? o.opportunities : []);
     setOppsError(!oppsOk);
@@ -144,6 +150,7 @@ export default function TradeCommandRoom() {
     setDecisionsError(!decisionsOk);
     setQuote(q.quote);
     setQuoteLoadFailed(q.failed);
+    setQuoteLoading(false);
     const iq = readIntentQueueCount(ic);
     const counted = iq.kind === "exact" || iq.kind === "at_least";
     setIntentCount(counted ? iq.total : null);
@@ -153,7 +160,16 @@ export default function TradeCommandRoom() {
     setAlertCount(ac.count ?? 0);
   }
 
-  useEffect(() => { void load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, [symbol]);
+  useEffect(() => {
+    let current = true;
+    // A new symbol has no quote read yet: the previous symbol's quote and
+    // read failure are not shown for it.
+    setQuote(null); setQuoteLoadFailed(false); setQuoteLoading(true);
+    const run = () => { void load(() => current); };
+    run();
+    const id = setInterval(run, 5000);
+    return () => { current = false; clearInterval(id); };
+  }, [symbol]);
 
   function pickAndAnalyze(o: Opp) {
     setPicked(o); setSymbol(o.symbol); setTimeframe(o.timeframe);
@@ -184,6 +200,7 @@ export default function TradeCommandRoom() {
         lot={lot} setLot={setLot}
         quote={quote}
         quoteLoadFailed={quoteLoadFailed}
+        quoteLoading={quoteLoading}
         slTpOn={slTpOn} setSlTpOn={setSlTpOn}
         stopLoss={stopLoss} setStopLoss={setStopLoss}
         takeProfit={takeProfit} setTakeProfit={setTakeProfit}

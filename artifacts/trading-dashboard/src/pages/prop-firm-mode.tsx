@@ -52,6 +52,45 @@ function isStatus(v: unknown): v is Status {
 }
 const timeOf = (ms: number) => new Date(ms).toLocaleTimeString();
 
+/**
+ * GET /me/risk-settings as this page reads it: whether "Block after daily
+ * loss" is on and the daily loss amount stored (null = none set, undefined =
+ * not reported), or why it could not be read.
+ */
+type DailyBlock = { on: boolean; amount: number | null | undefined } | { error: string };
+
+/**
+ * What the page may say about the daily loss cap. The prop cap is enforced
+ * only while "Block after daily loss" is on AND the trader's risk settings
+ * hold that amount: the Risk Governor reads the stored amount, never the prop
+ * configuration. propCapUsd is the saved prop value (null when the prop status
+ * has not loaded).
+ */
+function dailyLossEnforcement(d: DailyBlock, propCapUsd: number | null): { text: string; propCapEnforced: boolean } {
+  if ("error" in d) {
+    return { propCapEnforced: false, text: `Whether "Block after daily loss" is on could not be checked (${d.error}), so it is not known whether the daily loss cap is enforced.` };
+  }
+  if (!d.on) {
+    return { propCapEnforced: false, text: `"Block after daily loss" is off in your risk settings, so the daily loss cap is not enforced on any order (a daily loss limit set by an operator, if any, still applies). The total drawdown, lot size and open-position caps still apply.` };
+  }
+  const usd = (n: number) => `$${n}`;
+  const propCap = propCapUsd != null ? `the prop daily loss cap (${usd(propCapUsd)})` : "the prop daily loss cap";
+  if (d.amount === undefined) {
+    return { propCapEnforced: false, text: `"Block after daily loss" is on, but your risk settings did not report a daily loss amount, so it is not known whether the prop daily loss cap is enforced.` };
+  }
+  if (d.amount === null) {
+    return { propCapEnforced: false, text: `"Block after daily loss" is on, but no daily loss amount is set in your risk settings, so ${propCap} is not enforced. Only your daily loss percentage limit, if set, and a limit set by an operator, if any, apply. Saving the mode writes the prop value.` };
+  }
+  if (propCapUsd == null) {
+    return { propCapEnforced: false, text: `"Block after daily loss" is on and your risk settings hold a daily loss cap of ${usd(d.amount)}, which is enforced. Whether it is the prop value is not known: the prop settings were not loaded.` };
+  }
+  // Within a cent: the stored amount is a float4 column.
+  if (Math.abs(d.amount - propCapUsd) < 0.005) {
+    return { propCapEnforced: true, text: `"Block after daily loss" is on and your risk settings hold ${propCap}, so it is enforced as well.` };
+  }
+  return { propCapEnforced: false, text: `"Block after daily loss" is on, but the daily loss cap in your risk settings is ${usd(d.amount)}, not the prop value ${usd(propCapUsd)}, so ${usd(d.amount)} is the daily loss cap enforced. Saving the mode writes the prop value.` };
+}
+
 export default function PropFirmMode() {
   const [s, setS] = useState<Status | null>(null);
   const [edit, setEdit] = useState<Partial<Status["config"]>>({});
@@ -59,14 +98,20 @@ export default function PropFirmMode() {
   const [loadError, setLoadError] = useState<{ at: number; message: string } | null>(null);
   const [actionResult, setActionResult] = useState<{ ok: boolean; text: string } | null>(null);
   // The Risk Governor uses the saved daily loss cap only while the trader's
-  // own "Block after daily loss" setting is on (resolveEffectiveLimits), so
-  // the page reads that setting and says whether the cap is enforced.
-  const [dailyBlock, setDailyBlock] = useState<{ on: boolean } | { error: string } | null>(null);
+  // own "Block after daily loss" setting is on (resolveEffectiveLimits), and
+  // it uses the amount stored in the trader's risk settings, which may not be
+  // the prop value (the mode was never turned on, the settings were reset, or
+  // the amount was edited since). The page reads both and says which cap, if
+  // any, is enforced.
+  const [dailyBlock, setDailyBlock] = useState<DailyBlock | null>(null);
   async function loadDailyBlock() {
     try {
       const rs = await api("/api/me/risk-settings");
-      const v = rs && typeof rs === "object" ? (rs as { blockAfterDailyLossHit?: unknown }).blockAfterDailyLossHit : undefined;
-      setDailyBlock(typeof v === "boolean" ? { on: v } : { error: "the setting was not reported" });
+      const r = rs && typeof rs === "object" ? (rs as { blockAfterDailyLossHit?: unknown; maxDailyLossAmount?: unknown }) : {};
+      const v = r.blockAfterDailyLossHit;
+      const a = r.maxDailyLossAmount;
+      const amount = typeof a === "number" && Number.isFinite(a) ? a : a === null ? null : undefined;
+      setDailyBlock(typeof v === "boolean" ? { on: v, amount } : { error: "the setting was not reported" });
     } catch (e) {
       setDailyBlock({ error: (e as Error).message });
     }
@@ -139,6 +184,7 @@ export default function PropFirmMode() {
   const statusUnmeasured = s != null && unmeasured
     && (s.status === "ACTIVE" || s.status === "PASSED" || s.status === "WARNING" || s.status === "TARGET_REACHED");
   const statusCode = s == null ? "" : statusUnmeasured ? "NOT_MEASURED" : s.status;
+  const dailyLoss = dailyBlock ? dailyLossEnforcement(dailyBlock, s?.config.maxDailyDrawdownUsd ?? null) : null;
   const statusLabel = STATUS_LABEL[statusCode] ?? statusCode;
 
   return (
@@ -152,13 +198,9 @@ export default function PropFirmMode() {
               applies to paper, demo and live orders alike. The daily loss cap
               only counts while blockAfterDailyLossHit is on. */}
           <p className="text-sm text-muted-foreground" data-testid="prop-firm-scope">Practise a prop-firm challenge. Progress is measured on your paper account only. Saving also writes the daily loss, total drawdown, lot size and open-position caps into your own risk limits. The Risk Governor applies the total drawdown, lot size and open-position caps to every order you place on every venue, including demo and live broker orders. It applies the daily loss cap the same way only while "Block after daily loss" is on in your risk settings. Turning the mode off keeps those limits until you change them.</p>
-          {dailyBlock && (
-            <p className={`text-xs ${"on" in dailyBlock && dailyBlock.on ? "text-muted-foreground" : "text-amber-500"}`} data-testid="prop-firm-daily-loss-enforcement">
-              {"error" in dailyBlock
-                ? `Whether "Block after daily loss" is on could not be checked (${dailyBlock.error}), so it is not known whether the daily loss cap is enforced.`
-                : dailyBlock.on
-                  ? `"Block after daily loss" is on in your risk settings, so the daily loss cap is enforced as well.`
-                  : `"Block after daily loss" is off in your risk settings, so the daily loss cap is not enforced on any order (a daily loss limit set by an operator, if any, still applies). The total drawdown, lot size and open-position caps still apply.`}
+          {dailyLoss && (
+            <p className={`text-xs ${dailyLoss.propCapEnforced ? "text-muted-foreground" : "text-amber-500"}`} data-testid="prop-firm-daily-loss-enforcement">
+              {dailyLoss.text}
             </p>
           )}
           <p className="text-xs text-muted-foreground" data-testid="prop-firm-separate">

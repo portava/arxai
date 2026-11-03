@@ -107,3 +107,45 @@ describe("PositionPickerPanel list rows carry the server freshness verdict", () 
     expect(screen.queryByTestId("text-row-report-live-777")).toBeNull();
   });
 });
+
+// Round 3 review: the count badge fell back to (liveCount ?? 0) + (demoCount
+// ?? 0), so before the first answer and after a failed first load it read "0"
+// next to "Positions could not be loaded: HTTP 500". A failed or pending read
+// is not a zero count.
+describe("PositionPickerPanel open-positions count badge", () => {
+  const badge = () => screen.getByTestId("badge-open-positions-count").textContent;
+
+  it("a first load that fails with HTTP 500 shows no count, not 0", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "boom" }), { status: 500 })));
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("positions-load-error");
+    expect(screen.getByTestId("positions-load-error").textContent).toBe("Positions could not be loaded: HTTP 500");
+    expect(badge()).not.toBe("0");
+    expect(badge()).toBe("—");
+  });
+
+  it("a first load that throws shows no count, not 0", async () => {
+    stubFetch(["fail"]);
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("positions-load-error");
+    expect(badge()).toBe("—");
+  });
+
+  it("before the first answer arrives the badge shows no count", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    render(<PositionPickerPanel />);
+    expect(badge()).toBe("—");
+  });
+
+  it("a successful load still counts its rows, including an answered zero", async () => {
+    stubFetch([body([row({ observedAt: new Date().toISOString(), freshness: "FRESH" })])]);
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("text-row-pnl-live-777");
+    expect(badge()).toBe("1");
+    cleanup();
+    stubFetch([body([])]);
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("text-no-open-positions");
+    expect(badge()).toBe("0");
+  });
+});

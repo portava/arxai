@@ -23,11 +23,11 @@ const SIM_QUOTE = {
 };
 
 const noop = () => undefined;
-function panel(quote: Parameters<typeof QuickTradePanel>[0]["quote"], riskApprox = "—", quoteLoadFailed = false) {
+function panel(quote: Parameters<typeof QuickTradePanel>[0]["quote"], riskApprox = "—", quoteLoadFailed = false, quoteLoading?: boolean) {
   return (
     <QuickTradePanel
       symbol="EURUSD" setSymbol={noop} timeframe="M15" setTimeframe={noop}
-      orderType="Market" setOrderType={noop} lot="1.00" setLot={noop} quote={quote} quoteLoadFailed={quoteLoadFailed}
+      orderType="Market" setOrderType={noop} lot="1.00" setLot={noop} quote={quote} quoteLoadFailed={quoteLoadFailed} quoteLoading={quoteLoading}
       slTpOn setSlTpOn={noop} stopLoss="1.0800" setStopLoss={noop} takeProfit="" setTakeProfit={noop}
       riskCheckOn setRiskCheckOn={noop} safetyGatesOn setSafetyGatesOn={noop}
       riskApprox={riskApprox} canTrade blockedLabel=""
@@ -155,6 +155,23 @@ describe("Quick Trade — a failed quote read is 'could not be loaded', not 'no 
 
   it("with no failure, an absent quote still reads 'No quote available for this symbol.'", () => {
     render(panel(null, "—", false));
+    expect(screen.getByTestId("quick-trade-quote-source").textContent).toBe("No quote available for this symbol.");
+  });
+});
+
+// Round 3 review: until the first quote read answered, the panel reached its
+// last branch and said "No quote available for this symbol." -- a claim about
+// the symbol made before any answer arrived.
+describe("Quick Trade — a quote not read yet is not 'no quote'", () => {
+  it("while the quote is loading the panel says so, not 'No quote available'", () => {
+    render(panel(null, "—", false, true));
+    const src = screen.getByTestId("quick-trade-quote-source").textContent ?? "";
+    expect(src).not.toMatch(/No quote available/);
+    expect(src).toBe("Loading the quote…");
+  });
+
+  it("once the read answered with no quote it says 'No quote available for this symbol.'", () => {
+    render(panel(null, "—", false, false));
     expect(screen.getByTestId("quick-trade-quote-source").textContent).toBe("No quote available for this symbol.");
   });
 });

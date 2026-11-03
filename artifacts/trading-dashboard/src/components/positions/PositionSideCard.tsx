@@ -86,7 +86,11 @@ export interface PositionReportState {
  * time since the answer arrived here (nowMs − receivedAtMs).
  */
 export interface PositionReportClock {
-  /** Browser time (Date.now()) when the positions answer arrived. */
+  /**
+   * Browser time (Date.now()) when the positions answer arrived. A caller may
+   * pass the time its request was sent instead: that counts the server's work
+   * and the transfer after its generatedAt, so the age is never understated.
+   */
   receivedAtMs: number;
   /** Server time the answer was built (its generatedAt); null when the server did not send one. */
   serverNowMs: number | null;

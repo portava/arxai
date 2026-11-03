@@ -83,6 +83,7 @@ export function QuickTradePanel({
   lot, setLot,
   quote,
   quoteLoadFailed = false,
+  quoteLoading = false,
   slTpOn, setSlTpOn,
   stopLoss, setStopLoss,
   takeProfit, setTakeProfit,
@@ -97,6 +98,11 @@ export function QuickTradePanel({
   quote: Quote;
   /** True when the latest quote read failed (see readQuickTradeQuote). */
   quoteLoadFailed?: boolean;
+  /**
+   * True while no quote read for this symbol has answered yet. Nothing is
+   * known about the symbol's quote then: it is not "no quote available".
+   */
+  quoteLoading?: boolean;
   slTpOn: boolean; setSlTpOn: (v: boolean) => void;
   stopLoss: string; setStopLoss: (v: string) => void;
   takeProfit: string; setTakeProfit: (v: string) => void;
@@ -202,9 +208,11 @@ export function QuickTradePanel({
               ? withheldSource
                 ? `A quote came back from "${withheldSource}", which is not a broker or MT5 price, so it is not shown. Check the chart feed for the current price.`
                 : "A quote came back with no stated source, so it is not shown. Check the chart feed for the current price."
-              : quoteLoadFailed
-                ? "The quote could not be loaded, so no price is shown. Check the chart feed for the current price."
-                : "No quote available for this symbol."}
+              : quoteLoading
+                ? "Loading the quote…"
+                : quoteLoadFailed
+                  ? "The quote could not be loaded, so no price is shown. Check the chart feed for the current price."
+                  : "No quote available for this symbol."}
       </p>
 
       {/* Lot sizing */}

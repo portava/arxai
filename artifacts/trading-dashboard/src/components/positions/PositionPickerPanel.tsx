@@ -55,11 +55,16 @@ export function PositionPickerPanel() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
+      // The answer is stamped with when the request was sent, not when it
+      // arrived: the server reads its clock (generatedAt) after the request
+      // reaches it, then still reads more and sends the answer. Ageing from
+      // the send time counts that time too, so an age can only be overstated.
+      const sentAt = Date.now();
       try {
         const r = await fetch(u("/api/me/positions/all"), { credentials: "include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as Resp;
-        if (!cancelled) { setData(j); setErr(null); setLoadedAt(Date.now()); }
+        if (!cancelled) { setData(j); setErr(null); setLoadedAt(sentAt); }
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
       } finally {
@@ -71,8 +76,8 @@ export function PositionPickerPanel() {
   }, []);
 
   // Report ages are computed on one clock at a time (server age at read +
-  // browser time since the answer arrived), never a server timestamp against
-  // this browser's clock.
+  // browser time since the request was sent), never a server timestamp
+  // against this browser's clock.
   const serverNowMs = data?.generatedAt ? Date.parse(data.generatedAt) : NaN;
   const reportClock: PositionReportClock | undefined = loadedAt == null
     ? undefined
@@ -90,6 +95,13 @@ export function PositionPickerPanel() {
   // That is not "not in live mode" and not "no positions": the account may be
   // live and hold positions, so the count and the empty copy are withheld.
   const modeUnread = data?.modeResolved === false;
+  // The count comes only from an answer that was read: before the first
+  // answer, after a failed first load, or with the mode unread and nothing
+  // listed, there is no count (never a 0 nobody counted).
+  const openCount: number | null =
+    !data || (modeUnread && all.length === 0) || !Number.isFinite(data.liveCount) || !Number.isFinite(data.demoCount)
+      ? null
+      : data.liveCount + data.demoCount;
 
   const submitClose = async (pos: UnifiedPosition) => {
     if (!pos.brokerTicket) return;
@@ -142,8 +154,15 @@ export function PositionPickerPanel() {
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             My open positions
-            <Badge variant="outline" className="text-[10px]" data-testid="badge-open-positions-count">
-              {modeUnread && all.length === 0 ? "—" : (data?.liveCount ?? 0) + (data?.demoCount ?? 0)}
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              data-testid="badge-open-positions-count"
+              title={openCount == null
+                ? (err ? "Positions could not be loaded, so they were not counted." : modeUnread ? "Your account's trading mode could not be read, so positions were not counted." : "Positions have not loaded yet.")
+                : err && loadedAt != null ? `Count from the last successful load at ${new Date(loadedAt).toLocaleTimeString()}.` : undefined}
+            >
+              {openCount ?? "—"}
             </Badge>
           </CardTitle>
         </CardHeader>
