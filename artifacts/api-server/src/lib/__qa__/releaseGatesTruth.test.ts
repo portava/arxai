@@ -10,7 +10,10 @@ let mt5Connected: boolean | "throw" = false;
 
 const realDb = await import("@workspace/db");
 mock.module("@workspace/db", { namedExports: { ...realDb, db: {
-  select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+  select: () => ({ from: () => ({
+    where: () => ({ limit: async () => [] }),
+    orderBy: () => ({ limit: async () => [] }),
+  }) }),
 } } });
 mock.module("../systemHealth/audit.js", { namedExports: { listAudit: async () => [] } });
 mock.module("../riskGovernor/riskProfile.js", { namedExports: {
@@ -43,8 +46,8 @@ mock.module("../data/providers/mt5Provider.js", { namedExports: {
   },
 } });
 
-const { readinessReport, versionEnvelope, observedVersionEnvelope } = await import("../release.js");
-const { mt5SetupStatusFrom } = await import("../dailyTesting.js");
+const { readinessReport, versionEnvelope, observedVersionEnvelope, diagnosticsPackage, diagnosticsSafetyAgrees } = await import("../release.js");
+const { mt5SetupStatusFrom, exportWeeklyReport } = await import("../dailyTesting.js");
 
 // Round 3: a connected feed was reported as mt5Deferred: true next to
 // mt5Connected: true, and the gate failed it, so a working MT5 feed read as a
@@ -130,4 +133,52 @@ test("version 'lastUpdated' is not the request time", async () => {
   const b = versionEnvelope().lastUpdated;
   assert.equal(a, b);
   assert.equal(versionEnvelope().lastUpdatedBasis, "server_start");
+});
+
+// Round 3 review: the diagnostics package embedded the observed readiness
+// (mt5Connected: true, mt5Deferred: false) next to a literal safety block
+// { mt5Connected: false, mt5Deferred: true }, so one payload contradicted
+// itself, and acceptance S10 called it "honest" only because of the literals.
+test("the diagnostics package's MT5 safety flags are the readiness observation, not literals", async () => {
+  mt5Connected = true;
+  const on = await diagnosticsPackage();
+  assert.equal(on.readiness.mt5Connected, true);
+  assert.equal(on.safety.mt5Connected, true, "no 'not connected' next to an observed connection");
+  assert.equal(on.safety.mt5Deferred, false, "no 'deferred' next to an observed connection");
+  assert.equal(on.safety.mt5CheckedAt, on.readiness.evaluatedAt);
+  assert.equal(on.safety.realBrokerExecutionAvailable, false);
+  assert.equal(diagnosticsSafetyAgrees(on), true);
+
+  mt5Connected = false;
+  const off = await diagnosticsPackage();
+  assert.equal(off.safety.mt5Connected, false);
+  assert.equal(off.safety.mt5Deferred, true);
+  assert.equal(diagnosticsSafetyAgrees(off), true);
+
+  mt5Connected = "throw";
+  const unknown = await diagnosticsPackage();
+  assert.equal(unknown.safety.mt5Connected, null, "unreadable is not 'not connected'");
+  assert.equal(unknown.safety.mt5Deferred, true);
+  assert.equal(diagnosticsSafetyAgrees(unknown), true);
+});
+
+test("S10's honesty check fails a safety block that contradicts the readiness observation", async () => {
+  mt5Connected = true;
+  const pkg = await diagnosticsPackage();
+  assert.equal(diagnosticsSafetyAgrees({ ...pkg, safety: { ...pkg.safety, mt5Connected: false, mt5Deferred: true } }), false,
+    "the old literal block next to an observed connection is not honest");
+  assert.equal(diagnosticsSafetyAgrees({ ...pkg, safety: { ...pkg.safety, realBrokerExecutionAvailable: true } }), false);
+  assert.equal(diagnosticsSafetyAgrees({ ...pkg, safety: undefined }), false);
+});
+
+test("the weekly export's note says what the MT5 feed was observed doing, not 'MT5 deferred'", async () => {
+  mt5Connected = true;
+  const out = await exportWeeklyReport();
+  assert.equal(out.summary.mt5SetupStatus.connected, true);
+  assert.doesNotMatch(out.note, /MT5 deferred/i, "no 'deferred' next to connected: true");
+  assert.ok(out.note.startsWith(out.summary.mt5SetupStatus.note), out.note);
+
+  mt5Connected = "throw";
+  const unknown = await exportWeeklyReport();
+  assert.match(unknown.note, /could not be checked/i);
 });
