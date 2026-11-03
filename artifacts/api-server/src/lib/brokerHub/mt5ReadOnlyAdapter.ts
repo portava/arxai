@@ -1,4 +1,4 @@
-import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS, classifyHeartbeatAt, heartbeatIsOnline } from "./freshness.js";
+import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS, classifyHeartbeatAt, heartbeatAgeSecondsFrom, heartbeatIsOnline } from "./freshness.js";
 import { connectionAccountSnapshot } from "./accountSnapshot.js";
 import type {
   BrokerAccountSnapshot,
@@ -120,9 +120,9 @@ function healthOf(
   now: number,
 ): BrokerHealthSnapshot {
   const nativeStatus = connection.status.trim().toLowerCase();
-  const heartbeatMs = connection.lastHeartbeat?.getTime() ?? null;
-  const ageMs = heartbeatMs == null ? null : Math.max(0, now - heartbeatMs);
-  const staleSeconds = ageMs == null ? null : Math.floor(ageMs / 1000);
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age, so staleSeconds is null (unknown), never 0.
+  const staleSeconds = heartbeatAgeSecondsFrom(connection.lastHeartbeat, now);
   // Shared heartbeat policy: the link counts as up while the heartbeat is
   // online (fresh or degraded, age < 60 s). Missing / future-dated → not up.
   const heartbeatFresh = heartbeatIsOnline(classifyHeartbeatAt(connection.lastHeartbeat, now));

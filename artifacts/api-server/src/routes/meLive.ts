@@ -929,16 +929,21 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     bridgeState = { connected: false, state: "offline", stateReason: "No bridge connection", heartbeatAgeMs: null, eaVersion: null, lastHeartbeatAt: null };
   } else {
     const hbAt = freshestConn.lastHeartbeat ? new Date(freshestConn.lastHeartbeat).getTime() : null;
-    const ageMs = hbAt != null ? Math.max(0, now - hbAt) : null;
+    // Shared heartbeat policy: a heartbeat dated after the server's clock has
+    // no verifiable age, so heartbeatAgeMs is null (unknown), never 0.
+    const ageMs = hbAt != null && heartbeatAgeSecondsFrom(hbAt, now) != null ? now - hbAt : null;
     // Shared heartbeat policy on the raw age: fresh → live, degraded →
     // delayed, offline → stale; missing / future-dated → stale.
     const band = classifyHeartbeatAgeMs(hbAt != null ? now - hbAt : null);
     let state: "live" | "delayed" | "stale" | "offline";
     let stateReason: string | null = null;
-    if (ageMs == null) {
+    if (hbAt == null) {
       state = "stale"; stateReason = "Bridge has never sent a heartbeat";
-    } else if (band === "unknown") {
-      state = "stale"; stateReason = "Bridge heartbeat time is invalid (in the future)";
+    } else if (ageMs == null || band === "unknown") {
+      state = "stale";
+      stateReason = Number.isFinite(hbAt)
+        ? "Bridge heartbeat is dated after the server's clock, so its age cannot be verified"
+        : "Bridge heartbeat time is not a valid time, so its age cannot be verified";
     } else if (band === "fresh") {
       state = "live";
     } else if (band === "degraded") {
