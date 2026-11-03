@@ -15,6 +15,20 @@ const FALLBACK_SOURCE_NOTE =
 const SCOPE_LINE =
   "Simulated rows from the legacy trades table, which no longer records new trades. Your current paper book, DEMO EA positions and broker positions are not shown here.";
 
+// The only pairs the server splits by currency (api-server
+// lib/portfolio/exposure.ts PAIR_CURRENCIES). An open row on any other symbol
+// (EURGBP, XAUUSD, a suffixed "EURUSD.m") is counted in totalOpen but adds
+// nothing to exposureByCurrency, so an empty split is not "no forex rows".
+const CURRENCY_SPLIT_PAIRS = "EURUSD, GBPUSD, AUDUSD, USDJPY, USDCAD, USDCHF, NZDUSD, EURJPY and GBPJPY";
+
+function currencyCoverageLine(totalOpen: number, splitCount: number): string {
+  if (totalOpen === 0) return "No open rows in this source.";
+  if (splitCount > 0) return `Split by currency only for ${CURRENCY_SPLIT_PAIRS}. Open rows on any other symbol are not included here.`;
+  return totalOpen === 1
+    ? `The 1 open row in this source is not on one of the pairs this view splits by currency (${CURRENCY_SPLIT_PAIRS}), so its currency exposure is not shown.`
+    : `None of the ${totalOpen} open rows in this source is on one of the pairs this view splits by currency (${CURRENCY_SPLIT_PAIRS}), so their currency exposure is not shown.`;
+}
+
 // Sign before the symbol: "-$12.00", not "$-12.00".
 function money(v: number): string {
   return `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(2)}`;
@@ -137,14 +151,17 @@ export default function Portfolio() {
 
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Net Currency Exposure</CardTitle></CardHeader>
-        <CardContent>
-          {exp.exposureByCurrency.length === 0 ? <p className="text-sm text-muted-foreground">No open forex rows in this source.</p> :
+        <CardContent className="space-y-2">
+          {exp.exposureByCurrency.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-3">
               {exp.exposureByCurrency.map((c) => (
                 <div key={c.currency} className="p-2 rounded border border-border/50 flex justify-between"><span className="font-mono font-bold">{c.currency}</span><span className={`font-mono ${c.netLots >= 0 ? "text-success" : "text-destructive"}`}>{c.netLots > 0 ? "+" : ""}{c.netLots.toFixed(2)}</span></div>
               ))}
             </div>
-          }
+          ) : null}
+          <p className={exp.exposureByCurrency.length > 0 ? "text-xs text-muted-foreground" : "text-sm text-muted-foreground"} data-testid="currency-exposure-coverage">
+            {currencyCoverageLine(exp.totalOpen, exp.exposureByCurrency.length)}
+          </p>
         </CardContent>
       </Card>
     </div>
