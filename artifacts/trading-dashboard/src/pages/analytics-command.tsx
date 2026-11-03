@@ -276,7 +276,12 @@ export default function AnalyticsCommandCenter() {
               {snapshotCheck === "matches"
                 ? ". They match your closed trades as computed now."
                 : snapshotCheck === "differs"
-                  ? `. They no longer match your closed trades as computed now (${dd.data?.pnlCoverage?.closedTrades ?? "?"} closed trades)${snapshotOutOfDate ? ", so its money figures are shown as out of date" : ""}. Use Recompute snapshot to update them.`
+                  ? `. They no longer match your closed trades as computed now (${dd.data?.pnlCoverage?.closedTrades ?? "?"} closed trades)` +
+                    // With no trade sized in USD the money tiles read "not
+                    // measured", and recomputing does not change that.
+                    (pnlNotMeasured
+                      ? ". No money figure is shown because none of your closed trades could be sized in USD. Recompute snapshot updates the trade count, win rate and other non-money figures; it does not produce money figures."
+                      : `${snapshotOutOfDate ? ", so its money figures are shown as out of date" : ""}. Use Recompute snapshot to update them.`)
                   : snapshotCheck === "unchecked"
                     ? ". Whether they match your closed trades now could not be checked."
                     : ". Checking them against your closed trades now…"}
