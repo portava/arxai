@@ -13,4 +13,6 @@ export const Mt5StatusMode = {
   DEMO: "DEMO",
   LIVE_LOCKED: "LIVE_LOCKED",
   LIVE: "LIVE",
+  NOT_CONNECTED: "NOT_CONNECTED",
+  STALE: "STALE",
 } as const;

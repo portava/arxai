@@ -13,6 +13,8 @@
 //
 // Run: pnpm --filter @workspace/api-server run test:trade-engine-pipeline
 
+import { executablePaperFixture } from "../../safety/__qa__/paperModeFixture.js";
+let restorePaperMode: (() => Promise<void>) | undefined;
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { desc, eq, inArray } from "drizzle-orm";
@@ -83,12 +85,14 @@ const paperOpen = (userId: number, paperAccountId: number, over: Partial<Extract
 };
 
 before(async () => {
+  restorePaperMode = await executablePaperFixture();
   await deleteFixtures();
   u.a = await seedUser(EMAIL_A);
   u.b = await seedUser(EMAIL_B);
 });
 
 after(async () => {
+  await restorePaperMode?.();
   await deleteFixtures();
 });
 

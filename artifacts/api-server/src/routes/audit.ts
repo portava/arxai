@@ -29,8 +29,14 @@ import {
   shadowCapture,
   findAuditEventById,
 } from "../lib/auditVault.js";
+import { requireOperator } from "../lib/auth/ownerScope.js";
 
 const router: IRouter = Router();
+// These are global forensic records, including private trader decisions and
+// outcomes (listAllAuditEvents has no owner filter). Trader access is through
+// the owner-scoped /me/risk/events surface. The debug mutation endpoints are
+// protected too, including development preview installs. (PR #102 port.)
+router.use("/audit", requireOperator);
 
 const QuerySchema = z.object({
   sinceIso: z.string().optional(),

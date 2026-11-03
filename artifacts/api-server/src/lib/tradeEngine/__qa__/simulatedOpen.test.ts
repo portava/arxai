@@ -172,7 +172,7 @@ before(async () => {
   Object.assign(acct, { a: a.acct, b: b.acct });
   // Every install-wide stop released and the demo venue open, restored after.
   await setRow("platform", { emergencyKillSwitch: false, platformMode: "LIVE", demoEnabled: true });
-  await setRow("safety_core", { killSwitchEngaged: false });
+  await setRow("safety_core", { killSwitchEngaged: false, operationalMode: "PAPER_TRADING", globalState: "NORMAL" });
   const app = express();
   app.use(express.json());
   app.use(cookieParser());

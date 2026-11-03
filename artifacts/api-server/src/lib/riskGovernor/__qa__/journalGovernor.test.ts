@@ -13,6 +13,8 @@
 //
 // Run: pnpm --filter @workspace/api-server run test:risk-governor-journal
 
+import { executablePaperFixture } from "../../safety/__qa__/paperModeFixture.js";
+let restorePaperMode: (() => Promise<void>) | undefined;
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { desc, eq, inArray } from "drizzle-orm";
@@ -72,6 +74,7 @@ async function lastEvent() {
 }
 
 before(async () => {
+  restorePaperMode = await executablePaperFixture();
   await deleteFixtures();
   const rows = await db.insert(usersTable).values(EMAILS.map((email) => ({ email, name: "QA Journal", role: "USER", isSystemUser: true })))
     .returning({ id: usersTable.id });
@@ -83,7 +86,7 @@ beforeEach(async () => {
   await db.delete(userRiskSettingsTable).where(inArray(userRiskSettingsTable.userId, [userId, otherId]));
   await db.delete(autopilotCyclesTable).where(inArray(autopilotCyclesTable.userId, [userId, otherId]));
 });
-after(deleteFixtures);
+after(async () => { await deleteFixtures(); await restorePaperMode?.(); });
 
 test("journal open: with default settings the missing playbook and checklist block together, as before", async () => {
   const r = await enforceJournalOpen(userId, await planned(), 1.1);

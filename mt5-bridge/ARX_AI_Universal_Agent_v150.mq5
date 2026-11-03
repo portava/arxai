@@ -374,9 +374,17 @@ void HandleCommand(const string slice)
    }
 
    // ── Expiry: reject stale commands (retry/reconnect safety) ──
+   // createdAtEpoch is the ARX server's UTC epoch (seconds). Compare it with the
+   // EA's UTC clock (TimeGMT), never with TimeCurrent(): the trade server's
+   // clock is broker-local (e.g. UTC+2/+3), which would make every fresh command
+   // read as hours old and reject it as EXPIRED on a non-UTC broker. TimeGMT()
+   // can return 0 before the terminal has synced; fall back to TimeCurrent()
+   // only then (same rule as V2NowEpochMs).
    long createdAtEpoch = JsonLong(slice, "createdAtEpoch");
    if(createdAtEpoch > 0) {
-      long ageSec = (long)TimeCurrent() - createdAtEpoch;
+      long nowUtcSec = (long)TimeGMT();
+      if(nowUtcSec <= 0) nowUtcSec = (long)TimeCurrent();
+      long ageSec = nowUtcSec - createdAtEpoch;
       if(ageSec > CommandExpirySeconds) {
          RememberCmd(cmdId);
          PostResultStruct(cmdId, "EXPIRED", "COMMAND_EXPIRED", 0,

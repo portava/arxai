@@ -35,7 +35,7 @@ it("consumes preview synchronously so same-turn Keep does not duplicate history"
 });
 it("stale source/window refuses Keep and withdraws preview with no save",()=>{
  render(<ChartWorkbenchTools {...props}/>);preview();read={...ready(),proposal:{...ready().proposal!,comparisonKey:"revised"}} as ChartFibonacciRead;
- expect(ask("keep Fibonacci")).toContain("Preview withdrawn");expect(saved()).toEqual([]);expect(draw.mock.calls.at(-1)![0]).toEqual([]);
+ expect(ask("keep Fibonacci")).toContain("Preview cleared");expect(saved()).toEqual([]);expect(draw.mock.calls.at(-1)![0]).toEqual([]);
  expect(ask("keep Fibonacci")).toContain("No current Fibonacci preview");
 });
 it("unknown source and absent preview never create a kept object",()=>{

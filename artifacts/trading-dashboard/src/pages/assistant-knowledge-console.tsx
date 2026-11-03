@@ -188,6 +188,33 @@ function StatCard({ label, value, hint, bad, testId }: { label: string; value: s
   );
 }
 
+/** Key/value rendering of a diagnostic object for testers (no raw payload dump). */
+function describeDiagnosticValue(value: unknown): string {
+  if (value == null) return "none";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.length === 0 ? "none" : value.map(describeDiagnosticValue).join(", ");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).map(([k, v]) => `${k}: ${describeDiagnosticValue(v)}`).join("; ");
+  }
+  return String(value);
+}
+
+function DiagnosticFields({ value, testId }: { value: unknown; testId: string }) {
+  if (value == null) return <div className="mt-1 text-[10px]" data-testid={testId}>loading…</div>;
+  const entries = typeof value === "object" && !Array.isArray(value) ? Object.entries(value as Record<string, unknown>) : [["value", value] as [string, unknown]];
+  return (
+    <dl className="mt-1 max-h-40 overflow-auto text-[10px]" data-testid={testId}>
+      {entries.map(([key, v]) => (
+        <div key={key} className="flex gap-2">
+          <dt className="shrink-0 text-muted-foreground">{key}</dt>
+          <dd className="break-all">{describeDiagnosticValue(v)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function RuntimeDiagnosticsPanel() {
   const ctx = useRuntimeContext();
   const status = useMemo(() => explainAppStatus(ctx), [ctx]);
@@ -198,15 +225,11 @@ function RuntimeDiagnosticsPanel() {
       <div className="grid sm:grid-cols-2 gap-3 text-xs">
         <div className="rounded border border-border/60 p-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Health summary</div>
-          <pre className="mt-1 max-h-40 overflow-auto text-[10px]" data-testid="kc-rd-health">
-            {ctx.health ? JSON.stringify(ctx.health, null, 2) : "loading…"}
-          </pre>
+          <DiagnosticFields value={ctx.health} testId="kc-rd-health" />
         </div>
         <div className="rounded border border-border/60 p-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Bridge diagnostic</div>
-          <pre className="mt-1 max-h-40 overflow-auto text-[10px]" data-testid="kc-rd-bridge">
-            {ctx.bridge ? JSON.stringify(ctx.bridge, null, 2) : "loading…"}
-          </pre>
+          <DiagnosticFields value={ctx.bridge} testId="kc-rd-bridge" />
         </div>
         <div className="rounded border border-border/60 p-2 sm:col-span-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Runtime context (safe)</div>

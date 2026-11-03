@@ -56,6 +56,11 @@ const ALLOWLIST_FILE_PATTERNS = [
 const MONEY_HANDLING_ALLOWLIST = [
   "/pages/investor.tsx",
   "/pages/admin/investors.tsx",
+  // Admin-only Fund Control / cockpit capital views (operator role gated):
+  // the same investor-money bookkeeping surface as admin/investors.tsx.
+  "/components/admin/cockpit/CapitalSection.tsx",
+  "/components/admin/cockpit/InvestorsSection.tsx",
+  "/components/admin/fundControl/",
 ];
 
 function scanGroup(sources: WordingSource[], patterns: string[], moneyHandling: boolean): string[] {

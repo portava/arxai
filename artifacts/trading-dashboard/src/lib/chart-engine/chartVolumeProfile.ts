@@ -41,7 +41,7 @@ export function calculateVolumeProfile(bars:readonly ChartEngineCandle[],range:V
  for(let i=from;i<=to;i++){
   const b=bars[i]!,v=observedTradeVolume(b.volumeEvidence);
   if(!v||v.seriesIdentity!==range.seriesIdentity)return hold('Every selected bar needs qualified positive traded volume from the frozen source series; ticks or missing quantities cannot substitute.');
-  if(b.profileEvidence?.finality!=='closed'||b.profileEvidence.clockAuthority!==range.clockAuthority)return hold('Every selected bar needs original closed status and matching original UTC evidence; partial or withdrawn evidence holds the whole profile.');
+  if(b.profileEvidence?.finality!=='closed'||b.profileEvidence.clockAuthority!==range.clockAuthority)return hold('Every selected bar needs original closed status and matching original UTC evidence; partial or revoked evidence holds the whole profile.');
   if(![b.open,b.high,b.low,b.close].every(n=>Number.isFinite(n)&&n>0)||b.high<Math.max(b.open,b.close,b.low)||b.low>Math.min(b.open,b.close,b.high))return hold('Original candle prices are invalid; no partial profile was salvaged.');
   total+=v.quantity;if(!Number.isSafeInteger(total))return hold('Total traded quantity exceeds exact safe integer arithmetic.');low=Math.min(low,b.low);high=Math.max(high,b.high);
  }

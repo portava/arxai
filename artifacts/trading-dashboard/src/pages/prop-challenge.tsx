@@ -88,7 +88,7 @@ export default function PropChallengePage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Prop Firm Challenge Mode</h1>
-          <p className="text-xs text-amber-300">Practice/training only — does not promise funded-account approval or guaranteed profits.</p>
+          <p className="text-xs text-amber-300">Practice/training only — does not promise funded-account approval or certain profits.</p>
         </div>
         <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>

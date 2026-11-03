@@ -522,7 +522,7 @@ function AllocationTab({ allocation }: { allocation: { hasAllocation?: boolean; 
 function TimelineTab() {
   const { name } = useAssistantName();
   const [filter, setFilter] = useState("all");
-  const filters = ["All", "Deposits", "Withdrawals", "Allocations", "Trades", "Risk Events", "Reviews", `${name} Lessons`, "Bridge Events"];
+  const filters = ["All", "Funding in", "Funding out", "Allocations", "Trades", "Risk Events", "Reviews", `${name} Lessons`, "Bridge Events"];
   return (
     <Card>
       <div className="flex flex-wrap gap-1.5">

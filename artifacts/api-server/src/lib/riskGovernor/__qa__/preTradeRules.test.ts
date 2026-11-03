@@ -511,3 +511,31 @@ test("drawdown: at or past the cap from the recorded peak blocks new risk; closi
   const unknown = baseCtx({ limits, account: { equity: null, freeMargin: 9_000, leverage: 100, currency: "USD", source: "test" } });
   assert.ok(evaluatePreTradeRisk(baseIntent(), unknown).rules.find((x) => x.rule === "daily_loss_limit")!.reason!.includes("drawdown"));
 });
+
+// Owner policy is separate from configurable numerical confidence and trader
+// discipline overrides. It never restricts protective actions by AI origin.
+import { aiEntryPolicyReason, paperEntryOrigin, paperEntryPolicyReason } from '../../safety/entryPolicy.js';
+
+test('AI confidence policy pending: known generated entries hold; manual entries and protective actions keep their gates', () => {
+  for (const origin of ['ruby', 'automation', 'strategy'] as const) {
+    assert.equal(paperEntryOrigin(origin, 1), origin, 'retain the real generated actor in the audit');
+    assert.match(aiEntryPolicyReason({ action: 'OPEN', origin })!, /AI_ENTRY_POLICY_PENDING/);
+    for (const action of ['CLOSE', 'PARTIAL_CLOSE', 'MODIFY'] as const) assert.equal(aiEntryPolicyReason({ action, origin }), null);
+  }
+  assert.equal(aiEntryPolicyReason({ action: 'OPEN', origin: 'manual' }), null);
+  for (const origin of ['manual', 'api', 'system'] as const) {
+    assert.equal(paperEntryOrigin(origin, null), origin);
+    assert.equal(paperEntryOrigin(origin, 1), 'ruby');
+  }
+});
+
+test('paper Safety Core policy fails closed on unknown states and only permits executable modes', () => {
+  const healthy = { readable: true, present: true, engaged: false, operationalMode: 'PAPER_TRADING', globalState: 'NORMAL' };
+  assert.equal(paperEntryPolicyReason(healthy), null);
+  assert.equal(paperEntryPolicyReason({ ...healthy, operationalMode: 'LIVE_TRADING' }), null);
+  for (const operationalMode of ['OBSERVE_ONLY', 'SUGGEST_ONLY', '', 'paper_trading', 'UNKNOWN'])
+    assert.match(paperEntryPolicyReason({ ...healthy, operationalMode })!, /PAPER_MODE_BLOCK/);
+  for (const globalState of ['SAFE_SHUTDOWN', 'RECOVERY_MODE', 'DEGRADED_MODE', 'UNKNOWN'])
+    assert.match(paperEntryPolicyReason({ ...healthy, globalState })!, /PAPER_STATE_BLOCK/);
+  for (const changed of [{ readable: false }, { present: false }, { engaged: true }]) assert.ok(paperEntryPolicyReason({ ...healthy, ...changed }));
+});

@@ -63,7 +63,7 @@ const fakeDb = {
 };
 mock.module('@workspace/db', { namedExports: { db: fakeDb, bridgeV2EventsTable, bridgeV2StreamStateTable } });
 mock.module('@workspace/domain', { namedExports: { bridgeV2 } });
-mock.module(new URL('../../data/providers/mt5Provider.js', import.meta.url).href, { namedExports: { mergeCandleFromMT5: () => { }, updateQuoteFromMT5: () => { } } });
+mock.module(new URL('../../data/providers/mt5Provider.js', import.meta.url).href, { namedExports: { mergeCandleFromMT5: () => { }, updateQuoteFromMT5: () => { }, recordMt5Tick: () => ({ firstSeenEaMs: 0, lastPostedEaMs: 0, reposts: 0, priorPostEaMs: null }) } });
 mock.module(new URL('../../data/chart/formingBarComposer.js', import.meta.url).href, { namedExports: { foldFormingTick: () => { } } });
 const { liveAccountEventBus: accountBus } = await import('../../live/liveAccountEventBus.js');
 accountBus.onConnection(17, () => emitted.push(17));

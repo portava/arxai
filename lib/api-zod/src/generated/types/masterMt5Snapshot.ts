@@ -5,35 +5,26 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { MasterMt5SnapshotAccountObservationScope } from "./masterMt5SnapshotAccountObservationScope";
 import type { MasterMt5SnapshotSnapshotStatus } from "./masterMt5SnapshotSnapshotStatus";
 import type { MasterMt5SnapshotSyncStatus } from "./masterMt5SnapshotSyncStatus";
+import type { NativeAccountReport } from "./nativeAccountReport";
 
 /**
  * Owner/admin-only pinned MT5 account view. nativeAccountReport preserves direct reported decimal text with unverified clock and continuity. Legacy scalar fields are compatibility data and must not substitute for a missing native report. ARX allocation fields remain separate. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
 
  */
 export interface MasterMt5Snapshot {
-  /** Native reported decimal text, never proof of current account state. */
-  nativeAccountReport?: {
-    status: "reported" | "unavailable";
-    reason: string;
-    currentVerified: false;
-    observedAt: string | null;
-    observationAgeMs?: number | null;
-    receivedAt: string | null;
-    currency: string | null;
-    currencyDigits: number | null;
-    amounts: { balance: string; equity: string; profit: string; credit: string; margin: string; freeMargin: string } | null;
-  } | null;
+  nativeAccountReport?: NativeAccountReport | null;
   mt5Balance: number | null;
   mt5Equity: number | null;
   mt5UsedMargin: number | null;
   mt5FreeMargin: number | null;
   mt5OpenPnl: number | null;
   openPositions: number | null;
-  /** Timestamp proves some account data arrived, not that each stored amount was ever observed or when. */
-  accountObservationScope: "LATEST_ACCOUNT_UPDATE";
-  /** False while individual observations and a coherent pair are unverified; stored values may include never-observed defaults. */
+  /** Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when. */
+  accountObservationScope: MasterMt5SnapshotAccountObservationScope;
+  /** False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise. */
   amountsCoherent: boolean;
   accountCurrency?: string | null;
   brokerName?: string | null;
@@ -49,6 +40,6 @@ export interface MasterMt5Snapshot {
   lastMt5SnapshotAt?: Date | null;
   isOverAllocated: boolean;
   unattributedCount: number;
-  /** Freshness of the latest account update only, not of every amount. */
+  /** Freshness of the last account update only; does not establish freshness or coherence of every amount. */
   syncStatus: MasterMt5SnapshotSyncStatus;
 }
