@@ -14,11 +14,18 @@ type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
 // The *Unvalued flags: a percent cap is configured but equity is unknown, so
 // the cap cannot be valued in money. Absent on an older server.
-type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null }
-  // false when the server's *RiskUsed (and so *RiskRemaining) is a placeholder,
-  // with the plain reason. Absent on an older server.
+// The *RiskUsedUnmeasured flags: a cap is set but what was used against it
+// could not be measured (no account or activity read), so *Used / *Remaining
+// are null and mean "unknown", not 0 or "no cap".
+type ValuationFlags = {
+  equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null;
+  dailyRiskUsedUnmeasured?: boolean; weeklyRiskUsedUnmeasured?: boolean;
+}
+  // false when the server's *RiskUsed (and so *RiskRemaining) was not measured
+  // (an older server sent a placeholder there), with the plain reason. Absent
+  // on an older server.
   & { dailyRiskUsedKnown?: boolean; dailyRiskUsedUnknownReason?: string | null; weeklyRiskUsedKnown?: boolean; weeklyRiskUsedUnknownReason?: string | null };
-type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
+type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: Money; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: Money; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
 type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: Permissions; propFirm: PropFirmCard | null };
 
 // equityMeasured / measured false: the figures are not measured (older servers omit them).
@@ -33,6 +40,8 @@ const BLOCK_REASON: Record<string, string> = {
   stop_switch: "A stop switch is engaged",
   daily_loss_limit: "Your daily loss limit is reached",
   weekly_loss_limit: "Your weekly loss limit is reached",
+  // The governor refuses new orders while the activity its caps need is unreadable.
+  activity_unread: "Your recent trading activity could not be read, so your weekly loss, trade-count and loss-streak limits cannot be checked. The Risk Governor refuses new trades until it can read it",
 };
 
 /**
@@ -69,13 +78,14 @@ const propFirmProgressText = (pf: PropFirmCard) =>
 // configured (flag false). A percent cap with unknown equity cannot be
 // valued; an amount next to one is only an upper bound. Without the flag the
 // page cannot tell, so it says "not reported" rather than "none set".
-function capText(v: Money, unvalued: boolean | undefined, kind: "limit" | "left", pct?: number | null): string {
+function capText(v: Money, unvalued: boolean | undefined, kind: "limit" | "left", pct?: number | null, usedUnmeasured?: boolean, why?: string | null): string {
   const pctLabel = pct != null ? `${pct}% cap` : "% cap";
   if (unvalued === true) {
     if (v != null) return `$${v} or less (${pctLabel} not valued, equity unknown)`;
     return kind === "left" ? `unknown (${pctLabel}, equity unknown)` : `${pctLabel}, not valued (equity unknown)`;
   }
   if (v != null) return `$${v}`;
+  if (kind === "left" && usedUnmeasured === true) return `unknown (loss used not measured${why ? `: ${why}` : ""})`;
   return unvalued === false ? "no cap set" : "not reported";
 }
 
@@ -87,13 +97,14 @@ const equityText = (v: Money) => (v == null ? "unknown (no account equity read)"
  */
 const overtradingLabel = (v: string) => (v === "UNKNOWN" ? "Not measured — activity could not be read" : v);
 
-// "Used" and "left" when the server says the used figure was not measured: the
-// placeholder $0 used / full cap left is never shown. Left is at most the cap.
-const usedText = (v: number, known: boolean | undefined, why: string | null | undefined) =>
-  (known === false ? `unknown (${why ?? "not measured"})` : `$${v}`);
-function leftText(v: Money, unvalued: boolean | undefined, known: boolean | undefined, why: string | null | undefined, pct?: number | null): string {
+// "Used" and "left" when the server says the used figure was not measured
+// (known false, or a null used figure): an older server's placeholder $0 used /
+// full cap left is never shown, and null is never $0. Left is at most the cap.
+const usedText = (v: Money, known: boolean | undefined, why: string | null | undefined) =>
+  (known === false ? `unknown (${why ?? "not measured"})` : v == null ? "not measured" : `$${v}`);
+function leftText(v: Money, unvalued: boolean | undefined, known: boolean | undefined, why: string | null | undefined, pct?: number | null, usedUnmeasured?: boolean): string {
   if (known === false && v != null) return `unknown, at most $${v} (${why ?? "risk used not measured"})`;
-  return capText(v, unvalued, "left", pct);
+  return capText(v, unvalued, "left", pct, usedUnmeasured, known === false ? why : null);
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -211,8 +222,8 @@ export default function RiskCommandCenter() {
 
       {cards && (
         <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
-          <Stat label="Daily risk left" value={leftText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, cards.dailyRiskUsedKnown, cards.dailyRiskUsedUnknownReason, profile?.effectiveLimits.maxDailyLossPercent)} />
-          <Stat label="Weekly risk left" value={leftText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, cards.weeklyRiskUsedKnown, cards.weeklyRiskUsedUnknownReason)} />
+          <Stat label="Daily risk left" value={leftText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, cards.dailyRiskUsedKnown, cards.dailyRiskUsedUnknownReason, profile?.effectiveLimits.maxDailyLossPercent, cards.dailyRiskUsedUnmeasured)} />
+          <Stat label="Weekly risk left" value={leftText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, cards.weeklyRiskUsedKnown, cards.weeklyRiskUsedUnknownReason, null, cards.weeklyRiskUsedUnmeasured)} />
           <Stat label="Open risk" value={`$${cards.openRisk}`} />
           <Stat label="Open positions" value={String(cards.openPositions)} />
           <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
@@ -279,7 +290,7 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-rules-tab">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Permissions</CardTitle>
-          <CardDescription>What stops new trades on your account right now: your stop switches and your daily and weekly loss limits. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
+          <CardDescription>What stops new trades on your account right now: your stop switches, your daily and weekly loss limits, and trading activity that could not be read while a limit needs it. Every order is still checked by the Risk Governor against all of your rules.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1">
           {cards ? (() => {

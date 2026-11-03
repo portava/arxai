@@ -85,3 +85,50 @@ describe("Risk Command Center — Summary tab overtrading", () => {
     expect(screen.queryByText("UNKNOWN")).toBeNull();
   });
 });
+
+// With a weekly cap set and the trading activity unreadable, the server read
+// weekly use as 0 ("not blocked by ... loss limit", "Weekly used $0", the
+// whole cap "left") while the Risk Governor refused every new order. The
+// server now sends weekly use as null with weeklyRiskUsedUnmeasured, and
+// blockedBy "activity_unread"; the page says what that means.
+describe("Risk Command Center — unmeasured loss use", () => {
+  const statValue = (label: string) => screen.getByText(label).parentElement?.querySelector("p:last-child")?.textContent ?? "";
+
+  it("activity_unread reads blocked, naming why", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "rules");
+    stub(cards({ riskStatus: "UNKNOWN", riskStatusReason: "This week's trading activity could not be read, so weekly risk used is unknown.",
+      weeklyRiskRemaining: null, weeklyRiskUsedUnmeasured: true,
+      permissions: { trading: false, pauseReason: null, stopSwitchEngaged: false, blockedBy: ["activity_unread"] } }));
+    render(<RiskCommandCenter />);
+    const row = await screen.findByTestId("risk-perm-new-trades");
+    expect(row.textContent).toMatch(/New trades: blocked/);
+    expect(row.textContent).toMatch(/trading activity could not be read/);
+    expect(row.textContent).not.toMatch(/activity_unread/);
+    expect(row.textContent).not.toMatch(/not blocked by/);
+  });
+
+  it("an unmeasured weekly use is never 'no cap set' or $0", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "summary");
+    stub(cards({ riskStatus: "UNKNOWN", weeklyRiskRemaining: null, weeklyRiskLimitUnvalued: false, weeklyRiskUsedUnmeasured: true,
+      permissions: { trading: false, pauseReason: null, stopSwitchEngaged: false, blockedBy: ["activity_unread"] } }));
+    render(<RiskCommandCenter />);
+    await screen.findByText("Weekly risk left");
+    expect(statValue("Weekly risk left")).not.toMatch(/no cap set/);
+    expect(statValue("Weekly risk left")).toMatch(/not measured/);
+  });
+
+  it("the budget's unmeasured daily / weekly use reads 'not measured', never $null or $0", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "limits");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const body = url.includes("/risk-profile") ? PROFILE
+        : url.includes("/risk/budget") ? { ...BUDGET, riskStatus: "UNKNOWN", dailyRiskUsed: null, dailyRiskRemaining: null, weeklyRiskLimit: 300, weeklyRiskUsed: null,
+          dailyRiskUsedUnmeasured: true, weeklyRiskUsedUnmeasured: true }
+        : cards({});
+      return { ok: true, status: 200, json: async () => body };
+    }));
+    render(<RiskCommandCenter />);
+    await screen.findByText("Weekly used");
+    expect(statValue("Daily used")).toBe("not measured");
+    expect(statValue("Weekly used")).toBe("not measured");
+  });
+});

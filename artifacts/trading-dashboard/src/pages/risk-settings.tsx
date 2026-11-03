@@ -228,7 +228,9 @@ const LIVE_LOCK_OFF_NOTE =
 // the cooldown are measurements only when the server says it counted closed
 // rows (closedTradesMeasured) and does not list them in notMeasured. A server
 // that does not say what it read is treated as the unscoped, unmeasured case:
-// the page only ever downgrades.
+// the page only ever downgrades. Daily / weekly loss is only part of the loss
+// when closed rows with UNKNOWN P/L were left out of it (partlyMeasured, or
+// the unknownPnlRows* counts alone): never a pass, never the whole loss.
 
 const LEGACY_AUDIT_NOT_MEASURED = ["dailyLossUsed", "weeklyLossUsed", "losingStreak", "cooldownActive"];
 
@@ -244,6 +246,15 @@ function auditBasis(a: RiskAudit) {
   const notMeasured = new Set(a.notMeasured ?? []);
   if (a.closedTradesMeasured !== true) for (const f of LEGACY_AUDIT_NOT_MEASURED) notMeasured.add(f);
   const lossMeasured = !LEGACY_AUDIT_NOT_MEASURED.some((f) => notMeasured.has(f));
+  const unknownToday = a.unknownPnlRowsToday ?? null;
+  const unknownWeek = a.unknownPnlRowsThisWeek ?? null;
+  const partlyMeasured = new Set((a.partlyMeasured ?? []).filter((f) => !notMeasured.has(f)));
+  if ((unknownToday ?? 0) > 0 && !notMeasured.has("dailyLossUsed")) partlyMeasured.add("dailyLossUsed");
+  if ((unknownWeek ?? 0) > 0 && !notMeasured.has("weeklyLossUsed")) partlyMeasured.add("weeklyLossUsed");
+  const partlyLabel = partlyMeasured.has("dailyLossUsed") && partlyMeasured.has("weeklyLossUsed")
+    ? "daily and weekly loss"
+    : partlyMeasured.has("dailyLossUsed") ? "daily loss" : partlyMeasured.has("weeklyLossUsed") ? "weekly loss" : null;
+  const lossFullyMeasured = lossMeasured && partlyLabel == null;
   const balance = a.accountBalanceUsed ?? 1000;
   const notes: string[] = [];
   if (placeholder) notes.push(`Loss % is measured against a $${balance.toLocaleString("en-US")} placeholder balance, not your live balance.`);
@@ -258,6 +269,9 @@ function auditBasis(a: RiskAudit) {
   if (notMeasured.has("dailyLossUsed") || notMeasured.has("losingStreak")) {
     notes.push("Daily loss, weekly loss and losing streak are not measured: no closed trade in that log is counted.");
   }
+  if (partlyLabel != null) {
+    notes.push(`Closed trades with unknown P/L are left out of ${partlyLabel}, so it is only part of the loss.`);
+  }
   if (placeholder || legacyLog) {
     notes.push("Shown for review only: the Risk Governor checks your orders against your own book when they are placed; see Risk Command Center.");
   }
@@ -265,7 +279,7 @@ function auditBasis(a: RiskAudit) {
   const asOf = evaluated && !Number.isNaN(evaluated.getTime()) ? evaluated.toLocaleTimeString() : null;
   return {
     legacy: placeholder || legacyLog, placeholder, legacyLog, ownRowsOnly, scopeReported, allAccounts,
-    notMeasured, lossMeasured, balance, notes, asOf,
+    notMeasured, lossMeasured, partlyMeasured, partlyLabel, lossFullyMeasured, unknownToday, unknownWeek, balance, notes, asOf,
   };
 }
 
@@ -301,6 +315,9 @@ function riskAuditVerdict(audit: { passed: boolean; tradingHalt?: HaltRead }, ba
   if (!audit.passed) return { tone: "tripped", headline: `${name}: a rule is tripped` };
   if (!basis.lossMeasured) {
     return { tone: "unmeasured", headline: `${name}: daily / weekly loss and losing streak were not measured` };
+  }
+  if (basis.partlyLabel != null) {
+    return { tone: "unmeasured", headline: `${name}: ${basis.partlyLabel} is not fully measured (closed trades with unknown P/L)` };
   }
   if (basis.legacy) return { tone: "legacy", headline: "Legacy risk audit: no rule tripped — not a check of your live account" };
   return { tone: "pass", headline: "Risk audit: no rule tripped" };
@@ -400,7 +417,8 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
         <div>
           <div className="text-xs text-muted-foreground">{basis.placeholder ? `Daily loss (vs $${basis.balance.toLocaleString("en-US")})` : "Daily Loss"}</div>
           <div className="font-mono font-bold text-sm" data-testid="risk-audit-banner-daily-loss">
-            {basis.notMeasured.has("dailyLossUsed") ? "Not measured" : `${audit.dailyLossUsed.toFixed(1)}%`}
+            {basis.notMeasured.has("dailyLossUsed") ? "Not measured"
+              : `${audit.dailyLossUsed.toFixed(1)}%${basis.partlyMeasured.has("dailyLossUsed") ? " (partial)" : ""}`}
           </div>
         </div>
         <div>
@@ -427,15 +445,20 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
 /**
  * What the bot settings flags do. Bot mode, "is running" and the paused flag
  * are stored in your bot settings and echoed back here; no order path (the
- * Risk Governor, the paper autopilot, the live pipeline) reads them. Only a
- * stop switch halts new trades.
+ * Risk Governor, the paper autopilot, the live pipeline) reads them, so they
+ * do not halt new trades. The Kill switches row shows only the kill switches
+ * /risk/audit reads; the governor's other halts on demo and live orders (the
+ * broker's operator controls, a frozen shared-account allocation) are not
+ * read there, and the note says so.
  */
 export const BOT_PAUSE_FLAG_NOTE =
   "Stores a paused flag in your bot settings. No order path reads this flag, so it does not stop new trades. " +
   "To halt new trades on your account, use \"Pause my trading\" on Risk Command Center (Audit tab), which engages your kill switch.";
 
 export const BOT_FLAGS_NOTE =
-  "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. The Stop switch row is what halts new trades.";
+  "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. " +
+  "The Kill switches row shows the platform emergency stop, the safety-core switch and your own kill switch. " +
+  "The Risk Governor also refuses new demo and live orders when the broker's operator controls disable execution or a shared-account allocation is frozen; those are not read here.";
 
 // ── Emergency stop scope ─────────────────────────────────────────────────────
 
@@ -558,6 +581,9 @@ export default function RiskSettings() {
     // Which instrument-class value model sized the lot. Missing = not
     // reported, so the lot is treated as an estimate.
     valueModel?: string; estimate?: boolean; valuePerUnitPerLot?: number; basis?: string;
+    // Set when the Risk Governor refuses every order on this symbol (or
+    // side) whatever the lot: no allowed or final lot is shown, only this.
+    refusedReason?: string | null;
   }>(null);
   const [calcParams, setCalcParams] = useState<null | {
     symbol: string; accountBalance: number; riskPercent: number;
@@ -1386,18 +1412,21 @@ export default function RiskSettings() {
                     <StatRow label="Suggested Lot" value={calcResult.valueModel === "unknown_contract" ? "—" : calcResult.suggestedLot.toFixed(2)} />
                     <StatRow
                       label="Max Allowed Lot"
-                      value={calcResult.maxLotAllowed.toFixed(2)}
+                      value={calcResult.refusedReason ? "None" : calcResult.maxLotAllowed.toFixed(2)}
                       sub="Lot cap in force: the strictest of your cap, your operator's limit, the platform cap and any cap you set for this symbol. Your broker may allow less."
                     />
                     <div className="mt-3 pt-3 border-t border-border/50">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold" data-testid="sizer-final-label">
-                          {calcResult.estimate === false ? "Final Lot Size" : "Estimated Lot Size"}
+                          {calcResult.refusedReason ? "Lot Size" : calcResult.estimate === false ? "Final Lot Size" : "Estimated Lot Size"}
                         </span>
                         <span className="text-xl font-mono font-bold text-primary" data-testid="sizer-final-lot">
-                          {calcResult.valueModel === "unknown_contract" ? "Not sized" : calcResult.finalLot.toFixed(2)}
+                          {calcResult.refusedReason ? "Refused" : calcResult.valueModel === "unknown_contract" ? "Not sized" : calcResult.finalLot.toFixed(2)}
                         </span>
                       </div>
+                      {calcResult.refusedReason && (
+                        <p className="mt-2 text-xs text-red-300" data-testid="sizer-refused">{calcResult.refusedReason}</p>
+                      )}
                       <p className="mt-2 text-xs text-muted-foreground" data-testid="sizer-basis">
                         {calcResult.basis ?? "The sizing basis was not reported, so treat this lot as an estimate."}
                       </p>
@@ -1656,14 +1685,17 @@ export default function RiskSettings() {
                   // The bot rows are the saved Bot Control preference, which no
                   // engine reads: "start requested", never "is running".
                   const rows: { id: string; label: string; value: React.ReactNode; tone: "ok" | "warn" | "neutral" | "unread"; testId?: string }[] = [
+                    // Only the kill switches are read here (BOT_FLAGS_NOTE says
+                    // what is not), so released switches are neutral, not a
+                    // green "nothing halts new trades".
                     halt
                       ? {
-                          id: "Stop switch", label: "Stop switch",
+                          id: "Stop switch", label: "Kill switches", testId: "risk-status-row-Stop switch",
                           value: halt.engaged ? `ENGAGED (${halt.venues.join(", ")})` : "none engaged",
-                          tone: halt.engaged ? "warn" : "ok",
+                          tone: halt.engaged ? "warn" : "neutral",
                         }
                       : {
-                          id: "Stop switch", label: "Stop switch",
+                          id: "Stop switch", label: "Kill switches", testId: "risk-status-row-Stop switch",
                           value: auditHaltFailed ? "could not be loaded" : auditHaltLoading ? "loading" : "not read",
                           tone: "unread",
                         },
@@ -1757,6 +1789,10 @@ export function RiskAuditDetail() {
   const basis = auditBasis(audit);
   const unmeasured = (field: string) => basis.notMeasured.has(field);
   const NOT_MEASURED = <span className="text-muted-foreground">Not measured</span>;
+  // What a partly measured loss left out (closed rows with UNKNOWN P/L).
+  const leftOut = (field: string, n: number | null) => !basis.partlyMeasured.has(field) ? undefined
+    : n != null && n > 0 ? `${n} closed trade${n === 1 ? "" : "s"} with unknown P/L not counted`
+      : "closed trades with unknown P/L not counted";
 
   return (
     <Card className="border-border/50">
@@ -1784,10 +1820,12 @@ export function RiskAuditDetail() {
             <StatRow
               label={basis.placeholder ? `Daily Loss Used (vs $${basis.balance.toLocaleString("en-US")})` : "Daily Loss Used"}
               value={unmeasured("dailyLossUsed") ? NOT_MEASURED : `${audit.dailyLossUsed.toFixed(2)}%`}
+              sub={leftOut("dailyLossUsed", basis.unknownToday)}
             />
             <StatRow
               label={basis.placeholder ? `Weekly Loss Used (vs $${basis.balance.toLocaleString("en-US")})` : "Weekly Loss Used"}
               value={unmeasured("weeklyLossUsed") ? NOT_MEASURED : `${audit.weeklyLossUsed.toFixed(2)}%`}
+              sub={leftOut("weeklyLossUsed", basis.unknownWeek)}
             />
             <StatRow label={basis.legacyLog ? "Trades Remaining Today (legacy log)" : "Trades Remaining Today"} value={audit.tradesRemaining} />
             <StatRow
@@ -1838,7 +1876,7 @@ export function RiskAuditDetail() {
             </div>
           )}
 
-          {audit.passed && audit.warnings.length === 0 && basis.lossMeasured && (basis.legacy ? (
+          {audit.passed && audit.warnings.length === 0 && basis.lossFullyMeasured && (basis.legacy ? (
             <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-detail-clear">
               <ShieldAlert size={32} className="text-muted-foreground" />
               <p className="text-sm font-semibold">No legacy rule tripped</p>
@@ -1851,12 +1889,14 @@ export function RiskAuditDetail() {
               <p className="text-xs text-muted-foreground text-center">No blocked conditions or warnings</p>
             </div>
           ))}
-          {audit.passed && !basis.lossMeasured && (
+          {audit.passed && !basis.lossFullyMeasured && (
             <div className="flex flex-col items-center justify-center h-full gap-2 py-6" data-testid="risk-audit-unmeasured">
               <ShieldAlert size={32} className="text-amber-400" />
               <p className="text-sm text-amber-300 font-semibold">Not all rules were measured</p>
               <p className="text-xs text-muted-foreground text-center">
-                Daily / weekly loss, losing streak and cooldown were not measured, so they are not shown as passing.
+                {!basis.lossMeasured
+                  ? "Daily / weekly loss, losing streak and cooldown were not measured, so they are not shown as passing."
+                  : `${basis.partlyLabel!.charAt(0).toUpperCase()}${basis.partlyLabel!.slice(1)} is not fully measured: closed trades with unknown P/L are left out, so it is not shown as passing.`}
                 {basis.legacy && " This does not check your live account or your current trades."}
               </p>
             </div>

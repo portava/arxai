@@ -121,8 +121,10 @@ export default function PropFirmMode() {
   // measured is never a tick, and the status is not a measured verdict.
   const dailyUnmeasured = s?.dailyDrawdownMeasured === false || unmeasured;
   const serverNotChecked = s?.notChecked ?? [];
+  // DAILY_DD_TODAY / TOTAL_DD_CURRENT are the measured parts of those rules
+  // (newer servers): they are no tick either when their input was not measured.
   const unmeasuredRules = new Set<string>([...(s?.notEvaluated ?? []), ...serverNotChecked.map((c) => c.rule),
-    ...(dailyUnmeasured ? ["DAILY_DD"] : []), ...(unmeasured ? ["PROFIT_TARGET", "TOTAL_DD"] : [])]);
+    ...(dailyUnmeasured ? ["DAILY_DD", "DAILY_DD_TODAY"] : []), ...(unmeasured ? ["PROFIT_TARGET", "TOTAL_DD", "TOTAL_DD_CURRENT"] : [])]);
   const passedShown = nothingChecked ? [] : (s?.passed ?? []).filter((p) => !unmeasuredRules.has(p));
   const failedShown = nothingChecked ? [] : (s?.failed ?? []);
   // Not-checked rules the server's notChecked list does not already carry:
@@ -132,7 +134,7 @@ export default function PropFirmMode() {
     ...[...unmeasuredRules].filter((r) => (s?.passed ?? []).includes(r))])]
     .filter((r) => !serverNotChecked.some((c) => c.rule === r));
   const notCheckedWhy = (rule: string) => s?.notEvaluatedReasons?.[rule]
-    ?? (rule === "DAILY_DD" ? "today's drawdown was not measured" : "paper equity could not be read");
+    ?? (rule === "DAILY_DD" || rule === "DAILY_DD_TODAY" ? "today's drawdown was not measured" : "paper equity could not be read");
   // A status an older server worked out from placeholders is shown as NOT MEASURED.
   const statusUnmeasured = s != null && unmeasured
     && (s.status === "ACTIVE" || s.status === "PASSED" || s.status === "WARNING" || s.status === "TARGET_REACHED");
@@ -195,7 +197,10 @@ export default function PropFirmMode() {
         <p className="text-xs text-muted-foreground" data-testid="prop-measured-from">
           Measured on paper account #{s.paperAccountId}: equity ${s.equityUsd} as of {when(s.equityAsOf)} (the account's last stored mark),
           against ${s.startEquityUsd} when the challenge started {when(s.challengeStartedAt)}.
-          {s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
+          {/* On the start day the server measures from the start: a floating loss already open then is in the start equity. */}
+          {s.dailyDrawdownSince && s.dailyDrawdownSince === s.challengeStartedAt
+            ? <> Today's drawdown is the loss since the challenge started; a floating loss already open at the start is not counted.</>
+            : s.dailyDrawdownSince && <> Today's drawdown counts paper P/L settled since {when(s.dailyDrawdownSince)} plus the current floating loss.</>}
         </p>
       )}
       {s && s.status === "TARGET_REACHED" && (
@@ -214,7 +219,8 @@ export default function PropFirmMode() {
           <Stat label="Target progress" value={unmeasured || s.profitTargetProgress == null ? NOT_MEASURED : `${s.profitTargetProgress}%`} />
           <Stat label="Daily DD left" value={dailyUnmeasured ? NOT_MEASURED : money(s.dailyDrawdownRemainingUsd)} />
           <Stat label="Total DD left" value={unmeasured ? NOT_MEASURED : money(s.totalDrawdownRemainingUsd)} />
-          <Stat label="Passed rules" value={String(passedShown.length)} />
+          {/* Passed CHECKS: DAILY_DD_TODAY / TOTAL_DD_CURRENT are the measured parts of a rule, not the whole rule. */}
+          <Stat label="Passed checks" value={String(passedShown.length)} />
           <Stat label="Failed rules" value={String(failedShown.length)} />
           <Stat label="Not checked" value={String(serverNotChecked.length + extraNotChecked.length)} />
           <Stat label="Account status" value={statusLabel} />

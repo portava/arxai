@@ -100,3 +100,36 @@ test("the instrument-class calculator says which value model sized the lot, and 
   const zero = calculatePositionSize({ symbol: "XAUUSD", accountBalance: 1000, riskPercent: 1, entry: 2000, stopLoss: 2000 });
   assert.equal(zero.valueModel, "unknown_contract", "a zero-stop result still carries the disclosure");
 });
+
+// The value model is named from what the symbol is known to be, not from
+// "is not a currency pair". Gold, oil, crypto and lowercase pairs were sized
+// at $1 per point and labelled "index or stock CFD", so the calculator showed
+// a lot about 100x (gold) or 100,000x (eurusd) too large. The lot number is
+// unchanged (mission and paper sizing read it); only the label and basis
+// that the calculator shows are corrected, and anything not positively known
+// to be an index, stock or synthetic is "unknown_contract" (shown "Not sized").
+test("per_point only for known indices / stocks; metals, energy, crypto and lowercase pairs are not sized", () => {
+  const base = { accountBalance: 1000, riskPercent: 1, entry: 2000, stopLoss: 1995 };
+  for (const symbol of ["xauusd", "GOLD", "XAU", "USOIL", "WTI", "UKOIL", "BTC", "COCOA", "eurusd"]) {
+    const r = calculatePositionSize({ ...base, symbol });
+    assert.equal(r.valueModel, "unknown_contract", `${symbol} is not an index or stock CFD`);
+    assert.doesNotMatch(r.basis, /index or stock CFD/, `${symbol}: no index/stock description`);
+    assert.doesNotMatch(r.basis, /is not a currency pair:/, `${symbol}: no "not a currency pair" claim`);
+    assert.match(r.basis, /not usable/);
+    assert.match(r.basis, /\$1 per 1\.0 price move per lot/, `${symbol}: the basis states the value actually used`);
+  }
+  // The sized number itself is unchanged (missions and paper intelligence read it).
+  assert.equal(calculatePositionSize({ ...base, symbol: "GOLD" }).suggestedLot, 2);
+
+  // A synthetic named without "Volatility" (V75) is a synthetic, not a CFD.
+  const v75 = calculatePositionSize({ ...base, symbol: "V75" });
+  assert.equal(v75.valueModel, "synthetic_per_point");
+
+  // Known indices and stocks keep the per-point model and say what they are.
+  for (const symbol of ["US30", "us30", "NAS100", "GER30", "AAPL", "SPY"]) {
+    const r = calculatePositionSize({ ...base, symbol });
+    assert.equal(r.valueModel, "per_point", symbol);
+    assert.match(r.basis, /index, stock or ETF CFD/, symbol);
+    assert.doesNotMatch(r.basis, /not a currency pair/, symbol);
+  }
+});

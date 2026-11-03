@@ -56,6 +56,9 @@ router.get("/risk/dashboard-cards", requireUser, async (req, res) => {
     weeklyRiskRemaining: ov.budget.weeklyRiskRemaining,
     dailyRiskLimitUnvalued: ov.budget.dailyRiskLimitUnvalued,
     weeklyRiskLimitUnvalued: ov.budget.weeklyRiskLimitUnvalued,
+    // A cap is set but its use was not measured: the null *Remaining is unknown, not "no cap".
+    dailyRiskUsedUnmeasured: ov.budget.dailyRiskUsedUnmeasured,
+    weeklyRiskUsedUnmeasured: ov.budget.weeklyRiskUsedUnmeasured,
     equityKnown: ov.budget.equityKnown,
     // Additive: whether the risk used behind *RiskRemaining was measured.
     dailyRiskUsedKnown: ov.budget.dailyRiskUsedKnown,

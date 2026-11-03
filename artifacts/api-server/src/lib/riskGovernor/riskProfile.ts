@@ -73,6 +73,12 @@ export interface PropFirmChallengeStart {
   equity: number;
   /** … and when that equity was last marked (paper_accounts.updated_at, ISO). */
   equityAsOf: string;
+  /**
+   * The paper account's balance at that moment (equity minus floating P/L).
+   * Absent on starts recorded before it was tracked: the floating P/L at the
+   * start is then not known.
+   */
+  balance?: number;
 }
 
 export const DEFAULT_PROP_FIRM: PropFirmConfig = {
@@ -110,7 +116,7 @@ export async function configurePropFirm(userId: number, patch: Partial<PropFirmC
   if (cfg.enabled && (opts.restart || !prev.enabled || !prev.challengeStart)) {
     const acct = await readActivePaperAccount(userId);
     cfg.challengeStart = acct
-      ? { at: new Date().toISOString(), paperAccountId: acct.id, equity: acct.equity, equityAsOf: acct.updatedAt.toISOString() }
+      ? { at: new Date().toISOString(), paperAccountId: acct.id, equity: acct.equity, equityAsOf: acct.updatedAt.toISOString(), balance: acct.currentBalance }
       : null;
   }
   const limits = cfg.enabled ? {
@@ -138,13 +144,23 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const ctx = await governorFacts(userId, venue);
   const L = ctx.limits;
   const equity = ctx.account?.equity ?? null;
-  const realized = ctx.daily.realizedPnl ?? 0;
+  // Today's loss is measured only from a computed realized P/L, and on PAPER
+  // only from an account that was read (with no active paper account the
+  // fact loader reads no book: the governor's realized figure is a 0 nobody
+  // measured and there is no activity, and nothing failed to load). Unmeasured
+  // use is null, never 0, and the *UnknownReason says why in plain words.
+  const noPaperAccount = venue === "PAPER" && ctx.account == null;
+  const dailyRiskUsedUnknownReason = noPaperAccount ? "there is no active paper account"
+    : ctx.daily.realizedPnl == null ? "today's realized P/L could not be computed" : null;
+  const weeklyRiskUsedUnknownReason = noPaperAccount ? "there is no active paper account"
+    : ctx.activity == null ? "this week's trading activity could not be read" : null;
   const floatingLoss = ctx.daily.floatingPnl != null && ctx.daily.floatingPnl < 0 ? ctx.daily.floatingPnl : 0;
-  const dailyUsed = Math.max(0, -(realized + floatingLoss));
+  const dailyUsed = dailyRiskUsedUnknownReason == null ? Math.max(0, -(ctx.daily.realizedPnl! + floatingLoss)) : null;
   const caps = [L.maxDailyLossAmount, L.maxDailyLossPercent != null && equity != null ? (equity * L.maxDailyLossPercent) / 100 : null]
     .filter((v): v is number => v != null);
   const dailyLimit = caps.length ? Math.min(...caps) : null;
-  const weekUsed = Math.max(0, -(ctx.activity?.weekRealizedPnl ?? 0));
+  // This week's loss needs the activity facts; without them it is unknown.
+  const weekUsed = weeklyRiskUsedUnknownReason == null && ctx.activity != null ? Math.max(0, -ctx.activity.weekRealizedPnl) : null;
   const wcaps = [L.discipline.maxWeeklyLossAmount, L.discipline.maxWeeklyLossPercent != null && equity != null ? (equity * L.discipline.maxWeeklyLossPercent) / 100 : null]
     .filter((v): v is number => v != null);
   const weeklyLimit = wcaps.length ? Math.min(...wcaps) : null;
@@ -161,26 +177,22 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const weeklyCapSet = L.discipline.maxWeeklyLossAmount != null || L.discipline.maxWeeklyLossPercent != null;
   const dailyRiskLimitUnvalued = L.maxDailyLossPercent != null && equity == null;
   const weeklyRiskLimitUnvalued = L.discipline.maxWeeklyLossPercent != null && equity == null;
-  // Whether the "used" figures were measured. With no active paper account the
-  // fact loader reads no book: realized P/L stays a placeholder 0 and there is
-  // no activity, so nothing was measured (and nothing failed to load). The
-  // numeric dailyRiskUsed / weeklyRiskUsed stay for older clients; these flags
-  // say when they are placeholders.
-  const noPaperAccount = venue === "PAPER" && ctx.account == null;
-  const dailyRiskUsedUnknownReason = noPaperAccount ? "there is no active paper account"
-    : ctx.daily.realizedPnl == null ? "today's realized P/L could not be computed" : null;
-  const weeklyRiskUsedUnknownReason = noPaperAccount ? "there is no active paper account"
-    : ctx.activity == null ? "this week's trading activity could not be read" : null;
   const unknowns: string[] = [];
   if (dailyRiskLimitUnvalued) unknowns.push(`your ${L.maxDailyLossPercent}% daily loss cap cannot be valued because account equity is unknown`);
   if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
   if (dailyCapSet && dailyRiskUsedUnknownReason) unknowns.push(`${dailyRiskUsedUnknownReason}, so daily risk used is unknown`);
   if (weeklyCapSet && weeklyRiskUsedUnknownReason) unknowns.push(`${weeklyRiskUsedUnknownReason}, so weekly risk used is unknown`);
   const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
-  const dailyReached = dailyLimit != null && dailyUsed >= dailyLimit;
-  const weeklyReached = weeklyLimit != null && weekUsed >= weeklyLimit;
+  const dailyReached = dailyLimit != null && dailyUsed != null && dailyUsed >= dailyLimit;
+  const weeklyReached = weeklyLimit != null && weekUsed != null && weekUsed >= weeklyLimit;
+  // The governor refuses every new order when the activity facts are
+  // unreadable and any cap that needs them is set (preTrade evaluateDiscipline).
+  const D = L.discipline;
+  const activityCapSet = D.maxTradesPerDay != null || D.maxWeeklyLossAmount != null || D.maxWeeklyLossPercent != null
+    || D.maxConsecutiveLosses != null || D.cooldownAfterLossMinutes != null;
+  const activityUnread = ctx.activity == null && activityCapSet;
   const status = halt.engaged || dailyReached || weeklyReached
-    ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
+    ? "BLOCK" : dailyLimit != null && dailyUsed != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   // What stops new trades, as this view measures it. A read model only: the
   // Risk Governor decides each order. trading is false whenever anything here
   // blocks, so it never says "trading" next to a BLOCK status.
@@ -188,25 +200,31 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
     ...(halt.engaged ? ["stop_switch" as const] : []),
     ...(dailyReached ? ["daily_loss_limit" as const] : []),
     ...(weeklyReached ? ["weekly_loss_limit" as const] : []),
+    ...(activityUnread ? ["activity_unread" as const] : []),
   ];
   return {
     venue,
     preset: settings.riskPreset ?? null,
     limits: L,
     budget: {
-      dailyRiskLimit: dailyLimit != null ? r2(dailyLimit) : null, dailyRiskUsed: r2(dailyUsed),
-      dailyRiskRemaining: dailyLimit != null ? r2(dailyLimit - dailyUsed) : null,
-      weeklyRiskLimit: weeklyLimit != null ? r2(weeklyLimit) : null, weeklyRiskUsed: r2(weekUsed),
-      weeklyRiskRemaining: weeklyLimit != null ? r2(weeklyLimit - weekUsed) : null,
+      // *Used and *Remaining are null when the use was not measured (see the
+      // *RiskUsedUnmeasured flags), never 0 / the whole cap.
+      dailyRiskLimit: dailyLimit != null ? r2(dailyLimit) : null, dailyRiskUsed: dailyUsed != null ? r2(dailyUsed) : null,
+      dailyRiskRemaining: dailyLimit != null && dailyUsed != null ? r2(dailyLimit - dailyUsed) : null,
+      weeklyRiskLimit: weeklyLimit != null ? r2(weeklyLimit) : null, weeklyRiskUsed: weekUsed != null ? r2(weekUsed) : null,
+      weeklyRiskRemaining: weeklyLimit != null && weekUsed != null ? r2(weeklyLimit - weekUsed) : null,
       openRisk: r2(openRisk), openPositions: ctx.positions.length, equity, riskStatus: status,
       // Additive: null equity is unknown (no account read), not "none set";
       // an *Unvalued cap is configured as a percent but cannot be valued, so
       // a null (or amount-only) limit is not "no cap".
       equityKnown: equity != null, dailyRiskLimitUnvalued, weeklyRiskLimitUnvalued, riskStatusReason,
-      // Additive: false when the *RiskUsed figure (and so *RiskRemaining) is a
-      // placeholder, with the plain reason; never read the placeholder as $0.
+      // Additive: false when the *RiskUsed figure was not measured (it is then
+      // null, and so is *RiskRemaining), with the plain reason.
       dailyRiskUsedKnown: dailyRiskUsedUnknownReason == null, dailyRiskUsedUnknownReason,
       weeklyRiskUsedKnown: weeklyRiskUsedUnknownReason == null, weeklyRiskUsedUnknownReason,
+      /** A daily / weekly cap is set but what was used against it could not be measured. */
+      dailyRiskUsedUnmeasured: dailyCapSet && dailyUsed == null,
+      weeklyRiskUsedUnmeasured: weeklyCapSet && weekUsed == null,
     },
     activity: ctx.activity ?? null,
     halt,
@@ -230,8 +248,8 @@ function uncheckedChallengeRules(
   drawdown: { earlierDays: boolean; lowestEquity: boolean },
 ): PropFirmRuleNotChecked[] {
   const out: PropFirmRuleNotChecked[] = [];
-  if (drawdown.earlierDays) out.push({ rule: "DAILY_DD_EARLIER_DAYS", reason: "Only today's loss is checked. Daily losses on earlier days of the challenge are not." });
-  if (drawdown.lowestEquity) out.push({ rule: "TOTAL_DD_LOWEST_EQUITY", reason: "Only current equity is checked. A deeper dip earlier in the challenge is not recorded." });
+  if (drawdown.earlierDays) out.push({ rule: "DAILY_DD_EARLIER_DAYS", reason: "Only today's loss is checked (DAILY_DD_TODAY). Daily losses on earlier days of the challenge are not, so DAILY_DD is not confirmed." });
+  if (drawdown.lowestEquity) out.push({ rule: "TOTAL_DD_LOWEST_EQUITY", reason: "Only current equity is checked (TOTAL_DD_CURRENT). A deeper dip earlier in the challenge is not recorded, so TOTAL_DD is not confirmed." });
   out.push({ rule: "MIN_TRADING_DAYS", reason: `Trading days are not counted, so the minimum of ${cfg.minTradingDays} days is not checked.` });
   out.push({ rule: "CONSISTENCY", reason: `The ${cfg.consistencyRulePctOfTotal}% consistency rule (best day against total profit) is not checked.` });
   if (!cfg.newsTradingAllowed) out.push({ rule: "NEWS_TRADING", reason: "Trades opened around news are not checked against the no-news-trading rule." });
@@ -257,7 +275,10 @@ function uncheckedChallengeRules(
  * active paper account's stored equity minus its equity when the challenge
  * started, and today's drawdown counts paper P/L settled since the later of
  * the trading day's start and the challenge start, plus the current floating
- * loss. Equity is the account's last stored mark (equityAsOf).
+ * loss. On the day the challenge started, a floating loss already open at the
+ * start is in the start equity, so only floating loss beyond it counts (with
+ * no balance recorded at the start: the drop in equity since the start).
+ * Equity is the account's last stored mark (equityAsOf).
  *
  * A rule is scored (passed / failed) only when that measurement exists. With
  * no active paper account, no recorded challenge start, or a start on a
@@ -321,20 +342,35 @@ export async function propFirmStatus(userId: number, now: Date = new Date()) {
   const since = new Date(Math.max(dayStart, Date.parse(start.at) || 0));
   const realizedToday = await sumPaperRealizedSince({ account: acct.id }, since);
   const floating = acct.equity - acct.currentBalance;
-  const dailyDD = Math.max(0, -(realizedToday + Math.min(0, floating)));
+  const earlierDays = !(Date.parse(start.at) >= dayStart);
+  // On the start day the loss is measured from the start: a floating loss
+  // already open then is in start.equity and is not a loss since the start.
+  // A start recorded without its balance has no known floating P/L at the
+  // start, so it falls back to the drop in equity since the start.
+  const startBalance = typeof start.balance === "number" && Number.isFinite(start.balance) ? start.balance : null;
+  const dailyDD = earlierDays
+    ? Math.max(0, -(realizedToday + Math.min(0, floating)))
+    : startBalance != null
+      ? Math.max(0, -(realizedToday + Math.min(0, floating) - Math.min(0, start.equity - startBalance)))
+      : Math.max(0, start.equity - acct.equity);
   const totalDD = Math.max(0, -profit);
   if (Math.abs(cfg.startingBalance - start.equity) >= 0.01) {
     notes.push(`The challenge size is $${cfg.startingBalance}, but your paper account started the challenge with $${r2(start.equity)} equity. `
       + `Profit, target and drawdown are measured in dollars from $${r2(start.equity)} and are not scaled.`);
   }
   // Rules are checked only while the mode is on: while it is off nothing is
-  // listed as passed or failed.
+  // listed as passed or failed. A rule is passed only when all of it was
+  // measured: today's loss is all of DAILY_DD only for a challenge that
+  // started today, and current equity is never all of TOTAL_DD (a deeper dip
+  // earlier is not recorded). The measured part then passes under its own
+  // name (DAILY_DD_TODAY, TOTAL_DD_CURRENT) and the rule's caveat stays in
+  // notChecked; a breach of the measured part fails the rule itself.
   if (cfg.enabled) {
     if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
-    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
-    if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
+    if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push(earlierDays ? "DAILY_DD_TODAY" : "DAILY_DD");
+    if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD_CURRENT");
   }
-  notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays: !(Date.parse(start.at) >= dayStart), lowestEquity: true }));
+  notChecked.push(...uncheckedChallengeRules(cfg, limits, { earlierDays, lowestEquity: true }));
   // A reached target is not a passed challenge while any rule is unchecked.
   const status: PropFirmStatusCode = !cfg.enabled ? "OFF" : failed.length ? "FAILED"
     : profit >= cfg.profitTarget ? (notChecked.length ? "TARGET_REACHED" : "PASSED")

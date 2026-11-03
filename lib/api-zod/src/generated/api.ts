@@ -4360,6 +4360,24 @@ export const GetRiskAuditResponse = zod.object({
     .describe(
       "Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. Empty when closedTradesMeasured is true.",
     ),
+  partlyMeasured: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Fields that are only part of what they name: dailyLossUsed \/ weeklyLossUsed when closed rows in that window have UNKNOWN P\/L and were left out of the sum (unknownPnlRowsToday \/ unknownPnlRowsThisWeek). Show them as not fully measured, never as the whole loss or a clean pass.",
+    ),
+  unknownPnlRowsToday: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows today whose P\/L is UNKNOWN; left out of dailyLossUsed. 0 when closed rows were not counted.",
+    ),
+  unknownPnlRowsThisWeek: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows since the start of the week whose P\/L is UNKNOWN; left out of weeklyLossUsed. 0 when closed rows were not counted.",
+    ),
   evaluatedAt: zod.coerce
     .date()
     .optional()
@@ -4389,7 +4407,7 @@ export const GetRiskAuditResponse = zod.object({
     ])
     .optional()
     .describe(
-      "The trader's stop switches as the pre-trade Risk Governor reads them (an unreadable switch counts as engaged). An engaged one also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them.",
+      "The trader's kill switches (platform emergency stop, safety-core switch, the trader's own kill switch), from the reader the pre-trade Risk Governor uses (an unreadable switch counts as engaged). Not included, so \"none engaged\" does not mean nothing halts new trades - the broker's operator controls and a frozen shared-account allocation, which the governor also applies to DEMO \/ LIVE orders. An engaged switch also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them.",
     ),
 });
 
@@ -4421,7 +4439,7 @@ export const GetPositionSizeResponse = zod.object({
     ])
     .optional()
     .describe(
-      "Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable.",
+      "Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. per_point = an index, stock or ETF CFD known to the ARX market list. unknown_contract = anything else (metals, energy, crypto, an unknown name), sized with a model that does not fit it (XAUUSD, BTCUSD, GOLD, USOIL…); the lot is not usable.",
     ),
   estimate: zod
     .boolean()
@@ -4435,6 +4453,12 @@ export const GetPositionSizeResponse = zod.object({
     .string()
     .optional()
     .describe("Plain-English statement of the sizing assumption, for display."),
+  refusedReason: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set when the Risk Governor refuses every order on this symbol (or on this side, read from the stop: below the entry is a BUY) whatever the lot: not on the operator's instrument allow-list, a direction the operator restricted, or the symbol switched off in the trader's risk limits. maxLotAllowed and finalLot are then 0 and no lot may be shown. Null when none of these applies. Missing = an older server that did not check.",
+    ),
 });
 
 /**

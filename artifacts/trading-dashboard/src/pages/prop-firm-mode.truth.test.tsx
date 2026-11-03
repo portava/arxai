@@ -298,3 +298,57 @@ describe("Prop Firm Mode — target reached with unchecked rules", () => {
     for (const n of notChecked) expect(reasons.textContent).toContain(n.reason);
   });
 });
+
+// A challenge that spans earlier days: the server scores only today's loss
+// (DAILY_DD_TODAY) and current equity (TOTAL_DD_CURRENT). The page counts those
+// as passed checks, never as passed challenge rules.
+describe("Prop Firm Mode — partly measured drawdown rules", () => {
+  it("counts the measured parts as passed checks and never ticks DAILY_DD or TOTAL_DD", async () => {
+    const notChecked = [
+      { rule: "DAILY_DD_EARLIER_DAYS", reason: "Only today's loss is checked (DAILY_DD_TODAY). Daily losses on earlier days of the challenge are not, so DAILY_DD is not confirmed." },
+      { rule: "TOTAL_DD_LOWEST_EQUITY", reason: "Only current equity is checked (TOTAL_DD_CURRENT). A deeper dip earlier in the challenge is not recorded, so TOTAL_DD is not confirmed." },
+    ];
+    stubStatus({
+      config: CONFIG, measured: true, notMeasuredReason: null,
+      profitUsd: 0, profitTargetProgress: 0, dailyDrawdownRemainingUsd: 5000, totalDrawdownRemainingUsd: 10000,
+      passed: ["DAILY_DD_TODAY", "TOTAL_DD_CURRENT"], failed: [], notChecked, status: "ACTIVE", equitySource: "paper_ledger",
+      paperAccountId: 3, equityUsd: 100000, equityAsOf: "2026-10-30T11:59:00.000Z",
+      challengeStartedAt: "2026-10-27T09:00:00.000Z", startEquityUsd: 100000, dailyDrawdownSince: "2026-10-30T00:00:00.000Z", notes: [],
+    });
+    render(<PropFirmMode />);
+    const rules = await screen.findByTestId("prop-firm-rules");
+    expect(rules.textContent).toContain("✓ DAILY_DD_TODAY");
+    expect(rules.textContent).toContain("✓ TOTAL_DD_CURRENT");
+    expect(rules.textContent).not.toMatch(/✓ DAILY_DD(?!_TODAY)/);
+    expect(rules.textContent).not.toMatch(/✓ TOTAL_DD(?!_CURRENT)/);
+    expect(screen.queryByText("Passed rules")).toBeNull();
+    expect(screen.getByText("Passed checks")).toBeTruthy();
+    expect(screen.getByTestId("prop-not-checked-reasons").textContent).toMatch(/DAILY_DD is not confirmed/);
+  });
+});
+
+// On the day a challenge starts, the server measures today's drawdown from the
+// start, so a floating loss already open at the start (Reset with a losing
+// position) is not counted. The page said every day that it counts "the
+// current floating loss", which is not what is measured on the start day.
+describe("Prop Firm Mode — drawdown basis on the start day", () => {
+  const base = {
+    config: CONFIG, measured: true, notMeasuredReason: null,
+    profitUsd: 0, profitTargetProgress: 0, dailyDrawdownRemainingUsd: 5000, totalDrawdownRemainingUsd: 10000,
+    passed: ["DAILY_DD", "TOTAL_DD_CURRENT"], failed: [], notChecked: [], status: "ACTIVE", equitySource: "paper_ledger",
+    paperAccountId: 3, equityUsd: 96000, equityAsOf: "2026-10-28T11:59:00.000Z", startEquityUsd: 96000, notes: [],
+  };
+  it("on the start day it says a floating loss already open at the start is not counted", async () => {
+    stubStatus({ ...base, challengeStartedAt: "2026-10-28T08:00:00.000Z", dailyDrawdownSince: "2026-10-28T08:00:00.000Z" });
+    render(<PropFirmMode />);
+    const from = await screen.findByTestId("prop-measured-from");
+    expect(from.textContent).toMatch(/loss since the challenge started; a floating loss already open at the start is not counted/);
+    expect(from.textContent).not.toMatch(/plus the current floating loss/);
+  });
+  it("on later days it says the current floating loss counts", async () => {
+    stubStatus({ ...base, challengeStartedAt: "2026-10-25T08:00:00.000Z", dailyDrawdownSince: "2026-10-28T00:00:00.000Z" });
+    render(<PropFirmMode />);
+    const from = await screen.findByTestId("prop-measured-from");
+    expect(from.textContent).toMatch(/plus the current floating loss/);
+  });
+});

@@ -116,6 +116,26 @@ describe("Risk Settings: an engaged kill switch is visible", () => {
     expect(statusRow("Stop switch")).toMatch(/not read/);
     expect(statusRow("Stop switch")).not.toMatch(/none engaged/);
   });
+
+  // /risk/audit reads the kill switches only. The pre-trade Risk Governor also
+  // halts DEMO / LIVE on the broker's operator controls (execution disabled is
+  // the default with no broker_health_state row) and on a frozen shared-account
+  // allocation; neither is read here. The row read "Stop switch: none engaged"
+  // in green and the note said "The Stop switch row is what halts new trades".
+  it("released kill switches are named as kill switches only, never as nothing halting new trades", () => {
+    render(<RiskSettings />);
+    const row = screen.getByTestId("system-status-Stop switch");
+    expect(row.textContent).toMatch(/^Kill switches/);
+    expect(row.textContent).not.toMatch(/Stop switch/);
+    const value = screen.getByTestId("risk-status-row-Stop switch");
+    expect(value.textContent).toBe("none engaged");
+    expect(value.className).not.toMatch(/text-success/);
+    const note = screen.getByTestId("bot-flags-note").textContent ?? "";
+    expect(note).not.toMatch(/is what halts new trades/);
+    expect(note).toMatch(/broker's operator controls/);
+    expect(note).toMatch(/shared-account allocation/);
+    expect(note).toMatch(/not read here/);
+  });
 });
 
 // Before: "Pause All Trading" PATCHed bot_settings.isPaused, which no order

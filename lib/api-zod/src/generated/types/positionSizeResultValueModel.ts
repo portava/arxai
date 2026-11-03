@@ -7,7 +7,7 @@
  */
 
 /**
- * Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. unknown_contract = the symbol is not a known currency pair but was sized as one (XAUUSD, BTCUSD…); the lot is not usable.
+ * Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. per_point = an index, stock or ETF CFD known to the ARX market list. unknown_contract = anything else (metals, energy, crypto, an unknown name), sized with a model that does not fit it (XAUUSD, BTCUSD, GOLD, USOIL…); the lot is not usable.
  */
 export type PositionSizeResultValueModel =
   (typeof PositionSizeResultValueModel)[keyof typeof PositionSizeResultValueModel];

@@ -150,9 +150,13 @@ router.get("/risk/audit", requireUser, async (req, res) => {
     // what the audit read (riskAuditBasis), so no consumer can mistake it
     // for the trader's live balance or current book.
     const accountBalance = 1000;
-    // The trader's stop switches, read as the pre-trade Risk Governor reads
-    // them (fail closed: an unreadable switch counts as engaged). Read only
-    // for this view; nothing here changes what any order path blocks.
+    // The trader's kill switches (platform emergency stop, safety core, their
+    // own kill switch), from the same reader the pre-trade Risk Governor uses
+    // (fail closed: an unreadable switch counts as engaged). Not read here:
+    // the broker's operator controls and a frozen shared-account allocation,
+    // which the governor also applies to DEMO / LIVE orders; the page says
+    // so. Read only for this view; nothing here changes what any order path
+    // blocks.
     const userId = req.authUser!.id;
     const [paperHalt, liveHalt] = await Promise.all([
       loadTradingHalt({ userId, venue: "PAPER" }),
@@ -185,6 +189,7 @@ router.get("/risk/audit", requireUser, async (req, res) => {
       tradeSource: basis.tradeSource,
       tradeScope: basis.tradeScope,
       notMeasured: basis.notMeasured,
+      partlyMeasured: basis.partlyMeasured,
       evaluatedAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -205,19 +210,38 @@ const PositionSizeQuery = z.object({
 
 router.get("/risk/position-size", requireUser, async (req, res) => {
   try {
-    const query = PositionSizeQuery.parse(req.query);
+    const parsed = PositionSizeQuery.parse(req.query);
+    // The calculator's symbol is free text: "eurusd" or " XAUUSD" is sized
+    // and described as the market it names (this route serves only the
+    // calculator; mission and paper sizing pass their own symbols).
+    const query = { ...parsed, symbol: parsed.symbol.trim().toUpperCase() };
     // The lot cap in force, as the Risk Governor applies it: the strictest of
     // the trader's own cap, the operator's account limit and the platform
     // ceiling, then the trader's per-symbol cap. (The trader's saved cap
     // alone could show a lot the governor refuses.) The broker's own maximum
     // volume is not known here.
     const limits = await loadEffectiveLimits(req.authUser!.id);
-    const symbolCap = limits.symbolLimits[query.symbol.trim().toUpperCase()]?.maxLots ?? null;
+    const symbolCap = limits.symbolLimits[query.symbol]?.maxLots ?? null;
     const result = calculatePositionSize({
       ...query,
       maxLotSize: symbolCap == null ? limits.maxLotSize : Math.min(limits.maxLotSize, symbolCap),
     });
-    return res.json(result);
+    // The governor's max_position_size check also refuses some orders
+    // outright, whatever the lot (same order as preTrade.ts). The side is
+    // read from the stop: below the entry is a BUY, above it a SELL. For
+    // such an order there is no allowed lot to show, only the reason.
+    const side = query.stopLoss < query.entry ? "BUY" : query.stopLoss > query.entry ? "SELL" : null;
+    const refusedReason = limits.allowedSymbols && !limits.allowedSymbols.includes(query.symbol)
+      ? `${query.symbol} is not on the instruments your operator allowed for your account, so the Risk Governor refuses every order on it.`
+      : limits.allowedDirection && side && side !== limits.allowedDirection
+        ? `Your account is restricted to ${limits.allowedDirection} trades only. A stop ${side === "BUY" ? "below" : "above"} the entry is a ${side} trade, so the Risk Governor refuses it.`
+        : limits.symbolLimits[query.symbol]?.blocked
+          ? `Trading ${query.symbol} is switched off in your risk limits, so the Risk Governor refuses every order on it.`
+          : null;
+    if (refusedReason) {
+      return res.json({ ...result, maxLotAllowed: 0, finalLot: 0, warning: null, refusedReason });
+    }
+    return res.json({ ...result, refusedReason: null });
   } catch (err) {
     req.log.error(err);
     return res.status(400).json({ error: "Failed to calculate position size" });

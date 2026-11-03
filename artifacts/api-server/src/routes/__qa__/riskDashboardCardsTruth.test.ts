@@ -17,7 +17,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 
-const state: { activity: Record<string, number> | null } = { activity: null };
+const state: { activity: Record<string, number> | null; budget: Record<string, unknown> } = { activity: null, budget: {} };
 
 mock.module("../../lib/auth/middleware.js", {
   namedExports: {
@@ -48,6 +48,7 @@ mock.module("../../lib/riskGovernor/riskProfile.js", {
       limits: {},
       budget: {
         riskStatus: "OK", dailyRiskRemaining: 100, weeklyRiskRemaining: 300, openRisk: 0, openPositions: 0,
+        ...state.budget,
       },
       activity: state.activity,
       halt: { engaged: false, sources: [], reason: null },
@@ -91,4 +92,19 @@ test("measured activity keeps its verdicts", async () => {
   assert.equal((await cards())["overtrading"], "OVERTRADING_RISK");
   state.activity = { ...quiet, reentriesAfterLossInLastHour: 2 };
   assert.equal((await cards())["overtrading"], "REVENGE_TRADING_RISK");
+});
+
+// A weekly cap whose use could not be measured comes back with a null
+// weeklyRiskRemaining. Without the flag the card could not tell that from
+// "no cap set", which is what the page then said.
+test("an unmeasured daily / weekly use is flagged on the cards, so a null 'left' is not 'no cap set'", async () => {
+  state.budget = { weeklyRiskRemaining: null, weeklyRiskUsedUnmeasured: true, dailyRiskUsedUnmeasured: false };
+  try {
+    const c = await cards();
+    assert.equal(c["weeklyRiskRemaining"], null);
+    assert.equal(c["weeklyRiskUsedUnmeasured"], true);
+    assert.equal(c["dailyRiskUsedUnmeasured"], false);
+  } finally {
+    state.budget = {};
+  }
 });
