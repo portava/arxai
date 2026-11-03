@@ -84,6 +84,24 @@ describe("Analytics Command Center failure states", () => {
     expect(state).toContain("Failed to generate analytics snapshot");
   });
 
+  it("a failed Recompute with a stored snapshot says so, with the HTTP status and the snapshot's time", async () => {
+    routes.snapshot = { status: 200, body: { snapshot: { ...SNAPSHOT, id: 4, createdAt: "2026-10-27T09:00:00.000Z" } } };
+    renderPage();
+    await flush();
+    expect(postCalls).toBe(0);
+    expect(screen.getByTestId("stat-net-p-l").textContent).toContain("$12");
+    act(() => { screen.getByText("Recompute snapshot").click(); });
+    await flush();
+    expect(postCalls).toBe(1);
+    // Not silent: the old figures stay, and the page says they were not recomputed.
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toMatch(/could not be recomputed/);
+    expect(alert.textContent).toMatch(/HTTP 500/);
+    expect(alert.textContent).toContain("Failed to generate analytics snapshot");
+    expect(alert.textContent).toMatch(/snapshot taken 2026-10-27 09:00 UTC/);
+    expect(screen.getByText("Recompute snapshot")).toBeTruthy();
+  });
+
   it("a failed snapshot read is an error, not 'computing' and not an auto-POST", async () => {
     routes.snapshot = { status: 500, body: { error: "Failed to load snapshot" } };
     renderPage();

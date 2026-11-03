@@ -26,7 +26,11 @@ interface EmotionalResponse { trend: Array<{ idx:number; isCalm:number; followed
 // loaded") rather than an empty result.
 async function getAnalyticsJson<T>(url: string, action: string, init?: RequestInit): Promise<T> {
   const r = await safeJson<T>(url, init);
-  if (!r.ok) throw new Error(`${action} failed (${r.message})`);
+  if (!r.ok) {
+    // Name the HTTP status as well as the server's reason ("HTTP 500: ...").
+    const detail = r.kind === "http" && !r.message.startsWith("HTTP ") ? `HTTP ${r.status}: ${r.message}` : r.message;
+    throw new Error(`${action} failed (${detail})`);
+  }
   if (r.data == null) throw new Error(`${action} failed (empty response)`);
   return r.data;
 }
@@ -158,7 +162,8 @@ export default function AnalyticsCommandCenter() {
 
       {generate.isError && s && (
         <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
-          The snapshot could not be recomputed. {errorMessage(generate.error)}. The figures below are from the previous snapshot.
+          The snapshot could not be recomputed. {errorMessage(generate.error)}. The figures below are from the
+          {snapshotTaken ? ` snapshot taken ${snapshotTaken}` : " previous snapshot"}.
         </p>
       )}
 
