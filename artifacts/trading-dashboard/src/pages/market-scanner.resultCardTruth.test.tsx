@@ -292,5 +292,21 @@ describe("legacy scanner result card — Live Intent reports the server's verdic
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatch(/could not be submitted/i);
     expect(alerts[0]).toMatch(/Failed to capture live intent/);
+    // The route writes its safety-log event before the intent row, so a 500
+    // can follow a partial write: the client cannot say nothing was recorded.
+    expect(alerts[0]).not.toMatch(/Nothing was recorded/i);
+    expect(alerts[0]).toMatch(/whether the server recorded .* could not be confirmed/i);
+  });
+
+  it("a dropped connection does not claim nothing was recorded", async () => {
+    rowOverrides = { finalRead: { label: "TRADE_WATCH" } };
+    globalFeed = envelope("all", ["EURUSD"]);
+    const alerts = submitWith(new TypeError("Failed to fetch"));
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByText("Live Intent")); await settle();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatch(/could not be submitted: Failed to fetch/);
+    expect(alerts[0]).not.toMatch(/Nothing was recorded/i);
+    expect(alerts[0]).toMatch(/could not be confirmed/i);
   });
 });

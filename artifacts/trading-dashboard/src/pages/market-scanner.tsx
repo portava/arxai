@@ -591,7 +591,10 @@ export default function MarketScanner() {
         }),
       })) as typeof res;
     } catch (e) {
-      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Nothing was recorded as captured.`);
+      // A 500 can follow a partial server write (the safety-log event is
+      // written before the intent row), and a dropped connection can follow a
+      // full one, so the client cannot say nothing was recorded.
+      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Whether the server recorded any part of it could not be confirmed.`);
       return;
     }
     alert(liveIntentResultMessage(o.symbol, res));
