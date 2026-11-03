@@ -206,9 +206,15 @@ function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
         {entry.closedAt && <span>Closed {fmtDate(entry.closedAt)}</span>}
         {entry.rubyWarnedCorrectly != null && (
           <span>
-            {entry.rubyWarnedCorrectly
-              ? `${name}'s warning matched what happened.`
-              : `This one didn't follow ${name}'s read.`}
+            {/* Derived from the result; unless that result is a KNOWN
+                (broker-realised) P/L it was graded from the last reading. */}
+            {entry.plQuality === "KNOWN"
+              ? entry.rubyWarnedCorrectly
+                ? `${name}'s warning matched what happened.`
+                : `This one didn't follow ${name}'s read.`
+              : entry.rubyWarnedCorrectly
+                ? `${name}'s warning matched the last reading before the close (estimated).`
+                : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>
         )}
         {entry.entryCount > 1 && <span>{entry.entryCount} entries</span>}
@@ -260,9 +266,15 @@ function ReviewRow({ entry }: { entry: ScalpJournalEntry }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
         {entry.rubyWarnedCorrectly != null && (
           <span>
-            {entry.rubyWarnedCorrectly
-              ? `${name}'s warning matched what happened.`
-              : `This one didn't follow ${name}'s read.`}
+            {/* Derived from the result; unless that result is a KNOWN
+                (broker-realised) P/L it was graded from the last reading. */}
+            {entry.plQuality === "KNOWN"
+              ? entry.rubyWarnedCorrectly
+                ? `${name}'s warning matched what happened.`
+                : `This one didn't follow ${name}'s read.`
+              : entry.rubyWarnedCorrectly
+                ? `${name}'s warning matched the last reading before the close (estimated).`
+                : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>
         )}
         {entry.entryCount > 1 && <span>{entry.entryCount} entries</span>}

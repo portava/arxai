@@ -3,13 +3,13 @@
 // rows is the newest 200, not the whole record. "signals tracked: 200" and
 // counts/win rate derived from it must say they cover only that window.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-const h = vi.hoisted(() => ({ entries: [] as unknown[] }));
+const h = vi.hoisted(() => ({ entries: [] as unknown[], reviews: [] as unknown[] }));
 vi.mock("@workspace/api-client-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useGetMeScalpJournal: () => ({ data: { entries: h.entries, generatedAt: "2026-10-28T12:00:00Z" }, isFetching: false, isLoading: false, isError: false, refetch: () => {} }),
-  useGetMeScalpReviews: () => ({ data: { reviews: [], generatedAt: "2026-10-28T12:00:00Z" }, isFetching: false, isLoading: false, isError: false, refetch: () => {} }),
+  useGetMeScalpReviews: () => ({ data: { reviews: h.reviews, generatedAt: "2026-10-28T12:00:00Z" }, isFetching: false, isLoading: false, isError: false, refetch: () => {} }),
   useGetMeScalpPersonality: () => ({ data: { symbols: [], generatedAt: "2026-10-28T12:00:00Z" }, isFetching: false, isLoading: false, isError: false, refetch: () => {} }),
 }));
 
@@ -130,5 +130,39 @@ describe("Scalp Journal outcome counts graded from an estimate", () => {
     expect(plain.LOSS).toBe("Losses");
     const mixed = Object.fromEntries(resultFilterOptions({ ...known, estimatedWins: 1 }).map((f) => [f.value, f.label]));
     expect(mixed.WIN).toBe("Wins (some estimated)");
+  });
+});
+
+// rubyWarnedCorrectly is derived from the estimate-graded result, so on an
+// ESTIMATED row the footer goes by the last reading, not "what happened".
+describe("Scalp Journal warning line on estimate-graded rows", () => {
+  it("journal rows: ESTIMATED says 'last reading … (estimated)', KNOWN keeps 'what happened'", () => {
+    h.reviews = [];
+    h.entries = [
+      { ...entry(2), symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -2, rubyWarnedCorrectly: true },
+      { ...entry(1), symbol: "GBPUSD", result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 2, rubyWarnedCorrectly: false },
+      { ...entry(4), symbol: "AUDUSD", result: "LOSS", plQuality: "KNOWN", realizedPl: -2, rubyWarnedCorrectly: true },
+    ];
+    render(<ScalpJournalPage />);
+    const rows = screen.getAllByTestId("scalp-journal-row");
+    const bySymbol = (sym: string) => rows.find((r) => r.getAttribute("data-symbol") === sym)!;
+    expect(bySymbol("EURUSD").textContent).not.toMatch(/matched what happened/);
+    expect(bySymbol("EURUSD").textContent).toMatch(/warning matched the last reading before the close \(estimated\)/);
+    expect(bySymbol("GBPUSD").textContent).toMatch(/Going by the last reading before the close, this one didn't follow .*'s read \(estimated\)/);
+    expect(bySymbol("AUDUSD").textContent).toMatch(/warning matched what happened\./);
+  });
+
+  it("review rows: ESTIMATED says 'last reading … (estimated)', not 'what happened'", () => {
+    h.entries = [entry(1)];
+    h.reviews = [
+      { ...entry(2), symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: -2, rubyWarnedCorrectly: true, lesson: null, exitReason: null },
+    ];
+    render(<ScalpJournalPage />);
+    const tab = screen.getByTestId("scalp-tab-reviews");
+    fireEvent.mouseDown(tab);
+    fireEvent.click(tab);
+    const row = screen.getByTestId("scalp-review-row");
+    expect(row.textContent).not.toMatch(/matched what happened/);
+    expect(row.textContent).toMatch(/warning matched the last reading before the close \(estimated\)/);
   });
 });
