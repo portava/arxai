@@ -28,6 +28,7 @@ import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   scoreNewsRisk,
+  newsRiskDisplayLabel,
   detectVolatilitySpike,
   type ImpactLevel,
   type EconomicEventInput,
@@ -407,7 +408,9 @@ export async function generateNewsRiskForSymbol(symbol: string) {
                    : result.riskLevel === "HIGH_RISK" ? "warning" : "warning";
     void createAlert({
       type: "NEWS_RISK", priority, severity,
-      title: `News risk: ${result.riskLevel.replace(/_/g, " ")} for ${symbol}`,
+      // A critical-event hold outside the release window is a trade-plan
+      // hold, not a live no-trade window: the title says which.
+      title: `News risk: ${newsRiskDisplayLabel(result)} for ${symbol}`,
       message: result.tradeWarning ?? result.aiSummary,
       symbol,
       actionRequired: result.blockTrading,

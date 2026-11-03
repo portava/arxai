@@ -11,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scoreNewsRisk, type EconomicEventInput } from "../index.js";
+import { scoreNewsRisk, newsRiskDisplayLabel, type EconomicEventInput } from "../index.js";
 
 const NOW = Date.parse("2026-10-28T12:00:00.000Z");
 
@@ -77,4 +77,32 @@ test("CRITICAL hold copy names what it holds (trade-plan validation), not all ne
     assert.doesNotMatch(r.tradeWarning ?? "", /^NO TRADE WINDOW:/, "a plan hold 20h out is not a live no-trade window");
     assert.ok(r.reasons.some((x) => /trade plan/i.test(x)), r.reasons.join(" | "));
   }
+});
+
+// The hold copy said TRADE PLAN HOLD, but the summary on the same report still
+// said "Risk: NO TRADE WINDOW." and the alert title read "News risk: NO TRADE
+// WINDOW for EURUSD" for a release 20 hours away. riskLevel / blockTrading stay
+// NO_TRADE_WINDOW / true (they drive the trade-plan gate); only the words change.
+test("CRITICAL hold: the summary and display label say TRADE PLAN HOLD, not NO TRADE WINDOW", () => {
+  for (const minutes of [20 * 60, -45]) {
+    const r = scoreNewsRisk({ symbol: "EURUSD", events: [critical(minutes)], nowMs: NOW });
+    assert.equal(r.riskLevel, "NO_TRADE_WINDOW");
+    assert.equal(r.blockTrading, true);
+    assert.equal(r.criticalHold, true);
+    assert.doesNotMatch(r.aiSummary, /NO TRADE WINDOW/);
+    assert.match(r.aiSummary, /Risk: TRADE PLAN HOLD\./);
+    assert.equal(newsRiskDisplayLabel(r), "TRADE PLAN HOLD");
+  }
+});
+
+test("a live release window keeps the NO TRADE WINDOW summary and label", () => {
+  for (const ev of [critical(5), { ...critical(10), impactLevel: "HIGH" as const, eventName: "CPI" }]) {
+    const r = scoreNewsRisk({ symbol: "EURUSD", events: [ev], nowMs: NOW });
+    assert.equal(r.criticalHold, false);
+    assert.match(r.aiSummary, /Risk: NO TRADE WINDOW\./);
+    assert.equal(newsRiskDisplayLabel(r), "NO TRADE WINDOW");
+  }
+  const clear = scoreNewsRisk({ symbol: "EURUSD", events: [], nowMs: NOW });
+  assert.equal(clear.criticalHold, false);
+  assert.equal(newsRiskDisplayLabel(clear), "CLEAR");
 });

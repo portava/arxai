@@ -84,6 +84,20 @@ const STYLES: Record<Risk, string> = {
   NO_TRADE_WINDOW:  "bg-red-700 text-white animate-pulse",
 };
 
+// ARX's critical-event hold blocks trade-plan validation from 24h before a
+// CRITICAL release until 2h after it, and is stored as NO_TRADE_WINDOW. A live
+// no-trade window (HIGH, or CRITICAL inside its release window) only exists
+// within ±15 minutes of the release, so a NO_TRADE_WINDOW report further out —
+// or one whose warning already says TRADE PLAN HOLD — is the trade-plan hold,
+// not a "do not trade" window. Read from the stored row; no schema change.
+const RELEASE_WINDOW_MIN = 15;
+export function isTradePlanHold(r: Pick<NewsRiskReport, "riskLevel" | "timeUntilEventMinutes" | "tradeWarning">): boolean {
+  if (r.riskLevel !== "NO_TRADE_WINDOW") return false;
+  if (r.tradeWarning?.startsWith("TRADE PLAN HOLD")) return true;
+  return r.timeUntilEventMinutes != null && Math.abs(r.timeUntilEventMinutes) > RELEASE_WINDOW_MIN;
+}
+const TRADE_PLAN_HOLD_STYLE = "bg-red-800 text-white";
+
 // A persisted report is a snapshot taken when the scan ran: its risk label and
 // countdown were computed for THAT moment. The scorer's narrowest window edge
 // is 10-15 minutes, so a report older than this may already have crossed one
@@ -172,6 +186,8 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
   // A CLEAR scored from a stored calendar that does not reach the next 24h is
   // not an all-clear: shown as "not checked" with the server's reason.
   const clearNotChecked = r?.riskLevel === "CLEAR" && r.calendarCoverage?.windowCovered === false;
+  const planHold = r ? isTradePlanHold(r) : false;
+  const levelLabel = r ? (planHold ? "TRADE PLAN HOLD" : r.riskLevel.replace(/_/g, " ")) : "";
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
       <header className="flex items-center justify-between">
@@ -237,11 +253,13 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
             ) : (
               <span
                 className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                  reportOutdated ? "border border-slate-600 bg-slate-800 text-slate-300" : STYLES[r.riskLevel]
+                  reportOutdated ? "border border-slate-600 bg-slate-800 text-slate-300"
+                  : planHold ? TRADE_PLAN_HOLD_STYLE
+                  : STYLES[r.riskLevel]
                 }`}
                 data-testid="news-risk-level"
               >
-                {reportOutdated ? `At ${scanTime}: ` : ""}{r.riskLevel.replace(/_/g, " ")}
+                {reportOutdated ? `At ${scanTime}: ` : ""}{levelLabel}
               </span>
             )}
             {r.timeUntilEventMinutes !== null && Number.isFinite(createdMs) && (
@@ -264,8 +282,8 @@ export function NewsRiskCard({ symbol }: { symbol: string | null }) {
             }`} data-testid="news-risk-warning">
               <div className="mb-1 font-semibold uppercase tracking-wide">
                 {reportOutdated
-                  ? `At scan time (${scanTime}): ${r.riskLevel === "NO_TRADE_WINDOW" ? "do not trade" : "caution"}`
-                  : `⚠ ${r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}`}
+                  ? `At scan time (${scanTime}): ${planHold ? "trade plans held" : r.riskLevel === "NO_TRADE_WINDOW" ? "do not trade" : "caution"}`
+                  : `⚠ ${planHold ? "Trade plans held" : r.riskLevel === "NO_TRADE_WINDOW" ? "Do not trade" : "Caution"}`}
               </div>
               <p>{r.tradeWarning}</p>
             </div>
