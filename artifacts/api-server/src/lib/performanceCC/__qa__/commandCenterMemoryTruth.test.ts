@@ -130,18 +130,18 @@ test("Best/Weakest setup says its P&L sums overlap across signals", async () => 
 // booked profit_loss, which for older or unsized closes is on another scale or
 // a placeholder. The two "Net P&L" figures can differ for the same book, so
 // Ruby Memory says what its figure is.
-test("Net P&L names its basis: booked demo P&L (older and unsized closes disclosed), not Analytics' USD figure", async () => {
+test("Net P&L names its basis: booked paper P&L (older and unsized closes disclosed), not Analytics' USD figure", async () => {
   rows.set(database.paperOrdersTable, [
     order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2 }),
   ]);
   const cc = await buildCommandCenter(7) as unknown as { netPnl: number; netPnlBasis: string };
   assert.equal(cc.netPnl, 2);
-  assert.match(cc.netPnlBasis, /booked on each closed demo trade\. Closes are now booked in USD at the instrument's contract size/);
+  assert.match(cc.netPnlBasis, /booked on each closed paper trade\. Closes are now booked in USD at the instrument's contract size/);
   assert.match(cc.netPnlBasis, /closes booked before that may carry the earlier price move × lots × 100 figure/);
   // An unsized close is left out (it used to say its 0 placeholder was added),
   // and the balance's treatment is stated as it is now: loss at the model, win 0.
   assert.match(cc.netPnlBasis, /could not be sized for the instrument is left out of this sum/);
-  assert.match(cc.netPnlBasis, /paper risk model when it lost and as 0 when it won/);
+  assert.match(cc.netPnlBasis, /paper account balance counts such a close at the paper risk model when it lost and as 0 when it won/);
   assert.doesNotMatch(cc.netPnlBasis, /adds its stored 0 placeholder/);
   assert.doesNotMatch(cc.netPnlBasis, /demo account units/);
   assert.match(cc.netPnlBasis, /Analytics recomputes each trade in USD/);
@@ -190,4 +190,25 @@ test("riskStats.highRiskBlocks says it counts every not-opened symbol, AI holds 
   assert.match(basis, /sniper/i);
   assert.match(basis, /not a count of (high-risk|safety) blocks/i);
   assert.match(basis, /latest 20/);
+});
+
+// The Memory tab calls paper_orders "paper" (Paper Win Rate, Net Paper P&L,
+// "Trade calls with no paper order"). The Insights card, the blocked-count
+// scope and the Net P&L basis on the same tab still said "demo order", "closed
+// demo trade" and "your demo balance": a DEMO-mode user (an MT5 demo account)
+// reads those as statements about that account.
+test("the Memory tab's server copy calls paper orders paper, never demo", async () => {
+  rows.set(database.tradeDecisionLogsTable, [decision(1), decision(2)]);
+  rows.set(database.paperOrdersTable, [
+    order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2, decisionId: 1 }),
+  ]);
+  const cc = await buildCommandCenter(7) as unknown as {
+    insights: string[]; netPnlBasis: string; aiDecisionStats: Record<string, unknown>;
+  };
+  const insights = cc.insights.join("\n");
+  assert.match(insights, /1 of 2 AI trade calls have no paper order/);
+  assert.doesNotMatch(insights, /demo order/i);
+  assert.match(String(cc.aiDecisionStats.blockedCountScope), /no paper order/);
+  assert.doesNotMatch(String(cc.aiDecisionStats.blockedCountScope), /demo/i);
+  assert.doesNotMatch(cc.netPnlBasis, /demo/i);
 });
