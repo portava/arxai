@@ -30,6 +30,28 @@ import { derivFeedStateFromStatus, type DerivStatusPayload } from "@/lib/derivFe
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
+const NEWS_LEVEL_UNTIMED = "unknown (release time not published)";
+
+/**
+ * The news-risk level the panel may state (badge and reasoning block).
+ * Downgrade-only: null when the calendar was not checked (the reasoning block
+ * then says event risk was not assessed); "unknown (release time not
+ * published)" when the server says the level was measured to a date-only
+ * release's midnight marker, or leaves out a release dated today with no
+ * published time — except an "unscored" high, which no left-out release can
+ * raise further.
+ */
+export function selectedNewsRiskLevel(
+  newsRisk: { riskLevel?: string | null; levelBasis?: string | null } | null | undefined,
+  calendarChecked: boolean,
+): string | null {
+  if (!calendarChecked || !newsRisk) return null;
+  const level = newsRisk.riskLevel ?? null;
+  if (newsRisk.levelBasis === "date_only") return NEWS_LEVEL_UNTIMED;
+  if (newsRisk.levelBasis === "unscored" && level !== "high") return NEWS_LEVEL_UNTIMED;
+  return level;
+}
+
 function biasBadgeClass(b: "BUY" | "SELL" | "NEUTRAL" | "WAIT"): string {
   if (b === "BUY") return "bg-success/20 text-success border-success/40";
   if (b === "SELL") return "bg-danger/20 text-danger border-danger/40";
@@ -190,6 +212,7 @@ export function SelectedMarketPanel() {
   // Downgrade-only: an empty event list reads as a quiet day only when the
   // server says the calendar was actually checked.
   const calendarChecked = ok?.newsRisk?.calendarChecked === true;
+  const newsRiskShown = ok ? selectedNewsRiskLevel(ok.newsRisk, calendarChecked) : null;
   const calendarNote = ok
     ? ok.newsRisk?.calendarNote
       ?? (calendarChecked ? null : "The economic calendar could not be checked, so scheduled events are not shown.")
@@ -234,7 +257,7 @@ export function SelectedMarketPanel() {
         levelsWithheldReason: readWithheldReason,
         dataState: ok.dataState ?? null,
         dataSourceLabel: ok.dataSourceLabel ?? null,
-        newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+        newsRiskLevel: newsRiskShown,
       });
     }
     return buildReasoningFromOppMap({
@@ -261,10 +284,10 @@ export function SelectedMarketPanel() {
       levelsWithheldReason: ok.levelsWithheldReason ?? null,
       dataState: ok.dataState ?? null,
       dataSourceLabel: ok.dataSourceLabel ?? null,
-      newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      newsRiskLevel: newsRiskShown,
       pricePrecision: levelPrecision,
     });
-  }, [ok, readWithheldReason, levelPrecision]);
+  }, [ok, readWithheldReason, levelPrecision, newsRiskShown]);
 
   return (
     <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
@@ -420,7 +443,7 @@ export function SelectedMarketPanel() {
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-foreground">Upcoming events that may move {ok.symbol}</div>
                 <Badge variant="outline" className="text-[10px]" data-testid="badge-selected-news-risk">
-                  News risk: {calendarChecked ? ok.newsRisk?.riskLevel ?? "—" : "unknown"}
+                  News risk: {calendarChecked ? newsRiskShown ?? "—" : "unknown"}
                 </Badge>
               </div>
               {calendarNote && (

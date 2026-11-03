@@ -18,6 +18,7 @@ type Facts = {
   maxDailyLossPercent: number | null; maxDailyLossAmount: number | null;
   maxWeeklyLossPercent?: number | null; maxWeeklyLossAmount?: number | null;
   equity: number | null; realizedPnl?: number | null;
+  activity?: { weekRealizedPnl: number } | null;
 };
 let facts: Facts = { maxDailyLossPercent: 3, maxDailyLossAmount: null, equity: null };
 
@@ -30,7 +31,7 @@ mock.module("../enforce.js", {
       },
       account: facts.equity == null ? null : { equity: facts.equity },
       daily: { realizedPnl: facts.realizedPnl === undefined ? 0 : facts.realizedPnl, floatingPnl: null },
-      activity: null, positions: [], instruments: {},
+      activity: facts.activity ?? null, positions: [], instruments: {},
       halt: { engaged: false, sources: [], reason: null },
     }),
   },
@@ -82,4 +83,43 @@ test("no daily or weekly cap configured at all is not 'unvalued'", async () => {
   assert.equal(ov.budget.dailyRiskLimitUnvalued, false);
   assert.equal(ov.budget.weeklyRiskLimitUnvalued, false);
   assert.equal(ov.budget.equityKnown, false);
+});
+
+// Truth: with a weekly cap set (every preset sets one) and no activity facts,
+// the reason said weekly risk used was unknown, yet the budget still sent
+// weeklyRiskUsed 0 and weeklyRiskRemaining = the full cap, so the page showed
+// "Weekly used $0" and "Weekly risk left $500" under that reason. With no
+// active paper account the reason also said the activity "could not be read",
+// although nothing failed: there is no paper book. The budget now says which
+// "used" figures are measured, and why not.
+test("weekly activity that could not be read: weekly used is flagged unknown with that reason", async () => {
+  facts = { maxDailyLossPercent: null, maxDailyLossAmount: 150, maxWeeklyLossAmount: 500, equity: 10_000, activity: null };
+  const ov = await riskOverview(1, "PAPER");
+  assert.equal(ov.budget.weeklyRiskUsedKnown, false);
+  assert.equal(ov.budget.weeklyRiskUsedUnknownReason, "this week's trading activity could not be read");
+  assert.equal(ov.budget.dailyRiskUsedKnown, true);
+  assert.equal(ov.budget.dailyRiskUsedUnknownReason, null);
+  assert.equal(ov.budget.riskStatus, "UNKNOWN");
+  assert.match(String(ov.budget.riskStatusReason), /this week's trading activity could not be read/i);
+});
+
+test("no active paper account: daily and weekly used are not measured, and the reason says there is no account", async () => {
+  facts = { maxDailyLossPercent: null, maxDailyLossAmount: 150, maxWeeklyLossAmount: 500, equity: null, activity: null };
+  const ov = await riskOverview(1, "PAPER");
+  assert.equal(ov.budget.weeklyRiskUsedKnown, false);
+  assert.equal(ov.budget.dailyRiskUsedKnown, false);
+  assert.equal(ov.budget.weeklyRiskUsedUnknownReason, "there is no active paper account");
+  assert.equal(ov.budget.dailyRiskUsedUnknownReason, "there is no active paper account");
+  assert.doesNotMatch(String(ov.budget.riskStatusReason), /could not be read/);
+  assert.match(String(ov.budget.riskStatusReason), /no active paper account/i);
+  assert.equal(ov.budget.riskStatus, "UNKNOWN");
+});
+
+test("measured weekly activity: weekly used is known and counted", async () => {
+  facts = { maxDailyLossPercent: null, maxDailyLossAmount: 150, maxWeeklyLossAmount: 500, equity: 10_000, activity: { weekRealizedPnl: -120 } };
+  const ov = await riskOverview(1, "PAPER");
+  assert.equal(ov.budget.weeklyRiskUsedKnown, true);
+  assert.equal(ov.budget.weeklyRiskUsed, 120);
+  assert.equal(ov.budget.weeklyRiskRemaining, 380);
+  assert.equal(ov.budget.riskStatus, "OK");
 });

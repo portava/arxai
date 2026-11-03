@@ -22,9 +22,13 @@ type Status = {
   status: "OFF" | "NOT_MEASURED" | "ACTIVE" | "WARNING" | "FAILED" | "TARGET_REACHED" | "PASSED";
   /** False when no rule was checked (mode off, or nothing measured). Older servers omit it. */
   rulesEvaluated?: boolean;
-  /** Rules not checked because they could not be measured (an older server: the paper equity could not be read). */
+  /** Rules not checked because an input was not measured (an older server: the paper equity could not be read). */
   notEvaluated?: string[];
+  /** Why each not-checked rule was not checked (newer servers). */
+  notEvaluatedReasons?: Record<string, string>;
   equityMeasured?: boolean;
+  /** False when the day's drawdown is a placeholder (newer servers). */
+  dailyDrawdownMeasured?: boolean;
 };
 type NumericKey = "startingBalance" | "profitTarget" | "maxDailyDrawdownUsd" | "maxTotalDrawdownUsd" | "minTradingDays" | "maxLotSize" | "maxPositions" | "consistencyRulePctOfTotal";
 const STATUS_LABEL: Record<string, string> = { NOT_MEASURED: "NOT MEASURED", TARGET_REACHED: "TARGET REACHED" };
@@ -93,6 +97,29 @@ export default function PropFirmMode() {
   const rulesOff = s != null && (s.status === "OFF" || s.config.enabled === false);
   const nothingChecked = s?.rulesEvaluated === false;
   const unmeasured = s?.equityMeasured === false || s?.measured === false;
+  // Paper equity is unmeasured only when there is no active paper account, and
+  // then the day's drawdown is a placeholder too (an older server still listed
+  // DAILY_DD as passed). The page only downgrades: a rule whose input was not
+  // measured is never a tick, and the status is not a measured verdict.
+  const dailyUnmeasured = s?.dailyDrawdownMeasured === false || unmeasured;
+  const serverNotChecked = s?.notChecked ?? [];
+  const unmeasuredRules = new Set<string>([...(s?.notEvaluated ?? []), ...serverNotChecked.map((c) => c.rule),
+    ...(dailyUnmeasured ? ["DAILY_DD"] : []), ...(unmeasured ? ["PROFIT_TARGET", "TOTAL_DD"] : [])]);
+  const passedShown = nothingChecked ? [] : (s?.passed ?? []).filter((p) => !unmeasuredRules.has(p));
+  const failedShown = nothingChecked ? [] : (s?.failed ?? []);
+  // Not-checked rules the server's notChecked list does not already carry:
+  // an older server's notEvaluated, and rules it listed as passed whose input
+  // was not measured.
+  const extraNotChecked = [...new Set([...(s?.notEvaluated ?? []),
+    ...[...unmeasuredRules].filter((r) => (s?.passed ?? []).includes(r))])]
+    .filter((r) => !serverNotChecked.some((c) => c.rule === r));
+  const notCheckedWhy = (rule: string) => s?.notEvaluatedReasons?.[rule]
+    ?? (rule === "DAILY_DD" ? "today's drawdown was not measured" : "paper equity could not be read");
+  // A status an older server worked out from placeholders is shown as NOT MEASURED.
+  const statusUnmeasured = s != null && unmeasured
+    && (s.status === "ACTIVE" || s.status === "PASSED" || s.status === "WARNING" || s.status === "TARGET_REACHED");
+  const statusCode = s == null ? "" : statusUnmeasured ? "NOT_MEASURED" : s.status;
+  const statusLabel = STATUS_LABEL[statusCode] ?? statusCode;
 
   return (
     <div className="space-y-4">
@@ -110,7 +137,7 @@ export default function PropFirmMode() {
         </div>
         <Badge variant="outline" title="Profit, drawdown and rule progress are read from your paper account.">Progress: PAPER</Badge>
         <Badge variant="outline" className="border-amber-500/50 text-amber-500" title="Saved caps apply to paper, demo and live orders.">Limits: ALL VENUES</Badge>
-        {s && <Badge className={STATUS_COLOR[s.status]} data-testid="prop-status-badge">{STATUS_LABEL[s.status] ?? s.status}</Badge>}
+        {s && <Badge className={STATUS_COLOR[statusCode]} data-testid="prop-status-badge" title={statusUnmeasured ? "The mode is on, but no paper equity was measured, so the challenge has no measured status." : undefined}>{statusLabel}</Badge>}
       </div>
 
       {!s && loadError && (
@@ -157,12 +184,12 @@ export default function PropFirmMode() {
           <Stat label="Enabled" value={s.config.enabled ? "YES" : "NO"} />
           <Stat label="Profit USD" value={unmeasured ? NOT_MEASURED : money(s.profitUsd)} />
           <Stat label="Target progress" value={unmeasured || s.profitTargetProgress == null ? NOT_MEASURED : `${s.profitTargetProgress}%`} />
-          <Stat label="Daily DD left" value={s.measured === false ? NOT_MEASURED : money(s.dailyDrawdownRemainingUsd)} />
+          <Stat label="Daily DD left" value={dailyUnmeasured ? NOT_MEASURED : money(s.dailyDrawdownRemainingUsd)} />
           <Stat label="Total DD left" value={unmeasured ? NOT_MEASURED : money(s.totalDrawdownRemainingUsd)} />
-          <Stat label="Passed rules" value={String(s.passed.length)} />
-          <Stat label="Failed rules" value={String(s.failed.length)} />
-          <Stat label="Not checked" value={String(s.notChecked?.length ?? s.notEvaluated?.length ?? 0)} />
-          <Stat label="Account status" value={STATUS_LABEL[s.status] ?? s.status} />
+          <Stat label="Passed rules" value={String(passedShown.length)} />
+          <Stat label="Failed rules" value={String(failedShown.length)} />
+          <Stat label="Not checked" value={String(serverNotChecked.length + extraNotChecked.length)} />
+          <Stat label="Account status" value={statusLabel} />
         </div>
       )}
 
@@ -198,18 +225,18 @@ export default function PropFirmMode() {
             ) : (
               <>
                 <div className="flex flex-wrap gap-1">
-                  {!nothingChecked && s.passed.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
-                  {!nothingChecked && s.failed.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
-                  {(s.notEvaluated ?? []).filter((n) => !(s.notChecked ?? []).some((c) => c.rule === n)).map((n) => (
-                    <Badge key={n} variant="outline">{n}: not checked (paper equity could not be read)</Badge>
+                  {passedShown.map((p) => <Badge key={p} className="bg-emerald-500/20 text-emerald-400">✓ {p}</Badge>)}
+                  {failedShown.map((f) => <Badge key={f} variant="destructive">✗ {f}</Badge>)}
+                  {extraNotChecked.map((n) => (
+                    <Badge key={n} variant="outline">{n}: not checked ({notCheckedWhy(n)})</Badge>
                   ))}
-                  {(s.notChecked ?? []).map((n) => (
+                  {serverNotChecked.map((n) => (
                     <Badge key={n.rule} variant="outline" title={n.reason} data-testid={`prop-rule-not-checked-${n.rule}`}>– {n.rule} not checked</Badge>
                   ))}
                 </div>
-                {(s.notChecked ?? []).length > 0 && (
+                {serverNotChecked.length > 0 && (
                   <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5" data-testid="prop-not-checked-reasons">
-                    {(s.notChecked ?? []).map((n) => <li key={n.rule}><span className="font-mono">{n.rule}</span>: {n.reason}</li>)}
+                    {serverNotChecked.map((n) => <li key={n.rule}><span className="font-mono">{n.rule}</span>: {n.reason}</li>)}
                   </ul>
                 )}
               </>

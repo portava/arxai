@@ -61,6 +61,13 @@ export interface SnapshotOk {
     calendarChecked?: boolean;
     /** Plain-English limit of the event list, or null. */
     calendarNote?: string | null;
+    /**
+     * What riskLevel was measured against: "release_time"; "date_only" (to a
+     * date-only release's midnight-UTC marker, not a release time); or
+     * "unscored" (a listed release dated today has no published time and is
+     * not in the level). null/absent when not checked or from older servers.
+     */
+    levelBasis?: "release_time" | "date_only" | "unscored" | null;
   };
   // Additive truth fields (Task #518). dataAsOf = the DATA timestamp (newest
   // confirmed candle), distinct from generatedAt (analysis build time).

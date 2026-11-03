@@ -12,7 +12,7 @@ import { logUserOverride } from "../lib/vaultLogger.js";
 import { scanVaultIntegrity } from "../lib/vaultIntegrity.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets } from "../lib/broker/secrets.js";
 import { getBrokerProvider } from "../lib/broker/registry.js";
-import { haltFrom, loadPlatformHalt, loadTradingHalt, type HaltSource } from "../lib/safety/tradingHalt.js";
+import { loadPlatformHaltReport, loadTradingHaltReport, type HaltSource } from "../lib/safety/tradingHalt.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // /api/system/* — Phase 1 Safety Core + Phase 2 Vault endpoints
@@ -166,7 +166,8 @@ router.get("/system/mt5-deferred-status", async (req, res) => {
 // throws, activeHalts is null, meaning "could not be checked", never "none".
 export interface StatusHalts {
   activeHalts: HaltSource[] | null;
-  /** One plain-English sentence per entry of activeHalts, same order. */
+  /** One plain-English sentence per entry of activeHalts, same order, each
+   *  with its own stored detail ("state unreadable", the trader's reason). */
   activeHaltReasons: string[];
   activeHaltsCheckedAt: string;
 }
@@ -174,12 +175,12 @@ export interface StatusHalts {
 export async function readStatusHalts(userId: number | null | undefined): Promise<StatusHalts> {
   const activeHaltsCheckedAt = new Date().toISOString();
   try {
-    const halt = userId != null && userId > 0
-      ? await loadTradingHalt({ userId, venue: "LIVE" })
-      : await loadPlatformHalt();
+    const report = userId != null && userId > 0
+      ? await loadTradingHaltReport({ userId, venue: "LIVE" })
+      : await loadPlatformHaltReport();
     return {
-      activeHalts: [...halt.sources],
-      activeHaltReasons: halt.sources.map((s, i) => (i === 0 ? halt.reason : haltFrom([s]).reason) ?? s),
+      activeHalts: [...report.halt.sources],
+      activeHaltReasons: [...report.reasons],
       activeHaltsCheckedAt,
     };
   } catch {

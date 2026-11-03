@@ -271,7 +271,7 @@ export function enrichStateWithBrokerAlignment(
       state.setupState,
       state.decisionFork,
     ),
-    chartReadVerification(gateOutput, feedStatus),
+    chartReadVerification(gateOutput, feedStatus, chartTruthScore),
   );
   const { marketSentences: _previous, ...rest } = state;
   const sentenceInput: Omit<ChartIntelligenceState, "marketSentences"> = {
@@ -631,7 +631,7 @@ export async function buildChartIntelligenceState(
   // capped at "watch" with the reason, matching Ruby's "syncing" answer.
   const decisionState: ChartDecisionState = capDecisionStateByChartTruth(
     engineDecisionState,
-    chartReadVerification(gateOutput, truth.feedStatus),
+    chartReadVerification(gateOutput, truth.feedStatus, chartTruthScore),
   );
 
   // Natural-language reader over the assembled engine outputs. Deterministic

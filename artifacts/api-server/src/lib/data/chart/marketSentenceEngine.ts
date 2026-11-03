@@ -99,8 +99,10 @@ export function chartLevelPersonalityWords(p: ChartLevelPersonality | string): s
       return "weakening";
     case "broken":
       return "broken";
+    // levelPersonality sets retest_pending only after the level broke AND
+    // price came back to it: the retest was observed, not awaited.
     case "retest_pending":
-      return "waiting for a retest";
+      return "broken, and price has come back to retest it";
     case "trap_zone":
       return "a possible trap zone";
     case "scalp_only":
@@ -372,10 +374,11 @@ function sentenceRisk(s: SentenceInput): ChartMarketSentence {
 }
 
 // The chart-truth gate's verdict on this read, in plain words. An unverified
-// read (Chart Truth < 75, stale feed, failed mirror, feed not live) may still
-// be described, but no sentence may invite acting on it.
+// read (Chart Truth < 75, stale feed, failed mirror, an unmeasured or failing
+// candle-data check, feed not live) may still be described, but no sentence
+// may invite acting on it.
 function unverifiedWhy(s: SentenceInput): string | null {
-  const v = chartReadVerification(s.gateOutput, s.truthState);
+  const v = chartReadVerification(s.gateOutput, s.truthState, s.chartTruthScore);
   return v.verified ? null : v.reasons.join("; ");
 }
 
@@ -469,6 +472,18 @@ function sentenceScalp(s: SentenceInput): ChartMarketSentence {
   const tf = s.marketUnderstanding.timeframeAgreement;
   const momentum = s.fastFlags.momentumBurst;
   if (tf.scalpOnlyWarning) {
+    // Scalp-only guidance still invites a quick trade, so an unverified read
+    // gets the caution instead (the same rule as the momentum branch below).
+    const why = unverifiedWhy(s);
+    if (why) {
+      return {
+        ...base,
+        tone: "caution",
+        text: momentum
+          ? `Scalp-only conditions with a momentum burst, but this read is not verified (${why}) — don't scalp off it yet.`
+          : `Scalp-only conditions (the timeframes disagree), but this read is not verified (${why}) — don't scalp off it yet.`,
+      };
+    }
     return {
       ...base,
       tone: "caution",

@@ -43,18 +43,27 @@ const REASONS: Record<string, string> = {
   trader_kill_switch: "Your kill switch is engaged. Release it to trade again.",
 };
 type Halt = { engaged: boolean; sources: string[]; reason: string | null };
-const haltOf = (sources: string[], detail?: string): Halt =>
-  sources.length
-    ? { engaged: true, sources, reason: detail ? `${REASONS[sources[0]!]} (${detail})` : REASONS[sources[0]!]! }
-    : { engaged: false, sources: [], reason: null };
-let traderHalt: () => Promise<Halt> = async () => haltOf([]);
-let platformHalt: () => Promise<Halt> = async () => haltOf([]);
+// The stub reader's facts: the engaged sources and each one's stored detail
+// (a bare string is the first source's detail, as before).
+type Facts = { sources: string[]; detail: Record<string, string | undefined> };
+const sentence = (s: string, d?: string) => (d ? `${REASONS[s]} (${d})` : REASONS[s]!);
+const haltOf = (sources: string[], detail?: string | Record<string, string>): Facts => ({
+  sources,
+  detail: typeof detail === "string" ? { [sources[0]!]: detail } : detail ?? {},
+});
+const asHalt = (f: Facts): Halt => f.sources.length
+  ? { engaged: true, sources: f.sources, reason: sentence(f.sources[0]!, f.detail[f.sources[0]!]) }
+  : { engaged: false, sources: [], reason: null };
+const asReport = (f: Facts) => ({ halt: asHalt(f), reasons: f.sources.map((s) => sentence(s, f.detail[s])) });
+let traderHalt: () => Promise<Facts> = async () => haltOf([]);
+let platformHalt: () => Promise<Facts> = async () => haltOf([]);
 const traderCalls: Array<{ userId: number; venue: string }> = [];
 mock.module("../../lib/safety/tradingHalt.js", {
   namedExports: {
-    loadTradingHalt: async (args: { userId: number; venue: string }) => { traderCalls.push(args); return traderHalt(); },
-    loadPlatformHalt: async () => platformHalt(),
-    haltFrom: (sources: string[]) => haltOf(sources),
+    loadTradingHalt: async (args: { userId: number; venue: string }) => { traderCalls.push(args); return asHalt(await traderHalt()); },
+    loadPlatformHalt: async () => asHalt(await platformHalt()),
+    loadTradingHaltReport: async (args: { userId: number; venue: string }) => { traderCalls.push(args); return asReport(await traderHalt()); },
+    loadPlatformHaltReport: async () => asReport(await platformHalt()),
   },
 });
 
@@ -100,6 +109,16 @@ test("the viewer's own kill switch is reported, one reason per stop", async () =
   assert.deepEqual(s.activeHalts, ["platform_emergency_stop", "trader_kill_switch"]);
   assert.equal((s.activeHaltReasons as string[]).length, 2);
   assert.match((s.activeHaltReasons as string[])[1]!, /Your kill switch is engaged/);
+});
+
+test("every stop keeps its own detail, not only the first ('state unreadable' is never dropped)", async () => {
+  viewerId = 7;
+  traderHalt = async () => haltOf(["platform_emergency_stop", "trader_kill_switch"], { platform_emergency_stop: "news spike", trader_kill_switch: "state unreadable" });
+  const s = await status();
+  assert.deepEqual(s.activeHaltReasons, [
+    "The platform emergency stop is engaged by an operator. (news spike)",
+    "Your kill switch is engaged. Release it to trade again. (state unreadable)",
+  ]);
 });
 
 test("no stop engaged is an empty list, not missing", async () => {

@@ -29,9 +29,24 @@ function gate(truth: number, over: Record<string, unknown> = {}) {
   };
 }
 
+// Every candle-data check Ruby's handshake reads, measured and passing
+// (a bound broker quote). `unmeasured` leaves those keys without evidence.
+const SOURCE_KEYS = ["ohlc_integrity", "source_authenticity", "timeframe_accuracy", "symbol_mirror_accuracy",
+  "historical_live_merge", "feed_freshness", "price_precision"];
+function truthScore(score: number, unmeasured: string[] = []) {
+  const subMetrics = [...SOURCE_KEYS, "render_accuracy", "scale_quality", "interaction_stability"].map((key) => {
+    const measured = SOURCE_KEYS.includes(key) && !unmeasured.includes(key);
+    return { key, label: key, weight: 0.1, rawScore: measured ? 100 : null, weightedScore: measured ? 10 : null,
+      evidenceStatus: measured ? "measured" : "unavailable", detail: "fixture" };
+  });
+  return { score, label: score >= 75 ? "Verified" : "Degraded", subMetrics, evidenceCoverage: 0.87,
+    unmeasuredKeys: subMetrics.filter((m) => m.evidenceStatus !== "measured").map((m) => m.key), primaryConcern: null, note: "fixture" };
+}
+
 // A clean, non-stale feed with an A-grade setup. `actionability` is what the
 // server sent (an older/uncapped server can still send "ready").
-function state(g: ReturnType<typeof gate> | undefined, actionability = "ready", isLive = true): ChartState {
+function state(g: ReturnType<typeof gate> | undefined, actionability = "ready", isLive = true,
+  score: ReturnType<typeof truthScore> = truthScore(g?.chartTruthScore ?? 0)): ChartState {
   return {
     symbol: "EURUSD",
     displaySymbol: "EURUSD",
@@ -56,6 +71,7 @@ function state(g: ReturnType<typeof gate> | undefined, actionability = "ready", 
     },
     setupState: { populated: true, ageBars: 2, stage: "entry_valid" },
     gateOutput: g,
+    chartTruthScore: score,
   } as unknown as ChartState;
 }
 
@@ -90,8 +106,43 @@ describe("Chart Pulse readiness respects the chart-truth gate", () => {
     expect(screen.getByTestId("chart-pulse-unverified").textContent).toMatch(/feed is not live/i);
   });
 
+  // Truth: with no bound broker quote the broker comparison is unmeasured, so
+  // a clean feed scores exactly 75 and the gate opens — but Ruby's handshake
+  // needs that check measured and answers "syncing". Pulse must agree.
+  it("Chart Truth exactly 75 with the broker comparison unmeasured is not 'Ready'", () => {
+    render(<ChartPulse state={state(gate(75), "ready", true, truthScore(75, ["symbol_mirror_accuracy"]))} />);
+    const readiness = screen.getByTestId("pulse-readiness");
+    expect(readiness.textContent).not.toContain("Ready");
+    expect(readiness.className).not.toMatch(/emerald/);
+    expect(screen.getByTestId("chart-pulse-unverified").textContent).toContain("the broker price comparison was not measured");
+  });
+
+  it("candles that are not real OHLC, or a feed that is not clean, are not verified", () => {
+    render(<ChartPulse state={state(gate(87, { candlestickModeAllowed: false }))} />);
+    expect(screen.getByTestId("chart-pulse-unverified").textContent).toContain("the provider does not deliver real OHLC candles");
+    cleanup();
+    const delayed = state(gate(87));
+    (delayed as unknown as { truthState: Record<string, unknown> }).truthState = {
+      ...(delayed as unknown as { truthState: Record<string, unknown> }).truthState, quality: "delayed", aiUsable: false };
+    render(<ChartPulse state={delayed} />);
+    expect(screen.getByTestId("pulse-readiness").textContent).not.toContain("Ready");
+    expect(screen.getByTestId("chart-pulse-unverified").textContent).toContain("the candle feed is delayed");
+  });
+
+  // Truth: a merge-seam failure (the chart's own history/live join) also
+  // closes trade confirmation; with no broker quote it was reported as a
+  // failed broker-mirror check that never ran.
+  it("a merge-seam failure is named as such, not as a failed broker comparison", () => {
+    render(<ChartPulse state={state(gate(87, { tradeConfirmationAllowed: false,
+      blockedReasons: ["Merge-seam integrity failed — chart-based trade confirmation blocked."] }))} />);
+    const banner = screen.getByTestId("chart-pulse-unverified").textContent ?? "";
+    expect(banner).not.toMatch(/broker-mirror/i);
+    expect(banner).toContain("the chart's history and live bars do not join cleanly");
+  });
+
   it("failed mirror and missing gate are not verified", () => {
-    render(<ChartPulse state={state(gate(87, { tradeConfirmationAllowed: false }))} />);
+    render(<ChartPulse state={state(gate(87, { tradeConfirmationAllowed: false,
+      blockedReasons: ["Broker price alignment failed — chart-based trade confirmation blocked."] }))} />);
     expect(screen.getByTestId("chart-pulse-unverified").textContent).toMatch(/broker-mirror check failed/i);
     cleanup();
     render(<ChartPulse state={state(undefined)} />);

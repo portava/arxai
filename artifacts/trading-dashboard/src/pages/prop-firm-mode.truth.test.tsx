@@ -89,12 +89,41 @@ describe("Prop Firm Mode — labels", () => {
     expect(screen.getByTestId("prop-firm-rules").textContent).not.toMatch(/✓/);
   });
 
+  // With no paper account the day's drawdown is a placeholder too: an older
+  // server still listed DAILY_DD as passed and sent "Daily DD left $5000".
   it("rules the server could not check are shown as not checked, and unmeasured profit is not $0", async () => {
     stubFetch(() => json(status({ passed: ["DAILY_DD"], notEvaluated: ["PROFIT_TARGET", "TOTAL_DD"], equityMeasured: false, profitUsd: 0 })));
     render(<PropFirmMode />);
     await waitFor(() => expect(screen.getByTestId("prop-firm-rules").textContent).toMatch(/TOTAL_DD: not checked/));
-    expect(screen.getAllByText("Not measured").length).toBeGreaterThanOrEqual(3);
+    const rules = screen.getByTestId("prop-firm-rules").textContent ?? "";
+    expect(rules).not.toMatch(/✓/);
+    expect(rules).toMatch(/DAILY_DD: not checked/);
+    expect(screen.getAllByText("Not measured").length).toBeGreaterThanOrEqual(4);
     expect(screen.queryByText("$0")).toBeNull();
+    expect(screen.queryByText("$5000")).toBeNull();
+  });
+
+  it("with no active paper account every rule says why it was not checked, and the status is not a measured verdict", async () => {
+    const why = "there is no active paper account";
+    stubFetch(() => json(status({
+      passed: [], notEvaluated: ["PROFIT_TARGET", "DAILY_DD", "TOTAL_DD"],
+      notEvaluatedReasons: { PROFIT_TARGET: why, DAILY_DD: why, TOTAL_DD: why },
+      equityMeasured: false, dailyDrawdownMeasured: false, profitUsd: 0, profitTargetProgress: 0, status: "ACTIVE",
+    })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByTestId("prop-firm-rules").textContent).toMatch(/DAILY_DD: not checked/));
+    const rules = screen.getByTestId("prop-firm-rules").textContent ?? "";
+    expect(rules).toContain(`TOTAL_DD: not checked (${why})`);
+    expect(rules).not.toMatch(/could not be read/);
+    expect(screen.getAllByText("NOT MEASURED").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("an older server's PASSED from a placeholder profit is not shown as PASSED", async () => {
+    stubFetch(() => json(status({ passed: [], notEvaluated: ["PROFIT_TARGET", "TOTAL_DD"], equityMeasured: false, profitUsd: 0, status: "PASSED",
+      config: { ...status().config, profitTarget: 0 } })));
+    render(<PropFirmMode />);
+    await waitFor(() => expect(screen.getByTestId("prop-firm-rules").textContent).toMatch(/not checked/));
+    expect(screen.queryByText("PASSED")).toBeNull();
   });
 });
 

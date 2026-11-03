@@ -14,9 +14,15 @@ type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
 // The *Unvalued flags: a percent cap is configured but equity is unknown, so
 // the cap cannot be valued in money. Absent on an older server.
-type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null };
+type ValuationFlags = { equityKnown?: boolean; dailyRiskLimitUnvalued?: boolean; weeklyRiskLimitUnvalued?: boolean; riskStatusReason?: string | null }
+  // false when the server's *RiskUsed (and so *RiskRemaining) is a placeholder,
+  // with the plain reason. Absent on an older server.
+  & { dailyRiskUsedKnown?: boolean; dailyRiskUsedUnknownReason?: string | null; weeklyRiskUsedKnown?: boolean; weeklyRiskUsedUnknownReason?: string | null };
 type Budget = ValuationFlags & { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
-type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: Permissions; propFirm: { status: string; profitTargetProgress: number | null } | null };
+type Cards = ValuationFlags & { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: Permissions; propFirm: PropFirmCard | null };
+
+// equityMeasured / measured false: the figures are not measured (older servers omit them).
+type PropFirmCard = { status: string; profitTargetProgress: number | null; equityMeasured?: boolean; measured?: boolean };
 
 // permissions.trading is false when a stop switch is engaged or a loss limit
 // is reached; blockedBy names which (older servers sent only trading +
@@ -45,6 +51,20 @@ function newTradesVerdict(c: Pick<Cards, "permissions" | "riskStatus" | "activeH
   return { blocked: reasons.length > 0, reasons };
 }
 
+// A prop-firm status worked out from a placeholder (no paper equity measured)
+// is not a measured verdict; FAILED and OFF come only from measured rules.
+// A newer server says NOT_MEASURED itself (measured: false), and a reached
+// target with unchecked rules is TARGET_REACHED, not a confirmed pass.
+const propFirmStatusText = (pf: PropFirmCard) => {
+  if (pf.status === "FAILED" || pf.status === "OFF") return pf.status;
+  if (pf.equityMeasured === false) return "NOT MEASURED (no paper equity measured)";
+  if (pf.status === "NOT_MEASURED" || pf.measured === false) return "NOT MEASURED";
+  return pf.status === "TARGET_REACHED" ? "TARGET REACHED (not a confirmed pass)" : pf.status;
+};
+const propFirmProgressText = (pf: PropFirmCard) =>
+  (pf.equityMeasured === false ? "Not measured (no paper equity measured)"
+    : pf.profitTargetProgress == null || pf.measured === false ? "Not measured" : `${pf.profitTargetProgress}%`);
+
 // A null money value is "no cap set" only when the server says no cap is
 // configured (flag false). A percent cap with unknown equity cannot be
 // valued; an amount next to one is only an upper bound. Without the flag the
@@ -66,6 +86,15 @@ const equityText = (v: Money) => (v == null ? "unknown (no account equity read)"
  * no overtrading verdict to show (an older server sent NORMAL here).
  */
 const overtradingLabel = (v: string) => (v === "UNKNOWN" ? "Not measured — activity could not be read" : v);
+
+// "Used" and "left" when the server says the used figure was not measured: the
+// placeholder $0 used / full cap left is never shown. Left is at most the cap.
+const usedText = (v: number, known: boolean | undefined, why: string | null | undefined) =>
+  (known === false ? `unknown (${why ?? "not measured"})` : `$${v}`);
+function leftText(v: Money, unvalued: boolean | undefined, known: boolean | undefined, why: string | null | undefined, pct?: number | null): string {
+  if (known === false && v != null) return `unknown, at most $${v} (${why ?? "risk used not measured"})`;
+  return capText(v, unvalued, "left", pct);
+}
 
 const STATUS_COLOR: Record<string, string> = {
   OK: "bg-success/20 text-success",
@@ -177,8 +206,8 @@ export default function RiskCommandCenter() {
 
       {cards && (
         <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
-          <Stat label="Daily risk left" value={capText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, "left", profile?.effectiveLimits.maxDailyLossPercent)} />
-          <Stat label="Weekly risk left" value={capText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, "left")} />
+          <Stat label="Daily risk left" value={leftText(cards.dailyRiskRemaining, cards.dailyRiskLimitUnvalued, cards.dailyRiskUsedKnown, cards.dailyRiskUsedUnknownReason, profile?.effectiveLimits.maxDailyLossPercent)} />
+          <Stat label="Weekly risk left" value={leftText(cards.weeklyRiskRemaining, cards.weeklyRiskLimitUnvalued, cards.weeklyRiskUsedKnown, cards.weeklyRiskUsedUnknownReason)} />
           <Stat label="Open risk" value={`$${cards.openRisk}`} />
           <Stat label="Open positions" value={String(cards.openPositions)} />
           <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
@@ -226,9 +255,9 @@ export default function RiskCommandCenter() {
           <CardHeader className="pb-2"><CardTitle className="text-base">Risk Budget</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
             <Stat label="Daily limit" value={capText(budget.dailyRiskLimit, budget.dailyRiskLimitUnvalued, "limit", profile?.effectiveLimits.maxDailyLossPercent)} />
-            <Stat label="Daily used" value={`$${budget.dailyRiskUsed}`} />
+            <Stat label="Daily used" value={usedText(budget.dailyRiskUsed, budget.dailyRiskUsedKnown, budget.dailyRiskUsedUnknownReason)} />
             <Stat label="Weekly limit" value={capText(budget.weeklyRiskLimit, budget.weeklyRiskLimitUnvalued, "limit")} />
-            <Stat label="Weekly used" value={`$${budget.weeklyRiskUsed}`} />
+            <Stat label="Weekly used" value={usedText(budget.weeklyRiskUsed, budget.weeklyRiskUsedKnown, budget.weeklyRiskUsedUnknownReason)} />
             <Stat label="Open risk" value={`$${budget.openRisk}`} />
             <Stat label="Equity" value={equityText(budget.equity)} />
             <Stat label="Venue" value={budget.venue} />
@@ -272,14 +301,14 @@ export default function RiskCommandCenter() {
 
       <CollapsibleSection
         title="Prop-firm rules"
-        description={cards?.propFirm ? `Status ${cards.propFirm.status}` : "Open only when a prop-firm challenge is active."}
+        description={cards?.propFirm ? `Status ${propFirmStatusText(cards.propFirm)}` : "Open only when a prop-firm challenge is active."}
         storageKey="risk.propFirm"
         testId="risk-propfirm-section"
       >
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress == null ? "not measured" : `${cards.propFirm.profitTargetProgress}%`}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{propFirmStatusText(cards.propFirm)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{propFirmProgressText(cards.propFirm)}</span></div>
             <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
           </div>
         ) : (

@@ -73,16 +73,37 @@ export function haltFrom(sources: HaltSource[], detail: Partial<Record<HaltSourc
   };
 }
 
+/** A halt plus one reason per engaged source, for status views. */
+export interface HaltReport {
+  /** Exactly what loadTradingHalt / loadPlatformHalt return (what the gates read). */
+  halt: TradingHalt;
+  /** One sentence per entry of halt.sources, in order, each with its own
+   *  detail ("state unreadable", the trader's stored reason). */
+  reasons: string[];
+}
+
+function haltReport(sources: HaltSource[], detail: Partial<Record<HaltSource, string | null>>): HaltReport {
+  return {
+    halt: haltFrom(sources, detail),
+    reasons: sources.map((s) => haltFrom([s], detail).reason ?? s),
+  };
+}
+
 async function read<T>(fn: () => Promise<T>): Promise<T | "unreadable"> {
   try { return await fn(); } catch { return "unreadable"; }
 }
 
 /** The install-wide switches only (emergency stop, safety core), for fleet-level views. */
 export async function loadPlatformHalt(): Promise<TradingHalt> {
+  return (await loadPlatformHaltReport()).halt;
+}
+
+/** loadPlatformHalt with one reason per engaged stop (status views). */
+export async function loadPlatformHaltReport(): Promise<HaltReport> {
   const sources: HaltSource[] = [];
   const detail: Partial<Record<HaltSource, string | null>> = {};
   await addInstallWideStops(sources, detail, "LIVE");
-  return haltFrom(sources, detail);
+  return haltReport(sources, detail);
 }
 
 // Both install-wide stops through the one platform-stop read (platformStop).
@@ -101,12 +122,22 @@ async function addInstallWideStops(
   }
 }
 
-export async function loadTradingHalt(args: {
+export async function loadTradingHalt(args: TradingHaltArgs): Promise<TradingHalt> {
+  return (await loadTradingHaltReport(args)).halt;
+}
+
+export interface TradingHaltArgs {
   userId: number;
   venue: RiskVenue;
   /** Set when the order routes through a shared master account. */
   virtualAccountId?: number | null;
-}): Promise<TradingHalt> {
+}
+
+/**
+ * loadTradingHalt with one reason per engaged stop, each keeping its own
+ * detail, for status views (the Control Tower). Same reads, same halt.
+ */
+export async function loadTradingHaltReport(args: TradingHaltArgs): Promise<HaltReport> {
   const sources: HaltSource[] = [];
   const detail: Partial<Record<HaltSource, string | null>> = {};
   const broker = args.venue !== "PAPER";
@@ -135,7 +166,7 @@ export async function loadTradingHalt(args: {
     }
   }
 
-  return haltFrom(sources, detail);
+  return haltReport(sources, detail);
 }
 
 // ── May this venue trade now, and why not ──────────────────────────────────

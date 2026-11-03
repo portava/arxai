@@ -550,7 +550,9 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       if (rev >= 60) reasons.push(`reversal risk ${rev}`);
       if (fake >= 60) reasons.push(`possible fakeout (${fake})`);
       if (vol >= 70) reasons.push(`high volatility (${vol})`);
-      if (peak > 0 && pnl <= 0) reasons.push("returned to break-even or worse");
+      // Only on a P&L that was read: `pnl` is 0 for an unread P&L, which would
+      // flag a return to break-even nobody observed (counted in signalGaps).
+      if (trade.unrealizedPnl != null && peak > 0 && trade.unrealizedPnl <= 0) reasons.push("returned to break-even or worse");
       // Near-SL / Near-TP fired as separate alerts; surface here too if relevant.
       if (trade.stopLoss != null && trade.currentPrice != null && trade.entryPrice != null) {
         const total = Math.abs(trade.entryPrice - trade.stopLoss);

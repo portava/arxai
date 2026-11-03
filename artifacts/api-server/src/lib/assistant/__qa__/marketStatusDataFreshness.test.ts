@@ -104,3 +104,78 @@ test("a Twelve Data candle fetch is recorded as a candle observation, not a quot
     assert.equal(s.dataKind, "candles");
   } finally { restore(); }
 });
+
+// Truth: Twelve Data and Polygon candle fetches stamped a blanket "REALTIME"
+// observation without looking at the bars. At the weekend a Finnhub quote was
+// correctly recorded STALE, then the next candle fetch of Friday's bars
+// replaced it with REALTIME, and Market Health showed a green FRESH with
+// "Last candles: real-time from twelve_data". A candle observation is now
+// age-checked from its newest bar, and it never replaces a quote observation
+// seen within the stale window (a quote carries its own timestamp; a candle
+// series does not say when its last price traded).
+const H = 3_600_000;
+function tdValues(newestMs: number, stepMs: number, n = 12) {
+  return Array.from({ length: n }, (_, i) => ({
+    datetime: new Date(newestMs - i * stepMs).toISOString().slice(0, 19).replace("T", " "),
+    open: "1.08", high: "1.09", low: "1.07", close: "1.085",
+  }));
+}
+
+test("old Twelve Data candles (Friday's bars read at the weekend) are not recorded as real-time", async () => {
+  const fridayClose = Date.now() - 40 * H;
+  const restore = withOnlyKeys({ TWELVEDATA_API_KEY: "offline-fixture" }, () => ({ status: "ok", values: tdValues(fridayClose, 900_000) }));
+  try {
+    const r = await getMarketProvider().getCandles("EURUSD", "M15", 12);
+    assert.ok(r.candles.length > 0);
+    const s = getMarketStatus() as Status;
+    assert.equal(s.dataKind, "candles");
+    assert.notEqual(s.dataFreshness, "REALTIME");
+    assert.equal(s.dataFreshness, "STALE");
+  } finally { restore(); }
+});
+
+test("in the Twelve Data + Finnhub hybrid a candle fetch does not overwrite the stale quote verdict", async () => {
+  const fridayClose = Date.now() - 40 * H;
+  const restore = withOnlyKeys({ TWELVEDATA_API_KEY: "offline-fixture", FINNHUB_API_KEY: "offline-fixture" }, (url) =>
+    url.includes("twelvedata")
+      // Even a series whose newest bar is current must not replace the quote.
+      ? { status: "ok", values: tdValues(Date.now(), 900_000) }
+      : { c: 1.0842, t: Math.floor(fridayClose / 1000) });
+  try {
+    const p = getMarketProvider();
+    await p.getLiveQuote("EURUSD");
+    await p.getCandles("EURUSD", "M15", 12);
+    const s = getMarketStatus() as Status;
+    assert.equal(s.dataFreshness, "STALE");
+    assert.equal(s.dataKind, "quote");
+    assert.equal(s.dataSource, "finnhub");
+  } finally { restore(); }
+});
+
+test("yesterday's closed Polygon daily bar is not recorded as real-time", async () => {
+  const dayMs = 24 * H;
+  const yesterdayOpen = Math.floor(Date.now() / dayMs) * dayMs - dayMs;
+  const restore = withOnlyKeys({ POLYGON_API_KEY: "offline-fixture" }, () => ({
+    status: "OK",
+    // sort=desc: newest first.
+    results: Array.from({ length: 12 }, (_, i) => ({ t: yesterdayOpen - i * dayMs, o: 1.08, h: 1.09, l: 1.07, c: 1.085 })),
+  }));
+  try {
+    const r = await getMarketProvider().getCandles("EURUSD", "D1", 12);
+    assert.ok(r.candles.length > 0);
+    const s = getMarketStatus() as Status;
+    assert.equal(s.dataKind, "candles");
+    assert.equal(s.dataSource, "polygon");
+    assert.notEqual(s.dataFreshness, "REALTIME");
+  } finally { restore(); }
+});
+
+test("a candle series whose newest bar is stamped seconds ago is recorded as real-time", async () => {
+  const restore = withOnlyKeys({ TWELVEDATA_API_KEY: "offline-fixture" }, () => ({ status: "ok", values: tdValues(Date.now() - 2_000, 60_000) }));
+  try {
+    await getMarketProvider().getCandles("EURUSD", "M1", 12);
+    const s = getMarketStatus() as Status;
+    assert.equal(s.dataKind, "candles");
+    assert.equal(s.dataFreshness, "REALTIME");
+  } finally { restore(); }
+});

@@ -19,7 +19,9 @@ type ChartState = ChartIntelligenceResponse["state"];
 afterEach(() => { cleanup(); __resetChartPricePrecision(); });
 
 function v10State(): ChartState {
-  const support = { kind: "support", price: 5123.457, personality: "retest_pending", distancePct: -0.1 };
+  // retest_pending: the level broke and price has come back to it (the engine
+  // sets it only when breaks > 0 && retests > 0).
+  const support = { kind: "support", price: 5123.457, personality: "retest_pending", breakCount: 1, retestCount: 1, distancePct: -0.1 };
   const resistance = { kind: "resistance", price: 5140.102, personality: "trap_zone", distancePct: 0.2 };
   return {
     symbol: "V10",
@@ -66,7 +68,8 @@ describe("Chart read panels — instrument precision and plain level words", () 
     expect(panel.textContent).not.toContain("5123.46 ");
     expect(panel.textContent).toContain("5140.102");
     expect(panel.textContent).not.toMatch(/retest_pending|trap_zone/);
-    expect(panel.textContent).toContain("waiting for a retest");
+    expect(panel.textContent).toContain("broken, and price has come back to retest it");
+    expect(panel.textContent).not.toContain("waiting for a retest");
     expect(panel.textContent).toContain("possible trap zone");
     // Invalidation reasoning price too.
     expect(panel.textContent).toContain("(5123.457)");

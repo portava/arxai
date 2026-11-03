@@ -69,21 +69,30 @@ function formatAge(ms: number): string {
 // ── Evaluator ──────────────────────────────────────────────────────────────
 // What a broker_health_logs status says about the broker for readiness. The
 // statuses come from lib/domain/src/broker-health/evaluator.ts. `detail` is
-// the checklist sentence, `short` the warning / blocker phrase after "Broker".
-interface BrokerStatusMeaning { kind: "connected" | "warn" | "block"; detail: string; short: string }
+// the checklist sentence, `short` the blocker phrase after "Broker".
+//
+// Every status other than a connected one is a readiness blocker (LOCKED),
+// fresh or stale, as it always was: the stored readiness status is read by
+// tradeDecision.orchestrate() (LOCKED/NOT_READY forces HOLD), and through it
+// by the paper autopilot, so the wording below says what was observed but the
+// verdict is never loosened here.
+interface BrokerStatusMeaning { kind: "connected" | "block"; detail: string; short: string }
 const BROKER_STATUS_MEANING: Record<string, BrokerStatusMeaning> = {
   CONNECTED: { kind: "connected", detail: "Connected", short: "connected" },
   OK: { kind: "connected", detail: "Connected", short: "connected" },
   HEALTHY: { kind: "connected", detail: "Connected", short: "connected" },
   DEGRADED: {
-    kind: "warn",
+    kind: "block",
     detail: "Connected but slow: the MT5 heartbeat was 15–60 s old",
     short: "link was slow (MT5 heartbeat 15–60 s old)",
   },
   EXECUTION_DISABLED: {
-    kind: "warn",
-    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was turned off by the operator: no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
-    short: "execution was turned off by the operator; the link was up",
+    kind: "block",
+    // The observed state of broker_health_state.executionEnabled, which starts
+    // false (schema default) and may never have been switched on: never
+    // worded as an operator action nobody observed.
+    detail: "Connected (MT5 heartbeat under 60 s old), but broker execution was not enabled (the operator execution switch was off): no new DEMO or LIVE positions can be opened while it stays off; paper trading is not affected",
+    short: "execution not enabled (operator execution switch off); the link was up",
   },
   PRICE_FEED_DELAYED: {
     kind: "block",
@@ -200,9 +209,9 @@ export function evaluateReadiness(
   //
   // Only DISCONNECTED means the link was observed down. The broker health
   // evaluator writes EXECUTION_DISABLED and DEGRADED only while the MT5
-  // heartbeat is under 60 s old, so those say the link was up: a warning
-  // (execution switched off by the operator / a slow link), never "not
-  // connected" and never a readiness lock on their own.
+  // heartbeat is under 60 s old, so those say the link was up and are never
+  // worded "not connected"; they still block readiness exactly as before
+  // (see BROKER_STATUS_MEANING).
   const log = signals.brokerLog;
   const loggedStatus = log?.status ?? "UNKNOWN";
   const checkedAtMs = log?.createdAt ? new Date(log.createdAt).getTime() : NaN;
@@ -211,8 +220,7 @@ export function evaluateReadiness(
   const meaning = brokerStatusMeaning(loggedStatus);
   const loggedOk = meaning.kind === "connected";
   const brokerOk = loggedOk && logFresh;
-  const brokerWarn = meaning.kind === "warn" && logFresh;
-  const bs = log == null ? "UNKNOWN" : (meaning.kind !== "block" && !logFresh ? "UNKNOWN" : loggedStatus);
+  const bs = log == null ? "UNKNOWN" : (loggedOk && !logFresh ? "UNKNOWN" : loggedStatus);
   const checkedAtText = Number.isFinite(checkedAtMs)
     ? `${new Date(checkedAtMs).toISOString().slice(0, 16).replace("T", " ")} UTC, ${formatAge(ageMs)} ago`
     : "time not recorded";
@@ -220,19 +228,18 @@ export function evaluateReadiness(
     ? "No broker health check on record — the broker connection has not been checked"
     : brokerOk
       ? `${loggedStatus} per the last platform broker health check (${checkedAtText})`
-      : meaning.kind !== "block" && !logFresh
+      : loggedOk && !logFresh
         ? `Last platform broker health check said ${loggedStatus} (${checkedAtText}) — too old to count as connected now`
         : `${meaning.detail} — ${loggedStatus} per the last platform broker health check (${checkedAtText})`;
   // Labelled for what it reads (the broker health check), so a FAIL for a
   // delayed feed or a login error does not read as "Broker connected: FAIL".
   checklist.push({ id: "broker", label: "Broker health check",
-    status: brokerOk ? "PASS" : (bs === "UNKNOWN" || brokerWarn ? "WARN" : "FAIL"),
+    status: brokerOk ? "PASS" : (bs === "UNKNOWN" ? "WARN" : "FAIL"),
     detail: brokerDetail });
   if (meaning.kind === "block" && log != null) {
     blockers.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText}${logFresh ? "" : " — no newer check on record"})`);
     lockedByHard = true;
   }
-  else if (brokerWarn) warnings.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText})`);
   else if (log == null) warnings.push("Broker connection not checked — no broker health check on record");
   else if (bs === "UNKNOWN") warnings.push("Broker connection unknown — the last broker health check is too old");
   if (!brokerOk && bs === "UNKNOWN") notChecked.add("broker");
@@ -384,7 +391,18 @@ function buildSummary(
   checklist: ChecklistItem[],
 ): string {
   if (status === "LOCKED") {
-    return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
+    const coreKs = signals.safety?.killSwitchEngaged === true;
+    const emergency = signals.emergencyStopEngaged;
+    // A real stop halts orders; only then is this an operator's to clear.
+    if (coreKs || emergency) {
+      const who = coreKs && emergency ? "The kill switch and the platform emergency stop must be"
+        : coreKs ? "The kill switch must be" : "The platform emergency stop must be";
+      return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${who} cleared by an operator.`;
+    }
+    // Readiness-only blockers (news, a broker health verdict, a risk lock):
+    // this check changes no stop, lock or gate. The one thing a stored LOCKED
+    // does is make tradeDecision.orchestrate() hold, so say that too.
+    return `LOCKED — ${blockers.join("; ")}. This pre-session check is advisory: it recommends not trading until these are resolved, and it does not engage or release any stop, lock or order gate — order execution is decided by the safety layer. While it is your latest check, the AI trade decision counts it as a blocker and recommends HOLD.`;
   }
   if (status === "NOT_READY") {
     // Name the checks that actually failed. Broker / news / risk-lock failures

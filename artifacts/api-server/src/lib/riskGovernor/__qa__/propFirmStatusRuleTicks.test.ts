@@ -80,16 +80,46 @@ test("while the mode is OFF with a recorded start, still no rule is listed as pa
   assert.equal(s.rulesEvaluated, false);
 });
 
-test("with no readable paper equity, TOTAL_DD and PROFIT_TARGET are not evaluated, never passed", async () => {
+// With no active paper account the daily drawdown is a placeholder 0 too
+// (realized P/L is never read, floating P/L is unknown), so DAILY_DD is not
+// evaluated either; it was listed as passed ("✓ DAILY_DD") beside
+// "TOTAL_DD: not checked".
+test("with no active paper account, PROFIT_TARGET, DAILY_DD and TOTAL_DD are not evaluated, never passed", async () => {
   propFirm = { enabled: true };
   equity = null;
   const s = await propFirmStatus(1, NOW);
-  assert.ok(!s.passed.includes("TOTAL_DD"), `passed: ${s.passed.join(",")}`);
-  assert.ok(!s.passed.includes("PROFIT_TARGET"));
+  assert.deepEqual(s.passed, [], `passed: ${s.passed.join(",")}`);
+  assert.deepEqual(s.failed, []);
   // Merged with fix-2: with no paper account nothing is measured, so today's
   // drawdown (DAILY_DD) is not evaluated either.
   assert.deepEqual([...s.notEvaluated].sort(), ["DAILY_DD", "PROFIT_TARGET", "TOTAL_DD"]);
   assert.equal(s.equityMeasured, false);
+  assert.equal(s.dailyDrawdownMeasured, false);
+  // Merged with fix-2: each reason is the not-measured reason the page shows
+  // (fix-14 wrote "there is no active paper account"), and the status is
+  // NOT_MEASURED, not ACTIVE: neither is a measured verdict.
+  const why = "No active paper account, so paper equity could not be read.";
+  assert.equal(s.notEvaluatedReasons["DAILY_DD"], why);
+  assert.equal(s.notEvaluatedReasons["TOTAL_DD"], why);
+  assert.equal(s.notMeasuredReason, why);
+  assert.equal(s.status, "NOT_MEASURED");
+});
+
+// The placeholder profit (0) met a profit target of 0 (the schema allows it),
+// so the status was a green PASSED while PROFIT_TARGET was "not checked".
+test("a placeholder profit never turns the status PASSED, even with a profit target of 0", async () => {
+  propFirm = { enabled: true, profitTarget: 0, challengeStart: START };
+  equity = null;
+  const s = await propFirmStatus(1, NOW);
+  assert.notEqual(s.status, "PASSED");
+  // Merged with fix-2: nothing measured reads NOT_MEASURED (fix-14 expected ACTIVE).
+  assert.equal(s.status, "NOT_MEASURED");
+  // With equity measured, a target of 0 is met; merged with fix-2, a reached
+  // target with unchecked challenge rules is TARGET_REACHED, not PASSED.
+  equity = 100_000;
+  const measured = await propFirmStatus(1, NOW);
+  assert.ok(measured.passed.includes("PROFIT_TARGET"));
+  assert.equal(measured.status, "TARGET_REACHED");
 });
 
 test("while the mode is on with equity, the drawdown rules are checked as before", async () => {
@@ -101,4 +131,6 @@ test("while the mode is on with equity, the drawdown rules are checked as before
   assert.deepEqual(s.failed, []);
   assert.deepEqual(s.notEvaluated, []);
   assert.equal(s.rulesEvaluated, true);
+  assert.equal(s.dailyDrawdownMeasured, true);
+  assert.deepEqual(s.notEvaluatedReasons, {});
 });
