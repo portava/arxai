@@ -278,6 +278,18 @@ export default function MT5BridgePage() {
   }
   if (openTrades != null) activity.push({ time: "time not reported", event: `Positions reported: ${openTrades}`, tone: "muted", chip: "On file" });
 
+  // A failing status poll leaves the last accountSnapshot in React Query's
+  // cache. The card names the rows that come from it as the last read, with
+  // the snapshot's own sync age, never as current values.
+  const staleSnapshotRows = statusUnreadable && snapshot
+    ? ["Broker", "Account", ...(acct?.balance == null ? ["Balance"] : []), ...(acct?.equity == null ? ["Equity"] : []), "Free Margin", "Margin Level"]
+    : [];
+  const staleSnapshotNote = staleSnapshotRows.length === 0 ? null
+    : `MT5 status could not be loaded, so these values are not current: ${staleSnapshotRows.slice(0, -1).join(", ")} and ${staleSnapshotRows[staleSnapshotRows.length - 1]} are from the last status read (${
+      Number.isFinite(snapshotSyncedMs)
+        ? `account synced ${fmtAge(Math.max(0, Math.floor((Date.now() - snapshotSyncedMs) / 1000)))}`
+        : "its sync time was not reported"}).`;
+
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-mt5-bridge">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -441,6 +453,11 @@ export default function MT5BridgePage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard title="Account Snapshot" icon={Landmark}
           action={<Link href="/analytics" className="text-xs text-primary hover:underline">View Account Analytics</Link>}>
+          {staleSnapshotNote && (
+            <p className="mb-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning" role="status" data-testid="account-snapshot-stale">
+              {staleSnapshotNote}
+            </p>
+          )}
           {snapshot?.account || acct ? (
             <div className="divide-y divide-border/60">
               <Row label="Broker" value={snapshot?.broker ?? "—"} />

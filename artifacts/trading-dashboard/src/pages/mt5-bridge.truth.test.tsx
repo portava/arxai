@@ -142,4 +142,44 @@ describe("MT5 Bridge when status polls start failing", () => {
     for (const row of screen.queryAllByTestId("bridge-activity-row")) expect(row.textContent).not.toMatch(/Bridge heartbeat.*Connected/);
     expect(document.body.textContent).not.toContain("3 seconds ago");
   });
+
+  // Regression: the Account Snapshot card kept showing Broker, Account, Free
+  // Margin and Margin Level from the cached status read with no as-of time and
+  // no note that the status read had failed.
+  it("the Account Snapshot card says its values are from the last status read, with the sync age", () => {
+    const syncedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+    statusResult = { ...statusResult, data: {
+      ...(statusResult.data as Record<string, unknown>),
+      accountSnapshot: { broker: "Demo Broker", account: "12345678", balance: 1000, equity: 1010, freeMargin: 900, marginLevel: 1500, currency: "USD", syncedAt },
+    } };
+    render(<MT5BridgePage />);
+    const note = screen.getByTestId("account-snapshot-stale").textContent ?? "";
+    expect(note).toMatch(/could not be loaded/);
+    expect(note).toMatch(/not current/);
+    expect(note).toMatch(/Free Margin/);
+    expect(note).toMatch(/Margin Level/);
+    expect(note).toMatch(/synced 5 min ago/);
+  });
+
+  it("without a reported sync time the note says the time was not reported", () => {
+    statusResult = { ...statusResult, data: {
+      ...(statusResult.data as Record<string, unknown>),
+      accountSnapshot: { broker: "Demo Broker", account: "12345678", freeMargin: 900, marginLevel: 1500, currency: "USD" },
+    } };
+    render(<MT5BridgePage />);
+    expect(screen.getByTestId("account-snapshot-stale").textContent).toMatch(/sync time was not reported/);
+  });
+});
+
+describe("MT5 Bridge Account Snapshot on a good status read", () => {
+  it("has no stale note", () => {
+    statusResult = { isLoading: false, isError: false, data: {
+      ...BASE_STATUS, connected: true, mode: "LIVE", route: "OWN_CONNECTION", secondsSinceHeartbeat: 3,
+      sharedMasterBridge: null, userSafeMessage: null,
+      accountSnapshot: { broker: "Demo Broker", account: "12345678", freeMargin: 900, marginLevel: 1500, currency: "USD", syncedAt: new Date().toISOString() },
+    } };
+    render(<MT5BridgePage />);
+    expect(screen.getByText("Demo Broker")).toBeTruthy();
+    expect(screen.queryByTestId("account-snapshot-stale")).toBeNull();
+  });
 });
