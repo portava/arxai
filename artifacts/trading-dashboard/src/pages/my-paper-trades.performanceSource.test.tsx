@@ -19,10 +19,11 @@ const CLOSED = {
   strategyTag: null, setupGrade: null, reasonForEntry: null, notes: null, createdAt: "2026-10-27T09:00:00.000Z",
 };
 
-function stub(calendar: Record<string, unknown> | null, summary: Record<string, unknown>) {
+function stub(calendar: Record<string, unknown> | null, summary: Record<string, unknown>, failing: string[] = []) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const u = String(url);
     const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b }) as Response;
+    if (failing.some((p) => u.endsWith(p))) return { ok: false, status: 500, json: async () => ({ error: "boom" }) } as Response;
     if (u.endsWith("/api/me/paper-trades")) return ok({ trades: [CLOSED] });
     if (u.endsWith("/api/me/trade-journal")) return ok({ entries: [] });
     if (u.endsWith("/api/me/performance-calendar")) {
@@ -68,6 +69,25 @@ describe("My Demo Trades — Performance tab names the book it shows", () => {
     await openPerformance();
     expect(screen.getByTestId("performance-not-demo").textContent).toContain("could not be loaded");
     expect(document.body.textContent).not.toContain("will populate after your first closed trade");
+  });
+
+  // Each read has its own catch (2c56a512): an unrelated failed request is
+  // named on its own section, and the Performance tab does not blame "the
+  // request for your demo-trade performance" when calendar and summary loaded.
+  it("a failed playbooks or reviews request does not make the Performance tab say its request failed", async () => {
+    stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"), ["/api/me/playbooks", "/api/me/ai-trade-reviews"]);
+    await openPerformance();
+    expect(screen.queryByTestId("performance-not-demo")).toBeNull();
+    expect(document.body.textContent).not.toContain("The request for your demo-trade performance failed");
+    expect(document.body.textContent).toContain("Close a demo trade to see your day appear here");
+  });
+
+  it("a failed summary request (calendar loaded) names the summary as the failed read", async () => {
+    stub({ days: [], isEmpty: true, source: "paper_trades" }, emptySummary("paper_trades"), ["/api/me/performance-summary"]);
+    await openPerformance();
+    expect(screen.getByTestId("performance-not-demo").textContent).toContain("could not be loaded");
+    expect(screen.getByTestId("load-error-summary").textContent).toMatch(/Your performance summary could not be loaded/);
+    expect(screen.queryByTestId("load-error-calendar")).toBeNull();
   });
 
   it("demo record: shows the demo calendar", async () => {
