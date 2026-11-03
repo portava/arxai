@@ -8,8 +8,10 @@
 //   - symbol pip/tick size — ONLY from the broker spec (digits/point via
 //     stopLossInputsFromBrokerSpec). The pip size is never guessed from the
 //     symbol name: when it is unknown, the pip-based floor and slippage buffer
-//     are not applied, and the result says the distance could not be checked
-//     (distanceChecked=false) instead of claiming it was. An MT5 spec defines a
+//     are not applied (distanceChecked=false) and the result says so: it names
+//     the broker figures the distance was checked against and that the pip
+//     checks were not applied, or, with no figure at all, that the distance
+//     could not be checked. An MT5 spec defines a
 //     pip only for forex; for crypto, metals, indices and synthetics its point
 //     is a price step, not a pip, and an 8-"pip" floor built from it is 10–100x
 //     too small — those specs give no pip size.
@@ -60,8 +62,9 @@ export interface AssessStopLossResult {
   pipSize: number | null;
   /**
    * True only when the stop distance was checked against the broker-spec pip
-   * floor. False means the pip size was unknown, so the distance could not be
-   * checked (only the side of entry and any supplied broker figures were).
+   * floor. False means the pip size was unknown, so the pip-based floor and
+   * slippage buffer were not applied (only the side of entry and any supplied
+   * broker figures were checked).
    */
   distanceChecked: boolean;
   /** When ok=false, why no safe SL is possible. */
@@ -172,9 +175,17 @@ function describeChecks(input: AssessStopLossInput, pip: number | null): string 
 
 const MIN_SAFE_LABEL = "the minimum safe distance";
 
-function notCheckedNote(input: AssessStopLossInput): string {
+/**
+ * What was left out without a pip size. When some figure was applied (the
+ * broker's stop or freeze level, the spread, the ATR — `checks`), only the
+ * pip-based floor and slippage buffer were not; with none, the distance from
+ * entry could not be checked at all.
+ */
+function notCheckedNote(input: AssessStopLossInput, checks: string): string {
   const why = (input.pipSizeNote ?? "").trim() || `the broker's pip size for ${input.symbol} is not available`;
-  return `Its distance from entry could not be checked: ${why}.`;
+  return checks
+    ? `It was not checked against a pip-based minimum or slippage buffer: ${why}.`
+    : `Its distance from entry could not be checked: ${why}.`;
 }
 
 export function assessStopLoss(input: AssessStopLossInput): AssessStopLossResult {
@@ -245,7 +256,7 @@ export function assessStopLoss(input: AssessStopLossInput): AssessStopLossResult
     if (distanceChecked) {
       reason = `Proposed stop loss is beyond ${checks}.`;
     } else {
-      reason = `Stop loss is on the correct side of entry${checks ? ` and beyond ${checks}` : ""}. ${notCheckedNote(input)}`;
+      reason = `Stop loss is on the correct side of entry${checks ? ` and beyond ${checks}` : ""}. ${notCheckedNote(input, checks)}`;
     }
     return {
       ok: true,
@@ -276,7 +287,7 @@ export function assessStopLoss(input: AssessStopLossInput): AssessStopLossResult
         ok: true,
         sl: c.value,
         adjusted: tooClose || input.proposedSl == null,
-        reason: distanceChecked ? base : `${base} ${notCheckedNote(input)}`,
+        reason: distanceChecked ? base : `${base} ${notCheckedNote(input, checks)}`,
         stopDistance: dist,
         spreadBuffer: input.spread ?? null,
         pipSize: pip,

@@ -76,7 +76,26 @@ interface MarketDataExtState {
   currentEvents?: { connected?: boolean; reason?: string | null };
   commandExecution?: { allowed?: boolean; intentional?: boolean; reason?: string };
 }
-function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade; snap: unknown; snapTargetsUnavailable: boolean }) {
+// The card polls the trade snapshot every 5s. A snapshot not refreshed within
+// three polls is not treated as current.
+const SNAPSHOT_POLL_MS = 5_000;
+const SNAPSHOT_CURRENT_MS = 3 * SNAPSHOT_POLL_MS;
+
+/**
+ * Whether the trade snapshot on screen is current. react-query keeps the last
+ * successful data when a refetch fails or is paused (offline), so `snap` alone
+ * does not say the server still has a quote now.
+ */
+export interface SnapshotReadState {
+  /** The latest snapshot request failed (the data shown is from an earlier read). */
+  refreshFailed: boolean;
+  /** The refresh is paused (e.g. the browser is offline). */
+  refreshPaused: boolean;
+  /** When the data on screen was received (epoch ms); 0 / undefined when never. */
+  updatedAtMs: number | undefined;
+}
+
+function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable, snapRead }: { trade: Trade; snap: unknown; snapTargetsUnavailable: boolean; snapRead: SnapshotReadState }) {
   const { data: safety } = useQuery<SafetyState>({
     queryKey: ["/me/protective-auto-close/settings"],
     queryFn: () => fetch(`${PAC_BASE}/api/me/protective-auto-close/settings`, { credentials: "include" }).then((r) => (r.ok ? r.json() : ({} as SafetyState))),
@@ -197,9 +216,27 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   // unread — that claims less, never more. The card can move the stop
   // (Break-Even / Trail) but has no take-profit editor, so the label names
   // the stop only.
+  // They also need a CURRENT snapshot: after a failed or paused refresh, or
+  // once the last read is older than three polls, the quote on screen is from
+  // an earlier read and whether the server still has one was not checked.
   const killRead = typeof safety?.settings?.killSwitchEngaged === "boolean";
   const hasQuote = (snap as { currentPrice?: number | null } | null | undefined)?.currentPrice != null;
-  const controlsUsable = hasQuote && killRead && !killEngaged;
+  const updatedAtMs = snapRead.updatedAtMs;
+  const snapAgeMs = typeof updatedAtMs === "number" && updatedAtMs > 0 ? Date.now() - updatedAtMs : null;
+  const snapCurrent = !snapRead.refreshFailed && !snapRead.refreshPaused && snapAgeMs != null && snapAgeMs <= SNAPSHOT_CURRENT_MS;
+  if (snap && !snapCurrent) {
+    const readAt = typeof updatedAtMs === "number" && updatedAtMs > 0 ? new Date(updatedAtMs).toLocaleTimeString() : null;
+    const lastRead = readAt ? `the last successful read at ${readAt}` : "an earlier read";
+    badges.push({
+      label: snapRead.refreshFailed ? "Snapshot Could Not Be Refreshed" : "Snapshot Not Current",
+      tone: "warn",
+      testId: "badge-snapshot-not-current",
+      title: snapRead.refreshFailed
+        ? `The latest request for this trade's snapshot failed. The figures shown are from ${lastRead}, so whether Close, Break-Even and Trail Stop can run now was not checked.`
+        : `This trade's snapshot has not been refreshed since ${lastRead}, so whether Close, Break-Even and Trail Stop can run now was not checked.`,
+    });
+  }
+  const controlsUsable = snapCurrent && hasQuote && killRead && !killEngaged;
   if (controlsUsable) {
     badges.push({
       label: "Stop Adjustable", tone: "ok", testId: "badge-sltp-editable",
@@ -293,7 +330,13 @@ function AskTradeAi({ tradeId }: { tradeId: number }) {
 export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () => void }) {
   const qc = useQueryClient();
   const [coachOpen, setCoachOpen] = useState(false);
-  const { data: snap } = useGetTradeSnapshot(trade.id, { query: { queryKey: getGetTradeSnapshotQueryKey(trade.id), refetchInterval: 5000 } });
+  const snapQ = useGetTradeSnapshot(trade.id, { query: { queryKey: getGetTradeSnapshotQueryKey(trade.id), refetchInterval: SNAPSHOT_POLL_MS } });
+  const snap = snapQ.data;
+  const snapRead: SnapshotReadState = {
+    refreshFailed: snapQ.isError === true,
+    refreshPaused: snapQ.isPaused === true,
+    updatedAtMs: snapQ.dataUpdatedAt,
+  };
   const { data: coach, isLoading: coachLoading } = useGetCoachExplanation(trade.id, { query: { queryKey: getGetCoachExplanationQueryKey(trade.id), enabled: coachOpen } });
   const be = useMoveTradeToBreakeven();
   const trail = useTrailTradeStop();
@@ -363,6 +406,7 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
         <SafetyBadgeRow
           trade={trade}
           snap={snap}
+          snapRead={snapRead}
           snapTargetsUnavailable={
             !snap ||
             Boolean((snap as unknown as { targetsUnavailableReason?: string | null }).targetsUnavailableReason)
@@ -371,7 +415,9 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
         <div className="flex flex-wrap gap-1" data-testid={`aaci-badges-${trade.id}`}>
           <AaciTradeBadges symbol={trade.symbol} />
         </div>
-        {!snap ? <Skeleton className="h-32 w-full" /> :
+        {!snap ? (snapRead.refreshFailed
+          ? <p className="text-xs text-destructive" role="alert" data-testid={`snap-load-failed-${trade.id}`}>This trade's snapshot could not be loaded, so its price, P&L and management controls are not shown.</p>
+          : <Skeleton className="h-32 w-full" />) :
           <>
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>

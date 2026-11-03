@@ -111,7 +111,11 @@ export function LiveOpenTradesPanel() {
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Briefcase className="h-4 w-4" /> Open Trades
-            <span className="text-xs text-muted-foreground font-normal">({positions.length})</span>
+            {/* Count only what a read returned: while loading or after a failed
+                first read there is no count, never a "(0)" that was not measured. */}
+            {q.data ? (
+              <span className="text-xs text-muted-foreground font-normal" data-testid="open-trades-count">({positions.length})</span>
+            ) : null}
           </CardTitle>
           <CardDescription>Floating P/L per position as last reported by the broker (before swap and commission, which the broker does not report).</CardDescription>
         </div>

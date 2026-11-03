@@ -11,7 +11,9 @@
 // master heartbeat snapshot FRESH / STALE / MISSING, pause and over-allocation).
 // It describes the SHARED MASTER bridge, so it is only used for users who trade
 // through that route. Anyone else gets "Not checked here" — this card does not
-// read their own MT5 bridge.
+// read their own MT5 bridge. When the account route itself was not read (the
+// account-mode envelope is loading or could not be checked) neither claim is
+// made: the row says the route was not checked.
 
 export type BridgeObservationState = "online" | "reconciling" | "unavailable" | "checking" | "not_checked";
 export type BridgeObservationTone = "success" | "warning" | "danger" | "muted";
@@ -31,8 +33,14 @@ export interface SharedBridgeAvailabilityView {
 }
 
 export interface BridgeObservationInput {
-  /** The user trades through the shared master bridge (LIVE_SHARED or SHARED_MASTER_MT5 routing). */
-  onSharedRoute: boolean;
+  /**
+   * The user trades through the shared master bridge (LIVE_SHARED or
+   * SHARED_MASTER_MT5 routing). null = the account route was not read (no
+   * account-mode envelope), so it is not known whether the shared bridge applies.
+   */
+  onSharedRoute: boolean | null;
+  /** With onSharedRoute null: the account-mode check failed (rather than still loading). */
+  routeCheckFailed?: boolean;
   /** /me/shared-account/summary allocationView; null/undefined when not read. */
   allocationView: SharedBridgeAvailabilityView | null | undefined;
   /** The summary read is still in flight. */
@@ -40,6 +48,16 @@ export interface BridgeObservationInput {
 }
 
 export function describeBridgeObservation(input: BridgeObservationInput): BridgeObservation {
+  if (input.onSharedRoute == null) {
+    return input.routeCheckFailed
+      ? {
+          state: "not_checked",
+          label: "Not checked",
+          detail: "Your account route could not be checked, so which bridge you trade through, and its connection, were not read.",
+          tone: "muted",
+        }
+      : { state: "checking", label: "Checking", detail: "Reading your account route…", tone: "muted" };
+  }
   if (!input.onSharedRoute) {
     return {
       state: "not_checked",
@@ -76,6 +94,20 @@ export function describeBridgeObservation(input: BridgeObservationInput): Bridge
         tone: "muted",
       };
   }
+}
+
+/**
+ * The onSharedRoute input for describeBridgeObservation from a useTradingMode
+ * result: null while there is no envelope (the route was not read), else
+ * isOnSharedMasterRoute.
+ */
+export function sharedMasterRouteObserved(mode: {
+  isLiveShared: boolean;
+  envelope: { accountShellStatus?: { accountMode?: string } | null } | null;
+  isModeUnknown?: boolean;
+}): { onSharedRoute: boolean | null; routeCheckFailed: boolean } {
+  if (mode.envelope == null) return { onSharedRoute: null, routeCheckFailed: mode.isModeUnknown === true };
+  return { onSharedRoute: isOnSharedMasterRoute(mode), routeCheckFailed: false };
 }
 
 /** Whether the user's route is the shared master bridge, from the envelope's routing fields. */

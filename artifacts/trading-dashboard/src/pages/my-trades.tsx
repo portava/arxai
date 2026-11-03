@@ -256,8 +256,18 @@ export default function MyTradesPage() {
   // have no P/L yet, both figures are named by source so the page never gives
   // two unexplained answers for the same book.
   const snapshotOpenPl: number | null = stripFromSnapshot ? liveSnap.snapshot!.openPL : null;
+  // The strip also takes a delayed or stale snapshot (only "unavailable" is
+  // dropped). The strip carries a FreshnessBadge; the summary and the read do
+  // not, so the sentence itself says the total is not current and as of when.
+  const snapshotCurrent = liveSnap.freshness === "live" || liveSnap.freshness === "fresh";
+  const snapshotAsOf = liveSnap.lastUpdatedMs != null && Number.isFinite(liveSnap.lastUpdatedMs)
+    ? `as of ${new Date(liveSnap.lastUpdatedMs).toLocaleTimeString()}`
+    : "update time not reported";
+  const snapshotTotal = snapshotOpenPl == null ? "" : `${money(snapshotOpenPl)}${stripIsEstimate ? " est." : ""}`;
   const snapshotNote = snapshotOpenPl != null && sum.openPnl == null && cards.length > 0
-    ? `The account snapshot reports ${money(snapshotOpenPl)}${stripIsEstimate ? " est." : ""} in total.`
+    ? snapshotCurrent
+      ? `The account snapshot reports ${snapshotTotal} in total.`
+      : `The account snapshot last reported ${snapshotTotal} in total (${liveSnap.freshness}, ${snapshotAsOf}).`
     : null;
 
   // Summary badge: "Healthy" only for a book that loaded on the latest poll.

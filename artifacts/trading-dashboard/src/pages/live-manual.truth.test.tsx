@@ -59,7 +59,18 @@ async function renderSettled() {
   render(<LiveManualPage />);
   await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
 }
-const killSwitchBadge = () => screen.getByText("Kill switch").parentElement!.lastElementChild!;
+const rowBadge = (label: string) => screen.getByText(label).parentElement!.lastElementChild!;
+// The permission verdict's kill switch is the safety-core switch only, so the
+// row says so; the other stops have rows of their own.
+const killSwitchBadge = () => rowBadge("Safety-core kill switch");
+
+// The real GET /api/system/status halt fields (routes/system.ts
+// readStatusHalts): every stop that halts this viewer's broker orders, read by
+// the pre-trade Risk Governor's own reader. null = could not be checked.
+const systemStatus = (activeHalts: string[] | null, reasons: string[] = []) => ({
+  operationalMode: "OBSERVE_ONLY", globalState: "NORMAL", killSwitchEngaged: activeHalts?.includes("safety_core_kill_switch") ?? false,
+  activeHalts, activeHaltReasons: reasons, activeHaltsCheckedAt: "2026-11-03T10:00:00.000Z",
+});
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -87,6 +98,70 @@ describe("Manual Trade Ticket — kill switch row", () => {
     stubFetch(baseRoutes({ "/api/permission/status": { status: 500, body: { error: "Failed" } } }));
     await renderSettled();
     expect(killSwitchBadge().textContent).toBe("not checked");
+  });
+});
+
+// Round 3 review: the row read "Kill switch: off" whenever the permission
+// verdict had no KILL_SWITCH reason, but that verdict covers only the
+// safety-core switch. The platform emergency stop and the trader's own kill
+// switch were never read, so "off" was an all-clear nobody checked.
+describe("Manual Trade Ticket — every stop has its own row", () => {
+  it("no bare 'off' under a generic 'Kill switch' label", async () => {
+    stubFetch(baseRoutes({ "/api/system/status": { body: systemStatus([]) } }));
+    await renderSettled();
+    expect(screen.queryByText("Kill switch")).toBeNull();
+    expect(killSwitchBadge().textContent).toBe("off");
+    expect(rowBadge("Emergency stop").textContent).toBe("off");
+    expect(rowBadge("Your kill switch").textContent).toBe("off");
+  });
+
+  it("the trader's own kill switch engaged: its row says ENGAGED while the safety-core row stays 'off'", async () => {
+    stubFetch(baseRoutes({
+      "/api/system/status": { body: systemStatus(["trader_kill_switch"], ["Your kill switch is engaged. Release it to trade again."]) },
+    }));
+    await renderSettled();
+    expect(rowBadge("Your kill switch").textContent).toBe("ENGAGED");
+    expect(rowBadge("Your kill switch").getAttribute("title")).toContain("Your kill switch is engaged");
+    expect(killSwitchBadge().textContent).toBe("off");
+    expect(rowBadge("Emergency stop").textContent).toBe("off");
+  });
+
+  it("the platform emergency stop engaged: its row says ENGAGED", async () => {
+    stubFetch(baseRoutes({
+      "/api/system/status": { body: systemStatus(["platform_emergency_stop"], ["The platform emergency stop is engaged by an operator."]) },
+    }));
+    await renderSettled();
+    expect(rowBadge("Emergency stop").textContent).toBe("ENGAGED");
+    expect(rowBadge("Your kill switch").textContent).toBe("off");
+  });
+
+  it("a failed system status read: the other stops are 'not checked', never 'off'", async () => {
+    stubFetch(baseRoutes({ "/api/system/status": { status: 500, body: { error: "Failed to load safety core status" } } }));
+    await renderSettled();
+    expect(rowBadge("Emergency stop").textContent).toBe("not checked");
+    expect(rowBadge("Your kill switch").textContent).toBe("not checked");
+    expect(killSwitchBadge().textContent).toBe("off");
+  });
+
+  it("a system status whose halt read failed (activeHalts null) is 'not checked'", async () => {
+    stubFetch(baseRoutes({ "/api/system/status": { body: systemStatus(null) } }));
+    await renderSettled();
+    expect(rowBadge("Emergency stop").textContent).toBe("not checked");
+    expect(rowBadge("Your kill switch").textContent).toBe("not checked");
+  });
+
+  it("the client only downgrades: a safety-core switch the halt reader lists as engaged is ENGAGED", async () => {
+    stubFetch(baseRoutes({
+      "/api/system/status": { body: systemStatus(["safety_core_kill_switch"], ["The safety-core kill switch is engaged."]) },
+    }));
+    await renderSettled();
+    expect(killSwitchBadge().textContent).toBe("ENGAGED");
+  });
+
+  it("says the stops are shown for information and are not checked when the intent is captured", async () => {
+    stubFetch(baseRoutes({ "/api/system/status": { body: systemStatus([]) } }));
+    await renderSettled();
+    expect(screen.getByTestId("ticket-stops-note").textContent).toMatch(/not checked when you submit/i);
   });
 });
 

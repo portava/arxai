@@ -181,6 +181,11 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
 
   res.json({
     ok: true,
+    // The server clock reading every row's freshness verdict was taken
+    // against. A client ages a report as (generatedAt − observedAt) plus the
+    // time since the answer arrived, so it never compares a server timestamp
+    // with its own, possibly skewed, clock.
+    generatedAt: new Date(nowMs).toISOString(),
     live, demo,
     liveCount: live.length, demoCount: demo.length,
     notLiveReason,

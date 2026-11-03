@@ -5,6 +5,8 @@
 // positions are not part of these figures.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let exposure: Record<string, unknown> = {};
 // Query-state overrides for the read-failure tests (data, isError, times).
@@ -139,10 +141,18 @@ describe("portfolio page read failures", () => {
     expect(screen.queryByTestId("correlation-none")).toBeNull();
   });
 
-  it("an empty correlation result says so plainly", () => {
+  // Regression (review of 7b5fbc3c): detectCorrelationWarnings checks only
+  // three groups, so long EURUSD + short USDCHF (one USD bet) or long EURUSD +
+  // long EURGBP returns [] — and the page said "No correlated open rows in
+  // this source." An empty result is "no warning raised", with what was checked.
+  it("an empty correlation result says no warning was raised and names what was checked", () => {
     exposure = { ...base };
     render(<Portfolio />);
-    expect(screen.getByTestId("correlation-none").textContent).toMatch(/No correlated open rows in this source/);
+    const text = screen.getByTestId("correlation-none").textContent ?? "";
+    expect(text).not.toMatch(/No correlated open rows/);
+    expect(text).toMatch(/^No correlation warning was raised for the open rows in this source\./);
+    expect(text).toMatch(/Only three groups are checked: two or more long EURUSD, GBPUSD, AUDUSD or NZDUSD rows; two or more US30, NAS100 or SPX500 rows in the same direction as the first one open; and two or more JPY pairs in the same direction as the first one open\./);
+    expect(text).toMatch(/Other correlations, such as long EURUSD with short USDCHF, are not checked\.$/);
   });
 
   it("prints a negative P&L as -$12.00, not $-12.00", () => {
@@ -151,5 +161,54 @@ describe("portfolio page read failures", () => {
     expect(screen.getByTestId("floating-pnl").textContent).toBe("-$12.00");
     expect(screen.getByTestId("realized-pnl").textContent).toBe("-$12.00");
     expect(document.body.textContent).not.toMatch(/\$-/);
+  });
+});
+
+// Regression (review of 10f7a840): computeExposure splits currencies only for
+// nine hard-coded pairs (api-server lib/portfolio/exposure.ts PAIR_CURRENCIES).
+// An open EURGBP, XAUUSD or suffixed "EURUSD.m" row leaves exposureByCurrency
+// empty while totalOpen is 1+, and the card said "No open forex rows in this
+// source." next to "Open legacy rows 1".
+describe("portfolio Net Currency Exposure coverage", () => {
+  const PAIRS = "EURUSD, GBPUSD, AUDUSD, USDJPY, USDCAD, USDCHF, NZDUSD, EURJPY and GBPJPY";
+
+  it("open rows that are not on a split pair are named as not broken down, not as no forex rows", () => {
+    exposure = { ...base, totalOpen: 2, exposureByMarket: { Other: 0.2 }, exposureByCurrency: [] };
+    render(<Portfolio />);
+    const text = screen.getByTestId("currency-exposure-coverage").textContent ?? "";
+    expect(document.body.textContent).not.toMatch(/No open forex rows/);
+    expect(text).toContain(`None of the 2 open rows in this source is on one of the pairs this view splits by currency (${PAIRS})`);
+    expect(text).toMatch(/currency exposure is not shown/);
+  });
+
+  it("a single unsplit open row is described in the singular", () => {
+    exposure = { ...base, totalOpen: 1, exposureByMarket: { Other: 0.1 }, exposureByCurrency: [] };
+    render(<Portfolio />);
+    expect(screen.getByTestId("currency-exposure-coverage").textContent).toContain(
+      `The 1 open row in this source is not on one of the pairs this view splits by currency (${PAIRS}), so its currency exposure is not shown.`,
+    );
+  });
+
+  it("a currency split says which pairs it covers and that other symbols are left out", () => {
+    exposure = { ...base, totalOpen: 2, exposureByCurrency: [{ currency: "EUR", netLots: 0.1 }, { currency: "USD", netLots: -0.1 }] };
+    render(<Portfolio />);
+    expect(screen.getByText("EUR")).toBeTruthy();
+    expect(screen.getByTestId("currency-exposure-coverage").textContent).toBe(
+      `Split by currency only for ${PAIRS}. Open rows on any other symbol are not included here.`,
+    );
+  });
+
+  it("the named pairs are exactly the pairs the server splits", () => {
+    const src = readFileSync(resolve(__dirname, "../../../api-server/src/lib/portfolio/exposure.ts"), "utf8");
+    const block = /const PAIR_CURRENCIES[^{]*\{([\s\S]*?)\n\};/.exec(src)?.[1] ?? "";
+    const serverPairs = [...block.matchAll(/^\s*([A-Z]{6}):/gm)].map((m) => m[1]);
+    expect(serverPairs.length).toBeGreaterThan(0);
+    expect(PAIRS.replace(" and ", ", ").split(", ")).toEqual(serverPairs);
+  });
+
+  it("with no open rows at all it says so", () => {
+    exposure = { ...base, totalOpen: 0, exposureByCurrency: [] };
+    render(<Portfolio />);
+    expect(screen.getByTestId("currency-exposure-coverage").textContent).toBe("No open rows in this source.");
   });
 });

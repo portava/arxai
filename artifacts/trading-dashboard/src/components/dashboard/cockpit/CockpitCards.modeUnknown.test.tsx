@@ -12,6 +12,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
   mode: {} as Record<string, unknown>,
+  accountStatus: "pending",
 }));
 
 vi.mock("wouter", () => ({
@@ -25,12 +26,13 @@ vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby"
 vi.mock("@/lib/symbol-context", () => ({ useActiveSymbol: () => ({ active: "EURUSD" }) }));
 vi.mock("@/hooks/useLiveAccountSnapshotContext", () => ({ useLiveAccountSnapshotCtx: () => ({ snapshot: null, live: null, freshness: "unavailable", connectionStatus: "unavailable", lastUpdatedMs: null, notLiveReason: null, isEstimate: false, isStale: false, isUnavailable: true, warnings: [], reload: () => {} }) }));
 vi.mock("@workspace/api-client-react", () => ({
-  useGetMeSharedAccountSummary: () => ({ data: { ok: true, accounts: [{ status: "pending", masterBrokerName: "Broker", masterAccountNumberMasked: "****12" }], allocationView: null, masterMt5: null }, isLoading: false }),
+  useGetMeSharedAccountSummary: () => ({ data: { ok: true, accounts: [{ status: h.accountStatus, masterBrokerName: "Broker", masterAccountNumberMasked: "****12" }], allocationView: null, masterMt5: null }, isLoading: false }),
   getGetMeSharedAccountSummaryQueryKey: () => ["/api/me/shared-account/summary"],
 }));
 
 import { TradingPermissionSummaryCard, AccountSnapshotCard } from "./CockpitCards";
 import { EnvironmentPill } from "./EnvironmentPill";
+import { describeBridgeObservation } from "./bridgeObservation";
 
 function unknownMode(over: Record<string, unknown> = {}) {
   return {
@@ -62,6 +64,7 @@ function rowValue(testId: string): string {
 
 beforeEach(() => {
   h.mode = unknownMode();
+  h.accountStatus = "pending";
 });
 afterEach(() => cleanup());
 
@@ -125,5 +128,64 @@ describe("Account snapshot footer — account-mode check failed", () => {
     h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isDemo: true, cleanModeLabel: "Demo Mode" });
     render(<AccountSnapshotCard />);
     expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("DEMO");
+  });
+});
+
+// The shared-account summary is a separate query, so it can load an 'active'
+// allocation row while /me/account-mode failed. "Active" needs the server
+// blocker to have been read (a blocker overrides it), so with no envelope the
+// pill must not say "Active".
+describe("Account snapshot Active pill — account-mode check failed", () => {
+  function pill(): string {
+    return screen.getByTestId("cockpit-account-active-pill").textContent ?? "";
+  }
+
+  it("does not show 'Active' beside 'Mode unknown' when the blocker was never read", () => {
+    h.accountStatus = "active";
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("Mode unknown");
+    expect(pill()).not.toBe("Active");
+    expect(pill()).toBe("Not checked");
+    expect(screen.getByTestId("cockpit-account-active-pill").getAttribute("title") ?? "").toMatch(/could not be checked/);
+  });
+
+  it("says 'Checking' while the mode is still loading", () => {
+    h.accountStatus = "active";
+    h.mode = unknownMode({ isLoading: true, isError: false, isModeUnknown: false, cleanModeLabel: "Loading…", cleanUserMessage: "" });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Checking");
+  });
+
+  it("a read envelope with no blocker and an active allocation still says 'Active'; a blocker says 'Blocked'", () => {
+    h.accountStatus = "active";
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live" });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Active");
+    cleanup();
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live", cleanBlockedReason: "Live execution is paused by an operator." });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Blocked");
+  });
+});
+
+// With the mode unknown the route was never read: isOnSharedMasterRoute is
+// false only because there is no envelope. The Bridge row's detail said "Your
+// account does not trade through the shared master bridge", an unobserved
+// fact (the user may be LIVE_SHARED).
+describe("Trading Permission Bridge row — account-mode check failed", () => {
+  it("says the route could not be checked, not that the account is off the shared bridge", () => {
+    render(<TradingPermissionSummaryCard />);
+    const row = screen.getByTestId("permission-bridge");
+    expect(rowValue("permission-bridge")).toBe("Not checked");
+    const title = row.getAttribute("title") ?? "";
+    expect(title).not.toMatch(/does not trade through/);
+    expect(title).toMatch(/account route could not be checked/);
+  });
+
+  it("the trade room hero uses the same route-aware observation", () => {
+    const obs = describeBridgeObservation({ onSharedRoute: null, routeCheckFailed: true, allocationView: null });
+    expect(obs.detail).not.toMatch(/does not trade through/);
+    expect(describeBridgeObservation({ onSharedRoute: null, allocationView: null })).toMatchObject({ state: "checking", label: "Checking" });
+    expect(describeBridgeObservation({ onSharedRoute: false, allocationView: null }).label).toBe("Not checked here");
   });
 });

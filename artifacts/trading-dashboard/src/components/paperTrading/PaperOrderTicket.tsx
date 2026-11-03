@@ -128,6 +128,17 @@ function placeRefusalText(j: { error?: unknown; message?: unknown; result?: { re
   return code ? `The server refused this order (${code}).` : `The order request failed (HTTP ${status}).`;
 }
 
+/**
+ * Plain-English text for a non-2xx /me/pending-order-draft answer: the server's
+ * reason, else its code named as a draft that was not saved, else (no readable
+ * answer) a failed request whose outcome could not be confirmed.
+ */
+function pendingDraftFailureText(j: { error?: unknown; reason?: unknown }, status: number): string {
+  if (typeof j.reason === "string" && j.reason) return j.reason;
+  if (typeof j.error === "string" && j.error) return `The server did not save this draft (${j.error}).`;
+  return `The draft request failed (HTTP ${status}). ARX could not confirm whether the draft was saved; check your saved drafts.`;
+}
+
 interface SimulatedFill { fillPrice?: number | null; priceSource?: string | null; quoteAt?: string | null; replayed?: boolean }
 
 export function PaperOrderTicket({ accountId: _accountId }: { accountId: number | null }) {
@@ -199,7 +210,9 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok && !j.blocked) throw new Error(j.error || "Pending order draft failed");
+      // A 200 can still be a refusal ({ok:false, blocked:true, reason}); that is
+      // rendered below as "Draft not saved", never as saved.
+      if (!r.ok) throw new Error(pendingDraftFailureText(j, r.status));
       return { kind: "pending", result: j };
     },
     onSuccess: () => {
@@ -337,16 +350,43 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
                 {at ? `, quote observed at ${at}` : ""}. No broker order was sent.
               </p>
             );
-          })() : (
-            <>
-              <p className="text-sky-300">Draft saved.</p>
-              <p className="text-slate-300 mt-1">{place.data.result.reason ?? "Draft validated. Not sent to broker."}</p>
-              <p className="text-amber-300 mt-1">
-                {place.data.result.executable ? "Ready to send" : "Not ready to send"}
-                {place.data.result.pendingStatus ? ` · ${place.data.result.pendingStatus}` : ""}
-              </p>
-            </>
-          )}
+          })() : (() => {
+            const j = (place.data.result ?? {}) as {
+              ok?: unknown; draftId?: unknown; blocked?: unknown; reason?: unknown; error?: unknown;
+              executable?: unknown; pendingStatus?: unknown;
+            };
+            const reason = typeof j.reason === "string" && j.reason ? j.reason : null;
+            // Saved only when the server says so: ok:true with the new draft's id.
+            const saved = j.ok === true && typeof j.draftId === "number";
+            if (!saved) {
+              return (
+                <div data-testid="order-ticket-draft-result">
+                  {j.ok === false ? (
+                    <>
+                      <p className="text-red-300">Draft not saved.</p>
+                      <p className="text-slate-300 mt-1">
+                        {reason ?? (typeof j.error === "string" && j.error
+                          ? `The server refused this draft (${j.error}).`
+                          : "The server refused this draft without giving a reason.")}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-amber-300">The server answered but did not confirm that a draft was saved. Check your saved drafts.</p>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <div data-testid="order-ticket-draft-result">
+                <p className="text-sky-300">Draft saved.</p>
+                <p className="text-slate-300 mt-1">{reason ?? "Not sent to broker."}</p>
+                <p className="text-amber-300 mt-1">
+                  {j.executable === true ? "Ready to send" : "Not ready to send"}
+                  {typeof j.pendingStatus === "string" && j.pendingStatus ? ` · ${j.pendingStatus}` : ""}
+                </p>
+              </div>
+            );
+          })()}
         </div>
       )}
 

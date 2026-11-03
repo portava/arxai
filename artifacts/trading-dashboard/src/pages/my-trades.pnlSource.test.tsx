@@ -82,3 +82,44 @@ describe("My Trades — strip and summary Open P/L", () => {
     expect(screen.getByText(/Open P\/L is not reported yet for 1 of 3 positions\. The account snapshot reports \+?\$12\.34 in total\./)).toBeTruthy();
   });
 });
+
+// Regression (review of 34f894b8): a stale snapshot still feeds the strip
+// (only "unavailable" drops it), and the note beside the per-position gap said
+// "The account snapshot reports $12.34 in total." in the present tense, with
+// no stale marker or time, in the two places that carry no FreshnessBadge.
+describe("My Trades — a stale account snapshot total is not stated as current", () => {
+  const cardsBody = () => body([
+    card("a", {}), card("b", { symbol: "GBPUSD" }), card("c", { symbol: "USDJPY", waitingForSync: true, unrealizedPnl: null }),
+  ]);
+
+  for (const freshness of ["stale", "delayed"] as const) {
+    it(`a ${freshness} snapshot is "last reported", with its freshness and time`, async () => {
+      const at = new Date("2026-10-28T11:58:07Z").getTime();
+      snap.value = {
+        isUnavailable: false, isStale: freshness === "stale", snapshot: { openPL: 12.34, openPositionsCount: 3 }, live: null,
+        freshness, lastUpdatedMs: at, isEstimate: false,
+      };
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(cardsBody(), { status: 200 })));
+      render(<MyTradesPage />);
+      await waitFor(() => expect(screen.getByTestId("position-summary-open-pnl").textContent).toMatch(/1 of 3 awaiting broker P\/L/));
+      const expected = `The account snapshot last reported +$12.34 in total (${freshness}, as of ${new Date(at).toLocaleTimeString()}).`;
+      const summary = screen.getByTestId("position-summary-open-pnl").textContent ?? "";
+      expect(summary).toContain(expected);
+      expect(document.body.textContent).not.toMatch(/account snapshot reports/);
+      expect(screen.getByText(/Open P\/L is not reported yet for 1 of 3 positions\./).textContent).toContain(expected);
+    });
+  }
+
+  it("a stale snapshot with no update time says the time was not reported", async () => {
+    snap.value = {
+      isUnavailable: false, isStale: true, snapshot: { openPL: 12.34, openPositionsCount: 3 }, live: null,
+      freshness: "stale", lastUpdatedMs: null, isEstimate: false,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(cardsBody(), { status: 200 })));
+    render(<MyTradesPage />);
+    await waitFor(() => expect(screen.getByTestId("position-summary-open-pnl").textContent).toMatch(/1 of 3 awaiting broker P\/L/));
+    expect(screen.getByTestId("position-summary-open-pnl").textContent).toContain(
+      "The account snapshot last reported +$12.34 in total (stale, update time not reported).",
+    );
+  });
+});

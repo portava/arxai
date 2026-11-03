@@ -133,6 +133,12 @@ export interface InvestorLiveBalance {
    * Absent on older payloads.
    */
   realizedPnLPendingCount?: number;
+  /**
+   * Open trades whose floating P/L is unknown. floatingPnL sums the KNOWN
+   * trades only, so > 0 means floatingPnL, liveEquity, freeMargin and
+   * availableBalance leave those trades out. Absent on older payloads.
+   */
+  floatingPnLUnknownCount?: number;
 }
 
 export interface LiveAccountSnapshot {

@@ -19,6 +19,11 @@ export interface TradeRoomModeInput {
   canManualTrade: boolean;
   cleanBlockedReason: string | null;
   cleanModeLabel: string;
+  /**
+   * The account-mode envelope as read (useTradingMode().envelope). null =
+   * nothing was read: still loading, paused (offline), or the check failed.
+   */
+  envelope: { userApprovalStatus?: string | null } | null;
   /** The account-mode envelope is still loading (nothing read yet). */
   isLoading?: boolean;
   /** The account-mode check failed: mode, approval, pause and blockers are unknown. */
@@ -35,17 +40,38 @@ export interface TradeRoomStatus {
   rgStatus: { label: string; tone: "warning" | "success" | "danger" };
   /** Bridge row value, from the bridge observation (never from the envelope). */
   bridge: string;
-  /** Risk Governor "Approval" row: the read permission, or that it was not read. */
+  /** Risk Governor "Approval" row: the read approval status, or that it was not read. */
   approval: string;
 }
 
+// The envelope's userApprovalStatus (meAccountShell approvalStatus), in the
+// same words as the MT5 Bridge page. It is the approval alone: a blocker,
+// pause or account status that stops trading is shown on the status rows, not
+// here, so an approved but blocked trader reads "Approved".
+const APPROVAL_LABEL: Record<string, string> = {
+  APPROVED: "Approved",
+  NOT_APPROVED: "Not approved",
+  PENDING: "Pending",
+  NOT_REQUIRED: "Not required",
+  SUSPENDED: "Suspended",
+  RISK_LOCKED: "Risk locked",
+  DISABLED: "Disabled",
+};
+
+function approvalLabel(status: string | null | undefined): string {
+  return (status ? APPROVAL_LABEL[status.toUpperCase()] : undefined) ?? "Unknown";
+}
+
 export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeObservation): TradeRoomStatus {
-  // No envelope (still loading, or the check failed): the mode, approval,
-  // pause flag and blockers were not read. Say so, instead of falling through
-  // to "Sim" / "Risk lock active" / "Waiting for approval" / "Pending" — the
-  // user may be LIVE_SHARED. Trading stays closed (canManualTrade is false).
+  // No envelope (still loading, paused offline, or the check failed): the
+  // mode, approval, pause flag and blockers were not read. Say so, instead of
+  // falling through to "Sim" / "Risk lock active" / "Waiting for approval" /
+  // "Pending" — the user may be LIVE_SHARED. Trading stays closed
+  // (canManualTrade is false). Keyed on the envelope itself, not isLoading:
+  // React Query's isLoading is false for a pending query whose fetch is
+  // paused, so it does not cover every "nothing read yet" state.
   const modeUnknown = m.isModeUnknown === true;
-  if (modeUnknown || m.isLoading === true) {
+  if (modeUnknown || m.envelope == null) {
     return {
       canTrade: false,
       modeLabel: m.cleanModeLabel || (modeUnknown ? "Mode unknown" : "Loading…"),
@@ -89,7 +115,9 @@ export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeO
 
   const bridge = bridgeObs.label;
 
-  const approval = m.canManualTrade ? "Approved" : "Pending";
+  // From the read approval status, not canManualTrade (which also folds in
+  // account status, review items and any blocker).
+  const approval = approvalLabel(m.envelope.userApprovalStatus);
 
   return { canTrade, modeLabel, gatesLabel, blockedLabel, connStatus, rgStatus, bridge, approval };
 }

@@ -66,12 +66,31 @@ const STATUS_LABEL: Record<Status, string> = {
   CANCELED: "CANCELED",
 };
 
-/** A validate the server refused (409) or could not complete. */
+/** A failed request that carries the HTTP status it was answered with. */
+function httpFailure(status: number): Error & { status: number } {
+  return Object.assign(new Error(`HTTP ${status}`), { status });
+}
+
+// A 4xx answer is the server refusing before it changes the plan (bad id, not
+// found, wrong status, news / portfolio block). A 5xx or a lost response may
+// come after the change was stored, so its outcome is unknown.
+function refusedBeforeChange(e: unknown): boolean {
+  const status = (e as { status?: unknown } | null)?.status;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
+/**
+ * A validate the server refused (4xx: before any change, e.g. a 409 news /
+ * portfolio block) or whose outcome is unknown (5xx: validate may have
+ * committed READY / INVALIDATED before it failed).
+ */
 class ValidateError extends Error {
   readonly refused: boolean;
-  constructor(message: string, refused: boolean) {
+  readonly status: number;
+  constructor(message: string, status: number) {
     super(message);
-    this.refused = refused;
+    this.status = status;
+    this.refused = refusedBeforeChange({ status });
   }
 }
 
@@ -137,13 +156,19 @@ export function TradePlanBuilderPanel() {
       ];
       for (const k of keys) if (input[k] !== undefined) body[k] = input[k];
       const r = await fetch(`/api/trade-plans/${active.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw httpFailure(r.status);
       return r.json();
     },
     onSuccess: () => {
       if (active && chartCheck?.planId === active.id) setChartCheck(null);
-      qc.invalidateQueries({ queryKey: ["trade-plans"] });
     },
+    // A save whose outcome is unknown may have stored new values, so the chart
+    // check taken on the old ones no longer applies to what is shown.
+    onError: (e: Error) => {
+      if (!refusedBeforeChange(e) && active && chartCheck?.planId === active.id) setChartCheck(null);
+    },
+    // Re-read on failure too: a failed answer does not say what the server stored.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   const validate = useMutation({
@@ -152,12 +177,14 @@ export function TradePlanBuilderPanel() {
       const r = await fetch(`/api/trade-plans/${active.id}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       if (!r.ok) {
         const err = (await r.json().catch(() => ({}))) as { error?: string; reason?: string };
-        if (r.status === 409) {
+        const http = `HTTP ${r.status}`;
+        if (refusedBeforeChange({ status: r.status })) {
           const what = err.error ? REFUSAL_TITLE[err.error] : undefined;
-          const reason = err.reason ?? err.error ?? `HTTP ${r.status}`;
-          throw new ValidateError(what ? `Refused because of ${what}: ${reason}` : `Refused: ${reason}`, true);
+          const reason = err.reason ?? err.error;
+          const detail = reason ? `${http}: ${reason}` : http;
+          throw new ValidateError(what ? `Refused because of ${what} (${detail}).` : `Refused (${detail}).`, r.status);
         }
-        throw new ValidateError(`Validation could not be completed (${err.error ?? `HTTP ${r.status}`}). Nothing was checked.`, false);
+        throw new ValidateError(`Validation could not be completed (${err.error ? `${http}: ${err.error}` : http}).`, r.status);
       }
       return r.json();
     },
@@ -179,21 +206,27 @@ export function TradePlanBuilderPanel() {
           checkedAtIso: new Date().toISOString(),
         });
       }
-      qc.invalidateQueries({ queryKey: ["trade-plans"] });
     },
     onError: (e: Error) => {
-      if (active) setValidateFailure({ planId: active.id, refused: e instanceof ValidateError && e.refused, message: e.message });
+      if (!active) return;
+      setValidateFailure(
+        e instanceof ValidateError
+          ? { planId: active.id, refused: e.refused, message: e.message }
+          : { planId: active.id, refused: false, message: `The validate request failed (${failureDetail(e)}).` },
+      );
     },
+    // Re-read on failure too: a failed answer does not say what the server stored.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   const cancel = useMutation({
     mutationFn: async () => {
       if (!active) return;
       const r = await fetch(`/api/trade-plans/${active.id}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw httpFailure(r.status);
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["trade-plans"] }),
   });
 
   // A failed save / validate / cancel belongs to the plan it was tried on;
@@ -216,12 +249,20 @@ export function TradePlanBuilderPanel() {
   const listFailed = list.isError;
   const hasStaleList = listFailed && (list.data?.plans?.length ?? 0) > 0;
 
-  // A failed validate is shown by the validation box below (refused vs not
-  // completed, and whether an earlier READY still holds), not here.
+  // Only a 4xx refusal says the plan was not changed. Any other failure says
+  // the outcome could not be confirmed; the plans are re-read (onSettled), so
+  // the status and checklist shown come from the server. A failed validate is
+  // shown by the validation box below (refused vs unconfirmed, and whether a
+  // READY on the row still holds), not here.
+  const unconfirmed = "check the plan's status once your plans reload.";
   const actionError = save.isError
-    ? `Your changes were not saved (${failureDetail(save.error)}).`
+    ? refusedBeforeChange(save.error)
+      ? `The server refused your changes (${failureDetail(save.error)}). They were not saved.`
+      : `Saving failed (${failureDetail(save.error)}). ARX could not confirm whether your changes were saved; ${unconfirmed}`
     : cancel.isError
-      ? `The plan was not cancelled (${failureDetail(cancel.error)}).`
+      ? refusedBeforeChange(cancel.error)
+        ? `The server refused to cancel the plan (${failureDetail(cancel.error)}). It was not cancelled.`
+        : `The cancel request failed (${failureDetail(cancel.error)}). ARX could not confirm whether the plan was cancelled; ${unconfirmed}`
       : null;
 
   return (
@@ -369,17 +410,31 @@ export function TradePlanBuilderPanel() {
                 {actionError && <p className="text-xs text-red-300">{actionError}</p>}
                 {activeValidateFailure && (
                   <div className="rounded-md border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">
+                    {/* A 4xx refusal changed nothing. Any other failure may come
+                        after validate committed READY / INVALIDATED, so neither
+                        "not validated" nor "unchanged" can be said there. */}
                     <p>
-                      {activeValidateFailure.refused ? "The latest validation refused this plan." : "The plan was not validated."}{" "}
+                      {activeValidateFailure.refused
+                        ? "The server refused to validate this plan; it was not validated."
+                        : "ARX could not confirm whether the plan was validated."}{" "}
                       {activeValidateFailure.message}
                     </p>
-                    {active.status === "READY" ? (
-                      <p className="mt-1 text-xs text-amber-300">
-                        The plan&apos;s status was not changed: READY is from an earlier check and does not hold now.
-                        It cannot be sent from here until a validation passes again.
-                      </p>
+                    {activeValidateFailure.refused ? (
+                      active.status === "READY" ? (
+                        <p className="mt-1 text-xs text-amber-300">
+                          The plan&apos;s status was not changed: READY is from an earlier check and does not hold now.
+                          It cannot be sent from here until a validation passes again.
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-amber-300">Its status and checklist below are unchanged.</p>
+                      )
                     ) : (
-                      <p className="mt-1 text-xs text-amber-300">Its status and checklist below are unchanged.</p>
+                      <p className="mt-1 text-xs text-amber-300">
+                        Check the plan&apos;s status and checklist once your plans reload.
+                        {active.status === "READY"
+                          ? " READY may be from this request or from an earlier check, so it cannot be sent from here until a validation passes again."
+                          : ""}
+                      </p>
                     )}
                   </div>
                 )}

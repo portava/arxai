@@ -78,27 +78,63 @@ export interface PositionReportState {
   lastReported: string;
 }
 
+/**
+ * When the positions answer behind a row was built and received. observedAt
+ * and the FRESH verdict are on the server's clock; this browser's clock can be
+ * off by minutes. A report's age is computed one clock at a time: its age on
+ * the server when the answer was built (serverNowMs − observedAt) plus the
+ * time since the answer arrived here (nowMs − receivedAtMs).
+ */
+export interface PositionReportClock {
+  /** Browser time (Date.now()) when the positions answer arrived. */
+  receivedAtMs: number;
+  /** Server time the answer was built (its generatedAt); null when the server did not send one. */
+  serverNowMs: number | null;
+}
+
 // What the side card may say about whether this position is open right now.
 // The feed lists rows that passed the open-exposure predicate; "open now" is
 // only asserted when the bridge reported the row recently (server FRESH) AND
 // that report is still recent now — the client may only downgrade the server.
-export function positionReportState(p: Pick<UnifiedPosition, "observedAt" | "freshness">, nowMs = Date.now()): PositionReportState {
+// Callers that hold the answer's clock pass it; without it the report time is
+// compared with this browser's clock, which is only right when the clocks agree.
+export function positionReportState(
+  p: Pick<UnifiedPosition, "observedAt" | "freshness">,
+  nowMs = Date.now(),
+  clock?: PositionReportClock,
+): PositionReportState {
   const observedMs = p.observedAt ? new Date(p.observedAt).getTime() : NaN;
-  const known = Number.isFinite(observedMs);
-  const lastReported = known
-    ? `${new Date(observedMs).toLocaleTimeString()} (${fmtAgeShort(nowMs - observedMs)})`
-    : "Not reported";
-  if (p.freshness === "FRESH" && known && nowMs - observedMs <= POSITION_REPORT_FRESH_MS) {
+  if (!Number.isFinite(observedMs)) {
+    return { confirmed: false, status: "Unconfirmed — no bridge report time", lastReported: "Not reported" };
+  }
+  const at = new Date(observedMs).toLocaleTimeString();
+  const serverNowMs = clock?.serverNowMs;
+  const sinceAnswerMs = clock ? Math.max(0, nowMs - clock.receivedAtMs) : 0;
+  // Age of the report now, or null when it cannot be computed on one clock.
+  const ageMs = !clock
+    ? nowMs - observedMs
+    : serverNowMs != null && Number.isFinite(serverNowMs)
+      ? Math.max(0, serverNowMs - observedMs) + sinceAnswerMs
+      : null;
+  if (ageMs == null) {
+    // The answer carried no server time: the FRESH verdict holds for the
+    // freshness window from when it arrived, and no age is shown.
+    if (p.freshness === "FRESH" && sinceAnswerMs <= POSITION_REPORT_FRESH_MS) {
+      return { confirmed: true, status: "Open — reported by bridge", lastReported: at };
+    }
+    return { confirmed: false, status: `Unconfirmed — last reported at ${at}`, lastReported: at };
+  }
+  const lastReported = `${at} (${fmtAgeShort(ageMs)})`;
+  if (p.freshness === "FRESH" && ageMs <= POSITION_REPORT_FRESH_MS) {
     return { confirmed: true, status: "Open — reported by bridge", lastReported };
   }
-  if (known) {
-    return { confirmed: false, status: `Unconfirmed — last reported ${fmtAgeShort(nowMs - observedMs)}`, lastReported };
-  }
-  return { confirmed: false, status: "Unconfirmed — no bridge report time", lastReported };
+  return { confirmed: false, status: `Unconfirmed — last reported ${fmtAgeShort(ageMs)}`, lastReported };
 }
 
 interface Props {
   position: UnifiedPosition;
+  /** When the answer holding this position was built and received; see PositionReportClock. */
+  reportClock?: PositionReportClock;
   onClose?: () => void;
   onModifySLTP?: (pos: UnifiedPosition) => void;
   onCloseTrade?: (pos: UnifiedPosition) => void;
@@ -181,7 +217,7 @@ function calcRR(side: "BUY" | "SELL" | null, entry: number | null, sl: number | 
   return `1 : ${(reward / risk).toFixed(2)}`;
 }
 
-export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTrade }: Props) {
+export function PositionSideCard({ position: p, reportClock, onClose, onModifySLTP, onCloseTrade }: Props) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [feedStatus, setFeedStatus] = useState<FeedStatus | null>(null);
   const [candleError, setCandleError] = useState<string | null>(null);
@@ -232,7 +268,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
 
   const openedAtLabel = p.openedAt ? new Date(p.openedAt).toLocaleString() : "—";
   const nowMs = useNowMs();
-  const report = positionReportState(p, nowMs);
+  const report = positionReportState(p, nowMs, reportClock);
   const isLive = p.accountMode === "LIVE";
 
   const handleRefreshAnalysis = () => {

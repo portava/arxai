@@ -45,6 +45,31 @@ export function isMarketQuote(q: Quote): q is NonNullable<Quote> {
     && MARKET_QUOTE_SOURCES.has(q.executionEnvironment.toUpperCase());
 }
 
+/** One read of the quote route: failed = the read itself failed. */
+export type QuoteRead = { quote: Quote; failed: boolean };
+
+/**
+ * Reads GET /api/market/quote/:symbol for the Trade Command Room. The route
+ * answers 404 {error:"Unknown symbol"} when it has no quote for the symbol:
+ * that is no quote, not a failure. Any other non-2xx answer (5xx, 401, a 404
+ * without that body), a 2xx body that is not JSON, or a request that throws is
+ * a failed read: "could not be loaded", never "no quote for this symbol".
+ */
+export async function readQuickTradeQuote(bareSymbol: string): Promise<QuoteRead> {
+  try {
+    const r = await fetch(`/api/market/quote/${bareSymbol}`);
+    if (r.status === 404) {
+      const body: unknown = await r.json().catch(() => null);
+      const unknownSymbol = body != null && typeof body === "object" && (body as { error?: unknown }).error === "Unknown symbol";
+      return { quote: null, failed: !unknownSymbol };
+    }
+    if (!r.ok) return { quote: null, failed: true };
+    return { quote: (await r.json()) as Quote, failed: false };
+  } catch {
+    return { quote: null, failed: true };
+  }
+}
+
 const ORDER_TYPES = [
   "Market", "Buy Limit", "Sell Limit", "Buy Stop", "Sell Stop", "Buy Stop Limit", "Sell Stop Limit",
 ];
@@ -57,6 +82,7 @@ export function QuickTradePanel({
   orderType, setOrderType,
   lot, setLot,
   quote,
+  quoteLoadFailed = false,
   slTpOn, setSlTpOn,
   stopLoss, setStopLoss,
   takeProfit, setTakeProfit,
@@ -69,6 +95,8 @@ export function QuickTradePanel({
   orderType: string; setOrderType: (v: string) => void;
   lot: string; setLot: (v: string) => void;
   quote: Quote;
+  /** True when the latest quote read failed (see readQuickTradeQuote). */
+  quoteLoadFailed?: boolean;
   slTpOn: boolean; setSlTpOn: (v: boolean) => void;
   stopLoss: string; setStopLoss: (v: string) => void;
   takeProfit: string; setTakeProfit: (v: string) => void;
@@ -174,7 +202,9 @@ export function QuickTradePanel({
               ? withheldSource
                 ? `A quote came back from "${withheldSource}", which is not a broker or MT5 price, so it is not shown. Check the chart feed for the current price.`
                 : "A quote came back with no stated source, so it is not shown. Check the chart feed for the current price."
-              : "No quote available for this symbol."}
+              : quoteLoadFailed
+                ? "The quote could not be loaded, so no price is shown. Check the chart feed for the current price."
+                : "No quote available for this symbol."}
       </p>
 
       {/* Lot sizing */}

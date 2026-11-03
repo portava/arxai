@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 import { calendarEventWhen, describeCalendarEnvelope } from "@/lib/calendarCoverage";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
-import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
+import { describeBridgeObservation, sharedMasterRouteObserved } from "./bridgeObservation";
 import { riskCapsStatus } from "@/lib/riskCapsStatus";
 
 const money = (n: number | null | undefined) =>
@@ -225,11 +225,24 @@ export function AccountSnapshotCard() {
   // admin) a LIVE master sync. The LIVE_SHARED mode label is not one — the
   // server also sets it for display on an approved-but-unconfirmed account
   // whose execution is blocked — and a server blocker overrides both.
+  // With no envelope (still loading, or the check failed) the blocker was not
+  // read, so neither "Active" nor "Inactive" is claimed: the pill says
+  // "Checking" / "Not checked" instead.
+  const blockerRead = mode.envelope != null;
   const executionBlocked = Boolean(mode.cleanBlockedReason);
-  const isActive = !executionBlocked && (
+  const isActive = blockerRead && !executionBlocked && (
     (accounts[0]?.status ?? "").toString().toLowerCase() === "active"
     || master?.syncStatus === "LIVE"
   );
+  const pill: { label: string; tone: "success" | "warning" | "muted"; title?: string } = !blockerRead
+    ? mode.isModeUnknown
+      ? { label: "Not checked", tone: "muted", title: "Your account mode could not be checked, so whether a server blocker (such as an operator pause) applies is unknown." }
+      : { label: "Checking", tone: "muted", title: "Reading your account mode and any server blocker…" }
+    : isActive
+      ? { label: "Active", tone: "success" }
+      : executionBlocked
+        ? { label: "Blocked", tone: "warning", title: mode.cleanBlockedReason ?? undefined }
+        : { label: "Inactive", tone: "muted" };
 
   return (
     <CockpitCard
@@ -360,8 +373,8 @@ export function AccountSnapshotCard() {
               compact
             />
           )}
-          <span data-testid="cockpit-account-active-pill" title={executionBlocked ? mode.cleanBlockedReason ?? undefined : undefined}>
-            <Pill tone={isActive ? "success" : executionBlocked ? "warning" : "muted"}>{isActive ? "Active" : executionBlocked ? "Blocked" : "Inactive"}</Pill>
+          <span data-testid="cockpit-account-active-pill" title={pill.title}>
+            <Pill tone={pill.tone}>{pill.label}</Pill>
           </span>
         </div>
       </div>
@@ -394,9 +407,12 @@ export function TradingPermissionSummaryCard() {
   const summaryQ = useGetMeSharedAccountSummary({
     query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
   });
-  const onSharedRoute = isOnSharedMasterRoute(mode);
+  // With no envelope the route was not read: the Bridge row says so rather
+  // than "your account does not trade through the shared master bridge".
+  const routeObs = sharedMasterRouteObserved(mode);
+  const onSharedRoute = routeObs.onSharedRoute === true;
   const bridge = describeBridgeObservation({
-    onSharedRoute,
+    ...routeObs,
     allocationView: summaryQ.data?.allocationView ?? null,
     summaryLoading: summaryQ.isLoading,
   });

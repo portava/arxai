@@ -17,12 +17,13 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 const h = vi.hoisted(() => ({
   mt5State: undefined as undefined | { connected?: boolean; liveAllowed?: boolean },
   snap: undefined as unknown,
+  snapState: {} as { isError?: boolean; isPaused?: boolean; dataUpdatedAt?: number },
   queries: {} as Record<string, unknown>,
   closeMutate: (() => Promise.resolve()) as (...a: unknown[]) => Promise<unknown>,
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
-  useGetTradeSnapshot: () => ({ data: h.snap }),
+  useGetTradeSnapshot: () => ({ data: h.snap, isError: false, isPaused: false, dataUpdatedAt: h.snap ? Date.now() : 0, ...h.snapState }),
   useGetCoachExplanation: () => ({ data: undefined, isLoading: false }),
   useMoveTradeToBreakeven: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTrailTradeStop: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -59,6 +60,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.mt5State = undefined;
   h.snap = undefined;
+  h.snapState = {};
   h.queries = {};
   h.closeMutate = () => Promise.resolve();
 });
@@ -214,5 +216,54 @@ describe("LiveTradeCard simulated-record badge does not read trades.mode as a ve
   it("marks a DEMO-mode record the same way", () => {
     render(<LiveTradeCard trade={{ ...(trade as object), mode: "DEMO" } as never} />);
     expect(screen.getByTestId("badge-paper-only").textContent).toMatch(/Simulated/);
+  });
+});
+
+// A react-query refetch that fails keeps the last successful data, so
+// snap.currentPrice stays set from the last good read. The stop / close
+// badges say what works now; they are not claimed from a snapshot whose
+// refresh failed, was paused (offline), or is older than the poll window.
+describe("LiveTradeCard capability badges need a current snapshot", () => {
+  beforeEach(() => {
+    h.snap = { ...snap, quoteAt: new Date(Date.now() - 120_000).toISOString() };
+    h.queries["/me/protective-auto-close/settings"] = { settings: { killSwitchEngaged: false } };
+  });
+
+  it("withholds them and says so when the latest snapshot refresh failed", () => {
+    h.snapState = { isError: true, dataUpdatedAt: Date.now() - 120_000 };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+    expect(screen.queryByTestId("badge-sltp-editable")).toBeNull();
+    const b = screen.getByTestId("badge-snapshot-not-current");
+    expect(b.textContent).toBe("Snapshot Could Not Be Refreshed");
+    expect(b.getAttribute("title") ?? "").toMatch(/was not checked/);
+  });
+
+  it("withholds them while the refresh is paused (offline)", () => {
+    h.snapState = { isPaused: true };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+    expect(screen.getByTestId("badge-snapshot-not-current").textContent).toBe("Snapshot Not Current");
+  });
+
+  it("withholds them when the last successful read is older than the poll window", () => {
+    h.snapState = { dataUpdatedAt: Date.now() - 60_000 };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.queryByTestId("badge-manual-close")).toBeNull();
+    expect(screen.queryByTestId("badge-sltp-editable")).toBeNull();
+    expect(screen.getByTestId("badge-snapshot-not-current").textContent).toBe("Snapshot Not Current");
+  });
+
+  it("claims them from a snapshot read just now", () => {
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-manual-close")).toBeTruthy();
+    expect(screen.queryByTestId("badge-snapshot-not-current")).toBeNull();
+  });
+
+  it("says the snapshot could not be loaded instead of a skeleton when the first read failed", () => {
+    h.snap = undefined;
+    h.snapState = { isError: true };
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("snap-load-failed-1").textContent).toMatch(/could not be loaded/);
   });
 });

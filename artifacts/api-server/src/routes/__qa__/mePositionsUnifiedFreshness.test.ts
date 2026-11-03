@@ -76,3 +76,18 @@ test("a just-reported row reads FRESH; a row with no sync time reads MISSING", a
   const second = byTicket.get("2") as any;
   if (second) assert.equal(second.freshness, "MISSING");
 });
+
+test("the answer carries the server clock reading the freshness verdicts were taken against", async () => {
+  const before = Date.now();
+  const observedAt = new Date(before - 12_000);
+  liveRows = [live("1", observedAt)];
+  const body = await invoke();
+  const after = Date.now();
+  assert.equal(typeof body.generatedAt, "string");
+  const generatedMs = Date.parse(body.generatedAt);
+  assert.ok(generatedMs >= before && generatedMs <= after, "generatedAt is the server's clock at read time");
+  // Same clock as the verdict: (generatedAt − observedAt) is the age the
+  // FRESH verdict was based on.
+  assert.ok(generatedMs - observedAt.getTime() <= 30_000);
+  assert.equal(body.live[0].freshness, "FRESH");
+});
