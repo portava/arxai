@@ -21,6 +21,16 @@ import { generateInsights } from "./insights.js";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { readAccountLivePosture } from "../systemHealth/livePosture.js";
 
+/**
+ * What netPnl is. It sums the P&L the paper venue booked on each closed demo
+ * order (profit_loss), which is what the demo account balance moves by.
+ * Analytics recomputes P&L in USD at each instrument's contract size from
+ * the fill prices, so the two boards' Net P&L are different measures of the
+ * same trades and are not expected to match.
+ */
+export const NET_PNL_BASIS =
+  "Sum of the P&L the paper venue booked on each closed demo trade, in demo account units — what your demo balance moves by. Analytics recomputes P&L in USD at each instrument's contract size from entry and exit prices, so its Net P&L differs.";
+
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.
 export async function buildCommandCenter(userId: number) {
@@ -155,6 +165,7 @@ export async function buildCommandCenter(userId: number) {
     totalClosedTrades: closed.length,
     winRate: Number(winRate.toFixed(2)),
     netPnl: Number(netPnl.toFixed(2)),
+    netPnlBasis: NET_PNL_BASIS,
     bestSymbol,
     worstSymbol,
     bestSetup,

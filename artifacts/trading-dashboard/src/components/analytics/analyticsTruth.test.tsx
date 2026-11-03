@@ -47,14 +47,14 @@ const NOTHING_MEASURED: AnalyticsFigures = {
 describe("ConsistencyTrendCard", () => {
   it("an unmeasured pillar is — with the reason, not a red 0/100", () => {
     render(<ConsistencyTrendCard snapshot={NOTHING_MEASURED} />);
-    for (const label of ["Discipline", "Execution", "Emotional", "Consistency"]) {
+    for (const label of ["Discipline", "Execution", "Emotional control", "Consistency"]) {
       const cell = screen.getByTestId(`consistency-${label}`);
       expect(cell.textContent).toContain("—");
       expect(cell.textContent).not.toMatch(/\b0\b|\/100/);
       expect(cell.querySelector(".text-red-300")).toBeNull();
     }
     expect(screen.getByTestId("consistency-Discipline").textContent).toContain("No Trader Skill profile");
-    expect(screen.getByTestId("consistency-Emotional").textContent).toContain("No post-trade debriefs");
+    expect(screen.getByTestId("consistency-Emotional control").textContent).toContain("No post-trade debriefs");
   });
 
   it("a measured pillar keeps its score and the profile's time is shown", () => {
@@ -71,5 +71,13 @@ describe("RiskExposureGraph", () => {
       const row = screen.getByTestId(`risk-exposure-${label}`);
       expect(row.textContent).toBe(`${label}—`);
     }
+  });
+});
+
+describe("ConsistencyTrendCard and Trader Skill", () => {
+  it("names the emotional pillar as Trader Skill does and says the scores are the same", () => {
+    render(<ConsistencyTrendCard snapshot={{ ...NOTHING_MEASURED, emotionalScoreAvg: 100, behaviorAsOf: "2026-10-27T09:00:00.000Z" }} />);
+    expect(screen.getByTestId("consistency-Emotional control").textContent).toBe("Emotional control100/100");
+    expect(screen.getByTestId("consistency-asof").textContent).toContain("The same scores as your Trader Skill profile");
   });
 });

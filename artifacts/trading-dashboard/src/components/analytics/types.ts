@@ -13,6 +13,8 @@ export interface AnalyticsFigures {
   unmeasured?: Record<string, string>;
   /** Live figures only: when the Trader Skill profile behind the behaviour scores was computed. */
   behaviorAsOf?: string | null;
+  /** Live figures only: what the money figures cover and their basis (USD at contract size). */
+  pnlCoverage?: { closedTrades: number; sizedTrades: number; unsizedTrades: number; unsizedSymbols: string[]; note: string };
   strongestStrategy: string | null; weakestStrategy: string | null;
   strongestMarketCondition: string | null; weakestMarketCondition: string | null;
   // Live figures only (not snapshot columns): what the highlights really are.

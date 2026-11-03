@@ -252,3 +252,38 @@ test("unmeasured: GET /analytics/snapshot sends the nulls in current", async () 
   assert.equal(current["disciplineScoreAvg"], null);
   assert.equal(current["emotionalScoreAvg"], null);
 });
+
+// ── One paper book, consistent figures across boards ────────────────────────
+function debrief(id: number, emotion: string) {
+  return { id, userId: 7, paperOrderId: id, followedPlan: 1, traderEmotionAfter: emotion, checklist: [] };
+}
+
+test("consistency: Emotional is Trader Skill's emotional control score, not a CALM-only share", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 })],
+    // Trader Skill counts NEUTRAL and RELIEVED as controlled: 100 here.
+    trader_skill_profiles: [{ id: 1, userId: 7, disciplineScore: 90, executionScore: 70, consistencyScore: 40,
+      emotionalControlScore: 100, updatedAt: new Date("2026-10-27T09:00:00Z") }],
+    post_trade_debriefs: [debrief(1, "NEUTRAL"), debrief(2, "RELIEVED")],
+    edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.emotionalScoreAvg, 100, "the same number Trader Skill shows as Emotional control");
+});
+
+test("consistency: a cancelled order with an exit price is not a closed trade", async () => {
+  setRows({
+    paper_orders: [order({ id: 1 }), order({ id: 2, status: "CANCELLED", exitPrice: 1.08 })],
+    trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [],
+  });
+  const s = await mod.computeSnapshot(7);
+  assert.equal(s.totalTrades, 1);
+  assert.equal(s.netProfitLoss, 1000);
+});
+
+test("consistency: the P&L basis says it differs from Ruby Memory's booked demo P&L", async () => {
+  setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
+  const s = await mod.computeSnapshot(7);
+  assert.match(s.pnlCoverage.note, /USD at each instrument's contract size/);
+  assert.match(s.pnlCoverage.note, /Ruby Memory and your demo account show the P&L the paper venue booked on each close, in demo account units/);
+});

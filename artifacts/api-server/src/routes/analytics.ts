@@ -41,11 +41,13 @@ async function vaultAnalytics(kind: string, payload: Record<string, unknown>) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-// Paper-order statuses are OPEN | CLOSED_TP | CLOSED_SL | CLOSED_MANUAL
-// (and the legacy "CLOSED" used by some seeders). A trade is closed iff
-// status starts with CLOSED OR exitPrice is set and status !== OPEN.
+// Paper-order statuses are OPEN | CLOSED_TP | CLOSED_SL | CLOSED_MANUAL |
+// CANCELLED (and the legacy "CLOSED" used by some seeders). A trade is closed
+// when it is neither open nor cancelled and has an exit price to measure it
+// by. A cancelled order was voided — it is not a trade (Ruby Memory does not
+// count it either); it used to count here whenever it carried an exit price.
 function isClosed(o: typeof paperOrdersTable.$inferSelect): boolean {
-  return o.status !== "OPEN" && o.exitPrice != null;
+  return o.status !== "OPEN" && o.status !== "CANCELLED" && o.exitPrice != null;
 }
 // P&L of a closed order in USD at the instrument's contract size (the sizing
 // rule in lib/mt5/contractSize.ts, via paperPnl). It used to be
@@ -79,7 +81,10 @@ function pnlCoverageOf(closed: Array<typeof paperOrdersTable.$inferSelect>): Pnl
   const unsized = closed.filter((o) => pnlOf(o) == null);
   const sizedTrades = closed.length - unsized.length;
   const unsizedSymbols = [...new Set(unsized.map((o) => o.symbol))].sort();
-  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair).";
+  // Ruby Memory and the demo account sum the P&L the paper venue BOOKED on
+  // each close, in demo account units (price move × lots × 100 for most
+  // closes, not a contract size), so the same trades give a different figure.
+  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close, in demo account units, so their Net P&L differs from this one.";
   const note = unsized.length === 0
     ? basis
     : sizedTrades === 0
@@ -214,8 +219,11 @@ export async function computeSnapshot(userId: number) {
   const sk = skill[0] ?? null;
   const hasDebriefs = debriefs.length > 0;
   const hasEdgeReports = edges.length > 0;
-  const calmCount = debriefs.filter((d) => d.traderEmotionAfter === "CALM").length;
-  const emotionalScoreAvg: number | null = hasDebriefs ? (calmCount / debriefs.length) * 100 : null;
+  // Emotional control is the Trader Skill profile's own score, so this board
+  // and Trader Skill give one number. It used to be the CALM share of the
+  // last 200 debriefs (NEUTRAL and RELIEVED counted as not calm, no revenge
+  // penalty), which disagreed with Trader Skill's "Emotional control".
+  const emotionalScoreAvg: number | null = sk && hasDebriefs ? sk.emotionalControlScore : null;
   const disciplineScoreAvg: number | null = sk && hasDebriefs ? sk.disciplineScore : null;
   const executionScoreAvg: number | null = sk && hasDebriefs ? sk.executionScore : null;
   const consistencyScoreAvg: number | null = sk && hasEdgeReports ? sk.consistencyScore : null;
@@ -234,7 +242,7 @@ export async function computeSnapshot(userId: number) {
   if (averageRr == null) unmeasured["averageRr"] = totalTrades ? "No closed trade has a stop distance to measure R from." : "No closed paper trades yet.";
   if (disciplineScoreAvg == null) unmeasured["disciplineScoreAvg"] = !sk ? noProfile : noDebriefs;
   if (executionScoreAvg == null) unmeasured["executionScoreAvg"] = !sk ? noProfile : noDebriefs;
-  if (emotionalScoreAvg == null) unmeasured["emotionalScoreAvg"] = noDebriefs;
+  if (emotionalScoreAvg == null) unmeasured["emotionalScoreAvg"] = !sk ? noProfile : noDebriefs;
   if (consistencyScoreAvg == null) unmeasured["consistencyScoreAvg"] = !sk ? noProfile : "No edge reports yet.";
 
   return {

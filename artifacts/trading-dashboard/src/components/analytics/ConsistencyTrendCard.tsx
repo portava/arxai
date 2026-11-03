@@ -4,7 +4,7 @@ export function ConsistencyTrendCard({ snapshot }: { snapshot: AnalyticsFigures 
   const items = [
     { key: "disciplineScoreAvg",  label: "Discipline",  v: snapshot.disciplineScoreAvg },
     { key: "executionScoreAvg",   label: "Execution",   v: snapshot.executionScoreAvg },
-    { key: "emotionalScoreAvg",   label: "Emotional",   v: snapshot.emotionalScoreAvg },
+    { key: "emotionalScoreAvg",   label: "Emotional control", v: snapshot.emotionalScoreAvg },
     { key: "consistencyScoreAvg", label: "Consistency", v: snapshot.consistencyScoreAvg },
   ];
   const asOf = snapshot.behaviorAsOf ? new Date(snapshot.behaviorAsOf) : null;
@@ -37,7 +37,7 @@ export function ConsistencyTrendCard({ snapshot }: { snapshot: AnalyticsFigures 
       </div>
       {asOf && !Number.isNaN(asOf.getTime()) ? (
         <p className="mt-2 text-[10px] text-slate-500" data-testid="consistency-asof">
-          From your Trader Skill profile computed {asOf.toLocaleString()}.
+          The same scores as your Trader Skill profile, computed {asOf.toLocaleString()}.
         </p>
       ) : null}
     </div>

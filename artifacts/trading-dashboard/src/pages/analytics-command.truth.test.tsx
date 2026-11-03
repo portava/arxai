@@ -102,7 +102,7 @@ describe("Analytics Command Center unmeasured figures", () => {
     renderPage();
     const winRate = await screen.findByTestId("analytics-stat-win-rate");
     expect(winRate.textContent).toBe("Win rate—");
-    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toBe("Net P&L—");
+    expect(screen.getByTestId("analytics-stat-net-pnl").textContent).toBe("Net P&L (USD)—");
     expect(screen.getByTestId("analytics-stat-avg-rr").textContent).toBe("Avg RR—");
     expect(screen.getByTestId("analytics-stat-expectancy").textContent).toBe("Expectancy—");
     expect(screen.getByTestId("analytics-stat-profit-factor").textContent).toBe("Profit factor—");
@@ -128,5 +128,20 @@ describe("Analytics Command Center unmeasured figures", () => {
     const pf = await screen.findByTestId("analytics-stat-profit-factor");
     expect(pf.textContent).toBe("Profit factor—");
     expect(screen.getByTestId("analytics-unmeasured").textContent).toContain("No losing trade");
+  });
+});
+
+describe("Analytics Command Center P&L basis", () => {
+  it("labels Net P&L as USD and says it differs from the booked demo P&L in Ruby Memory", async () => {
+    const note = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close, in demo account units, so their Net P&L differs from this one.";
+    serve({
+      snapshot: SAVED,
+      current: { ...FIGURES, asOf: "2026-10-28T12:00:00.000Z",
+        pnlCoverage: { closedTrades: 5, sizedTrades: 5, unsizedTrades: 0, unsizedSymbols: [], note } },
+    });
+    renderPage();
+    const pnl = await screen.findByTestId("analytics-stat-net-pnl");
+    expect(pnl.textContent).toBe("Net P&L (USD)$5000");
+    expect(screen.getByTestId("analytics-pnl-basis").textContent).toContain("Ruby Memory and your demo account show the P&L the paper venue booked");
   });
 });

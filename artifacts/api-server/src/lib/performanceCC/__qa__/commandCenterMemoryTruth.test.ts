@@ -125,3 +125,16 @@ test("Best/Weakest setup says its P&L sums overlap across signals", async () => 
   const cc = await buildCommandCenter(7) as unknown as Record<string, unknown>;
   assert.match(String(cc.setupRankingBasis), /counts toward each/i);
 });
+
+// Analytics recomputes P&L in USD at contract size; Ruby Memory sums the
+// booked profit_loss. The two "Net P&L" figures differ for the same book, so
+// Ruby Memory says what its figure is.
+test("Net P&L names its basis: booked demo P&L in demo account units, not Analytics' USD figure", async () => {
+  rows.set(database.paperOrdersTable, [
+    order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2 }),
+  ]);
+  const cc = await buildCommandCenter(7) as unknown as { netPnl: number; netPnlBasis: string };
+  assert.equal(cc.netPnl, 2);
+  assert.match(cc.netPnlBasis, /booked on each closed demo trade, in demo account units/);
+  assert.match(cc.netPnlBasis, /Analytics recomputes P&L in USD/);
+});

@@ -99,13 +99,18 @@ export default function AnalyticsCommandCenter() {
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
             <Stat id="trades"        label="Trades"        v={s.totalTrades.toString()} />
             {/* null = not measured: "—", no colour, and the reason below. */}
-            <Stat id="net-pnl"       label="Net P&L"       v={s.netProfitLoss == null ? "—" : `$${s.netProfitLoss.toFixed(0)}`} tone={s.netProfitLoss == null ? undefined : s.netProfitLoss >= 0 ? "emerald" : "red"} />
+            <Stat id="net-pnl"       label="Net P&L (USD)" v={s.netProfitLoss == null ? "—" : `$${s.netProfitLoss.toFixed(0)}`} tone={s.netProfitLoss == null ? undefined : s.netProfitLoss >= 0 ? "emerald" : "red"} />
             <Stat id="win-rate"      label="Win rate"      v={s.winRate == null ? "—" : `${(s.winRate*100).toFixed(1)}%`} />
             <Stat id="avg-rr"        label="Avg RR"        v={s.averageRr == null ? "—" : `${s.averageRr.toFixed(2)}R`} />
             <Stat id="expectancy"    label="Expectancy"    v={s.expectancy == null ? "—" : `$${s.expectancy.toFixed(2)}`} tone={s.expectancy == null ? undefined : s.expectancy >= 0 ? "emerald" : "red"} />
             <Stat id="profit-factor" label="Profit factor" v={s.profitFactor == null ? "—" : s.profitFactor.toFixed(2)} />
             <Stat id="max-dd"        label="Max DD"        v={s.maxDrawdown == null ? "—" : `$${s.maxDrawdown.toFixed(0)}`} tone={s.maxDrawdown != null && s.maxDrawdown > 0 ? "red" : undefined} />
           </section>
+          {/* What the money figures are: USD at contract size, recomputed from
+              fill prices — not the booked demo P&L Ruby Memory shows. */}
+          {s.pnlCoverage?.note ? (
+            <p className="text-[11px] text-slate-400" data-testid="analytics-pnl-basis">{s.pnlCoverage.note}</p>
+          ) : null}
           {notMeasuredLine(s) ? (
             <p className="text-[11px] text-slate-400" data-testid="analytics-unmeasured">{notMeasuredLine(s)}</p>
           ) : null}
