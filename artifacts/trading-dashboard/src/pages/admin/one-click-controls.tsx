@@ -131,11 +131,14 @@ export function OneClickControlsContent({ embedded = false }: { embedded?: boole
           <CardContent className="p-6 text-center text-muted-foreground text-sm" data-testid="text-one-click-empty">
             {data.isSharedMode === false ? (
               <>
-                No users are listed because account routing is not
-                SHARED_MASTER_MT5 — each user trades through their own MT5
-                bridge, so there are no shared-bridge users to control here.
-                This says nothing about how many users are in the master live
-                access table.
+                No users are listed because platform account routing is not
+                SHARED_MASTER_MT5 (or there is no settings row). This list is
+                built from the platform routing setting only: it does not check
+                per-user routing overrides, so a user whose per-user routing
+                override sends them through the shared master bridge is not
+                listed here, and their one-click permission cannot be managed
+                from this page. This says nothing about how many users are in
+                the master live access table.
               </>
             ) : (
               <>

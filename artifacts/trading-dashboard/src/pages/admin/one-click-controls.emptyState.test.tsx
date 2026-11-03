@@ -35,6 +35,19 @@ describe("OneClickControlsContent — empty list explains the shared-bridge filt
     expect(t).toContain("SHARED_MASTER_MT5");
   });
 
+  it("routing not shared: claims only what was checked (the platform routing setting), not how every user trades", () => {
+    reply = { ok: true, isSharedMode: false, users: [] };
+    render(<OneClickControlsContent embedded />);
+    const t = screen.getByTestId("text-one-click-empty").textContent ?? "";
+    // A per-user accountRoutingOverride of shared_master_mt5 still routes that
+    // user through the shared bridge; the server does not check overrides.
+    expect(t).not.toMatch(/each user trades through their own MT5\s+bridge/);
+    expect(t).not.toMatch(/there are no shared-bridge users/);
+    expect(t).toMatch(/platform routing setting/);
+    expect(t).toMatch(/per-user routing override/);
+    expect(t).toMatch(/no settings row/);
+  });
+
   it("shared routing, nobody listed: says the list excludes users with their own bridge", () => {
     reply = { ok: true, isSharedMode: true, users: [] };
     render(<OneClickControlsContent embedded />);
