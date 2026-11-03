@@ -34,6 +34,40 @@ async function getAnalyticsJson<T>(url: string, action: string, init?: RequestIn
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
 
 const NOT_MEASURED = "not measured";
+const OUT_OF_DATE = "out of date";
+
+/** "2026-10-27 09:00 UTC", or null when the time is missing or unreadable. */
+function utcStamp(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/**
+ * Does the stored snapshot hold the same figures as your closed trades give
+ * when computed now (GET /analytics/drawdown, on the basis its pnlCoverage
+ * note states)? A snapshot is a stored row: one written before contract-size
+ * P&L holds Δprice × lots × 100 figures, and one written before later trades
+ * closed misses them. Its money columns are float4, hence the tolerance.
+ */
+type SnapshotCheck = "checking" | "unchecked" | "matches" | "differs";
+function snapshotCheckOf(
+  s: AnalyticsSnapshot,
+  dd: { isPending: boolean; isError: boolean; data?: DrawdownResponse },
+): SnapshotCheck {
+  if (dd.isPending) return "checking";
+  const live = dd.data;
+  if (dd.isError || !live?.pnlCoverage || !Array.isArray(live.equityCurve)) return "unchecked";
+  const curve = live.equityCurve;
+  const netNow = curve.length ? curve[curve.length - 1]!.equity : 0;
+  const same = (stored: number, now: number) =>
+    Number.isFinite(stored) && Number.isFinite(now) && Math.abs(stored - now) <= Math.max(0.01, Math.abs(now) * 1e-6);
+  return s.totalTrades === live.pnlCoverage.closedTrades
+    && same(s.netProfitLoss, netNow)
+    && same(s.maxDrawdown, live.maxDrawdown)
+    ? "matches" : "differs";
+}
 
 export default function AnalyticsCommandCenter() {
   const qc = useQueryClient();
@@ -60,7 +94,12 @@ export default function AnalyticsCommandCenter() {
 
   const generate = useMutation({
     mutationFn: () => getAnalyticsJson<unknown>("/api/analytics/snapshot", "Computing the analytics snapshot", { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics-snapshot"] }),
+    // Re-read the live equity/drawdown too, so the new snapshot is checked
+    // against trades read at the same time.
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["analytics-snapshot"] });
+      void qc.invalidateQueries({ queryKey: ["analytics-drawdown"] });
+    },
   });
 
   // Auto-generate the first snapshot if the server confirmed none exists. This
@@ -93,8 +132,14 @@ export default function AnalyticsCommandCenter() {
   const coverage = dd.data?.pnlCoverage ?? strat.data?.pnlCoverage ?? null;
   const coverageUnavailable = coverage == null && (dd.isError || dd.isSuccess);
   const pnlNotMeasured = coverage != null && coverage.closedTrades > 0 && coverage.sizedTrades === 0;
-  const money = (v: string) => (pnlNotMeasured ? NOT_MEASURED : v);
-  const moneyTone = (positive: boolean): "emerald" | "red" | undefined => (pnlNotMeasured ? undefined : positive ? "emerald" : "red");
+  // The coverage note describes figures computed now. The tiles come from the
+  // stored snapshot, so they carry it only when they match those figures.
+  const snapshotCheck: SnapshotCheck | null = s ? snapshotCheckOf(s, dd) : null;
+  const snapshotOutOfDate = !pnlNotMeasured && snapshotCheck === "differs";
+  const snapshotTaken = s ? utcStamp(s.createdAt) : null;
+  const money = (v: string) => (pnlNotMeasured ? NOT_MEASURED : snapshotOutOfDate ? OUT_OF_DATE : v);
+  const moneyKnown = !pnlNotMeasured && !snapshotOutOfDate;
+  const moneyTone = (positive: boolean): "emerald" | "red" | undefined => (!moneyKnown ? undefined : positive ? "emerald" : "red");
 
   return (
     <div className="space-y-4 p-4">
@@ -131,12 +176,26 @@ export default function AnalyticsCommandCenter() {
             <Stat id="avg-rr"        label="Avg RR"        v={`${s.averageRr.toFixed(2)}R`} />
             <Stat id="expectancy"    label="Expectancy"    v={money(`$${s.expectancy.toFixed(2)}`)} tone={moneyTone(s.expectancy >= 0)} />
             <Stat id="profit-factor" label="Profit factor" v={money(s.profitFactor === 999 ? "∞" : s.profitFactor.toFixed(2))} />
-            <Stat id="max-dd"        label="Max DD"        v={money(`$${s.maxDrawdown.toFixed(0)}`)} tone={pnlNotMeasured ? undefined : "red"} />
+            <Stat id="max-dd"        label="Max DD"        v={money(`$${s.maxDrawdown.toFixed(0)}`)} tone={moneyKnown ? "red" : undefined} />
           </section>
+
+          <p className={`text-[11px] ${snapshotCheck === "differs" || snapshotCheck === "unchecked" ? "text-amber-300" : "text-slate-400"}`}
+            data-testid="analytics-snapshot-asof">
+            {`These figures are from your stored analytics snapshot${snapshotTaken ? ` taken ${snapshotTaken}` : " (its time was not recorded)"}`}
+            {snapshotCheck === "matches"
+              ? ". They match your closed trades as computed now."
+              : snapshotCheck === "differs"
+                ? `. They no longer match your closed trades as computed now (${dd.data?.pnlCoverage?.closedTrades ?? "?"} closed trades), so its money figures are shown as out of date. Use Recompute snapshot to update them.`
+                : snapshotCheck === "unchecked"
+                  ? ". Whether they match your closed trades now could not be checked."
+                  : ". Checking them against your closed trades now…"}
+          </p>
 
           <p className={`text-[11px] ${pnlNotMeasured || coverageUnavailable ? "text-amber-300" : "text-slate-400"}`} data-testid="analytics-pnl-coverage">
             {coverage
-              ? coverage.note
+              // Unless the snapshot was checked against it, the note covers
+              // only the figures computed now (charts and tables below).
+              ? snapshotCheck === "matches" ? coverage.note : `Computed now from your closed trades: ${coverage.note}`
               : coverageUnavailable
                 ? "Which closed trades could be sized in USD could not be loaded, so it is not known whether these money figures cover every closed trade."
                 : "Checking which closed trades could be sized in USD…"}
@@ -158,7 +217,9 @@ export default function AnalyticsCommandCenter() {
           <div className="grid gap-3 lg:grid-cols-3">
             {pnlNotMeasured && coverage
               ? <Unavailable text={`Risk Exposure: ${coverage.note}`} />
-              : <RiskExposureGraph snapshot={s} />}
+              : snapshotOutOfDate
+                ? <Unavailable text="Risk Exposure: the stored snapshot's figures are out of date. Use Recompute snapshot to update them." />
+                : <RiskExposureGraph snapshot={s} />}
             <ConsistencyTrendCard snapshot={s} />
             {sess.isError
               ? <LoadError what="Session performance" error={sess.error} />
@@ -181,8 +242,8 @@ export default function AnalyticsCommandCenter() {
           </section>
 
           <section className="grid gap-3 sm:grid-cols-2">
-            <Highlight id="strongest-strategy" label="Strongest strategy"         v={pnlNotMeasured ? NOT_MEASURED : s.strongestStrategy} tone="emerald" />
-            <Highlight id="weakest-strategy"   label="Weakest strategy"           v={pnlNotMeasured ? NOT_MEASURED : s.weakestStrategy} tone="red" />
+            <Highlight id="strongest-strategy" label="Strongest strategy"         v={moneyKnown ? s.strongestStrategy : money("")} tone="emerald" />
+            <Highlight id="weakest-strategy"   label="Weakest strategy"           v={moneyKnown ? s.weakestStrategy : money("")} tone="red" />
             <Highlight id="strongest-market-condition" label="Strongest market condition" v={s.strongestMarketCondition} tone="emerald" />
             <Highlight id="weakest-market-condition"   label="Weakest market condition"   v={s.weakestMarketCondition} tone="red" />
           </section>
