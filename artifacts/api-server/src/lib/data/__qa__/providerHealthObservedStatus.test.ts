@@ -307,3 +307,25 @@ test("TD + Finnhub hybrid in a composite: a quote Polygon served means Finnhub (
   assert.equal(td.status, "healthy");
   assert.doesNotMatch(td.statusReason, /tried before/i, td.statusReason);
 });
+
+test("TD + Finnhub hybrid: Finnhub is counted only over the quote requests it could be sent, and Twelve Data only over candles", async () => {
+  process.env.TWELVEDATA_API_KEY = "td-key-0000";
+  process.env.FINNHUB_API_KEY = "fh-key-1234";
+  process.env.POLYGON_API_KEY = "pg-key-1111";
+  assistantName = "composite(twelve_data,polygon)";
+  routerPlan = (leg) => leg === "quote"
+    ? { ok: true, primaryProvider: "assistant_real:polygon", attempts: [mt5Miss, { provider: "assistant_real:polygon", ok: true, reason: null, ms: 25 }] }
+    : { ok: true, primaryProvider: "assistant_real:twelve_data", attempts: [mt5Miss, { provider: "assistant_real:twelve_data", ok: true, reason: null, ms: 20 }] };
+  const snap = await getProviderHealthSnapshot();
+  const fh = byId(snap, "finnhub");
+  assert.equal(fh.status, "failing", fh.statusReason);
+  // 6 quote requests could reach Finnhub; the 6 candle requests never could.
+  assert.doesNotMatch(fh.statusReason, /any of the 12/i, fh.statusReason);
+  assert.match(fh.statusReason, /did not answer any of the 6 self-test requests/i, fh.statusReason);
+  assert.match(fh.statusReason, /not used for candle requests, so the other 6 were never sent to it/i, fh.statusReason);
+  const td = byId(snap, "twelve_data");
+  assert.equal(td.status, "healthy");
+  assert.doesNotMatch(td.statusReason, /of the 12/i, td.statusReason);
+  assert.match(td.statusReason, /answered 6 of the 6 self-test requests/i, td.statusReason);
+  assert.match(td.statusReason, /not used for quote requests, so the other 6 were never sent to it/i, td.statusReason);
+});
