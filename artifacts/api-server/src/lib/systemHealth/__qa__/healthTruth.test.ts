@@ -16,7 +16,13 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-const state = { dbDown: false, insertFails: false };
+const state = { dbDown: false, insertFails: false, logScanFails: false, frontendLeaks: 0 };
+
+// The SQL text of a drizzle `sql` template, to route the two secret-scan queries.
+function sqlText(q: unknown): string {
+  const chunks = (q as { queryChunks?: Array<{ value?: unknown }> })?.queryChunks ?? [];
+  return chunks.map((c) => (Array.isArray(c?.value) ? c.value.join("") : "")).join("");
+}
 
 const EXPECTED_TABLES = [
   "trades", "signals", "alerts", "safety_core",
@@ -43,8 +49,11 @@ function chain(resolve: () => Promise<unknown>): unknown {
 }
 
 const fakeDb = {
-  execute: async () => {
+  execute: async (q: unknown) => {
     if (state.dbDown) throw new Error("connect ECONNREFUSED (fixture)");
+    const text = sqlText(q);
+    if (/from notification_logs where message/.test(text) && state.logScanFails) throw new Error("notification_logs scan failed (fixture)");
+    if (/from notifications where message/.test(text)) return { rows: [{ c: state.frontendLeaks }] };
     return { rows: ROWS };
   },
   select: () => chain(async () => {
@@ -152,5 +161,36 @@ test("(c) a 2xx probe is reported as reachability only, with no unmeasured claim
     }
     if (build === "DD") assert.equal(sub.checkScope, "IN_PROCESS");
     else if (sub.status === "OK") assert.equal(sub.checkScope, "REACHABILITY_ONLY", build);
+  }
+});
+
+test("(d) secret-shaped strings found by the half of the scan that ran fail the check, even when the other half could not run", async (t) => {
+  state.dbDown = false; state.insertFails = false; state.logScanFails = true; state.frontendLeaks = 3;
+  try {
+    stubFetch(t);
+    const r = await runHealthCheck();
+    assert.equal(r.secretSafetyStatus.frontendScanChecked, true);
+    assert.equal(r.secretSafetyStatus.logScanChecked, false);
+    assert.equal(r.secretSafetyStatus.secretsDetectedInFrontend, 3);
+    assert.ok(r.errors.includes("secret redaction warnings — investigate"), r.errors.join(" | "));
+    assert.equal(r.overallStatus, "FAILED");
+    // The unrun half is still reported, and names which half it was.
+    assert.ok(r.warnings.some((w) => /notification log/.test(w) && /could not run/.test(w)), r.warnings.join(" | "));
+  } finally {
+    state.logScanFails = false; state.frontendLeaks = 0;
+  }
+});
+
+test("(e) the half that ran found nothing and the other could not run: a warning, not a pass and not an error", async (t) => {
+  state.dbDown = false; state.insertFails = false; state.logScanFails = true; state.frontendLeaks = 0;
+  try {
+    stubFetch(t);
+    const r = await runHealthCheck();
+    assert.equal(r.secretSafetyStatus.redactionWorking, false);
+    assert.ok(!r.errors.includes("secret redaction warnings — investigate"), r.errors.join(" | "));
+    assert.ok(r.warnings.some((w) => /could not run/.test(w)), r.warnings.join(" | "));
+    assert.notEqual(r.overallStatus, "HEALTHY");
+  } finally {
+    state.logScanFails = false; state.frontendLeaks = 0;
   }
 });

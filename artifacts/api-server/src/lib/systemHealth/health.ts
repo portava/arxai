@@ -386,7 +386,11 @@ export async function probeSecretSafety(): Promise<SecretSafetyStatus> {
   const scanChecked = inFrontend !== null && inLogs !== null;
   const ff = inFrontend ? (inFrontend.rows[0] as { c: number } | undefined)?.c ?? 0 : 0;
   const lf = inLogs ? (inLogs.rows[0] as { c: number } | undefined)?.c ?? 0 : 0;
-  if (!scanChecked) warnings.push("secret-safety scan could not run (database query failed), so redaction is not verified");
+  if (!scanChecked) {
+    warnings.push(inFrontend === null && inLogs === null
+      ? "secret-safety scan could not run (database query failed), so redaction is not verified"
+      : `secret-safety scan of ${inFrontend === null ? "notifications" : "notification logs"} could not run (database query failed), so redaction is not fully verified`);
+  }
   if (ff > 0) warnings.push(`possible secret-shaped strings in ${ff} notification messages`);
   if (lf > 0) warnings.push(`possible secret-shaped strings in ${lf} notification log messages`);
   return {
@@ -452,8 +456,21 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
   if (!databaseStatus.connected) errors.push(`database not reachable: ${databaseStatus.migrationWarnings[0] ?? "query failed"}`);
   if (databaseStatus.missingTables.length) warnings.push(`missing tables: ${databaseStatus.missingTables.join(",")}`);
   if (endpointStatus.failed > 0) warnings.push(`${endpointStatus.failed} endpoint(s) failing`);
-  if (!secretSafetyStatus.scanChecked) warnings.push("secret-safety scan could not run — redaction not verified");
-  else if (!secretSafetyStatus.redactionWorking) errors.push("secret redaction warnings — investigate");
+  // Secret scan, per half: a half that ran and found secret-shaped strings is
+  // an error whether or not the other half ran; a half that could not run is
+  // a warning (redaction not verified), never a pass.
+  const ss = secretSafetyStatus;
+  const foundInCheckedHalf =
+    (ss.frontendScanChecked && ss.secretsDetectedInFrontend > 0) || (ss.logScanChecked && ss.secretsDetectedInLogs > 0);
+  if (!ss.scanChecked) {
+    const unrun = !ss.frontendScanChecked && ss.logScanChecked ? "notifications"
+      : ss.frontendScanChecked && !ss.logScanChecked ? "notification logs"
+      : null;
+    warnings.push(unrun
+      ? `secret-safety scan of ${unrun} could not run — redaction not fully verified`
+      : "secret-safety scan could not run — redaction not verified");
+  }
+  if (foundInCheckedHalf || (ss.scanChecked && !ss.redactionWorking)) errors.push("secret redaction warnings — investigate");
   if (safetyStatus.hardBlocks.length) errors.push(`${safetyStatus.hardBlocks.length} hard safety block(s) active`);
   const criticalUnread = performanceStatus.latestNotificationCriticalCount;
   if (criticalUnread !== null && criticalUnread > 0)
