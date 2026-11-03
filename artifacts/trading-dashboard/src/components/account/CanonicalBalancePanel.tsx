@@ -19,6 +19,11 @@
 //     equity and Equity after reserve are marked "incomplete — floating P/L
 //     not included", and Available (which subtracts open-trade losses) says
 //     those losses are not included.
+//   - floatingPnLUnknownCount > 0 with a non-null floatingPnL: the server sums
+//     only the open trades whose P/L is known, so the unknown ones are left
+//     out. Floating P/L, Live equity and Equity after reserve say "incomplete
+//     — P/L of N of M open trades not included", and Available says those
+//     trades' losses are not included.
 //   - Open trades is only a count when the server read a live snapshot; with
 //     no balance, or no live snapshot (floatingPnL null and count 0), it
 //     reads "—", never a 0 nobody counted.
@@ -94,6 +99,14 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
   const floating = signedMoney(live?.floatingPnL ?? null);
   const realized = signedMoney(live?.realizedPnL ?? null);
   const floatingUnavailable = live != null && live.floatingPnL == null;
+  // Some (not all) open trades' P/L unknown: floatingPnL is the known part only.
+  const unknownPLCount =
+    livePositionsRead && live != null && live.floatingPnL != null
+      ? Math.max(0, Math.floor(live.floatingPnLUnknownCount ?? 0))
+      : 0;
+  const floatingPartial = unknownPLCount > 0;
+  const openCount = live?.openTradeCount ?? 0;
+  const partialOf = `${unknownPLCount} of ${Math.max(openCount, unknownPLCount)} open trade${Math.max(openCount, unknownPLCount) === 1 ? "" : "s"}`;
   const pendingCount = live?.realizedPnLPendingCount ?? 0;
   const pending = pendingCount > 0;
   const pendingSub = pending ? `incomplete — ${pendingCount} pending` : undefined;
@@ -104,6 +117,7 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
   const equityGaps: string[] = [];
   if (pending) equityGaps.push(`${pendingCount} realized P/L pending`);
   if (floatingUnavailable && livePositionsRead) equityGaps.push("floating P/L not included");
+  if (floatingPartial) equityGaps.push(`P/L of ${partialOf} not included`);
   const equitySubParts: string[] = [];
   if (equityGaps.length > 0) equitySubParts.push(`incomplete — ${equityGaps.join("; ")}`);
   if (live && !livePositionsRead) equitySubParts.push("no open P/L included");
@@ -130,13 +144,19 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
         <Tile
           label="Available"
           value={money(live?.availableBalance ?? null)}
-          sub={floatingUnavailable ? "open-trade losses not included" : undefined}
+          sub={
+            floatingUnavailable
+              ? "open-trade losses not included"
+              : floatingPartial
+                ? `losses of ${unknownPLCount} open trade${unknownPLCount === 1 ? "" : "s"} not included`
+                : undefined
+          }
         />
         <Tile
           label="Floating P/L"
           value={floating.text}
           tone={floating.tone}
-          sub={floatingUnavailable ? "unavailable" : undefined}
+          sub={floatingUnavailable ? "unavailable" : floatingPartial ? `incomplete — ${partialOf} not included` : undefined}
         />
         <Tile label="Realized P/L" value={realized.text} tone={realized.tone} sub={pendingSub} />
         <Tile label="Reserved risk" value={money(live?.marginUsed ?? null)} sub="ARX reserve, not broker margin" />
@@ -161,6 +181,12 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
           trade{live.openTradeCount === 1 ? "" : "s"} could not be read, so it is not included. No estimate is shown in its place.
         </p>
       )}
+      {floatingPartial && (
+        <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-floating-partial-note">
+          Floating P/L, live equity and equity after reserve are incomplete: the P/L of {partialOf} could not be read,
+          so it is not included. No estimate is shown in its place.
+        </p>
+      )}
       {pending && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-pnl-pending-note">
           Realized P/L and live equity are incomplete: {pendingCount} closed trade{pendingCount === 1 ? " is" : "s are"} awaiting
@@ -174,7 +200,9 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       )}
       {status === "unavailable" && (
         <p className="mt-2 text-[11px] text-txt-muted" data-testid="canonical-balance-unavailable-note">
-          Live balance is not available for this account mode.
+          {livePositionsRead
+            ? "Live balance is not confirmed current: part or all of the live data behind it was missing at the last read."
+            : "Live balance is not available for this account mode."}
         </p>
       )}
     </div>

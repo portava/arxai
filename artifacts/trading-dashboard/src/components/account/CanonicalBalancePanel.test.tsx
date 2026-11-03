@@ -142,3 +142,53 @@ describe("CanonicalBalancePanel source truth", () => {
     expect(within(tile("Open trades")).getByText("1")).toBeTruthy();
   });
 });
+
+// Round 3 review: openPL sums only the positions whose P/L is known, so with
+// one known (+40) and one unknown open trade the server sends floatingPnL 40
+// (not null). The panel showed "+$40.00" and an unmarked Live equity. The
+// block now carries floatingPnLUnknownCount; any unknown trade marks the
+// figures built from floating P/L incomplete, naming how many.
+describe("CanonicalBalancePanel partly unknown floating P/L", () => {
+  const partial: InvestorLiveBalance = {
+    ...base,
+    realizedPnL: 0,
+    floatingPnL: 40,
+    liveEquity: 1040,
+    marginUsed: 0,
+    freeMargin: 1040,
+    availableBalance: 1000,
+    openTradeCount: 2,
+    realizedPnLPendingCount: 0,
+    floatingPnLUnknownCount: 1,
+  };
+
+  it("marks Floating P/L, Live equity, Equity after reserve and Available incomplete for 1 of 2 trades", () => {
+    render(<CanonicalBalancePanel live={partial} />);
+    expect(within(tile("Floating P/L")).getByText("+$40.00")).toBeTruthy();
+    expect(within(tile("Floating P/L")).getByText(/incomplete.*1 of 2 open trades/i)).toBeTruthy();
+    expect(within(tile("Live equity")).getByText(/incomplete.*1 of 2 open trades.*not included/i)).toBeTruthy();
+    expect(within(tile("Equity after reserve")).getByText(/incomplete.*1 of 2 open trades.*not included/i)).toBeTruthy();
+    expect(within(tile("Available")).getByText(/losses of 1 open trade not included/i)).toBeTruthy();
+    const note = screen.getByTestId("canonical-balance-floating-partial-note");
+    expect(note.textContent).toMatch(/1 of 2 open trades/);
+    expect(note.textContent).toMatch(/not included/);
+    expect(screen.queryByTestId("canonical-balance-floating-missing-note")).toBeNull();
+  });
+
+  it("says nothing extra when every open trade's P/L is known", () => {
+    render(<CanonicalBalancePanel live={{ ...partial, floatingPnLUnknownCount: 0 }} />);
+    expect(screen.queryByText(/incomplete/i)).toBeNull();
+    expect(screen.queryByText(/not included/i)).toBeNull();
+    expect(screen.queryByTestId("canonical-balance-floating-partial-note")).toBeNull();
+  });
+
+  it("an unavailable Live Shared balance gives the live reason, not 'not available for this account mode'", () => {
+    render(<CanonicalBalancePanel live={{ ...partial, freshness: { status: "unavailable", lastUpdatedAt: null, ageMs: null } }} />);
+    const note = screen.getByTestId("canonical-balance-unavailable-note").textContent ?? "";
+    expect(note).not.toMatch(/for this account mode/);
+    expect(note).toMatch(/not confirmed current/i);
+    cleanup();
+    render(<CanonicalBalancePanel live={{ ...partial, source: "demo", floatingPnL: null, openTradeCount: 0, freshness: { status: "unavailable", lastUpdatedAt: null, ageMs: null } }} />);
+    expect(screen.getByTestId("canonical-balance-unavailable-note").textContent).toMatch(/not available for this account mode/);
+  });
+});
