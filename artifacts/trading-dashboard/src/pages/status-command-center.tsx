@@ -52,8 +52,10 @@ function toAskContext(ctx: RuntimeContext): AskContext {
     route: ctx.route,
     selectedSymbol: ctx.selectedSymbol ?? undefined,
     safetyStatuses: ctx.activeSafetyLocks,
-    // An unread bridge summary is "unknown", never "disconnected".
-    mt5Hint: ctx.bridge === null ? "unknown" : ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
+    // An unread bridge summary, or a summary that could not read the EA
+    // connection (bridgeMode "unknown"), is "unknown", never "deferred" or
+    // "disconnected".
+    mt5Hint: ctx.bridge === null || ctx.bridge.bridgeMode === "unknown" ? "unknown" : ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
     tradingModeHint: ctx.paperOnly ? "paper" : ctx.simulatorMode ? "simulator" : ctx.tradingMode === "broker-readonly" ? "broker-readonly" : "unknown",
   } as AskContext;
 }
