@@ -92,12 +92,30 @@ router.post("/trade-management/:id/partial-close", async (req, res) => {
   const parsed = PartialCloseBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: "closePct must be between 1 and 99" }); return; }
   const closePct = parsed.data.closePct ?? 50;
+  const snap = await evaluateTrade(trade);
+  // No quote: the closed part would leave at an unknown price with no result.
+  // Refuse, as close and trail do, instead of removing it silently.
+  if (snap.currentPrice == null) {
+    res.status(409).json({ error: "NO_CURRENT_QUOTE", message: snap.priceUnavailableReason });
+    return;
+  }
   const newLot = Math.max(0.01, Number((trade.lot * (1 - closePct / 100)).toFixed(2)));
   const updated = await manage(res, trade, { kind: "PARTIAL_CLOSE", newLot });
   if (!updated) return;
+  // The closed part's result from the same snapshot (floating P&L scales with
+  // the lot). The legacy trade row keeps one P&L, written at the final close,
+  // so this result is reported here but not recorded; the reply says so.
+  const closedLot = Number((trade.lot - newLot).toFixed(2));
+  const partPnl = snap.floatingPnl == null || !(trade.lot > 0)
+    ? null
+    : Number(((snap.floatingPnl * closedLot) / trade.lot).toFixed(2));
+  const partResult = partPnl == null
+    ? `its result could not be sized (${snap.pnlUnavailableReason ?? "P&L unavailable"})`
+    : `its result was ${partPnl < 0 ? "-" : "+"}$${Math.abs(partPnl).toFixed(2)}`;
   res.json({
     success: true,
-    message: `Closed ${closePct}% — lot reduced from ${trade.lot} to ${newLot} (mock).`,
+    message: `Closed ${closePct}% — lot reduced from ${trade.lot} to ${newLot} at ${snap.currentPrice.toFixed(5)}. `
+      + `For the ${closedLot} lot closed, ${partResult}; this is not added to this trade's recorded P&L (mock).`,
     trade: serialiseTrade(updated),
   });
 });
