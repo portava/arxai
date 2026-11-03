@@ -111,3 +111,28 @@ test("with no tracked outcomes nothing is named best or worst", () => {
     mock.timers.reset();
   }
 });
+
+// startedAt is when the tournament was started. Shadow mode can be stopped
+// and restarted without touching it, so the page cannot say "running since
+// <startedAt>" from it alone; the results also return when shadow mode (which
+// the tournament collects decisions from) last started.
+test("results say when shadow mode last started, separately from the tournament start", () => {
+  mock.timers.enable({ apis: ["setInterval", "Date"], now: Date.parse("2026-10-03T09:30:00Z") });
+  try {
+    sm.startTournament();
+    const first = sm.tournamentResults() as Record<string, unknown>;
+    assert.equal(first.startedAt, "2026-10-03T09:30:00.000Z");
+    assert.equal(first.shadowStartedAt, "2026-10-03T09:30:00.000Z");
+    mock.timers.tick(30 * 60_000);
+    sm.stopShadowMode();
+    mock.timers.tick(4 * 60 * 60_000);
+    sm.startShadowMode();
+    const t = sm.tournamentResults() as Record<string, unknown>;
+    assert.equal(t.running, true);
+    assert.equal(t.startedAt, "2026-10-03T09:30:00.000Z", "the tournament start is unchanged");
+    assert.equal(t.shadowStartedAt, "2026-10-03T14:00:00.000Z", "shadow mode restarted at 14:00");
+  } finally {
+    sm.stopShadowMode();
+    mock.timers.reset();
+  }
+});

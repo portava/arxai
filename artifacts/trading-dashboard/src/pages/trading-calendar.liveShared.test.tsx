@@ -81,6 +81,46 @@ describe("trading calendar — LIVE_SHARED", () => {
     expect(document.body.textContent).not.toMatch(/closed live trades recorded against your account/i);
   });
 
+  // Which ledger the page reads is only known once the calendar reply says
+  // whether it is withheld (notShownHere). While it loads, or after it fails,
+  // the page used to fall back to "From your simulated orders…" for a
+  // LIVE_SHARED account — a ledger the server never reads for it — and kept
+  // it next to "could not be loaded".
+  it("a failed calendar load names no ledger (no 'simulated orders' source note)", async () => {
+    renderPage((url) => {
+      if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "DEMO" }, perUserTradingMode: { mode: "LIVE" } });
+      if (url.startsWith("/api/performance/calendar")) return json({ error: "boom" }, 500);
+      return json({}, 404);
+    });
+    await waitFor(() => expect(screen.getByTestId("calendar-load-error").textContent).toMatch(/could not be loaded/i));
+    expect(screen.queryByTestId("calendar-source-note")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/simulated orders/i);
+    expect(document.body.textContent).not.toMatch(/Paper Autopilot and simulated trade tickets/);
+  });
+
+  it("a failed live calendar load names no ledger (no 'closed live trades' source note)", async () => {
+    renderPage((url) => {
+      if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "LIVE" } });
+      if (url.startsWith("/api/me/performance-calendar")) return json({ error: "boom" }, 500);
+      return json({}, 404);
+    });
+    await waitFor(() => expect(screen.getByTestId("calendar-load-error").textContent).toMatch(/could not be loaded/i));
+    expect(screen.queryByTestId("calendar-source-note")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/from your closed live trades/i);
+    expect(document.body.textContent).not.toMatch(/closed live trades recorded against your account/i);
+  });
+
+  it("while the calendar loads it says it is checking, not which ledger it reads", async () => {
+    renderPage((url) => {
+      if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "DEMO" } });
+      if (url.startsWith("/api/performance/calendar")) return new Promise<Response>(() => {});
+      return json({}, 404);
+    });
+    await waitFor(() => expect(screen.getByText(/Checking which trades this calendar reads/)).toBeTruthy());
+    expect(screen.queryByTestId("calendar-source-note")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/simulated orders/i);
+  });
+
   it("day detail: no invented rating, profit factor or win rate", async () => {
     renderPage((url) => {
       if (url.startsWith("/api/me/trading/mode")) return json({ ok: true, envelope: { tradingMode: "DEMO" } });

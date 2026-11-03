@@ -40,7 +40,7 @@ export function generateInsights(i: InsightInputs): { insights: string[]; nextBe
   if (i.tradeCallsWithoutOrder > 0 && i.tradeCalls > 0) {
     // Not "blocked by safety filters": no safety-filter outcome is stored per
     // decision, so the reason a call has no order is unknown.
-    insights.push(`${i.tradeCallsWithoutOrder} of ${i.tradeCalls} AI trade calls have no demo order. Why is not recorded per call (a safety filter, a setting, or it was never sent), so this is not a count of safety blocks.`);
+    insights.push(`${i.tradeCallsWithoutOrder} of ${i.tradeCalls} AI trade calls have no paper order. Why is not recorded per call (a safety filter, a setting, or it was never sent), so this is not a count of safety blocks.`);
   }
   if (i.winRate >= 60 && i.netPnl > 0) {
     insights.push(`Paper win rate is healthy at ${i.winRate.toFixed(1)}% with positive net P&L.`);

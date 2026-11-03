@@ -23,20 +23,20 @@ import { readAccountLivePosture } from "../systemHealth/livePosture.js";
 import { bookedPnlOf, outcomeOf, unsizedPnlNote } from "./aggregator.js";
 
 /**
- * What netPnl is. It sums the P&L the paper venue booked on each closed demo
+ * What netPnl is. It sums the P&L the paper venue booked on each closed paper
  * order (profit_loss). Every close path (ticket, manual, stop/target
  * settlement, the paper execution monitor) now books in USD at the contract
  * size; rows booked before contract sizing may hold the earlier move × lots ×
  * 100 figure, and the row does not record which. A close the venue could not
  * size holds a 0 placeholder: it is left out of netPnl (bookedPnlOf), counted
  * in unsizedClosedTrades and named in the line built from this basis. The
- * demo balance counts such a close at the paper risk model when it lost and
+ * paper account balance counts such a close at the paper risk model when it lost and
  * as 0 when it won (paperBookReader.bookedRealizedOf). Analytics recomputes each
  * trade from its fill prices and leaves out trades it cannot size, so the two
  * boards' Net P&L can differ for the same trades.
  */
 export const NET_PNL_BASIS =
-  "Sum of the P&L the paper venue booked on each closed demo trade. Closes are now booked in USD at the instrument's contract size; closes booked before that may carry the earlier price move × lots × 100 figure (the trade does not record which). A close that could not be sized for the instrument is left out of this sum, because its P&L is not known; your demo balance counts such a close at the paper risk model when it lost and as 0 when it won. Analytics recomputes each trade in USD at contract size from its entry and exit prices, so its Net P&L can differ.";
+  "Sum of the P&L the paper venue booked on each closed paper trade. Closes are now booked in USD at the instrument's contract size; closes booked before that may carry the earlier price move × lots × 100 figure (the trade does not record which). A close that could not be sized for the instrument is left out of this sum, because its P&L is not known; your paper account balance counts such a close at the paper risk model when it lost and as 0 when it won. Analytics recomputes each trade in USD at contract size from its entry and exit prices, so its Net P&L can differ.";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // Learning memory (edges / mistake patterns) is the caller's own too.
@@ -134,9 +134,10 @@ export async function buildCommandCenter(userId: number) {
   const avgRiskScore = decisions.length ? decisions.reduce((a, d) => a + d.riskScore, 0) / decisions.length : 0;
   const avgEdgeScore = edges.length ? edges.reduce((a, e) => a + e.edgeScore, 0) / edges.length : 0;
 
-  // Not-opened symbols over the latest 20 paper autopilot cycles. The cycle's
-  // paper_trades_rejected counts AI holds, the daily loss limit, sniper skips
-  // and execution refusals alike, so this is not a count of safety blocks.
+  // Held / skipped / refused symbol-timeframe checks over the latest 20 paper
+  // autopilot cycles. The cycle's paper_trades_rejected counts AI holds, the
+  // daily loss limit, sniper skips and execution refusals alike (not checks
+  // that threw), so this is not a count of safety blocks.
   const safetyBlockTotal = recentCycles.reduce((a, c) => a + c.paperTradesRejected, 0);
 
   // Improvement over time is not measured. A strategy edge keeps only its
@@ -207,7 +208,7 @@ export async function buildCommandCenter(userId: number) {
       tradeCallsWithoutOrder,
       /** Not measured: no safety-filter outcome is stored per decision. */
       blockedCount: null,
-      blockedCountScope: "Not recorded: ARX does not store a safety-filter outcome per AI decision, so how many were blocked by a safety filter is unknown. tradeCallsWithoutOrder counts trade calls with no demo order, for any reason.",
+      blockedCountScope: "Not recorded: ARX does not store a safety-filter outcome per AI decision, so how many were blocked by a safety filter is unknown. tradeCallsWithoutOrder counts trade calls with no paper order, for any reason.",
       avgConfidence: Number(avgConfidence.toFixed(2)),
       avgRiskScore: Number(avgRiskScore.toFixed(2)),
       avgEdgeScore: Number(avgEdgeScore.toFixed(2)),
@@ -229,7 +230,7 @@ export async function buildCommandCenter(userId: number) {
       wideSpreadBlocks: 0,
       staleDataBlocks: 0,
       highRiskBlocks: safetyBlockTotal,
-      highRiskBlocksBasis: "Not a count of high-risk blocks: it sums, over your latest 20 paper autopilot cycles, every symbol a cycle did not open a trade for (the AI decided to hold, the daily paper loss limit, a sniper-filter skip or a paper-execution refusal). Ordinary AI holds are included, so it is not a count of safety blocks.",
+      highRiskBlocksBasis: "Not a count of high-risk blocks: it sums, over your latest 20 paper autopilot cycles, each symbol/timeframe check that did not open a trade because the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it or paper execution refused it. Ordinary AI holds are included, so it is not a count of safety blocks. Checks that failed with an error are not counted.",
     },
     insights: insightOut.insights,
     nextBestActions: insightOut.nextBestActions,

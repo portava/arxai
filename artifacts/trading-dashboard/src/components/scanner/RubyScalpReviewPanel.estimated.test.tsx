@@ -74,6 +74,29 @@ describe("Journal & Lessons — results graded from an estimate say so", () => {
     expect(within(bySymbol("AUDUSD")).queryByText(/estimated/)).toBeNull();
   });
 
+  // rubyWarnedCorrectly is derived from the result graded from the last
+  // floating reading. A leg last read at -$2 that closed at +$1 must not be
+  // told Ruby's warning "matched what happened".
+  it("the warning line on an ESTIMATED row says it is going by the last reading, not what happened", async () => {
+    reviewsFn.mockResolvedValue({
+      reviews: [
+        review({ id: 1, symbol: "EURUSD", result: "LOSS", plQuality: "ESTIMATED", lastFloatingPl: -2, rubyWarnedCorrectly: true }),
+        review({ id: 2, symbol: "GBPUSD", result: "WIN", plQuality: "ESTIMATED", lastFloatingPl: 2, rubyWarnedCorrectly: false }),
+        review({ id: 3, symbol: "AUDUSD", result: "LOSS", plQuality: "KNOWN", realizedPl: -2, lastFloatingPl: null, rubyWarnedCorrectly: true }),
+      ],
+    });
+    personalityFn.mockResolvedValue({ symbols: [] });
+    render(withClient(<RubyScalpReviewPanel />));
+    fireEvent.click(screen.getByTestId("ruby-scalp-reviews-collapse"));
+    await waitFor(() => expect(screen.getAllByTestId("scalp-review-row")).toHaveLength(3));
+    const rows = screen.getAllByTestId("scalp-review-row");
+    const bySymbol = (sym: string) => rows.find((r) => r.getAttribute("data-symbol") === sym)!;
+    expect(bySymbol("EURUSD").textContent).not.toMatch(/matched what happened/);
+    expect(bySymbol("EURUSD").textContent).toMatch(/warning matched the last reading before the close \(estimated\)/);
+    expect(bySymbol("GBPUSD").textContent).toMatch(/Going by the last reading before the close, this one didn't follow .*'s read \(estimated\)/);
+    expect(bySymbol("AUDUSD").textContent).toMatch(/warning matched what happened\./);
+  });
+
   it("the per-market win share is labelled as estimated", async () => {
     reviewsFn.mockResolvedValue({ reviews: [] });
     personalityFn.mockResolvedValue({

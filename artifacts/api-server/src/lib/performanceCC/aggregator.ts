@@ -787,14 +787,28 @@ type AutopilotCycleRow = typeof autopilotCyclesTable.$inferSelect;
 
 /**
  * What safety_blocks_today counts. It sums autopilot_cycles.paper_trades_rejected,
- * which the paper autopilot increments for every symbol a cycle did not open
- * a trade for (autopilotService: DAILY_LOSS_LIMIT, AA_HOLD, any sniper result
- * other than PASS, any paper-execution refusal). Ordinary AI holds are the
- * bulk of it, so the field name is kept for compatibility and this says what
- * it is.
+ * which the paper autopilot increments once per symbol/timeframe check that
+ * ended without a trade for one of four reasons (autopilotService:
+ * DAILY_LOSS_LIMIT, AA_HOLD, any sniper result other than PASS, any
+ * paper-execution refusal). A check that threw (its catch records the error
+ * and increments neither counter) is not in it; those are counted in
+ * symbol_checks_failed_today. Ordinary AI holds are the bulk of it, so the
+ * field name is kept for compatibility and this says what it is.
  */
 export const SAFETY_BLOCKS_TODAY_BASIS =
-  "Counts each symbol a paper autopilot cycle did not open a trade for today (UTC): the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks.";
+  "Counts each symbol/timeframe check a paper autopilot cycle ran today (UTC) that did not open a trade because the AI decided to hold, the daily paper loss limit was reached, the sniper filter skipped it, or paper execution refused it. Ordinary AI holds are included, so this is not a count of safety blocks. A check that failed with an error is not counted here; failed checks are counted separately.";
+
+/**
+ * Symbol/timeframe checks in a cycle that failed with an error before reaching
+ * a result. The cycle counts every check it starts (symbols_checked) and ends
+ * each one as opened, held/skipped/refused (paper_trades_rejected) or, when it
+ * throws, neither; so the remainder is the checks that failed. A row without
+ * symbols_checked (or one still running) reports 0, never a negative count.
+ */
+function failedChecksOf(c: AutopilotCycleRow): number {
+  const checked = typeof c.symbolsChecked === "number" && Number.isFinite(c.symbolsChecked) ? c.symbolsChecked : 0;
+  return Math.max(0, checked - (c.paperTradesOpened ?? 0) - (c.paperTradesRejected ?? 0));
+}
 
 /**
  * Summarise autopilot cycles. `wholeDay: true` means `recent` is every cycle
@@ -821,6 +835,8 @@ export function summarizeAutopilotCycles(
       finished_at: last.finishedAt,
       paper_trades_opened: last.paperTradesOpened,
       paper_trades_rejected: last.paperTradesRejected,
+      /** Checks in this cycle that failed with an error (not in paper_trades_rejected). */
+      symbol_checks_failed: failedChecksOf(last),
       paper_trades_closed: last.paperTradesClosed,
       debriefs_triggered: last.debriefsTriggered,
       learning_events_triggered: last.learningEventsTriggered,
@@ -834,8 +850,12 @@ export function summarizeAutopilotCycles(
     paper_trades_opened_today: todayCycles.reduce((a, c) => a + c.paperTradesOpened, 0),
     paper_trades_closed_today: todayCycles.reduce((a, c) => a + c.paperTradesClosed, 0),
     safety_blocks_today: todayCycles.reduce((a, c) => a + c.paperTradesRejected, 0),
-    /** safety_blocks_today counts every not-opened symbol, AI holds included. */
+    /** safety_blocks_today counts checks the AI held, the loss limit stopped, the sniper skipped or execution refused; not failed checks. */
     safety_blocks_today_basis: SAFETY_BLOCKS_TODAY_BASIS,
+    /** Symbol/timeframe checks today that failed with an error (not in safety_blocks_today). */
+    symbol_checks_failed_today: todayCycles.reduce((a, c) => a + failedChecksOf(c), 0),
+    /** Cycles today that ended FAILED (a check, the trade monitor or the cycle itself raised an error). */
+    cycles_failed_today: todayCycles.filter(c => c.status === "FAILED").length,
     /** True when the today counts may be undercounted by the read window (never for a whole-day read). */
     today_counts_capped: todayCountsCapped,
     /** The read window's size, or null when every cycle started today was read. */

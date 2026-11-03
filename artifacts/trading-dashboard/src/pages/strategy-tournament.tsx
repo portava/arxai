@@ -7,7 +7,7 @@ import { Swords } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
 type Row = { strategy: string; sample: number; winRate: number; avgR: number; profitFactor: number | null; expectancy: number; riskAdjustedReturn: number; qualitySetups: number; confidenceAccuracy: number | null; riskDiscipline: number | null; tradeGradeAvg: number };
-type Result = { running: boolean; idleReason?: "NOT_STARTED" | "SHADOW_STOPPED" | null; startedAt: string | null; ranked: Row[]; unranked?: Array<{ strategy: string; decisions: number; reason: string }>; leaderboard: Record<string, string | null> };
+type Result = { running: boolean; idleReason?: "NOT_STARTED" | "SHADOW_STOPPED" | null; startedAt: string | null; shadowStartedAt?: string | null; ranked: Row[]; unranked?: Array<{ strategy: string; decisions: number; reason: string }>; leaderboard: Record<string, string | null> };
 
 async function api(path: string, init?: RequestInit) {
   return fetch(path, { headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init }).then((r) => r.json());
@@ -28,9 +28,25 @@ function utcMinute(iso: string | null): string | null {
 function emptyTableText(r: Result): string {
   if ((r.unranked?.length ?? 0) > 0) return "No strategy has a tracked win or loss yet, so none is ranked.";
   if (r.running) {
+    // startedAt is when the tournament was started. It collects decisions only
+    // while shadow mode runs, and shadow mode can be stopped and restarted
+    // without changing startedAt, so "running since" is claimed only when
+    // shadow mode has run since the tournament started.
     const since = utcMinute(r.startedAt);
-    return `${since ? `Running since ${since}. ` : "Running. "}No strategy has proposed a trade since it started: ` +
-      "the scans so far found no actionable signal, or no scan has run yet.";
+    const shadowSince = utcMinute(r.shadowStartedAt ?? null);
+    const quiet = "the scans so far found no actionable signal, or no scan has run yet.";
+    if (!since) return `Running. No strategy has proposed a trade since it started: ${quiet}`;
+    if (shadowSince) {
+      // startTournament starts shadow mode itself, a moment after startedAt.
+      const continuous = Date.parse(r.shadowStartedAt!) - Date.parse(r.startedAt!) <= 1000;
+      if (continuous) return `Running since ${since}. No strategy has proposed a trade since it started: ${quiet}`;
+      return `Tournament started ${since}; shadow mode, which it collects decisions from, has run since ${shadowSince} ` +
+        "(it was stopped and restarted after the tournament started, and nothing was collected while it was stopped). " +
+        `No strategy has proposed a trade in the scans collected: ${quiet}`;
+    }
+    return `Tournament started ${since}; it is running now. It collects decisions only while shadow mode runs, ` +
+      "and when shadow mode last started was not reported, so time it was stopped may not be covered. " +
+      `No strategy has proposed a trade in the scans collected: ${quiet}`;
   }
   if (r.idleReason === "SHADOW_STOPPED") {
     return "No data yet — the tournament is started, but shadow mode is stopped, so no decisions are being made. Start shadow mode to collect them.";

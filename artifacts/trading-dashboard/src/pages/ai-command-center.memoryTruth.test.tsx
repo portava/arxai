@@ -142,6 +142,58 @@ describe("Ruby Memory tab — truth", () => {
     expect(document.body.textContent).not.toMatch(/demo account units/);
   });
 
+  // Net P&L sums only the sized closes. With an unsized close left out, the
+  // sum's sign is not established (sized +50 plus an unsized stop-out of
+  // unknown size may be a loss), so the figure is not coloured as a gain or a
+  // loss; the figure and the basis that says what was left out stay.
+  it("with an unsized close left out, Net P&L is not coloured as a gain or a loss", async () => {
+    const basis = "Sum of the P&L the paper venue booked on each closed paper trade. 1 of 2 closed trades (V75) could not be sized for the instrument.";
+    for (const netPnl of [50, -20]) {
+      renderTab((url) => {
+        if (url.startsWith("/api/performance/ai-command-center")) {
+          return json({ ok: true, commandCenter: { ...paperCc, netPnl, totalClosedTrades: 2, unsizedClosedTrades: 1, netPnlBasis: basis }, autopilot: {}, currentAccountMode: "PAPER" });
+        }
+        if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [] } });
+        return json({ ok: true, decisionQuality: null });
+      });
+      const tile = await screen.findByTestId("memory-net-pnl");
+      expect(tile.textContent).toBe(netPnl.toFixed(2));
+      expect(tile.className).not.toMatch(/text-success|text-danger/);
+      expect(tile.className).toMatch(/text-txt-secondary/);
+      expect(screen.getByTestId("memory-net-pnl-scope").textContent).toBe(basis);
+      cleanup();
+    }
+    // Every close sized: the sign is the measured one.
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: { ...paperCc, netPnl: 50, totalClosedTrades: 2, unsizedClosedTrades: 0 }, autopilot: {}, currentAccountMode: "PAPER" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [] } });
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-net-pnl")).className).toMatch(/text-success/);
+  });
+
+  // A server that sends no netPnlBasis does not say how its closes were
+  // booked. The fallback must not read as one measured figure: it names the
+  // two scales profit_loss can hold and that an unsized close may be a 0.
+  it("with no server basis, the Net P&L line names the mixed booking scales and unsized 0s", async () => {
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: paperCc, autopilot: {}, currentAccountMode: "PAPER" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [] } });
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-net-pnl")).textContent).toBe("12.50");
+    const scope = screen.getByTestId("memory-net-pnl-scope").textContent ?? "";
+    expect(scope).toMatch(/all closed paper trades/i);
+    expect(scope).toMatch(/did not report how these closes were booked/);
+    expect(scope).toMatch(/USD at the contract size/);
+    expect(scope).toMatch(/price move × lots × 100/);
+    expect(scope).toMatch(/could not be sized may be counted as 0/);
+  });
+
   it("when no closed trade could be sized, Net P&L is not measured (not 0.00) and the curve says why it has no points", async () => {
     const note = "P&L not measured: none of the 2 closed trades (V75) could be sized for the instrument (no contract size or currency conversion).";
     renderTab((url) => {
