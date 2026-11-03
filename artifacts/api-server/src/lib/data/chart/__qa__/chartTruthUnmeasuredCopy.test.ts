@@ -213,3 +213,34 @@ test("a measured deduction scoring 90-99 is named, never 'No measured check foun
   assert.match(bothReason, /Measured concerns: Source Authenticity 0\/100\. Minor measured deductions: Price Precision 95\/100 \(/, bothReason);
   assert.doesNotMatch(bothReason, /No measured check/, bothReason);
 });
+
+test("an unchecked seam earns no credit inside a measured broker failure", () => {
+  const failed = quoteAlignment(2, 2.0001);
+  assert.equal(failed.quoteBinding?.status, "BOUND"); assert.equal(failed.tolerance, "failed");
+  const observed = metric(computeChartTruthScore(fixture(), feed, failed), "symbol_mirror_accuracy");
+  const unchecked = metric(computeChartTruthScore(noSeam(), feed, failed), "symbol_mirror_accuracy");
+  assert.equal(observed.evidenceStatus, "measured"); assert.equal(observed.rawScore, 49);
+  assert.equal(unchecked.evidenceStatus, "measured");
+  // Only the observed broker half is scored, at half weight: (100 - 40) / 2.
+  assert.equal(unchecked.rawScore, 30, unchecked.detail);
+  assert.ok(unchecked.rawScore! < observed.rawScore!, "an unobserved seam may not score like an observed clean seam");
+  assert.ok(unchecked.rawScore! <= 40, "never above the old 80-placeholder value");
+  assert.match(unchecked.detail, /Merge seam could not be checked/);
+  assert.match(unchecked.detail, /only the broker comparison is scored/i);
+  // Without real OHLC the unobserved seam still earns nothing: (75 - 40) / 2.
+  const lineOnly = metric(computeChartTruthScore(fixture({ providerDeliversRealOhlc: false,
+    mergeSeam: { formingBarDetected: false, formingBarCount: 0, gapAtSeam: false, overlapAtSeam: false, seamGapIntervals: 0 } }),
+  feed, failed), "symbol_mirror_accuracy");
+  assert.equal(lineOnly.rawScore, 17.5);
+  // The handshake reading is unchanged: still a FAIL.
+  const truth = noSeam(), score = computeChartTruthScore(truth, feed, failed);
+  assert.equal(buildChartHandshake(computeChartGateOutput(score, read, failed, truth, false), score).BrokerPriceAlignment, "FAIL");
+});
+
+test("an unscored comparison with an unchecked seam never claims to be scored", () => {
+  for (const alignment of [quoteAlignment(1.09999, 1.10001), quoteAlignment(2, 2.0001, { bridgeConnectionId: 8 })]) {
+    const mirror = metric(computeChartTruthScore(noSeam(), feed, alignment), "symbol_mirror_accuracy");
+    assert.equal(mirror.rawScore, null, mirror.detail);
+    assert.doesNotMatch(mirror.detail, /is scored/i, mirror.detail);
+  }
+});
