@@ -41,7 +41,10 @@ vi.mock("@/components/layout/Topbar", () => ({ MobileMenuTrigger: () => null }))
 vi.mock("@/components/layout/AppLayout", () => ({ SidebarContent: () => null }));
 vi.mock("@/components/dashboard/trade/QuickTradePanel", async (orig) => ({
   ...(await orig<typeof import("@/components/dashboard/trade/QuickTradePanel")>()),
-  QuickTradePanel: () => null,
+  // A probe of what the page hands the panel (the panel's copy is tested on its own).
+  QuickTradePanel: (p: { quote: unknown; quoteLoadFailed?: boolean }) => (
+    <div data-testid="quick-trade-probe" data-quote={JSON.stringify(p.quote ?? null)} data-quote-failed={String(p.quoteLoadFailed === true)} />
+  ),
 }));
 vi.mock("@/components/dashboard/trade/PreTradeHeatChecklist", () => ({ PreTradeHeatChecklist: () => null }));
 vi.mock("@/components/dashboard/trade/TradePanels", async (orig) => ({
@@ -66,7 +69,7 @@ afterEach(() => {
 });
 
 type Answer = { status: number; body: unknown } | "throw";
-function serve(answers: { opps?: Answer; queue?: Answer; decisions?: Answer }) {
+function serve(answers: { opps?: Answer; queue?: Answer; decisions?: Answer; quote?: Answer }) {
   const json = (a: Answer | undefined, fallback: unknown) => {
     if (a === "throw") throw new TypeError("Failed to fetch");
     const { status, body } = a ?? { status: 200, body: fallback };
@@ -76,6 +79,7 @@ function serve(answers: { opps?: Answer; queue?: Answer; decisions?: Answer }) {
     if (url.includes("/market-scanner/opportunities")) return json(answers.opps, { opportunities: [] });
     if (url.includes("/live-intent/queue")) return json(answers.queue, { counts: { total: 0 } });
     if (url.includes("/decision-stream")) return json(answers.decisions, { decisions: [] });
+    if (url.includes("/market/quote/")) return answers.quote ? json(answers.quote, {}) : new Response(JSON.stringify({}));
     return new Response(JSON.stringify({}));
   }));
 }
@@ -138,5 +142,44 @@ describe("Trade Command Room failed reads", () => {
     expect(document.body.textContent).toMatch(/No decisions yet/);
     expect(document.body.textContent).toMatch(/No open positions/);
     expect(screen.getByTestId("orders-intent-count").textContent).toBe("0");
+  });
+});
+
+// Review finding (d019e37f): the page mapped every non-ok quote answer and
+// every rejected request to a null quote, which the panel read as "No quote
+// available for this symbol." Only 404 {error:"Unknown symbol"} means no quote.
+describe("Trade Command Room quote read", () => {
+  const probe = () => screen.getByTestId("quick-trade-probe");
+
+  it("a 5xx quote answer reaches the panel as a failed read, not as no quote", async () => {
+    serve({ quote: { status: 500, body: { error: "Internal error" } } });
+    render(<TradeCommandRoom />);
+    await waitFor(() => expect(probe().dataset.quoteFailed).toBe("true"));
+    expect(probe().dataset.quote).toBe("null");
+  });
+
+  it("a quote request that throws reaches the panel as a failed read", async () => {
+    serve({ quote: "throw" });
+    render(<TradeCommandRoom />);
+    await waitFor(() => expect(probe().dataset.quoteFailed).toBe("true"));
+    expect(probe().dataset.quote).toBe("null");
+  });
+
+  it("the route's 404 Unknown symbol is no quote, not a failed read", async () => {
+    serve({ quote: { status: 404, body: { error: "Unknown symbol" } } });
+    render(<TradeCommandRoom />);
+    // The queue count is set in the same pass as the quote, so the read has settled.
+    await waitFor(() => expect(screen.getByTestId("orders-intent-count").textContent).toBe("0"));
+    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes("/market/quote/"))).toBe(true);
+    expect(probe().dataset.quoteFailed).toBe("false");
+    expect(probe().dataset.quote).toBe("null");
+  });
+
+  it("a quote that loads is handed to the panel with no failure", async () => {
+    const q = { symbol: "EURUSD", bid: 1.1, ask: 1.1002, spread: 0.0002, mid: 1.1001, executionEnvironment: "SIMULATOR" };
+    serve({ quote: { status: 200, body: q } });
+    render(<TradeCommandRoom />);
+    await waitFor(() => expect(JSON.parse(probe().dataset.quote ?? "null")).toEqual(q));
+    expect(probe().dataset.quoteFailed).toBe("false");
   });
 });

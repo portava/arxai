@@ -25,7 +25,7 @@ import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, use
 import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
 import { MobileMenuTrigger } from "@/components/layout/Topbar";
 import { SidebarContent } from "@/components/layout/AppLayout";
-import { QuickTradePanel, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
+import { QuickTradePanel, readQuickTradeQuote, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
 import { quickTradeRiskApprox } from "@/components/dashboard/trade/quickTradeRisk";
 import { PreTradeHeatChecklist } from "@/components/dashboard/trade/PreTradeHeatChecklist";
 import {
@@ -96,6 +96,9 @@ export default function TradeCommandRoom() {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [decisionsError, setDecisionsError] = useState(false);
   const [quote, setQuote] = useState<Quote>(null);
+  // True when the latest quote read failed, so the panel says "could not be
+  // loaded" rather than "no quote for this symbol".
+  const [quoteLoadFailed, setQuoteLoadFailed] = useState(false);
   // null until the queue answers; intentError when it could not be loaded.
   const [intentCount, setIntentCount] = useState<number | null>(null);
   const [intentError, setIntentError] = useState(false);
@@ -123,8 +126,8 @@ export default function TradeCommandRoom() {
     const [o, d, q, ic, ac] = await Promise.all([
       readJson("/api/market-scanner/opportunities?limit=12"),
       readJson("/api/decision-stream?limit=20"),
-      // An error answer (e.g. 404 {error:"Unknown symbol"}) is no quote, not a quote object.
-      fetch(`/api/market/quote/${bare}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      // 404 {error:"Unknown symbol"} is no quote; any other failure is a failed read.
+      readQuickTradeQuote(bare),
       readJson("/api/live-intent/queue"),
       fetch("/api/alerts/scanner?unackedOnly=true").then((r) => r.json()).catch(() => ({ count: 0 })),
     ]);
@@ -134,7 +137,8 @@ export default function TradeCommandRoom() {
     const decisionsOk = Array.isArray(d?.decisions);
     setDecisions(decisionsOk ? d.decisions : []);
     setDecisionsError(!decisionsOk);
-    setQuote(q);
+    setQuote(q.quote);
+    setQuoteLoadFailed(q.failed);
     const total = ic?.counts?.total;
     const intentOk = typeof total === "number" && Number.isFinite(total);
     setIntentCount(intentOk ? total : null);
@@ -172,6 +176,7 @@ export default function TradeCommandRoom() {
         orderType={orderType} setOrderType={setOrderType}
         lot={lot} setLot={setLot}
         quote={quote}
+        quoteLoadFailed={quoteLoadFailed}
         slTpOn={slTpOn} setSlTpOn={setSlTpOn}
         stopLoss={stopLoss} setStopLoss={setStopLoss}
         takeProfit={takeProfit} setTakeProfit={setTakeProfit}
