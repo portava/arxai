@@ -199,3 +199,44 @@ test("the pipeline's synthetic-floor inputs do not depend on the new reads", asy
   assert.equal(v.assetClass, "synthetic");
   assert.equal(v.dataProvider, "deriv");
 });
+
+// The live pipeline's synthetic floor refuses every synthetic order unless the
+// account has the owner-unrestricted risk profile, the master broker is Deriv
+// and the symbol has a live tick — none of which this label reads. Under
+// governance the live market list is not read either, so a governance user
+// with V75 off their own list was shown a green "Allowed for MT5 live" with
+// submit enabled, although an ADMIN without that profile is always refused.
+test("governance user, synthetic not on their own live list: never 'yes' and submit stays off", async () => {
+  settings = async () => ({ allowedSymbols: ["EURUSD"] });
+  governance = async () => ({ ...NORMAL_USER, isPrivileged: true, ownerLiveControlMode: true });
+  assert.equal(isApprovedArxMarket("V75"), true, "fixture: V75 is an ARX Focus market");
+  const t = await getSymbolTradability("V75", 1);
+  assert.notEqual(t.mt5Tradable, "yes");
+  assert.equal(t.liveExecutionAllowed, false);
+  assert.notEqual(t.badgeLabel, "Allowed for MT5 live");
+  assert.equal(t.mt5Tradable, "unknown");
+  assert.equal(t.badgeLabel, "Tradability not verified");
+  assert.match(t.userMessage, /synthetic index/);
+  assert.match(t.userMessage, /owner-unrestricted risk profile/);
+  assert.match(t.userMessage, /Deriv/);
+  assert.match(t.userMessage, /live tick/);
+  // The pipeline does not read the live market list under governance.
+  assert.doesNotMatch(t.userMessage, /live market list/);
+  // The floor's inputs are unchanged.
+  assert.equal(t.assetClass, "synthetic");
+  assert.equal(t.dataProvider, "deriv");
+
+  // With no list of their own (the default list, which holds no synthetics) the same.
+  settings = async () => ({ allowedSymbols: null });
+  const d = await getSymbolTradability("V75", 1);
+  assert.equal(d.mt5Tradable, "unknown");
+  assert.equal(d.liveExecutionAllowed, false);
+});
+
+test("an allowed synthetic says the synthetic-index requirements were not checked", async () => {
+  settings = async () => ({ allowedSymbols: ["V75"] });
+  const t = await getSymbolTradability("V75", 1);
+  assert.equal(t.mt5Tradable, "yes");
+  assert.match(t.userMessage, /owner-unrestricted risk profile, a Deriv master broker and a live tick/);
+  assert.match(t.userMessage, /only when an order is submitted/);
+});

@@ -24,7 +24,10 @@
 //       · owner/admin governance (getEffectiveTradingGovernance, as the live
 //         pipeline reads it): under Owner Live Control Mode the pipeline
 //         applies the governance blocklist / allowlist INSTEAD of the live
-//         market list, so the list is then not named;
+//         market list, so the list is then not named — except that a
+//         synthetic the user has not put on their own list is "unknown":
+//         the pipeline's synthetic floor (owner-unrestricted profile, Deriv
+//         master broker, live tick) decides it and is not read here;
 //       · the Risk Governor's limits in force (loadEffectiveLimits): account
 //         limited to demo, symbol off the operator's instruments, symbol
 //         switched off in the trader's limits (preTrade max_position_size).
@@ -136,6 +139,17 @@ export async function getSymbolTradability(
         ? `${symbol} is not on your governance symbol allowlist, so live orders for it are refused. You can still analyze it.`
         : null;
   const onList = useGovernance ? govRefusal == null : allowed.includes(symbol);
+  // The live pipeline's synthetic floor (evaluateSyntheticLiveFloor) refuses
+  // every synthetic order unless the account has the owner-unrestricted risk
+  // profile, the master broker is Deriv and the symbol has a live tick; none
+  // of that is read here. Under governance the live market list is not read
+  // by the pipeline either, so a synthetic the user has not put on their own
+  // list is not offered as live-allowed: whether it can go live is decided
+  // only by the floor at submit time. (Display only: the pipeline reads just
+  // assetClass / dataProvider from this module.)
+  const syntheticFloor = assetClass === "synthetic" || dataProvider === "deriv";
+  const govSyntheticUnchecked = useGovernance && syntheticFloor
+    && (listSource === "unreadable" || !allowed.includes(symbol));
   // The governor's symbol-level refusals (preTrade max_position_size), in its order.
   const limitsRefusal = limits == null || limits === "unreadable" ? null
     : limits.liveAllowed === false
@@ -156,7 +170,7 @@ export async function getSymbolTradability(
     mt5Tradable = "unknown";
   } else if (!onList || !arxFocus || limitsRefusal != null) {
     mt5Tradable = "no";
-  } else if (limits === "unreadable") {
+  } else if (limits === "unreadable" || govSyntheticUnchecked) {
     mt5Tradable = "unknown";
   } else {
     mt5Tradable = "yes";
@@ -181,6 +195,7 @@ export async function getSymbolTradability(
     const unchecked = [
       "The MT5 bridge connection",
       "the broker's symbol list",
+      ...(syntheticFloor ? ["the synthetic-index requirements (an owner-unrestricted risk profile, a Deriv master broker and a live tick)"] : []),
       ...(limits == null ? ["your risk limits"] : ["lot and loss limits"]),
       ...(gov == null ? ["governance rules"] : []),
     ];
@@ -207,6 +222,9 @@ export async function getSymbolTradability(
   } else if (gov === "unreadable" && assetClass !== "unknown") {
     badgeLabel = "Tradability not verified";
     userMessage = `Your governance settings could not be loaded, so whether ${symbol} can be traded live was not checked. Live order submit is disabled until it is.`;
+  } else if (govSyntheticUnchecked && limits !== "unreadable") {
+    badgeLabel = "Tradability not verified";
+    userMessage = `${symbol} is a synthetic index. Live orders for synthetic indices are refused unless your account has the owner-unrestricted risk profile, the master broker is Deriv and ${symbol} has a live tick right now. This label checks none of those, so it does not offer live order submit for ${symbol}; they are checked only when an order is submitted. You can still analyze it.`;
   } else if (listSource === "unreadable" && assetClass !== "unknown") {
     badgeLabel = "Tradability not verified";
     userMessage = `Your live market list could not be loaded, so whether ${symbol} can be traded live was not checked. Live order submit is disabled until it is.`;
