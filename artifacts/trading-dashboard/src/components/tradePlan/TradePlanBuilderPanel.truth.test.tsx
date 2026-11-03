@@ -210,6 +210,47 @@ describe("Trade Plan Builder — a refused validate is shown, not swallowed", ()
   });
 });
 
+describe("Trade Plan Builder — a validate result belongs to the plan that was validated", () => {
+  it("switching plans while a validate is in flight does not move the refusal to the other plan", async () => {
+    routes["GET /api/trade-plans?limit=20"] = () => ({
+      status: 200,
+      body: { plans: [
+        plan({ id: 11, symbol: "EURUSD", status: "READY", checklist: { items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true } }),
+        plan({ id: 12, symbol: "GBPUSD", status: "READY", checklist: { items: [], passCount: 9, failCount: 0, warnCount: 0, isReady: true } }),
+      ] },
+    });
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    routes["POST /api/trade-plans/11/validate"] = async () => {
+      await held;
+      return { status: 409, body: { error: "NEWS_NO_TRADE_WINDOW", reason: "US Non-Farm Payrolls in 12 minutes." } };
+    };
+    renderPanel();
+    await screen.findByText("Plan #11");
+    fireEvent.click(screen.getByRole("button", { name: /validate plan/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === "/api/trade-plans/11/validate")).toBe(true));
+
+    // The user opens plan 12 while plan 11's validate is pending.
+    fireEvent.click(screen.getByRole("button", { name: /GBPUSD/ }));
+    await screen.findByText("Plan #12");
+    release();
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u) === "/api/trade-plans?limit=20").length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Plan 12 was not validated: no refusal on it and its send stays enabled.
+    expect(screen.queryByText(/US Non-Farm Payrolls in 12 minutes/)).toBeNull();
+    expect(screen.queryByText(/latest validation refused this plan/i)).toBeNull();
+    expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(false);
+
+    // Plan 11, the one refused, shows the refusal and cannot be sent.
+    fireEvent.click(screen.getByRole("button", { name: /EURUSD/ }));
+    await screen.findByText("Plan #11");
+    expect(await screen.findByText(/US Non-Farm Payrolls in 12 minutes/)).toBeTruthy();
+    expect(screen.getByText(/latest validation refused this plan/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /pre-trade confirmation/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe("Trade Plan Builder — validate's chart check is shown", () => {
   it("a Chart Truth limit shows the note and the capped confidence, not 'Strong'", async () => {
     routes["GET /api/trade-plans?limit=20"] = () => ({ status: 200, body: { plans: [plan({ status: "DRAFT", confidenceLevel: 80 })] } });

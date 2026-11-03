@@ -146,10 +146,13 @@ export function TradePlanBuilderPanel() {
     },
   });
 
+  // The plan id is the mutation variable: the user can select another plan
+  // while a validate is in flight, and React Query runs onError with the
+  // latest render's closure, so `active` then is a different plan. The result
+  // belongs to the plan that was validated.
   const validate = useMutation({
-    mutationFn: async () => {
-      if (!active) return;
-      const r = await fetch(`/api/trade-plans/${active.id}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    mutationFn: async (planId: number) => {
+      const r = await fetch(`/api/trade-plans/${planId}/validate`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       if (!r.ok) {
         const err = (await r.json().catch(() => ({}))) as { error?: string; reason?: string };
         if (r.status === 409) {
@@ -181,8 +184,8 @@ export function TradePlanBuilderPanel() {
       }
       qc.invalidateQueries({ queryKey: ["trade-plans"] });
     },
-    onError: (e: Error) => {
-      if (active) setValidateFailure({ planId: active.id, refused: e instanceof ValidateError && e.refused, message: e.message });
+    onError: (e: Error, planId: number) => {
+      setValidateFailure({ planId, refused: e instanceof ValidateError && e.refused, message: e.message });
     },
   });
 
@@ -357,7 +360,7 @@ export function TradePlanBuilderPanel() {
               <button onClick={() => save.mutate(form)} disabled={!editable || save.isPending} className="rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
                 {save.isPending ? "Saving…" : "Save changes"}
               </button>
-              <button onClick={() => validate.mutate()} disabled={!editable || validate.isPending} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <button onClick={() => validate.mutate(active.id)} disabled={!editable || validate.isPending} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
                 {validate.isPending ? "Validating…" : "Validate plan"}
               </button>
               <button onClick={() => cancel.mutate()} disabled={!editable || cancel.isPending} className="rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm font-semibold text-red-200 disabled:opacity-50">
