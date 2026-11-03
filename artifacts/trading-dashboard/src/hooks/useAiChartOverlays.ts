@@ -27,7 +27,8 @@ import {
 //     BUY/SELL opportunity with finite levels from a scan the scanner page
 //     would still act on (≤30 s old, live + tradeable, final read TRADE_WATCH;
 //     see isDrawableScannerRow), every level names its scan timeframe, and the opportunity's honest
-//     `dataSource` (SIMULATOR / LIVE_FEED / …) is carried in metadata + label.
+//     `dataSource` (SIMULATOR / LIVE_FEED / …) is carried in metadata, and the
+//     entry label names any non-live source in plain English.
 //   - Any fetch failure renders NOTHING (no fake lines), and never throws into
 //     the chart — chart rendering and the Ruby/scanner pages keep working.
 //   - This hook never re-runs per candle: scanner polling is on a fixed
@@ -215,6 +216,24 @@ function toSignalSummary(
   };
 }
 
+// Plain-English copy for the scanner's data-source tag, shared by the chart's
+// signal line labels and the overlay panel's chip. It names the source the
+// scanner read WHEN IT SCANNED, not the chart's current feed, so "live" is
+// always qualified as "scanned on". Unknown tokens never leak.
+const SCANNER_DATA_SOURCE_LABELS: Record<string, string> = {
+  LIVE_FEED: "Scanned on live feed",
+  LIVE_DELAYED: "Scanned on delayed feed",
+  STALE_FEED: "Scanned on stale feed",
+  SIMULATOR: "Simulated data",
+  AWAITING_FEED: "No market data yet",
+  HISTORY_READY_AWAITING_LIVE_TICK: "History only, no live tick yet",
+};
+
+export function scannerDataSourceLabel(source: string | null | undefined): string {
+  if (!source) return "Source not reported";
+  return SCANNER_DATA_SOURCE_LABELS[source] ?? "Unrecognised source";
+}
+
 /** Build `source:"signal"` overlays from a scanner summary. */
 export function buildSignalOverlays(
   sig: AiSignalSummary,
@@ -224,7 +243,9 @@ export function buildSignalOverlays(
   // Every drawn level names the scan timeframe it came from, so an H4 level on
   // a 1m chart is never read as this chart's own setup.
   const tf = sig.timeframe ? ` ${sig.timeframe}` : "";
-  const tag = sig.dataSource && sig.dataSource !== "LIVE_FEED" ? ` · ${sig.dataSource}` : "";
+  // A non-live (or unreported) source is named in plain English on the entry
+  // line; the raw token stays in metadata only.
+  const tag = sig.dataSource === "LIVE_FEED" ? "" : ` · ${scannerDataSourceLabel(sig.dataSource)}`;
   const meta = {
     source: "signal",
     side: sig.side,

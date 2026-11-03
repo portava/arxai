@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,13 +13,22 @@ interface CalendarDay {
   wins: number;
   losses: number;
   win_rate: number;
-  day_rating: "A" | "B" | "C" | "D" | "F";
+  /** "—" = not rated (the live route computes no day rating). */
+  day_rating: "A" | "B" | "C" | "D" | "F" | "—";
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
 }
-interface CalendarResp { calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number } }
+interface CalendarResp {
+  calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number };
+  /**
+   * The server answered for a LIVE_SHARED account without reading any trades
+   * (an empty, mode-tagged reply). Nothing was looked up, so the page must not
+   * show it as "no trades" or a 0.00 month.
+   */
+  notShownHere?: boolean;
+}
 interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
 
 function dayColor(d: CalendarDay) {
@@ -33,29 +42,43 @@ function dayColor(d: CalendarDay) {
 
 // Map the LIVE mode-aware route ({ days:[{date,totalPnl,tradesCount,winRate,...}] })
 // into the CalendarResp shape the existing UI renders. No paper data in LIVE mode.
-function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: boolean } | undefined): CalendarResp {
+// The route lists only days that had closed trades over the whole from..to
+// range it read, so every other day of the month is a no-trade day. It
+// computes no day rating, so live days are shown as not rated ("—").
+function mapLiveToCalendarResp(
+  month: string,
+  live: { days?: any[]; isEmpty?: boolean; currentAccountMode?: string } | undefined,
+): CalendarResp {
   const src = Array.isArray(live?.days) ? live!.days : [];
-  const inMonth = src.filter((d) => typeof d.date === "string" && d.date.startsWith(month));
-  const days: CalendarDay[] = inMonth.map((d) => {
+  const byDate = new Map<string, any>();
+  for (const d of src) {
+    if (typeof d?.date === "string" && d.date.startsWith(month)) byDate.set(d.date, d);
+  }
+  const [y, m] = month.split("-").map(Number);
+  const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 0;
+  const days: CalendarDay[] = Array.from({ length: daysInMonth }, (_, i) => {
+    const date = `${month}-${String(i + 1).padStart(2, "0")}`;
+    const d = byDate.get(date) ?? {};
     const pnl = Number(d.totalPnl ?? 0);
     const trades = Number(d.tradesCount ?? 0);
     const status: CalendarDay["day_status"] =
       trades === 0 ? "NO_TRADE_DAY" : pnl > 0 ? "WINNING_DAY" : pnl < 0 ? "LOSING_DAY" : "BREAK_EVEN_DAY";
     return {
-      date: d.date,
+      date,
       net_pnl: pnl,
       total_trades: trades,
       wins: Number(d.wins ?? 0),
       losses: Number(d.losses ?? 0),
       win_rate: Number(d.winRate ?? 0),
-      day_rating: "C" as const,
+      day_rating: "—" as const,
       day_status: status,
       debriefs_created: 0,
       learning_events_created: 0,
       symbols_traded: [],
     };
-  }).sort((a, b) => a.date.localeCompare(b.date));
+  });
   return {
+    notShownHere: live?.currentAccountMode === "LIVE_SHARED",
     calendar: {
       month,
       days,
@@ -68,18 +91,34 @@ function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: bo
   };
 }
 
+// Every read checks the HTTP status and the payload shape: an error body (a
+// 401, or a 500 carrying { error, ...SAFETY }) is a failed load, never data.
+async function readJson(url: string, init?: RequestInit): Promise<any> {
+  const r = await fetch(url, init);
+  if (!r.ok) throw new Error(`${url.split("?")[0]} failed: ${r.status}`);
+  return r.json();
+}
+
 export default function TradingCalendarPage() {
-  const qc = useQueryClient();
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // Read the live/account mode so the calendar shows LIVE trades in LIVE mode
-  // and paper trades otherwise — never mixed.
-  const mode = useQuery<{ tradingMode: string }>({
+  // and paper trades otherwise — never mixed. GET /api/me/trading/mode answers
+  // { ok, envelope: { tradingMode }, perUserTradingMode: { mode } }; the
+  // envelope's tradingMode is the same value the live calendar route uses to
+  // pick live vs paper rows (mePerformanceCalendar.ts loadClosedRows).
+  const mode = useQuery<{ ok?: boolean; envelope?: { tradingMode?: string } }>({
     queryKey: ["trading-mode-for-calendar"],
-    queryFn: async () => (await fetch("/api/me/trading/mode", { credentials: "include" })).json(),
+    queryFn: async () => {
+      const j = await readJson("/api/me/trading/mode", { credentials: "include" });
+      if (j?.ok !== true || typeof j?.envelope?.tradingMode !== "string") {
+        throw new Error("/api/me/trading/mode returned no mode");
+      }
+      return j;
+    },
   });
-  const isLive = mode.data?.tradingMode === "LIVE";
+  const isLive = mode.data?.envelope?.tradingMode === "LIVE";
 
   const cal = useQuery<CalendarResp>({
     queryKey: ["trading-calendar", month, isLive],
@@ -91,19 +130,26 @@ export default function TradingCalendarPage() {
         const [y, m] = month.split("-").map(Number);
         const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
         const to = `${month}-${String(lastDay).padStart(2, "0")}`;
-        const live = await (await fetch(`/api/me/performance-calendar?from=${from}&to=${to}`, { credentials: "include" })).json();
+        const live = await readJson(`/api/me/performance-calendar?from=${from}&to=${to}`, { credentials: "include" });
+        if (!Array.isArray(live?.days)) throw new Error("/api/me/performance-calendar returned no days");
         return mapLiveToCalendarResp(month, live);
       }
-      return (await fetch(`/api/performance/calendar?month=${month}`)).json();
+      const paper = await readJson(`/api/performance/calendar?month=${month}`);
+      if (!Array.isArray(paper?.calendar?.days)) throw new Error("/api/performance/calendar returned no calendar");
+      return { ...paper, notShownHere: paper?.currentAccountMode === "LIVE_SHARED" };
     },
   });
+  // A failed (re)load is shown as a failure, never over older data.
+  const calData = cal.isError ? undefined : cal.data;
+  const notShownHere = calData?.notShownHere === true;
 
   const day = useQuery<DayDetailResp>({
     queryKey: ["trading-calendar-day", selectedDate, isLive],
     enabled: !!selectedDate && mode.isSuccess,
     queryFn: async () => {
       if (isLive) {
-        const d = await (await fetch(`/api/me/performance-calendar/${selectedDate}`, { credentials: "include" })).json();
+        const d = await readJson(`/api/me/performance-calendar/${selectedDate}`, { credentials: "include" });
+        if (!Array.isArray(d?.trades)) throw new Error("/api/me/performance-calendar/:date returned no trades");
         // Map live day-agg → DayDetailResp shape the UI renders.
         return {
           day: {
@@ -125,16 +171,28 @@ export default function TradingCalendarPage() {
           },
         } as DayDetailResp;
       }
-      return (await fetch(`/api/performance/day?date=${selectedDate}`)).json();
+      const paperDay = await readJson(`/api/performance/day?date=${selectedDate}`);
+      if (!paperDay?.day?.stats || !Array.isArray(paperDay.day.trades)) {
+        throw new Error("/api/performance/day returned no day");
+      }
+      return paperDay;
     },
   });
 
+  // POST /api/performance/rebuild rewrites the saved snapshot tables
+  // (performance_daily_snapshots and friends, read by the Trader Coach). This
+  // calendar never reads them: GET /api/performance/calendar recomputes every
+  // day from paper_orders on each load. So a rebuild changes nothing here and
+  // the calendar is not reloaded as if it had been rebuilt.
   const rebuild = useMutation({
-    mutationFn: async () => (await fetch("/api/performance/rebuild", { method: "POST" })).json(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trading-calendar"] }),
+    mutationFn: async () => {
+      const j = await readJson("/api/performance/rebuild", { method: "POST" });
+      if (!j?.rebuild || typeof j.rebuild !== "object") throw new Error("/api/performance/rebuild returned no summary");
+      return j.rebuild as { finished_at?: string; daily_snapshots_written?: number };
+    },
   });
 
-  const days = cal.data?.calendar.days ?? [];
+  const days = calData?.calendar.days ?? [];
   // Pad start so day-of-week aligns.
   const firstWeekday = days[0] ? new Date(days[0].date + "T00:00:00Z").getUTCDay() : 0;
 
@@ -146,7 +204,13 @@ export default function TradingCalendarPage() {
             <CalendarDays className="text-primary" /> Trading Calendar
           </h2>
           <div className="text-muted-foreground flex items-center gap-2 flex-wrap">
-            {isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
+            {mode.isError
+              ? "Your trading mode could not be loaded."
+              : !mode.isSuccess
+              ? "Checking your trading mode…"
+              : notShownHere
+              ? "Live trades on your shared account are not shown on this calendar."
+              : isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
           </div>
         </div>
         <div className="flex gap-2">
@@ -157,29 +221,64 @@ export default function TradingCalendarPage() {
             className="bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm"
             data-testid="input-month"
           />
-          {!isLive && (
+          {mode.isSuccess && !isLive && (
             <Button onClick={() => rebuild.mutate()} disabled={rebuild.isPending} data-testid="btn-rebuild">
               <RefreshCcw className={`mr-2 h-4 w-4 ${rebuild.isPending ? "animate-spin" : ""}`} />
-              Rebuild
+              Rebuild saved snapshots
             </Button>
           )}
         </div>
       </div>
 
-      {cal.data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
-            <CardContent><div className={`text-xl font-bold ${cal.data.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{cal.data.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Total Trades</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold">{cal.data.calendar.total_trades}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Winning Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-emerald-400">{cal.data.calendar.winning_days}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Losing Days</CardTitle></CardHeader>
-            <CardContent><div className="text-xl font-bold text-rose-400">{cal.data.calendar.losing_days}</div></CardContent></Card>
+      {mode.isSuccess && !isLive && !notShownHere && (
+        <div className="text-xs text-muted-foreground -mt-4" data-testid="calendar-source-note">
+          Calculated from your demo orders each time this page loads. &ldquo;Rebuild saved snapshots&rdquo; refreshes the
+          saved daily snapshots the Trader Coach reads; it does not change this calendar.
         </div>
       )}
 
-      {isLive && cal.data && cal.data.calendar.total_trades === 0 && (
+      {(rebuild.isSuccess || rebuild.isError) && (
+        <div className={`text-xs ${rebuild.isError ? "text-rose-300" : "text-muted-foreground"}`} data-testid="rebuild-result">
+          {rebuild.isError
+            ? "Saved snapshots could not be rebuilt."
+            : `Saved snapshots rebuilt${rebuild.data?.finished_at ? ` at ${new Date(rebuild.data.finished_at).toLocaleTimeString()}` : ""}: ${
+                typeof rebuild.data?.daily_snapshots_written === "number" ? rebuild.data.daily_snapshots_written : "an unknown number of"
+              } daily snapshots written. This calendar does not read them, so nothing above changed.`}
+        </div>
+      )}
+
+      {mode.isError && (
+        <Card className="border-border" data-testid="calendar-mode-error">
+          <CardContent className="pt-4 text-sm text-muted-foreground">
+            Your trading mode could not be loaded, so this page can&apos;t tell whether to show your live or demo
+            calendar. Nothing is shown until it loads.
+          </CardContent>
+        </Card>
+      )}
+
+      {notShownHere && (
+        <Card className="border-border" data-testid="calendar-not-shown">
+          <CardContent className="pt-4 text-sm text-muted-foreground">
+            This calendar does not read live trades on a shared account, so it has no P&amp;L to show for {month}.
+            Check Live Trades or your broker statement for your live results.
+          </CardContent>
+        </Card>
+      )}
+
+      {calData && !notShownHere && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
+            <CardContent><div className={`text-xl font-bold ${calData.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{calData.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Total Trades</CardTitle></CardHeader>
+            <CardContent><div className="text-xl font-bold">{calData.calendar.total_trades}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Winning Days</CardTitle></CardHeader>
+            <CardContent><div className="text-xl font-bold text-emerald-400">{calData.calendar.winning_days}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Losing Days</CardTitle></CardHeader>
+            <CardContent><div className="text-xl font-bold text-rose-400">{calData.calendar.losing_days}</div></CardContent></Card>
+        </div>
+      )}
+
+      {isLive && calData && !notShownHere && calData.calendar.total_trades === 0 && (
         <Card className="border-border">
           <CardContent className="pt-4 text-sm text-muted-foreground">
             No live trades recorded yet for {month}. Live P&amp;L will appear here once you place and close live trades.
@@ -187,10 +286,14 @@ export default function TradingCalendarPage() {
         </Card>
       )}
 
-      <Card>
+      {!mode.isError && !notShownHere && <Card>
         <CardHeader><CardTitle>{month}</CardTitle></CardHeader>
         <CardContent>
-          {cal.isLoading ? (
+          {cal.isError ? (
+            <div className="text-sm text-rose-300" data-testid="calendar-load-error">
+              The calendar for {month} could not be loaded. Nothing is shown rather than an empty month.
+            </div>
+          ) : !calData ? (
             <Skeleton className="h-72 w-full" />
           ) : (
             <>
@@ -208,7 +311,7 @@ export default function TradingCalendarPage() {
                   >
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold">{Number(d.date.slice(8))}</span>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>
+                      {d.day_rating !== "—" && <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>}
                     </div>
                     <div className="mt-1 text-sm font-bold flex items-center gap-1">
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
@@ -231,13 +334,17 @@ export default function TradingCalendarPage() {
             </>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {selectedDate && (
         <Card data-testid="day-detail-card">
           <CardHeader><CardTitle className="flex items-center gap-2"><CalIcon className="h-4 w-4" /> {selectedDate} — Day Detail</CardTitle></CardHeader>
           <CardContent>
-            {day.isLoading ? <Skeleton className="h-32 w-full" /> : day.data ? (
+            {day.isLoading ? <Skeleton className="h-32 w-full" /> : day.isError ? (
+              <div className="text-sm text-rose-300" data-testid="day-load-error">
+                Details for {selectedDate} could not be loaded.
+              </div>
+            ) : day.data ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
                   <div><div className="text-muted-foreground text-xs">Net P&L</div><div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div></div>

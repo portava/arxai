@@ -4,10 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 type Subsys = { status: string; checkScope?: "REACHABILITY_ONLY" | "IN_PROCESS"; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
+type LivePosture = { state: "ON" | "OFF" | "UNKNOWN"; plainEnglish: string; source?: string; checkedAt?: string };
 type Report = {
   health_check_id: string; generated_at: string;
   overallStatus: "HEALTHY"|"DEGRADED"|"UNSAFE"|"FAILED";
   liveTradingStatus: string; mode: string;
+  /** The platform live-execution switch as read for this report (absent from older servers). */
+  livePosture?: LivePosture;
   subsystemStatus: Record<string, Subsys>;
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
@@ -42,6 +45,18 @@ function reportedOperationalMode(r: Report): string | null {
   return null;
 }
 
+/**
+ * The Live trading card: the platform switch as the report read it. Without
+ * livePosture (an older server) the report did not check live trading, so it
+ * says exactly that — never the report's fixed liveTradingStatus constant.
+ */
+export function livePostureBadge(lp: LivePosture | undefined): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+  if (!lp) return { label: "Not checked by this report", variant: "outline" };
+  if (lp.state === "ON") return { label: "Switched on for the platform", variant: "default" };
+  if (lp.state === "OFF") return { label: "Switched off for the platform", variant: "outline" };
+  return { label: "Unknown — switch could not be read", variant: "secondary" };
+}
+
 const tone = (s: string): "default"|"secondary"|"destructive"|"outline" => {
   if (s === "HEALTHY" || s === "OK") return "default";
   if (s === "DEGRADED") return "secondary";
@@ -58,9 +73,18 @@ export default function SystemHealthPage() {
     setLoading(true); setErr(null);
     try {
       const r = await fetch("/api/system-health/check", { method: "POST" });
-      const j = await r.json();
-      setReport(j.report ?? null);
-    } catch (e) { setErr(String(e)); } finally { setLoading(false); }
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.report) {
+        // A failed check is "could not be loaded", never an empty page.
+        setReport(null);
+        setErr(`The health check could not be loaded (HTTP ${r.status}${j?.error ? `: ${j.error}` : ""}).`);
+        return;
+      }
+      setReport(j.report);
+    } catch (e) {
+      setReport(null);
+      setErr(`The health check could not be loaded (${String(e)}).`);
+    } finally { setLoading(false); }
   };
   useEffect(() => { void run(); }, []);
 
@@ -72,7 +96,16 @@ export default function SystemHealthPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">System Health</h1>
-          <p className="text-sm text-muted-foreground">Build MM — Diagnostics, audit & admin for the paper stack. This report does not read live-trading state.</p>
+          <p className="text-sm text-muted-foreground" data-testid="system-health-subtitle">
+            Build MM — Diagnostics, audit & admin. The health checks cover the paper stack; the Live trading card is the platform's live-execution switch as read for this report.
+          </p>
+          {report && (
+            <p className="text-xs text-muted-foreground" data-testid="system-health-generated-at">
+              {typeof report.generated_at === "string" && report.generated_at
+                ? `Report generated ${report.generated_at.slice(0, 19).replace("T", " ")} UTC`
+                : "Report time not given by the server"}
+            </p>
+          )}
         </div>
         <Button onClick={run} disabled={loading} data-testid="btn-run-health-check">{loading ? "Running…" : "Run health check"}</Button>
       </div>
@@ -92,7 +125,10 @@ export default function SystemHealthPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent><Badge variant={tone(report.overallStatus)}>{report.overallStatus}</Badge></CardContent></Card>
             <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent>
-              <Badge variant="outline" data-testid="system-health-live-trading">Not checked by this report</Badge>
+              <Badge variant={livePostureBadge(report.livePosture).variant} data-testid="system-health-live-trading">{livePostureBadge(report.livePosture).label}</Badge>
+              {report.livePosture && (
+                <div className="mt-1 text-xs text-muted-foreground" data-testid="system-health-live-posture">{report.livePosture.plainEnglish}</div>
+              )}
             </CardContent></Card>
             <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent data-testid="system-health-mode">
               {nonPaperMode

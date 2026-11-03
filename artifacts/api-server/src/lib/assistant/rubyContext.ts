@@ -16,7 +16,10 @@
 //   - Setup guidance is state-gated: it only appears when the live state truly
 //     requires it, so solved setup steps are not repeated.
 import { getUserAllocationView } from "../live/masterBridgePool.js";
+import { getConnection } from "../brokerHub/connections.js";
+import { connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { analyzeSession } from "../../brain/sessions/sessionEngine.js";
+import { isFxWeekendClosed, FX_WEEKEND_SESSION_NAME } from "../../brain/timing/sessionKillZoneEngine.js";
 import { getSymbolTradability } from "../data/symbolTradability.js";
 import { classifySymbol } from "../data/marketDataRouter.js";
 import { isApprovedArxMarket } from "@workspace/domain/market";
@@ -79,6 +82,13 @@ export interface RubyContext {
       openPnl: number;
       currency: string | null;
       snapshotStatus: string;
+      /**
+       * Set when the pool's balance/equity cannot be shown: the pool stores a
+       * figure the EA never reported as 0 (NOT NULL columns) and its FRESH
+       * status comes from the heartbeat alone. Plain-English reason; null or
+       * absent when the master connection's own snapshot has the figures.
+       */
+      figuresUnavailableReason?: string | null;
     } | null;
     // Every user's own ARX allocation slice.
     allocation: { allocated: number; available: number; reserved: number } | null;
@@ -271,6 +281,58 @@ async function fetchCalendar(): Promise<CalCacheVal> {
 }
 
 /**
+ * Why the master pool's balance/equity must not be shown, or null when the
+ * master connection's own account snapshot has both figures. Reads the stored
+ * connection row only (no broker call). A failed read is "could not be
+ * checked", never a pass.
+ */
+async function masterFiguresUnavailableReason(masterConnectionId: number | null | undefined): Promise<string | null> {
+  if (masterConnectionId == null) return "the master connection is not recorded, so its account figures could not be checked";
+  let snap: ReturnType<typeof connectionAccountSnapshot>;
+  try {
+    snap = connectionAccountSnapshot(await getConnection(masterConnectionId));
+  } catch {
+    return "the master account figures could not be checked";
+  }
+  if (snap.status !== "observed") return "the EA has not reported the account's balance and equity yet";
+  const missing = [snap.balance == null ? "balance" : null, snap.equity == null ? "equity" : null].filter(Boolean);
+  if (missing.length) return `the EA has not reported the account's ${missing.join(" and ")}`;
+  return null;
+}
+
+/**
+ * The briefing's market-session line. analyzeSession() reads only the UTC hour,
+ * so on a Saturday it still names "London"; the FX week (Sun 17:00 - Fri 17:00
+ * New York, isFxWeekendClosed) decides whether forex is open. At the weekend
+ * forex is closed for every symbol: a forex/index symbol's session reads as
+ * closed, and a synthetic symbol (24/7) keeps its own liquidity but does not
+ * claim an FX session. Briefing copy only; the brain's session scoring is
+ * unchanged.
+ */
+export function rubySessionContext(
+  assetClass: string,
+  symbol: string,
+  now: Date,
+): NonNullable<RubyContext["session"]> {
+  const sa = analyzeSession(assetClass, symbol);
+  if (isFxWeekendClosed(now)) {
+    const synthetic = assetClass === "synthetic";
+    return {
+      name: FX_WEEKEND_SESSION_NAME,
+      liquidity: synthetic ? sa.liquidityLevel : "Closed",
+      score: synthetic ? sa.sessionScore : 0,
+      forexOpen: false,
+    };
+  }
+  return {
+    name: sa.session,
+    liquidity: sa.liquidityLevel,
+    score: sa.sessionScore,
+    forexOpen: assetClass === "synthetic" ? true : sa.session !== "Off-hours",
+  };
+}
+
+/**
  * Gather the full Ruby context for a user. Never throws — each source is
  * isolated so a single failure degrades to a null/empty field.
  */
@@ -314,6 +376,7 @@ export async function buildRubyContext(
         openPnl: Number(view.pool.totalUserUnrealizedPnl ?? 0),
         currency: view.pool.accountCurrency ?? null,
         snapshotStatus: String(view.pool.snapshotStatus ?? "MISSING"),
+        figuresUnavailableReason: await masterFiguresUnavailableReason(view.pool.masterConnectionId),
       };
     }
   } catch {
@@ -381,13 +444,7 @@ export async function buildRubyContext(
   let session: RubyContext["session"] = null;
   try {
     const assetClass = symbolUpper ? classifySymbol(symbolUpper) : "unknown";
-    const sa = analyzeSession(assetClass, symbolUpper ?? "");
-    session = {
-      name: sa.session,
-      liquidity: sa.liquidityLevel,
-      score: sa.sessionScore,
-      forexOpen: assetClass === "synthetic" ? true : sa.session !== "Off-hours",
-    };
+    session = rubySessionContext(assetClass, symbolUpper ?? "", now);
   } catch {
     session = null;
   }
@@ -612,6 +669,10 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
       // MISSING (or unrecognised): the pool reports 0s for a snapshot it never
       // received — never show those as the account's balance.
       lines.push("Master MT5: no account snapshot has been received, so balance, equity and open P/L are not available.");
+    } else if (m.figuresUnavailableReason) {
+      // The pool reads FRESH/STALE from the heartbeat, but its 0s may be
+      // figures the EA never reported — never show those as the balance.
+      lines.push(`Master MT5: ${m.figuresUnavailableReason}, so balance, equity and open P/L are not shown.`);
     } else {
       lines.push(
         `Master MT5${m.snapshotStatus === "STALE" ? " (last-known — the snapshot is stale)" : ""}: balance ${fmtMoney(m.balance, m.currency)}, ` +

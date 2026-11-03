@@ -790,26 +790,44 @@ type DemoOpenPosition = {
 type DemoPositionsSnapshot = {
   ok: boolean;
   lastSyncAt: string | null;
+  /**
+   * False when this user's MT5 positions could not be read (the EA feed is
+   * install-wide, not stamped with a user). The position counts are then null
+   * and an empty list is not "no open positions".
+   */
+  positionsMeasured?: boolean;
+  positionsNote?: string | null;
   openPositions: DemoOpenPosition[];
   reconciliation: {
-    mt5OpenPositionCount: number;
-    arxMatchedPositionCount: number;
-    arxOrphanPositionCount: number;
-    filledCommandHistoryCount: number;
-    inSync: boolean;
+    mt5OpenPositionCount: number | null;
+    arxMatchedPositionCount: number | null;
+    arxOrphanPositionCount: number | null;
+    filledCommandHistoryCount: number | null;
+    inSync: boolean | null;
   };
 };
 
-function OpenDemoPositionsCard() {
+/** A count the server did not measure is "not checked", never 0. */
+function demoCount(n: number | null | undefined): string {
+  return typeof n === "number" && Number.isFinite(n) ? String(n) : "not checked";
+}
+
+export function OpenDemoPositionsCard() {
   const { toast } = useToast();
   const [snap, setSnap] = useState<DemoPositionsSnapshot | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ok" | "failed">("loading");
   const [refreshing, setRefreshing] = useState(false);
 
-  async function load() {
+  async function load(): Promise<boolean> {
     setRefreshing(true);
     const s = await jget<DemoPositionsSnapshot>("/api/me/demo-positions-snapshot");
-    setSnap(s);
+    // A failed or malformed read is "could not be loaded" — never an empty
+    // snapshot with zero counts.
+    const ok = s != null && Array.isArray(s.openPositions) && s.reconciliation != null;
+    setSnap(ok ? s : null);
+    setLoadState(ok ? "ok" : "failed");
     setRefreshing(false);
+    return ok;
   }
   useEffect(() => {
     void load();
@@ -819,10 +837,21 @@ function OpenDemoPositionsCard() {
 
   const positions = snap?.openPositions ?? [];
   const recon = snap?.reconciliation;
-  const orphanCount = recon?.arxOrphanPositionCount ?? 0;
+  const measured = snap != null && snap.positionsMeasured !== false;
+  const orphanCount = measured && typeof recon?.arxOrphanPositionCount === "number" ? recon.arxOrphanPositionCount : null;
   const lastSync = snap?.lastSyncAt ? new Date(snap.lastSyncAt) : null;
   const ageSec = lastSync ? Math.round((Date.now() - lastSync.getTime()) / 1000) : null;
   const stale = ageSec != null && ageSec > 30;
+  const lastSyncLabel =
+    loadState === "loading"
+      ? "checking…"
+      : snap == null
+        ? "could not be loaded"
+        : !measured
+          ? "not read"
+          : lastSync
+            ? `${ageSec}s ago`
+            : "not reported";
 
   return (
     <Card className="border-2 border-success/30 bg-success/5" data-testid="card-open-demo-positions">
@@ -831,35 +860,51 @@ function OpenDemoPositionsCard() {
           <ListChecks className="w-4 h-4" /> Open Demo Positions (MT5)
         </CardTitle>
         <CardDescription>
-          Live snapshot of every open position on your MT5 DEMO account, joined to ARX demo
-          commands by broker ticket. Your EA syncs this every few seconds.{" "}
+          Open positions from the last positions sync of your MT5 DEMO account, joined to ARX
+          demo commands by broker ticket. Your EA posts this sync every few seconds while it is
+          attached.{" "}
           <strong>DEMO ONLY.</strong>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <Badge variant="outline" data-testid="badge-open-positions-count">
-            MT5 open: {recon?.mt5OpenPositionCount ?? 0}
+            MT5 open: {measured ? demoCount(recon?.mt5OpenPositionCount) : "not checked"}
           </Badge>
-          <Badge variant="outline">ARX matched: {recon?.arxMatchedPositionCount ?? 0}</Badge>
+          <Badge variant="outline" data-testid="badge-open-positions-matched">
+            ARX matched: {measured ? demoCount(recon?.arxMatchedPositionCount) : "not checked"}
+          </Badge>
           <Badge
             className={
-              orphanCount > 0
-                ? "bg-warning/15 text-warning border-warning/30"
-                : "bg-success/15 text-success border-success/30"
+              orphanCount == null
+                ? ""
+                : orphanCount > 0
+                  ? "bg-warning/15 text-warning border-warning/30"
+                  : "bg-success/15 text-success border-success/30"
             }
+            variant={orphanCount == null ? "outline" : undefined}
             data-testid="badge-open-positions-orphans"
           >
-            Orphan (not from ARX): {orphanCount}
+            Orphan (not from ARX): {demoCount(orphanCount)}
           </Badge>
-          <Badge variant="outline">ARX fill history: {recon?.filledCommandHistoryCount ?? 0}</Badge>
-          <span className="text-muted-foreground">
-            Last sync: {lastSync ? `${ageSec}s ago` : "never"}
+          <Badge variant="outline" data-testid="badge-open-positions-fill-history">
+            ARX fill history: {snap ? demoCount(recon?.filledCommandHistoryCount) : "not checked"}
+          </Badge>
+          <span className="text-muted-foreground" data-testid="text-open-positions-last-sync">
+            Last sync: {lastSyncLabel}
           </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void load().then(() => toast({ title: "Positions snapshot refreshed" }))}
+            onClick={() =>
+              void load().then((ok) =>
+                toast(
+                  ok
+                    ? { title: "Positions snapshot refreshed" }
+                    : { title: "Positions snapshot could not be loaded", variant: "destructive" },
+                ),
+              )
+            }
             disabled={refreshing}
             data-testid="button-refresh-open-positions"
           >
@@ -878,7 +923,7 @@ function OpenDemoPositionsCard() {
           </Alert>
         )}
 
-        {orphanCount > 0 && (
+        {orphanCount != null && orphanCount > 0 && (
           <Alert className="border-warning/40 bg-warning/10">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertTitle className="text-warning">
@@ -892,8 +937,20 @@ function OpenDemoPositionsCard() {
           </Alert>
         )}
 
-        {positions.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic">
+        {loadState === "failed" ? (
+          <p className="text-xs text-warning" data-testid="text-open-positions-load-failed">
+            The demo positions snapshot could not be loaded, so whether any demo positions are
+            open is unknown.
+          </p>
+        ) : snap != null && !measured ? (
+          <p className="text-xs text-warning" data-testid="text-open-positions-not-measured">
+            Your demo positions could not be checked, so they are not listed here.
+            {snap.positionsNote ? ` ${snap.positionsNote}` : ""}
+          </p>
+        ) : loadState === "loading" ? (
+          <p className="text-xs text-muted-foreground italic">Checking your demo positions…</p>
+        ) : positions.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic" data-testid="text-open-positions-empty">
             No open positions on the MT5 demo account.
           </p>
         ) : (
@@ -914,7 +971,7 @@ function OpenDemoPositionsCard() {
               <tbody>
                 {positions.map((p, i) => {
                   const matched = p.matchStatus === "MATCHED_TO_ARX_COMMAND";
-                  const pnl = p.floatingPnL ?? 0;
+                  const pnl = p.floatingPnL;
                   return (
                     <tr
                       key={p.brokerTicket ?? `pos-${i}`}
@@ -926,11 +983,11 @@ function OpenDemoPositionsCard() {
                       <td className="py-1 pr-2">{p.side ?? "—"}</td>
                       <td className="py-1 pr-2">{p.volume ?? "—"}</td>
                       <td className="py-1 pr-2 font-mono text-[10px]">{p.entryPrice ?? "—"}</td>
-                      <td className={`py-1 pr-2 font-mono text-[10px] ${pnl >= 0 ? "text-success" : "text-danger"}`}>
-                        {pnl.toFixed(2)}
+                      <td className={`py-1 pr-2 font-mono text-[10px] ${pnl == null ? "" : pnl >= 0 ? "text-success" : "text-danger"}`}>
+                        {pnl != null ? pnl.toFixed(2) : "—"}
                       </td>
                       <td className="py-1 pr-2 font-mono text-[10px]">
-                        {(p.stopLoss ?? 0)} / {(p.takeProfit ?? 0)}
+                        {p.stopLoss ?? "—"} / {p.takeProfit ?? "—"}
                       </td>
                       <td className="py-1 pr-2">
                         {matched ? (

@@ -220,3 +220,97 @@ test("the event that affects the symbol drives the overlay even when an unrelate
   assert.equal(out.minutesUntil, 10);
   assert.equal(out.heatAdjustment, 15);
 });
+
+// The date-only guard above must not catch a TIMED release: a connected
+// calendar with a confirmed release time 20 s away is at the event (heat +30,
+// the at-event stand-by), not "pre-event, release time not confirmed".
+function timedRadar(countdownSeconds: number, state: string, providerName = "fred"): NewsHeatDeps["buildRadarFn"] {
+  return async () => ({
+    radar: {
+      symbol: "EURUSD",
+      provider: { connected: true, name: providerName, note: "live" },
+      events: [{
+        id: "cpi-timed",
+        title: "US CPI",
+        currency: "USD",
+        severity: "HIGH",
+        eventTimeIso: "2026-10-28T12:30:00.000Z", // a real release time, not a date sentinel
+        countdownSeconds,
+        state,
+        affectsSymbol: true,
+        affectedSymbols: ["EURUSD"],
+      }],
+      topSeverity: "HIGH",
+      highImpactWindowActive: true,
+      summary: "",
+    },
+    behavior: { mode: "PRE_NEWS_CAUTION", note: "" },
+  }) as never;
+}
+
+test("a timed release 20 s away (radar IMMINENT) is AT_EVENT, not an unconfirmed pre-event", async () => {
+  for (const providerName of ["fred", "trading_economics"]) {
+    const out = await computeNewsHeat("EURUSD", {
+      classify: () => "forex",
+      analyzeNewsRiskFn: () => newsRisk(),
+      buildRadarFn: timedRadar(20, "IMMINENT", providerName),
+    });
+    assert.equal(out.phase, "AT_EVENT", providerName);
+    assert.equal(out.heatAdjustment, 30, providerName);
+    assert.equal(out.minutesSince, 0, providerName);
+    assert.equal(out.minutesUntil, null, providerName);
+  }
+});
+
+test("a timed release exactly 30 s away is never '1 min ago'", async () => {
+  const out = await computeNewsHeat("EURUSD", {
+    classify: () => "forex",
+    analyzeNewsRiskFn: () => newsRisk(),
+    buildRadarFn: timedRadar(30, "IMMINENT"),
+  });
+  assert.equal(out.phase, "AT_EVENT");
+  assert.equal(out.minutesSince, 0);
+});
+
+test("a timed release 10 min away keeps its known minute count", async () => {
+  const out = await computeNewsHeat("EURUSD", {
+    classify: () => "forex",
+    analyzeNewsRiskFn: () => newsRisk(),
+    buildRadarFn: timedRadar(600, "IMMINENT"),
+  });
+  assert.equal(out.phase, "PRE_EVENT");
+  assert.equal(out.minutesUntil, 10);
+  assert.equal(out.heatAdjustment, 15);
+});
+
+test("a date-only FRED release in its first seconds after midnight is still release-time-unconfirmed", async () => {
+  const out = await computeNewsHeat("EURUSD", {
+    classify: () => "forex",
+    analyzeNewsRiskFn: () => newsRisk(),
+    buildRadarFn: async () => ({
+      radar: {
+        symbol: "EURUSD",
+        provider: { connected: true, name: "fred", note: "live" },
+        events: [{
+          id: "cpi",
+          title: "Consumer Price Index",
+          currency: "USD",
+          severity: "CRITICAL",
+          eventTimeIso: "2026-10-28T00:00:00.000Z", // date-only sentinel
+          countdownSeconds: 0, // exactly midnight UTC
+          state: "IMMINENT",
+          affectsSymbol: true,
+          affectedSymbols: ["EURUSD"],
+        }],
+        topSeverity: "CRITICAL",
+        highImpactWindowActive: true,
+        summary: "",
+      },
+      behavior: { mode: "PRE_NEWS_CAUTION", note: "" },
+    }),
+  });
+  assert.equal(out.phase, "PRE_EVENT");
+  assert.equal(out.minutesUntil, null);
+  assert.equal(out.minutesSince, null);
+  assert.equal(out.heatAdjustment, 15);
+});

@@ -60,7 +60,7 @@ export async function startOnboarding(): Promise<Progress> {
   }).where(eq(userOnboardingProgressTable.id, p.id)).returning();
   await logEvent(p.onboardingId, "STARTED", "Onboarding started.");
   await audit("onboarding.started", { onboardingId: p.onboardingId });
-  await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding started", message: "Guided onboarding has been started. Live trading remains DISABLED." }).catch(() => {});
+  await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding started", message: "Guided onboarding has been started. Onboarding does not change your account's live-trading status." }).catch(() => {});
   return row!;
 }
 
@@ -83,7 +83,7 @@ export async function completeStep(stepId: string): Promise<Progress> {
   await logEvent(p.onboardingId, "STEP_COMPLETED", `Step '${stepId}' completed.`, { stepId });
   if (!next) {
     await audit("onboarding.completed", { onboardingId: p.onboardingId });
-    await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding completed", message: "Guided onboarding finished. Live trading remains DISABLED." }).catch(() => {});
+    await createAlert({ type: "AI_COACH", priority: "LOW", title: "Onboarding completed", message: "Guided onboarding finished. Onboarding does not change your account's live-trading status." }).catch(() => {});
   }
   return row!;
 }
@@ -144,7 +144,7 @@ export async function acknowledge(key: AckKey): Promise<Progress> {
   const patch: Record<string, unknown> = { lastSeenAt: new Date(), updatedAt: new Date() };
   patch[key] = true;
   const [row] = await db.update(userOnboardingProgressTable).set(patch as Partial<typeof userOnboardingProgressTable.$inferInsert>).where(eq(userOnboardingProgressTable.id, p.id)).returning();
-  await logEvent(p.onboardingId, "ACKNOWLEDGED", `Acknowledgement '${key}' recorded. Live trading remains DISABLED.`, { stepId: key });
+  await logEvent(p.onboardingId, "ACKNOWLEDGED", `Acknowledgement '${key}' recorded. Acknowledgements never change live-trading status.`, { stepId: key });
   await audit("onboarding.acknowledged", { onboardingId: p.onboardingId, key, liveTradingStatus: "DISABLED" });
   return row!;
 }

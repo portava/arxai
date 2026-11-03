@@ -196,17 +196,24 @@ export default function TraderCoachPage() {
         <p className="text-xs text-gray-400 mb-2">
           This report does not evaluate the system checks below (daily loss, cooldowns, data quality and so on).
           Tick each row yourself once you have confirmed it on the relevant page.
+          {coach.preSessionChecklist.some(item => item.id === "system_locked") &&
+            " The STOP row is the Risk Governor status this report read; it cannot be ticked off here."}
         </p>
         <ul className="text-sm space-y-1" data-testid="pre-session-checklist">
-          {coach.preSessionChecklist.map(item => (
+          {coach.preSessionChecklist.map(item => item.id === "system_locked" ? (
+            // The server only adds this row when the Risk Governor status it
+            // read for this report is LOCKED, so it is a measured finding, not
+            // a user confirmation: no checkbox, so it cannot be "cleared".
+            <li key={item.id} className="flex gap-2 text-red-300" data-testid={`checklist-${item.id}`} role="alert">
+              <span aria-hidden="true" className="font-bold">■</span>
+              <span>{item.label}</span>
+              <span className="text-xs text-red-400">(Risk Governor reports LOCKED)</span>
+            </li>
+          ) : (
             <li key={item.id} className="flex gap-2" data-testid={`checklist-${item.id}`}>
               <input type="checkbox" aria-label={item.label} />
               <span>{item.label}</span>
-              {item.id === "system_locked" ? (
-                // The server only adds this row when the Risk Governor status it
-                // read for this report is LOCKED, so it is a measured finding.
-                <span className="text-xs text-red-400">(Risk Governor reports LOCKED)</span>
-              ) : item.auto ? (
+              {item.auto ? (
                 <span className="text-xs text-amber-400">(system check — not checked by this report; verify before trading)</span>
               ) : null}
             </li>

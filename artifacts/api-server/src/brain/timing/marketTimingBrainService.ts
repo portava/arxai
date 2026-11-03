@@ -88,7 +88,7 @@ export async function computeTimingRead(
   const hasQuoteData = quoteData != null;
 
   // ─── 2. Session / Kill-Zone Engine ───────────────────────────────────────
-  const session = computeSessionKillZone({ symbol, isSynthetic, userTimezone });
+  const session = computeSessionKillZone({ symbol, isSynthetic, assetClass, userTimezone });
 
   // ─── 3+5. News + Broad-Flow Engines (independent → run in parallel) ───────
   // News heat and broad flow do not depend on each other; broad flow only needs

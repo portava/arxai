@@ -256,6 +256,13 @@ export function TradeHealthPanel({
             Trade health is momentarily unavailable — your positions and trading
             are unaffected.
           </p>
+        ) : assessments.length === 0 && data?.positionsMeasured === false ? (
+          // The server could not read this account's positions, so an empty
+          // list is not "no open positions" — say what happened instead.
+          <p className="text-amber-400/80" data-testid="trade-health-not-measured">
+            Your open positions could not be checked, so trade health is not
+            shown.{data.positionsNote ? ` ${data.positionsNote}` : ""}
+          </p>
         ) : assessments.length === 0 ? (
           <p className="text-zinc-500" data-testid="trade-health-empty">
             No open positions to monitor right now. Health guidance appears once

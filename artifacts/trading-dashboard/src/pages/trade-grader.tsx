@@ -113,11 +113,14 @@ export default function TradeGrader() {
             <CardDescription>No grade or entry score was produced for this idea.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <p>{grade.withheld === true ? grade.improvementSuggestion : "The entry sniper score was withheld."}</p>
-            <p className="text-muted-foreground">
-              The grader only runs on simulator prices, and the server hides simulator-based scores from your account.
-              This is not a judgement for or against the trade.
+            {/* The server masks by the viewer's role alone, never by feed state,
+                so its reason text is not echoed here: an older reason said the
+                grade was waiting for a verified feed, which no feed changes. */}
+            <p>
+              The grader only runs on simulator prices, and simulator-based scores are shown only to platform
+              operators, so the server did not return a grade to your account.
             </p>
+            <p className="text-muted-foreground">This is not a judgement for or against the trade.</p>
           </CardContent>
         </Card>
       )}

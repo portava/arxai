@@ -48,4 +48,22 @@ describe("Alerts Center counts and empty state", () => {
     await waitFor(() => expect(screen.getByTestId("alerts-open-count").textContent).toBe("42 open"));
     expect(screen.getByTestId("alerts-shown-count").textContent).toMatch(/Showing the newest 100/);
   });
+
+  it("a complete count over the list limit is the true number, not 'at least 100'", async () => {
+    const shown = Array.from({ length: 100 }, (_, i) => alert(i));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ alerts: shown, count: 150, countComplete: true }), { status: 200 })));
+    render(<AlertsCenter />);
+    await screen.findByTestId("alert-a0");
+    expect(screen.getByTestId("alerts-open-count").textContent).toBe("150 open");
+  });
+
+  it("a count the server marks incomplete is a lower bound, with the server's reason as the tooltip", async () => {
+    const note = "At least this many: 50 older open alerts were pushed out because the server keeps only the newest 200.";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ alerts: [alert(1)], count: 200, countComplete: false, countNote: note }), { status: 200 })));
+    render(<AlertsCenter />);
+    await screen.findByTestId("alert-a1");
+    const badge = screen.getByTestId("alerts-open-count");
+    expect(badge.textContent).toBe("at least 200 open");
+    expect(badge.getAttribute("title")).toBe(note);
+  });
 });

@@ -12,6 +12,10 @@ import type { NewsOverlay, NewsPhase } from "@workspace/domain/timing-brain";
 import { analyzeNewsRisk } from "../news/newsRiskEngine.js";
 import { buildMarketImpactRadar } from "../../lib/news/marketImpactRadar.js";
 import { classifySymbol } from "../../lib/data/marketDataRouter.js";
+import { FRED_PROVIDER } from "../../lib/news/calendar/fredCalendarProvider.js";
+
+/** FRED release dates carry this midnight-UTC sentinel instead of a release time. */
+const DATE_ONLY_SENTINEL_SUFFIX = "T00:00:00.000Z";
 
 /**
  * Optional dependency injection for testing. Production callers pass nothing and
@@ -82,18 +86,25 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
       // happened. A date-only release (FRED midnight sentinel) is held
       // UPCOMING/IMMINENT all day while its countdown runs from midnight, so a
       // negative countdown there does NOT mean the release is past: treat it
-      // as pre-event with no known minute count.
+      // as pre-event with no known minute count. A TIMED release keeps its
+      // real countdown: one seconds away (radar IMMINENT, countdown 0..30 s)
+      // is at the event, not "release time not confirmed".
+      const heldPreRelease = topEvent.state === "UPCOMING" || topEvent.state === "IMMINENT";
+      const dateOnlyRelease =
+        radar.provider.name === FRED_PROVIDER && topEvent.eventTimeIso.endsWith(DATE_ONLY_SENTINEL_SUFFIX);
       const releaseTimeUnconfirmed =
-        (topEvent.state === "UPCOMING" || topEvent.state === "IMMINENT") && secsRemaining <= 30;
+        heldPreRelease && (secsRemaining < 0 || (dateOnlyRelease && secsRemaining <= 30));
       if (releaseTimeUnconfirmed) {
         radarPhase = "PRE_EVENT";
       } else if (secsRemaining > 30) {
         minutesUntil = Math.round(secsRemaining / 60);
         radarPhase = minutesUntil <= 30 ? "PRE_EVENT" : "NONE";
       } else if (secsRemaining >= -900) {
-        // Within 15 min after start → treat as AT_EVENT
+        // From 30 s before the release to 15 min after it → AT_EVENT. Before
+        // the release no time has elapsed, so minutesSince is 0 (never
+        // "1 min ago" for a release still 30 s away).
         radarPhase = "AT_EVENT" as const;
-        minutesSince = Math.round(Math.abs(secsRemaining) / 60);
+        minutesSince = Math.round(Math.max(0, -secsRemaining) / 60);
       } else {
         minutesSince = Math.round(Math.abs(secsRemaining) / 60);
         radarPhase = minutesSince <= 60 ? "POST_EVENT" : "SETTLED";

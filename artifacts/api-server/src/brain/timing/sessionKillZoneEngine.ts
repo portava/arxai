@@ -190,8 +190,16 @@ function overlapWindowNote(londonActive: boolean): string {
 export interface SessionKillZoneInput {
   symbol: string;
   isSynthetic: boolean;
+  /**
+   * The symbol's asset class (classifySymbol). Crypto trades 24/7, so the FX
+   * weekend close does not close it. Optional: callers that leave it out get
+   * the FX week, as before.
+   */
+  assetClass?: string | null;
   userTimezone?: string | null;
 }
+
+export const CRYPTO_WEEKEND_SESSION_NAME = "24/7 Crypto — FX closed for the weekend";
 
 export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimingResult {
   const now = new Date();
@@ -217,6 +225,25 @@ export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimi
   // Weekend: interbank FX is closed — no session, no kill zone, no session
   // bonuses and no "best this session" symbols.
   if (isFxWeekendClosed(now)) {
+    // Crypto keeps trading through the FX weekend. No FX session or kill zone
+    // is open, so the session/kill-zone bonuses stay at 0 (same values as the
+    // FX weekend), but the read must not call a trading market closed.
+    if (input.assetClass === "crypto") {
+      return {
+        sessionName: CRYPTO_WEEKEND_SESSION_NAME,
+        killZone: "OFF_KILLZONE",
+        isKillZoneActive: false,
+        utcHour: Math.round(hour * 10) / 10,
+        sessionHeatBonus: 0,
+        fakeoutRisk: 30,
+        tradeabilityBonus: 0,
+        bestSymbols: [],
+        dangerSymbols: [],
+        sessionDescription:
+          "Crypto trades 24/7, including weekends. Interbank FX is closed for the weekend (Friday 17:00 to Sunday 17:00 New York time), so no FX session or kill zone is open and no session or kill-zone bonus is added.",
+        userLocalTime: getUserLocalTime(now, input.userTimezone),
+      };
+    }
     return {
       sessionName: FX_WEEKEND_SESSION_NAME,
       killZone: "OFF_KILLZONE",

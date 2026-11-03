@@ -58,11 +58,13 @@ async function postJSON<T>(path: string, body: unknown = {}, headers: Record<str
   return r.json();
 }
 
+// PASS_WITH_WARNINGS (readiness gate) and PAPER_CAUTION (Risk Governor) carry
+// soft warnings, so they wear the amber warning tone, never PASS's green.
 function StatusBadge({ status }: { status?: string }) {
   const s = (status ?? "UNKNOWN").toUpperCase();
-  const tone = s === "PASS" || s === "PASS_WITH_WARNINGS" || s === "PAPER_ALLOWED" || s === "PAPER_CAUTION" || s === "ACTIVE" || s === "OK"
+  const tone = s === "PASS" || s === "PAPER_ALLOWED" || s === "ACTIVE" || s === "OK"
     ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30"
-    : s === "PAPER_PAUSED" || s === "PAUSED" || s === "WATCH_ONLY" || s === "DEGRADED"
+    : s === "PASS_WITH_WARNINGS" || s === "PAPER_CAUTION" || s === "PAPER_PAUSED" || s === "PAUSED" || s === "WATCH_ONLY" || s === "DEGRADED"
     ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
     : s === "FAIL" || s === "BLOCKED" || s === "LOCKED" || s === "UNSAFE"
     ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30"
