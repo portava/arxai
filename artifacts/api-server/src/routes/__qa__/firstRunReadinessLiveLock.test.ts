@@ -51,6 +51,7 @@ const state: { env: Env | Error } = { env: DEMO };
 mock.module("../../lib/adminTrading/safetyEnvelope.js", {
   namedExports: {
     FAIL_CLOSED_ENVELOPE,
+    envelopeUnread: (env: Env) => env === FAIL_CLOSED_ENVELOPE,
     getEnvelope: async () => {
       if (state.env instanceof Error) throw state.env;
       return state.env;

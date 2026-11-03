@@ -27,7 +27,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { getMarketProvider } from "../lib/assistant/marketProvider.js";
 import { getPreferences } from "../lib/notifications/service.js";
-import { FAIL_CLOSED_ENVELOPE, getEnvelope, type SafetyEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { envelopeUnread, getEnvelope, type SafetyEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 
 const router = Router();
 
@@ -50,9 +50,9 @@ const SAFETY_MODE = "paper_only" as const;
 async function readLivePosture(userId: number): Promise<SafetyEnvelope | null> {
   try {
     const env = await getEnvelope(userId);
-    // getEnvelope returns the fail-closed default itself when the settings
+    // getEnvelope fails closed when the settings or the user's permissions
     // could not be read: that lock is a default, not a reading.
-    return env === FAIL_CLOSED_ENVELOPE ? null : env;
+    return envelopeUnread(env) ? null : env;
   } catch {
     return null;
   }
