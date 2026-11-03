@@ -44,6 +44,12 @@ function newTradesVerdict(c: Pick<Cards, "permissions" | "riskStatus" | "activeH
 
 const usd = (v: Money) => (v == null ? "none set" : `$${v}`);
 
+/**
+ * UNKNOWN means the server could not read your trading activity, so there is
+ * no overtrading verdict to show (an older server sent NORMAL here).
+ */
+const overtradingLabel = (v: string) => (v === "UNKNOWN" ? "Not measured — activity could not be read" : v);
+
 const STATUS_COLOR: Record<string, string> = {
   OK: "bg-success/20 text-success",
   CAUTION: "bg-warning/20 text-warning",
@@ -113,7 +119,7 @@ export default function RiskCommandCenter() {
           <Stat label="Open positions" value={String(cards.openPositions)} />
           <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
           <Stat label="Losses in a row" value={cards.consecutiveLosses == null ? "—" : String(cards.consecutiveLosses)} />
-          <Stat label="Overtrading" value={cards.overtrading} />
+          <Stat label="Overtrading" value={overtradingLabel(cards.overtrading)} />
           <Stat label="Active halts" value={cards.activeHalts.length === 0 ? "none" : String(cards.activeHalts.length)} />
         </div>
       )}

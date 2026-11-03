@@ -58,3 +58,16 @@ describe("Risk Command Center — Rules tab permissions", () => {
     expect(row.textContent).toMatch(/still checked by the Risk Governor/);
   });
 });
+
+// The Summary tab's Overtrading stat read NORMAL when the trader's activity
+// could not be read; the server now sends UNKNOWN and the page says so.
+describe("Risk Command Center — Summary tab overtrading", () => {
+  it("UNKNOWN reads 'Not measured', never NORMAL", async () => {
+    window.localStorage.setItem("arx.pageTab.risk-command-center", "summary");
+    stub(cards({ tradesToday: null, consecutiveLosses: null, overtrading: "UNKNOWN" }));
+    render(<RiskCommandCenter />);
+    expect(await screen.findByText("Not measured — activity could not be read")).toBeTruthy();
+    expect(screen.queryByText("NORMAL")).toBeNull();
+    expect(screen.queryByText("UNKNOWN")).toBeNull();
+  });
+});
