@@ -638,7 +638,9 @@ function ArmExecutionCard({
 }: { readiness: ReadinessResp | null; onAfter: () => void }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  // "armed": the arm endpoint set the operator arm. What that means for live
+  // execution is read from the current readiness at render time, not assumed.
+  const [msg, setMsg] = useState<string | "armed" | null>(null);
   if (!readiness) return null;
   const { state } = computeArmState(readiness);
   const required = readiness.requiredConfirmationPhrases.activate;
@@ -658,7 +660,7 @@ function ArmExecutionCard({
         })},
       );
       setMsg(r.ok
-        ? "ARMED — server live broker execution enabled."
+        ? "armed"
         : `${r.error}${r.mismatches ? ` :: ${r.mismatches.join("; ")}` : ""}${r.failedChecks ? ` :: ${r.failedChecks.join(",")}` : ""}`);
       onAfter();
     } finally { setBusy(null); }
@@ -778,10 +780,26 @@ function ArmExecutionCard({
             {busy === "disarm" ? "Disarming…" : "Disarm"}
           </Button>
         </div>
-        {msg && <div className="text-xs font-mono text-amber-300" data-testid="arm-msg">{msg}</div>}
+        {msg && <div className="text-xs font-mono text-amber-300" data-testid="arm-msg">{msg === "armed" ? armedMessage(g) : msg}</div>}
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * After a successful Arm. The arm endpoint sets the operator arm only (it does
+ * not read the env var), and effective live broker execution = env
+ * ARX_LIVE_BROKER_EXECUTION_ENABLED AND operator arm, so the message says what
+ * the latest readiness shows instead of claiming execution is enabled.
+ */
+function armedMessage(g: ReadinessResp["globalSwitches"]): string {
+  if (g.serverMasterSwitchEnvOnly !== true) {
+    return "ARMED — operator arm set. Live broker execution stays off: ARX_LIVE_BROKER_EXECUTION_ENABLED is not true on the server (effective = env AND operator arm).";
+  }
+  if (g.serverMasterSwitchEnabled === true) {
+    return "ARMED — operator arm set; live broker execution is enabled (env AND operator arm, as of the latest readiness).";
+  }
+  return "ARMED — operator arm set. Readiness does not yet report effective live broker execution as on; see the state above.";
 }
 
 // ── Activation Wizard ────────────────────────────────────────────────────────

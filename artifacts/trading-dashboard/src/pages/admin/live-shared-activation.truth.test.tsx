@@ -532,6 +532,39 @@ describe("live shared activation — env AND operator arm", () => {
     const banner = screen.getByTestId("banner-ready-to-arm");
     expect(banner.textContent).not.toMatch(/is not set/);
   });
+
+  // The arm endpoint does not read the env var: it sets the operator arm and
+  // answers {ok:true, armed:true}. With the env unset, effective execution
+  // stays off, yet the card said "ARMED — server live broker execution
+  // enabled." under the banner saying live execution stays off.
+  async function pressArm(envOn: boolean) {
+    let armed = false;
+    const after = () => ({ serverMasterSwitchEnvOnly: envOn, liveBrokerExecutionArmedDb: armed, serverMasterSwitchEnabled: envOn && armed });
+    stubApi({
+      "/api/admin/live-shared/readiness": () => response(readiness({ globalSwitches: after() })),
+      "/api/admin/live-shared/arm-live-execution": () => { armed = true; return response({ ok: true, armed: true }); },
+    });
+    render(<AdminLiveSharedActivationPage />);
+    await settle();
+    fireEvent.click(screen.getByTestId("arm-button"));
+    await settle();
+  }
+
+  it("arming with the env var not set does not say live execution is enabled", async () => {
+    await pressArm(false);
+    await waitFor(() => expect(screen.getByTestId("banner-armed-env-off")).toBeTruthy());
+    const msg = screen.getByTestId("arm-msg").textContent ?? "";
+    expect(msg).not.toMatch(/execution enabled/i);
+    expect(msg).toMatch(/operator arm set/);
+    expect(msg).toMatch(/stays off/);
+    expect(msg).toMatch(/ARX_LIVE_BROKER_EXECUTION_ENABLED/);
+  });
+
+  it("arming with the env var set reports execution enabled only once readiness says so", async () => {
+    await pressArm(true);
+    await waitFor(() => expect(screen.getByTestId("banner-armed")).toBeTruthy());
+    expect(screen.getByTestId("arm-msg").textContent).toMatch(/live broker execution is enabled/);
+  });
 });
 
 describe("live shared activation — identity confirmation copy", () => {
