@@ -40,7 +40,8 @@ import {
   readActivePaperAccount, readOpenPaperOrders, readPaperOrdersOpenedSince, sumPaperRealizedSince,
   readPaperCloses, countPaperOpenedSinceStillOpen,
 } from "../tradeEngine/paperBookReader.js";
-import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
+import { decideContractSize, resolveQuoteToAccountFx, type ResolvedContractSize } from "../mt5/contractSize.js";
+import { PAPER_ACCOUNT_CURRENCY, resolvePaperContract } from "../paperExecution/paperPnl.js";
 import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
@@ -65,11 +66,45 @@ import {
 
 export * from "./preTrade.js";
 
-/** The paper ledger books P/L as Δprice × lots × 100 (paperTrading pnlFor, paperExecutionMonitor). */
+/**
+ * The paper risk model: Δprice × lots × 100, quoted 1:1 in USD
+ * (paperExecution/paperPnl.ts PAPER_LEDGER_MODEL_CONTRACT_SIZE). Every paper
+ * order was priced at it before the paper venue sized P&L at the instrument's
+ * contract size, and the venue still counts a loss it cannot size at it. The
+ * governor never prices a paper order below it (paperInstrumentModel).
+ */
 export const PAPER_LEDGER_INSTRUMENT: InstrumentModel = {
   contractSize: 100, quoteToAccountFx: 1, volumeStep: 0.01, minVolume: 0.01, maxVolume: null,
   source: "paper_ledger_model",
 };
+
+/**
+ * Instrument model the governor prices a paper order with. The paper venue
+ * books P&L at the instrument's contract size (paperPnl.resolvePaperContract:
+ * the owner's broker spec, else the FX standard lot for a fiat pair) converted
+ * to USD, so a 50-pip stop on 5 lots of EURUSD books −2,500, not the −2.50 the
+ * paper risk model reads. The governor prices loss at stop, notional and
+ * margin at the larger of the two per-lot money values, so it never prices an
+ * order below what the venue books, nor below the paper risk model it used
+ * before contract sizing. A symbol whose contract size or USD rate is unknown
+ * uses the paper risk model, the figure the venue counts its loss at.
+ * Volume step and limits stay the paper model's.
+ */
+export function paperInstrumentModel(symbol: string, contract: ResolvedContractSize, price: number | null): InstrumentModel {
+  if (contract.contractSize == null) return PAPER_LEDGER_INSTRUMENT;
+  const fx = resolveQuoteToAccountFx({
+    symbol, profitCurrency: contract.profitCurrency, accountCurrency: PAPER_ACCOUNT_CURRENCY, closePrice: price ?? Number.NaN,
+  });
+  if (fx.factor == null) return PAPER_LEDGER_INSTRUMENT;
+  const sized = contract.contractSize * fx.factor;
+  const model = PAPER_LEDGER_INSTRUMENT.contractSize! * PAPER_LEDGER_INSTRUMENT.quoteToAccountFx!;
+  if (!Number.isFinite(sized) || !(sized > model)) return PAPER_LEDGER_INSTRUMENT;
+  return {
+    ...PAPER_LEDGER_INSTRUMENT,
+    contractSize: contract.contractSize, quoteToAccountFx: fx.factor,
+    source: `paper_contract:${contract.source ?? "unknown"}`,
+  };
+}
 /** Paper accounts carry no leverage column; margin is modelled at 1:100. */
 export const PAPER_ACCOUNT_LEVERAGE = 100;
 
@@ -212,7 +247,7 @@ async function loadActionInFlight(userId: number, venue: TradeIntent["venue"], n
 // PAPER facts come from the paper book's read side (owner decision 7):
 // paper_orders of the active paper account, never paper_trades (the journal)
 // or trades (legacy / DEMO).
-async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Date): Promise<Omit<RiskContext, "limits" | "now">> {
+async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Date, quote: RiskQuote | null = null): Promise<Omit<RiskContext, "limits" | "now">> {
   const acct = await readActivePaperAccount(intent.userId, opts.paperAccountId);
   const account: RiskAccount | null = acct ? {
     equity: acct.equity, freeMargin: acct.equity - acct.marginUsed,
@@ -250,8 +285,20 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     } catch { activity = null; }
   }
 
+  // Each symbol at the contract size the paper venue books it at, never below
+  // the paper risk model (paperInstrumentModel). The USD rate of a pair quoted
+  // in the base currency (USDJPY) needs a price: the quote for the order's
+  // symbol, else the order's entry, else an open position's entry.
   const instruments: Record<string, InstrumentModel> = {};
-  for (const s of new Set([intent.symbol, ...positions.map((p) => p.symbol)])) instruments[s] = PAPER_LEDGER_INSTRUMENT;
+  const quoteMid = quote
+    ? (quote.bid != null && quote.ask != null ? (quote.bid + quote.ask) / 2 : quote.bid ?? quote.ask ?? null)
+    : null;
+  for (const s of new Set([intent.symbol, ...positions.map((p) => p.symbol)])) {
+    if (!s) { instruments[s] = PAPER_LEDGER_INSTRUMENT; continue; }
+    const px = (s === intent.symbol ? quoteMid ?? intent.entryPrice ?? null : null)
+      ?? positions.find((p) => p.symbol === s)?.entryPrice ?? null;
+    instruments[s] = paperInstrumentModel(s, await resolvePaperContract(intent.userId, s), px);
+  }
 
   return {
     account,
@@ -514,7 +561,7 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     ? f.quote
     : intent.action === "OPEN" ? await loadQuote(intent.userId, intent.symbol) : null;
   const loaded = intent.venue === "PAPER"
-    ? await loadPaperFacts(intent, opts, now)
+    ? await loadPaperFacts(intent, opts, now, quote)
     : await loadBrokerFacts(intent, opts, now, quote);
   const account = f.account !== undefined ? f.account : loaded.account;
   const equityPeak = f.equityPeak !== undefined
