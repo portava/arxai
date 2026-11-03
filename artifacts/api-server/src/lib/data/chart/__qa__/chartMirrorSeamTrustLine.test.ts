@@ -16,6 +16,7 @@ import type { ChartFeedStatus } from "../chartDataService.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
 import { buildTrustLine } from "../rubyChartContext.js";
 import { buildRubyDraftRead } from "../../../assistant/rubyDraftRead.js";
+import { recordStateTruthResult, truthResultOfState } from "../stateTruthResult.js";
 
 const epoch = 1_700_000_000_000;
 function fixture(overrides: Partial<TimeframeTruthResult> = {}): TimeframeTruthResult {
@@ -96,4 +97,25 @@ test("a measured seam with a bound, aligned broker quote still reads 'Mirror syn
   assert.equal(mirrorTrustSegment(true, tight, gateMirrorBlockCause(gate, truth)), "Mirror synced");
   assert.match(buildTrustLine(gate, tight, "M5", false, "WARN", { feed, mergeSeamChecked: true }), /Mirror synced/);
   assert.match(buildRubyDraftRead(draftState(truth, gate, score, tight), "analyze").trustLine, /Mirror synced/);
+});
+
+test("a built state carries its seam evidence beside it, not as a serialized field", () => {
+  const truth = fixture(), tight = quoteAlignment(1.09999, 1.10001);
+  const score = computeChartTruthScore(truth, feed, tight);
+  const gate = computeChartGateOutput(score, read, tight, truth, false);
+  // Production states have no truthResult property (the chart builder never
+  // puts it on the state, so API responses never carry it).
+  const built = draftState(truth, gate, score, tight) as unknown as Record<string, unknown>;
+  delete built.truthResult;
+  const state = built as unknown as ChartIntelligenceState;
+  assert.equal(JSON.stringify(state).includes("truthResult"), false);
+  // Before the builder records the truth result, the seam is unobserved.
+  assert.equal(truthResultOfState(state), null);
+  assert.doesNotMatch(buildRubyDraftRead(state, "analyze").trustLine, /Mirror synced/);
+  // Once recorded (as buildChartIntelligenceState / enrichStateWithBrokerAlignment
+  // do), a measured seam reads "Mirror synced" and stays out of the JSON.
+  recordStateTruthResult(state, truth);
+  assert.equal(truthResultOfState(state), truth);
+  assert.match(buildRubyDraftRead(state, "analyze").trustLine, /Mirror synced/);
+  assert.equal(JSON.stringify(state).includes("truthResult"), false);
 });

@@ -20,6 +20,7 @@ import { computeChartTruthScore } from "../chartTruthScore.js";
 import { computeChartGateOutput } from "../chartGateOutput.js";
 import { noBrokerAlignment } from "../brokerPriceAlignment.js";
 import { enrichStateWithBrokerAlignment, type ChartIntelligenceState } from "../chartIntelligence.js";
+import { truthResultOfState } from "../stateTruthResult.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
 
 const epoch = 1_700_000_000_000;
@@ -130,6 +131,10 @@ test("broker-alignment enrichment rebuilds the gate with the same feed wording",
   // The closed-market stale gate also keeps the A-grade summary off "ready".
   assert.equal(enriched.gateOutput.autonomousChartActionAllowed, false);
   assert.equal(enriched.decisionState.actionability, "watch");
+  // The enriched state keeps its truth result beside it (for the seam check),
+  // never as a serialized field.
+  assert.equal(truthResultOfState(enriched), truth);
+  assert.equal(JSON.stringify(enriched).includes("truthResult"), false);
 });
 
 test("every chart-intelligence gate build passes the feed status, not only its stale flag", () => {

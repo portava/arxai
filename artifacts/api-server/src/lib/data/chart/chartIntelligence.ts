@@ -14,6 +14,7 @@
 //  - Adds NO new data source; reads ONLY the truth layer.
 //  - Pure Fast-Brain work — never invokes the Slow Brain (background-only).
 
+import { recordStateTruthResult } from "./stateTruthResult.js";
 import {
   getChartCandles,
   type ChartFeedStatus,
@@ -212,6 +213,7 @@ interface CacheEntry {
 }
 const cache = new Map<string, CacheEntry>();
 
+
 /**
  * Return the cached intelligence context (state + truth result + feed status)
  * for a symbol/timeframe/limit combination if the cache entry is still live.
@@ -281,7 +283,9 @@ export function enrichStateWithBrokerAlignment(
     gateOutput,
     decisionState,
   };
-  return { ...sentenceInput, marketSentences: buildMarketSentences(sentenceInput) };
+  const enriched: ChartIntelligenceState = { ...sentenceInput, marketSentences: buildMarketSentences(sentenceInput) };
+  recordStateTruthResult(enriched, truthResult);
+  return enriched;
 }
 
 function mean(xs: number[]): number {
@@ -679,6 +683,7 @@ export async function buildChartIntelligenceState(
     ...sentenceInput,
     marketSentences,
   };
+  recordStateTruthResult(state, truth.truthResult);
 
   cache.set(cacheKey, {
     state,

@@ -12,6 +12,7 @@
 // execution gate. Never weakens the 16-gate live pipeline.
 
 import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
+import { truthResultOfState } from "./stateTruthResult.js";
 import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import { isMergeSeamMeasured } from "./chartTruthScore.js";
@@ -256,7 +257,7 @@ function unusableFeedReason(state: ChartIntelligenceState): string {
     case "invalid": {
       const detail = count(feed.invalidOhlcCount)
         ? ` (${plural(count(feed.invalidOhlcCount), "bar")} with invalid OHLC)`
-        : state.truthResult?.mockDataDetected
+        : truthResultOfState(state)?.mockDataDetected
           ? " (the data looks simulated, not real market data)"
           : typeof feed.warning === "string" && /timestamps could not be confirmed/i.test(feed.warning)
             ? " (candle timestamps could not be confirmed)"
@@ -414,7 +415,7 @@ export async function buildRubyChartContext(
   let basis = toBasis(gate, state, aaciHandshake.sourceOverall);
   const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall,
     { feed: state.truthState, aaciSourceOverall: aaciHandshake.sourceOverall,
-      mergeSeamChecked: isMergeSeamMeasured(state.truthResult) });
+      mergeSeamChecked: isMergeSeamMeasured(truthResultOfState(state)) });
   let blockReason = gate.primaryBlockReason;
 
   // ── ONE DATA-SUFFICIENCY TRUTH ─────────────────────────────────────────────

@@ -85,7 +85,7 @@ test("Ruby's prompt and tool descriptions do not call READ_ONLY an account lock 
   assert.match(prompt, /READ_ONLY is the expected answer for a connected EA that reports pendingOrders/);
   assert.match(prompt, /not because of the user's connection or account/);
 
-  const describe = (name: string) => String((TOOL_DEFINITIONS as Array<{ name: string; description: string }>)
+  const describe = (name: string) => String((TOOL_DEFINITIONS as unknown as Array<{ name: string; description: string }>)
     .find((t) => t.name === name)?.description);
   assert.doesNotMatch(describe("getMyPendingOrderDrafts"), /nearly every submit returns BLOCKED_BY_PAPER_LOCK/);
   assert.match(describe("getMyPendingOrderDrafts"), /READ_ONLY/);

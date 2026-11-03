@@ -25,6 +25,7 @@ import {
   formatChartStatePrice,
 } from "../data/chart/marketSentenceEngine.js";
 import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause } from "../data/chart/chartGateOutput.js";
+import { truthResultOfState } from "../data/chart/stateTruthResult.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 export type RubyDraftIntent =
@@ -174,7 +175,7 @@ function buildTrustLine(state: ChartIntelligenceState, hasForming: boolean): str
   // sync while the price is only drifting (wide) or unverifiable (unknown).
   // A missing truth result counts as an unobserved seam: never "Mirror synced".
   const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment,
-    gateMirrorBlockCause(gate, state.truthResult ?? null));
+    gateMirrorBlockCause(gate, truthResultOfState(state)));
   if (mirror) {
     parts.push(mirror);
   }
