@@ -96,6 +96,10 @@ export function selectAwaitingBrokerOutcome(rows: LiveSharedCommandRow[]): LiveS
 
 type TabKey = "place" | "open" | "pending" | "sltp" | "rr" | "history" | "ruby";
 
+// useMasterLiveAccess re-reads access on mount and when the window regains
+// focus or becomes visible again — nothing else retries it.
+const ACCESS_RETRY_COPY = "Reload the page or switch back to this tab to retry.";
+
 // Tabs that need the commands list (open/pending/sltp/rr).
 const COMMAND_TABS = new Set<TabKey>(["open", "pending", "sltp", "rr"]);
 
@@ -250,7 +254,13 @@ export default function LiveSharedPage() {
               >
                 <Zap className="h-4 w-4 mr-1" /> Open Live Shared trade ticket
               </Button>
-              {access.loaded && !access.canTrade && (
+              {access.loaded && access.error ? (
+                // The access read failed: this is "could not be checked", not a
+                // refusal. The ticket stays closed (fail-closed).
+                <div className="text-xs text-amber-300" data-testid="ls-place-access-unknown">
+                  {access.error} {ACCESS_RETRY_COPY}
+                </div>
+              ) : access.loaded && !access.canTrade && (
                 <details className="text-xs">
                   <summary className="cursor-pointer text-amber-300">Trade blocked — why?</summary>
                   <div className="mt-1 text-muted-foreground">
@@ -296,7 +306,11 @@ export default function LiveSharedPage() {
 
         <TabsContent value="sltp" className="mt-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">SL / TP Manager</CardTitle></CardHeader><CardContent className="space-y-2">
-            {!access.canTrade && access.loaded && (
+            {!access.canTrade && access.loaded && access.error ? (
+              <div className="text-xs text-amber-300 flex items-center gap-2" data-testid="ls-sltp-access-unknown">
+                <ShieldAlert className="h-3.5 w-3.5" /> {access.error} SL/TP changes stay off until access is confirmed. {ACCESS_RETRY_COPY}
+              </div>
+            ) : !access.canTrade && access.loaded && (
               <div className="text-xs text-amber-300 flex items-center gap-2">
                 <ShieldAlert className="h-3.5 w-3.5" /> SL/TP modification is admin-gated.
               </div>
