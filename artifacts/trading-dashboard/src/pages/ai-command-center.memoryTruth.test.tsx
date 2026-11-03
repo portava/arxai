@@ -174,6 +174,26 @@ describe("Ruby Memory tab — truth", () => {
     expect((await screen.findByTestId("memory-net-pnl")).className).toMatch(/text-success/);
   });
 
+  // A server that sends no netPnlBasis does not say how its closes were
+  // booked. The fallback must not read as one measured figure: it names the
+  // two scales profit_loss can hold and that an unsized close may be a 0.
+  it("with no server basis, the Net P&L line names the mixed booking scales and unsized 0s", async () => {
+    renderTab((url) => {
+      if (url.startsWith("/api/performance/ai-command-center")) {
+        return json({ ok: true, commandCenter: paperCc, autopilot: {}, currentAccountMode: "PAPER" });
+      }
+      if (url.startsWith("/api/performance/equity-curve")) return json({ ok: true, equityCurve: { points: [] } });
+      return json({ ok: true, decisionQuality: null });
+    });
+    expect((await screen.findByTestId("memory-net-pnl")).textContent).toBe("12.50");
+    const scope = screen.getByTestId("memory-net-pnl-scope").textContent ?? "";
+    expect(scope).toMatch(/all closed paper trades/i);
+    expect(scope).toMatch(/did not report how these closes were booked/);
+    expect(scope).toMatch(/USD at the contract size/);
+    expect(scope).toMatch(/price move × lots × 100/);
+    expect(scope).toMatch(/could not be sized may be counted as 0/);
+  });
+
   it("when no closed trade could be sized, Net P&L is not measured (not 0.00) and the curve says why it has no points", async () => {
     const note = "P&L not measured: none of the 2 closed trades (V75) could be sized for the instrument (no contract size or currency conversion).";
     renderTab((url) => {

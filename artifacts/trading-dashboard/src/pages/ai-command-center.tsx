@@ -647,11 +647,12 @@ export function MemoryTab() {
               {!hasClosed ? "—" : netPnlMeasured ? c.netPnl.toFixed(2) : "Not measured"}
             </div>
             {/* The server's basis: how each close was booked and what is left
-                out. An older server sends none; no unit is claimed then. */}
+                out. An older server sends none; no unit is claimed then, and
+                the known caveats of the booked figure are named. */}
             <div className="text-[11px] text-txt-secondary mt-1" data-testid="memory-net-pnl-scope">
               {typeof c.netPnlBasis === "string" && c.netPnlBasis
                 ? c.netPnlBasis
-                : "All closed paper trades, as booked by the ARX paper simulator (not an MT5 demo or live account)"}
+                : "All closed paper trades, as booked by the ARX paper simulator (not an MT5 demo or live account). The server did not report how these closes were booked: newer closes are in USD at the contract size, older ones may carry the earlier price move × lots × 100 figure, and a close that could not be sized may be counted as 0."}
             </div>
           </CardContent>
         </Card>
