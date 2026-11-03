@@ -1812,7 +1812,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getRecentExecutionResults", description: "Phase UX9. Returns the most recent (default 10) trade-action execution results for the signed-in user across all statuses. Each row has actionId, actionType, symbol, requestedMode, status, mt5OrderTicket, mt5PositionTicket, fillPrice, slippage, brokerMessage, errorCode, executedAt, createdAt. Read-only. Use for 'show my recent executions', 'what did the broker do last', 'how have my trades been filling'.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getStuckCommandsForUser", description: "Phase UX9. Returns any of the signed-in user's trade actions whose underlying broker command went stale (status=failed with errorCode=WATCHDOG_STALE or status=sent_to_mt5 past timeout). Each row has actionId, symbol, requestedMode, status, brokerMessage, staleAt, ageMinutes, recommendedAction. Read-only. Use for 'why is my action stuck', 'did anything time out', 'is my close still pending'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getLaunchReadiness", description: "Alias of getMyTradingReadiness. Returns the signed-in user's launch/readiness report (ready_for_paper / ready_for_demo / ready_for_live + blockers). Use when the user asks 'am I ready to launch', 'launch readiness', 'can I go live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "summarizeLaunchReadinessForAdmin", description: "ADMIN/OWNER ONLY. Read-only operator summary of the ARX Operator Command Center: trading mode, server live-broker master switch (boolean), kill switch, queue depth, open live commands, reconciliation severity counts, user-approval counts (totals only — no per-user PII beyond aggregate buckets), and a 'ready / blocked / needsAction / safeToManuallyTest' verdict. NEVER returns raw bridge tokens, hashes, env values, IP addresses, or account numbers. NEVER places trades, modifies connections, or contacts the EA. If the caller is not ADMIN or OWNER, returns {error:'ADMIN_REQUIRED'}. Use when an operator asks 'summarize launch readiness', 'what's the operator status', 'is the platform safe to live-test'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "summarizeLaunchReadinessForAdmin", description: "ADMIN/OWNER ONLY. Read-only operator summary of the ARX Operator Command Center: trading mode, the live-broker master switch as dispatch gate 1 reads it (tradingMode.liveBrokerExecutionEnabled = the env flag AND an operator arm; liveBrokerExecutionEnvFlag and liveBrokerExecutionOperatorArmed say which half is missing — never call live broker execution enabled from the env flag alone), kill switch, queue depth, open live commands, reconciliation severity counts, user-approval counts (totals only — no per-user PII beyond aggregate buckets), and a 'ready / blocked / needsAction / safeToManuallyTest' verdict. NEVER returns raw bridge tokens, hashes, env values, IP addresses, or account numbers. NEVER places trades, modifies connections, or contacts the EA. If the caller is not ADMIN or OWNER, returns {error:'ADMIN_REQUIRED'}. Use when an operator asks 'summarize launch readiness', 'what's the operator status', 'is the platform safe to live-test'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMyTradingReadiness", description: "Readiness Engine. Returns the signed-in user's full 14-status readiness report: accountMode (USER_OWNED_MT5 | SHARED_MASTER_MT5 | null), paperOnlyHardLockActive, ready_for_paper, ready_for_demo, ready_for_live, blockers[], and statuses[] (id, label, status: pass|fail|warning|blocked|not_required, requiredFor, blockerReason, userFriendlyExplanation, nextStep). NEVER fabricates readiness — every flag comes from the same engine the API and admin dashboard use. ready_for_live is REPORTING ONLY (no execution path reads it) and is true ONLY for an admin-approved, armed, eligible trader who has cleared every live gate; it is false for non-approved, non-armed, investor, or system accounts. Use to answer 'am I ready to trade', 'what's my readiness', 'can I trade live yet'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "explainReadinessBlockers", description: "Readiness Engine. Returns only the FAILING readiness items for the signed-in user with a plain-English explanation and the exact next step for each. Use when the user asks 'why am I blocked', 'why can't I trade live', 'what's stopping me', 'what do I need to fix'. Read-only.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "listMyOnboardingSteps", description: "Readiness Engine. Returns the full list of the signed-in user's onboarding/readiness statuses grouped by stage (profile, risk, disclosures, account_mode, mt5, demo, live) with their current status. Use for 'what onboarding steps are left', 'where am I in setup', 'show my checklist'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
@@ -2629,7 +2629,11 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     // The switches come from the one switch authority; an unreadable row
     // reads as engaged / OFF.
     const { switches, config } = await loadPlatformSettings({ ifMissing: "seed" });
-    const masterSwitch = switches.liveBrokerExecution.envEnabled;
+    // The master switch is what dispatch gate 1 reads: the env flag AND the
+    // operator arm (platformSwitches). The env flag alone is reported beside it.
+    const envFlag = switches.liveBrokerExecution.envEnabled;
+    const operatorArmed = switches.liveBrokerExecution.operatorArmed === true;
+    const masterSwitch = switches.liveBrokerExecution.enabled === true;
     const sharedLive = !!config?.sharedLiveTradingEnabled;
     const platformMode = switches.platformMode;
     // Both install-wide stops through platformStop(); killSwitchEngaged keeps
@@ -2658,7 +2662,9 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     };
 
     const blockers: string[] = [];
-    if (!masterSwitch) blockers.push("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)");
+    if (!envFlag) blockers.push("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)");
+    else if (switches.readable === false) blockers.push("LIVE_BROKER_EXECUTION_UNKNOWN (platform settings could not be read; live broker execution is treated as off)");
+    else if (!masterSwitch) blockers.push("LIVE_BROKER_EXECUTION_NOT_ARMED (env flag is set but no operator has armed live broker execution; every live dispatch is refused until one does)");
     if (killEngaged) blockers.push("GLOBAL_KILL_SWITCH_ENGAGED");
     if (stopSourceEngaged(stop, "safety_core_kill_switch")) blockers.push("SAFETY_CORE_KILL_SWITCH_ENGAGED");
     if (!det.ok) blockers.push(`NO_CURRENT_LIVE_BRIDGE:${det.primaryReason}`);
@@ -2688,7 +2694,14 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       needsAction,
       safeToManuallyTest,
       systemStatus: { platformMode, killSwitchEngaged: killEngaged, ...platformStopReport(stop), latestQaStatus: "ARX_AUDIT_FIX_BUILD_READY" },
-      tradingMode: { liveBrokerExecutionEnabled: masterSwitch, sharedLiveTradingEnabled: sharedLive, currentBridgeDetected: !!det.ok },
+      tradingMode: {
+        // Effective switch (env AND operator arm), as dispatch gate 1 reads it.
+        liveBrokerExecutionEnabled: masterSwitch,
+        liveBrokerExecutionEnvFlag: envFlag,
+        liveBrokerExecutionOperatorArmed: operatorArmed,
+        sharedLiveTradingEnabled: sharedLive,
+        currentBridgeDetected: !!det.ok,
+      },
       counts: {
         queueDepth: queueRows[0]?.n ?? 0,
         openLiveCommandsNonTerminal: openLiveRows[0]?.n ?? 0,
