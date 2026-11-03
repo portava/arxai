@@ -30,6 +30,7 @@ import {
   adminActionAuditLogTable,
 } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { isUnsizedPaperClose, paperMoveSign } from "../paperExecution/paperPnl.js";
 import {
   getAppFeatureMap,
   explainFeature as featureExplain,
@@ -1198,6 +1199,13 @@ export async function getPropFirmModeStatus(userId: number) {
     const orders = await db.select().from(paperOrdersTable).where(orderWhere);
     const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt);
     const openCount = orders.filter((o) => o.status === "OPEN").length;
+    // A close the paper venue could not size for the instrument (no contract
+    // size or currency conversion) holds a 0 placeholder in profit_loss. Its
+    // P&L is not known: it adds nothing to the sums below, and the result
+    // says so instead of reading it as a break-even.
+    const unsizedCloses = closed.filter((o) => o.status !== "CANCELLED" && isUnsizedPaperClose(o));
+    const unsizedLosses = unsizedCloses.filter((o) => o.exitPrice != null && paperMoveSign(o.direction, o.entryPrice, o.exitPrice) < 0).length;
+    const unsizedSymbols = [...new Set(unsizedCloses.map((o) => o.symbol))].sort();
 
     // Bucket P&L + trade count per UTC day.
     const byDayPnl = new Map<string, number>();
@@ -1272,6 +1280,11 @@ export async function getPropFirmModeStatus(userId: number) {
     if (totalPositive > 0 && consistencyTopShare > ch.consistencyRulePercent) {
       const msg = `Single best day = ${(consistencyTopShare*100).toFixed(1)}% of profit, exceeds consistency rule ${(ch.consistencyRulePercent*100).toFixed(0)}%`;
       if (totalPct >= ch.profitTarget) violations.push(msg); else warnings.push(msg);
+    }
+    // Unknown P&L: the balance, profit, daily loss and drawdown leave these
+    // closes out, so compliance with the loss limits cannot be confirmed.
+    if (unsizedCloses.length > 0) {
+      warnings.push(`${unsizedCloses.length} closed paper trade${unsizedCloses.length === 1 ? "" : "s"} (${unsizedSymbols.join(", ")}) could not be sized for the instrument (no contract size or currency conversion), so ${unsizedCloses.length === 1 ? "its" : "their"} P&L is not known and is left out of the balance, profit, daily loss and drawdown. Those figures may be wrong, so the loss and drawdown limits cannot be confirmed.`);
     }
     // Overtrading: >20 closed trades on any single day → soft warning.
     for (const date of sortedDates) {
@@ -1355,7 +1368,9 @@ export async function getPropFirmModeStatus(userId: number) {
 
     // Profit-target reached signal (informational; route /evaluate is the
     // authoritative pass/fail writer — we never mutate state here).
-    const profitTargetReached = hasData && totalPct >= ch.profitTarget && daysWorked >= ch.minTradingDays;
+    // An unsized losing close could take the profit below the target, so the
+    // target is not confirmed while one is left out.
+    const profitTargetReached = hasData && totalPct >= ch.profitTarget && daysWorked >= ch.minTradingDays && unsizedLosses === 0;
 
     // Read-only advisory: would a new trade still be allowed under hard rules?
     const canTakeNewTradeReasons: string[] = [];
@@ -1414,6 +1429,9 @@ export async function getPropFirmModeStatus(userId: number) {
         daysSinceStart,
         openTradeCount: openCount,
         closedTradeCount: closed.length,
+        /** Closed trades whose P&L could not be sized: left out of every money figure above. */
+        unsizedClosedTradeCount: unsizedCloses.length,
+        unsizedSymbols,
       },
       warnings,
       violations,
@@ -1761,7 +1779,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getCurrentPageContext", description: "Returns the page the user is currently looking at (pathname + matched feature). Use for 'what page am I on' or 'explain this page'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getPaperSafetyStatus", description: "Returns the paper-only / liveLocked / readOnlyMode safety status with the reason. Use when the user asks why the app is paper-only, whether you can place a live trade, or what live execution requires.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMarketDataProviderStatus", description: "Returns whether a real market data provider is wired (Finnhub, Alpha Vantage, Polygon, NewsAPI). Use when the user asks 'do I have live market data'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestTradeRiskPct, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, daysWorked, daysSinceStart, openTradeCount, closedTradeCount), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestTradeRiskPct, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, daysWorked, daysSinceStart, openTradeCount, closedTradeCount, unsizedClosedTradeCount, unsizedSymbols — closes whose P&L could not be sized are left out of every money figure and named in warnings[], so the loss limits are not confirmed), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "createSupportDiagnosticReport", description: "Builds a diagnostic snapshot (MT5, account, risk, notifications, activity, market provider) for the current user. Use when the user asks for a support summary.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "evaluatePaperTradePlan", description: "Transparent plan-quality scorecard for the user's stored paper trade or an inline draft. Returns plan_completeness, risk_quality, reward_quality, timing_readiness, discipline_alignment, overall score, and a label (incomplete | needs_review | watchlist_ready | paper_trade_ready | blocked_by_risk). NOT a profit prediction. Use when the user asks 'is this trade ready', 'what's missing', 'why was this blocked', 'what's my setup score'.", parameters: { type: "object", properties: { paperTradeId: { type: "integer" }, plan: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, entry: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, lotSize: { type: "number" }, reasonForEntry: { type: "string" }, setupType: { type: "string" } }, additionalProperties: false } }, additionalProperties: false } },
   { name: "getTradingStyleProfile", description: "Returns the user's saved trading style: preferred symbol/market, account mode, risk rules. Returns configured:false for fresh users — never invents preferences.", parameters: { type: "object", properties: {}, additionalProperties: false } },

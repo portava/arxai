@@ -143,3 +143,28 @@ test("Net P&L names its basis: booked demo P&L (older and unsized closes disclos
   assert.match(cc.netPnlBasis, /can differ/);
   assert.doesNotMatch(cc.netPnlBasis, /what your demo balance moves by/);
 });
+
+// A close the paper venue could not size holds profit_loss 0. Ruby Memory
+// counted it as a break-even and added its 0 to net P&L; it is a win or a
+// loss by its price move, and its amount is left out and counted.
+test("an unsized manual V75 loss (stored 0) counts as a loss, adds nothing to Net P&L, and is disclosed", async () => {
+  rows.set(database.tradeDecisionLogsTable, [decision(1), decision(2)]);
+  rows.set(database.paperOrdersTable, [
+    order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2, decisionId: 1 }),
+    order(12, { symbol: "V75", status: "CLOSED_MANUAL", closedAt: new Date(), entryPrice: 1000, stopLoss: 980, takeProfit: 1040, exitPrice: 990, profitLoss: 0, decisionId: 2 }),
+    order(13, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2 }),
+  ]);
+  const cc = await buildCommandCenter(7) as unknown as {
+    winRate: number; netPnl: number; netPnlBasis: string; unsizedClosedTrades: number;
+    bestSymbol: string | null; worstSymbol: string | null; insights: string[];
+    aiDecisionStats: Record<string, unknown>;
+  };
+  assert.equal(cc.winRate, 66.67, "2 wins of 3 closes");
+  assert.equal(cc.netPnl, 4);
+  assert.equal(cc.unsizedClosedTrades, 1);
+  assert.match(cc.netPnlBasis, /1 of 3 closed trades \(V75\) could not be sized/);
+  assert.equal(cc.bestSymbol, "EURUSD");
+  assert.equal(cc.worstSymbol, null, "V75's net is not known, so it is not ranked");
+  assert.equal(cc.aiDecisionStats.decisionToWinRate, 50);
+  assert.doesNotMatch(cc.insights.join("\n"), /positive net P&L/, "the unsized loss could take the net below zero");
+});

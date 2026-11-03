@@ -18,7 +18,13 @@ interface CalendarDay {
    * computed for it (the live route does not grade days).
    */
   day_rating: "A" | "B" | "C" | "D" | "F" | null;
-  day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
+  /**
+   * NOT_SIZED_DAY: some closes could not be sized for the instrument, so the
+   * day could be up or down.
+   */
+  day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY" | "NOT_SIZED_DAY";
+  /** Closes whose P&L could not be sized; net_pnl leaves them out. */
+  unsized_trades?: number;
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
@@ -33,6 +39,8 @@ interface CalendarResp {
     winning_days: number | null; losing_days: number | null; no_trade_days: number | null;
     /** Which ledger the month was read from (server text). */
     source_note?: string;
+    /** Server note on closes whose P&L could not be sized (null when none). */
+    pnl_note?: string | null;
   };
   currentAccountMode?: string;
   liveAggregation?: string;
@@ -87,6 +95,11 @@ function profitFactorText(stats: { profit_factor?: unknown; wins?: unknown; loss
   if (typeof pf === "number" && Number.isFinite(pf) && losses != null && losses > 0) return pf.toFixed(2);
   if (losses === 0 && wins != null && wins > 0) return "No losses (undefined)";
   return "—";
+}
+
+/** How many of a day's closes could not be sized (0 from an older server). */
+function unsizedOf(d: { unsized_trades?: unknown }): number {
+  return typeof d.unsized_trades === "number" && d.unsized_trades > 0 ? d.unsized_trades : 0;
 }
 
 function dayColor(d: CalendarDay) {
@@ -362,6 +375,10 @@ export default function TradingCalendarPage() {
         </div>
       )}
 
+      {totals && typeof totals.pnl_note === "string" && totals.pnl_note && (
+        <div className="text-xs text-amber-300" data-testid="calendar-pnl-note">{totals.pnl_note}</div>
+      )}
+
       {isLive && calData && !notShownHere && num(calData.calendar.total_trades) === 0 && (
         <Card className="border-border">
           <CardContent className="pt-4 text-sm text-muted-foreground">
@@ -403,10 +420,12 @@ export default function TradingCalendarPage() {
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
                       {d.day_status === "LOSING_DAY" && <TrendingDown className="h-3 w-3" />}
                       {d.day_status === "BREAK_EVEN_DAY" && <Minus className="h-3 w-3" />}
-                      {d.total_trades > 0 ? d.net_pnl.toFixed(2) : "—"}
+                      {/* No figure when none of the day's closes could be sized: its 0.00 is not a result. */}
+                      {d.total_trades > 0 && unsizedOf(d) < d.total_trades ? d.net_pnl.toFixed(2) : "—"}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-1">
                       {d.total_trades > 0 ? `${d.total_trades}t · ${d.win_rate.toFixed(0)}%w` : d.is_future ? "not yet" : "no trades"}
+                      {unsizedOf(d) > 0 && <span data-testid={`day-unsized-${d.date}`}>{` · ${unsizedOf(d)} not sized`}</span>}
                     </div>
                     {(d.debriefs_created > 0 || d.learning_events_created > 0) && (
                       <div className="text-[10px] text-muted-foreground">
@@ -433,12 +452,15 @@ export default function TradingCalendarPage() {
             ) : day.data ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-                  <div><div className="text-muted-foreground text-xs">Net P&L</div>{num(day.data.day.stats.net_pnl) == null ? <div className="font-bold text-muted-foreground">—</div> : <div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{day.data.day.stats.net_pnl.toFixed(2)}</div>}</div>
+                  <div><div className="text-muted-foreground text-xs">Net P&L</div>{num(day.data.day.stats.net_pnl) == null ? <div className="font-bold text-muted-foreground">—</div> : num(day.data.day.stats.total_trades) != null && unsizedOf(day.data.day.stats) >= day.data.day.stats.total_trades ? <div className="font-bold text-muted-foreground" data-testid="day-detail-net-pnl">Not measured</div> : <div className={`font-bold ${day.data.day.stats.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`} data-testid="day-detail-net-pnl">{day.data.day.stats.net_pnl.toFixed(2)}</div>}</div>
                   <div><div className="text-muted-foreground text-xs">Trades</div><div className="font-bold">{num(day.data.day.stats.total_trades) ?? "—"}</div></div>
                   <div><div className="text-muted-foreground text-xs">Win Rate</div><div className="font-bold">{num(day.data.day.stats.win_rate) == null ? "—" : `${day.data.day.stats.win_rate.toFixed(1)}%`}</div></div>
                   <div><div className="text-muted-foreground text-xs">Profit Factor</div><div className="font-bold" data-testid="day-detail-profit-factor">{profitFactorText(day.data.day.stats)}</div></div>
                   <div><div className="text-muted-foreground text-xs">Day Rating</div><div className="font-bold" data-testid="day-detail-rating">{day.data.day.stats.day_rating ?? (num(day.data.day.stats.total_trades) === 0 ? "Not rated — no closed trades" : "Not rated")}</div></div>
                 </div>
+                {typeof day.data.day.stats.pnl_note === "string" && day.data.day.stats.pnl_note && (
+                  <div className="text-xs text-amber-300" data-testid="day-pnl-note">{day.data.day.stats.pnl_note}</div>
+                )}
                 {dayLiveWithheld && <div className="text-sm text-muted-foreground" data-testid="day-mode-note">{day.data.modeNote ?? "This is a live account. Live trades are not totalled by day here, so no figures are shown. They are not zero."}</div>}
                 {day.data.day.stats.top_lesson && <div className="text-sm italic text-amber-300">📖 {day.data.day.stats.top_lesson}</div>}
                 <div className="space-y-2">

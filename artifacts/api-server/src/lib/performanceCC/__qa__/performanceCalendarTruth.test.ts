@@ -33,7 +33,7 @@ mock.module("../../learning/scopedMemory.js", {
   namedExports: { listOwnEdges: async () => [], listOwnMistakes: async () => [] },
 });
 
-const { computeAutopilotSummary, computeCalendarMonth, computeDailyStats, computeDayDetail, computeRangeSummary } = await import("../aggregator.js");
+const { computeAutopilotSummary, computeCalendarMonth, computeDailyStats, computeDayDetail, computeRangeSummary, computeEquityCurve, computeSymbolStats, computeDecisionQuality } = await import("../aggregator.js");
 
 function order(over: Record<string, unknown>) {
   return {
@@ -138,4 +138,110 @@ test("profit factor with no losing trade is undefined (null), not an invented 9.
 
   rows.clear();
   assert.equal((await computeDailyStats(7, "2026-05-04")).profit_factor, null, "no closed trades: nothing to divide");
+});
+
+// The paper venue stores profit_loss 0 for a close it could not size for the
+// instrument (no contract size or currency conversion), on every close path:
+// a trader's manual V75 close with no broker spec is one. That 0 is a
+// placeholder, not a break-even: the close is a win or a loss by its price
+// move, and its unknown amount is left out of every money figure (as
+// Analytics does).
+const unsizedV75Loss = (over: Record<string, unknown> = {}) => order({
+  id: 2, symbol: "V75", direction: "BUY", entryPrice: 1000, stopLoss: 980, takeProfit: 1040,
+  exitPrice: 990, profitLoss: 0, status: "CLOSED_MANUAL", ...over,
+});
+
+test("day stats: an unsized manual V75 loss (stored 0) is a loss, not a break-even, and never the best or worst trade", async () => {
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 2 }), unsizedV75Loss()]);
+  const d = await computeDailyStats(7, "2026-05-04");
+  assert.equal(d.wins, 1);
+  assert.equal(d.losses, 1, "was 0: the stored 0 read as a break-even");
+  assert.equal(d.break_even, 0);
+  assert.equal(d.net_pnl, 2, "the unsized amount is not known, so it adds nothing");
+  assert.equal(d.best_trade, 2);
+  assert.equal(d.worst_trade, 2, "was 0.00: the placeholder ranked as the worst trade");
+  assert.equal(d.worst_trade_id, 1);
+  assert.equal(d.unsized_trades, 1);
+  assert.deepEqual(d.unsized_symbols, ["V75"]);
+  assert.match(String(d.pnl_note), /1 of 2 closed trades \(V75\) could not be sized/);
+  assert.equal(d.profit_factor, null, "the ratio is not known with an unsized close");
+  // +2 sized and a loss of unknown size: the day could be up or down.
+  assert.equal(d.day_status, "NOT_SIZED_DAY");
+  assert.equal(d.day_rating, null);
+});
+
+test("day stats: a day whose only close is an unsized loss is a losing day, with its P&L not measured", async () => {
+  rows.set(database.paperOrdersTable, [unsizedV75Loss()]);
+  const d = await computeDailyStats(7, "2026-05-04");
+  assert.equal(d.day_status, "LOSING_DAY", "was BREAK_EVEN_DAY");
+  assert.equal(d.day_rating, "F", "was C (net >= 0)");
+  assert.equal(d.best_trade, null);
+  assert.equal(d.worst_trade, null);
+  assert.match(String(d.pnl_note), /P&L not measured: none of the 1 closed trade \(V75\) could be sized/);
+
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 2 }), unsizedV75Loss({ id: 3, exitPrice: 1010, status: "CLOSED_TP" })]);
+  const up = await computeDailyStats(7, "2026-05-04");
+  assert.equal(up.day_status, "WINNING_DAY", "a sized win and an unsized win: the day is up");
+  assert.equal(up.wins, 2);
+  assert.equal(up.avg_win, 2, "the average win is over sized wins only");
+});
+
+test("day detail: an unsized close has no P&L (null) and says why, not a measured 0.00", async () => {
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 2 }), unsizedV75Loss()]);
+  const detail = await computeDayDetail(7, "2026-05-04");
+  const row = detail.trades.find((t) => t.trade_id === 2)!;
+  assert.equal(row.pnl, null);
+  assert.match(String(row.pnl_note), /could not be sized/);
+  assert.match(String(row.pnl_note), /moved against you/);
+  assert.equal(detail.trades.find((t) => t.trade_id === 1)!.pnl, 2);
+});
+
+test("range summary, symbols, equity curve and decision quality leave unsized closes out of money and count them by price move", async () => {
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 2, decisionId: 41 }), unsizedV75Loss({ decisionId: 42 })]);
+  rows.set(database.tradeDecisionLogsTable, [
+    { id: 41, userId: 7, shouldTrade: true, confidence: 70, riskScore: 30, createdAt: new Date() },
+    { id: 42, userId: 7, shouldTrade: true, confidence: 70, riskScore: 30, createdAt: new Date() },
+  ]);
+  const r = await computeRangeSummary(7, "all");
+  assert.equal(r.losses, 1);
+  assert.equal(r.break_even, 0);
+  assert.equal(r.net_pnl, 2);
+  assert.equal(r.unsized_trades, 1);
+  assert.equal(r.avg_daily_pnl, null, "the day's total is not known");
+  assert.equal(r.best_day, null, "a day with an unsized close is not ranked");
+  assert.equal(r.best_symbol, "EURUSD");
+  assert.equal(r.worst_symbol, "EURUSD", "V75's net is not known, so it is not ranked");
+  assert.match(String(r.pnl_note), /could not be sized/);
+
+  const sym = (await computeSymbolStats(7, "all")).find((x) => x.symbol === "V75")!;
+  assert.equal(sym.losses, 1);
+  assert.equal(sym.unsized_trades, 1);
+  assert.equal(sym.best_trade_id, null);
+  assert.match(String(sym.pnl_note), /P&L not measured/);
+
+  const eq = await computeEquityCurve(7, "all");
+  assert.deepEqual(eq.points.map((p) => p.trade_id), [1], "no 0.00 point for the unsized close");
+  assert.equal(eq.unsized_trades, 1);
+  assert.match(String(eq.pnl_note), /1 of 2 closed trades \(V75\)/);
+
+  const dq = await computeDecisionQuality(7, "all");
+  assert.equal(dq.became_win, 1);
+  assert.equal(dq.became_loss, 1, "was 0: the unsized loss was neither a win nor a loss");
+});
+
+test("calendar month: an unsized loss day is a losing day, and a mixed day is not counted as break-even or no-trade", async () => {
+  rows.set(database.paperOrdersTable, [unsizedV75Loss()]);
+  const lost = await computeCalendarMonth(7, "2020-02");
+  assert.equal(lost.losing_days, 29, "the stub returns the close for every day");
+  assert.equal(lost.break_even_days, 0);
+  assert.equal(lost.unsized_trades, 29);
+  assert.equal(lost.days[0]!.unsized_trades, 1);
+  assert.match(String(lost.pnl_note), /P&L not measured/);
+
+  rows.set(database.paperOrdersTable, [order({ id: 1, profitLoss: 2 }), unsizedV75Loss()]);
+  const mixed = await computeCalendarMonth(7, "2020-02");
+  assert.equal(mixed.not_sized_days, 29);
+  assert.equal(mixed.winning_days, 0);
+  assert.equal(mixed.break_even_days, 0);
+  assert.equal(mixed.no_trade_days, 0);
 });

@@ -371,3 +371,49 @@ describe("trading calendar: day profit factor", () => {
     expect((await screen.findByTestId("day-detail-profit-factor")).textContent).toBe("2.00");
   });
 });
+
+// A close the paper venue could not size for the instrument stores P&L 0.
+// The server now leaves it out of the money figures, counts it, and marks a
+// day it leaves undecided NOT_SIZED_DAY; the page must not show that 0 as a
+// result.
+describe("trading calendar: closes whose P&L could not be sized", () => {
+  it("a day of only unsized closes shows no 0.00, says how many were not sized, and the detail shows the server's note", async () => {
+    const note = "P&L not measured: none of the 1 closed trade (V75) could be sized for the instrument (no contract size or currency conversion).";
+    mockFetch({
+      "/api/me/trading/mode": { ok: true, envelope: { tradingMode: "PAPER" } },
+      "/api/performance/calendar": {
+        calendar: {
+          month: MONTH, total_pnl: 2, total_trades: 3, winning_days: 0, losing_days: 1, no_trade_days: 0,
+          pnl_note: "2 of 3 closed trades (V75) could not be sized for the instrument.",
+          days: [
+            day(`${MONTH}-01`, { total_trades: 1, losses: 1, day_rating: "F", day_status: "LOSING_DAY", unsized_trades: 1 }),
+            day(`${MONTH}-02`, { net_pnl: 2, total_trades: 2, wins: 1, losses: 1, win_rate: 50, day_status: "NOT_SIZED_DAY", unsized_trades: 1 }),
+          ],
+        },
+      },
+      "/api/performance/day": {
+        day: {
+          date: `${MONTH}-01`,
+          stats: { net_pnl: 0, total_trades: 1, wins: 0, losses: 1, win_rate: 0, profit_factor: null, day_rating: "F", top_lesson: "", unsized_trades: 1, pnl_note: note },
+          trades: [{ trade_id: 2, symbol: "V75", action: "BUY", status: "CLOSED_MANUAL", pnl: null, pnl_note: "P&L not known: this trade could not be sized for the instrument (no contract size or currency conversion), so it is left out of the day's P&L. The price moved against you.", entry_price: 1000, exit_price: 990, stop_loss: 980, take_profit: 1040, decision_id: null }],
+        },
+      },
+    });
+    renderPage();
+    const only = await screen.findByTestId(`day-${MONTH}-01`);
+    expect(only.textContent).not.toMatch(/0\.00/);
+    expect(screen.getByTestId(`day-unsized-${MONTH}-01`).textContent).toMatch(/1 not sized/);
+    const mixed = screen.getByTestId(`day-${MONTH}-02`);
+    expect(mixed.textContent).toMatch(/2\.00/);
+    expect(mixed.textContent).toMatch(/1 not sized/);
+    expect(mixed.className).not.toMatch(/amber/);
+    expect(screen.getByTestId("calendar-pnl-note").textContent).toMatch(/could not be sized/);
+
+    fireEvent.click(only);
+    await screen.findByTestId("day-pnl-note");
+    expect(screen.getByTestId("day-pnl-note").textContent).toBe(note);
+    expect(screen.getByTestId("day-detail-net-pnl").textContent).toBe("Not measured");
+    expect(screen.getByTestId("trade-pnl-2").textContent).toMatch(/could not be sized/);
+    expect(screen.getByTestId("trade-pnl-2").textContent).not.toMatch(/0\.00/);
+  });
+});
