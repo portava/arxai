@@ -44,3 +44,22 @@ describe("Scalp Journal summary scope", () => {
     expect(screen.queryByTestId("scalp-summary-scope")).toBeNull();
   });
 });
+
+describe("Scalp Journal results graded from an estimate", () => {
+  it("ESTIMATED rows are badged as likely outcomes and the win rate is labelled estimated", () => {
+    h.entries = Array.from({ length: 6 }, (_, i) => ({ ...entry(i + 1), plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 2 }));
+    render(<ScalpJournalPage />);
+    const rows = screen.getAllByTestId("scalp-journal-row");
+    expect(rows[0]!.textContent).toMatch(/Likely (win|loss) \(estimated\)/);
+    for (const r of rows) expect(r.textContent).not.toMatch(/\bWin\b|\bLoss\b/);
+    expect(screen.getByTestId("scalp-summary-winrate").textContent).toMatch(/estimated win rate/);
+  });
+
+  it("a KNOWN (broker-realised) row keeps a plain Win badge", () => {
+    h.entries = [{ ...entry(1), plQuality: "KNOWN", realizedPl: 5 }];
+    render(<ScalpJournalPage />);
+    const row = screen.getByTestId("scalp-journal-row");
+    expect(row.textContent).toMatch(/Win/);
+    expect(row.textContent).not.toMatch(/estimated\)/);
+  });
+});

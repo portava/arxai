@@ -14,6 +14,7 @@ import {
   computeQualityBias,
   deriveResult,
   deriveReview,
+  labelEstimatedWinShare,
   applyPersonalityDelta,
   isSyntheticSymbol,
   flameIsContinuing,
@@ -231,6 +232,47 @@ test("review LOSS with add-ons calls out the adds", () => {
     maxExitUrgency: "WATCH", flameContinued: true, addOnCount: 2, isSynthetic: false,
   });
   assert.match(r.lesson, /add/i);
+});
+
+test("review graded from an estimate does not state the outcome as fact", () => {
+  // A LIVE leg last read at +$3 can still close at -$4 after that reading:
+  // ESTIMATED results say what the last reading showed, not that it won.
+  const base = {
+    plQuality: "ESTIMATED" as const, flameStageAtEntry: "ACTIVE", entryTimingAtEntry: "ACCEPTABLE",
+    maxExitUrgency: "NONE" as const, addOnCount: 1, isSynthetic: false,
+  };
+  const factual = /this one worked|closed in profit|closed at a loss|closed in the red|no real win, no real loss|(?<!looked like it )(?:paid off|made the loss bigger|added to the result)/i;
+  for (const result of ["WIN", "LOSS", "BREAKEVEN"] as const) {
+    for (const flameContinued of [true, false]) {
+      for (const maxExitUrgency of ["NONE", "CLOSE_ALL"] as const) {
+        const r = deriveReview({ ...base, result, flameContinued, maxExitUrgency });
+        assert.ok(!factual.test(r.exitReason), `${result}/${flameContinued}/${maxExitUrgency}: ${r.exitReason}`);
+        assert.ok(!factual.test(r.lesson), `${result}/${flameContinued}/${maxExitUrgency}: ${r.lesson}`);
+        assert.match(r.exitReason, /last P\/L reading before the close/);
+        assert.match(r.exitReason, /final figure was not reported/);
+      }
+    }
+  }
+  const win = deriveReview({ ...base, result: "WIN", flameContinued: true, addOnCount: 0 });
+  assert.match(win.exitReason, /looked like a win/);
+  assert.match(win.lesson, /looked like it paid off/);
+  const loss = deriveReview({ ...base, result: "LOSS", flameContinued: true });
+  assert.match(loss.exitReason, /looked like a loss/);
+  // The KNOWN wording is unchanged.
+  const known = deriveReview({ ...base, plQuality: "KNOWN", result: "WIN", flameContinued: true });
+  assert.match(known.exitReason, /^This one worked\./);
+});
+
+test("personality notes call the win share an estimate", () => {
+  let p = EMPTY_PERSONALITY_COUNTS;
+  for (let i = 0; i < 4; i++) p = applyPersonalityDelta(p, closed());
+  p = applyPersonalityDelta(p, closed({ result: "WIN", flameContinued: true, flameReversedAtClose: false }));
+  const b = computeQualityBias(p);
+  assert.match(b.notes ?? "", /20% estimated wins so far/);
+  assert.equal(labelEstimatedWinShare("This market has behaved normally for you so far (60% wins)."),
+    "This market has behaved normally for you so far (60% estimated wins).");
+  assert.equal(labelEstimatedWinShare(b.notes), b.notes, "already-labelled notes are left as they are");
+  assert.equal(labelEstimatedWinShare(null), null);
 });
 
 test("review copy never uses guaranteed-return wording", () => {

@@ -43,16 +43,20 @@ import { useAssistantName } from "@/lib/assistant-name";
 
 // ── Result / outcome helpers (shared shape with RubyScalpReviewPanel) ────────
 
+// Only a KNOWN (broker-realised) P/L earns a plain "Win" / "Loss"; a result
+// graded from the last floating reading before the close says it is estimated.
 function resultBadge(
   result: string,
+  plQuality: string,
 ): { label: string; tone: string; icon: typeof CheckCircle2 } {
+  const known = plQuality === "KNOWN";
   switch (result) {
     case "WIN":
-      return { label: "Win", tone: "text-emerald-300 border-emerald-500/40", icon: CheckCircle2 };
+      return { label: known ? "Win" : "Likely win (estimated)", tone: "text-emerald-300 border-emerald-500/40", icon: CheckCircle2 };
     case "LOSS":
-      return { label: "Loss", tone: "text-rose-300 border-rose-500/40", icon: XCircle };
+      return { label: known ? "Loss" : "Likely loss (estimated)", tone: "text-rose-300 border-rose-500/40", icon: XCircle };
     case "BREAKEVEN":
-      return { label: "Break-even", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
+      return { label: known ? "Break-even" : "Roughly flat (estimated)", tone: "text-muted-foreground border-border/60", icon: MinusCircle };
     case "OPEN":
       return { label: "Still open", tone: "text-sky-300 border-sky-500/40", icon: CircleDot };
     default:
@@ -123,7 +127,7 @@ function buildJournalCsv(entries: ScalpJournalEntry[]): string {
     [
       e.displayName ?? e.symbol,
       e.direction === "BUY" ? "Buy" : "Sell",
-      resultBadge(e.result).label,
+      resultBadge(e.result, e.plQuality).label,
       journalPlCell(e),
       e.plQuality,
       e.lesson ?? "",
@@ -155,7 +159,7 @@ function downloadJournalCsv(entries: ScalpJournalEntry[]): void {
 
 function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
   const { name } = useAssistantName();
-  const badge = resultBadge(entry.result);
+  const badge = resultBadge(entry.result, entry.plQuality);
   const pl = plLine(entry);
   const Icon = badge.icon;
   return (
@@ -216,7 +220,7 @@ function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
 
 function ReviewRow({ entry }: { entry: ScalpJournalEntry }) {
   const { name } = useAssistantName();
-  const badge = resultBadge(entry.result);
+  const badge = resultBadge(entry.result, entry.plQuality);
   const pl = plLine(entry);
   const Icon = badge.icon;
   return (
@@ -295,6 +299,8 @@ interface ScalpSummary {
   open: number;
   unknown: number;
   decided: number;
+  /** Decided results graded from an estimate rather than a broker-realised P/L. */
+  estimatedDecided: number;
   winRatePct: number | null;
   stillLearning: number;
   cautious: number;
@@ -309,7 +315,9 @@ function buildSummary(
   let breakeven = 0;
   let open = 0;
   let unknown = 0;
+  let estimatedDecided = 0;
   for (const e of entries) {
+    if ((e.result === "WIN" || e.result === "LOSS") && e.plQuality !== "KNOWN") estimatedDecided += 1;
     switch (e.result) {
       case "WIN":
         wins += 1;
@@ -351,6 +359,7 @@ function buildSummary(
     open,
     unknown,
     decided,
+    estimatedDecided,
     winRatePct,
     stillLearning,
     cautious,
@@ -404,7 +413,8 @@ function ScalpSummaryStrip({ summary, capped }: { summary: ScalpSummary; capped:
                 {summary.winRatePct}%
               </span>
               <span className="text-[11px] text-muted-foreground">
-                win rate ({summary.decided} decided)
+                {summary.estimatedDecided > 0 ? "estimated win rate" : "win rate"} ({summary.decided} decided
+                {summary.estimatedDecided > 0 ? ", graded from the last reading before each close" : ""})
               </span>
             </>
           ) : (
@@ -499,7 +509,7 @@ function PersonalityRow({ p }: { p: ScalpSymbolPersonality }) {
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {p.tradesClosed} closed
-          {!stillLearning && p.winRatePct != null ? ` · ${p.winRatePct}% won` : ""}
+          {!stillLearning && p.winRatePct != null ? ` · ${p.winRatePct}% won (estimated)` : ""}
         </span>
       </div>
 

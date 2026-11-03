@@ -23,6 +23,7 @@ const journalTable = database.scalpJournalEntriesTable;
 type Op = { kind: "insert" | "update"; table: unknown; values: Record<string, unknown> };
 const ops: Op[] = [];
 let openRows: Record<string, unknown>[] = [];
+let personalityRows: Record<string, unknown>[] = [];
 
 function selectChain(): Record<string, unknown> {
   let table: unknown = null;
@@ -36,7 +37,11 @@ function selectChain(): Record<string, unknown> {
   // The OPEN-entries read returns the seeded rows; a by-key lookup (limit 1)
   // finds nothing, as for a key the journal has never stored.
   q.then = (resolve: (v: unknown[]) => unknown) =>
-    Promise.resolve(table === journalTable && !limited ? openRows : []).then(resolve);
+    Promise.resolve(
+      table === journalTable && !limited ? openRows
+        : table === database.scalpSymbolPersonalityTable && !limited ? personalityRows
+        : [],
+    ).then(resolve);
   return q;
 }
 function writeChain(kind: Op["kind"], table: unknown): Record<string, unknown> {
@@ -64,7 +69,7 @@ mock.module("../../positions/ledger.js", {
   namedExports: { ...realLedger, livePositionLedger: { read: async () => closedLedgerRows } },
 });
 
-const { recordScalpBasketsObservation, getScalpAfterActionReviews, getScalpJournal } =
+const { recordScalpBasketsObservation, getScalpAfterActionReviews, getScalpJournal, getSymbolPersonalities } =
   await import("../scalpJournalService.js");
 type Snapshot = Parameters<typeof recordScalpBasketsObservation>[2][number];
 
@@ -229,4 +234,65 @@ test("close P/L: a stored KNOWN row (a summed floating reading) is reported as a
   assert.equal(reviews[0]!.realizedPl, null);
   const { entries } = await getScalpJournal(41);
   assert.equal(entries[0]!.plQuality, "ESTIMATED");
+});
+
+test("close review: a scalp graded from its last reading is not reviewed as a confirmed win", async () => {
+  ops.length = 0;
+  openRows = [openEntry({ legTickets: ["t1"], entryCount: 1, addOnCount: 0, lastFloatingPl: 3 })];
+  closedLedgerRows = [{ brokerTicket: "t1", closedAt: new Date(), floatingPl: "3.00", currentPrice: "1.1010" }];
+  await recordScalpBasketsObservation(41, "LIVE_SHARED", []);
+  const fin = finalizeWrite();
+  assert.equal(fin["result"], "WIN", "the result still feeds the tightening-only personality");
+  assert.equal(fin["plQuality"], "ESTIMATED");
+  assert.doesNotMatch(String(fin["exitReason"]), /This one worked|closed in profit/);
+  assert.match(String(fin["exitReason"]), /looked like a win/);
+  assert.match(String(fin["exitReason"]), /final figure was not reported/);
+});
+
+test("close review: a stored review that states an estimated outcome as fact is reported with the estimate wording", async () => {
+  openRows = [
+    openEntry({
+      id: 8, status: "CLOSED", result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 3,
+      exitReason: "This one worked. The move kept pushing in your favour after you got in.",
+      lesson: "Entry timing was clean; banking it while the move was alive paid off.",
+      rubyWarnedCorrectly: null, openedAt: new Date(T1), closedAt: new Date(T2),
+    }),
+    openEntry({
+      id: 9, status: "CLOSED", result: "LOSS", plQuality: "KNOWN", realizedPl: -4, lastFloatingPl: -4,
+      exitReason: "Price moved against the position and it closed at a loss.", lesson: "x",
+      rubyWarnedCorrectly: false, openedAt: new Date(T1), closedAt: new Date(T2),
+    }),
+    openEntry({
+      id: 10, status: "CLOSED", result: "UNKNOWN", plQuality: "UNKNOWN", realizedPl: null, lastFloatingPl: null,
+      exitReason: "stored unknown text", lesson: "stored unknown lesson",
+      openedAt: new Date(T1), closedAt: new Date(T2),
+    }),
+  ];
+  const { reviews } = await getScalpAfterActionReviews(41);
+  const [win, loss, unknown] = reviews;
+  assert.equal(win!.result, "WIN");
+  assert.match(win!.exitReason ?? "", /looked like a win/);
+  assert.doesNotMatch(win!.exitReason ?? "", /This one worked/);
+  assert.doesNotMatch(win!.lesson ?? "", /(?<!looked like it )paid off/);
+  assert.equal(loss!.plQuality, "ESTIMATED");
+  assert.match(loss!.exitReason ?? "", /looked like a loss/);
+  assert.doesNotMatch(loss!.exitReason ?? "", /closed at a loss/);
+  assert.equal(loss!.rubyWarnedCorrectly, false, "warnedCorrectly is reported as stored");
+  assert.equal(unknown!.exitReason, "stored unknown text", "an UNKNOWN result keeps its stored text");
+  const { entries } = await getScalpJournal(41);
+  assert.match(entries[0]!.exitReason ?? "", /looked like a win/);
+});
+
+test("personality: a stored win share is reported as estimated", async () => {
+  personalityRows = [{
+    userId: 41, symbol: "EURUSD", displayName: "EUR/USD", isSynthetic: false,
+    tradesClosed: 5, wins: 3, losses: 2, breakevens: 0, reversalCount: 1, fakeoutCount: 0,
+    continuationCount: 3, avgScoreAtEntry: 70, qualityBias: -2, minQualityDelta: 1,
+    notes: "Ruby is a little more cautious here based on your history (60% wins so far).",
+    updatedAt: new Date(T2),
+  }];
+  const { symbols } = await getSymbolPersonalities(41);
+  assert.equal(symbols[0]!.notes, "Ruby is a little more cautious here based on your history (60% estimated wins so far).");
+  assert.equal(symbols[0]!.winRatePct, 60);
+  personalityRows = [];
 });
