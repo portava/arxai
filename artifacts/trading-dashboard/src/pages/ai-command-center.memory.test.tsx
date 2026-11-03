@@ -89,7 +89,7 @@ describe("Memory tab: AI decision quality", () => {
     };
     openMemory();
     const row = screen.getByTestId("decision-calls-without-order");
-    expect(row.textContent).toMatch(/Trade calls with no demo order: 1 of 2/);
+    expect(row.textContent).toMatch(/Trade calls with no paper order: 1 of 2/);
     expect(screen.queryByText(/Blocked:/)).toBeNull();
   });
 

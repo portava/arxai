@@ -559,13 +559,13 @@ export function MemoryTab() {
     );
   }
   // The server withheld the paper book for a live account (the same rule as
-  // the Trading Calendar): show its note, not demo figures under a LIVE strip.
+  // the Trading Calendar): show its note, not paper figures under a LIVE strip.
   if (cc.data?.currentAccountMode === "LIVE_SHARED") {
     return (
       <Card className="rounded-2xl border-border bg-card">
         <CardContent className="p-5 text-sm text-txt-secondary" data-testid="memory-mode-note">
           {cc.data.modeNote ??
-            `This is a live account. ${name}'s memory is built from demo trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.`}
+            `This is a live account. ${name}'s memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.`}
         </CardContent>
       </Card>
     );
@@ -576,7 +576,7 @@ export function MemoryTab() {
     return (
       <Card className="rounded-2xl border-border bg-card">
         <CardContent className="p-5 text-sm text-txt-secondary">
-          No memory snapshot yet. Try a few demo trades and {name} will
+          No memory snapshot yet. Try a few paper trades and {name} will
           start building her record.
         </CardContent>
       </Card>
@@ -604,7 +604,7 @@ export function MemoryTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Demo Win Rate</CardTitle>
+            <CardTitle className="text-xs">Paper Win Rate</CardTitle>
           </CardHeader>
           <CardContent>
             {/* No closed trade = no win rate measured, not 0%. */}
@@ -612,13 +612,13 @@ export function MemoryTab() {
               {hasClosed ? `${c.winRate.toFixed(1)}%` : "—"}
             </div>
             <div className="text-[11px] text-txt-secondary mt-1">
-              {hasClosed ? "All closed demo trades" : "No closed demo trades yet"}
+              {hasClosed ? "All closed paper trades" : "No closed paper trades yet"}
             </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Net Demo P&amp;L</CardTitle>
+            <CardTitle className="text-xs">Net Paper P&amp;L</CardTitle>
           </CardHeader>
           <CardContent>
             <div
@@ -630,13 +630,14 @@ export function MemoryTab() {
               {hasClosed ? c.netPnl.toFixed(2) : "—"}
             </div>
             <div className="text-[11px] text-txt-secondary mt-1" data-testid="memory-net-pnl-scope">
-              All closed demo trades, in demo account units
+              All closed paper trades, as booked by the ARX paper simulator
+              (not an MT5 demo or live account)
             </div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Closed Demo Trades</CardTitle>
+            <CardTitle className="text-xs">Closed Paper Trades</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold">{c.totalClosedTrades}</div>
@@ -674,11 +675,11 @@ export function MemoryTab() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-4 w-4" /> Demo Equity Curve (last 30 days)
+              <Activity className="h-4 w-4" /> Paper Equity Curve (last 30 days)
             </CardTitle>
             <div className="text-[11px] text-txt-secondary">
-              Cumulative P&amp;L of demo trades closed in the last 30 days. The
-              tiles above cover all closed demo trades.
+              Cumulative P&amp;L of paper trades closed in the last 30 days. The
+              tiles above cover all closed paper trades.
             </div>
           </CardHeader>
           <CardContent>
@@ -704,7 +705,7 @@ export function MemoryTab() {
               </ResponsiveContainer>
             ) : (
               <div className="text-txt-secondary text-sm">
-                No closed demo trades in this range yet.
+                No closed paper trades in this range yet.
               </div>
             )}
           </CardContent>
@@ -764,7 +765,7 @@ export function MemoryTab() {
                 decision, so a trade call with no order may have been
                 refused, filtered by a setting, or never sent. */}
             <div data-testid="decision-calls-without-order">
-              Trade calls with no demo order:{" "}
+              Trade calls with no paper order:{" "}
               {typeof c.aiDecisionStats.tradeCallsWithoutOrder === "number"
                 ? `${c.aiDecisionStats.tradeCallsWithoutOrder}${typeof c.aiDecisionStats.tradeCalls === "number" ? ` of ${c.aiDecisionStats.tradeCalls}` : ""}`
                 : "—"}{" "}

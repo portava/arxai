@@ -1,11 +1,12 @@
-// The evaluator measures drawdown from the running balance of CLOSED demo
-// trades; open positions are not marked to market. The meter says so, and how
-// many open positions were left out, instead of reading as equity drawdown.
+// The evaluator measures drawdown from the running balance of CLOSED paper
+// trades (paper_orders on the challenge's paper account, not an MT5 demo
+// account); open positions are not marked to market. The meter says so, and
+// how many open positions were left out, instead of reading as equity drawdown.
 export function ClosedTradeBasisNote({ openPositions, testId }: { openPositions?: number | null; testId: string }) {
   const n = typeof openPositions === "number" && Number.isFinite(openPositions) ? openPositions : null;
   return (
     <p className="mt-2 text-[11px] text-slate-400" data-testid={testId}>
-      From closed demo trades only. Open positions&rsquo; floating P&amp;L is not counted.
+      From closed paper trades only. Open positions&rsquo; floating P&amp;L is not counted.
       {n != null && n > 0 && (
         <span className="text-amber-400"> {n === 1 ? "1 open position is" : `${n} open positions are`} not counted.</span>
       )}

@@ -32,7 +32,7 @@ interface EvalResp {
     /** True when the challenge is finished: judged only up to its end. */
     final?: boolean;
     evaluatedThrough?: string;
-    /** Drawdown / daily loss are built from closed demo trades only. */
+    /** Drawdown / daily loss are built from closed paper trades only. */
     drawdownBasis?: "CLOSED_TRADES_ONLY";
     /** Open positions left out of drawdown / daily loss (floating P&L not read). */
     openPositionsNotCounted?: number;
@@ -112,7 +112,7 @@ export default function PropChallengePage() {
         <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <h3 className="text-sm font-semibold text-slate-100">Start a practice challenge</h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <label><span className="text-slate-400">Demo account ID</span>
+            <label><span className="text-slate-400">Paper account ID</span>
               <input type="number" value={paperAccountId} onChange={(e)=>setPaperAccountId(Number(e.target.value))} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
             </label>
             <label><span className="text-slate-400">Challenge name</span>
