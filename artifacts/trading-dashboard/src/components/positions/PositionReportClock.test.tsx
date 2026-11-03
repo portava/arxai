@@ -144,3 +144,39 @@ describe("PositionPickerPanel with a skewed browser clock", () => {
     expect(screen.getByTestId("text-row-report-live-777").textContent).toBe("Unconfirmed — last reported 1m ago");
   });
 });
+
+// Round 3 review: generatedAt is the server's clock reading before its DEMO
+// reads, serialization and the transfer; the panel stamped receivedAtMs only
+// after the answer was parsed. Everything in between was left out of the age,
+// so a report 33s old read "25s ago" and stayed confirmed past its 30s window.
+// The age is now anchored on when the request was sent: an upper bound, so it
+// can only downgrade.
+describe("PositionPickerPanel with a slow answer", () => {
+  it("an answer that takes 8s to arrive is aged from when the request was sent, not from when it arrived", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    let first = true;
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).includes("/api/chart/candles")) {
+        return Promise.resolve(new Response(JSON.stringify({ candles: [], feedStatus: null }), { status: 200 }));
+      }
+      if (!first) return new Promise<Response>(() => {});
+      first = false;
+      // The server reads its clock when the request reaches it; the report is
+      // 25s old then. Its slow reads and the transfer take another 8s.
+      const serverNow = Date.now();
+      const body = JSON.stringify({
+        ok: true, generatedAt: new Date(serverNow).toISOString(),
+        live: [row({ observedAt: new Date(serverNow - 25_000).toISOString(), freshness: "FRESH" })],
+        demo: [], liveCount: 1, demoCount: 0, notLiveReason: null,
+      });
+      return new Promise<Response>((resolve) => setTimeout(() => resolve(new Response(body, { status: 200 })), 8_000));
+    }));
+    render(<PositionPickerPanel />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    // The report is 33s old when the answer arrives: past the 30s window.
+    expect(screen.getByTestId("text-row-report-live-777").textContent).toBe("Unconfirmed — last reported 33s ago");
+    fireEvent.click(screen.getByTestId("btn-select-position-live-777"));
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Unconfirmed — last reported 33s ago");
+    expect(screen.getByTestId("text-position-last-reported").textContent).not.toMatch(/\(25s ago\)/);
+  });
+});

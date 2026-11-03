@@ -55,11 +55,16 @@ export function PositionPickerPanel() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
+      // The answer is stamped with when the request was sent, not when it
+      // arrived: the server reads its clock (generatedAt) after the request
+      // reaches it, then still reads more and sends the answer. Ageing from
+      // the send time counts that time too, so an age can only be overstated.
+      const sentAt = Date.now();
       try {
         const r = await fetch(u("/api/me/positions/all"), { credentials: "include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as Resp;
-        if (!cancelled) { setData(j); setErr(null); setLoadedAt(Date.now()); }
+        if (!cancelled) { setData(j); setErr(null); setLoadedAt(sentAt); }
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
       } finally {
@@ -71,8 +76,8 @@ export function PositionPickerPanel() {
   }, []);
 
   // Report ages are computed on one clock at a time (server age at read +
-  // browser time since the answer arrived), never a server timestamp against
-  // this browser's clock.
+  // browser time since the request was sent), never a server timestamp
+  // against this browser's clock.
   const serverNowMs = data?.generatedAt ? Date.parse(data.generatedAt) : NaN;
   const reportClock: PositionReportClock | undefined = loadedAt == null
     ? undefined
