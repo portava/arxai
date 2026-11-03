@@ -16,7 +16,8 @@ interface PnlCoverage {
   unsizedSymbols: string[]; note: string;
 }
 interface DrawdownResponse { equityCurve: EquityPoint[]; maxDrawdown: number; pnlCoverage?: PnlCoverage }
-interface SessionBucket { trades: number; pnl: number; wins: number }
+/** pnl sums only the session's sized trades; sizedTrades says how many. */
+interface SessionBucket { trades: number; pnl: number; wins: number; sizedTrades?: number }
 type SessionData = Record<"ASIA"|"LONDON"|"NEWYORK", SessionBucket>;
 interface EmotionalResponse { trend: Array<{ idx:number; isCalm:number; followedPlan:number; emotion:string }>; totalDebriefs: number }
 
@@ -163,7 +164,7 @@ export default function AnalyticsCommandCenter() {
               ? <LoadError what="Session performance" error={sess.error} />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
-                : <SessionHeatmap data={(sess.data?.session ?? {}) as any} />}
+                : <SessionHeatmap data={sess.data?.session ?? {}} />}
           </div>
 
           {emo.isError

@@ -91,6 +91,23 @@ describe("Analytics Command Center — P&L coverage", () => {
     expect(screen.getByTestId("stat-net-p-l").textContent).toContain("$1234");
   });
 
+  it("some trades sized: a session whose trades could not be sized reads 'not measured', not a green $0", async () => {
+    stub(routes({
+      "GET /api/analytics/drawdown": { status: 200, body: { equityCurve: [], maxDrawdown: 0, pnlCoverage: PARTIAL } },
+      "GET /api/analytics/strategy": { status: 200, body: { strategies: [], pnlCoverage: PARTIAL } },
+      "GET /api/analytics/session": { status: 200, body: { session: {
+        ASIA: { trades: 1, pnl: 0, wins: 1, sizedTrades: 0 },
+        LONDON: { trades: 2, pnl: 150, wins: 1, sizedTrades: 2 },
+        NEWYORK: { trades: 0, pnl: 0, wins: 0, sizedTrades: 0 },
+      } } },
+    }));
+    renderPage();
+    const asia = (await screen.findByText("ASIA")).parentElement as HTMLElement;
+    expect(asia.textContent).toMatch(/not measured/);
+    expect(asia.textContent).not.toMatch(/\$0/);
+    expect((screen.getByText("LONDON").parentElement as HTMLElement).textContent).toContain("$150");
+  });
+
   it("coverage requests failed: says it could not be loaded, not silence or an empty state", async () => {
     stub(routes({
       "GET /api/analytics/drawdown": { status: 500, body: { error: "Failed to load drawdown" } },
