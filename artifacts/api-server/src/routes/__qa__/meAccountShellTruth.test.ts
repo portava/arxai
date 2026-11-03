@@ -17,7 +17,9 @@
 //     platform emergency stop halted every new demo and live order.
 //   * The ACTIVE reason said "your allocation allow[s] trading" when no
 //     allocation was assigned (live shared-master entries are refused then)
-//     and named an approval check for accounts where none runs.
+//     and named an approval check for accounts where none runs. It also
+//     named a revoked / denied / pending approval as passed, and called an
+//     assigned allocation a pass when its headroom was never checked here.
 //   * Available Capacity was the allocation less virtual_margin_used, a
 //     column only ever seeded at 0, next to "Margin Used: Not measured".
 import { test, mock, beforeEach } from "node:test";
@@ -357,7 +359,27 @@ test("no allocation assigned: the reason never says the allocation allows tradin
   tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
   const allocated = await computeAccountShell(USER, { skipInvestorSnapshot: true });
   assert.equal(allocated.accountTradingStatus, "ACTIVE");
-  assert.match(allocated.accountTradingStatusReason, /your shared-master approval and your allocation allow trading/);
+  assert.match(allocated.accountTradingStatusReason, /your shared-master approval allow trading/);
+  assert.match(allocated.accountTradingStatusReason, /An allocation is assigned to you and is not frozen/);
+});
+
+test("an assigned allocation is not claimed to allow trading: its headroom is checked per live order, not by this status", async () => {
+  platformMode = "LIVE";
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_master_live_access = [{ masterLiveStatus: "APPROVED" }];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  // $1,000 assigned; reserved risk plus open floating loss may have used all
+  // of it, in which case the live allocation gate refuses every entry
+  // (USER_ALLOCATION_EXHAUSTED). This status only sees that one is assigned.
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active" }];
+  tables.virtual_trading_accounts = [{ virtualBalance: 1000, virtualEquity: 1000, virtualMarginUsed: 0, virtualPnl: 0, status: "active", sharedMasterAccountId: 3 }];
+  investor = liveSnapshot({ allocatedBalance: 1000, availableBalance: 0, floatingPnL: -1000, openTradeCount: 3 });
+
+  const shell = await computeAccountShell(USER);
+  assert.doesNotMatch(shell.accountTradingStatusReason, /allocation allow/, "an assigned allocation is not a passed headroom check");
+  assert.match(shell.accountTradingStatusReason, /An allocation is assigned to you and is not frozen/);
+  assert.match(shell.accountTradingStatusReason, /reserved risk and open losses/);
+  assert.match(shell.accountTradingStatusReason, /checked on each live order and is not part of this status/);
 });
 
 test("available capacity is not the allocation with an unmeasured margin of 0 subtracted", async () => {

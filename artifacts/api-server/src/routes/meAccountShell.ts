@@ -570,10 +570,15 @@ export async function computeAccountShell(
       const noAllocationLine = "No allocation is assigned to you yet: live orders on the shared master account are refused until an operator assigns one.";
       if (liveAllocationMissing) return noAllocationLine;
       // Name only the checks that ran and passed: shared-master approval
-      // only when it is APPROVED, an allocation only when one is assigned.
+      // only when it is APPROVED. The allocation is not one of them: this
+      // status only sees that one is assigned and not frozen. Its headroom
+      // (assigned less reserved risk and open floating loss) is checked by
+      // the live allocation gate on each order (USER_ALLOCATION_EXHAUSTED).
       const checked = ["the platform mode", "your trading mode"];
       if (sharedMaster && approvalStatus === "APPROVED") checked.push("your shared-master approval");
-      if (allocationAssigned) checked.push("your allocation");
+      const allocationLine = allocationAssigned
+        ? "An allocation is assigned to you and is not frozen; the room left in it after reserved risk and open losses is checked on each live order and is not part of this status."
+        : null;
       const checkedList = checked.length > 1
         ? `${checked.slice(0, -1).join(", ")} and ${checked[checked.length - 1]}`
         : checked[0]!;
@@ -585,6 +590,7 @@ export async function computeAccountShell(
       return [
         allowLine,
         ...(sharedApprovalLine ? [sharedApprovalLine] : []),
+        ...(allocationLine ? [allocationLine] : []),
         ...(sharedMaster && !allocationAssigned ? [noAllocationLine] : []),
         stopLine,
         "Your own kill switch and risk limits are checked on every order and are not part of this status.",
