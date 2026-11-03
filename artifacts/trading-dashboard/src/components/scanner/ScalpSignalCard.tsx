@@ -22,6 +22,7 @@ import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
 import {
   scalpStatusToSetup,
   scalpStatusLabel,
+  scalpSpreadRead,
   isScalpAwaitingFeed,
   hasKnownScalpRejectReason,
   scalpBusTimeframe,
@@ -152,6 +153,9 @@ export function ScalpSignalCard({
   // check and the scalp stopped only because the broker's symbol details are
   // unavailable — that is never shown as "Feed limited".
   const scalpDataReady = !isScalpAwaitingFeed(r);
+  // A reject's spread / slippage "LOW" is a placeholder unless the engine read
+  // the spread before turning the scalp down.
+  const spreadRead = scalpSpreadRead(r);
   const engineTf = scalpEngineTimeframe(r);
   const readability = evaluateMarketDataSufficiency({
     symbol: r.symbol,
@@ -419,10 +423,22 @@ export function ScalpSignalCard({
         {/* Risk chips */}
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <Tip className="text-txt-muted" help="How wide the broker's buy/sell price gap is right now — a wider spread costs more to enter and exit, so a higher reading is worse for a quick scalp.">
-            Spread <span className={riskTone(r.spreadRisk)}>{r.spreadRisk}</span>
+            Spread{" "}
+            {spreadRead === "not_read" ? (
+              <span className="text-txt-muted" data-testid="scalp-spread-risk">Not read</span>
+            ) : spreadRead === "too_wide" ? (
+              <span className={riskTone("HIGH")} data-testid="scalp-spread-risk">Too wide</span>
+            ) : (
+              <span className={riskTone(r.spreadRisk)} data-testid="scalp-spread-risk">{r.spreadRisk}</span>
+            )}
           </Tip>
           <Tip className="text-txt-muted" help="The risk your order fills at a worse price than expected — higher in fast-moving or thin markets, which eats into a scalp's small target.">
-            Slippage <span className={riskTone(r.slippageRisk)}>{r.slippageRisk}</span>
+            Slippage{" "}
+            {spreadRead !== "read" ? (
+              <span className="text-txt-muted" data-testid="scalp-slippage-risk">Not read</span>
+            ) : (
+              <span className={riskTone(r.slippageRisk)} data-testid="scalp-slippage-risk">{r.slippageRisk}</span>
+            )}
           </Tip>
           <Tip className="text-txt-muted" help="The risk of upcoming or recent news shaking this market — a higher reading means more event risk around now, so the move can turn sharply.">
             News{" "}

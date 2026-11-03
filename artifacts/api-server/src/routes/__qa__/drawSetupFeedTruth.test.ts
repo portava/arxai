@@ -207,3 +207,34 @@ test("a feed with no grade is 'not confirmed', never assumed delayed", async () 
   assert.match(p.refusalReason, /has not passed its checks/);
   assert.equal(p.dataFreshness.trustLine, "M15 candles syncing · feed not confirmed · read gated");
 });
+
+// A series in its scheduled weekend close, or the stored MT5 mirror with no
+// bridge pushing it, is graded "delayed" (or "stale") by candle age, but the
+// chart itself says "Market closed ... Not a feed fault" / "Showing stored
+// MetaTrader 5 broker candles ... not a live feed". The refusal and the line
+// say the same — never a "delayed" or "stale" feed.
+test("a closed-market series graded delayed is named as a closed market, not a delayed feed", async () => {
+  ctx = unusableFeedCtx({ quality: "delayed", notLiveReason: "market_closed" });
+  const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
+  assert.equal(p.verdict, "refused");
+  assert.doesNotMatch(p.refusalReason, /delayed|stale/i, p.refusalReason);
+  assert.match(p.refusalReason, /scheduled weekend close/);
+  assert.equal(p.dataFreshness.trustLine, "M15 candles from before the weekend close · market closed · read gated");
+});
+
+test("a closed-market series graded stale is named as a closed market, not a stale feed", async () => {
+  ctx = { ...unusableFeedCtx({ quality: "stale", notLiveReason: "market_closed" }) };
+  ctx.state = { ...ctx.state, stale: true };
+  const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
+  assert.doesNotMatch(p.refusalReason, /delayed|stale/i, p.refusalReason);
+  assert.match(p.refusalReason, /scheduled weekend close/);
+  assert.equal(p.dataFreshness.trustLine, "M15 candles from before the weekend close · market closed · read gated");
+});
+
+test("a stored-mirror series graded delayed is named as stored candles, not a delayed feed", async () => {
+  ctx = unusableFeedCtx({ quality: "delayed", notLiveReason: "stored_history" });
+  const p = await draw({ symbol: "EURUSD", timeframe: "M15", side: "BUY" });
+  assert.doesNotMatch(p.refusalReason, /delayed|stale/i, p.refusalReason);
+  assert.match(p.refusalReason, /stored broker candles with no bridge pushing them/);
+  assert.equal(p.dataFreshness.trustLine, "M15 stored candles · not live · read gated");
+});

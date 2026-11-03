@@ -142,6 +142,11 @@ function isLiveData(dataSource: string): boolean {
   return dataSource === "LIVE_FEED";
 }
 
+/** Slippage band from the spread band (synthetics always MEDIUM). */
+function slippageRiskFor(spec: ScalpEngineInput["spec"], spreadRisk: RiskBand): RiskBand {
+  return assetClassFor(spec.category) === "Synthetic/Volatility" ? "MEDIUM" : spreadRisk;
+}
+
 /** Build a bare result skeleton for early-exit (non-actionable) states. */
 function rejectResult(
   input: ScalpEngineInput,
@@ -152,6 +157,8 @@ function rejectResult(
     userAction?: ScalpResult["userAction"];
     plain?: string;
     rejectReason?: ScalpRejectReason;
+    /** The spread band the engine read before this reject; absent = not read. */
+    spreadRisk?: RiskBand;
   } = {},
 ): ScalpResult {
   const now = input.now ?? Date.now();
@@ -190,8 +197,12 @@ function rejectResult(
     rewardToRisk: null,
     estimatedMargin: null,
     moneyCurrency: currencyCode(input.account.currency),
-    spreadRisk: "LOW",
-    slippageRisk: "LOW",
+    // A reject that read the spread reports the band it read (slippage by the
+    // same rule as a full read); one that stopped earlier keeps the LOW
+    // placeholders and says they were not read.
+    spreadRisk: opts.spreadRisk ?? "LOW",
+    slippageRisk: opts.spreadRisk ? slippageRiskFor(input.spec, opts.spreadRisk) : "LOW",
+    ...(opts.spreadRisk ? {} : { spreadNotRead: true }),
     newsRisk: input.scanner?.newsRisk ?? "LOW",
     ...(input.scanner?.newsRiskUnchecked === true ? { newsRiskUnchecked: true } : {}),
     ...(input.scanner?.newsRiskNotConfigured === true ? { newsRiskNotConfigured: true } : {}),
@@ -223,6 +234,16 @@ function resolveRiskBudget(input: ScalpEngineInput): number | null {
   if (num(base) && base > 0) return roundTo(base * DEFAULT_RISK_FRACTION, 2);
   return null;
 }
+
+/**
+ * The NO_CLEAN_SCALP rejects evaluateScalp makes BEFORE its news gate (no
+ * clear direction; stop inside market noise). rejectResult copies the
+ * scanner's newsRiskUnchecked onto every reject, so these carry the flag too
+ * although the news check played no part in them; readers that count
+ * "could not be checked for scheduled news" exclude them by this reason.
+ */
+export const NO_DIRECTION_NO_TRADE_REASON = "No clean scalp right now. Best action: wait.";
+export const STOP_IN_NOISE_NO_TRADE_REASON = "The stop would sit inside normal market noise, so this scalp is not clean.";
 
 export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const now = input.now ?? Date.now();
@@ -284,7 +305,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   else if (scanner.bias === "bearish") direction = "SELL";
 
   if (!direction || scanner.recommendedAction === "REJECT") {
-    return rejectResult(input, "NO_CLEAN_SCALP", "No clean scalp right now. Best action: wait.", {
+    return rejectResult(input, "NO_CLEAN_SCALP", NO_DIRECTION_NO_TRADE_REASON, {
       canWatch: true,
       plain: "There is no clean scalp here right now. The market is not giving a clear direction with enough quality.",
     });
@@ -352,7 +373,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const minStopDist = Math.max(spreadPrice * 2 + stopsLevelPrice, structuralStopDist > 0 ? structuralStopDist : spreadPrice * 3, point * 10);
   let stopDist = Math.max(structuralStopDist, minStopDist);
   if (!(stopDist > 0)) {
-    return rejectResult(input, "NO_CLEAN_SCALP", "The stop would sit inside normal market noise, so this scalp is not clean.", {
+    return rejectResult(input, "NO_CLEAN_SCALP", STOP_IN_NOISE_NO_TRADE_REASON, {
       canWatch: true,
     });
   }
@@ -366,6 +387,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     return rejectResult(input, "SPREAD_TOO_WIDE", "Spread is too wide for a clean scalp right now.", {
       canWatch: true,
       plain: "The spread is too wide for a clean scalp here right now — it would eat too much of the trade.",
+      spreadRisk: "HIGH",
     });
   }
   const spreadRisk: RiskBand = spreadRatio > profile.spreadRatioWide * 0.6 ? "MEDIUM" : "LOW";
@@ -376,6 +398,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     return rejectResult(input, "NEWS_DANGER", "High-impact news risk makes this scalp unsafe right now.", {
       canWatch: true,
       plain: "There is high-impact news risk around this market, so a scalp is unsafe right now.",
+      spreadRisk,
     });
   }
   // Event risk applies but was never checked (news lookup failed / calendar did
@@ -385,6 +408,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
     return rejectResult(input, "NO_CLEAN_SCALP", "Scheduled news risk could not be checked, so no scalp is offered right now.", {
       canWatch: true,
       plain: "Scheduled news risk for this market could not be checked right now (the economic calendar did not answer), so no scalp is offered until it can be.",
+      spreadRisk,
     });
   }
 
@@ -714,7 +738,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const validForSeconds = status === "LATE" ? Math.round(profile.validForSeconds * 0.3) : profile.validForSeconds;
   const expiresAt = new Date(now + validForSeconds * 1000).toISOString();
   const scalpType = scalpTypeLabel(input.mode, direction, trend, profile.label);
-  const slippageRisk: RiskBand = assetClassFor(spec.category) === "Synthetic/Volatility" ? "MEDIUM" : spreadRisk;
+  const slippageRisk: RiskBand = slippageRiskFor(spec, spreadRisk);
 
   return {
     symbol: input.symbol,

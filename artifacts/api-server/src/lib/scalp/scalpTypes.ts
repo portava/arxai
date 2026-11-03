@@ -275,6 +275,12 @@ export interface ScalpResult {
   moneyCurrency?: string | null;
   spreadRisk: RiskBand;
   slippageRisk: RiskBand;
+  /**
+   * True when the engine turned the scalp down before it read the spread:
+   * `spreadRisk` / `slippageRisk` are then placeholders, not observations,
+   * and must not be shown. Display only — no decision reads it.
+   */
+  spreadNotRead?: boolean;
   newsRisk: RiskBand;
   /** True when news risk could not be checked: `newsRisk` is then not an observation. */
   newsRiskUnchecked?: boolean;

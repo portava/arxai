@@ -139,6 +139,18 @@ test("the gated trust line for a clean feed never says the candles or mirror are
   assert.equal(other, "M5 candles clean · read gated");
 });
 
+test("the gated trust line names a closed market or stored candles, never a delayed/stale/syncing feed", () => {
+  for (const [stale, quality] of [[false, "delayed"], [true, "stale"], [false, "clean"]] as const) {
+    const closed = buildGatedTrustLine("H4", { available: true, stale, aiUsable: false, basis: "INSUFFICIENT", quality, notLiveReason: "market_closed" });
+    assert.equal(closed, "H4 candles from before the weekend close · market closed · read gated");
+  }
+  const stored = buildGatedTrustLine("H1", { available: true, stale: false, aiUsable: false, basis: "INSUFFICIENT", quality: "delayed", notLiveReason: "stored_history" });
+  assert.equal(stored, "H1 stored candles · not live · read gated");
+  // Without a not-live reason the delayed grade is still a delayed feed.
+  const delayed = buildGatedTrustLine("H1", { available: true, stale: false, aiUsable: false, basis: "INSUFFICIENT", quality: "delayed", notLiveReason: null });
+  assert.equal(delayed, "H1 candles syncing · feed delayed · read gated");
+});
+
 // ── Item: "Hold or close?" never assumes the position runs with the chart ───
 
 test("hold-or-close with a SELL against bullish evidence does not say the thesis holds", () => {

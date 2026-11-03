@@ -124,3 +124,47 @@ describe("scalp Risk row", () => {
     expect(risk).not.toMatch(/no economic calendar connected/);
   });
 });
+
+// Round 3 pass 3: a rejected scalp never read its spread or slippage. The
+// engine's rejectResult hard-coded spreadRisk/slippageRisk "LOW", so a
+// news-unchecked reject read "Risk read — spread LOW, slippage LOW, news could
+// not be checked" and a SPREAD_TOO_WIDE card said "spread LOW". Reject
+// fixtures here, not READY (which the engine never sends with these flags).
+describe("scalp Risk row on a rejected scalp", () => {
+  const reject = (extra: Partial<ScalpResult>) => buildReasoningFromScalp({
+    result: {
+      symbol: "EURUSD", direction: null, status: "NO_CLEAN_SCALP", spreadRisk: "LOW", slippageRisk: "LOW",
+      newsRisk: "LOW", canBuildTrade: false, noTradeReason: "No clean scalp right now. Best action: wait.",
+      plainEnglishReason: "No clear direction.", stopLoss: null, entryZone: null,
+      ...extra,
+    } as unknown as ScalpResult,
+  }).evidence.risk;
+
+  it("a reject that stopped before the spread was read (spreadNotRead) never says 'spread LOW'", () => {
+    const risk = reject({ spreadNotRead: true, newsRiskUnchecked: true } as Partial<ScalpResult>);
+    expect(risk).not.toMatch(/spread\s*LOW|slippage\s*LOW/i);
+    expect(risk).toMatch(/spread and slippage not read/);
+    expect(risk).toMatch(/news could not be checked/);
+  });
+
+  it("an older server without the flag: AWAITING_DATA / MARKET_CLOSED / SYMBOL_NOT_TRADEABLE never read the spread", () => {
+    for (const status of ["AWAITING_DATA", "MARKET_CLOSED", "SYMBOL_NOT_TRADEABLE"] as const) {
+      const risk = reject({ status });
+      expect(risk, status).not.toMatch(/spread\s*LOW|slippage\s*LOW/i);
+      expect(risk, status).toMatch(/spread and slippage not read/);
+    }
+  });
+
+  it("SPREAD_TOO_WIDE says the spread was too wide, never 'spread LOW'", () => {
+    const risk = reject({ status: "SPREAD_TOO_WIDE", noTradeReason: "Spread is too wide for a clean scalp right now." });
+    expect(risk).not.toMatch(/spread\s*LOW/i);
+    expect(risk).toMatch(/spread too wide/);
+    expect(risk).not.toMatch(/slippage\s*LOW/i);
+  });
+
+  it("a news-gate reject that did read the spread keeps the band it read", () => {
+    const risk = reject({ spreadRisk: "MEDIUM", slippageRisk: "MEDIUM", newsRiskUnchecked: true,
+      noTradeReason: "Scheduled news risk could not be checked, so no scalp is offered right now." });
+    expect(risk).toMatch(/spread MEDIUM, slippage MEDIUM, news could not be checked/);
+  });
+});

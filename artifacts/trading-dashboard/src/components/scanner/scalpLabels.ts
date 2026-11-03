@@ -391,6 +391,21 @@ export function isScalpAwaitingFeed(r: ScalpReasonCarrier): boolean {
   return r.status === "AWAITING_DATA" && !isScalpAwaitingBrokerSpecs(r);
 }
 
+/**
+ * Whether a scalp's spread / slippage bands are readings. A reject that
+ * stopped before the spread check carries LOW placeholders: the server says
+ * so with spreadNotRead, and an older server's AWAITING_DATA / MARKET_CLOSED /
+ * SYMBOL_NOT_TRADEABLE always stops before it. SPREAD_TOO_WIDE read the spread
+ * and found it too wide (an older server still sent "LOW" there).
+ */
+export type ScalpSpreadRead = "read" | "too_wide" | "not_read";
+export function scalpSpreadRead(r: { status: ScalpResultStatus; spreadNotRead?: boolean }): ScalpSpreadRead {
+  if (r.status === "SPREAD_TOO_WIDE") return "too_wide";
+  if (r.spreadNotRead === true || r.status === "AWAITING_DATA" || r.status === "MARKET_CLOSED"
+    || r.status === "SYMBOL_NOT_TRADEABLE") return "not_read";
+  return "read";
+}
+
 /** True when the AWAITING_DATA reason is one the server explicitly named. */
 export function hasKnownScalpRejectReason(r: ScalpReasonCarrier): boolean {
   return (

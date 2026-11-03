@@ -65,6 +65,8 @@ const MARKET_DATA_CATEGORIES: ReadonlySet<string> = new Set(["broker", "syntheti
 type ActivityRow = {
   assetClass?: unknown; representativeSymbol?: unknown; aiUsable?: unknown; feedQuality?: unknown;
   lastCandleTime?: unknown; lastQuoteTime?: unknown;
+  /** The feed's own words for why it is not current (the chart's warning), or null. */
+  staleReason?: unknown;
 };
 const utcMinute = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 const parsedMs = (v: unknown): number | null => {
@@ -75,8 +77,10 @@ const parsedMs = (v: unknown): number | null => {
 
 /**
  * Asset classes whose resolved feed is not current (anything but a clean,
- * AI-usable feed), named with their grade and newest observation, plus the
- * age of the oldest such observation. null when every class is clean.
+ * AI-usable feed), named with the feed's own reason when it gives one (so a
+ * scheduled market close reads "Market closed ... Not a feed fault", never a
+ * bare "stale") or else its grade, and its newest observation, plus the age
+ * of the oldest such observation. null when every class is clean.
  */
 function feedNotCurrent(rows: ActivityRow[], now: number): { detail: string; ageMs: number | null } | null {
   const notCurrent = rows.filter((r) => r.aiUsable !== true || r.feedQuality !== "clean");
@@ -94,9 +98,12 @@ function feedNotCurrent(rows: ActivityRow[], now: number): { detail: string; age
       candleMs != null ? `last candle ${utcMinute(candleMs)}` : null,
       quoteMs != null ? `last tick ${utcMinute(quoteMs)}` : null,
     ].filter(Boolean).join(", ");
-    parts.push(quality
-      ? `${cls}${sym} ${quality}${seen ? ` (${seen})` : ""}`
-      : `${cls}${sym} freshness could not be checked`);
+    const reason = typeof r.staleReason === "string" ? r.staleReason.trim().replace(/\.+$/, "") : "";
+    parts.push(!quality
+      ? `${cls}${sym} freshness could not be checked`
+      : reason
+        ? `${cls}${sym}: ${reason}${seen ? ` (${seen})` : ""}`
+        : `${cls}${sym} ${quality}${seen ? ` (${seen})` : ""}`);
   }
   const ageMs = newestPerClass.length ? Math.max(0, now - Math.min(...newestPerClass)) : null;
   return { detail: `feed not current for ${parts.join("; ")}`, ageMs };

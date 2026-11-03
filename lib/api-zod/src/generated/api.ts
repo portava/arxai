@@ -17969,6 +17969,12 @@ export const CreateMeScalpFocusResponse = zod.object({
     ),
   spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+  spreadNotRead: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+    ),
   newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   newsRiskUnchecked: zod
     .boolean()
@@ -18183,6 +18189,12 @@ export const CreateMeScalpRankResponse = zod.object({
         ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRiskUnchecked: zod
         .boolean()
@@ -18388,6 +18400,12 @@ export const CreateMeScalpRankResponse = zod.object({
         ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRiskUnchecked: zod
         .boolean()
@@ -18593,6 +18611,12 @@ export const CreateMeScalpRankResponse = zod.object({
         ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRiskUnchecked: zod
         .boolean()
@@ -18798,6 +18822,12 @@ export const CreateMeScalpRankResponse = zod.object({
         ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRiskUnchecked: zod
         .boolean()
@@ -19024,6 +19054,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRiskUnchecked: zod
         .boolean()
@@ -19229,6 +19265,12 @@ export const CreateMeScalpBuildResponse = zod.object({
         ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRiskUnchecked: zod
         .boolean()

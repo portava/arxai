@@ -11,7 +11,7 @@ let mt5Connected: boolean | "throw" = false;
 const realDb = await import("@workspace/db");
 mock.module("@workspace/db", { namedExports: { ...realDb, db: {
   select: () => ({ from: () => ({
-    where: () => ({ limit: async () => [] }),
+    where: () => ({ limit: async () => [], orderBy: () => ({ limit: async () => [] }) }),
     orderBy: () => ({ limit: async () => [] }),
   }) }),
 } } });
@@ -47,7 +47,7 @@ mock.module("../data/providers/mt5Provider.js", { namedExports: {
 } });
 
 const { readinessReport, versionEnvelope, observedVersionEnvelope, diagnosticsPackage, diagnosticsSafetyAgrees } = await import("../release.js");
-const { mt5SetupStatusFrom, exportWeeklyReport } = await import("../dailyTesting.js");
+const { mt5SetupStatusFrom, exportWeeklyReport, exportDailyReport, startSession, dailyTestingStatus } = await import("../dailyTesting.js");
 
 // Round 3: a connected feed was reported as mt5Deferred: true next to
 // mt5Connected: true, and the gate failed it, so a working MT5 feed read as a
@@ -181,4 +181,46 @@ test("the weekly export's note says what the MT5 feed was observed doing, not 'M
   mt5Connected = "throw";
   const unknown = await exportWeeklyReport();
   assert.match(unknown.note, /could not be checked/i);
+});
+
+// The daily export and the daily-testing status still printed a fixed
+// "MT5 deferred." / mt5Deferred: true whatever the feed was doing, and both
+// exports said "No real broker orders placed" although neither reads any live
+// order or command table.
+test("the daily export's note follows the MT5 observation, and no export claims an unchecked 'no real broker orders'", async () => {
+  const s = startSession({ userRole: "OWNER" });
+  mt5Connected = true;
+  const daily = await exportDailyReport(s.sessionId);
+  assert.ok(!("error" in daily), JSON.stringify(daily));
+  const note = (daily as { note: string }).note;
+  assert.doesNotMatch(note, /MT5 deferred/i, note);
+  assert.match(note, /^MT5 feed observed connected/, note);
+  assert.doesNotMatch(note, /No real broker orders placed/i, note);
+  assert.match(note, /real broker orders were not checked/i, note);
+
+  const weekly = await exportWeeklyReport();
+  assert.doesNotMatch(weekly.note, /No real broker orders placed/i, weekly.note);
+  assert.match(weekly.note, /real broker orders were not checked/i, weekly.note);
+
+  mt5Connected = "throw";
+  const unknown = await exportDailyReport(s.sessionId);
+  assert.match((unknown as { note: string }).note, /could not be checked/i);
+});
+
+test("the daily-testing status reports mt5Deferred from the observation, not a literal", async () => {
+  mt5Connected = true;
+  const on = await dailyTestingStatus();
+  assert.equal(on.mt5Deferred, false);
+  assert.equal(on.mt5Connected, true);
+  assert.ok(on.mt5CheckedAt);
+  assert.doesNotMatch(on.note, /MT5 deferred/i, on.note);
+  mt5Connected = false;
+  const off = await dailyTestingStatus();
+  assert.equal(off.mt5Deferred, true);
+  assert.equal(off.mt5Connected, false);
+  mt5Connected = "throw";
+  const unread = await dailyTestingStatus();
+  assert.equal(unread.mt5Deferred, true);
+  assert.equal(unread.mt5Connected, null);
+  assert.match(unread.note, /could not be checked/i);
 });

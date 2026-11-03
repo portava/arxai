@@ -314,10 +314,17 @@ function observedAdapterStatus(
   const notCalledBehind = new Map<string, number>();
   let triedOnCandles = false;
   let failedEverywhere = 0;
+  // Requests on a leg whose chain does not hold this adapter (the TD + Finnhub
+  // hybrid sends candles to Twelve Data and quotes to Finnhub) could never be
+  // sent to it, so they are not counted against it.
+  let eligible = 0;
+  const notUsedLegs = new Set<AssistantLeg>();
   for (const r of ev.requests) {
+    const chain = legChain(r.leg);
+    if (r.servedBy !== id && chain.indexOf(id) < 0) { notUsedLegs.add(r.leg); continue; }
+    eligible += 1;
     if (r.servedBy == null) { failedEverywhere += 1; continue; }
     if (r.servedBy === id) continue;
-    const chain = legChain(r.leg);
     const mine = chain.indexOf(id), theirs = chain.indexOf(r.servedBy);
     if (mine < 0 || theirs < 0) continue;
     const bucket = mine < theirs ? triedBefore : notCalledBehind;
@@ -332,19 +339,31 @@ function observedAdapterStatus(
   const cacheNote = triedOnCandles ? "; cached candles reflect the fetch that filled the cache, up to a minute earlier" : "";
   const triedText = (lead: string) =>
     `${lead} it was tried before ${names(triedBefore)} and gave no usable answer (an error, no data or a stale quote)${cacheNote}.`;
+  const notUsed = ev.reached - eligible;
+  const legNames = Array.from(notUsedLegs).map((l) => (l === "candles" ? "candle" : "quote")).join(" or ");
+  const notUsedNote = notUsed > 0
+    ? ` It is not used for ${legNames} requests, so the other ${notUsed} ${notUsed === 1 ? "was" : "were"} never sent to it.`
+    : "";
 
   if (served > 0) {
-    const others = ev.reached - served;
+    const others = eligible - served;
     return {
       status: "healthy",
-      statusReason: `${label} answered ${served} of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot.` +
-        (tried > 0 ? ` ${triedText(tried === others ? `On the other ${tried}` : `On ${plural(tried, "other request")}`)}` : ""),
+      statusReason: `${label} answered ${served} of the ${eligible} self-test requests that reached the assistant feed in this snapshot.` +
+        (tried > 0 ? ` ${triedText(tried === others ? `On the other ${tried}` : `On ${plural(tried, "other request")}`)}` : "") +
+        notUsedNote,
     };
   }
   if (ev.reached === 0) {
     return {
       status: "unverified",
       statusReason: `Key is set, but no self-test request in this snapshot reached the assistant feed (an earlier provider in the router answered, or the probe could not run), so ${label} was not checked.`,
+    };
+  }
+  if (eligible === 0) {
+    return {
+      status: "unverified",
+      statusReason: `${label} is not used for ${legNames} requests, and those were the only ${plural(ev.reached, "self-test request")} that reached the assistant feed in this snapshot, so ${label} was not checked.`,
     };
   }
   if (ev.servedBy.size === 0) {
@@ -356,18 +375,20 @@ function observedAdapterStatus(
   if (tried > 0 || failedEverywhere > 0) {
     return {
       status: "failing",
-      statusReason: `${label} did not answer any of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot.` +
+      statusReason: `${label} did not answer any of the ${eligible} self-test requests that reached the assistant feed in this snapshot.` +
         (tried > 0 ? ` ${triedText(`On ${tried} of them`)}` : "") +
         (failedEverywhere > 0
           ? ` ${plural(failedEverywhere, "request")} failed with no adapter answering${ev.lastFailure?.reason ? ` — last reason: ${truncate(ev.lastFailure.reason, 200)}` : ""}.`
           : "") +
-        (skipped > 0 ? ` It was not called on ${skipped}, where ${names(notCalledBehind)} answered first.` : ""),
+        (skipped > 0 ? ` It was not called on ${skipped}, where ${names(notCalledBehind)} answered first.` : "") +
+        notUsedNote,
     };
   }
   if (skipped > 0) {
     return {
       status: "unverified",
-      statusReason: `${label} was not called on any of the ${ev.reached} self-test requests that reached the assistant feed in this snapshot: ${names(notCalledBehind)} answered first, and the composite only falls through to ${label} when the adapters ahead of it fail. Not checked.`,
+      statusReason: `${label} was not called on any of the ${eligible} self-test requests that reached the assistant feed in this snapshot: ${names(notCalledBehind)} answered first, and the composite only falls through to ${label} when the adapters ahead of it fail. Not checked.` +
+        notUsedNote,
     };
   }
   const others = Array.from(ev.servedBy.keys()).map(labelOf);

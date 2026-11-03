@@ -336,3 +336,37 @@ test("precision: entry and manage sides resolve the same precision from one spec
   assert.deepEqual(resolveScalpPricePrecision({ digits: null, point: 0.25 }), { digits: 2, point: 0.25 });
   assert.equal(resolveScalpPricePrecision({ digits: null, point: null }), null);
 });
+
+// ── Finding: rejects hard-coded spread / slippage "LOW" ─────────────────────
+// rejectResult sent spreadRisk/slippageRisk "LOW" whatever was read before the
+// reject: a SPREAD_TOO_WIDE result said spread LOW, a news reject on a MEDIUM
+// spread said LOW, and a reject that never reached the spread check still
+// carried LOW as if it were a reading.
+test("rejects: a spread read before the reject is reported; one never read is flagged spreadNotRead", () => {
+  const priced = (spec: Partial<ScalpSpecInput> = {}) => usdJpySpec({ tickSize: 0.001, tickValue: 0.667, ...spec });
+
+  const noDirection = evaluateScalp(usdJpyInput({ spec: priced(), scanner: usdJpyScanner({ bias: "neutral", recommendedAction: "REJECT" }) }));
+  assert.equal(noDirection.status, "NO_CLEAN_SCALP");
+  assert.equal(noDirection.spreadNotRead, true);
+
+  const closed = evaluateScalp(usdJpyInput({ spec: priced({ marketOpen: false }) }));
+  assert.equal(closed.status, "MARKET_CLOSED");
+  assert.equal(closed.spreadNotRead, true);
+
+  const wide = evaluateScalp(usdJpyInput({ spec: priced({ spreadPoints: 150 }) }));
+  assert.equal(wide.status, "SPREAD_TOO_WIDE");
+  assert.equal(wide.spreadRisk, "HIGH");
+  assert.equal(wide.slippageRisk, "HIGH");
+  assert.equal(wide.spreadNotRead, undefined);
+
+  const newsUnchecked = evaluateScalp(usdJpyInput({ spec: priced({ spreadPoints: 50 }), scanner: usdJpyScanner({ newsRiskUnchecked: true }) }));
+  assert.equal(newsUnchecked.status, "NO_CLEAN_SCALP");
+  assert.match(newsUnchecked.noTradeReason ?? "", /news risk could not be checked/i);
+  assert.equal(newsUnchecked.spreadRisk, "MEDIUM", "the MEDIUM spread read before the news gate");
+  assert.equal(newsUnchecked.slippageRisk, "MEDIUM");
+  assert.equal(newsUnchecked.spreadNotRead, undefined);
+
+  const full = evaluateScalp(usdJpyInput({ spec: priced() }));
+  assert.notEqual(full.status, "AWAITING_DATA");
+  assert.equal(full.spreadNotRead, undefined);
+});
