@@ -204,6 +204,40 @@ export function applySecurityAutonomyToAdvisory(
   return next;
 }
 
+/**
+ * Hold the chart inputs the autonomous dispatch advisory decides from at least
+ * as cautious as they were before the shared snapshot carried the chart's
+ * structure-clarity read. The user-facing AACI reads keep the truthful inputs;
+ * only the copy this advisory scores is adjusted, and only downwards.
+ *
+ * Market structure (M): the more cautious of the structure-clarity read and
+ * the Chart Truth (data quality) score this input used to carry. When the
+ * structure is unknown it falls back to the Chart Truth score, so M never
+ * drops a low input it used to count, and a trending market can never lift
+ * the dispatch score above what the data-quality score allowed.
+ *
+ * Pure: returns a new snapshot, never mutates its input.
+ */
+export function holdDispatchChartInputsCautious(
+  snapshot: AaciSharedTruthSnapshot,
+): AaciSharedTruthSnapshot {
+  const chart = snapshot.smartChart;
+  if (!chart) return snapshot;
+  // Set together with smartChart, from the same cached chart state's gate.
+  const dataQuality = snapshot.chartHandshake?.chartTruthScore;
+  const structure = chart.structureScore;
+  const cautiousStructure =
+    typeof dataQuality === "number" && Number.isFinite(dataQuality)
+      ? typeof structure === "number" && Number.isFinite(structure)
+        ? Math.min(structure, dataQuality)
+        : dataQuality
+      : structure;
+  return {
+    ...snapshot,
+    smartChart: { ...chart, structureScore: cautiousStructure },
+  };
+}
+
 export interface AaciExecutionAdvisoryInput {
   /** The user the agent executes as (owner / fleet creator). */
   executingUserId: number;
@@ -231,13 +265,17 @@ export async function evaluateAaciExecutionAdvisory(
 ): Promise<{ advisory: AaciExecutionAdvisory; decision: AaciDecision | null }> {
   const timeframe = input.timeframe ?? "M15";
   try {
-    const snapshot = await buildAaciSnapshot({
-      userId: input.executingUserId,
-      role: "system",
-      symbol: input.symbol,
-      timeframe,
-      includeMasterBroker: true,
-    });
+    // Dispatch never scores looser chart inputs than the shared snapshot
+    // gave it before its chart read was made truthful (see the helper).
+    const snapshot = holdDispatchChartInputsCautious(
+      await buildAaciSnapshot({
+        userId: input.executingUserId,
+        role: "system",
+        symbol: input.symbol,
+        timeframe,
+        includeMasterBroker: true,
+      }),
+    );
 
     // Override the fleet-aggregate self-trade context with THIS agent's facts so
     // the hard gate reflects the specific agent being dispatched.
