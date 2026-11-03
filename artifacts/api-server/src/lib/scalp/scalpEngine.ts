@@ -224,6 +224,16 @@ function resolveRiskBudget(input: ScalpEngineInput): number | null {
   return null;
 }
 
+/**
+ * The NO_CLEAN_SCALP rejects evaluateScalp makes BEFORE its news gate (no
+ * clear direction; stop inside market noise). rejectResult copies the
+ * scanner's newsRiskUnchecked onto every reject, so these carry the flag too
+ * although the news check played no part in them; readers that count
+ * "could not be checked for scheduled news" exclude them by this reason.
+ */
+export const NO_DIRECTION_NO_TRADE_REASON = "No clean scalp right now. Best action: wait.";
+export const STOP_IN_NOISE_NO_TRADE_REASON = "The stop would sit inside normal market noise, so this scalp is not clean.";
+
 export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const now = input.now ?? Date.now();
   const profile = MODE_PROFILES[input.mode];
@@ -284,7 +294,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   else if (scanner.bias === "bearish") direction = "SELL";
 
   if (!direction || scanner.recommendedAction === "REJECT") {
-    return rejectResult(input, "NO_CLEAN_SCALP", "No clean scalp right now. Best action: wait.", {
+    return rejectResult(input, "NO_CLEAN_SCALP", NO_DIRECTION_NO_TRADE_REASON, {
       canWatch: true,
       plain: "There is no clean scalp here right now. The market is not giving a clear direction with enough quality.",
     });
@@ -352,7 +362,7 @@ export function evaluateScalp(input: ScalpEngineInput): ScalpResult {
   const minStopDist = Math.max(spreadPrice * 2 + stopsLevelPrice, structuralStopDist > 0 ? structuralStopDist : spreadPrice * 3, point * 10);
   let stopDist = Math.max(structuralStopDist, minStopDist);
   if (!(stopDist > 0)) {
-    return rejectResult(input, "NO_CLEAN_SCALP", "The stop would sit inside normal market noise, so this scalp is not clean.", {
+    return rejectResult(input, "NO_CLEAN_SCALP", STOP_IN_NOISE_NO_TRADE_REASON, {
       canWatch: true,
     });
   }

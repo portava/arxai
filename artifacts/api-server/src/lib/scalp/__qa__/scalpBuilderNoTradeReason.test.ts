@@ -120,3 +120,60 @@ test("builder reason: AWAITING_DATA is worded from its reject reason", () => {
   assert.match(text, /2 had no live price/);
   assert.doesNotMatch(text, /no live price or broker specs/, "a market with a live price was described as having none");
 });
+
+// Round 3 pass 3: rejectResult copies the scanner's newsRiskUnchecked onto
+// EVERY reject, but the news gate runs only after the direction, stop-noise
+// and spread checks. A market turned down for no clear direction or a too-wide
+// spread would be turned down even if the calendar had answered, so it is
+// evaluated — never counted as "could not be checked for scheduled news".
+// Real engine results, not hand-built fixtures.
+const { evaluateScalp } = await import("../scalpEngine.js");
+const { evaluateMarketDataSufficiency } = await import("@workspace/domain/market");
+type EngineInput = Parameters<typeof evaluateScalp>[0];
+function engineInput(scanner: Record<string, unknown> = {}, spec: Record<string, unknown> = {}): EngineInput {
+  return {
+    symbol: "USDJPY",
+    currentPrice: 150.0,
+    spec: {
+      hasBrokerTruth: true, tradeMode: "FULL", tradeAllowed: true, visible: true, marketOpen: true,
+      digits: 3, point: 0.001, minLot: 0.01, maxLot: 100, lotStep: 0.01, contractSize: 100000,
+      tickSize: 0.001, tickValue: 0.667, stopsLevelPoints: 0, spreadPoints: 10,
+      category: "forex", displayName: "USDJPY", profitCurrency: "JPY", ...spec,
+    },
+    scanner: {
+      bias: "bullish", recommendedAction: "BUY", confidenceScore: 82, entrySniperScore: 80,
+      setupType: "Continuation", entry: 150.0, stopLoss: 149.8, takeProfit: 150.4,
+      entryZone: { low: 149.98, high: 150.02 }, dataSource: "LIVE_FEED",
+      sufficiency: evaluateMarketDataSufficiency({ symbol: "USDJPY", timeframe: "M5", freshnessVerdict: "LIVE", availableClosedCandles: 300 }),
+      newsRiskUnchecked: true,
+      ...scanner,
+    },
+    account: { balance: 10000, equity: 10000, freeMargin: 10000, leverage: 100, currency: "USD" },
+    mode: "ANY",
+    riskAmount: 100,
+    now: 1_780_000_000_000,
+  } as unknown as EngineInput;
+}
+
+test("builder reason: no-direction and spread-too-wide rejects are evaluated, not blamed on the news check", () => {
+  const noDirection = evaluateScalp(engineInput({ bias: "neutral", recommendedAction: "REJECT" }));
+  const spreadWide = evaluateScalp(engineInput({}, { spreadPoints: 150 }));
+  const newsGate = evaluateScalp(engineInput());
+  // Fixture sanity: each reject came from the gate the test names, and all
+  // three carry the copied newsRiskUnchecked flag.
+  assert.equal(noDirection.status, "NO_CLEAN_SCALP");
+  assert.match(noDirection.noTradeReason ?? "", /Best action: wait/);
+  assert.equal(spreadWide.status, "SPREAD_TOO_WIDE");
+  assert.equal(newsGate.status, "NO_CLEAN_SCALP");
+  assert.match(newsGate.noTradeReason ?? "", /news risk could not be checked/i);
+  for (const r of [noDirection, spreadWide, newsGate]) assert.equal(r.newsRiskUnchecked, true);
+
+  const text = builderNoTradeReason([noDirection, spreadWide, newsGate], "target");
+  assert.match(text, /^2 of 3 markets had live data to evaluate \(1 could not be evaluated\)/, text);
+  assert.match(text, /1 market could not be checked for scheduled news/, text);
+  assert.doesNotMatch(text, /[23] markets? could not be checked for scheduled news/, text);
+
+  const onlyEarlier = builderNoTradeReason([noDirection, spreadWide], "target");
+  assert.doesNotMatch(onlyEarlier, /scheduled news/, onlyEarlier);
+  assert.match(onlyEarlier, /^2 of 2 markets had live data to evaluate; none gave a clean scalp/, onlyEarlier);
+});

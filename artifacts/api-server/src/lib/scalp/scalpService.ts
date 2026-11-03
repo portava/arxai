@@ -25,7 +25,7 @@ import {
 } from "../marketScanner.js";
 import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import { isCurrentBuild } from "../truth/marketReadEvidence.js";
-import { evaluateScalp } from "./scalpEngine.js";
+import { evaluateScalp, NO_DIRECTION_NO_TRADE_REASON, STOP_IN_NOISE_NO_TRADE_REASON } from "./scalpEngine.js";
 import {
   loadSpecInput,
   loadAccountInput,
@@ -512,10 +512,15 @@ export function builderNoTradeReason(
   const notTradeable = evaluated.filter(
     (r) => r.status === "MARKET_CLOSED" || r.status === "SYMBOL_NOT_TRADEABLE",
   ).length;
-  // Not already counted above, and its scheduled-news check did not run.
+  // Turned down by the news gate itself: its scheduled-news check did not
+  // run. Every reject carries the scanner's newsRiskUnchecked flag, but the
+  // news gate only runs after the direction, stop-noise and spread checks; a
+  // market rejected by one of those (no direction, stop in noise,
+  // SPREAD_TOO_WIDE) was evaluated and would be rejected with the calendar up.
   const newsUnchecked = evaluated.filter(
-    (r) => r.status !== "AWAITING_DATA" && r.status !== "MARKET_CLOSED"
-      && r.status !== "SYMBOL_NOT_TRADEABLE" && r.newsRiskUnchecked === true,
+    (r) => r.status === "NO_CLEAN_SCALP" && r.newsRiskUnchecked === true
+      && r.noTradeReason !== NO_DIRECTION_NO_TRADE_REASON
+      && r.noTradeReason !== STOP_IN_NOISE_NO_TRADE_REASON,
   ).length;
   const checked = n - awaiting.length - notTradeable - newsUnchecked;
   const newsWhy = "the economic calendar or news lookup did not answer";
