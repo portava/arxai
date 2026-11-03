@@ -10,7 +10,8 @@
 // predictions, and when structure/intent is not populated the map is empty with
 // an honest note. The chart NEVER executes from this — decision support only.
 
-import { decimalsFor, round } from "./chartMath.js";
+import { round } from "./chartMath.js";
+import { chartPriceText, validPriceDecimals } from "./chartPriceDecimals.js";
 import type {
   ChartCandleIntentRead,
   ChartLevel,
@@ -66,6 +67,13 @@ export interface DecisionForkInputs {
   levels: ChartLevelsRead;
   candleIntent: ChartCandleIntentRead;
   setup: ChartSetupRead;
+  /**
+   * The instrument's display precision for this chart (chartPriceDecimals).
+   * The pivot and branch prices are reported and printed at it. When omitted,
+   * prices are reported as the level engines produced them — never re-rounded
+   * by magnitude.
+   */
+  priceDecimals?: number | null;
 }
 
 const LIKELIHOOD_ORDER: Record<ChartLikelihood, number> = {
@@ -88,17 +96,14 @@ function nearestPivot(levels: ChartLevelsRead): ChartLevel | null {
   return sup ?? null;
 }
 
-function fmt(price: number | null | undefined): number | null {
-  if (price == null || !Number.isFinite(price)) return null;
-  return round(price, decimalsFor(price));
-}
-
-function p(price: number | null): string {
-  return price != null ? `${price}` : "the level";
-}
-
 export function computeDecisionFork(input: DecisionForkInputs): ChartDecisionFork {
   const { trend, levels, candleIntent, setup } = input;
+  const decimals = validPriceDecimals(input.priceDecimals);
+  const fmt = (price: number | null | undefined): number | null => {
+    if (price == null || !Number.isFinite(price)) return null;
+    return decimals == null ? price : round(price, decimals);
+  };
+  const p = (price: number | null): string => (price != null ? chartPriceText(price, decimals) : "the level");
 
   if (!levels.populated || !candleIntent.populated) {
     return {

@@ -35,6 +35,7 @@ import { computeTrendRegime } from "./engines/trendRegime.js";
 import { computeLevelPersonality } from "./engines/levelPersonality.js";
 import { computeCandleIntent } from "./engines/candleIntent.js";
 import { computeSetupLifecycle, type ChartSetupRead } from "./engines/setupLifecycle.js";
+import { chartPriceDecimals } from "./engines/chartPriceDecimals.js";
 import { getTimeframeAgreement } from "./engines/timeframeAgreement.js";
 import { computeEvidenceStack } from "./engines/evidenceStack.js";
 import { computeTradeReadiness } from "./engines/tradeReadiness.js";
@@ -508,12 +509,20 @@ export async function buildChartIntelligenceState(
   );
   const levels = levelsResult.read;
   const candleIntent = computeCandleIntent(closed);
+  // One display precision for every engine that reports or prints a level
+  // price (the same rule level personality rounds its levels at): never
+  // re-rounded by magnitude downstream.
+  const priceDecimals = chartPriceDecimals(
+    closed,
+    truth.symbol,
+    truth.truthResult ? truth.truthResult.pricePrecision : undefined,
+  );
 
   // Engine 4 is heavy (4 timeframes) — read the cached value instantly and let
   // it refresh in the background (Slow Brain). Never awaited on the hot path.
   const timeframeAgreement = getTimeframeAgreement(truth.symbol);
 
-  const setup = computeSetupLifecycle(closed, timeframe, trend, levels, candleIntent);
+  const setup = computeSetupLifecycle(closed, timeframe, trend, levels, candleIntent, priceDecimals);
   const evidence = computeEvidenceStack(
     trend,
     levels,
@@ -562,12 +571,14 @@ export async function buildChartIntelligenceState(
     levels,
     evidence,
     setup,
+    priceDecimals,
   });
   const decisionFork: ChartDecisionFork = computeDecisionFork({
     trend,
     levels,
     candleIntent,
     setup,
+    priceDecimals,
   });
 
   // Engine-only summary. The read score and the (advisory) agent consensus are
@@ -645,6 +656,7 @@ export async function buildChartIntelligenceState(
     feedStale: truth.feedStatus.stale,
     sufficiencyAllowsSetup: closed.length >= MIN_SUFFICIENT_CLOSED_BARS,
     chartReadConfidenceLow: !truth.aiUsable,
+    priceDecimals,
   });
 
   const sentenceInput: Omit<ChartIntelligenceState, "marketSentences"> = {
