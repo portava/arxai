@@ -153,6 +153,6 @@ describe("Ruby Memory tab — truth", () => {
     });
     expect((await screen.findByTestId("memory-net-pnl")).textContent).toBe("Not measured");
     expect((await screen.findByTestId("memory-equity-pnl-note")).textContent).toBe(note);
-    expect(screen.queryByText(/No closed demo trades in this range yet/)).toBeNull();
+    expect(screen.queryByText(/No closed (demo|paper) trades in this range yet/)).toBeNull();
   });
 });
