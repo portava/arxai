@@ -642,26 +642,37 @@ function stopValuedClause(ctx: Pick<RiskContext, "daily">): string {
 
 /**
  * PAPER: what the daily-loss figures are when the risk count differs from
- * the booked figures, for the daily-loss refusal. "" when they agree.
+ * the booked figures, for the refusals that read them (the daily-loss limit,
+ * and the automation's share of today's loss budget). "" when they agree.
+ * "sentence" is a sentence to append to a refusal; "clause" is a
+ * parenthetical for a refusal that continues after it.
  */
-function paperDailyCountNote(ctx: RiskContext, withEquity: boolean): string {
+function paperDailyCountNote(ctx: RiskContext, withEquity: boolean, form: "sentence" | "clause" = "sentence"): string {
   const parts: string[] = [];
+  const pair = (counted: number, booked: number, what: string) => form === "sentence"
+    ? `${round(counted)} (${what === "booked" ? `booked ${round(booked)}` : `the paper account shows ${round(booked)} ${what}`})`
+    : `${round(counted)} against ${round(booked)} ${what === "booked" ? "booked" : `${what} on the paper account`}`;
   const { realizedPnl, bookedRealizedPnl, floatingPnl, bookedFloatingPnl } = ctx.daily;
   if (realizedPnl != null && bookedRealizedPnl != null) {
-    parts.push(`today's closed trades count ${round(realizedPnl)} (booked ${round(bookedRealizedPnl)})`);
+    parts.push(`today's closed trades count ${pair(realizedPnl, bookedRealizedPnl, "booked")}`);
   }
   const openCounted = floatingPnl != null && floatingPnl < 0 && bookedFloatingPnl != null;
   if (openCounted) {
-    parts.push(`open positions count ${round(floatingPnl!)} (the paper account shows ${round(bookedFloatingPnl!)} floating)`);
+    parts.push(`open positions count ${pair(floatingPnl!, bookedFloatingPnl!, "floating")}`);
   }
   const a = ctx.account;
   const equityCounted = withEquity && a?.equity != null && a.bookedEquity != null;
   if (equityCounted) {
-    parts.push(`equity counts ${round(a!.equity!)} (the paper account shows ${round(a!.bookedEquity!)} booked)`);
+    parts.push(form === "sentence"
+      ? `equity counts ${round(a!.equity!)} (the paper account shows ${round(a!.bookedEquity!)} booked)`
+      : `equity counts ${round(a!.equity!)} against ${round(a!.bookedEquity!)} booked`);
   }
   if (!parts.length) return "";
   const basis = openCounted || equityCounted ? PAPER_EQUITY_COUNT_BASIS : PAPER_RISK_COUNT_BASIS;
-  return ` This is the paper risk count: ${parts.join(", and ")}; it takes ${basis}${openCounted || equityCounted ? stopValuedClause(ctx) : ""}.`;
+  const stop = openCounted || equityCounted ? stopValuedClause(ctx) : "";
+  return form === "sentence"
+    ? ` This is the paper risk count: ${parts.join(", and ")}; it takes ${basis}${stop}.`
+    : ` (paper risk count: ${parts.join(", ")}; it takes ${basis}${stop})`;
 }
 
 function moneyPerPriceUnit(lots: number, inst: InstrumentModel | undefined): number | null {
@@ -1110,7 +1121,14 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
     } else if (!acct || acct.freeMargin == null) set("buying_power", "BLOCK", "Free margin is unknown, so buying power cannot be checked.", measured);
     else if (required == null) set("buying_power", "BLOCK", `Cannot compute required margin: ${sizingGap}.`, measured);
     else if (required > acct.freeMargin + 1e-9) {
-      set("buying_power", "BLOCK", `This trade needs about ${round(required)} margin but only ${round(acct.freeMargin)} is free.`, measured);
+      // PAPER: free margin is the risk-count equity less the margin in use;
+      // when that equity is below the booked one, say so with the free margin
+      // the paper account shows.
+      const booked = acct.bookedEquity != null && acct.equity != null
+        ? ` on the paper risk count (equity counts ${round(acct.equity)} against ${round(acct.bookedEquity)} booked, so the paper account shows ${round(acct.freeMargin + acct.bookedEquity - acct.equity)} free; the risk count takes ${PAPER_EQUITY_COUNT_BASIS}${stopValuedClause(ctx)})`
+        : "";
+      set("buying_power", "BLOCK", `This trade needs about ${round(required)} margin but only ${round(acct.freeMargin)} is free${booked}.`,
+        acct.bookedEquity != null ? { ...measured, bookedEquity: round(acct.bookedEquity) } : measured);
     } else set("buying_power", "PASS", null, measured);
   }
 
@@ -1240,7 +1258,11 @@ function evaluateDiscipline(
     const share = used.length ? Math.max(...used) : 0;
     measured["dailyBudgetUsed"] = round(share, 3);
     if (share >= AUTOMATION_DAILY_BUDGET_SHARE) {
-      hard.push(`${Math.round(share * 100)}% of today's loss budget is used; automation pauses at ${AUTOMATION_DAILY_BUDGET_SHARE * 100}%`);
+      // PAPER: the share reads the paper risk count; name it with the booked
+      // figures beside it when they differ (the equity only when a percent
+      // cap was valued on it).
+      const count = paperDailyCountNote(ctx, L.maxDailyLossPercent != null && equity != null, "clause");
+      hard.push(`${Math.round(share * 100)}% of today's loss budget is used${count}; automation pauses at ${AUTOMATION_DAILY_BUDGET_SHARE * 100}%`);
     }
   }
 

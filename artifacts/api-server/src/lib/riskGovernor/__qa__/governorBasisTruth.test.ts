@@ -4,6 +4,9 @@
 //   - widening a stop (MODIFY) while the equity the caps are valued on is 0 or
 //     below is refused even when an amount cap is set: a percent of that
 //     equity allows no risk, the same as for a new trade (the OPEN path);
+//   - the automation's daily-budget refusal and the buying-power refusal say
+//     they read the paper risk count, with the booked figures beside it, when
+//     the two differ (they read the same figures as the daily-loss refusal);
 //
 // Pure: the evaluator runs over hand-built contexts.
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
@@ -17,7 +20,7 @@ import {
 const NOW = new Date("2026-10-23T12:00:00Z");
 const FX = { contractSize: 100_000, quoteToAccountFx: 1, volumeStep: 0.01, minVolume: 0.01, maxVolume: 50, source: "FX_STANDARD_LOT" };
 const USER = {
-  maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null as number | null, maxDailyLossPercent: 3, maxDailyLossAmount: null,
+  maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null as number | null, maxDailyLossPercent: 3, maxDailyLossAmount: null as number | null,
   maxOpenTrades: 3, maxPositionSize: null, blockAfterDailyLossHit: true, requireStopLoss: true,
 };
 
@@ -76,4 +79,50 @@ test("MODIFY: with no amount cap the percent cap at equity <= 0 is used up, not 
   const ok = evaluatePreTradeRisk(WIDEN, ctxOf({}, { maxRiskPerTradeAmount: 100 }));
   assert.equal(ok.decision, "ALLOW", ok.primaryReason ?? "");
   assert.equal(ok.rules.find((x) => x.rule === "per_trade_loss_limit")!.measured?.["cap"], 100);
+});
+
+// ── Finding 4: automation budget and buying power name the paper risk count ──
+// Today's only close: a US30 0.1-lot 50-point loss at 1 unit per lot, booked
+// −5 and counted −500 at the paper risk model.
+const INDEX_DAY = {
+  account: { equity: 9_500, bookedEquity: 9_995, freeMargin: 9_500, leverage: 100, currency: "USD", source: "paper_account:3" },
+  daily: { realizedPnl: -500, bookedRealizedPnl: -5, floatingPnl: 0 },
+};
+
+test("automation: the 70% daily-budget refusal says it reads the paper risk count, with the booked figures beside it", () => {
+  const ctx = ctxOf(INDEX_DAY, { maxDailyLossAmount: 600, maxDailyLossPercent: 50 });
+  const d = evaluatePreTradeRisk(intentOf({ origin: "automation" }), ctx);
+  assert.equal(d.rules.find((r) => r.rule === "daily_loss_limit")!.outcome, "PASS", "rule 7 itself passes (−500 > −600)");
+  const r = d.rules.find((x) => x.rule === "trading_discipline")!;
+  assert.equal(r.outcome, "BLOCK");
+  assert.match(r.reason!, /^Blocked by your trading rules: 83% of today's loss budget is used \(paper risk count: today's closed trades count -500 against -5 booked, equity counts 9500 against 9995 booked; it takes the lower of the booked total and the price move × lots × 100 total of the closed paper trades, and values each open position/);
+  assert.match(r.reason!, /\); automation pauses at 70%\.$/);
+  // The same figures with no booked difference carry no note.
+  const plain = evaluatePreTradeRisk(intentOf({ origin: "automation" }),
+    ctxOf({ daily: { realizedPnl: -500, floatingPnl: 0 } }, { maxDailyLossAmount: 600, maxDailyLossPercent: 50 }));
+  const pr = plain.rules.find((x) => x.rule === "trading_discipline")!;
+  assert.equal(pr.reason, "Blocked by your trading rules: 83% of today's loss budget is used; automation pauses at 70%.");
+});
+
+test("automation: with only the amount cap set, the share names the closed-trade count and not the equity", () => {
+  const limits = resolveEffectiveLimits({ userSettings: { ...USER, maxDailyLossAmount: 600, blockAfterDailyLossHit: true } });
+  const ctx = ctxOf({ ...INDEX_DAY, limits: { ...limits, maxDailyLossPercent: null } });
+  const r = evaluatePreTradeRisk(intentOf({ origin: "automation" }), ctx).rules.find((x) => x.rule === "trading_discipline")!;
+  assert.equal(r.outcome, "BLOCK");
+  assert.match(r.reason!, /83% of today's loss budget is used \(paper risk count: today's closed trades count -500 against -5 booked; it takes the lower of the booked total and the price move × lots × 100 total of the closed paper trades\); automation pauses at 70%/);
+  assert.doesNotMatch(r.reason!, /equity counts/);
+});
+
+test("buying power: 'only X is free' says it is the paper risk count and shows the free margin the paper account shows", () => {
+  // Risk-count equity 350 with 300 margin in use: 50 free on the count; the
+  // paper account shows 9,800 booked, so 9,500 free.
+  const ctx = ctxOf({ account: { equity: 350, bookedEquity: 9_800, freeMargin: 50, leverage: 100, currency: "USD", source: "paper_account:3" } });
+  const r = evaluatePreTradeRisk(intentOf({ lots: 0.1 }), ctx).rules.find((x) => x.rule === "buying_power")!;
+  assert.equal(r.outcome, "BLOCK");
+  assert.match(r.reason!, /^This trade needs about 110\.01 margin but only 50 is free on the paper risk count \(equity counts 350 against 9800 booked, so the paper account shows 9500 free; the risk count takes the lower of the booked total/);
+  assert.equal(r.measured?.["bookedEquity"], 9_800);
+  // A broker account (no booked figure) reads as before.
+  const live = evaluatePreTradeRisk(intentOf({ lots: 0.1, venue: "LIVE" }),
+    ctxOf({ account: { equity: 350, freeMargin: 50, leverage: 100, currency: "USD", source: "broker_hub:mt5:1" } }));
+  assert.equal(live.rules.find((x) => x.rule === "buying_power")!.reason, "This trade needs about 110.01 margin but only 50 is free.");
 });
