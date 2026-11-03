@@ -22,6 +22,14 @@ interface Report {
   coach_summary: string;
   next_best_actions: string[];
   warnings: Array<Record<string, unknown>>;
+  /** When the report was generated (absent on an older server). */
+  report_generated_at?: string;
+}
+
+function formatGeneratedAt(iso: string | undefined): string {
+  if (!iso) return "not reported by the server";
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleString() : "not reported by the server";
 }
 
 interface Session { paper_session_id: string; status: string; }
@@ -108,6 +116,10 @@ export default function SessionReport() {
     : 0;
   const classified = report ? report.wins + report.losses + report.break_even : 0;
   const inProgress = report ? (report.duration_in_progress ?? report.status !== "COMPLETE") : false;
+  // A report's duration is a snapshot at generation time. The session list
+  // is a newer read: when it shows the session ENDED, say so.
+  const sessionNow = report ? sessions.find((x) => x.paper_session_id === report.paper_session_id) : undefined;
+  const endedSinceReport = inProgress && sessionNow?.status === "ENDED";
 
   return (
     <div className="p-6 space-y-4">
@@ -134,7 +146,8 @@ export default function SessionReport() {
         <div className="space-y-3">
           <div className="rounded border p-4">
             <div className="text-sm text-muted-foreground">Report ID: {report.session_report_id} · Status: {report.status}</div>
-            <div>Duration: {report.duration_minutes}m{inProgress ? " so far (session not ended)" : ""} · Trades: {report.total_trades} ({report.wins}W/{report.losses}L/{report.break_even}BE{unclassified > 0 ? `, ${unclassified} unclassified` : ""})</div>
+            <div className="text-sm text-muted-foreground" data-testid="session-report-generated-at">Generated: {formatGeneratedAt(report.report_generated_at)}</div>
+            <div>Duration: {report.duration_minutes}m{inProgress ? ` so far as of this report (the session had not ended when it was generated${endedSinceReport ? "; it has since ended — generate a new report for its full duration" : ""})` : ""} · Trades: {report.total_trades} ({report.wins}W/{report.losses}L/{report.break_even}BE{unclassified > 0 ? `, ${unclassified} unclassified` : ""})</div>
             <div>Net P&L (¢): {report.net_pnl} · Win rate: {report.win_rate == null ? "not available (no close has a recorded result)" : `${report.win_rate}% of ${classified} with a recorded result`}</div>
           </div>
           <div className="rounded border p-4">

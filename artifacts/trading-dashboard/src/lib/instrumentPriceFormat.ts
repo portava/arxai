@@ -60,7 +60,7 @@ export function resolveDisplayPricePrecision(
 }
 
 /** Legacy magnitude heuristic — used ONLY when no precision is known at all. */
-function magnitudeDecimals(value: number): number {
+export function magnitudeDecimals(value: number): number {
   const abs = Math.abs(value);
   return abs < 10 ? 5 : abs < 1000 ? 3 : 2;
 }

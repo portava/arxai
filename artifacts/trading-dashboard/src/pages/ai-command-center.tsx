@@ -46,13 +46,14 @@ import {
   type MentorActionItem,
   type MentorSession,
 } from "@/components/aiMentor";
+import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "@/lib/mentorApi";
 
 // Ruby Command Center — 4-tab, user-facing surface.
 //
 // Tabs:
-//   • Chat       — opens Ruby's floating live chat (voice + typing-indicator
-//                  ready) and shows the user's recent mentor briefings as
-//                  saved conversations.
+//   • Chat       — opens Ruby's floating live chat and shows the user's
+//                  latest generated mentor briefing and recent mentor
+//                  sessions (not their chat history).
 //   • Market Read — plain-language read of the currently-selected market,
 //                  reusing the same SelectedMarketPanel as the scanner.
 //   • Commands   — user-safe trading command examples Ruby will accept,
@@ -181,17 +182,19 @@ function ChatTab() {
   const { name } = useAssistantName();
   const qc = useQueryClient();
 
-  const latest = useQuery<{
-    session: MentorSession | null;
-    actionItems: MentorActionItem[];
-  }>({
-    queryKey: ["mentor-latest"],
-    queryFn: async () => (await fetch("/api/mentor/sessions/latest")).json(),
+  // Same cache entries as /ai-mentor: a non-2xx read throws, so a failed read
+  // is an error here and there, never an empty "no session yet" answer.
+  type LatestResponse = { session: MentorSession | null; actionItems: MentorActionItem[] };
+  type HistoryResponse = { sessions: MentorSession[] };
+  const latest = useQuery<LatestResponse>({
+    queryKey: MENTOR_LATEST_QUERY_KEY,
+    queryFn: async () => readMentorJson<LatestResponse>(await fetch("/api/mentor/sessions/latest"), "Loading the latest mentor session"),
   });
-  const history = useQuery<{ sessions: MentorSession[] }>({
-    queryKey: ["mentor-history"],
-    queryFn: async () => (await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`)).json(),
+  const history = useQuery<HistoryResponse>({
+    queryKey: mentorHistoryQueryKey(MENTOR_HISTORY_LIMIT),
+    queryFn: async () => readMentorJson<HistoryResponse>(await fetch(`/api/mentor/sessions?limit=${MENTOR_HISTORY_LIMIT}`), "Loading mentor history"),
   });
+  const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
 
   const updateStatus = useMutation({
     mutationFn: async ({
@@ -219,14 +222,13 @@ function ChatTab() {
       {/* Open-Ruby CTA */}
       <Card className="rounded-2xl border-ruby/25 bg-card">
         <CardContent className="p-5">
+          {/* No status pill: nothing on this page checks whether the
+              assistant or chat backend is up, so none is claimed. */}
           <div className="flex items-start justify-between gap-3">
             <h3 className="text-base font-semibold flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-ruby" />
               Talk to {name}
             </h3>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-              <span className="h-1.5 w-1.5 rounded-full bg-success" /> {name} is ready
-            </span>
           </div>
           <p className="text-sm text-txt-secondary mt-1.5">
             Ask about the market, request a setup read, review a trade, or run
@@ -254,9 +256,15 @@ function ChatTab() {
         </CardContent>
       </Card>
 
-      {/* Latest mentor briefing — treated as Ruby's most recent saved chat */}
+      {/* Latest generated mentor briefing */}
       {latest.isLoading ? (
         <Skeleton className="h-40 w-full" />
+      ) : latest.isError ? (
+        <Card className="rounded-2xl border-destructive/40 bg-card">
+          <CardContent className="p-5 text-sm text-destructive" role="alert" data-testid="chat-mentor-latest-error">
+            Could not load your latest mentor briefing, so whether one exists is unknown. {errorMessage(latest.error)}
+          </CardContent>
+        </Card>
       ) : session ? (
         <>
           <MentorWarningCard session={session} />
@@ -290,14 +298,22 @@ function ChatTab() {
         </Card>
       )}
 
-      {/* Saved conversations / history — grouped */}
+      {/* Generated mentor sessions, grouped. These are mentor briefings and
+          notes, not the user's chat history. */}
       <section>
-        <h3 className="mb-2 flex items-center gap-2 text-base font-semibold">
+        <h3 className="mb-2 flex items-center gap-2 text-base font-semibold" data-testid="chat-mentor-history-heading">
           <MessageCircle className="h-4 w-4 text-ruby" />
-          Recent {name} Conversations
+          Recent mentor sessions
         </h3>
+        <p className="mb-2 text-xs text-txt-secondary">
+          Briefings and notes {name}'s mentor generated for you. Your chat messages are not listed here.
+        </p>
         {history.isLoading ? (
           <Skeleton className="h-32 w-full" />
+        ) : history.isError ? (
+          <p className="text-xs text-destructive" role="alert" data-testid="chat-mentor-history-error">
+            Could not load your recent mentor sessions. {errorMessage(history.error)}
+          </p>
         ) : (
           <MentorHistory sessions={history.data?.sessions ?? []} pageLimit={MENTOR_HISTORY_LIMIT} />
         )}

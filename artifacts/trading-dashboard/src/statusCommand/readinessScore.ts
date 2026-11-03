@@ -95,11 +95,15 @@ export function computeReadinessScore(
       score: liveLock === null ? 0 : liveLock ? 10 : 5, max: 10,
       level: liveLock === null ? "unavailable" : liveLock ? "info" : "attention",
       summary: liveLock === null
-        ? "Server safety posture could not be read, so the locks are unknown; server still gates execution."
+        ? ctx.executionPostureUnmeasured
+          ? "Not read: the diagnostic summary does not read the live-trading lock, live arming or your account mode, so this section is not scored. The server still gates execution."
+          : "Server safety posture could not be read, so the locks are unknown; server still gates execution."
         : liveLock
           ? "Server-enforced safety locks are active and working as intended."
           : "Safety locks not detected from the client view; server still gates execution.",
-      evidence: liveLock === null ? [`bridgeStatus=${ctx.bridgeStatus ?? "unknown"}`] : locks,
+      evidence: liveLock === null
+        ? ctx.executionPostureUnmeasured ? ["executionPostureMeasured=false"] : [`bridgeStatus=${ctx.bridgeStatus ?? "unknown"}`]
+        : locks,
     });
   }
 
@@ -112,7 +116,9 @@ export function computeReadinessScore(
       score: unread ? 0 : ok ? 10 : 4, max: 10,
       level: unread ? "unavailable" : ok ? "ready" : "attention",
       summary: unread
-        ? "Demo/simulator mode could not be read from the server."
+        ? ctx.executionPostureUnmeasured
+          ? "Not read: the diagnostic summary only describes your own MT5 bridge, not which surface your orders go to. Your account mode is the authority."
+          : "Demo/simulator mode could not be read from the server."
         : ok ? "Simulator/demo mode is the active execution surface." : "Simulator/demo mode not detected.",
       evidence: [`tradingMode=${ctx.tradingMode}`, `paperOnly=${ctx.paperOnly}`, `simulatorMode=${ctx.simulatorMode}`],
     });
@@ -167,7 +173,9 @@ export function computeReadinessScore(
       score: ro === null ? 0 : ro ? 10 : 5, max: 10,
       level: ro === null ? "unavailable" : ro ? "info" : "attention",
       summary: ro === null
-        ? "Broker mode could not be read from the server."
+        ? ctx.executionPostureUnmeasured
+          ? "Not read: the diagnostic summary reports a fixed read-only value, not the broker execution gates."
+          : "Broker mode could not be read from the server."
         : ro ? "Broker is read-only (safe default)." : "Broker is NOT read-only — investigate before any execution.",
       evidence: [`brokerReadOnly=${ro}`, `brokerExecutionDisabled=${ctx.brokerExecutionDisabled}`],
     });

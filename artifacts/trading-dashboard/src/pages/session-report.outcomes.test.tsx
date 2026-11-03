@@ -47,4 +47,29 @@ describe("session report outcome breakdown", () => {
     expect(screen.getByText(/Win rate: not available/)).toBeTruthy();
     expect(screen.queryByText(/Win rate: 0%/)).toBeNull();
   });
+
+  // Regression: a report generated while the session was ACTIVE said "12m so
+  // far (session not ended)" with no report time, so after the session ended
+  // the page still described report time as current.
+  it("dates a running-duration report and says the duration is as of that report", async () => {
+    stub({ ...base, duration_in_progress: true, unclassified: 1, report_generated_at: "2026-10-28T10:12:00.000Z" });
+    render(<SessionReport />);
+    await waitFor(() => expect(screen.getByText(/Trades: 4/)).toBeTruthy());
+    expect(screen.queryByText(/so far \(session not ended\)/)).toBeNull();
+    expect(screen.getByText(/42m so far as of this report/)).toBeTruthy();
+    expect(screen.getByTestId("session-report-generated-at").textContent).toMatch(/Generated:/);
+    expect(screen.getByTestId("session-report-generated-at").textContent).not.toMatch(/unknown/i);
+  });
+
+  it("says the session has since ended when the session list shows it ENDED", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (String(url).startsWith("/api/paper-sessions?")) {
+        return new Response(JSON.stringify({ sessions: [{ paper_session_id: "ps_1", status: "ENDED" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ report: { ...base, duration_in_progress: true, unclassified: 1, report_generated_at: "2026-10-28T10:12:00.000Z" } }), { status: 200 });
+    }));
+    render(<SessionReport />);
+    await waitFor(() => expect(screen.getByText(/Trades: 4/)).toBeTruthy());
+    expect(screen.getByText(/has since ended/)).toBeTruthy();
+  });
 });

@@ -508,6 +508,31 @@ function winRateOf(wins: number, classified: number): number | null {
   return classified > 0 ? Math.round((wins / classified) * 100) : null;
 }
 
+// Duration of a session that had not ended when the report was generated. It
+// is worded relative to the report, so a stored report stays true after the
+// session ends.
+const DURATION_AS_OF_REPORT = "so far as of this report (the session had not ended when it was generated)";
+
+/** The coach summary sentence, built only from the report's own counts. */
+function coachSummaryText(p: {
+  paperSessionId: string; closed: number; wins: number; losses: number; breakEven: number;
+  netPnl: number; durationMinutes: number; durationInProgress: boolean;
+}): string {
+  const classified = p.wins + p.losses + p.breakEven;
+  const unclassified = Math.max(0, p.closed - classified);
+  const winRate = winRateOf(p.wins, classified);
+  const breakdown = `${p.wins}W/${p.losses}L/${p.breakEven}BE${unclassified > 0 ? `, ${unclassified} without a recorded result` : ""}`;
+  const winRateText = winRate == null
+    ? "win rate not available (no close has a recorded result)"
+    : `win rate ${winRate}% of ${classified} close${classified === 1 ? "" : "s"} with a recorded result`;
+  const durationText = p.durationInProgress ? `, ${p.durationMinutes}m ${DURATION_AS_OF_REPORT}` : "";
+  return `Paper-only session ${p.paperSessionId}: ${p.closed} closed trades (${breakdown}), net $${(p.netPnl/100).toFixed(2)}, ${winRateText}${durationText}. This paper session places no live orders.`;
+}
+
+// The first stored template divided the win rate by every close (including
+// result-less ones) and printed "win rate 0%" when none had a result.
+const LEGACY_COACH_SUMMARY = /^Paper-only session \S+: \d+ closed trades \(\d+W\/\d+L\/\d+BE\), net \$-?\d+\.\d{2}, win rate -?\d+%\. (?:Live trading remains DISABLED|This paper session places no live orders)\.$/;
+
 export interface SessionReport {
   session_report_id: string;
   paper_session_id: string;
@@ -534,6 +559,8 @@ export interface SessionReport {
   warnings: Array<Record<string, unknown>>;
   mode: "PAPER_ONLY";
   liveTradingStatus: "DISABLED";
+  /** When this report was generated (its stored creation time on a read). */
+  report_generated_at: string;
   generatedAt: string;
 }
 
@@ -560,12 +587,9 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
   if (-netPnl > cur.sessionRules.maxSessionLoss) ruleViolations.push({ code: "SESSION_LOSS_EXCEEDED", limit: cur.sessionRules.maxSessionLoss, actual: -netPnl });
   if (durationMinutes > cur.sessionRules.maxSessionMinutes) ruleViolations.push({ code: "SESSION_DURATION_EXCEEDED", limit: cur.sessionRules.maxSessionMinutes, actual: durationMinutes });
 
-  const breakdown = `${wins}W/${losses}L/${breakEven}BE${unclassified > 0 ? `, ${unclassified} without a recorded result` : ""}`;
-  const winRateText = winRate == null
-    ? "win rate not available (no close has a recorded result)"
-    : `win rate ${winRate}% of ${classified} close${classified === 1 ? "" : "s"} with a recorded result`;
-  const durationText = durationInProgress ? `, ${durationMinutes}m so far (session not ended)` : "";
-  const coachSummary = `Paper-only session ${paperSessionId}: ${closed.length} closed trades (${breakdown}), net $${(netPnl/100).toFixed(2)}, ${winRateText}${durationText}. This paper session places no live orders.`;
+  const coachSummary = coachSummaryText({
+    paperSessionId, closed: closed.length, wins, losses, breakEven, netPnl, durationMinutes, durationInProgress,
+  });
   const nextBestActions: string[] = [];
   if (winRate != null && winRate < 50 && classified >= 2) nextBestActions.push("Review setups in BB debriefs — focus on quality over quantity");
   if (ruleViolations.length > 0) nextBestActions.push(`Address ${ruleViolations.length} rule violation(s) before next session`);
@@ -586,6 +610,7 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
     coachSummary, nextBestActions, warnings: cur.activeWarnings,
   });
   await emit(paperSessionId, "REPORT_GENERATED", `Session report ${sessionReportId} created`, "INFO", { sessionReportId });
+  const generatedAt = new Date().toISOString();
 
   return {
     session_report_id: sessionReportId,
@@ -604,7 +629,8 @@ export async function generateSessionReport(userId: number, paperSessionId: stri
     next_best_actions: nextBestActions,
     warnings: cur.activeWarnings,
     mode: "PAPER_ONLY", liveTradingStatus: "DISABLED",
-    generatedAt: new Date().toISOString(),
+    report_generated_at: generatedAt,
+    generatedAt,
   };
 }
 
@@ -615,6 +641,21 @@ export async function getLatestReport(paperSessionId: string): Promise<SessionRe
     .limit(1);
   const r = rows[0];
   if (!r) return null;
+  const durationInProgress = r.endedAt == null;
+  // Read-time correction only; the stored row is never changed. A summary in
+  // the first template is rebuilt from the same stored counts the header
+  // uses; a newer one has its running-duration phrase reworded relative to
+  // the report and its account-wide live claim dropped.
+  const storedSummary = r.coachSummary ?? "";
+  const coachSummary = LEGACY_COACH_SUMMARY.test(storedSummary)
+    ? coachSummaryText({
+        paperSessionId: r.paperSessionId, closed: r.totalTrades, wins: r.wins, losses: r.losses,
+        breakEven: r.breakEven, netPnl: r.netPnl, durationMinutes: r.durationMinutes, durationInProgress,
+      })
+    : storedSummary
+        .replace(/ so far \(session not ended\)/, ` ${DURATION_AS_OF_REPORT}`)
+        .replace(/ Live trading remains DISABLED\.$/, " This paper session places no live orders.");
+  const generatedAt = new Date(r.createdAt).toISOString();
   return {
     session_report_id: r.sessionReportId,
     paper_session_id: r.paperSessionId,
@@ -622,7 +663,7 @@ export async function getLatestReport(paperSessionId: string): Promise<SessionRe
     started_at: r.startedAt ? r.startedAt.toISOString() : null,
     ended_at: r.endedAt ? r.endedAt.toISOString() : null,
     duration_minutes: r.durationMinutes,
-    duration_in_progress: r.endedAt == null,
+    duration_in_progress: durationInProgress,
     total_trades: r.totalTrades, wins: r.wins, losses: r.losses, break_even: r.breakEven,
     unclassified: Math.max(0, r.totalTrades - r.wins - r.losses - r.breakEven),
     net_pnl: r.netPnl,
@@ -633,11 +674,13 @@ export async function getLatestReport(paperSessionId: string): Promise<SessionRe
     mistakes_detected: r.mistakesDetected as Array<Record<string, unknown>>,
     lessons_generated: r.lessonsGenerated as Array<Record<string, unknown>>,
     // Reports stored before this change end with an unverified account-wide
-    // claim; drop it rather than repeat it.
-    coach_summary: (r.coachSummary ?? "").replace(/ Live trading remains DISABLED\.$/, " This paper session places no live orders."),
+    // claim; drop it rather than repeat it (see coachSummary above).
+    coach_summary: coachSummary,
     next_best_actions: r.nextBestActions as string[],
     warnings: r.warnings as Array<Record<string, unknown>>,
     mode: "PAPER_ONLY", liveTradingStatus: "DISABLED",
-    generatedAt: new Date().toISOString(),
+    // When the report was generated (stored), never the time of this read.
+    report_generated_at: generatedAt,
+    generatedAt,
   };
 }

@@ -29,6 +29,8 @@ function goRead(over: Record<string, unknown> = {}, state: Record<string, unknow
       generatedAt: new Date(NOW - 2_000).toISOString(), dataQuality: { hasCandleData: true }, ...over,
     },
     isError: false,
+    isFetching: false,
+    refetch: () => Promise.resolve(),
     ...state,
   };
 }
@@ -83,5 +85,65 @@ describe("ChartTimingChip — no grade without a current read", () => {
     render(<ChartTimingChip symbol="EURUSD" apiTf="M15" timeframeLabel="15m" />);
     expect(screen.queryByTestId("scanner-chart-timing-chip")).toBeNull();
     expect(gateCalls[0]).toEqual(["EURUSD", "15m"]);
+  });
+});
+
+// Review fix (2026-10-28): the chip's poll interval and the read's lifetime
+// were both 30 s, and React Query restarts the interval after each response,
+// so every healthy cycle the grade expired before the next read arrived and the
+// chip flashed "no current read". The chip now asks for a new read ahead of
+// the expiry. Simulated: React Query's polling (interval restarted on every
+// update, as configured by the chip), 1 s request latency, generatedAt stamped
+// when the request starts.
+describe("ChartTimingChip — a healthy poll never shows 'no current read'", () => {
+  it("keeps the grade on screen across several polling cycles", async () => {
+    const { useEffect, useState } = await import("react");
+    const LATENCY_MS = 1_000;
+    let requests = 0;
+    mockUseGetTimingBrain.mockImplementation(
+      (_symbol: string, _params: unknown, options: { query: { refetchInterval?: number } }) => {
+        const [data, setData] = useState(() => goRead({ generatedAt: new Date(Date.now() - 1_000).toISOString() }).data);
+        const [isFetching, setFetching] = useState(false);
+        const fetchNow = () => {
+          requests += 1;
+          const startedAt = Date.now();
+          setFetching(true);
+          return new Promise<void>((resolve) => {
+            setTimeout(() => {
+              setData(goRead({ generatedAt: new Date(startedAt).toISOString() }).data);
+              setFetching(false);
+              resolve();
+            }, LATENCY_MS);
+          });
+        };
+        const interval = options.query.refetchInterval;
+        useEffect(() => {
+          if (typeof interval !== "number") return;
+          const id = setTimeout(() => { void fetchNow(); }, interval);
+          return () => clearTimeout(id);
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [data, interval]);
+        return { data, isError: false, isFetching, refetch: fetchNow };
+      },
+    );
+    render(<ChartTimingChip symbol="EURUSD" apiTf="M15" timeframeLabel="15m" />);
+    expect(screen.getByTestId("scanner-chart-timing-chip")).toBeTruthy();
+    for (let elapsed = 0; elapsed < 3 * 60_000; elapsed += 250) {
+      act(() => { vi.advanceTimersByTime(250); });
+      if (screen.queryByTestId("scanner-chart-timing-chip-unavailable")) {
+        throw new Error(`'no current read' shown at +${elapsed + 250} ms on a healthy poll`);
+      }
+      expect(screen.getByTestId("scanner-chart-timing-chip")).toBeTruthy();
+    }
+    expect(requests).toBeGreaterThan(3);
+  });
+
+  it("a read the server returns unchanged is not re-requested in a loop", async () => {
+    const refetch = vi.fn(() => Promise.resolve());
+    mockUseGetTimingBrain.mockReturnValue({ ...goRead(), isFetching: false, refetch });
+    render(<ChartTimingChip symbol="EURUSD" apiTf="M15" timeframeLabel="15m" />);
+    act(() => { vi.advanceTimersByTime(2 * 60_000); });
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("scanner-chart-timing-chip-unavailable")).toBeTruthy();
   });
 });

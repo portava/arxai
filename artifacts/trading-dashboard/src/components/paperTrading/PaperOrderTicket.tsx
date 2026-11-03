@@ -60,16 +60,18 @@ function runPreview(input: {
   if (!Number.isFinite(lot) || lot <= 0) errors.push("Lot size must be positive.");
 
   let eff: number | null = null;
+  // `current` is the price the user TYPED — no quote is read here. Every check
+  // below is against that typed reference price, and says so.
   if (isMarket(t)) {
-    if (current == null) { warnings.push("Live market price unavailable — SL/TP direction checks skipped."); }
+    if (current == null) { warnings.push("No reference price typed — SL/TP direction checks skipped."); }
     else { eff = current; }
   } else if (isStopLimit(t)) {
     if (trigger == null) errors.push("Stop-Limit requires a Stop Trigger Price.");
     if (limit == null) errors.push("Stop-Limit requires a Stop-Limit Price.");
     eff = limit;
     if (current != null && trigger != null) {
-      if (t === "BUY_STOP_LIMIT" && trigger <= current) errors.push("Buy Stop-Limit trigger must be ABOVE current ask.");
-      if (t === "SELL_STOP_LIMIT" && trigger >= current) errors.push("Sell Stop-Limit trigger must be BELOW current bid.");
+      if (t === "BUY_STOP_LIMIT" && trigger <= current) errors.push("Buy Stop-Limit trigger must be ABOVE your typed reference price.");
+      if (t === "SELL_STOP_LIMIT" && trigger >= current) errors.push("Sell Stop-Limit trigger must be BELOW your typed reference price.");
     }
     if (trigger != null && limit != null) {
       if (t === "BUY_STOP_LIMIT" && limit >= trigger) errors.push("Buy Stop-Limit limit price must be STRICTLY BELOW the trigger.");
@@ -79,10 +81,10 @@ function runPreview(input: {
     if (entry == null) errors.push("Pending orders require an Entry Price.");
     eff = entry;
     if (current != null && entry != null) {
-      if (t === "BUY_LIMIT" && entry >= current) errors.push("Buy Limit entry must be BELOW current market.");
-      if (t === "SELL_LIMIT" && entry <= current) errors.push("Sell Limit entry must be ABOVE current market.");
-      if (t === "BUY_STOP" && entry <= current) errors.push("Buy Stop entry must be ABOVE current market.");
-      if (t === "SELL_STOP" && entry >= current) errors.push("Sell Stop entry must be BELOW current market.");
+      if (t === "BUY_LIMIT" && entry >= current) errors.push("Buy Limit entry must be BELOW your typed reference price.");
+      if (t === "SELL_LIMIT" && entry <= current) errors.push("Sell Limit entry must be ABOVE your typed reference price.");
+      if (t === "BUY_STOP" && entry <= current) errors.push("Buy Stop entry must be ABOVE your typed reference price.");
+      if (t === "SELL_STOP" && entry >= current) errors.push("Sell Stop entry must be BELOW your typed reference price.");
     }
   }
 
@@ -113,6 +115,20 @@ function runPreview(input: {
 
   return { errors, warnings, riskReward: rr, effectiveEntry: eff, label };
 }
+
+/** Plain-English text for a refused /trade/place answer: the server's message, else the code named as a refusal. */
+function placeRefusalText(j: { error?: unknown; message?: unknown; result?: { reason?: unknown; message?: unknown } }, status: number): string {
+  const message = typeof j.result?.message === "string" && j.result.message
+    ? j.result.message
+    : typeof j.message === "string" && j.message ? j.message : null;
+  if (message) return message;
+  const code = typeof j.result?.reason === "string" && j.result.reason
+    ? j.result.reason
+    : typeof j.error === "string" && j.error ? j.error : null;
+  return code ? `The server refused this order (${code}).` : `The order request failed (HTTP ${status}).`;
+}
+
+interface SimulatedFill { fillPrice?: number | null; priceSource?: string | null; quoteAt?: string | null; replayed?: boolean }
 
 export function PaperOrderTicket({ accountId: _accountId }: { accountId: number | null }) {
   const qc = useQueryClient();
@@ -161,7 +177,7 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
           }),
         });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || j.result?.reason || "Trade place failed");
+        if (!r.ok || j.ok === false) throw new Error(placeRefusalText(j, r.status));
         return { kind: "market", result: j };
       }
       // Pending order — goes to draft endpoint; backend force-locks executable:false.
@@ -240,8 +256,11 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         </label>
 
         <label className="col-span-2">
-          <span className="text-slate-400">Current price (live) <span className="text-[10px] text-amber-300">— leave blank if not available</span></span>
-          <input type="number" step="0.00001" value={current} placeholder="e.g. 1.08500" onChange={(e) => setCurrent(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+          <span className="text-slate-400">
+            Reference price (typed by you){" "}
+            <span className="text-[10px] text-amber-300">— not a live quote; only used for the checks below. Leave blank to skip them.</span>
+          </span>
+          <input type="number" step="0.00001" value={current} placeholder="e.g. 1.08500" onChange={(e) => setCurrent(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-reference-price" />
         </label>
 
         {showEntry && (
@@ -280,11 +299,13 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
           <span className="font-mono text-slate-100" data-testid="rr-preview">{preview.riskReward == null ? "—" : `${preview.riskReward}:1`}</span>
         </div>
         <div className="flex justify-between text-slate-300">
-          <span>Effective entry</span>
+          <span data-testid="entry-preview-label">
+            {isMarket(orderType) ? "Entry (your typed price — the server fills at its own quote)" : "Effective entry"}
+          </span>
           <span className="font-mono text-slate-100">{preview.effectiveEntry == null ? "—" : preview.effectiveEntry}</span>
         </div>
         {!current.trim() && (
-          <p className="text-amber-300">Live price unavailable — direction checks against market are skipped. Real submission of a pending order may still be rejected at execution time.</p>
+          <p className="text-amber-300">No reference price typed — direction checks against the market are skipped. Real submission of a pending order may still be rejected at execution time.</p>
         )}
         {preview.warnings.map((w, i) => <p key={`w${i}`} className="text-amber-300">{w}</p>)}
         {preview.errors.map((e, i) => <p key={`e${i}`} className="text-red-400" data-testid={`error-${i}`}>{e}</p>)}
@@ -299,13 +320,24 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         {place.isPending ? "Placing…" : isMarket(orderType) ? `Place SIMULATED ${ORDER_LABELS[orderType]}` : `Save ${ORDER_LABELS[orderType]} Draft`}
       </button>
 
-      {place.isError && <p className="text-[11px] text-red-400">{(place.error as Error).message}</p>}
+      {place.isError && <p className="text-[11px] text-red-400" data-testid="order-ticket-error">{(place.error as Error).message}</p>}
 
       {place.isSuccess && place.data && (
         <div className="rounded border border-slate-700 bg-slate-950/60 p-2 text-[11px]">
-          {place.data.kind === "market" ? (
-            <p className="text-emerald-300">Market order accepted.</p>
-          ) : (
+          {place.data.kind === "market" ? (() => {
+            const fill = (place.data.result?.result?.paper ?? null) as SimulatedFill | null;
+            if (!fill || fill.fillPrice == null) {
+              return <p className="text-amber-300" data-testid="order-ticket-filled">The server accepted the order but returned no fill details.</p>;
+            }
+            const at = fill.quoteAt ? new Date(fill.quoteAt).toLocaleTimeString() : null;
+            return (
+              <p className="text-emerald-300" data-testid="order-ticket-filled">
+                {fill.replayed ? "Already booked: simulated paper order" : "Simulated paper order booked"} at {fill.fillPrice}
+                {fill.priceSource ? ` from ${fill.priceSource}` : " (price source not reported)"}
+                {at ? `, quote observed at ${at}` : ""}. No broker order was sent.
+              </p>
+            );
+          })() : (
             <>
               <p className="text-sky-300">Draft saved.</p>
               <p className="text-slate-300 mt-1">{place.data.result.reason ?? "Draft validated. Not sent to broker."}</p>
@@ -318,8 +350,10 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         </div>
       )}
 
-      <p className="text-[10px] text-amber-300">
-        Live execution remains system-locked. Market orders execute as SIMULATED; pending orders save as validated DRAFTS until the MT5 bridge supports them and live trading is unlocked.
+      <p className="text-[10px] text-amber-300" data-testid="order-ticket-footer">
+        Live execution remains system-locked. Market orders are submitted as SIMULATED paper orders, but the server currently
+        refuses them from this ticket (it requires a retry-safety request key this ticket does not send), so none are booked here.
+        Pending orders save as validated DRAFTS until the MT5 bridge supports them and live trading is unlocked.
       </p>
     </div>
   );

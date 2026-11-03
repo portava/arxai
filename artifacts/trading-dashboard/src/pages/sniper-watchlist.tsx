@@ -26,11 +26,54 @@ type WatchItem = {
   urgencyTier: "info" | "watch" | "warning" | "urgent";
 };
 
+type SignalGaps = {
+  closeUrgency?: number; profitGiveback?: number; stopTargetProximity?: number;
+  reversalRisk?: number; fakeoutRisk?: number; volatilityRisk?: number;
+};
+
 type Coverage = {
   scannedVenues?: Array<"DEMO" | "SHARED_MASTER">;
   scannedCount?: number;
   notScanned?: { venue: "LIVE"; openPositions: number | null } | null;
+  /** Scanned trades that could not be read (not evaluated at all). */
+  unresolvedCount?: number;
+  /** Scanned trades that were read and run through the checks. */
+  evaluatedCount?: number;
+  /** Per check: how many evaluated trades had no score / input for it. */
+  signalGaps?: SignalGaps;
 };
+
+const SIGNAL_LABELS: Array<[keyof SignalGaps, string]> = [
+  ["closeUrgency", "close urgency"],
+  ["profitGiveback", "profit giveback"],
+  ["stopTargetProximity", "stop/target proximity"],
+  ["reversalRisk", "reversal risk"],
+  ["fakeoutRisk", "fakeout risk"],
+  ["volatilityRisk", "volatility risk"],
+];
+
+/**
+ * What the scan actually evaluated (server-reported). A check whose score or
+ * input was missing could not fire, so "not flagged" is only claimed when
+ * every scanned trade was read and every check ran. Absent fields → unknown.
+ */
+export function sniperEvaluation(c: Coverage | null): { fullyEvaluated: boolean | null; evaluatedCount: number | null; notes: string[] } {
+  if (!c || typeof c.unresolvedCount !== "number" || typeof c.evaluatedCount !== "number" || !c.signalGaps) {
+    return { fullyEvaluated: null, evaluatedCount: null, notes: [] };
+  }
+  const notes: string[] = [];
+  const scanned = c.scannedCount ?? c.unresolvedCount + c.evaluatedCount;
+  if (c.unresolvedCount > 0) {
+    notes.push(`${c.unresolvedCount} of the ${scanned} scanned trade${scanned === 1 ? "" : "s"} could not be read and ${c.unresolvedCount === 1 ? "was" : "were"} not evaluated.`);
+  }
+  const ev = c.evaluatedCount;
+  const parts = SIGNAL_LABELS
+    .map(([k, label]) => [label, c.signalGaps?.[k] ?? 0] as const)
+    .filter(([, n]) => n > 0)
+    .map(([label, n]) => `${label} on ${n} of ${ev} trade${ev === 1 ? "" : "s"}`);
+  if (parts.length > 0) notes.push(`Checks that could not run (no score or no current price/P&L): ${parts.join("; ")}.`);
+  return { fullyEvaluated: notes.length === 0, evaluatedCount: ev, notes };
+}
 
 const POLL_MS = 15_000;
 
@@ -73,7 +116,10 @@ export default function SniperWatchlistPage() {
       const b = (await r.json()) as { items: WatchItem[]; routingMode: string } & Coverage;
       setItems(b.items ?? []);
       setRoutingMode(b.routingMode ?? "—");
-      setCoverage({ scannedVenues: b.scannedVenues, scannedCount: b.scannedCount, notScanned: b.notScanned ?? null });
+      setCoverage({
+        scannedVenues: b.scannedVenues, scannedCount: b.scannedCount, notScanned: b.notScanned ?? null,
+        unresolvedCount: b.unresolvedCount, evaluatedCount: b.evaluatedCount, signalGaps: b.signalGaps,
+      });
     } catch (e) {
       setErr(String((e as Error).message ?? e));
     } finally {
@@ -107,10 +153,16 @@ export default function SniperWatchlistPage() {
 
       {!loading && !err && (() => {
         const cov = sniperCoverage(coverage);
+        const evaluation = sniperEvaluation(coverage);
         return (
           <div className="space-y-1 text-xs" data-testid="watchlist-coverage">
             <p className="text-zinc-400">{cov.scanned}</p>
             {cov.gap && <p className="flex items-center gap-1 text-amber-300" data-testid="watchlist-coverage-gap"><AlertTriangle className="h-3 w-3" /> {cov.gap}</p>}
+            {evaluation.notes.length > 0 && (
+              <div className="space-y-0.5 text-amber-300" data-testid="watchlist-coverage-evaluation">
+                {evaluation.notes.map((n) => <p key={n} className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {n}</p>)}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -122,9 +174,14 @@ export default function SniperWatchlistPage() {
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-sm text-zinc-400" data-testid="watchlist-empty">
-            {(coverage?.scannedCount ?? 0) === 0
-              ? "There are no open trades in the scanned account for this watchlist to evaluate."
-              : "None of the scanned trades are flagged for attention right now."}{" "}
+            {(() => {
+              if ((coverage?.scannedCount ?? 0) === 0) return "There are no open trades in the scanned account for this watchlist to evaluate.";
+              const evaluation = sniperEvaluation(coverage);
+              if (evaluation.fullyEvaluated === null) return "No scanned trade is flagged by the checks the server ran; it did not report whether every trade was read and every check could run.";
+              if (evaluation.fullyEvaluated) return "None of the scanned trades are flagged for attention right now.";
+              if (evaluation.evaluatedCount === 0) return "None of the scanned trades could be read, so none was evaluated.";
+              return "No trade is flagged by the checks that could run. Some trades or checks were not evaluated (see above), so this is not an all-clear.";
+            })()}{" "}
             This page re-scans every {POLL_MS / 1000} seconds while it is open — if a profit-giveback,
             reversal, or close-urgency signal fires on a scanned trade, it will appear here.
           </CardContent>

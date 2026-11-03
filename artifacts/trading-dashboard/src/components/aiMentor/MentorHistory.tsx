@@ -27,6 +27,15 @@ const GROUP_META: Record<GroupKey, { title: string; noun: string; icon: typeof S
 
 const GROUP_ORDER: GroupKey[] = ["risk", "post-trade", "coaching", "briefing"];
 
+// When the group's latest session was generated, so an old note is not read
+// as current.
+function sessionDate(createdAt: string): string {
+  const d = new Date(createdAt);
+  return Number.isFinite(d.getTime())
+    ? d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : "date unknown";
+}
+
 export function MentorHistory({ sessions, onSelect, pageLimit }:
   {
     sessions: MentorSession[];
@@ -38,7 +47,7 @@ export function MentorHistory({ sessions, onSelect, pageLimit }:
   if (sessions.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-txt-muted">
-        No recent conversations yet. {name}'s coaching, trade reviews, and risk notes will appear here.
+        No mentor sessions yet. {name}'s coaching, trade reviews, and risk notes will appear here.
       </p>
     );
   }
@@ -79,8 +88,8 @@ export function MentorHistory({ sessions, onSelect, pageLimit }:
             <p className={`mt-2 text-xs font-medium ${meta.text}`}>
               {count} {meta.noun}{count === 1 ? "" : "s"} in your latest {windowSize} session{windowSize === 1 ? "" : "s"}
             </p>
-            <p className="mt-1 text-xs leading-snug text-txt-secondary line-clamp-2">
-              Latest: {latest.mainFocus}
+            <p className="mt-1 text-xs leading-snug text-txt-secondary line-clamp-2" data-testid={`conversation-latest-${g}`}>
+              Latest ({sessionDate(latest.createdAt)}): {latest.mainFocus}
             </p>
             {onSelect && (
               <button

@@ -49,6 +49,15 @@ export interface BridgeDiagnosticSummary {
   brokerReadOnly: boolean;
   liveTradingEnabled: boolean;
   paperOnly: boolean;
+  /**
+   * false: the server says liveTradingEnabled, brokerExecutionEnabled,
+   * brokerReadOnly and paperOnly are fixed values (paperOnly only reflects the
+   * caller's own EA bridge), not readings of the live master switch, live
+   * arming or the account mode. Clients must not show them as measured.
+   */
+  executionPostureMeasured?: boolean;
+  /** The server's plain-English explanation of executionPostureMeasured. */
+  executionPostureNote?: string;
   safestNextStep: string;
   reason: string;
   fetchedAt: string;
@@ -77,13 +86,22 @@ export interface RuntimeContext {
   /*
    * Posture flags read from /api/mt5/diagnostic-summary. `null` means the
    * summary was not read (still loading, request failed, or the field was
-   * missing) — it is unknown, never the default safe posture.
+   * missing) — it is unknown, never the default safe posture. They are also
+   * `null` when the summary says it did not read them (see
+   * executionPostureUnmeasured).
    */
   paperOnly: boolean | null;
   simulatorMode: boolean | null;
   liveTradingDisabled: boolean | null;
   brokerExecutionDisabled: boolean | null;
   brokerReadOnly: boolean | null;
+  /**
+   * true when the diagnostic summary was read but says its live-trading,
+   * broker-execution, read-only and demo-only flags are fixed values, not
+   * readings (executionPostureMeasured=false). The flags above are then null
+   * because they were not read — not because the request failed.
+   */
+  executionPostureUnmeasured?: boolean;
   mt5Deferred: boolean;
   mt5BridgeConnected: boolean;
   heartbeatPresent: boolean | null;

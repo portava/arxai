@@ -112,17 +112,26 @@ check(
   "the recent-trades section description still hardcodes 'Demo commands'",
 );
 
-// ── 5. RecentScannerTrades — title reflects real mode, not always Demo ────
+// ── 5. RecentScannerTrades — title names the source it reads ─────────────
+// The card reads ONE source: the MT5 demo command queue. A live (or
+// mode-unknown) account that is not shown that feed must not get a Demo
+// title, and demo rows must never be titled "Live Shared" (an admin in Live
+// Shared with diagnostics on, or a paper account, is reading demo commands).
 const recentTrades = read("components/scanner/RecentScannerTrades.tsx");
 check(
-  "recent-trades title is mode-accurate (live)",
-  recentTrades.includes("Recent Scanner Trades — Live Shared"),
-  "expected a Live Shared title branch",
+  "recent-trades title is Demo only while the demo feed is shown",
+  recentTrades.includes('showDemoFeed ? "Recent Scanner Trades — MT5 Demo" : "Recent Scanner Trades"'),
+  "the title must name the MT5 demo source only when the demo feed is shown, and carry no mode suffix otherwise",
 );
 check(
-  "recent-trades title no longer defaults paper to Demo",
-  recentTrades.includes("mode.isDemo"),
-  "title must branch on mode.isDemo so paper/other modes are not mislabelled 'Demo'",
+  "recent-trades never titles demo rows 'Live Shared'",
+  !recentTrades.includes("Recent Scanner Trades — Live Shared"),
+  "the card reads no live orders; a 'Live Shared' title would present demo commands as live history",
+);
+check(
+  "recent-trades does not promise live history it never loads",
+  !recentTrades.includes("will appear here once orders are placed"),
+  "the card has no live-order source, so it must not promise Live Shared history",
 );
 
 console.log(`live-surface demo-wording guard: ${pass}/${pass + fail} PASS`);

@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { safeJson } from "@/lib/api/safeJson";
 import {
   EquityCurveChart, DrawdownChart, StrategyAnalyticsTable,
   SessionHeatmap, EmotionalTrendGraph, RiskExposureGraph, ConsistencyTrendCard,
@@ -19,13 +20,17 @@ interface SessionBucket { trades: number; pnl: number; wins: number }
 type SessionData = Record<"ASIA"|"LONDON"|"NEWYORK", SessionBucket>;
 interface EmotionalResponse { trend: Array<{ idx:number; isCalm:number; followedPlan:number; emotion:string }>; totalDebriefs: number }
 
-/** A failed request throws, so the page can say "could not be loaded". */
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, init);
-  const j = await r.json().catch(() => null);
-  if (!r.ok || j == null) throw new Error(`HTTP ${r.status}`);
-  return j as T;
+// Reads an analytics endpoint and throws on a non-2xx status, an unreadable
+// body or a null body, so a failed read is an error state ("could not be
+// loaded") rather than an empty result.
+async function getAnalyticsJson<T>(url: string, action: string, init?: RequestInit): Promise<T> {
+  const r = await safeJson<T>(url, init);
+  if (!r.ok) throw new Error(`${action} failed (${r.message})`);
+  if (r.data == null) throw new Error(`${action} failed (empty response)`);
+  return r.data;
 }
+
+const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
 
 const NOT_MEASURED = "not measured";
 
@@ -33,36 +38,53 @@ export default function AnalyticsCommandCenter() {
   const qc = useQueryClient();
   const snap = useQuery<{ snapshot: AnalyticsSnapshot | null }>({
     queryKey: ["analytics-snapshot"],
-    queryFn: () => fetchJson<{ snapshot: AnalyticsSnapshot | null }>("/api/analytics/snapshot"),
+    queryFn: () => getAnalyticsJson<{ snapshot: AnalyticsSnapshot | null }>("/api/analytics/snapshot", "Loading the analytics snapshot"),
   });
   const strat = useQuery<{ strategies: StrategyRow[]; pnlCoverage?: PnlCoverage }>({
     queryKey: ["analytics-strategy"],
-    queryFn: () => fetchJson<{ strategies: StrategyRow[]; pnlCoverage?: PnlCoverage }>("/api/analytics/strategy"),
+    queryFn: () => getAnalyticsJson<{ strategies: StrategyRow[]; pnlCoverage?: PnlCoverage }>("/api/analytics/strategy", "Loading strategy analytics"),
   });
   const sess = useQuery<{ session: SessionData }>({
     queryKey: ["analytics-session"],
-    queryFn: () => fetchJson<{ session: SessionData }>("/api/analytics/session"),
+    queryFn: () => getAnalyticsJson<{ session: SessionData }>("/api/analytics/session", "Loading session analytics"),
   });
   const emo = useQuery<EmotionalResponse>({
     queryKey: ["analytics-emotional"],
-    queryFn: () => fetchJson<EmotionalResponse>("/api/analytics/emotional"),
+    queryFn: () => getAnalyticsJson<EmotionalResponse>("/api/analytics/emotional", "Loading emotional trend"),
   });
   const dd = useQuery<DrawdownResponse>({
     queryKey: ["analytics-drawdown"],
-    queryFn: () => fetchJson<DrawdownResponse>("/api/analytics/drawdown"),
+    queryFn: () => getAnalyticsJson<DrawdownResponse>("/api/analytics/drawdown", "Loading equity and drawdown"),
   });
 
   const generate = useMutation({
-    mutationFn: () => fetchJson<Record<string, unknown>>("/api/analytics/snapshot", { method: "POST" }),
+    mutationFn: () => getAnalyticsJson<unknown>("/api/analytics/snapshot", "Computing the analytics snapshot", { method: "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics-snapshot"] }),
   });
 
-  // Auto-generate the first snapshot if none exists — once; a failure is shown, not retried in a loop.
+  // Auto-generate the first snapshot if the server confirmed none exists. This
+  // runs at most once per page visit: a failed or empty computation is shown
+  // as such, and further attempts are the user's choice (Recompute).
+  const autoGenerateTried = useRef(false);
   useEffect(() => {
-    if (snap.isSuccess && snap.data?.snapshot == null && generate.status === "idle") generate.mutate();
+    if (autoGenerateTried.current) return;
+    if (snap.isSuccess && snap.data?.snapshot === null && !generate.isPending) {
+      autoGenerateTried.current = true;
+      generate.mutate();
+    }
   }, [snap.isSuccess, snap.data?.snapshot, generate]);
 
   const s = snap.data?.snapshot ?? null;
+  const snapshotState: string = snap.isError
+    ? `The analytics snapshot could not be loaded. ${errorMessage(snap.error)}`
+    : snap.isPending
+      ? "Loading your latest analytics snapshot…"
+      : generate.isPending
+        ? "Computing your first analytics snapshot…"
+        : generate.isError
+          ? `Your analytics snapshot could not be computed. ${errorMessage(generate.error)}. Nothing is computing; use Recompute snapshot to try again.`
+          : "No analytics snapshot yet. Use Recompute snapshot to compute one.";
+  const snapshotFailed = snap.isError || generate.isError;
 
   // The stored snapshot's money columns are NOT NULL, so a snapshot with no
   // sizable trade holds 0 (or an older Δprice × lots × 100 figure). The
@@ -88,17 +110,16 @@ export default function AnalyticsCommandCenter() {
         </button>
       </header>
 
-      {snap.isError ? (
-        <p className="rounded border border-dashed border-red-800 p-6 text-center text-xs text-red-300" data-testid="analytics-snapshot-error">
-          The analytics snapshot could not be loaded ({String((snap.error as Error)?.message ?? "request failed")}).
+      {generate.isError && s && (
+        <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300">
+          The snapshot could not be recomputed. {errorMessage(generate.error)}. The figures below are from the previous snapshot.
         </p>
-      ) : !s ? (
-        <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">
-          {snap.isLoading
-            ? "Loading your analytics snapshot…"
-            : generate.isError
-              ? `Your first analytics snapshot could not be computed (${String((generate.error as Error)?.message ?? "request failed")}).`
-              : "Computing your first analytics snapshot…"}
+      )}
+
+      {!s ? (
+        <p data-testid="analytics-snapshot-state" role={snapshotFailed ? "alert" : undefined}
+          className={`rounded border border-dashed p-6 text-center text-xs ${snapshotFailed ? "border-rose-700 text-rose-300" : "border-slate-700 text-slate-500"}`}>
+          {snapshotState}
         </p>
       ) : (
         <>
@@ -120,18 +141,18 @@ export default function AnalyticsCommandCenter() {
                 : "Checking which closed trades could be sized in USD…"}
           </p>
 
-          <div className="grid gap-3 lg:grid-cols-2">
-            {dd.isError ? (
-              <Unavailable text="The equity curve and drawdown could not be loaded." />
-            ) : pnlNotMeasured && coverage ? (
-              <Unavailable text={coverage.note} />
-            ) : (
-              <>
-                <EquityCurveChart points={dd.data?.equityCurve ?? []} />
-                <DrawdownChart    points={dd.data?.equityCurve ?? []} maxDrawdown={dd.data?.maxDrawdown ?? 0} />
-              </>
-            )}
-          </div>
+          {dd.isError ? (
+            <LoadError what="The equity curve and drawdown" error={dd.error} />
+          ) : dd.isPending ? (
+            <p className="p-3 text-center text-[11px] text-slate-500">Loading the equity curve…</p>
+          ) : pnlNotMeasured && coverage ? (
+            <Unavailable text={coverage.note} />
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <EquityCurveChart points={dd.data?.equityCurve ?? []} />
+              <DrawdownChart    points={dd.data?.equityCurve ?? []} maxDrawdown={dd.data?.maxDrawdown ?? 0} />
+            </div>
+          )}
 
           <div className="grid gap-3 lg:grid-cols-3">
             {pnlNotMeasured && coverage
@@ -139,20 +160,20 @@ export default function AnalyticsCommandCenter() {
               : <RiskExposureGraph snapshot={s} />}
             <ConsistencyTrendCard snapshot={s} />
             {sess.isError
-              ? <Unavailable text="The session heatmap could not be loaded." />
+              ? <LoadError what="Session performance" error={sess.error} />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
                 : <SessionHeatmap data={(sess.data?.session ?? {}) as any} />}
           </div>
 
           {emo.isError
-            ? <Unavailable text="The emotional trend could not be loaded." />
+            ? <LoadError what="The emotional trend" error={emo.error} />
             : <EmotionalTrendGraph trend={emo.data?.trend ?? []} />}
 
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-200">Strategy Analytics</h3>
             {strat.isError
-              ? <Unavailable text="Strategy analytics could not be loaded." />
+              ? <LoadError what="Strategy analytics" error={strat.error} />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={coverage.note} />
                 : <StrategyAnalyticsTable rows={strat.data?.strategies ?? []} />}
@@ -174,6 +195,13 @@ export default function AnalyticsCommandCenter() {
   );
 }
 
+function LoadError({ what, error }: { what: string; error: unknown }) {
+  return (
+    <p role="alert" className="rounded border border-dashed border-rose-700 p-3 text-center text-[11px] text-rose-300">
+      {what} could not be loaded. {errorMessage(error)}
+    </p>
+  );
+}
 function Stat({ id, label, v, tone }: { id: string; label: string; v: string; tone?: "emerald"|"red" }) {
   const t = tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";
   return (

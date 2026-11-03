@@ -24,6 +24,10 @@
 //     reads "—", never a 0 nobody counted.
 //   - marginUsed / freeMargin are computed from ARX reserved risk, not broker
 //     margin, so they are labelled "Reserved risk" / "Equity after reserve".
+//   - Live positions are read only for Live Shared data (source live_shared).
+//     For demo / paper / unknown data the heading never says "Live", the
+//     equity tile is "Equity" (no open P/L in it) and the open-trade count,
+//     which was never read, is "—" rather than 0.
 
 import { cn } from "@/lib/utils";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
@@ -65,8 +69,27 @@ function Tile({ label, value, tone, sub }: { label: string; value: string; tone?
   );
 }
 
+const SOURCE_TITLE: Record<InvestorLiveBalance["source"], string> = {
+  live_shared: "Live balance",
+  demo: "Demo balance",
+  paper: "Paper balance",
+  unknown: "Account balance",
+};
+
+/**
+ * The panel heading. A caller's title that says "live" is used only for Live
+ * Shared data; demo, paper or unknown data is titled by its source.
+ */
+export function canonicalBalanceTitle(live: InvestorLiveBalance | null, title?: string): string {
+  if (live?.source === "live_shared") return title ?? "Account balance";
+  if (title && !/\blive\b/i.test(title)) return title;
+  return live ? SOURCE_TITLE[live.source] ?? "Account balance" : "Account balance";
+}
+
 export function CanonicalBalancePanel({ live, className, title }: CanonicalBalancePanelProps) {
   const status = live?.freshness.status ?? "unavailable";
+  // Live positions (floating P/L, open-trade count) are read only for Live Shared data.
+  const livePositionsRead = live?.source === "live_shared";
   const lastUpdatedMs = live?.freshness.lastUpdatedAt ? Date.parse(live.freshness.lastUpdatedAt) : null;
   const floating = signedMoney(live?.floatingPnL ?? null);
   const realized = signedMoney(live?.realizedPnL ?? null);
@@ -76,18 +99,25 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
   const pendingSub = pending ? `incomplete — ${pendingCount} pending` : undefined;
   // Figures built from liveEquity inherit both gaps: withheld realized P/L
   // and an unavailable floating P/L (counted as 0 by the server).
+  // Demo / paper / unknown data never had open P/L read, so it says that
+  // instead of calling a floating P/L that was never measured "not included".
   const equityGaps: string[] = [];
   if (pending) equityGaps.push(`${pendingCount} realized P/L pending`);
-  if (floatingUnavailable) equityGaps.push("floating P/L not included");
-  const equitySub = equityGaps.length > 0 ? `incomplete — ${equityGaps.join("; ")}` : undefined;
+  if (floatingUnavailable && livePositionsRead) equityGaps.push("floating P/L not included");
+  const equitySubParts: string[] = [];
+  if (equityGaps.length > 0) equitySubParts.push(`incomplete — ${equityGaps.join("; ")}`);
+  if (live && !livePositionsRead) equitySubParts.push("no open P/L included");
+  const equitySub = equitySubParts.length > 0 ? equitySubParts.join(" · ") : undefined;
   // With no live snapshot the server reports openTradeCount 0 and floating
-  // null without having counted anything.
-  const openTradesUnread = live == null || (live.floatingPnL == null && live.openTradeCount === 0);
+  // null without having counted anything; outside Live Shared the count is
+  // never read at all.
+  const openTradesUnread =
+    live == null || !livePositionsRead || (live.floatingPnL == null && live.openTradeCount === 0);
 
   return (
     <div className={cn("rounded-xl border border-border bg-surface/40 p-3", className)}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-txt">{title ?? "Account balance"}</span>
+        <span className="text-xs font-semibold text-txt" data-testid="canonical-balance-title">{canonicalBalanceTitle(live, title)}</span>
         <FreshnessBadge
           freshness={toBadgeFreshness(status)}
           lastUpdatedMs={Number.isFinite(lastUpdatedMs) ? lastUpdatedMs : null}
@@ -96,7 +126,7 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile label="Allocated" value={money(live?.allocatedBalance ?? null)} />
-        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} sub={equitySub} />
+        <Tile label={livePositionsRead ? "Live equity" : "Equity"} value={money(live?.liveEquity ?? null)} sub={equitySub} />
         <Tile
           label="Available"
           value={money(live?.availableBalance ?? null)}
@@ -114,10 +144,18 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
         <Tile
           label="Open trades"
           value={openTradesUnread || live == null ? "—" : String(live.openTradeCount)}
-          sub={live != null && openTradesUnread ? "not read — no live snapshot" : undefined}
+          sub={
+            live == null
+              ? undefined
+              : !livePositionsRead
+                ? "not read for this account mode"
+                : openTradesUnread
+                  ? "not read — no live snapshot"
+                  : undefined
+          }
         />
       </div>
-      {floatingUnavailable && live != null && live.openTradeCount > 0 && (
+      {floatingUnavailable && livePositionsRead && live != null && live.openTradeCount > 0 && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-floating-missing-note">
           Live equity and equity after reserve are incomplete: the floating P/L of {live.openTradeCount} open
           trade{live.openTradeCount === 1 ? "" : "s"} could not be read, so it is not included. No estimate is shown in its place.

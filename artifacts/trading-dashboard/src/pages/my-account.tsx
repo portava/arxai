@@ -194,7 +194,9 @@ export default function MyAccountPage() {
       </div>
 
       {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
-          Open Trades, risk panel, wallet and admin. */}
+          Open Trades, risk panel, wallet and admin. The panel uses this
+          title only for Live Shared data; demo / paper data is titled by
+          its source (canonicalBalanceTitle). */}
       <CanonicalBalancePanel live={liveAcct.live} title="Live balance" />
 
       {/* My Balance + Equity */}
@@ -208,15 +210,12 @@ export default function MyAccountPage() {
           <Stat label="My Balance" value={fmtMoney(s.allocation.currentBalance)} testid="my-balance" />
           <Stat label="My Equity" value={fmtMoney(s.allocation.equity)} testid="my-equity" />
           <Stat label="Margin Used" value={fmtMoney(s.allocation.marginUsed)} testid="my-margin-used" />
+          {/* Only an operator's allocation row (totalAllocation) is an
+              assignment. assignedStartingBalance falls back to the running
+              balance when no row exists, so it is never shown here. */}
           <Stat
             label="Assigned Allocation"
-            value={
-              s.allocation.assignedStartingBalance != null
-                ? fmtMoney(s.allocation.assignedStartingBalance)
-                : s.allocation.currentBalance > 0
-                  ? fmtMoney(s.allocation.currentBalance)
-                  : "—"
-            }
+            value={s.allocation.totalAllocation != null ? fmtMoney(s.allocation.totalAllocation) : "Not assigned"}
             testid="my-allocation"
           />
         </CardContent>
@@ -405,6 +404,22 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
     },
   });
 
+  if (q.error || (!q.isLoading && !q.data)) {
+    const why = q.error instanceof Error ? ` (${q.error.message})` : "";
+    return (
+      <Card data-testid="bridge-preference-card-error" className="rounded-2xl border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="h-4 w-4" /> Bridge Preference
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2 text-sm text-txt-secondary">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Your bridge preference could not be loaded{why}. Reload the page to try again.
+        </CardContent>
+      </Card>
+    );
+  }
   if (q.isLoading || !q.data) {
     return (
       <Card data-testid="bridge-preference-card-loading" className="rounded-2xl border-border bg-card">
@@ -427,6 +442,11 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
   // never lies and says "Use my own MT5 bridge: Active" while their
   // trades actually route through the shared master.
   const onShared = sharedAttached || d.preferredBridge === "SHARED_MASTER_MT5";
+  // The badge reports the saved preference and the operator switch only.
+  // Nothing here checks that the EA is installed, connected or heartbeating,
+  // so the personal bridge is never called "Active".
+  const personalDisabled = !d.personalBridgeEnabled;
+  const personalBadge = personalDisabled ? "Disabled" : !onShared ? "Selected" : "Available";
 
   return (
     <Card data-testid="bridge-preference-card" className="rounded-2xl border-border bg-card">
@@ -439,12 +459,17 @@ function BridgePreferenceCard({ sharedAttached }: { sharedAttached: boolean }) {
         <div className="flex items-start justify-between gap-3 rounded-md border p-3">
           <div className="space-y-1">
             <div className="text-sm font-medium">Use my own MT5 bridge</div>
-            <div className="text-xs text-txt-secondary">
-              Your trades route through the MT5 EA installed on your machine. This is the default and recommended path.
+            <div className="text-xs text-txt-secondary" data-testid="text-personal-bridge-note">
+              {personalDisabled
+                ? "Your personal bridge has been disabled by an operator. Contact support to turn it back on."
+                : "Routes your trades through the MT5 EA installed on your machine. This is the default and recommended path. This card shows your saved choice only and does not check that your EA is connected — MT5 Setup shows its heartbeat."}
             </div>
           </div>
-          <Badge variant={!onShared ? "default" : "outline"} data-testid="badge-personal-bridge-state">
-            {!onShared ? "Active" : "Available"}
+          <Badge
+            variant={personalDisabled ? "destructive" : !onShared ? "default" : "outline"}
+            data-testid="badge-personal-bridge-state"
+          >
+            {personalBadge}
           </Badge>
         </div>
 

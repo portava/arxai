@@ -83,6 +83,10 @@ export interface SecretSafetyStatus {
   redactionWorking: boolean;
   /** false when a scan query failed: zero findings then means "not checked". */
   scanChecked: boolean;
+  /** Whether the notifications (frontend-visible) count query ran; when false, secretsDetectedInFrontend is a placeholder 0. */
+  frontendScanChecked: boolean;
+  /** Whether the notification_logs count query ran; when false, secretsDetectedInLogs is a placeholder 0. */
+  logScanChecked: boolean;
   warnings: string[];
 }
 
@@ -370,7 +374,7 @@ async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promi
 
 // ── Secret-safety probe ─────────────────────────────────────────────────────
 const SECRET_SHAPED = /AKIA[0-9A-Z]{16}|sk_(?:live|test)_[A-Za-z0-9]{12,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ|ghp_[A-Za-z0-9]{20,}|postgres(?:ql)?:\/\/[^[\s]/;
-async function probeSecretSafety(): Promise<SecretSafetyStatus> {
+export async function probeSecretSafety(): Promise<SecretSafetyStatus> {
   const warnings: string[] = [];
   // A failed scan query is NOT zero findings: it is an unchecked scan.
   // Notification messages (frontend-visible)
@@ -389,6 +393,9 @@ async function probeSecretSafety(): Promise<SecretSafetyStatus> {
     secretsDetectedInFrontend: ff, secretsDetectedInLogs: lf,
     redactionWorking: scanChecked && ff === 0 && lf === 0,
     scanChecked,
+    // Per half, so a count is only ever shown for a query that ran.
+    frontendScanChecked: inFrontend !== null,
+    logScanChecked: inLogs !== null,
     warnings,
   };
 }

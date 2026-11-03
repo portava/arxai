@@ -55,4 +55,44 @@ describe("Strategy Lab truth labels", () => {
     await waitFor(() => expect(screen.getByText(/list experiments failed/)).toBeTruthy());
     expect(screen.queryByText("No experiments yet")).toBeNull();
   });
+
+  // Regression: the stats tile said "1 of 2 replayed", but the ranking list
+  // and recommendations on the same card still ranked the never-replayed
+  // scenario as "net 0, wr 0%" — above a real losing scenario — and named it
+  // "Best scenario … with net 0". A zero-trade scenario showed "wr 0%".
+  it("a stored ranking does not rank or name a scenario that was never replayed", async () => {
+    stubFetch(200, { experiments: [{ experimentId: "e3", title: "Exp3", status: "COMPLETED", symbol: "EURUSD", resultSummary: {
+      scenariosRun: 2, totalTrades: 3, totalNet: -5, aggregateWinRate: 33,
+      perScenario: [{ scenarioId: "scenario-a", replayRunId: "r1", trades: 3 }, { scenarioId: "scenario-b", replayRunId: "", trades: 0 }],
+      ranking: [{ scenarioId: "scenario-b", netPnl: 0, winRate: 0 }, { scenarioId: "scenario-a", netPnl: -5, winRate: 33 }],
+      recommendations: [
+        { type: "BEST_SCENARIO", message: "Best scenario: scenario-b with net 0" },
+        { type: "WORST_SCENARIO", message: "Worst scenario: scenario-a with net -5" },
+      ],
+    } }] });
+    render(<StrategyLab />);
+    await screen.findByText("Exp3");
+    const ranking = screen.getByTestId("strategy-lab-ranking").textContent ?? "";
+    const rows = Array.from(screen.getByTestId("strategy-lab-ranking").querySelectorAll("li")).map((li) => li.textContent ?? "");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatch(/#1 .*scenario-a.* net -5, wr 33%/);
+    expect(ranking).toMatch(/Not replayed \(scenario not found\): scenario-b/);
+    expect(ranking).not.toMatch(/wr 0%/);
+    const recs = screen.getByTestId("strategy-lab-recommendations").textContent ?? "";
+    expect(recs).not.toMatch(/scenario-b with net 0/);
+    expect(recs).toMatch(/Best scenario: scenario-a with net -5/);
+  });
+
+  it("a replayed scenario with zero trades has no win rate in the ranking", async () => {
+    stubFetch(200, { experiments: [{ experimentId: "e4", title: "Exp4", status: "COMPLETED", symbol: "EURUSD", resultSummary: {
+      scenariosRun: 1, totalTrades: 0, totalNet: 0, aggregateWinRate: 0,
+      perScenario: [{ scenarioId: "scenario-z", replayRunId: "r9", trades: 0 }],
+      ranking: [{ scenarioId: "scenario-z", netPnl: 0, winRate: 0 }],
+    } }] });
+    render(<StrategyLab />);
+    await screen.findByText("Exp4");
+    const ranking = screen.getByTestId("strategy-lab-ranking").textContent ?? "";
+    expect(ranking).not.toMatch(/wr 0%/);
+    expect(ranking).toMatch(/no trades/);
+  });
 });

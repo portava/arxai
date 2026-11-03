@@ -13,6 +13,7 @@ import {
   FLAME_STAGE_LABEL,
   FLAME_STAGE_TONE,
   directionTone,
+  fmtPrice,
   fmtScalpMoney,
 } from "./scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -33,8 +34,37 @@ function pl(v: number | null | undefined): { text: string; tone: string } {
   return { text: fmtScalpMoney(v, null), tone };
 }
 
+function decimalsOf(v: number | null | undefined): number | null {
+  if (v == null || !Number.isFinite(v)) return null;
+  const s = String(v);
+  if (/e/i.test(s)) return null;
+  const dot = s.indexOf(".");
+  return dot < 0 ? 0 : s.length - dot - 1;
+}
+
+/**
+ * Price digits for the basket's aggregates: the broker spec's digits from the
+ * server, else the most decimals any of the basket's own reported prices carry
+ * (capped at 8); null when neither says.
+ */
+export function basketPriceDigits(basket: ScalpBasket): number | null {
+  const d = basket.digits;
+  if (typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 8) return d;
+  let best: number | null = null;
+  const prices: Array<number | null | undefined> = [basket.currentPrice];
+  for (const leg of basket.legs ?? []) {
+    prices.push(leg.entryPrice, leg.currentPrice, leg.stopLoss, leg.takeProfit);
+  }
+  for (const p of prices) {
+    const n = decimalsOf(p);
+    if (n != null && (best == null || n > best)) best = n;
+  }
+  return best == null ? null : Math.min(best, 8);
+}
+
 function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
   const combined = pl(basket.combinedFloatingPl);
+  const digits = basketPriceDigits(basket);
   return (
     <div
       className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-2"
@@ -63,11 +93,23 @@ function BasketRow({ basket, name }: { basket: ScalpBasket; name: string }) {
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
         <div>
           <span className="text-muted-foreground">Avg entry</span>
-          <div className="font-mono">{basket.averageEntry > 0 ? basket.averageEntry : "—"}</div>
+          <div className="font-mono" data-testid="scalp-basket-avg-entry">
+            {basket.averageEntry > 0 ? fmtPrice(basket.averageEntry, digits) : "—"}
+          </div>
         </div>
         <div>
-          <span className="text-muted-foreground">Break-even</span>
-          <div className="font-mono">{basket.breakEvenPrice > 0 ? basket.breakEvenPrice : "—"}</div>
+          {/* The server's break-even is the volume-weighted average entry:
+              no spread, commission or swap, so it is labelled as such. */}
+          <span
+            className="text-muted-foreground"
+            data-testid="scalp-basket-break-even-label"
+            title="The volume-weighted average entry. Spread, commission and swap are not included, so the real break-even is further away."
+          >
+            Break-even before costs
+          </span>
+          <div className="font-mono" data-testid="scalp-basket-break-even">
+            {basket.breakEvenPrice > 0 ? fmtPrice(basket.breakEvenPrice, digits) : "—"}
+          </div>
         </div>
         <div>
           <span className="text-muted-foreground">Open P/L</span>
@@ -140,6 +182,10 @@ export function RubyScalpBasketPanel() {
   // latest read failed, so those positions (which may since have closed) and
   // their exit / add-on advice are not shown as current.
   const list = baskets.isError ? [] : data?.baskets ?? [];
+  // The server says the open positions for this account mode were not read
+  // (for example no MT5 snapshot is stored for this user). An empty list is
+  // then not "no positions".
+  const positionsUnread = !!data && !baskets.isError && data.positionsMeasured === false;
 
   return (
     <Card data-testid="ruby-scalp-baskets" className="rounded-2xl border-ruby/25 bg-card">
@@ -187,7 +233,20 @@ export function RubyScalpBasketPanel() {
               {name} is reading your open positions…
             </p>
           )}
-          {data && !baskets.isError && list.length === 0 && (
+          {positionsUnread && (
+            <div
+              className="rounded-md border border-warning/40 bg-warning/5 p-2 text-sm text-warning"
+              data-testid="ruby-scalp-baskets-not-measured"
+            >
+              <p className="font-medium">
+                Your open positions were not read, so {name} cannot say whether you have any to manage.
+              </p>
+              {data?.positionsNote ? (
+                <p className="mt-1 text-xs text-muted-foreground">{data.positionsNote}</p>
+              ) : null}
+            </div>
+          )}
+          {data && !baskets.isError && !positionsUnread && list.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No open scalp positions to manage. Once you're in a trade, {name} will
               watch the flame, exit urgency, and whether it's sane to add.

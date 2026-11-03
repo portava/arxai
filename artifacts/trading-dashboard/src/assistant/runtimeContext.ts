@@ -114,17 +114,23 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
   // truth). Without a summary (loading, failed request, missing field) each
   // flag is null = unknown; absent data is never turned into a safe default.
   const bridge = input.bridge ?? null;
-  const liveTradingEnabled = readBool(bridge?.liveTradingEnabled);
-  const brokerExecutionEnabled = readBool(bridge?.brokerExecutionEnabled);
+  // The summary may say its live / execution / read-only / demo-only flags are
+  // fixed values that never read the live master switch, live arming or the
+  // account mode. Those flags are then not read here (null), and neither is
+  // the demo/simulator surface derived from the caller's own bridge: a LIVE
+  // Shared account with no personal EA is not "in simulator mode".
+  const postureUnmeasured = bridge?.executionPostureMeasured === false;
+  const liveTradingEnabled = postureUnmeasured ? null : readBool(bridge?.liveTradingEnabled);
+  const brokerExecutionEnabled = postureUnmeasured ? null : readBool(bridge?.brokerExecutionEnabled);
   const liveTradingDisabled = liveTradingEnabled === null ? null : !liveTradingEnabled;
   const brokerExecutionDisabled = brokerExecutionEnabled === null ? null : !brokerExecutionEnabled;
-  const brokerReadOnly = readBool(bridge?.brokerReadOnly);
+  const brokerReadOnly = postureUnmeasured ? null : readBool(bridge?.brokerReadOnly);
   const mt5Deferred = bridge?.bridgeMode === "deferred" || bridge?.bridgeMode === "unknown";
   const mt5BridgeConnected = bridge?.bridgeMode === "connected";
   const heartbeatPresent = readBool(bridge?.heartbeatPresent);
   const heartbeatAgeSeconds = bridge?.heartbeatAgeSeconds ?? null;
-  const paperOnly = readBool(bridge?.paperOnly);
-  const simulatorMode = bridge ? bridge.bridgeMode === "simulator" || bridge.bridgeMode === "deferred" : null;
+  const paperOnly = postureUnmeasured ? null : readBool(bridge?.paperOnly);
+  const simulatorMode = bridge && !postureUnmeasured ? bridge.bridgeMode === "simulator" || bridge.bridgeMode === "deferred" : null;
 
   const tradingMode: RuntimeContext["tradingMode"] =
     liveTradingDisabled === null ? "unknown"
@@ -157,6 +163,7 @@ export function collectRuntimeContext(input: CollectInputs): RuntimeContext {
     liveTradingDisabled,
     brokerExecutionDisabled,
     brokerReadOnly,
+    executionPostureUnmeasured: postureUnmeasured,
     mt5Deferred,
     mt5BridgeConnected,
     heartbeatPresent,

@@ -246,12 +246,24 @@ export function ScalpSignalCard({
               </Badge>
             )}
           </CardTitle>
-          <Badge
-            className={`${SCALP_STATUS_TONE[r.status]} text-xs shrink-0`}
-            data-status-token={r.status}
-          >
-            {scalpStatusLabel(r)}
-          </Badge>
+          {scalpExpired ? (
+            // Past its own expiresAt the read's status is history, not the
+            // market now: no "Ready to review" in a success tone.
+            <Badge
+              className="bg-zinc-500/20 text-zinc-300 border-zinc-500/40 text-xs shrink-0"
+              data-status-token="EXPIRED"
+              title={`When it was read: ${scalpStatusLabel(r)}`}
+            >
+              Read expired
+            </Badge>
+          ) : (
+            <Badge
+              className={`${SCALP_STATUS_TONE[r.status]} text-xs shrink-0`}
+              data-status-token={r.status}
+            >
+              {scalpStatusLabel(r)}
+            </Badge>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {r.direction && directionReadable && (
@@ -281,18 +293,24 @@ export function ScalpSignalCard({
             data-flame-status={flame.scalpStatus}
             data-flame-stage={flame.flameStage}
           >
-            <Badge className={`${FLAME_SCALP_STATUS_TONE[flame.scalpStatus]} text-xs`}>
-              {FLAME_SCALP_STATUS_LABEL[flame.scalpStatus]}
-            </Badge>
-            <Badge className={`${FLAME_STAGE_TONE[flame.flameStage]} text-xs flex items-center gap-1`}>
-              <Flame className="h-3 w-3" />
-              {FLAME_STAGE_LABEL[flame.flameStage]}
-            </Badge>
-            <Tip help="The flame's momentum-quality score out of 100 — higher means a stronger, cleaner move with more conviction behind it. It's a read, not a guarantee.">
-              <Badge variant="outline" className="text-xs font-mono" data-testid={`scalp-flame-score-${r.symbol}`}>
-                {flame.scalpScore}/100
-              </Badge>
-            </Tip>
+            {/* Expired: the flame's status, stage and score described the
+                candles at read time, so they are not shown as the move now. */}
+            {!scalpExpired && (
+              <>
+                <Badge className={`${FLAME_SCALP_STATUS_TONE[flame.scalpStatus]} text-xs`}>
+                  {FLAME_SCALP_STATUS_LABEL[flame.scalpStatus]}
+                </Badge>
+                <Badge className={`${FLAME_STAGE_TONE[flame.flameStage]} text-xs flex items-center gap-1`}>
+                  <Flame className="h-3 w-3" />
+                  {FLAME_STAGE_LABEL[flame.flameStage]}
+                </Badge>
+                <Tip help="The flame's momentum-quality score out of 100 — higher means a stronger, cleaner move with more conviction behind it. It's a read, not a guarantee.">
+                  <Badge variant="outline" className="text-xs font-mono" data-testid={`scalp-flame-score-${r.symbol}`}>
+                    {flame.scalpScore}/100
+                  </Badge>
+                </Tip>
+              </>
+            )}
             <Tip
               className="ml-auto text-[10px] text-muted-foreground"
               help="How recent the live candle read behind this signal is — a fresher read is more reliable, while a stale read means the signal may be out of date."
@@ -314,7 +332,7 @@ export function ScalpSignalCard({
           signals={{
             scannerScore: r.qualityScore,
             riskScore: null,
-            flameStage: flameLive && flame ? flame.flameStage : null,
+            flameStage: flameLive && flame && !scalpExpired ? flame.flameStage : null,
             runOnQuality: null,
             governanceOutcome: null,
           }}
@@ -421,8 +439,8 @@ export function ScalpSignalCard({
           )}
         </div>
 
-        {/* Flame execution-quality chips — live read only. */}
-        {flameLive && flame && (
+        {/* Flame execution-quality chips — current live read only. */}
+        {flameLive && flame && !scalpExpired && (
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <Tip className="text-txt-muted" help="How well-timed an entry is right now within the move — it flags whether you're early, on time, or already late to the flame.">
               Timing <span className="text-foreground">{FLAME_TIMING_LABEL[flame.entryTiming]}</span>
@@ -452,6 +470,7 @@ export function ScalpSignalCard({
           data={buildReasoningFromScalp({
             result: r,
             patternLabel: flameLive && flame ? FLAME_SETUP_LABEL[flame.setupType] : null,
+            expired: scalpExpired,
           })}
           testid={`scalp-reasoning-${r.symbol}`}
           dense

@@ -122,7 +122,11 @@ export function buildBlockerCards(ctx: RuntimeContext, checklist: ChecklistItem[
       kind: "mt5-deferred",
       title: "MT5 Deferred",
       severity: "info", nature: "protective",
-      blocks: "MT5 EA bridge calls. ARX runs in simulator/demo mode.",
+      // Your own bridge being deferred does not decide the account mode (a
+      // Live Shared account trades through the shared master, not your EA).
+      blocks: ctx.executionPostureUnmeasured
+        ? "Calls through your own MT5 EA bridge. Which mode your account trades in is shown by the Mode row, not by this bridge."
+        : "MT5 EA bridge calls. ARX runs in simulator/demo mode.",
       why: "MT5 bridge is intentionally deferred (no token configured or unknown bridge state).",
       howToCheck: "Open MT5 Bridge to read the EA setup steps.",
       safeNextStep: "If you intend to connect MT5, configure the bridge server-side. Otherwise, simulator is the safe default.",
