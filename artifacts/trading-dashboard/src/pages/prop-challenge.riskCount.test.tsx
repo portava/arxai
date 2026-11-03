@@ -1,6 +1,8 @@
-// Prop Challenge page: the evaluator now checks the pass and fail rules with
-// each closed trade at the lower of its booked P&L and the paper risk model,
-// never passes while a close could not be sized, and says so in the summary
+// Prop Challenge page: the evaluator now checks the pass and fail rules on two
+// complete running balances, each closed trade at its booked P&L and, again,
+// at the paper risk model (price move × lots × 100): a breach on either fails,
+// a pass needs both. It never passes while a close could not be sized, and
+// says so in the summary
 // (passBlockedReason, unsizedClosesNote, ruleBasisNote). The page showed only
 // the booked meters, so an ACTIVE challenge whose booked profit was over the
 // target read as if it should have passed, with no word why. It now shows the
@@ -26,7 +28,7 @@ const challenge = {
 };
 const passBlockedReason = "Not passed: 1 closed trade's P&L could not be sized, so the result is not known.";
 const unsizedClosesNote = "1 closed paper trade (NAS100) could not be sized for the instrument (no contract size or currency conversion), so its P&L is not known and is left out of the balance, profit, daily loss and drawdown shown here.";
-const ruleBasisNote = "The pass and fail rules are checked with each closed trade counted at the lower of its booked P&L and the paper risk model (price move × lots × 100): profit 0.01% (booked 11.00%), drawdown 0.00% (booked 0.00%), worst day 0.00% (booked 0.00%).";
+const ruleBasisNote = "The pass and fail rules are checked twice: with each closed trade counted at its booked P&L (the figures shown) and with each counted at the paper risk model (price move × lots × 100). A breach on either fails the challenge, and a pass needs both. At the paper risk model: profit 0.01% (booked 11.00%), drawdown 0.00% (booked 0.00%), worst day 0.00% (booked 0.00%).";
 const summary = {
   status: "ACTIVE", failureReason: null, totalPnl: 1100, totalPct: 0.11, peakBalance: 11_100, maxDrawdownPct: 0,
   worstDayPct: 0, worstDayDate: null, bestDayPnl: 1100, daysWorked: 1, daysSinceStart: 9, consistencyTopShare: 1,

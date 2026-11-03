@@ -40,7 +40,7 @@ interface EvalResp {
     /** Closes whose P&L could not be sized, and the plain-English disclosure. */
     unsizedCloses?: number;
     unsizedClosesNote?: string | null;
-    /** How the figures the pass/fail rules were checked on differ from the booked ones shown. */
+    /** The pass/fail rules are checked on the booked figures shown and again at the paper risk model (x100); how the two differ. */
     ruleBasisNote?: string | null;
     /** Why a challenge whose booked figures meet the pass rules is not PASSED. */
     passBlockedReason?: string | null;
