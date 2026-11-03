@@ -19,6 +19,10 @@
 //     read), never selected by the 1-hour window: its midnight sentinel is not
 //     a time, so it must not decide when the warning appears or disappears.
 //     A failed day read says so — it is not an all-clear either.
+//   - When the stored calendar does not reach the end of the next hour
+//     (calendarCoverage.windowCovered false), the banner says so whether or
+//     not other rows are shown: rows on screen are not a complete account of
+//     an hour that was not checked.
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -175,6 +179,14 @@ export function HighImpactEventBanner() {
           );
         })}
       </ul>
+      {data?.calendarCoverage?.windowCovered === false && (
+        // The rows above are not a complete account of the next hour: the
+        // stored calendar does not reach that far, so timed events after its
+        // end were never checked.
+        <p className="mt-1 text-xs opacity-80" data-testid="high-impact-banner-window-not-checked">
+          High-impact events in the next hour were not checked: {data.calendarCoverage.note ?? "the stored economic calendar does not cover it."}
+        </p>
+      )}
       {dayReadFailed && (
         <p className="mt-1 text-xs opacity-80" data-testid="high-impact-banner-date-only-failed">
           Releases listed by date only (no published time) could not be loaded for {todayUtc} (UTC date).

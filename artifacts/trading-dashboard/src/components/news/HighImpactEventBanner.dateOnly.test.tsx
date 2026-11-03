@@ -126,3 +126,44 @@ describe("HighImpactEventBanner date-only events follow their date, not the sent
     expect(note.textContent).toMatch(/not an all-clear/);
   });
 });
+
+// Review finding: the "next hour was not checked" notice rendered only when
+// no row at all was on screen. With the stored calendar ending at today's
+// FRED row (its midnight sentinel), the window read reports
+// windowCovered:false and no timed rows, while the day read returns that
+// CRITICAL FRED row dated today — so the banner showed only "Critical
+// economic event dated … — release time not published" and dropped the
+// notice, reading as a complete account of the next hour although timed
+// events after the stored calendar's end were never checked.
+describe("HighImpactEventBanner keeps the not-checked notice next to a date-only row", () => {
+  const NOT_COVERED = {
+    windowCovered: false, coveredThrough: "2026-10-28T00:00:00.000Z", storedEventCount: 12, providerConfigured: true,
+    note: "the stored economic calendar only runs to 2026-10-28 00:00 UTC.",
+  };
+  function routedWithCoverage(coverage: unknown, day: unknown[]) {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("/api/economic-events/upcoming") ? { events: [], calendarCoverage: coverage } : { events: day };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><HighImpactEventBanner /></QueryClientProvider>);
+  }
+
+  it("a date-only row dated today does not hide that the next hour was not checked", async () => {
+    vi.setSystemTime(new Date("2026-10-28T14:00:00.000Z"));
+    routedWithCoverage(NOT_COVERED, [FOMC]);
+    await screen.findByTestId("high-impact-event-1");
+    const banner = screen.getByTestId("high-impact-banner");
+    const note = screen.getByTestId("high-impact-banner-window-not-checked");
+    expect(banner.contains(note)).toBe(true);
+    expect(note.textContent).toMatch(/High-impact events in the next hour were not checked: the stored economic calendar only runs to 2026-10-28 00:00 UTC\./);
+  });
+
+  it("a covered window adds no not-checked notice", async () => {
+    vi.setSystemTime(new Date("2026-10-28T14:00:00.000Z"));
+    routedWithCoverage({ ...NOT_COVERED, windowCovered: true, coveredThrough: "2099-01-01T00:00:00.000Z", note: null }, [FOMC]);
+    await screen.findByTestId("high-impact-event-1");
+    expect(screen.queryByTestId("high-impact-banner-window-not-checked")).toBeNull();
+  });
+});
