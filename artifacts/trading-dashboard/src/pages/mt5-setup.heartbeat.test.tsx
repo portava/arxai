@@ -49,7 +49,7 @@ describe("describeBridgeHeartbeat", () => {
   });
 
   // Browser clock 3 s behind the server: the server measured the heartbeat as
-  // 1 s old. The server's age (plus the time since the response arrived) is
+  // 1 s old. The server's age (plus the time since the request was sent) is
   // used, not Date.now() - lastHeartbeatAt across two different clocks.
   it("a fresh heartbeat stays Connected when the browser clock is behind the server", () => {
     const skewed = { ...BASE, lastHeartbeatAt: new Date(NOW + 3_000).toISOString(), heartbeatAgeSeconds: 1, heartbeatFreshness: "fresh" as const };
@@ -59,7 +59,7 @@ describe("describeBridgeHeartbeat", () => {
     expect(v.lastHeartbeat).toContain("1s ago");
   });
 
-  it("the server-measured age grows with the time since the response arrived, so Connected decays", () => {
+  it("the server-measured age grows with the time since the request was sent, so Connected decays", () => {
     const skewed = { ...BASE, lastHeartbeatAt: new Date(NOW + 3_000).toISOString(), heartbeatAgeSeconds: 1, heartbeatFreshness: "fresh" as const };
     const delayed = describeBridgeHeartbeat(skewed, NOW + 20_000, NOW);
     expect(delayed.state).toBe("delayed");
@@ -108,6 +108,36 @@ describe("MT5 Setup header", () => {
       // The bottom heartbeat line follows the same state: no green check for a delayed heartbeat.
       expect(screen.getByTestId("bridge-heartbeat-line").getAttribute("data-state")).toBe("delayed");
       expect(screen.getByTestId("bridge-heartbeat-line").querySelector(".text-success")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Regression: the receipt time was stamped only after all six setup reads
+  // finished, and the server measured the age before its own slower reads, so
+  // a 10 s old heartbeat whose sibling reads took 10 s more was shown as
+  // "Connected (10s ago)" while it was really about 20 s old.
+  it("counts the heartbeat age from when the check was sent, so slow sibling reads cannot make it look fresher", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      conn = { ...conn, lastHeartbeatAt: new Date(Date.now() - 10_000).toISOString(), heartbeatAgeSeconds: 10, heartbeatFreshness: "fresh" };
+      vi.stubGlobal("fetch", vi.fn((url: string) => {
+        if (String(url).includes("/api/broker/connection-check")) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => conn } as unknown as Response);
+        }
+        return new Promise<Response>((resolve) => setTimeout(
+          () => resolve({ ok: false, status: 404, json: async () => ({}) } as unknown as Response), 10_000));
+      }));
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(<QueryClientProvider client={qc}><MT5SetupWizardPage /></QueryClientProvider>);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.waitFor(() => expect(screen.getByTestId("bridge-last-heartbeat").textContent).toMatch(/s ago/));
+      const state = screen.getByTestId("bridge-heartbeat-state").textContent ?? "";
+      expect(state).not.toMatch(/^\s*Connected\s*$/);
+      expect(state).toMatch(/delayed/i);
+      const age = Number((screen.getByTestId("bridge-last-heartbeat").textContent ?? "").match(/\((\d+)s ago\)/)?.[1]);
+      expect(age).toBeGreaterThanOrEqual(20);
+      expect(screen.getByTestId("bridge-heartbeat-line").getAttribute("data-state")).not.toBe("connected");
     } finally {
       vi.useRealTimers();
     }
