@@ -60,6 +60,11 @@ type ReadinessResp = {
     platformStopEngaged?: boolean;
     platformStopSources?: PlatformStopSource[];
     platformStopReason?: string | null;
+    // False when this report could not read a stop (it then counts as
+    // engaged, fail-closed). The per-source detail says which: "state
+    // unreadable" / "settings missing" for a source that was not read.
+    platformStopReadable?: boolean;
+    platformStopDetail?: Partial<Record<PlatformStopSource, string | null>>;
   };
   liveAccount: {
     pinnedBridge: null | {
@@ -97,17 +102,39 @@ type ReadinessResp = {
 
 type PlatformStopSource = "platform_emergency_stop" | "safety_core_kill_switch";
 
+// The server's fail-closed reasons for a stop it could not read.
+const STOP_NOT_READ = new Set(["state unreadable", "settings missing"]);
+
 // Which install-wide stops the readiness response says are engaged. The
 // platform emergency stop is engaged when either field says so; the
 // safety-core kill switch only appears in platformStopSources. `reported` is
 // false when the server did not send the combined fields.
+//
+// `emergencyStopUnread` / `safetyCoreUnread`: that stop counts as engaged only
+// because this report could not read it (platformStopReadable:false and its
+// detail is "state unreadable" / "settings missing"). Nothing was observed, so
+// it is shown as "could not be read — treated as engaged", never as an engaged
+// switch to release. It still counts as engaged for every decision here.
 function installWideStops(g: ReadinessResp["globalSwitches"]) {
   const sources = Array.isArray(g.platformStopSources) ? g.platformStopSources : [];
   const reported = typeof g.platformStopEngaged === "boolean";
   const emergencyStop = g.emergencyKillSwitch === true || sources.includes("platform_emergency_stop");
   const safetyCore = sources.includes("safety_core_kill_switch");
   const engaged = emergencyStop || safetyCore || g.platformStopEngaged === true;
-  return { reported, emergencyStop, safetyCore, engaged, released: reported && !engaged };
+  const detail = g.platformStopDetail ?? {};
+  const notRead = (src: PlatformStopSource) =>
+    g.platformStopReadable === false && sources.includes(src) && STOP_NOT_READ.has(String(detail[src] ?? ""));
+  const emergencyStopUnread = emergencyStop && notRead("platform_emergency_stop");
+  const safetyCoreUnread = safetyCore && notRead("safety_core_kill_switch");
+  return {
+    reported, emergencyStop, safetyCore, engaged, released: reported && !engaged,
+    emergencyStopUnread, safetyCoreUnread,
+    emergencyStopDetail: detail.platform_emergency_stop ?? null,
+    safetyCoreDetail: detail.safety_core_kill_switch ?? null,
+    // Every engaged source is engaged only because it could not be read.
+    onlyUnread: engaged && (!emergencyStop || emergencyStopUnread) && (!safetyCore || safetyCoreUnread)
+      && (emergencyStop || safetyCore),
+  };
 }
 
 type SmokeStatus = "pass" | "fail" | "not_checked";
@@ -338,16 +365,29 @@ function ActivationStateBanner({ readiness, loadError }: { readiness: ReadinessR
   if (state === "KILL_SWITCH_ACTIVE") {
     const g = readiness.globalSwitches;
     const stops = installWideStops(g);
-    const reason = g.platformStopReason ?? g.killSwitchReason;
+    // The server's reason names the first engaged source ("... is engaged.
+    // (state unreadable)"). When that source was not read, the per-source line
+    // below already says so; do not repeat it as an engaged switch.
+    const firstUnread = stops.emergencyStop ? stops.emergencyStopUnread : stops.safetyCoreUnread;
+    const reason = firstUnread ? null : g.platformStopReason ?? g.killSwitchReason;
     return (
       <Alert className="py-3 border-rose-500/60 bg-rose-500/10" data-testid="banner-kill-switch">
         <ShieldAlert className="h-4 w-4 text-rose-400" />
-        <AlertTitle className="text-sm text-rose-200">KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED</AlertTitle>
+        <AlertTitle className="text-sm text-rose-200">
+          {stops.onlyUnread
+            ? "INSTALL-WIDE STOP COULD NOT BE READ — TREATED AS ENGAGED"
+            : "KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED"}
+        </AlertTitle>
         <AlertDescription className="text-xs text-rose-200/80">
-          An install-wide stop is engaged and overrides every other state: the Risk
-          Governor refuses every new live order.
-          {stops.emergencyStop && <> The platform emergency stop is engaged; release it with Wizard step 9 once you've confirmed the cause.</>}
-          {stops.safetyCore && <> The safety-core kill switch is engaged; Wizard step 9 does not release it — release it on the Emergency page.</>}
+          {stops.onlyUnread
+            ? <>This report could not read an install-wide stop, so it treats it as engaged (fail-closed) and overrides every other state here. Nothing was observed engaged. The Risk Governor reads the stops again on every new live order.</>
+            : <>An install-wide stop is engaged and overrides every other state: the Risk Governor refuses every new live order.</>}
+          {stops.emergencyStop && (stops.emergencyStopUnread
+            ? <> The platform emergency stop could not be read ({stops.emergencyStopDetail}) — treated as engaged. There is nothing to release until it can be read; Refresh, and check the server logs if it persists.</>
+            : <> The platform emergency stop is engaged; release it with Wizard step 9 once you've confirmed the cause.</>)}
+          {stops.safetyCore && (stops.safetyCoreUnread
+            ? <> The safety-core kill switch could not be read ({stops.safetyCoreDetail}) — treated as engaged. There is nothing to release until it can be read; Refresh, and check the server logs if it persists.</>
+            : <> The safety-core kill switch is engaged; Wizard step 9 does not release it — release it on the Emergency page.</>)}
           {reason && <> Reason: <code className="font-mono">{reason}</code></>}
         </AlertDescription>
       </Alert>
@@ -400,7 +440,8 @@ function ModeChip({ readiness, loadError }: { readiness: ReadinessResp | null; l
   if (!readiness) return <Badge variant="outline">loading…</Badge>;
   const { state } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
-    return <Badge className="bg-rose-500/15 text-rose-300 border border-rose-500/40" data-testid="mode-chip-kill">KILL SWITCH ACTIVE</Badge>;
+    const unreadOnly = installWideStops(readiness.globalSwitches).onlyUnread;
+    return <Badge className="bg-rose-500/15 text-rose-300 border border-rose-500/40" data-testid="mode-chip-kill">{unreadOnly ? "STOP COULD NOT BE READ" : "KILL SWITCH ACTIVE"}</Badge>;
   }
   if (state === "LIVE_BROKER_EXECUTION_ENABLED") {
     return <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/40" data-testid="mode-chip-armed">LIVE BROKER EXECUTION ENABLED</Badge>;
@@ -449,12 +490,18 @@ function ReadinessCards({ readiness, loadError }: { readiness: ReadinessResp | n
         <div data-testid="safety-master-switch-env">{row("Env ARX_LIVE_BROKER_EXECUTION_ENABLED", String(g.serverMasterSwitchEnvOnly))}</div>
         <div data-testid="safety-master-switch-armed">{row("Operator arm (DB flag)", String(g.liveBrokerExecutionArmedDb))}</div>
         <div data-testid="safety-master-switch-effective">{row("Live broker execution (effective: env AND operator arm)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}</div>
-        {row("Platform emergency stop engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
+        <div data-testid="safety-emergency-stop-row">
+          {stops.emergencyStopUnread
+            ? row("Platform emergency stop engaged", `could not be read — treated as engaged (${stops.emergencyStopDetail})`, undefined)
+            : row("Platform emergency stop engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
+        </div>
         {row("Kill engaged at", g.killSwitchEngagedAt ?? "—")}
         <div data-testid="safety-core-kill-row">
-          {row("Safety-core kill switch engaged",
-            stops.reported ? String(stops.safetyCore) : "not reported",
-            stops.reported ? !stops.safetyCore : undefined)}
+          {stops.safetyCoreUnread
+            ? row("Safety-core kill switch engaged", `could not be read — treated as engaged (${stops.safetyCoreDetail})`, undefined)
+            : row("Safety-core kill switch engaged",
+              stops.reported ? String(stops.safetyCore) : "not reported",
+              stops.reported ? !stops.safetyCore : undefined)}
         </div>
         {row("Approved users", String(readiness.approvedUsers.approvedCount), readiness.approvedUsers.approvedCount > 0)}
         {row("Active users", String(readiness.approvedUsers.activeCount))}
@@ -490,8 +537,12 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     const ea: EaInputs = (det.detected && det.bridge) ? det.bridge : {};
     const stops = installWideStops(g);
     const engagedStops = [
-      stops.emergencyStop ? "platform emergency stop engaged" : null,
-      stops.safetyCore ? "safety-core kill switch engaged (release on the Emergency page)" : null,
+      stops.emergencyStop
+        ? (stops.emergencyStopUnread ? "platform emergency stop could not be read — treated as engaged" : "platform emergency stop engaged")
+        : null,
+      stops.safetyCore
+        ? (stops.safetyCoreUnread ? "safety-core kill switch could not be read — treated as engaged" : "safety-core kill switch engaged (release on the Emergency page)")
+        : null,
       !stops.reported ? "safety-core kill switch not reported" : null,
     ].filter(Boolean).join("; ");
     return [
@@ -621,21 +672,47 @@ function ArmExecutionCard({
             <AlertDescription className="text-[11px] text-rose-200/80">Resolve the failing checks in the checklist above, then return here.</AlertDescription>
           </Alert>
         )}
-        {state === "KILL_SWITCH_ACTIVE" && (installWideStops(g).emergencyStop ? (
-          <Alert className="py-2 border-rose-500/60 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Platform emergency stop engaged — the server refuses Arm.</AlertTitle>
-            <AlertDescription className="text-[11px] text-rose-200/80">Release it (Wizard step 9) before arming.</AlertDescription>
-          </Alert>
-        ) : (
-          <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-safety-core-stop">
-            <AlertTitle className="text-xs text-rose-200">Safety-core kill switch engaged — no live order can go through.</AlertTitle>
-            <AlertDescription className="text-[11px] text-rose-200/80">
-              The Risk Governor refuses every new live order while it is engaged. The server's Arm
-              check reads only the platform emergency stop, so it does not refuse Arm for this switch.
-              Release it on the Emergency page.
-            </AlertDescription>
-          </Alert>
-        ))}
+        {state === "KILL_SWITCH_ACTIVE" && (() => {
+          const stops = installWideStops(g);
+          if (stops.emergencyStop) {
+            return stops.emergencyStopUnread ? (
+              <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-emergency-stop">
+                <AlertTitle className="text-xs text-rose-200">Platform emergency stop could not be read — treated as engaged; the server refuses Arm.</AlertTitle>
+                <AlertDescription className="text-[11px] text-rose-200/80">
+                  The settings were not read ({stops.emergencyStopDetail}), so the stop is treated as
+                  engaged, not observed engaged. There is nothing to release until it can be read:
+                  Refresh, and check the server logs if it persists.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-emergency-stop">
+                <AlertTitle className="text-xs text-rose-200">Platform emergency stop engaged — the server refuses Arm.</AlertTitle>
+                <AlertDescription className="text-[11px] text-rose-200/80">Release it (Wizard step 9) before arming.</AlertDescription>
+              </Alert>
+            );
+          }
+          return stops.safetyCoreUnread ? (
+            <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-safety-core-stop">
+              <AlertTitle className="text-xs text-rose-200">Safety-core kill switch could not be read — treated as engaged.</AlertTitle>
+              <AlertDescription className="text-[11px] text-rose-200/80">
+                This report could not read the safety-core switch ({stops.safetyCoreDetail}), so it shows
+                it as engaged (fail-closed), not as an observed engaged switch. The server's Arm check
+                reads only the platform emergency stop, so it does not refuse Arm for this. The Risk
+                Governor reads the switch again on every new live order. Refresh, and check the server
+                logs if it persists.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-safety-core-stop">
+              <AlertTitle className="text-xs text-rose-200">Safety-core kill switch engaged — no live order can go through.</AlertTitle>
+              <AlertDescription className="text-[11px] text-rose-200/80">
+                The Risk Governor refuses every new live order while it is engaged. The server's Arm
+                check reads only the platform emergency stop, so it does not refuse Arm for this switch.
+                Release it on the Emergency page.
+              </AlertDescription>
+            </Alert>
+          );
+        })()}
         {state === "LIVE_BROKER_EXECUTION_ENABLED" && (
           <Alert className="py-2 border-emerald-500/60 bg-emerald-500/10">
             <AlertTitle className="text-xs text-emerald-200">Currently ARMED.</AlertTitle>

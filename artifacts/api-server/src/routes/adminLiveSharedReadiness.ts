@@ -255,6 +255,8 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable);
 
+  const installStop = await platformStopWith(sw);
+
   await tryAudit(req, {
     adminId: admin.id,
     adminRole: admin.role,
@@ -296,8 +298,13 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       killSwitchEngagedAt: sw.emergencyStop.engagedAt,
       killSwitchReason: sw.emergencyStop.reason,
       // Either install-wide stop (platformStop()); the fields above name the
-      // platform emergency stop this handler writes.
-      ...platformStopReport(await platformStopWith(sw)),
+      // platform emergency stop this handler writes. platformStopReadable is
+      // false when either stop could not be read (it then counts as engaged);
+      // platformStopDetail names each engaged source's stored reason, "state
+      // unreadable" / "settings missing" when it was not read.
+      ...platformStopReport(installStop),
+      platformStopReadable: installStop.readable,
+      platformStopDetail: installStop.detail,
     },
     liveAccount: {
       pinnedBridge: bridgeForUi,
@@ -411,6 +418,8 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         platformStopEngaged: true,
         platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
         platformStopReason: null,
+        platformStopReadable: false,
+        platformStopDetail: { platform_emergency_stop: "state unreadable", safety_core_kill_switch: "state unreadable" },
       },
       liveAccount: {
         readable: false,
