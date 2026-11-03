@@ -74,8 +74,10 @@ mock.module("../../lib/positions/ledger.js", {
     demoPositionLedger: { read: async () => ledgerQueue.shift() ?? [] },
   },
 });
+// The stored running peak from earlier polls (null = never in profit).
+let storedPeakPnl: number | null = null;
 mock.module("../../lib/intelligence/mfeTracker.js", {
-  namedExports: { ...actualMfe, getRunning: async () => ({ mfe: null, mae: null, peakPnl: null }) },
+  namedExports: { ...actualMfe, getRunning: async () => ({ mfe: null, mae: null, peakPnl: storedPeakPnl }) },
 });
 mock.module("../../lib/intelligence/alertEngine.js", {
   namedExports: { ...actualAlerts, evaluateAlerts: () => [] },
@@ -104,6 +106,7 @@ before(async () => {
 after(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
 test("an unreadable trade and unscored signals are counted, not folded into 'not flagged'", async () => {
+  storedPeakPnl = null;
   ledgerQueue.length = 0;
   ledgerQueue.push(
     [demoRow(1, {})],
@@ -125,4 +128,34 @@ test("an unreadable trade and unscored signals are counted, not folded into 'not
   assert.equal(gaps["reversalRisk"], 2);
   assert.equal(gaps["fakeoutRisk"], 2);
   assert.equal(gaps["volatilityRisk"], 2);
+});
+
+// An earlier poll saw the trade in profit (stored peak > 0); now the ledger
+// row's P&L is null. `trade.unrealizedPnl ?? 0` turned the unread P&L into 0
+// and flagged "returned to break-even or worse" for a P&L nobody observed,
+// while the same response counted the trade under profit giveback that could
+// not be checked.
+test("a trade whose P&L was not read is never flagged 'returned to break-even or worse'", async () => {
+  storedPeakPnl = 12;
+  ledgerQueue.length = 0;
+  ledgerQueue.push([demoRow(1, { unrealizedProfitLoss: null })], [], []);
+  const r = await fetch(`${base}/me/sniper-watchlist`);
+  assert.equal(r.status, 200);
+  const body = (await r.json()) as Record<string, unknown>;
+  const items = body["items"] as Array<{ tradeKey: string; reasons: string[] }>;
+  for (const it of items) assert.ok(!it.reasons.includes("returned to break-even or worse"), `${it.tradeKey} flagged on an unread P&L`);
+  assert.deepEqual(items, []);
+  assert.equal((body["signalGaps"] as Record<string, number>)["profitGiveback"], 1);
+});
+
+test("a trade read at or below break-even after a stored peak is still flagged", async () => {
+  storedPeakPnl = 12;
+  ledgerQueue.length = 0;
+  ledgerQueue.push([demoRow(1, { unrealizedProfitLoss: -1 })], [], []);
+  const r = await fetch(`${base}/me/sniper-watchlist`);
+  assert.equal(r.status, 200);
+  const body = (await r.json()) as Record<string, unknown>;
+  const items = body["items"] as Array<{ tradeKey: string; reasons: string[] }>;
+  assert.equal(items.length, 1);
+  assert.ok(items[0].reasons.includes("returned to break-even or worse"));
 });
