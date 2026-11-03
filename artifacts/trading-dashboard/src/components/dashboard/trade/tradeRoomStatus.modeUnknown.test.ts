@@ -18,7 +18,7 @@ import { describeBridgeObservation } from "@/components/dashboard/cockpit/bridge
 import { riskCapsStatus } from "@/lib/riskCapsStatus";
 
 const noEnvelope = {
-  isLiveShared: false, isDemo: false, isFrozen: false, canManualTrade: false, cleanBlockedReason: null,
+  isLiveShared: false, isDemo: false, isFrozen: false, canManualTrade: false, cleanBlockedReason: null, envelope: null,
 };
 const obs = describeBridgeObservation({ onSharedRoute: false, allocationView: null });
 
@@ -70,7 +70,7 @@ describe("Trade Command Room — account mode still loading", () => {
 
 describe("Trade Command Room — a read envelope keeps its labels", () => {
   it("approved demo user: 'Demo' / 'Approved'", () => {
-    const s = resolveTradeRoomStatus({ isLiveShared: false, isDemo: true, isFrozen: false, canManualTrade: true, cleanBlockedReason: null, cleanModeLabel: "Demo Mode" }, obs);
+    const s = resolveTradeRoomStatus({ isLiveShared: false, isDemo: true, isFrozen: false, canManualTrade: true, cleanBlockedReason: null, cleanModeLabel: "Demo Mode", envelope: {} }, obs);
     expect(s.connStatus).toBe("Demo");
     expect(s.approval).toBe("Approved");
   });
@@ -88,10 +88,29 @@ describe("Trade Command Room — a read envelope keeps its labels", () => {
 // "Waiting for approval" — the Risk Governor must not call it "Risk lock active".
 describe("Trade Command Room — read envelope, not yet approved, no blocker", () => {
   it("Risk Governor names the same not-approved state as the status bar", () => {
-    const s = resolveTradeRoomStatus({ isLiveShared: true, isDemo: false, isFrozen: false, canManualTrade: false, cleanBlockedReason: null, cleanModeLabel: "Live (Shared Master MT5)" }, obs);
+    const s = resolveTradeRoomStatus({ isLiveShared: true, isDemo: false, isFrozen: false, canManualTrade: false, cleanBlockedReason: null, cleanModeLabel: "Live (Shared Master MT5)", envelope: {} }, obs);
     expect(s.rgStatus.label).not.toBe("Risk lock active");
     expect(s.rgStatus).toEqual({ label: "Waiting for approval", tone: "warning" });
     expect(s.gatesLabel).toBe(s.rgStatus.label);
+    expect(s.canTrade).toBe(false);
+  });
+});
+
+// React Query v5 sets isLoading = isPending && isFetching. Offline at mount,
+// the account-mode query is pending with fetchStatus "paused": isLoading
+// false, isError false, envelope null. The branch keyed on isLoading, so the
+// room fell through to "Sim" / "Waiting for approval" / "Pending" for a user
+// who may be LIVE_SHARED. No envelope now always means nothing was read.
+describe("Trade Command Room — account-mode query paused (offline), no envelope", () => {
+  const s = resolveTradeRoomStatus({ ...noEnvelope, envelope: null, isLoading: false, isModeUnknown: false, cleanModeLabel: "Loading…" }, obs);
+
+  it("says it is checking instead of 'Sim' / 'Waiting for approval' / 'Pending'", () => {
+    expect(s.connStatus).not.toBe("Sim");
+    expect(s.connStatus).toBe("Checking");
+    expect(s.gatesLabel).not.toBe("Waiting for approval");
+    expect(s.gatesLabel).toBe("Checking account mode…");
+    expect(s.rgStatus).toEqual({ label: "Checking", tone: "warning" });
+    expect(s.approval).toBe("Checking");
     expect(s.canTrade).toBe(false);
   });
 });

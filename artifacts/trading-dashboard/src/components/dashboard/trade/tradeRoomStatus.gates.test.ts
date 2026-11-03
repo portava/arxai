@@ -19,7 +19,7 @@ import { describeBridgeObservation } from "@/components/dashboard/cockpit/bridge
 import { describeRiskCaps } from "@/components/dashboard/cockpit/riskCapsSummary";
 
 const demoApproved = {
-  isLiveShared: false, isDemo: true, isFrozen: false, canManualTrade: true, cleanBlockedReason: null, cleanModeLabel: "Demo",
+  isLiveShared: false, isDemo: true, isFrozen: false, canManualTrade: true, cleanBlockedReason: null, cleanModeLabel: "Demo", envelope: {},
 };
 
 describe("Trade Command Room — status labels without a measurement behind them", () => {

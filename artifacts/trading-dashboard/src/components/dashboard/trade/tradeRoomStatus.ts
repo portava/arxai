@@ -19,6 +19,11 @@ export interface TradeRoomModeInput {
   canManualTrade: boolean;
   cleanBlockedReason: string | null;
   cleanModeLabel: string;
+  /**
+   * The account-mode envelope as read (useTradingMode().envelope). null =
+   * nothing was read: still loading, paused (offline), or the check failed.
+   */
+  envelope: object | null;
   /** The account-mode envelope is still loading (nothing read yet). */
   isLoading?: boolean;
   /** The account-mode check failed: mode, approval, pause and blockers are unknown. */
@@ -40,12 +45,15 @@ export interface TradeRoomStatus {
 }
 
 export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeObservation): TradeRoomStatus {
-  // No envelope (still loading, or the check failed): the mode, approval,
-  // pause flag and blockers were not read. Say so, instead of falling through
-  // to "Sim" / "Risk lock active" / "Waiting for approval" / "Pending" — the
-  // user may be LIVE_SHARED. Trading stays closed (canManualTrade is false).
+  // No envelope (still loading, paused offline, or the check failed): the
+  // mode, approval, pause flag and blockers were not read. Say so, instead of
+  // falling through to "Sim" / "Risk lock active" / "Waiting for approval" /
+  // "Pending" — the user may be LIVE_SHARED. Trading stays closed
+  // (canManualTrade is false). Keyed on the envelope itself, not isLoading:
+  // React Query's isLoading is false for a pending query whose fetch is
+  // paused, so it does not cover every "nothing read yet" state.
   const modeUnknown = m.isModeUnknown === true;
-  if (modeUnknown || m.isLoading === true) {
+  if (modeUnknown || m.envelope == null) {
     return {
       canTrade: false,
       modeLabel: m.cleanModeLabel || (modeUnknown ? "Mode unknown" : "Loading…"),
