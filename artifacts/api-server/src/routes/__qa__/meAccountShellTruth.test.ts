@@ -297,7 +297,7 @@ test("the platform emergency stop is not hidden behind ACTIVE: demo and live use
   tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
   const released = await computeAccountShell(USER, { skipInvestorSnapshot: true });
   assert.equal(released.accountTradingStatus, "ACTIVE");
-  assert.match(released.accountTradingStatusReason, /platform emergency stop is released/);
+  assert.match(released.accountTradingStatusReason, /platform emergency stop and the safety-core kill switch are released/);
 });
 
 test("unreadable platform settings are reported as not read, not as trading switched off by an operator", async () => {
@@ -380,4 +380,22 @@ test("available capacity is not the allocation with an unmeasured margin of 0 su
   const none = await computeAccountShell(USER, { skipInvestorSnapshot: true });
   assert.equal(none.allocation.availableCapacity, null);
   assert.match(String(none.allocation.availableCapacityNote), /no allocation/i);
+});
+
+test("the safety-core kill switch halts every venue, paper included: the badge reads PAUSED and names it", async () => {
+  platformMode = "LIVE";
+  // safety_core row as readSafetyCoreSwitch() selects it.
+  tables.safety_core = [{ on: true, why: "drill", at: new Date("2026-11-03T08:00:00.000Z"), mode: null, state: null }];
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "SIMULATED" }];
+  const paper = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(paper.tradingStatus, "ACTIVE", "the mode resolver's input is unchanged");
+  assert.equal(paper.accountTradingStatus, "PAUSED");
+  assert.match(paper.accountTradingStatusReason, /safety-core kill switch is engaged \(drill\) since 2026-11-03T08:00:00\.000Z/);
+  assert.match(paper.accountTradingStatusReason, /paper included/);
+
+  // Released: both stops are named as checked.
+  tables.safety_core = [{ on: false, why: null, at: null, mode: null, state: null }];
+  const released = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(released.accountTradingStatus, "ACTIVE");
+  assert.match(released.accountTradingStatusReason, /platform emergency stop and the safety-core kill switch are released/);
 });

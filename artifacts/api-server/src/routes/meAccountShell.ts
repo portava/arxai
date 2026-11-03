@@ -26,7 +26,13 @@ import {
   userSlotAllocationTable,
 } from "@workspace/db/schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import {
+  loadPlatformSettings,
+  platformStopWith,
+  platformStopForVenue,
+  type PlatformStop,
+  type PlatformStopSource,
+} from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
@@ -486,16 +492,30 @@ export async function computeAccountShell(
     // order guards (USER_TRADING_DISABLED) and an allocation freeze by the
     // live pipeline, so ACTIVE must not be shown over either.
     const fullFreeze = allocRow?.allocationStatus === "frozen" || Boolean(allocRow?.tradingFrozen);
-    // The platform emergency stop (global_trading_settings) halts new demo and
-    // live orders on every account; the paper simulator is not halted by it
-    // (platformStopForVenue). The Risk Governor enforces it on every order;
-    // here it is only reported, so ACTIVE is not shown while it halts this
+    // Both install-wide stops, read once through the platform-stop authority
+    // (platformStopWith, never throws; unreadable = engaged). The platform
+    // emergency stop halts new demo and live orders on every account but not
+    // the paper simulator; the safety-core kill switch halts every venue
+    // (platformStopForVenue). The Risk Governor enforces both on every order;
+    // here they are only reported, so ACTIVE is not shown while one halts this
     // user's orders. tradingStatus (the mode resolver's input) is unchanged.
-    const emergencyStop = platform.switches.emergencyStop;
-    const emergencyStopHaltsUser = emergencyStop.engaged && perUserTradingMode !== "SIMULATED";
-    const emergencyStopSentence = "The platform emergency stop is engaged" +
-      (emergencyStop.reason ? ` (${emergencyStop.reason})` : "") +
-      (emergencyStop.engagedAt ? ` since ${new Date(emergencyStop.engagedAt).toISOString()}` : "");
+    const stop = await platformStopWith(platform.switches);
+    const userStop = platformStopForVenue(stop,
+      perUserTradingMode === "SIMULATED" ? "PAPER" : perUserTradingMode === "DEMO" ? "DEMO" : "LIVE");
+    const stopHaltsUser = userStop.engaged;
+    const STOP_NAMES: Record<PlatformStopSource, string> = {
+      platform_emergency_stop: "The platform emergency stop",
+      safety_core_kill_switch: "The safety-core kill switch",
+    };
+    const describeStop = (st: PlatformStop, src: PlatformStopSource): string => {
+      const detail = st.detail[src] ?? null;
+      if (detail === "state unreadable" || detail === "settings missing") {
+        return `${STOP_NAMES[src]} could not be read, so it is treated as engaged`;
+      }
+      const at = st.engagedAt?.[src] ?? null;
+      return `${STOP_NAMES[src]} is engaged` + (detail ? ` (${detail})` : "") +
+        (at ? ` since ${new Date(at).toISOString()}` : "");
+    };
     // An allocation is an operator's row assigning more than 0. The live
     // pipeline refuses every entry without one (allocationGate:
     // USER_ALLOCATION_NOT_ASSIGNED), so a shared-master user in LIVE mode with
@@ -506,7 +526,7 @@ export async function computeAccountShell(
     const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
       tradingStatus !== "ACTIVE" ? tradingStatus
         : perUserTradingMode === "DISABLED" ? "RESTRICTED"
-        : emergencyStopHaltsUser ? "PAUSED"
+        : stopHaltsUser ? "PAUSED"
         : fullFreeze ? "PAUSED"
         : liveAllocationMissing ? "PAUSED"
         : "ACTIVE";
@@ -521,8 +541,11 @@ export async function computeAccountShell(
       if (tradingStatus === "PAUSED") return `Your shared-master access is ${String(approvalStatus).toLowerCase()}.`;
       if (tradingStatus === "RESTRICTED") return "Your shared-master access is risk-locked.";
       if (perUserTradingMode === "DISABLED") return "Your operator has not enabled trading on your account.";
-      if (emergencyStopHaltsUser) {
-        return `${emergencyStopSentence}: new demo and live orders are halted on every account until an operator releases it.`;
+      if (stopHaltsUser) {
+        const what = userStop.sources.includes("safety_core_kill_switch")
+          ? "no new orders are accepted on any account, paper included, until it is released."
+          : "new demo and live orders are halted on every account until an operator releases it.";
+        return `${userStop.sources.map((src) => describeStop(userStop, src)).join("; ")}: ${what}`;
       }
       if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
       const noAllocationLine = "No allocation is assigned to you yet: live orders on the shared master account are refused until an operator assigns one.";
@@ -536,14 +559,15 @@ export async function computeAccountShell(
         ? `${checked.slice(0, -1).join(", ")} and ${checked[checked.length - 1]}`
         : checked[0]!;
       const allowLine = `${checkedList.charAt(0).toUpperCase()}${checkedList.slice(1)} allow trading.`;
-      const stopLine = emergencyStop.engaged
-        ? `${emergencyStopSentence}: it halts new demo and live orders, not paper (simulated) trades.`
-        : "The platform emergency stop is released.";
+      // Not halting this user: released, or the emergency stop on a paper account.
+      const stopLine = stop.sources.includes("platform_emergency_stop")
+        ? `${describeStop(stop, "platform_emergency_stop")}: it halts new demo and live orders, not paper (simulated) trades. The safety-core kill switch is released.`
+        : "The platform emergency stop and the safety-core kill switch are released.";
       return [
         allowLine,
         ...(sharedMaster && !allocationAssigned ? [noAllocationLine] : []),
         stopLine,
-        "The safety-core kill switch, your own kill switch and risk limits are checked on every order and are not part of this status.",
+        "Your own kill switch and risk limits are checked on every order and are not part of this status.",
       ].join(" ");
     })();
     const tradingModeLabel = (() => {
