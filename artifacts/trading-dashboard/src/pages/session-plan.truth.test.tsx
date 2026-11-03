@@ -4,7 +4,7 @@
 // not be loaded", never a crash. The footer names the scanner sweep the
 // plan came from and how old it is.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import SessionPlanPage from "./session-plan";
 
 const PLAN = {
@@ -35,6 +35,7 @@ function mockFetch(status: number, body: unknown) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Session Plan truth", () => {
@@ -69,6 +70,22 @@ describe("Session Plan truth", () => {
     const footer = await screen.findByTestId("session-plan-sweep-time");
     expect(footer.textContent).toMatch(/scanner sweep at .+ \(3 h 5 min ago\)/);
     expect(footer.textContent).not.toMatch(/^Generated /);
+  });
+
+  // sweepAge read Date.now() during render and nothing re-rendered the page,
+  // so a plan loaded from a fresh sweep said "(under a minute ago)" for as
+  // long as the page stayed open.
+  it("the sweep age keeps counting while the page stays open", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-03T09:00:00.000Z"));
+    mockFetch(200, { ...PLAN, generatedAt: "2026-11-03T09:00:00.000Z" });
+    render(<SessionPlanPage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId("session-plan-sweep-time").textContent).toMatch(/\(under a minute ago\)/);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2 * 3_600_000); });
+    const footer = screen.getByTestId("session-plan-sweep-time").textContent ?? "";
+    expect(footer).not.toMatch(/under a minute ago/);
+    expect(footer).toMatch(/\(2 h 0 min ago\)/);
   });
 
   it("the plan's caps and rules are labelled as fixed plan text, not the trader's risk settings", async () => {

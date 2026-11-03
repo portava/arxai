@@ -27,10 +27,10 @@ function isPlan(v: unknown): v is Plan {
     && Array.isArray(p.rules) && Array.isArray(p.warningZones) && Array.isArray(p.focusAreas);
 }
 
-function sweepAge(iso: string): string | null {
+function sweepAge(iso: string, now: number): string | null {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
-  const min = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  const min = Math.max(0, Math.round((now - t) / 60_000));
   if (min < 1) return "under a minute ago";
   if (min < 60) return `${min} min ago`;
   return `${Math.floor(min / 60)} h ${min % 60} min ago`;
@@ -40,6 +40,13 @@ export default function SessionPlanPage() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Client clock for the sweep age. It ticks while the page is open so the
+  // age keeps counting instead of keeping the value from the last render.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   async function load() {
     setBusy(true);
@@ -48,6 +55,7 @@ export default function SessionPlanPage() {
       const body: unknown = await res.json().catch(() => null);
       if (res.ok && isPlan(body)) {
         setPlan(body);
+        setNow(Date.now());
         setFailed(false);
       } else {
         setPlan(null);
@@ -62,7 +70,7 @@ export default function SessionPlanPage() {
 
   const withheld = plan?.withheld === true;
   const sweptAt = plan ? safeDate(plan.generatedAt, "datetime", "") : "";
-  const age = plan ? sweepAge(plan.generatedAt) : null;
+  const age = plan ? sweepAge(plan.generatedAt, now) : null;
   const held = <span className="text-sm text-muted-foreground">{WITHHELD}</span>;
 
   return (
