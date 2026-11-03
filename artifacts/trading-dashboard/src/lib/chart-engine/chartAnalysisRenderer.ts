@@ -1,4 +1,4 @@
-import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange } from "lightweight-charts";
+import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange, type LineSeriesPartialOptions, type HistogramSeriesPartialOptions } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
 import { StudyCalculator, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
@@ -20,6 +20,8 @@ export class ChartAnalysisRenderer {
   private pending: { candles: ChartEngineCandle[]; from: number } | null = null;
   private displayWindow: { from: number; to: number } | null = null;
   private rendering = false;
+  /** time, open, high, low, close of every bar the calculators consumed. */
+  private inputs: number[] = [];
   private onViewport = () => {
     if (this.rendering || !this.studies.length) return;
     const window = this.nextWindow();
@@ -33,31 +35,160 @@ export class ChartAnalysisRenderer {
     const key = JSON.stringify(valid);
     if (this.studyKey === key) return;
     const range = this.chart.timeScale().getVisibleLogicalRange();
+    // Appending, removing or editing studies keeps the series and calculators
+    // of untouched studies. Anything that cannot reproduce a full rebuild
+    // exactly (reorder, insertion before a kept study, unexpected panes or a
+    // manually scaled oscillator pane) takes the full rebuild instead.
+    if (!this.patchStudies(valid, key, candles, range)) this.rebuildStudies(valid, key, candles, range);
+  }
+  private rebuildStudies(valid: ChartStudy[], key: string, candles: ChartEngineCandle[], range: LogicalRange | null): void {
     this.cancelPending();
     this.clearStudies(); this.displayWindow = null; this.studyKey = key;
     let pane = 0;
     for (const config of valid) {
-      const definition = studyDefinition(config.kind);
-      const oscillator = definition.pane;
-      const paneIndex = oscillator ? ++pane : 0;
-      const count = definition.channels.length;
-      const lines = Array.from({length:count}, (_, i) => {
-        const histogram = config.kind === "macd" && i === 2;
-        const title = oscillator ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[i]}` : "";
-        const line: ISeriesApi<"Line" | "Histogram"> = histogram
-          ? this.chart.addSeries(HistogramSeries, {color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}, paneIndex)
-          : this.chart.addSeries(LineSeries, {color:i === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}, paneIndex);
-        if (i === 0) for (const price of definition.levels ?? []) line.createPriceLine({price,color:"#71717a",lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:String(price)});
-        return line;
-      });
-      this.studies.push({calculator:new StudyCalculator(config),lines,rendered:[]});
-
+      const paneIndex = studyDefinition(config.kind).pane ? ++pane : 0;
+      this.studies.push({calculator:new StudyCalculator(config),lines:this.addStudySeries(config, paneIndex),rendered:[]});
     }
     // Set proportions only after all panes exist; inserting a later pane must
     // not collapse the first oscillator to the library minimum height.
     this.chart.panes().forEach((p, i)=>p.setStretchFactor(i === 0 ? 3 : 1));
     this.refresh(candles, 0, true);
     if (range) this.chart.timeScale().setVisibleLogicalRange(range);
+  }
+  private addStudySeries(config: ChartStudy, paneIndex: number): ISeriesApi<"Line" | "Histogram">[] {
+    const definition = studyDefinition(config.kind);
+    return definition.channels.map((_, i) => {
+      const spec = studySeriesOptions(config, i);
+      const line: ISeriesApi<"Line" | "Histogram"> = spec.histogram
+        ? this.chart.addSeries(HistogramSeries, spec.options, paneIndex)
+        : this.chart.addSeries(LineSeries, spec.options, paneIndex);
+      if (i === 0) for (const price of definition.levels ?? []) line.createPriceLine({price,color:"#71717a",lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:String(price)});
+      return line;
+    });
+  }
+  /** Reconciles the current studies with `valid` so that series, options,
+   * panes, draw order and rendered data equal what rebuildStudies would leave.
+   * Returns false, before changing anything, when that cannot be guaranteed. */
+  private patchStudies(valid: ChartStudy[], key: string, candles: ChartEngineCandle[], range: LogicalRange | null): boolean {
+    const previous = this.studies;
+    if (!previous.length || !valid.length) return false;
+    const index = new Map(previous.map((study, i) => [studyMatchKey(study.calculator.config, i), i]));
+    if (index.size !== previous.length) return false;
+    const reuse: (StudyHandle | undefined)[] = [];
+    const seen = new Set<string>();
+    let last = -1, added = false;
+    for (const [i, config] of valid.entries()) {
+      const match = studyMatchKey(config, i);
+      if (seen.has(match)) return false;
+      seen.add(match);
+      const at = index.get(match);
+      if (at === undefined) { added = true; reuse.push(undefined); continue; }
+      // Kept studies must keep their order and precede every new study, or
+      // the rebuild's pane numbering and draw order could not be reproduced.
+      if (added || at <= last) return false;
+      last = at; reuse.push(previous[at]);
+    }
+    if (last < 0) return false;
+    const kept = new Set(reuse);
+    // One pane per oscillator, in study order, holding only its own series.
+    const panes = this.chart.panes();
+    const oscillators = previous.filter(study => studyDefinition(study.calculator.config.kind).pane);
+    if (panes.length !== oscillators.length + 1) return false;
+    for (const [i, study] of oscillators.entries()) {
+      if (!sameSeries(panes[i + 1]!.getSeries(), study.lines)) return false;
+      // A rebuild recreates the pane, whose price scales start from the chart
+      // options. A pane the user scaled by hand would be reset, so rebuild.
+      if (kept.has(study) && !this.freshPaneScales(i + 1)) return false;
+    }
+    this.cancelPending();
+    this.studyKey = key;
+    const dirty = this.firstInputChange(candles);
+    let exact = false;
+    this.rendering = true;
+    try {
+      for (const study of [...previous].reverse()) if (!kept.has(study)) for (const line of study.lines) this.chart.removeSeries(line);
+      let pane = 0;
+      this.studies = valid.map((config, i) => {
+        const paneIndex = studyDefinition(config.kind).pane ? ++pane : 0;
+        const old = reuse[i];
+        if (!old) return {calculator:new StudyCalculator(config),lines:this.addStudySeries(config, paneIndex),rendered:[]};
+        if (JSON.stringify(old.calculator.config) === JSON.stringify(config)) return old;
+        // Same kind: only colour and title can differ; the rest is per kind.
+        old.lines.forEach((line, channel) => {
+          const change = changedOptions(studySeriesOptions(old.calculator.config, channel).options, studySeriesOptions(config, channel).options);
+          if (change) line.applyOptions(change);
+        });
+        return {calculator:new StudyCalculator(config),lines:old.lines,rendered:old.rendered};
+      });
+      exact = this.matchRebuildLayout();
+    } finally { this.rendering = false; }
+    if (!exact) { this.rebuildStudies(valid, key, candles, range); return true; }
+    this.chart.panes().forEach((p, i)=>p.setStretchFactor(i === 0 ? 3 : 1));
+    // Kept calculators continue from the first input that differs from what
+    // they consumed; new calculators start at 0 (calculate clamps to them).
+    for (const study of this.studies) study.calculator.calculate(candles, dirty, false);
+    this.recordInputs(candles, dirty);
+    // The window a rebuild would choose: it starts from displayWindow = null.
+    const window = studyDisplayWindow(this.studies[0]!.calculator.points.length, this.chart.timeScale().getVisibleLogicalRange(), null);
+    this.displayWindow = window;
+    this.rendering = true;
+    try {
+      for (const study of this.studies) {
+        const visible = study.calculator.points.slice(window.from, window.to);
+        const unchanged = samePoints(study.rendered, visible);
+        study.rendered = visible;
+        if (!unchanged) study.lines.forEach((line, channel) => line.setData(visible.map(point => this.renderPoint(study, point, channel))));
+      }
+    } finally { this.rendering = false; }
+    if (range) this.chart.timeScale().setVisibleLogicalRange(range);
+    return true;
+  }
+  /** After a patch: the panes must be the rebuild's panes, and pane 0 must
+   * draw the overlay studies last in study order, as freshly added series. */
+  private matchRebuildLayout(): boolean {
+    const panes = this.chart.panes();
+    const oscillators = this.studies.filter(study => studyDefinition(study.calculator.config.kind).pane);
+    if (panes.length !== oscillators.length + 1) return false;
+    if (!oscillators.every((study, i) => sameSeries(panes[i + 1]!.getSeries(), study.lines))) return false;
+    const overlays = this.studies.filter(study => !studyDefinition(study.calculator.config.kind).pane).flatMap(study => study.lines);
+    const series = panes[0]!.getSeries();
+    if (!sameSeries(series.slice(series.length - overlays.length), overlays)) {
+      for (const line of overlays) line.setSeriesOrder(series.length - 1);
+    }
+    return true;
+  }
+  /** Perf caveat: in lightweight-charts 5, applyOptions on the default left or
+   * right price scale of ANY pane also merges those options into the chart
+   * options. The drawing freeze path (lightweightChartsAdapter freeze) sets
+   * autoScale:false on pane 0 and restores pane 0's previous value, so a
+   * hand-scaled pane 0 leaves autoScale:false in the chart options. Kept
+   * oscillator panes created before that no longer match, so the next study
+   * change takes the full rebuild. The rebuild creates its panes from the
+   * merged options, so later changes patch again: the incremental saving is
+   * lost once per such scale-option change, not for the session, and the
+   * output is correct either way. */
+  private freshPaneScales(pane: number): boolean {
+    const options = this.chart.options();
+    return sameValue(this.chart.priceScale("left", pane).options(), options.leftPriceScale) &&
+      sameValue(this.chart.priceScale("right", pane).options(), options.rightPriceScale);
+  }
+  /** Every calculator has consumed exactly these bar inputs. */
+  private recordInputs(candles: ChartEngineCandle[], from: number): void {
+    const start = Math.max(0, Math.min(from, this.inputs.length / INPUT_STRIDE, candles.length));
+    const inputs = this.inputs;
+    inputs.length = candles.length * INPUT_STRIDE;
+    for (let i = start, k = start * INPUT_STRIDE; i < candles.length; i++, k += INPUT_STRIDE) {
+      const bar = candles[i]!;
+      inputs[k] = bar.time; inputs[k + 1] = bar.open; inputs[k + 2] = bar.high; inputs[k + 3] = bar.low; inputs[k + 4] = bar.close;
+    }
+  }
+  private firstInputChange(candles: ChartEngineCandle[]): number {
+    const inputs = this.inputs, count = Math.min(inputs.length / INPUT_STRIDE, candles.length);
+    for (let i = 0, k = 0; i < count; i++, k += INPUT_STRIDE) {
+      const bar = candles[i]!;
+      if (bar.time !== inputs[k] || bar.open !== inputs[k + 1] || bar.high !== inputs[k + 2] || bar.low !== inputs[k + 3] || bar.close !== inputs[k + 4]) return i;
+    }
+    return count;
   }
   /** Price writes can move the shared time axis several times in one JS task.
    * Render studies once against the final viewport, before that task can paint. */
@@ -72,6 +203,7 @@ export class ChartAnalysisRenderer {
     const dirtyFrom = Math.min(from, this.pending?.from ?? from);
     this.cancelPending();
     for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom, false);
+    if (this.studies.length) this.recordInputs(candles, dirtyFrom);
     const window = this.nextWindow();
     if (replace || !this.displayWindow || window.from !== this.displayWindow.from) { this.renderWindow(window); return; }
     this.displayWindow = window;
@@ -210,6 +342,48 @@ export function studyDisplayWindow(count: number, visible: LogicalRange | null, 
   }
   return { from: Math.max(0, from - 200), to: Math.min(count, to + 200) };
 }
+
+/** Series options exactly as a full rebuild creates them. */
+function studySeriesOptions(config: ChartStudy, channel: number):
+  { histogram: true; options: HistogramSeriesPartialOptions } | { histogram: false; options: LineSeriesPartialOptions } {
+  const definition = studyDefinition(config.kind);
+  if (config.kind === "macd" && channel === 2) {
+    return {histogram:true,options:{color:config.color,priceLineVisible:false,lastValueVisible:false,title:"",priceFormat:{type:"price",precision:5,minMove:.00001}}};
+  }
+  const title = definition.pane ? `${config.kind.toUpperCase()} ${config.period} ${definition.channels[channel]}` : "";
+  return {histogram:false,options:{color:channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color, lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title,priceFormat:{type:"price",precision:config.kind === "rsi" ? 2 : 5,minMove:config.kind === "rsi" ? .01 : .00001}, ...(definition.range ? {autoscaleInfoProvider:() => ({priceRange:{minValue:definition.range![0],maxValue:definition.range![1]}})} : {})}};
+}
+/** Options that differ between two same-kind specs. Functions depend on the
+ * kind only (autoscale range), so they never differ. */
+function changedOptions(previous: object, next: object): LineSeriesPartialOptions | null {
+  const before = previous as Record<string, unknown>, after = next as Record<string, unknown>;
+  const change: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (typeof after[key] === "function" || sameValue(before[key], after[key])) continue;
+    change[key] = after[key];
+  }
+  return Object.keys(change).length ? change as LineSeriesPartialOptions : null;
+}
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  // A key holding undefined and a missing key configure the same thing.
+  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) if (!sameValue(left[key], right[key])) return false;
+  return true;
+}
+/** Identity used to keep a study across edits: id and kind, or position and
+ * kind for studies saved without an id. */
+function studyMatchKey(config: ChartStudy, index: number): string {
+  return config.id ? `id:${config.id}:${config.kind}` : `at:${index}:${config.kind}`;
+}
+function sameSeries(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+function samePoints(a: StudyPoint[], b: StudyPoint[]): boolean {
+  return a.length === b.length && a.every((point, i) => sameStudyPoint(point, b[i]!));
+}
+const INPUT_STRIDE = 5;
 
 function sameStudyPoint(a: StudyPoint, b: StudyPoint): boolean {
   return a === b || a.time === b.time && a.values.length === b.values.length &&

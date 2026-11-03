@@ -40,7 +40,10 @@ import {
   // certificate
   MISSION_CERTIFICATE_PHRASE,
   buildCertificateContent,
+  selectCertificateObservedDrawdown,
+  certificateDrawdownLine,
   validateCertificateAcceptance,
+  type CertificateObservedDrawdown,
   // briefing / report / learning
   buildDailyBriefing,
   buildEndOfDayReview,
@@ -52,6 +55,7 @@ import {
   // banned vocab guard
   checkMissionCopyDeep,
 } from "@workspace/domain/profit-mission";
+import { projectMissionTestResult } from "../missionTestingEvidence.js";
 
 const NOW = Date.UTC(2026, 5, 21);
 
@@ -276,6 +280,20 @@ test("promotion: guardrail ceiling clamps the requested target", () => {
 
 // ── Mission Risk Certificate ─────────────────────────────────────────────────
 
+// ── Certificate drawdown line: closed-draft evidence only ────────────────────
+
+const CLOSED_DRAFT_DRAWDOWN: CertificateObservedDrawdown = {
+  pct: 12.3, source: "closed_mission_drafts", validation: "unverified", sampleSize: 7,
+  context: { strategyKey: "trend", symbol: "EURUSD", timeframe: "M15" },
+};
+const CERT_BASE = { startingAmount: 1000, targetAmount: 1300, riskProfile: "balanced", targetAutomationLevel: 4 as const };
+const ACKNOWLEDGEMENT_LINES = [
+  "Trading involves the risk of loss, including the possible loss of your starting capital.",
+  "Past and simulated results are estimates only and do not predict future outcomes.",
+  "This target is a goal, not a promise — the mission may fall short or lose money.",
+  "Live automation only ever places trades through the platform's existing safety gates, which can refuse or stop a trade at any time.",
+  "You can pause, reduce automation, or stop this mission at any time.",
+];
 test("certificate: exact phrase required; fail-closed on mismatch/!confirmed", () => {
   assert.match(MISSION_CERTIFICATE_PHRASE, /not guaranteed and losses are possible/i);
 
@@ -294,10 +312,139 @@ test("certificate: exact phrase required; fail-closed on mismatch/!confirmed", (
 
   const content = buildCertificateContent({
     startingAmount: 1000, targetAmount: 1300, riskProfile: "balanced",
-    targetAutomationLevel: 4, observedMaxDrawdownPct: 12.3,
+    targetAutomationLevel: 4, observedDrawdown: CLOSED_DRAFT_DRAWDOWN,
   });
   assert.equal(content.phrase, MISSION_CERTIFICATE_PHRASE);
   assert.ok(content.acknowledgements.length > 0);
+});
+
+const drawdownLineOf = (lines: string[]) => {
+  const found = lines.filter((l) => /drawdown/i.test(l));
+  assert.equal(found.length, 1, `exactly one drawdown line: ${JSON.stringify(lines)}`);
+  return found[0]!;
+};
+
+let rowId = 0;
+function storedRow(p: { kind: string; metricsJson: unknown; createdAt: string; strategyKey?: string; symbol?: string; timeframe?: string }) {
+  rowId += 1;
+  return projectMissionTestResult({
+    id: rowId, missionId: 1, kind: p.kind, strategyKey: p.strategyKey ?? "trend", symbol: p.symbol ?? "EURUSD",
+    timeframe: p.timeframe ?? "M15", metricsJson: p.metricsJson, createdAt: new Date(p.createdAt),
+  });
+}
+const GEN = { version: 1, source: "generated_prices", validation: "unverified" };
+const CLOSED = { version: 1, source: "closed_mission_drafts", validation: "unverified" };
+const m = (maxDrawdownPct: number, totalTrades = 10) => metrics({ totalTrades, winningTrades: Math.min(6, totalTrades), losingTrades: Math.max(0, Math.min(4, totalTrades - 6)), maxDrawdownPct });
+
+test("certificate drawdown line: populated variant names source, sample, equity basis and exclusions", () => {
+  const cert = buildCertificateContent({ ...CERT_BASE, observedDrawdown: CLOSED_DRAFT_DRAWDOWN });
+  const line = drawdownLineOf(cert.summaryLines);
+  assert.match(line, /12\.3%/);
+  assert.match(line, /closed mission drafts, unverified/);
+  assert.match(line, /7 closed trades/);
+  assert.match(line, /strategy trend, EURUSD M15/);
+  assert.match(line, /nominal starting-amount equity curve/);
+  assert.match(line, /not broker account equity/);
+  assert.match(line, /execution mode and net costs are unverified/);
+  assert.match(line, /Generated-price simulations are excluded/);
+  assert.doesNotMatch(line, /seen in testing/);
+  assert.deepEqual(cert.acknowledgements, ACKNOWLEDGEMENT_LINES, "acknowledgements unchanged");
+  assert.ok(cert.summaryLines.every((l) => typeof l === "string"), "summaryLines stays string[]");
+
+  const mixed = certificateDrawdownLine({ ...CLOSED_DRAFT_DRAWDOWN, sampleSize: 1, context: "Mixed" });
+  assert.match(mixed, /1 closed trade;/);
+  assert.match(mixed, /mixed context/);
+});
+
+test("certificate drawdown line: null / unusable records say unavailable, never 0.0%, never suggest a backtest", () => {
+  const unusable: (CertificateObservedDrawdown | null)[] = [
+    null,
+    { ...CLOSED_DRAFT_DRAWDOWN, sampleSize: 0 },
+    { ...CLOSED_DRAFT_DRAWDOWN, pct: Number.NaN },
+    { ...CLOSED_DRAFT_DRAWDOWN, pct: -1 },
+    { ...CLOSED_DRAFT_DRAWDOWN, source: "generated_prices" as "closed_mission_drafts" },
+  ];
+  for (const d of unusable) {
+    const cert = buildCertificateContent({ ...CERT_BASE, observedDrawdown: d });
+    const line = drawdownLineOf(cert.summaryLines);
+    assert.match(line, /unavailable/);
+    assert.match(line, /no closed-trade drawdown record available/);
+    assert.doesNotMatch(line, /\d+(\.\d+)?%/, "no numeric drawdown figure");
+    assert.doesNotMatch(line, /\b(run|start|try)\b[^.]*\bbacktest/i, "must not suggest running a generated-price backtest");
+    assert.doesNotMatch(line, /backtest/i);
+    assert.deepEqual(cert.acknowledgements, ACKNOWLEDGEMENT_LINES);
+  }
+});
+
+test("certificate drawdown selector: generated-price and unknown-source rows never contribute", () => {
+  const rows = [
+    storedRow({ kind: "BACKTEST", createdAt: "2026-03-05T00:00:00Z", metricsJson: { metrics: m(40), evidence: GEN } }),
+    storedRow({ kind: "FORWARD", createdAt: "2026-03-01T00:00:00Z", metricsJson: { metrics: m(5), evidence: CLOSED } }),
+    // Legacy FORWARD with valid metrics but no evidence blob → source "unknown".
+    storedRow({ kind: "FORWARD", createdAt: "2026-03-04T00:00:00Z", metricsJson: { metrics: m(55) } }),
+    // FORWARD claiming generated prices is not a recognised pairing → "unknown".
+    storedRow({ kind: "FORWARD", createdAt: "2026-03-03T00:00:00Z", metricsJson: { metrics: m(60), evidence: GEN } }),
+    // BACKTEST claiming closed drafts → "unknown" too.
+    storedRow({ kind: "BACKTEST", createdAt: "2026-03-06T00:00:00Z", metricsJson: { metrics: m(70), evidence: CLOSED } }),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id);
+  assert.equal(rows[2]!.evidence.source, "unknown");
+  assert.deepEqual(selectCertificateObservedDrawdown(rows), {
+    pct: 5, source: "closed_mission_drafts", validation: "unverified", sampleSize: 10,
+    context: { strategyKey: "trend", symbol: "EURUSD", timeframe: "M15" },
+  });
+  // Generated-only / unknown-only history → null (no numeric line).
+  assert.equal(selectCertificateObservedDrawdown(rows.filter((r) => r.evidence.source !== "closed_mission_drafts")), null);
+  assert.equal(selectCertificateObservedDrawdown([]), null);
+});
+
+test("certificate drawdown selector: invalid, legacy and zero-sample closed-draft rows are ignored", () => {
+  const invalidMetrics = [
+    { metrics: { ...m(30), totalTrades: "40" }, evidence: CLOSED },
+    { metrics: { ...m(30), maxDrawdownPct: -2 }, evidence: CLOSED },
+    { metrics: { ...m(30), winRate: 4 }, evidence: CLOSED },
+    { metrics: null, evidence: CLOSED },
+    { evidence: CLOSED },
+    "not-an-object",
+    null,
+    [m(30)],
+    { metrics: m(30), evidence: { ...CLOSED, version: 2 } },
+    { metrics: m(30), evidence: { ...CLOSED, validation: "verified" } },
+  ];
+  for (const metricsJson of invalidMetrics) {
+    const r = storedRow({ kind: "FORWARD", createdAt: "2026-04-01T00:00:00Z", metricsJson });
+    assert.equal(selectCertificateObservedDrawdown([r]), null, `ignored: ${JSON.stringify(metricsJson)}`);
+    const line = drawdownLineOf(buildCertificateContent({ ...CERT_BASE, observedDrawdown: selectCertificateObservedDrawdown([r]) }).summaryLines);
+    assert.doesNotMatch(line, /0\.0%/);
+  }
+  // Zero-trade closed-draft aggregate (no matching outcomes) is not a 0.0% record.
+  const zero = storedRow({ kind: "FORWARD", createdAt: "2026-04-02T00:00:00Z", metricsJson: { metrics: metrics({ totalTrades: 0, winningTrades: 0, losingTrades: 0, winRate: 0, maxDrawdownPct: 0 }), evidence: CLOSED } });
+  assert.equal(zero.evidence.source, "closed_mission_drafts");
+  assert.equal(selectCertificateObservedDrawdown([zero]), null);
+  // ...and it does not shadow an older valid closed-draft record either.
+  const older = storedRow({ kind: "FORWARD", createdAt: "2026-03-20T00:00:00Z", metricsJson: { metrics: m(8, 3), evidence: CLOSED } });
+  assert.equal(selectCertificateObservedDrawdown([zero, older])?.pct, 8);
+});
+
+test("certificate drawdown selector: newest matching row wins, no max across contexts, deterministic", () => {
+  const newestSmall = storedRow({ kind: "FORWARD", createdAt: "2026-05-02T00:00:00Z", symbol: "GBPUSD", metricsJson: { metrics: m(3, 4), evidence: CLOSED } });
+  const olderLarge = storedRow({ kind: "FORWARD", createdAt: "2026-05-01T00:00:00Z", metricsJson: { metrics: m(25), evidence: CLOSED } });
+  const listOrder = [newestSmall, olderLarge];
+  const picked = selectCertificateObservedDrawdown(listOrder);
+  assert.deepEqual(picked, {
+    pct: 3, source: "closed_mission_drafts", validation: "unverified", sampleSize: 4,
+    context: { strategyKey: "trend", symbol: "GBPUSD", timeframe: "M15" },
+  });
+  // Input order does not change the result.
+  assert.deepEqual(selectCertificateObservedDrawdown([olderLarge, newestSmall]), picked);
+  assert.deepEqual(selectCertificateObservedDrawdown(listOrder), selectCertificateObservedDrawdown(listOrder));
+  // Same createdAt → higher id is newer (list order createdAt desc, id desc).
+  const tieA = storedRow({ kind: "FORWARD", createdAt: "2026-06-01T00:00:00Z", metricsJson: { metrics: m(9), evidence: CLOSED } });
+  const tieB = storedRow({ kind: "FORWARD", createdAt: "2026-06-01T00:00:00Z", metricsJson: { metrics: m(2), evidence: CLOSED } });
+  assert.equal(selectCertificateObservedDrawdown([tieA, tieB])?.pct, 2);
+  assert.equal(selectCertificateObservedDrawdown([tieB, tieA])?.pct, 2);
+  // Mixed aggregate keeps the "Mixed" context label.
+  const mixed = storedRow({ kind: "FORWARD", createdAt: "2026-07-01T00:00:00Z", strategyKey: "Mixed", symbol: "Mixed", timeframe: "Mixed", metricsJson: { metrics: m(11), evidence: CLOSED } });
+  assert.equal(selectCertificateObservedDrawdown([mixed, tieB])?.context, "Mixed");
 });
 
 // ── Briefing / EOD / report / learning loop ──────────────────────────────────
@@ -391,11 +538,17 @@ test("all engine-generated copy is free of guaranteed-profit vocabulary", () => 
   copy.push(...drift.reasons, ...drift.signals.map((s) => s.detail));
 
   // Certificate copy.
-  const cert = buildCertificateContent({
-    startingAmount: 1000, targetAmount: 1300, riskProfile: "balanced",
-    targetAutomationLevel: 4, observedMaxDrawdownPct: 12,
-  });
-  copy.push(cert.title, ...cert.summaryLines, ...cert.acknowledgements);
+  for (const observedDrawdown of [
+    CLOSED_DRAFT_DRAWDOWN,
+    { ...CLOSED_DRAFT_DRAWDOWN, context: "Mixed" as const },
+    null,
+  ]) {
+    const cert = buildCertificateContent({
+      startingAmount: 1000, targetAmount: 1300, riskProfile: "balanced",
+      targetAutomationLevel: 4, observedDrawdown,
+    });
+    copy.push(cert.title, ...cert.summaryLines, ...cert.acknowledgements);
+  }
 
   // Briefing / eod / report copy.
   const brief = buildDailyBriefing(briefState({ promotionPaused: true }), NOW);

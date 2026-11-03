@@ -51,9 +51,12 @@ const liveSym = resolveDerivSymbol("V75");
 const otherSym = resolveDerivSymbol("V100");
 assert.ok(liveSym && otherSym && liveSym.derivId !== otherSym.derivId, "V75/V100 resolve to distinct deriv ids");
 
-const nowSec = Math.floor(Date.now() / 1000);
+// Ages are relative to the moment each test seeds its tick, not module load: under
+// --test-isolation=none (test:fast-unit) all files are evaluated before any test
+// runs, so slow sibling imports or earlier tests can age a module-load clock past
+// the 30 s window and fail the two fresh-tick tests.
 const seedTick = (derivId: string, ageSec: number) =>
-  client.lastTickBySymbol.set(derivId, { symbol: derivId, epoch: nowSec - ageSec, quote: 100 });
+  client.lastTickBySymbol.set(derivId, { symbol: derivId, epoch: Math.floor(Date.now() / 1000) - ageSec, quote: 100 });
 
 test("the ticking symbol reads LIVE_FEED (false-negative fixed)", () => {
   client.lastTickBySymbol.clear();

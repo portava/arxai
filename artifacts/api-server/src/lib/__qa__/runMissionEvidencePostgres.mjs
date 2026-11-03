@@ -22,6 +22,8 @@ const env = {
     ? { ESBUILD_BINARY_PATH: process.env.ESBUILD_BINARY_PATH }
     : {}),
 };
+// Port is overrideable so concurrent disposable runs do not collide; Unix socket only.
+const port = /^\d{4,5}$/.test(process.env.ARX_PG_PORT ?? "") ? process.env.ARX_PG_PORT : "55459";
 let started = false;
 let status = 1;
 try {
@@ -46,7 +48,7 @@ try {
       "-l",
       join(folder, "postgres.log"),
       "-o",
-      `-k ${socket} -p 55459 -h ''`,
+      `-k ${socket} -p ${port} -h ''`,
       "-w",
       "start",
     ],
@@ -55,7 +57,7 @@ try {
   started = true;
   execFileSync(
     tool("createdb"),
-    ["-h", socket, "-p", "55459", "-U", "arx_qa", "arx_mission_evidence_test"],
+    ["-h", socket, "-p", port, "-U", "arx_qa", "arx_mission_evidence_test"],
     { env, stdio: "pipe" },
   );
   const result = spawnSync(
@@ -75,7 +77,7 @@ try {
       cwd: join(dirname(fileURLToPath(import.meta.url)), "../../.."),
       env: {
         ...env,
-        DATABASE_URL: `postgresql://arx_qa@localhost/arx_mission_evidence_test?host=${encodeURIComponent(socket)}&port=55459`,
+        DATABASE_URL: `postgresql://arx_qa@localhost/arx_mission_evidence_test?host=${encodeURIComponent(socket)}&port=${port}`,
         ARX_MISSION_EVIDENCE_PG: "1",
       },
       stdio: "inherit",
