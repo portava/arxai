@@ -37,6 +37,13 @@ interface EvalResp {
     /** Open positions left out of drawdown / daily loss (floating P&L not read). */
     openPositionsNotCounted?: number;
     drawdownNote?: string;
+    /** Closes whose P&L could not be sized, and the plain-English disclosure. */
+    unsizedCloses?: number;
+    unsizedClosesNote?: string | null;
+    /** How the figures the pass/fail rules were checked on differ from the booked ones shown. */
+    ruleBasisNote?: string | null;
+    /** Why a challenge whose booked figures meet the pass rules is not PASSED. */
+    passBlockedReason?: string | null;
   };
   days: Array<{ tradeDate: string; dailyProfitLoss: number; tradesTaken: number; dailyLossPercent: number }>;
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
@@ -218,6 +225,15 @@ export default function PropChallengePage() {
           {showResults && evalQ.data && (
             <>
               <PropChallengeProgressCard summary={evalQ.data.summary} />
+              {evalQ.data.summary.passBlockedReason && (
+                <p className="text-xs text-amber-300" data-testid="prop-pass-blocked-reason">{evalQ.data.summary.passBlockedReason}</p>
+              )}
+              {evalQ.data.summary.unsizedClosesNote && (
+                <p className="text-xs text-amber-300" data-testid="prop-unsized-closes-note">{evalQ.data.summary.unsizedClosesNote}</p>
+              )}
+              {evalQ.data.summary.ruleBasisNote && (
+                <p className="text-xs text-muted-foreground" data-testid="prop-rule-basis-note">{evalQ.data.summary.ruleBasisNote}</p>
+              )}
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <PropProfitTargetMeter totalPct={evalQ.data.summary.totalPct} target={evalQ.data.summary.profitTarget} />
                 <PropDrawdownMeter ddPct={evalQ.data.summary.maxDrawdownPct} limit={evalQ.data.summary.maxTotalDrawdown} openPositions={evalQ.data.summary.openPositionsNotCounted ?? null} />

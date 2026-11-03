@@ -79,7 +79,9 @@ async function applyCooldown(symbol: string, action: string, reason: string, min
 const eeBook = (ownerUserId: number | null) => ({ owner: ownerUserId, strategyId: "build_ee_paper_execution" });
 
 async function dailyPaperPnl(ownerUserId: number | null): Promise<number> {
-  // Realized P/L of EE-owned settled paper_orders since UTC midnight (the governor's trading day).
+  // Realized P/L of EE-owned settled paper_orders since UTC midnight (the
+  // governor's trading day), as the paper book's risk count: each close at
+  // the lower of its booked P&L and the paper risk model (realizedOf).
   return sumPaperRealizedSince(eeBook(ownerUserId), tradingDayStart(new Date()));
 }
 
@@ -186,9 +188,9 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
     // 3. Daily-loss safety check.
     const dpnl = await dailyPaperPnl(ownerUserId);
     if (dpnl <= -Math.abs(settings.maxDailyPaperLoss)) {
-      summary.warnings.push(`Daily paper loss limit hit (${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss}) — no new trades`);
+      summary.warnings.push(`Daily paper loss limit hit (${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss}, each close counted at the lower of its booked P&L and the paper risk model) — no new trades`);
       await logCycle({ cycleId, step: "SAFETY_SHUTDOWN", status: "WARN",
-        message: `Daily paper loss ${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss} — refusing new trades`,
+        message: `Daily paper loss ${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss} (each close counted at the lower of its booked P&L and the paper risk model) — refusing new trades`,
         details: { dailyPnl: dpnl, limit: settings.maxDailyPaperLoss } });
     }
     const allowNewTrades = dpnl > -Math.abs(settings.maxDailyPaperLoss);

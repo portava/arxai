@@ -367,6 +367,14 @@ export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
 
 export interface RiskAccount {
   equity: number | null;
+  /**
+   * PAPER only, and only when it differs: the account's equity as booked
+   * (stored). `equity` is then the risk-count equity every cap is checked
+   * against (booked equity lowered so each close counts at the lower of its
+   * booked amount and the paper risk model); the equity high-water mark keeps
+   * recording this booked figure.
+   */
+  bookedEquity?: number;
   freeMargin: number | null;
   /** Account leverage (e.g. 100 for 1:100). null = unknown; the platform ceiling is used. */
   leverage: number | null;
@@ -434,7 +442,15 @@ export interface RiskContext {
    * for paper and shared-master virtual ledgers, which ARX keeps itself.
    */
   accountSnapshot?: AccountSnapshotFacts | null;
-  daily: { realizedPnl: number | null; floatingPnl: number | null };
+  daily: {
+    realizedPnl: number | null; floatingPnl: number | null;
+    /**
+     * PAPER only, and only when it differs: today's realized P/L as booked.
+     * realizedPnl is then the paper risk count (each close at the lower of its
+     * booked amount and the paper risk model), which every rule reads.
+     */
+    bookedRealizedPnl?: number;
+  };
   /**
    * Highest equity the governor has recorded for this account (user_equity_peaks).
    * Needed only when a drawdown limit is set; null = none recorded yet.

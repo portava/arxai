@@ -37,7 +37,7 @@ import {
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
-import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { heartbeatAgeSecondsFrom, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { loadPlatformSettings, platformStopReport, platformStopWith, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
 import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { getMyArming } from "../lib/live/liveArming.js";
@@ -169,12 +169,9 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         brokerName: pinnedBridge.brokerName,
         eaVersion: pinnedBridge.eaVersion,
         lastHeartbeatAt: pinnedBridge.lastHeartbeat?.toISOString() ?? null,
-        heartbeatAgeSeconds: pinnedBridge.lastHeartbeat
-          ? Math.max(
-              0,
-              Math.floor((Date.now() - new Date(pinnedBridge.lastHeartbeat).getTime()) / 1000),
-            )
-          : null,
+        // Shared heartbeat policy: a heartbeat dated after the server's clock
+        // has no verifiable age, so it is null, never 0.
+        heartbeatAgeSeconds: heartbeatAgeSecondsFrom(pinnedBridge.lastHeartbeat, Date.now()),
         readOnlyMode: pinnedBridge.readOnlyMode,
         tokenRevokedAt: pinnedBridge.tokenRevokedAt?.toISOString() ?? null,
         // Task #30 — EA host clock drift surface (admin-only). SEVERE drift
@@ -515,6 +512,12 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
         (arming?.killSwitchEngaged ?? false) || (await platformStopWith(sw)).engaged,
       bridgeAccountType: detector.bridge.accountType ?? null,
       bridgeHeartbeatAgeSec: detector.bridge.heartbeatAgeSec,
+      // Display only: lets gate 7 say a heartbeat with no age is dated after
+      // the server's clock rather than "No heartbeat received yet".
+      bridgeLastHeartbeatAt:
+        detector.bridge.lastHeartbeat && Number.isFinite(detector.bridge.lastHeartbeat.getTime())
+          ? detector.bridge.lastHeartbeat.toISOString()
+          : null,
       bridgeEaVersion: detector.bridge.eaVersion,
       bridgeEnableLiveExecution: detector.bridge.eaInputs.enableLiveExecution,
       bridgeReadOnlyMode: detector.bridge.eaInputs.readOnlyMode,

@@ -16,6 +16,7 @@
 // tokens, API key hashes, or session secrets — only IDs, account
 // numbers (operator visibility), and aggregate metrics.
 import { listConnections } from "../lib/brokerHub/connections.js";
+import { heartbeatAgeSecondsFrom } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
@@ -86,9 +87,8 @@ router.get("/admin/performance", async (req, res) => {
     const bridgeRows = bridges.rows.map((b) => ({
       id: b.id, userId: b.user_id, mode: b.mode,
       accountNumberLast4: b.account_number ? b.account_number.slice(-4) : null,
-      heartbeatAgeSec: b.last_heartbeat
-        ? Math.max(0, Math.floor((now - new Date(b.last_heartbeat).getTime()) / 1000))
-        : null,
+      // Shared heartbeat policy: future-dated has no verifiable age (null), never 0.
+      heartbeatAgeSec: heartbeatAgeSecondsFrom(b.last_heartbeat, now),
     }));
 
     return res.json({

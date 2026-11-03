@@ -166,6 +166,10 @@ function scoreEvidence(e: Evidence, asOf?: Date): Subs {
 
   // ── Emotional control: % of debriefs with calm/neutral/relieved emotion
   // minus penalty for journal entries tagged with revenge / overtrading.
+  // Measured only when a debrief recorded an emotion (as Analytics reads
+  // it): an automatic debrief, written on every paper close, records none.
+  const emotionRecorded = debriefs.some((d) =>
+    typeof d.traderEmotionAfter === "string" && d.traderEmotionAfter !== "");
   const calm = debriefs.filter((d) =>
     ["CALM", "NEUTRAL", "RELIEVED"].includes(d.traderEmotionAfter ?? "")).length;
   const emoBase = debriefCount ? (calm / debriefCount) * 100 : 0;
@@ -202,7 +206,7 @@ function scoreEvidence(e: Evidence, asOf?: Date): Subs {
   if (debriefCount === 0) unmeasured.push("discipline");
   if (exN === 0) unmeasured.push("execution");
   if (totalActivity === 0) unmeasured.push("risk");
-  if (debriefCount === 0) unmeasured.push("emotional");
+  if (!emotionRecorded) unmeasured.push("emotional");
   if (edges.length === 0) unmeasured.push("consistency");
   if (debriefCount === 0 && plans.length === 0) unmeasured.push("planning");
 

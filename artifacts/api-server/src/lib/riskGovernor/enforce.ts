@@ -41,7 +41,7 @@ import {
   readPaperCloses, countPaperOpenedSinceStillOpen,
 } from "../tradeEngine/paperBookReader.js";
 import { decideContractSize, resolveQuoteToAccountFx, type ResolvedContractSize } from "../mt5/contractSize.js";
-import { PAPER_ACCOUNT_CURRENCY, resolvePaperContract } from "../paperExecution/paperPnl.js";
+import { PAPER_ACCOUNT_CURRENCY, paperRiskShortfall, resolvePaperContract } from "../paperExecution/paperPnl.js";
 import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
@@ -249,14 +249,18 @@ async function loadActionInFlight(userId: number, venue: TradeIntent["venue"], n
 // or trades (legacy / DEMO).
 async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Date, quote: RiskQuote | null = null): Promise<Omit<RiskContext, "limits" | "now">> {
   const acct = await readActivePaperAccount(intent.userId, opts.paperAccountId);
-  const account: RiskAccount | null = acct ? {
-    equity: acct.equity, freeMargin: acct.equity - acct.marginUsed,
-    leverage: PAPER_ACCOUNT_LEVERAGE, currency: "USD", source: `paper_account:${acct.id}`,
-  } : null;
 
   let positions: RiskPosition[] = [];
   const inFlight: RiskInFlight[] = [];
   let realized: number | null = 0;
+  // The stored balance and equity add up each close's booked P&L. The risk
+  // count (paperBookReader.realizedOf) takes each close at the lower of that
+  // and the paper risk model (move × lots × 100), so the equity every cap is
+  // checked against is lowered by the difference over every settled order on
+  // the account: never above the booked equity, and never above the equity
+  // the same closes gave when every close was counted at the model.
+  let riskShortfall = 0;
+  let todayShortfall = 0;
   if (acct) {
     const book = { account: acct.id };
     const open = await readOpenPaperOrders(book);
@@ -271,8 +275,20 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
         lots: o.lotSize, at: o.openedAt, kind: "filled" });
     }
     realized = await sumPaperRealizedSince(book, startOfTodayUtc(now));
+    const dayStart = startOfTodayUtc(now).getTime();
+    for (const c of await readPaperCloses(book)) {
+      const d = paperRiskShortfall([c]);
+      riskShortfall += d;
+      if (c.closedAt.getTime() >= dayStart) todayShortfall += d;
+    }
   }
   inFlight.push(...await loadActionInFlight(intent.userId, "PAPER", now));
+  const riskEquity = acct ? acct.equity + riskShortfall : null;
+  const account: RiskAccount | null = acct ? {
+    equity: riskEquity, freeMargin: riskEquity! - acct.marginUsed,
+    leverage: PAPER_ACCOUNT_LEVERAGE, currency: "USD", source: `paper_account:${acct.id}`,
+    ...(riskShortfall < 0 ? { bookedEquity: acct.equity } : {}),
+  } : null;
 
   let activity: TradingActivity | null = null;
   if (acct) {
@@ -309,7 +325,10 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     broker: acct
       ? { status: "CONNECTED", lastSeenAt: now, detail: "internal paper simulator" }
       : { status: "DISCONNECTED", lastSeenAt: null, detail: "no active paper account" },
-    daily: { realizedPnl: realized, floatingPnl: acct ? acct.equity - acct.currentBalance : null },
+    daily: {
+      realizedPnl: realized, floatingPnl: acct ? acct.equity - acct.currentBalance : null,
+      ...(todayShortfall < 0 && realized != null ? { bookedRealizedPnl: realized - todayShortfall } : {}),
+    },
     activity,
   };
 }
@@ -533,10 +552,15 @@ async function loadEquityPeak(intent: TradeIntent, account: RiskAccount): Promis
 }
 
 /** Raise the account's recorded equity high-water mark; it never falls. */
+// The high-water mark keeps recording the account's booked equity: a paper
+// account whose caps are checked against a lower risk-count equity
+// (bookedEquity set) still raises its mark from the booked figure, so the
+// drawdown from it is measured to the lower equity and never reads smaller.
 async function recordEquityPeak(intent: TradeIntent, account: RiskAccount | null): Promise<void> {
-  if (!account || account.equity == null || !Number.isFinite(account.equity) || account.equity <= 0) return;
+  const equity = account?.bookedEquity ?? account?.equity ?? null;
+  if (!account || equity == null || !Number.isFinite(equity) || equity <= 0) return;
   await db.insert(userEquityPeaksTable).values({
-    userId: intent.userId, venue: intent.venue, accountKey: account.source, peakEquity: account.equity,
+    userId: intent.userId, venue: intent.venue, accountKey: account.source, peakEquity: equity,
   }).onConflictDoUpdate({
     target: [userEquityPeaksTable.userId, userEquityPeaksTable.venue, userEquityPeaksTable.accountKey],
     set: {
