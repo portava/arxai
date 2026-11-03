@@ -99,8 +99,12 @@ test("weekly activity that could not be read: weekly used is flagged unknown wit
   assert.equal(ov.budget.weeklyRiskUsedUnknownReason, "this week's trading activity could not be read");
   assert.equal(ov.budget.dailyRiskUsedKnown, true);
   assert.equal(ov.budget.dailyRiskUsedUnknownReason, null);
-  assert.equal(ov.budget.riskStatus, "UNKNOWN");
+  // The Risk Governor refuses every new order when activity is unreadable
+  // and a cap that needs it (here the weekly cap) is set, so the status is
+  // BLOCK (permissions.blockedBy activity_unread), never OK.
+  assert.equal(ov.budget.riskStatus, "BLOCK");
   assert.match(String(ov.budget.riskStatusReason), /this week's trading activity could not be read/i);
+  assert.match(String(ov.budget.riskStatusReason), /refuses new orders/);
 });
 
 test("no active paper account: daily and weekly used are not measured, and the reason says there is no account", async () => {
@@ -112,7 +116,9 @@ test("no active paper account: daily and weekly used are not measured, and the r
   assert.equal(ov.budget.dailyRiskUsedUnknownReason, "there is no active paper account");
   assert.doesNotMatch(String(ov.budget.riskStatusReason), /could not be read/);
   assert.match(String(ov.budget.riskStatusReason), /no active paper account/i);
-  assert.equal(ov.budget.riskStatus, "UNKNOWN");
+  // No paper book means no activity facts: with a weekly cap set the
+  // governor refuses new orders, so BLOCK, never OK.
+  assert.equal(ov.budget.riskStatus, "BLOCK");
 });
 
 test("measured weekly activity: weekly used is known and counted", async () => {

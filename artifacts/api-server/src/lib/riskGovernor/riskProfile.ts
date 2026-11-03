@@ -182,7 +182,6 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   if (weeklyRiskLimitUnvalued) unknowns.push(`your ${L.discipline.maxWeeklyLossPercent}% weekly loss cap cannot be valued because account equity is unknown`);
   if (dailyCapSet && dailyRiskUsedUnknownReason) unknowns.push(`${dailyRiskUsedUnknownReason}, so daily risk used is unknown`);
   if (weeklyCapSet && weeklyRiskUsedUnknownReason) unknowns.push(`${weeklyRiskUsedUnknownReason}, so weekly risk used is unknown`);
-  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
   const dailyReached = dailyLimit != null && dailyUsed != null && dailyUsed >= dailyLimit;
   const weeklyReached = weeklyLimit != null && weekUsed != null && weekUsed >= weeklyLimit;
   // The governor refuses every new order when the activity facts are
@@ -191,7 +190,22 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   const activityCapSet = D.maxTradesPerDay != null || D.maxWeeklyLossAmount != null || D.maxWeeklyLossPercent != null
     || D.maxConsecutiveLosses != null || D.cooldownAfterLossMinutes != null;
   const activityUnread = ctx.activity == null && activityCapSet;
-  const status = halt.engaged || dailyReached || weeklyReached
+  if (activityUnread) {
+    const needs = [
+      ...(D.maxTradesPerDay != null ? [`your ${D.maxTradesPerDay}-trades-a-day limit`] : []),
+      ...(D.maxConsecutiveLosses != null ? [`your ${D.maxConsecutiveLosses}-losses-in-a-row limit`] : []),
+      ...(D.cooldownAfterLossMinutes != null ? [`your ${D.cooldownAfterLossMinutes}-minute cooldown after a loss`] : []),
+      ...(weeklyCapSet ? ["your weekly loss cap"] : []),
+    ];
+    const list = needs.length > 1 ? `${needs.slice(0, -1).join(", ")} and ${needs[needs.length - 1]}` : needs[0]!;
+    unknowns.push(noPaperAccount
+      ? `there is no active paper account, so ${list} cannot be checked and the Risk Governor refuses new orders until one is active`
+      : `your recent trading activity could not be read, so ${list} cannot be checked and the Risk Governor refuses new orders until it can be read`);
+  }
+  const riskStatusReason = unknowns.length ? `${unknowns.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : null;
+  // Unread activity with such a cap set blocks like a reached limit
+  // (blockedBy activity_unread), so the status is BLOCK, never OK / UNKNOWN.
+  const status = halt.engaged || dailyReached || weeklyReached || activityUnread
     ? "BLOCK" : dailyLimit != null && dailyUsed != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : unknowns.length ? "UNKNOWN" : "OK";
   // What stops new trades, as this view measures it. A read model only: the
   // Risk Governor decides each order. trading is false whenever anything here
