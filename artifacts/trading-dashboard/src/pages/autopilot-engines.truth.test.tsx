@@ -72,6 +72,43 @@ describe("Autopilot boards name their engine", () => {
     expect(screen.getByTestId("paper-autopilot-capped").textContent).toMatch(/latest 50 cycles only/);
   });
 
+  it("the 'today' tiles name their UTC day basis even when not capped", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 12, paper_trades_opened_today: 3, paper_trades_closed_today: 2,
+      safety_blocks_today: 0, last_cycle: null, today_counts_capped: false, cycles_read_limit: 50, today_basis: "UTC",
+    }} />);
+    expect(screen.getByText("Cycles today (UTC)")).toBeTruthy();
+    expect(screen.getByText("Opened today (UTC)")).toBeTruthy();
+    expect(screen.getByTestId("paper-autopilot-day-basis").textContent).toMatch(/UTC calendar day/);
+  });
+
+  it("a day basis the server did not report is said so, not assumed", () => {
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 12, paper_trades_opened_today: 3, paper_trades_closed_today: 2,
+      safety_blocks_today: 0, last_cycle: null,
+    }} />);
+    expect(screen.getByTestId("paper-autopilot-day-basis").textContent).toMatch(/not reported/);
+    expect(screen.queryByText(/\(UTC\)/)).toBeNull();
+  });
+
+  it("the last cycle line says when that cycle started", () => {
+    const startedAt = "2026-10-01T08:15:00.000Z";
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 0, paper_trades_opened_today: 0, paper_trades_closed_today: 0, safety_blocks_today: 0,
+      today_basis: "UTC",
+      last_cycle: { autopilot_cycle_id: "apc_x", status: "COMPLETED", started_at: startedAt, paper_trades_opened: 1, paper_trades_rejected: 0 },
+    }} />);
+    const line = screen.getByTestId("paper-autopilot-last-cycle").textContent ?? "";
+    expect(line).toContain(new Date(startedAt).toLocaleString());
+    expect(line).toMatch(/apc_x/);
+    cleanup();
+    render(<PaperAutopilotSummaryCard a={{
+      cycles_today: 0, paper_trades_opened_today: 0, paper_trades_closed_today: 0, safety_blocks_today: 0,
+      last_cycle: { autopilot_cycle_id: "apc_y", status: "COMPLETED", paper_trades_opened: 0, paper_trades_rejected: 0 },
+    }} />);
+    expect(screen.getByTestId("paper-autopilot-last-cycle").textContent).toMatch(/time not reported/);
+  });
+
   it("uncapped counts are shown as totals", () => {
     render(<PaperAutopilotSummaryCard a={{
       cycles_today: 12, paper_trades_opened_today: 3, paper_trades_closed_today: 2,

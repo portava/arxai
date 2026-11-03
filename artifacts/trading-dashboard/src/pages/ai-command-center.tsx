@@ -47,6 +47,7 @@ import {
   type MentorSession,
 } from "@/components/aiMentor";
 import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "@/lib/mentorApi";
+import { safeDate } from "@/lib/safeFormat";
 
 // Ruby Command Center — 4-tab, user-facing surface.
 //
@@ -771,7 +772,12 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
   // The server counts "today" (UTC) from the latest cycles_read_limit cycles
   // only; when they all started today the counts are lower bounds.
   const capped = a?.today_counts_capped === true;
-  const n = (v: unknown) => `${v ?? 0}${capped ? "+" : ""}`;
+  // A count the summary did not return is unknown ("—"), never 0.
+  const n = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) ? `${v}${capped ? "+" : ""}` : "—";
+  // "Today" is the server's UTC calendar day — not the reader's local day.
+  const utc = a?.today_basis === "UTC";
+  const today = (label: string) => (utc ? `${label} today (UTC)` : `${label} today`);
   return (
     <Card className="rounded-2xl border-border bg-card">
       <CardHeader>
@@ -799,26 +805,34 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
       ) : (
       <CardContent className="text-sm grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
-          <div className="text-txt-secondary text-xs">Cycles today</div>
+          <div className="text-txt-secondary text-xs">{today("Cycles")}</div>
           <div className="font-bold">{n(a?.cycles_today)}</div>
         </div>
         <div>
-          <div className="text-txt-secondary text-xs">Opened today</div>
+          <div className="text-txt-secondary text-xs">{today("Opened")}</div>
           <div className="font-bold">
             {n(a?.paper_trades_opened_today)}
           </div>
         </div>
         <div>
-          <div className="text-txt-secondary text-xs">Closed today</div>
+          <div className="text-txt-secondary text-xs">{today("Closed")}</div>
           <div className="font-bold">
             {n(a?.paper_trades_closed_today)}
           </div>
         </div>
         <div>
           <div className="text-txt-secondary text-xs">
-            Safety blocks today
+            {today("Safety blocks")}
           </div>
           <div className="font-bold">{n(a?.safety_blocks_today)}</div>
+        </div>
+        <div
+          className="col-span-2 sm:col-span-4 text-xs text-txt-secondary"
+          data-testid="paper-autopilot-day-basis"
+        >
+          {utc
+            ? "Today = the UTC calendar day (from 00:00 UTC), not your local day."
+            : "The day boundary \u201ctoday\u201d uses was not reported by the summary."}
         </div>
         {capped && (
           <div
@@ -831,8 +845,14 @@ export function PaperAutopilotSummaryCard({ a }: { a: any }) {
           </div>
         )}
         {a?.last_cycle && (
-          <div className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2">
-            Last cycle: {a.last_cycle.autopilot_cycle_id} —{" "}
+          <div
+            className="col-span-2 sm:col-span-4 text-xs text-txt-secondary mt-2"
+            data-testid="paper-autopilot-last-cycle"
+          >
+            {/* Latest cycle overall — not necessarily one of today's. */}
+            Last cycle (started{" "}
+            {safeDate(a.last_cycle.started_at, "datetime", "time not reported")}):{" "}
+            {a.last_cycle.autopilot_cycle_id} —{" "}
             {a.last_cycle.status} · opened{" "}
             {a.last_cycle.paper_trades_opened} · rejected{" "}
             {a.last_cycle.paper_trades_rejected}
