@@ -1,8 +1,9 @@
 // (N) Dashboard banner — shows when a HIGH/CRITICAL economic event is within
 // the next 60 minutes OR was released within the last 30 minutes (the same
 // post-release window the Truth news radar treats as LIVE). Polls
-// /economic-events/upcoming?hours=1&minImpact=HIGH&pastMinutes=30.
-// Pulses red on CRITICAL.
+// /economic-events/upcoming?hours=1&minImpact=HIGH&pastMinutes=30 for timed
+// events, and /economic-events (from before today's UTC midnight) for
+// date-only releases dated today. Pulses red on a timed CRITICAL event.
 //
 // Truth rules:
 //   - A released event reads "released Xm ago", never "0m".
@@ -14,6 +15,10 @@
 //     "release time not published". With timed rows on screen, only they set
 //     the heading's severity, count and colour; date-only rows are named in a
 //     separate "also dated …" clause.
+//   - A date-only row is shown for the whole UTC date it carries (day-wide
+//     read), never selected by the 1-hour window: its midnight sentinel is not
+//     a time, so it must not decide when the warning appears or disappears.
+//     A failed day read says so — it is not an all-clear either.
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -29,6 +34,20 @@ interface UpcomingEvent {
 
 // Matches the radar's post-release LIVE window (smartChartLayers RECENT_WINDOW_S).
 export const HIGH_IMPACT_POST_RELEASE_WINDOW_MIN = 30;
+
+function utcYmd(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Hours back to ask GET /economic-events for so its window starts before
+ * today's UTC midnight (where a date-only row's sentinel sits), with an hour
+ * of slack for the time between this call and the server's clock read.
+ */
+export function pastHoursToUtcMidnight(nowMs: number): number {
+  const sinceMidnightMs = nowMs - Date.parse(`${utcYmd(nowMs)}T00:00:00.000Z`);
+  return Math.min(48, Math.ceil(sinceMidnightMs / 3_600_000) + 1);
+}
 
 export function HighImpactEventBanner() {
   const { data, isError, dataUpdatedAt } = useQuery<{ events: UpcomingEvent[]; calendarCoverage?: CalendarCoverage }>({
@@ -48,6 +67,19 @@ export function HighImpactEventBanner() {
     const id = setInterval(() => setNowMs(Date.now()), 15_000);
     return () => clearInterval(id);
   }, []);
+  // Date-only releases (FRED) dated today, whatever the time of day: the
+  // 1-hour window above only reaches their midnight sentinel between 23:00
+  // and 00:30 UTC. Keyed by the UTC date so a new day reads afresh.
+  const todayUtc = utcYmd(nowMs);
+  const day = useQuery<{ events: UpcomingEvent[] }>({
+    queryKey: ["high-impact-date-only", todayUtc],
+    queryFn: async () => {
+      const r = await fetch(`/api/economic-events?days=1&pastHours=${pastHoursToUtcMidnight(Date.now())}`);
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    refetchInterval: 5 * 60_000,
+  });
 
   if (isError) {
     const lastOk = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
@@ -64,10 +96,21 @@ export function HighImpactEventBanner() {
   }
 
   const windowStartMs = nowMs - HIGH_IMPACT_POST_RELEASE_WINDOW_MIN * 60_000;
-  const events = (data?.events ?? []).filter((e) => {
+  // Only events with a published release time can be "within 1 hour" or
+  // "released Xm ago". A date-only row in the window response is there only
+  // because of its sentinel, so it is never taken from it.
+  const timed = (data?.events ?? []).filter((e) => {
+    if (isDateOnlyCalendarSource(e.source)) return false;
     const t = new Date(e.eventTime).getTime();
     return Number.isFinite(t) && t > windowStartMs;
   });
+  // Date-only rows are listed by the UTC date they carry: today's, all day.
+  const dateOnly = (day.data?.events ?? []).filter((e) =>
+    isDateOnlyCalendarSource(e.source) &&
+    (e.impactLevel === "HIGH" || e.impactLevel === "CRITICAL") &&
+    typeof e.eventTime === "string" && e.eventTime.slice(0, 10) === todayUtc);
+  const dayReadFailed = day.isError;
+  const events = [...timed, ...dateOnly];
   if (events.length === 0) {
     // No banner is read as "nothing in the next hour". When the stored
     // calendar does not reach that far, say it was not checked instead.
@@ -78,12 +121,16 @@ export function HighImpactEventBanner() {
         </div>
       );
     }
+    if (dayReadFailed) {
+      return (
+        <div data-testid="high-impact-banner-date-only-unavailable" className="rounded-md border border-slate-600 bg-slate-900/60 p-2 text-xs text-slate-300">
+          Releases listed by date only (FRED, no published time) could not be loaded for {todayUtc} (UTC date), so one
+          dated today cannot be ruled out. No banner here is not an all-clear.
+        </div>
+      );
+    }
     return null;
   }
-  // Only events with a published release time can be "within 1 hour" or
-  // "released Xm ago"; date-only rows are listed by date.
-  const timed = events.filter((e) => !isDateOnlyCalendarSource(e.source));
-  const dateOnly = events.filter((e) => isDateOnlyCalendarSource(e.source));
   // The heading's severity word, count and colour describe the rows its time
   // phrase is about: the timed rows when there are any. An untimed CRITICAL
   // row is not known to be within the hour, so it never makes a "within 1
@@ -128,6 +175,11 @@ export function HighImpactEventBanner() {
           );
         })}
       </ul>
+      {dayReadFailed && (
+        <p className="mt-1 text-xs opacity-80" data-testid="high-impact-banner-date-only-failed">
+          Releases listed by date only (no published time) could not be loaded for {todayUtc} (UTC date).
+        </p>
+      )}
     </div>
   );
 }

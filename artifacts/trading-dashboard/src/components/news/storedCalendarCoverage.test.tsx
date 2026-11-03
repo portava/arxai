@@ -30,6 +30,8 @@ function stubFetch(coverage: unknown) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/api/economic-events/upcoming")) return json({ events: [], windowHours: 24, minImpact: "MEDIUM", calendarCoverage: coverage });
+    // HighImpactEventBanner's day-wide read of date-only (FRED) releases.
+    if (url.startsWith("/api/economic-events?")) return json({ events: [] });
     if (url.includes("/api/market-heat/diagnostics")) {
       return json({ providers: [{ kind: "news", connected: true, name: "finnhub" }, { kind: "calendar", connected: true, name: "te" }] });
     }
