@@ -80,3 +80,25 @@ test("with closed trades: averages with no trade to average are null; currency, 
   assert.equal(s.topSymbolsOrder, "CLOSED_TRADE_COUNT");
   assert.deepEqual(s.sources, ["MT5_CSV"]);
 });
+
+// Round 3 review: opened_at is nullable and Postgres puts NULLs first under
+// ORDER BY ... DESC, so one row with no open time made trades[0].openedAt null
+// and the page said "Date range not recorded" although every other trade had
+// a date. The range is the min / max of the recorded open times.
+test("a row with no open time does not blank the date range of the dated rows", async () => {
+  state.trades = [row(9, { openedAt: null }), row(3), row(2), row(1)];
+  state.imports = [{ id: 1, source: "MT5_CSV" }];
+  const s = await getTradeHistorySummary(9) as Record<string, unknown>;
+  assert.deepEqual(s.dateFrom, at("2026-10-01T10:00:00Z"));
+  assert.deepEqual(s.dateTo, at("2026-10-03T10:00:00Z"), "a NULL-first row made the range 'not recorded'");
+  assert.equal(s.withoutOpenTimeCount, 1);
+});
+
+test("no row has an open time: the range stays not recorded, and the count says so", async () => {
+  state.trades = [row(2, { openedAt: null }), row(1, { openedAt: null })];
+  state.imports = [{ id: 1, source: "MT5_CSV" }];
+  const s = await getTradeHistorySummary(9) as Record<string, unknown>;
+  assert.equal(s.dateFrom, null);
+  assert.equal(s.dateTo, null);
+  assert.equal(s.withoutOpenTimeCount, 2);
+});
