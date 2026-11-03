@@ -362,6 +362,29 @@ test("validate with a stored calendar that ends inside the window says news risk
   }
 });
 
+// Pass 3 review: a stored calendar whose last event is already in the past
+// covers none of the upcoming window, so "Only partly checked" claimed
+// coverage that did not exist. Partial only when it reaches past now.
+test("validate with a stored calendar that ended days ago says news risk was not checked, not partly", async () => {
+  planRow = plan({ status: "DRAFT", checklistJson: null });
+  brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
+  const through = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  coverageImpl = async () => ({ ...COVERED, coveredThrough: through, windowCovered: false,
+    note: `The stored economic calendar only runs to ${through}; events after that have not been synced, so they cannot be ruled out.` });
+  try {
+    const { status, body } = await invoke("post", "/trade-plans/:id/validate", { id: "11" });
+    assert.equal(status, 200);
+    assert.equal(body.status, "READY", "a WARN does not change readiness (no gate is moved)");
+    const item = body.checklist.items.find((i: any) => i.key === "NEWS_RISK");
+    assert.ok(item);
+    assert.equal(item.status, "WARN");
+    assert.doesNotMatch(item.detail, /partly/i);
+    assert.match(item.detail, /^Not checked — The stored economic calendar only runs to/);
+  } finally {
+    coverageImpl = async () => COVERED;
+  }
+});
+
 test("validate when the calendar coverage cannot be read says so, not a clean news check", async () => {
   planRow = plan({ status: "DRAFT", checklistJson: null });
   brokerState = { executionEnabled: true, lastStatus: "CONNECTED", lastEvaluatedAt: new Date() };
