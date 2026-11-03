@@ -216,7 +216,7 @@ export default function AnalyticsCommandCenter() {
               ? <LoadError what="Session performance" error={sess.error} />
               : pnlNotMeasured && coverage
                 ? <Unavailable text={`Session Heatmap: ${coverage.note}`} />
-                : <SessionHeatmap data={(sess.data?.session ?? {}) as any} basis={sess.data?.sessionBasis} />}
+                : <SessionHeatmap data={sess.data?.session ?? null} basis={sess.data?.sessionBasis} loading={sess.isPending} />}
           </div>
 
           {emo.isError

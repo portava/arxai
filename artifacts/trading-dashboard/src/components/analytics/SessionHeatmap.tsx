@@ -2,8 +2,21 @@
 // only those). Older servers omit it; then every trade is taken as sized.
 type SessionData = Record<string, { trades: number; pnl: number; wins: number; sizedTrades?: number }>;
 
-export function SessionHeatmap({ data, basis }: { data: SessionData; basis?: string }) {
+// "No trades" only for a bucket the loaded response reported with 0 trades:
+// while loading, or when the results (or a bucket) are missing from the
+// response, nothing was observed, so no cell claims an empty session.
+export function SessionHeatmap({ data, basis, loading = false }: { data: SessionData | null | undefined; basis?: string; loading?: boolean }) {
   const sessions = ["ASIA", "LONDON", "NEWYORK"] as const;
+  if (loading || !data) {
+    return (
+      <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+        <h3 className="mb-2 text-sm font-semibold text-slate-200">Session Heatmap</h3>
+        <p data-testid="session-heatmap-state" className="p-3 text-center text-[11px] text-slate-500">
+          {loading ? "Loading session results…" : "The session results were missing from the response, so they cannot be shown."}
+        </p>
+      </div>
+    );
+  }
   const sizedOf = (d: { trades: number; sizedTrades?: number }) => d.sizedTrades ?? d.trades;
   const max = Math.max(...sessions.map((s) => {
     const d = data[s];
@@ -14,7 +27,18 @@ export function SessionHeatmap({ data, basis }: { data: SessionData; basis?: str
       <h3 className="mb-2 text-sm font-semibold text-slate-200">Session Heatmap</h3>
       <div className="grid grid-cols-3 gap-2">
         {sessions.map((s) => {
-          const d = data[s] ?? { trades: 0, pnl: 0, wins: 0 };
+          const reported = data[s];
+          if (!reported) {
+            return (
+              <div key={s} className="rounded border border-slate-700 p-2 text-center" data-testid={`session-cell-${s}`}
+                style={{ backgroundColor: "rgba(51,65,85,0.35)" }}>
+                <div className="text-[10px] uppercase tracking-wide text-slate-100/80">{s}</div>
+                <div className="text-base font-bold text-slate-400">—</div>
+                <div className="text-[10px] text-slate-100/70">Not reported</div>
+              </div>
+            );
+          }
+          const d = reported;
           // No trade → no result; trades none of which could be sized → no
           // P&L. Neither is a $0 or 0% cell.
           const hasPnl = d.trades > 0 && sizedOf(d) > 0;

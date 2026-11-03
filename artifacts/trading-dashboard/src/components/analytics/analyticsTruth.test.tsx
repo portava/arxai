@@ -109,3 +109,24 @@ describe("StrategyAnalyticsTable empty states", () => {
     expect(empty()).toMatch(/Loading results by symbol/);
   });
 });
+
+describe("SessionHeatmap without a loaded result", () => {
+  it("while loading it says so and shows no 'No trades' cells", () => {
+    render(<SessionHeatmap data={null} loading />);
+    expect(screen.getByTestId("session-heatmap-state").textContent).toMatch(/Loading session results/);
+    expect(screen.queryByText("No trades")).toBeNull();
+  });
+
+  it("a response without the session results says they are missing, not 'No trades'", () => {
+    render(<SessionHeatmap data={null} />);
+    expect(screen.getByTestId("session-heatmap-state").textContent).toMatch(/missing from the response/);
+    expect(screen.queryByText("No trades")).toBeNull();
+  });
+
+  it("a session the response did not report is 'Not reported', not 'No trades'", () => {
+    render(<SessionHeatmap data={{ LONDON: { trades: 2, pnl: 150, wins: 1, sizedTrades: 2 } }} />);
+    const asia = screen.getByTestId("session-cell-ASIA").textContent ?? "";
+    expect(asia).toContain("Not reported");
+    expect(asia).not.toContain("No trades");
+  });
+});

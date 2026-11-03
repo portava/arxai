@@ -145,3 +145,33 @@ describe("Analytics Command Center results by symbol", () => {
     expect(screen.queryByText("No closed trades to group by symbol.")).toBeNull();
   });
 });
+
+describe("Analytics Command Center session heatmap", () => {
+  it("a session read still in flight says it is loading, not 'No trades' in every cell", async () => {
+    const pending = new Promise<Response>(() => {});
+    const base = routes({
+      "GET /api/analytics/drawdown": { status: 200, body: { equityCurve: [], maxDrawdown: 0, pnlCoverage: PARTIAL } },
+      "GET /api/analytics/strategy": { status: 200, body: { strategies: [], pnlCoverage: PARTIAL } },
+    });
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/analytics/session") return pending;
+      const r = base[`${init?.method ?? "GET"} ${url}`] ?? { status: 404, body: { error: "not stubbed" } };
+      return new Response(JSON.stringify(r.body), { status: r.status });
+    }));
+    renderPage();
+    const state = await screen.findByTestId("session-heatmap-state");
+    expect(state.textContent).toMatch(/Loading session results/);
+    expect(screen.queryByText("No trades")).toBeNull();
+  });
+
+  it("a failed session read says it could not be loaded, not 'No trades'", async () => {
+    stub(routes({
+      "GET /api/analytics/session": { status: 500, body: { error: "Failed to load session analytics" } },
+      "GET /api/analytics/drawdown": { status: 200, body: { equityCurve: [], maxDrawdown: 0, pnlCoverage: PARTIAL } },
+      "GET /api/analytics/strategy": { status: 200, body: { strategies: [], pnlCoverage: PARTIAL } },
+    }));
+    renderPage();
+    expect(await screen.findByText(/Session performance could not be loaded/)).toBeTruthy();
+    expect(screen.queryByText("No trades")).toBeNull();
+  });
+});
