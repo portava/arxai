@@ -175,6 +175,19 @@ export interface SelectedMarketResult {
     calendarChecked: boolean;
     /** Plain-English limit of the event list (not checked / synthetic / unmapped), or null. */
     calendarNote: string | null;
+    /**
+     * What riskLevel was measured against (display only; riskLevel and
+     * blockTrading stay exactly as scored).
+     *  - "release_time": published release times, or a checked window with
+     *    no relevant event.
+     *  - "date_only": the nearest scored event publishes only its date (FRED),
+     *    so the level was measured to its midnight-UTC date marker, not to a
+     *    release time.
+     *  - "unscored": a listed release dated today has no published release
+     *    time and could not be scored, so riskLevel leaves it out.
+     * null when the calendar was not checked or scheduled events do not apply.
+     */
+    levelBasis: NewsLevelBasis | null;
   };
   /**
    * Honest data source for THIS envelope. Always the real market-data pipeline
@@ -454,27 +467,62 @@ export function toSelectedMarketEvent(r: {
   };
 }
 
+export type NewsLevelBasis = "release_time" | "date_only" | "unscored";
+
+/**
+ * Listed date-only releases dated today whose midnight marker has passed:
+ * their release time is unknown, so the scorer had no time to score them.
+ */
+function untimedTodayEvents(listed: SelectedMarketEvent[], nowMs: number): SelectedMarketEvent[] {
+  return listed.filter((e) => e.timePublished === false && Date.parse(e.eventTime) < nowMs);
+}
+
+const IMPACT_RANK: Record<string, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+
+/** "A HIGH-impact release (CPI) is" / "2 releases (highest impact HIGH) are". */
+function untimedSubject(untimed: SelectedMarketEvent[]): string {
+  if (untimed.length === 1) {
+    const e = untimed[0];
+    return `A ${e.impactLevel}-impact release (${e.title}) is`;
+  }
+  const top = untimed.reduce((a, b) => ((IMPACT_RANK[b.impactLevel] ?? 0) > (IMPACT_RANK[a.impactLevel] ?? 0) ? b : a));
+  return `${untimed.length} releases (highest impact ${top.impactLevel}) are`;
+}
+
+/** What the scored riskLevel rests on — see SelectedMarketResult.newsRisk.levelBasis. */
+export function newsLevelBasis(
+  news: { upcomingEvent: EconomicEvent | null }, listed: SelectedMarketEvent[], nowMs: number,
+): NewsLevelBasis {
+  if (untimedTodayEvents(listed, nowMs).length > 0) return "unscored";
+  if (news.upcomingEvent && isDateOnlyEventSource(news.upcomingEvent.source)) return "date_only";
+  return "release_time";
+}
+
 /**
  * The news-risk line for a date-only release. The scorer measures minutes to
  * the event's midnight date marker, which is not a release time, so the line
  * names the date instead of a countdown; and a release dated today whose
  * marker has passed (listed, but not timeable) is named rather than silently
- * dropped. Risk level and blockTrading are left exactly as scored.
+ * dropped. When the scorer found no timed event at all, "No relevant
+ * high-impact news" would be false beside that listed release, so the line
+ * says the risk could not be scored instead. Risk level and blockTrading are
+ * left exactly as scored.
  */
 function dateOnlyAwareNewsReason(
   news: { reason: string; blockTrading: boolean; upcomingEvent: EconomicEvent | null },
   listed: SelectedMarketEvent[], symbol: string, nowMs: number,
 ): string {
   const ev = news.upcomingEvent;
-  if (ev && isDateOnlyEventSource(ev.source)) {
-    const tail = news.blockTrading ? `trading blocked for ${symbol}` : "proceed with caution";
-    return `${ev.impact.toUpperCase()} impact ${ev.title} dated ${ev.eventTime.slice(0, 10)} (release time not published) — ${tail}.`;
+  const base = ev && isDateOnlyEventSource(ev.source)
+    ? `${ev.impact.toUpperCase()} impact ${ev.title} dated ${ev.eventTime.slice(0, 10)} (release time not published) — ${news.blockTrading ? `trading blocked for ${symbol}` : "proceed with caution"}.`
+    : ev ? news.reason : null;
+  const untimed = untimedTodayEvents(listed, nowMs);
+  if (untimed.length === 0) return base ?? news.reason;
+  const subject = untimedSubject(untimed);
+  if (base === null) {
+    return `${subject} dated today with no published release time, so news risk for ${symbol} could not be scored.`;
   }
-  const untimed = listed.filter((e) => e.timePublished === false && Date.parse(e.eventTime) < nowMs).length;
-  if (untimed === 0) return news.reason;
-  return untimed === 1
-    ? `${news.reason} A listed release is dated today with no published release time, so its timing was not scored.`
-    : `${news.reason} ${untimed} listed releases are dated today with no published release time, so their timing was not scored.`;
+  return `${base} ${subject} also dated today with no published release time, so ${untimed.length === 1 ? "it is" : "they are"} not in this risk level.`;
 }
 
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
@@ -749,6 +797,7 @@ async function buildSelectedMarketSnapshot(
         riskLevel: "none", blockTrading: false, summary: "",
         calendarChecked: false,
         calendarNote: "Scheduled events are not checked until market data is available for this market.",
+        levelBasis: null,
       },
       dataSource: a.dataSource,
       dataSourceLabel,
@@ -801,8 +850,9 @@ async function buildSelectedMarketSnapshot(
     : calendar.checked
       ? scoreNewsRisk(symbol, loaded.scorerInput)
       : newsRiskUnavailable(symbol, calendar.note ?? CALENDAR_NOT_CONFIGURED_NOTE);
+  const newsNowMs = Date.now();
   const newsReason = !synthetic && calendar.checked
-    ? dateOnlyAwareNewsReason(news, events, symbol, Date.now())
+    ? dateOnlyAwareNewsReason(news, events, symbol, newsNowMs)
     : news.reason;
   const volatility = volatilityLabel(closed, a.marketBias);
   const highlights: SelectedMarketHighlights = {
@@ -832,6 +882,7 @@ async function buildSelectedMarketSnapshot(
       riskLevel: news.riskLevel, blockTrading: news.blockTrading, summary: newsReason,
       calendarChecked: synthetic || calendar.checked,
       calendarNote: synthetic ? SYNTHETIC_EVENT_RISK_LABEL : calendar.note,
+      levelBasis: !synthetic && calendar.checked ? newsLevelBasis(news, events, newsNowMs) : null,
     },
     dataSource: a.dataSource,
     dataSourceLabel,

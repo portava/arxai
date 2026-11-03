@@ -773,3 +773,79 @@ test("a FRED release dated today that the scorer cannot time is named in the new
   assert.equal(env.upcomingEvents.length, 1);
   assert.match(env.newsRisk.summary, /dated today with no published release time/);
 });
+
+// ── News risk that could not be scored is never "none" ─────────────────────
+// A HIGH FRED release dated today (marker passed) is listed but cannot be
+// timed, so the scorer sees nothing and returns riskLevel "none" with "No
+// relevant high-impact news in window." The panel then showed the HIGH row
+// under "News risk: none" and a summary that contradicted itself. The verdict
+// (riskLevel, blockTrading) stays exactly as scored; the summary says the risk
+// could not be scored and levelBasis tells the panel what the level rests on.
+function fredLoader(eventTime: string, scored: boolean, extraTimed?: { title: string; at: string; impact: "high" | "medium" }) {
+  const now = Date.now();
+  const events: Array<Record<string, unknown>> = [{
+    externalId: "fred-cpi", title: "CPI", currency: "USD", impactLevel: "HIGH", eventTime,
+    minutesUntil: Math.round((Date.parse(eventTime) - now) / 60000), source: "FRED", timePublished: false,
+  }];
+  const scorerInput: Array<Record<string, unknown>> = scored
+    ? [{ id: "fred-cpi", title: "CPI", country: "United States", currency: "USD", impact: "high", actual: null, forecast: null, previous: null, eventTime, affectedMarkets: ["EURUSD"], source: "FRED" }]
+    : [];
+  if (extraTimed) {
+    events.push({ externalId: "te-x", title: extraTimed.title, currency: "USD", impactLevel: extraTimed.impact.toUpperCase(), eventTime: extraTimed.at, minutesUntil: Math.round((Date.parse(extraTimed.at) - now) / 60000), source: "trading_economics", timePublished: true });
+    scorerInput.push({ id: "te-x", title: extraTimed.title, country: "United States", currency: "USD", impact: extraTimed.impact, actual: null, forecast: null, previous: null, eventTime: extraTimed.at, affectedMarkets: ["EURUSD"], source: "trading_economics" });
+  }
+  return (async () => ({ events, scorerInput, calendar: { checked: true, note: null } })) as unknown as SelectedMarketDeps["loadEventsFn"];
+}
+
+test("a HIGH release dated today with no release time is 'could not be scored', never 'No relevant high-impact news'", async () => {
+  clearSelectedMarketCache();
+  const todayMarker = new Date(utcMidnight(Date.now())).toISOString();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, { getChartCandlesFn: stub, loadEventsFn: fredLoader(todayMarker, false) });
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.doesNotMatch(env.newsRisk.summary, /No relevant high-impact news/);
+  assert.match(env.newsRisk.summary, /HIGH-impact release \(CPI\) is dated today with no published release time/);
+  assert.match(env.newsRisk.summary, /news risk for EURUSD could not be scored/);
+  assert.equal(env.newsRisk.levelBasis, "unscored");
+  // Verdict untouched: exactly as scored.
+  assert.equal(env.newsRisk.riskLevel, "none");
+  assert.equal(env.newsRisk.blockTrading, false);
+  for (const c of env.explanation.cautions) assert.doesNotMatch(c, /No relevant high-impact news/);
+});
+
+test("a timed event beside an untimed release keeps its line and says the untimed one is not in the level", async () => {
+  clearSelectedMarketCache();
+  const todayMarker = new Date(utcMidnight(Date.now())).toISOString();
+  const at = new Date(Date.now() + 3 * 3600_000).toISOString();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, { getChartCandlesFn: stub, loadEventsFn: fredLoader(todayMarker, false, { title: "Retail Sales", at, impact: "medium" }) });
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.match(env.newsRisk.summary, /^MEDIUM impact Retail Sales in \d+m — proceed with caution\./);
+  assert.match(env.newsRisk.summary, /HIGH-impact release \(CPI\) is also dated today with no published release time, so it is not in this risk level\./);
+  assert.equal(env.newsRisk.levelBasis, "unscored");
+  assert.equal(env.newsRisk.riskLevel, "low");
+});
+
+test("a level measured to a FRED date marker says so (levelBasis date_only); a timed level says release_time", async () => {
+  clearSelectedMarketCache();
+  const marker = new Date(utcMidnight(Date.now()) + DAY_MS).toISOString();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, { getChartCandlesFn: stub, loadEventsFn: fredLoader(marker, true) });
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.newsRisk.levelBasis, "date_only");
+
+  clearSelectedMarketCache();
+  const at = new Date(Date.now() + 3 * 3600_000).toISOString();
+  const timedOnly = (async () => ({
+    events: [{ externalId: "te-x", title: "NFP", currency: "USD", impactLevel: "HIGH", eventTime: at, minutesUntil: 180, source: "trading_economics", timePublished: true }],
+    scorerInput: [{ id: "te-x", title: "NFP", country: "United States", currency: "USD", impact: "high", actual: null, forecast: null, previous: null, eventTime: at, affectedMarkets: ["EURUSD"], source: "trading_economics" }],
+    calendar: { checked: true, note: null },
+  })) as unknown as SelectedMarketDeps["loadEventsFn"];
+  const env2 = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, { getChartCandlesFn: stub, loadEventsFn: timedOnly });
+  assert.ok(env2.ok);
+  if (!env2.ok) return;
+  assert.equal(env2.newsRisk.levelBasis, "release_time");
+});
