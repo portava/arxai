@@ -33,14 +33,17 @@ import type { PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "../logger.js";
 import { checkBrokerSafety } from "../brokerReadOnly/service.js";
 import { loadEffectiveLimits } from "../riskGovernor/limitSettings.js";
-import { resolveEffectiveLimits, dailyLossCapAmount } from "../riskGovernor/preTrade.js";
+import {
+  resolveEffectiveLimits, dailyLossCapAmount, PAPER_EQUITY_COUNT_BASIS, type EffectiveLimits,
+} from "../riskGovernor/preTrade.js";
 import {
   readActivePaperAccount, readOpenPaperOrders, readPaperCloses, readPaperOrders, sumPaperRealizedSince,
   isSettledPaperStatus, realizedOf, type PaperBookScope,
 } from "../tradeEngine/paperBookReader.js";
 import {
-  isUnsizedPaperClose, paperBookedRealized, paperModelRealized, paperMoveSign, paperRiskShortfall,
+  isUnsizedPaperClose, paperBookedRealized, paperModelRealized, paperMoveSign,
 } from "../paperExecution/paperPnl.js";
+import { paperRiskEquity, valueOpenPaperPositions } from "../paperExecution/paperOpenRisk.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -65,8 +68,34 @@ export interface GovernorMetrics {
    * account. unsizedPaperCloses30d says how many closes could not be sized.
    */
   dailyPnl: number;
-  /** Enforced daily loss cap in money (Risk Governor); null = none enforced. */
+  /**
+   * Enforced daily loss cap in money (Risk Governor): the amount cap or the
+   * percent cap valued on paperRiskCountEquity, whichever is stricter. 0 when
+   * a percent cap is set and paperRiskCountEquity is at or below 0 (a percent
+   * of it allows no loss: the cap is used up). The amount cap alone when the
+   * paper account could not be read. null = none enforced.
+   */
   dailyLossLimit: number | null;
+  /** Enforced daily loss cap as a percent of equity (Risk Governor); null = none. */
+  maxDailyLossPercent: number | null;
+  /** Enforced per-trade risk limit as a percent of equity (Risk Governor); null = the limits could not be read. */
+  maxRiskPerTradePercent: number | null;
+  /**
+   * The equity the Risk Governor values every percent cap on for the active
+   * paper account (riskGovernor/enforce.ts): the booked equity lowered by the
+   * paper risk count of the settled closes and of the open positions
+   * (paperExecution/paperOpenRisk.ts). No market quote is read here, so a
+   * market-priced open position is counted at its stop (paperOpenValuedAtStop).
+   * At or below 0 the governor refuses every new trade (a percent of it
+   * allows no risk), and readiness hard-blocks (PAPER_RISK_COUNT_EQUITY_EXHAUSTED).
+   * null = no active paper account, an install-wide read, or the paper
+   * account could not be read (missingDataSources then lists "paper_orders").
+   */
+  paperRiskCountEquity: number | null;
+  /** The booked equity the paper account shows, next to paperRiskCountEquity; null with it. */
+  paperBookedEquity: number | null;
+  /** Symbols of open positions counted at their stop in paperRiskCountEquity (no market quote read for them). */
+  paperOpenValuedAtStop: string[];
   weeklyPnl: number;
   maxDrawdown: number;
   /** Closes in the last 30 days whose P&L could not be sized (counted as above, not measured). */
@@ -309,18 +338,54 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   // defaults rather than borrowing another trader's row.
   let dailyLossLimit: number | null = null;
   let maxOpenPaperTrades: number | null = null;
+  let maxDailyLossPercent: number | null = null;
+  let maxRiskPerTradePercent: number | null = null;
+  let limits: EffectiveLimits | null = null;
   try {
-    const L = userId == null ? resolveEffectiveLimits({}) : await loadEffectiveLimits(userId);
-    maxOpenPaperTrades = L.discipline.maxOpenTrades;
-    // The equity the governor values a percent cap on: the booked equity
-    // lowered to the lower of the booked and paper risk model totals of every
-    // settled order on the account (riskGovernor/enforce.ts loadPaperFacts),
-    // never the larger booked one.
-    const acct = userId == null ? null : await readActivePaperAccount(userId);
-    const equity = acct ? acct.equity + paperRiskShortfall(await readPaperCloses({ account: acct.id })) : null;
-    dailyLossLimit = dailyLossCapAmount(L, equity);
+    limits = userId == null ? resolveEffectiveLimits({}) : await loadEffectiveLimits(userId);
+    maxOpenPaperTrades = limits.discipline.maxOpenTrades;
+    maxDailyLossPercent = limits.maxDailyLossPercent;
+    maxRiskPerTradePercent = limits.maxRiskPerTradePercent;
+    // Until the paper account's equity is read, only the amount cap has a value.
+    dailyLossLimit = dailyLossCapAmount(limits, null);
     dataSourcesRead.push("user_risk_settings");
   } catch { missingDataSources.push("user_risk_settings"); }
+
+  // The equity the governor values every percent cap on (riskGovernor/
+  // enforce.ts loadPaperFacts): the booked equity lowered by the paper risk
+  // count of every settled close and every open position, never the larger
+  // booked one (paperExecution/paperOpenRisk.ts; no market quote is read
+  // here, so a market-priced open position is counted at its stop). Read in
+  // its own try: a failed read is reported as "paper_orders" and keeps the
+  // limits loaded above.
+  let paperRiskCountEquity: number | null = null;
+  let paperBookedEquity: number | null = null;
+  let paperOpenValuedAtStop: string[] = [];
+  if (userId != null) {
+    try {
+      const acct = await readActivePaperAccount(userId);
+      if (acct) {
+        const scope = { account: acct.id };
+        const closes = await readPaperCloses(scope);
+        const openValue = await valueOpenPaperPositions(await readOpenPaperOrders(scope), { now: new Date(), userId, quote: null });
+        const risk = paperRiskEquity(acct, closes, openValue);
+        paperRiskCountEquity = Number(risk.equity.toFixed(2));
+        paperBookedEquity = Number(risk.bookedEquity.toFixed(2));
+        paperOpenValuedAtStop = risk.openValuedAtStop;
+        // A percent of an equity at or below 0 allows no loss: the percent
+        // cap is used up (the governor refuses every new trade), never dropped.
+        if (limits) {
+          dailyLossLimit = risk.equity <= 0 && limits.maxDailyLossPercent != null
+            ? 0 : dailyLossCapAmount(limits, risk.equity);
+        }
+      }
+    } catch {
+      // Part of the paper book could not be read: do not also list it as read.
+      const i = dataSourcesRead.indexOf("paper_orders");
+      if (i >= 0) dataSourcesRead.splice(i, 1);
+      if (!missingDataSources.includes("paper_orders")) missingDataSources.push("paper_orders");
+    }
+  }
 
   // --- Apply simulate overrides ---
   if (overrides?.forceDailyPnl !== undefined) dailyPnl = overrides.forceDailyPnl;
@@ -336,6 +401,11 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     metrics: {
       dailyPnl: Number(dailyPnl.toFixed(2)),
       dailyLossLimit,
+      maxDailyLossPercent,
+      maxRiskPerTradePercent,
+      paperRiskCountEquity,
+      paperBookedEquity,
+      paperOpenValuedAtStop,
       weeklyPnl: Number(weeklyPnl.toFixed(2)),
       maxDrawdown,
       unsizedPaperCloses30d,
@@ -360,6 +430,29 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
 }
 
 // ── Hard block & status rules ─────────────────────────────────────────────
+/** The active paper account's risk-count equity is at or below 0 (see GovernorMetrics.paperRiskCountEquity). */
+function paperRiskCountExhausted(m: GovernorMetrics): boolean {
+  return m.paperRiskCountEquity != null && m.paperRiskCountEquity <= 0;
+}
+
+/** The PAPER_RISK_COUNT_EQUITY_EXHAUSTED message: both equity figures, how the count is taken, and what it blocks. */
+function paperRiskCountExhaustedMessage(m: GovernorMetrics): string {
+  const eq = m.paperRiskCountEquity!;
+  const booked = m.paperBookedEquity;
+  const at = m.paperOpenValuedAtStop;
+  const join = (word: string) => at.length > 1 ? `${at.slice(0, -1).join(", ")} ${word} ${at[at.length - 1]}` : at[0] ?? "";
+  const stop = !at.length ? "" : at.length === 1
+    ? `; the open ${join("and")} position is counted at its stop because no market quote for it was read for this check`
+    : `; the open ${join("and")} positions are counted at their stops because no market quote for them was read for this check`;
+  const figures = booked != null && eq < booked - 0.005
+    ? `The paper risk count puts the paper account's equity at ${eq}, at or below zero (the paper account shows ${booked} booked; the risk count takes ${PAPER_EQUITY_COUNT_BASIS}${stop})`
+    : `The paper account's equity is ${eq}, at or below zero (booked; the paper risk count gives the same figure${stop})`;
+  const perTrade = m.maxRiskPerTradePercent != null ? `your ${m.maxRiskPerTradePercent}% per-trade limit` : "your per-trade limit";
+  const daily = m.maxDailyLossPercent != null ? ` and the ${m.maxDailyLossPercent}% daily loss cap is used up` : "";
+  const ownQuote = at.length ? ` (an order on ${join("or")} is checked with its own quote, which can value that position differently)` : "";
+  return `${figures}, so ${perTrade} leaves no risk for a new trade${daily}. New paper trades are blocked${ownQuote}; closing is allowed.`;
+}
+
 function evaluateStatus(
   m: GovernorMetrics,
   cooldowns: Cooldown[],
@@ -388,7 +481,14 @@ function evaluateStatus(
   if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades && m.maxOpenPaperTrades > 0) {
     hardBlocks.push({ code: "MAX_OPEN_PAPER_TRADES_EXCEEDED", severity: "BLOCK", message: `Open paper trades ${m.openPaperTrades} exceed configured max ${m.maxOpenPaperTrades}.`, details: { open: m.openPaperTrades, max: m.maxOpenPaperTrades } });
   }
-  if (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
+  // A risk-count equity at or below 0 uses up every percent cap; that block
+  // names the figures, so the daily loss check against a used-up (0) cap is
+  // not repeated next to it.
+  const riskCountExhausted = paperRiskCountExhausted(m);
+  if (riskCountExhausted) {
+    hardBlocks.push({ code: "PAPER_RISK_COUNT_EQUITY_EXHAUSTED", severity: "BLOCK", message: paperRiskCountExhaustedMessage(m), details: { paperRiskCountEquity: m.paperRiskCountEquity, paperBookedEquity: m.paperBookedEquity, openValuedAtStop: m.paperOpenValuedAtStop } });
+  }
+  if (!riskCountExhausted && m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
     hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily paper loss count ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit} (the paper risk count: the lower of today's booked total and its paper risk model total).`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit } });
   }
   for (const [sym, n] of Object.entries(m.sameSymbolExposure)) {
@@ -413,7 +513,7 @@ function evaluateStatus(
 
   // ── PAUSE conditions ─────────────────────────────────────────────────────
   let pauseReasons = 0;
-  if (m.dailyLossLimit != null && m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
+  if (!riskCountExhausted && m.dailyLossLimit != null && m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
     softWarnings.push({ code: "DAILY_LOSS_NEAR_LIMIT", message: `Daily paper loss count ${m.dailyPnl} is within 30% of loss limit -${m.dailyLossLimit} (the paper risk count: the lower of today's booked total and its paper risk model total).` }); pauseReasons += 1;
   }
   if (cooldowns.some(c => (c.reason ?? "").toUpperCase().includes("REVENGE"))) {
@@ -462,7 +562,7 @@ function evaluateStatus(
 function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGrade; level: ReadinessLevel; breakdown: Record<string, number> } {
   // A. Risk discipline (25)
   let a = 25;
-  if (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) a -= 15;
+  if (paperRiskCountExhausted(m) || (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit))) a -= 15;
   else if (m.dailyLossLimit != null && m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
   if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
   if (Object.values(m.sameSymbolExposure).some(n => n >= 3)) a -= 5;
@@ -548,6 +648,9 @@ function buildNextBestActions(status: OverallStatus, m: GovernorMetrics, hardBlo
   }
   if (hardBlocks.some(b => b.code === "MARKET_DATA_MODE_NOT_READ_ONLY")) {
     out.push('Set MARKET_DATA_MODE="read_only" before resuming any paper activity.');
+  }
+  if (hardBlocks.some(b => b.code === "PAPER_RISK_COUNT_EQUITY_EXHAUSTED")) {
+    out.push("Open no new paper trades: the paper risk count leaves no equity for new risk. Review the open positions and the losses behind it.");
   }
   if (hardBlocks.some(b => b.code === "DAILY_LOSS_LIMIT_EXCEEDED")) {
     out.push("Stop new paper trades for the day and review the day's debriefs.");

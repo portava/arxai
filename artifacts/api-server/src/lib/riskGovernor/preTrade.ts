@@ -612,8 +612,8 @@ const sentenceCase = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 const PAPER_RISK_COUNT_BASIS = "the lower of the booked total and the price move × lots × 100 total of the closed paper trades";
 /** How the paper risk count values open positions, for refusals that read it. */
 const PAPER_OPEN_RISK_BASIS = "values each open position at the lower of its sized and its price move × lots × 100 value at the paper venue's current price, never above the floating P&L the account shows";
-/** How the paper risk-count equity is taken, for refusals that read it. */
-const PAPER_EQUITY_COUNT_BASIS = `${PAPER_RISK_COUNT_BASIS}, and ${PAPER_OPEN_RISK_BASIS}`;
+/** How the paper risk-count equity is taken, for refusals (and trader readiness's block) that read it. */
+export const PAPER_EQUITY_COUNT_BASIS = `${PAPER_RISK_COUNT_BASIS}, and ${PAPER_OPEN_RISK_BASIS}`;
 
 /**
  * Why an account's equity, although it was read, cannot value a percent cap:
@@ -630,7 +630,7 @@ function nonPositiveEquity(ctx: Pick<RiskContext, "account" | "daily">): string 
     : `account equity is ${round(a.equity)}, at or below zero`;
 }
 
-/** PAPER: ", and counts the open X position at its stop (no market quote for it was read here)". "" when none. */
+/** PAPER: "; the open X position is counted at its stop because no market quote for it was read with this order". "" when none. */
 function stopValuedClause(ctx: Pick<RiskContext, "daily">): string {
   const at = ctx.daily.openValuedAtStop ?? [];
   if (!at.length) return "";
