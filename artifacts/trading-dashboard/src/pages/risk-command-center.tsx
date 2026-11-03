@@ -46,19 +46,31 @@ const BLOCK_REASON: Record<string, string> = {
   weekly_loss_limit: "Your weekly loss limit is reached",
   // The governor refuses new orders while the activity its caps need is unreadable.
   activity_unread: "Your recent trading activity could not be read, so your weekly loss, trade-count and loss-streak limits cannot be checked. The Risk Governor refuses new trades until it can read it",
-  // A percent of an equity at or below 0 allows no risk; the risk status
-  // reason gives the equity figure (and the booked one on paper).
-  equity_exhausted: "Your account equity is at or below zero, so your percent risk limits leave no room for a new trade. The Risk Governor refuses new trades until equity is above zero",
 };
+
+/**
+ * equity_exhausted in plain words, naming the equity the Risk Governor reads:
+ * on PAPER the paper risk count, which can be below the booked equity the
+ * paper account and the budget show (the risk status reason gives both
+ * figures); on a broker venue that venue's account equity. A percent of an
+ * equity at or below 0 allows no risk.
+ */
+function equityExhaustedText(venue: string | undefined): string {
+  const effect = "so your percent risk limits leave no room for a new trade. The Risk Governor refuses new trades until";
+  return venue === "PAPER"
+    ? `On the paper risk count (the Risk Governor's own count, which can be below the booked equity the paper account shows), your paper account's equity is at or below zero, ${effect} that count is above zero`
+    : `The ${venue ? `${venue} account equity` : "account equity"} the Risk Governor reads is at or below zero, ${effect} it is above zero`;
+}
 
 /**
  * What stops new trades, in plain words. Only ever downgrades the server's
  * answer: a BLOCK status or an active halt reads blocked even if an older
  * server said trading: true.
  */
-function newTradesVerdict(c: Pick<Cards, "permissions" | "riskStatus" | "activeHalts">): { blocked: boolean; reasons: string[] } {
+function newTradesVerdict(c: Pick<Cards, "permissions" | "riskStatus" | "activeHalts" | "venue">): { blocked: boolean; reasons: string[] } {
   const p = c.permissions;
-  const reasons = (p.blockedBy ?? []).map((b) => (b === "stop_switch" && p.pauseReason ? `${BLOCK_REASON[b]}: ${p.pauseReason}` : BLOCK_REASON[b] ?? b));
+  const reasons = (p.blockedBy ?? []).map((b) => (b === "stop_switch" && p.pauseReason ? `${BLOCK_REASON[b]}: ${p.pauseReason}`
+    : b === "equity_exhausted" ? equityExhaustedText(c.venue) : BLOCK_REASON[b] ?? b));
   if (!p.blockedBy) {
     if (p.pauseReason || c.activeHalts.length > 0) reasons.push(`A stop switch is engaged${p.pauseReason ? `: ${p.pauseReason}` : ""}`);
     if (c.riskStatus === "BLOCK" && reasons.length === 0) reasons.push("A loss limit is reached (risk status BLOCK)");
