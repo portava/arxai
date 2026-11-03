@@ -1,2 +1,2 @@
 export * from "./types.js";
-export { evaluatePermission } from "./evaluate.js";
+export { evaluatePermission, LIVE_LOCK_PREFERENCE_NOTE } from "./evaluate.js";
