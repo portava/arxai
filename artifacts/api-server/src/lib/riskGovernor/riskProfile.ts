@@ -295,15 +295,20 @@ function equityExhaustedReason(ctx: Pick<RiskContext, "account">, L: RiskContext
 
 /**
  * Plain-English note for a paper risk count that differs from the booked
- * figures (RiskContext.daily.bookedRealizedPnl / bookedFloatingPnl and
- * account.bookedEquity are set only then). null when the governor counts
- * exactly what was booked.
+ * figures (RiskContext.daily.bookedRealizedPnl / bookedFloatingPnl,
+ * account.bookedEquity and activity.bookedWeekRealizedPnl are set only then).
+ * null when the governor counts exactly what was booked.
  */
-export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account">): string | null {
+export function paperRiskCountNote(ctx: Pick<RiskContext, "daily" | "account"> & { activity?: RiskContext["activity"] }): string | null {
   const parts: string[] = [];
   const booked = ctx.daily.bookedRealizedPnl;
   if (booked != null && ctx.daily.realizedPnl != null) {
     parts.push(`today's realized paper P&L is counted as ${usd(ctx.daily.realizedPnl)} (booked ${usd(booked)})`);
+  }
+  // The week's figure (weekly used, the weekly caps) is the risk count too.
+  const bookedWeek = ctx.activity?.bookedWeekRealizedPnl;
+  if (bookedWeek != null && ctx.activity != null) {
+    parts.push(`this week's (the last 7 days') realized paper P&L is counted as ${usd(ctx.activity.weekRealizedPnl)} (booked ${usd(bookedWeek)})`);
   }
   const bookedFloating = ctx.daily.bookedFloatingPnl;
   if (bookedFloating != null && ctx.daily.floatingPnl != null) {
