@@ -180,7 +180,21 @@ test("Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTra
   const closedDirect = await closePaperFill({
     userId: u.a, order: direct.order, exitPrice: 1.11, intentRef: `qa_close:${direct.order.id}`, auditContext: { caller: "QA" }, eventLabel: "QA close",
   });
-  assert.deepEqual(closedPipe, closedDirect);
+  // Since 84111206 a close of an instrument with no contract size returns
+  // pnl null and a reason that names the order's own symbol (before, both
+  // closes returned the same guessed `move × lots × 100`). The two orders
+  // must be on different symbols (a second same-symbol BUY is a governor
+  // duplicate), so, as `strip` does for the rows above, the symbol is the
+  // only thing allowed to differ: the pipeline's result must equal the
+  // venue's own result with QAPCUSD read as QAPBUSD, field for field.
+  assert.ok(closedPipe.ok && closedDirect.ok, JSON.stringify([closedPipe, closedDirect]));
+  assert.equal(closedPipe.pnl, null);
+  assert.match(String(closedPipe.pnlUnavailableReason), new RegExp(`^contract size for ${SYMBOL} is unknown`));
+  assert.deepEqual(closedPipe, {
+    ...closedDirect,
+    pnlUnavailableReason: closedDirect.pnlUnavailableReason == null ? null
+      : closedDirect.pnlUnavailableReason.replaceAll(SYMBOL_2, SYMBOL),
+  });
   assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, viaPipe.order.id)))[0]!.status, "CLOSED_MANUAL");
 
   // Settlement and rollback: not re-governed, same columns move.
