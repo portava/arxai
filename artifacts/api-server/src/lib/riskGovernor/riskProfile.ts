@@ -195,7 +195,7 @@ export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
   // booked total and their paper risk model total, so "used" and the equity a
   // percent cap is valued on can differ from the booked figures. Say so, with
   // both.
-  const riskCountNote = paperRiskCountNote(ctx);
+  const riskCountNote = riskCountNoteFor(ctx);
   const dailyReached = dailyLimit != null && dailyUsed != null && dailyUsed >= dailyLimit;
   const weeklyReached = weeklyLimit != null && weekUsed != null && weekUsed >= weeklyLimit;
   // The governor refuses every new order when the activity facts are
@@ -293,6 +293,30 @@ function equityExhaustedReason(ctx: Pick<RiskContext, "account">, L: RiskContext
   ];
   const caps = usedUp.length ? `, and ${usedUp.join(" and ")} ${usedUp.length > 1 ? "are" : "is"} used up` : "";
   return `${figure}, so ${perTrade} leaves no risk for a new trade${caps}. The Risk Governor refuses new trades until equity is above zero`;
+}
+
+/**
+ * The risk overview's riskCountNote: the paper risk-count note
+ * (paperRiskCountNote), then, on any venue, the weekly note when the week's
+ * figure counted is the newest closes' (weekNewestClosesNote). null when
+ * neither applies.
+ */
+export function riskCountNoteFor(ctx: Pick<RiskContext, "daily" | "account"> & { activity?: RiskContext["activity"] }): string | null {
+  const notes = [paperRiskCountNote(ctx), weekNewestClosesNote(ctx.activity ?? null)].filter((n): n is string => n != null);
+  return notes.length ? notes.join(" ") : null;
+}
+
+/**
+ * Plain-English note when the week's P/L the Risk Governor counts is the
+ * newest closes' figure within the week, not the whole week's (set only when
+ * more than the newest closes it reads closed this week and they lost more
+ * than the whole week): the weekly caps never count less loss than those
+ * newest closes show. null otherwise.
+ */
+export function weekNewestClosesNote(activity: RiskContext["activity"] | null): string | null {
+  const n = activity?.weekNewestCloses;
+  if (activity == null || n == null || activity.allWeekRealizedPnl == null) return null;
+  return `For your weekly loss caps this week's realized P&L is counted as ${usd(activity.weekRealizedPnl)}, from your newest ${n.counted} of this week's ${n.ofTotal} closes (since ${n.since.toISOString()}), because they lost more than all of this week's closes, which net ${usd(activity.allWeekRealizedPnl)}. The Risk Governor never counts less weekly loss than its newest closes show.`;
 }
 
 /**

@@ -57,6 +57,13 @@ export interface PaperOpenRiskValue {
    * open positions on the paper risk model alone (paperModelEquity reads it).
    */
   model: number;
+  /**
+   * Σ over open positions of the sized P&L at the same mark, a position that
+   * cannot be sized counted at min(0, price move × lots × 100) as markToMarket
+   * stores it: the open positions on the booked basis at the venue's mark now
+   * (the Risk Governor's booked drawdown basis reads it).
+   */
+  sized: number;
   /** Symbols of the positions counted at their stop because no market quote for them was read here. */
   valuedAtStop: string[];
 }
@@ -81,6 +88,7 @@ export async function valueOpenPaperPositions(
   const contracts = new Map<string, Promise<ResolvedContractSize>>();
   let total = 0;
   let modelTotal = 0;
+  let sizedTotal = 0;
   const valuedAtStop: string[] = [];
   for (const o of rows) {
     const mark = markOf(o, opts.now, opts.quote ?? null);
@@ -94,10 +102,12 @@ export async function valueOpenPaperPositions(
     const sized = (await sizePaperOrderPnl({ ...o, userId: owner }, px, await c)).amount;
     // An open position that cannot be sized counts as markToMarket stores it:
     // a loss at the model, a gain as 0.
-    total += Math.min(sized ?? Math.min(0, model), model);
+    const booked = sized ?? Math.min(0, model);
+    total += Math.min(booked, model);
     modelTotal += model;
+    sizedTotal += booked;
   }
-  return { total, model: modelTotal, valuedAtStop };
+  return { total, model: modelTotal, sized: sizedTotal, valuedAtStop };
 }
 
 /** The paper risk-count equity and the booked figures it was taken from. */

@@ -309,10 +309,19 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
     // The drawdown rule measures each full basis against a peak on the same
     // basis: the booked equity against the peak recorded from it, and the
     // equity at the paper risk model against the highest equity at that
-    // model, read from the same closes (never stored).
+    // model, read from the same closes (never stored). The booked equity
+    // counts open positions at the venue's mark now, as the risk count does:
+    // the stored equity is only as new as the account's last revaluation
+    // (markToMarket), and nothing revalues it before the governor runs. It
+    // takes the lower of the stored floating P&L and the open positions'
+    // sized P&L at the mark, so it is never above the stored equity.
     const model = paperModelEquity(acct, closes, openValue, now);
+    const storedFloating = acct.equity - acct.currentBalance;
+    const openAtMarkLower = openValue.sized < storedFloating;
     paperEquityBases = {
-      bookedEquity: acct.equity,
+      bookedEquity: acct.currentBalance + Math.min(storedFloating, openValue.sized),
+      storedEquity: acct.equity, storedAt: acct.updatedAt ?? null, bookedBalance: acct.currentBalance,
+      bookedOpenValuedAtStop: openAtMarkLower ? [...openValue.valuedAtStop] : [],
       modelEquity: model.equity, modelPeakEquity: model.peakEquity, modelPeakAt: model.peakAt,
       modelOpenValuedAtStop: model.openValuedAtStop,
       source: `paper_account:${acct.id}`,
@@ -336,18 +345,36 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
       // The losing streak, the cooldown and the last-hour checks read the
       // newest closes' signs (pnl). Today's trade count and the week's P/L
       // cover every close in their window, from the full close list read
-      // above (never only the newest ACTIVITY_CLOSES): the week's P/L is the
-      // lower of the week's booked and model totals.
+      // above: the week's P/L is the lower of the week's booked and model
+      // totals. As on DEMO and LIVE (loadBrokerFacts), the week's P/L counted
+      // is the lower of that whole-week risk count and the risk count of the
+      // newest ACTIVITY_CLOSES closes within the week (they differ only when
+      // more than ACTIVITY_CLOSES closed in the week and the older ones net
+      // positive), so the weekly cap never counts less loss than the newest
+      // closes show; both figures are carried so the refusal can name them.
       const summary = summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
         openedToday, now, `paper_orders:account:${acct.id}`);
       const dayStart = startOfTodayUtc(now).getTime();
       const weekStart = now.getTime() - 7 * 86_400_000;
-      const week = paperRiskTotals(allCloses.filter((c) => c.closedAt.getTime() >= weekStart));
+      const weekCloses = allCloses.filter((c) => c.closedAt.getTime() >= weekStart);
+      const week = paperRiskTotals(weekCloses);
+      const newestInWeek = recentCloses.filter((c) => c.closedAt.getTime() >= weekStart);
+      const newest = paperRiskTotals(newestInWeek);
+      const newestLower = newestInWeek.length > 0 && newest.risk < week.risk - 0.005;
+      const counted = newestLower ? newest : week;
       activity = {
         ...summary,
         tradesToday: openedToday + allCloses.filter((c) => c.closedAt.getTime() >= dayStart).length,
-        weekRealizedPnl: Number(week.risk.toFixed(2)),
-        ...(week.risk < week.booked - DISCLOSE_DIFFERENCE ? { bookedWeekRealizedPnl: Number(week.booked.toFixed(2)) } : {}),
+        weekRealizedPnl: Number(counted.risk.toFixed(2)),
+        ...(counted.risk < counted.booked - DISCLOSE_DIFFERENCE ? { bookedWeekRealizedPnl: Number(counted.booked.toFixed(2)) } : {}),
+        ...(newestLower ? {
+          allWeekRealizedPnl: Number(week.risk.toFixed(2)),
+          weekNewestCloses: {
+            counted: newestInWeek.length,
+            since: new Date(Math.min(...newestInWeek.map((c) => c.closedAt.getTime()))),
+            ofTotal: Math.max(weekCloses.length, newestInWeek.length),
+          },
+        } : {}),
       };
     } catch { activity = null; }
   }
@@ -518,10 +545,20 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
     : await db.select({ s: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8` })
         .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, startOfTodayUtc(now))));
 
-  // Trading activity for rule 13, from the same ledgers as realized P/L.
+  // Trading activity for rule 13, from the same ledgers as realized P/L. The
+  // losing streak, the cooldown and the last-hour checks read the newest
+  // ACTIVITY_CLOSES closes' signs. Today's trade count and the week's P/L
+  // cover every close in their window, from an unbounded COUNT and SUM over
+  // the same ledger, so an account that closed more than ACTIVITY_CLOSES
+  // trades in a week or a day never drops its older closes. The week's P/L
+  // counted is the lower of the whole week's and the newest closes' within
+  // the week (they differ only when more than ACTIVITY_CLOSES closed in the
+  // week), so the weekly cap never counts less loss than they show; both are
+  // carried so the refusal can name them.
   let activity: TradingActivity | null = null;
   try {
     const day = startOfTodayUtc(now);
+    const weekStart = new Date(now.getTime() - 7 * 86_400_000);
     const closes = intent.venue === "LIVE"
       ? (await livePositionLedger.select(
         { closedAt: livePositionColumns.closedAt, pnl: livePositionColumns.floatingPl },
@@ -534,9 +571,40 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
       : (await db.select({ closedAt: tradesTable.closedAt, pnl: tradesTable.pnl })
           .from(tradesTable).where(and(eq(tradesTable.userId, userId), sql`${tradesTable.closedAt} is not null`))
           .orderBy(desc(tradesTable.closedAt)).limit(ACTIVITY_CLOSES));
-    activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
-      sided.filter((p) => p.at >= day).length, now,
-      intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+    const openedToday = sided.filter((p) => p.at >= day).length;
+    const summary = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
+      openedToday, now, intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+    const closedSince = async (since: Date): Promise<{ pnl: number; n: number }> => {
+      const [row] = intent.venue === "LIVE"
+        ? await livePositionLedger.select(
+          { pnl: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)::float8`, n: sql<number>`count(*)::int` },
+          { where: and(eq(livePositionColumns.userId, userId), gte(livePositionColumns.closedAt, since)) },
+        )
+        : await db.select({ pnl: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8`, n: sql<number>`count(*)::int` })
+            .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, since)));
+      const pnl = Number(row?.pnl ?? 0);
+      const n = Number(row?.n ?? 0);
+      if (!Number.isFinite(pnl) || !Number.isFinite(n)) throw new Error("closed-trade totals are not numbers");
+      return { pnl, n };
+    };
+    const week = await closedSince(weekStart);
+    const today = await closedSince(day);
+    const weekAll = Number(week.pnl.toFixed(2));
+    const newestInWeek = closes.filter((c) => c.closedAt!.getTime() >= weekStart.getTime());
+    const newestLower = summary.weekRealizedPnl < weekAll - 0.005 && newestInWeek.length > 0;
+    activity = {
+      ...summary,
+      tradesToday: Math.max(summary.tradesToday, openedToday + today.n),
+      weekRealizedPnl: newestLower ? summary.weekRealizedPnl : weekAll,
+      ...(newestLower ? {
+        allWeekRealizedPnl: weekAll,
+        weekNewestCloses: {
+          counted: newestInWeek.length,
+          since: new Date(Math.min(...newestInWeek.map((c) => c.closedAt!.getTime()))),
+          ofTotal: Math.max(week.n, newestInWeek.length),
+        },
+      } : {}),
+    };
   } catch { activity = null; }
 
   // Instrument model per symbol: broker spec first, else the strict FX lot;
@@ -608,10 +676,12 @@ async function loadEquityPeak(intent: TradeIntent, account: RiskAccount): Promis
 /** Raise the account's recorded equity high-water mark; it never falls. */
 // The high-water mark keeps recording the account's booked equity: a paper
 // account whose caps are checked against a lower risk-count equity
-// (bookedEquity set) still raises its mark from the booked figure. On PAPER
-// the drawdown rule measures the booked equity against it, and the equity at
-// the paper risk model against that model's own peak (PaperEquityBases), so
-// no figure on one basis is compared with a peak on the other.
+// (bookedEquity set) still raises its mark from the booked figure (the
+// stored paper_accounts.equity). On PAPER the drawdown rule measures the
+// booked equity with open positions at the current price against it, and the
+// equity at the paper risk model against that model's own peak
+// (PaperEquityBases), so no figure on one basis is compared with a peak on
+// the other.
 async function recordEquityPeak(intent: TradeIntent, account: RiskAccount | null): Promise<void> {
   const equity = account?.bookedEquity ?? account?.equity ?? null;
   if (!account || equity == null || !Number.isFinite(equity) || equity <= 0) return;
@@ -724,7 +794,8 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
               ? { ...ctx.equityPeak, since: ctx.equityPeak.since?.toISOString() ?? null }
               : null,
             paperEquityBases: ctx.paperEquityBases
-              ? { ...ctx.paperEquityBases, modelPeakAt: ctx.paperEquityBases.modelPeakAt?.toISOString() ?? null }
+              ? { ...ctx.paperEquityBases, modelPeakAt: ctx.paperEquityBases.modelPeakAt?.toISOString() ?? null,
+                storedAt: ctx.paperEquityBases.storedAt?.toISOString() ?? null }
               : null,
             accountSnapshot: ctx.accountSnapshot
               ? { ...ctx.accountSnapshot, observedAt: ctx.accountSnapshot.observedAt?.toISOString() ?? null }

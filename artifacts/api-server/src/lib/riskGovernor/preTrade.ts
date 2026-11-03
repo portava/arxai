@@ -514,11 +514,29 @@ export interface RiskContext {
  */
 export interface PaperEquityBases {
   /**
-   * The equity the paper account shows (paper_accounts.equity: the booked
-   * balance plus the booked floating P&L). Its peak is RiskContext.equityPeak,
-   * which the governor records from this figure.
+   * The booked equity with open positions at the paper venue's mark now: the
+   * booked balance plus the lower of the floating P&L the account stores and
+   * the open positions' sized P&L at the mark (a crossed stop at its stop, a
+   * position that cannot be sized at min(0, model); paperOpenRisk.ts). Never
+   * above the stored equity (paper_accounts.equity), which is only as new as
+   * the account's last revaluation (markToMarket), and nothing revalues it
+   * before the governor runs. Its peak is RiskContext.equityPeak, which the
+   * governor records from the stored equity.
    */
   bookedEquity: number;
+  /**
+   * The equity the paper account stores (paper_accounts.equity: the booked
+   * balance plus the floating P&L its last revaluation stored). The refusal
+   * shows it when it is above bookedEquity. Absent: bookedEquity is the
+   * stored figure.
+   */
+  storedEquity?: number;
+  /** When the stored equity was written (paper_accounts.updated_at, its last revaluation), when known. */
+  storedAt?: Date | null;
+  /** The booked balance (the starting balance plus every settled close's booked P&L) bookedEquity starts from. */
+  bookedBalance?: number;
+  /** Open positions counted at their stop in bookedEquity because no market quote for them was read. */
+  bookedOpenValuedAtStop?: string[];
   /**
    * The equity at the paper risk model (price move × lots × 100): the
    * starting balance plus every settled close and each open position at the
@@ -557,6 +575,16 @@ export interface TradingActivity {
    * booked total and its total at the paper risk model).
    */
   bookedWeekRealizedPnl?: number;
+  /**
+   * Only when it differs: the realized P/L of every close of the last 7 days
+   * (on PAPER, their paper risk count). weekRealizedPnl is then the lower
+   * figure of the newest closes within the week (weekNewestCloses), the
+   * closes the streak and the cooldown read, so the weekly cap never counts
+   * less loss than they show.
+   */
+  allWeekRealizedPnl?: number;
+  /** With allWeekRealizedPnl: how many of the week's closes weekRealizedPnl counts, the oldest of them, and the week's total. */
+  weekNewestCloses?: { counted: number; since: Date; ofTotal: number };
   consecutiveLosses: number;
   lastClosedAt: Date | null;
   lastClosedWasLoss: boolean;
@@ -861,7 +889,8 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   if (intent.action === "MODIFY") {
     // Position Guardian invariant: an automated action (Ruby, a strategy,
     // automation) may only tighten a stop. A trader may widen it by hand, but
-    // never past their per-trade loss limit.
+    // never past their per-trade loss limit, and never remove it (an unbounded
+    // loss).
     const pos = intent.position ?? null;
     if (!pos && intent.origin !== "manual" && results.get("stop_loss_required")?.outcome !== "BLOCK") {
       set("stop_loss_required", "BLOCK",
@@ -878,7 +907,15 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
             `Automated actions may only tighten a stop: ${intent.origin} tried to move it from ${pos.stopLoss} to ${sl ?? "none"}.`,
             measured);
         }
-        if (sl != null) {
+        if (sl == null) {
+          // Removing the stop is the widest widen: the loss on the position is
+          // then unbounded, so no per-trade limit can hold it (the same as rule
+          // 8 on OPEN, which refuses a new trade without a stop). Whatever the
+          // trader's stop requirement and equity.
+          set("per_trade_loss_limit", "BLOCK",
+            "Removing the stop leaves the loss on this position unbounded, so it cannot stay within your per-trade loss limit. Closing or tightening the stop is allowed.",
+            measured);
+        } else {
           const perUnit = lots != null && lots > 0 ? moneyPerPriceUnit(lots, ctx.instruments[intent.symbol]) : null;
           const equity = ctx.account?.equity != null && ctx.account.equity > 0 ? ctx.account.equity : null;
           const pctCap = equity != null ? (equity * L.maxRiskPerTradePercent) / 100 : null;
@@ -1189,8 +1226,12 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
  * The drawdown rule on a paper account (PaperEquityBases): the drawdown on
  * each full basis against a peak on the same basis, blocking when either
  * reaches the limit and naming the basis that did.
- *   - booked: the equity the paper account shows against the peak the
- *     governor recorded from it (user_equity_peaks);
+ *   - booked: the booked equity with open positions at the paper venue's
+ *     current price (never above the stored equity) against the higher of
+ *     the peak the governor recorded from the stored equity
+ *     (user_equity_peaks) and the stored equity itself. When the stored
+ *     equity is higher (its last revaluation is older than the price), the
+ *     refusal shows both;
  *   - paper risk model: the equity at price move × lots × 100 against the
  *     highest equity at that model (starting balance, after each settled
  *     close, now).
@@ -1207,7 +1248,10 @@ function paperDrawdown(
   set: (rule: RiskRuleId, outcome: RuleOutcome, reason: string | null, measured?: RiskRuleResult["measured"]) => void,
 ): void {
   const ddOf = (eq: number, peak: number) => (peak > 0 ? Math.max(0, ((peak - eq) / peak) * 100) : null);
-  const bookedPeak = Math.max(b.bookedEquity, peakFact?.peakEquity ?? b.bookedEquity);
+  // The peak is never below the stored equity, the figure this basis read
+  // (and the peak was recorded from) before open positions were valued at
+  // the current price.
+  const bookedPeak = Math.max(b.bookedEquity, b.storedEquity ?? b.bookedEquity, peakFact?.peakEquity ?? b.bookedEquity);
   const bookedDd = ddOf(b.bookedEquity, bookedPeak);
   const modelPeak = Math.max(b.modelEquity, b.modelPeakEquity);
   const modelDd = ddOf(b.modelEquity, modelPeak);
@@ -1224,18 +1268,41 @@ function paperDrawdown(
     drawdownBasis: bookedBreach && modelBreach ? "booked_and_paper_risk_model" : bookedBreach ? "booked" : modelBreach ? "paper_risk_model" : null,
     equityBasesSource: b.source,
   });
+  // The stored equity is disclosed when it is at least half a cent above the
+  // booked equity at the current price (the figures are float sums).
+  const stored = b.storedEquity != null && b.storedEquity - b.bookedEquity >= 0.005 ? b.storedEquity : null;
+  if (stored != null) {
+    Object.assign(m, {
+      storedEquity: round(stored), storedAt: b.storedAt?.toISOString() ?? null,
+      ...(b.bookedBalance != null ? { bookedBalance: round(b.bookedBalance), bookedOpenAtCurrentPrice: round(b.bookedEquity - b.bookedBalance) } : {}),
+    });
+  }
   if (!bookedBreach && !modelBreach) { set("daily_loss_limit", "PASS", null, m); return; }
   const parts: string[] = [];
   if (bookedBreach) {
-    parts.push(b.bookedEquity <= 0
-      ? `The paper account's booked equity is ${round(b.bookedEquity)}, at or below zero, so your ${limit}% drawdown limit is used up.`
-      : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`);
+    if (stored == null) {
+      parts.push(b.bookedEquity <= 0
+        ? `The paper account's booked equity is ${round(b.bookedEquity)}, at or below zero, so your ${limit}% drawdown limit is used up.`
+        : `The paper account's booked equity ${round(b.bookedEquity)} is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`);
+    } else {
+      const counted = b.bookedBalance != null
+        ? ` (booked balance ${round(b.bookedBalance)}, open positions ${round(b.bookedEquity - b.bookedBalance)}${stopValuedList(b.bookedOpenValuedAtStop ?? [])})`
+        : stopValuedList(b.bookedOpenValuedAtStop ?? []);
+      parts.push(`The paper account's booked equity is ${round(b.bookedEquity)} with its open positions valued at the paper venue's current price${counted}; `
+        + `the account stores ${round(stored)} from its last revaluation${b.storedAt ? ` at ${b.storedAt.toISOString()}` : ""}. `
+        + (b.bookedEquity <= 0
+          ? `That is at or below zero, so your ${limit}% drawdown limit is used up.`
+          : `That is ${round(bookedDd!)}% below its recorded peak of ${round(bookedPeak)} (drawdown limit ${limit}%).`));
+    }
   }
   if (modelBreach) {
     const what = b.modelEquity <= 0
       ? `the account's equity is ${round(b.modelEquity)}, at or below zero, so your ${limit}% drawdown limit is used up`
       : `the account's equity ${round(b.modelEquity)} is ${round(modelDd!)}% below its peak of ${round(modelPeak)} on the same basis (drawdown limit ${limit}%)`;
-    parts.push(`At the paper risk model (price move × lots × 100), ${what}${bookedBreach ? "" : `; the paper account shows ${round(b.bookedEquity)} booked`}. `
+    const bookedNote = bookedBreach ? ""
+      : stored == null ? `; the paper account shows ${round(b.bookedEquity)} booked`
+      : `; the paper account's booked equity is ${round(b.bookedEquity)} with its open positions at the current price (it stores ${round(stored)})`;
+    parts.push(`At the paper risk model (price move × lots × 100), ${what}${bookedNote}. `
       + `That equity is the starting balance plus every closed paper trade and each open position at that model${stopValuedList(b.modelOpenValuedAtStop)}; `
       + `its peak is the highest of the starting balance, the equity after each closed trade, and now.`);
   }
@@ -1322,8 +1389,15 @@ function evaluateDiscipline(
       hard.push(`you have reached your ${D.maxTradesPerDay} trades for today`);
     }
     // PAPER: the week's figure is the paper risk count; name the booked one when they differ.
-    const weekBooked = act.bookedWeekRealizedPnl != null
-      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "";
+    // Every venue: when the newest closes lost more than the whole week, the
+    // figure counted is theirs; name it and the whole week's figure.
+    const newest = act.allWeekRealizedPnl != null ? act.weekNewestCloses ?? null : null;
+    const weekBooked = (act.bookedWeekRealizedPnl != null
+      ? ` (paper risk count, ${PAPER_RISK_COUNT_BASIS}; booked ${round(act.bookedWeekRealizedPnl)})` : "")
+      + (newest
+        ? ` (counted from your newest ${newest.counted} of this week's ${newest.ofTotal} closes, since ${newest.since.toISOString()}; all of this week's closes net ${round(act.allWeekRealizedPnl!)})`
+        : "");
+    if (act.allWeekRealizedPnl != null) measured["allWeekRealizedPnl"] = round(act.allWeekRealizedPnl);
     const nonPos = nonPositiveEquity(ctx);
     if (D.maxWeeklyLossAmount != null && act.weekRealizedPnl <= -D.maxWeeklyLossAmount) {
       hard.push(`this week's loss ${round(-act.weekRealizedPnl)}${weekBooked} reached your weekly cap of ${D.maxWeeklyLossAmount}`);
