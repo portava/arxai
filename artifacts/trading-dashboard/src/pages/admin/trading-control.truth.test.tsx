@@ -49,6 +49,12 @@ describe("Admin Trading Control: install-wide stops", () => {
     expect(screen.getByTestId("text-stop-summary").textContent).toMatch(/unknown until both stops can be read/);
   });
 
+  it("settings:null: no 'read HH:MM:SS' stamp beside 'unknown — settings could not be loaded'", async () => {
+    await renderWith({ "/api/admin/trading/settings": { status: 200, body: { ok: true, settings: null, ...bothReleased } } });
+    expect(screen.getByTestId("text-platform-mode").textContent).toBe("unknown — settings could not be loaded");
+    expect(screen.queryByTestId("text-settings-read-at")).toBeNull();
+  });
+
   it("settings request failed: unknown, never released", async () => {
     await renderWith({ "/api/admin/trading/settings": "network-error" });
     expect(screen.getByTestId("text-emergency-stop").textContent).toBe("unknown — settings could not be loaded");
