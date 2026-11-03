@@ -10,7 +10,9 @@ import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/components/propChallenges", () => ({
-  PropChallengeProgressCard: () => null, PropProfitTargetMeter: () => null, PropDrawdownMeter: () => null,
+  PropChallengeProgressCard: ({ summary }: { summary: { status: string; final?: boolean } }) =>
+    <div data-testid="progress">{summary.status} final={String(summary.final)}</div>,
+  PropProfitTargetMeter: () => null, PropDrawdownMeter: () => null,
   PropDailyLossLimitCard: () => null, PropRuleViolationFeed: () => null, PropChallengeCalendar: () => null,
   PropExtendedRulesPanel: () => null,
   PropPassFailBanner: ({ status }: { status: string }) => <div data-testid="banner">{status}</div>,
@@ -99,5 +101,93 @@ describe("Prop Challenge page — not confused with Prop Firm Risk Mode", () => 
     expect(screen.queryByText("Prop Firm Challenge Mode")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Prop Challenge Practice");
     expect(screen.getByTestId("prop-challenge-separate").textContent).toMatch(/separate from Prop Firm Risk Mode/);
+  });
+});
+
+// Regression: after a Cancel (or an evaluate poll that resolved the challenge
+// to PASSED/FAILED) the list showed the challenge as finished and polling
+// stopped, but the ["prop-eval", id] key did not change, so the last ACTIVE
+// evaluation (final: false, with open-position rules) stayed on screen under
+// the note that the results cover only trades closed up to the end.
+describe("Prop Challenge page — the final evaluation after a challenge ends", () => {
+  function stubLifecycle(firstEvalStatus: "ACTIVE" | "PASSED") {
+    const row = challenge({ status: "ACTIVE" });
+    const evaluateCalls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/prop-challenges" && method === "GET") {
+        return new Response(JSON.stringify({ challenges: [row] }), { status: 200 });
+      }
+      if (url === `/api/prop-challenges/${row.id}` && method === "PATCH") {
+        const { status } = JSON.parse(String(init!.body)) as { status: string };
+        Object.assign(row, { status, completedAt: status === "CANCELED" ? "2026-09-10T00:00:00Z" : null });
+        return new Response(JSON.stringify({ challenge: row }), { status: 200 });
+      }
+      if (url.endsWith("/evaluate")) {
+        evaluateCalls.push(url);
+        const finished = row.status !== "ACTIVE" && row.status !== "PAUSED";
+        const body = evalBody(finished);
+        if (!finished && firstEvalStatus === "PASSED") {
+          // The server resolves the challenge during this evaluation.
+          Object.assign(row, { status: "PASSED", completedAt: "2026-09-21T00:00:00Z" });
+          body.summary.status = "PASSED";
+        } else {
+          body.summary.status = row.status;
+        }
+        body.violations = finished ? [] : [{ type: "MAX_OPEN_TRADES", severity: "HARD", message: "2 open" }] as never;
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }));
+    return evaluateCalls;
+  }
+
+  it("after Cancel the final evaluation is loaded and the ACTIVE one is not shown under the finished note", async () => {
+    const calls = stubLifecycle("ACTIVE");
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("progress").textContent).toBe("ACTIVE final=false"));
+    await act(async () => { screen.getByText("Cancel").click(); });
+    await waitFor(() => expect(screen.getByTestId("banner").textContent).toBe("CANCELED"));
+    await waitFor(() => expect(screen.getByTestId("progress").textContent).toBe("CANCELED final=true"));
+    expect(calls.length).toBe(2);
+    expect(screen.getByTestId("prop-finished-note").textContent).toMatch(/cover only trades closed up to that time/);
+  });
+
+  it("an evaluate poll that resolves the challenge is followed by one final evaluation", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const calls = stubLifecycle("PASSED");
+    renderPage();
+    await waitFor(() => expect(calls.length).toBe(1));
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_500); });
+    await waitFor(() => expect(screen.getByTestId("banner").textContent).toBe("PASSED"));
+    await waitFor(() => expect(screen.getByTestId("progress").textContent).toBe("PASSED final=true"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(calls.length).toBe(2);
+  });
+
+  it("the finished note does not say 'results below' over a non-final evaluation", async () => {
+    const gate: { release: (() => void) | null } = { release: null };
+    const row = challenge({ status: "ACTIVE" });
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/prop-challenges" && method === "GET") return new Response(JSON.stringify({ challenges: [row] }), { status: 200 });
+      if (method === "PATCH") { Object.assign(row, { status: "CANCELED", completedAt: "2026-09-10T00:00:00Z" }); return new Response("{}", { status: 200 }); }
+      if (url.endsWith("/evaluate")) {
+        if (row.status === "ACTIVE") return new Response(JSON.stringify(evalBody(false)), { status: 200 });
+        await new Promise<void>((r) => { gate.release = r; });
+        return new Response(JSON.stringify(evalBody(true)), { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("progress")).toBeTruthy());
+    await act(async () => { screen.getByText("Cancel").click(); });
+    await waitFor(() => expect(screen.getByTestId("banner").textContent).toBe("CANCELED"));
+    await waitFor(() => expect(gate.release).not.toBeNull());
+    expect(screen.queryByTestId("progress")).toBeNull();
+    expect(screen.getByTestId("prop-finished-note").textContent).not.toMatch(/results below/);
+    expect(screen.getByTestId("prop-final-result-state").textContent).toMatch(/Loading the final result/);
+    await act(async () => { gate.release!(); });
+    await waitFor(() => expect(screen.getByTestId("progress").textContent).toMatch(/final=true/));
   });
 });

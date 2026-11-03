@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PropChallengeProgressCard, PropProfitTargetMeter, PropDrawdownMeter,
   PropDailyLossLimitCard, PropRuleViolationFeed, PropChallengeCalendar, PropPassFailBanner,
@@ -65,6 +65,20 @@ export default function PropChallengePage() {
     enabled: active != null,
     refetchInterval: finished ? false : 8000,
   });
+  // A finished challenge is judged only up to its end (summary.final). When a
+  // challenge ends while this page is open (Cancel, or an evaluate poll that
+  // resolved it to PASSED/FAILED) the cached evaluation is the last ACTIVE
+  // one, so the final evaluation is requested once, and only a final one is
+  // shown for a finished challenge.
+  const evalIsFinal = evalQ.data?.summary.final === true;
+  const finalRequestedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!finished || active == null || evalQ.data == null || evalIsFinal || evalQ.isFetching) return;
+    if (finalRequestedFor.current === active.id) return;
+    finalRequestedFor.current = active.id;
+    void evalQ.refetch();
+  }, [finished, active?.id, evalQ.data, evalIsFinal, evalQ.isFetching]);
+  const showResults = evalQ.data != null && (!finished || evalIsFinal);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -126,7 +140,17 @@ export default function PropChallengePage() {
           {finished && (
             <p className="text-xs text-slate-400" data-testid="prop-finished-note">
               Your last challenge, {active.challengeName}, ended{active.completedAt ? ` on ${new Date(active.completedAt).toLocaleString()}` : ""} ({active.status}).
-              The results below cover only trades closed up to that time. Later paper trades are not part of it.
+              {showResults && " The results below cover only trades closed up to that time. Later paper trades are not part of it."}
+            </p>
+          )}
+          {finished && !showResults && !evalQ.isError && (
+            <p className="text-xs text-slate-400" data-testid="prop-final-result-state">
+              {evalQ.isFetching || evalQ.isPending
+                ? "Loading the final result of this challenge…"
+                : "The final result of this challenge was not returned."}
+              {!(evalQ.isFetching || evalQ.isPending) && (
+                <button onClick={() => void evalQ.refetch()} className="ml-2 underline">Retry</button>
+              )}
             </p>
           )}
           <PropPassFailBanner status={active.status} reason={active.failureReason} />
@@ -144,7 +168,7 @@ export default function PropChallengePage() {
               <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
             )}
           </div>
-          {evalQ.data && (
+          {showResults && evalQ.data && (
             <>
               <PropChallengeProgressCard summary={evalQ.data.summary} />
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
