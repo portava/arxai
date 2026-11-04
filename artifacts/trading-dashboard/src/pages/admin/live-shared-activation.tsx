@@ -30,8 +30,15 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<ApiResp<T>>
 // ── readiness response shape (subset we render) ──────────────────────────
 type ReadinessResp = {
   ok: boolean;
+  // The route's catch branch answers ok:true, degraded:true with fail-closed
+  // placeholders (stops "engaged", platformMode UNKNOWN, no users): not
+  // observations, so the page treats it as "could not be loaded".
+  /** Set when a server query failed: every value below is a fail-closed stand-in, not a reading. */
+  degraded?: boolean;
+  degradedReason?: string;
+  message?: string;
   globalSwitches: {
-    serverMasterSwitchEnabled: boolean; // effective = env OR db-armed
+    serverMasterSwitchEnabled: boolean; // effective = env AND db-armed
     serverMasterSwitchEnvOnly: boolean; // ARX_LIVE_BROKER_EXECUTION_ENABLED=true
     liveBrokerExecutionArmedDb: boolean; // admin armed via cockpit UI
     liveBrokerExecutionArmedAt: string | null;
@@ -42,9 +49,22 @@ type ReadinessResp = {
     accountRoutingMode: string;
     sharedLiveTradingEnabled: boolean;
     masterBridgeLiveEnabled: boolean;
+    // The platform emergency stop only (POST /admin/trading/reset-kill
+    // releases it).
     emergencyKillSwitch: boolean;
     killSwitchEngagedAt: string | null;
     killSwitchReason: string | null;
+    // Either install-wide stop (platform emergency stop OR safety-core kill
+    // switch), as the Risk Governor reads them (platformStopReport()). Missing
+    // fields are "not reported" and never read as released.
+    platformStopEngaged?: boolean;
+    platformStopSources?: PlatformStopSource[];
+    platformStopReason?: string | null;
+    // False when this report could not read a stop (it then counts as
+    // engaged, fail-closed). The per-source detail says which: "state
+    // unreadable" / "settings missing" for a source that was not read.
+    platformStopReadable?: boolean;
+    platformStopDetail?: Partial<Record<PlatformStopSource, string | null>>;
   };
   liveAccount: {
     pinnedBridge: null | {
@@ -80,12 +100,89 @@ type ReadinessResp = {
   requiredConfirmationPhrases: { activate: string; killSwitch: string };
 };
 
+type PlatformStopSource = "platform_emergency_stop" | "safety_core_kill_switch";
+
+// The server's fail-closed reasons for a stop it could not read.
+const STOP_NOT_READ = new Set(["state unreadable", "settings missing"]);
+
+// Which install-wide stops the readiness response says are engaged. The
+// platform emergency stop is engaged when either field says so; the
+// safety-core kill switch only appears in platformStopSources. `reported` is
+// false when the server did not send the combined fields.
+//
+// `emergencyStopUnread` / `safetyCoreUnread`: that stop counts as engaged only
+// because this report could not read it (platformStopReadable:false and its
+// detail is "state unreadable" / "settings missing"). Nothing was observed, so
+// it is shown as "could not be read — treated as engaged", never as an engaged
+// switch to release. It still counts as engaged for every decision here.
+function installWideStops(g: ReadinessResp["globalSwitches"]) {
+  const sources = Array.isArray(g.platformStopSources) ? g.platformStopSources : [];
+  const reported = typeof g.platformStopEngaged === "boolean";
+  const emergencyStop = g.emergencyKillSwitch === true || sources.includes("platform_emergency_stop");
+  const safetyCore = sources.includes("safety_core_kill_switch");
+  const engaged = emergencyStop || safetyCore || g.platformStopEngaged === true;
+  const detail = g.platformStopDetail ?? {};
+  const notRead = (src: PlatformStopSource) =>
+    g.platformStopReadable === false && sources.includes(src) && STOP_NOT_READ.has(String(detail[src] ?? ""));
+  const emergencyStopUnread = emergencyStop && notRead("platform_emergency_stop");
+  const safetyCoreUnread = safetyCore && notRead("safety_core_kill_switch");
+  return {
+    reported, emergencyStop, safetyCore, engaged, released: reported && !engaged,
+    emergencyStopUnread, safetyCoreUnread,
+    emergencyStopDetail: detail.platform_emergency_stop ?? null,
+    safetyCoreDetail: detail.safety_core_kill_switch ?? null,
+    // Every engaged source is engaged only because it could not be read.
+    onlyUnread: engaged && (!emergencyStop || emergencyStopUnread) && (!safetyCore || safetyCoreUnread)
+      && (emergencyStop || safetyCore),
+  };
+}
+
+/**
+ * The platform settings row was not read: the platform emergency stop is
+ * engaged only because the settings read failed ("settings missing" / "state
+ * unreadable"). Every other settings-derived field (mode, routing, live flags,
+ * operator arm) is then a fail-closed stand-in too. Returns the server's
+ * reason, or null when the settings were read.
+ */
+function settingsUnreadDetail(g: ReadinessResp["globalSwitches"]): string | null {
+  const stops = installWideStops(g);
+  return stops.emergencyStopUnread ? String(stops.emergencyStopDetail) : null;
+}
+
+type SmokeStatus = "pass" | "fail" | "not_checked";
 type SmokeResp = {
   ok: boolean;
-  summary: { total: number; passed: number; failed: number };
-  checks: Array<{ id: string; label: string; pass: boolean; detail: string }>;
+  summary: { total: number; passed: number; failed: number; notChecked?: number };
+  checks: Array<{ id: string; label: string; pass: boolean; status?: SmokeStatus; detail: string }>;
   bridgeGate: { decision: string; primaryReason?: string };
 };
+
+// A row's status. An older server sends only `pass`; a newer one marks rows
+// the smoke test does not exercise as "not_checked", which is never a pass.
+function smokeStatus(c: SmokeResp["checks"][number]): SmokeStatus {
+  if (c.status === "pass" || c.status === "fail" || c.status === "not_checked") return c.status;
+  return c.pass === true ? "pass" : "fail";
+}
+
+/** "8/11 pass · 2 not checked · 1 fail", counted from the rows themselves. */
+function smokeResultText(r: SmokeResp): string {
+  const st = r.checks.map(smokeStatus);
+  const passed = st.filter((s) => s === "pass").length;
+  const notChecked = st.filter((s) => s === "not_checked").length;
+  const failed = st.filter((s) => s === "fail").length;
+  return `${passed}/${r.checks.length} pass${notChecked ? ` · ${notChecked} not checked` : ""}${failed ? ` · ${failed} fail` : ""}`;
+}
+
+/** The smoke report, or why it could not be loaded (never a half-read report). */
+async function runSmokeTest(): Promise<{ data: SmokeResp } | { error: string }> {
+  try {
+    const r = await apiJson<SmokeResp>("/api/admin/live-shared/activation-smoke-test", { method: "POST" });
+    if (!r.ok || !Array.isArray(r.checks) || !r.summary) return { error: r.error ?? "the server did not return a smoke-test report" };
+    return { data: r };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 type QueueResp = {
   ok: boolean;
@@ -106,18 +203,32 @@ type TabKey = "readiness" | "wizard" | "bridge" | "users" | "commands" | "smoke"
 export default function AdminLiveSharedActivationPage() {
   const [tab, setTab] = useState<TabKey>("readiness");
   const [readiness, setReadiness] = useState<ReadinessResp | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
+  // A failed, refused or degraded load drops the earlier readiness (it is no
+  // longer current) and says it could not be loaded.
   async function loadReadiness() {
     setBusy(true); setActionMsg(null);
     try {
       const r = await apiJson<ReadinessResp>("/api/admin/live-shared/readiness");
-      if (r.ok) setReadiness(r);
-      else setActionMsg(`readiness error: ${r.error ?? "unknown"}`);
+      if (r.ok && r.degraded !== true) { setReadiness(r); setLoadError(null); }
+      else {
+        setReadiness(null);
+        setLoadError(r.degraded === true ? (r.message ?? "the server could not evaluate readiness") : (r.error ?? "the server did not answer ok"));
+      }
+    } catch (e) {
+      setReadiness(null);
+      setLoadError(e instanceof Error ? e.message : "request failed");
     } finally { setBusy(false); }
   }
   useEffect(() => { void loadReadiness(); }, []);
+  // Panels built from readiness show "could not be loaded" instead of a value.
+  // While set, no readiness value is shown: a degraded body's kill switch /
+  // users / exposure are stand-ins, and an earlier load would be stale.
+  const needsReadiness = (node: React.ReactNode) =>
+    loadError ? <ReadinessPending loadError={loadError} /> : node;
 
   const checklist = useChecklist(readiness);
 
@@ -127,13 +238,13 @@ export default function AdminLiveSharedActivationPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <ShieldAlert className="h-6 w-6 text-amber-400" /> Live Shared — Activation
         </h1>
-        <ModeChip readiness={readiness} />
+        <ModeChip readiness={readiness} loadError={loadError} />
         <Button size="sm" variant="outline" className="ml-auto" disabled={busy} onClick={loadReadiness} data-testid="act-refresh">
           <RefreshCw className={`h-3 w-3 mr-1 ${busy ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>
 
-      <ActivationStateBanner readiness={readiness} />
+      <ActivationStateBanner readiness={readiness} loadError={loadError} />
 
       {actionMsg && (
         <Alert className="py-2" data-testid="act-msg">
@@ -155,21 +266,23 @@ export default function AdminLiveSharedActivationPage() {
         </TabsList>
 
         <TabsContent value="readiness" className="mt-3 space-y-3">
-          <ReadinessCards readiness={readiness} />
-          <ChecklistCard items={checklist} />
-          <ArmExecutionCard readiness={readiness} onAfter={loadReadiness} />
+          {needsReadiness(<>
+            <ReadinessCards readiness={readiness} loadError={loadError} />
+            {readiness && <ChecklistCard items={checklist} />}
+            <ArmExecutionCard readiness={readiness} onAfter={loadReadiness} />
+          </>)}
         </TabsContent>
 
         <TabsContent value="wizard" className="mt-3">
-          <ActivationWizard readiness={readiness} checklist={checklist} onAfterStep={loadReadiness} />
+          {needsReadiness(<ActivationWizard readiness={readiness} loadError={loadError} checklist={checklist} onAfterStep={loadReadiness} />)}
         </TabsContent>
 
         <TabsContent value="bridge" className="mt-3">
-          <BridgeTab readiness={readiness} onAction={loadReadiness} setActionMsg={setActionMsg} />
+          {needsReadiness(<BridgeTab readiness={readiness} loadError={loadError} onAction={loadReadiness} setActionMsg={setActionMsg} />)}
         </TabsContent>
 
         <TabsContent value="users" className="mt-3">
-          <UsersTab readiness={readiness} />
+          {needsReadiness(<UsersTab readiness={readiness} loadError={loadError} />)}
         </TabsContent>
 
         <TabsContent value="commands" className="mt-3">
@@ -181,7 +294,7 @@ export default function AdminLiveSharedActivationPage() {
         </TabsContent>
 
         <TabsContent value="micro" className="mt-3">
-          <MicroTestTab readiness={readiness} />
+          {needsReadiness(<MicroTestTab readiness={readiness} />)}
         </TabsContent>
 
         <TabsContent value="rollback" className="mt-3">
@@ -189,7 +302,7 @@ export default function AdminLiveSharedActivationPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="mt-3">
-          <AuditTab readiness={readiness} />
+          {needsReadiness(<AuditTab readiness={readiness} loadError={loadError} />)}
         </TabsContent>
       </Tabs>
     </div>
@@ -200,16 +313,34 @@ export default function AdminLiveSharedActivationPage() {
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Compute the four mutually-exclusive arm states from readiness.
-// IMPORTANT: serverMasterSwitchEnabled (env OR db-armed) is NOT itself a
+// What a readiness-backed section shows while it has no readiness: still
+// loading, or the load failed (never an empty or default state).
+function ReadinessPending({ loadError }: { loadError: string | null }) {
+  return loadError
+    ? (
+      <div className="text-xs text-rose-300" data-testid="readiness-unavailable">
+        Readiness could not be loaded — nothing here is checked. Reason: {loadError}
+      </div>
+    )
+    : <div className="text-xs text-muted-foreground italic">loading…</div>;
+}
+
+// Compute the mutually-exclusive arm states from readiness.
+// IMPORTANT: serverMasterSwitchEnabled (env AND db-armed) is NOT itself a
 // pre-arm safety gate. It IS the arm state. Pre-arm gates are independent
 // of the arm flag — that's how the operator can reach READY TO ARM.
-type ArmState = "LOCKED" | "READY_TO_ARM" | "LIVE_BROKER_EXECUTION_ENABLED" | "KILL_SWITCH_ACTIVE";
+// ARMED_ENV_OFF: the operator arm (DB flag) is on but the server env
+// ARX_LIVE_BROKER_EXECUTION_ENABLED is not true, so effective execution
+// (env AND operator arm) stays off and arming again changes nothing.
+type ArmState = "LOCKED" | "READY_TO_ARM" | "ARMED_ENV_OFF" | "LIVE_BROKER_EXECUTION_ENABLED" | "KILL_SWITCH_ACTIVE";
 function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFailures: string[] } {
   if (!r) return { state: "LOCKED", preArmFailures: ["loading"] };
   const g = r.globalSwitches;
   const b = r.liveAccount.pinnedBridge;
-  if (g.emergencyKillSwitch === true) return { state: "KILL_SWITCH_ACTIVE", preArmFailures: [] };
+  // Either install-wide stop refuses every new live order at the Risk
+  // Governor, so either one is the kill-switch state.
+  const stops = installWideStops(g);
+  if (stops.engaged) return { state: "KILL_SWITCH_ACTIVE", preArmFailures: [] };
   const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
   const eaOk = b?.eaVersion != null && b.eaVersion >= r.constants.MIN_LIVE_EA_VERSION;
   const liveAccountType = b?.accountType === "live" || b?.accountType === "real";
@@ -221,27 +352,61 @@ function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFail
   if (!eaOk) failures.push("EA version < 1.27");
   if (b && b.readOnlyMode !== false) failures.push("EA ReadOnlyMode is not false");
   if (!detected) failures.push("bridge identity (account/broker/server) not detected");
+  if (!stops.reported) failures.push("install-wide stop state not reported (safety-core kill switch unknown)");
   // Pre-arm pass; arm state depends on flag.
   if (failures.length === 0 && g.serverMasterSwitchEnabled) return { state: "LIVE_BROKER_EXECUTION_ENABLED", preArmFailures: [] };
+  if (failures.length === 0 && g.liveBrokerExecutionArmedDb === true && g.serverMasterSwitchEnvOnly !== true) {
+    return { state: "ARMED_ENV_OFF", preArmFailures: [] };
+  }
   if (failures.length === 0) return { state: "READY_TO_ARM", preArmFailures: [] };
   return { state: "LOCKED", preArmFailures: failures };
 }
 
-// 4-state activation banner. LOCKED (red), READY_TO_ARM (amber),
+// Activation banner. LOCKED (red), READY_TO_ARM / ARMED_ENV_OFF (amber),
 // LIVE_BROKER_EXECUTION_ENABLED (emerald), KILL_SWITCH_ACTIVE (rose).
-function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null }) {
+function ActivationStateBanner({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness && loadError) {
+    return (
+      <Alert className="py-3 border-rose-500/60 bg-rose-500/10" data-testid="banner-load-failed">
+        <AlertCircle className="h-4 w-4 text-rose-400" />
+        <AlertTitle className="text-sm text-rose-200">READINESS COULD NOT BE LOADED — STATE UNKNOWN</AlertTitle>
+        <AlertDescription className="text-xs text-rose-200/80">
+          Arm state, pre-arm checks, both install-wide stops, the bridge, approved users and open
+          exposure are unknown until readiness loads, so nothing on this page is shown as current.
+          Refresh to try again. Reason: <code className="font-mono">{loadError}</code>
+        </AlertDescription>
+      </Alert>
+    );
+  }
   if (!readiness) return null;
   const { state, preArmFailures } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
+    const g = readiness.globalSwitches;
+    const stops = installWideStops(g);
+    // The server's reason names the first engaged source ("... is engaged.
+    // (state unreadable)"). When that source was not read, the per-source line
+    // below already says so; do not repeat it as an engaged switch.
+    const firstUnread = stops.emergencyStop ? stops.emergencyStopUnread : stops.safetyCoreUnread;
+    const reason = firstUnread ? null : g.platformStopReason ?? g.killSwitchReason;
     return (
       <Alert className="py-3 border-rose-500/60 bg-rose-500/10" data-testid="banner-kill-switch">
         <ShieldAlert className="h-4 w-4 text-rose-400" />
-        <AlertTitle className="text-sm text-rose-200">KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED</AlertTitle>
+        <AlertTitle className="text-sm text-rose-200">
+          {stops.onlyUnread
+            ? "INSTALL-WIDE STOP COULD NOT BE READ — TREATED AS ENGAGED"
+            : "KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED"}
+        </AlertTitle>
         <AlertDescription className="text-xs text-rose-200/80">
-          The emergency kill switch overrides every other state. New live dispatches
-          are refused. Release the kill switch (Wizard step 9) once you've confirmed
-          the cause of the engage event.
-          {readiness.globalSwitches.killSwitchReason && <> Reason: <code className="font-mono">{readiness.globalSwitches.killSwitchReason}</code></>}
+          {stops.onlyUnread
+            ? <>This report could not read an install-wide stop, so it treats it as engaged (fail-closed) and overrides every other state here. Nothing was observed engaged. The Risk Governor reads the stops again on every new live order.</>
+            : <>An install-wide stop is engaged and overrides every other state: the Risk Governor refuses every new live order.</>}
+          {stops.emergencyStop && (stops.emergencyStopUnread
+            ? <> The platform emergency stop could not be read ({stops.emergencyStopDetail}) — treated as engaged. There is nothing to release until it can be read; Refresh, and check the server logs if it persists.</>
+            : <> The platform emergency stop is engaged; release it with Wizard step 9 once you've confirmed the cause.</>)}
+          {stops.safetyCore && (stops.safetyCoreUnread
+            ? <> The safety-core kill switch could not be read ({stops.safetyCoreDetail}) — treated as engaged. There is nothing to release until it can be read; Refresh, and check the server logs if it persists.</>
+            : <> The safety-core kill switch is engaged; Wizard step 9 does not release it — release it on the Emergency page.</>)}
+          {reason && <> Reason: <code className="font-mono">{reason}</code></>}
         </AlertDescription>
       </Alert>
     );
@@ -259,15 +424,32 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
       </Alert>
     );
   }
+  if (state === "ARMED_ENV_OFF") {
+    return (
+      <Alert className="py-3 border-amber-500/60 bg-amber-500/10" data-testid="banner-armed-env-off">
+        <AlertCircle className="h-4 w-4 text-amber-400" />
+        <AlertTitle className="text-sm text-amber-200">OPERATOR ARMED — ENV NOT SET, LIVE EXECUTION STAYS OFF</AlertTitle>
+        <AlertDescription className="text-xs text-amber-200/80">
+          The operator arm is on, but the server env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code> is
+          not true, so live broker execution stays off (effective = env AND operator arm).
+          Arming again changes nothing; the env var is set on the server, not on this page.
+        </AlertDescription>
+      </Alert>
+    );
+  }
   if (state === "READY_TO_ARM") {
+    const envOff = readiness.globalSwitches.serverMasterSwitchEnvOnly !== true;
     return (
       <Alert className="py-3 border-amber-500/60 bg-amber-500/10" data-testid="banner-ready-to-arm">
         <AlertCircle className="h-4 w-4 text-amber-400" />
         <AlertTitle className="text-sm text-amber-200">EA READY / SERVER DISPATCH OFF — READY TO ARM</AlertTitle>
         <AlertDescription className="text-xs text-amber-200/80">
           The live EA is connected, fresh, and healthy. Server live broker execution
-          is OFF — this is the safe default. Confirm bridge identity (account /
-          broker / server), type the activation phrase, then click Arm Live Execution.
+          is OFF — this is the safe default. Arm live execution below sends the
+          detected account / broker / server and the activation phrase for you
+          (nothing is typed); the server compares them with the bridge it detects
+          at that moment and re-validates the pre-arm checks.
+          {envOff && <> The server env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code> is not set, so arming alone will not enable live execution (effective = env AND operator arm).</>}
         </AlertDescription>
       </Alert>
     );
@@ -286,14 +468,19 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
   );
 }
 
-function ModeChip({ readiness }: { readiness: ReadinessResp | null }) {
+function ModeChip({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness && loadError) return <Badge variant="outline" className="border-rose-500/40 text-rose-300" data-testid="mode-chip-not-loaded">NOT LOADED</Badge>;
   if (!readiness) return <Badge variant="outline">loading…</Badge>;
   const { state } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
-    return <Badge className="bg-rose-500/15 text-rose-300 border border-rose-500/40" data-testid="mode-chip-kill">KILL SWITCH ACTIVE</Badge>;
+    const unreadOnly = installWideStops(readiness.globalSwitches).onlyUnread;
+    return <Badge className="bg-rose-500/15 text-rose-300 border border-rose-500/40" data-testid="mode-chip-kill">{unreadOnly ? "STOP COULD NOT BE READ" : "KILL SWITCH ACTIVE"}</Badge>;
   }
   if (state === "LIVE_BROKER_EXECUTION_ENABLED") {
     return <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/40" data-testid="mode-chip-armed">LIVE BROKER EXECUTION ENABLED</Badge>;
+  }
+  if (state === "ARMED_ENV_OFF") {
+    return <Badge className="bg-amber-500/15 text-amber-200 border border-amber-500/40" data-testid="mode-chip-armed-env-off">ARMED · ENV OFF — EXECUTION OFF</Badge>;
   }
   if (state === "READY_TO_ARM") {
     return <Badge className="bg-amber-500/15 text-amber-200 border border-amber-500/40" data-testid="mode-chip-ready-to-arm">EA READY / SERVER DISPATCH OFF</Badge>;
@@ -313,19 +500,25 @@ function row(label: string, value: React.ReactNode, ok?: boolean) {
   );
 }
 
-function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+function ReadinessCards({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   const g = readiness.globalSwitches;
   const b = readiness.liveAccount.pinnedBridge;
   const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
+  const stops = installWideStops(g);
+  // Settings not read: show each settings-derived value as unread, never the
+  // fail-closed stand-in (OFF / USER_OWNED_MT5 / false) as a reading.
+  const unread = settingsUnreadDetail(g);
+  const settingRow = (label: string, value: React.ReactNode, ok?: boolean) =>
+    unread ? row(label, `could not be read (${unread})`, undefined) : row(label, value, ok);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-      <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Platform</CardTitle></CardHeader><CardContent className="pt-1">
-        {row("Platform mode", g.platformMode, g.platformMode === "LIVE")}
-        {row("Routing", g.accountRoutingMode, g.accountRoutingMode === "SHARED_MASTER_MT5")}
-        {row("Live enabled", String(g.liveEnabled), g.liveEnabled)}
-        {row("Shared live trading", String(g.sharedLiveTradingEnabled), g.sharedLiveTradingEnabled)}
-        {row("Master bridge live", String(g.masterBridgeLiveEnabled), g.masterBridgeLiveEnabled)}
+      <Card data-testid="readiness-platform-card"><CardHeader className="pb-1"><CardTitle className="text-xs">Platform</CardTitle></CardHeader><CardContent className="pt-1">
+        {settingRow("Platform mode", g.platformMode, g.platformMode === "LIVE")}
+        {settingRow("Routing", g.accountRoutingMode, g.accountRoutingMode === "SHARED_MASTER_MT5")}
+        {settingRow("Live enabled", String(g.liveEnabled), g.liveEnabled)}
+        {settingRow("Shared live trading", String(g.sharedLiveTradingEnabled), g.sharedLiveTradingEnabled)}
+        {settingRow("Master bridge live", String(g.masterBridgeLiveEnabled), g.masterBridgeLiveEnabled)}
       </CardContent></Card>
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Bridge / EA</CardTitle></CardHeader><CardContent className="pt-1">
         {row("Master bridge pinned", b ? `#${b.connectionId}` : "not pinned", b != null)}
@@ -335,9 +528,22 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
         {row("ReadOnlyMode", String(b?.readOnlyMode ?? "—"), b?.readOnlyMode === false)}
       </CardContent></Card>
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Safety</CardTitle></CardHeader><CardContent className="pt-1">
-        {row("Master switch (env)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}
-        {row("Kill switch engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
+        <div data-testid="safety-master-switch-env">{row("Env ARX_LIVE_BROKER_EXECUTION_ENABLED", String(g.serverMasterSwitchEnvOnly))}</div>
+        <div data-testid="safety-master-switch-armed">{settingRow("Operator arm (DB flag)", String(g.liveBrokerExecutionArmedDb))}</div>
+        <div data-testid="safety-master-switch-effective">{row("Live broker execution (effective: env AND operator arm)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}</div>
+        <div data-testid="safety-emergency-stop-row">
+          {stops.emergencyStopUnread
+            ? row("Platform emergency stop engaged", `could not be read — treated as engaged (${stops.emergencyStopDetail})`, undefined)
+            : row("Platform emergency stop engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
+        </div>
         {row("Kill engaged at", g.killSwitchEngagedAt ?? "—")}
+        <div data-testid="safety-core-kill-row">
+          {stops.safetyCoreUnread
+            ? row("Safety-core kill switch engaged", `could not be read — treated as engaged (${stops.safetyCoreDetail})`, undefined)
+            : row("Safety-core kill switch engaged",
+              stops.reported ? String(stops.safetyCore) : "not reported",
+              stops.reported ? !stops.safetyCore : undefined)}
+        </div>
         {row("Approved users", String(readiness.approvedUsers.approvedCount), readiness.approvedUsers.approvedCount > 0)}
         {row("Active users", String(readiness.approvedUsers.activeCount))}
       </CardContent></Card>
@@ -345,7 +551,9 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
   );
 }
 
-type Check = { id: string; label: string; ok: boolean; detail?: string };
+// ok: true passed, false failed, null not checked (this page has no evidence
+// for it). A not-checked row is never shown or counted as passed.
+type Check = { id: string; label: string; ok: boolean | null; detail?: string };
 
 function useChecklist(r: ReadinessResp | null): Check[] {
   return useMemo(() => {
@@ -363,11 +571,28 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     // The IDs in this array MUST stay aligned with the server-side preArm
     // list in adminLiveSharedReadiness.ts (POST /arm-live-execution). The
     // server re-validates the same checks; any drift is a UX bug.
+    // The readiness route sends detector.bridge = maskBridgeEvidenceForUser(),
+    // which carries the EA-reported inputs as flat fields (no `eaInputs`).
     type EaInputs = { terminalConnected?: boolean | null; algoTradingAllowed?: boolean | null; enableLiveExecution?: boolean | null };
-    const det = r.liveAccount.detector as { detected: boolean; bridge?: { eaInputs?: EaInputs | null } };
-    const ea: EaInputs = (det.detected && det.bridge?.eaInputs) ? det.bridge.eaInputs : {};
+    const det = r.liveAccount.detector as { detected: boolean; bridge?: EaInputs | null };
+    const ea: EaInputs = (det.detected && det.bridge) ? det.bridge : {};
+    const stops = installWideStops(g);
+    // Settings not read: these rows keep failing (fail-closed) and say why.
+    const unread = settingsUnreadDetail(g);
+    const settingsDetail = unread ? `settings could not be read (${unread})` : undefined;
+    const engagedStops = [
+      stops.emergencyStop
+        ? (stops.emergencyStopUnread ? "platform emergency stop could not be read — treated as engaged" : "platform emergency stop engaged")
+        : null,
+      stops.safetyCore
+        ? (stops.safetyCoreUnread ? "safety-core kill switch could not be read — treated as engaged" : "safety-core kill switch engaged (release on the Emergency page)")
+        : null,
+      !stops.reported ? "safety-core kill switch not reported" : null,
+    ].filter(Boolean).join("; ");
     return [
-      { id: "operator_auth", ok: true, label: "Admin/operator authenticated" },
+      // Evidence: readiness is only stored when the admin/owner-gated endpoint
+      // answered ok (it refuses any other session with 401/403).
+      { id: "operator_auth", ok: r.ok === true, label: "Admin/operator authenticated", detail: "readiness endpoint accepted this session as admin/owner" },
       { id: "bridge_pinned", ok: b != null, label: "Master bridge pinned" },
       { id: "heartbeat", ok: fresh, label: `Bridge heartbeat fresh (<${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`, detail: b?.heartbeatAgeSeconds != null ? `${b.heartbeatAgeSeconds}s old` : "no heartbeat" },
       { id: "ea_version", ok: eaOk, label: `EA ≥ ${r.constants.MIN_LIVE_EA_VERSION}`, detail: b?.eaVersion ?? "—" },
@@ -376,36 +601,42 @@ function useChecklist(r: ReadinessResp | null): Check[] {
       { id: "enable_live_execution", ok: ea.enableLiveExecution === true, label: "EA EnableLiveExecution=true" },
       { id: "terminal_connected", ok: ea.terminalConnected === true, label: "EA terminal connected" },
       { id: "algo_trading_allowed", ok: ea.algoTradingAllowed === true, label: "EA algo trading allowed" },
-      { id: "routing_shared", ok: g.accountRoutingMode === "SHARED_MASTER_MT5", label: "Routing = SHARED_MASTER_MT5" },
-      { id: "master_bridge_mode_live", ok: g.masterBridgeLiveEnabled, label: "Master bridge mode = live" },
-      { id: "shared_live_enabled", ok: g.sharedLiveTradingEnabled, label: "Shared live trading enabled" },
-      { id: "platform_mode_live", ok: g.platformMode === "LIVE", label: "Platform mode = LIVE" },
-      { id: "live_enabled", ok: g.liveEnabled, label: "liveEnabled flag = true" },
-      { id: "kill_released", ok: g.emergencyKillSwitch === false, label: "Kill switch released" },
+      { id: "routing_shared", ok: !unread && g.accountRoutingMode === "SHARED_MASTER_MT5", label: "Routing = SHARED_MASTER_MT5", detail: settingsDetail },
+      { id: "master_bridge_mode_live", ok: !unread && g.masterBridgeLiveEnabled, label: "Master bridge mode = live", detail: settingsDetail },
+      { id: "shared_live_enabled", ok: !unread && g.sharedLiveTradingEnabled, label: "Shared live trading enabled", detail: settingsDetail },
+      { id: "platform_mode_live", ok: !unread && g.platformMode === "LIVE", label: "Platform mode = LIVE", detail: settingsDetail },
+      { id: "live_enabled", ok: !unread && g.liveEnabled, label: "liveEnabled flag = true", detail: settingsDetail },
+      { id: "kill_released", ok: g.emergencyKillSwitch === false && stops.released, label: "Kill switches released (platform emergency stop and safety-core)", detail: engagedStops || undefined },
       { id: "approved_users", ok: r.approvedUsers.approvedCount > 0, label: "At least one user approved", detail: `${r.approvedUsers.approvedCount} approved` },
       { id: "user_limits", ok: usersWithCaps > 0 && usersWithCaps === r.approvedUsers.approvedCount, label: "Approved users have symbol/lot/risk caps", detail: `${usersWithCaps}/${r.approvedUsers.approvedCount} with caps` },
-      { id: "audit", ok: true, label: "Audit logging active" },
-      { id: "queue_reachable", ok: true, label: "Command queue reachable" },
-      { id: "attribution_reachable", ok: true, label: "shared_trade_attribution reachable" },
-      { id: "demo_works", ok: true, label: "Demo/paper path still works (untouched by activation)" },
+      // Nothing on this page checks these four (the readiness audit write is
+      // best-effort and swallows failures), so they are "not checked".
+      { id: "audit", ok: null, label: "Audit logging active", detail: "not checked" },
+      { id: "queue_reachable", ok: null, label: "Command queue reachable", detail: "not checked" },
+      { id: "attribution_reachable", ok: null, label: "shared_trade_attribution reachable", detail: "not checked" },
+      { id: "demo_works", ok: null, label: "Demo/paper path still works (untouched by activation)", detail: "not checked" },
     ];
   }, [r]);
 }
 
 function ChecklistCard({ items }: { items: Check[] }) {
-  const passed = items.filter(i => i.ok).length;
+  const checked = items.filter(i => i.ok !== null);
+  const passed = checked.filter(i => i.ok === true).length;
+  const notChecked = items.length - checked.length;
   return (
     <Card><CardHeader className="pb-2">
       <CardTitle className="text-sm flex items-center gap-2">
         Activation checklist
-        <Badge variant={passed === items.length ? "default" : "outline"} className="text-[10px]">
-          {passed}/{items.length}
+        <Badge variant={passed === checked.length && notChecked === 0 ? "default" : "outline"} className="text-[10px]" data-testid="checklist-badge">
+          {passed}/{checked.length} passed{notChecked > 0 ? ` · ${notChecked} not checked` : ""}
         </Badge>
       </CardTitle>
     </CardHeader><CardContent className="space-y-1">
       {items.map(i => (
-        <div key={i.id} className="flex items-center gap-2 text-xs">
-          {i.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
+        <div key={i.id} className="flex items-center gap-2 text-xs" data-testid={`check-${i.id}`} data-state={i.ok === true ? "pass" : i.ok === false ? "fail" : "not-checked"}>
+          {i.ok === true && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
+          {i.ok === false && <XCircle className="h-3 w-3 text-rose-400" />}
+          {i.ok === null && <AlertCircle className="h-3 w-3 text-zinc-500" />}
           <span>{i.label}</span>
           {i.detail && <span className="text-muted-foreground ml-auto font-mono text-[10px]">{i.detail}</span>}
         </div>
@@ -416,19 +647,20 @@ function ChecklistCard({ items }: { items: Check[] }) {
 
 // ── Arm / Disarm Live Execution card ─────────────────────────────────────────
 // Surfaced on the Readiness tab. This is the operator's one-click arm/disarm
-// for the DB-backed `liveBrokerExecutionArmed` flag. Pre-arm checks must
-// already pass (LOCKED state disables Arm) and the kill switch must be off.
-// Disarm is always allowed (fail-closed). All actions are audited server-side.
+// for the DB-backed `liveBrokerExecutionArmed` flag. The Arm button is not
+// disabled by this page: it sends the activation phrase and the detected
+// account / broker / server from readiness (nothing is typed), and the server
+// refuses on an engaged platform emergency stop, an identity mismatch or a
+// failing pre-arm check. The copy below says exactly that. Disarm is always
+// allowed (fail-closed). All actions are audited server-side.
 function ArmExecutionCard({
   readiness, onAfter,
 }: { readiness: ReadinessResp | null; onAfter: () => void }) {
-  const [phrase, setPhrase] = useState("");
-  const [acct, setAcct] = useState("");
-  const [broker, setBroker] = useState("");
-  const [server, setServer] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  // "armed": the arm endpoint set the operator arm. What that means for live
+  // execution is read from the current readiness at render time, not assumed.
+  const [msg, setMsg] = useState<string | "armed" | null>(null);
   if (!readiness) return null;
   const { state } = computeArmState(readiness);
   const required = readiness.requiredConfirmationPhrases.activate;
@@ -436,12 +668,6 @@ function ArmExecutionCard({
   const detectedAccount = readiness.liveAccount.detectedAccountNumber;
   const detectedBroker = readiness.liveAccount.detectedBrokerName;
   const detectedServer = readiness.liveAccount.detectedServerName;
-  const phraseOk = phrase === required;
-  const acctOk = detectedAccount != null && acct.trim() === detectedAccount.trim();
-  const brokerOk = detectedBroker != null && broker.trim() === detectedBroker.trim();
-  const serverOk = detectedServer != null && server.trim() === detectedServer.trim();
-  const armable =
-    state === "READY_TO_ARM" && phraseOk && acctOk && brokerOk && serverOk && busy == null;
   async function arm() {
     setBusy("arm"); setMsg(null);
     try {
@@ -454,9 +680,8 @@ function ArmExecutionCard({
         })},
       );
       setMsg(r.ok
-        ? "ARMED — server live broker execution enabled."
+        ? "armed"
         : `${r.error}${r.mismatches ? ` :: ${r.mismatches.join("; ")}` : ""}${r.failedChecks ? ` :: ${r.failedChecks.join(",")}` : ""}`);
-      setPhrase(""); setAcct(""); setBroker(""); setServer("");
       onAfter();
     } finally { setBusy(null); }
   }
@@ -478,38 +703,90 @@ function ArmExecutionCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-[11px] text-muted-foreground space-y-1">
-          <div>
-            DB flag: <code className="font-mono">liveBrokerExecutionArmed = {String(g.liveBrokerExecutionArmedDb)}</code>
-            {g.liveBrokerExecutionArmedAt && <> · armed at <code className="font-mono">{g.liveBrokerExecutionArmedAt}</code></>}
-            {g.liveBrokerExecutionArmedBy != null && <> · by admin #{g.liveBrokerExecutionArmedBy}</>}
-          </div>
-          <div>
-            Env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code>: {String(g.serverMasterSwitchEnvOnly)} (hard-kill override; leave unset in normal operation)
+          {settingsUnreadDetail(g) ? (
+            <div data-testid="arm-db-flag-unread">
+              DB flag <code className="font-mono">liveBrokerExecutionArmed</code>: could not be read ({settingsUnreadDetail(g)}).
+            </div>
+          ) : (
+            <div>
+              DB flag: <code className="font-mono">liveBrokerExecutionArmed = {String(g.liveBrokerExecutionArmedDb)}</code>
+              {g.liveBrokerExecutionArmedAt && <> · armed at <code className="font-mono">{g.liveBrokerExecutionArmedAt}</code></>}
+              {g.liveBrokerExecutionArmedBy != null && <> · by admin #{g.liveBrokerExecutionArmedBy}</>}
+            </div>
+          )}
+          <div data-testid="arm-env-line">
+            Env <code className="font-mono">ARX_LIVE_BROKER_EXECUTION_ENABLED</code>: {String(g.serverMasterSwitchEnvOnly)} (must be true for live execution: effective = env AND operator arm; unset = off. Set on the server, not on this page.)
           </div>
         </div>
         {state === "LOCKED" && (
           <Alert className="py-2 border-rose-500/40 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Pre-arm checks failing — Arm disabled.</AlertTitle>
+            <AlertTitle className="text-xs text-rose-200">Pre-arm checks failing — the server refuses Arm.</AlertTitle>
             <AlertDescription className="text-[11px] text-rose-200/80">Resolve the failing checks in the checklist above, then return here.</AlertDescription>
           </Alert>
         )}
-        {state === "KILL_SWITCH_ACTIVE" && (
-          <Alert className="py-2 border-rose-500/60 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Kill switch active — Arm refused.</AlertTitle>
-            <AlertDescription className="text-[11px] text-rose-200/80">Release the kill switch (Wizard step 9) before arming.</AlertDescription>
-          </Alert>
-        )}
+        {state === "KILL_SWITCH_ACTIVE" && (() => {
+          const stops = installWideStops(g);
+          if (stops.emergencyStop) {
+            return stops.emergencyStopUnread ? (
+              <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-emergency-stop">
+                <AlertTitle className="text-xs text-rose-200">Platform emergency stop could not be read — treated as engaged; the server refuses Arm.</AlertTitle>
+                <AlertDescription className="text-[11px] text-rose-200/80">
+                  The settings were not read ({stops.emergencyStopDetail}), so the stop is treated as
+                  engaged, not observed engaged. There is nothing to release until it can be read:
+                  Refresh, and check the server logs if it persists.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-emergency-stop">
+                <AlertTitle className="text-xs text-rose-200">Platform emergency stop engaged — the server refuses Arm.</AlertTitle>
+                <AlertDescription className="text-[11px] text-rose-200/80">Release it (Wizard step 9) before arming.</AlertDescription>
+              </Alert>
+            );
+          }
+          return stops.safetyCoreUnread ? (
+            <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-safety-core-stop">
+              <AlertTitle className="text-xs text-rose-200">Safety-core kill switch could not be read — treated as engaged.</AlertTitle>
+              <AlertDescription className="text-[11px] text-rose-200/80">
+                This report could not read the safety-core switch ({stops.safetyCoreDetail}), so it shows
+                it as engaged (fail-closed), not as an observed engaged switch. The server's Arm check
+                reads only the platform emergency stop, so it does not refuse Arm for this. The Risk
+                Governor reads the switch again on every new live order. Refresh, and check the server
+                logs if it persists.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-safety-core-stop">
+              <AlertTitle className="text-xs text-rose-200">Safety-core kill switch engaged — no live order can go through.</AlertTitle>
+              <AlertDescription className="text-[11px] text-rose-200/80">
+                The Risk Governor refuses every new live order while it is engaged. The server's Arm
+                check reads only the platform emergency stop, so it does not refuse Arm for this switch.
+                Release it on the Emergency page.
+              </AlertDescription>
+            </Alert>
+          );
+        })()}
         {state === "LIVE_BROKER_EXECUTION_ENABLED" && (
           <Alert className="py-2 border-emerald-500/60 bg-emerald-500/10">
             <AlertTitle className="text-xs text-emerald-200">Currently ARMED.</AlertTitle>
             <AlertDescription className="text-[11px] text-emerald-200/80">Use Disarm below to fail-closed immediately. Audit row is written.</AlertDescription>
           </Alert>
         )}
+        {state === "ARMED_ENV_OFF" && (
+          <Alert className="py-2 border-amber-500/60 bg-amber-500/10" data-testid="arm-env-off">
+            <AlertTitle className="text-xs text-amber-200">Operator armed, but ARX_LIVE_BROKER_EXECUTION_ENABLED is not set — live execution stays off.</AlertTitle>
+            <AlertDescription className="text-[11px] text-amber-200/80">
+              Effective live broker execution = env AND operator arm. Arming again changes nothing;
+              set the env var on the server to enable it, or Disarm below.
+            </AlertDescription>
+          </Alert>
+        )}
         {state === "READY_TO_ARM" && (
           <Alert className="py-2 border-amber-500/60 bg-amber-500/10">
             <AlertTitle className="text-xs text-amber-200">Ready to arm.</AlertTitle>
             <AlertDescription className="text-[11px] text-amber-200/80">
-              Type the phrase and the detected account / broker / server exactly (trim-matched) to enable.
+              Arm is one click and nothing is typed: it sends the activation phrase and the detected
+              account / broker / server for you. The server compares them with the bridge it detects at
+              that moment, re-validates the pre-arm checks, and refuses on any mismatch or failure.
             </AlertDescription>
           </Alert>
         )}
@@ -529,10 +806,26 @@ function ArmExecutionCard({
             {busy === "disarm" ? "Disarming…" : "Disarm"}
           </Button>
         </div>
-        {msg && <div className="text-xs font-mono text-amber-300" data-testid="arm-msg">{msg}</div>}
+        {msg && <div className="text-xs font-mono text-amber-300" data-testid="arm-msg">{msg === "armed" ? armedMessage(g) : msg}</div>}
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * After a successful Arm. The arm endpoint sets the operator arm only (it does
+ * not read the env var), and effective live broker execution = env
+ * ARX_LIVE_BROKER_EXECUTION_ENABLED AND operator arm, so the message says what
+ * the latest readiness shows instead of claiming execution is enabled.
+ */
+function armedMessage(g: ReadinessResp["globalSwitches"]): string {
+  if (g.serverMasterSwitchEnvOnly !== true) {
+    return "ARMED — operator arm set. Live broker execution stays off: ARX_LIVE_BROKER_EXECUTION_ENABLED is not true on the server (effective = env AND operator arm).";
+  }
+  if (g.serverMasterSwitchEnabled === true) {
+    return "ARMED — operator arm set; live broker execution is enabled (env AND operator arm, as of the latest readiness).";
+  }
+  return "ARMED — operator arm set. Readiness does not yet report effective live broker execution as on; see the state above.";
 }
 
 // ── Activation Wizard ────────────────────────────────────────────────────────
@@ -552,28 +845,23 @@ const WIZARD_STEPS: Array<{ id: string; label: string; checks: string[] }> = [
 ];
 
 function ActivationWizard({
-  readiness, checklist, onAfterStep,
-}: { readiness: ReadinessResp | null; checklist: Check[]; onAfterStep: () => void }) {
+  readiness, loadError, checklist, onAfterStep,
+}: { readiness: ReadinessResp | null; loadError: string | null; checklist: Check[]; onAfterStep: () => void }) {
   const [phrase, setPhrase] = useState("");
-  const [acctConfirm, setAcctConfirm] = useState("");
-  const [brokerConfirm, setBrokerConfirm] = useState("");
-  const [serverConfirm, setServerConfirm] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   const required = readiness.requiredConfirmationPhrases.activate;
   const phraseOk = phrase === required;
   const detectedAccount = readiness.liveAccount.detectedAccountNumber;
   const detectedBroker = readiness.liveAccount.detectedBrokerName;
   const detectedServer = readiness.liveAccount.detectedServerName;
-  // Confirmation inputs are matched after trim() on both sides, mirroring the
-  // server-side check #12 logic. Without trim, an accidental trailing space
-  // pasted in from the broker UI would cause a confusing identity mismatch.
-  const acctOk = true;
-  const brokerOk = true;
-  const serverOk = true;
-  const allConfirmOk = phraseOk && acctOk && brokerOk && serverOk;
+  // The setting steps ask only for the typed phrase (the /activate-step
+  // endpoint checks nothing else). The detected identity below is shown for
+  // reference; this wizard does not collect or compare an identity
+  // confirmation.
+  const allConfirmOk = phraseOk;
   const checkOk = (id: string) => checklist.find(c => c.id === id)?.ok === true;
   async function copy(text: string | null, label: string) {
     if (!text) return;
@@ -620,8 +908,8 @@ function ActivationWizard({
   async function smoke() {
     setBusy("smoke"); setMsg(null);
     try {
-      const r = await apiJson<SmokeResp>("/api/admin/live-shared/activation-smoke-test", { method: "POST" });
-      setMsg(`smoke: ${r.summary.passed}/${r.summary.total} pass`);
+      const r = await runSmokeTest();
+      setMsg("data" in r ? `smoke: ${smokeResultText(r.data)}` : `smoke: could not be loaded — ${r.error}`);
     } finally { setBusy(null); }
   }
 
@@ -633,7 +921,7 @@ function ActivationWizard({
         <AlertDescription className="text-[11px]">
           Each step writes to <code>global_trading_settings</code> through the audited
           <code> /activate-step</code> endpoint, which requires the typed phrase
-          <strong> {required}</strong> on every call. Steps 11–13 are read-only dry-runs.
+          <strong> {required}</strong> on every call. Steps 10–11 are read-only dry-runs.
         </AlertDescription>
       </Alert>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
@@ -645,8 +933,8 @@ function ActivationWizard({
             Must exactly equal <code className="font-mono">{required}</code>.
           </div>
         </div>
-        <div>
-          <Label className="text-xs">Detected master bridge — confirm to proceed</Label>
+        <div data-testid="wizard-detected-identity">
+          <Label className="text-xs">Detected master bridge (for reference — not confirmed by this wizard)</Label>
           <div className="border border-zinc-800/60 rounded p-2 space-y-1 text-[11px]">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground w-16">Account</span>
@@ -672,6 +960,10 @@ function ActivationWizard({
                 onClick={() => copy(detectedServer, "Server")}
                 data-testid="copy-server">Copy</Button>
             </div>
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-1">
+            The setting steps need only the typed phrase. Bridge identity is compared by the server
+            only when you Arm (Readiness tab).
           </div>
           {!detectedAccount && (
             <div className="text-[10px] text-amber-300 mt-1">
@@ -711,8 +1003,8 @@ function ActivationWizard({
 
 // ── Bridge / EA tab ──────────────────────────────────────────────────────────
 function BridgeTab({
-  readiness, onAction, setActionMsg,
-}: { readiness: ReadinessResp | null; onAction: () => void; setActionMsg: (s: string | null) => void }) {
+  readiness, loadError, onAction, setActionMsg,
+}: { readiness: ReadinessResp | null; loadError: string | null; onAction: () => void; setActionMsg: (s: string | null) => void }) {
   const [busy, setBusy] = useState(false);
   async function refresh() {
     setBusy(true); setActionMsg(null);
@@ -728,7 +1020,8 @@ function BridgeTab({
       <CardTitle className="text-sm">Bridge / EA</CardTitle>
       <Button size="sm" variant="outline" disabled={busy} onClick={refresh} data-testid="bridge-test-connection">Refresh snapshot</Button>
     </CardHeader><CardContent className="space-y-1">
-      {!b && <Alert className="py-2"><AlertTitle className="text-xs">No master bridge pinned.</AlertTitle></Alert>}
+      {!readiness && <ReadinessPending loadError={loadError} />}
+      {readiness && !b && <Alert className="py-2"><AlertTitle className="text-xs">No master bridge pinned.</AlertTitle></Alert>}
       {b && (
         <>
           {row("Connection ID", `#${b.connectionId}`)}
@@ -746,8 +1039,8 @@ function BridgeTab({
 }
 
 // ── Users tab ────────────────────────────────────────────────────────────────
-function UsersTab({ readiness }: { readiness: ReadinessResp | null }) {
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+function UsersTab({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   const rows = readiness.approvedUsers.rows;
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Approved users ({readiness.approvedUsers.approvedCount} / active {readiness.approvedUsers.activeCount})</CardTitle></CardHeader><CardContent>
@@ -860,12 +1153,14 @@ function CommandsTab() {
 // ── Smoke tests tab ──────────────────────────────────────────────────────────
 function SmokeTab() {
   const [data, setData] = useState<SmokeResp | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   async function run() {
     setBusy(true);
     try {
-      const r = await apiJson<SmokeResp>("/api/admin/live-shared/activation-smoke-test", { method: "POST" });
-      setData(r);
+      const r = await runSmokeTest();
+      if ("data" in r) { setData(r.data); setError(null); }
+      else { setData(null); setError(r.error); }
     } finally { setBusy(false); }
   }
   return (
@@ -873,15 +1168,19 @@ function SmokeTab() {
       <CardTitle className="text-sm">Activation smoke test</CardTitle>
       <Button size="sm" disabled={busy} onClick={run} data-testid="smoke-run">{busy ? "Running…" : "Run smoke test"}</Button>
     </CardHeader><CardContent className="space-y-2">
-      {!data && <div className="text-xs text-muted-foreground italic">Read-only probe: 11 sub-checks. No EA contact, no DB writes (except audit row).</div>}
+      {!data && !error && <div className="text-xs text-muted-foreground italic">Read-only probe: 11 sub-checks, some of which it cannot exercise (shown as not checked). No EA contact, no DB writes (except audit row).</div>}
+      {error && <div className="text-xs text-rose-300" data-testid="smoke-error">Smoke test could not be loaded: {error}</div>}
       {data && (
         <>
-          <div className="text-xs">Result: <strong>{data.summary.passed}/{data.summary.total} pass</strong> · bridge gate: <code>{data.bridgeGate.decision}</code></div>
+          <div className="text-xs" data-testid="smoke-result">Result: <strong>{smokeResultText(data)}</strong> · bridge gate: <code>{data.bridgeGate.decision}</code></div>
           <ul className="space-y-1 text-xs">
             {data.checks.map(c => (
-              <li key={c.id} className="flex items-center gap-2">
-                {c.pass ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
+              <li key={c.id} className="flex items-center gap-2" data-testid={`smoke-check-${c.id}`} data-status={smokeStatus(c)}>
+                {smokeStatus(c) === "pass" ? <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  : smokeStatus(c) === "not_checked" ? <AlertCircle className="h-3 w-3 text-zinc-500" aria-label="not checked" />
+                  : <XCircle className="h-3 w-3 text-rose-400" />}
                 <span>{c.label}</span>
+                {smokeStatus(c) === "not_checked" && <span className="text-[10px] text-muted-foreground">(not checked)</span>}
                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">{c.detail}</span>
               </li>
             ))}
@@ -938,7 +1237,8 @@ function MicroTestTab({ readiness }: { readiness: ReadinessResp | null }) {
   }
 
   const canExec = validated != null && phrase === REQUIRED_QUEUE && sl !== "" && Number(lot) <= 0.01;
-  const noApproved = (readiness?.approvedUsers.approvedCount ?? 0) === 0;
+  // Only a loaded readiness can say there are no approved users.
+  const noApproved = readiness != null && readiness.approvedUsers.approvedCount === 0;
 
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Micro live test (operator runs as self)</CardTitle></CardHeader><CardContent className="space-y-2">
@@ -1001,8 +1301,8 @@ function RollbackTab({ onDone, setActionMsg }: { onDone: () => void; setActionMs
 }
 
 // ── Audit tab ────────────────────────────────────────────────────────────────
-function AuditTab({ readiness }: { readiness: ReadinessResp | null }) {
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+function AuditTab({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Recent admin actions (last 50)</CardTitle></CardHeader><CardContent>
       <ul className="space-y-1 text-xs">

@@ -21,11 +21,17 @@ interface AuditRow {
   aggregationPass: boolean;
   formingCandlePresent: boolean;
   mergePass: boolean;
+  /** Additive server field: the seam was actually measured. */
+  mergeChecked?: boolean;
   outlierSpikeCount: number;
   outlierWickCount: number;
   historicalPeriodShiftCount: number;
   mirrorPass: boolean;
   priceAlignPass: boolean;
+  /** Additive server field: a precision profile let price scale be checked. */
+  priceChecked?: boolean;
+  /** Additive server field: the feed was confirmed live (null = not reported). */
+  feedLive?: boolean | null;
   rubyAllowed: boolean;
   status: AuditStatus;
   rawAssessment: string;
@@ -73,12 +79,28 @@ function statusClasses(status: AuditStatus): string {
   }
 }
 
-function PassCell({ ok }: { ok: boolean }) {
+// ok === null → the check did not run: shown as "–", never as a tick.
+function PassCell({ ok, testid }: { ok: boolean | null; testid?: string }) {
+  if (ok === null) {
+    return (
+      <span className="text-muted-foreground" title="Not checked" aria-label="Not checked" data-testid={testid} data-check="not-checked">
+        –
+      </span>
+    );
+  }
   return ok ? (
-    <Check className="h-3.5 w-3.5 text-success inline" />
+    <Check className="h-3.5 w-3.5 text-success inline" aria-label="Pass" data-testid={testid} data-check="pass" />
   ) : (
-    <X className="h-3.5 w-3.5 text-danger inline" />
+    <X className="h-3.5 w-3.5 text-danger inline" aria-label="Fail" data-testid={testid} data-check="fail" />
   );
+}
+
+// Downgrade-only: a tick needs the server to say the check actually ran. An
+// older payload without the flag keeps a fail as a fail but never shows a tick.
+function checkedResult(pass: boolean, checked: boolean | undefined): boolean | null {
+  if (checked === true) return pass;
+  if (checked === false) return null;
+  return pass ? null : false;
 }
 
 export function ChartTruthHealthCard() {
@@ -187,9 +209,9 @@ export function ChartTruthHealthCard() {
                   <th className="text-center py-1 pr-2">Aggr</th>
                   <th className="text-center py-1 pr-2">Form</th>
                   <th className="text-center py-1 pr-2">Merge</th>
-                  <th className="text-center py-1 pr-2">Mirror</th>
+                  <th className="text-center py-1 pr-2" title="Response symbol and timeframe match the request. This is not a broker-price mirror check.">Sym/TF</th>
                   <th className="text-center py-1 pr-2">Price</th>
-                  <th className="text-center py-1 pr-2">{name}</th>
+                  <th className="text-center py-1 pr-2" title={`Feed quality is clean (AI-usable). ${name} also needs Chart Truth 75+ and a handshake pass before a verified read; those are not checked here.`}>AI-usable</th>
                   <th className="text-left py-1">Notes</th>
                 </tr>
               </thead>
@@ -207,9 +229,9 @@ export function ChartTruthHealthCard() {
                       <td className="text-center py-1 pr-2"><PassCell ok={row.ohlcPass} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.aggregationPass} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.formingCandlePresent} /></td>
-                      <td className="text-center py-1 pr-2"><PassCell ok={row.mergePass} /></td>
+                      <td className="text-center py-1 pr-2"><PassCell ok={checkedResult(row.mergePass, row.mergeChecked)} testid={`chart-truth-merge-${symbol}-${row.timeframe}`} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.mirrorPass} /></td>
-                      <td className="text-center py-1 pr-2"><PassCell ok={row.priceAlignPass} /></td>
+                      <td className="text-center py-1 pr-2"><PassCell ok={checkedResult(row.priceAlignPass, row.priceChecked)} testid={`chart-truth-price-${symbol}-${row.timeframe}`} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.rubyAllowed} /></td>
                       <td className="py-1 text-muted-foreground max-w-[280px] whitespace-normal break-words">
                         {row.reasons.length > 0 ? row.reasons.join(" ") : "—"}
@@ -225,8 +247,11 @@ export function ChartTruthHealthCard() {
         <p className="text-[11px] text-muted-foreground">
           Lightweight {report?.probeLimit ?? 10}-bar probe per symbol × timeframe through the live market-data router
           and candle truth engine. Cached for {report ? Math.round(report.ttlSeconds / 60) : 5} minutes so it never hits a
-          provider more often than a normal chart load. History-minimum is intentionally not enforced here (small probe),
-          so a green row means real data is flowing, valid, and fresh.
+          provider more often than a normal chart load. History-minimum is intentionally not enforced here (small probe).
+          A CLEAN row means candles came back with valid OHLC and no sequence anomalies, no measured seam or price-scale
+          problem, and a feed that is neither stale nor delayed and is confirmed live. "–" means the check could not run
+          (no forming bar for the seam, or no precision profile for price scale). Sym/TF only checks that the response
+          matches the requested symbol and timeframe; AI-usable is feed quality only, not {name}'s full read gate.
         </p>
       </CardContent>
     </Card>
