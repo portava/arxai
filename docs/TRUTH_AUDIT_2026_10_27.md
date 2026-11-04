@@ -22,6 +22,7 @@ Already fixed and documented issues (`TRUTH_EVIDENCE_INTEGRITY_2026_10_26.md`, `
   - An offset that a writer's pushed bars never expose cannot be seen. One example is +2h on closed-only H4 pushes with no forming bar and no lower timeframe from the same writer.
   - Two other producers carry no receipt-time observation: the durable `market_candles` mirror and non-MT5 providers. They are bounded only by the open-time rule.
   - No timezone conversion is attempted. The broker's offset is not known.
+  - Codex line note (2026-11-04, audit H7): on this line the offset is now measured as a diagnostic, from each bridge's own v2 ticks (broker clock minus EA UTC, `getMt5BridgeClockOffset`), and every EA bar carries it in `timeBasisEvidence`. When an offset is measured, the future-lead bound and the receipt-time future-stamp mark compare the bar's open time minus that offset with UTC, and the trailing gap ages the bar by the earlier of its raw and corrected opens (an offset only ever makes a bar older). With no measured offset the raw bar time is compared (fail closed), and a mark set that way is re-checked once the offset is measured. No bar time is converted or rewritten, and no UTC claim is made from a current offset.
 - **Side effect:** `candleHistoryService` derives `live` from the same evaluator. A newest window that is undated, or that opens more than 5 s in the future, now reads `stale` instead of `live`.
 
 ### 2. A failed news check read as an all-clear for entry advice

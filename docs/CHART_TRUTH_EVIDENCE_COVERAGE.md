@@ -36,11 +36,19 @@ used by Ruby's draw-setup/structural reads) share one enrichment,
 `enrichStateWithUserBrokerQuote` (`userBrokerAlignment.ts`). It tries the live
 MT5 quote pushed by the series' own bridge (only when that bridge belongs to the
 requesting user), then the user's `arx_symbol_specs` row, which binds only from
-an EA-reported `lastTickTime` on the same bridge. Ruby's `VERIFIED` basis and
-the draft read's `feedUsable` require the handshake `sourceOverall` (candle-data
-rollup, renderer telemetry excluded) to PASS, which needs a measured, BOUND
-broker comparison: with no quote, or only an unbound one (another account's
-bridge, no observed tick time, stale), Ruby stays non-VERIFIED. The earlier gap
+an EA-reported `lastTickTime` on the same bridge. On this line Ruby's `VERIFIED`
+basis (`rubyChartContext.ts`) and the draft read's `feedUsable`
+(`rubyDraftRead.ts`) require the FULL handshake `overall` to PASS, renderer
+telemetry (`RenderHealth`) included; the candle-data rollup `sourceOverall`
+(renderer excluded) is only named in Ruby's trust line and is not the gate.
+That needs a measured, BOUND broker comparison: with no quote, or only an
+unbound one (another account's bridge, no observed tick time, stale), Ruby stays
+non-VERIFIED. The server does not measure `render_accuracy` (it is always
+unmeasured there, so `RenderHealth` is WARN), so a server-side Ruby read cannot
+become `VERIFIED` and a draft read cannot become `feedUsable` until renderer
+evidence is measured or the owner decides to gate on `sourceOverall` instead
+(the Truth line gates on `sourceOverall`; this line keeps the stricter rule
+pending that decision). The earlier gap
 where Ruby's per-user path compared the spec row's bid/ask without checking its
 quote age or account provenance is closed.
 Otherwise the sub-metric is null and its detail names the reasons (for example
