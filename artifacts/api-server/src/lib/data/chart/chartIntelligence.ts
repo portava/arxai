@@ -79,6 +79,7 @@ import type {
   ChartEvidenceDirection,
   ChartQualityLabel,
 } from "./engines/marketUnderstandingTypes.js";
+import { boundedCacheSet } from "./boundedCache.js";
 
 export interface ChartCandleStats {
   barsAnalyzed: number;
@@ -214,6 +215,8 @@ interface CacheEntry {
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
+/** Entry cap; expired entries are swept on every write (boundedCacheSet). */
+const CACHE_MAX_ENTRIES = 500;
 
 
 /**
@@ -703,12 +706,13 @@ export async function buildChartIntelligenceState(
   };
   recordStateTruthResult(state, truth.truthResult);
 
-  cache.set(cacheKey, {
+  const writtenAt = Date.now();
+  boundedCacheSet(cache, cacheKey, {
     state,
     truthResult: truth.truthResult,
     feedStatus: truth.feedStatus,
     seriesAttribution: chartSeriesAttribution(truth),
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  });
+    expiresAt: writtenAt + CACHE_TTL_MS,
+  }, { max: CACHE_MAX_ENTRIES, isExpired: (e) => e.expiresAt <= writtenAt });
   return state;
 }
