@@ -11,10 +11,14 @@ type Grade = {
   strengths: string[]; weaknesses: string[];
   mistakesDetected: string[]; improvementSuggestion: string;
   shouldHaveTakenTrade: boolean; dataSource: string;
+  /** Server masked the grade for this viewer: no grading was performed. */
+  withheld?: boolean;
 };
 type Sniper = {
   score: number; label: string;
   factors: Record<string, number>;
+  /** Server masked the sniper score for this viewer: no score was computed. */
+  withheld?: boolean;
 };
 
 const GRADE_COLORS: Record<string, string> = {
@@ -98,7 +102,30 @@ export default function TradeGrader() {
         </CardContent>
       </Card>
 
-      {grade && sniper && (
+      {grade && sniper && (grade.withheld === true || sniper.withheld === true) && (
+        // The server withholds simulator-derived grades from viewers who may not
+        // see simulator detail and sends zeroed placeholders ("—", 0/100,
+        // DO_NOT_ENTER). Those placeholders are not a verdict on the idea, so we
+        // say plainly that nothing was graded instead of rendering them.
+        <Card data-testid="trade-grader-withheld">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-400" /> Not graded</CardTitle>
+            <CardDescription>No grade or entry score was produced for this idea.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {/* The server masks by the viewer's role alone, never by feed state,
+                so its reason text is not echoed here: an older reason said the
+                grade was waiting for a verified feed, which no feed changes. */}
+            <p>
+              The grader only runs on simulator prices, and simulator-based scores are shown only to platform
+              operators, so the server did not return a grade to your account.
+            </p>
+            <p className="text-muted-foreground">This is not a judgement for or against the trade.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {grade && sniper && grade.withheld !== true && sniper.withheld !== true && (
         <div className="grid gap-4 md:grid-cols-2">
           <Card className={GRADE_COLORS[grade.tradeGrade] ?? ""}>
             <CardHeader>

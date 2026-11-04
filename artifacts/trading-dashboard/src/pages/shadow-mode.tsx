@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Eye, Play, StopCircle } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
+import { formatInstrumentPrice, magnitudeDecimals } from "@/lib/instrumentPriceFormat";
+import { rowTimeLabel } from "@/lib/rowTimeLabel";
 
-type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number };
-type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number; tp: number; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
+type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number; untracked?: number; priceSource?: string };
+type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number | null; tp: number | null; confidence: number; status: string; pnlR?: number; outcomeAt?: string; untrackedReason?: string; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
 
 const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-emerald-500/20 text-emerald-400", SHADOW_LOSS: "bg-rose-500/20 text-rose-400", SHADOW_BREAKEVEN: "bg-slate-500/20 text-slate-300", SHADOW_TRACKING_OUTCOME: "bg-blue-500/20 text-blue-400", SHADOW_REJECTED: "bg-amber-500/20 text-amber-400", SHADOW_WAIT: "bg-slate-500/20 text-slate-300", SHADOW_EXPIRED: "bg-slate-500/20 text-slate-300" };
 
@@ -62,6 +64,7 @@ export default function ShadowMode() {
         <Eye className="h-6 w-6 text-primary" />
         <div className="flex-1"><h1 className="text-2xl font-bold">Shadow Mode</h1>
           <p className="text-sm text-muted-foreground">AI generates trade ideas and tracks hypothetical outcomes. No simulator orders, no broker calls.</p>
+          {s && <p className="text-xs text-amber-400" data-testid="shadow-price-source">{priceSourceText(s.priceSource)}</p>}
         </div>
         <Badge variant="outline">SHADOW</Badge>
         {s && <Badge className={s.enabled ? "bg-emerald-500/20 text-emerald-400" : ""}>{s.enabled ? "RUNNING" : "STOPPED"}</Badge>}
@@ -77,11 +80,12 @@ export default function ShadowMode() {
           <Stat label="Expired" value={String(s.expired)} />
           <Stat label="Rejected by risk" value={String(s.rejected)} />
           <Stat label="Waits" value={String(s.waits)} />
+          <Stat label="Outcome not tracked" value={s.untracked != null ? String(s.untracked) : "not reported"} />
         </div>
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Controls</CardTitle><CardDescription>Shadow scans default symbols every ~5s. Admin-gated.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Controls</CardTitle><CardDescription>Shadow scans default symbols every ~5s and tracks each idea's outcome only while running. Stop closes ideas still open as expired with no measured result; a decision forced while stopped is recorded but its outcome is not tracked. Admin-gated.</CardDescription></CardHeader>
         <CardContent className="flex gap-2 flex-wrap">
           <Button onClick={() => api("/api/shadow-mode/start", { method: "POST", body: JSON.stringify({ intervalSec: 5 }) }).then(load)}><Play className="h-4 w-4 mr-1" />Start</Button>
           <Button variant="outline" onClick={() => api("/api/shadow-mode/stop", { method: "POST" }).then(load)}><StopCircle className="h-4 w-4 mr-1" />Stop</Button>
@@ -108,10 +112,11 @@ export default function ShadowMode() {
                 <span className="text-muted-foreground">conf {d.confidence}</span>
                 <span className="text-muted-foreground">mc {d.marketCondition}</span>
                 {d.pnlR != null && <span className="text-muted-foreground">R={d.pnlR.toFixed(2)}</span>}
-                <span className="ml-auto text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span>
+                <span className="ml-auto text-muted-foreground">{rowTimeLabel(d.ts)}</span>
               </div>
-              <div className="text-muted-foreground mt-1">entry {d.entry.toFixed(5)} sl {d.sl.toFixed(5)} tp {d.tp.toFixed(5)}</div>
+              <div className="text-muted-foreground mt-1">{levelsText(d)}</div>
               <div className="text-muted-foreground">{d.reason}</div>
+              {d.untrackedReason && <div className="text-amber-400">{untrackedText(d)}</div>}
               {d.reasonToAvoid && <div className="text-rose-400">avoid: {d.reasonToAvoid}</div>}
             </div>
           ))}
@@ -120,6 +125,40 @@ export default function ShadowMode() {
       </Card>
     </div>
   );
+}
+
+/** Why this idea's outcome was never measured. */
+function untrackedText(d: Dec): string {
+  if (d.untrackedReason === "TRACKING_STOPPED") {
+    const at = d.outcomeAt ? ` at ${rowTimeLabel(d.outcomeAt)}` : "";
+    return `Outcome not tracked: shadow mode was stopped${at}, before this idea reached its stop or target.`;
+  }
+  if (d.untrackedReason === "TRACKER_NOT_RUNNING") return "Outcome not tracked: shadow mode was stopped when this decision was made.";
+  return "Outcome not tracked.";
+}
+
+/** Where the prices on this page come from, as the server reported it. */
+function priceSourceText(priceSource: string | undefined): string {
+  return priceSource === "SYNTHETIC_SIMULATOR"
+    ? "Every price here comes from the built-in synthetic market simulator, not a live market feed or a broker. These are not real market levels."
+    : "The server did not report where these prices come from, so they are unverified.";
+}
+
+/**
+ * Entry / stop / target as the strategy proposed them; never an invented level.
+ * Decisions carry no instrument precision, so one precision per row comes
+ * from the entry's magnitude (indices 2, JPY-style 3, FX 5), never a blanket
+ * 5 decimals. A missing price (stored as 0) is "—", not "0.00"; a stop or
+ * target the strategy never proposed (null) is "none".
+ */
+function levelsText(d: Dec): string {
+  const ok = (v: number) => Number.isFinite(v) && v > 0;
+  const p = ok(d.entry) ? magnitudeDecimals(d.entry) : null;
+  const f = (v: number) => (ok(v) ? formatInstrumentPrice(v, p) : "—");
+  const px = (v: number | null) => (v == null ? "none" : f(v));
+  if (d.sl == null && d.tp == null) return `price ${f(d.entry)} · no stop or target proposed`;
+  const prefix = d.action === "WAIT" ? "proposed before the filter said WAIT: " : "";
+  return `${prefix}entry ${f(d.entry)} sl ${px(d.sl)} tp ${px(d.tp)}`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
