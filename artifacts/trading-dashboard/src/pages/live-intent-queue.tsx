@@ -192,7 +192,7 @@ export default function LiveIntentQueuePage() {
                   <td className="p-2"><Badge className={`text-[10px] border ${statusColor(i.status)}`}>{i.status}</Badge></td>
                   <td className="p-2 text-[10px] text-muted-foreground max-w-[260px] truncate" title={i.rejectionReason ? humanizeReason(i.rejectionReason) : ""}>{i.rejectionReason ? humanizeReason(i.rejectionReason) : "—"}</td>
                   <td className="p-2">
-                    <Button size="sm" variant="outline" disabled className="text-[10px] h-6" title="Not available: converting an intent into a broker order is not built yet. Connecting the MT5 bridge does not enable this button.">Convert to Broker Order Later</Button>
+                    <span className="text-[10px] text-muted-foreground" data-testid="intent-not-routed" title="Intents in this queue are a record only. Converting one into a broker order is not built, and connecting the MT5 bridge does not change that.">Record only</span>
                   </td>
                 </tr>
               ))}

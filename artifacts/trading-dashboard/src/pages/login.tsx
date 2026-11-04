@@ -17,6 +17,7 @@ import { useForgotPassword } from "@workspace/api-client-react";
 import { normalizeProductRole, productRoleHomePath } from "@/lib/productRole";
 import LoginShowcase from "@/components/login/LoginShowcase";
 import { useAssistantName } from "@/lib/assistant-name";
+import { readReturnTo } from "@/lib/authReturnTo";
 import {
   AlertCircle,
   ArrowRight,
@@ -186,7 +187,7 @@ export default function LoginPage() {
       // Route to the caller's role-based home (admin → admin command center,
       // investor → portal, trader → cockpit). AuthGate also bounces /login on
       // the next render, but navigating eagerly avoids an extra cycle.
-      navigate(productRoleHomePath(normalizeProductRole(result.user.role)));
+      navigate(readReturnTo() ?? productRoleHomePath(normalizeProductRole(result.user.role)));
     } catch (err) {
       setFormError((err as Error).message || "Sign in failed.");
     }

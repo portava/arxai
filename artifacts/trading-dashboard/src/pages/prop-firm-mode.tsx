@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -214,7 +215,7 @@ export default function PropFirmMode() {
             </p>
           )}
           <p className="text-xs text-muted-foreground" data-testid="prop-firm-separate">
-            This is separate from <a href="/prop-challenge" className="underline">Prop Challenge Practice</a>, which tracks its own challenges with their own balance, rules and status. A status on one page says nothing about the other.
+            This is separate from <Link href="/prop-challenge" className="underline">Prop Challenge Practice</Link>, which tracks its own challenges with their own balance, rules and status. A status on one page says nothing about the other.
           </p>
         </div>
         <Badge variant="outline" title="Profit, drawdown and rule progress are read from your paper account.">Progress: PAPER</Badge>

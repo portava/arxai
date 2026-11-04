@@ -79,14 +79,14 @@ export function AdminDiagnosticsGate({
             : "No raw account, bridge, or order internals are shown here. Your trading state is reflected on the user-facing pages."}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/my-account">
+          <Link asChild href="/my-account">
             <a>
               <Button variant="outline" size="sm" data-testid="admin-diag-gate-back">
                 <ArrowLeft className="h-3 w-3 mr-1" aria-hidden="true" /> Back to My Account
               </Button>
             </a>
           </Link>
-          <Link href="/help">
+          <Link asChild href="/help">
             <a>
               <Button variant="ghost" size="sm" data-testid="admin-diag-gate-help">
                 Get help

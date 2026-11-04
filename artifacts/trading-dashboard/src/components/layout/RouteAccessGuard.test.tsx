@@ -116,17 +116,20 @@ describe("RouteAccessGuard — two-tier human-trader containment (Task #768)", (
     expect(h.setLocation).not.toHaveBeenCalled();
   });
 
-  it("redirects a PENDING trader home from an approved-only execution surface", async () => {
+  it("shows a PENDING trader an approval lock card on an approved-only execution surface", () => {
     renderAsTrader("/market-scanner", { isLoading: false, isApprovedTrader: false });
-    expect(screen.getByTestId("routeaccess-nonproduct-redirect")).toBeTruthy();
+    expect(screen.getByTestId("routeaccess-pending-locked")).toBeTruthy();
     expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
-    await waitFor(() => expect(h.setLocation).toHaveBeenCalledWith("/"));
+    // Contained in place, not a silent bounce to the cockpit.
+    expect(h.setLocation).not.toHaveBeenCalled();
+    screen.getByTestId("button-pending-go-home").click();
+    expect(h.setLocation).toHaveBeenCalledWith("/");
   });
 
-  it("redirects a PENDING trader home from live trading", async () => {
+  it("keeps live trading locked for a PENDING trader", () => {
     renderAsTrader("/live-trading", { isLoading: false, isApprovedTrader: false });
+    expect(screen.getByTestId("routeaccess-pending-locked")).toBeTruthy();
     expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
-    await waitFor(() => expect(h.setLocation).toHaveBeenCalledWith("/"));
   });
 
   it("holds on the approval-loading skeleton for an approved-only path while the tier resolves", () => {
@@ -203,10 +206,10 @@ describe("personal Journal route containment", () => {
     expect(screen.getByTestId(PAGE_TESTID)).toBeTruthy();
     expect(h.setLocation).not.toHaveBeenCalled();
   });
-  it("keeps the personal journal outside the pending tier", async () => {
+  it("keeps the personal journal outside the pending tier", () => {
     renderAsTrader("/journal", { isLoading: false, isApprovedTrader: false });
     expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
-    await waitFor(() => expect(h.setLocation).toHaveBeenCalledWith("/"));
+    expect(screen.getByTestId("routeaccess-pending-locked")).toBeTruthy();
   });
   it("refuses the operator shadow journal for normal traders", async () => {
     renderAsTrader("/shadow-journal");

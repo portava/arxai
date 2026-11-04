@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { useProductRole } from "@/hooks/useProductRole";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -90,12 +91,12 @@ export default function ShadowMode() {
           <Button onClick={() => api("/api/shadow-mode/start", { method: "POST", body: JSON.stringify({ intervalSec: 5 }) }).then(load)}><Play className="h-4 w-4 mr-1" />Start</Button>
           <Button variant="outline" onClick={() => api("/api/shadow-mode/stop", { method: "POST" }).then(load)}><StopCircle className="h-4 w-4 mr-1" />Stop</Button>
           <Button variant="ghost" onClick={() => api("/api/shadow-mode/decision", { method: "POST", body: JSON.stringify({ symbol: "EURUSD" }) }).then(load)}>Force EURUSD decision</Button>
-          <a className="text-xs underline ml-2" href="/testing-lab?tab=forward">Forward testing →</a>
-          <a className="text-xs underline" href="/strategy-tournament">Tournament →</a>
-          <a className="text-xs underline" href="/confidence-calibration">Calibration →</a>
-          <a className="text-xs underline" href="/strategy-promotion">Promotion →</a>
-          <a className="text-xs underline" href="/ai-readiness-score">Readiness →</a>
-          <a className="text-xs underline" href="/shadow-journal">Journal →</a>
+          <Link className="text-xs underline ml-2" href="/testing-lab?tab=forward">Forward testing →</Link>
+          <Link className="text-xs underline" href="/strategy-tournament">Tournament →</Link>
+          <Link className="text-xs underline" href="/confidence-calibration">Calibration →</Link>
+          <Link className="text-xs underline" href="/strategy-promotion">Promotion →</Link>
+          <Link className="text-xs underline" href="/ai-readiness-score">Readiness →</Link>
+          <Link className="text-xs underline" href="/shadow-journal">Journal →</Link>
         </CardContent>
       </Card>
 

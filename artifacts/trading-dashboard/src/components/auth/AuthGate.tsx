@@ -3,6 +3,7 @@ import { Switch, Route, useLocation } from "wouter";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { normalizeProductRole, productRoleHomePath } from "@/lib/productRole";
 import { Skeleton } from "@/components/ui/skeleton";
+import { rememberReturnTo, readReturnTo, clearReturnTo } from "@/lib/authReturnTo";
 
 const LoginPage = lazy(() => import("@/pages/login"));
 const RegisterPage = lazy(() => import("@/pages/register"));
@@ -35,6 +36,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!user) {
     // Allow the public auth routes; redirect anything else to /login.
     if (!ANON_ROUTES.has(location)) {
+      // Remember where they were going so sign-in can return them there.
+      rememberReturnTo(`${location}${typeof window !== "undefined" ? window.location.search : ""}`);
       // Defer to next tick so React doesn't complain about state-during-render.
       queueMicrotask(() => navigate("/login"));
       return <AuthFallback />;
@@ -55,10 +58,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // role-based home (admin → admin command center, investor → portal,
   // trader → cockpit). RouteAccessGuard further contains each role.
   if (ANON_ROUTES.has(location)) {
-    const home = productRoleHomePath(normalizeProductRole(user.role));
+    const home = readReturnTo() ?? productRoleHomePath(normalizeProductRole(user.role));
     queueMicrotask(() => navigate(home));
     return <AuthFallback />;
   }
 
+  clearReturnTo();
   return <>{children}</>;
 }

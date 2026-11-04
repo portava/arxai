@@ -35,7 +35,7 @@ const BUILDERS: Builder[] = [
     build: (ctx) => ({
       status: BADGES(ctx).length > 0 ? "complete" : "incomplete",
       explanation: "ARX is rendering safety badges, which means the dashboard wired up correctly.",
-      related: { label: "Dashboard", route: "/dashboard" },
+      related: { label: "Dashboard", route: "/" },
       safeNextAction: "Skim the badges at the top of the dashboard to confirm safe-defaults.",
     }),
   },
