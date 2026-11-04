@@ -721,4 +721,12 @@ export class Mt5Provider implements DataProvider {
   }
 }
 
+/** Server wall-clock ms when the quote `getQuote` would serve for this symbol
+ *  was pushed (its receive time); null when nothing is stored. Lets the router
+ *  label a push older than MT5_FEED_FRESH_MS STALE instead of LIVE_TICK. */
+export function readServingQuoteReceivedAtMs(symbol: string): number | null {
+  const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
+  return q ? q.updatedAt : null;
+}
+
 export const mt5Provider = new Mt5Provider();

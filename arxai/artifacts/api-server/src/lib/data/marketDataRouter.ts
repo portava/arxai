@@ -41,6 +41,7 @@
 
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
+import { MT5_FEED_FRESH_MS } from "./freshness.js";
 import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
   getDerivCandles,
@@ -52,8 +53,7 @@ import {
   mt5Provider,
   getMt5CandleAvailability,
   readMt5Candles,
-  MULTI_BRIDGE_CONTENTION_NOTE,
-} from "./providers/mt5Provider.js";
+  MULTI_BRIDGE_CONTENTION_NOTE, readServingQuoteReceivedAtMs } from "./providers/mt5Provider.js";
 import { getMarketProvider } from "../assistant/marketProvider.js";
 import { readCachedCandles } from "./candleCache.js";
 import {
@@ -381,14 +381,21 @@ async function tryMt5Quote(symbol: string): Promise<ProviderAttempt & { quote: M
     if (!hasPrice) {
       return { provider: "mt5_broker", ok: false, reason: "MT5_QUOTES_NOT_PUSHED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
+    // The store serves a quote for up to CANDLE_TTL_MS after its push, but
+    // only a push within MT5_FEED_FRESH_MS is a live reading. An older one is
+    // still served (a real last quote), labelled STALE with delayed unknown —
+    // never LIVE_TICK / delayed:false.
+    const receivedAtMs = readServingQuoteReceivedAtMs(symbol);
+    const pushAgeMs = receivedAtMs == null ? Number.NaN : Date.now() - receivedAtMs;
+    const livePush = Number.isFinite(pushAgeMs) && pushAgeMs <= MT5_FEED_FRESH_MS;
     return {
       provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q,
       // A served quote is a fresh reading off the EA's real-time push → LIVE_TICK.
       provenance: makeProvenance({
         providerId: "mt5_broker",
         brokerCode: "mt5",
-        delayed: false,
-        source: "LIVE_TICK",
+        delayed: livePush ? false : null,
+        source: livePush ? "LIVE_TICK" : "STALE",
         sourceId: `mt5_broker:${sourceSymbolKey(symbol)}`,
       }),
     };
