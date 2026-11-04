@@ -26,6 +26,7 @@ vi.mock("@/hooks/useCurrentUser", () => ({
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false, viewMode: "user", setViewMode: () => {} }) }));
 vi.mock("./SymbolPicker", () => ({ SymbolPicker: () => null }));
 vi.mock("@/components/alerts/NotificationBell", () => ({ NotificationBell: () => null }));
+vi.mock("@/components/oneclick/OneClickModeToggle", () => ({ OneClickModeToggle: () => null }));
 
 import { Topbar } from "./Topbar";
 

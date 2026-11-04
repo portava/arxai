@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { OpenDemoPositions, openDemoPositionsSummary } from "./OpenDemoPositions";
 
+vi.mock("@/hooks/useOneClickMode", () => ({
+  useOneClickMode: () => ({ mode: { on: false, scope: null, canEnable: false, blockReason: null, defaultVolume: 0.01, maxLotPerClick: null, loading: false }, busyKey: null, switching: false, execute: async () => ({ ok: false }), closePosition: async () => ({ ok: false }), enable: async () => ({ ok: false }), disable: async () => ({ ok: true }) }),
+}));
+
 const NOTE = "Your MT5 account state could not be attributed to you.";
 const UNREAD = {
   ok: true, safetyMode: "demo_only", liveExecutionBlocked: true, lastSyncAt: null,

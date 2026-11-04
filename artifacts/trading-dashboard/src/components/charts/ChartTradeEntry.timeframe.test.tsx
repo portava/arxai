@@ -50,6 +50,9 @@ vi.mock("@/lib/use-chart-symbol", () => ({
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({
   useMasterLiveAccess: () => ({ loaded: true, canTrade: false }),
 }));
+vi.mock("@/hooks/useOneClickMode", () => ({
+  useOneClickMode: () => ({ mode: { on: false, scope: null, canEnable: false, blockReason: null, defaultVolume: 0.01, maxLotPerClick: null, loading: false }, busyKey: null, switching: false, execute: async () => ({ ok: false }), closePosition: async () => ({ ok: false }), enable: async () => ({ ok: false }), disable: async () => ({ ok: true }) }),
+}));
 vi.mock("@/components/live/LiveTradeTicket", () => ({ LiveTradeTicket: () => null }));
 vi.mock("@/components/live/LiveSharedTradeTicket", () => ({ LiveSharedTradeTicket: () => null }));
 vi.mock("@/components/news/EventImpactBadge", () => ({ EventImpactBadge: () => null }));

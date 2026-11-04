@@ -41,6 +41,7 @@ vi.mock("@/components/charts/ChartPositionOverlayPanel", () => ({ ChartPositionO
 vi.mock("@/components/charts/ChartAiOverlayPanel", () => ({ ChartAiOverlayPanel: () => null }));
 vi.mock("@/components/charts/ChartSetupPreviewPanel", () => ({ ChartSetupPreviewPanel: () => null }));
 vi.mock("@/components/charts/ChartTradeEntry", () => ({ ChartTradeEntry: () => null }));
+vi.mock("@/components/oneclick/OneClickTradePanel", () => ({ OneClickTradePanel: () => null }));
 vi.mock("@/components/positions/PositionPickerPanel", () => ({ PositionPickerPanel: () => null }));
 vi.mock("@/hooks/useLivePositionOverlays", () => ({ useLivePositionOverlays: () => ({ overlays: [] }) }));
 vi.mock("@/hooks/useAiChartOverlays", () => ({ useAiChartOverlays: () => ({ overlays: [] }) }));
