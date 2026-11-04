@@ -226,7 +226,8 @@ export async function ingestBridgeV2Message(
     // touches arx_live_* / positions / balances / the 16-gate pipeline. A feed
     // failure is swallowed so it can never corrupt the honest ingest response.
     if (result.accepted) {
-      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict);
+      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict,
+        bridgeConnectionId != null ? { bridgeConnectionId, userId } : null);
     }
 
     return result;
@@ -245,6 +246,8 @@ function feedMarketDataStore(
   messageType: string,
   payload: unknown,
   freshnessVerdict: string | null,
+  // Authenticated writer; null (no bridge connection) → unattributed partition.
+  bridge: { bridgeConnectionId: number; userId: number } | null,
 ): void {
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
@@ -264,10 +267,10 @@ function feedMarketDataStore(
         close: Number(p.close),
         volume: typeof p.volume === "number" ? p.volume : 0,
       };
-      mergeCandleFromMT5(symbol, candle, timeframe);
+      mergeCandleFromMT5(symbol, candle, timeframe, bridge);
       return;
     }
-    // TICK → latest quote (the quote store correctly keeps a single latest).
+    // TICK → latest quote (the quote store keeps a single latest per writer).
     const symbol = typeof p.symbol === "string" ? p.symbol : null;
     const bid = typeof p.bid === "number" ? p.bid : null;
     const ask = typeof p.ask === "number" ? p.ask : null;
@@ -280,7 +283,18 @@ function feedMarketDataStore(
       spread: ask - bid,
       timestamp: new Date(brokerTimeEpochMs ?? Date.now()).toISOString(),
     };
-    updateQuoteFromMT5(symbol, quote);
+    // The v2 TICK contract requires brokerTimeEpochMs; should the defensive
+    // receive-time fallback ever be used, the store records that it is not an
+    // observed tick time.
+    //
+    // Limit (documented, not repaired): tickTimeObserved=true means only that
+    // the PRODUCER supplied the tick's own time. brokerTimeEpochMs is broker
+    // server time per the contract; it is a UTC instant only if the EA
+    // converted it, and nothing here can verify that. No timezone conversion
+    // is attempted. Consumers compare it with server UTC and fail closed: an
+    // un-converted clock ahead of UTC beyond the 5 s skew allowance reads
+    // QUOTE_TIME_FUTURE / not fresh, and one behind reads stale.
+    updateQuoteFromMT5(symbol, quote, bridge, { tickTimeObserved: brokerTimeEpochMs != null });
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an

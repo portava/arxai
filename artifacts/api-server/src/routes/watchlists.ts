@@ -3,14 +3,17 @@ import { db, watchlistsTable, watchlistItemsTable } from "@workspace/db";
 import { CreateWatchlistBody, AddWatchlistItemBody } from "@workspace/api-zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { resolveArxMarket, isApprovedArxMarket, arxFocusApprovedEnvelope } from "@workspace/domain/market";
-import { runStrategyScan } from "../lib/strategyEngine.js";
+import { MIN_STRATEGY_SCAN_CANDLES, runStrategyScan } from "../lib/strategyEngine.js";
+import { classifyCandleFreshness, feedTimestampsUnconfirmed, newestBarLeadMs } from "../lib/data/freshness.js";
 import { getMarketData } from "../lib/data/dataManager.js";
 import { newsRiskFrom, resolveNewsRiskEvents } from "../lib/news/calendar/newsRiskResolver.js";
 import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
+/** The watchlist scan runs on 1m bars. */
+const BAR_MS = 60_000;
 
-async function enrichItems(items: typeof watchlistItemsTable.$inferSelect[]) {
+export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$inferSelect[]) {
   // Resolve the REAL calendar once per batch so every row's newsRisk badge sits
   // on one consistent snapshot. With no provider configured this yields an
   // honest unavailable read rather than a fabricated event set (Theme A1).
@@ -19,14 +22,38 @@ async function enrichItems(items: typeof watchlistItemsTable.$inferSelect[]) {
     let signal: string | null = null;
     let confidence: number | null = null;
     let trend: string | null = null;
+    // Why there is (or is not) a signal, and the open time of the newest 1m
+    // bar it was computed from. A signal is shown only for a scan of current
+    // bars: no / too few candles → NO_DATA; newest bar stale (>= 3 intervals
+    // behind) or future-stamped → STALE_DATA; either way signal stays null.
+    let signalStatus: "OK" | "DELAYED" | "STALE_DATA" | "NO_DATA" | "UNAVAILABLE" = "UNAVAILABLE";
+    let signalAsOf: string | null = null;
     try {
       const raw = await getMarketData(it.symbol, "1m", 220);
       const candles = raw.map((c) => ({ ...c, volume: c.volume ?? 0 }));
-      const sig = runStrategyScan(it.symbol, candles, 60);
-      signal = sig.direction;
-      confidence = sig.confidence;
-      trend = sig.direction === "BUY" ? "up" : sig.direction === "SELL" ? "down" : "neutral";
-    } catch { /* swallow */ }
+      const newestMs = candles.length ? Date.parse(candles[candles.length - 1]!.time) : NaN;
+      if (candles.length < MIN_STRATEGY_SCAN_CANDLES || !Number.isFinite(newestMs)) {
+        signalStatus = "NO_DATA";
+      } else {
+        signalAsOf = new Date(newestMs).toISOString();
+        const now = Date.now();
+        const currentBarOpen = Math.floor(now / BAR_MS) * BAR_MS;
+        const trailing = Math.floor((currentBarOpen - newestMs) / BAR_MS);
+        const fresh = classifyCandleFreshness(trailing);
+        const unconfirmed = feedTimestampsUnconfirmed({
+          trailingIntervals: trailing, newestOpenLeadMs: newestBarLeadMs(newestMs, now),
+        });
+        if (!fresh || fresh.stale || unconfirmed) {
+          signalStatus = "STALE_DATA";
+        } else {
+          const sig = runStrategyScan(it.symbol, candles, 60);
+          signal = sig.direction;
+          confidence = sig.confidence;
+          trend = sig.direction === "BUY" ? "up" : sig.direction === "SELL" ? "down" : "neutral";
+          signalStatus = fresh.freshness === "delayed" ? "DELAYED" : "OK";
+        }
+      }
+    } catch { /* provider error → UNAVAILABLE, no signal */ }
     const news = newsRiskFrom(it.symbol, calendar);
     // Approved → carry the shared extended approved envelope per item. Additive
     // (nested key) — existing consumers of the item shape are unaffected. Items
@@ -42,6 +69,9 @@ async function enrichItems(items: typeof watchlistItemsTable.$inferSelect[]) {
       signal,
       confidence,
       trend,
+      signalStatus,
+      signalAsOf,
+      signalTimeframe: "1m",
       spread: null,
       newsRisk: news.riskLevel,
       // Additive honesty marker: false ⇒ no calendar provider, so "none" means
@@ -118,7 +148,7 @@ router.get("/watchlists", requireUser, async (req, res) => {
   const allItems = storedItems.filter((i) => isApprovedArxMarket(i.symbol));
   const result = await Promise.all(allLists.map(async (w) => ({
     id: w.id, name: w.name, category: w.category,
-    items: await enrichItems(allItems.filter((i) => i.watchlistId === w.id)),
+    items: await enrichWatchlistItems(allItems.filter((i) => i.watchlistId === w.id)),
   })));
   res.json(result);
 });
@@ -177,7 +207,7 @@ router.post("/watchlists/:id/items", requireUser, async (req, res) => {
     }
     const inserted = await db.insert(watchlistItemsTable).values({ watchlistId: id, symbol: resolved.canonicalSymbol, marketType: body.marketType }).returning();
     // enrichItems augments the approved item with the shared arxFocus envelope.
-    const enriched = await enrichItems(inserted);
+    const enriched = await enrichWatchlistItems(inserted);
     res.json(enriched[0]);
   } catch (err) {
     req.log.error(err);
@@ -209,7 +239,7 @@ router.post("/watchlists/items/:id/favorite", requireUser, async (req, res) => {
     .limit(1);
   if (!parent[0]) { res.status(404).json({ error: "Item not found" }); return; }
   const updated = await db.update(watchlistItemsTable).set({ favorite: cur[0].favorite ? 0 : 1 }).where(eq(watchlistItemsTable.id, id)).returning();
-  const enriched = await enrichItems(updated);
+  const enriched = await enrichWatchlistItems(updated);
   res.json(enriched[0]);
 });
 

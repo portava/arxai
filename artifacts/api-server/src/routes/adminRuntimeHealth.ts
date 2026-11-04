@@ -79,6 +79,8 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
     stale: 0,
     down: 0,
     latestHeartbeatAgeSeconds: null as number | null,
+    /** false when the aggregate query failed — the zero counts are then unknown, not "no bridges". */
+    readable: true,
   };
   try {
     const rows = await listConnections({ order: "oldest" });
@@ -95,10 +97,18 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
     bridge.latestHeartbeatAgeSeconds = latest == null ? null : Math.floor(latest / 1000);
   } catch (e) {
     req.log?.error({ err: e }, "runtime-health MT5 aggregate failed");
+    bridge.readable = false;
+    bridge.latestHeartbeatAgeSeconds = null;
   }
 
+  // Headline: the DB answers AND the bridge aggregate was read AND, when any
+  // bridge is registered, at least one is heartbeating. A DB ping alone is not
+  // "healthy" while every bridge is down or the bridge counts are unknown.
+  const bridgesAllDown = bridge.total > 0 && bridge.healthy === 0;
+  const ok = dbOk && bridge.readable && !bridgesAllDown;
+
   res.json({
-    ok: dbOk,
+    ok,
     checkedAt: new Date().toISOString(),
     apiServer: {
       listening: true,

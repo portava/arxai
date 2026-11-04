@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
+import { formatUtcClock } from "@/components/scanner/scannerChartFormat";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -43,6 +44,7 @@ import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel"
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
+import { scannerFinalReadReasons, scannerResultActionChip, scannerResultCardClaims, scannerSetupReasonWithheld } from "@/components/scanner/scannerResultAction";
 import type { ScalpResult } from "@workspace/api-client-react";
 
 type Opp = {
@@ -60,6 +62,8 @@ type Opp = {
   dataStatus?: string;
   tradeable?: boolean;
   timingContext?: ScannerTimingContext;
+  /** The server's fused final read; the card may only downgrade with it. */
+  finalRead?: { label?: string | null; reasons?: unknown } | null;
 };
 
 // Mirrors the server's `MANUAL_SCAN_COOLDOWN_MS` (per-user manual-scan cooldown
@@ -89,6 +93,7 @@ const BADGE_COLORS: Record<string, string> = {
   LOW_CONFIDENCE: "bg-orange-500/20 text-orange-400 border-orange-500/40",
   SPREAD_TOO_HIGH: "bg-rose-500/20 text-rose-400 border-rose-500/40",
   PENDING_MT5_CONNECTION: "bg-purple-500/20 text-purple-400 border-purple-500/40",
+  LOW_OPPORTUNITY_SCORE: "bg-orange-500/20 text-orange-400 border-orange-500/40",
 };
 
 // Plain-language labels for the scanner status badges. Raw UPPER_SNAKE
@@ -99,10 +104,21 @@ const BADGE_LABELS: Record<string, string> = {
   WATCHLIST: "Watchlist",
   WAIT_FOR_CONFIRMATION: "Wait for confirmation",
   REJECTED_BY_RISK: "Risk too high",
-  CHOPPY_MARKET: "Choppy market",
+  // The scanner sets this when the last bar's range is > 1.8x the window
+  // average — a volatility spike (often an expansion bar), not a range/chop.
+  CHOPPY_MARKET: "Volatility spike",
   LOW_CONFIDENCE: "Low confidence",
   SPREAD_TOO_HIGH: "Spread too wide",
   PENDING_MT5_CONNECTION: "Waiting for connection",
+  // Score under the scanner's minimum while no risk rule failed — not "Risk too high".
+  LOW_OPPORTUNITY_SCORE: "Score too low",
+};
+
+const BORDER_TONE_COLORS: Record<"positive" | "negative" | "info" | "neutral", string> = {
+  positive: "#10b981",
+  negative: "#f43f5e",
+  info: "#3b82f6",
+  neutral: "#71717a",
 };
 
 const LABEL_COLORS: Record<string, string> = {
@@ -129,6 +145,22 @@ const COHESION_MAX_SYMBOLS = 12;
 // client-supplied role header is sent — role is resolved server-side from the
 // session cookie; a spoofed role header is dead, misleading code on a
 // user-facing page (rejected in production, superseded by the real session).
+// The Live Intent alert reports the server's own verdict for the submit — its
+// status and reason — never a hard-coded status. A risk rejection is said to
+// be rejected, not captured and pending.
+function liveIntentResultMessage(
+  symbol: string,
+  res: { status?: unknown; riskCheckPassed?: unknown; reason?: unknown } | null,
+): string {
+  const status = typeof res?.status === "string" ? res.status : null;
+  const reason = typeof res?.reason === "string" && res.reason.trim() ? ` ${res.reason.trim()}` : "";
+  if (!status) return `Live intent for ${symbol}: the server did not report a status, so whether it was captured could not be confirmed.${reason}`;
+  if (status === "REJECTED_BY_RISK" || res?.riskCheckPassed === false) {
+    return `Live intent for ${symbol} was rejected by the risk check (${status}).${reason}`;
+  }
+  return `Live intent captured for ${symbol} (${status}).${reason}`;
+}
+
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -546,17 +578,26 @@ export default function MarketScanner() {
 
   async function sendToIntent(o: Opp) {
     if (err || !canUseScannerOpportunity(o, Date.now())) return;
-    await api("/api/live-intent/submit", {
-      method: "POST",
-      body: JSON.stringify({
-        source: "AI_ASSIST", symbol: o.symbol,
-        direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
-        lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-        maxLossUsd: 5, confidenceScore: o.confidenceScore,
-        reasonForTrade: o.reasonForTrade,
-      }),
-    });
-    alert(`Live intent captured for ${o.symbol} (PENDING_MT5_CONNECTION).`);
+    let res: { status?: unknown; riskCheckPassed?: unknown; reason?: unknown } | null;
+    try {
+      res = (await api("/api/live-intent/submit", {
+        method: "POST",
+        body: JSON.stringify({
+          source: "AI_ASSIST", symbol: o.symbol,
+          direction: o.recommendedAction === "SELL" ? "SELL" : "BUY",
+          lotSize: 0.01, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+          maxLossUsd: 5, confidenceScore: o.confidenceScore,
+          reasonForTrade: o.reasonForTrade,
+        }),
+      })) as typeof res;
+    } catch (e) {
+      // A 500 can follow a partial server write (the safety-log event is
+      // written before the intent row), and a dropped connection can follow a
+      // full one, so the client cannot say nothing was recorded.
+      alert(`Live intent for ${o.symbol} could not be submitted: ${(e as Error).message || "request failed"}. Whether the server recorded any part of it could not be confirmed.`);
+      return;
+    }
+    alert(liveIntentResultMessage(o.symbol, res));
   }
 
   const activeUniverse = universes.find((u) => u.id === universe);
@@ -635,7 +676,7 @@ export default function MarketScanner() {
       </p>}
       {resultTimestamp && (
         <p className="text-xs text-muted-foreground">
-          Last scan {new Date(resultTimestamp).toLocaleTimeString()} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
+          Last scan {formatUtcClock(resultTimestamp) ?? "—"} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
         </p>
       )}
 
@@ -684,26 +725,44 @@ export default function MarketScanner() {
                 This setup needs a fresh, tradeable market read. Scan again to restore its direction, scores and trade actions.
               </CardContent>
             </Card>
-          ) : (
+          ) : (() => {
+            // The server's fused final read may withhold the action; the
+            // grade, border and status badge are then downgraded with it.
+            const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
+            const claims = scannerResultCardClaims(chip, o.opportunity.label, o.statusBadge);
+            return (
             <Card
               key={`${o.symbol}-${o.timeframe}-${i}`}
               className="border-l-4"
-              style={{ borderLeftColor: o.opportunity.label === "ELITE" || o.opportunity.label === "STRONG" ? "#10b981" : o.opportunity.label === "REJECT" ? "#f43f5e" : "#3b82f6" }}
+              style={{ borderLeftColor: BORDER_TONE_COLORS[claims.borderTone] }}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">{o.symbol} <span className="text-xs text-muted-foreground">{o.timeframe}</span></CardTitle>
-                  <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  {claims.showGrade ? (
+                    <Badge className={LABEL_COLORS[o.opportunity.label] ?? ""}>{o.opportunity.label} {o.opportunity.score}</Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-xs text-muted-foreground"
+                      data-testid={`scanner-grade-withheld-${o.symbol}`}
+                      title="The server's final read says not to take this setup now, so its grade is not shown."
+                    >
+                      Score {o.opportunity.score} · not graded
+                    </Badge>
+                  )}
                 </div>
                 <CardDescription className="flex flex-wrap items-center gap-1.5 mt-1">
-                  <Badge variant={o.recommendedAction === "BUY" ? "default" : o.recommendedAction === "SELL" ? "destructive" : "outline"} className="text-xs">{o.recommendedAction}</Badge>
-                  <Badge variant="outline" className="text-xs">{o.bias}</Badge>
-                  <Badge
-                    className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
-                    data-status-badge={o.statusBadge}
-                  >
-                    {BADGE_LABELS[o.statusBadge] ?? "Working on it"}
-                  </Badge>
+                  <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>
+                  <Badge variant="outline" className="text-xs">{o.bias === "choppy" ? "volatile" : o.bias}</Badge>
+                  {claims.showStatusBadge && (
+                    <Badge
+                      className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
+                      data-status-badge={o.statusBadge}
+                    >
+                      {BADGE_LABELS[o.statusBadge] ?? "Working on it"}
+                    </Badge>
+                  )}
                   {(() => {
                     const c = cohesionMap.get(o.symbol);
                     if (!c) return null;
@@ -753,20 +812,44 @@ export default function MarketScanner() {
                 </div>
                 <div className="text-xs text-muted-foreground italic">"{o.reasonForTrade}"</div>
                 {o.reasonToAvoid && <div className="text-xs text-rose-400">⚠ {o.reasonToAvoid}</div>}
-                <RubySetupReason
-                  signal={{
-                    symbol: o.symbol, timeframe: o.timeframe,
-                    recommendedAction: o.recommendedAction, bias: o.bias,
-                    confidenceScore: o.confidenceScore, riskScore: o.riskScore,
-                    entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
-                    reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
-                    entry: o.entry, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-                    statusBadge: o.statusBadge,
-                  }}
-                  dense
-                />
+                {chip.withheld ? (
+                  // Ruby's Setup Reason explains the raw BUY / SELL action. Under
+                  // a withheld final read it would describe a buy or sell setup
+                  // beside "No trade", so the final read's own reasons show here.
+                  <div
+                    className="rounded border border-slate-500/40 bg-slate-500/5 p-2 text-[11px] leading-snug space-y-1"
+                    data-testid={`scanner-final-read-note-${o.symbol}`}
+                  >
+                    <div>
+                      Setup reason not shown: the server's final read for this row is "{chip.text}".
+                    </div>
+                    {(() => {
+                      const reasons = scannerFinalReadReasons(o.finalRead);
+                      return reasons.length > 0 ? (
+                        <ul className="list-disc pl-4 text-muted-foreground">
+                          {reasons.map((r, idx) => <li key={idx}>{r}</li>)}
+                        </ul>
+                      ) : (
+                        <div className="text-muted-foreground">The server did not send a reason with this final read.</div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <RubySetupReason
+                    signal={{
+                      symbol: o.symbol, timeframe: o.timeframe,
+                      recommendedAction: o.recommendedAction, bias: o.bias,
+                      confidenceScore: o.confidenceScore, riskScore: o.riskScore,
+                      entrySniperScore: o.entrySniperScore, reasonForTrade: o.reasonForTrade,
+                      reasonToAvoid: o.reasonToAvoid, setupType: o.setupType,
+                      entry: o.entry, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
+                      statusBadge: o.statusBadge,
+                    }}
+                    dense
+                  />
+                )}
                 {o.timingContext && (
-                  <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} />
+                  <ScannerTimingBadges ctx={o.timingContext} isGold={isGoldMode(o.symbol)} rowTimeframe={o.timeframe} />
                 )}
                 <div className="grid grid-cols-3 gap-1 pt-2 border-t">
                   <Button
@@ -818,7 +901,8 @@ export default function MarketScanner() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })())}
         </div>
       )}
     </div>
@@ -826,14 +910,10 @@ export default function MarketScanner() {
 
   const symbolsTab = (
     <div className="space-y-3" data-testid="symbols-tab-content">
-      <p className="text-xs text-muted-foreground">
-        Search any market — forex pairs, metals, indices, crypto, stocks,
-        or Deriv synthetics (V10..V100, BOOM/CRASH/STEP). Pick one to
-        update Focus, the chart, and the trade ticket everywhere.
-      </p>
       <SymbolExplorer
         activeSymbol={symbolsTabActive}
         onSelect={(canonical) => setChartSymbol(canonical)}
+        scopeNote="Pick one to update Focus, the chart, and the trade ticket everywhere."
       />
     </div>
   );
@@ -878,6 +958,15 @@ export default function MarketScanner() {
               <RefreshCw className="h-4 w-4 mr-1" />
               {scanCoolingDown ? `Scan again in ${cooldownSecs}s` : "Scan"}
             </Button>
+            {/* Operator auto-scan engine state — a fact about the scan engine,
+                not about the selected market, so it lives beside its controls.
+                Shown only once /api/market-scanner/status has answered and the
+                last poll did not fail; never inferred from a missing status. */}
+            {status != null && typeof status.running === "boolean" && !err && (
+              <span className="text-xs text-muted-foreground" data-testid="scanner-autoscan-state">
+                {status.running ? "Auto-scan on" : "Auto-scan off"}
+              </span>
+            )}
             {realIsAdmin ? (
               status?.running
                 ? <Button size="sm" variant="outline" onClick={stop} disabled={busy} data-testid="scanner-btn-stop"><Square className="h-4 w-4 mr-1" />Stop</Button>
@@ -932,7 +1021,7 @@ export default function MarketScanner() {
 
       <CollapsibleSection
         title="Recent scanner trades"
-        description="Scanner-generated trades will appear here once orders are placed."
+        description="Lists MT5 demo orders sent from the scanner only."
         storageKey="scanner.recentTrades"
         testId="scanner-recent-trades"
         defaultOpen
@@ -952,7 +1041,7 @@ export default function MarketScanner() {
         the floating Ruby orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
-      <ScannerHeaderSummary running={Boolean(status?.running)} />
+      <ScannerHeaderSummary />
 
       {err && (
         <CompactAlert
@@ -1011,6 +1100,14 @@ export default function MarketScanner() {
             entry: tradeTarget.opp.entry, stopLoss: tradeTarget.opp.stopLoss, takeProfit: tradeTarget.opp.takeProfit,
             statusBadge: tradeTarget.opp.statusBadge,
           }}
+          // The card withheld the raw action under the server's final read
+          // ("No trade" / "Avoid for now"); the ticket's Summary shows the
+          // same note instead of explaining a buy or sell setup. Display only:
+          // the signal above (what an order records) is unchanged.
+          setupReasonWithheld={scannerSetupReasonWithheld(
+            scannerResultActionChip(tradeTarget.opp.recommendedAction, tradeTarget.opp.finalRead?.label),
+            tradeTarget.opp.finalRead,
+          )}
           defaultSide={tradeTarget.side}
         />
         </SectionErrorBoundary>

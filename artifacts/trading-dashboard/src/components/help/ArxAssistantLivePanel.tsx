@@ -7,7 +7,7 @@
 // - Suggestion chips collapsible
 // - Market provider connectivity surfaced in-panel
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useGetTimingBrain, getGetTimingBrainQueryKey } from "@workspace/api-client-react";
+import { RubyTimingChip } from "./RubyTimingChip";
 import { Mic, MicOff, Send, X, Sparkles, Loader2, ChevronDown, ChevronUp, ShieldCheck, Wrench, AlertCircle, Wifi, WifiOff, Radio, Square, VolumeX, Volume2, MoreHorizontal, Plus, Trash2, Eraser, Download, Brain, BrainCircuit, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -1317,7 +1317,7 @@ export function ArxAssistantLivePanel() {
                   Quick suggestions
                 </button>
                 {/* Phase 3 — advisory timing chip for active chart symbol */}
-                <RubyTimingChip symbol={chartSymbol ?? "EURUSD"} />
+                <RubyTimingChip symbol={chartSymbol ?? "EURUSD"} chartTimeframe={scannerTimeframe ?? null} />
               </div>
               <div className="flex items-center gap-2">
                 {briefingUpdatedAt && (
@@ -1815,39 +1815,3 @@ function MessageBubble({ m }: { m: ChatMessage }) {
   );
 }
 
-// ── RubyTimingChip ─────────────────────────────────────────────────────────
-// Compact advisory timing grade chip for the active chart symbol.
-// Shown next to the suggestion chips; advisory only, never a gate.
-// Renders nothing when data is unavailable (honest empty, fail-open).
-const TIMING_CHIP_COLOR: Record<string, string> = {
-  "A+": "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  "A":  "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  "B":  "border-blue-500/40 bg-blue-500/10 text-blue-400",
-  "C":  "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  "D":  "border-orange-500/40 bg-orange-500/10 text-orange-400",
-  "F":  "border-rose-500/40 bg-rose-500/10 text-rose-400",
-};
-function RubyTimingChip({ symbol }: { symbol: string }) {
-  const q = useGetTimingBrain(symbol, {}, {
-    query: {
-      queryKey: getGetTimingBrainQueryKey(symbol),
-      refetchInterval: 90_000,
-      retry: false,
-      staleTime: 60_000,
-    },
-  });
-  if (!q.data) return null;
-  const r = q.data;
-  const colorClass = TIMING_CHIP_COLOR[r.timingGrade as string] ?? "border-zinc-500/40 bg-zinc-500/10 text-zinc-400";
-  const permLabel: Record<string, string> = {
-    GO: "GO", WAIT_FOR_ENTRY: "Wait", WAIT_NEWS: "News", NO_TRADE: "Skip", STAND_DOWN: "Stand down",
-  };
-  return (
-    <span
-      className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none", colorClass)}
-      title={`${symbol} timing: ${r.timingGrade} grade · ${r.entryPermission} — advisory only`}
-    >
-      {symbol} · {r.timingGrade} · {permLabel[r.entryPermission as string] ?? r.entryPermission}
-    </span>
-  );
-}

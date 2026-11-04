@@ -78,7 +78,10 @@ router.get("/me/investor/fundbook", requireUser, async (req, res) => {
     const nav = navByPool.get(p.id);
     const h = holdingByPool.get(p.id);
     const navPerUnit = nav?.navPerUnit ?? 1;
-    const navStatus = nav?.navStatus ?? "OK";
+    // No NAV row means the NAV was never computed for this pool: say so rather
+    // than reporting a healthy "OK" NAV (navPerUnit falls back to 1 only so
+    // the arithmetic below stays defined; the client must not present it).
+    const navStatus = nav?.navStatus ?? "NOT_COMPUTED";
     const totalUnitsOutstanding = nav?.totalUnitsOutstanding ?? 0;
     const unitsOwned = h?.unitsOwned ?? 0;
     const currentValue = computeHoldingValue(unitsOwned, navPerUnit);

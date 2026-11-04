@@ -9,7 +9,7 @@
 //   - The badge never shows "live" when bridgeState is stale/offline.
 //   - The spinner is only shown while isRefreshing (actual in-flight reload).
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -56,6 +56,14 @@ export function LiveBridgeAutoRefreshControl({
   className,
 }: LiveBridgeAutoRefreshControlProps) {
   const style = BRIDGE_STATE_STYLES[bridgeState];
+  // "Checked Ns ago" is computed at render, so re-render on a clock tick: the
+  // age keeps counting even when auto-refresh is off and no data arrives.
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    if (lastRefreshAt == null) return;
+    const id = setInterval(() => setClockTick((n) => n + 1), 1_000);
+    return () => clearInterval(id);
+  }, [lastRefreshAt]);
 
   const handleRefresh = useCallback(() => {
     if (!isRefreshing) refreshNow();

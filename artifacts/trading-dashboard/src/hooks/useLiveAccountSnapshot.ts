@@ -42,6 +42,48 @@ export interface SnapshotReconciliation {
   excludedCount: number;
   brokerAbsentExcludedCount: number;
   stalePLCount: number;
+  /**
+   * Client-side only. True when this marker was NOT produced by the server's
+   * reconciler: the snapshot was rebuilt from the slot-summary poll (stream
+   * down / tab hidden), whose open P/L is the per-position sum that was never
+   * compared with equity − balance. Such a snapshot is flagged
+   * (exceedsThreshold) until a stream snapshot reconciles it.
+   */
+  unverified?: boolean;
+}
+
+/**
+ * Reconciliation marker for a snapshot rebuilt from the slot-summary poll.
+ * Downgrade-only: a discrepancy the stream already flagged is kept as-is, and
+ * an unchecked poll total is never presented as reconciled (no marker would
+ * read as "in agreement" to every consumer).
+ */
+/**
+ * Position rows carried from the last stream snapshot into a poll-built one.
+ * The poll does not refresh them, so a "live" / "fresh" row label is
+ * downgraded to "stale"; delayed / stale / unavailable rows keep their label.
+ */
+export function carriedPositionsForPoll(rows: LivePositionPL[] | null | undefined): LivePositionPL[] {
+  return (rows ?? []).map((r) =>
+    r.freshness === "live" || r.freshness === "fresh" ? { ...r, freshness: "stale" as const } : r,
+  );
+}
+
+export function pollReconciliationMarker(
+  prev: SnapshotReconciliation | null | undefined,
+  polledOpenPL: number | null,
+): SnapshotReconciliation {
+  if (prev?.exceedsThreshold) return { ...prev };
+  return {
+    snapshotSummedPL: polledOpenPL,
+    equityMinusBalancePL: null,
+    discrepancy: null,
+    exceedsThreshold: true,
+    excludedCount: 0,
+    brokerAbsentExcludedCount: 0,
+    stalePLCount: 0,
+    unverified: true,
+  };
 }
 
 export interface LivePositionPL {
@@ -85,6 +127,18 @@ export interface InvestorLiveBalance {
   availableBalance: number;
   openTradeCount: number;
   freshness: { status: "fresh" | "stale" | "unavailable"; lastUpdatedAt: string | null; ageMs: number | null };
+  /**
+   * Closed trades whose realized P/L the server withheld (e.g. missing broker
+   * contract size). > 0 means realizedPnL / liveEquity are incomplete.
+   * Absent on older payloads.
+   */
+  realizedPnLPendingCount?: number;
+  /**
+   * Open trades whose floating P/L is unknown. floatingPnL sums the KNOWN
+   * trades only, so > 0 means floatingPnL, liveEquity, freeMargin and
+   * availableBalance leave those trades out. Absent on older payloads.
+   */
+  floatingPnLUnknownCount?: number;
 }
 
 export interface LiveAccountSnapshot {
@@ -279,32 +333,49 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
           ? { ...baseLive, freshness: { ...baseLive.freshness, status: balanceStatus } }
           : baseLive;
 
+      // An explicit null is the server saying "unknown right now" (e.g. an
+      // open position the broker has not priced yet makes open P/L, equity and
+      // free margin unknown). Only a key the payload does not carry at all may
+      // fall back to the last stream value; a null is never upgraded to it.
+      const polledFigure = (key: string, carried: number | null | undefined): number | null => {
+        if (!Object.prototype.hasOwnProperty.call(data, key)) return carried ?? null;
+        const v = data[key];
+        return typeof v === "number" && Number.isFinite(v) ? v : null;
+      };
+      const synthOpenPL: number | null = accountMode === "LIVE_SHARED"
+        ? polledFigure("openPnL", prev?.openPL)
+        : null;
       const synth: LiveAccountSnapshot = {
         userId: prev?.userId ?? "",
         accountMode,
         live: healedLive,
         source: "computed",
-        balance: (data["balance"] as number | null | undefined) ?? prev?.balance ?? null,
-        equity: (data["equity"] as number | null | undefined) ?? prev?.equity ?? null,
-        margin: (data["margin"] as number | null | undefined) ?? prev?.margin ?? null,
-        freeMargin: (data["freeMargin"] as number | null | undefined) ?? prev?.freeMargin ?? null,
-        marginLevel: (data["marginLevelPercent"] as number | null | undefined) ?? prev?.marginLevel ?? null,
+        balance: polledFigure("balance", prev?.balance),
+        equity: polledFigure("equity", prev?.equity),
+        margin: polledFigure("margin", prev?.margin),
+        freeMargin: polledFigure("freeMargin", prev?.freeMargin),
+        marginLevel: polledFigure("marginLevelPercent", prev?.marginLevel),
         // slot-summary doesn't carry the account-sync marker; keep the last
         // SSE-known value so the >60s stale note stays honest across fallback.
         accountSyncedAtMs: prev?.accountSyncedAtMs ?? null,
         // Only forward financial figures when the user is actually in live-shared
         // mode — never surface a LIVE_SHARED-sourced number to a non-live user.
-        openPL: accountMode === "LIVE_SHARED"
-          ? ((data["openPnL"] as number | null | undefined) ?? prev?.openPL ?? null)
-          : null,
+        openPL: synthOpenPL,
         openPositionsCount: accountMode === "LIVE_SHARED"
           ? Number((data["openPositionCount"] as number | undefined) ?? prev?.openPositionsCount ?? 0)
           : 0,
-        positions: accountMode === "LIVE_SHARED" ? (prev?.positions ?? []) : [],
+        // slot-summary does not re-read the rows: these are the last stream
+        // rows, frozen. Never keep their "live"/"fresh" label on the poll path.
+        positions: accountMode === "LIVE_SHARED" ? carriedPositionsForPoll(prev?.positions) : [],
         lastComputedAtMs: Date.now(),
         freshness: accountMode === "LIVE_SHARED" ? freshness : "unavailable",
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],
         notLiveReason,
+        // The poll path never runs the server reconciler: carry an explicit
+        // unverified marker instead of silently dropping it.
+        reconciliation: accountMode === "LIVE_SHARED"
+          ? pollReconciliationMarker(prev?.reconciliation, synthOpenPL)
+          : undefined,
       };
       setSnapshot(synth);
       setConnectionStatus("polling");

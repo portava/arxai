@@ -29,9 +29,10 @@ export default function TestingLab() {
     <div className="min-w-0 max-w-full space-y-4 p-4">
       <header className="space-y-1">
         <h1 className="text-2xl font-bold text-slate-100">Testing Lab</h1>
-        <p className="text-sm text-muted-foreground">
-          Test strategies against historical data and live market conditions
-          before trusting them.
+        <p data-testid="testing-lab-subtitle" className="text-sm text-muted-foreground">
+          Test strategies before trusting them. Backtests replay stored or
+          generated price history; forward tests run on the synthetic market
+          simulator. Nothing in this lab observes the live market.
         </p>
       </header>
 

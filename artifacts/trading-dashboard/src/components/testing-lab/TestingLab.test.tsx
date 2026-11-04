@@ -60,9 +60,22 @@ describe("Testing Lab page", () => {
   it("renders the header and subtitle", () => {
     render(<TestingLab />);
     expect(screen.getByRole("heading", { name: "Testing Lab" })).toBeTruthy();
-    expect(
-      screen.getByText(/Test strategies against historical data and live market conditions/i),
-    ).toBeTruthy();
+    // Truth: nothing in the lab observes live market conditions. Forward tests
+    // run on the synthetic market simulator (persisted as
+    // SYNTHETIC_SIMULATOR_SOURCE) and backtests on stored history, so the
+    // subtitle must not claim "live market conditions".
+    const subtitle = screen.getByTestId("testing-lab-subtitle");
+    expect(subtitle.textContent ?? "").not.toMatch(/live market conditions/i);
+    expect(subtitle.textContent ?? "").toMatch(/synthetic/i);
+    expect(subtitle.textContent ?? "").toMatch(/Nothing in this lab observes the live market/i);
+  });
+
+  it("describes the Forward tab as a synthetic simulator, never a live stream", () => {
+    render(<TestingLab />);
+    selectTab("Forward Testing");
+    const desc = screen.getByTestId("forward-testing-description");
+    expect(desc.textContent ?? "").not.toMatch(/\blive\b/i);
+    expect(desc.textContent ?? "").toMatch(/synthetic/i);
   });
 
   it("exposes all four tabs", () => {

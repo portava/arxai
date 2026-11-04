@@ -18,4 +18,18 @@ export interface MeScalpAddOnCheckResp {
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
+  /**
+   * When the MT5 bridge last reported the positions read for this check (the oldest leg's reading, ISO time). Same rule as the baskets response. Null when no position was read or no reading time is recorded.
+   * @nullable
+   */
+  positionsAsOf?: string | null;
+  /** True when positions were read but their bridge reading is older than 90 seconds or has no recorded time. The basket and add-on advice then describe that reading, not the account now. Same rule as the baskets response. */
+  positionsStale?: boolean;
 }

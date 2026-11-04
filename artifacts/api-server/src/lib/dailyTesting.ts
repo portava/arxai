@@ -384,11 +384,34 @@ export async function weeklySummary() {
     averageTradeGrade: avg(weekDecisions.map((d) => d.tradeGrade ?? 0)),
     simulatedPnl: pnlSummary("DEMO_SIMULATOR")?.closedRealizedPnL ?? 0,
     riskGovernorBlocks: weekRisk.filter((e) => e.severity === "BLOCK").length,
-    mt5SetupStatus: { connected: false, deferred: true, ready: false, note: "MT5 bridge deferred until desktop/VPS connected." },
+    mt5SetupStatus: mt5SetupStatusFrom(r),
     readinessScore: readinessNow,
     releaseReady: releaseReadyNow,
     conclusion,
   };
+}
+
+/**
+ * The weekly report's MT5 line, from the readiness report's MT5 observation
+ * (mt5Connected at evaluatedAt). connected is null when it was not checked.
+ */
+export function mt5SetupStatusFrom(
+  r: { mt5Connected: boolean | null; evaluatedAt: string } | null,
+): { connected: boolean | null; deferred: boolean; ready: false; checkedAt: string | null; note: string } {
+  if (!r) {
+    return { connected: null, deferred: true, ready: false, checkedAt: null,
+      note: "MT5 feed state could not be checked: the readiness report could not be loaded." };
+  }
+  if (r.mt5Connected === true) {
+    return { connected: true, deferred: false, ready: false, checkedAt: r.evaluatedAt,
+      note: `MT5 feed observed connected (checked ${r.evaluatedAt}).` };
+  }
+  if (r.mt5Connected === false) {
+    return { connected: false, deferred: true, ready: false, checkedAt: r.evaluatedAt,
+      note: `MT5 feed observed not connected (checked ${r.evaluatedAt}). MT5 bridge deferred until desktop/VPS connected.` };
+  }
+  return { connected: null, deferred: true, ready: false, checkedAt: r.evaluatedAt,
+    note: `MT5 feed state could not be checked (${r.evaluatedAt}).` };
 }
 
 function decideWeeklyConclusion(args: { bugsOpenP0P1: number; sessionsCompleted: number; readinessNow: number }):
@@ -446,7 +469,32 @@ export async function exportDailyReport(sessionId?: string) {
     generatedAt: nowIso(),
     session: target,
     performanceReview: review,
-    note: "MT5 deferred. No real broker orders placed. Simulator + tester intents only.",
+    // The MT5 part is the readiness observation now, not a fixed "deferred".
+    // No live order or command table is read here, so real broker orders are
+    // named as not checked, never as "none placed".
+    note: `${mt5SetupStatusFrom(await readinessReport().catch(() => null)).note} ${EXPORT_SCOPE_NOTE}`,
+  };
+}
+
+/** What the testing exports cover — they read no live order or command table. */
+const EXPORT_SCOPE_NOTE = "This report covers simulator and tester intents only; real broker orders were not checked.";
+
+/**
+ * Daily-testing status payload. mt5Deferred / mt5Connected follow the MT5
+ * feed observed by the readiness report (could not be read → not connected,
+ * deferred, and said so), never a literal.
+ */
+export async function dailyTestingStatus() {
+  const mt5 = mt5SetupStatusFrom(await readinessReport().catch(() => null));
+  return {
+    active: getActive(),
+    stepTemplate: STEP_TEMPLATE,
+    lastSession: listSessionsAll(1)[0] ?? null,
+    mt5Deferred: mt5.deferred,
+    mt5Connected: mt5.connected,
+    mt5CheckedAt: mt5.checkedAt,
+    realBrokerExecutionAvailable: false,
+    note: `Daily testing mode — simulator + tester intents only. ${mt5.note}`,
   };
 }
 
@@ -458,7 +506,8 @@ export async function exportWeeklyReport() {
     brand: { name: "ARX AI", tagline: "Analyze. Risk. eXecute.", lockup: "The AI trading fortress built for disciplined decisions." },
     generatedAt: nowIso(),
     summary,
-    note: "MT5 deferred. No real broker orders placed. Simulator + tester intents only.",
+    // The MT5 part is the week's readiness observation, not a fixed "deferred".
+    note: `${summary.mt5SetupStatus.note} ${EXPORT_SCOPE_NOTE}`,
   };
 }
 

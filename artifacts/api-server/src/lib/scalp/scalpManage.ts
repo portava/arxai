@@ -443,7 +443,7 @@ export function evaluateExitUrgency(
 export function assembleBasket(
   group: GroupedLegs,
   flame: ScalpFlameRead,
-  opts: { personality?: RiskPersonality; currentPrice?: number | null; now?: number } = {},
+  opts: { personality?: RiskPersonality; currentPrice?: number | null; now?: number; digits?: number | null } = {},
 ): ScalpBasket {
   const summary = summarizeBasket(group.legs);
   const personality = opts.personality ?? "BALANCED";
@@ -461,6 +461,7 @@ export function assembleBasket(
     combinedFloatingPl: summary.combinedFloatingPl,
     breakEvenPrice: summary.breakEvenPrice,
     hasUnprotectedLeg: summary.hasUnprotectedLeg,
+    digits: opts.digits ?? null,
     legs: group.legs,
     flame,
     exit: evaluateExitUrgency(flame, summary, personality),

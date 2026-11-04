@@ -5,7 +5,7 @@ import { RefreshCw, ChevronDown, ChevronUp, Crosshair } from "lucide-react";
 import { useCreateMeScalpFocus } from "@workspace/api-client-react";
 import type { ScalpResult, ScalpMode } from "@workspace/api-client-react";
 import { ScalpSignalCard, SCALP_SIGNAL_BUS_TIMEFRAME } from "./ScalpSignalCard";
-import type { PublishedScannerAction } from "@/lib/scannerActionability";
+import type { ActionDirection, PublishedScannerAction } from "@/lib/scannerActionability";
 import { useSelectedActionStore } from "@/components/scanner/selectedActionStore";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -34,7 +34,9 @@ export function RubyScalpFocusCard({
 
   // Publish the selected-symbol verdict the scalp card computes so the header's
   // Action cell shows EXACTLY it (Task #600). The verdict is keyed by symbol AND
-  // the scalp's timeframe (the card publishes its real "1m" read), so when the
+  // the timeframe the engine actually read (the card publishes under the result's
+  // own `timeframe`, "5m" for the M5 Focus read — never the 1m cell), and a null
+  // publish retracts it (e.g. a refresh that returns NO_SPECS), so when the
   // symbol OR timeframe switches we clear the PREVIOUS symbol+timeframe key
   // first, and clear on unmount — a stale verdict can never linger for a
   // symbol/timeframe whose Focus card is no longer mounted there. `setAction` is
@@ -49,13 +51,18 @@ export function RubyScalpFocusCard({
    *  identity-only effect re-runs retracting a published verdict. */
   const lastRunKeyRef = useRef<string | null>(null);
   const publishAction = useCallback(
-    (pubSymbol: string, pubTimeframe: string, action: PublishedScannerAction) => {
+    (
+      pubSymbol: string,
+      pubTimeframe: string,
+      action: PublishedScannerAction | null,
+      side: ActionDirection = null,
+    ) => {
       const prev = lastKeyRef.current;
       if (prev && (prev.symbol !== pubSymbol || prev.timeframe !== pubTimeframe)) {
         setAction(prev.symbol, prev.timeframe, null);
       }
       lastKeyRef.current = { symbol: pubSymbol, timeframe: pubTimeframe };
-      setAction(pubSymbol, pubTimeframe, action);
+      setAction(pubSymbol, pubTimeframe, action, side);
     },
     [setAction],
   );
@@ -120,6 +127,10 @@ export function RubyScalpFocusCard({
         onSuccess: (data) => { if (requestKeyRef.current === runKey) setResult(data); },
         onError: () => {
           if (requestKeyRef.current === runKey) {
+            // The latest check failed: the earlier plan (status, entry, stop,
+            // TP ladder, Build) is no longer confirmed, so it is removed rather
+            // than left under the "couldn't read this market" line.
+            setResult(null);
             publishAction(sym, SCALP_SIGNAL_BUS_TIMEFRAME, "CHECK_FAILED");
           }
         },
@@ -170,7 +181,7 @@ export function RubyScalpFocusCard({
           )}
           {sym && focus.isError && (
             <p className="text-sm text-danger">
-              {name} couldn't read this market right now. Try Refresh in a moment.
+              {name} couldn't read this market right now, so no scalp plan is shown. Try Refresh in a moment.
             </p>
           )}
           {sym && focus.isPending && !result && (

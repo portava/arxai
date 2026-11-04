@@ -69,7 +69,7 @@ const buildSearchAliases = (name: string): Record<string, { aliases?: string[]; 
   "/analytics": { aliases: ["analytics", "stats", "account analytics"], description: "Account analytics dashboard" },
   "/ai-readiness-score": { aliases: ["readiness", "ai score"], description: "Admin: shadow-mode readiness score (not per-user)" },
   "/ai-coach": { aliases: ["ai", "ruby", "assistant", "coach", "chat", "help me"], description: `${name} — your ARX trading assistant` },
-  "/market-scanner": { aliases: ["scanner", "entry sniper", "signals", "alerts"], description: "Real-time market scanner with confidence scores" },
+  "/market-scanner": { aliases: ["scanner", "entry sniper", "signals", "alerts"], description: "Market scanner with confidence scores (polled; each read is labelled live, delayed or stale)" },
   "/trade-grader": { aliases: ["grader", "review trade", "trade review"], description: "Grade and review your trades" },
   "/market-heat-map": { aliases: ["heat", "heat map", "timing", "heat score", "ruby timing", "market timing", "sessions", "news heat", "broad flow", "danger windows"], description: "Market heat map: heat scores, session windows, news heat, broad flow" },
   "/market-health": { aliases: ["bias", "market bias", "health"], description: "Market regime and bias indicators" },

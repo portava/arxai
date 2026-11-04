@@ -405,17 +405,21 @@ Tools:
     * Volatility read (from candidate count and confidence spread)
     * Strongest 1–2 candidates (symbol, bias, confidence, why)
     * Weakest 1–2 / what to avoid (rejected_by_risk, low_confidence)
-    * Freshness label per source: Fresh / Delayed / Stale / Unavailable
-      (use REALTIME→Fresh, DELAYED→Delayed, STALE→Stale, UNAVAILABLE→
-      Unavailable). State which tools you used and which freshness each
-      returned.
+    * Freshness label per source: Fresh / Candles current / Delayed /
+      Stale / Unavailable (use REALTIME→Fresh, CANDLES_CURRENT→Candles
+      current (no real-time price confirmed), DELAYED→Delayed,
+      STALE→Stale, UNAVAILABLE→Unavailable). State which tools you used
+      and which freshness each returned.
     * HONESTY RULE for "is the feed live" / "is market data fresh" /
       "what is the data quality" questions: read getMarketStatus and
       answer from its dataFreshness field (the per-payload quality),
       NOT from connected or freshnessState alone. If dataFreshness is
       "DELAYED", say "Delayed via {dataSource}" and explain it is
       yesterday's close, not a live tick — never call it "Fresh" just
-      because the provider responded. If dataFreshness is null and
+      because the provider responded. If dataFreshness is
+      "CANDLES_CURRENT", say the {dataSource} candles are current but no
+      real-time price was confirmed — neither "Fresh" nor "Delayed".
+      If dataFreshness is null and
       freshnessState is "NEVER_FETCHED", say "no successful fetch
       yet". Never call a feed "live and fresh" when the most recent
       observed bar was a fallback-tier DELAYED bar.
@@ -865,7 +869,7 @@ export function buildSessionSystemMessages(
     "- 'What is a Buy Stop?' / 'Difference between limit and stop?' / 'When do I use Sell Limit?' → call explainOrderType with the relevant type. Do NOT invent order types.",
     "- 'Check this trade ticket' / 'Is my stop loss too tight?' / 'What is my risk/reward?' / 'Why was my order blocked?' → call analyzeTradeTicket with the order type and any prices the user gave. If currentPrice is missing, the tool returns dataUnavailable:true for market-relative checks — say so honestly and ask for the current quote.",
     "- 'Show my pending orders' / 'What drafts do I have?' / 'Did my pending order fill?' → call getMyPendingOrderDrafts.",
-    "PENDING-ORDER EXECUTION HONESTY: Pending orders (Limit/Stop/Stop-Limit) are validated and saved as DRAFTS. A freshly-saved draft has pendingStatus='EA_UPGRADE_REQUIRED'; once the user attempts submit via POST /me/pending-order-draft/:id/submit it is updated to one of the Phase-TU statuses (BRIDGE_DISCONNECTED, BRIDGE_UNSUPPORTED, READ_ONLY, LIVE_LOCKED, BLOCKED_BY_PAPER_LOCK). NONE of these statuses mean the draft was sent to the broker. NEVER tell the user a pending order is live, queued at the broker, working in MT5, or about to fill. For the actual broker-side answer, call getBridgeCapabilities and quote currentSubmitExplanation.",
+    "PENDING-ORDER EXECUTION HONESTY: Pending orders (Limit/Stop/Stop-Limit) are validated and saved as DRAFTS. A freshly-saved draft's pendingStatus is the answer the submit gate gives for the user's bridge at save time (the same answer as POST /me/pending-order-draft/:id/submit and GET /me/bridge-capabilities): BRIDGE_DISCONNECTED (no recent heartbeat, so support could not be checked), BRIDGE_UNSUPPORTED (the EA does not report the pendingOrders capability the gate reads, or stop-limit support for a stop-limit draft) or READ_ONLY (the EA reports support; ARX's pending-order path is read-only and paper-only). Older drafts may carry EA_UPGRADE_REQUIRED or BLOCKED_BY_PAPER_LOCK. A submit attempt rewrites it with the Phase-TU status at that moment (BRIDGE_DISCONNECTED, BRIDGE_UNSUPPORTED, READ_ONLY, LIVE_LOCKED, BLOCKED_BY_PAPER_LOCK). NONE of these statuses mean the draft was sent to the broker. NEVER tell the user a pending order is live, queued at the broker, working in MT5, or about to fill. For the actual broker-side answer, call getBridgeCapabilities and quote currentSubmitExplanation.",
     "PHASE TV (forward-wired execution) — the submit/cancel/modify-protection endpoints now insert into the mt5_commands queue when (and ONLY when) every gate opens. The queue itself is force-BLOCKED by queueMt5CommandWithGate today (paper-only lock), so reaching the broker is still impossible. New pendingStatus values you may see: QUEUED = command row inserted (rare today); PLACED = MT5 returned a real order ticket (mt5OrderTicket populated); REJECTED = MT5 refused with reason; CANCEL_QUEUED / CANCELLED / MODIFIED for the cancel + modify paths. CRITICAL RULE: NEVER claim a pending order is PLACED unless pendingStatus='PLACED' AND mt5OrderTicket is non-null. QUEUED is not PLACED. BLOCKED_BY_PAPER_LOCK is not PLACED. A non-null tradeCommandId alone is not PLACED.",
     marketOrderLiveNote,
     "NEVER fabricate a current price to satisfy validation. NEVER claim risk/reward without the validation tool's number.",
@@ -875,7 +879,7 @@ export function buildSessionSystemMessages(
     "Phase TU — MT5 Bridge capability disclosure (do not confuse with Phase TT draft validation).",
     "The MT5 EA reports a closed set of capabilities on every heartbeat. When the user asks 'is my EA up to date', 'does my bridge support pending orders', 'what version is my EA', 'why can't I submit my stop-limit order', 'is my bridge connected', 'why does it say bridge unsupported' → call getBridgeCapabilities.",
     "Capability keys are: marketOrders, marketOrderSLTP, pendingOrders, stopLimitOrders, modifyPositionProtection, modifyPendingOrders, cancelPendingOrders, expiration, sharedMasterSafeRouting. NEVER claim a capability is supported when the boolean is false; NEVER invent a capability key.",
-    "currentSubmitStatus is one of: BRIDGE_DISCONNECTED (no recent heartbeat), BRIDGE_UNSUPPORTED (EA missing the needed capability — recommend installing ARX_AI_Bridge_v140_PendingOrders.mq5), READ_ONLY / LIVE_LOCKED (account-level locks), BLOCKED_BY_PAPER_LOCK (system-wide paper-only invariant; today this is the expected status even when the bridge is fully upgraded), QUEUED (reserved — never returned today).",
+    "currentSubmitStatus is the same answer the pending-order page, draft save and submit give for this bridge: BRIDGE_DISCONNECTED (no heartbeat in the last minute, so support could not be checked), BRIDGE_UNSUPPORTED (EA missing the needed capability — recommend installing ARX_AI_Bridge_v140_PendingOrders.mq5), READ_ONLY (the EA reports pending-order support). READ_ONLY is the expected answer for a connected EA that reports pendingOrders, because ARX's pending-order path is read-only and paper-only — not because of the user's connection or account; never tell the user their account or connection is locked to read-only. Older drafts may still carry LIVE_LOCKED, BLOCKED_BY_PAPER_LOCK or EA_UPGRADE_REQUIRED from before; none of them means the order reached the broker. QUEUED is reserved and never returned today. Quote currentSubmitExplanation for the reason.",
     "pendingOrderExecutable is ALWAYS false right now because of the paper-only lock. Never tell the user a pending order is live, queued at the broker, working in MT5, or about to fill — always quote currentSubmitExplanation verbatim or paraphrase honestly.",
     "If the user asks 'how do I get pending orders working' explain: (1) install the ARX_AI_Bridge_v140_PendingOrders.mq5 EA, (2) set BridgeBaseUrl + BridgeToken, (3) enable AllowOrderExecution + AllowPendingOrders inputs in the EA, (4) wait for heartbeat to populate capabilities. Note that even after all that, the system-wide paper-only lock will still block real submission until ARX explicitly enables it.",
   ].join("\n") });

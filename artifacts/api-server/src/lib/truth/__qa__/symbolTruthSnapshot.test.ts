@@ -132,6 +132,8 @@ function scannerStub(opts: {
   stopLoss?: number | null;
   invalidation?: number | null;
   tp?: number[];
+  /** The market-edge minimum-evidence rule; default met. `null` omits the ledger. */
+  meetsMinimum?: boolean | null;
 } = {}): ScannerResult {
   return {
     symbol: "EURUSD",
@@ -152,6 +154,9 @@ function scannerStub(opts: {
       from: m - 0.0002,
       to: m + 0.0002,
     })),
+    ...(opts.meetsMinimum === null
+      ? {}
+      : { evidence: { for: [], against: [], conflicts: [], meetsMinimum: opts.meetsMinimum ?? true, netScore: 40 } }),
   } as unknown as ScannerResult;
 }
 
@@ -518,4 +523,55 @@ test("snapshot computes timing with persistSnapshot:false (no heat write)", asyn
   // The brain must request the timing read WITHOUT persisting a heat snapshot —
   // proof the read-side snapshot writes nothing on the timing path.
   assert.equal(req.persistSnapshot, false);
+});
+
+// ── (+) a lean is not an edge (owner screenshot 2026-10-27) ──────────────────
+// Header read "Bullish · Developing" while the only voter (the market-edge read)
+// had failed its own minimum-evidence rule (edge 4/100, NO TRADE).
+
+test("lean: the only bullish voter is below its evidence rule → LEAN qualifier + 'lean' label", async () => {
+  const snap = await build({
+    scanner: scannerStub({ direction: "BUY", bias: "BULLISH", lifecycleStage: "SETUP_FORMING", meetsMinimum: false }),
+    timing: null,
+  });
+  assert.equal(snap.verdict.bias, "BULLISH", "the vote itself is unchanged");
+  assert.equal(snap.verdict.stage, "DEVELOPING");
+  assert.equal(snap.verdict.biasQualifier, "LEAN");
+  assert.equal(snap.components.scanner.label, "Bullish lean · Setup forming");
+  assert.equal(snap.components.scanner.belowEvidenceFloor, true);
+});
+
+test("lean: evidence rule met → no qualifier, label unchanged", async () => {
+  const snap = await build({
+    scanner: scannerStub({ direction: "BUY", bias: "BULLISH", lifecycleStage: "SETUP_FORMING", meetsMinimum: true }),
+    timing: null,
+  });
+  assert.equal(snap.verdict.biasQualifier, null);
+  assert.equal(snap.components.scanner.label, "Bullish · Setup forming");
+});
+
+test("lean: a missing evidence ledger fails closed (treated as below the rule)", async () => {
+  const snap = await build({ scanner: scannerStub({ meetsMinimum: null }), timing: null });
+  assert.equal(snap.verdict.biasQualifier, "LEAN");
+});
+
+test("lean: a second independent bullish voter clears the qualifier (ALIGNED)", async () => {
+  const snap = await build({ scanner: scannerStub({ meetsMinimum: false }) });
+  assert.equal(snap.verdict.stage, "ALIGNED");
+  assert.equal(snap.verdict.biasQualifier, null);
+});
+
+test("lean: bearish mirror and a non-directional structure word", async () => {
+  const bear = await build({
+    scanner: scannerStub({ direction: "SELL", bias: "BEARISH", meetsMinimum: false, entryFrom: 1.1, entryTo: 1.1002, stopLoss: 1.101, invalidation: 1.101, tp: [1.099] }),
+    timing: null,
+  });
+  assert.equal(bear.verdict.bias, "BEARISH");
+  assert.equal(bear.verdict.biasQualifier, "LEAN");
+  assert.match(bear.components.scanner.label, /^Bearish lean · /);
+  const ranging = await build({
+    scanner: scannerStub({ direction: "BUY", bias: "RANGING", meetsMinimum: false }),
+    timing: null,
+  });
+  assert.match(ranging.components.scanner.label, /^Ranging, bullish lean · /);
 });

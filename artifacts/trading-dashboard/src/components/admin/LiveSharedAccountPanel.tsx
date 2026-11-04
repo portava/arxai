@@ -36,6 +36,11 @@ import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/hear
 
 type Readiness = {
   ok: boolean;
+  // The route's catch branch answers ok:true, degraded:true with fail-closed
+  // stand-ins and readable:false on each section; `message` says what failed.
+  degraded?: boolean;
+  message?: string;
+  error?: string;
   architecture: { model: string; summary: string; brokerCredentialsOnServer: boolean };
   globalSwitches: {
     serverMasterSwitchEnabled: boolean;
@@ -50,6 +55,15 @@ type Readiness = {
     killSwitchEngagedAt: string | null;
     killSwitchReason: string | null;
     liveBrokerExecutionArmedDb?: boolean;
+    // Either install-wide stop (platformStopReport()). platformStopReadable is
+    // false when this report could not read a stop (it then counts as engaged);
+    // platformStopDetail names each engaged source's reason, "state
+    // unreadable" / "settings missing" for a source that was not read.
+    platformStopEngaged?: boolean;
+    platformStopSources?: string[];
+    platformStopReason?: string | null;
+    platformStopReadable?: boolean;
+    platformStopDetail?: Partial<Record<"platform_emergency_stop" | "safety_core_kill_switch", string | null>>;
   };
   liveAccount: {
     pinnedBridge: null | {
@@ -113,6 +127,59 @@ type FirstTestStatus = {
   };
 };
 
+// True when the readiness body is not a reading: the server flagged it
+// degraded, or any section says it could not be read.
+function readinessDegraded(d: Readiness | undefined): boolean {
+  if (!d) return true;
+  if (d.degraded === true) return true;
+  const sections = [d.globalSwitches, d.liveAccount, d.approvedUsers, d.openExposure] as Array<unknown>;
+  return sections.some((s) => !s || (s as { readable?: unknown }).readable === false);
+}
+
+// The server's fail-closed reasons for a stop it could not read.
+const STOP_NOT_READ = new Set(["state unreadable", "settings missing"]);
+
+/**
+ * The platform settings row was not read (missing, or the read failed):
+ * loadPlatformSettings() then answers fail-closed stand-ins — emergency stop
+ * "engaged", mode OFF, routing USER_OWNED_MT5, every live flag false — in an
+ * otherwise normal 200 body. Returns the server's reason ("settings missing" /
+ * "state unreadable"), or null when the settings were read.
+ */
+function settingsUnreadDetail(g: Readiness["globalSwitches"]): string | null {
+  if (g.platformStopReadable !== false) return null;
+  const detail = String(g.platformStopDetail?.platform_emergency_stop ?? "");
+  return STOP_NOT_READ.has(detail) ? detail : null;
+}
+
+/**
+ * The second install-wide stop. emergencyKillSwitch is only the platform
+ * emergency stop; the safety-core kill switch appears only in
+ * platformStopSources / platformStopDetail, and the live pipeline refuses new
+ * live risk while it is engaged or could not be read. Display only.
+ *   released     — reported, and not among the engaged sources
+ *   engaged      — reported engaged (detail: its stored reason)
+ *   unread       — counted as engaged only because it could not be read
+ *   not_reported — the server sent no combined stop fields, so it is unknown
+ */
+type SafetyCoreState = "released" | "engaged" | "unread" | "not_reported";
+function installWideStops(g: Readiness["globalSwitches"]) {
+  const sources = Array.isArray(g.platformStopSources) ? g.platformStopSources : [];
+  const reported = typeof g.platformStopEngaged === "boolean";
+  const coreDetail = g.platformStopDetail?.safety_core_kill_switch ?? null;
+  const safetyCore: SafetyCoreState = !reported
+    ? "not_reported"
+    : !sources.includes("safety_core_kill_switch")
+      ? "released"
+      : g.platformStopReadable === false && STOP_NOT_READ.has(String(coreDetail ?? ""))
+        ? "unread"
+        : "engaged";
+  // Either stop engaged, or one could not be read (it then counts as engaged).
+  const engaged = g.emergencyKillSwitch === true || sources.length > 0
+    || g.platformStopEngaged === true || g.platformStopReadable === false;
+  return { reported, engaged, safetyCore, safetyCoreDetail: coreDetail };
+}
+
 async function jget<T>(url: string): Promise<T> {
   const r = await fetch(url, { credentials: "include" });
   if (!r.ok) throw new Error(`${url} -> ${r.status}`);
@@ -127,7 +194,11 @@ async function jpost<T>(url: string, body: unknown): Promise<T> {
   return r.json();
 }
 
-function StatusPill({ ok, label }: { ok: boolean; label: string }) {
+function StatusPill({ ok, label, unread }: { ok: boolean; label: string; unread?: boolean }) {
+  // unread: nothing was read, so neither a tick nor a cross.
+  if (unread) {
+    return <Badge variant="outline" className="font-medium">{"? "}{label}</Badge>;
+  }
   return (
     <Badge variant={ok ? "default" : "destructive"} className="font-medium">
       {ok ? "✓ " : "✗ "}{label}
@@ -285,20 +356,57 @@ export function LiveSharedAccountPanel() {
   });
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading live shared readiness…</div>;
-  if (error || !data?.ok)
+  // A degraded body (ok:true, degraded:true, readable:false sections) carries
+  // fail-closed stand-ins — kill switch "engaged", 0 users, 0 exposure, 0
+  // pending commands — not readings. Treat it like a failed load: show the
+  // server's message and render no switch, count or release toggle from it.
+  if (error || !data?.ok || readinessDegraded(data))
     return (
-      <Alert variant="destructive" className="m-6">
+      <Alert variant="destructive" className="m-6" data-testid="live-shared-readiness-not-loaded">
         <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Failed to load</AlertTitle>
-        <AlertDescription>{String((error as Error)?.message ?? "unknown")}</AlertDescription>
+        <AlertTitle>Live Shared readiness could not be loaded</AlertTitle>
+        <AlertDescription>
+          {error
+            ? `The request failed: ${(error as Error).message}. The kill switch, switches, approved users and open exposure are unknown.`
+            : data?.message
+              ?? (data?.error
+                ? `The server did not answer ok (${data.error}). The kill switch, switches, approved users and open exposure are unknown.`
+                : "The server did not return a complete reading. The kill switch, switches, approved users and open exposure are unknown, not zero.")}
+        </AlertDescription>
       </Alert>
     );
 
   const g = data.globalSwitches;
-  const isLive =
+  // Settings not read: every settings-derived value below is a stand-in.
+  const settingsUnread = settingsUnreadDetail(g);
+  const stops = installWideStops(g);
+  const switchesOn =
     g.serverMasterSwitchEnabled && g.platformMode === "LIVE" &&
     g.accountRoutingMode === "SHARED_MASTER_MT5" &&
     g.sharedLiveTradingEnabled && g.masterBridgeLiveEnabled && !g.emergencyKillSwitch;
+  // Active only when both install-wide stops were reported and released.
+  const isLive = switchesOn && stops.reported && !stops.engaged;
+  const liveLabel = isLive
+    ? "Live trading: Active"
+    : !switchesOn
+      ? "Live trading: Not active"
+      : stops.safetyCore === "engaged"
+        ? "Live trading: Not active — the safety-core kill switch is engaged"
+        : stops.safetyCore === "unread"
+          ? "Live trading: Not active — the safety-core kill switch could not be read (treated as engaged)"
+          : stops.safetyCore === "not_reported"
+            ? "Live trading: Not confirmed — the safety-core kill switch was not reported"
+            : "Live trading: Not active — an install-wide stop is engaged or could not be read";
+  // "Kill switch" unqualified only while the safety-core kill switch is read
+  // released; otherwise the pill names the one stop it shows.
+  const stopName = stops.safetyCore === "released" ? "Kill switch" : "Platform emergency stop";
+  const coreDetail = stops.safetyCoreDetail;
+  const safetyCoreLabel =
+    stops.safetyCore === "engaged"
+      ? `Safety-core kill switch: engaged${coreDetail ? ` (${coreDetail})` : ""} — new live orders are refused`
+      : stops.safetyCore === "unread"
+        ? `Safety-core kill switch: could not be read (${coreDetail}) — treated as engaged`
+        : "Safety-core kill switch: not reported by the server — state unknown";
 
   const hbAge = detectorQ.data?.bridge?.heartbeatAgeSec ?? null;
   const detectorFresh = isHeartbeatAgeSecondsFresh(hbAge) && detectorQ.data?.ok === true;
@@ -320,7 +428,7 @@ export function LiveSharedAccountPanel() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <Badge variant={isLive ? "default" : "secondary"} className="text-sm">
-            {isLive ? "Live trading: Active" : "Live trading: Not active"}
+            {liveLabel}
           </Badge>
           <Badge variant="outline" className="text-xs">
             Pending commands: {data.arxLiveCommandsCount}
@@ -450,19 +558,51 @@ export function LiveSharedAccountPanel() {
                 const envOk = g.serverMasterSwitchEnvOnly === true;
                 const opArm = g.liveBrokerExecutionArmedDb === true;
                 const effective = g.serverMasterSwitchEnabled === true; // backend-resolved (env AND op)
+                // Settings not read: the operator arm, stop, mode, routing and
+                // live flags are fail-closed stand-ins, shown as unread.
+                const unreadLabel = (name: string) => `${name}: could not be read`;
                 return (
                   <>
+                    {settingsUnread && (
+                      <Alert variant="destructive" className="mb-2" data-testid="live-shared-settings-unread">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle className="text-sm">Platform settings could not be read ({settingsUnread})</AlertTitle>
+                        <AlertDescription className="text-xs">
+                          The kill switch, operator arm, trading mode, routing, shared live trading and master bridge below
+                          are not readings. This report counts the emergency stop as engaged because it could not read it;
+                          it does not show what each dispatch gate reads. The switches stay disabled until a reload reads the settings.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                       <StatusPill ok={envOk} label={envOk ? "Broker execution permission: Allowed" : "Broker execution permission: Blocked"} />
-                      <StatusPill ok={opArm} label={opArm ? "Operator broker execution: On" : "Operator broker execution: Off"} />
+                      {settingsUnread
+                        ? <StatusPill ok={false} unread label={unreadLabel("Operator broker execution")} />
+                        : <StatusPill ok={opArm} label={opArm ? "Operator broker execution: On" : "Operator broker execution: Off"} />}
                       <StatusPill ok={effective} label={effective ? "Effective broker execution: Enabled" : "Effective broker execution: Disabled"} />
-                      <StatusPill ok={!g.emergencyKillSwitch} label={g.emergencyKillSwitch ? "Kill switch: engaged" : "Kill switch: released"} />
+                      {settingsUnread
+                        ? <StatusPill ok={false} label={`${stopName}: could not be read (${settingsUnread}) — treated as engaged`} />
+                        : <StatusPill ok={!g.emergencyKillSwitch} label={g.emergencyKillSwitch ? `${stopName}: engaged` : `${stopName}: released`} />}
+                      {stops.safetyCore !== "released" && (
+                        <StatusPill ok={false} unread={stops.safetyCore === "not_reported"} label={safetyCoreLabel} />
+                      )}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                      <StatusPill ok={g.platformMode === "LIVE"} label={g.platformMode === "LIVE" ? "Trading mode: Live" : "Trading mode: Demo"} />
-                      <StatusPill ok={g.accountRoutingMode === "SHARED_MASTER_MT5"} label={g.accountRoutingMode === "SHARED_MASTER_MT5" ? "Routing: Shared master" : "Routing: User-owned"} />
-                      <StatusPill ok={g.sharedLiveTradingEnabled} label={g.sharedLiveTradingEnabled ? "Shared live trading: On" : "Shared live trading: Off"} />
-                      <StatusPill ok={g.masterBridgeLiveEnabled} label={g.masterBridgeLiveEnabled ? "Master bridge: Live" : "Master bridge: Off"} />
+                      {settingsUnread ? (
+                        <>
+                          <StatusPill ok={false} unread label={unreadLabel("Trading mode")} />
+                          <StatusPill ok={false} unread label={unreadLabel("Routing")} />
+                          <StatusPill ok={false} unread label={unreadLabel("Shared live trading")} />
+                          <StatusPill ok={false} unread label={unreadLabel("Master bridge")} />
+                        </>
+                      ) : (
+                        <>
+                          <StatusPill ok={g.platformMode === "LIVE"} label={g.platformMode === "LIVE" ? "Trading mode: Live" : "Trading mode: Demo"} />
+                          <StatusPill ok={g.accountRoutingMode === "SHARED_MASTER_MT5"} label={g.accountRoutingMode === "SHARED_MASTER_MT5" ? "Routing: Shared master" : "Routing: User-owned"} />
+                          <StatusPill ok={g.sharedLiveTradingEnabled} label={g.sharedLiveTradingEnabled ? "Shared live trading: On" : "Shared live trading: Off"} />
+                          <StatusPill ok={g.masterBridgeLiveEnabled} label={g.masterBridgeLiveEnabled ? "Master bridge: Live" : "Master bridge: Off"} />
+                        </>
+                      )}
                       <StatusPill ok={detectorFresh} label={detectorFresh ? `Heartbeat: Fresh (${hbAge ?? "?"}s)` : "Heartbeat: Stale / missing"} />
                       <StatusPill ok={firstTestQ.data?.enabled === true} label={firstTestQ.data?.enabled === true ? "First Live Test Mode: On" : "First Live Test Mode: Off"} />
                     </div>
@@ -473,6 +613,7 @@ export function LiveSharedAccountPanel() {
 
               <LiveSwitch
                 testId="switch-routing-shared"
+                disabled={settingsUnread !== null}
                 label="Route trades through the shared master bridge"
                 helper="Sends user orders through the operator-funded master MT5 instead of per-user bridges."
                 checked={g.accountRoutingMode === "SHARED_MASTER_MT5"}
@@ -484,6 +625,7 @@ export function LiveSharedAccountPanel() {
               />
               <LiveSwitch
                 testId="switch-master-bridge-live"
+                disabled={settingsUnread !== null}
                 label="Enable master bridge in LIVE mode"
                 helper="Allows the platform to forward live commands to the pinned master bridge."
                 checked={g.masterBridgeLiveEnabled}
@@ -495,6 +637,7 @@ export function LiveSharedAccountPanel() {
               />
               <LiveSwitch
                 testId="switch-shared-live-trading"
+                disabled={settingsUnread !== null}
                 label="Enable shared live trading platform-wide"
                 helper="Master switch for the shared live trading workflow across all approved users."
                 checked={g.sharedLiveTradingEnabled}
@@ -506,6 +649,7 @@ export function LiveSharedAccountPanel() {
               />
               <LiveSwitch
                 testId="switch-platform-mode-live"
+                disabled={settingsUnread !== null}
                 label="Set platform trading mode to LIVE"
                 helper="Switches the global trading mode from Demo to Live. Only takes effect alongside the switches above."
                 checked={g.platformMode === "LIVE"}
@@ -519,9 +663,13 @@ export function LiveSharedAccountPanel() {
               <LiveSwitch
                 testId="switch-release-kill"
                 label="Release emergency kill switch"
-                helper="Re-allows live dispatch once the conditions that triggered the kill have been resolved."
+                helper={stops.safetyCore === "released"
+                  ? "Re-allows live dispatch once the conditions that triggered the kill have been resolved."
+                  : "Releases the platform emergency stop only. It does not release the safety-core kill switch, which is "
+                    + (stops.safetyCore === "engaged" ? "engaged" : stops.safetyCore === "unread" ? "counted as engaged because it could not be read" : "not reported")
+                    + ", so live dispatch is not re-allowed by this switch alone."}
                 checked={!g.emergencyKillSwitch}
-                disabled={!g.emergencyKillSwitch}
+                disabled={!g.emergencyKillSwitch || settingsUnread !== null}
                 busy={releaseMut.isPending}
                 confirmTitle="Release kill switch?"
                 confirmDesc="This releases the platform emergency stop on every settings row and writes an audit row. It does not release the safety-core kill switch or arm live execution. The 16-gate evaluator still applies on every dispatch."
@@ -547,12 +695,18 @@ export function LiveSharedAccountPanel() {
               </button>
               {techOpen && (
                 <div className="mt-2 rounded bg-muted/40 p-3 text-xs space-y-1 font-mono">
+                  {settingsUnread && (
+                    <div className="text-destructive">
+                      Settings could not be read ({settingsUnread}): the settings values below are fail-closed stand-ins, not readings.
+                    </div>
+                  )}
                   <div>platformMode = <span className="font-semibold">{g.platformMode}</span></div>
                   <div>liveEnabled = <span className="font-semibold">{String(g.liveEnabled)}</span></div>
                   <div>accountRoutingMode = <span className="font-semibold">{g.accountRoutingMode}</span></div>
                   <div>sharedLiveTradingEnabled = <span className="font-semibold">{String(g.sharedLiveTradingEnabled)}</span></div>
                   <div>masterBridgeLiveEnabled = <span className="font-semibold">{String(g.masterBridgeLiveEnabled)}</span></div>
                   <div>emergencyKillSwitch = <span className="font-semibold">{String(g.emergencyKillSwitch)}</span></div>
+                  <div>platformStopSources = <span className="font-semibold">{stops.reported ? JSON.stringify(g.platformStopSources ?? []) : "not reported"}</span></div>
                   <div className="pt-1 text-muted-foreground">
                     ARX_LIVE_BROKER_EXECUTION_ENABLED (env permission, true source) = <span className="font-semibold">{String(g.serverMasterSwitchEnvOnly ?? false)}</span>
                   </div>
@@ -784,12 +938,36 @@ export function LiveSharedAccountPanel() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="text-sm">
-                Current state: <Badge variant={g.emergencyKillSwitch ? "destructive" : "default"}>
-                  {g.emergencyKillSwitch ? "ENGAGED" : "Released"}
+              <div className="text-sm" data-testid="kill-tab-emergency-stop-state">
+                {stops.safetyCore === "released" ? "Current state:" : "Platform emergency stop:"}{" "}
+                <Badge variant={g.emergencyKillSwitch ? "destructive" : "default"}>
+                  {settingsUnread ? "Could not be read — treated as engaged" : g.emergencyKillSwitch ? "ENGAGED" : "Released"}
                 </Badge>
                 {g.killSwitchReason && <span className="ml-2 text-xs text-muted-foreground">— {g.killSwitchReason}</span>}
               </div>
+              {stops.safetyCore !== "released" && (
+                // The other install-wide stop. This tab neither engages nor releases it.
+                <div className="text-sm" data-testid="kill-tab-safety-core-state">
+                  Safety-core kill switch:{" "}
+                  <Badge variant={stops.safetyCore === "not_reported" ? "outline" : "destructive"}>
+                    {stops.safetyCore === "engaged"
+                      ? "ENGAGED"
+                      : stops.safetyCore === "unread"
+                        ? `Could not be read (${coreDetail}) — treated as engaged`
+                        : "Not reported — state unknown"}
+                  </Badge>
+                  {stops.safetyCore === "engaged" && coreDetail && (
+                    <span className="ml-2 text-xs text-muted-foreground">— {coreDetail}</span>
+                  )}
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {stops.safetyCore === "not_reported"
+                      ? "The server did not report the safety-core kill switch, so this page cannot say whether new live orders are refused. This tab does not engage or release it."
+                      : stops.safetyCore === "unread"
+                        ? "This report could not read it, so it counts it as engaged; nothing was observed engaged. New live orders are refused while it cannot be read. There is nothing to release until it can be read; refresh, and check the server logs if it persists."
+                        : "New live orders are refused while it is engaged. This tab does not engage or release it; release it on the Safety Core Control Tower (/emergency)."}
+                  </div>
+                </div>
+              )}
               <Label htmlFor="kill-reason" className="text-xs">Reason (recorded in audit log)</Label>
               <input
                 id="kill-reason" className="w-full px-3 py-2 border rounded text-sm"

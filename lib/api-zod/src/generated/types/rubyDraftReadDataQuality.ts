@@ -7,7 +7,7 @@
  */
 
 /**
- * Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution.
+ * Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution.
  */
 export type RubyDraftReadDataQuality =
   (typeof RubyDraftReadDataQuality)[keyof typeof RubyDraftReadDataQuality];

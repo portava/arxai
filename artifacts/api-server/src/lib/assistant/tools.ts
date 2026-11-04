@@ -8,8 +8,6 @@
 import {
   MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
   classifyHeartbeatAgeSeconds,
-  classifyHeartbeatAt,
-  heartbeatIsOnline,
   isHeartbeatAgeSecondsOnline,
 } from "../brokerHub/freshness.js";
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
@@ -29,7 +27,8 @@ import {
   unattributedMasterTradesTable,
   adminActionAuditLogTable,
 } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { isUnsizedPaperClose, paperMoveSign } from "../paperExecution/paperPnl.js";
 import {
   getAppFeatureMap,
   explainFeature as featureExplain,
@@ -50,6 +49,12 @@ import {
 } from "../live/positionTruthAdapter.js";
 import type { PositionTruthVerdict } from "@workspace/domain/live-position";
 import { isApprovedArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
+import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
+import {
+  quoteObservationFreshness,
+  type QuoteObservation,
+  type QuoteTimeBasis,
+} from "../data/quoteObservationFreshness.js";
 import { deriveOpportunityLabel, projectOpportunitySetup } from "../data/opportunityAdapters.js";
 import { evaluatePaperTradePlan, getTradingStyleProfile } from "./coachTools.js";
 import { getVoiceModeStatus } from "./realtimeSession.js";
@@ -180,9 +185,11 @@ export async function getCurrentUserContext(userId: number) {
     accountMode: string;
     approvalStatus: string;
     tradingStatus: string;
+    tradingStatusReason: string;
     accountStatus: string;
-    currentBalance: number;
-    equity: number;
+    // null = not available / not measured (the shell never reports a missing figure as 0).
+    currentBalance: number | null;
+    equity: number | null;
     availableRisk: number | null;
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;
@@ -192,8 +199,11 @@ export async function getCurrentUserContext(userId: number) {
     accountShellSummary = {
       accountMode: shell.accountMode,
       approvalStatus: shell.approvalStatus,
-      tradingStatus: shell.tradingStatus,
-      accountStatus: `${shell.approvalStatus}/${shell.tradingStatus}`,
+      // The user's own status (their trading mode and an allocation freeze
+      // included) — the same one My Account's badge shows.
+      tradingStatus: shell.accountTradingStatus,
+      tradingStatusReason: shell.accountTradingStatusReason,
+      accountStatus: `${shell.approvalStatus}/${shell.accountTradingStatus}`,
       currentBalance: shell.allocation.currentBalance,
       equity: shell.allocation.equity,
       availableRisk: shell.risk.availableRiskAmount,
@@ -715,7 +725,9 @@ export async function getReconciliationStatus(userId: number) {
     : null;
   // Shared heartbeat policy: connected = online (fresh or degraded, < 60 s).
   const bridgeConnected = !!conn && isHeartbeatAgeSecondsOnline(heartbeatAgeSec);
-  const bridgeMode: "OFFLINE" | "READ_ONLY" | "PAPER_ONLY" | "LIVE_LOCKED" =
+  // Only these three labels are ever emitted: this tool has no paper-routing
+  // input, so the contract's PAPER_ONLY value is never produced here.
+  const bridgeMode: "OFFLINE" | "READ_ONLY" | "LIVE_LOCKED" =
     !bridgeConnected ? "OFFLINE" : (conn?.liveLocked ? "LIVE_LOCKED" : "READ_ONLY");
 
   // 2. Per-user attribution rows (shared-master routing model — currently
@@ -754,6 +766,15 @@ export async function getReconciliationStatus(userId: number) {
     .where(eq(unattributedMasterTradesTable.status, "pending_review"));
   const unattributedSystemPendingCount = unattributedPending.length;
 
+  // 3b. The user's REAL live-execution posture, from the same derived envelope
+  //     every other assistant surface reports (getMT5BridgeStatus, risk check).
+  //     Reporting only — it opens nothing. A failed read collapses fail-closed
+  //     inside deriveAssistantEnvelope, never to "live available".
+  const env = await deriveAssistantEnvelope(userId);
+  const assistantName = await getAssistantDisplayName(userId);
+  const liveNote = liveExecutionAvailabilityNote(env, assistantName);
+  const liveOpenForAccount = !env.liveLocked && env.allowOrderExecution;
+
   // 4. Status precedence
   let reconciliationStatus:
     | "BRIDGE_OFFLINE" | "RECONCILIATION_BLOCKED"
@@ -764,13 +785,13 @@ export async function getReconciliationStatus(userId: number) {
     note = "MT5 bridge is offline or has no recent heartbeat. Reconciliation cannot run until the EA reconnects. Broker balance/positions are unavailable — never inferred.";
   } else if (attrRows.length === 0) {
     reconciliationStatus = "NO_ROUTED_TRADES";
-    note = "No shared-routing attribution rows for this user. Shared MT5 routing is currently BLOCKED at the placement layer (paper-only by construction), so nothing is being executed against the broker.";
+    note = `No shared-routing attribution rows for this user, so there is nothing to reconcile yet. ${liveNote}`;
   } else if (missingTicketCount > 0 || missingAttributionMetadataCount > 0) {
     reconciliationStatus = "ATTRIBUTION_INCOMPLETE";
     note = `${missingTicketCount} attribution row(s) have no broker ticket yet; ${missingAttributionMetadataCount} row(s) are missing required metadata (commandId / auditId / virtualAccountId). Affected commands stay BLOCKED until attribution is complete.`;
   } else {
     reconciliationStatus = "MATCHED";
-    note = `All ${matchedCount} attribution row(s) reference a broker ticket. Real placement is still BLOCKED — this confirms only the observation-side mapping.`;
+    note = `All ${matchedCount} attribution row(s) reference a broker ticket. This confirms only the app-to-broker ticket mapping, not current broker positions or P/L. ${liveNote}`;
   }
 
   // Cleanup phase A + B — emit canonical bridge mode + canonical
@@ -779,8 +800,10 @@ export async function getReconciliationStatus(userId: number) {
   // consume the shared contract enums at lib/domain/safety-contracts.
   const canonicalReconciliationStatus = mapLegacyReconciliationStatus(reconciliationStatus);
   const heartbeatStale = !bridgeConnected;
+  // Mapped from the same label as bridge.mode, so a live-locked connection
+  // reads LIVE_LOCKED in both fields (not LIVE_LOCKED and READ_ONLY).
   const canonicalBridgeMode = applyHeartbeatStaleness(
-    mapLegacyBridgeMode(bridgeConnected ? "connected" : "disconnected"),
+    mapLegacyBridgeMode(bridgeMode),
     heartbeatStale,
   );
   return {
@@ -790,6 +813,14 @@ export async function getReconciliationStatus(userId: number) {
       connected: bridgeConnected,
       mode: bridgeMode,
       canonicalMode: canonicalBridgeMode,
+      // mode/canonicalMode are connection labels from a 4-value contract that
+      // has no "live" value: a connected bridge reads READ_ONLY even when this
+      // account can place live orders. Say what the label does and doesn't mean.
+      modeNote: !bridgeConnected
+        ? "The MT5 bridge is offline (no heartbeat in the last minute), so nothing can be read from or sent to the broker through it."
+        : bridgeMode === "LIVE_LOCKED"
+          ? "The MT5 bridge is connected, and this connection is locked for live orders."
+          : `The MT5 bridge is connected. "${bridgeMode}" is the connection label only — it is not this account's live-trading permission; see placementLayerNote.`,
       lastHeartbeatAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
       heartbeatAgeSec,
       heartbeatStaleThresholdSec: MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
@@ -799,8 +830,12 @@ export async function getReconciliationStatus(userId: number) {
       allowOrderExecution: false as const,
       liveLocked: conn?.liveLocked ?? true,
     },
-    placementLayer: "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED" as const,
-    placementLayerNote: "All real MT5 commands resolve to BLOCKED — placeLiveOrderGuarded always returns REJECTED.",
+    // Derived from the user's real envelope, never a constant: an armed live
+    // account and a paper account must not read the same placement claim.
+    placementLayer: liveOpenForAccount
+      ? ("LIVE_DISPATCH_GATED" as const)
+      : ("LIVE_LOCKED_FOR_ACCOUNT" as const),
+    placementLayerNote: liveNote,
     userAttributions: {
       total: attrRows.length,
       matchedToBrokerTicket: matchedCount,
@@ -886,18 +921,42 @@ export async function getMarketSnapshot(symbol: string) {
     let quote: {
       bid: number | null; ask: number | null; spread: number | null;
       price: number | null; providerFreshness: string; source: string;
+      observedAt: string | null; timeBasis: QuoteTimeBasis; ageMs: number | null;
+      freshness: QuoteObservation["freshness"]; stale: boolean; staleAfterMs: number;
+      observationNote: string;
     } | null = null;
     if (p.connected && p.features.quotes) {
       try {
         const q = await p.getLiveQuote((symbol ?? "").toString().trim() || symbol);
         const bid = typeof q.bid === "number" ? q.bid : null;
         const ask = typeof q.ask === "number" ? q.ask : null;
+        const price = typeof q.price === "number" ? q.price : null;
+        // Observation evidence: when this quote was observed (the vendor's own
+        // as-of time) and whether it is past the shared quote budget. The
+        // vendor's own stale/error verdict can only make it staler.
+        const obs = quoteObservationFreshness({
+          hasPrice: price != null || bid != null || ask != null,
+          observedAt: q.asOf,
+          basis: "provider_as_of",
+          sourceLabel: q.source,
+        });
+        const providerSaysStale = q.stale === true || q.freshness === "STALE" || q.freshness === "ERROR" || q.freshness === "UNAVAILABLE";
+        const stale = obs.stale || providerSaysStale;
         quote = {
           bid, ask,
           spread: bid != null && ask != null ? ask - bid : null,
-          price: typeof q.price === "number" ? q.price : null,
+          price,
           providerFreshness: q.freshness,
           source: q.source,
+          observedAt: obs.observedAt,
+          timeBasis: obs.timeBasis,
+          ageMs: obs.ageMs,
+          freshness: stale && obs.freshness !== "unavailable" && obs.freshness !== "unknown" ? "stale" : obs.freshness,
+          stale,
+          staleAfterMs: obs.staleAfterMs,
+          observationNote: providerSaysStale && !obs.stale
+            ? `${obs.plainEnglish} The provider itself marks this quote ${String(q.freshness).toLowerCase()}, so it is not a current price.`
+            : obs.plainEnglish,
         };
       } catch {
         quote = null;
@@ -960,7 +1019,21 @@ export async function getEconomicCalendar() {
         region: sanitizeExternalText(e.region, { source: "economic_calendar", field: "region" }),
       }))
     : r.events;
-  return { ...r, events,};
+  // Evidence: an unconnected calendar was NOT checked — its empty list means
+  // "unknown", never "no events". Only a connected provider's empty list is a
+  // checked "nothing scheduled".
+  const checked = r.connected === true;
+  const count = Array.isArray(events) ? events.length : 0;
+  return {
+    ...r,
+    events,
+    calendarChecked: checked,
+    note: !checked
+      ? "No economic calendar answered through the market-data provider, so upcoming events are unknown — not none. Do not say there are no events."
+      : count === 0
+        ? `The ${r.provider} calendar was checked and lists no upcoming events.`
+        : `${count} event(s) from the ${r.provider} calendar.`,
+  };
 }
 export async function getRecentMarketNews(query: string, limit = 5) {
   const p = getMarketProvider();
@@ -1088,6 +1161,12 @@ export function getMarketDataProviderStatusTool() {
 }
 
 // ── 18. getPropFirmModeStatus ───────────────────────────────────────────
+// The prop-challenge rules checked on both bases (booked and paper risk
+// model) whose messages Ruby gives in /evaluate's own words.
+const PROP_TWO_BASIS_RULES: ReadonlySet<string> = new Set([
+  "DAILY_LOSS", "TOTAL_DRAWDOWN", "TRAILING_DRAWDOWN", "CONSISTENCY", "MAX_RISK_PER_TRADE",
+]);
+
 // Phase 18A — per-user. Reads the user's own ACTIVE prop_challenge row
 // (Build R, paper-only). Does NOT read the global riskGovernor2 module
 // state, which is a system-wide simulator and would leak the same numbers
@@ -1114,90 +1193,135 @@ export async function getPropFirmModeStatus(userId: number) {
       };
     }
 
-    // Phase 27 — per-user paper-only progress evaluator. Mirrors the math
-    // in /prop-challenges/:id/evaluate (routes/propChallenges.ts) but is
-    // read-only and per-user-scoped (defense-in-depth filter on userId).
-    // Uses ONLY this user's paper_orders. Never live. Never fabricated.
+    // Phase 27 — per-user paper-only progress evaluator. Runs the rules of
+    // /prop-challenges/:id/evaluate itself (evaluateChallengeRules in
+    // routes/propChallenges.ts, the pure function /evaluate runs) on this
+    // challenge and its paper orders, read only and per-user-scoped
+    // (defense-in-depth filter on userId). Uses ONLY this user's paper_orders.
+    // Never live. Never fabricated. Writes nothing.
     const orderWhere = ch.userId == null
       ? and(eq(paperOrdersTable.paperAccountId, ch.paperAccountId), sql`${paperOrdersTable.userId} IS NULL`)
       : and(eq(paperOrdersTable.paperAccountId, ch.paperAccountId), eq(paperOrdersTable.userId, ch.userId));
-    const orders = await db.select().from(paperOrdersTable).where(orderWhere);
+    // Oldest first, as /evaluate reads them.
+    const orders = await db.select().from(paperOrdersTable).where(orderWhere).orderBy(asc(paperOrdersTable.openedAt));
+    const now = new Date();
+    // The page's own wording for what these figures measure, so Ruby and the
+    // Prop Challenge page describe the same numbers the same way, and the
+    // page's own rule checks.
+    const { closedTradeDrawdownNote, RISK_PER_TRADE_NOTE, evaluateChallengeRules, BOOKED_CLAUSE, MODEL_CLAUSE, BOTH_CLAUSE } = await import("../../routes/propChallenges.js");
+    // What /evaluate would compute now. The pass and fail rules are checked on
+    // two complete running balances: each closed trade at its booked P&L (the
+    // figures shown) and each at the paper risk model (price move × lots ×
+    // 100). A breach on either fails the challenge; a pass needs both.
+    const ev = evaluateChallengeRules(ch, orders, now);
     const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt);
     const openCount = orders.filter((o) => o.status === "OPEN").length;
+    // A close the paper venue could not size for the instrument (no contract
+    // size or currency conversion) holds a 0 placeholder in profit_loss. Its
+    // P&L is not known: it adds nothing to the booked figures below, and the
+    // result says so instead of reading it as a break-even.
+    const unsizedCloses = closed.filter((o) => o.status !== "CANCELLED" && isUnsizedPaperClose(o));
+    const unsizedLosses = unsizedCloses.filter((o) => o.exitPrice != null && paperMoveSign(o.direction, o.entryPrice, o.exitPrice) < 0).length;
+    const unsizedSymbols = [...new Set(unsizedCloses.map((o) => o.symbol))].sort();
 
-    // Bucket P&L + trade count per UTC day.
-    const byDayPnl = new Map<string, number>();
+    // Trade count per UTC day.
     const byDayCount = new Map<string, number>();
     for (const o of closed) {
       const d = (o.closedAt as Date).toISOString().slice(0, 10);
-      byDayPnl.set(d, (byDayPnl.get(d) ?? 0) + o.profitLoss);
       byDayCount.set(d, (byDayCount.get(d) ?? 0) + 1);
     }
-    const sortedDates = [...byDayPnl.keys()].sort();
-    const totalPnl = closed.reduce((s, o) => s + o.profitLoss, 0);
-    const totalPct = totalPnl / ch.startingBalance;
+    const sortedDates = [...byDayCount.keys()].sort();
+
+    // The booked figures (each closed trade at its stored P&L), as the page
+    // shows them. Daily loss is a share of the DAY-START balance.
+    const totalPnl = ev.totalPnl;
+    const totalPct = ev.totalPct;
     const currentBalance = ch.startingBalance + totalPnl;
-    const daysWorked = sortedDates.length;
-    const daysSinceStart = Math.max(1, Math.ceil((Date.now() - ch.startedAt.getTime()) / 86_400_000));
-
-    // Sequential walk — same math as evaluateChallenge() in
-    // routes/propChallenges.ts so the AI never reports numbers that
-    // disagree with the UI / /evaluate endpoint. Daily-loss percentage
-    // uses the DAY-START balance as denominator (not startingBalance).
-    let runBal = ch.startingBalance;
-    let peakBal = ch.startingBalance;
-    let maxDrawdownPct = 0;
-    let todayLossPct = 0; // today's loss as % of today's start balance
-    const todayKey = new Date().toISOString().slice(0, 10);
-    // Per-day start balance — mirrors routes/propChallenges.ts evaluator so
-    // per-trade risk uses the SAME denominator as the authoritative path.
-    const dayStartBalMap = new Map<string, number>();
-    for (const date of sortedDates) {
-      const dayPnl = byDayPnl.get(date) ?? 0;
-      const startBal = runBal;
-      dayStartBalMap.set(date, startBal);
-      runBal = startBal + dayPnl;
-      const dayLossPct = dayPnl < 0 && startBal > 0 ? Math.abs(dayPnl) / startBal : 0;
-      if (date === todayKey) todayLossPct = dayLossPct;
-      peakBal = Math.max(peakBal, runBal);
-      const dd = peakBal > 0 ? (peakBal - runBal) / peakBal : 0;
-      if (dd > maxDrawdownPct) maxDrawdownPct = dd;
-    }
-
-    // Consistency: largest single positive-day P&L share of total profit.
-    let consistencyTopShare = 0;
-    let totalPositive = 0;
-    let topPositiveDay = 0;
-    for (const date of sortedDates) {
-      const dayPnl = byDayPnl.get(date) ?? 0;
-      if (dayPnl > 0) {
-        totalPositive += dayPnl;
-        if (dayPnl > topPositiveDay) topPositiveDay = dayPnl;
-      }
-    }
-    if (totalPositive > 0) consistencyTopShare = topPositiveDay / totalPositive;
+    const daysWorked = ev.daysWorked;
+    const daysSinceStart = ev.daysSinceStart;
+    const maxDrawdownPct = ev.maxDrawdownPct;
+    const todayKey = now.toISOString().slice(0, 10);
+    const [bookedBasis, modelBasis] = ev.ruleBases as [typeof ev.ruleBases[number], typeof ev.ruleBases[number]];
+    // A basis's closed-trade loss today, as a share of today's starting balance.
+    const todayLossOf = (b: typeof bookedBasis): number => (b.lastDayDate === todayKey ? b.lastDayLossPct : 0);
+    const todayLossPct = todayLossOf(bookedBasis);
 
     // Honest INSUFFICIENT_DATA: brand-new challenge with zero closed trades.
     const hasData = closed.length > 0;
 
-    // Remaining headroom (clamped at 0).
-    const dailyLossRemainingPct = Math.max(0, ch.maxDailyLoss - todayLossPct);
-    const totalDrawdownRemainingPct = Math.max(0, ch.maxTotalDrawdown - maxDrawdownPct);
-    const profitTargetProgressPct = ch.profitTarget > 0 ? Math.max(0, totalPct) / ch.profitTarget : 0;
+    // Remaining headroom (clamped at 0) and target progress, on whichever
+    // basis is closer to failing or further from the target: /evaluate fails
+    // on a breach on either basis and passes only when both reach the target.
+    const dailyLossRemainingPct = Math.max(0, ch.maxDailyLoss - Math.max(...ev.ruleBases.map(todayLossOf)));
+    const totalDrawdownRemainingPct = Math.max(0, ch.maxTotalDrawdown - Math.max(...ev.ruleBases.map((b) => b.maxDrawdownPct)));
+    const profitTargetProgressPct = ch.profitTarget > 0 ? Math.min(...ev.ruleBases.map((b) => Math.max(0, b.totalPct))) / ch.profitTarget : 0;
 
     // Compliance status (no fabrication: WARNING at 80% of any limit).
     const warnings: string[] = [];
     const violations: string[] = [];
-    if (todayLossPct > ch.maxDailyLoss) violations.push(`Daily loss ${(todayLossPct*100).toFixed(2)}% exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
-    else if (todayLossPct > ch.maxDailyLoss * 0.8) warnings.push(`Daily loss ${(todayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}%`);
-    if (maxDrawdownPct > ch.maxTotalDrawdown) violations.push(`Drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
-    else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) warnings.push(`Drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`);
+    // Daily loss, drawdown, trailing drawdown, consistency and max risk per
+    // trade are checked on both bases, in /evaluate's own words: each names
+    // the basis it holds on when the two count some trade differently, and
+    // drawdown and daily loss are closed-trade figures (open positions are
+    // not marked to market), as on the page. A breach is a violation; nearing
+    // a limit, or a realised per-trade loss over the limit, is a warning.
+    const lastWalkDay = ev.days.length > 0 ? ev.days[ev.days.length - 1]!.tradeDate : null;
+    // Drawdown is checked on each basis's running maximum, so /evaluate raises
+    // the HARD drawdown message again on every walk day after a breach, each
+    // dated that day. The last walk day's check is the current one, but its
+    // date is not when the breach happened. Each basis's current maximum is
+    // given dated to the day it was reached, and the day the limit was first
+    // exceeded on that basis when that is earlier, in /evaluate's own words.
+    // While both bases are at the same drawdown /evaluate gives one message
+    // with the "both" clause, and one per basis, each with its own clause,
+    // once they differ; with no clause both bases count every trade the same.
+    // So a message speaks for a basis when it carries that basis's clause,
+    // the "both" clause or none, and each basis is followed through all of
+    // them (a breach first reported for both bases belongs to each).
+    const ddHard = ev.violations
+      .map((v, i) => ({ v, day: ev.violationDates[i] ?? null }))
+      .filter(({ v }) => v.type === "TOTAL_DRAWDOWN" && v.severity === "HARD");
+    const undated = (m: string) => m.replace(/ on \d{4}-\d{2}-\d{2}/, "");
+    const basisOfDrawdown = (m: string) => undated(m).replace(/^Closed-trade drawdown [\d.]+% exceeds limit [\d.]+%/, "");
+    const drawdownPctOf = (m: string) => /^Closed-trade drawdown ([\d.]+)%/.exec(m)?.[1] ?? null;
+    const speaksFor = (m: string, clause: string) => {
+      const c = basisOfDrawdown(m);
+      return c === "" || c === ` (${clause})` || c === ` (${BOTH_CLAUSE})`;
+    };
+    const breachEntries: Array<{ message: string; day: string | null }> = [];
+    for (const clause of [BOOKED_CLAUSE, MODEL_CLAUSE]) {
+      const mine = ddHard.filter((x) => speaksFor(x.v.message, clause));
+      const cur = mine.find((x) => x.day === lastWalkDay);
+      if (!cur) continue;
+      // The first message for this basis is the day its limit was first exceeded;
+      // the first giving its current maximum is the day that maximum was reached.
+      const first = mine[0] ?? cur;
+      const reached = mine.find((x) => drawdownPctOf(x.v.message) === drawdownPctOf(cur.v.message)) ?? cur;
+      for (const x of [first, reached]) {
+        if (!breachEntries.some((e) => e.message === x.v.message)) breachEntries.push({ message: x.v.message, day: x.day });
+      }
+    }
+    // Oldest first (a stable sort keeps the booked basis before the model on one day).
+    const drawdownBreaches = breachEntries
+      .sort((p, q) => (p.day ?? "").localeCompare(q.day ?? ""))
+      .map((e) => e.message);
+    ev.violations.forEach((v, i) => {
+      if (!PROP_TWO_BASIS_RULES.has(v.type) || v.severity === "INFO") return;
+      const day = ev.violationDates[i] ?? null;
+      // A drawdown breach is given above, dated to when it happened.
+      if (v.type === "TOTAL_DRAWDOWN" && v.severity === "HARD") return;
+      // Nearing the drawdown limit: the last day's check is the current one.
+      if (v.type === "TOTAL_DRAWDOWN" && day !== lastWalkDay) return;
+      // A daily-loss breach on any day fails the challenge; nearing the limit matters only today.
+      if (v.type === "DAILY_LOSS" && v.severity !== "HARD" && day !== todayKey) return;
+      (v.severity === "HARD" ? violations : warnings).push(v.message);
+    });
+    violations.push(...drawdownBreaches);
     if (daysSinceStart > ch.maxTradingDays) violations.push(`Day ${daysSinceStart} > maxTradingDays ${ch.maxTradingDays}`);
-    // Consistency rule (mirrors routes/propChallenges.ts evaluateChallenge):
-    // HARD when profit target already reached and rule exceeded; WARN otherwise.
-    if (totalPositive > 0 && consistencyTopShare > ch.consistencyRulePercent) {
-      const msg = `Single best day = ${(consistencyTopShare*100).toFixed(1)}% of profit, exceeds consistency rule ${(ch.consistencyRulePercent*100).toFixed(0)}%`;
-      if (totalPct >= ch.profitTarget) violations.push(msg); else warnings.push(msg);
+    // Unknown P&L: the balance, profit, daily loss and drawdown leave these
+    // closes out, so compliance with the loss limits cannot be confirmed.
+    if (unsizedCloses.length > 0) {
+      warnings.push(`${unsizedCloses.length} closed paper trade${unsizedCloses.length === 1 ? "" : "s"} (${unsizedSymbols.join(", ")}) could not be sized for the instrument (no contract size or currency conversion), so ${unsizedCloses.length === 1 ? "its" : "their"} P&L is not known and is left out of the balance, profit, daily loss and drawdown. Those figures may be wrong, so the loss and drawdown limits cannot be confirmed.`);
     }
     // Overtrading: >20 closed trades on any single day → soft warning.
     for (const date of sortedDates) {
@@ -1207,33 +1331,21 @@ export async function getPropFirmModeStatus(userId: number) {
 
     // ── Phase 27-B extended rule evaluation (mirrors routes/propChallenges.ts) ──
     const insufficientDataRules: string[] = [];
-    // Trailing drawdown.
-    let trailingDdPct = 0;
-    if (ch.trailingDrawdownEnabled === 1) {
-      const tdRef = ch.trailingDrawdownType === "TRAILING" ? peakBal : ch.startingBalance;
-      trailingDdPct = tdRef > 0 ? (tdRef - runBal) / tdRef : 0;
-      if (trailingDdPct > ch.trailingDrawdownAmount) {
-        violations.push(`Trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
-      } else if (trailingDdPct > ch.trailingDrawdownAmount * 0.8) {
-        warnings.push(`Trailing drawdown ${(trailingDdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`);
-      }
-    }
-    // Max risk per trade + max position size (per-trade scan).
-    let largestTradeRiskPct = 0;
+    // Trailing drawdown on the booked figures (both bases are checked above).
+    const trailingDdPct = bookedBasis.trailingDrawdownPct ?? 0;
+    // Largest realised trade loss + max position size (per-trade scan). The
+    // rule is checked on each closed trade's REALISED loss against that day's
+    // start balance (booked); risk at entry (stop-loss distance) is not
+    // measured (RISK_PER_TRADE_NOTE).
+    const dayStartBalMap = new Map(ev.days.map((d) => [d.tradeDate, d.startingBalance] as const));
+    let largestRealisedTradeLossPct = 0;
     let largestPositionSizeLots = 0;
     for (const o of closed) {
       const dayKey = (o.closedAt as Date).toISOString().slice(0, 10);
-      // Mirror route evaluator: per-trade risk uses that day's start balance
-      // as the denominator (NOT challenge startingBalance), so the AI and
-      // /evaluate endpoint produce identical risk percentages.
       const dayStart = dayStartBalMap.get(dayKey) ?? ch.startingBalance;
-      const tradeRiskPct = o.profitLoss < 0 && dayStart > 0 ? Math.abs(o.profitLoss) / dayStart : 0;
-      if (tradeRiskPct > largestTradeRiskPct) largestTradeRiskPct = tradeRiskPct;
+      const tradeLossPct = o.profitLoss < 0 && dayStart > 0 ? Math.abs(o.profitLoss) / dayStart : 0;
+      if (tradeLossPct > largestRealisedTradeLossPct) largestRealisedTradeLossPct = tradeLossPct;
       if (o.lotSize > largestPositionSizeLots) largestPositionSizeLots = o.lotSize;
-      if (tradeRiskPct > ch.maxRiskPerTrade) {
-        // Mirrors route severity: WARN (not HARD) — does NOT trigger BLOCKED.
-        warnings.push(`Trade #${o.id} loss ${(tradeRiskPct*100).toFixed(2)}% exceeds max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}%`);
-      }
       if (o.lotSize > ch.maxPositionSize) {
         warnings.push(`Trade #${o.id} size ${o.lotSize} lots exceeds max position size ${ch.maxPositionSize}`);
       }
@@ -1248,7 +1360,7 @@ export async function getPropFirmModeStatus(userId: number) {
     // Max pending orders — INSUFFICIENT_DATA (no PENDING status in paper schema).
     insufficientDataRules.push("MAX_PENDING_ORDERS");
     // Weekend / overnight holding.
-    const nowUtc = new Date();
+    const nowUtc = now;
     const isWeekendUtc = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
     const openOrdersAll = orders.filter((o) => o.status === "OPEN");
     if (ch.weekendHoldingAllowed === 0 && isWeekendUtc && openOrdersAll.length > 0) {
@@ -1266,22 +1378,36 @@ export async function getPropFirmModeStatus(userId: number) {
     // News restriction — INSUFFICIENT_DATA.
     if (ch.newsTradingAllowed === 0) insufficientDataRules.push("NEWS_RESTRICTION");
 
+    // Every breach /evaluate fails on is listed above. Should one ever be
+    // missed, its failure reason still makes this a violation, never COMPLIANT.
+    const evaluateWouldFail = ev.resolvedStatus === "FAILED";
+    if (evaluateWouldFail && violations.length === 0) {
+      violations.push(`/evaluate would end this challenge as FAILED: ${ev.failureReason ?? "a rule is breached"}`);
+    }
+
     let ruleStatus: "COMPLIANT" | "WARNING" | "VIOLATION" | "INSUFFICIENT_DATA" | "BLOCKED" = "COMPLIANT";
-    if (!hasData) ruleStatus = "INSUFFICIENT_DATA";
+    // No closed trades yet is INSUFFICIENT_DATA, unless /evaluate would fail
+    // the challenge anyway (past its day limit).
+    if (!hasData && !evaluateWouldFail) ruleStatus = "INSUFFICIENT_DATA";
     else if (violations.length > 0) ruleStatus = "VIOLATION";
     else if (warnings.length > 0) ruleStatus = "WARNING";
     // BLOCKED status only when strictGuardrails is enabled AND a HARD-severity
     // violation exists. In this tool, violations[] is reserved for HARD-equivalent
-    // failures only (DAILY_LOSS exceed, TOTAL_DRAWDOWN exceed, TIME_LIMIT,
-    // TRAILING_DRAWDOWN exceed, CONSISTENCY when profit target reached,
-    // MAX_OPEN_TRADES strictly exceeded). WARN-level signals (per-trade risk,
-    // position size, near-limit, overtrading, weekend/overnight holding) live
-    // in warnings[] and never trigger BLOCKED — mirroring routes/propChallenges.ts.
+    // failures only (DAILY_LOSS exceed on any day, TOTAL_DRAWDOWN exceed,
+    // TIME_LIMIT, TRAILING_DRAWDOWN exceed, CONSISTENCY when profit target
+    // reached — each on either basis — and MAX_OPEN_TRADES strictly exceeded).
+    // WARN-level signals (per-trade risk, position size, near-limit,
+    // overtrading, weekend/overnight holding) live in warnings[] and never
+    // trigger BLOCKED — mirroring routes/propChallenges.ts.
     if (ch.strictGuardrailsEnabled === 1 && violations.length > 0) ruleStatus = "BLOCKED";
 
     // Profit-target reached signal (informational; route /evaluate is the
-    // authoritative pass/fail writer — we never mutate state here).
-    const profitTargetReached = hasData && totalPct >= ch.profitTarget && daysWorked >= ch.minTradingDays;
+    // authoritative pass/fail writer — we never mutate state here). The
+    // target counts as reached only on both bases, as /evaluate requires.
+    // An unsized losing close could take the profit below the target, so the
+    // target is not confirmed while one is left out.
+    const profitTargetReached = hasData && bookedBasis.profitTargetReached && modelBasis.profitTargetReached
+      && daysWorked >= ch.minTradingDays && unsizedLosses === 0;
 
     // Read-only advisory: would a new trade still be allowed under hard rules?
     const canTakeNewTradeReasons: string[] = [];
@@ -1319,8 +1445,13 @@ export async function getPropFirmModeStatus(userId: number) {
         strictGuardrailsEnabled: ch.strictGuardrailsEnabled === 1,
       },
       extendedRuleSignals: {
+        // Booked figures, as on the page; ruleBasis.bases gives each basis's.
         trailingDrawdownPct: trailingDdPct,
-        largestTradeRiskPct,
+        // The largest realised loss of one closed trade, as a share of that
+        // day's starting balance — not the risk the trade carried at entry.
+        largestRealisedTradeLossPct,
+        riskPerTradeBasis: "REALISED_LOSS_AFTER_CLOSE" as const,
+        riskPerTradeNote: RISK_PER_TRADE_NOTE,
         largestPositionSizeLots,
         openTradeCount: openCount,
         insufficientDataRules,
@@ -1330,16 +1461,58 @@ export async function getPropFirmModeStatus(userId: number) {
         currentBalance,
         totalPnl,
         totalPct,
+        // On the basis further from the target (both must reach it).
         profitTargetProgressPct,
+        // Reached on both bases (and the minimum days met, no unsized loss left out).
         profitTargetReached,
         maxDrawdownPct,
         dailyLossUsedPct: todayLossPct,
+        // On the basis closer to the limit (a breach on either fails).
         dailyLossRemainingPct,
         totalDrawdownRemainingPct,
+        headroomNote: ev.basisDiffers
+          ? "The daily-loss and drawdown headroom and the profit-target progress are on whichever basis is closer to failing or further from the target, because /evaluate fails the challenge on a breach on either basis and passes it only when both reach the target. The balance, P&L, drawdown and daily loss figures are the booked ones; ruleBasis gives both."
+          : null,
+        // What maxDrawdownPct / dailyLossUsedPct (and the headroom above) are
+        // built from: closed trades only, with the open positions left out.
+        drawdownBasis: "CLOSED_TRADES_ONLY" as const,
+        openPositionsNotCounted: openCount,
+        drawdownNote: closedTradeDrawdownNote(openCount, false, ch.trailingDrawdownEnabled === 1),
         daysWorked,
         daysSinceStart,
         openTradeCount: openCount,
         closedTradeCount: closed.length,
+        /** Closed trades whose P&L could not be sized: left out of every money figure above. */
+        unsizedClosedTradeCount: unsizedCloses.length,
+        unsizedSymbols,
+      },
+      // The two bases the pass and fail rules are checked on, each with its own figures.
+      ruleBasis: {
+        basesDiffer: ev.basisDiffers,
+        note: ev.ruleBasisNote,
+        bases: ev.ruleBases.map((b) => ({
+          basis: b.basis,
+          description: b.basis === "BOOKED"
+            ? "each closed trade counted at its booked P&L (the figures in progress)"
+            : "each closed trade counted at the paper risk model, price move × lots × 100",
+          totalPnl: b.totalPnl,
+          totalPct: b.totalPct,
+          maxDrawdownPct: b.maxDrawdownPct,
+          dailyLossUsedPct: todayLossOf(b),
+          trailingDrawdownPct: b.trailingDrawdownPct,
+          consistencyTopShare: b.consistencyTopShare,
+          profitTargetReached: b.profitTargetReached,
+        })),
+      },
+      // What /evaluate would decide if it ran now, from the same rules on the
+      // same closed trades. Nothing is stored: the challenge stays as it is
+      // until /evaluate runs.
+      evaluationPreview: {
+        resolvedStatus: ev.resolvedStatus,
+        failureReason: ev.failureReason,
+        passBlockedReason: ev.passBlockedReason,
+        computedAt: now.toISOString(),
+        note: "What /prop-challenges/:id/evaluate would decide if it ran now, from the same rules on the same closed trades. Not stored: the challenge stays ACTIVE until /evaluate runs.",
       },
       warnings,
       violations,
@@ -1348,7 +1521,9 @@ export async function getPropFirmModeStatus(userId: number) {
       hasSufficientData: hasData,
       note: hasData
         ? "Prop firm tracking is paper/simulator only. Numbers reflect simulated paper P&L, not a real funded account. Run /prop-challenges/:id/evaluate for the authoritative pass/fail and to persist day-bucket history."
-        : "Prop firm challenge is configured but has no closed paper trades yet — INSUFFICIENT_DATA. Take some paper trades to start tracking rule progress.",
+        : evaluateWouldFail
+          ? `Prop firm challenge has no closed paper trades, but /evaluate would end it as FAILED now (${ev.failureReason ?? "a rule is breached"}). Prop firm tracking is paper/simulator only.`
+          : "Prop firm challenge is configured but has no closed paper trades yet — INSUFFICIENT_DATA. Take some paper trades to start tracking rule progress.",
       honestyDisclaimer: "Prop firm tracking is paper/simulator only. We do not claim to be connected to any real prop firm or funded account. Rules shown are user-entered; not official prop firm rules unless explicitly verified.",
       dataSource: "USER_PROP_CHALLENGE",
       perUserScoped: true as const,
@@ -1677,17 +1852,17 @@ export const TOOL_DEFINITIONS = [
   { name: "getRiskLimits", description: "Returns the user's risk governor limits.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getOpenExposure", description: "Phase 26 — Portfolio awareness. Returns the user's total open exposure broken down by symbol and side (long lots / short lots / net lots / positions count). Paper-trade lot totals only. Per-user-scoped — never returns another user's positions. Use for 'am I overexposed', 'what symbols do I have open', 'how much am I trading right now', 'what's my net exposure on EURUSD'. To convert lots → USD notional honestly, call getMarketSnapshot per symbol; never fabricate a notional number.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRiskUtilization", description: "Phase 26 — Portfolio awareness. Reports how much of the user's configured risk envelope is currently used: open trades vs maxOpenTrades, today's realized loss, and which limits are at/over threshold. Returns hasRiskSettings:false when the user has none — never invents defaults. Per-user-scoped. Use for 'how much risk am I taking', 'am I close to my daily loss limit', 'should I reduce risk', 'how many open trades can I still take', 'am I at my limit'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. NEVER imply broker execution is enabled (placementLayer is always BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED today). Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED — a connection label only, NOT the account's live permission; repeat bridge.modeNote rather than calling the account read-only), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. For whether live orders can be placed, read placementLayer (LIVE_DISPATCH_GATED = live orders are possible for this account but every one still needs the user's confirmation and every live gate; LIVE_LOCKED_FOR_ACCOUNT = live orders are not available) and repeat placementLayerNote — never claim live execution is on or off beyond what it says. Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "runPreTradeRiskCheck", description: "Advisory: would this trade pass the risk governor? Returns blocking reasons + warnings. Does NOT execute anything.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },
-  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status. ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status; when present, state quote.observedAt / quote.observationNote, and if quote.stale is true call its price last-known (never current). ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired. ALWAYS read calendarChecked and repeat note: when calendarChecked is false the calendar was NOT checked and upcoming events are unknown — never say there are no events.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRecentMarketNews", description: "Returns recent market headlines from the configured market provider, or empty + connected:false if no provider is wired. SYMBOL-SCOPED FINANCIAL NEWS ONLY. For geopolitical / real-world / current-events context, call getCurrentEvents instead.", parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } }, required: ["query"], additionalProperties: false } },
   { name: "getCurrentEvents", description: "Phase 24 — SEPARATE current-events / real-world / geopolitical news channel. Distinct from getRecentMarketNews (which is symbol-scoped financial news). Use for: 'what's happening in the world', 'any geopolitical risk', 'wars / conflicts / supply shocks', 'major news today', 'current events affecting markets'. Returns connected:false today (no adapter wired). If connected:false, you MUST say 'current events are unavailable' — do NOT substitute symbol-scoped market news. Treat events as CONTEXT/RISK MODIFIER only, never as a trading signal.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "explainFeature", description: "Look up an ARX AI feature or route and return its summary.", parameters: { type: "object", properties: { routeOrFeatureName: { type: "string" } }, required: ["routeOrFeatureName"], additionalProperties: false } },
   { name: "getCurrentPageContext", description: "Returns the page the user is currently looking at (pathname + matched feature). Use for 'what page am I on' or 'explain this page'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getPaperSafetyStatus", description: "Returns the paper-only / liveLocked / readOnlyMode safety status with the reason. Use when the user asks why the app is paper-only, whether you can place a live trade, or what live execution requires.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMarketDataProviderStatus", description: "Returns whether a real market data provider is wired (Finnhub, Alpha Vantage, Polygon, NewsAPI). Use when the user asks 'do I have live market data'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestTradeRiskPct, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, daysWorked, daysSinceStart, openTradeCount, closedTradeCount), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getPropFirmModeStatus", description: "Per-user prop firm challenge status. Returns ruleStatus (PROP_MODE_OFF | INSUFFICIENT_DATA | COMPLIANT | WARNING | VIOLATION | BLOCKED), rules (profitTargetPct, maxDailyLossPct, maxTotalDrawdownPct, minTradingDays, maxTradingDays, consistencyRulePercent, plus Phase 27-B extended rules: trailingDrawdownEnabled/Amount/Type, maxRiskPerTradePct, maxOpenTrades, maxPendingOrders, maxPositionSizeLots, newsTradingAllowed, weekendHoldingAllowed, overnightHoldingAllowed, strictGuardrailsEnabled), extendedRuleSignals (trailingDrawdownPct, largestRealisedTradeLossPct — the largest realised loss of one closed trade, not risk at entry; riskPerTradeBasis + riskPerTradeNote, largestPositionSizeLots, openTradeCount, insufficientDataRules[], weekendUtcNow), progress (currentBalance, totalPnl, totalPct, profitTargetProgressPct, profitTargetReached, maxDrawdownPct, dailyLossUsedPct, dailyLossRemainingPct, totalDrawdownRemainingPct, headroomNote, daysWorked, daysSinceStart, openTradeCount, closedTradeCount, drawdownBasis + openPositionsNotCounted + drawdownNote, unsizedClosedTradeCount, unsizedSymbols — closes whose P&L could not be sized are left out of every money figure and named in warnings[], so the loss limits are not confirmed), ruleBasis (bases[]: BOOKED and PAPER_RISK_MODEL, each with totalPnl, totalPct, maxDrawdownPct, dailyLossUsedPct, trailingDrawdownPct, profitTargetReached; note), evaluationPreview (resolvedStatus, failureReason, passBlockedReason: what /prop-challenges/:id/evaluate would decide if it ran now; not stored), warnings[], violations[], canTakeNewTrade + canTakeNewTradeReasons. The tool runs the same rules as /evaluate: every rule is checked with each closed trade counted at its booked P&L and again at the paper risk model (price move × lots × 100); a breach on either fails the challenge and a pass needs both. Quote violations and warnings as given — they name the basis when the two differ. currentBalance, totalPnl, totalPct, maxDrawdownPct, dailyLossUsedPct and extendedRuleSignals.trailingDrawdownPct / largestRealisedTradeLossPct are the booked figures (ruleBasis.bases gives each basis's own); dailyLossRemainingPct, totalDrawdownRemainingPct and profitTargetProgressPct are on the basis closer to failing or further from the target (say so, quoting headroomNote when set); profitTargetReached is true only when both bases reach the target — when evaluationPreview.passBlockedReason is set, quote it. If evaluationPreview.resolvedStatus is FAILED, say the next evaluation would end the challenge as FAILED and give failureReason. Drawdown and daily loss are closed-trade figures: open positions' floating P&L is not counted — say so and quote progress.drawdownNote when you give them. Max risk per trade is checked on realised losses after close — quote extendedRuleSignals.riskPerTradeNote, never call it risk at entry. BLOCKED is emitted only when strictGuardrailsEnabled is true AND a HARD violation exists. News + pending-order rules return INSUFFICIENT_DATA (no provider / no PENDING status). Numbers are paper/simulator ONLY — never a real funded account. Returns NOT_CONFIGURED when the user has no ACTIVE challenge. Returns INSUFFICIENT_DATA when configured but zero closed paper trades. Rules are user-entered; not official prop firm rules unless explicitly verified.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "createSupportDiagnosticReport", description: "Builds a diagnostic snapshot (MT5, account, risk, notifications, activity, market provider) for the current user. Use when the user asks for a support summary.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "evaluatePaperTradePlan", description: "Transparent plan-quality scorecard for the user's stored paper trade or an inline draft. Returns plan_completeness, risk_quality, reward_quality, timing_readiness, discipline_alignment, overall score, and a label (incomplete | needs_review | watchlist_ready | paper_trade_ready | blocked_by_risk). NOT a profit prediction. Use when the user asks 'is this trade ready', 'what's missing', 'why was this blocked', 'what's my setup score'.", parameters: { type: "object", properties: { paperTradeId: { type: "integer" }, plan: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, entry: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, lotSize: { type: "number" }, reasonForEntry: { type: "string" }, setupType: { type: "string" } }, additionalProperties: false } }, additionalProperties: false } },
   { name: "getTradingStyleProfile", description: "Returns the user's saved trading style: preferred symbol/market, account mode, risk rules. Returns configured:false for fresh users — never invents preferences.", parameters: { type: "object", properties: {}, additionalProperties: false } },
@@ -1697,7 +1872,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getFeatureHelp", description: "Phase 22H. Look up a single ARX AI feature by id (e.g. 'mt5_bridge'), name ('MT5 Bridge'), user-facing name ('Risk Settings'), or route ('/risk') and return its full registry entry: short + full description, where to find it, required setup, current status, safety notes, related features. Use for 'what is X', 'how do I use Y', 'is feature Z live', 'what setup does X need'.", parameters: { type: "object", properties: { idOrName: { type: "string", description: "Feature id, name, user-facing name, or route." } }, required: ["idOrName"], additionalProperties: false } },
   { name: "getCurrentPageHelp", description: "Phase 22H. Explains the page the user is currently looking at. ONLY use when the user EXPLICITLY asks about the current page or screen — e.g. 'what does this page do', 'what does this button do', 'how do I use this screen', 'explain this page', 'why is this empty'. DO NOT use for short follow-ups ('?', '??', 'and?', 'so?', 'what happened?', 'did you check?', 'what did you find?', 'I asked you a question'), market/scanner/trade/risk/MT5/account questions, or anything where the prior turn was about a different topic. Short follow-ups always continue the most recent unresolved request — never default to page help.", parameters: { type: "object", properties: { pathname: { type: "string", description: "Optional pathname override. Defaults to the page context sent by the frontend." } }, additionalProperties: false } },
   { name: "getAssistantCapabilityStatus", description: "Phase 22H. Reports what the assistant can actually do RIGHT NOW for this user: app help, market awareness, bridge awareness, risk checks, journal analysis, notifications, voice input, speech output, live realtime mode, plus order-execution lock. Each capability includes available + reason + setup hints. Use for 'what can the assistant do', 'what can you do', 'are you live', 'can you talk', 'what's broken'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getMarketScannerOpportunities", description: "Phase 22O + TW. Returns ranked scanner candidates from REAL provider candles when a market data provider with candle support is connected (currently: TwelveData / Finnhub). Each candidate has symbol, timeframe, bias, setupType, confidenceScore, riskScore, riskRewardRatio, reasonForTrade, statusBadge, opportunityLabel, entry, stopLoss, takeProfit (= TP2 main, backward-compat), AND a Phase TW takeProfitTargets[] array with up to TP1/TP2/TP3 — each {label, price, reason, rr, distancePoints, distancePips, suggestedAction (partial|full|runner), confidence (low|medium|high)}. bestTargetLabel names the primary target (usually TP2). If targetsUnavailableReason is non-null, takeProfitTargets is [] and you MUST report that targets are unavailable — never invent them. Call this WHENEVER the user asks 'check the scanner', 'what should I trade', 'best market right now', 'any opportunities', 'scan the market', 'what's hot', 'where should I take profit', 'where to TP'. ALWAYS read liveDataConnected: if false, opportunities is EMPTY and you MUST tell the user that live market data with candle support is not connected. Never fabricate scanner candidates or TP levels of your own.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
+  { name: "getMarketScannerOpportunities", description: "Phase 22O + TW. Returns ranked scanner candidates from REAL provider candles when a market data provider with candle support is connected (currently: TwelveData / Finnhub). Each candidate has symbol, timeframe, bias, setupType, confidenceScore, riskScore, riskRewardRatio, reasonForTrade, statusBadge, opportunityLabel, entry, stopLoss, takeProfit (= TP2 main, backward-compat), AND a Phase TW takeProfitTargets[] array with up to TP1/TP2/TP3 — each {label, price, reason, rr, distancePoints, distancePips, suggestedAction (partial|full|runner), confidence (low|medium|high)}. distancePips uses the symbol's own pip size (e.g. 0.01 for JPY pairs); it is null when that pip size is unknown — then quote distancePoints (price distance) and never convert it to pips yourself. bestTargetLabel names the primary target (usually TP2). If targetsUnavailableReason is non-null, takeProfitTargets is [] and you MUST report that targets are unavailable — never invent them. Call this WHENEVER the user asks 'check the scanner', 'what should I trade', 'best market right now', 'any opportunities', 'scan the market', 'what's hot', 'where should I take profit', 'where to TP'. ALWAYS read liveDataConnected: if false, opportunities is EMPTY and you MUST tell the user that live market data with candle support is not connected. Never fabricate scanner candidates or TP levels of your own.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getTradingMode", description: "Phase 23. Returns the user's current trading mode envelope: platform mode (OFF/SIMULATED/DEMO/LIVE), per-user permissions, emergency kill switch state, MT5 account type, banner label, and the top blocker reason. Use for 'is trading on', 'am I in demo or live', 'can I trade', 'why is my trade blocked', 'is my MT5 account demo or live', 'what is the current platform mode'. NEVER guess — always call this first.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "requestDemoOrder", description: "Phase 23. Submits a DEMO trade order through the guarded placement chain. Routes ONLY to verified MT5 demo accounts. Cannot bypass any backend gate — every order goes through runOrderGuards() and then the broker placement queue. Returns the audit log id, queued command id, and rejection reason if any gate failed. Use ONLY when the user has explicitly said 'place this demo trade' / 'send the demo order' etc. Never use to silently trade.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, stopLoss: { type: "number" }, takeProfit: { type: "number" } }, required: ["symbol", "side", "lotSize"], additionalProperties: false } },
   { name: "getMyLiveOpenTrades", description: "Phase UX1. Returns the signed-in user's open trades, routing-aware. USER_OWNED_MT5 reads from live_positions; SHARED_MASTER_MT5 reads from shared_trade_attribution. Per-user P&L on shared master is an allocation estimate (pnlIsEstimate:true). Never returns master credentials or other users' rows. Use whenever the user asks 'what are my open trades', 'how is my position doing', 'show my live trades'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
@@ -1705,7 +1880,7 @@ export const TOOL_DEFINITIONS = [
   { name: "prepareOpenTicket", description: "Phase UX1. Previews how a hypothetical order would route (mode, broker, block reason). Does NOT place the order — the user must click Submit Order in the Quick Trade modal. Use when the user asks 'walk me through opening a EURUSD buy' or 'what would happen if I went short XAUUSD'.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, mode: { type: "string", enum: ["SIMULATED", "DEMO", "LIVE"] } }, required: ["symbol", "side", "lotSize", "mode"], additionalProperties: false } },
   { name: "requestLiveOrder", description: "Phase 23. Submits a LIVE (real-money) trade order through the guarded placement chain. ALWAYS requires confirmedByUser=true — pass true ONLY when the user has just typed an explicit confirmation phrase like 'confirm live trade' or 'yes, place the live order'. Otherwise pass false; the order will be rejected with LIVE_CONFIRMATION_REQUIRED. Routes only to verified MT5 live accounts. Cannot bypass any backend gate.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, confirmedByUser: { type: "boolean", default: false } }, required: ["symbol", "side", "lotSize", "confirmedByUser"], additionalProperties: false } },
   { name: "getTradeIntelligence", description: "Phase UX2. Returns a fresh live-trade intelligence snapshot for one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>' from getMyLiveOpenTrades). Scores: continuation, pullback, reversal, fakeout, profit protection, close urgency, hold confidence, trend strength, volatility risk. Includes derived pnlPips and profitGivebackPercent, plus a label and recommendedAction (HOLD | WATCH_CLOSELY | MOVE_STOP_TO_BREAKEVEN | TRAIL_STOP | PARTIAL_CLOSE | CLOSE_CONSIDERATION | CLOSE_NOW_PROMPT | NO_ACTION_DATA_INSUFFICIENT). dataQuality lists missing inputs — when missing.length>0, you MUST tell the user which signals are unavailable instead of pretending you can judge confidently. Never guarantees profit. Never closes a trade.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
-  { name: "getSymbolMarketContext", description: "Phase UX6. Returns the LIVE multi-timeframe market context for a symbol (M1..D1): trend per TF, ATR, swing high/low, S/R, range, plus a classifier label (Strong continuation | Weak continuation | Healthy pullback | Deep retracement | Reversal risk rising | Possible fakeout | Liquidity sweep possible | Breakout holding | Failed breakout | Choppy / no clear edge | Data insufficient) with 11 scores and an evidence-cited explanation. context.source and context.freshness now come from the SAME shared chart-truth resolver the chart uses, so they match the chart exactly; context.sharedQuality / context.sharedAiUsable / context.sharedCause carry that shared verdict (sharedCause names the actual reason when data is not usable). ALWAYS read context.dataQuality.quality (and context.sharedQuality) — if data is insufficient/unavailable you MUST tell the user live candle data is unavailable, name the cause, and not invent a read. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read as a confident call. This caveat is advisory only and never blocks anything. Never fabricates candles. Use for a BROAD multi-timeframe live-quote/context overview — e.g. 'what is the market doing on X', 'is there a trend on GBPUSD H1', 'give me the broad picture on EURUSD'. For a SINGLE-SYMBOL structural/direction read ('read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>') use readChartStructure instead — never this tool.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getSymbolMarketContext", description: "Phase UX6. Returns the LIVE multi-timeframe market context for a symbol (M1..D1): trend per TF, ATR, swing high/low, S/R, range, plus a classifier label (Strong continuation | Weak continuation | Healthy pullback | Deep retracement | Reversal risk rising | Possible fakeout | Liquidity sweep possible | Breakout holding | Failed breakout | Choppy / no clear edge | Data insufficient) with 11 scores and an evidence-cited explanation. context.source and context.freshness now come from the SAME shared chart-truth resolver the chart uses, so they match the chart exactly; context.sharedQuality / context.sharedAiUsable / context.sharedCause carry that shared verdict (sharedCause names the actual reason when data is not usable). ALWAYS read context.dataQuality.quality (and context.sharedQuality) — if data is insufficient/unavailable you MUST tell the user live candle data is unavailable, name the cause, and not invent a read. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read as a confident call. This caveat is advisory only and never blocks anything. ALSO read context.priceEvidence — it names where currentPrice/bid/ask came from (provider_quote | candle_close | none), from which source and as of when; say that, and when priceEvidence.stale is true call the price last-known, never current. Never fabricates candles. Use for a BROAD multi-timeframe live-quote/context overview — e.g. 'what is the market doing on X', 'is there a trend on GBPUSD H1', 'give me the broad picture on EURUSD'. For a SINGLE-SYMBOL structural/direction read ('read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>') use readChartStructure instead — never this tool.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "readChartStructure", description: "Phase Chart-Read (Task #602). THE primary tool for a STRUCTURAL chart read — use this FIRST whenever the user says 'read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>', 'redo on V75', 'structure on GBPUSD', or asks for the direction/bias on a specific market (and optional timeframe). Returns the SAME directional read the Scanner 'Chart Read' panel shows, so chat and the panel never disagree: chartRead carries bias, confidence, summary, support/resistance levels, conditions, invalidation, risk notes — plus readLayer. ALWAYS branch on readLayer: 'FULL' = the exact entry/stopLoss/takeProfit/reward:risk in chartRead are valid and you MAY state them; 'STRUCTURAL_ONLY' = give the directional structure (bias, S/R, conditions, invalidation) but you MUST say the exact entry/stop/target are WITHHELD until the live feed confirms (cite chartRead.blockedReason) and NEVER invent levels; 'INSUFFICIENT' = there isn't enough verified candle data, so say exactly that (use chartRead.headline / chartRead.blockedReason) and do NOT invent a read. ALWAYS surface chartRead.trustLine and end with chartRead.disclaimer. symbol is OPTIONAL — when omitted it reads the symbol currently on the user's chart (page context). timeframe is OPTIONAL — omit to use the user's on-screen chart timeframe, otherwise it defaults to H1. Read-only; never places a trade; never fabricates candles. Prefer this over getSymbolMarketContext for a single-symbol structure/direction read (getSymbolMarketContext is for a broad multi-timeframe live quote/context overview).", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string" } }, additionalProperties: false } },
   { name: "getTradeMarketContext", description: "Phase UX6. Returns LIVE market context attached to one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>' from getMyLiveOpenTrades). Includes trendAlignment (ALIGNED | FIGHTING | NEUTRAL | UNKNOWN), tradeLabel (Trade aligned with trend | Trade still valid | Trade weakening | Trade fighting trend | Trade invalidation near | Trade at decision level | Profit protection needed | Exit review recommended | Data insufficient), keyLevels (invalidationLevel, continuationLevel, nearestSupport/Resistance, swingHigh/Low, breakoutLevel, keyLevelToWatch), bullishScenario, bearishScenario, exitHoldReview. Use to answer 'how is my trade looking', 'is my trade still valid', 'where is my invalidation', 'what is the structure on my open trade'. Never closes a trade. If context.dataQuality.quality is 'insufficient', say so and recommend no price-action call. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read on an open trade as a confident call. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
   { name: "getTradeDecision", description: "Phase UX7. Returns the SINGLE central trade decision for one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>'). Fuses market context (UX6) + smart exit plan (UX5) + live trade intelligence (UX2) + the user's preferences into one decisionLabel from this fixed set: Hold | Hold but monitor | Healthy pullback | Continuation still valid | Protect profit | Review partial close | Review full close | Move stop review | Trail stop review | Exit risk rising | Trade invalidation near | Trade invalidated | No clear decision | Data insufficient. Also returns decisionAction (HOLD | WATCH_CLOSELY | SET_ALERT | REVIEW_MOVE_STOP | REVIEW_TRAIL_STOP | REVIEW_PARTIAL_CLOSE | REVIEW_FULL_CLOSE | WAIT_FOR_CONFIRMATION | NO_ACTION_DATA_INSUFFICIENT), confidenceScore/urgencyScore/riskScore (0..100 or null), mainReason, supportingReasons[], invalidation/protectProfit/continuation levels, suggestedButton (always opens a review modal — NEVER an instant order), and dataQuality with missing[]. If dataQuality.hasIntelligence=false and hasMarketContext=false the decision will be 'Data insufficient' — you MUST say live data is not connected and stop, never invent a call. Use to answer 'what should I do with my trade', 'is my trade still good', 'why are you saying review close', 'do I hold or close'.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
@@ -1724,7 +1899,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getRecentExecutionResults", description: "Phase UX9. Returns the most recent (default 10) trade-action execution results for the signed-in user across all statuses. Each row has actionId, actionType, symbol, requestedMode, status, mt5OrderTicket, mt5PositionTicket, fillPrice, slippage, brokerMessage, errorCode, executedAt, createdAt. Read-only. Use for 'show my recent executions', 'what did the broker do last', 'how have my trades been filling'.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getStuckCommandsForUser", description: "Phase UX9. Returns any of the signed-in user's trade actions whose underlying broker command went stale (status=failed with errorCode=WATCHDOG_STALE or status=sent_to_mt5 past timeout). Each row has actionId, symbol, requestedMode, status, brokerMessage, staleAt, ageMinutes, recommendedAction. Read-only. Use for 'why is my action stuck', 'did anything time out', 'is my close still pending'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getLaunchReadiness", description: "Alias of getMyTradingReadiness. Returns the signed-in user's launch/readiness report (ready_for_paper / ready_for_demo / ready_for_live + blockers). Use when the user asks 'am I ready to launch', 'launch readiness', 'can I go live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "summarizeLaunchReadinessForAdmin", description: "ADMIN/OWNER ONLY. Read-only operator summary of the ARX Operator Command Center: trading mode, server live-broker master switch (boolean), kill switch, queue depth, open live commands, reconciliation severity counts, user-approval counts (totals only — no per-user PII beyond aggregate buckets), and a 'ready / blocked / needsAction / safeToManuallyTest' verdict. NEVER returns raw bridge tokens, hashes, env values, IP addresses, or account numbers. NEVER places trades, modifies connections, or contacts the EA. If the caller is not ADMIN or OWNER, returns {error:'ADMIN_REQUIRED'}. Use when an operator asks 'summarize launch readiness', 'what's the operator status', 'is the platform safe to live-test'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "summarizeLaunchReadinessForAdmin", description: "ADMIN/OWNER ONLY. Read-only operator summary of the ARX Operator Command Center: trading mode, the live-broker master switch as dispatch gate 1 reads it (tradingMode.liveBrokerExecutionEnabled = the env flag AND an operator arm; liveBrokerExecutionEnvFlag and liveBrokerExecutionOperatorArmed say which half is missing — never call live broker execution enabled from the env flag alone; liveBrokerExecutionOperatorArmed is null when the platform settings could not be read, so whether an operator armed it is unknown — say it could not be checked, never that it is not armed), kill switch, queue depth, open live commands, reconciliation severity counts, user-approval counts (totals only — no per-user PII beyond aggregate buckets), and a 'ready / blocked / needsAction / safeToManuallyTest' verdict. NEVER returns raw bridge tokens, hashes, env values, IP addresses, or account numbers. NEVER places trades, modifies connections, or contacts the EA. If the caller is not ADMIN or OWNER, returns {error:'ADMIN_REQUIRED'}. Use when an operator asks 'summarize launch readiness', 'what's the operator status', 'is the platform safe to live-test'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMyTradingReadiness", description: "Readiness Engine. Returns the signed-in user's full 14-status readiness report: accountMode (USER_OWNED_MT5 | SHARED_MASTER_MT5 | null), paperOnlyHardLockActive, ready_for_paper, ready_for_demo, ready_for_live, blockers[], and statuses[] (id, label, status: pass|fail|warning|blocked|not_required, requiredFor, blockerReason, userFriendlyExplanation, nextStep). NEVER fabricates readiness — every flag comes from the same engine the API and admin dashboard use. ready_for_live is REPORTING ONLY (no execution path reads it) and is true ONLY for an admin-approved, armed, eligible trader who has cleared every live gate; it is false for non-approved, non-armed, investor, or system accounts. Use to answer 'am I ready to trade', 'what's my readiness', 'can I trade live yet'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "explainReadinessBlockers", description: "Readiness Engine. Returns only the FAILING readiness items for the signed-in user with a plain-English explanation and the exact next step for each. Use when the user asks 'why am I blocked', 'why can't I trade live', 'what's stopping me', 'what do I need to fix'. Read-only.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "listMyOnboardingSteps", description: "Readiness Engine. Returns the full list of the signed-in user's onboarding/readiness statuses grouped by stage (profile, risk, disclosures, account_mode, mt5, demo, live) with their current status. Use for 'what onboarding steps are left', 'where am I in setup', 'show my checklist'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
@@ -1737,12 +1912,12 @@ export const TOOL_DEFINITIONS = [
   { name: "explainOpportunityRanking", description: "Opportunity Radar. Returns the ranked opportunities for the signed-in user PLUS a per-symbol explanation of which tools were used and why each rank. Use when the user asks 'why did you rank X higher than Y', 'what tools did you use to rank this', 'explain the ranking', 'why is gold #1'. Reads only from real scanner output; never invents reasoning.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } }, additionalProperties: false } },
   { name: "explainOrderType", description: "Phase TT (Trade Ticket). Static educational explanation of one of the 8 supported order types: BUY_MARKET, SELL_MARKET, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP, BUY_STOP_LIMIT, SELL_STOP_LIMIT. Returns whatItIs, whenToUse, requiredFields, placementRule, typicalUseCase, slTpRule. Use when the user asks 'what is a Buy Stop', 'when do I use a Sell Limit', 'difference between stop and limit', 'how does Stop Limit work'. Read-only, no user state. NEVER invents new order types.", parameters: { type: "object", properties: { orderType: { type: "string", enum: ["BUY_MARKET","SELL_MARKET","BUY_LIMIT","SELL_LIMIT","BUY_STOP","SELL_STOP","BUY_STOP_LIMIT","SELL_STOP_LIMIT"] } }, required: ["orderType"], additionalProperties: false } },
   { name: "analyzeTradeTicket", description: "Phase TT (Trade Ticket). Runs the SAME per-order-type validation the trade ticket UI and backend use: SL/TP direction relative to entry, pending-order entry vs current market, stop-limit trigger/limit relationship, min-stop distance, lot rules. Returns { ok, errors[], warnings[], riskReward, slDistancePips, tpDistancePips, riskPriceUnits, rewardPriceUnits, dataUnavailable }. Use when the user asks 'is my stop loss too tight', 'is my TP realistic', 'what is my risk/reward', 'where is my invalidation', 'why was my order blocked', 'check this setup before I submit'. NEVER fabricates a current price — when currentPrice is omitted, market-relative checks are skipped honestly (dataUnavailable:true).", parameters: { type: "object", properties: { orderType: { type: "string", enum: ["BUY_MARKET","SELL_MARKET","BUY_LIMIT","SELL_LIMIT","BUY_STOP","SELL_STOP","BUY_STOP_LIMIT","SELL_STOP_LIMIT"] }, lotSize: { type: "number" }, currentPrice: { type: "number" }, entryPrice: { type: "number" }, stopTriggerPrice: { type: "number" }, stopLimitPrice: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, minStopDistance: { type: "number" }, minPendingDistance: { type: "number" }, symbolPipSize: { type: "number" } }, required: ["orderType","lotSize"], additionalProperties: false } },
-  { name: "getMyPendingOrderDrafts", description: "Phase TT/TU/TV (Trade Ticket). Returns the signed-in user's saved pending-order drafts. Each draft has id, orderType, symbol, side, lotSize, entryPrice, stopTriggerPrice, stopLimitPrice, stopLoss, takeProfit, expiration, pendingStatus, status, tradeCommandId (link to the mt5_commands row if forward-submitted), mt5OrderTicket (only present after MT5 confirmed), createdAt. Per-user-scoped. pendingStatus VOCABULARY: EA_UPGRADE_REQUIRED|BRIDGE_DISCONNECTED|BRIDGE_UNSUPPORTED|READ_ONLY|LIVE_LOCKED|BLOCKED_BY_PAPER_LOCK = draft only, NOT at broker. QUEUED = command row inserted into mt5_commands. PLACED = MT5 returned a real order ticket (mt5OrderTicket populated). REJECTED = MT5 refused. CANCELLED = soft-cancelled OR broker-confirmed cancel. CANCEL_QUEUED/MODIFIED = transient post-bridge states. CRITICAL: NEVER claim a draft is 'live', 'at the broker', 'filling', or 'working' unless pendingStatus='PLACED' AND mt5OrderTicket is non-null. The system is paper-only today: nearly every submit returns BLOCKED_BY_PAPER_LOCK.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getMyPendingOrderDrafts", description: "Phase TT/TU/TV (Trade Ticket). Returns the signed-in user's saved pending-order drafts. Each draft has id, orderType, symbol, side, lotSize, entryPrice, stopTriggerPrice, stopLimitPrice, stopLoss, takeProfit, expiration, pendingStatus, status, tradeCommandId (link to the mt5_commands row if forward-submitted), mt5OrderTicket (only present after MT5 confirmed), createdAt. Per-user-scoped. pendingStatus VOCABULARY: EA_UPGRADE_REQUIRED|BRIDGE_DISCONNECTED|BRIDGE_UNSUPPORTED|READ_ONLY|LIVE_LOCKED|BLOCKED_BY_PAPER_LOCK = draft only, NOT at broker. QUEUED = command row inserted into mt5_commands. PLACED = MT5 returned a real order ticket (mt5OrderTicket populated). REJECTED = MT5 refused. CANCELLED = soft-cancelled OR broker-confirmed cancel. CANCEL_QUEUED/MODIFIED = transient post-bridge states. CRITICAL: NEVER claim a draft is 'live', 'at the broker', 'filling', or 'working' unless pendingStatus='PLACED' AND mt5OrderTicket is non-null. The pending-order path is read-only and paper-only today: for a connected EA that reports pendingOrders, saving and submitting answer READ_ONLY — that is ARX's pending-order path, not a lock on the user's connection or account. Older drafts may still carry BLOCKED_BY_PAPER_LOCK or EA_UPGRADE_REQUIRED. For the current answer and its reason, call getBridgeCapabilities and quote currentSubmitExplanation.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getProtectiveCloseStatus", description: "Phase 13 (Protective Auto-Close). READ-ONLY. Returns the signed-in user's Protective Auto-Close settings and the most recent decisions journal (one entry per evaluation, even ALERT_ONLY / NO_ACTION / BLOCKED). Each decision row has tradeKey, decision (NO_ACTION | ALERT_ONLY | RECOMMEND_CLOSE | RECOMMEND_PARTIAL_CLOSE | AUTO_CLOSE_ELIGIBLE | BLOCKED), reasonCode, signals[], confidenceScore, activityStatus (ACTIVE | INACTIVE | UNKNOWN), failedChecks[] (when BLOCKED), actionTakenActionId (only when the engine actually drafted a CLOSE action — null otherwise), createdAt. The settings object includes enabled (default false), inactivityThresholdMinutes, minConfidence, allowPartialCloseOnly, killSwitchActive, optInAt, lastUpdatedAt. CRITICAL: ARX may EXPLAIN these decisions but NEVER claims a close happened unless actionTakenActionId is non-null AND the linked action's execution result shows status='executed'. When decision='BLOCKED' say so honestly with the failedChecks reason. When settings.enabled=false say protective auto-close is OFF (default). When activityStatus='UNKNOWN' explain that the engine downgraded to alert-only. NEVER triggers the engine — only the worker does. Per-user-scoped (SQL-filtered on userId).", parameters: { type: "object", properties: { tradeKey: { type: "string", description: "Optional. Filter decisions for a single trade ('lp_<id>' or 'att_<id>')." }, limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getFinalTradeRead", description: "Phase News-Decision. Returns the fused FINAL TRADE READ for a symbol/timeframe — combines current technical scanner score, same-time historical context, and news-risk context into one decision: TRADE_WATCH | WAIT_FOR_CONFIRMATION | AVOID_FOR_NOW | NO_TRADE. Also returns headline, reasons[], technicalScore, historicalScore, newsRiskLevel, conflict, confidence. CRITICAL: you are EXPLICITLY ALLOWED — and expected — to recommend WAIT / AVOID / NO_TRADE when this tool returns those. Do NOT force a buy/sell answer when the safer answer is no trade. If confidence=LOW because news/history are unavailable, say so honestly. Use for 'should I trade EURUSD now', 'what's the read on gold', 'is this a good entry', 'safe to buy', 'should I wait'.", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string", description: "Defaults to 'M15'." } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getMarketNewsIntelligence", description: "Phase News. Returns a normalized MarketNewsDecisionPack for a symbol: riskLevel (none|low|medium|high|critical), bias (bullish|bearish|mixed|unclear) from recent headlines, timing (now|upcoming|recent|quiet), recommendation (watch|wait|avoid|proceed_with_caution), upcomingEvent {title,currency,impact,minutesUntil}, recentHeadlines (real provider only — empty if no provider wired), affectedCurrencies, and dataSources with connected flags for headlines/calendar/social. CRITICAL: if dataSources.headlines.connected=false the headlines array is empty — you MUST say 'news feed is unavailable' rather than inventing headlines. The economic calendar today is a built-in schedule (mock) — never claim it as a live live calendar feed. Social/X monitoring is not configured. Decision support only, never a buy/sell signal. Per-symbol cached 60s. Use for 'what news affects EURUSD', 'is there event risk', 'should I avoid this trade due to news', 'why is gold moving', 'what catalysts are active'.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getMarketNewsIntelligence", description: "Phase News. Returns a normalized MarketNewsDecisionPack for a symbol: riskLevel (none|low|medium|high|critical|unknown), bias (bullish|bearish|mixed|unclear) from recent headlines, timing (now|upcoming|recent|quiet|unknown), recommendation (watch|wait|avoid|proceed_with_caution), upcomingEvent {title,currency,impact,minutesUntil}, recentHeadlines (real provider only — empty if no provider wired), affectedCurrencies, and dataSources with connected flags for headlines/calendar/social. CRITICAL: if dataSources.headlines.connected=false the headlines array is empty — you MUST say 'news feed is unavailable' rather than inventing headlines. ALSO read scheduledEventRisk: 'not_checked' (riskLevel/timing read 'unknown') means no economic calendar answered, so upcoming events are UNKNOWN — you MUST say scheduled news was not checked and never say there are no events; 'not_applicable' = synthetic index (not moved by scheduled events); 'checked' = a live calendar answered. Social/X monitoring is not configured. Decision support only, never a buy/sell signal. Per-symbol cached 60s. Use for 'what news affects EURUSD', 'is there event risk', 'should I avoid this trade due to news', 'why is gold moving', 'what catalysts are active'.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "getHistoricalContext", description: "Phase Historical. Returns same-time historical comparison for a symbol over yesterday / last week / last month / last year / 5 years ago, using REAL provider candles via the market data provider chain. Returns bias (BULLISH | BEARISH | MIXED | INSUFFICIENT_DATA), confidence (LOW | MEDIUM | HIGH), sampleSize (0-5), per-window directions and % moves, plus setupSummary {sampleSize, winRate, avgMovePct, worstDrawdownPct, bestMovePct, avgTimeToNextCandleMs}. CRITICAL: if bias = INSUFFICIENT_DATA OR setupSummary.sampleSize = 0, you MUST tell the user historical data is unavailable for this symbol/timeframe — never invent a number. Treat as decision support only, never as a buy/sell signal. Per-symbol cached for 60s. Use for 'what does history say about X', 'how did EURUSD behave this time last year', 'is this setup historically reliable', 'what's the same-time pattern'.", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string", description: "Defaults to '1d'." } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getBridgeCapabilities", description: "Phase TU (MT5 EA/Bridge upgrade). Returns the signed-in user's MT5 bridge capability disclosure as last reported by their EA on heartbeat. Fields: bridgeConnected (bool, true only if a heartbeat arrived within the last ~90s), eaVersion (string|null), capabilitiesReportedAt (ISO|null), capabilities (object with booleans: marketOrders, marketOrderSLTP, pendingOrders, stopLimitOrders, modifyPositionProtection, modifyPendingOrders, cancelPendingOrders, expiration, sharedMasterSafeRouting), pendingOrderExecutable (bool — always false today because of the system-wide paper-only lock), currentSubmitStatus (one of: BRIDGE_DISCONNECTED, BRIDGE_UNSUPPORTED, READ_ONLY, LIVE_LOCKED, BLOCKED_BY_PAPER_LOCK, QUEUED), currentSubmitExplanation (plain-language reason). Use when the user asks 'is my EA up to date', 'does my bridge support pending orders', 'why can't I submit a stop-limit', 'what version is my EA', 'is my bridge connected'. NEVER claims the bridge supports an action when the capability is false. NEVER says pendingOrderExecutable is true today.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getBridgeCapabilities", description: "Phase TU (MT5 EA/Bridge upgrade). Returns the signed-in user's MT5 bridge capability disclosure as last reported by their EA on heartbeat. Fields: bridgeConnected (bool, true only if a heartbeat arrived within the last 60 seconds — the shared online policy; lastHeartbeatAt says when the last one arrived), eaVersion (string|null), capabilitiesReportedAt (ISO|null), capabilities (object with booleans: marketOrders, marketOrderSLTP, pendingOrders, stopLimitOrders, modifyPositionProtection, modifyPendingOrders, cancelPendingOrders, expiration, sharedMasterSafeRouting), pendingOrderExecutable (bool — always false today because of the system-wide paper-only lock), currentSubmitStatus and currentSubmitExplanation — the same answer as the pending-order page, draft save and submit give for this bridge: BRIDGE_DISCONNECTED (no heartbeat in the last minute, so support could not be checked), BRIDGE_UNSUPPORTED (the EA does not report the pendingOrders capability, or stop-limit support) or READ_ONLY (the EA reports support; ARX's pending-order path is read-only and paper-only — not a lock on the user's connection or account). Quote currentSubmitExplanation. Use when the user asks 'is my EA up to date', 'does my bridge support pending orders', 'why can't I submit a stop-limit', 'what version is my EA', 'is my bridge connected'. NEVER claims the bridge supports an action when the capability is false. NEVER says pendingOrderExecutable is true today.", parameters: { type: "object", properties: {}, additionalProperties: false } },
 ] as const;
 
 export type ToolName = typeof TOOL_DEFINITIONS[number]["name"];
@@ -2206,7 +2381,16 @@ async function getReconciliationCenterSummaryTool(userId: number): Promise<unkno
     brokerTicket: i.brokerTicket, symbol: i.symbol, status: i.status,
     reason: i.reason, recommendedAction: i.recommendedAction,
   }));
-  return { ok: true, total: agg.total, countsByType: agg.countsByType, countsBySeverity: agg.countsBySeverity, issues,};
+  // complete=false: a detector did not run, so its types are unknown, not 0.
+  return {
+    ok: true, total: agg.total, countsByType: agg.countsByType, countsBySeverity: agg.countsBySeverity, issues,
+    complete: agg.complete, uncheckedTypes: agg.uncheckedTypes,
+    truncated: agg.truncated, truncatedTypes: agg.truncatedTypes,
+    note: [
+      agg.complete ? null : `Not every reconciliation check ran. Could not be checked: ${agg.uncheckedTypes.join(", ")}. Counts cover only the checks that ran.`,
+      agg.truncated ? `These lists hit their row cap, so their counts are "at least", not totals: ${agg.truncatedTypes.join(", ")}.` : null,
+    ].filter(Boolean).join(" ") || undefined,
+  };
 }
 
 async function explainMyReconciliationIssueTool(issueType: string | null): Promise<unknown> {
@@ -2361,21 +2545,20 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
       const { getNewsIntelligence } = await import("../news/newsIntelligenceService.js");
       try {
         const pack = await getNewsIntelligence(String(args.symbol ?? ""));
-        return {
-          ...pack,
-          safetyNote:
-            !pack.dataSources.headlines.connected
-              ? "News feed is unavailable right now. Do not invent headlines. Rely on chart/history/scanner data and say the feed is unavailable."
-              : pack.safetyNote,
-        };
+        return newsPackForAssistant(pack);
       } catch {
+        const sym = String(args.symbol ?? "").trim().toUpperCase();
         return {
           symbol: String(args.symbol ?? ""),
           generatedAt: new Date().toISOString(),
-          riskLevel: "none",
+          // The read failed: nothing was checked, so risk and timing are
+          // unknown — never "none" / "quiet".
+          riskLevel: "unknown",
           bias: "unclear",
-          timing: "quiet",
-          warningSummary: "News intelligence is temporarily unavailable.",
+          timing: "unknown",
+          scheduledEventRisk: "not_checked",
+          headlinesChecked: false,
+          warningSummary: `News intelligence could not be read for ${sym || "this market"} — scheduled events and headlines were not checked, so news risk is unknown (not none).`,
           recommendation: "watch",
           upcomingEvent: null,
           recentHeadlines: [],
@@ -2533,7 +2716,14 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     // The switches come from the one switch authority; an unreadable row
     // reads as engaged / OFF.
     const { switches, config } = await loadPlatformSettings({ ifMissing: "seed" });
-    const masterSwitch = switches.liveBrokerExecution.envEnabled;
+    // The master switch is what dispatch gate 1 reads: the env flag AND the
+    // operator arm (platformSwitches). The env flag alone is reported beside it.
+    const envFlag = switches.liveBrokerExecution.envEnabled;
+    // Unreadable settings fail closed with operatorArmed false; that false was
+    // not read, so it is reported as unknown (null), never as "not armed".
+    const operatorArmed = switches.liveBrokerExecution.operatorArmed === true;
+    const operatorArmedReported: boolean | null = switches.readable === false ? null : operatorArmed;
+    const masterSwitch = switches.liveBrokerExecution.enabled === true;
     const sharedLive = !!config?.sharedLiveTradingEnabled;
     const platformMode = switches.platformMode;
     // Both install-wide stops through platformStop(); killSwitchEngaged keeps
@@ -2562,16 +2752,27 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     };
 
     const blockers: string[] = [];
-    if (!masterSwitch) blockers.push("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)");
+    if (!envFlag) blockers.push("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)");
+    else if (switches.readable === false) blockers.push("LIVE_BROKER_EXECUTION_UNKNOWN (platform settings could not be read; live broker execution is treated as off)");
+    else if (!masterSwitch) blockers.push("LIVE_BROKER_EXECUTION_NOT_ARMED (env flag is set but no operator has armed live broker execution; every live dispatch is refused until one does)");
     if (killEngaged) blockers.push("GLOBAL_KILL_SWITCH_ENGAGED");
     if (stopSourceEngaged(stop, "safety_core_kill_switch")) blockers.push("SAFETY_CORE_KILL_SWITCH_ENGAGED");
     if (!det.ok) blockers.push(`NO_CURRENT_LIVE_BRIDGE:${det.primaryReason}`);
     if ((openLiveRows[0]?.n ?? 0) > 0) blockers.push(`OPEN_LIVE_COMMANDS_NONTERMINAL=${openLiveRows[0]?.n}`);
     if ((recon.countsBySeverity?.critical ?? 0) > 0) blockers.push(`RECONCILIATION_CRITICAL=${recon.countsBySeverity?.critical}`);
+    // A detector that could not run is unknown, not "0 issues": an unchecked
+    // critical-severity check blocks the "safe to test" verdict like a found one.
+    const uncheckedOf = (sev: (s: string) => boolean) =>
+      [...new Set((recon.failedChecks ?? []).filter((f) => sev(f.severity)).map((f) => f.type))];
+    const uncheckedCritical = uncheckedOf((sv) => sv === "critical");
+    if (uncheckedCritical.length > 0) blockers.push(`RECONCILIATION_UNCHECKED=${uncheckedCritical.join(",")}`);
+    if (recon.complete !== true && (recon.failedChecks ?? []).length === 0) blockers.push("RECONCILIATION_UNCHECKED=unknown");
 
     const needsAction: string[] = [];
     if (!sharedLive && masterSwitch) needsAction.push("SHARED_LIVE_TRADING_DISABLED");
     if ((recon.countsBySeverity?.high ?? 0) > 0) needsAction.push(`RECONCILIATION_HIGH=${recon.countsBySeverity?.high}`);
+    const uncheckedOther = uncheckedOf((sv) => sv !== "critical");
+    if (uncheckedOther.length > 0) needsAction.push(`RECONCILIATION_UNCHECKED=${uncheckedOther.join(",")}`);
     if (userApprovals.pendingReview > 0) needsAction.push(`PENDING_USER_REVIEWS=${userApprovals.pendingReview}`);
 
     const safeToManuallyTest = blockers.length === 0 && det.ok;
@@ -2583,13 +2784,25 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       needsAction,
       safeToManuallyTest,
       systemStatus: { platformMode, killSwitchEngaged: killEngaged, ...platformStopReport(stop), latestQaStatus: "ARX_AUDIT_FIX_BUILD_READY" },
-      tradingMode: { liveBrokerExecutionEnabled: masterSwitch, sharedLiveTradingEnabled: sharedLive, currentBridgeDetected: !!det.ok },
+      tradingMode: {
+        // Effective switch (env AND operator arm), as dispatch gate 1 reads it.
+        liveBrokerExecutionEnabled: masterSwitch,
+        liveBrokerExecutionEnvFlag: envFlag,
+        liveBrokerExecutionOperatorArmed: operatorArmedReported,
+        sharedLiveTradingEnabled: sharedLive,
+        currentBridgeDetected: !!det.ok,
+      },
       counts: {
         queueDepth: queueRows[0]?.n ?? 0,
         openLiveCommandsNonTerminal: openLiveRows[0]?.n ?? 0,
         reconciliationTotal: recon.total,
         reconciliationCritical: recon.countsBySeverity?.critical ?? 0,
         reconciliationHigh: recon.countsBySeverity?.high ?? 0,
+        reconciliationChecksComplete: recon.complete === true,
+        reconciliationUncheckedTypes: recon.uncheckedTypes ?? [],
+        // A list hit its row cap: the reconciliation counts are "at least".
+        reconciliationCountsAreLowerBounds: recon.truncated === true,
+        reconciliationTruncatedTypes: recon.truncatedTypes ?? [],
       },
       userApprovals,
       doNotTouch: [
@@ -2710,6 +2923,91 @@ export async function getOnboardingProgressTool(userId: number) {
   }
 }
 
+// ── getMarketNewsIntelligence — evidence class of every claim ───────────
+// The news pack scores risk ONLY from a connected economic calendar. When no
+// calendar answered, its riskLevel "none" / timing "quiet" / "No major
+// scheduled news" mean "nothing was checked", not "nothing is scheduled". The
+// model restates whatever this returns, so a market that scheduled events can
+// move reads "unknown / not checked" instead. Synthetic indices are not moved
+// by scheduled events, so their "none" stays. Downgrade-only: a connected
+// calendar's real verdict passes through unchanged.
+type NewsPackLike = {
+  symbol: string;
+  riskLevel: string;
+  timing: string;
+  warningSummary: string;
+  safetyNote: string;
+  dataSources: {
+    headlines: { connected: boolean };
+    calendar: { connected: boolean; providerState?: string | null };
+  };
+};
+export function newsPackForAssistant<T extends NewsPackLike>(pack: T) {
+  const headlinesChecked = pack.dataSources.headlines.connected === true;
+  const calendarChecked = pack.dataSources.calendar.connected === true;
+  const eventsApply = !isSyntheticInstrument(pack.symbol);
+  const unchecked = eventsApply && !calendarChecked;
+  const why = pack.dataSources.calendar.providerState === "fetch_error"
+    ? "the economic calendar did not answer"
+    : "no economic-calendar provider is connected";
+  return {
+    ...pack,
+    riskLevel: unchecked ? "unknown" : pack.riskLevel,
+    timing: unchecked ? "unknown" : pack.timing,
+    scheduledEventRisk: !eventsApply ? "not_applicable" : calendarChecked ? "checked" : "not_checked",
+    headlinesChecked,
+    warningSummary: unchecked
+      ? `Scheduled news for ${pack.symbol} was not checked — ${why}, so upcoming events are unknown (not none).`
+      : pack.warningSummary,
+    safetyNote: !headlinesChecked
+      ? "News feed is unavailable right now. Do not invent headlines. Rely on chart/history/scanner data and say the feed is unavailable."
+        + (unchecked ? " Scheduled events were not checked either — never say there are no events." : "")
+      : unchecked
+        ? `${pack.safetyNote} Scheduled events were not checked — never say there are no events.`
+        : pack.safetyNote,
+  };
+}
+
+// ── getSymbolMarketContext — price evidence ─────────────────────────────
+// buildMarketContext takes currentPrice/bid/ask from the market-data adapter's
+// quote, or (no quote) from the latest M1/M5/M15 candle close, while
+// context.source is overlaid with the shared chart feed. So the model could say
+// "price X from <chart feed>" when X came from a different adapter, at an
+// unstated time. This names the price's real basis, source and observation
+// time, and marks it stale past the shared quote budget. Describes only.
+type PriceEvidenceCtx = {
+  currentPrice: number | null;
+  asOf: string | null;
+  dataQuality: { hasQuote: boolean };
+  timeframes: Partial<Record<string, { available: boolean; source: string; asOf: string | null; lastClose: number | null }>>;
+};
+export function marketContextPriceEvidence(ctx: PriceEvidenceCtx, quoteSourceName: string, nowMs: number = Date.now()) {
+  if (ctx.currentPrice == null) {
+    const obs = quoteObservationFreshness({ hasPrice: false, observedAt: null, basis: "provider_as_of", nowMs });
+    return { basis: "none" as const, source: null, observedAt: null, timeBasis: obs.timeBasis, ageMs: null, freshness: obs.freshness, stale: true, note: obs.plainEnglish };
+  }
+  if (ctx.dataQuality.hasQuote) {
+    // ctx.asOf is the quote's own as-of time whenever a quote is present.
+    const obs = quoteObservationFreshness({ hasPrice: true, observedAt: ctx.asOf, basis: "provider_as_of", sourceLabel: `the ${quoteSourceName} quote`, nowMs });
+    return { basis: "provider_quote" as const, source: quoteSourceName, observedAt: obs.observedAt, timeBasis: obs.timeBasis, ageMs: obs.ageMs, freshness: obs.freshness, stale: obs.stale, note: obs.plainEnglish };
+  }
+  const tf = (["M1", "M5", "M15"] as const).find((t) => ctx.timeframes[t]?.lastClose != null);
+  const row = tf ? ctx.timeframes[tf]! : null;
+  // A candle's stamp is its bar time, so the close may be up to one bar newer:
+  // the age is an upper bound, never an understatement.
+  const obs = quoteObservationFreshness({ hasPrice: true, observedAt: row?.asOf ?? null, basis: "provider_as_of", sourceLabel: row ? `the last ${tf} candle close (${row.source})` : null, nowMs });
+  return {
+    basis: "candle_close" as const,
+    source: row?.source ?? null,
+    observedAt: obs.observedAt,
+    timeBasis: obs.timeBasis,
+    ageMs: obs.ageMs,
+    freshness: obs.freshness,
+    stale: obs.stale,
+    note: `No live quote — currentPrice is the last ${tf ?? "candle"} close, not a bid/ask. ${obs.plainEnglish}${row?.asOf ? " (The time is the bar's start; its close may be newer.)" : ""}`,
+  };
+}
+
 // ── Phase UX6 — Market Context tools (read-only, provider-backed) ───────
 export async function getSymbolMarketContextTool(symbol: string) {
   const s = (symbol ?? "").toString().trim();
@@ -2736,6 +3034,9 @@ export async function getSymbolMarketContextTool(symbol: string) {
         source: ctx.source, asOf: ctx.asOf, freshness: ctx.freshness,
         session: ctx.session, currentPrice: ctx.currentPrice,
         bid: ctx.bid, ask: ctx.ask, spread: ctx.spread,
+        // Where currentPrice/bid/ask actually came from and when — `source`
+        // above is the chart feed, which is NOT necessarily the price's source.
+        priceEvidence: marketContextPriceEvidence(ctx, getMarketProvider().name),
         dataQuality: ctx.dataQuality,
         // Shared chart-truth verdict (identical to the chart) — honest source/
         // quality/cause for this symbol; null when the resolver errored.
@@ -3807,29 +4108,17 @@ export async function getProtectiveCloseStatusTool(
   }
 }
 
-export async function getBridgeCapabilitiesTool(userId: number, env: SafetyEnvelope) {
+// The pending-order answer comes from the same resolver (and reason) the
+// pending-order route uses for saving a draft, GET /me/bridge-capabilities and
+// submit, so Ruby and the page never give two statuses for one bridge. That
+// resolver reads the route's fixed paper-only posture, not this user's live
+// envelope (which governs market orders, not this path), so `env` is unused.
+export async function getBridgeCapabilitiesTool(userId: number, _env: SafetyEnvelope) {
   try {
-    const {
-      normaliseCapabilities,
-      resolvePendingSubmitStatus,
-      explainStatus,
-    } = await import("../mt5/bridgeCapabilities.js");
+    const { resolveRoutePendingStatus } = await import("../../routes/pendingOrderDraft.js");
     const conn = await getUserPrimaryConnection(userId);
-    const caps = normaliseCapabilities(conn?.capabilities);
-    const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
-    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
-    const probe = resolvePendingSubmitStatus({
-      capabilities: caps,
-      bridgeConnected,
-      needsStopLimit: false,
-      // paperOnlyLock is the SEPARATE pending-order paper lock (out of scope —
-      // still hard-true today). The live-envelope inputs below are DERIVED.
-      paperOnlyLock: true,
-      liveLocked: env.liveLocked,
-      readOnlyMode: env.readOnlyMode,
-      allowOrderExecution: env.allowOrderExecution,
-    });
+    const { status: probe, reason, bridgeConnected, caps, lastHb } =
+      resolveRoutePendingStatus(conn, false, Date.now());
     return {
       ok: true,
       bridgeConnected,
@@ -3839,7 +4128,7 @@ export async function getBridgeCapabilitiesTool(userId: number, env: SafetyEnvel
       capabilities: caps,
       pendingOrderExecutable: probe === "QUEUED",
       currentSubmitStatus: probe,
-      currentSubmitExplanation: explainStatus(probe),
+      currentSubmitExplanation: reason,
       note: "Capabilities are reported by the EA on heartbeat. The backend NEVER claims an action is supported when the corresponding capability is false. Pending-order execution remains system-blocked today by the paper-only lock.",
     };
   } catch (e) {

@@ -1,3 +1,4 @@
+import { useEffect, useReducer, useState } from "react";
 import { type ChartFeedStatus } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,8 @@ import {
   capConfidence,
   providerInfo,
   relativeTime,
+  isFutureTime,
+  feedReadinessLabel,
   formatTrailingGap,
   type FeedSeverity,
   type FeedProviderTier,
@@ -64,7 +67,7 @@ const TIER_CHIP: Record<FeedProviderTier, string> = {
 };
 
 const TIER_LABEL: Record<FeedProviderTier, string> = {
-  broker: "Primary broker feed",
+  broker: "Broker feed (MT5)",
   synthetic: "Synthetic feed",
   thirdParty: "Fallback feed",
   none: "No feed",
@@ -105,6 +108,13 @@ export interface FeedConfidenceBadgeProps {
    * bare chip. Suppressed for a current feed (<=1), honest "· —" when null.
    */
   showTrailingGap?: boolean;
+  /**
+   * The timeframe this verdict describes (e.g. "M1"). When given it is shown on
+   * the always-visible chip and named in the accessible label, so a chip that
+   * sits away from its chart never leaves the reader guessing which
+   * timeframe's feed it graded.
+   */
+  timeframeLabel?: string;
 }
 
 export function FeedConfidenceBadge({
@@ -113,12 +123,22 @@ export function FeedConfidenceBadge({
   onRequestFallback,
   aiUsableResolved,
   showTrailingGap = false,
+  timeframeLabel,
 }: FeedConfidenceBadgeProps) {
   const rawConf = feedConfidence(feedStatus);
   // Cap the raw feed verdict by the resolved verdict when one is supplied, so
   // the badge can never look more confident than the rest of the panel.
   const conf = capConfidence(rawConf, aiUsableResolved);
   const fs = feedStatus ?? null;
+  // The State row follows the same cap: a raw isLive is not shown as "Live"
+  // while the resolved verdict is unconfirmed (false) or still checking (null).
+  const rawFeedState = fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—";
+  const feedStateLabel =
+    rawFeedState === "Live" && aiUsableResolved === false
+      ? "Unconfirmed (feed reports live)"
+      : rawFeedState === "Live" && aiUsableResolved === null
+        ? "Checking…"
+        : rawFeedState;
   const provider = providerInfo(fs?.source);
   const ProviderIcon = TIER_ICON[provider.tier];
   // Task #776 — a synthetic served by the MT5 broker has NO separate Deriv tick
@@ -130,9 +150,19 @@ export function FeedConfidenceBadge({
   // Inline trailing-interval gap for the always-visible chip (opt-in). Reuses
   // the shared formatTrailingGap over the SAME feed status the popover reads.
   const inlineGap = showTrailingGap ? formatTrailingGap(fs?.trailingIntervals) : null;
+  // The popover's "Last tick" / "Last candle" ages are relative to NOW, so they
+  // re-render once a second while it is open instead of freezing at the age
+  // they had when it opened.
+  const [open, setOpen] = useState(false);
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(tick, 1_000);
+    return () => clearInterval(id);
+  }, [open]);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -141,7 +171,7 @@ export function FeedConfidenceBadge({
           data-ai-usable={conf.aiUsable ? "true" : "false"}
           data-provider-tier={provider.tier}
           className="inline-flex items-center gap-1"
-          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}`}
+          aria-label={`Data source: ${provider.label} (${TIER_LABEL[provider.tier]}). Feed status: ${conf.statusLabel}${timeframeLabel ? `. Timeframe: ${timeframeLabel}` : ""}`}
         >
           {/* Source sub-chip — distinct icon + colour per trust tier. Names the
               primary broker feed vs. whatever fallback is actually serving. */}
@@ -153,6 +183,15 @@ export function FeedConfidenceBadge({
             <ProviderIcon className="h-3 w-3" />
             {provider.label}
           </Badge>
+          {timeframeLabel ? (
+            <Badge
+              variant="outline"
+              data-testid="arx-feed-timeframe"
+              className="text-[10px] font-mono text-zinc-300"
+            >
+              {timeframeLabel}
+            </Badge>
+          ) : null}
           {/* Quality sub-chip — live/stale severity + AI-usability. */}
           <Badge
             variant="outline"
@@ -204,9 +243,20 @@ export function FeedConfidenceBadge({
 
         <div className="space-y-1 rounded-md border border-zinc-800 p-2">
           <Row label="Source" value={fs?.source || "—"} />
-          <Row label="State" value={fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—"} />
-          <Row label="Latency" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
-          <Row label="Last candle" value={relativeTime(fs?.lastCandleTime)} />
+          <Row label="State" value={feedStateLabel} />
+          {/* Server-side time to read the winning provider — NOT tick or bar age
+              (see "Last tick" / "Last candle"). Unknown when nothing served. */}
+          <Row label="Server read time" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
+          {/* A future candle time is the forming bar's scheduled close, not an
+              arrival — it says nothing about whether ticks are flowing. */}
+          <Row
+            label="Last candle"
+            value={
+              isFutureTime(fs?.lastCandleTime)
+                ? `Forming bar · closes ${relativeTime(fs?.lastCandleTime)}`
+                : relativeTime(fs?.lastCandleTime)
+            }
+          />
           <Row
             label="Last tick"
             value={
@@ -243,7 +293,7 @@ export function FeedConfidenceBadge({
             }
           />
           {fs?.feedReadinessState ? (
-            <Row label="Readiness" value={fs.feedReadinessState} />
+            <Row label="Readiness" value={feedReadinessLabel(fs.feedReadinessState)} />
           ) : null}
         </div>
 

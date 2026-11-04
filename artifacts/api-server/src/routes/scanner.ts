@@ -9,7 +9,7 @@ import { z } from "zod/v4";
 import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js";
 import {
   scanOnceSnapshot, scannerSnapshot, scannerFeedNote, scannerStart, scannerStop, scannerStatus,
-  opportunityScore, sessionPlan, decisionStream, listAlerts, alertAction, alertCount,
+  opportunityScore, sessionPlan, decisionStream, listAlerts, alertAction, alertCount, alertCountCoverage,
   decorateOpportunitiesWithHistory, decorateOpportunitiesWithNewsRisk,
   decorateOpportunitiesWithFinalRead, decorateOpportunitiesWithTimingContext,
   decorateOpportunitiesWithFvgRead,
@@ -246,9 +246,18 @@ router.get("/decision-stream", (req, res) => {
 router.get("/alerts/scanner", (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 200);
   const unackedOnly = req.query.unackedOnly === "true";
+  // The alerts come from the platform scanner loop, not from any one user's
+  // account, and acknowledge/dismiss/snooze are admin actions on that one
+  // shared list. Said in the payload so no surface presents it as personal.
+  const coverage = alertCountCoverage();
   return res.json({
     alerts: listAlerts({ limit, unackedOnly }),
     count: alertCount(),
+    countComplete: coverage.complete,
+    countNote: coverage.note,
+    storeCapacity: coverage.storeCapacity,
+    scope: "platform_shared",
+    scopeNote: "Shared scanner notices raised by the platform's market scans. The same list for every user, not personal to you; acknowledge, dismiss and snooze change it for everyone.",
     dataSource: "SIMULATOR",
   });
 });

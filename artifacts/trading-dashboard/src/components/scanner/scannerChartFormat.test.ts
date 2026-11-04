@@ -9,6 +9,11 @@ import {
   inferBarSeconds,
   resolveEventMarkerSec,
   snapSecToCandle,
+  CHART_TIME_AXIS_LABEL,
+  CHART_TIME_AXIS_TITLE,
+  formatUtcClock,
+  computeCandleRemainingMs,
+  candleCountdownLabel,
 } from "@/components/scanner/scannerChartFormat";
 import type { ChartDisplayStatus } from "@/lib/chart-display-status";
 
@@ -210,5 +215,46 @@ describe("snapSecToCandle", () => {
       expect(snapped).not.toBeNull();
       expect(BARS).toContain(snapped);
     }
+  });
+});
+
+// ── Chart time zone + server-clock countdown (owner screenshots 2026-10-27:
+//    axis 14:00 … 16:00 with no zone for a New York viewer at 12:04 local, and a
+//    "⏱0:15" chip computed against the client clock). ──
+describe("chart time zone label + UTC clock", () => {
+  it("one shared axis label, stated in UTC", () => {
+    expect(CHART_TIME_AXIS_LABEL).toBe("Times: UTC");
+    expect(CHART_TIME_AXIS_TITLE).toMatch(/UTC/);
+  });
+
+  it("formats the UTC wall clock regardless of the viewer's zone", () => {
+    // 16:04Z is 12:04 in New York — the label must read the UTC hour.
+    expect(formatUtcClock(Date.parse("2026-10-27T16:04:31Z"))).toBe("16:04 UTC");
+    expect(formatUtcClock("2026-10-27T14:00:00.000Z")).toBe("14:00 UTC");
+    expect(formatUtcClock("not a time")).toBeNull();
+    expect(formatUtcClock(null)).toBeNull();
+  });
+});
+
+describe("computeCandleRemainingMs — measured against the server clock", () => {
+  const closeTimeMs = Date.parse("2026-10-27T16:05:00Z");
+  const serverTs = Date.parse("2026-10-27T16:04:45Z"); // 15 s left on the server
+  const clock = { serverTs, receivedPerf: 1_000 };
+
+  it("a client clock 5 s fast or slow shows the same remaining time", () => {
+    const fast = computeCandleRemainingMs({ closeTimeMs, clock, nowPerf: 1_000, fallbackNowMs: serverTs + 5_000 });
+    const slow = computeCandleRemainingMs({ closeTimeMs, clock, nowPerf: 1_000, fallbackNowMs: serverTs - 5_000 });
+    expect(fast).toBe(15_000);
+    expect(slow).toBe(15_000);
+    expect(candleCountdownLabel(fast, "1m")).toBe("closes in 0:15");
+  });
+
+  it("advances with monotonic elapsed time since the frame", () => {
+    expect(computeCandleRemainingMs({ closeTimeMs, clock, nowPerf: 6_000, fallbackNowMs: 0 })).toBe(10_000);
+  });
+
+  it("without a server sample falls back to the client wall clock (never a fabricated offset)", () => {
+    expect(computeCandleRemainingMs({ closeTimeMs, clock: null, nowPerf: 0, fallbackNowMs: serverTs + 5_000 })).toBe(10_000);
+    expect(computeCandleRemainingMs({ closeTimeMs, clock: { serverTs: Number.NaN, receivedPerf: 0 }, nowPerf: 0, fallbackNowMs: serverTs })).toBe(15_000);
   });
 });

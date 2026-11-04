@@ -33,7 +33,8 @@ import type {
   TrendPosture,
 } from "@workspace/domain/market";
 import type { NormalizedChartCandle } from "../candleNormalization.js";
-import { atr, clamp, decimalsFor, findSwings, round, type Swing } from "./chartMath.js";
+import { atr, clamp, findSwings, round, type Swing } from "./chartMath.js";
+import { chartPriceDecimals, chartPriceText, validPriceDecimals } from "./chartPriceDecimals.js";
 
 export interface TrendlineEngineResult {
   trendlines: ActiveTrendline[];
@@ -84,6 +85,10 @@ const NONE_PATTERN_CHANGE: PatternChange = {
  */
 export function detectTrendlines(
   candles: NormalizedChartCandle[],
+  /** priceDecimals: the instrument's display precision (chart truth result);
+   *  when omitted it is resolved from the bars' symbol profile and quoted
+   *  digits. Rounding of reported levels only — the geometry is unrounded. */
+  opts: { priceDecimals?: number | null } = {},
 ): TrendlineEngineResult {
   const closed = candles.filter((c) => c.isComplete && !c.isForming);
   if (closed.length < GLOBAL_MIN_CANDLES) {
@@ -100,7 +105,9 @@ export function detectTrendlines(
   const atrVal = atr(closed, Math.min(14, closed.length - 1));
   const last = closed[closed.length - 1]!;
   const lastIndex = closed.length - 1;
-  const decimals = decimalsFor(last.close);
+  // Reported levels are rounded at the instrument's precision, not by
+  // magnitude (which dropped EURUSD's 5th and XAUUSD's 2nd decimal).
+  const decimals = validPriceDecimals(opts.priceDecimals) ?? chartPriceDecimals(closed);
 
   if (!atrVal || atrVal <= 0) {
     // Without a usable ATR we cannot normalize geometry honestly.
@@ -277,7 +284,7 @@ function detectChannel(
     keyPoints: railKeyPoints(ctx, rail, oppRail),
     rationale: [
       `Two roughly parallel ${bullish ? "rising" : "falling"} rails bound the move.`,
-      `Price oscillates between ${round(oppLevel, ctx.decimals)} and ${round(level, ctx.decimals)}.`,
+      `Price oscillates between ${chartPriceText(round(oppLevel, ctx.decimals), ctx.decimals)} and ${chartPriceText(round(level, ctx.decimals), ctx.decimals)}.`,
     ],
     failureModes: [
       "A decisive close beyond either rail breaks the channel (possible trend shift).",

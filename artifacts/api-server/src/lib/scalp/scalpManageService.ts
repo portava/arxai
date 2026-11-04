@@ -8,7 +8,7 @@
 //  - Per-user isolation: open positions, specs, execution and lockouts are all
 //    read/written scoped by userId. No row from another user is ever returned.
 //  - Mode-scoped: a LIVE_SHARED user only sees LIVE rows; a DEMO user only DEMO.
-//    PAPER/NONE users get no baskets here.
+//    PAPER/NONE users get no baskets here (reported as not read, not as none).
 //  - ADVICE ONLY: nothing in this module places, modifies, sizes or closes a
 //    real order. Exit verdicts are ALERT_ONLY; add-on verdicts are guidance.
 //  - No fabrication: candles are real or the flame reads blind (honest NONE);
@@ -21,6 +21,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { db, scalpFlameLockoutsTable } from "@workspace/db";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { readFlame, finalizeScalpVerdict } from "./flameRead.js";
+import { resolveScalpPricePrecision } from "./scalpPrecision.js";
 import { getSymbolInfo } from "../instruments/index.js";
 import {
   assembleBasket,
@@ -54,13 +55,18 @@ import type {
   ScalpFlameRead,
   ScalpSpecInput,
 } from "./scalpTypes.js";
-import { readLatestUserMt5State } from "../brokerHub/mt5StateReader.js";
+import { readLatestUserMt5State, MT5_STATE_NOT_ATTRIBUTED_NOTE } from "../brokerHub/mt5StateReader.js";
 
 function num(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
 export type ManageAccountMode = "LIVE_SHARED" | "DEMO" | "PAPER" | "NONE";
+
+export const SCALP_PAPER_NOT_READ_NOTE =
+  "Your account is in Paper mode. The Position Manager reads live and demo MT5 positions only, so your paper positions were not read here. This is not a count of zero.";
+export const SCALP_NO_ACCOUNT_NOT_READ_NOTE =
+  "No live or demo account is active, so no MT5 positions were read here. This is not a count of zero.";
 
 type DemoRaw = {
   ticket?: string | number | null;
@@ -81,10 +87,29 @@ type DemoRaw = {
  * positions feed). Returns the rows already mapped to the pure module's
  * OpenPositionInput shape, plus the resolved account mode for the response.
  */
+/**
+ * How recent a positions reading must be to be shown as current. The bridge
+ * pushes its book every few seconds; 90s is comfortably longer than that
+ * cadence (the same window the ghost filter below uses).
+ */
+export const SCALP_POSITIONS_FRESH_MS = 90_000;
+
+interface LoadedOpenPositions {
+  positions: OpenPositionInput[];
+  accountMode: ManageAccountMode;
+  positionsMeasured: boolean;
+  /** Why the positions were not read; null when they were. */
+  positionsNote: string | null;
+  /** Oldest bridge reading among the positions returned (ms); null when none or unrecorded. */
+  readingAtMs: number | null;
+  /** A returned position has no recorded reading time. */
+  readingTimeMissing: boolean;
+}
+
 async function loadOpenPositions(
   userId: number,
   isAdmin: boolean,
-): Promise<{ positions: OpenPositionInput[]; accountMode: ManageAccountMode }> {
+): Promise<LoadedOpenPositions> {
   const scope = await getUserModeScope(userId, { isAdmin });
   const mode = scope.currentAccountMode;
   const includeLive = mode === "LIVE_SHARED";
@@ -99,6 +124,17 @@ async function loadOpenPositions(
     : "NONE";
 
   const positions: OpenPositionInput[] = [];
+  // Only live and demo MT5 positions are read here. A Paper (or no) account's
+  // positions are never read, so an empty list is not a measured "none".
+  let positionsMeasured = includeLive || includeDemo;
+  let positionsNote: string | null = positionsMeasured ? null
+    : accountMode === "PAPER" ? SCALP_PAPER_NOT_READ_NOTE : SCALP_NO_ACCOUNT_NOT_READ_NOTE;
+  let readingAtMs: number | null = null;
+  let readingTimeMissing = false;
+  const noteReading = (t: number) => {
+    if (!(t > 0)) { readingTimeMissing = true; return; }
+    if (readingAtMs === null || t < readingAtMs) readingAtMs = t;
+  };
 
   if (includeLive) {
     const liveRowsAll = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
@@ -112,6 +148,7 @@ async function loadOpenPositions(
       if (r.closedAt) continue;
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
       if (t < liveFloor) continue;
+      noteReading(t);
       positions.push({
         ticket: r.brokerTicket ?? null,
         symbol: r.symbol,
@@ -131,11 +168,19 @@ async function loadOpenPositions(
 
   if (includeDemo) {
     const state = await readLatestUserMt5State(userId);
+    // No row of the user's own: the EA feed is install-wide and never
+    // stamped with a user, so the demo positions were not read.
+    if (state == null) {
+      positionsMeasured = false;
+      positionsNote = MT5_STATE_NOT_ATTRIBUTED_NOTE;
+    }
     const raw: DemoRaw[] = Array.isArray(state?.positions)
       ? (state!.positions as DemoRaw[]) : [];
+    const demoReadingMs = state?.lastSyncAt ? new Date(state.lastSyncAt).getTime() : 0;
     for (const p of raw) {
       const symbol = p.symbol ?? null;
       if (!symbol) continue;
+      noteReading(Number.isFinite(demoReadingMs) ? demoReadingMs : 0);
       positions.push({
         ticket: p.ticket == null ? null : String(p.ticket),
         symbol,
@@ -153,14 +198,16 @@ async function loadOpenPositions(
     }
   }
 
-  return { positions, accountMode };
+  return { positions, accountMode, positionsMeasured, positionsNote, readingAtMs, readingTimeMissing };
 }
 
-/** Point size from broker spec digits when the spec doesn't carry `point`. */
+/**
+ * Point size for the flame read's internal floors: the shared broker
+ * precision (same authority as the entry engine), else a small internal floor.
+ * The floor is never used to format a price.
+ */
 function pointFor(spec: ScalpSpecInput): number {
-  if (num(spec.point) && spec.point > 0) return spec.point;
-  if (num(spec.digits) && spec.digits >= 0) return Math.pow(10, -spec.digits);
-  return 0.0001;
+  return resolveScalpPricePrecision(spec)?.point ?? 0.0001;
 }
 
 interface BasketGeometry {
@@ -171,12 +218,13 @@ interface BasketGeometry {
 }
 
 /**
+ * (Exported for the truth-accuracy regression test.)
  * Build a direction-aligned flame read for an OPEN position. Unlike the entry
  * engine (which derives direction from the scanner), the manage side always
  * reads the flame in the basket's OWN direction so exit/add-on guidance reflects
  * the side the user is actually holding. Real candles or an honest blind read.
  */
-function readManageFlame(
+export function readManageFlame(
   direction: ScalpDirection,
   candles: ScalpCandle[] | null,
   spec: ScalpSpecInput,
@@ -185,7 +233,8 @@ function readManageFlame(
   personality: RiskPersonality,
 ): ScalpFlameRead {
   const point = pointFor(spec);
-  const digits = num(spec.digits) ? spec.digits : 5;
+  // Same precision as the entry engine; null (unknown) → prices as reported.
+  const digits = resolveScalpPricePrecision(spec)?.digits ?? null;
   const spreadPrice = num(spec.spreadPoints) ? spec.spreadPoints * point : 0;
   const sign = direction === "BUY" ? 1 : -1;
 
@@ -286,6 +335,20 @@ async function upsertFailedFlameLockout(
 export interface GetScalpBasketsResult {
   baskets: ScalpBasket[];
   accountMode: ManageAccountMode;
+  /** False when the open positions could not be read; an empty list is then not "no baskets". */
+  positionsMeasured: boolean;
+  positionsNote: string | null;
+  /**
+   * When the bridge last reported the positions shown (the oldest leg's
+   * reading). Null when no position is shown or no reading time is recorded.
+   */
+  positionsAsOf: string | null;
+  /**
+   * True when positions are shown but their reading is older than
+   * SCALP_POSITIONS_FRESH_MS or has no recorded time: the open P/L, stops and
+   * advice describe that reading, not the account now.
+   */
+  positionsStale: boolean;
   generatedAt: string;
 }
 
@@ -299,7 +362,8 @@ export async function getScalpBaskets(
   opts: { isAdmin?: boolean; riskPersonality?: RiskPersonality | null } = {},
 ): Promise<GetScalpBasketsResult> {
   const personality = opts.riskPersonality ?? "BALANCED";
-  const { positions, accountMode } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, accountMode, positionsMeasured, positionsNote, readingAtMs, readingTimeMissing } =
+    await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const now = Date.now();
 
@@ -322,7 +386,12 @@ export async function getScalpBaskets(
       },
       personality,
     );
-    const basket = assembleBasket(g, flame, { personality, currentPrice, now });
+    const basket = assembleBasket(g, flame, {
+      personality, currentPrice, now,
+      // Broker spec digits only (same authority as the entry engine); null
+      // when the spec does not say — never the internal point floor.
+      digits: resolveScalpPricePrecision(spec)?.digits ?? null,
+    });
     return { basket, spec, execution };
   }));
 
@@ -339,7 +408,9 @@ export async function getScalpBaskets(
 
   // Side effect: journal the lifecycle of every open basket (and finalize any
   // that have since closed). Per-user, advisory, best-effort. LIVE/DEMO only.
-  if (accountMode === "LIVE_SHARED" || accountMode === "DEMO") {
+  // Skipped when the positions were not read: finalizing would mark every
+  // open journal entry closed on an unread book.
+  if (positionsMeasured && (accountMode === "LIVE_SHARED" || accountMode === "DEMO")) {
     const journalMode: JournalAccountMode = accountMode;
     const snapshots: ObservationSnapshot[] = built.map(({ basket, spec, execution }) => {
       const snap = buildEntrySnapshot(basket, {
@@ -363,6 +434,12 @@ export async function getScalpBaskets(
   return {
     baskets,
     accountMode,
+    positionsMeasured,
+    positionsNote,
+    positionsAsOf: readingAtMs != null ? new Date(readingAtMs).toISOString() : null,
+    positionsStale: baskets.length > 0 && (
+      readingTimeMissing || readingAtMs == null || now - readingAtMs > SCALP_POSITIONS_FRESH_MS
+    ),
     generatedAt: new Date(now).toISOString(),
   };
 }
@@ -377,6 +454,17 @@ export interface GetAddOnCheckResult {
   symbol: string;
   direction: ScalpDirection;
   hasOpenBasket: boolean;
+  /** False when the open positions could not be read; hasOpenBasket false is then not a measured "none". */
+  positionsMeasured: boolean;
+  positionsNote: string | null;
+  /** Same as GetScalpBasketsResult.positionsAsOf: when the bridge last reported the positions read. */
+  positionsAsOf: string | null;
+  /**
+   * Same rule as GetScalpBasketsResult.positionsStale: positions were read but
+   * their reading is older than SCALP_POSITIONS_FRESH_MS or has no recorded
+   * time, so the basket and add-on verdict describe that reading, not now.
+   */
+  positionsStale: boolean;
   basket: ScalpBasket | null;
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
@@ -395,7 +483,8 @@ export async function getAddOnCheck(
   opts: { isAdmin?: boolean } = {},
 ): Promise<GetAddOnCheckResult> {
   const personality = args.riskPersonality ?? "BALANCED";
-  const { positions } = await loadOpenPositions(userId, opts.isAdmin ?? false);
+  const { positions, positionsMeasured, positionsNote, readingAtMs, readingTimeMissing } =
+    await loadOpenPositions(userId, opts.isAdmin ?? false);
   const groups = groupLegsIntoBaskets(positions);
   const symU = args.symbol.trim().toUpperCase();
   const group = groups.find(
@@ -423,7 +512,12 @@ export async function getAddOnCheck(
     personality,
   );
 
-  const basket = group ? assembleBasket(group, flame, { personality, currentPrice: refPrice, now }) : null;
+  const basket = group
+    ? assembleBasket(group, flame, {
+      personality, currentPrice: refPrice, now,
+      digits: resolveScalpPricePrecision(spec)?.digits ?? null,
+    })
+    : null;
   const addOn = basket ? basket.addOn : evaluateAddOn(flame, summary, personality);
 
   // Populate addOnsBlockedReason on the admin trace when the add-on is blocked
@@ -452,6 +546,13 @@ export async function getAddOnCheck(
     symbol: group?.symbol ?? args.symbol,
     direction: args.direction,
     hasOpenBasket: group != null,
+    positionsMeasured,
+    // Computed exactly as getScalpBaskets does, so both boards agree on one reading.
+    positionsAsOf: readingAtMs != null ? new Date(readingAtMs).toISOString() : null,
+    positionsStale: groups.length > 0 && (
+      readingTimeMissing || readingAtMs == null || now - readingAtMs > SCALP_POSITIONS_FRESH_MS
+    ),
+    positionsNote,
     basket,
     addOn,
     flame: enrichedFlame,

@@ -6,6 +6,8 @@ import type {
   ChartPosition,
   UseLivePositionOverlaysResult,
 } from "@/hooks/useLivePositionOverlays";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { useChartPricePrecision } from "./chartPricePrecisionStore";
 
 // ChartPositionOverlayPanel — Level 4 legend + gated close for the overlays
 // drawn on ARXNativeChart. It is a thin presentation layer over
@@ -21,18 +23,15 @@ interface ChartPositionOverlayPanelProps {
   data: UseLivePositionOverlaysResult;
 }
 
-function fmtPrice(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const decimals = abs < 10 ? 5 : abs < 1000 ? 3 : 2;
-  return n.toFixed(decimals);
-}
 
 export function ChartPositionOverlayPanel({
   symbol,
   data,
 }: ChartPositionOverlayPanelProps) {
   const { positions, canTrade, busyTicket, noTradeReason, closePosition } = data;
+  // Same digits as the chart's price axis for this symbol (shared rule).
+  const pricePrecision = useChartPricePrecision(symbol);
+  const fmtPrice = (n: number | null | undefined) => formatInstrumentPrice(n, pricePrecision);
 
   // Clean no-position state: render nothing at all.
   if (positions.length === 0) return null;

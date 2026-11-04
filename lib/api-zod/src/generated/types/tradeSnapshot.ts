@@ -6,14 +6,55 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TradeHealth } from "./tradeHealth";
+import type { TradeSnapshotPnlDataQualityFlag } from "./tradeSnapshotPnlDataQualityFlag";
+import type { TradeSnapshotQuoteFreshness } from "./tradeSnapshotQuoteFreshness";
+import type { TradeSnapshotQuoteTimeBasis } from "./tradeSnapshotQuoteTimeBasis";
 import type { TradeSnapshotSuggestions } from "./tradeSnapshotSuggestions";
 
 export interface TradeSnapshot {
   tradeId: number;
-  currentPrice: number;
-  rMultiple: number;
-  floatingPnl: number;
-  health: TradeHealth;
+  /**
+   * Last price from the market-data feed; null when no quote was available (never the entry price).
+   * @nullable
+   */
+  currentPrice: number | null;
+  /**
+   * Timestamp of the quote currentPrice came from; null when there is no quote.
+   * @nullable
+   */
+  quoteAt?: string | null;
+  /**
+   * Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.
+   * @nullable
+   */
+  priceUnavailableReason?: string | null;
+  /** The quote's own freshness verdict. Only fresh (a producer tick inside the fresh window) confirms currentPrice is current. A priced snapshot can also be delayed (stamped with the time ARX received it, or a tick older than the fresh window): a last price, not confirmed current. stale, unknown and unavailable come with currentPrice null. */
+  quoteFreshness?: TradeSnapshotQuoteFreshness;
+  /** What the quote's time means (producer tick time, provider time, the time ARX received it, or none). */
+  quoteTimeBasis?: TradeSnapshotQuoteTimeBasis;
+  /**
+   * One plain-English sentence on the quote - source, age, time basis and whether it is current; null when there was no quote.
+   * @nullable
+   */
+  quoteNote?: string | null;
+  /** @nullable */
+  rMultiple: number | null;
+  /**
+   * Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size / FX rate cannot be established.
+   * @nullable
+   */
+  floatingPnl: number | null;
+  /**
+   * Why floatingPnl is null; null when it was sized.
+   * @nullable
+   */
+  pnlUnavailableReason?: string | null;
+  /**
+   * Which input was missing when a priced trade's P&L could not be sized.
+   * @nullable
+   */
+  pnlDataQualityFlag?: TradeSnapshotPnlDataQualityFlag;
+  health: TradeHealth | null;
   primarySuggestion: string;
   invalidated: boolean;
   suggestions: TradeSnapshotSuggestions;

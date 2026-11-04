@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromSetupReason } from "@/lib/rubyReasoningBlock";
@@ -120,30 +121,43 @@ export function RubySetupReason({ signal, dense = false }: { signal: SignalConte
 }
 
 // Ruby copy — Centralized Master MT5 Bridge (Slice 1+2).
-// Surfaces a one-liner explaining that the trade may route through the
-// platform's master demo bridge instead of the user's own MT5. The note
-// is rendered only when the user is actually on SHARED_MASTER_MT5 mode
-// (per /api/me/routing-status) so it doesn't confuse user-owned users.
+// One line on where orders from this ticket would route, taken from
+// /api/me/routing-status. That route resolves DEMO routing and always reports
+// live as locked (safetyMode paper_only), so the note names the shared master
+// DEMO bridge — never a live one. Blocked routing (ok:false) is said to be
+// blocked rather than described as a working route. Nothing is shown for
+// user-owned routing or when the status could not be read. The query key is
+// invalidated by My Account's Bridge Preference switch, so the note follows a
+// switch instead of keeping the answer from when it first mounted.
+export const ROUTING_STATUS_QUERY_KEY = ["me", "routing-status"] as const;
+
+type RoutingStatus = {
+  ok?: boolean;
+  effectiveRoutingMode?: string;
+  liveLocked?: boolean;
+};
+
 function MasterBridgeNote() {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`${BASE}/api/me/routing-status`, { credentials: "include" });
-        if (!r.ok) return;
-        const j = await r.json();
-        if (!cancelled && j?.effectiveRoutingMode === "SHARED_MASTER_MT5") {
-          setShow(true);
-        }
-      } catch { /* silent */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-  if (!show) return null;
+  const q = useQuery<RoutingStatus | null>({
+    queryKey: ROUTING_STATUS_QUERY_KEY,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/me/routing-status`, { credentials: "include" });
+      if (!r.ok) return null;
+      return (await r.json()) as RoutingStatus;
+    },
+    staleTime: 15_000,
+  });
+  const j = q.data;
+  if (!j || j.effectiveRoutingMode !== "SHARED_MASTER_MT5") return null;
   return (
-    <div className="text-[10px] text-amber-300/80 italic pt-1 border-t border-slate-700/40">
-      Orders route through the shared master live bridge. Risk limits apply per your account settings.
+    <div
+      className="text-[10px] text-amber-300/80 italic pt-1 border-t border-slate-700/40"
+      data-testid="ruby-setup-master-bridge-note"
+      data-routing-ok={j.ok === true ? "true" : "false"}
+    >
+      {j.ok === true
+        ? `Demo orders from this ticket route through the platform's shared master demo bridge, not your own MT5.${j.liveLocked === false ? "" : " Live trading is locked on this route."} Risk limits apply per your account settings.`
+        : "Your account is set to the shared master demo bridge, but that routing is blocked right now, so orders from this ticket cannot route through it."}
     </div>
   );
 }

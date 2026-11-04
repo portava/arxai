@@ -117,13 +117,14 @@ describe("C2 — Broad/Builder use a real live quote", () => {
 
   // 8c35627 moved Focus to scalpMarketInputsFor, which binds the quote to the
   // same confirmed candle evidence. Its price still comes from routeQuote, the
-  // same route currentPriceFor (Broad/Builder) reads.
+  // same route currentPriceFor (Broad/Builder) reads — pinned to the served
+  // series' MT5 writer (c9ab910), never another bridge's quote.
   it("Focus reads its quote through the same route as Broad/Builder", () => {
     assert.ok(/scalpMarketInputsFor\(args\.symbol\)/.test(scalpService));
     const inputs = read("artifacts/api-server/src/lib/scalp/scalpServiceInputs.ts");
     const body = (name: string) => inputs.slice(inputs.indexOf(`export async function ${name}(`), inputs.indexOf("\n}\n", inputs.indexOf(`export async function ${name}(`)));
     assert.ok(/routeQuote\(symbol\)/.test(body("currentPriceFor")));
-    assert.ok(/routeQuote\(symbol\)/.test(body("scalpMarketInputsFor")));
+    assert.ok(/routeQuote\(symbol,\s*quotePinForSeries\(/.test(body("scalpMarketInputsFor")));
   });
 });
 

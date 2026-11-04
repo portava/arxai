@@ -29,7 +29,7 @@ import { eq, desc, asc, and, gte, sql } from "drizzle-orm";
 import { tradingModeGate } from "@workspace/db/repositories";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
-import { loadGlobalTradingSettingsRow } from "../lib/safety/platformSwitches.js";
+import { loadGlobalTradingSettingsRow, platformStop, platformStopReport } from "../lib/safety/platformSwitches.js";
 import { engagePlatformStop, engagedRow, releasePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readOperatorRiskLimits } from "../lib/riskGovernor/limitSettings.js";
@@ -76,8 +76,20 @@ async function writeAdminAudit(args: {
 
 router.get("/admin/trading/settings", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const settings = await loadGlobalTradingSettingsRow();
-  res.json({ ok: true, settings });
+  const [settings, stop] = await Promise.all([loadGlobalTradingSettingsRow(), platformStop()]);
+  // `settings` is null when the row could not be read. The platformStop*
+  // fields are both install-wide stops as the pre-trade Risk Governor reads
+  // them (tradingHalt): the platform emergency stop this page writes AND the
+  // safety-core kill switch it does not. An unreadable source is engaged and
+  // makes platformStopReadable false.
+  res.json({
+    ok: true,
+    settings,
+    ...platformStopReport(stop),
+    platformStopReadable: stop.readable,
+    platformStopDetail: stop.detail,
+    platformStopEngagedAt: stop.engagedAt ?? {},
+  });
 });
 
 const modeSchema = z.object({

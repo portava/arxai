@@ -76,7 +76,39 @@ interface MarketDataExtState {
   currentEvents?: { connected?: boolean; reason?: string | null };
   commandExecution?: { allowed?: boolean; intentional?: boolean; reason?: string };
 }
-function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade; snap: unknown; snapTargetsUnavailable: boolean }) {
+// The card polls the trade snapshot every 5s. A snapshot not refreshed within
+// three polls is not treated as current.
+const SNAPSHOT_POLL_MS = 5_000;
+const SNAPSHOT_CURRENT_MS = 3 * SNAPSHOT_POLL_MS;
+
+/**
+ * Whether the trade snapshot on screen is current. react-query keeps the last
+ * successful data when a refetch fails or is paused (offline), so `snap` alone
+ * does not say the server still has a quote now.
+ */
+export interface SnapshotReadState {
+  /** The latest snapshot request failed (the data shown is from an earlier read). */
+  refreshFailed: boolean;
+  /** The refresh is paused (e.g. the browser is offline). */
+  refreshPaused: boolean;
+  /** When the data on screen was received (epoch ms); 0 / undefined when never. */
+  updatedAtMs: number | undefined;
+}
+
+/** The snapshot on screen was read within three polls and its latest refresh neither failed nor is paused. */
+export function isSnapshotCurrent(snapRead: SnapshotReadState, nowMs = Date.now()): boolean {
+  const updatedAtMs = snapRead.updatedAtMs;
+  const ageMs = typeof updatedAtMs === "number" && updatedAtMs > 0 ? nowMs - updatedAtMs : null;
+  return !snapRead.refreshFailed && !snapRead.refreshPaused && ageMs != null && ageMs <= SNAPSHOT_CURRENT_MS;
+}
+
+/** When the snapshot on screen was received, as a time of day; null when never. */
+function snapshotReadAt(snapRead: SnapshotReadState): string | null {
+  const updatedAtMs = snapRead.updatedAtMs;
+  return typeof updatedAtMs === "number" && updatedAtMs > 0 ? new Date(updatedAtMs).toLocaleTimeString() : null;
+}
+
+function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable, snapRead }: { trade: Trade; snap: unknown; snapTargetsUnavailable: boolean; snapRead: SnapshotReadState }) {
   const { data: safety } = useQuery<SafetyState>({
     queryKey: ["/me/protective-auto-close/settings"],
     queryFn: () => fetch(`${PAC_BASE}/api/me/protective-auto-close/settings`, { credentials: "include" }).then((r) => (r.ok ? r.json() : ({} as SafetyState))),
@@ -112,7 +144,6 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   const pacEnabled = safety?.settings?.enabled === true;
   const killEngaged = safety?.settings?.killSwitchEngaged === true;
   const activity = safety?.activity?.status ?? "UNKNOWN";
-  const isPaper = (trade.mode ?? "").toUpperCase() !== "LIVE";
   const newsConnected = market?.features?.news === true;
   const candlesConnected = market?.features?.candles === true;
   const dataInsufficient = !snap || !candlesConnected;
@@ -124,7 +155,7 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
     danger: "border-red-500/40 text-red-300 bg-red-500/10",
     ok: "border-emerald-500/40 text-emerald-300 bg-emerald-500/10",
   };
-  const badges: Array<{ label: string; tone: Tone; testId: string }> = [];
+  const badges: Array<{ label: string; tone: Tone; testId: string; title?: string }> = [];
 
   // Account / execution gates.
   // Feature Truth Audit: "Live Trading Blocked" and "Bridge Offline" used to be
@@ -132,7 +163,14 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   // online or live execution enabled. They now derive from the real backend
   // MT5 state (same source as the page header) and are only asserted when the
   // status has loaded AND reports that state. Unknown status asserts nothing.
-  if (isPaper) badges.push({ label: "Demo Only", tone: "muted", testId: "badge-paper-only" });
+  // Every row this card renders is a legacy simulated ARX record (lib/db
+  // schema/trades.ts: no broker order stands behind any row). trade.mode is
+  // the Safety Core state when the record was written, not a venue, so it
+  // must not decide this badge — a mode of LIVE is still a simulated record.
+  badges.push({
+    label: "Simulated Record", tone: "muted", testId: "badge-paper-only",
+    title: "This ARX trade record is simulated on the paper book; no broker order stands behind it, whatever the Safety Core state was at entry.",
+  });
   if (mt5State && mt5State.liveAllowed !== true) {
     badges.push({ label: "Live Trading Blocked", tone: "warn", testId: "badge-live-blocked" });
   }
@@ -179,13 +217,52 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   } else {
     badges.push({ label: "TP Targets Available", tone: "ok", testId: "badge-tp-available" });
   }
-  badges.push({ label: "SL/TP Editable", tone: "ok", testId: "badge-sltp-editable" });
-  badges.push({ label: "Manual Close Available", tone: "ok", testId: "badge-manual-close" });
+  // The stop / close capability badges used to be pushed UNCONDITIONALLY.
+  // They now follow what /trade-management actually enforces
+  // (api-server routes/tradeManagement.ts): the buttons change this ARX
+  // record on the paper book through the Position Guardian, with no MT5
+  // bridge involved, and Close / Trail Stop answer 409 NO_CURRENT_QUOTE when
+  // the server has no quote. So the badges are claimed only when the
+  // snapshot loaded WITH a current price; the bridge state is not a
+  // condition. The protective auto-close kill switch does not gate these
+  // routes either, but the badges stay withheld while it is engaged or
+  // unread — that claims less, never more. The card can move the stop
+  // (Break-Even / Trail) but has no take-profit editor, so the label names
+  // the stop only.
+  // They also need a CURRENT snapshot: after a failed or paused refresh, or
+  // once the last read is older than three polls, the quote on screen is from
+  // an earlier read and whether the server still has one was not checked.
+  const killRead = typeof safety?.settings?.killSwitchEngaged === "boolean";
+  const hasQuote = (snap as { currentPrice?: number | null } | null | undefined)?.currentPrice != null;
+  const snapCurrent = isSnapshotCurrent(snapRead);
+  if (snap && !snapCurrent) {
+    const readAt = snapshotReadAt(snapRead);
+    const lastRead = readAt ? `the last successful read at ${readAt}` : "an earlier read";
+    badges.push({
+      label: snapRead.refreshFailed ? "Snapshot Could Not Be Refreshed" : "Snapshot Not Current",
+      tone: "warn",
+      testId: "badge-snapshot-not-current",
+      title: snapRead.refreshFailed
+        ? `The latest request for this trade's snapshot failed. The figures shown are from ${lastRead}, so whether Close, Break-Even and Trail Stop can run now was not checked.`
+        : `This trade's snapshot has not been refreshed since ${lastRead}, so whether Close, Break-Even and Trail Stop can run now was not checked.`,
+    });
+  }
+  const controlsUsable = snapCurrent && hasQuote && killRead && !killEngaged;
+  if (controlsUsable) {
+    badges.push({
+      label: "Stop Adjustable", tone: "ok", testId: "badge-sltp-editable",
+      title: "Break-Even and Trail Stop move the stop on this ARX record (simulated, no broker order). The Position Guardian refuses any move that would widen the stop.",
+    });
+    badges.push({
+      label: "Manual Close Available", tone: "ok", testId: "badge-manual-close",
+      title: "Close books this ARX record at the server's current quote (simulated, no broker order).",
+    });
+  }
 
   return (
     <div className="flex flex-wrap gap-1" data-testid={`safety-badges-${trade.id}`}>
       {badges.map((b) => (
-        <Badge key={b.label} variant="outline" className={`text-[10px] ${TONE[b.tone]}`} data-testid={b.testId}>{b.label}</Badge>
+        <Badge key={b.label} variant="outline" className={`text-[10px] ${TONE[b.tone]}`} data-testid={b.testId} title={b.title}>{b.label}</Badge>
       ))}
     </div>
   );
@@ -264,7 +341,13 @@ function AskTradeAi({ tradeId }: { tradeId: number }) {
 export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () => void }) {
   const qc = useQueryClient();
   const [coachOpen, setCoachOpen] = useState(false);
-  const { data: snap } = useGetTradeSnapshot(trade.id, { query: { queryKey: getGetTradeSnapshotQueryKey(trade.id), refetchInterval: 5000 } });
+  const snapQ = useGetTradeSnapshot(trade.id, { query: { queryKey: getGetTradeSnapshotQueryKey(trade.id), refetchInterval: SNAPSHOT_POLL_MS } });
+  const snap = snapQ.data;
+  const snapRead: SnapshotReadState = {
+    refreshFailed: snapQ.isError === true,
+    refreshPaused: snapQ.isPaused === true,
+    updatedAtMs: snapQ.dataUpdatedAt,
+  };
   const { data: coach, isLoading: coachLoading } = useGetCoachExplanation(trade.id, { query: { queryKey: getGetCoachExplanationQueryKey(trade.id), enabled: coachOpen } });
   const be = useMoveTradeToBreakeven();
   const trail = useTrailTradeStop();
@@ -275,8 +358,45 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
     qc.invalidateQueries({ queryKey: getGetTradeSnapshotQueryKey(trade.id) });
     qc.invalidateQueries({ queryKey: getGetOpenTradesQueryKey() });
   };
+  // A refused or failed management request (e.g. 409 NO_CURRENT_QUOTE) is
+  // shown on the card, never swallowed — a silent click reads as success.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runAction = async (label: string, fn: () => Promise<unknown>) => {
+    setActionError(null);
+    try {
+      await fn();
+    } catch (e) {
+      const msg = e instanceof Error && e.message ? e.message : "the request failed";
+      setActionError(`${label} did not go through: ${msg}`);
+      return;
+    }
+    refresh();
+  };
 
-  const healthColor = snap ? (snap.health.score >= 70 ? "[&>div]:bg-green-500" : snap.health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  // Truth rule: Current / P&L / R / Health are null when the server had no
+  // quote — render "Unavailable" with the server's reason, never 0 or entry.
+  const health = snap?.health ?? null;
+  const healthColor = health ? (health.score >= 70 ? "[&>div]:bg-green-500" : health.score >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-destructive") : "";
+  const currentPrice = snap?.currentPrice ?? null;
+  const floatingPnl = snap?.floatingPnl ?? null;
+  const rMultiple = snap?.rMultiple ?? null;
+  const quoteAt = snap?.quoteAt ?? null;
+  // Only a quote the server confirmed "fresh" is the current price. "delayed"
+  // (a receive-time stamp, or a tick past the fresh window) — or a snapshot
+  // that does not say — is a last price, not confirmed current. So is any
+  // quote in a snapshot that is no longer current: react-query keeps the last
+  // snapshot when a refresh fails or is paused, so the server's verdict and
+  // its relative note ("observed 2s ago") are from that earlier read.
+  const snapCurrent = isSnapshotCurrent(snapRead);
+  const confirmedCurrent = snapCurrent && snap?.quoteFreshness === "fresh";
+  const quoteAsOf = quoteAt ? `Quote as of ${new Date(quoteAt).toLocaleTimeString()}.` : "";
+  const readAt = snapshotReadAt(snapRead);
+  const notRefreshed = snapRead.refreshFailed
+    ? `This trade's snapshot could not be refreshed ${readAt ? `since ${readAt}` : "after an earlier read"}.`
+    : `This trade's snapshot has not been refreshed ${readAt ? `since ${readAt}` : "after an earlier read"}.`;
+  const unconfirmedDetail = snapCurrent
+    ? (snap?.quoteNote ?? quoteAsOf)
+    : `${notRefreshed}${quoteAsOf ? ` ${quoteAsOf}` : ""}`;
 
   return (
     <Card data-testid={`live-trade-card-${trade.id}`}>
@@ -288,7 +408,16 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
             </span>
             <span className="font-mono">{trade.symbol}</span>
             <Badge variant="outline" className="text-[10px]">{trade.lot} lots</Badge>
-            <Badge variant="outline" className="text-[10px]">{trade.mode}</Badge>
+            {/* trades.mode is the Safety Core state when the record was written,
+                not a broker venue (lib/db schema/trades.ts) — label it so. */}
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              data-testid={`badge-trade-mode-${trade.id}`}
+              title="Safety Core state when this ARX trade record was written. It is not a broker venue; this record is not a broker order."
+            >
+              Safety Core: {trade.mode ?? "unknown"} (at entry)
+            </Badge>
           </CardTitle>
           <Button variant="ghost" size="icon" onClick={() => { setCoachOpen(true); onCoach?.(); }} data-testid={`button-coach-${trade.id}`}>
             <Brain size={16} className="text-primary" />
@@ -299,6 +428,7 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
         <SafetyBadgeRow
           trade={trade}
           snap={snap}
+          snapRead={snapRead}
           snapTargetsUnavailable={
             !snap ||
             Boolean((snap as unknown as { targetsUnavailableReason?: string | null }).targetsUnavailableReason)
@@ -307,30 +437,52 @@ export function LiveTradeCard({ trade, onCoach }: { trade: Trade; onCoach?: () =
         <div className="flex flex-wrap gap-1" data-testid={`aaci-badges-${trade.id}`}>
           <AaciTradeBadges symbol={trade.symbol} />
         </div>
-        {!snap ? <Skeleton className="h-32 w-full" /> :
+        {!snap ? (snapRead.refreshFailed
+          ? <p className="text-xs text-destructive" role="alert" data-testid={`snap-load-failed-${trade.id}`}>This trade's snapshot could not be loaded, so its price, P&L and management controls are not shown.</p>
+          : <Skeleton className="h-32 w-full" />) :
           <>
             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
               <div><div className="text-muted-foreground">Entry</div><div>{trade.entryPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">Current</div><div>{snap.currentPrice.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">P&L</div><div className={snap.floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>${snap.floatingPnl.toFixed(2)}</div></div>
+              <div><div className="text-muted-foreground" data-testid={`snap-price-label-${trade.id}`}>{currentPrice == null || confirmedCurrent ? "Current" : "Last price"}</div><div data-testid={`snap-current-${trade.id}`}>{currentPrice != null ? currentPrice.toFixed(5) : <span className="text-muted-foreground">Unavailable</span>}</div></div>
+              <div><div className="text-muted-foreground">P&L</div>{floatingPnl != null
+                ? <div data-testid={`snap-pnl-${trade.id}`} className={floatingPnl >= 0 ? "text-green-500" : "text-destructive"}>{floatingPnl < 0 ? "-" : ""}${Math.abs(floatingPnl).toFixed(2)}</div>
+                : <div data-testid={`snap-pnl-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
               <div><div className="text-muted-foreground">SL</div><div className="text-destructive">{trade.stopLoss.toFixed(5)}</div></div>
               <div><div className="text-muted-foreground">TP</div><div className="text-green-500">{trade.takeProfit.toFixed(5)}</div></div>
-              <div><div className="text-muted-foreground">R</div><div className={snap.rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{snap.rMultiple.toFixed(2)}R</div></div>
+              <div><div className="text-muted-foreground">R</div>{rMultiple != null
+                ? <div data-testid={`snap-r-${trade.id}`} className={rMultiple >= 0 ? "text-green-500" : "text-destructive"}>{rMultiple.toFixed(2)}R</div>
+                : <div data-testid={`snap-r-${trade.id}`} className="text-muted-foreground">Unavailable</div>}</div>
             </div>
+            {currentPrice != null && confirmedCurrent && quoteAt ? (
+              <div className="text-[10px] text-muted-foreground" data-testid={`snap-quote-at-${trade.id}`}>Quote as of {new Date(quoteAt).toLocaleTimeString()}</div>
+            ) : null}
+            {currentPrice != null && !confirmedCurrent ? (
+              <div className="text-[10px] text-amber-300" data-testid={`snap-quote-unconfirmed-${trade.id}`}>
+                Last price · not confirmed current. {unconfirmedDetail} P&L, R and health are measured from this last price.
+              </div>
+            ) : null}
+            {currentPrice != null && floatingPnl == null && snap.pnlUnavailableReason ? (
+              <div className="text-[10px] text-amber-300" data-testid={`snap-pnl-unavailable-${trade.id}`}>{snap.pnlUnavailableReason}</div>
+            ) : null}
             <div>
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Health</span>
-                <Badge variant="outline" className="text-[10px] capitalize">{snap.health.state.replace("_", " ")}</Badge>
+                {health
+                  ? <Badge variant="outline" className="text-[10px] capitalize">{health.state.replace("_", " ")}</Badge>
+                  : <Badge variant="outline" className="text-[10px]" data-testid={`snap-health-unavailable-${trade.id}`}>Not measured</Badge>}
               </div>
-              <Progress value={snap.health.score} className={`h-2 ${healthColor}`} />
+              {health ? <Progress value={health.score} className={`h-2 ${healthColor}`} /> : null}
             </div>
             <div className="text-xs p-2 rounded bg-muted/30 border border-border/50">{snap.primarySuggestion}</div>
             <div className="grid grid-cols-2 gap-2">
-              <Button size="sm" variant={snap.suggestions.breakEven.recommended ? "default" : "outline"} disabled={be.isPending} onClick={async () => { await be.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-breakeven-${trade.id}`}>Break-Even</Button>
-              <Button size="sm" variant={snap.suggestions.trail.recommended ? "default" : "outline"} disabled={trail.isPending} onClick={async () => { await trail.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-trail-${trade.id}`}>Trail Stop</Button>
-              <Button size="sm" variant={snap.suggestions.partial.recommended ? "default" : "outline"} disabled={partial.isPending} onClick={async () => { await partial.mutateAsync({ id: trade.id, data: { closePct: 50 } }); refresh(); }} data-testid={`button-partial-${trade.id}`}>Close 50%</Button>
-              <Button size="sm" variant="destructive" disabled={close.isPending} onClick={async () => { await close.mutateAsync({ id: trade.id }); refresh(); }} data-testid={`button-close-${trade.id}`}><X size={14} className="mr-1" /> Close</Button>
+              <Button size="sm" variant={snap.suggestions.breakEven.recommended ? "default" : "outline"} disabled={be.isPending} onClick={() => runAction("Break-Even", () => be.mutateAsync({ id: trade.id }))} data-testid={`button-breakeven-${trade.id}`}>Break-Even</Button>
+              <Button size="sm" variant={snap.suggestions.trail.recommended ? "default" : "outline"} disabled={trail.isPending} onClick={() => runAction("Trail Stop", () => trail.mutateAsync({ id: trade.id }))} data-testid={`button-trail-${trade.id}`}>Trail Stop</Button>
+              <Button size="sm" variant={snap.suggestions.partial.recommended ? "default" : "outline"} disabled={partial.isPending} onClick={() => runAction("Close 50%", () => partial.mutateAsync({ id: trade.id, data: { closePct: 50 } }))} data-testid={`button-partial-${trade.id}`}>Close 50%</Button>
+              <Button size="sm" variant="destructive" disabled={close.isPending} onClick={() => runAction("Close", () => close.mutateAsync({ id: trade.id }))} data-testid={`button-close-${trade.id}`}><X size={14} className="mr-1" /> Close</Button>
             </div>
+            {actionError ? (
+              <p className="text-xs text-destructive" role="alert" data-testid={`trade-action-error-${trade.id}`}>{actionError}</p>
+            ) : null}
           </>
         }
       </CardContent>

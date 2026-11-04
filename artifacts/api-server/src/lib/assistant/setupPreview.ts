@@ -23,7 +23,8 @@
 //     and reference the exact drawn levels so the words match the chart.
 
 import type { Candle } from "../data/types.js";
-import type { ChartReadResult, StructureBias } from "./chartStructure.js";
+import { resolvePriceDecimals, type ChartReadResult, type StructureBias } from "./chartStructure.js";
+import { knownPricePrecision } from "../data/chart/symbolProfile.js";
 import type { RubyChartReadBasis } from "../data/chart/rubyChartContext.js";
 
 export type SetupSide = "BUY" | "SELL";
@@ -65,6 +66,31 @@ export interface SetupPreviewProviderSource {
   composite: boolean;
   /** Plain-English source label shown to the user (never says "broker" when composite). */
   label: string;
+}
+
+/**
+ * The provider source a preview names, from the source that actually served
+ * the chart series (ChartFeedStatus.source). Only the MetaTrader 5 broker
+ * bridge ("mt5_broker") is broker-native. A tradeable preview needs a VERIFIED
+ * read, which needs a broker quote BOUND to an mt5_broker series from the
+ * requesting user's own bridge (brokerQuoteBinding.ts), so a tradeable preview
+ * is never labelled composite. The label never says "your": on a gated read an
+ * mt5_broker series may come from another bridge. An unreported source is
+ * named as such, never guessed.
+ */
+export function setupPreviewProviderSource(
+  assetClass: string,
+  seriesSource: string | null | undefined,
+): SetupPreviewProviderSource {
+  if (seriesSource === "mt5_broker") {
+    return { assetClass, composite: false, label: "MetaTrader 5 broker bridge" };
+  }
+  if (!seriesSource) return { assetClass, composite: true, label: "unreported" };
+  return {
+    assetClass,
+    composite: true,
+    label: assetClass === "synthetic" ? "synthetic index" : "composite market-data",
+  };
 }
 
 export interface SetupPreviewBridge {
@@ -186,14 +212,6 @@ function atr(candles: Candle[], period: number): number | null {
     );
   }
   return trs.reduce((a, b) => a + b, 0) / trs.length;
-}
-
-function decimalsFor(price: number): number {
-  const p = Math.abs(price);
-  if (p >= 1000) return 1;
-  if (p >= 100) return 2;
-  if (p >= 1) return 4;
-  return 5;
 }
 
 function roundTo(n: number, decimals: number): number {
@@ -339,7 +357,9 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
   const candles = sortAscending(input.candles);
   const closes = candles.map((c) => c.close);
   const last = closes[closes.length - 1]!;
-  const decimals = decimalsFor(last);
+  // The instrument's own precision, else the precision the candles are quoted
+  // in — never a magnitude guess that rounds the entry itself (1.08523 → 1.0852).
+  const decimals = resolvePriceDecimals(candles, knownPricePrecision(input.symbol), last);
   const lookback = Math.min(candles.length, 60);
   const window = candles.slice(candles.length - lookback);
   const swingHigh = Math.max(...window.map((c) => c.high));
@@ -400,7 +420,7 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
   );
   if (input.providerSource.composite) {
     explanation.push(
-      `Heads up: this instrument is priced from a ${input.providerSource.label} feed, not a broker-native quote — treat exact levels as indicative.`,
+      `Heads up: this price comes from the ${input.providerSource.label} feed, not a broker-native quote — treat exact levels as indicative.`,
     );
   }
   if (!allocationKnown) {

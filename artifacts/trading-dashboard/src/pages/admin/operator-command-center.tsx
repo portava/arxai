@@ -46,6 +46,13 @@ type OperatorPayload = {
   reconciliationSummary: {
     total: number; critical: number; high: number; medium: number; low: number;
     byType: Record<string, number>;
+    /** True only when every reconciliation detector ran. */
+    complete?: boolean;
+    uncheckedTypes?: string[];
+    /** A list hit its row cap: these counts are lower bounds. */
+    truncated?: boolean;
+    truncatedTypes?: string[];
+    truncatedSeverities?: string[];
   };
 };
 
@@ -233,15 +240,43 @@ export default function OperatorCommandCenter() {
       {/* G. Reconciliation Summary */}
       <Panel title="Reconciliation Summary" testid="panel-reconciliation">
         <div className="space-y-2 text-sm">
+          {d.reconciliationSummary.complete !== true && (
+            <p className="text-warning" data-testid="reconciliation-unchecked">
+              Reconciliation could not be fully checked —{" "}
+              {(d.reconciliationSummary.uncheckedTypes ?? []).length > 0
+                ? `${(d.reconciliationSummary.uncheckedTypes ?? []).join(", ")} did not run`
+                : "the server did not confirm every check ran"}
+              . The counts below cover only the checks that ran.
+            </p>
+          )}
+          {d.reconciliationSummary.truncated && (
+            <p className="text-warning" data-testid="reconciliation-capped">
+              {(d.reconciliationSummary.truncatedTypes ?? []).join(", ")} hit the row cap — counts marked + are lower bounds.
+            </p>
+          )}
           <div className="grid grid-cols-5 gap-2">
-            <div>Total: <strong>{d.reconciliationSummary.total}</strong></div>
-            <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}</strong></div>
-            <div>High: <strong>{d.reconciliationSummary.high}</strong></div>
-            <div>Medium: <strong>{d.reconciliationSummary.medium}</strong></div>
-            <div>Low: <strong>{d.reconciliationSummary.low}</strong></div>
+            <div>Total: <strong>{d.reconciliationSummary.total}{d.reconciliationSummary.truncated ? "+" : ""}</strong></div>
+            <div>Critical: <strong className="text-danger">{d.reconciliationSummary.critical}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("critical") ? "+" : ""}</strong></div>
+            <div>High: <strong>{d.reconciliationSummary.high}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("high") ? "+" : ""}</strong></div>
+            <div>Medium: <strong>{d.reconciliationSummary.medium}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("medium") ? "+" : ""}</strong></div>
+            <div>Low: <strong>{d.reconciliationSummary.low}{(d.reconciliationSummary.truncatedSeverities ?? []).includes("low") ? "+" : ""}</strong></div>
           </div>
+          {/* Per-type counts, as the Reconciliation Center shows them: a type
+              whose check did not run is "not checked" (its 0 is not a
+              reading) and a capped list's count is a lower bound ("N+"). */}
           {Object.keys(d.reconciliationSummary.byType).length > 0 && (
-            <pre className="rounded-xl border border-border bg-background/40 p-2 text-xs text-txt-secondary">{JSON.stringify(d.reconciliationSummary.byType, null, 2)}</pre>
+            <div className="grid gap-1 md:grid-cols-2 rounded-xl border border-border bg-background/40 p-2 text-xs text-txt-secondary" data-testid="occ-recon-by-type">
+              {Object.entries(d.reconciliationSummary.byType).map(([k, v]) => (
+                <div key={k} className="flex justify-between border-b border-border/40 py-0.5" data-testid={`occ-recon-type-${k}`}>
+                  <span className="font-mono">{k}</span>
+                  <span>
+                    {(d.reconciliationSummary.uncheckedTypes ?? []).includes(k)
+                      ? <span className="text-warning">not checked</span>
+                      : `${v}${(d.reconciliationSummary.truncatedTypes ?? []).includes(k) ? "+" : ""}`}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
           <Link href="/admin/reconciliation-center" className="text-xs text-primary underline">Open Reconciliation Center →</Link>
         </div>

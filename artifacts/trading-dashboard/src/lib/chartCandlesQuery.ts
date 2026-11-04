@@ -79,6 +79,12 @@ export function normalizeChartTimeframe(tf: string | null | undefined): string {
 export interface ChartCandlesResult {
   candles: Candle[];
   feedStatus: ChartFeedStatus | null;
+  /**
+   * The instrument's declared display precision (decimal places) from the
+   * server's truthResult (symbolProfile, venue-pip-derived). Null when the
+   * server sent none — never guessed here. Display only.
+   */
+  pricePrecision?: number | null;
   marketEvidence?: {
     symbol: string;
     timeframe: string;
@@ -115,7 +121,11 @@ export async function fetchChartCandles(
     ? { symbol, timeframe: apiTf, source: evidence.source, sourceIdentity: evidence.sourceIdentity,
         lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null }
     : null;
-  return { candles, feedStatus, ...(marketEvidence ? { marketEvidence } : {}) };
+  const truthResult = obj?.truthResult as Record<string, unknown> | null | undefined;
+  const rawPrecision = truthResult?.pricePrecision;
+  const pricePrecision = typeof rawPrecision === "number" && Number.isSafeInteger(rawPrecision)
+    && rawPrecision >= 0 && rawPrecision <= 8 ? rawPrecision : null;
+  return { candles, feedStatus, pricePrecision, ...(marketEvidence ? { marketEvidence } : {}) };
 }
 
 // ── Deep history (Task #438) ────────────────────────────────────────────────

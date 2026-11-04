@@ -5,8 +5,10 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { BacktestMetricsMeasurement } from "./backtestMetricsMeasurement";
 
 export type GenerateBacktestAiReview200 = {
   id: number;
   aiSummary: string;
+  metricsMeasurement?: BacktestMetricsMeasurement;
 };

@@ -90,6 +90,9 @@ export interface ChartTrendlineOverlayFacts {
   sufficiencyAllowsSetup: boolean;
   /** True when the chart-read structural confidence is LOW. */
   chartReadConfidenceLow: boolean;
+  /** The instrument's display precision for reported line levels (the chart's
+   *  own, so the overlay matches the levels and setup). Optional. */
+  priceDecimals?: number | null;
 }
 
 const EMPTY_OVERLAY: ChartTrendlineOverlay = {
@@ -126,7 +129,7 @@ export function buildChartTrendlineOverlay(
   // maps to a real candle openTime. The engine drops a trailing forming bar.
   const closed = candles.filter((c) => c.isComplete && !c.isForming);
 
-  const detection = detectTrendlines(candles);
+  const detection = detectTrendlines(candles, { priceDecimals: facts.priceDecimals });
   if (detection.insufficient) {
     return {
       ...EMPTY_OVERLAY,

@@ -23,22 +23,45 @@ export function inferDecimals(symbol: string | null | undefined): number {
   return 5;
 }
 
-// Conventional 1-pip increment for a symbol. With decimals d, a pip is the
+// ISO currencies a conventional FX pip is defined for. Metals (XAU/XAG/XPT/
+// XPD), crypto, indices and synthetic indices are deliberately absent: their
+// digits vary by broker and a "pip" is not a defined unit for them.
+const FX_CURRENCIES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD", "SEK", "NOK", "DKK",
+  "PLN", "HUF", "CZK", "TRY", "ZAR", "MXN", "SGD", "HKD", "CNH", "CNY", "ILS",
+  "THB", "RUB", "INR", "KRW", "TWD", "BRL",
+]);
+
+/** True for a currency pair (e.g. EURUSD, GBP/USD, EURUSD.m). */
+export function isFxPair(symbol: string | null | undefined): boolean {
+  const s = (symbol ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (s.length < 6) return false;
+  return FX_CURRENCIES.has(s.slice(0, 3)) && FX_CURRENCIES.has(s.slice(3, 6));
+}
+
+// Conventional 1-pip increment for an FX pair. With decimals d, a pip is the
 // second-to-last place (10^-(d-1)) — FX majors 0.0001, JPY pairs 0.01. This is a
-// conventional display unit for the "distance in points/pips" readout, not an
-// execution constant.
-export function pipSize(symbol: string | null | undefined): number {
+// conventional display unit for the "distance in pips" readout, not an
+// execution constant. null for anything that is not an FX pair: gold, crypto,
+// indices and synthetics have no defined pip, and assuming 5-digit FX pricing
+// for them inflated the readout by 100x-10,000x.
+export function pipSize(symbol: string | null | undefined): number | null {
+  if (!isFxPair(symbol)) return null;
   const d = inferDecimals(symbol);
   return Math.pow(10, -(d - 1));
 }
 
-// One price point (smallest quoted increment) for a symbol — 10^-decimals.
-export function pointSize(symbol: string | null | undefined): number {
+// One price point (smallest quoted increment) for an FX pair — 10^-decimals.
+// null outside FX pairs (the symbol's digits are not known here).
+export function pointSize(symbol: string | null | undefined): number | null {
+  if (!isFxPair(symbol)) return null;
   return Math.pow(10, -inferDecimals(symbol));
 }
 
 // Absolute distance between two prices expressed in pips (>= 0). null when
-// either input is not a finite, positive price.
+// either input is not a finite, positive price, or when the symbol has no
+// defined pip (not an FX pair) — the readout then shows no pip count rather
+// than an invented one.
 export function pipDistance(
   symbol: string | null | undefined,
   a: number | null | undefined,
@@ -47,7 +70,7 @@ export function pipDistance(
   if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return null;
   if (a <= 0 || b <= 0) return null;
   const pip = pipSize(symbol);
-  if (!(pip > 0)) return null;
+  if (pip == null || !(pip > 0)) return null;
   return Math.abs(a - b) / pip;
 }
 

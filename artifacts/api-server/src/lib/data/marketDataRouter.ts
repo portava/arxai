@@ -41,6 +41,7 @@
 
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
+import { FUTURE_STAMPED_SERIES_NOTE } from "./freshness.js";
 import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
   getDerivCandles,
@@ -52,6 +53,7 @@ import {
   mt5Provider,
   getMt5CandleAvailability,
   readMt5Candles,
+  readMt5Quote,
   MULTI_BRIDGE_CONTENTION_NOTE,
 } from "./providers/mt5Provider.js";
 import { getMarketProvider } from "../assistant/marketProvider.js";
@@ -99,7 +101,9 @@ export interface MarketCandlesResult {
    * Provenance qualifier notes for the served series (R4 slice 2), e.g.
    * MULTI_BRIDGE_CONTENTION when ≥2 attributed bridges held fresh series for
    * this symbol|timeframe and the read served the primary (most recent)
-   * WITHOUT blending. Present only when non-empty; additive — carried beside
+   * WITHOUT blending, or FUTURE_STAMPED_SERIES when the serving partition was
+   * observed stamped ahead of its receipt time (freshness.ts). Present only
+   * when non-empty; additive — carried beside
    * the envelope because `SeriesProvenance` (types.ts, wave-2 ownership) has
    * no notes field yet.
    */
@@ -117,6 +121,14 @@ export interface MarketQuoteResult {
   adminDetail: string;
   /** Same contract as `MarketCandlesResult.provenance`. */
   provenance?: SeriesProvenance;
+  /**
+   * Additive: true only when `quote.timestamp` is the producer-observed tick
+   * time (MT5 EA tick time, Deriv tick epoch, provider `asOf`). false when the
+   * served quote's timestamp is a server receive-time stamp or its origin is
+   * unknown. Absent on failures and on results built by older callers —
+   * consumers must treat absent as not observed.
+   */
+  tickTimeObserved?: boolean;
 }
 
 // ── Timeframe normalization ──────────────────────────────────────────────
@@ -313,7 +325,16 @@ async function tryMt5Candles(
           }),
           // Contention is a serve-time truth about the store (two attributed
           // bridges fresh on one series): named, never silently resolved.
-          ...(read.contention ? { notes: [MULTI_BRIDGE_CONTENTION_NOTE] } : {}),
+          // A partition observed stamped ahead of its receipt time is named so
+          // freshness consumers fail closed even after the series stalls.
+          ...(read.contention || read.futureStamped
+            ? {
+                notes: [
+                  ...(read.contention ? [MULTI_BRIDGE_CONTENTION_NOTE] : []),
+                  ...(read.futureStamped ? [FUTURE_STAMPED_SERIES_NOTE] : []),
+                ],
+              }
+            : {}),
         };
       }
     } catch (err) {
@@ -369,27 +390,40 @@ async function tryMt5Candles(
   return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
 }
 
-async function tryMt5Quote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
+type QuoteAttempt = ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null; tickTimeObserved?: boolean };
+
+async function tryMt5Quote(symbol: string, writer?: { bridgeConnectionId: number | null }): Promise<QuoteAttempt> {
   const t0 = Date.now();
   const connected = await mt5Provider.isConnected();
   if (!connected) {
     return { provider: "mt5_broker", ok: false, reason: "MT5_BROKER_FEED_NOT_ACTIVE", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   try {
-    const q = await mt5Provider.getQuote(symbol);
-    const hasPrice = (q.bid != null && q.bid > 0) || (q.ask != null && q.ask > 0) || (q.last != null && q.last > 0);
-    if (!hasPrice) {
-      return { provider: "mt5_broker", ok: false, reason: "MT5_QUOTES_NOT_PUSHED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
+    // Bridge-partitioned read. Unpinned: serves the most recent writer (the
+    // previous single-latest behavior) and reports that writer's identity.
+    // Pinned (`writer`): ONLY that writer's partition — never another bridge.
+    const read = writer ? readMt5Quote(symbol, { writer }) : readMt5Quote(symbol);
+    const q = read?.quote ?? null;
+    const hasPrice = q != null && ((q.bid != null && q.bid > 0) || (q.ask != null && q.ask > 0) || (q.last != null && q.last > 0));
+    if (!read || !q || !hasPrice) {
+      const reason = writer && readMt5Quote(symbol) ? "MT5_WRITER_QUOTE_MISSING" : "MT5_QUOTES_NOT_PUSHED";
+      return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
     return {
       provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q,
+      tickTimeObserved: read.tickTimeObserved,
       // A served quote is a fresh reading off the EA's real-time push → LIVE_TICK.
+      // Bridge/owner are the authenticated writer's identity when the ingest
+      // path threaded it; an unattributed writer stays null. Broker-native
+      // symbol and environment are not observed on this path → null/unknown.
       provenance: makeProvenance({
         providerId: "mt5_broker",
         brokerCode: "mt5",
         delayed: false,
         source: "LIVE_TICK",
         sourceId: `mt5_broker:${sourceSymbolKey(symbol)}`,
+        bridgeConnectionId: read.bridgeConnectionId,
+        userId: read.userId,
       }),
     };
   } catch (err) {
@@ -433,7 +467,7 @@ async function tryDerivCandles(symbol: string, timeframe: string, limit: number)
   };
 }
 
-async function tryDerivQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
+async function tryDerivQuote(symbol: string): Promise<QuoteAttempt> {
   const t0 = Date.now();
   const status = getDerivFeedStatus();
   const source = derivMarketDataSource();
@@ -451,6 +485,8 @@ async function tryDerivQuote(symbol: string): Promise<ProviderAttempt & { quote:
   };
   return {
     provider: source, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
+    // The timestamp is the tick's own epoch from the Deriv tick payload.
+    tickTimeObserved: true,
     provenance: makeProvenance({
       providerId: source,
       brokerCode: "deriv",
@@ -502,7 +538,7 @@ async function tryAssistantCandles(symbol: string, timeframe: string, limit: num
   }
 }
 
-async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
+async function tryAssistantQuote(symbol: string): Promise<QuoteAttempt> {
   const t0 = Date.now();
   const p = getMarketProvider();
   if (!p.connected || !p.features.quotes) {
@@ -526,6 +562,8 @@ async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { qu
     };
     return {
       provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
+      // The provider's own `asOf` was required above (QUOTE_TIMESTAMP_UNKNOWN otherwise).
+      tickTimeObserved: true,
       // The adapter's freshness verdict is threaded, not re-judged: DELAYED /
       // REALTIME map to the delayed flag, DEMO marks the environment, and a
       // STALE reading stays a real-but-old observation → "STALE" origin.
@@ -717,24 +755,49 @@ export async function routeCandlesForDecision(
   );
 }
 
-export async function routeQuote(symbol: string): Promise<MarketQuoteResult> {
+export interface RouteQuoteOptions {
+  /**
+   * Pin the quote to the MT5 WRITER that produced a served candle series
+   * (`bridgeConnectionId: null` = the unattributed partition). A pinned read
+   * serves only that writer's quote: no other bridge and no other provider
+   * is tried, so a quote is never paired across writers. Build it with
+   * `quotePinForSeries`.
+   */
+  mt5Writer?: { bridgeConnectionId: number | null };
+}
+
+/**
+ * The quote pin for a served candle series: its live MT5 writer when the
+ * series came from the in-memory MT5 store; otherwise none (unpinned routing).
+ * With several v1 EAs on one symbol, candles and an unscoped quote would come
+ * from different bridges and never pair; Truth consumers that pair a quote
+ * with a series route the quote through this pin.
+ */
+export function quotePinForSeries(candles: MarketCandlesResult | null | undefined): RouteQuoteOptions | undefined {
+  const p = candles?.ok ? candles.provenance : undefined;
+  if (!p || p.providerId !== "mt5_broker" || p.subProviderId != null) return undefined;
+  return { mt5Writer: { bridgeConnectionId: p.bridgeConnectionId ?? null } };
+}
+
+export async function routeQuote(symbol: string, opts?: RouteQuoteOptions): Promise<MarketQuoteResult> {
   const assetClass = classifySymbol(symbol);
-  const chain = CHAIN_BY_CLASS[assetClass];
+  const pinned = opts?.mt5Writer;
+  const chain = pinned ? CHAIN_BY_CLASS[assetClass].filter((id) => id === "mt5_broker") : CHAIN_BY_CLASS[assetClass];
   const attempts: ProviderAttempt[] = [];
 
   for (const id of chain) {
     if (id === "mt5_broker") {
-      const r = await tryMt5Quote(symbol);
+      const r = await tryMt5Quote(symbol, pinned);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
     } else if (id === "deriv") {
       const r = await tryDerivQuote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
     } else if (id === "assistant_real") {
       const r = await tryAssistantQuote(symbol);
       attempts.push(stripQuote(r));
-      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance);
+      if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
     }
   }
 
@@ -830,8 +893,8 @@ function stripCandles<T extends { candles: Candle[]; provenance: SeriesProvenanc
   const { candles: _candles, provenance: _provenance, notes: _notes, ...rest } = r;
   return rest;
 }
-function stripQuote<T extends { quote: MarketQuote | null; provenance: SeriesProvenance | null } & ProviderAttempt>(r: T): ProviderAttempt {
-  const { quote: _quote, provenance: _provenance, ...rest } = r;
+function stripQuote<T extends QuoteAttempt>(r: T): ProviderAttempt {
+  const { quote: _quote, provenance: _provenance, tickTimeObserved: _tickTimeObserved, ...rest } = r;
   return rest;
 }
 
@@ -851,7 +914,7 @@ function success(symbol: string, assetClass: AssetClass, candles: Candle[], prov
     ...(notes && notes.length > 0 ? { provenanceNotes: notes } : {}),
   };
 }
-function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null): MarketQuoteResult {
+function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote, provider: string, attempts: ProviderAttempt[], provenance: SeriesProvenance | null, tickTimeObserved?: boolean): MarketQuoteResult {
   return {
     ok: true,
     symbol,
@@ -862,6 +925,7 @@ function successQuote(symbol: string, assetClass: AssetClass, quote: MarketQuote
     userMessage: "Live feed active",
     adminDetail: `Served by ${provider}; ${attempts.length} provider(s) tried.`,
     ...(provenance ? { provenance } : {}),
+    tickTimeObserved: tickTimeObserved === true,
   };
 }
 

@@ -84,9 +84,25 @@ type StatusBadge =
   | { label: "READY TO ARM"; tone: "warn" }
   | { label: "KILL SWITCH ACTIVE"; tone: "danger" }
   | { label: "ACCOUNT NOT APPROVED"; tone: "danger" }
+  | { label: "ACCESS NOT CHECKED"; tone: "muted" }
+  | { label: "STATUS UNKNOWN"; tone: "muted" }
   | { label: "LOADING"; tone: "muted" };
 
-function deriveStatus(args: {
+/**
+ * True only when the arming read answered: a 2xx body that carries the
+ * `arming` key (null = never armed) and a boolean server master switch. A
+ * failed or malformed read is unknown — not "not armed" / "switch off".
+ */
+export function armingReadKnown(r: { isError: boolean; data: unknown }): { arming: boolean; serverSwitch: boolean } {
+  const d = r.data as Record<string, unknown> | null | undefined;
+  const ok = !r.isError && d != null && typeof d === "object";
+  return {
+    arming: ok && "arming" in d!,
+    serverSwitch: ok && typeof d!.liveBrokerExecutionEnabled === "boolean",
+  };
+}
+
+export function deriveStatus(args: {
   accessLoaded: boolean;
   canTrade: boolean;
   armingLoaded: boolean;
@@ -94,9 +110,19 @@ function deriveStatus(args: {
   killSwitch: boolean;
   liveOneClickEnabled: boolean;
   serverLiveExecutionEnabled: boolean;
+  /** False when the arming read failed: arming / kill switch are unknown. Defaults to true. */
+  armingKnown?: boolean;
+  /** False when the server master switch was not reported. Defaults to true. */
+  serverSwitchKnown?: boolean;
+  /** True when the live-access read failed: approval is unknown, not refused. */
+  accessError?: boolean;
 }): StatusBadge {
   if (!args.accessLoaded || !args.armingLoaded) return { label: "LOADING", tone: "muted" };
+  if (!args.canTrade && args.accessError) return { label: "ACCESS NOT CHECKED", tone: "muted" };
   if (!args.canTrade) return { label: "ACCOUNT NOT APPROVED", tone: "danger" };
+  // Display only: an unanswered arming / master-switch read is never shown as
+  // "READY TO ARM" (a known state). Submit stays disabled either way (armed=false).
+  if (args.armingKnown === false || args.serverSwitchKnown === false) return { label: "STATUS UNKNOWN", tone: "muted" };
   if (args.killSwitch) return { label: "KILL SWITCH ACTIVE", tone: "danger" };
   // Server master switch off OR user not armed yet → "READY TO ARM"
   // (matches the spec: serverLiveExecutionEnabled=false → READY TO ARM).
@@ -144,7 +170,8 @@ export function LiveTradeTicket({
   const { toast } = useToast();
   const qc = useQueryClient();
   const { name } = useAssistantName();
-  const access = useMasterLiveAccess();
+  // Re-read access each time the ticket is reopened ("Reopen the ticket to retry").
+  const access = useMasterLiveAccess({ open });
 
   const arming = useQuery<ArmingResp>({
     queryKey: ["live", "arming"],
@@ -231,9 +258,13 @@ export function LiveTradeTicket({
   const tradability = useTradability(symbol);
   const tradabilityBlocked = tradability.data ? tradability.data.liveExecutionAllowed === false : false;
   const accountInfo = arming.data?.arming;
+  const armingKnown = armingReadKnown({ isError: arming.isError, data: arming.data });
   const status = deriveStatus({
+    armingKnown: armingKnown.arming,
+    serverSwitchKnown: armingKnown.serverSwitch,
     accessLoaded: access.loaded,
     canTrade: access.canTrade,
+    accessError: !!access.error,
     armingLoaded: !arming.isLoading,
     armed,
     killSwitch,
@@ -484,7 +515,9 @@ export function LiveTradeTicket({
   // Single explicit reason the Confirm button is disabled (shown verbatim
   // beneath it) so the user always knows what to fix.
   const submitDisabledReason = (() => {
+    if (!access.canTrade && access.error) return "Live access could not be checked. Reopen the ticket to retry.";
     if (!access.canTrade) return "Live access is not ready yet. Contact your operator.";
+    if (!armingKnown.arming) return "Couldn't read whether live execution is armed. Reopen the ticket to retry.";
     if (!armed) return "Arm live execution on the MT5 Setup page to confirm.";
     if (!(vol > 0)) return "Enter a volume greater than 0 to confirm.";
     if (overLot) return `Volume exceeds the max lot ${maxLot}.`;
@@ -506,7 +539,16 @@ export function LiveTradeTicket({
           </DialogDescription>
         </DialogHeader>
 
-        {!armed && (
+        {!armed && !arming.isLoading && !armingKnown.arming && (
+          <Alert variant="destructive" data-testid="live-arming-unknown">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Arming state could not be read</AlertTitle>
+            <AlertDescription>
+              ARX couldn&apos;t confirm whether live execution is armed, so this ticket can&apos;t submit. Reopen it to retry.
+            </AlertDescription>
+          </Alert>
+        )}
+        {!armed && (arming.isLoading || armingKnown.arming) && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Live trading not armed</AlertTitle>

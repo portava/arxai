@@ -9,7 +9,15 @@
 //   settled   status <> 'OPEN' with a closed_at (CLOSED_SL / CLOSED_TP /
 //             CLOSED_MANUAL, and a CANCELLED the venue settled); a voided
 //             order (CANCELLED, no closed_at) never counts
-//   realized  sum of profit_loss over settled orders
+//   realized  the RISK count of settled orders (sumPaperRealizedSince,
+//             paperPnl.paperRiskTotals): the lower of two full totals over
+//             the same closes, their booked total and their total at the
+//             paper risk model (move × lots × 100), so no loss total or
+//             equity cap reads looser than either basis and none drifts below
+//             both; a losing streak reads each close's sign (realizedOf)
+//   booked    bookedRealizedOf(): profit_loss as booked (an amount not sized
+//             counts only when it lost, at the governor's paper model, and a
+//             win of unknown size counts 0); the account balance adds it up
 //
 // The other two tables are NOT paper facts and are never mixed in here:
 // paper_trades is the trader's hand-entered journal (lib/riskGovernor/
@@ -20,6 +28,7 @@
 
 import { db, paperAccountsTable, paperOrdersTable } from "@workspace/db";
 import { and, desc, eq, gte, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { paperBookedRealized, paperRiskRealized, paperRiskTotals, type PaperCloseFigures } from "../paperExecution/paperPnl.js";
 
 export type PaperOrderRow = typeof paperOrdersTable.$inferSelect;
 export type PaperAccountRow = typeof paperAccountsTable.$inferSelect;
@@ -55,15 +64,31 @@ export function isSettledPaperStatus(status: string): boolean {
 }
 
 /**
- * Realized P/L of one settled order. An order settled without a recorded
- * profit_loss (no current writer does this) reads its sign from the fill
- * prices, so missing P/L never reads as a win or resets a losing streak.
+ * The paper book's RISK count of ONE settled order
+ * (paperExecution/paperPnl.ts paperRiskRealized): the lower of its booked
+ * amount (bookedRealizedOf) and the paper risk model (move × lots × 100). Its
+ * sign is the close's sign, which the losing streak and win counts read: a
+ * stop-out of unknown size reads as a loss, a win of unknown size counts 0.
+ * A total over several closes (the daily loss total, the weekly P/L, the
+ * equity a cap is valued on) is never a sum of these: it is the lower of the
+ * booked total and the model total over the same closes (paperRiskTotals,
+ * sumPaperRealizedSince), because a sum of per-close minimums takes every win
+ * at the smaller figure and every loss at the larger one and drifts below
+ * both totals. A risk count, not a measured result: the booked amount is the
+ * P&L shown and the balance.
  */
-export function realizedOf(o: Pick<PaperOrderRow, "exitPrice" | "entryPrice" | "direction" | "lotSize"> & { profitLoss: number | null }): number {
-  if (o.profitLoss != null) return Number(o.profitLoss);
-  if (o.exitPrice == null) return 0;
-  const dir = o.direction === "SELL" ? -1 : 1;
-  return (o.exitPrice - o.entryPrice) * dir * Math.abs(o.lotSize || 1);
+export function realizedOf(o: PaperCloseFigures): number {
+  return paperRiskRealized(o);
+}
+
+/**
+ * Booked P/L of one settled order (paperPnl.paperBookedRealized): the stored
+ * profit_loss when it is a sized amount; an amount that could not be sized
+ * counts only when it lost (at the paper risk model) and a win of unknown
+ * size counts 0. The paper account's balance adds this up.
+ */
+export function bookedRealizedOf(o: PaperCloseFigures): number {
+  return paperBookedRealized(o);
 }
 
 /** The trader's paper account: the given id (if theirs), else the newest active one. */
@@ -94,18 +119,24 @@ export async function countPaperOpenedSinceStillOpen(scope: PaperBookScope, sinc
   return Number(r?.n ?? 0);
 }
 
-/** Realized P/L of orders in scope settled at or after `since`. */
+/**
+ * Realized P/L of orders in scope settled at or after `since`, as the RISK
+ * count: the lower of their booked total and their total at the paper risk
+ * model (paperPnl.paperRiskTotals), never a sum of per-close figures.
+ */
 export async function sumPaperRealizedSince(scope: PaperBookScope, since: Date): Promise<number> {
   const rows = await db.select({
     profitLoss: paperOrdersTable.profitLoss, exitPrice: paperOrdersTable.exitPrice, entryPrice: paperOrdersTable.entryPrice,
     direction: paperOrdersTable.direction, lotSize: paperOrdersTable.lotSize,
   }).from(paperOrdersTable).where(and(SETTLED, gte(paperOrdersTable.closedAt, since), scopeWhere(scope)));
-  return rows.reduce((s, o) => s + realizedOf(o), 0);
+  return paperRiskTotals(rows).risk;
 }
 
 /**
  * Settled orders in scope, newest close first, with `closedAt` and the
- * realized `pnl`. `since` bounds the close time; `limit` the row count.
+ * close's own risk count `pnl` (realizedOf: read its sign, never add these up
+ * for a total; paperPnl.paperRiskTotals gives the total). `since` bounds the
+ * close time; `limit` the row count.
  */
 export async function readPaperCloses(
   scope: PaperBookScope,

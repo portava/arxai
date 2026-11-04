@@ -25,7 +25,7 @@
 //   stubbed — everything CI cannot supply headlessly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act, fireEvent } from "@testing-library/react";
+import { render, cleanup, act, fireEvent, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { ChartViewLink } from "@/lib/chart-engine/chartViewLink";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -290,6 +290,13 @@ afterEach(() => {
 });
 
 describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
+  it("states the chart time zone (the axis is UTC) with the shared label", async () => {
+    renderChart();
+    const label = await screen.findByTestId("arx-native-timezone");
+    expect(label.textContent).toBe("Times: UTC");
+    expect(label.getAttribute("title")).toMatch(/UTC/);
+  });
+
   it("subscribes to the same /api/chart/tick-stream SSE endpoint for the resolved symbol + timeframe", () => {
     renderChart();
     expect(openedStreams).toHaveLength(1);

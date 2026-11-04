@@ -36,8 +36,8 @@ export function StrategyBacktestForm({
   const [candleCount, setCandleCount] = useState(500);
   const [initialBalance, setInitialBalance] = useState(10000);
   const [minConfidence, setMinConfidence] = useState(60);
-  // Task #797 — optional REAL-history window. When both dates are set the run
-  // uses real broker candles inside the range ONLY (honest INSUFFICIENT_DATA
+  // Task #797 — optional broker-history window. When both dates are set the run
+  // uses (unattested) broker candles inside the range ONLY (honest INSUFFICIENT_DATA
   // if the history is too thin — never a synthetic fallback).
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -123,7 +123,7 @@ export function StrategyBacktestForm({
         {create.isPending ? "Running…" : "Run backtest"}
       </button>
       {create.isError && <p className="text-xs text-red-400">{(create.error as Error).message}</p>}
-      <p className="text-[10px] text-slate-500">Backtests run on real broker history when enough closed bars exist; otherwise a clearly labeled synthetic series is used (never for an explicit date range). Past performance does not guarantee future results.</p>
+      <p className="text-[10px] text-slate-500">Backtests run on broker history whose source and account identity are not verified when enough closed bars exist; otherwise generated prices are used and labeled as such (never for an explicit date range). Past performance does not guarantee future results.</p>
     </div>
   );
 }

@@ -9,6 +9,8 @@
 import { getMarketProvider, getMarketStatus, type Candle } from "./marketProvider.js";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 import type { Candle as RouterCandle } from "../data/types.js";
+import { knownPipDistance } from "../data/chart/symbolProfile.js";
+import { quoteObservationFreshness } from "../data/quoteObservationFreshness.js";
 
 const LIVE_TIMEFRAMES = ["M15", "H1"] as const;
 const MIN_CANDLES = 10;
@@ -47,7 +49,8 @@ export interface TakeProfitTarget {
   reason: string;
   rr: number;                                  // reward / risk; 0 if SL missing
   distancePoints: number;                      // absolute price distance from entry
-  distancePips: number;                        // approximate pips (10x for JPY would need symbol meta — kept as price-units * 10000)
+  /** Pips from entry using the symbol's own pip size; null when the pip size is unknown. */
+  distancePips: number | null;
   suggestedAction: "partial" | "full" | "runner";
   confidence: "low" | "medium" | "high";
 }
@@ -63,7 +66,7 @@ export interface LiveCandidate {
   riskRewardRatio: number;
   reasonForTrade: string;
   reasonToAvoid: string;
-  statusBadge: "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION" | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE";
+  statusBadge: "HOT_SETUP" | "WATCHLIST" | "WAIT_FOR_CONFIRMATION" | "REJECTED_BY_RISK" | "CHOPPY_MARKET" | "LOW_CONFIDENCE" | "LOW_OPPORTUNITY_SCORE";
   opportunityLabel: "ELITE" | "STRONG" | "ACCEPTABLE" | "WEAK" | "REJECT";
   entry: number;
   stopLoss: number;
@@ -73,6 +76,24 @@ export interface LiveCandidate {
   bestTargetLabel: "TP1" | "TP2" | "TP3" | null; // primary recommended target
   score: number;
   generatedAt: string;
+  /**
+   * Evidence for this candidate (additive; set by scoreLiveCandidates, absent
+   * on candidates adapted from other scanners). The candles come from the
+   * unified market-data router, NOT the assistant adapter, so these name the
+   * router provider that actually served them.
+   */
+  dataSource?: string | null;
+  /** Bar time of the newest candle scored (ISO), or null when unknown. */
+  lastCandleAt?: string | null;
+  /** What `entry` is: the router quote's price, or the last candle close (no quote). */
+  entryBasis?: "router_quote" | "last_candle_close";
+  /** Router provider that served the quote used for entry/spread; null when no quote. */
+  quoteSource?: string | null;
+  /** When the entry price was observed and whether it is past the quote budget. */
+  entryObservedAt?: string | null;
+  entryStale?: boolean;
+  /** Plain English: where the entry price came from and as of when. */
+  entryNote?: string;
 }
 
 /**
@@ -80,7 +101,8 @@ export interface LiveCandidate {
  * Direction-validated. Returns [] only when stopDist is non-finite or zero
  * (which would make every target invalid).
  */
-function buildTpTargets(
+export function buildTpTargets(
+  symbol: string,
   action: "BUY" | "SELL",
   entry: number,
   stopDist: number,
@@ -112,9 +134,9 @@ function buildTpTargets(
 
   // Direction guard — drop any target that violates direction rule (defensive).
   const all: TakeProfitTarget[] = [
-    { label: "TP1", price: tp1Price, reason: tp1Reason, rr: 1.0, distancePoints: Math.abs(tp1Price - entry), distancePips: Math.abs(tp1Price - entry) * 10000, suggestedAction: "partial", confidence: "high" },
-    { label: "TP2", price: tp2Price, reason: tp2Reason, rr: 2.0, distancePoints: Math.abs(tp2Price - entry), distancePips: Math.abs(tp2Price - entry) * 10000, suggestedAction: "full",    confidence: "medium" },
-    { label: "TP3", price: tp3Price, reason: tp3Reason, rr: Number((tp3RawDist / stopDist).toFixed(2)), distancePoints: Math.abs(tp3Price - entry), distancePips: Math.abs(tp3Price - entry) * 10000, suggestedAction: "runner",  confidence: "low" },
+    { label: "TP1", price: tp1Price, reason: tp1Reason, rr: 1.0, distancePoints: Math.abs(tp1Price - entry), distancePips: knownPipDistance(symbol, tp1Price - entry), suggestedAction: "partial", confidence: "high" },
+    { label: "TP2", price: tp2Price, reason: tp2Reason, rr: 2.0, distancePoints: Math.abs(tp2Price - entry), distancePips: knownPipDistance(symbol, tp2Price - entry), suggestedAction: "full",    confidence: "medium" },
+    { label: "TP3", price: tp3Price, reason: tp3Reason, rr: Number((tp3RawDist / stopDist).toFixed(2)), distancePoints: Math.abs(tp3Price - entry), distancePips: knownPipDistance(symbol, tp3Price - entry), suggestedAction: "runner",  confidence: "low" },
   ];
   const candidates: TakeProfitTarget[] = all.filter((t) => action === "BUY" ? t.price > entry : t.price < entry);
 
@@ -171,7 +193,7 @@ function scoreCandles(
   const swingLow = Math.min(...candles.map((c) => c.l));
   const atrProjection = avgRange * 4; // ATR-based runner projection
   const tpBuilt = (action === "BUY" || action === "SELL")
-    ? buildTpTargets(action, mid, stopDist, swingHigh, swingLow, atrProjection)
+    ? buildTpTargets(symbol, action, mid, stopDist, swingHigh, swingLow, atrProjection)
     : { targets: [] as TakeProfitTarget[], bestLabel: null, reason: "No actionable direction — TP targets not applicable." };
 
   const score = clamp(Math.round(confidence * 0.5 + setupQ * 0.3 + entryQ * 0.2));
@@ -225,8 +247,22 @@ export type LiveScannerReason =
   | "INSUFFICIENT_SYMBOLS_WITH_DATA";
 
 export interface LiveScannerResult {
+  /**
+   * Whether the scan ran. false when the assistant market-data adapter gate
+   * stopped it (adapter not connected, or no candle support) — the router's
+   * candle feed (mt5_broker / deriv) was then never asked, so false here says
+   * nothing about that feed.
+   */
   connected: boolean;
+  /**
+   * The feed(s) the scored candles actually came from — the router provider
+   * ids, joined with "+" when several served this scan, or "none" when no
+   * candles were served (including when the adapter gate stopped the scan;
+   * `gateProvider` names that adapter).
+   */
   source: string;
+  /** Additive: the assistant market-data adapter whose connection gates the scan. */
+  gateProvider?: string;
   candidates: LiveCandidate[];
   symbolsAttempted: number;
   symbolsWithData: number;
@@ -239,28 +275,34 @@ export interface LiveScannerResult {
 
 export async function scoreLiveCandidates(symbols: readonly string[], limit = 10): Promise<LiveScannerResult> {
   const p = getMarketProvider();
+  // The scan is gated on the ASSISTANT market-data adapter, but candles come
+  // from the unified router (mt5_broker-first). The gate still fails closed
+  // (no candidates); these results only say truthfully what stopped the scan
+  // and that the router's candle feed was not asked.
   if (!p.connected) {
     return {
       connected: false,
-      source: p.name,
+      source: "none",
+      gateProvider: p.name,
       candidates: [],
       symbolsAttempted: 0,
       symbolsWithData: 0,
-      warnings: ["No market data provider is connected."],
+      warnings: ["The live scanner did not run: the assistant's market-data adapter is not connected."],
       reason: "PROVIDER_NOT_CONFIGURED",
-      reasonDetail: "No market data provider is connected. Set TWELVEDATA_API_KEY (or FINNHUB_API_KEY) to enable the live scanner.",
+      reasonDetail: `The live scanner only runs when the assistant's market-data adapter is connected, and it is not (${p.name && p.name !== "none" ? `'${p.name}'` : "none is configured"}). No candles were requested and nothing was scored. The chart's candle feed (MT5 / Deriv) was not checked by this scan, so this says nothing about it. Set TWELVEDATA_API_KEY (or FINNHUB_API_KEY) to connect the adapter.`,
     };
   }
   if (!p.features.candles) {
     return {
       connected: false,
-      source: p.name,
+      source: "none",
+      gateProvider: p.name,
       candidates: [],
       symbolsAttempted: 0,
       symbolsWithData: 0,
-      warnings: [`Provider '${p.name}' does not implement candle/OHLC fetching in this adapter yet.`],
+      warnings: [`The live scanner did not run: the assistant's market-data adapter '${p.name}' has no candle/OHLC support.`],
       reason: "PROVIDER_UNAVAILABLE",
-      reasonDetail: `Provider '${p.name}' has no candle/OHLC support — the scanner cannot rank candidates without real candles.`,
+      reasonDetail: `The live scanner only runs when the assistant's market-data adapter supports candles, and '${p.name}' does not. No candles were requested and nothing was scored. The chart's candle feed (MT5 / Deriv) was not checked by this scan, so this says nothing about it.`,
     };
   }
 
@@ -273,6 +315,7 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
 
   const out: LiveCandidate[] = [];
   const warnings: string[] = [];
+  const servedBy = new Set<string>();
   let attempted = 0;
   let withData = 0;
 
@@ -293,6 +336,8 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
         }
         const cr = { candles: routed.candles.map(toScannerCandle) };
         withData++;
+        const dataSource = routed.provenance?.providerId ?? routed.primaryProvider ?? null;
+        if (dataSource) servedBy.add(dataSource);
         const rq = await routeQuote(sym).catch(() => null);
         const q = rq?.ok && rq.quote
           ? { price: rq.quote.last ?? null, bid: rq.quote.bid ?? null, ask: rq.quote.ask ?? null }
@@ -302,7 +347,40 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
           ask: q?.ask ?? null,
           price: q?.price ?? null,
         });
-        if (scored) out.push(scored);
+        if (scored) {
+          const lastBar = routed.candles[routed.candles.length - 1];
+          const lastCandleMs = lastBar ? Date.parse(String(lastBar.time)) : NaN;
+          const lastCandleAt = Number.isFinite(lastCandleMs) ? new Date(lastCandleMs).toISOString() : null;
+          const quoteSource = q?.price != null ? (rq?.provenance?.providerId ?? rq?.primaryProvider ?? null) : null;
+          // Entry evidence: the quote's own time on its real basis (tick time
+          // only when the router says the producer observed it), else the
+          // last candle's bar time.
+          const obs = q?.price != null
+            ? quoteObservationFreshness({
+                hasPrice: true,
+                observedAt: rq?.quote?.timestamp ?? null,
+                basis: rq?.tickTimeObserved === true ? "producer_tick" : "server_receive",
+                sourceLabel: quoteSource ? `the ${quoteSource} quote` : "the router quote",
+              })
+            : quoteObservationFreshness({
+                hasPrice: true,
+                observedAt: lastCandleAt,
+                basis: "provider_as_of",
+                sourceLabel: `the last ${tf} candle close (${dataSource ?? "unknown feed"})`,
+              });
+          out.push({
+            ...scored,
+            dataSource,
+            lastCandleAt,
+            entryBasis: q?.price != null ? "router_quote" : "last_candle_close",
+            quoteSource,
+            entryObservedAt: obs.observedAt,
+            entryStale: obs.stale,
+            entryNote: q?.price != null
+              ? `Entry is the live quote price. ${obs.plainEnglish}`
+              : `No quote — entry is the last ${tf} candle close. ${obs.plainEnglish} (The time is the bar's start; its close may be newer.)`,
+          });
+        }
       } catch {
         if (warnings.length < 6) warnings.push(`${sym} ${tf}: candle fetch failed`);
       }
@@ -313,25 +391,29 @@ export async function scoreLiveCandidates(symbols: readonly string[], limit = 10
 
   // Determine the honest reason code from the scan outcome.
   const statusAfter = getMarketStatus();
+  const source = servedBy.size > 0 ? [...servedBy].sort().join("+") : "none";
   let reason: LiveScannerReason = "SCANNER_OK";
-  let reasonDetail = `Scanner returned ${out.length} ranked candidate(s) from ${withData}/${attempted} (symbol × timeframe) attempts on provider '${p.name}'.`;
+  let reasonDetail = `Scanner returned ${out.length} ranked candidate(s) from ${withData}/${attempted} (symbol × timeframe) attempts; candles served by ${source}.`;
   if (withData === 0) {
     // No symbol produced enough candles. Differentiate stale vs unavailable.
+    // Candles come from the router, so the failure is the router's; the
+    // adapter's own status is reported as the adapter's, never as the source.
     if (statusAfter.stale && wasAlreadyStale) {
       reason = "MARKET_DATA_STALE";
-      reasonDetail = `Provider '${p.name}' is connected but market data is stale — no successful fetch in the last ${Math.round(statusAfter.staleAfterMs / 60000)} minutes. The scanner refuses to rank candidates from stale data.`;
+      reasonDetail = `The market-data router returned no usable candle data for any requested (symbol × timeframe) pair in this scan, and the assistant's market-data adapter '${p.name}' has had no successful fetch in the last ${Math.round(statusAfter.staleAfterMs / 60000)} minutes. Nothing was ranked.`;
     } else {
       reason = "CANDLES_UNAVAILABLE";
-      reasonDetail = `Provider '${p.name}' is connected but returned no usable candle data for any requested (symbol × timeframe) pair in this scan${statusAfter.lastError ? ` — last error: ${statusAfter.lastError}` : ""}.`;
+      reasonDetail = `The market-data router returned no usable candle data for any requested (symbol × timeframe) pair in this scan (see warnings for each feed's message)${statusAfter.lastError ? ` — the assistant adapter '${p.name}' last reported: ${statusAfter.lastError}` : ""}.`;
     }
   } else if (out.length === 0) {
     reason = "INSUFFICIENT_SYMBOLS_WITH_DATA";
-    reasonDetail = `Provider returned candles for ${withData}/${attempted} pairs but none scored as a ranked candidate.`;
+    reasonDetail = `The candle feed (${source}) returned candles for ${withData}/${attempted} pairs but none scored as a ranked candidate.`;
   }
 
   return {
     connected: true,
-    source: p.name,
+    source,
+    gateProvider: p.name,
     candidates: out.slice(0, limit),
     symbolsAttempted: attempted,
     symbolsWithData: withData,

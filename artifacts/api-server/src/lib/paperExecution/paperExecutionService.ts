@@ -24,19 +24,22 @@ import {
   paperExecutionLogsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
-import { readOpenPaperOrders } from "../tradeEngine/paperBookReader.js";
+import { readOpenPaperOrders, readPaperCloses } from "../tradeEngine/paperBookReader.js";
+import { paperRiskShortfall, resolvePaperContract } from "./paperPnl.js";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
+import { currentQuote } from "../tradeEngine/marketQuote.js";
 import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
 import { checkEligibility } from "./eligibility.js";
-import { loadEffectiveLimits } from "../riskGovernor/enforce.js";
+import { loadEffectiveLimits, paperInstrumentModel, type InstrumentModel } from "../riskGovernor/enforce.js";
 import { fillPaperTrade, voidPaperTrade } from "../tradeEngine/pipeline.js";
 import type {
   ExecuteFromDecisionOpts,
   PaperExecutionResult,
   FillType,
+  PositionSizingResult,
 } from "./types.js";
 import type { TradeDecision } from "../../routes/tradeDecision.js";
 
@@ -78,6 +81,63 @@ async function getActivePaperAccount(ownerUserId: number | null, explicitId?: nu
     .where(and(owner, explicitId != null ? eq(paperAccountsTable.id, explicitId) : eq(paperAccountsTable.isActive, 1)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Size a paper execution the way the pre-trade Risk Governor will price it
+ * (riskGovernor/enforce.ts loadPaperFacts), so the proposed lot does not
+ * carry more risk than the governor allows:
+ *   - money per 1.0 price move per lot: paperInstrumentModel, the contract
+ *     size the paper venue books the symbol at, converted to USD at the quote
+ *     mid, never below the paper risk model of 100. A symbol with no known
+ *     contract or USD rate, or a contract under 100 units, stays at 100;
+ *   - equity: the stored equity lowered by the paper risk count of the
+ *     account's settled orders (paperRiskShortfall: to the lower of their
+ *     booked total and their paper risk model total), as the governor's caps
+ *     read it for closed trades. The governor also counts open positions no
+ *     higher than their ×100 value (paperOpenRisk), so its equity can be lower
+ *     still; it decides, and its refusal names the figure;
+ *   - risk budget: the lower of the percent limit and the money limit.
+ * When the contract prices above 100 the lot is floored to the step, so the
+ * loss at stop stays inside the budget. The lot is never larger than the
+ * previous sizing (100 per point per lot, stored equity, percent limit only,
+ * nearest step) proposes for the same order: when it would be, that sizing
+ * is used. The governor still decides; this changes only the proposed lot.
+ */
+export async function sizePaperExecution(a: {
+  userId: number;
+  accountId: number;
+  accountEquity: number;
+  symbol: string;
+  fillPrice: number;
+  stopLoss: number;
+  quote: { bid: number | null; ask: number | null };
+  limits: { maxLotSize: number; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null };
+}): Promise<{ sizing: PositionSizingResult; instrument: InstrumentModel; riskEquity: number; valuePerUnitPerLot: number }> {
+  const maxLotSizeOverride = Math.min(PAPER_DEFAULTS.maxLotSize, a.limits.maxLotSize);
+  const riskPercentOverride = Math.min(PAPER_DEFAULTS.riskPercent, a.limits.maxRiskPerTradePercent / 100);
+  const previous = calculatePaperPositionSize({
+    accountEquity: a.accountEquity, entryPrice: a.fillPrice, stopLoss: a.stopLoss, maxLotSizeOverride, riskPercentOverride,
+  });
+  // The price the governor converts the contract to USD at: the quote mid.
+  const mid = a.quote.bid != null && a.quote.ask != null
+    ? (a.quote.bid + a.quote.ask) / 2
+    : a.quote.bid ?? a.quote.ask ?? a.fillPrice;
+  const instrument = paperInstrumentModel(a.symbol, await resolvePaperContract(a.userId, a.symbol), mid);
+  const valuePerUnitPerLot = (instrument.contractSize ?? PAPER_DEFAULTS.pointValuePerLot) * (instrument.quoteToAccountFx ?? 1);
+  let riskEquity = a.accountEquity;
+  try {
+    riskEquity = a.accountEquity + paperRiskShortfall(await readPaperCloses({ account: a.accountId }));
+  } catch {
+    // The stored equity; the governor reads the closes again and decides.
+  }
+  const priced = calculatePaperPositionSize({
+    accountEquity: riskEquity, entryPrice: a.fillPrice, stopLoss: a.stopLoss, maxLotSizeOverride, riskPercentOverride,
+    maxRiskAmount: a.limits.maxRiskPerTradeAmount, valuePerUnitPerLot,
+    rounding: valuePerUnitPerLot > PAPER_DEFAULTS.pointValuePerLot ? "floor" : "nearest",
+  });
+  const sizing = priced.capped_position_size <= previous.capped_position_size ? priced : previous;
+  return { sizing, instrument, riskEquity, valuePerUnitPerLot };
 }
 
 async function ensurePaperAccount(ownerUserId: number | null, explicitId?: number): Promise<{ id: number; equity: number; userId: number | null }> {
@@ -184,11 +244,26 @@ export async function executePaperFromDecision(
     });
   }
 
+  // ── Execution price: the market data router only (audit H4, owner decision
+  //    2026-11-04). The DD snapshot above still gates data quality and is kept
+  //    as provenance, but the fill is priced on the same quote the Risk
+  //    Governor sizes on; no current real quote → no simulated fill.
+  const exec = await currentQuote(symbol);
+  if (!exec.ok) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `No current execution price: ${exec.reasons.join("; ")}`,
+      warnings: [...eligibility.warnings, ...snapshot.dataQuality.warnings],
+      mdSnapshot: snapshot,
+    });
+  }
+  const execMd = { bid: exec.bid, ask: exec.ask, mid: (exec.bid + exec.ask) / 2, spread: exec.ask - exec.bid };
+
   // ── Simulated fill ──
   const fillType: FillType = "SIMULATED_MARKET";
   // Eligibility ensured action ∈ {BUY, SELL}.
   const dir = action as "BUY" | "SELL";
-  const { fillPrice, slippage, spread } = applySimulatedFill(dir, snapshot);
+  const { fillPrice, slippage, spread } = applySimulatedFill(dir, execMd);
   const stopLoss = decision.stopLoss as number;
   const takeProfit = decision.takeProfit as number;
 
@@ -213,16 +288,16 @@ export async function executePaperFromDecision(
       warnings: eligibility.warnings, mdSnapshot: snapshot,
     });
   }
+  // The lot is priced the way the governor prices it (sizePaperExecution):
+  // the symbol's contract size, the paper risk count's equity and both
+  // per-trade limits, never larger than the 100-per-point sizing.
   const limits = await loadEffectiveLimits(acct.userId);
-  const sizing = calculatePaperPositionSize({
-    accountEquity: acct.equity,
-    entryPrice: fillPrice,
-    stopLoss,
-    maxLotSizeOverride: Math.min(PAPER_DEFAULTS.maxLotSize, limits.maxLotSize),
-    riskPercentOverride: Math.min(PAPER_DEFAULTS.riskPercent, limits.maxRiskPerTradePercent / 100),
+  const { sizing, instrument, riskEquity, valuePerUnitPerLot } = await sizePaperExecution({
+    userId: acct.userId, accountId: acct.id, accountEquity: acct.equity, symbol,
+    fillPrice, stopLoss, quote: { bid: snapshot.bid, ask: snapshot.ask }, limits,
   });
   const positionSize = sizing.capped_position_size;
-  log.info({ sizing }, "Build EE: position sizing computed");
+  log.info({ sizing, valuePerUnitPerLot, pricing: instrument.source, riskEquity }, "Build EE: position sizing computed");
 
   if (!(positionSize > 0)) {
     return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
@@ -245,11 +320,7 @@ export async function executePaperFromDecision(
     strategyId: "build_ee_paper_execution",
     origin: opts.origin ?? "manual",
     governedEntryPrice: null,
-    quote: {
-      bid: snapshot.bid, ask: snapshot.ask,
-      at: snapshot.timestamp ? new Date(snapshot.timestamp) : null,
-      source: `${snapshot.source}:${snapshot.provider}`,
-    },
+    quote: { bid: exec.bid, ask: exec.ask, at: exec.at, source: exec.source },
     auditContext: { caller: "paper_execution", executionId, decisionId },
     placedMessage: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
   });
@@ -271,6 +342,9 @@ export async function executePaperFromDecision(
     source: snapshot.source, provider: snapshot.provider,
     bid: snapshot.bid, ask: snapshot.ask, mid: snapshot.mid, spread: snapshot.spread,
     timestamp: snapshot.timestamp, timeframe: snapshot.timeframe,
+    // The price the fill was actually struck on (router quote), distinct from
+    // the DD snapshot's own numbers above.
+    executionQuote: { bid: exec.bid, ask: exec.ask, at: exec.at.toISOString(), source: exec.source },
     candlesAvailable: snapshot.dataQuality.candlesAvailable,
     sessionContext: snapshot.sessionContext,
     dataQuality: snapshot.dataQuality,

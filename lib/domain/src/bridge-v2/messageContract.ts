@@ -158,6 +158,10 @@ export const tickPayloadSchema = z.object({
   symbol: z.string().min(1).max(32),
   bid: z.number().positive(),
   ask: z.number().positive(),
+  // The tick's own time as the EA supplies it (ms epoch). Like the snapshot
+  // field above it is broker SERVER time: MT5 tick times are broker-server
+  // local, so this is a UTC instant only if the EA converted it. The server
+  // does not (and cannot) verify or convert the offset.
   brokerTimeEpochMs: z.number().int().positive(),
 });
 

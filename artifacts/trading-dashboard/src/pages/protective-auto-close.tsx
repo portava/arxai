@@ -56,6 +56,25 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+// A product lock is a fixed design decision in the auto-close engine
+// (lib/protectiveClose/engine.ts hard-codes bridgeConnected:false and
+// liveLocked:true). It is NOT a reading of the user's bridge or account, so
+// it is labelled LOCKED, never as a measured BLOCKED gate.
+function LockRow({ label, detail, testId }: { label: string; detail: string; testId: string }) {
+  return (
+    <div className="flex items-start gap-3 py-1.5" data-testid={testId}>
+      <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold bg-zinc-700/60 text-zinc-300">
+        ■
+      </span>
+      <div className="flex-1">
+        <div className="text-sm text-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground">{detail}</div>
+      </div>
+      <Badge variant="outline" className="text-[10px] border-zinc-600 text-zinc-300">LOCKED</Badge>
+    </div>
+  );
+}
+
 function GateRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
   return (
     <div className="flex items-start gap-3 py-1.5">
@@ -124,20 +143,25 @@ export default function ProtectiveAutoClosePage() {
   const effectiveMode = pendingMode ?? s.mode;
   const effectiveThreshold = pendingThreshold ?? s.inactivityThresholdMin;
 
-  // Gates — every one must PASS for real auto-close to fire. We deliberately
-  // hard-code bridgeConnected:false until a real MT5 bridge is wired.
+  // Product locks — fixed in the auto-close engine, not measured here. The
+  // engine never sends a close order through the bridge and live execution is
+  // locked in code, so the effective status is always ALERT_ONLY. This page
+  // does not read the user's bridge state and must not claim to.
+  const productLocks = [
+    { testId: "pac-lock-broker-close", label: "Broker close orders", detail: "Product lock: the auto-close engine is built to never send a close order through the MT5 bridge. This page does not check your MT5 bridge — connecting it does not change this lock." },
+    { testId: "pac-lock-live-execution", label: "Live execution", detail: "Product lock: live execution for auto-close is locked in code. Until ARX ships an unlock, every auto-close decision is ALERT_ONLY." },
+  ];
+  // Gates — read from your saved settings and activity status.
   const gates = [
-    { label: "Broker bridge connected", ok: false, detail: "MT5 bridge is not connected (demo-only system lock). Without the bridge, the AI cannot send a close order." },
     { label: "User opt-in saved", ok: s.enabled === true, detail: s.enabled ? "You have opted in to Protective Auto-Close." : "You have not opted in. Toggle ENABLE below and acknowledge the risk." },
     { label: "Risk acknowledgement", ok: s.enabled === true, detail: "Enabling required the acknowledgement that the AI may close or partially close your trades under your pre-authorized policy when you are inactive." },
     { label: "Activity status known", ok: act.status !== "UNKNOWN", detail: `Current activity: ${act.status}. ${act.reason}` },
     { label: "Inactivity confirmed", ok: act.status === "INACTIVE", detail: act.status === "INACTIVE" ? `Inactive for ${Math.round((act.inactiveDurationMs ?? 0) / 60_000)} min ≥ threshold ${s.inactivityThresholdMin} min.` : "Auto-close fires only when you are confirmed INACTIVE for longer than your threshold." },
     { label: "Multi-signal confirmation required", ok: s.requireMultiSignal === true, detail: s.requireMultiSignal ? "Auto-close requires ≥2 independent reversal signals." : "Multi-signal confirmation is OFF — recommend turning it ON." },
-    { label: "Live execution unlocked", ok: false, detail: "Live execution remains system-locked (demo-only). Until ARX explicitly unlocks live trading, every decision is ALERT_ONLY." },
     { label: "Kill switch not engaged", ok: s.killSwitchEngaged === false, detail: s.killSwitchEngaged ? "Kill switch is ENGAGED. Auto-close cannot fire." : "Kill switch is clear." },
     { label: "Duplicate-action protection active", ok: s.cooldownMin >= 1 && s.maxAutoClosesPerTrade >= 1, detail: `Cooldown ${s.cooldownMin} min between actions, max ${s.maxAutoClosesPerTrade} auto-close action(s) per trade. The engine refuses to re-fire inside the cooldown or after the cap.` },
   ];
-  const allPass = gates.every((g) => g.ok);
+  const allPass = productLocks.length === 0 && gates.every((g) => g.ok);
   const effectiveStatus: "ALERT_ONLY" | "ARMED" = allPass ? "ARMED" : "ALERT_ONLY";
 
   return (
@@ -164,9 +188,11 @@ export default function ProtectiveAutoClosePage() {
           {effectiveStatus === "ALERT_ONLY" && (
             <div className="rounded border border-amber-500/30 bg-amber-500/10 p-3 flex gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-              <div className="text-amber-100 text-xs">
+              <div className="text-amber-100 text-xs" data-testid="pac-alert-only-reason">
                 <strong>Alert Only</strong> — the AI can warn you, but cannot close this trade.
-                At least one gate below is BLOCKED.
+                {productLocks.length > 0
+                  ? " Auto-close is alert-only by product lock (see LOCKED rows below), whatever your settings or bridge state."
+                  : " At least one gate below is BLOCKED."}
               </div>
             </div>
           )}
@@ -177,6 +203,7 @@ export default function ProtectiveAutoClosePage() {
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader className="pb-2"><CardTitle className="text-white text-sm">Required gates</CardTitle></CardHeader>
         <CardContent className="divide-y divide-zinc-800">
+          {productLocks.map((l) => <LockRow key={l.testId} {...l} />)}
           {gates.map((g) => <GateRow key={g.label} {...g} />)}
         </CardContent>
       </Card>

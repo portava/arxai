@@ -2,7 +2,7 @@
 // Picks exactly one state (never conflicting LIVE + Demo + Paused at once),
 // resolved from the unified trading-mode envelope. Read-only.
 
-import { CheckCircle2, AlertTriangle, PlugZap, Pause } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Lock, Pause } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { cn } from "@/lib/utils";
 
@@ -13,13 +13,22 @@ export function EnvironmentPill() {
     return <div className="h-7 w-40 animate-pulse rounded-full bg-secondary/40" />;
   }
 
-  // Priority: blocked/disconnected → frozen/paused → live → demo → sim.
-  const state = mode.cleanBlockedReason
-    ? { label: "Bridge Disconnected", dot: "bg-danger", text: "text-danger", icon: PlugZap, sub: mode.cleanBlockedReason }
+  // Priority: blocked → frozen/paused → live → demo → sim.
+  // cleanBlockedReason is an account / permission / arming blocker from the
+  // server's mode precedence (operator pause, tradingMode, live confirmation,
+  // master switch …). It never reads a bridge heartbeat, so the label names the
+  // block and the sub-line carries the server's own reason — never "Bridge
+  // Disconnected".
+  const state = mode.isModeUnknown
+    // The check failed: say so, never a demo/simulator label or "Loading…".
+    ? { label: "Mode unknown", dot: "bg-warning", text: "text-warning", icon: AlertTriangle, sub: "Your account mode could not be checked just now." }
+    : mode.cleanBlockedReason
+    ? { label: "Trading blocked", dot: "bg-danger", text: "text-danger", icon: Lock, sub: mode.cleanBlockedReason }
     : mode.isFrozen
       ? { label: "Trading Paused", dot: "bg-warning", text: "text-warning", icon: Pause, sub: mode.cleanUserMessage }
       : mode.isLiveShared
-        ? { label: "LIVE · Shared MT5", dot: "bg-success", text: "text-success", icon: CheckCircle2, sub: "All systems operational" }
+        // The envelope measures permission, not systems: say what it knows.
+        ? { label: "LIVE · Shared MT5", dot: "bg-success", text: "text-success", icon: CheckCircle2, sub: mode.canManualTrade ? "Approved for live trading" : mode.cleanUserMessage }
         : mode.isDemo
           ? { label: "Demo · Simulator", dot: "bg-primary", text: "text-primary", icon: CheckCircle2, sub: "Demo environment" }
           : { label: mode.cleanModeLabel || "Simulator", dot: "bg-muted", text: "text-txt-secondary", icon: AlertTriangle, sub: mode.cleanUserMessage };

@@ -37,6 +37,18 @@ function payloadNum(p: Record<string, unknown> | null, k: string): number | null
 
 // Status tone/label moved to @/lib/statusLabels for cross-surface reuse.
 
+/** Date and time the command was created ("Oct 27, 2:05:00 PM"); "—" when unreadable. */
+function commandTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${d.toLocaleTimeString()}`;
+}
+
+/** Scanner signal strength on its 0–100 scale, as the trade modal shows it. */
+function strengthText(v: number | null): string {
+  return v != null && Number.isFinite(v) ? `${Math.round(v)} / 100` : "—";
+}
+
 // Recent Scanner Trades — compact table on the Market Scanner page. Lists
 // commands whose payload.source === "MARKET_SCANNER". Polls every 5s.
 export function RecentScannerTrades() {
@@ -44,6 +56,9 @@ export function RecentScannerTrades() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // True once the demo feed has been read successfully; until then an empty
+  // list is "not read yet", not "no trades".
+  const [hasRead, setHasRead] = useState(false);
   const mode = useTradingMode();
   const { name } = useAssistantName();
   const showDemoFeed = mode.shouldShowDemoPaperCopy || mode.shouldShowAdminDiagnostics;
@@ -83,6 +98,7 @@ export function RecentScannerTrades() {
       return payloadStr(c.payload, "scope") !== "TEST";
     });
     setRows(scannerOnly.slice(0, 20));
+    setHasRead(true);
     setErr(null);
     setLoading(false);
   }
@@ -101,6 +117,7 @@ export function RecentScannerTrades() {
   }
 
   useEffect(() => {
+    setHasRead(false);
     void load();
     // Perf: don't poll while the tab is backgrounded; resume immediately on return.
     function tick() {
@@ -123,13 +140,29 @@ export function RecentScannerTrades() {
      
   }, [showDemoFeed, mode.shouldShowAdminDiagnostics]);
 
-  const cardTitle = mode.isLiveShared
-    ? "Recent Scanner Trades — Live Shared"
-    : mode.isDemo
-      ? "Recent Scanner Trades — Demo"
-      : mode.isPaper
-        ? "Recent Scanner Trades — Paper"
-        : "Recent Scanner Trades";
+  // The card reads ONE source: the MT5 demo command queue. The title names
+  // that source, never the account mode — an admin in Live Shared reading demo
+  // commands for diagnostics is not looking at live order history.
+  const cardTitle = showDemoFeed ? "Recent Scanner Trades — MT5 Demo" : "Recent Scanner Trades";
+  // Shown only because admin diagnostics are on, not because the account is
+  // in a demo/paper mode.
+  const adminDemoView = showDemoFeed && !mode.shouldShowDemoPaperCopy;
+  const sourceNote = adminDemoView
+    ? "Admin diagnostics: these are MT5 demo orders sent from the scanner. They are not Live Shared orders, and Live Shared orders are not listed here."
+    : showDemoFeed && mode.isPaper
+      ? "These are MT5 demo orders sent from the scanner, not paper trades."
+      : null;
+  // The demo feed is not read: say why, and never promise history this card
+  // does not load (it has no live-order source).
+  const notListedCopy = showDemoFeed
+    ? null
+    : mode.isModeUnknown
+      ? "Your account mode could not be checked, so no scanner orders are listed. ARX will check again."
+      : mode.envelope == null
+        ? "Checking your account mode…"
+        : mode.isLiveShared
+          ? "This card lists MT5 demo orders only. Live Shared scanner orders are not listed here."
+          : "Live execution is armed, so MT5 demo orders are not listed here. This card does not list live orders.";
 
   return (
     <Card className="rounded-xl border-border bg-background/40">
@@ -143,6 +176,11 @@ export function RecentScannerTrades() {
         </Button>
       </CardHeader>
       <CardContent className="p-0">
+        {sourceNote && (
+          <div className="px-3 pb-1 text-[11px] text-muted-foreground" data-testid="recent-scanner-trades-source">
+            {sourceNote}
+          </div>
+        )}
         {err && (
           <div
             className="flex items-center justify-between gap-2 px-3 py-2"
@@ -162,11 +200,19 @@ export function RecentScannerTrades() {
             </Button>
           </div>
         )}
-        {!err && rows.length === 0 && (
+        {notListedCopy && (
+          <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-not-listed">
+            {notListedCopy}
+          </div>
+        )}
+        {showDemoFeed && !err && !hasRead && rows.length === 0 && (
+          <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-loading">
+            Loading scanner orders…
+          </div>
+        )}
+        {showDemoFeed && !err && hasRead && rows.length === 0 && (
           <div className="text-xs text-muted-foreground px-3 py-3" data-testid="recent-scanner-trades-empty">
-            {showDemoFeed
-              ? "No scanner-originated trades yet. Use Buy or Sell on a result card to place one."
-              : "Live Shared scanner trade history will appear here once orders are placed."}
+            No scanner-originated trades yet. Use Buy or Sell on a result card to place one.
           </div>
         )}
         {rows.length > 0 && (
@@ -180,7 +226,7 @@ export function RecentScannerTrades() {
                   <th className="text-right font-medium px-2 py-1.5">Vol</th>
                   <th className="text-left font-medium px-2 py-1.5">Status</th>
                   <th className="text-left font-medium px-2 py-1.5">Ticket</th>
-                  <th className="text-right font-medium px-2 py-1.5">Conf</th>
+                  <th className="text-right font-medium px-2 py-1.5" title="Scanner signal strength (0–100), not a calibrated win probability.">Strength</th>
                   <th className="text-left font-medium px-2 py-1.5">{name} reason</th>
                 </tr>
               </thead>
@@ -194,7 +240,7 @@ export function RecentScannerTrades() {
                   const why = sc && typeof sc.reasonForTrade === "string" ? sc.reasonForTrade as string : null;
                   return (
                     <tr key={c.commandId} className="border-b border-slate-800/60 last:border-0">
-                      <td className="px-2 py-1 font-mono whitespace-nowrap">{new Date(c.createdAt).toLocaleTimeString()}</td>
+                      <td className="px-2 py-1 font-mono whitespace-nowrap" data-testid="recent-scanner-trade-time">{commandTime(c.createdAt)}</td>
                       <td className="px-2 py-1 font-mono">{sym}</td>
                       <td className={`px-2 py-1 font-mono ${side === "BUY" ? "text-success" : side === "SELL" ? "text-danger" : ""}`}>{side}</td>
                       <td className="px-2 py-1 font-mono text-right">{vol ?? "—"}</td>
@@ -205,7 +251,7 @@ export function RecentScannerTrades() {
                         )}
                       </td>
                       <td className="px-2 py-1 font-mono">{c.brokerTicket ?? "—"}</td>
-                      <td className="px-2 py-1 font-mono text-right">{conf ?? "—"}</td>
+                      <td className="px-2 py-1 font-mono text-right whitespace-nowrap" data-testid="recent-scanner-trade-strength">{strengthText(conf)}</td>
                       <td className="px-2 py-1 text-muted-foreground truncate max-w-[200px]" title={why ?? ""}>{why ?? "—"}</td>
                     </tr>
                   );

@@ -20,6 +20,7 @@ export interface MultiTimeframeReport {
   middleTrend: MultiTimeframeTrendSnapshot;
   higherTrend: MultiTimeframeTrendSnapshot;
   alignmentScore: number;
+  /** DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning). */
   alignmentLabel: MultiTimeframeReportAlignmentLabel;
   conflictWarning?: string | null;
   bestBias: MultiTimeframeReportBestBias;

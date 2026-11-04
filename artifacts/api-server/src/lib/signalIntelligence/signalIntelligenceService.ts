@@ -29,10 +29,13 @@ import type {
   MarketRegime,
   SignalLifecycleStage,
   ConfidenceBand,
+  ScannerBinding,
 } from "@workspace/domain/signal-intelligence";
-import { prepareMarketRead, matchedMarketQuote, evidenceMatches, isCurrentBuild } from "../truth/marketReadEvidence.js";
+import {
+  prepareMarketRead, matchedMarketQuote, matchedMarketQuoteBinding, evidenceMatches, isCurrentBuild,
+} from "../truth/marketReadEvidence.js";
 import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
-import { routeCandles, routeQuote, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
 import {
   scanSymbolTimeframe,
   decorateOpportunitiesWithNewsRisk,
@@ -69,8 +72,19 @@ function coerceScannerAction(a: string): SignalScannerInput["recommendedAction"]
 }
 
 type DecoratedOpportunity = ScannerOpportunity & {
-  newsContext?: { riskLevel?: string | null };
+  newsContext?: { riskLevel?: string | null; headlinesConnected?: boolean };
 };
+
+/**
+ * A news risk level is an observation only when the news decorator actually got
+ * an answer from the provider for this symbol. The decorator's catch fallback
+ * (riskLevel "none", headlinesConnected false) and finalRead's `?? "none"`
+ * default are not observations, so the news-safety score built on them is a
+ * default (label-only: the level passed to scoring is unchanged).
+ */
+function newsRiskMeasured(opp: DecoratedOpportunity | null): boolean {
+  return !!opp?.newsContext && opp.newsContext.headlinesConnected === true;
+}
 
 function mapNewsRiskLevel(opp: DecoratedOpportunity): NewsRiskLevel | null {
   const fromFinal = opp.finalRead?.newsRiskLevel;
@@ -93,6 +107,12 @@ function oppToScannerInput(opp: DecoratedOpportunity): SignalScannerInput {
     entry: Number.isFinite(opp.entry) ? opp.entry : null,
     stopLoss: Number.isFinite(opp.stopLoss) ? opp.stopLoss : null,
     takeProfit: Number.isFinite(opp.takeProfit) ? opp.takeProfit : null,
+    // The scanner's real analysed zone (only shipped when its setup is allowed);
+    // without it the lifecycle engine could never reach ENTRY_WINDOW_OPEN.
+    entryZone: opp.entryZone && Number.isFinite(opp.entryZone.low) && Number.isFinite(opp.entryZone.high) &&
+      opp.entryZone.low > 0 && opp.entryZone.low <= opp.entryZone.high
+      ? { from: opp.entryZone.low, to: opp.entryZone.high }
+      : null,
     reasonForTrade: opp.reasonForTrade ?? null,
     reasonToAvoid: opp.reasonToAvoid ?? null,
   };
@@ -239,12 +259,16 @@ export async function buildRubyMarketEdgeForUser(
       ? Promise.resolve(options.scalp)
       : evaluateScalpForSymbol(userId, { symbol, mode: "ANY" }).catch(() => null);
 
-  const [candleResult, opp, scalp, execution, quoteResult] = await Promise.all([
-    routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT),
+  // The quote is routed AFTER the candles and pinned to the served series'
+  // writer, so with several MT5 bridges on one symbol the price can only come
+  // from the bridge that produced these candles (never blended).
+  const [[candleResult, quoteResult], opp, scalp, execution] = await Promise.all([
+    routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT).then(
+      async (c) => [c, await routeQuote(symbol, quotePinForSeries(c))] as const,
+    ),
     scanSymbolTimeframe(symbol, timeframe),
     scalpPromise,
     loadExecutionInput(userId),
-    routeQuote(symbol),
   ]);
 
   const now = Date.now();
@@ -284,6 +308,33 @@ export async function buildRubyMarketEdgeForUser(
     scannerOpp = (decorated ?? opp) as DecoratedOpportunity;
     scanner = oppToScannerInput(scannerOpp);
   }
+  // Record WHY the scanner's geometry was (not) bound — the first failing check
+  // of the gate above, in its order — so the explanation can state the real
+  // cause of missing levels instead of a guess. Reason-only: the gate is
+  // unchanged, and nothing here can bind a level.
+  const scannerBinding: ScannerBinding = scanner
+    ? { bound: true, reasonCode: null, reason: null }
+    : !marketRead
+      ? { bound: false, reasonCode: null, reason: null }
+      : !opp
+        ? { bound: false, reasonCode: "no_scanner_read", reason: "the scanner has no current read for this market and timeframe" }
+        : price == null
+          ? matchedMarketQuoteBinding(candleResult, quoteResult, symbol, now) === "LAST_ONLY"
+            ? { bound: false, reasonCode: "quote_last_only", reason: "the live quote is last-price only — no bid/ask spread is bound to these candles" }
+            : { bound: false, reasonCode: "no_bound_quote", reason: "no live quote from the same feed is matched to these candles" }
+          : opp.symbol !== symbol || opp.timeframe !== timeframe ||
+              opp.featureSnapshot?.computedAt !== marketRead.evidence.lastClosedCandleAt ||
+              scannerRowSourceIdentity(opp) !== marketRead.evidence.sourceIdentity || !isCurrentBuild(opp.generatedAt, now)
+            ? { bound: false, reasonCode: "different_candles", reason: "the scanner's read is from a different candle set than this read" }
+            : opp.dataSource !== "LIVE_FEED"
+              ? { bound: false, reasonCode: "scanner_not_live", reason: "the scanner's read isn't on a confirmed live feed" }
+              : {
+                  bound: false,
+                  reasonCode: "setup_withheld",
+                  reason: opp.sufficiency?.humanReason
+                    ? `the scanner withheld its setup: ${opp.sufficiency.humanReason.replace(/\.$/, "")}`
+                    : "the scanner withheld its setup",
+                };
   const newsRiskLevel: NewsRiskLevel | null = scannerOpp
     ? mapNewsRiskLevel(scannerOpp)
     : null;
@@ -325,11 +376,13 @@ export async function buildRubyMarketEdgeForUser(
     scalp: scalpInput,
     execution: executionInput,
     newsRiskLevel,
+    newsMeasured: newsRiskLevel != null && newsRiskMeasured(scannerOpp),
     previous,
     now,
   });
 
   signal.marketEvidence = marketRead ? { ...marketRead.evidence, userId } : null;
+  signal.scannerBinding = scannerBinding;
 
   const saved = !options.skipPersist && contextKey != null
     ? await persistSnapshot(userId, signal, contextKey) : false;

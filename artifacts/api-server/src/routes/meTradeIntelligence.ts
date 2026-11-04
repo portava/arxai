@@ -485,10 +485,23 @@ router.get("/me/sniper-watchlist", async (req, res) => {
     const env = await getEnvelope(userId);
     // Gather open trade keys depending on routing mode (user-scoped reads).
     const keys: string[] = [];
+    // What this scan covers. The trade-intelligence engine evaluates DEMO
+    // ledger rows (lp_) and shared-master attributions (att_) only; LIVE
+    // positions on a user-owned MT5 are NOT evaluated. Count them so the page
+    // can say so instead of claiming "none of your open trades are flagged".
+    let scannedVenues: Array<"DEMO" | "SHARED_MASTER">;
+    let notScanned: { venue: "LIVE"; openPositions: number | null } | null = null;
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
+      scannedVenues = ["DEMO"];
       const rows = await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" });
       for (const r of rows) keys.push(`lp_${r.id}`);
+      let liveOpen: number | null = null;
+      try {
+        liveOpen = (await readOpenPositions({ userId, venue: "LIVE", basis: "CONFIRMED_OPEN" })).length;
+      } catch { liveOpen = null; /* unknown, never reported as zero */ }
+      notScanned = { venue: "LIVE", openPositions: liveOpen };
     } else {
+      scannedVenues = ["SHARED_MASTER"];
       const rows = await db.select({ id: sharedTradeAttributionTable.id })
         .from(sharedTradeAttributionTable)
         .where(and(eq(sharedTradeAttributionTable.userId, userId), eq(sharedTradeAttributionTable.status, "open")));
@@ -505,11 +518,25 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       reasons: string[]; urgencyTier: "info" | "watch" | "warning" | "urgent";
     }> = [];
 
+    // What the scan actually evaluated. The flag checks below treat a missing
+    // score or P&L as "did not fire" (`?? 0`), so an unscored trade is never
+    // flagged; count those gaps so the page does not call them "not flagged".
+    let unresolvedCount = 0;
+    const signalGaps = {
+      closeUrgency: 0, profitGiveback: 0, stopTargetProximity: 0,
+      reversalRisk: 0, fakeoutRisk: 0, volatilityRisk: 0,
+    };
     for (const k of keys) {
       const trade = await resolveTrade(userId, k);
-      if (!trade) continue;
+      if (!trade) { unresolvedCount++; continue; }
       const r = await computeAndPersist(userId, trade, env.accountType);
       const s = r.snap;
+      if (s.closeUrgencyScore == null) signalGaps.closeUrgency++;
+      if (trade.unrealizedPnl == null) signalGaps.profitGiveback++;
+      if (trade.currentPrice == null || trade.entryPrice == null) signalGaps.stopTargetProximity++;
+      if (s.reversalRiskScore == null) signalGaps.reversalRisk++;
+      if (s.fakeoutRiskScore == null) signalGaps.fakeoutRisk++;
+      if (s.volatilityRiskScore == null) signalGaps.volatilityRisk++;
       const reasons: string[] = [];
       const urg = s.closeUrgencyScore ?? 0;
       const giveback = s.profitGivebackPercent ?? 0;
@@ -523,7 +550,9 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       if (rev >= 60) reasons.push(`reversal risk ${rev}`);
       if (fake >= 60) reasons.push(`possible fakeout (${fake})`);
       if (vol >= 70) reasons.push(`high volatility (${vol})`);
-      if (peak > 0 && pnl <= 0) reasons.push("returned to break-even or worse");
+      // Only on a P&L that was read: `pnl` is 0 for an unread P&L, which would
+      // flag a return to break-even nobody observed (counted in signalGaps).
+      if (trade.unrealizedPnl != null && peak > 0 && trade.unrealizedPnl <= 0) reasons.push("returned to break-even or worse");
       // Near-SL / Near-TP fired as separate alerts; surface here too if relevant.
       if (trade.stopLoss != null && trade.currentPrice != null && trade.entryPrice != null) {
         const total = Math.abs(trade.entryPrice - trade.stopLoss);
@@ -557,6 +586,15 @@ router.get("/me/sniper-watchlist", async (req, res) => {
       items,
       accountType: env.accountType,
       routingMode: env.accountRoutingMode,
+      scannedVenues,
+      scannedCount: keys.length,
+      // Of scannedCount: trades that could not be read (not evaluated at all),
+      // trades evaluated, and per signal how many evaluated trades had no
+      // score / input for it (that check could not fire for them).
+      unresolvedCount,
+      evaluatedCount: keys.length - unresolvedCount,
+      signalGaps,
+      notScanned,
       lastUpdatedAt: new Date().toISOString(),
       dataFreshness: "fresh",
     });

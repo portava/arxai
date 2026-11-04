@@ -85,6 +85,23 @@ export function normaliseCapabilities(raw: unknown): BridgeCapabilities {
   return out;
 }
 
+/**
+ * True when the EA reported pending-order support in its v1.50 capability
+ * list (`capabilities.v150.normalized.supportsPendingOrders`, written by the
+ * heartbeat's mapping layer). The pending-order submit gate does NOT read
+ * this list — it reads only the closed-set `pendingOrders` key above — so
+ * this is used to explain a BRIDGE_UNSUPPORTED answer truthfully, never to
+ * pass the gate.
+ */
+export function v150PendingSupportReported(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const v150 = (raw as { v150?: unknown }).v150;
+  if (!v150 || typeof v150 !== "object") return false;
+  const normalized = (v150 as { normalized?: unknown }).normalized;
+  if (!normalized || typeof normalized !== "object") return false;
+  return (normalized as Record<string, unknown>)["supportsPendingOrders"] === true;
+}
+
 // ─── Task #32 — feature capability gate ──────────────────────────────────────
 //
 // ARX must only ever call an EA feature the installed build reports as

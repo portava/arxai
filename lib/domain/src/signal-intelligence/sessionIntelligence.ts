@@ -23,8 +23,26 @@ export function resolveSession(now: number): TradingSession {
   return "OFF_HOURS";
 }
 
-export function sessionContext(now: number): SessionContext {
+/** Session note for a synthetic index (24/7, no FX session applies). */
+export const SYNTHETIC_SESSION_NOTE =
+  "Synthetic index — trades 24/7; session liquidity does not apply.";
+
+/**
+ * Session context for an epoch (UTC) and, optionally, the asset class.
+ *
+ * HONESTY: the engine has NO liquidity observation — `session` is a wall-clock
+ * bucket, nothing more. Notes therefore state session HOURS only, never an
+ * unmeasured "deep/high/thin liquidity" claim. A synthetic index trades 24/7 and
+ * is not an FX session instrument: it keeps the real session enum (the wire
+ * enum still validates) but `isHighLiquidity` is false and the note says the
+ * session does not apply. `liquidityWeight` 0.9 for synthetics is exactly what
+ * `playbookWeight` already uses for them, so scoring is unchanged.
+ */
+export function sessionContext(now: number, assetClass?: string | null): SessionContext {
   const session = resolveSession(now);
+  if ((assetClass ?? "").toLowerCase() === "synthetic") {
+    return { session, isHighLiquidity: false, liquidityWeight: 0.9, note: SYNTHETIC_SESSION_NOTE };
+  }
   let liquidityWeight: number;
   let isHighLiquidity: boolean;
   let note: string;
@@ -32,28 +50,28 @@ export function sessionContext(now: number): SessionContext {
     case "LONDON_NY_OVERLAP":
       liquidityWeight = 1;
       isHighLiquidity = true;
-      note = "London/New York overlap — deepest liquidity.";
+      note = "London/New York overlap hours.";
       break;
     case "LONDON":
     case "NEW_YORK":
       liquidityWeight = 0.9;
       isHighLiquidity = true;
-      note = `${session === "LONDON" ? "London" : "New York"} session — high liquidity.`;
+      note = `${session === "LONDON" ? "London" : "New York"} session hours.`;
       break;
     case "TOKYO":
       liquidityWeight = 0.7;
       isHighLiquidity = false;
-      note = "Tokyo session — moderate liquidity.";
+      note = "Tokyo session hours.";
       break;
     case "SYDNEY":
       liquidityWeight = 0.6;
       isHighLiquidity = false;
-      note = "Sydney session — thinner liquidity.";
+      note = "Sydney session hours.";
       break;
     default:
       liquidityWeight = 0.5;
       isHighLiquidity = false;
-      note = "Off-hours — thin liquidity, wider spreads likely.";
+      note = "Outside the main session hours.";
   }
   return { session, isHighLiquidity, liquidityWeight, note };
 }

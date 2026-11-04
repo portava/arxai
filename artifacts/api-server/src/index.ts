@@ -1,3 +1,4 @@
+import { startHeapWatch } from "./lib/perf/heapWatch.js";
 import { startResultSettlementWorker } from "./lib/live/resultSettlementWorker.js";
 import app from "./app";
 import { logger } from "./lib/logger";
@@ -132,6 +133,9 @@ ensureSafetyCoreInitialized()
       void runStartupReadinessCheck(port).catch((e) =>
         logger.error({ err: String(e) }, "Startup readiness check threw (non-fatal)"),
       );
+      // Heap watch: observation-only memory log (runs in preview too, where
+      // the long page crawls that exhausted the heap were run).
+      startHeapWatch();
       startStuckCommandWatchdog();
       // R2 S3/S4 — scheduled UNKNOWN-command reconciler. Resolves LIVE_UNKNOWN
       // commands from broker evidence (never fabricates an outcome) and

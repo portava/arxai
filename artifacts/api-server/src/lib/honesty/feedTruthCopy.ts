@@ -170,8 +170,24 @@ export function projectOpportunitiesForViewer(
 // viewerSeesSimulatorDetail(readRoleFromRequest(req)) exactly like the scanner
 // rows do, then chooses the masked payload here.
 
-/** Honest reason copy shared by every withheld simulator-scored payload. */
+/**
+ * The waiting-for-feed reason (scanner rows a live feed can replace). Payloads
+ * masked by the viewer's role alone use the role reasons below instead.
+ */
 export const SIMULATOR_DETAIL_WITHHELD_REASON = WAITING_FOR_FEED_REASON;
+
+/**
+ * Why a simulator market analysis / trade card is withheld. analyzeMarket and
+ * generateTradeCard always run on simulator prices and the routes mask them by
+ * the viewer's role alone, so no verified feed will ever un-hide them; the text
+ * says what hides them and who may see them instead of promising a feed.
+ */
+export const SIMULATOR_ANALYSIS_WITHHELD_REASON =
+  "Not shown: this analysis is built from simulator prices, not a live market feed, and simulator-based analysis is shown only to platform operators.";
+const SIMULATOR_READ_WITHHELD_AVOID =
+  "Read withheld: it is built from simulator prices, and simulator-based reads are shown only to platform operators.";
+export const SIMULATOR_TRADE_CARD_WITHHELD_REASON =
+  "Not shown: this trade card is built from simulator prices, not a live market feed, and simulator-based trade cards are shown only to platform operators.";
 
 /** Mask a simulator-derived market analysis: strip every score + level. */
 export function maskSimulatorMarketAnalysis(
@@ -190,8 +206,8 @@ export function maskSimulatorMarketAnalysis(
     stopLoss: 0,
     takeProfit: 0,
     riskRewardRatio: 0,
-    reasonForTrade: WAITING_FOR_FEED_REASON,
-    reasonToAvoid: "Read withheld until a verified live feed is available.",
+    reasonForTrade: SIMULATOR_ANALYSIS_WITHHELD_REASON,
+    reasonToAvoid: SIMULATOR_READ_WITHHELD_AVOID,
     invalidationReason: "",
     rulesPassed: [],
     rulesFailed: [],
@@ -207,7 +223,7 @@ export function maskSimulatorTradeCard(
     ...maskSimulatorMarketAnalysis(card),
     cardId: card.cardId,
     positionSizingHint: { maxRiskUsd: card.positionSizingHint.maxRiskUsd, suggestedLot: 0 },
-    notes: WAITING_FOR_FEED_REASON,
+    notes: SIMULATOR_TRADE_CARD_WITHHELD_REASON,
     withheld: true,
   };
 }
@@ -237,6 +253,14 @@ export function maskSimulatorEntrySniperScore(
   };
 }
 
+/**
+ * Reason for a withheld trade grade. gradeTrade() always runs on simulator
+ * prices and /ai/grade-trade masks by the viewer's role alone, so no verified
+ * feed will ever un-hide the grade — the feed reason above would be false here.
+ */
+export const SIMULATOR_GRADE_WITHHELD_REASON =
+  "Not graded: the trade grader runs only on simulator prices, and simulator-based grades are shown only to platform operators.";
+
 /** Mask a simulator-derived trade grade. `tradeGrade` becomes a neutral "—". */
 export function maskSimulatorTradeGrade(
   _g: TradeGrade,
@@ -247,7 +271,7 @@ export function maskSimulatorTradeGrade(
     strengths: [],
     weaknesses: [],
     mistakesDetected: [],
-    improvementSuggestion: WAITING_FOR_FEED_REASON,
+    improvementSuggestion: SIMULATOR_GRADE_WITHHELD_REASON,
     shouldHaveTakenTrade: false,
     dataSource: "SIMULATOR",
     withheld: true,
@@ -272,6 +296,16 @@ interface SimulatorSessionPlan {
   generatedAt: string;
 }
 
+/**
+ * Why a session plan is withheld. The routes mask it by the viewer's role
+ * alone, so no verified feed will ever un-hide it. The plan is built from the
+ * scanner's latest sweep, whose rows carry their own dataSource (they can be
+ * live-feed rows); nothing checks that its input is simulated, so the text
+ * states only the rule the server applies and names no data source.
+ */
+export const SIMULATOR_SESSION_PLAN_WITHHELD_REASON =
+  "Not shown: session plans are shown only to platform operators, so this plan's values are withheld for your account.";
+
 /** Mask a simulator-derived session plan (best/avoid symbols, risk zones …). */
 export function maskSimulatorSessionPlan<T extends SimulatorSessionPlan>(
   plan: T,
@@ -280,16 +314,16 @@ export function maskSimulatorSessionPlan<T extends SimulatorSessionPlan>(
     ...plan,
     bestSymbols: [],
     symbolsToAvoid: [],
-    preferredStrategy: "Withheld until a verified feed is available",
+    preferredStrategy: "Withheld (session plans are shown only to platform operators)",
     maxTrades: 0,
     maxRiskPerTradeUsd: 0,
     maxRiskPerSessionUsd: 0,
-    marketConditions: WAITING_FOR_FEED_REASON,
+    marketConditions: SIMULATOR_SESSION_PLAN_WITHHELD_REASON,
     rules: [],
     warningZones: [],
     focusAreas: [],
-    recommendedFirstTest: WAITING_FOR_FEED_REASON,
-    summary: WAITING_FOR_FEED_REASON,
+    recommendedFirstTest: SIMULATOR_SESSION_PLAN_WITHHELD_REASON,
+    summary: SIMULATOR_SESSION_PLAN_WITHHELD_REASON,
     withheld: true,
   };
 }

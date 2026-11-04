@@ -18,6 +18,23 @@ interface ReadinessResponse {
   safetyMode: "paper_only";
   liveLocked: boolean;
   readOnlyMode: boolean;
+  allowOrderExecution?: boolean;
+  /** true when liveLocked was read from the user's safety envelope (false = fail-closed default). */
+  liveLockRead?: boolean;
+}
+
+type LiveLockState = "locked" | "not_locked" | "unread" | "not_loaded";
+
+/**
+ * The live lock as the server read it for this user. "locked" needs the
+ * envelope to have been read AND to lock live order execution; a server that
+ * does not say it read the envelope (liveLockRead !== true) only sent a
+ * fail-closed default, which is not a reading.
+ */
+function liveLockState(d: ReadinessResponse | undefined): LiveLockState {
+  if (!d) return "not_loaded";
+  if (d.liveLockRead !== true) return "unread";
+  return d.liveLocked === true && d.allowOrderExecution === false ? "locked" : "not_locked";
 }
 
 function StatusIcon({ status }: { status: ReadinessStatus }) {
@@ -37,15 +54,25 @@ export function FirstRunReadinessPanel() {
     },
     refetchInterval: 60_000,
   });
+  const lock = liveLockState(q.data);
 
   return (
     <Card className="border-card-border" data-testid="first-run-readiness-panel">
       <CardHeader className="pb-3 border-b border-border">
         <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
           First-run readiness
-          <span className="text-[10px] font-normal text-zinc-400 normal-case">
-            live trading armed
-          </span>
+          {/* From the user's safety envelope as the server read it, never a fixed string. */}
+          {(q.data || q.isError) && (
+            <span data-testid="text-first-run-live-lock" className="text-[10px] font-normal text-zinc-400 normal-case">
+              {lock === "not_loaded"
+                ? "live lock status could not be loaded"
+                : lock === "unread"
+                  ? "live lock status could not be read"
+                  : lock === "locked"
+                    ? "live trading locked"
+                    : "server does not report live trading as locked"}
+            </span>
+          )}
         </CardTitle>
         {q.data && (
           <p className="text-xs text-zinc-400 mt-1">
@@ -87,9 +114,16 @@ export function FirstRunReadinessPanel() {
             ))}
           </ul>
         )}
-        <p className="text-[11px] text-zinc-500 mt-4 leading-relaxed">
-          Every status is read from the backend. Live trading remains BLOCKED; all order
-          flows route to the demo engine. Safety alerts are read-only — they never close a trade.
+        <p data-testid="text-first-run-footer" className="text-[11px] text-zinc-500 mt-4 leading-relaxed">
+          Every status is read from the backend.{" "}
+          {lock === "locked"
+            ? "Live trading remains BLOCKED for your account (its safety envelope locks live order execution). "
+            : lock === "unread"
+              ? "Your account's live-trading lock could not be read just now. "
+              : lock === "not_locked"
+                ? "The server does not report live trading as locked for your account. "
+                : ""}
+          Safety alerts are read-only — they never close a trade.
         </p>
       </CardContent>
     </Card>

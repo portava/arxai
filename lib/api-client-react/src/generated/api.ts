@@ -257,6 +257,7 @@ import type {
   DeleteAdminInvestorStatementParams,
   DeleteResult,
   DiscrepancyActionReq,
+  EconomicCalendarEnvelope,
   EconomicEvent,
   EmergencyStopProfitMission200,
   EmergencyStopProfitMission404,
@@ -358,6 +359,7 @@ import type {
   GetChartHistoryParams,
   GetDailyPerformanceParams,
   GetDemoExecutionStatus200,
+  GetEconomicCalendarEnvelopeParams,
   GetEconomicCalendarParams,
   GetEdgeReportById200,
   GetEdgeReports200,
@@ -5065,7 +5067,7 @@ export const useApplyRiskMode = <
 };
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const getSetLiveLockUrl = () => {
   return `/api/risk/lock-live`;
@@ -5128,7 +5130,7 @@ export type SetLiveLockMutationBody = BodyType<RiskLockInput>;
 export type SetLiveLockMutationError = ErrorType<unknown>;
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const useSetLiveLock = <
   TError = ErrorType<unknown>,
@@ -5151,7 +5153,7 @@ export const useSetLiveLock = <
 };
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 export const getGetRiskAuditUrl = (params?: GetRiskAuditParams) => {
   const normalizedParams = new URLSearchParams();
@@ -5218,7 +5220,7 @@ export type GetRiskAuditQueryResult = NonNullable<
 export type GetRiskAuditQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 
 export function useGetRiskAudit<
@@ -7209,7 +7211,8 @@ export const useMt5SyncPositions = <
 };
 
 /**
- * @summary Latest known MT5 connection state
+ * Requires sign-in (401 otherwise). Operators (ADMIN/OWNER) receive the install-wide EA feed (scope platform). Everyone else receives only their own bridge connection, or the shared-master bridge they route through, with no positions claimed (scope own_connection, shared_master_bridge or none).
+ * @summary MT5 connection state, scoped to the caller
  */
 export const getGetMt5StateUrl = () => {
   return `/api/mt5/state`;
@@ -7258,7 +7261,7 @@ export type GetMt5StateQueryResult = NonNullable<
 export type GetMt5StateQueryError = ErrorType<unknown>;
 
 /**
- * @summary Latest known MT5 connection state
+ * @summary MT5 connection state, scoped to the caller
  */
 
 export function useGetMt5State<
@@ -11698,6 +11701,112 @@ export function useGetEconomicCalendar<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetEconomicCalendarQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Upcoming economic events with the calendar read state in one read
+ */
+export const getGetEconomicCalendarEnvelopeUrl = (
+  params?: GetEconomicCalendarEnvelopeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/news/calendar/envelope?${stringifiedParams}`
+    : `/api/news/calendar/envelope`;
+};
+
+export const getEconomicCalendarEnvelope = async (
+  params?: GetEconomicCalendarEnvelopeParams,
+  options?: RequestInit,
+): Promise<EconomicCalendarEnvelope> => {
+  return customFetch<EconomicCalendarEnvelope>(
+    getGetEconomicCalendarEnvelopeUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEconomicCalendarEnvelopeQueryKey = (
+  params?: GetEconomicCalendarEnvelopeParams,
+) => {
+  return [`/api/news/calendar/envelope`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetEconomicCalendarEnvelopeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetEconomicCalendarEnvelopeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEconomicCalendarEnvelopeQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>
+  > = ({ signal }) =>
+    getEconomicCalendarEnvelope(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEconomicCalendarEnvelopeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>
+>;
+export type GetEconomicCalendarEnvelopeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Upcoming economic events with the calendar read state in one read
+ */
+
+export function useGetEconomicCalendarEnvelope<
+  TData = Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetEconomicCalendarEnvelopeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEconomicCalendarEnvelope>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEconomicCalendarEnvelopeQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

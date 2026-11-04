@@ -7,6 +7,7 @@
  */
 import type { BacktestChartSeriesKind } from "./backtestChartSeriesKind";
 import type { BacktestChartSeriesSummary } from "./backtestChartSeriesSummary";
+import type { BacktestDataReliability } from "./backtestDataReliability";
 import type { BacktestEquityPoint } from "./backtestEquityPoint";
 import type { BacktestEvidence } from "./backtestEvidence";
 import type { BacktestTradeMarker } from "./backtestTradeMarker";
@@ -25,4 +26,5 @@ export interface BacktestChartSeries {
   strategyId?: string;
   symbol?: string;
   timeframe?: string;
+  dataReliability?: BacktestDataReliability;
 }

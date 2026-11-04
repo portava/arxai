@@ -84,6 +84,54 @@ export interface EvidenceInput {
   htfContext: string | null;
 }
 
+/** Minimum-evidence rule: independent supporting items required. */
+export const MIN_EVIDENCE_SUPPORTING_ITEMS = 2;
+/** Minimum-evidence rule: net (for − against) evidence score required, 0–100. */
+export const MIN_EVIDENCE_NET_SCORE = 25;
+
+/** One failed sub-rule of the minimum-evidence rule. */
+export type MinimumEvidenceShortfall =
+  | "NO_DIRECTION"
+  | "UNCLEAR_STRUCTURE"
+  | "TOO_FEW_SUPPORTING"
+  | "NET_TOO_LOW"
+  | "OPPOSING_TRAP";
+
+/** A high-confidence fakeout working against the lean (fails the minimum-evidence rule). */
+export function isHighConfidenceOpposingTrap(
+  fakeout: FakeoutReading,
+  direction: SignalDirection,
+): boolean {
+  return (
+    fakeout.detected &&
+    fakeout.confidence >= 60 &&
+    ((fakeout.kind === "BULL_TRAP" && direction === "BUY") ||
+      (fakeout.kind === "BEAR_TRAP" && direction === "SELL") ||
+      fakeout.kind === "FAILED_BREAKOUT")
+  );
+}
+
+/**
+ * The sub-rules of the minimum-evidence rule that FAIL for these inputs. Empty
+ * means the rule is met. buildEvidence derives `meetsMinimum` from this, so any
+ * copy that names a failed sub-rule names exactly the one the producer applied.
+ */
+export function minimumEvidenceShortfall(args: {
+  direction: SignalDirection;
+  bias: SignalBias;
+  supportingCount: number;
+  netScore: number;
+  highConfOpposingTrap: boolean;
+}): MinimumEvidenceShortfall[] {
+  const out: MinimumEvidenceShortfall[] = [];
+  if (args.direction === "NEUTRAL") out.push("NO_DIRECTION");
+  if (args.bias === "UNCLEAR") out.push("UNCLEAR_STRUCTURE");
+  if (args.supportingCount < MIN_EVIDENCE_SUPPORTING_ITEMS) out.push("TOO_FEW_SUPPORTING");
+  if (args.netScore < MIN_EVIDENCE_NET_SCORE) out.push("NET_TOO_LOW");
+  if (args.highConfOpposingTrap) out.push("OPPOSING_TRAP");
+  return out;
+}
+
 /**
  * Build the for/against evidence ledger, apply the minimum-evidence rule, and
  * surface conflicts. `meetsMinimum` requires at least two independent
@@ -167,19 +215,16 @@ export function buildEvidence(input: EvidenceInput): SignalEvidence {
   const againstSum = against.reduce((a, b) => a + b.weight, 0);
   const netScore = round(clamp(forSum - againstSum, 0, 100));
 
-  const highConfOpposingTrap =
-    fakeout.detected &&
-    fakeout.confidence >= 60 &&
-    ((fakeout.kind === "BULL_TRAP" && wantUp) ||
-      (fakeout.kind === "BEAR_TRAP" && wantDown) ||
-      fakeout.kind === "FAILED_BREAKOUT");
+  const highConfOpposingTrap = isHighConfidenceOpposingTrap(fakeout, direction);
 
   const meetsMinimum =
-    direction !== "NEUTRAL" &&
-    bias !== "UNCLEAR" &&
-    forItems.length >= 2 &&
-    netScore >= 25 &&
-    !highConfOpposingTrap;
+    minimumEvidenceShortfall({
+      direction,
+      bias,
+      supportingCount: forItems.length,
+      netScore,
+      highConfOpposingTrap,
+    }).length === 0;
 
   return { for: forItems, against, conflicts, meetsMinimum, netScore };
 }

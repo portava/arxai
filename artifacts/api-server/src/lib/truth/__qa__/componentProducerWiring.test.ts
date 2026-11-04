@@ -10,6 +10,7 @@ let f = marketFixture({ timeframe: "M5", forming: true });
 let wrongRowSource = false, wrongRowBar = false;
 let candleCalls = 0, quoteCalls = 0;
 let failWrite = false;
+let newsCtx: Record<string, unknown> | null = null;
 const memories = new Map<string, any>();
 const dialect = new PgDialect();
 const router = await import("../../data/marketDataRouter.js");
@@ -34,7 +35,7 @@ mock.module("../../marketScanner.js", { namedExports: { ...scanner,
     sufficiency: { canShowTradeSetup: true }, entry: 1.098, stopLoss: 1.097, takeProfit: 1.1, confidenceScore: 80, entrySniperScore: 80, setupType: "Trend", reasonForTrade: "", reasonToAvoid: "",
     patternImpact: { labelHint: "failed_setup", qualityCeiling: "low", conditional: false, contextOnly: false },
     featureSnapshot: { computedAt: wrongRowBar ? new Date(NOW - 60_000).toISOString() : f.evidence.lastClosedCandleAt } }, wrongRowSource ? "other-source" : f.evidence.sourceIdentity),
-  decorateOpportunitiesWithNewsRisk: async (rows: unknown[]) => rows,
+  decorateOpportunitiesWithNewsRisk: async (rows: Record<string, unknown>[]) => newsCtx ? rows.map((r) => ({ ...r, newsContext: newsCtx })) : rows,
 } });
 const loaders = await import("../../scalp/scalpServiceInputs.js");
 mock.module("../../scalp/scalpServiceInputs.js", { namedExports: { ...loaders,
@@ -50,7 +51,7 @@ mock.module("../../scalp/scalpEngine.js", { namedExports: { ...scalpEngine, eval
 const { buildRubyMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
 const { evaluateScalpForSymbol } = await import("../../scalp/scalpService.js");
 const { getChartCandles } = await import("../../data/chart/chartDataService.js");
-beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); wrongRowSource = wrongRowBar = false; candleCalls = quoteCalls = 0; captured = undefined; memories.clear(); failWrite = false; });
+beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); wrongRowSource = wrongRowBar = false; candleCalls = quoteCalls = 0; captured = undefined; memories.clear(); failWrite = false; newsCtx = null; });
 
 test("real Ruby service keeps closed-bar and user evidence, drops forming-price shocks", async () => {
   const before = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
@@ -111,6 +112,21 @@ test("real Ruby producer ignores unbound legacy memory and failed writes never c
   assert.notEqual(result.lifecycleStage, "EXPIRED");
   assert.deepEqual(result.continuity, { basis: "current_observation", saved: false });
   assert.equal(memories.size, 1);
+});
+
+test("real Ruby service: a fallback 'none' news level is a default, not observed news safety", async () => {
+  // The news decorator's catch path: provider unavailable → riskLevel "none", headlinesConnected false.
+  newsCtx = { riskLevel: "none", headlinesConnected: false, warning: "News intelligence temporarily unavailable." };
+  const fallback = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  assert.ok(fallback.scores.unmeasured?.includes("newsSafety"), JSON.stringify(fallback.scores.unmeasured));
+  assert.ok(fallback.scores.unmeasured?.includes("execution"), "no bridge telemetry → execution is a default");
+  assert.equal(fallback.confidenceBandBasis, "PARTIAL");
+  // The provider answered → the same level is an observation; the score itself is unchanged.
+  newsCtx = { riskLevel: "none", headlinesConnected: true, warning: "" };
+  const answered = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  assert.ok(!answered.scores.unmeasured?.includes("newsSafety"));
+  assert.equal(answered.scores.newsSafety, fallback.scores.newsSafety);
+  assert.equal(answered.scores.overall, fallback.scores.overall);
 });
 
 test("actual chart producer emits same opaque source and preceding closed bar despite a future scheduled tip close", async () => {

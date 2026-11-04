@@ -28,7 +28,10 @@ type Counts = {
 };
 
 type Digest = {
-  digestId: string;
+  // "USER" = the caller's own notifications only. Anything else (e.g. the
+  // persisted all-users digest) is never rendered on this page.
+  scope?: string;
+  digestId: string | null;
   rangeStart: string; rangeEnd: string;
   totalNotifications: number;
   criticalCount: number; warningCount: number;
@@ -223,10 +226,10 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* Digest panel */}
-      {digest && (
+      {/* Digest panel — only the caller's own digest (scope USER). */}
+      {digest && digest.scope === "USER" && (
         <div className="border rounded p-3 space-y-1 text-sm" data-testid="digest-panel">
-          <div className="font-semibold">Latest digest: {digest.digestId}</div>
+          <div className="font-semibold">Your notifications — digest</div>
           <div className="text-xs opacity-70">{safeDate(digest.rangeStart)} → {safeDate(digest.rangeEnd)}</div>
           <div>Total: {digest.totalNotifications} • Critical: {digest.criticalCount} • Warnings: {digest.warningCount} • Trades: {digest.tradeCount} • Learning: {digest.learningCount} • Safety: {digest.safetyCount}</div>
           {digest.summary.topCritical && digest.summary.topCritical.length > 0 && (

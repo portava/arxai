@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { MultiTimeframeTrendSnapshotFreshness } from "./multiTimeframeTrendSnapshotFreshness";
 import type { MultiTimeframeTrendSnapshotTrend } from "./multiTimeframeTrendSnapshotTrend";
 
 export interface MultiTimeframeTrendSnapshot {
@@ -14,4 +15,16 @@ export interface MultiTimeframeTrendSnapshot {
   fastSma: number;
   slowSma: number;
   candlesUsed: number;
+  /**
+   * Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.
+   * @nullable
+   */
+  newestBarTime?: string | null;
+  /** CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports. */
+  freshness?: MultiTimeframeTrendSnapshotFreshness;
+  /**
+   * Provider that served this timeframe's bars, or null when not reported. Absent on older reports.
+   * @nullable
+   */
+  source?: string | null;
 }

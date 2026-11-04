@@ -19,6 +19,7 @@ import {
   type OpportunityLabel,
 } from "../marketScanner.js";
 import type { LiveCandidate, TakeProfitTarget } from "../assistant/liveScanner.js";
+import { knownPipDistance } from "./chart/symbolProfile.js";
 
 // ── Banding (exact same thresholds as liveScanner + marketScanner) ──────────
 
@@ -67,6 +68,8 @@ export function deriveTakeProfitTargets(
   action: TradeDirection | null,
   entry: number,
   stopLoss: number,
+  /** Symbol for the pip count; omitted/unknown ⇒ distancePips is null. */
+  symbol: string | null = null,
 ): DerivedTakeProfit {
   if (!action) {
     return {
@@ -100,7 +103,7 @@ export function deriveTakeProfitTargets(
       reason,
       rr: mult,
       distancePoints: Math.abs(price - entry),
-      distancePips: Math.abs(price - entry) * 10000,
+      distancePips: knownPipDistance(symbol, price - entry),
       suggestedAction,
       confidence,
     };
@@ -193,7 +196,7 @@ export function projectOpportunitySetup(o: ScannerOpportunity): ProjectedOpportu
       riskRewardRatio: null,
     };
   }
-  const tp = deriveTakeProfitTargets(normalizeTradeDirection(o.recommendedAction), o.entry, o.stopLoss);
+  const tp = deriveTakeProfitTargets(normalizeTradeDirection(o.recommendedAction), o.entry, o.stopLoss, o.symbol);
   return {
     setupWithheld: false,
     withheldReason: null,

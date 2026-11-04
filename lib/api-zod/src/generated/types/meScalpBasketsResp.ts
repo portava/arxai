@@ -12,4 +12,18 @@ export interface MeScalpBasketsResp {
   baskets: ScalpBasket[];
   accountMode: MeScalpBasketsRespAccountMode;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
+  /**
+   * When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.
+   * @nullable
+   */
+  positionsAsOf?: string | null;
+  /** True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P/L, stops and exit / add-on advice then describe that reading, not the account now. */
+  positionsStale?: boolean;
 }

@@ -1,11 +1,12 @@
 // Task #600 — the header Action cell must be synchronized on symbol AND
 // timeframe, not symbol alone.
 //
-// THE REGRESSION THIS LOCKS: the Focus-tab scalp card reads M1 and lifts its
-// setup-aware verdict ("Ready now") into the page store. The header's Action
+// THE REGRESSION THIS LOCKS: the Focus-tab scalp card reads M5 (the server
+// stamps `timeframe: "M5"` on the result) and lifts its setup-aware verdict
+// ("Ready now") into the page store under the bus key "5m". The header's Action
 // cell adopts that lifted verdict so the two can never disagree. But the scalp
-// verdict is an M1 verdict — if the store is keyed by symbol ALONE, switching the
-// chart to 15m (same symbol) leaves the header showing the stale M1 "Ready now"
+// verdict is an M5 verdict — if the store is keyed by symbol ALONE, switching the
+// chart to 15m (same symbol) leaves the header showing the stale M5 "Ready now"
 // while the user looks at a 15m chart that has no such setup. The fix keys the
 // lifted verdict by symbol+timeframe (mirroring rubyReadStore) and reads it back
 // under the SAME coerced timeframe, so the lifted verdict only ever shows on the
@@ -14,7 +15,7 @@
 //
 // This is a TRUE end-to-end render proof, not a store unit test or a source scan:
 // it mounts the REAL publisher (RubyScalpFocusCard → ScalpSignalCard, which is
-// what actually picks the "1m" bus key) AND the REAL ScannerHeaderSummary inside
+// what actually picks the "5m" bus key) AND the REAL ScannerHeaderSummary inside
 // ONE real SelectedActionStoreProvider, then asserts the header's Action cell.
 // Only the page's data hooks are stubbed (symbol/timeframe/truth/mode) and the
 // scalp mutation is resolved instantly — the store, the timeframe coercion, and
@@ -30,7 +31,9 @@ import type { ScalpResult } from "@workspace/api-client-react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 
 // ── Controllable selected timeframe (the variable under test) ────────────────
-let currentTimeframe = "1m";
+// The bus form of the timeframe the Focus scalp engine reads (server M5).
+const SCALP_TF = "5m";
+let currentTimeframe = SCALP_TF;
 
 // ── Controllable selected symbol + scalp resolve (cold-start proof) ──────────
 let currentSymbol = "EURUSD";
@@ -43,6 +46,8 @@ let scalpFails = false;
 // (mid-switch / first load) — the ONLY window in which the header may show
 // the neutral PENDING ("Checking…") state.
 let truthLoaded = true;
+// When set, the scalp mutation resolves THIS result instead of the READY one.
+let scalpOverride: Partial<ScalpResult> | null = null;
 
 // ── The data-only fallback verdict the header derives without a lifted card ──
 // Deliberately DIFFERENT from the card's "Ready now" so the two outcomes are
@@ -108,6 +113,7 @@ const { scalpResult } = vi.hoisted(() => {
     scalpType: "Momentum",
     mode: "ANY",
     status: "READY",
+    timeframe: "M5",
     qualityScore: 80,
     confidenceLabel: "Strong",
     entryType: "MARKET_BUY",
@@ -185,8 +191,9 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => {
           // stale-symbol guard on every switch.
           opts?.onSuccess?.({
             ...(scalpResult as ScalpResult),
+            ...(scalpOverride ?? {}),
             symbol: vars?.data?.symbol ?? (scalpResult as ScalpResult).symbol,
-          });
+          } as ScalpResult);
         }
       },
       isPending: false,
@@ -203,7 +210,7 @@ import { SelectedActionStoreProvider } from "./selectedActionStore";
 function sharedTree(symbol: string) {
   return (
     <SelectedActionStoreProvider>
-      {/* REAL publisher — lifts its M1 ("1m") verdict into the store */}
+      {/* REAL publisher — lifts its M5 ("5m") verdict into the store */}
       <RubyScalpFocusCard symbol={symbol} />
       {/* REAL consumer — its Action cell reads the lifted verdict back */}
       <ScannerHeaderSummary running={false} />
@@ -223,22 +230,23 @@ async function actionVerdictText(): Promise<string> {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  currentTimeframe = "1m";
+  currentTimeframe = SCALP_TF;
   currentSymbol = "EURUSD";
   scalpResolves = true;
+  scalpOverride = null;
   scalpFails = false;
   truthLoaded = true;
 });
 
 describe("ScannerHeaderSummary — Action cell synchronized on symbol AND timeframe (Task #600)", () => {
-  it("adopts the lifted scalp verdict ('Ready now') when the selected timeframe IS the scalp's 1m", async () => {
-    currentTimeframe = "1m";
+  it("adopts the lifted scalp verdict ('Ready now') when the selected timeframe IS the scalp's 5m", async () => {
+    currentTimeframe = SCALP_TF;
     renderShared();
 
-    // The card publishes READY_NOW under (EURUSD, "1m"); the header reads it back
-    // under the same coerced "1m" → it must show the lifted "Ready now", NOT the
-    // data-only fallback. (Also proves the publisher used the bus form "1m": had
-    // it published "M1", the header's get(EURUSD,"1m") would miss and this would
+    // The card publishes READY_NOW under (EURUSD, "5m"); the header reads it back
+    // under the same coerced "5m" → it must show the lifted "Ready now", NOT the
+    // data-only fallback. (Also proves the publisher used the bus form "5m": had
+    // it published "M5", the header's get(EURUSD,"5m") would miss and this would
     // fall back to the data-only "Wait for confirmation".)
     const action = within(await screen.findByTestId("scanner-header-action"));
     expect(await action.findByText("Ready now")).toBeTruthy();
@@ -246,16 +254,16 @@ describe("ScannerHeaderSummary — Action cell synchronized on symbol AND timefr
     expect(action.queryByText("Checking…")).toBeNull();
   });
 
-  it("does NOT show the stale 1m verdict on a different timeframe — mirrors the resolved data-only verdict", async () => {
+  it("does NOT show the stale 5m verdict on a different timeframe — mirrors the resolved data-only verdict", async () => {
     currentTimeframe = "15m";
     renderShared();
 
-    // The card still lifts its M1 verdict under (EURUSD, "1m"), but the header
+    // The card still lifts its M5 verdict under (EURUSD, "5m"), but the header
     // is now on 15m → get(EURUSD,"15m") misses. The truth read for 15m HAS
     // resolved (truthLoaded), and its data-only verdict is the resolved
     // scanner verdict the chart badge shows for this exact key — so the
     // header must mirror it IMMEDIATELY ("Wait for confirmation"): never the
-    // stale 1m "Ready now", and never a "Checking…" placeholder while the
+    // stale 5m "Ready now", and never a "Checking…" placeholder while the
     // chart already displays a resolved verdict (the desync bug this locks).
     const action = within(await screen.findByTestId("scanner-header-action"));
     expect(await action.findByText("Wait for confirmation")).toBeTruthy();
@@ -264,7 +272,7 @@ describe("ScannerHeaderSummary — Action cell synchronized on symbol AND timefr
   });
 
   it("the two timeframes resolve to DIFFERENT action verdicts from the SAME lifted card", async () => {
-    currentTimeframe = "1m";
+    currentTimeframe = SCALP_TF;
     renderShared();
     const onM1 = await actionVerdictText();
     cleanup();
@@ -291,7 +299,7 @@ describe("ScannerHeaderSummary — Action cell synchronized on symbol AND timefr
 describe("ScannerHeaderSummary — symbol switch never shows a stale or fabricated verdict", () => {
   it("mid-switch (reads in flight): neutral 'Checking…', then mirrors the truth verdict when it lands", async () => {
     // Step 1 — EURUSD resolves instantly: the lifted "Ready now" shows.
-    currentTimeframe = "1m";
+    currentTimeframe = SCALP_TF;
     currentSymbol = "EURUSD";
     scalpResolves = true;
     const view = renderShared();
@@ -333,7 +341,7 @@ describe("ScannerHeaderSummary — 'Checking…' always resolves to a final stat
   it("hard timeout: 'Checking…' becomes FINAL 'No confirmation' after PENDING_RESOLVE_TIMEOUT_MS", async () => {
     vi.useFakeTimers();
     // 15m with the truth read never landing: the scalp card publishes only
-    // under "1m" AND no data-only verdict ever arrives for this key —
+    // under "5m" AND no data-only verdict ever arrives for this key —
     // exactly the forever-hang scenario.
     currentTimeframe = "15m";
     truthLoaded = false;
@@ -403,7 +411,7 @@ describe("ScannerHeaderSummary — 'Checking…' always resolves to a final stat
   });
 
   it("failed scalp read: resolves IMMEDIATELY to FINAL 'Check failed' — no timeout needed", async () => {
-    currentTimeframe = "1m";
+    currentTimeframe = SCALP_TF;
     scalpFails = true;
     renderShared();
 
@@ -414,7 +422,7 @@ describe("ScannerHeaderSummary — 'Checking…' always resolves to a final stat
   });
 
   it("a successful re-read overwrites 'Check failed' with the real verdict", async () => {
-    currentTimeframe = "1m";
+    currentTimeframe = SCALP_TF;
     scalpFails = true;
     const view = renderShared();
     expect((await screen.findByTestId("scanner-header-action")).textContent).toContain("Check failed");
@@ -431,5 +439,61 @@ describe("ScannerHeaderSummary — 'Checking…' always resolves to a final stat
     const action = within(await screen.findByTestId("scanner-header-action"));
     expect(await action.findByText("Ready now")).toBeTruthy();
     expect(action.queryByText("Check failed")).toBeNull();
+  });
+});
+
+// ── Owner screenshot 2026-10-27 (V75 1m, Deriv public data, no MT5 bridge) ────
+// The header ACTION read "Feed limited — The live feed isn't fully confirmed"
+// on the 1m chart while DATA read "Live, confirmed candles.". The verdict came
+// from the M5 Focus scalp (AWAITING_DATA because the broker's symbol details
+// were missing) and was keyed under "1m".
+describe("ScannerHeaderSummary — the M5 scalp never speaks for the 1m cell, and NO_SPECS is never 'Feed limited'", () => {
+  const NO_SPECS: Partial<ScalpResult> = {
+    status: "AWAITING_DATA",
+    rejectReason: "NO_SPECS",
+    direction: null,
+    canBuildTrade: false,
+    canWatch: true,
+    entryZone: null,
+    stopLoss: null,
+    suggestedLot: null,
+    noTradeReason: "Eleanor needs live symbol specs before building a scalp for this market.",
+  } as Partial<ScalpResult>;
+
+  it("on 1m the header shows its own data-only verdict, never the M5 scalp's 'Ready now'", async () => {
+    currentTimeframe = "1m";
+    renderShared();
+    const action = within(await screen.findByTestId("scanner-header-action"));
+    expect(await action.findByText("Wait for confirmation")).toBeTruthy();
+    expect(action.queryByText("Ready now")).toBeNull();
+  });
+
+  for (const tf of ["1m", SCALP_TF]) {
+    it(`NO_SPECS on ${tf}: Action follows the data-only verdict and never says 'Feed limited' while DATA is Live`, async () => {
+      currentTimeframe = tf;
+      scalpOverride = NO_SPECS;
+      renderShared();
+      const pill = await screen.findByTestId("scanner-header-action");
+      const action = within(pill);
+      expect(await action.findByText("Wait for confirmation")).toBeTruthy();
+      expect(pill.textContent ?? "").not.toMatch(/feed limited/i);
+      expect(pill.textContent ?? "").not.toMatch(/live feed isn't fully confirmed/i);
+      expect(screen.getByTestId("scanner-header-data").textContent).toContain("Live");
+    });
+  }
+
+  it("a published READY verdict is retracted when a refresh returns NO_SPECS", async () => {
+    currentTimeframe = SCALP_TF;
+    renderShared();
+    const action = within(await screen.findByTestId("scanner-header-action"));
+    expect(await action.findByText("Ready now")).toBeTruthy();
+
+    scalpOverride = NO_SPECS;
+    await act(async () => {
+      screen.getByTestId("ruby-scalp-focus-refresh").click();
+    });
+    const pill = await screen.findByTestId("scanner-header-action");
+    expect(await within(pill).findByText("Wait for confirmation")).toBeTruthy();
+    expect(within(pill).queryByText("Ready now")).toBeNull();
   });
 });

@@ -14,4 +14,6 @@ export interface TradePlanChecklist {
   warnCount: number;
   isReady: boolean;
   rewardToRisk?: number | null;
+  /** When validate computed this checklist. Absent on plans validated before it was recorded. */
+  checkedAtIso?: string | null;
 }

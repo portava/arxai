@@ -41,9 +41,13 @@ function deriveBridgeState(
   freshness: Freshness,
 ): BridgeState {
   if (connectionStatus === "unavailable" || connectionStatus === "disconnected") return "offline";
-  if (freshness === "live" || (connectionStatus === "live" && freshness !== "stale" && freshness !== "unavailable")) return "live";
+  if (freshness === "live") return "live";
+  // "fresh" (≤30 s) reads live only while the stream is connected. A "delayed"
+  // snapshot (30 s – 2 min old) is delayed whatever the connection says: a
+  // connected stream does not make old broker data current.
+  if (freshness === "fresh") return connectionStatus === "live" ? "live" : "delayed";
+  if (freshness === "delayed") return "delayed";
   if (freshness === "stale" || freshness === "unavailable") return "stale";
-  if (freshness === "fresh" || freshness === "delayed") return "delayed";
   return "offline";
 }
 

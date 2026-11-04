@@ -88,7 +88,10 @@ router.post("/onboarding/acknowledge", async (req, res) => {
         brokerReadonlyAcknowledged: row.brokerReadonlyAcknowledged,
         liveTradingStatus: "DISABLED",
         canPlaceLiveTrade: false,
-        note: "Acknowledgement recorded. Live trading remains DISABLED.",
+        // liveTradingStatus / canPlaceLiveTrade above are this route's fixed
+        // labels (an acknowledgement can never enable live trading), not the
+        // account's status, which is on its Trading Permission card.
+        note: "Acknowledgement recorded. Acknowledgements never change live-trading status; your account's status is on the Trading Permission card.",
       },
     }));
   } catch (e) {

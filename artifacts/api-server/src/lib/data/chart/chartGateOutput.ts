@@ -10,15 +10,16 @@
 //                              selfTradeChartAllowed = false
 //   providerDeliversRealOhlc = false ⇒ candlestickModeAllowed = false
 //   mirror fail (seam overlap OR deviation failed) ⇒ tradeConfirmationAllowed = false
+//   mirror not checked (no seam AND no bound broker comparison) ⇒ tradeConfirmationAllowed = false
 //   feed stale               ⇒ autonomousChartActionAllowed = false
 //
 // SAFETY: this gate NEVER blocks candle rendering or the live 16-gate pipeline.
 // It is an advisory chokepoint for chart-BASED confirmations only. Phase 4
 // consumers enforce the hard rules; they may add stricter local checks on top.
 
-import type { ChartTruthScore } from "./chartTruthScore.js";
+import { isMergeSeamMeasured, type ChartTruthScore } from "./chartTruthScore.js";
 import type { ChartReadScore } from "./chartReadScore.js";
-import type { BrokerPriceAlignment } from "./brokerPriceAlignment.js";
+import { hasMeasuredBrokerAlignment, unboundQuoteDescription, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 import type { TimeframeTruthResult } from "./candleTruthEngine.js";
 
 export interface ChartGateOutput {
@@ -59,8 +60,12 @@ export interface ChartGateOutput {
   autonomousChartActionAllowed: boolean;
   /**
    * True when the broker-price mirror has NOT failed (seam clean AND broker
-   * alignment within wide tolerance). When false, chart-based trade confirmation
-   * (entry/stop reference from the chart) is blocked.
+   * alignment within wide tolerance) AND at least one of the two was actually
+   * observed. When neither the seam nor a bound broker comparison could be
+   * checked, "allowed" would rest on absent evidence, so it is false and the
+   * reason says the mirror could not be checked (not that it failed).
+   * When false, chart-based trade confirmation (entry/stop reference from the
+   * chart) is blocked.
    */
   tradeConfirmationAllowed: boolean;
 
@@ -74,15 +79,128 @@ export interface ChartGateOutput {
   note: string;
 }
 
-const TRUTH_THRESHOLD = 75;
+/** Chart Truth score a read needs before it may be called verified. */
+export const CHART_TRUTH_THRESHOLD = 75;
+const TRUTH_THRESHOLD = CHART_TRUTH_THRESHOLD;
+
+/**
+ * The feed fields the stale gate reads. A bare boolean is the stale flag
+ * alone (no feed wording available → the generic reason).
+ */
+export type ChartGateFeedInput =
+  | boolean
+  | { stale: boolean; quality?: string | null; warning?: string | null };
+
+/**
+ * Why the stale gate is closed, in the feed status's OWN words when it graded
+ * the series "stale": inside a scheduled weekend close that is "Market closed
+ * … Not a feed fault", for a session market "The market may be closed or the
+ * feed delayed", for a 24/7 market the measured trailing gap. A stale flag on a
+ * feed graded for something else (partial / invalid) keeps the generic reason,
+ * since its warning describes that other fault.
+ */
+function staleBlockReason(feed: ChartGateFeedInput): string {
+  const blocked = "Autonomous chart-based actions are blocked until the chart has current data.";
+  const warning = typeof feed === "object" && feed.quality === "stale" && typeof feed.warning === "string"
+    ? feed.warning.trim()
+    : "";
+  if (warning) return `${/[.!?]$/.test(warning) ? warning : `${warning}.`} ${blocked}`;
+  return "The chart's newest bars are not current — autonomous chart-based actions are blocked until the chart has current data.";
+}
+
+export const MERGE_SEAM_FAILED_REASON = "Merge-seam integrity failed — chart-based trade confirmation blocked.";
+export const MIRROR_NOT_CHECKED_REASON =
+  "Neither the merge seam nor a broker price comparison could be checked — chart-based trade confirmation is not allowed without evidence.";
+
+/**
+ * Trust-line candle segment. Passing the 75 gate is not "verified": the word
+ * is used only inside the score's own Verified band; otherwise the line
+ * states the score and its band.
+ */
+export function candleTrustSegment(
+  gate: Pick<ChartGateOutput, "confidentReadAllowed" | "chartTruthScore" | "truthLabel">,
+  timeframe: string,
+): string {
+  if (!gate.confidentReadAllowed) return `${timeframe} candles syncing`;
+  if (gate.truthLabel === "Verified") return `Verified ${timeframe} candles`;
+  return `${timeframe} candles: Chart Truth ${gate.chartTruthScore} (${gate.truthLabel})`;
+}
+
+/**
+ * Trust-line feed segment. "Not stale" is not "live": "Live feed" needs a
+ * clean feed that is confirmed live; a delayed or not-live feed says so.
+ */
+export function feedTrustSegment(
+  autonomousChartActionAllowed: boolean,
+  feed: { quality?: string | null; isLive?: boolean | null } | null | undefined,
+): string {
+  if (!autonomousChartActionAllowed || feed?.quality === "stale") return "Feed stale";
+  if (feed?.quality === "delayed") return "Feed delayed";
+  if (feed?.isLive === false) return "Feed not live";
+  if (feed?.quality === "clean" && feed.isLive === true) return "Live feed";
+  return "Feed not confirmed live";
+}
+
+/**
+ * The gate's mirror reasons, read back from its own blocked reasons (also for
+ * cached gates). Pass the series' truth result (null when there is none) to
+ * also report whether the merge seam went unobserved: an open gate can rest on
+ * the broker comparison alone, which does not confirm the symbol mirror.
+ */
+export function gateMirrorBlockCause(
+  gate: Pick<ChartGateOutput, "tradeConfirmationAllowed" | "blockedReasons">,
+  truthResult?: TimeframeTruthResult | null,
+): {
+  seamFailed: boolean; notChecked: boolean; seamUnchecked: boolean;
+} {
+  const reasons = Array.isArray(gate.blockedReasons) ? gate.blockedReasons : [];
+  return {
+    seamFailed: reasons.includes(MERGE_SEAM_FAILED_REASON),
+    notChecked: !gate.tradeConfirmationAllowed && reasons.includes(MIRROR_NOT_CHECKED_REASON),
+    seamUnchecked: truthResult !== undefined && !isMergeSeamMeasured(truthResult),
+  };
+}
+
+/**
+ * Plain-English reason for a Chart Truth Score under the threshold. The score
+ * band (e.g. "Degraded") is named only when a MEASURED check found a concern
+ * (under 90); a measured deduction scoring 90-99 is still listed, with its
+ * detail, as a minor deduction. "No measured check found a problem" is said
+ * only when every measured check scored 100. A score that is low only because
+ * checks could not run says exactly that and names them, because unmeasured
+ * checks earn no points.
+ */
+function truthShortfallReason(truthScore: ChartTruthScore): string {
+  const head = `Chart Truth Score ${truthScore.score} < ${TRUTH_THRESHOLD}`;
+  const metrics = Array.isArray(truthScore.subMetrics) ? truthScore.subMetrics : [];
+  if (!metrics.length) return `${head} (${truthScore.label}) — chart-based confirmation blocked.`;
+  const measured = (m: ChartTruthScore["subMetrics"][number]) =>
+    m.evidenceStatus === "measured" && m.rawScore != null && Number.isFinite(m.rawScore);
+  const concerns = metrics.filter(m => measured(m) && m.rawScore! < 90);
+  const minor = metrics.filter(m => measured(m) && m.rawScore! >= 90 && m.rawScore! < 100);
+  const unmeasured = metrics.filter(m => !measured(m));
+  const minorText = minor.length
+    ? `Minor measured deductions: ${minor.map(m => {
+      const detail = typeof m.detail === "string" ? m.detail.trim().replace(/\.$/, "") : "";
+      return `${m.label} ${m.rawScore}/100${detail ? ` (${detail})` : ""}`;
+    }).join(", ")}.`
+    : "";
+  return (concerns.length ? `${head} (${truthScore.label})` : head) + " — chart-based confirmation blocked. " +
+    (concerns.length
+      ? `Measured concerns: ${concerns.map(m => `${m.label} ${m.rawScore}/100`).join(", ")}.${minorText ? ` ${minorText}` : ""}`
+      : minorText ? `No measured check scored below 90. ${minorText}` : "No measured check found a problem.") +
+    (unmeasured.length
+      ? ` Could not be checked (earn no points): ${unmeasured.map(m => m.label).join(", ")}.` : "");
+}
 
 export function computeChartGateOutput(
   truthScore: ChartTruthScore,
   readScore: ChartReadScore,
   alignment: BrokerPriceAlignment,
   truthResult: TimeframeTruthResult | null,
-  feedStale: boolean,
+  feed: ChartGateFeedInput,
 ): ChartGateOutput {
+  const feedStale = typeof feed === "boolean" ? feed : feed.stale === true;
   const blockedReasons: string[] = [];
 
   // ── 1. confident read / scanner / self-trade — Truth ≥ 75 ─────────────────
@@ -90,11 +208,7 @@ export function computeChartGateOutput(
   const confidentReadAllowed = trustworthy;
   const scannerConfirmAllowed = trustworthy;
   const selfTradeChartAllowed = trustworthy;
-  if (!trustworthy) {
-    blockedReasons.push(
-      `Chart Truth Score ${truthScore.score} < ${TRUTH_THRESHOLD} (${truthScore.label}) — chart-based confirmation blocked.`,
-    );
-  }
+  if (!trustworthy) blockedReasons.push(truthShortfallReason(truthScore));
 
   // ── 2. candlestick mode — real OHLC required ───────────────────────────────
   const hasRealOhlc = truthResult?.providerDeliversRealOhlc ?? false;
@@ -109,7 +223,7 @@ export function computeChartGateOutput(
   // ── 3. autonomous chart action — feed must not be stale ───────────────────
   const autonomousChartActionAllowed = !feedStale;
   if (feedStale) {
-    blockedReasons.push("Feed is stale — autonomous chart-based actions are blocked until the feed is current.");
+    blockedReasons.push(staleBlockReason(feed));
   }
 
   // ── 4. trade confirmation — mirror must not have failed ───────────────────
@@ -117,12 +231,25 @@ export function computeChartGateOutput(
     ? (truthResult.mergeSeam.overlapAtSeam || (truthResult.mergeSeam.gapAtSeam && truthResult.mergeSeam.seamGapIntervals > 2))
     : false;
   const alignmentFailed = alignment.brokerDataAvailable && alignment.tolerance === "failed";
-  const tradeConfirmationAllowed = !seamFailed && !alignmentFailed;
+  // "Not failed" is not evidence: with no observed seam and no bound broker
+  // comparison there is nothing to confirm the chart's prices against.
+  const mirrorNotChecked = !seamFailed && !alignmentFailed &&
+    !isMergeSeamMeasured(truthResult) && !hasMeasuredBrokerAlignment(alignment);
+  const tradeConfirmationAllowed = !seamFailed && !alignmentFailed && !mirrorNotChecked;
   if (seamFailed) {
-    blockedReasons.push("Merge-seam integrity failed — chart-based trade confirmation blocked.");
+    blockedReasons.push(MERGE_SEAM_FAILED_REASON);
   }
   if (alignmentFailed) {
-    blockedReasons.push("Broker price alignment failed — chart-based trade confirmation blocked.");
+    // The gate stays closed either way; the copy names what was compared. A
+    // quote from another feed or an old tick says nothing about this chart.
+    const unbound = unboundQuoteDescription(alignment.quoteBinding);
+    blockedReasons.push(unbound
+      ? `The chart price differs beyond the failure band from ${unbound.reason} — chart-based trade confirmation blocked. ` +
+        "That comparison does not show whether this chart matches your broker."
+      : "Broker price alignment failed — chart-based trade confirmation blocked.");
+  }
+  if (mirrorNotChecked) {
+    blockedReasons.push(MIRROR_NOT_CHECKED_REASON);
   }
 
   const primaryBlockReason = blockedReasons[0] ?? null;

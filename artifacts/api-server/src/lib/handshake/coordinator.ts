@@ -12,6 +12,7 @@
 // investor-scoped handshake reads ONLY the supplied investor's rows, and
 // returns SKIPPED when no investor context is supplied (admin monitor view).
 
+import { registerHeapWatchGauge } from "../perf/heapWatch.js";
 import {
   aggregateHandshake,
   buildAdminDetails,
@@ -24,6 +25,7 @@ import {
   summarizeFreshness,
   type HandshakeContext,
   type HandshakeLayerCheck,
+  type HandshakeReadinessStatus,
   type HandshakeResult,
   type HandshakeType,
 } from "@workspace/domain/handshake";
@@ -36,6 +38,7 @@ import { logHandshakeResult } from "./handshakeLog.js";
 // calls. Keyed per handshake type AND investor scope (system vs per-investor).
 const RESULT_TTL_MS = 10_000;
 const cache = new Map<string, { at: number; result: HandshakeResult }>();
+registerHeapWatchGauge("handshake.resultCache", () => cache.size);
 
 function cacheKey(type: HandshakeType, ctx?: HandshakeContext): string {
   // Per-user isolation: the cache key MUST capture every context dimension a
@@ -62,10 +65,12 @@ function buildResult(
   checks: HandshakeLayerCheck[],
   implemented: boolean,
   evaluatedAt: string,
+  /** Set only when the evaluation itself failed ("ERROR"). */
+  failedStatus?: HandshakeReadinessStatus,
 ): HandshakeResult {
   const agg = aggregateHandshake(checks);
   const freshness = summarizeFreshness(checks, evaluatedAt);
-  const overallStatus = deriveReadinessStatus(checks, agg, freshness);
+  const overallStatus = failedStatus ?? deriveReadinessStatus(checks, agg, freshness);
   const copy = buildHandshakeCopy(type, overallStatus);
   return {
     type,
@@ -92,14 +97,15 @@ async function evaluate(type: HandshakeType, ctx?: HandshakeContext): Promise<Ha
   const def = getHandshakeDefinition(type);
   const evaluatedAt = new Date().toISOString();
 
-  // Scaffold handshakes (no adapters yet) honestly report UNKNOWN — never a
-  // fabricated PASS. Downstream phases wire real adapters.
+  // Scaffold handshakes (no adapters yet) honestly report NOT_CHECKED
+  // (aggregate UNKNOWN) — never a fabricated PASS, and not an error.
+  // Downstream phases wire real adapters.
   if (!def.implemented || def.layers.length === 0) {
     return buildResult(type, [], def.implemented, evaluatedAt);
   }
 
   // Per-investor isolation: an investor-scoped handshake with no investor
-  // context returns SKIPPED checks (→ UNKNOWN) rather than reading or
+  // context returns SKIPPED checks (→ NOT_CHECKED) rather than reading or
   // fabricating another tenant's data.
   const investorScoped = INVESTOR_SCOPED_HANDSHAKE_TYPES.includes(type);
   const missingInvestorContext = investorScoped && (ctx?.investorUserId ?? null) == null;
@@ -178,7 +184,8 @@ export async function runHandshake(
     return result;
   } catch (err) {
     logger.warn({ err, type }, "handshake evaluation failed (advisory; failing open to UNKNOWN)");
-    return buildResult(type, [], getHandshakeDefinition(type).implemented, new Date().toISOString());
+    // A failed evaluation is the one real ERROR (nothing-to-check is NOT_CHECKED).
+    return buildResult(type, [], getHandshakeDefinition(type).implemented, new Date().toISOString(), "ERROR");
   }
 }
 

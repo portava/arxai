@@ -34,9 +34,10 @@ router.get("/me/chart/intelligence", requireUser, async (req, res): Promise<void
   // Build (or return cached) base state — shared across users.
   let state = await buildChartIntelligenceState(q.symbol, q.timeframe, q.limit);
 
-  // Route-level enrichment: per-user broker bid/ask from arx_symbol_specs
-  // (EA-reported truth). Fail-open: any error falls through to the base state
-  // with the noBrokerAlignment placeholder.
+  // Route-level enrichment: the user's broker quote, bound to the served
+  // series through brokerQuoteBinding.ts (see userBrokerAlignment.ts). Only a
+  // BOUND quote measures alignment. Fail-open: any error falls through to the
+  // base state with the noBrokerAlignment placeholder (mirror unmeasured).
   const userId = req.authUser?.id;
   if (userId != null) {
     try {

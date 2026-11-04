@@ -44,8 +44,17 @@ function categoryOf(r: OpportunityInput): OpportunityCategory {
   if (r.newsRisk === "high" || r.newsRisk === "critical") return "WATCH_AFTER_NEWS";
   // 4. Scanner rejected, or edge too thin → avoid.
   if (r.recommendedAction === "REJECT" || r.edgeScore < 35) return "AVOID";
-  // 5. Clean, ready-to-act setup.
+  // 4b. The row's own final read said no trade / avoid → avoid. Every downgrade
+  //     computeFinalRead applies (risk rejection, chop, failed pattern,
+  //     trendline trap, news conflict) must reach the map, or a row whose reason
+  //     reads "No trade right now." would be filed under "Ready now".
+  if (r.finalReadLabel === "NO_TRADE" || r.finalReadLabel === "AVOID_FOR_NOW") return "AVOID";
+  // 5. Clean, ready-to-act setup — only when the final read itself is
+  //    TRADE_WATCH (or not supplied by a legacy caller). WAIT_FOR_CONFIRMATION
+  //    or an unknown (null) read can at most be FORMING_SOON.
+  const finalAllowsReady = r.finalReadLabel === undefined || r.finalReadLabel === "TRADE_WATCH";
   if (
+    finalAllowsReady &&
     (r.recommendedAction === "BUY" || r.recommendedAction === "SELL") &&
     r.direction !== "NEUTRAL" &&
     r.edgeScore >= 55 &&

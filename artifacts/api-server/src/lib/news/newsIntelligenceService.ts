@@ -46,6 +46,14 @@ export interface NewsIntelligencePack {
   bias: NewsBias;
   timing: "now" | "upcoming" | "recent" | "quiet";
   warningSummary: string;
+  /**
+   * Whether scheduled (economic-calendar) event risk was actually checked:
+   * "checked" — a live calendar answered; "not_checked" — no calendar is
+   * connected or its read failed, so `riskLevel` "none" / `timing` "quiet"
+   * were NOT observed and upcoming events are unknown; "not_applicable" — a
+   * synthetic instrument scheduled events do not move.
+   */
+  scheduledEventRisk: "checked" | "not_checked" | "not_applicable";
   recommendation: "watch" | "wait" | "avoid" | "proceed_with_caution";
   upcomingEvent: UpcomingEventSummary | null;
   recentHeadlines: NewsHeadline[];
@@ -159,6 +167,22 @@ function rawToEconomicEvent(e: RawCalendarEvent): EconomicEvent {
   };
 }
 
+/**
+ * True when a calendar read was attempted and did not answer: a configured
+ * provider ("none" means not configured) that is not connected, or an explicit
+ * failed fetch. Not configured at all is NOT a failed check (technicals-only by
+ * design); a failed check must never be read as "no scheduled news".
+ */
+export function calendarCheckFailed(
+  calendar: { connected?: boolean | null; provider?: string | null; providerState?: string | null } | null | undefined,
+): boolean {
+  if (!calendar) return false;
+  if (calendar.connected === true) return false;
+  if (calendar.providerState === "fetch_error") return true;
+  if (calendar.providerState === "not_configured") return false;
+  return typeof calendar.provider === "string" && calendar.provider !== "none" && calendar.provider !== "";
+}
+
 export async function getNewsIntelligence(
   symbolRaw: string,
 ): Promise<NewsIntelligencePack> {
@@ -209,8 +233,21 @@ export async function getNewsIntelligence(
     calendar = await getEconomicCalendar(symbol, nowMs);
   } catch {
     // Honest: on any calendar read failure treat it as disconnected (no events)
-    // rather than surfacing stale or invented schedule data.
+    // rather than surfacing stale or invented schedule data. The read was
+    // attempted and failed, so the state is a failed check ("fetch_error"),
+    // never "not_configured" — a failed check is not an all-clear.
+    calendar = {
+      connected: false,
+      provider: "unknown",
+      status: "error",
+      events: [],
+      providerState: "fetch_error",
+    };
   }
+  // Scheduled event risk applies to this market but could not be checked: the
+  // calendar is configured (or its read threw) yet did not answer. Synthetic
+  // instruments are not moved by scheduled events, so they are never "unchecked".
+  const eventRiskUnchecked = !synthetic && calendarCheckFailed(calendar);
 
   // Base news-risk is scored ONLY from real, connected calendar events. A
   // disconnected calendar or a synthetic instrument yields no events → "none".
@@ -248,7 +285,20 @@ export async function getNewsIntelligence(
   const timing = deriveTiming(newsRisk);
   const bias = deriveBiasFromHeadlines(recentHeadlines);
   const recommendation = deriveRecommendation(riskLevel, timing);
-  const warningSummary = summarizeWarning(symbol, riskLevel, upcoming, bias);
+  // What was actually checked. A calendar that is not configured is not a
+  // FAILED check (calendarCheckFailed stays false, so scanner gating is
+  // unchanged), but nothing scheduled was looked at either: riskLevel "none"
+  // there is a default, so the copy must never read as an all-clear.
+  const scheduledEventRisk: NewsIntelligencePack["scheduledEventRisk"] = synthetic
+    ? "not_applicable"
+    : calendar.connected
+      ? "checked"
+      : "not_checked";
+  const warningSummary = eventRiskUnchecked && riskLevel === "none"
+    ? `Scheduled news risk for ${symbol} could not be checked — the economic calendar did not answer.`
+    : scheduledEventRisk === "not_checked" && riskLevel === "none"
+      ? `Scheduled news for ${symbol} was not checked — no economic-calendar provider is connected, so upcoming events are unknown (not none).`
+      : summarizeWarning(symbol, riskLevel, upcoming, bias);
 
   const pack: NewsIntelligencePack = {
     symbol,
@@ -257,6 +307,7 @@ export async function getNewsIntelligence(
     bias,
     timing,
     warningSummary,
+    scheduledEventRisk,
     recommendation,
     upcomingEvent: upcoming,
     recentHeadlines,
@@ -273,6 +324,8 @@ export async function getNewsIntelligence(
         providerState: calendar.providerState,
         note: calendar.connected
           ? "Live economic-calendar provider connected — scheduled events are real."
+          : calendar.providerState === "fetch_error" && calendar.provider === "unknown"
+            ? "The economic calendar could not be read — scheduled news risk could not be checked."
           : calendar.providerState === "fetch_error"
             ? "Economic-calendar provider is configured but the last fetch failed — no scheduled events until reconnected."
             : "No live economic-calendar provider (Trading Economics / FRED) is configured, so no scheduled events are shown.",

@@ -31,7 +31,11 @@ type LivePos = {
 export function OpenLivePositions() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const q = useQuery<{ items: LivePos[]; count: number; note?: string; snapshotWarning?: string | null; notLiveReason?: string | null }>({
+  const q = useQuery<{
+    items: LivePos[]; count: number; note?: string; snapshotWarning?: string | null; notLiveReason?: string | null;
+    /** False when the server could not read the account's mode and filtered rows as PAPER. */
+    modeResolved?: boolean; modeScopeNote?: string | null;
+  }>({
     queryKey: ["live", "positions"],
     // P0-3 — a non-OK response MUST throw. This was previously
     // `.then((r) => r.json())` with NO r.ok check: a 500/502/401 error body has
@@ -106,6 +110,10 @@ export function OpenLivePositions() {
   // surface shows — never a misleading bare "0 positions". The raw reason
   // token is never rendered to the user.
   const notLiveMode = q.data?.notLiveReason === "ACCOUNT_NOT_IN_LIVE_MODE";
+  // The server could not read the account's mode and filtered rows as PAPER
+  // (its safest scope). That is not "not in live mode": the account may be
+  // live and hold positions, so neither a count nor a not-live line is shown.
+  const modeUnread = q.data?.modeResolved === false;
 
   return (
     <Card className="border-red-500/20" data-testid="open-live-positions">
@@ -114,7 +122,7 @@ export function OpenLivePositions() {
           <CardTitle className="flex items-center gap-2">
             <Briefcase className="h-5 w-5 text-red-400" /> Live Positions
             <span className="text-xs text-muted-foreground font-normal">
-              {q.isLoading || q.isError ? "(count unavailable)" : `(${open.length} open)`}
+              {q.isLoading || q.isError || (modeUnread && open.length === 0) ? "(count unavailable)" : `(${open.length} open)`}
             </span>
           </CardTitle>
           <CardDescription>
@@ -171,7 +179,17 @@ export function OpenLivePositions() {
             </Button>
           </div>
         ) : open.length === 0 ? (
-          notLiveMode ? (
+          modeUnread ? (
+            <div
+              className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-center text-xs text-amber-200"
+              data-testid="live-positions-mode-unread"
+            >
+              <div>{q.data?.modeScopeNote ?? "Your account's trading mode could not be read."}</div>
+              <div className="mt-1">
+                Live positions were not loaded. Do not assume you are flat — check MT5 directly.
+              </div>
+            </div>
+          ) : notLiveMode ? (
             <div className="text-sm text-muted-foreground py-4 text-center" data-testid="live-positions-not-live">
               <div>You are not currently in live trading mode.</div>
               <div className="mt-1 text-xs">Live positions will appear here when live mode is active.</div>

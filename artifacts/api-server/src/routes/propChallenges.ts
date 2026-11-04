@@ -14,6 +14,7 @@ import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { notify } from "../lib/notifications/service.js";
 import { buildPropFirmAlert, violationToAlertKind } from "../lib/notifications/propFirmAlerts.js";
+import { isUnsizedPaperClose, paperLedgerModelPnl } from "../lib/paperExecution/paperRiskCount.js";
 
 const router = Router();
 // Phase 18A — every prop-challenge route is now per-user. No row created
@@ -112,6 +113,170 @@ interface Eval {
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
   resolvedStatus: "ACTIVE" | "PASSED" | "FAILED";
   failureReason: string | null;
+  /** True for a finished challenge (PASSED, FAILED, CANCELED): judged only up to its end. */
+  final: boolean;
+  /** The end of the evaluated window (ISO): completedAt for a finished challenge, now otherwise. */
+  evaluatedThrough: string;
+  /** Open paper positions at evaluation time. Their floating P&L is not on
+   *  the row and is not read, so drawdown / daily loss leave them out.
+   *  Always 0 for a finished challenge, which is judged on closed trades up
+   *  to its end. */
+  openPositionsNotCounted: number;
+  /** Closed trades whose P&L could not be sized (the stored 0 placeholder). */
+  unsizedCloses: number;
+  /** Plain-English disclosure of unsizedCloses; null when there are none. */
+  unsizedClosesNote: string | null;
+  /**
+   * The pass and fail rules are checked on two complete running balances:
+   * the booked one (the figures above: totalPnl, maxDrawdownPct, ...) and
+   * this one, each closed trade at the paper risk model (price move × lots ×
+   * 100, the figure every paper close was booked at in 16c8a1a0). A breach
+   * on either fails the challenge; a pass needs both.
+   */
+  ruleBasis: {
+    basis: "PAPER_RISK_MODEL";
+    totalPnl: number; totalPct: number; maxDrawdownPct: number;
+    worstDayPct: number; worstDayDate: string | null; consistencyTopShare: number;
+  };
+  /** Says how the paper-risk-model figures differ from the booked ones; null when they agree. */
+  ruleBasisNote: string | null;
+  /** Why an ACTIVE challenge whose booked figures meet every pass rule is not PASSED; null otherwise. */
+  passBlockedReason: string | null;
+  // The fields below are for callers that report per basis (Ruby's
+  // getPropFirmModeStatus); the /evaluate response does not carry them.
+  /** True when the two bases count some closed trade differently (the messages then name a basis). */
+  basisDiffers: boolean;
+  /** The walk day each entry of violations was raised on; null for a check on the whole challenge. */
+  violationDates: Array<string | null>;
+  /** Each basis's own figures: BOOKED first, then PAPER_RISK_MODEL. */
+  ruleBases: Array<{
+    basis: "BOOKED" | "PAPER_RISK_MODEL";
+    totalPnl: number; totalPct: number; maxDrawdownPct: number;
+    /** The latest day with a closed trade, and that day's loss as a share of its starting balance (0 for a gain). */
+    lastDayDate: string | null; lastDayLossPct: number;
+    /** Against the trailing rule's reference (peak or start); null when the rule is off. */
+    trailingDrawdownPct: number | null;
+    consistencyTopShare: number;
+    /** This basis's profit is at or above the target (a pass needs both, plus the other rules). */
+    profitTargetReached: boolean;
+  }>;
+}
+
+// A challenge in one of these states is over. It is judged on what happened
+// up to its end, never on trades or days after it.
+const FINISHED_STATUSES: ReadonlySet<string> = new Set(["PASSED", "FAILED", "CANCELED"]);
+function isFinishedChallenge(status: string): boolean {
+  return FINISHED_STATUSES.has(status);
+}
+
+export const RISK_PER_TRADE_NOTE =
+  "Max risk per trade is checked on each closed trade's realised loss against that day's starting balance. " +
+  "Risk at entry (stop-loss distance) is not measured, so a trade that risked more but closed at a small loss or a profit is not flagged.";
+
+/** Drawdown, trailing drawdown and daily loss are a running balance of
+ *  realised P&L from closed paper orders; open positions are not marked to
+ *  market. A finished challenge is judged on closed trades up to its end, so
+ *  it does not count (or claim the absence of) positions open now. */
+export function closedTradeDrawdownNote(openPositions: number, final = false, trailing = false): string {
+  const base = trailing
+    ? "Drawdown, trailing drawdown and daily loss are measured from closed demo trades only."
+    : "Drawdown and daily loss are measured from closed demo trades only.";
+  if (final) return `${base} This challenge is finished, so only trades closed by its end count; open positions are not counted.`;
+  if (openPositions <= 0) return `${base} No positions were open when this was evaluated.`;
+  const n = openPositions === 1 ? "1 open position is" : `${openPositions} open positions are`;
+  return `${base} ${n} not counted, so their floating profit or loss is not in these figures.`;
+}
+
+type ChallengeOrder = typeof paperOrdersTable.$inferSelect;
+
+/**
+ * The pass and fail rules are checked on two complete running balances over
+ * the same closed trades, each with its own peak and daily window, never on a
+ * per-trade mix of them (a mix can fall below both, e.g. a 1-unit index
+ * contract's wins at the booked figure and its losses at the model):
+ *   - BOOKED: each trade's stored P&L, the figures shown and the figure the
+ *     evaluator read before the paper risk count (dbefac1c). A close whose
+ *     P&L could not be sized stores 0 and counts 0 here.
+ *   - PAPER_RISK_MODEL: each trade at price move × lots × 100, the figure
+ *     every paper close was booked at before contract sizing (16c8a1a0); the
+ *     stored figure when no exit price is recorded. An unsized close counts
+ *     at its price move here.
+ * A breach on either basis fails the challenge; a pass needs both to meet
+ * the target and every rule, and no unsized close. So the result is never
+ * more lenient than either basis, and never stricter than the stricter one.
+ */
+const bookedFigure = (o: ChallengeOrder): number => o.profitLoss;
+/** The paper risk model figure (price move × lots × 100); the stored figure when there is no exit price. */
+const modelFigure = (o: ChallengeOrder): number => o.exitPrice == null
+  ? o.profitLoss
+  : paperLedgerModelPnl(o.direction, Math.abs(o.lotSize || 1), o.entryPrice, o.exitPrice);
+// The basis clauses the rule messages end with (exported so Ruby can tell
+// which basis an /evaluate message speaks for: its own clause, or both).
+export const BOOKED_CLAUSE = "each closed trade counted at its booked P&L";
+export const MODEL_CLAUSE = "each closed trade counted at the paper risk model, price move × lots × 100";
+export const BOTH_CLAUSE = "both with each closed trade counted at its booked P&L and with each counted at the paper risk model, price move × lots × 100";
+
+/** One complete running balance the pass and fail rules are checked on. */
+interface RuleBasisWalk {
+  key: "BOOKED" | "PAPER_RISK_MODEL";
+  clause: string;
+  figure: (o: ChallengeOrder) => number;
+  balance: number;
+  peak: number;
+  maxDrawdownPct: number;
+  worstDayPct: number;
+  worstDayDate: string | null;
+  dayPnls: number[];
+  /** The current day: its starting balance, P&L and loss as a share of the start. */
+  dayStart: number;
+  dayPnl: number;
+  dayLossPct: number;
+}
+function ruleBasisWalk(key: RuleBasisWalk["key"], clause: string, figure: RuleBasisWalk["figure"], start: number): RuleBasisWalk {
+  return {
+    key, clause, figure, balance: start, peak: start, maxDrawdownPct: 0, worstDayPct: 0, worstDayDate: null,
+    dayPnls: [], dayStart: start, dayPnl: 0, dayLossPct: 0,
+  };
+}
+type RuleLevel = "HARD" | "WARN" | "INFO" | null;
+interface BasisCheck { b: RuleBasisWalk; value: number; level: RuleLevel }
+/**
+ * The clause naming the bases a result holds on: none when both bases count
+ * every trade the same, one basis, or both.
+ */
+function basesClause(hit: readonly RuleBasisWalk[], basisDiffers: boolean): string {
+  if (!basisDiffers || hit.length === 0) return "";
+  return ` (${hit.length > 1 ? BOTH_CLAUSE : hit[0]!.clause})`;
+}
+/**
+ * Reports one rule check on both bases: once when both give the same figure
+ * at the same level, otherwise once per basis that reached a level, each
+ * naming its basis.
+ */
+function onBases(checks: readonly BasisCheck[], basisDiffers: boolean, emit: (value: number, level: Exclude<RuleLevel, null>, clause: string) => void): void {
+  const hits = checks.filter((c) => c.level !== null);
+  if (hits.length === 2 && hits[0]!.level === hits[1]!.level && Math.abs(hits[0]!.value - hits[1]!.value) < 1e-12) {
+    emit(hits[0]!.value, hits[0]!.level!, basesClause(hits.map((c) => c.b), basisDiffers));
+    return;
+  }
+  for (const c of hits) emit(c.value, c.level!, basesClause([c.b], basisDiffers));
+}
+
+/** Largest single positive day's share of the total positive-day profit (0 when none). */
+function consistencyOf(dayPnls: number[]): { share: number; totalPositive: number } {
+  const positive = dayPnls.filter((p) => p > 0);
+  const totalPositive = positive.reduce((s, p) => s + p, 0);
+  const top = positive.reduce((m, p) => Math.max(m, p), 0);
+  return { share: totalPositive > 0 ? top / totalPositive : 0, totalPositive };
+}
+
+/** The disclosure for closes whose P&L could not be sized, in the Ruby prop-firm tool's words. */
+export function unsizedChallengeClosesNote(unsized: Array<{ symbol: string }>): string | null {
+  const n = unsized.length;
+  if (n === 0) return null;
+  const symbols = [...new Set(unsized.map((o) => o.symbol).filter(Boolean))].sort();
+  return `${n} closed paper trade${n === 1 ? "" : "s"}${symbols.length ? ` (${symbols.join(", ")})` : ""} could not be sized for the instrument (no contract size or currency conversion), so ${n === 1 ? "its" : "their"} P&L is not known and is left out of the balance, profit, daily loss and drawdown shown here. `
+    + `The pass and fail rules are also checked with every closed trade counted at the paper risk model (price move × lots × 100), which does count ${n === 1 ? "its" : "their"} price move, and the challenge cannot pass while any closed trade is unsized.`;
 }
 
 async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
@@ -130,7 +295,26 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   const orders = await db.select().from(paperOrdersTable)
     .where(orderWhere)
     .orderBy(asc(paperOrdersTable.openedAt));
-  const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt);
+  return evaluateChallengeRules(ch, orders, new Date());
+}
+
+type ChallengeRow = typeof propChallengesTable.$inferSelect;
+
+/**
+ * The prop-challenge rules, checked on one challenge and its paper account's
+ * orders (oldest first, as /evaluate reads them) at the instant `now`. Pure:
+ * it reads and writes nothing. /evaluate runs it and stores the result; Ruby's
+ * getPropFirmModeStatus runs it on the same rows so it reports the breaches,
+ * basis clauses and verdict /evaluate would give, never a looser one.
+ */
+export function evaluateChallengeRules(ch: ChallengeRow, orders: readonly ChallengeOrder[], now: Date = new Date()): Eval {
+  // A finished challenge ends at completedAt (updatedAt for an older row that
+  // has none: status changes stamp it, and a finished challenge's rules cannot
+  // be edited). Trades closed after the end are not part of the challenge.
+  const final = isFinishedChallenge(ch.status);
+  const endAt: Date = final ? (ch.completedAt ?? ch.updatedAt ?? now) : now;
+  const closed = orders.filter((o) => o.status !== "OPEN" && o.closedAt && o.closedAt >= ch.startedAt
+    && (!final || o.closedAt <= endAt));
 
   // Bucket by UTC date.
   const byDay = new Map<string, typeof closed>();
@@ -141,17 +325,43 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   }
   const sortedDates = [...byDay.keys()].sort();
 
+  // The booked running balance (each trade's stored P&L) is what the summary
+  // and day rows show. The pass and fail rules below are checked on two
+  // complete running balances, the booked one and the paper risk model one
+  // (see bookedFigure / modelFigure): a breach on either fails, a pass needs
+  // both. Each keeps its own peak and daily window; trades are never mixed
+  // across them.
   let runningBalance = ch.startingBalance;
   let peakBalance = ch.startingBalance;
   let maxDrawdownPct = 0;
   let worstDayPct = 0;
   let worstDayDate: string | null = null;
   let bestDayPnl = -Infinity;
+  const booked = ruleBasisWalk("BOOKED", BOOKED_CLAUSE, bookedFigure, ch.startingBalance);
+  const model = ruleBasisWalk("PAPER_RISK_MODEL", MODEL_CLAUSE, modelFigure, ch.startingBalance);
+  const bases = [booked, model];
   const days: Eval["days"] = [];
   const violations: Eval["violations"] = [];
+  // The walk day each violation was raised on; null for a check on the whole challenge.
+  const violationDates: Array<string | null> = [];
+  const tagViolations = (date: string | null) => {
+    while (violationDates.length < violations.length) violationDates.push(date);
+  };
+  // When the two bases count some trade differently, every rule message and
+  // the failure reason name the basis they hold on.
+  const basisDiffers = closed.some((o) => modelFigure(o) !== bookedFigure(o));
+  // A loss on a day that starts with nothing left is more than the whole
+  // balance, never a negative percentage.
+  const lossPctOf = (start: number, loss: number) => start > 0 ? Math.abs(loss) / start : 1 + Math.abs(loss) / ch.startingBalance;
+  const levelOf = (value: number, limit: number, over: RuleLevel, near: RuleLevel): RuleLevel =>
+    value > limit ? over : value > limit * 0.8 ? near : null;
 
-  // Hard fail tracking
+  // Hard fail tracking: the first rule breached, naming the basis it breached on.
   let hardFail: string | null = null;
+  const failOn = (what: string, checks: readonly BasisCheck[]) => {
+    const hit = checks.filter((c) => c.level === "HARD").map((c) => c.b);
+    if (hit.length > 0 && !hardFail) hardFail = `${what}${basesClause(hit, basisDiffers)}`;
+  };
 
   for (const date of sortedDates) {
     const dayOrders = byDay.get(date)!;
@@ -159,28 +369,35 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     const startBal = runningBalance;
     const endBal = runningBalance + dayPnl;
     const dayLossPct = dayPnl < 0 ? Math.abs(dayPnl) / startBal : 0;
+    for (const b of bases) {
+      b.dayStart = b.balance;
+      b.dayPnl = dayOrders.reduce((s, o) => s + b.figure(o), 0);
+      b.dayLossPct = b.dayPnl < 0 ? lossPctOf(b.dayStart, b.dayPnl) : 0;
+      b.dayPnls.push(b.dayPnl);
+    }
 
     const dayRules: string[] = [];
 
     // Phase 27-B: Max risk per trade (per-trade loss vs day-start balance).
-    // Per-trade, never fabricated — uses actual paper-order profitLoss.
+    // Per-trade, never fabricated — each trade on each basis against that
+    // basis's day-start balance. This is the REALISED loss after close; risk
+    // at entry (stop-loss distance) is not measured, so a trade that risked
+    // more but closed at a small loss or a profit raises nothing. Messages and
+    // the summary say so.
     if (startBal > 0) {
       for (const o of dayOrders) {
-        if (o.profitLoss < 0) {
-          const tradeLossPct = Math.abs(o.profitLoss) / startBal;
-          if (tradeLossPct > ch.maxRiskPerTrade) {
-            dayRules.push("MAX_RISK_PER_TRADE");
-            violations.push({
-              type: "MAX_RISK_PER_TRADE", severity: "WARN",
-              message: `Trade #${o.id} loss ${(tradeLossPct*100).toFixed(2)}% exceeds max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date}`,
-            });
-          } else if (tradeLossPct > ch.maxRiskPerTrade * 0.8) {
-            violations.push({
-              type: "MAX_RISK_PER_TRADE", severity: "INFO",
-              message: `Trade #${o.id} loss ${(tradeLossPct*100).toFixed(2)}% approaching max risk per trade ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date}`,
-            });
-          }
-        }
+        const risk: BasisCheck[] = bases.map((b) => {
+          const v = b.figure(o);
+          const value = v < 0 ? lossPctOf(b.dayStart, v) : 0;
+          return { b, value, level: levelOf(value, ch.maxRiskPerTrade, "WARN", "INFO") };
+        });
+        if (risk.some((c) => c.level === "WARN")) dayRules.push("MAX_RISK_PER_TRADE");
+        onBases(risk, basisDiffers, (pct, level, clause) => violations.push({
+          type: "MAX_RISK_PER_TRADE", severity: level,
+          message: level === "WARN"
+            ? `Trade #${o.id} realised loss ${(pct*100).toFixed(2)}% of the day's starting balance exceeds the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date} (checked after close; risk at entry is not measured)${clause}`
+            : `Trade #${o.id} realised loss ${(pct*100).toFixed(2)}% of the day's starting balance is approaching the max-risk-per-trade limit ${(ch.maxRiskPerTrade*100).toFixed(2)}% on ${date} (checked after close; risk at entry is not measured)${clause}`,
+        }));
         // Position size rule (lots).
         if (o.lotSize > ch.maxPositionSize) {
           violations.push({
@@ -196,20 +413,16 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       }
     }
 
-    // Daily-loss rule
-    if (dayLossPct > ch.maxDailyLoss) {
-      dayRules.push("DAILY_LOSS");
-      violations.push({
-        type: "DAILY_LOSS", severity: "HARD",
-        message: `Daily loss ${(dayLossPct*100).toFixed(2)}% on ${date} exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%`,
-      });
-      if (!hardFail) hardFail = "Daily loss limit exceeded";
-    } else if (dayLossPct > ch.maxDailyLoss * 0.8) {
-      violations.push({
-        type: "DAILY_LOSS", severity: "WARN",
-        message: `Daily loss ${(dayLossPct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}% on ${date}`,
-      });
-    }
+    // Daily-loss rule, on each basis.
+    const daily: BasisCheck[] = bases.map((b) => ({ b, value: b.dayLossPct, level: levelOf(b.dayLossPct, ch.maxDailyLoss, "HARD", "WARN") }));
+    if (daily.some((c) => c.level === "HARD")) dayRules.push("DAILY_LOSS");
+    failOn("Daily loss limit exceeded", daily);
+    onBases(daily, basisDiffers, (pct, level, clause) => violations.push({
+      type: "DAILY_LOSS", severity: level,
+      message: level === "HARD"
+        ? `Closed-trade daily loss ${(pct*100).toFixed(2)}% on ${date} exceeds limit ${(ch.maxDailyLoss*100).toFixed(2)}%${clause}`
+        : `Closed-trade daily loss ${(pct*100).toFixed(2)}% approaching limit ${(ch.maxDailyLoss*100).toFixed(2)}% on ${date}${clause}`,
+    }));
 
     // Overtrading: > 20 trades in a day is a soft warning.
     if (dayOrders.length > 20) {
@@ -220,25 +433,31 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       });
     }
 
-    // Drawdown from peak
+    // Drawdown from peak — of the realised (closed-trade) balance only; open
+    // positions are not marked to market here (see closedTradeDrawdownNote).
     runningBalance = endBal;
     peakBalance = Math.max(peakBalance, runningBalance);
     const ddPct = (peakBalance - runningBalance) / peakBalance;
     if (ddPct > maxDrawdownPct) maxDrawdownPct = ddPct;
-    if (maxDrawdownPct > ch.maxTotalDrawdown) {
-      if (!hardFail) hardFail = "Max total drawdown exceeded";
-      violations.push({
-        type: "TOTAL_DRAWDOWN", severity: "HARD",
-        message: `Drawdown ${(maxDrawdownPct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}% on ${date}`,
-      });
-    } else if (maxDrawdownPct > ch.maxTotalDrawdown * 0.8) {
-      violations.push({
-        type: "TOTAL_DRAWDOWN", severity: "WARN",
-        message: `Drawdown ${(maxDrawdownPct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%`,
-      });
+    for (const b of bases) {
+      b.balance = b.dayStart + b.dayPnl;
+      b.peak = Math.max(b.peak, b.balance);
+      const bDd = (b.peak - b.balance) / b.peak;
+      if (bDd > b.maxDrawdownPct) b.maxDrawdownPct = bDd;
     }
+    const drawdown: BasisCheck[] = bases.map((b) => ({ b, value: b.maxDrawdownPct, level: levelOf(b.maxDrawdownPct, ch.maxTotalDrawdown, "HARD", "WARN") }));
+    failOn("Max total drawdown exceeded", drawdown);
+    onBases(drawdown, basisDiffers, (pct, level, clause) => violations.push({
+      type: "TOTAL_DRAWDOWN", severity: level,
+      message: level === "HARD"
+        ? `Closed-trade drawdown ${(pct*100).toFixed(2)}% exceeds limit ${(ch.maxTotalDrawdown*100).toFixed(2)}% on ${date}${clause}`
+        : `Closed-trade drawdown ${(pct*100).toFixed(2)}% approaching limit ${(ch.maxTotalDrawdown*100).toFixed(2)}%${clause}`,
+    }));
 
     if (dayLossPct > worstDayPct) { worstDayPct = dayLossPct; worstDayDate = date; }
+    for (const b of bases) {
+      if (b.dayLossPct > b.worstDayPct) { b.worstDayPct = b.dayLossPct; b.worstDayDate = date; }
+    }
     if (dayPnl > bestDayPnl) bestDayPnl = dayPnl;
 
     days.push({
@@ -246,12 +465,17 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
       dailyProfitLoss: dayPnl, dailyLossPercent: dayLossPct,
       tradesTaken: dayOrders.length, rulesViolated: dayRules,
     });
+    tagViolations(date);
   }
 
   const totalPnl = runningBalance - ch.startingBalance;
   const totalPct = totalPnl / ch.startingBalance;
+  const totalPctOf = (b: RuleBasisWalk) => (b.balance - ch.startingBalance) / ch.startingBalance;
+  const modelTotalPnl = model.balance - ch.startingBalance;
+  const modelTotalPct = totalPctOf(model);
   const daysWorked = sortedDates.length;
-  const daysSinceStart = Math.max(1, Math.ceil((Date.now() - ch.startedAt.getTime()) / 86_400_000));
+  // The day count stops at the end of a finished challenge.
+  const daysSinceStart = Math.max(1, Math.ceil((endAt.getTime() - ch.startedAt.getTime()) / 86_400_000));
 
   // Time-limit (max trading days) — HARD terminal rule. Even if profit target
   // is reached later, the challenge must be passed WITHIN maxTradingDays. If
@@ -266,28 +490,32 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
 
   // ── Phase 27-B: Trailing drawdown rule ─────────────────────────────
   // STATIC = drawdown from starting balance; TRAILING = drawdown from peak.
+  // Same closed-trade running balances as total drawdown: open positions are
+  // not marked to market, so the messages say "Closed-trade".
+  let trailingByBasis: number[] | null = null;
   if (ch.trailingDrawdownEnabled === 1) {
-    const tdRef = ch.trailingDrawdownType === "TRAILING" ? peakBalance : ch.startingBalance;
-    const tdPct = tdRef > 0 ? (tdRef - runningBalance) / tdRef : 0;
-    if (tdPct > ch.trailingDrawdownAmount) {
-      if (!hardFail) hardFail = "Trailing drawdown exceeded";
-      violations.push({
-        type: "TRAILING_DRAWDOWN", severity: "HARD",
-        message: `Trailing drawdown ${(tdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`,
-      });
-    } else if (tdPct > ch.trailingDrawdownAmount * 0.8) {
-      violations.push({
-        type: "TRAILING_DRAWDOWN", severity: "WARN",
-        message: `Trailing drawdown ${(tdPct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%`,
-      });
-    }
+    // Checked on each basis, against its own peak.
+    const trailing: BasisCheck[] = bases.map((b) => {
+      const tdRef = ch.trailingDrawdownType === "TRAILING" ? b.peak : ch.startingBalance;
+      const value = tdRef > 0 ? (tdRef - b.balance) / tdRef : 0;
+      return { b, value, level: levelOf(value, ch.trailingDrawdownAmount, "HARD", "WARN") };
+    });
+    trailingByBasis = trailing.map((c) => c.value);
+    failOn("Trailing drawdown exceeded", trailing);
+    onBases(trailing, basisDiffers, (pct, level, clause) => violations.push({
+      type: "TRAILING_DRAWDOWN", severity: level,
+      message: level === "HARD"
+        ? `Closed-trade trailing drawdown ${(pct*100).toFixed(2)}% (${ch.trailingDrawdownType}) exceeds limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%${clause}`
+        : `Closed-trade trailing drawdown ${(pct*100).toFixed(2)}% (${ch.trailingDrawdownType}) approaching limit ${(ch.trailingDrawdownAmount*100).toFixed(2)}%${clause}`,
+    }));
   }
 
   // ── Phase 27-B: Max open trades + max pending orders ───────────────
   // OPEN paper orders = currently open positions. Paper schema has no
   // PENDING status (LIMIT orders fill immediately at entryPrice), so
   // pending-orders rule cannot be evaluated honestly today → INSUFFICIENT_DATA.
-  const openOrders = orders.filter((o) => o.status === "OPEN");
+  // Rules about positions open now say nothing about a finished challenge.
+  const openOrders = final ? [] : orders.filter((o) => o.status === "OPEN");
   if (openOrders.length >= ch.maxOpenTrades) {
     violations.push({
       type: "MAX_OPEN_TRADES",
@@ -308,7 +536,7 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
   });
 
   // ── Phase 27-B: Weekend / Overnight holding (clock-based, no fabrication) ──
-  const nowUtc = new Date();
+  const nowUtc = now;
   const isWeekendUtc = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
   if (ch.weekendHoldingAllowed === 0 && isWeekendUtc && openOrders.length > 0) {
     violations.push({
@@ -337,37 +565,81 @@ async function evaluateChallenge(challengeId: number): Promise<Eval | null> {
     });
   }
 
-  // Consistency: largest single-day profit ≤ consistencyRulePercent of total profit.
+  // Consistency: largest single-day profit ≤ consistencyRulePercent of total
+  // profit, on each basis. A breach on a basis that has reached the profit
+  // target fails the challenge; a pass needs both within the rule.
   const positiveDays = days.filter((d) => d.dailyProfitLoss > 0);
   const totalPositive = positiveDays.reduce((s, d) => s + d.dailyProfitLoss, 0);
   const topDay = positiveDays.reduce((m, d) => Math.max(m, d.dailyProfitLoss), 0);
   const consistencyTopShare = totalPositive > 0 ? topDay / totalPositive : 0;
-  if (totalPositive > 0 && consistencyTopShare > ch.consistencyRulePercent) {
-    violations.push({
-      type: "CONSISTENCY",
-      severity: totalPct >= ch.profitTarget ? "HARD" : "WARN",
-      message: `Single best day = ${(consistencyTopShare*100).toFixed(1)}% of profit, exceeds ${(ch.consistencyRulePercent*100).toFixed(0)}%`,
-    });
-    if (totalPct >= ch.profitTarget && !hardFail) {
-      hardFail = "Consistency rule violated at evaluation";
-    }
-  }
+  const consistencyByBasis = bases.map((b) => ({ b, ...consistencyOf(b.dayPnls), reached: totalPctOf(b) >= ch.profitTarget }));
+  const consistency: BasisCheck[] = consistencyByBasis.map((c) => ({
+    b: c.b, value: c.share,
+    level: c.totalPositive > 0 && c.share > ch.consistencyRulePercent ? (c.reached ? "HARD" : "WARN") : null,
+  }));
+  onBases(consistency, basisDiffers, (share, level, clause) => violations.push({
+    type: "CONSISTENCY", severity: level,
+    message: `Single best day = ${(share*100).toFixed(1)}% of profit, exceeds ${(ch.consistencyRulePercent*100).toFixed(0)}%${clause}`,
+  }));
+  failOn("Consistency rule violated at evaluation", consistency);
+  const consistencyOk = consistencyByBasis.every((c) => c.share <= ch.consistencyRulePercent);
+  const modelConsistency = consistencyByBasis[1]!;
 
-  // Resolve status
+  // Closes whose P&L could not be sized: the P&L is not known, so the
+  // challenge cannot pass while any is in it (it stays ACTIVE, with the reason).
+  const unsized = closed.filter((o) => o.status !== "CANCELLED" && isUnsizedPaperClose(o));
+  const unsizedClosesNote = unsizedChallengeClosesNote(unsized);
+  if (unsizedClosesNote) violations.push({ type: "UNSIZED_PNL", severity: "WARN", message: unsizedClosesNote });
+
+  // Resolve status. The profit target must be met on both bases.
   let resolvedStatus: Eval["resolvedStatus"] = "ACTIVE";
   let failureReason: string | null = null;
+  let passBlockedReason: string | null = null;
+  const bookedPassRulesMet = totalPct >= ch.profitTarget && daysWorked >= ch.minTradingDays && consistencyTopShare <= ch.consistencyRulePercent;
   if (hardFail) {
     resolvedStatus = "FAILED";
     failureReason = hardFail;
-  } else if (totalPct >= ch.profitTarget && daysWorked >= ch.minTradingDays && consistencyTopShare <= ch.consistencyRulePercent) {
+  } else if (totalPctOf(booked) >= ch.profitTarget && modelTotalPct >= ch.profitTarget
+    && daysWorked >= ch.minTradingDays && consistencyOk && unsized.length === 0) {
     resolvedStatus = "PASSED";
+  } else if (bookedPassRulesMet) {
+    const why: string[] = [];
+    if (unsized.length > 0) why.push(`${unsized.length} closed trade${unsized.length === 1 ? "'s" : "s'"} P&L could not be sized, so the result is not known`);
+    if (modelTotalPct < ch.profitTarget) why.push(`with ${MODEL_CLAUSE} the profit is ${(modelTotalPct*100).toFixed(2)}%, below the ${(ch.profitTarget*100).toFixed(2)}% target (booked ${(totalPct*100).toFixed(2)}%)`);
+    if (!consistencyOk) why.push("the consistency rule is not met when the trades are counted at the paper risk model");
+    passBlockedReason = `Not passed: ${why.join("; ")}.`;
   }
+
+  const ruleBasis: Eval["ruleBasis"] = {
+    basis: "PAPER_RISK_MODEL",
+    totalPnl: modelTotalPnl, totalPct: modelTotalPct, maxDrawdownPct: model.maxDrawdownPct,
+    worstDayPct: model.worstDayPct, worstDayDate: model.worstDayDate, consistencyTopShare: modelConsistency.share,
+  };
+  const pct = (x: number) => `${(x*100).toFixed(2)}%`;
+  const ruleBasisNote = basisDiffers
+    ? `The pass and fail rules are checked twice: with each closed trade counted at its booked P&L (the figures shown) and with each counted at the paper risk model (price move × lots × 100). A breach on either fails the challenge, and a pass needs both. At the paper risk model: profit ${pct(modelTotalPct)} (booked ${pct(totalPct)}), drawdown ${pct(model.maxDrawdownPct)} (booked ${pct(maxDrawdownPct)}), worst day ${pct(model.worstDayPct)} (booked ${pct(worstDayPct)}).`
+    : null;
+
+  tagViolations(null);
+  const lastDayDate = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1]! : null;
+  const ruleBases: Eval["ruleBases"] = bases.map((b, i) => ({
+    basis: b.key,
+    totalPnl: b.balance - ch.startingBalance, totalPct: totalPctOf(b), maxDrawdownPct: b.maxDrawdownPct,
+    lastDayDate, lastDayLossPct: b.dayLossPct,
+    trailingDrawdownPct: trailingByBasis ? trailingByBasis[i]! : null,
+    consistencyTopShare: consistencyByBasis[i]!.share,
+    profitTargetReached: totalPctOf(b) >= ch.profitTarget,
+  }));
 
   return {
     daysWorked, totalPnl, totalPct, peakBalance, maxDrawdownPct,
     worstDayPct, worstDayDate, bestDayPnl: bestDayPnl === -Infinity ? 0 : bestDayPnl,
     consistencyTopShare, tradeCount: closed.length, daysSinceStart,
     days, violations, resolvedStatus, failureReason,
+    final, evaluatedThrough: endAt.toISOString(),
+    openPositionsNotCounted: openOrders.length,
+    unsizedCloses: unsized.length, unsizedClosesNote, ruleBasis, ruleBasisNote, passBlockedReason,
+    basisDiffers, violationDates, ruleBases,
   };
 }
 
@@ -455,38 +727,42 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
     const ev = await evaluateChallenge(id);
     if (!ev) { fail(res, 404, "Not found"); return; }
 
-    // Persist day rows (replace existing for idempotency). Stamp userId
-    // for defense-in-depth ownership integrity (architect P1).
-    await db.delete(propChallengeDaysTable).where(eq(propChallengeDaysTable.challengeId, id));
-    if (ev.days.length > 0) {
-      await db.insert(propChallengeDaysTable).values(ev.days.map((d) => ({
-        challengeId: id, userId, tradeDate: d.tradeDate,
-        startingBalance: d.startingBalance, endingBalance: d.endingBalance,
-        dailyProfitLoss: d.dailyProfitLoss, dailyLossPercent: d.dailyLossPercent,
-        tradesTaken: d.tradesTaken, rulesViolated: d.rulesViolated.join(","),
-      })));
-    }
+    // A finished challenge is evaluated read-only: its stored day and
+    // violation rows are not rewritten and no prop-firm alerts are sent.
+    if (!ev.final) {
+      // Persist day rows (replace existing for idempotency). Stamp userId
+      // for defense-in-depth ownership integrity (architect P1).
+      await db.delete(propChallengeDaysTable).where(eq(propChallengeDaysTable.challengeId, id));
+      if (ev.days.length > 0) {
+        await db.insert(propChallengeDaysTable).values(ev.days.map((d) => ({
+          challengeId: id, userId, tradeDate: d.tradeDate,
+          startingBalance: d.startingBalance, endingBalance: d.endingBalance,
+          dailyProfitLoss: d.dailyProfitLoss, dailyLossPercent: d.dailyLossPercent,
+          tradesTaken: d.tradesTaken, rulesViolated: d.rulesViolated.join(","),
+        })));
+      }
 
-    // Persist violations (replace existing). Stamp userId.
-    await db.delete(propChallengeViolationsTable).where(eq(propChallengeViolationsTable.challengeId, id));
-    if (ev.violations.length > 0) {
-      await db.insert(propChallengeViolationsTable).values(ev.violations.map((v) => ({
-        challengeId: id, userId, violationType: v.type, message: v.message, severity: v.severity,
-      })));
-    }
+      // Persist violations (replace existing). Stamp userId.
+      await db.delete(propChallengeViolationsTable).where(eq(propChallengeViolationsTable.challengeId, id));
+      if (ev.violations.length > 0) {
+        await db.insert(propChallengeViolationsTable).values(ev.violations.map((v) => ({
+          challengeId: id, userId, violationType: v.type, message: v.message, severity: v.severity,
+        })));
+      }
 
-    // Phase 27-B: emit per-rule notifications with verbatim safety language.
-    // Per-user scoped, deduped 1h/day/rule. Never blocks evaluation on
-    // notification failure (notify() is fire-and-forget here).
-    for (const v of ev.violations) {
-      const kind = violationToAlertKind({ type: v.type, severity: v.severity });
-      if (!kind) continue;
-      const alert = buildPropFirmAlert(kind, {
-        challengeId: id, ruleChecked: v.type, detail: v.message, userId,
-      });
-      notify({ ...alert, userId }).catch((e) => {
-        req.log.warn({ err: String(e), challengeId: id, kind }, "prop-firm notify failed");
-      });
+      // Phase 27-B: emit per-rule notifications with verbatim safety language.
+      // Per-user scoped, deduped 1h/day/rule. Never blocks evaluation on
+      // notification failure (notify() is fire-and-forget here).
+      for (const v of ev.violations) {
+        const kind = violationToAlertKind({ type: v.type, severity: v.severity });
+        if (!kind) continue;
+        const alert = buildPropFirmAlert(kind, {
+          challengeId: id, ruleChecked: v.type, detail: v.message, userId,
+        });
+        notify({ ...alert, userId }).catch((e) => {
+          req.log.warn({ err: String(e), challengeId: id, kind }, "prop-firm notify failed");
+        });
+      }
     }
 
     // Update status only if challenge is ACTIVE (PAUSED/CANCELED stay; PASSED/FAILED are terminal).
@@ -520,6 +796,26 @@ router.post("/prop-challenges/:id/evaluate", async (req, res): Promise<void> => 
         maxTotalDrawdown: ch.maxTotalDrawdown,
         minTradingDays: ch.minTradingDays, maxTradingDays: ch.maxTradingDays,
         currentBalance: ch.startingBalance + ev.totalPnl,
+        final: ev.final,
+        evaluatedThrough: ev.evaluatedThrough,
+        // What the drawdown / daily-loss figures above are built from.
+        drawdownBasis: "CLOSED_TRADES_ONLY",
+        openPositionsNotCounted: ev.openPositionsNotCounted,
+        drawdownNote: closedTradeDrawdownNote(ev.openPositionsNotCounted, ev.final, ch.trailingDrawdownEnabled === 1),
+        // What the max-risk-per-trade rule actually checks.
+        maxRiskPerTrade: ch.maxRiskPerTrade,
+        riskPerTradeBasis: "REALISED_LOSS_AFTER_CLOSE",
+        riskPerTradeNote: RISK_PER_TRADE_NOTE,
+        // Additive: closes whose P&L could not be sized, the second set of
+        // figures the pass and fail rules were checked on (each closed trade
+        // at the paper risk model, price move × lots × 100; the booked
+        // figures above are the first), and why a challenge whose booked
+        // figures meet the pass rules is not PASSED.
+        unsizedCloses: ev.unsizedCloses,
+        unsizedClosesNote: ev.unsizedClosesNote,
+        ruleBasis: ev.ruleBasis,
+        ruleBasisNote: ev.ruleBasisNote,
+        passBlockedReason: ev.passBlockedReason,
       },
       days: ev.days,
       violations: ev.violations,

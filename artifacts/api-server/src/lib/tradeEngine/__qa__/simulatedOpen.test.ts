@@ -262,8 +262,10 @@ test("Trade Action Center: a confirmed SIMULATED open books one governed PAPER o
   // Never a fabricated exit: mark-to-market leaves a market-priced order to real market data.
   const valuation = await markToMarket(acct.a);
   assert.ok(valuation);
-  assert.ok(Math.abs(valuation.equity - (valuation.currentBalance + (QUOTE.bid - order.entryPrice) * order.lotSize * 100)) < 0.01,
-    "equity uses the real liquidation bid, never the simulator model");
+  // EURUSD is sized at the FX standard lot (100,000), like the Build EE monitor.
+  assert.ok(Math.abs(valuation.equity - (valuation.currentBalance + (QUOTE.bid - order.entryPrice) * order.lotSize * 100_000)) < 0.01,
+    "equity uses the real liquidation bid at the instrument's contract size, never the simulator model");
+  assert.equal(valuation.pnlSizing.unsizedOpenPositions, 0);
   feed = "stale";
   assert.equal(await markToMarket(acct.a), null, "stale real prices make valuation unavailable");
   const unavailable = await fetch(`${base}/paper/accounts/active`, { headers: { cookie: c.a } });

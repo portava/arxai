@@ -11,7 +11,7 @@ import {
   preTradeChecksTable, userRiskEventsTable, userNotificationsTable,
   userActivityTimelineTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import { listUserConnections } from "./brokerHub/connections.js";
 import { readTraderRiskSettings } from "./riskGovernor/limitSettings.js";
 
@@ -28,7 +28,9 @@ export type ReportFormat = (typeof REPORT_FORMATS)[number];
 export interface ReportRequest {
   reportType: ReportType;
   format: ReportFormat;
+  /** First UTC day of the range (00:00 UTC). */
   dateRangeStart?: Date | null;
+  /** Last UTC day of the range (00:00 UTC of that day); the whole day is included. */
   dateRangeEnd?: Date | null;
   tradingSessionId?: number | null;
   symbol?: string | null;
@@ -94,8 +96,9 @@ const BRAND = "ARX AI — Analyze. Risk. eXecute.";
 const DISCLAIMER = "Paper/read-only report — not financial advice.";
 
 function htmlHeader(title: string, dateRange: { start?: Date | null; end?: Date | null }): string {
+  // Dates, not midnights: an end of "2026-10-27T00:00Z" read as an empty range.
   const range = dateRange.start || dateRange.end
-    ? `${dateRange.start?.toISOString() ?? "—"} → ${dateRange.end?.toISOString() ?? "—"}`
+    ? `${utcDay(dateRange.start) ?? "—"} → ${utcDay(dateRange.end) ?? "—"} (UTC days, end day included)`
     : "All time";
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>body{font-family:system-ui,sans-serif;max-width:960px;margin:24px auto;padding:0 16px;color:#222}
@@ -123,6 +126,28 @@ function htmlSection(title: string, content: string): string {
 }
 
 // ── Data loaders (all userId-scoped, optionally date-bounded) ─────────────
+const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * Exclusive upper bound for a range end. The route turns "2026-10-27" into
+ * 00:00 UTC of that day; the user means "up to and including the 27th", so a
+ * midnight end becomes the next midnight (exclusive). Any other instant is
+ * kept inclusive (+1 ms) for callers that pass an exact time.
+ */
+function rangeEndExclusive(end: Date): Date {
+  const t = end.getTime();
+  return new Date(t % DAY_MS === 0 ? t + DAY_MS : t + 1);
+}
+function utcDay(d: Date | null | undefined): string | null {
+  return d ? d.toISOString().slice(0, 10) : null;
+}
+/** The book the demo-trade reports read, named so it is not confused with the sandbox order ledger. */
+const PAPER_TRADES_SOURCE =
+  "Trades you log on My Demo Trades (paper_trades). The Calendar page and Ruby Memory read the demo sandbox order ledger, so their totals can differ.";
+/** Report types whose figures come from paper_trades. */
+const PAPER_TRADE_REPORTS: ReadonlySet<ReportType> = new Set<ReportType>([
+  "account_summary", "trading_session_summary", "paper_trades", "performance_calendar",
+  "playbook_performance", "full_trading_archive",
+]);
 function withinRange<T extends { createdAt?: Date | null; closedAt?: Date | null; openedAt?: Date | null }>(
   field: "createdAt" | "closedAt" | "openedAt", start?: Date | null, end?: Date | null,
 ) {
@@ -133,10 +158,16 @@ function withinRange<T extends { createdAt?: Date | null; closedAt?: Date | null
   void { withinRange };
 }
 
-async function loadPaperTrades(userId: number, req: ReportRequest) {
+/**
+ * `dateField` picks which time the range applies to: createdAt for trade lists,
+ * closedAt for the performance calendar (which groups trades by the day they
+ * closed, so it must also select them by that day).
+ */
+async function loadPaperTrades(userId: number, req: ReportRequest, dateField: "createdAt" | "closedAt" = "createdAt") {
   const where = [eq(paperTradesTable.userId, userId)];
-  if (req.dateRangeStart) where.push(gte(paperTradesTable.createdAt, req.dateRangeStart));
-  if (req.dateRangeEnd) where.push(lte(paperTradesTable.createdAt, req.dateRangeEnd));
+  const col = dateField === "closedAt" ? paperTradesTable.closedAt : paperTradesTable.createdAt;
+  if (req.dateRangeStart) where.push(gte(col, req.dateRangeStart));
+  if (req.dateRangeEnd) where.push(lt(col, rangeEndExclusive(req.dateRangeEnd)));
   if (req.tradingSessionId != null) where.push(eq(paperTradesTable.tradingSessionId, req.tradingSessionId));
   if (req.symbol) where.push(eq(paperTradesTable.symbol, req.symbol));
   if (req.strategyTag) where.push(eq(paperTradesTable.strategyTag, req.strategyTag));
@@ -146,19 +177,19 @@ async function loadPaperTrades(userId: number, req: ReportRequest) {
 async function loadJournal(userId: number, req: ReportRequest) {
   const where = [eq(tradeJournalEntriesTable.userId, userId)];
   if (req.dateRangeStart) where.push(gte(tradeJournalEntriesTable.createdAt, req.dateRangeStart));
-  if (req.dateRangeEnd) where.push(lte(tradeJournalEntriesTable.createdAt, req.dateRangeEnd));
+  if (req.dateRangeEnd) where.push(lt(tradeJournalEntriesTable.createdAt, rangeEndExclusive(req.dateRangeEnd)));
   return db.select().from(tradeJournalEntriesTable).where(and(...where)).orderBy(desc(tradeJournalEntriesTable.createdAt)).limit(5000);
 }
 async function loadReviews(userId: number, req: ReportRequest) {
   const where = [eq(aiTradeReviewsTable.userId, userId)];
   if (req.dateRangeStart) where.push(gte(aiTradeReviewsTable.createdAt, req.dateRangeStart));
-  if (req.dateRangeEnd) where.push(lte(aiTradeReviewsTable.createdAt, req.dateRangeEnd));
+  if (req.dateRangeEnd) where.push(lt(aiTradeReviewsTable.createdAt, rangeEndExclusive(req.dateRangeEnd)));
   return db.select().from(aiTradeReviewsTable).where(and(...where)).orderBy(desc(aiTradeReviewsTable.createdAt)).limit(5000);
 }
 async function loadRiskEvents(userId: number, req: ReportRequest) {
   const where = [eq(userRiskEventsTable.userId, userId)];
   if (req.dateRangeStart) where.push(gte(userRiskEventsTable.createdAt, req.dateRangeStart));
-  if (req.dateRangeEnd) where.push(lte(userRiskEventsTable.createdAt, req.dateRangeEnd));
+  if (req.dateRangeEnd) where.push(lt(userRiskEventsTable.createdAt, rangeEndExclusive(req.dateRangeEnd)));
   return db.select().from(userRiskEventsTable).where(and(...where)).orderBy(desc(userRiskEventsTable.createdAt)).limit(5000);
 }
 async function loadPlaybooks(userId: number) {
@@ -187,13 +218,13 @@ async function loadPaperSessions(userId: number) {
 async function loadActivity(userId: number, req: ReportRequest) {
   const where = [eq(userActivityTimelineTable.userId, userId)];
   if (req.dateRangeStart) where.push(gte(userActivityTimelineTable.createdAt, req.dateRangeStart));
-  if (req.dateRangeEnd) where.push(lte(userActivityTimelineTable.createdAt, req.dateRangeEnd));
+  if (req.dateRangeEnd) where.push(lt(userActivityTimelineTable.createdAt, rangeEndExclusive(req.dateRangeEnd)));
   return db.select().from(userActivityTimelineTable).where(and(...where)).orderBy(desc(userActivityTimelineTable.createdAt)).limit(2000);
 }
 async function loadNotifications(userId: number, req: ReportRequest) {
   const where = [eq(userNotificationsTable.userId, userId)];
   if (req.dateRangeStart) where.push(gte(userNotificationsTable.createdAt, req.dateRangeStart));
-  if (req.dateRangeEnd) where.push(lte(userNotificationsTable.createdAt, req.dateRangeEnd));
+  if (req.dateRangeEnd) where.push(lt(userNotificationsTable.createdAt, rangeEndExclusive(req.dateRangeEnd)));
   return db.select().from(userNotificationsTable).where(and(...where)).orderBy(desc(userNotificationsTable.createdAt)).limit(2000);
 }
 
@@ -275,7 +306,7 @@ async function buildPaperTradesReport(userId: number, req: ReportRequest) {
 }
 
 async function buildPerformanceCalendar(userId: number, req: ReportRequest) {
-  const trades = (await loadPaperTrades(userId, req)).filter((t) => t.status === "closed" && t.closedAt);
+  const trades = (await loadPaperTrades(userId, req, "closedAt")).filter((t) => t.status === "closed" && t.closedAt);
   const byDay = new Map<string, { date: string; trades: number; wins: number; losses: number; pnl: number }>();
   for (const t of trades) {
     const d = new Date(t.closedAt!).toISOString().slice(0, 10);
@@ -288,7 +319,10 @@ async function buildPerformanceCalendar(userId: number, req: ReportRequest) {
   const days = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
   const best = days.reduce<{ date: string; pnl: number } | null>((b, d) => !b || d.pnl > b.pnl ? { date: d.date, pnl: d.pnl } : b, null);
   const worst = days.reduce<{ date: string; pnl: number } | null>((b, d) => !b || d.pnl < b.pnl ? { date: d.date, pnl: d.pnl } : b, null);
-  return { days, best, worst, totalDays: days.length, totalPnl: days.reduce((s, d) => s + d.pnl, 0) };
+  return {
+    days, best, worst, totalDays: days.length, totalPnl: days.reduce((s, d) => s + d.pnl, 0),
+    source: PAPER_TRADES_SOURCE,
+  };
 }
 
 async function buildTradeJournal(userId: number, req: ReportRequest) {
@@ -420,7 +454,9 @@ function flattenForCsv(reportType: ReportType, payload: unknown): { rows: Array<
 
 function buildHtml(reportType: ReportType, title: string, payload: unknown, req: ReportRequest): string {
   const head = htmlHeader(title, { start: req.dateRangeStart ?? null, end: req.dateRangeEnd ?? null });
-  let body = "";
+  let body = PAPER_TRADE_REPORTS.has(reportType)
+    ? `<div class="meta">Demo trades in this report: ${escapeHtml(PAPER_TRADES_SOURCE)}</div>`
+    : "";
   const flat = flattenForCsv(reportType, payload);
   if (Array.isArray(payload) || reportType === "performance_calendar" || reportType === "risk_governor" || reportType === "trading_session_summary") {
     body += htmlSection("Records", htmlTable(flat.rows, flat.columns));
@@ -468,8 +504,15 @@ export async function generateReport(userId: number, req: ReportRequest): Promis
   // Defensive: scrub the payload one more time before serialization.
   payload = stripSecrets(payload);
   const meta = { brand: BRAND, disclaimer: DISCLAIMER, generatedAt: new Date().toISOString(),
-    dateRange: { start: req.dateRangeStart ?? null, end: req.dateRangeEnd ?? null },
+    dateRange: {
+      start: req.dateRangeStart ?? null, end: req.dateRangeEnd ?? null,
+      startDay: utcDay(req.dateRangeStart), endDay: utcDay(req.dateRangeEnd), endDayIncluded: true,
+    },
+    ...(PAPER_TRADE_REPORTS.has(req.reportType) ? { demoTradeSource: PAPER_TRADES_SOURCE } : {}),
     reportType: req.reportType, format: req.format };
+  // Rows = the records the report lists, counted the same way in every format
+  // (an empty performance calendar is 0 rows, not 1 summary object).
+  const rowCount = flattenForCsv(req.reportType, payload).rows.length;
 
   const title = `${BRAND} — ${req.reportType.replace(/_/g, " ")}`;
   const baseName = sanitizeFileName(`${req.reportType}_${new Date().toISOString().slice(0, 10)}`);
@@ -477,17 +520,19 @@ export async function generateReport(userId: number, req: ReportRequest): Promis
   if (req.format === "json") {
     const wrapper = { meta, data: payload };
     const body = JSON.stringify(wrapper, null, 2);
-    const rowCount = Array.isArray(payload) ? payload.length : 1;
     return { body, mimeType: "application/json", fileName: `${baseName}.json`, rowCount };
   }
   if (req.format === "csv") {
     const flat = flattenForCsv(req.reportType, payload);
-    const banner = `# ${BRAND}\n# ${DISCLAIMER}\n# Generated: ${meta.generatedAt}\n# Range: ${meta.dateRange.start ?? "—"} to ${meta.dateRange.end ?? "—"}\n`;
+    const range = meta.dateRange.startDay || meta.dateRange.endDay
+      ? `${meta.dateRange.startDay ?? "—"} to ${meta.dateRange.endDay ?? "—"} (UTC days, end day included)`
+      : "All time";
+    const source = PAPER_TRADE_REPORTS.has(req.reportType) ? `# Demo trades: ${PAPER_TRADES_SOURCE}\n` : "";
+    const banner = `# ${BRAND}\n# ${DISCLAIMER}\n# Generated: ${meta.generatedAt}\n# Range: ${range}\n${source}`;
     const body = banner + toCsv(flat.rows, flat.columns);
-    return { body, mimeType: "text/csv", fileName: `${baseName}.csv`, rowCount: flat.rows.length };
+    return { body, mimeType: "text/csv", fileName: `${baseName}.csv`, rowCount };
   }
   // html (also serves as PDF fallback on the route)
   const body = buildHtml(req.reportType, title, payload, req);
-  const rowCount = Array.isArray(payload) ? payload.length : 1;
   return { body, mimeType: "text/html", fileName: `${baseName}.html`, rowCount };
 }

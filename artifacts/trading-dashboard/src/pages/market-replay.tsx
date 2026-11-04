@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Play, StepForward, Square, Rewind } from "lucide-react";
 
 type Decision = {
-  candleIndex: number; aiAction: string;
+  candleIndex: number; candleTsIso?: string; candlesAnalysed?: number; aiAction: string;
   entry?: number; stopLoss?: number; takeProfit?: number;
   confidenceScore: number; riskScore: number; reason: string;
   humanAction?: string;
@@ -26,6 +26,11 @@ export default function MarketReplay() {
   const [strategy, setStrategy] = useState("Trend Continuation");
   const [replayId, setReplayId] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  // Replay position as reported by the server for the last stepped candle
+  // (0-based), and whether every candle has been stepped.
+  const [lastIndex, setLastIndex] = useState<number | null>(null);
+  const [finished, setFinished] = useState(false);
+  const [candleTimeframe, setCandleTimeframe] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -33,13 +38,14 @@ export default function MarketReplay() {
   const headers = { "content-type": "application/json", "x-security-role": "ADMIN" };
 
   async function start() {
-    setBusy(true); setErr(""); setDecisions([]);
+    setBusy(true); setErr(""); setDecisions([]); setLastIndex(null); setFinished(false);
     try {
       const r = await fetch("/api/market-replay/start", {
         method: "POST", headers, body: JSON.stringify({ symbol, timeframe, strategy }),
       }).then((x) => x.json());
       if (r.error) throw new Error(r.error);
       setReplayId(r.replayId); setTotal(r.candles.length);
+      setCandleTimeframe(typeof r.candleTimeframe === "string" ? r.candleTimeframe : null);
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
@@ -51,7 +57,11 @@ export default function MarketReplay() {
         method: "POST", headers, body: JSON.stringify({ replayId, humanAction }),
       }).then((x) => x.json());
       if (r.error) throw new Error(r.error);
-      if (r.decision) setDecisions((d) => [r.decision, ...d]);
+      if (r.decision) {
+        setDecisions((d) => [r.decision, ...d]);
+        if (typeof r.decision.candleIndex === "number") setLastIndex(r.decision.candleIndex);
+      }
+      if (r.finished === true) setFinished(true);
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
@@ -71,7 +81,7 @@ export default function MarketReplay() {
         <div>
           <h1 className="text-2xl font-bold">Market Replay</h1>
           <p className="text-sm text-muted-foreground">
-            Step through simulated candles. Compare your decision vs the AI brain. Simulator only.
+            Step through the simulator's recorded candles. Each AI call is computed from the candles up to the one being replayed. Simulator only.
           </p>
         </div>
         <Badge variant="outline" className="ml-auto">SIMULATOR</Badge>
@@ -90,13 +100,15 @@ export default function MarketReplay() {
             {!replayId
               ? <Button onClick={start} disabled={busy}><Play className="h-4 w-4 mr-1" /> Start</Button>
               : <>
-                  <Button onClick={() => step()} disabled={busy}><StepForward className="h-4 w-4 mr-1" /> Step</Button>
+                  <Button onClick={() => step()} disabled={busy || finished}><StepForward className="h-4 w-4 mr-1" /> Step</Button>
                   <Button variant="outline" onClick={stop} disabled={busy}><Square className="h-4 w-4 mr-1" /> Stop</Button>
                 </>}
           </div>
           {err && <p className="text-sm text-rose-400 md:col-span-4">{err}</p>}
-          {replayId && <p className="text-xs text-muted-foreground md:col-span-4">
-            Replay <span className="font-mono">{replayId}</span> · candle {decisions.length} of {total}
+          {replayId && <p className="text-xs text-muted-foreground md:col-span-4" data-testid="replay-position">
+            Replay <span className="font-mono">{replayId}</span> · {lastIndex == null ? `not started · ${total} candles` : `candle ${lastIndex + 1} of ${total}`}
+            {candleTimeframe && ` · ${candleTimeframe === "M1" ? "1-minute" : candleTimeframe} simulator bars (the timeframe field is a label only)`}
+            {finished && " · Replay finished — every candle has been stepped."}
           </p>}
         </CardContent>
       </Card>
@@ -108,10 +120,10 @@ export default function MarketReplay() {
             <CardDescription>Click your call before stepping the next candle.</CardDescription>
           </CardHeader>
           <CardContent className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => step("BUY")} disabled={busy}>I would BUY</Button>
-            <Button size="sm" variant="outline" onClick={() => step("SELL")} disabled={busy}>I would SELL</Button>
-            <Button size="sm" variant="outline" onClick={() => step("WAIT")} disabled={busy}>I would WAIT</Button>
-            <Button size="sm" variant="ghost" onClick={() => step()} disabled={busy}><Rewind className="h-4 w-4 mr-1" /> Step (no call)</Button>
+            <Button size="sm" variant="outline" onClick={() => step("BUY")} disabled={busy || finished}>I would BUY</Button>
+            <Button size="sm" variant="outline" onClick={() => step("SELL")} disabled={busy || finished}>I would SELL</Button>
+            <Button size="sm" variant="outline" onClick={() => step("WAIT")} disabled={busy || finished}>I would WAIT</Button>
+            <Button size="sm" variant="ghost" onClick={() => step()} disabled={busy || finished}><Rewind className="h-4 w-4 mr-1" /> Step (no call)</Button>
           </CardContent>
         </Card>
       )}
@@ -124,7 +136,9 @@ export default function MarketReplay() {
             : <ul className="space-y-2 text-sm">
                 {decisions.map((d, i) => (
                   <li key={i} className="border rounded p-2 flex flex-wrap gap-2 items-center">
-                    <span className="text-xs text-muted-foreground font-mono">#{d.candleIndex}</span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      candle {d.candleIndex + 1}{d.candleTsIso ? ` · ${new Date(d.candleTsIso).toLocaleTimeString()}` : ""}
+                    </span>
                     <Badge className={ACTION_COLORS[d.aiAction] ?? ""}>AI: {d.aiAction}</Badge>
                     {d.humanAction && <Badge variant="outline">You: {d.humanAction}</Badge>}
                     <span className="text-xs">conf {d.confidenceScore} · risk {d.riskScore}</span>

@@ -102,7 +102,8 @@ export function LiveSharedTradeTicket({
   feedWarning?: { warningTitle: string; warningDetail: string } | null;
 }) {
   const { name } = useAssistantName();
-  const access = useMasterLiveAccess();
+  // Re-read access each time the ticket is reopened ("Reopen the ticket to retry").
+  const access = useMasterLiveAccess({ open });
   const mode = useTradingMode();
   const isPreviewing = mode.isAdminPreviewingUserMode === true;
   // Treat the mode-resolver loading window as preview-safe: until we know
@@ -307,13 +308,10 @@ export function LiveSharedTradeTicket({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, armedOneClick, intentValid, actionsLocked, busy, suppressAutoConfirm]);
 
-  const rr = (() => {
-    if (slNum == null || tpNum == null || slNum <= 0) return null;
-    const risk = Math.abs(slNum);
-    const reward = Math.abs(tpNum);
-    if (risk < 1e-9) return null;
-    return reward / risk;
-  })();
+  // No R:R is computed here. A reward-to-risk ratio needs the entry price
+  // (TP − entry vs entry − SL), and this market-order ticket has none; the old
+  // |TP| / |SL| ratio of two absolute prices (≈1.00 for any FX pair) was not an
+  // R:R. The execution preview below computes it from a real quote.
 
   // Non-blocking warning when exit protection is missing. Owner/admin can
   // ship a live order without SL/TP — we surface the consequence inline,
@@ -524,7 +522,17 @@ export function LiveSharedTradeTicket({
         )}
 
         {/* Unapproved users see the block above and no executable button. */}
-        {access.loaded && !access.canTrade && (
+        {/* A failed access read is "could not be checked", never a refusal. */}
+        {access.loaded && !access.canTrade && access.error && (
+          <Alert variant="destructive" data-testid="ls-access-unknown">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertTitle>Live access could not be checked</AlertTitle>
+            <AlertDescription className="text-xs">
+              {access.error} Reopen the ticket to retry.
+            </AlertDescription>
+          </Alert>
+        )}
+        {access.loaded && !access.canTrade && !access.error && (
           <Alert variant="destructive">
             <ShieldAlert className="h-4 w-4" />
             <AlertTitle>Live access pending</AlertTitle>
@@ -582,7 +590,15 @@ export function LiveSharedTradeTicket({
                   {suggestLoading
                     ? "Reading the market to suggest SL/TP…"
                     : suggestion
-                      ? <span>Suggested SL <span className="font-mono text-foreground">{suggestion.suggestedStopLoss}</span> · TP <span className="font-mono text-foreground">{suggestion.suggestedTakeProfit}</span> · {suggestion.method}</span>
+                      ? <span>Suggested SL <span className="font-mono text-foreground">{suggestion.suggestedStopLoss}</span> · TP <span className="font-mono text-foreground">{suggestion.suggestedTakeProfit}</span> · {suggestion.method}
+                          {/* The levels are measured from the newest candle close the
+                              market-data router returned, not from a live quote. */}
+                          <span data-testid="ls-suggest-anchor">
+                            {suggestion.entrySource === "provided"
+                              ? ` · measured from the entry price you gave (${suggestion.entry})`
+                              : ` · measured from the last M15 candle close (${suggestion.entry}), not a live quote; the fill price will differ`}
+                          </span>
+                        </span>
                       : (suggestNote ?? "SL/TP can be suggested from current market volatility.")}
                 </div>
                 <Button
@@ -612,11 +628,6 @@ export function LiveSharedTradeTicket({
                 </div>
               )}
 
-              {rr != null && (
-                <div className="text-xs text-muted-foreground">
-                  Estimated R:R <span className="font-mono">{rr.toFixed(2)}</span>
-                </div>
-              )}
               {rubyExplanationSummary && (
                 <Alert>
                   <AlertTitle className="text-amber-300">{name} note</AlertTitle>
@@ -638,7 +649,7 @@ export function LiveSharedTradeTicket({
               <div>volume <span className="text-foreground">{Number.isFinite(intent.volume) ? intent.volume : "—"}</span></div>
               <div>SL <span className="text-foreground">{slNum ?? "—"}</span></div>
               <div>TP <span className="text-foreground">{tpNum ?? "—"}</span></div>
-              <div>R:R <span className="text-foreground">{rr != null ? rr.toFixed(2) : "—"}</span></div>
+              <div data-testid="ls-summary-rr">R:R <span className="text-foreground">needs the live entry price, see the execution preview</span></div>
               <div className="col-span-2">mode <span className="text-foreground">SHARED · LIVE</span></div>
             </div>
 

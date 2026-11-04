@@ -1,22 +1,111 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+/** How the server valued the account (lib/tradeEngine/paperVenue.ts describePaperValuation). Older servers omit it. */
+interface PaperValuation {
+  priceSource: "SIMULATOR" | "MARKET_QUOTE" | "MIXED" | "NO_OPEN_ORDERS";
+  openOrders: number; openPricedBySimulator: number; closedSimulatorPriced: number;
+  /** "PAPER_USD": P&L sized in USD from the contract size; anything else is not a units claim the card repeats. */
+  units: string; pnlMultiplier: number; marginPerLot: number; note: string;
+}
 interface PaperAccount {
   id: number; accountName: string;
   startingBalance: number; currentBalance: number; equity: number; marginUsed: number;
   isActive: number; createdAt: string;
+  /** When the server last valued (marked to market) this account. */
+  updatedAt?: string | null;
+  /**
+   * Server note when the balance or equity counts P&L that could not be sized.
+   * unsizedClosedWins (newer servers): closes of unknown size that won, which
+   * the balance does not add. unsizedOpenGains (newer servers): open positions
+   * of unknown size in profit, which equity does not add.
+   */
+  pnlSizing?: { unsizedClosedOrders: number; unsizedClosedWins?: number; unsizedOpenPositions: number; unsizedOpenGains?: number; note: string | null };
+  valuation?: PaperValuation;
+}
+
+/**
+ * A failed read of the active demo account. 503 means the server found the
+ * active account but could not value it (no current real quote); any other
+ * status means the account could not be read at all. Neither is "no account".
+ */
+class PaperAccountReadError extends Error {
+  readonly status: number;
+  readonly reason: string | null;
+  constructor(status: number, reason: string | null) {
+    super(reason ?? `HTTP ${status}`);
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+function readFailureCopy(err: unknown): string {
+  if (err instanceof PaperAccountReadError && err.status === 503) {
+    return `Your active demo account could not be valued right now${err.reason ? ` (${err.reason})` : ""}. ` +
+      "Balance, equity and P&L are not shown until it can be valued. The account still exists — you do not need a new one.";
+  }
+  const why = err instanceof PaperAccountReadError ? (err.reason ?? `HTTP ${err.status}`) : "the request failed";
+  return `Your demo account could not be loaded (${why}). ` +
+    "Wait for it to load before creating another one — creating a new demo account deactivates the current one.";
+}
+
+/** Plain-English line for where the account's prices came from. */
+export function paperPriceSourceLine(v: PaperValuation | undefined): string {
+  if (!v) return "Price source not reported by the server. Orders opened without a market quote are valued at the simulator's synthetic price, not a market quote.";
+  // The paper execution monitor also checks every open order's stop and target
+  // against market data, so either feed can trigger a stop or target; both book
+  // the exit at the order's stop or target level. Only an EE manual close
+  // books a market price.
+  const monitor = " Stops and targets are checked against it, and also against market data by the paper execution monitor when it runs; either way a stop or target is booked at the order's stop or target level.";
+  const open = v.priceSource === "SIMULATOR"
+    ? `Prices: simulator (synthetic, generated — not a market quote).${monitor}`
+    : v.priceSource === "MIXED"
+    ? `Prices: ${v.openPricedBySimulator} of ${v.openOrders} open orders at the simulator's synthetic price (not a market quote), the rest at a market quote.${monitor}`
+    : v.priceSource === "MARKET_QUOTE"
+    ? "Prices: open orders valued at a current market quote."
+    : "No open orders.";
+  const closed = v.closedSimulatorPriced > 0
+    ? ` ${v.closedSimulatorPriced} closed order${v.closedSimulatorPriced === 1 ? " was" : "s were"} opened at the simulator's synthetic price, so the balance includes synthetic results; a stop or target exit may have been triggered by the simulator's price or by market data and is booked at the stop or target level; a trader's close is booked at the simulator's price and an EE manual close at a market price (the order does not record which path closed it).`
+    : "";
+  return open + closed;
+}
+
+/**
+ * The units line. Only a server that reports how it sized the figures
+ * (units PAPER_USD) gets a units claim; otherwise the card says the units were
+ * not reported and claims no scale.
+ */
+export function paperUnitsLine(v: PaperValuation | undefined, sizing?: PaperAccount["pnlSizing"]): string {
+  if (v?.units !== "PAPER_USD") {
+    return "Units not reported by the server. These are simulated figures, not money in a broker account, and margin is not a broker margin.";
+  }
+  // A server that reports unsizedClosedWins adds nothing for a closed win of
+  // unknown size, and one that reports unsizedOpenGains adds nothing for an
+  // open gain of unknown size; an older one counted them at the model like a loss.
+  const exceptions: string[] = [];
+  if (typeof sizing?.unsizedClosedWins === "number") exceptions.push("a closed trade that won is not added to the balance");
+  if (typeof sizing?.unsizedOpenGains === "number") exceptions.push("an open position in profit is not added to equity");
+  const winsRule = exceptions.length ? `, except that ${exceptions.join(" and ")}` : "";
+  return `Figures are simulated USD, not money in a broker account: P&L is sized from the instrument's contract size; an amount that could not be sized counts at the paper risk model (price move × lots × ${v.pnlMultiplier})${winsRule}. `
+    + `Orders closed before every paper close was sized this way keep the figure stored then (price move × lots × ${v.pnlMultiplier}), so an older balance can mix the two scales. `
+    + `Margin is lots × ${v.marginPerLot.toLocaleString("en-US")}, not a broker margin.`;
 }
 
 export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState("Practice");
   const [bal, setBal] = useState(10000);
-  const { data } = useQuery<{ account: PaperAccount }>({
+  const { data, isLoading, isError, error, dataUpdatedAt } = useQuery<{ account: PaperAccount | null }>({
     queryKey: ["paper-active"],
     queryFn: async () => {
       const r = await fetch("/api/paper/accounts/active");
-      if (r.status === 404) return { account: null as unknown as PaperAccount };
-      if (!r.ok) throw new Error("failed");
+      // Only a 404 is a confirmed "no active account".
+      if (r.status === 404) return { account: null };
+      if (!r.ok) {
+        let reason: string | null = null;
+        try { const b = await r.json(); if (typeof b?.error === "string" && b.error) reason = b.error; } catch { /* keep status */ }
+        throw new PaperAccountReadError(r.status, reason);
+      }
       const j = await r.json();
       onActive?.(j.account?.id);
       return j;
@@ -35,13 +124,23 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
     onSuccess: () => qc.invalidateQueries({ queryKey: ["paper-active"] }),
   });
   const acc = data?.account;
+  // A failed refresh keeps the last good account in `data`: it is shown only as
+  // the last successful valuation, with its time, never as current.
+  const refreshFailed = isError && acc != null;
+  const valuedAtMs = acc?.updatedAt ? Date.parse(acc.updatedAt) : dataUpdatedAt;
+  const valuedAt = Number.isFinite(valuedAtMs) && valuedAtMs > 0 ? new Date(valuedAtMs).toLocaleTimeString() : null;
+  const pnlVsStart = acc ? acc.equity - acc.startingBalance : 0;
   return (
     <div className="rounded-lg border border-amber-700 bg-amber-950/20 p-4">
       <header className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-100">Demo account</h3>
         <span className="rounded bg-amber-700 px-2 py-0.5 text-[10px] font-bold text-white">SIMULATED</span>
       </header>
-      {acc ? (
+      {isLoading ? (
+        <p className="text-xs text-slate-500" data-testid="paper-account-loading">Loading demo account…</p>
+      ) : isError && !acc ? (
+        <p className="text-xs text-amber-300" role="alert" data-testid="paper-account-unavailable">{readFailureCopy(error)}</p>
+      ) : acc ? (
         <div className="space-y-2">
           <p className="text-xs text-slate-300">{acc.accountName}</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -49,13 +148,32 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
             <div><span className="text-slate-500">Equity</span><div className="font-mono text-slate-100">{acc.equity.toFixed(2)}</div></div>
             <div><span className="text-slate-500">Margin</span><div className="font-mono text-slate-100">{acc.marginUsed.toFixed(2)}</div></div>
             <div><span className="text-slate-500">P&L vs start</span>
-              <div className={`font-mono ${acc.equity - acc.startingBalance >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {(acc.equity - acc.startingBalance).toFixed(2)}
+              <div
+                className={`font-mono ${refreshFailed ? "text-slate-400" : pnlVsStart >= 0 ? "text-green-400" : "text-red-400"}`}
+                data-testid="paper-account-pnl"
+              >
+                {pnlVsStart.toFixed(2)}
               </div>
             </div>
           </div>
+          {refreshFailed ? (
+            <p className="text-[11px] text-amber-300" role="alert" data-testid="paper-account-refresh-failed">
+              Could not refresh the demo account
+              {error instanceof PaperAccountReadError ? ` (${error.reason ?? `HTTP ${error.status}`})` : ""}.
+              {" "}Showing the last successful valuation{valuedAt ? ` from ${valuedAt}` : ""}; balance, equity and P&L may have changed since.
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-500" data-testid="paper-account-valued-at">
+              {valuedAt ? `Valued at ${valuedAt}` : "Valuation time not reported"}
+            </p>
+          )}
+          {acc.pnlSizing?.note ? (
+            <p className="text-[10px] text-amber-200" data-testid="paper-account-sizing-note">{acc.pnlSizing.note}</p>
+          ) : null}
+          <p className="text-[10px] text-amber-300" data-testid="paper-account-price-source">{paperPriceSourceLine(acc.valuation)}</p>
+          <p className="text-[10px] text-slate-400" data-testid="paper-account-units">{paperUnitsLine(acc.valuation, acc.pnlSizing)}</p>
         </div>
-      ) : (
+      ) : data?.account === null ? (
         <div className="space-y-2">
           <p className="text-xs text-slate-400">No active account.</p>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
@@ -67,6 +185,8 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
             {create.isPending ? "Creating…" : "Create demo account"}
           </button>
         </div>
+      ) : (
+        <p className="text-xs text-slate-500" data-testid="paper-account-loading">Loading demo account…</p>
       )}
       <p className="mt-2 text-[10px] text-amber-300">Simulated — demo trading does not guarantee live results.</p>
     </div>
