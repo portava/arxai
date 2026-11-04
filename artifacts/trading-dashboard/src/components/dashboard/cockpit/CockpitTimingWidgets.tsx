@@ -117,7 +117,12 @@ function timingFooterBody(rows: TimingRow[], now: number): string {
   const tfs = Array.from(new Set(measured.map((r) => String(r["timeframe"] ?? "")).filter(Boolean)));
   const tf = tfs.length === 1 ? `${tfs[0]} ` : "";
   const full = measured.filter((r) => rowQuality(r).label === "real").length;
-  const coverage = `current candles for ${measured.length} of ${rows.length} markets, ${full} with a live quote`;
+  // Coverage is counted against the markets the cockpit asked for, not the rows
+  // that came back: the multi-read endpoint omits failed markets and malformed
+  // rows are dropped, so "2 of 2" would read as full coverage when 3 of the 5
+  // requested markets have no read at all.
+  const requested = Math.max(SCAN_SYMBOLS.length, rows.length);
+  const coverage = `current candles for ${measured.length} of ${requested} requested markets, ${full} with a live quote`;
   const times = measured
     .map((r) => Date.parse(String(r["generatedAt"] ?? "")))
     .filter((t) => Number.isFinite(t));
@@ -154,6 +159,20 @@ function UnmeasuredLine({ rows }: { rows: TimingRow[] }) {
   );
 }
 
+/** Requested markets with no usable read: omitted by the server or dropped as malformed. */
+function MissingLine({ rows }: { rows: TimingRow[] }) {
+  // With no rows at all the card already says timing data is unavailable.
+  if (rows.length === 0) return null;
+  const returned = new Set(rows.map((r) => String(r["symbol"] ?? "")));
+  const missing = SCAN_SYMBOLS.filter((s) => !returned.has(s));
+  if (missing.length === 0) return null;
+  return (
+    <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-missing">
+      No usable read returned: {missing.join(", ")}
+    </p>
+  );
+}
+
 /** Measured reads (current candles) left out of "best now" because the live quote is missing. */
 function NoQuoteLine({ rows }: { rows: TimingRow[] }) {
   const partial = rows.filter((r) => isMeasuredTimingRead(r) && !isProviderBackedTimingRead(r)).map((r) => String(r["symbol"] ?? "")).filter(Boolean);
@@ -180,8 +199,18 @@ function useTimingReads() {
   // are no longer current and are not shown as candidates or cautions.
   const { rows, dropped } = q.isError ? { rows: [] as TimingRow[], dropped: 0 } : validTimingRows(q.data);
   const fullCount = rows.filter(isProviderBackedTimingRead).length;
-  const partialCoverage = fullCount > 0 && fullCount < SCAN_SYMBOLS.length;
-  return { q, rows, dropped, fullCount, partialCoverage };
+  const measuredCount = rows.filter(isMeasuredTimingRead).length;
+  return { q, rows, dropped, fullCount, measuredCount };
+}
+
+// Partial coverage is judged against the requested markets and against what the
+// card itself lists: Timing Candidates ranks provider-backed reads only, Timing
+// Cautions lists every read with current candles. Any requested market without
+// such a read (omitted, dropped, unmeasured or, for candidates, no live quote)
+// makes the card's coverage partial, even when none of the returned reads is
+// provider-backed.
+function isPartialCoverage(rows: TimingRow[], listedCount: number): boolean {
+  return rows.length > 0 && listedCount < SCAN_SYMBOLS.length;
 }
 
 const HEAT_STATE_SHORT: Record<string, string> = {
@@ -197,8 +226,8 @@ const HEAT_STATE_SHORT: Record<string, string> = {
 };
 
 export function BestMarketsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
-  const { q, rows, dropped, fullCount, partialCoverage } = useTimingReads();
-  const measuredCount = rows.filter(isMeasuredTimingRead).length;
+  const { q, rows, dropped, fullCount, measuredCount } = useTimingReads();
+  const partialCoverage = isPartialCoverage(rows, fullCount);
 
   const candidates = rows.filter((row) => PERMISSION_PASS.has(String(row["entryPermission"] ?? ""))
     && GRADE_GOOD.has(String(row["timingGrade"] ?? "")));
@@ -294,6 +323,7 @@ export function BestMarketsCard({ compactWorkspace = false }: { compactWorkspace
         </ul>
       )}
       {partialCoverage && <p className="mt-2 text-xs text-warning">Partial coverage. Missing or estimated market reads are excluded.</p>}
+      <MissingLine rows={rows} />
       <UnmeasuredLine rows={rows} />
       <NoQuoteLine rows={rows} />
       <TimingFooter rows={rows} isError={q.isError} dropped={dropped} />
@@ -307,8 +337,8 @@ export function BestMarketsCard({ compactWorkspace = false }: { compactWorkspace
 }
 
 export function AvoidMarketsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
-  const { q, rows, dropped, partialCoverage } = useTimingReads();
-  const measuredCount = rows.filter(isMeasuredTimingRead).length;
+  const { q, rows, dropped, measuredCount } = useTimingReads();
+  const partialCoverage = isPartialCoverage(rows, measuredCount);
 
   // A caution from a measured read (current candles) is listed, labelled
   // "Partial data" when the live quote is missing; a session-only estimate is
@@ -396,6 +426,7 @@ export function AvoidMarketsCard({ compactWorkspace = false }: { compactWorkspac
         </ul>
       )}
       {partialCoverage && <p className="mt-2 text-xs text-warning">Partial coverage. Missing or estimated market reads are excluded.</p>}
+      <MissingLine rows={rows} />
       <UnmeasuredLine rows={rows} />
       <TimingFooter rows={rows} isError={q.isError} dropped={dropped} />
       <div className="mt-3">

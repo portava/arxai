@@ -60,7 +60,8 @@ describe("Avoid Right Now — unmeasured timing reads", () => {
     const items = Array.from(screen.getByTestId("cockpit-avoid-markets").querySelectorAll("li"));
     expect(items.map((li) => li.textContent)).toEqual([expect.stringContaining("GBPUSD")]);
     const footer = screen.getByTestId("timing-footer").textContent ?? "";
-    expect(footer).toMatch(/1 of 2 markets/);
+    // Counted against the 5 requested markets, not the 2 rows returned.
+    expect(footer).toMatch(/1 of 5 requested markets/);
     expect(footer).toMatch(/computed 20s ago/);
   });
 });

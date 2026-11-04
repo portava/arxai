@@ -89,10 +89,10 @@ describe("a failed refetch with old rows in the query cache", () => {
   it("timingFooter: isError with rows is not silent; without isError it is unchanged", () => {
     const rows = [row()];
     expect(timingFooter(rows, { isError: true, now: NOW })).toBe(
-      "Last refresh failed · M15 timing reads computed 0s ago · current candles for 1 of 1 markets, 1 with a live quote",
+      "Last refresh failed · M15 timing reads computed 0s ago · current candles for 1 of 5 requested markets, 1 with a live quote",
     );
     expect(timingFooter(rows, { now: NOW })).toBe(
-      "M15 timing reads computed 0s ago · current candles for 1 of 1 markets, 1 with a live quote",
+      "M15 timing reads computed 0s ago · current candles for 1 of 5 requested markets, 1 with a live quote",
     );
   });
 });

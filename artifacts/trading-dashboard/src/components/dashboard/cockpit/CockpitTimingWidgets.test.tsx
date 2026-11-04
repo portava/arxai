@@ -52,7 +52,7 @@ describe("BestMarketsCard footer", () => {
     const footer = screen.getByTestId("timing-footer").textContent ?? "";
     expect(footer).not.toMatch(/live market provider/i);
     expect(footer).not.toMatch(/\b\ds ago/);
-    expect(footer).toBe("M15 timing reads computed 10m ago · current candles for 1 of 1 markets, 0 with a live quote");
+    expect(footer).toBe("M15 timing reads computed 10m ago · current candles for 1 of 5 requested markets, 0 with a live quote");
   });
 
   // Codex line (stricter): only a provider-backed read (current candles AND a
@@ -106,13 +106,79 @@ describe("AvoidMarketsCard", () => {
   });
 });
 
+// Coverage is measured against the 5 requested markets, not the rows that came
+// back. The server omits failed markets; when only 2 partial-data reads return
+// (none with a live quote), the omitted markets must still be named and both
+// cards must flag partial coverage, so "no listed cautions" is never read as
+// covering every market.
+describe("coverage against the requested markets", () => {
+  const MISSING = "USDJPY, XAUUSD, BTCUSD";
+  function twoPartialReads() {
+    setResults([row({ entryPermission: "WAIT_FOR_ENTRY", timingGrade: "C" }), row({ symbol: "GBPUSD", entryPermission: "WAIT_FOR_ENTRY", timingGrade: "C" })]);
+  }
+  function allFiveProviderBacked() {
+    setResults(["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"].map((symbol) => row({
+      symbol,
+      dataQuality: { label: "real", hasCandleData: true, hasQuoteData: true, hasNewsData: true, hasBroadFlowData: true, note: "" },
+    })));
+  }
+
+  it("Timing Cautions: 2 of 5 partial reads name the omitted markets, flag partial coverage, and count 2 of 5 in the footer", () => {
+    twoPartialReads();
+    render(<AvoidMarketsCard />);
+    expect(screen.getByTestId("avoid-markets-empty").textContent).toBe("No listed cautions in 2 measured timing reads.");
+    expect(screen.getByText(/Partial coverage/)).toBeTruthy();
+    expect(screen.getByTestId("timing-missing").textContent).toBe(`No usable read returned: ${MISSING}`);
+    expect(screen.getByTestId("timing-footer").textContent).toBe("M15 timing reads computed 10m ago · current candles for 2 of 5 requested markets, 0 with a live quote");
+  });
+
+  it("Timing Cautions compact: flags partial coverage when 2 of 5 come back as partial reads", () => {
+    twoPartialReads();
+    render(<AvoidMarketsCard compactWorkspace />);
+    expect(screen.getByText("No listed caution · not an all-clear")).toBeTruthy();
+    expect(screen.getByText("Partial coverage")).toBeTruthy();
+  });
+
+  it("Timing Candidates: flags partial coverage and names the omitted markets when none of the reads is provider-backed", () => {
+    twoPartialReads();
+    render(<BestMarketsCard />);
+    expect(screen.getByText(/Partial coverage/)).toBeTruthy();
+    expect(screen.getByTestId("timing-missing").textContent).toBe(`No usable read returned: ${MISSING}`);
+    expect(screen.getByTestId("timing-footer").textContent).toContain("2 of 5 requested markets, 0 with a live quote");
+  });
+
+  it("Timing Candidates compact: flags partial coverage when none of the reads is provider-backed", () => {
+    twoPartialReads();
+    render(<BestMarketsCard compactWorkspace />);
+    expect(screen.getByText("Not measured · no provider-backed reads")).toBeTruthy();
+    expect(screen.getByText("Partial coverage")).toBeTruthy();
+  });
+
+  it("a malformed row for a requested market counts as no usable read", () => {
+    setResults([row(), row({ symbol: "GBPUSD", timingGrade: "Z" })]);
+    render(<AvoidMarketsCard />);
+    expect(screen.getByTestId("timing-missing").textContent).toBe("No usable read returned: GBPUSD, USDJPY, XAUUSD, BTCUSD");
+    expect(screen.getByTestId("timing-footer").textContent).toContain("1 of 5 requested markets");
+  });
+
+  it("all 5 provider-backed reads: no partial-coverage flag and no missing markets", () => {
+    allFiveProviderBacked();
+    render(<><BestMarketsCard /><AvoidMarketsCard /></>);
+    expect(screen.queryByText(/Partial coverage/)).toBeNull();
+    expect(screen.queryByTestId("timing-missing")).toBeNull();
+    for (const f of screen.getAllByTestId("timing-footer")) {
+      expect(f.textContent).toBe("M15 timing reads computed 10m ago · current candles for 5 of 5 requested markets, 5 with a live quote");
+    }
+  });
+});
+
 describe("timingFooter", () => {
   it("uses the OLDEST generatedAt and reports missing read times plainly", () => {
     const now = Date.parse("2026-10-28T12:00:00Z");
     const a = row({ generatedAt: "2026-10-28T11:59:30Z", dataQuality: { label: "real", hasCandleData: true } });
     const b = row({ generatedAt: "2026-10-28T11:55:00Z", dataQuality: { label: "real", hasCandleData: true } });
-    expect(timingFooter([a, b], { now })).toBe("M15 timing reads computed 5m ago · current candles for 2 of 2 markets, 2 with a live quote");
-    expect(timingFooter([row({ generatedAt: undefined })], { now })).toBe("M15 timing reads · read time not reported · current candles for 1 of 1 markets, 0 with a live quote");
+    expect(timingFooter([a, b], { now })).toBe("M15 timing reads computed 5m ago · current candles for 2 of 5 requested markets, 2 with a live quote");
+    expect(timingFooter([row({ generatedAt: undefined })], { now })).toBe("M15 timing reads · read time not reported · current candles for 1 of 5 requested markets, 0 with a live quote");
     expect(timingFooter([], { isError: true })).toBe("Timing reads could not be loaded.");
   });
 });
