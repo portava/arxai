@@ -420,6 +420,29 @@ export interface Mt5QuoteRead {
  * partition). This is the read the self-trade entry claim uses, so one user's
  * EA can never supply the quote fact for another user's command.
  */
+/**
+ * The pushing bridge's broker-clock offset (broker epoch ms minus EA UTC epoch
+ * ms), from the newest tick that bridge posted for ANY symbol, with the EA UTC
+ * time of that tick. Null until the bridge has posted a tick carrying a broker
+ * time. Read by the CANDLE ingest to stamp bars (audit H7); never rewrites a
+ * bar time. An unattributed bridge has no offset (null): nothing is guessed.
+ */
+export function getMt5BridgeClockOffset(
+  bridge: Mt5BridgeIdentity | null | undefined,
+): { offsetMs: number; measuredAtMs: number } | null {
+  if (bridge == null) return null;
+  const bKey = bridgeKeyOf(bridge);
+  let best: QuoteEntry | null = null;
+  for (const partitions of quoteStore.values()) {
+    const e = partitions.get(bKey);
+    if (!e || e.quote.brokerClockOffsetMs == null || !Number.isFinite(e.quote.brokerClockOffsetMs)) continue;
+    if (!best || e.writeSeq > best.writeSeq) best = e;
+  }
+  if (!best || best.quote.brokerClockOffsetMs == null) return null;
+  const measuredAtMs = Date.parse(best.quote.timestamp);
+  return { offsetMs: best.quote.brokerClockOffsetMs, measuredAtMs: Number.isFinite(measuredAtMs) ? measuredAtMs : best.updatedAt };
+}
+
 export function readMt5Quote(
   symbol: string,
   opts: { bridgeConnectionId: number; now?: number },

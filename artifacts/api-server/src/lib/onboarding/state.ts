@@ -12,7 +12,7 @@ import { createAlert } from "../alerts/alertManager.js";
 
 export type Progress = typeof userOnboardingProgressTable.$inferSelect;
 
-const SINGLE_USER_ID: number | null = null; // single-user repl; one row keyed by null user_id
+// One progress row per signed-in user (user_onboarding_progress.user_id).
 
 async function logEvent(onboardingId: string, eventType: string, message: string, opts: { stepId?: string | null; severity?: string; details?: Record<string, unknown> } = {}) {
   await db.insert(onboardingEventsTable).values({
@@ -29,29 +29,30 @@ async function audit(action: string, details: Record<string, unknown>) {
   try { await auditEvent({ eventType: "ONBOARDING", action, sourceBuild: "MM", actor: "USER", metadata: { build: "RR", ...details } }); } catch { /* non-fatal */ }
 }
 
-export async function getOrCreateProgress(): Promise<Progress> {
-  const existing = await db.select().from(userOnboardingProgressTable).limit(1);
+export async function getOrCreateProgress(userId: number): Promise<Progress> {
+  const existing = await db.select().from(userOnboardingProgressTable)
+    .where(eq(userOnboardingProgressTable.userId, userId)).orderBy(userOnboardingProgressTable.id).limit(1);
   if (existing[0]) return existing[0];
   const onboardingId = `onb_${randomUUID()}`;
   const [row] = await db.insert(userOnboardingProgressTable).values({
     onboardingId,
-    userId: SINGLE_USER_ID,
+    userId,
     status: "NOT_STARTED",
   }).returning();
   await logEvent(onboardingId, "CREATED", "Onboarding progress row initialized.");
   return row!;
 }
 
-export async function getStatus(): Promise<Progress & { totalSteps: number; nextStep: string | null }> {
-  const p = await getOrCreateProgress();
+export async function getStatus(userId: number): Promise<Progress & { totalSteps: number; nextStep: string | null }> {
+  const p = await getOrCreateProgress(userId);
   const completed = (p.completedSteps as string[]) ?? [];
   const skipped = (p.skippedSteps as string[]) ?? [];
   const next = ONBOARDING_STEPS.find(s => !completed.includes(s.step_id) && !skipped.includes(s.step_id))?.step_id ?? null;
   return { ...p, totalSteps: ONBOARDING_STEPS.length, nextStep: next };
 }
 
-export async function startOnboarding(): Promise<Progress> {
-  const p = await getOrCreateProgress();
+export async function startOnboarding(userId: number): Promise<Progress> {
+  const p = await getOrCreateProgress(userId);
   const [row] = await db.update(userOnboardingProgressTable).set({
     status: "IN_PROGRESS",
     currentStep: p.currentStep ?? ONBOARDING_STEPS[0]!.step_id,
@@ -64,10 +65,10 @@ export async function startOnboarding(): Promise<Progress> {
   return row!;
 }
 
-export async function completeStep(stepId: string): Promise<Progress> {
+export async function completeStep(userId: number, stepId: string): Promise<Progress> {
   const step = ONBOARDING_STEPS.find(s => s.step_id === stepId);
   if (!step) throw new Error("UNKNOWN_STEP");
-  const p = await getOrCreateProgress();
+  const p = await getOrCreateProgress(userId);
   const completed = new Set([...(p.completedSteps as string[]) ?? [], stepId]);
   const skipped = new Set((p.skippedSteps as string[]) ?? []); skipped.delete(stepId);
   const next = ONBOARDING_STEPS.find(s => !completed.has(s.step_id) && !skipped.has(s.step_id))?.step_id ?? null;
@@ -88,11 +89,11 @@ export async function completeStep(stepId: string): Promise<Progress> {
   return row!;
 }
 
-export async function skipStep(stepId: string): Promise<Progress> {
+export async function skipStep(userId: number, stepId: string): Promise<Progress> {
   const step = ONBOARDING_STEPS.find(s => s.step_id === stepId);
   if (!step) throw new Error("UNKNOWN_STEP");
   if (step.required) throw new Error("STEP_REQUIRED");
-  const p = await getOrCreateProgress();
+  const p = await getOrCreateProgress(userId);
   const skipped = new Set([...(p.skippedSteps as string[]) ?? [], stepId]);
   const completed = (p.completedSteps as string[]) ?? [];
   const next = ONBOARDING_STEPS.find(s => !completed.includes(s.step_id) && !skipped.has(s.step_id))?.step_id ?? null;
@@ -108,8 +109,8 @@ export async function skipStep(stepId: string): Promise<Progress> {
   return row!;
 }
 
-export async function completeOnboarding(): Promise<Progress> {
-  const p = await getOrCreateProgress();
+export async function completeOnboarding(userId: number): Promise<Progress> {
+  const p = await getOrCreateProgress(userId);
   const [row] = await db.update(userOnboardingProgressTable).set({
     status: "COMPLETED",
     walkthroughCompleted: true,
@@ -122,8 +123,8 @@ export async function completeOnboarding(): Promise<Progress> {
   return row!;
 }
 
-export async function resetOnboarding(): Promise<Progress> {
-  const p = await getOrCreateProgress();
+export async function resetOnboarding(userId: number): Promise<Progress> {
+  const p = await getOrCreateProgress(userId);
   const [row] = await db.update(userOnboardingProgressTable).set({
     status: "NOT_STARTED",
     currentStep: null,
@@ -138,9 +139,9 @@ export async function resetOnboarding(): Promise<Progress> {
   return row!;
 }
 
-export async function acknowledge(key: AckKey): Promise<Progress> {
+export async function acknowledge(userId: number, key: AckKey): Promise<Progress> {
   if (!REQUIRED_ACK_KEYS.includes(key)) throw new Error("UNKNOWN_ACK");
-  const p = await getOrCreateProgress();
+  const p = await getOrCreateProgress(userId);
   const patch: Record<string, unknown> = { lastSeenAt: new Date(), updatedAt: new Date() };
   patch[key] = true;
   const [row] = await db.update(userOnboardingProgressTable).set(patch as Partial<typeof userOnboardingProgressTable.$inferInsert>).where(eq(userOnboardingProgressTable.id, p.id)).returning();
@@ -149,7 +150,7 @@ export async function acknowledge(key: AckKey): Promise<Progress> {
   return row!;
 }
 
-export async function listEvents(limit = 50) {
-  const p = await getOrCreateProgress();
+export async function listEvents(userId: number, limit = 50) {
+  const p = await getOrCreateProgress(userId);
   return db.select().from(onboardingEventsTable).where(eq(onboardingEventsTable.onboardingId, p.onboardingId)).orderBy(sql`${onboardingEventsTable.createdAt} desc`).limit(limit);
 }

@@ -22,20 +22,30 @@ export type Mt5StateRow = typeof mt5StateTable.$inferSelect;
 /** A db handle or an open transaction. */
 type Reader = Pick<typeof db, "select">;
 
-/** The install-wide EA feed row (lowest id), or null before the first heartbeat. */
+/**
+ * The install-wide EA feed row, or null before the first heartbeat.
+ *
+ * mt5_state holds one row per bridge user (plus, on an upgraded install, the
+ * legacy unowned row until a user adopts it). The platform read is the row of
+ * the EA that heartbeated most recently; ties and never-heartbeated rows fall
+ * back to the lowest id. It is an operator view of "the terminal that is
+ * talking to us now", never any one user's account.
+ */
 export async function readPlatformMt5State(reader: Reader = db): Promise<Mt5StateRow | null> {
-  const rows = await reader.select().from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
+  const rows = await reader.select().from(mt5StateTable)
+    .orderBy(sql`${mt5StateTable.lastHeartbeatAt} DESC NULLS LAST`, asc(mt5StateTable.id))
+    .limit(1);
   return rows[0] ?? null;
 }
 
 /**
- * Said when readLatestUserMt5State finds no row for the user. The EA bridge
- * writes the feed into the install-wide row only and never stamps a user on
- * it, so "no row" means the user's positions and account were not read from
- * this feed, never that they hold none.
+ * Said when readLatestUserMt5State finds no row for the user. Each bridge
+ * user's EA writes its own mt5_state row, so "no row" means this user's EA has
+ * not sent a snapshot yet (or their bridge is not attached): the positions and
+ * account were not read, never that they hold none.
  */
 export const MT5_STATE_NOT_ATTRIBUTED_NOTE =
-  "No MT5 snapshot is stored for your account in the EA account feed (the feed is saved install-wide, not per user), so your open positions were not read here. This is not a count of zero.";
+  "No MT5 snapshot is stored for your account yet: your Expert Advisor has not sent one through your bridge, so your open positions were not read here. This is not a count of zero.";
 
 /** The user's most recently synced snapshot, or null. Never returns another user's row. */
 export async function readLatestUserMt5State(userId: number): Promise<Mt5StateRow | null> {

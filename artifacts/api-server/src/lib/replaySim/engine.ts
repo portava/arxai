@@ -179,19 +179,23 @@ export interface RunRecord {
 }
 
 const stoppedRuns = new Set<string>();
-const activeRuns = new Map<string, { startedAt: Date; scenarioId: string }>();
+const activeRuns = new Map<string, { startedAt: Date; scenarioId: string; ownerUserId: number | null }>();
 
 export function requestStop(replayRunId: string) { stoppedRuns.add(replayRunId); }
-export function listActiveRuns() {
-  return Array.from(activeRuns.entries()).map(([id, v]) => ({ replayRunId: id, scenarioId: v.scenarioId, startedAt: v.startedAt }));
+/** Active runs; with an owner, only that user's runs. */
+export function listActiveRuns(ownerUserId?: number) {
+  return Array.from(activeRuns.entries())
+    .filter(([, v]) => ownerUserId === undefined || v.ownerUserId === ownerUserId)
+    .map(([id, v]) => ({ replayRunId: id, scenarioId: v.scenarioId, startedAt: v.startedAt }));
 }
 export function isActive(replayRunId: string) { return activeRuns.has(replayRunId); }
-export function _markActive(id: string, scenarioId: string) { activeRuns.set(id, { startedAt: new Date(), scenarioId }); }
+export function activeRunOwner(replayRunId: string): number | null | undefined { return activeRuns.get(replayRunId)?.ownerUserId; }
+export function _markActive(id: string, scenarioId: string, ownerUserId: number | null = null) { activeRuns.set(id, { startedAt: new Date(), scenarioId, ownerUserId }); }
 export function _unmarkActive(id: string) { activeRuns.delete(id); }
 
-export async function runReplay(scenario: Scenario, settings: RunSettings = {}, replayRunIdOverride?: string): Promise<RunRecord> {
+export async function runReplay(scenario: Scenario, settings: RunSettings = {}, replayRunIdOverride?: string, ownerUserId: number | null = null): Promise<RunRecord> {
   const replayRunId = replayRunIdOverride ?? `rrun_${randomUUID()}`;
-  _markActive(replayRunId, scenario.scenarioId);
+  _markActive(replayRunId, scenario.scenarioId, ownerUserId);
   const startedAt = new Date();
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -354,7 +358,7 @@ export async function runReplay(scenario: Scenario, settings: RunSettings = {}, 
 
   // Persist run + trades.
   await db.insert(replayRunsTable).values({
-    replayRunId, scenarioId: scenario.scenarioId, mode: "REPLAY_ONLY", status,
+    replayRunId, userId: ownerUserId, scenarioId: scenario.scenarioId, mode: "REPLAY_ONLY", status,
     symbol: scenario.symbol, timeframe: scenario.timeframe,
     candlesProcessed, decisionsCreated,
     simulatedTradesOpened: trades.length, simulatedTradesClosed: closed.length,
@@ -463,16 +467,21 @@ async function logEvent(runId: string, type: string, severity: string, message: 
   } catch { /* best-effort */ }
 }
 
-export async function getRun(replayRunId: string) {
+/** A run; with an owner, only when that user owns it (another user's run reads as absent). */
+export async function getRun(replayRunId: string, ownerUserId?: number) {
   const rows = await db.select().from(replayRunsTable).where(eq(replayRunsTable.replayRunId, replayRunId)).limit(1);
-  return rows[0] ?? null;
+  const run = rows[0] ?? null;
+  if (run && ownerUserId !== undefined && run.userId !== ownerUserId) return null;
+  return run;
 }
 
-export async function getRunTrades(replayRunId: string) {
+export async function getRunTrades(replayRunId: string, ownerUserId?: number) {
+  if (ownerUserId !== undefined && !(await getRun(replayRunId, ownerUserId))) return [];
   return db.select().from(replayTradesTable).where(eq(replayTradesTable.replayRunId, replayRunId));
 }
 
-export async function getRunReport(replayRunId: string) {
+export async function getRunReport(replayRunId: string, ownerUserId?: number) {
+  if (ownerUserId !== undefined && !(await getRun(replayRunId, ownerUserId))) return null;
   const rows = await db.select().from(replayReportsTable).where(eq(replayReportsTable.replayRunId, replayRunId)).limit(1);
   return rows[0] ?? null;
 }

@@ -1,7 +1,8 @@
 // Build RR — Onboarding routes. Read/write onboarding state ONLY.
 // SAFETY: Acknowledgements never unlock live trading. ALL responses scrubbed.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
 import {
   getStatus, startOnboarding, completeStep, skipStep, completeOnboarding,
@@ -11,11 +12,18 @@ import { ONBOARDING_STEPS, REQUIRED_ACK_KEYS, type AckKey } from "../lib/onboard
 import { scrub } from "../lib/security/redact.js";
 
 const router: IRouter = Router();
+// Onboarding progress and acknowledgements are per user: every route requires
+// a session and reads or writes only the caller's own row ("scope": "OWN").
+router.use("/onboarding", requireUser);
+function ownerId(req: Request): number {
+  return req.authUser!.id;
+}
 const DISCLAIMER = "Build RR — Guided Onboarding + Smart Help. Education only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets, never recommends live trading.";
 
 function envelope(payload: Record<string, unknown>) {
   return scrub({
     system: "onboarding",
+    scope: "OWN" as const,
     appMode: "PAPER_ONLY" as const,
     liveTradingStatus: "DISABLED" as const,
     mode: "PAPER_ONLY" as const,
@@ -25,8 +33,8 @@ function envelope(payload: Record<string, unknown>) {
   }) as Record<string, unknown>;
 }
 
-router.get("/onboarding/status", async (_req, res) => {
-  const status = await getStatus();
+router.get("/onboarding/status", async (req, res) => {
+  const status = await getStatus(ownerId(req));
   res.json(envelope({ status: status as unknown as Record<string, unknown> }));
 });
 
@@ -34,8 +42,8 @@ router.get("/onboarding/steps", (_req, res) => {
   res.json(envelope({ steps: ONBOARDING_STEPS, totalSteps: ONBOARDING_STEPS.length, requiredAcks: REQUIRED_ACK_KEYS }));
 });
 
-router.post("/onboarding/start", async (_req, res) => {
-  const row = await startOnboarding();
+router.post("/onboarding/start", async (req, res) => {
+  const row = await startOnboarding(ownerId(req));
   res.json(envelope({ result: { ok: true, status: row.status, currentStep: row.currentStep, onboardingId: row.onboardingId } }));
 });
 
@@ -44,7 +52,7 @@ router.post("/onboarding/complete-step", async (req, res) => {
   const p = StepBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BODY" })); return; }
   try {
-    const row = await completeStep(p.data.stepId);
+    const row = await completeStep(ownerId(req), p.data.stepId);
     res.json(envelope({ result: { ok: true, stepId: p.data.stepId, status: row.status, currentStep: row.currentStep, completedSteps: row.completedSteps } }));
   } catch (e) {
     res.status(400).json(envelope({ error: String((e as Error).message) }));
@@ -55,20 +63,20 @@ router.post("/onboarding/skip-step", async (req, res) => {
   const p = StepBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BODY" })); return; }
   try {
-    const row = await skipStep(p.data.stepId);
+    const row = await skipStep(ownerId(req), p.data.stepId);
     res.json(envelope({ result: { ok: true, stepId: p.data.stepId, status: row.status, currentStep: row.currentStep, skippedSteps: row.skippedSteps } }));
   } catch (e) {
     res.status(400).json(envelope({ error: String((e as Error).message) }));
   }
 });
 
-router.post("/onboarding/complete", async (_req, res) => {
-  const row = await completeOnboarding();
+router.post("/onboarding/complete", async (req, res) => {
+  const row = await completeOnboarding(ownerId(req));
   res.json(envelope({ result: { ok: true, status: row.status, walkthroughCompleted: row.walkthroughCompleted } }));
 });
 
-router.post("/onboarding/reset", async (_req, res) => {
-  const row = await resetOnboarding();
+router.post("/onboarding/reset", async (req, res) => {
+  const row = await resetOnboarding(ownerId(req));
   res.json(envelope({ result: { ok: true, status: row.status } }));
 });
 
@@ -77,7 +85,7 @@ router.post("/onboarding/acknowledge", async (req, res) => {
   const p = AckBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_ACK_KEY", allowed: REQUIRED_ACK_KEYS })); return; }
   try {
-    const row = await acknowledge(p.data.key);
+    const row = await acknowledge(ownerId(req), p.data.key);
     res.json(envelope({
       result: {
         ok: true, key: p.data.key,
@@ -106,8 +114,8 @@ router.post("/onboarding/demo", async (_req, res) => {
   }));
 });
 
-router.get("/onboarding/events", async (_req, res) => {
-  const events = await listEvents(50);
+router.get("/onboarding/events", async (req, res) => {
+  const events = await listEvents(ownerId(req), 50);
   res.json(envelope({ events: events as unknown as Record<string, unknown>[] }));
 });
 
