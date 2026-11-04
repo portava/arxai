@@ -28,6 +28,7 @@
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
+import { routeStoredCandleHistory, STORED_HISTORY_SUB_PROVIDER } from "../storedCandleHistory.js";
 import { currentFeedScopeBridge } from "../feedScope.js";
 import { MULTI_BRIDGE_CONTENTION_NOTE, mt5SeriesContention, readMt5Quote } from "../providers/mt5Provider.js";
 import { getBrokerClockOffset } from "../../brokerHub/brokerClockOffset.js";
@@ -145,6 +146,13 @@ export type ChartFeedScope = "own_bridge" | "platform_shared" | "provider";
 export interface ChartFeedOptions {
   /** The requesting trader's own bridge connection; pins the MT5 read to it. */
   bridgeConnectionId?: number | null;
+  /**
+   * Chart DISPLAY only: when no provider can serve the series (market closed,
+   * bridge disconnected, no feed configured), serve the newest bars already
+   * stored in market_candles, labelled stored history and never live or
+   * AI-usable. Analysis and decision callers leave this off.
+   */
+  storedHistoryFallback?: boolean;
 }
 
 export interface ChartCandlesResponse {
@@ -257,6 +265,12 @@ async function buildChartFeed(
     const shared = await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null });
     if (shared.primaryProvider === "mt5_broker") result = shared;
   }
+  // Nothing live answered: the display chart still shows the market up to its
+  // last stored bar (closed market or a down feed), labelled as stored.
+  if (!result.ok && opts.storedHistoryFallback === true) {
+    result = await routeStoredCandleHistory(symbol, timeframe, limit, result);
+  }
+  const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
   const source = result.primaryProvider;
   const servingBridgeId = result.ok ? (result.provenance?.bridgeConnectionId ?? null) : null;
   const feedScope: ChartFeedScope | null = source == null
@@ -414,7 +428,7 @@ async function buildChartFeed(
   // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && lastCandle && isFormingTickSource(source)) {
+  if (includeFormingTip && lastCandle && !storedHistory && isFormingTickSource(source)) {
     const forming = getFormingBar(symbol, timeframe, now, source);
     if (forming) {
       const tipOpenMs = forming.openMs;
@@ -476,7 +490,9 @@ async function buildChartFeed(
   const quality = verdict.quality;
   let warning = verdict.warning;
   const stale = verdict.stale;
-  const aiUsable = verdict.aiUsable;
+  // Stored bars are a record of the past, never an input the AI may read as
+  // the current market, however recent the newest one is.
+  const aiUsable = verdict.aiUsable && !storedHistory;
 
   // isLive: reachable, current, and (for synthetics) confirmed ticking. When a
   // forming tip is present its tick freshness (folded into the verdict) governs
@@ -510,7 +526,7 @@ async function buildChartFeed(
     ? closure.closedAtMs
     : null;
   const reachable = source != null && candles.length > 0;
-  const isLive = timestampsUnconfirmed || durableMirror || marketClosedAtMs != null
+  const isLive = timestampsUnconfirmed || durableMirror || storedHistory || marketClosedAtMs != null
     ? false
     : formingTipPresent
       ? reachable && !verdict.stale
@@ -519,6 +535,9 @@ async function buildChartFeed(
   const messageCtx: MessageContext = {
     isLive,
     durableMirror,
+    storedHistory,
+    sourceLabel: friendlyFeedSource(source),
+    nowMs: now,
     newestOpenTime: lastCandle?.openTime ?? null,
     marketClosedAtMs,
     alwaysOpen: session.alwaysOpen,
@@ -562,7 +581,7 @@ async function buildChartFeed(
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
   return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
-    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null,
+    marketEvidence: storedHistory ? null : prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null,
     seriesAttribution: result.ok ? seriesAttributionFrom(result.provenance) : null };
 }
 
@@ -590,6 +609,12 @@ const DURABLE_MIRROR_SUB_PROVIDER = "durable_mirror";
 interface MessageContext {
   isLive: boolean;
   durableMirror: boolean;
+  /** Bars served from stored history because no feed answered (display only). */
+  storedHistory?: boolean;
+  /** Friendly name of the stored source, for the stored-history wording. */
+  sourceLabel?: string;
+  /** Serve time, for the newest stored bar's age. */
+  nowMs?: number;
   /** Newest provider bar's open time (ISO), before any display tip. */
   newestOpenTime: string | null;
   /** Scheduled weekend close (epoch ms) the series predates, or null. */
@@ -611,6 +636,7 @@ interface MessageContext {
  */
 function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageContext): string | null {
   if (quality !== "stale" && quality !== "delayed") return null;
+  if (ctx.storedHistory && ctx.marketClosedAtMs == null) return storedHistoryMessage(displaySymbol, ctx);
   if (ctx.marketClosedAtMs != null) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. Not a feed fault, and not live data.`;
   }
@@ -625,6 +651,21 @@ function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageCo
     return `Live ticks for ${displaySymbol} have stopped, so the forming bar is frozen. The market may be closed or the feed delayed; this is not live data.`;
   }
   return null;
+}
+
+function ageText(fromIso: string | null, nowMs: number | undefined): string | null {
+  const from = fromIso ? Date.parse(fromIso) : Number.NaN;
+  if (!Number.isFinite(from) || nowMs == null || !Number.isFinite(nowMs) || nowMs < from) return null;
+  const mins = Math.floor((nowMs - from) / 60_000);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} days ago`;
+}
+
+function storedHistoryMessage(displaySymbol: string, ctx: MessageContext): string {
+  const age = ageText(ctx.newestOpenTime, ctx.nowMs);
+  return `Showing stored ${ctx.sourceLabel ?? "market"} candles for ${displaySymbol} up to the last bar (opened ${utcStamp(ctx.newestOpenTime)}${age ? `, ${age}` : ""}). No live feed is available right now, so this is history, not live data.`;
 }
 
 function utcStamp(iso: string | null): string {
@@ -643,6 +684,7 @@ function utcStamp(iso: string | null): string {
 function notLiveReasonFor(quality: ChartQuality, ctx: MessageContext): "market_closed" | "stored_history" | null {
   if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) return "market_closed";
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) return "stored_history";
+  if (ctx.storedHistory && (quality === "clean" || quality === "delayed" || quality === "stale")) return "stored_history";
   return null;
 }
 
@@ -654,6 +696,9 @@ function buildMessage(
 ): string {
   if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
+  }
+  if (ctx.storedHistory && (quality === "clean" || quality === "delayed" || quality === "stale")) {
+    return storedHistoryMessage(displaySymbol, ctx);
   }
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
     return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;
