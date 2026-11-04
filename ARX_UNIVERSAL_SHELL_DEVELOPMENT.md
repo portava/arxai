@@ -55,6 +55,83 @@ Development workflow logs also contain earlier `Object is disposed` chart errors
 - Signed-in visual/interaction acceptance and the six requested screenshots remain blocked. Review a clean authenticated preview before publication, including chart disposal behavior and all target desktop/phone widths.
 - Existing provider, first-navigation and chart-performance limitations are not resolved or reclassified by this shell change.
 
+## Desktop desk fill, account-strip and header follow-up — 2026-11-04
+
+Validated application: `91cd579a9a796f19f5ec4408ac26409fc2792758`.
+Baseline: `8671e4f75f828f9894d9ff6a85efe39ca7ea085e`, including the merged
+shared-header fixtures and specialist-panel persistence improvements.
+
+### Corrections
+
+- Desktop widths from 1024px explicitly retain three equal-height column tracks.
+  Legacy right-column spanning/two-column rules are reset within that scope.
+- The last expanded panel fills spare space in the left/right columns; the
+  centre favours the price chart. If every panel in a column is collapsed, its
+  last card fills the track without reopening content or changing saved state.
+  Pinning uses the panel's actual normalized expanded state. Panel order,
+  presets, persistence and mobile focus logic were not changed.
+- The shared header now keeps its natural height instead of shrinking against a
+  content area requesting the full viewport height. Main content takes the
+  remaining flex space, so the account strip begins below the complete header.
+- Header positioning is sticky with an opaque ink background and its own
+  stacking context; portalled presets/refresh/system controls remain within it.
+- No backend, authentication, permission, risk, trading, broker or data-hook
+  implementation changes.
+
+### Final results on this source
+
+| Check | Actual result |
+| --- | --- |
+| Focused workspace/frame/account-strip tests | 13 passed, 0 failed |
+| Full frontend suite | **3,465 passed, 11 skipped, 0 failed; exit 0** |
+| Full test files | 229 passed, 1 skipped |
+| Frontend typecheck | Passed |
+| Production frontend build | Passed; existing large-chunk warning retained |
+| Unchanged initial-JS budget | Passed: 688,479 bytes raw / 200,135 gzip; limits remain 720,000 / 210,000 |
+| Diff whitespace | Passed |
+| Development root HTTP | 200 |
+| Isolated desktop geometry regression | 1 passed, 0 failed, 0 skipped |
+
+New jsdom coverage checks normalized pin/collapse state and that all five account
+labels belong to main content after, rather than inside, the header. jsdom does
+not establish physical clipping; the separate Chromium check uses the shipped
+CSS with clearly synthetic layout content and blocks network requests:
+
+```sh
+cd arxai
+node --test scripts/shell-qa/desk-fill.geometry.test.mjs
+```
+
+That check passed all **768 collapse combinations** (256 each at 1100×900,
+1500×900 and 1900×900), column-top alignment, column-bottom fill within 1.5px,
+account-label containment and a normalized pinned-clock fill check at each
+width. Actual measured header-bottom/account-strip-top pairs were
+65.84375/81.84375px at 1100px and 48/64px at both wider widths. A 900×500 scroll
+case kept the sticky header at y=0 and its controls within y=33.84375–61.84375,
+inside the 65.84375px header.
+
+These are geometry-fixture results, not authenticated chart/data acceptance or
+performance evidence. The fresh 1500×900 app-preview capture redirected to the
+normal login page (401 identity response). No sign-in bypass or credential
+operation was attempted. Signed-in visual acceptance remains unverified.
+
+The only non-failing frontend-test diagnostic was jsdom's existing
+“navigation to another Document” message; no errors or tests were suppressed.
+No failed final check was discarded.
+
+### Concurrent work and boundaries
+
+Larger-text shell checks were still in progress, and right-to-left shell work
+was reported implemented/awaiting merge. Those later changes are not covered by
+the exact-source counts above; neither was overwritten or imported by this
+follow-up. Only the listed application changes and this report were saved.
+
+No API/frontend workflow restart, database change/migration/schema hook,
+publication/deployment, GitHub push, broker action, order or trading-policy
+change was performed. The running frontend receives these changes through Vite.
+All previously reported signed-in, provider and navigation limitations remain
+open unless separately verified.
+
 ## Isolated long-content browser regression (2026-11-04)
 
 Added a standalone fixture in `arxai/scripts/shell-qa/`. Run from the workspace
