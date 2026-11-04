@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { PencilRuler, Loader2, ShieldOff, Eraser, X } from "lucide-react";
 import {
   canUseSetup,
+  setupScannerChipContext,
   type SetupPreview,
 } from "@/lib/setup-preview";
 import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
@@ -106,6 +107,7 @@ export function ChartSetupPreviewPanel({
               governanceOutcome: preview.governanceOutcome,
             }}
             testIdPrefix="chart-setup-signal"
+            scannerContext={setupScannerChipContext(preview)}
           />
 
           {preview.levels ? (

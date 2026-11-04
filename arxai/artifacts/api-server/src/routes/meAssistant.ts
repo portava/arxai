@@ -93,7 +93,7 @@ import { aaciRecommendedActionLabel, aaciCohesionTone } from "@workspace/domain/
 import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { neutralizeFeedCopyDeep } from "../lib/honesty/feedTruthCopy.js";
 import { recordSignalOnAppear } from "../lib/rubyQuality/index.js";
-import { mintRealtimeSession, getVoiceModeStatus } from "../lib/assistant/realtimeSession.js";
+import { mintRealtimeSession, getVoiceModeStatus, VOICE_NO_TOOLS_INSTRUCTION } from "../lib/assistant/realtimeSession.js";
 import { computeRubySignalAdvisory, recordAdvisoryTrace } from "../lib/agentEcosystem/advisoryInfluence.js";
 import {
   computeSurfaceGovernance,
@@ -125,6 +125,8 @@ async function buildPerUserEnvelope(userId: number | null | undefined) {
 // Synchronous fail-closed envelope fields for error responses (err() can't await).
 const FAIL_CLOSED_FIELDS = assistantEnvelopeFields(FAIL_CLOSED_ENVELOPE);
 const MAX_TURNS_PER_REQUEST = 4;
+// Shown when the tool loop produced no answer text (AICS-4).
+export const EMPTY_REPLY_MESSAGE = "I ran out of steps before I could answer — please ask again, a bit more narrowly.";
 // Audit A9: tool results handed to the model are bounded but stay valid JSON.
 const TOOL_RESULT_MODEL_CHARS = 8000;
 const MAX_HISTORY_MESSAGES = 20;
@@ -1223,8 +1225,10 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   // finish. Cap memory load at 1500ms — Ruby will still answer if the
   // long-term memory snapshot is slow; she just won't have it for this
   // turn. Better than blocking the whole response.
-  const [envelope, memoryTriple, chatAssistantName] = await Promise.all([
-    buildPerUserEnvelope(userId),
+  const [safetyEnvelope, memoryTriple, chatAssistantName] = await Promise.all([
+    // AICS-10: derive the SafetyEnvelope ONCE per request and hand it to every
+    // tool call below (dispatchTool would otherwise re-derive it per call).
+    deriveAssistantEnvelope(userId),
     Promise.race([
       memoryLoadPromise,
       new Promise<readonly [typeof EMPTY_MEMORY_SNAPSHOT, null, never[]]>((resolve) =>
@@ -1237,6 +1241,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   // memory/envelope — no point spending tokens on an answer nobody is
   // listening for.
   if (aborted) { cleanupStream(); res.end(); return; }
+  const envelope = assistantEnvelopeFields(safetyEnvelope);
   send({ type: "safety", ...envelope });
   const memSnapshot = memoryTriple[0];
   const pending = memoryTriple[1];
@@ -1261,7 +1266,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
         maxTokens: 8192,
         messages,
         tools,
-        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead),
+        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead, MAX_TURNS_PER_REQUEST),
       });
     } catch (e) {
       try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, "assistant_openai_failed"); } catch { /* noop */ }
@@ -1366,7 +1371,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
       let result: unknown;
       let status = "ok";
       try {
-        result = await dispatchTool(c.name, parsedArgs, userId, req);
+        result = await dispatchTool(c.name, parsedArgs, userId, req, safetyEnvelope);
       } catch (e) {
         status = "error";
         result = { error: "tool_failed", name: c.name, message: (e as Error)?.message ?? "unknown" };
@@ -1417,6 +1422,13 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     }
 
     if (finishReason && finishReason !== "tool_calls") break;
+  }
+
+  // AICS-4: never end on a blank bubble. The last turn runs with
+  // tool_choice "none", so this only fires if the model still returned no
+  // text (or a provider quirk ended the loop on tool calls).
+  if (!aborted && assistantText.trim().length === 0) {
+    send({ type: "error", message: EMPTY_REPLY_MESSAGE });
   }
 
   // Persist final assistant message
@@ -1551,6 +1563,9 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   const voiceMemoryBlock = formatMemoryForSystemPrompt(voiceMem, voicePending, voiceToolHistory);
   const voicePriorMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     ...buildSessionSystemMessages(userId, null, voiceMemoryBlock, voiceEnvelope, voiceAssistantName),
+    // AICS-5: gpt-audio gets no tools, so the "call X first" rules above
+    // cannot be followed — say so explicitly (same text as the realtime path).
+    { role: "system", content: `${VOICE_NO_TOOLS_INSTRUCTION} This overrides every instruction above that tells you to call a tool.` },
     ...voiceOrdered.map((m) => ({
       role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
       content: m.content,
@@ -1562,6 +1577,19 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   try {
     const audio = await voiceAudio();
     const { buffer, format } = await audio.ensureCompatibleFormat(audioBuffer);
+    // AC1: gpt-audio never yields the user's words, so transcribe the clip
+    // first and emit it as `user_transcript` — the client shows the user
+    // bubble and runs a spoken trade command through the command pre-filter.
+    // A failed transcription is non-fatal: the spoken reply still streams.
+    try {
+      const heard = (await audio.speechToText(buffer, format)).trim();
+      if (heard && !voiceAborted) {
+        userTranscript = heard;
+        sendVoice({ type: "user_transcript", data: heard });
+      }
+    } catch (e) {
+      try { (req as { log?: { warn: (...a: unknown[]) => void } }).log?.warn({ err: (e as Error)?.message }, "assistant_voice_transcribe_failed"); } catch { /* noop */ }
+    }
     const stream = await audio.voiceChatStream(buffer, "alloy", format, voicePriorMessages);
     for await (const event of stream) {
       if (voiceAborted) break;
@@ -1571,9 +1599,14 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
         assistantTranscript += ev.data;
         sendVoice({ type: "transcript", data: ev.data });
       } else if (evType === "user_transcript" && typeof ev.data === "string") {
-        userTranscript += ev.data;
-        sendVoice({ type: "user_transcript", data: ev.data });
-      } else if (evType === "audio_chunk" && typeof ev.data === "string") {
+        // Only if a provider ever supplies it AND transcription above failed.
+        if (!userTranscript) {
+          userTranscript += ev.data;
+          sendVoice({ type: "user_transcript", data: ev.data });
+        }
+      } else if ((evType === "audio" || evType === "audio_chunk") && typeof ev.data === "string") {
+        // The provider yields {type:"audio"} (base64 pcm16); the canonical
+        // client event is audio_chunk.
         // Pass through base64 audio chunk, no transformation. Frontend
         // already understands this canonical shape.
         sendVoice({ type: "audio_chunk", data: ev.data });
@@ -1659,6 +1692,62 @@ export const WATCH_UNAVAILABLE_MESSAGE =
   "Conditional orders and position monitoring are switched off on this server (the watch sweeper is disabled), so I won't pretend to watch. Place the pending order yourself from the Trade Action Center, or ask me to prepare the ticket.";
 export const WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON = "WATCH_EVALUATION_UNAVAILABLE";
 
+// The chat bubble text for an instant-trade-command reply.
+export function commandReplyText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  for (const k of ["message", "primaryReason", "error"] as const) {
+    const v = p[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+// Wrap res.json so the first JSON reply is persisted with the user's command
+// into the user's own conversation. Persistence is best-effort and never
+// changes the response.
+export async function attachCommandTranscript(
+  res: { json: (body: unknown) => unknown },
+  userId: number,
+  rawConversationId: unknown,
+  text: string,
+): Promise<number | null> {
+  const convId = Number(rawConversationId);
+  if (!Number.isInteger(convId) || convId <= 0) return null;
+  let owned: Array<{ id: number }> = [];
+  try {
+    owned = await db.select({ id: arxAssistantConversationsTable.id }).from(arxAssistantConversationsTable)
+      .where(and(eq(arxAssistantConversationsTable.id, convId), eq(arxAssistantConversationsTable.userId, userId)))
+      .limit(1);
+  } catch { return null; }
+  if (owned.length === 0) return null;
+  const original = res.json.bind(res);
+  let done = false;
+  res.json = (payload: unknown) => {
+    if (!done) {
+      done = true;
+      const reply = commandReplyText(payload);
+      void (async () => {
+        try {
+          await db.insert(arxAssistantMessagesTable).values({
+            userId, conversationId: convId, role: "user", content: text, intent: "trade_command",
+          });
+          if (reply) {
+            await db.insert(arxAssistantMessagesTable).values({
+              userId, conversationId: convId, role: "assistant", content: reply, intent: "trade_command",
+            });
+          }
+          await db.update(arxAssistantConversationsTable)
+            .set({ updatedAt: new Date(), lastIntent: "trade_command" })
+            .where(and(eq(arxAssistantConversationsTable.id, convId), eq(arxAssistantConversationsTable.userId, userId)));
+        } catch { /* best-effort */ }
+      })();
+    }
+    return original(payload);
+  };
+  return convId;
+}
+
 router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req, res) => {
   const userId = (req as Request & { authUser?: { id: number } }).authUser!.id;
   // Phase 5: "paper" removed from accountMode union. Legacy callers
@@ -1675,6 +1764,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     accountMode?: "live" | "demo";
     source?: "ruby_text" | "ruby_voice";
     confirm?: boolean;
+    conversationId?: number | string;
   };
   const text = (body.text ?? "").trim();
   const source = body.source === "ruby_voice" ? "ruby_voice" : "ruby_text";
@@ -1691,6 +1781,15 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     res.status(400).json({ ok: false, error: "MISSING_TEXT" });
     return;
   }
+
+  // AC7 (additive): with a `conversationId` the user owns, the command text
+  // and this route's reply are saved as messages in that conversation, so
+  // they survive a reload and the analyst model sees them in history. An
+  // unknown / foreign id is ignored (nothing persisted, command unaffected).
+  // The confirm resend repeats the same text: store it as the confirmation,
+  // not as a second copy of the command.
+  await attachCommandTranscript(res, userId, body.conversationId,
+    body.confirm === true ? `Confirm: ${text}` : text);
 
   // Pull per-user Ruby defaults so commands like "buy EURUSD" without a
   // size can still resolve when the user has configured a default volume.
@@ -1949,6 +2048,20 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     return;
   }
 
+  // SL/TP given as a pip/point distance — the order path takes price levels
+  // only, so ask for the level rather than open without the protection.
+  if (parsed.kind === "SLTP_NEEDS_PRICE") {
+    await db.insert(oneClickAuditTable).values({
+      userId, action: "RUBY_TRADE_COMMAND_NEEDS_PRICE", ip, userAgent: ua,
+      metadata: JSON.stringify({ text, reason: "SLTP_NEEDS_PRICE", symbol: parsed.symbol, side: parsed.side, source, channel: "ELEANOR_CHAT" }),
+    });
+    res.json({
+      ok: false, classification: "SLTP_NEEDS_PRICE",
+      message: `I can only set a stop loss / take profit as a price level, not in pips or points. Tell me the levels (e.g. "${parsed.side.toLowerCase()} ${parsed.symbol} 0.01 sl 1.0850 tp 1.0950") and I'll take it.`,
+    });
+    return;
+  }
+
   // Pending entry intended but no trigger price given — ask for the price
   // rather than arm a priceless conditional entry.
   if (parsed.kind === "PENDING_NEEDS_PRICE") {
@@ -2139,6 +2252,15 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       symbol: symbol ?? null,
       side: parsed.kind === "WATCH_AND_ENTER" ? parsed.side : null,
       lot: parsed.kind === "WATCH_AND_ENTER" && typeof parsed.volume === "number" ? parsed.volume : null,
+      // WATCH_AND_ENTER carries the SL/TP the user typed; the evaluator applies
+      // them to the OPEN it fires. (MONITOR_TRADE uses this column for its own
+      // monitor state — never both on one row.)
+      riskParams: parsed.kind === "WATCH_AND_ENTER" && (parsed.stopLoss !== undefined || parsed.takeProfit !== undefined)
+        ? JSON.stringify({
+          ...(parsed.stopLoss !== undefined ? { stopLoss: parsed.stopLoss } : {}),
+          ...(parsed.takeProfit !== undefined ? { takeProfit: parsed.takeProfit } : {}),
+        })
+        : null,
       positionTicket,
       triggerCondition: triggerCondition ? JSON.stringify(triggerCondition) : null,
       rawUserCommand: text,
@@ -2154,7 +2276,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       ok: true, classification: parsed.kind, watchId: w!.id,
       message: parsed.kind === "MONITOR_TRADE"
         ? `Watching your ${symbol} position (checked about every ${Math.round(getRubySweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.${fakeoutAuthority ? " You also let me shift the stop loss or take profit when I see a fakeout (a spike that snaps back); each shift is bounded, announced, and confirmed by the broker." : ""}`
-        : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${expirySuffix}.`,
+        : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${parsed.kind === "WATCH_AND_ENTER" && parsed.stopLoss !== undefined ? `, SL ${parsed.stopLoss}` : ""}${parsed.kind === "WATCH_AND_ENTER" && parsed.takeProfit !== undefined ? `, TP ${parsed.takeProfit}` : ""}${expirySuffix}.`,
     });
     return;
   }
@@ -2179,6 +2301,9 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       intent = {
         source, action: parsed.side, accountMode, symbol: parsed.symbol,
         volume: parsed.volume, orderType: parsed.orderType,
+        // SL/TP typed on the command itself ("buy EURUSD 0.01 sl 1.0850 tp 1.0950").
+        ...(parsed.stopLoss !== undefined ? { stopLoss: parsed.stopLoss } : {}),
+        ...(parsed.takeProfit !== undefined ? { takeProfit: parsed.takeProfit } : {}),
         aiCommand: true, parsedByRuby: true, rawUserCommand: text,
         rubyCommandKind: "OPEN",
       };

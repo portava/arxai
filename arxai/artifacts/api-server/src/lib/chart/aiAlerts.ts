@@ -61,6 +61,13 @@ export interface ChartAlertOpenPosition {
   entry: number;
   sl: number | null;
   tp: number | null;
+  /**
+   * A FRESH broker-bound price for this position (e.g. the MT5 bridge's current
+   * price on a row it reported within the freshness window). Used ONLY when the
+   * chart feed is stale/unusable, so SL/TP proximity can still alert from a
+   * price the broker just confirmed. Null/absent → no fallback price.
+   */
+  freshQuote?: number | null;
 }
 
 export interface ChartAlertSignals {
@@ -91,6 +98,8 @@ export interface ChartAlertScanResult {
   fired: FiredAlert[];
   cleared: string[];
   evaluated: boolean;
+  /** Plain-English reasons alert families were held back this scan (e.g. a stale feed). */
+  suppressed?: string[];
 }
 
 function snapshotOf(
@@ -188,6 +197,7 @@ export async function scanChartAlerts(
   const display = state.displaySymbol || symbol;
   const fired: FiredAlert[] = [];
   const cleared: string[] = [];
+  const suppressed: string[] = [];
 
   const isInvestor = role === "INVESTOR";
 
@@ -367,7 +377,14 @@ export async function scanChartAlerts(
     }
 
     // ── 6. Scalp flame transitions (honest: only when a real flame read) ────
-    if (!isInvestor && now.flameStage != null) {
+    // Paused with the reads while the feed is stale / not AI-usable: no fire and
+    // no clear, so the held state does not flip on candles nobody trusts.
+    if (!isInvestor && now.feedBad && now.flameStage != null) {
+      suppressed.push(
+        `Momentum alerts paused — the ${display} (${timeframe}) feed is stale or not AI-usable.`,
+      );
+    }
+    if (!isInvestor && !now.feedBad && now.flameStage != null) {
       const nowStage = now.flameStage as FlameStage;
       const prevStage = (prev?.flameStage as FlameStage | null) ?? null;
       const nowTiming = (now.entryTiming as EntryTiming | null) ?? null;
@@ -422,11 +439,23 @@ export async function scanChartAlerts(
     }
 
     // ── 7. Open-position danger / partial-TP (honest: real positions only) ──
+    // On a healthy feed the chart's last close is the price. While the feed is
+    // stale / not AI-usable, only a position carrying a FRESH broker-bound quote
+    // may still be evaluated; the rest are skipped (no fire, no clear) with a
+    // reason, so a stale candle can never raise or drop a stop/target alert.
     const nowClose = now.lastClose;
-    if (!isInvestor && nowClose != null && Array.isArray(signals?.openPositions)) {
+    if (!isInvestor && Array.isArray(signals?.openPositions)) {
+      let heldBack = 0;
       for (const pos of signals!.openPositions!) {
         const dangerKey = `chart_trade_danger:${symbol}:${pos.id}`;
         const tpKey = `chart_partial_tp:${symbol}:${pos.id}`;
+        const fresh =
+          pos.freshQuote != null && Number.isFinite(pos.freshQuote) ? pos.freshQuote : null;
+        const price = now.feedBad ? fresh : nowClose;
+        if (price == null) {
+          if (now.feedBad) heldBack += 1;
+          continue;
+        }
 
         // Danger near stop: price has travelled most of the entry→SL band and is
         // on the losing side of entry.
@@ -434,9 +463,9 @@ export async function scanChartAlerts(
         if (pos.sl != null) {
           const band = Math.abs(pos.entry - pos.sl);
           if (band > 0) {
-            const distToSl = Math.abs(nowClose - pos.sl);
+            const distToSl = Math.abs(price - pos.sl);
             const losing =
-              pos.side === "BUY" ? nowClose < pos.entry : nowClose > pos.entry;
+              pos.side === "BUY" ? price < pos.entry : price > pos.entry;
             inDanger = losing && distToSl <= band * DANGER_BAND_FRAC;
           }
         }
@@ -457,9 +486,9 @@ export async function scanChartAlerts(
         if (pos.tp != null) {
           const band = Math.abs(pos.tp - pos.entry);
           if (band > 0) {
-            const distToTp = Math.abs(nowClose - pos.tp);
+            const distToTp = Math.abs(price - pos.tp);
             const winning =
-              pos.side === "BUY" ? nowClose > pos.entry : nowClose < pos.entry;
+              pos.side === "BUY" ? price > pos.entry : price < pos.entry;
             inTpZone = winning && distToTp <= band * PARTIAL_TP_BAND_FRAC;
           }
         }
@@ -473,6 +502,11 @@ export async function scanChartAlerts(
         } else {
           await clearKeyed(tpKey);
         }
+      }
+      if (heldBack > 0) {
+        suppressed.push(
+          `Stop/target alerts held for ${heldBack} open position(s) — the ${display} feed is stale and no fresh broker price is available for them.`,
+        );
       }
     }
 
@@ -532,8 +566,20 @@ export async function scanChartAlerts(
       }
     }
 
-    await saveSnapshot(userId, symbol, timeframe, now);
-    return { symbol, timeframe, fired, cleared, evaluated: true };
+    // While the feed is bad, keep the previous flame read as the held state so a
+    // stale-feed scan never becomes the "before" of the next real transition.
+    const persisted: AlertSnapshot = now.feedBad
+      ? { ...now, flameStage: prev?.flameStage ?? null, entryTiming: prev?.entryTiming ?? null }
+      : now;
+    await saveSnapshot(userId, symbol, timeframe, persisted);
+    return {
+      symbol,
+      timeframe,
+      fired,
+      cleared,
+      evaluated: true,
+      ...(suppressed.length > 0 ? { suppressed } : {}),
+    };
   } catch (err) {
     logger.warn({ err, userId, symbol }, "scanChartAlerts failed (fail-open)");
     return { symbol, timeframe, fired, cleared, evaluated: false };

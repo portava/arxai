@@ -25,6 +25,7 @@ import { useLocation, useSearch } from "wouter";
 import { useRealtimeVoice, type RealtimeMode } from "./useRealtimeVoice";
 import { useSpeakResponses, getAvailableVoices, saveVoiceName, getSavedVoiceName, getServerVoicePref, saveServerVoicePref } from "./useSpeakResponses";
 import { previewVoice } from "./useRubyTTS";
+import { useUserVoiceSettings } from "./useUserVoiceSettings";
 import { setChatPanelSpeaking } from "@/lib/rubyVoice";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
@@ -32,7 +33,9 @@ import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { markActionStart, markActionEnd, markUiFeedback, markRenderComplete, markApiStart, markApiEnd } from "@/lib/perf";
 import { useAssistantName, DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
 import { sendRubyTradeCommand, type RubyCommandResponse } from "@/lib/instantTradeRouter";
-import { looksLikeRubyCommand, rubyCommandHandled } from "@/lib/rubyCommandIntent";
+import { looksLikeRubyCommand, rubyCommandHandled, rubyCommandAccountMode, rubyCommandReplyText, rubyNotLiveReply } from "@/lib/rubyCommandIntent";
+import { pollRubyCommandOutcome, rubyCommandOutcomeText } from "@/lib/rubyCommandOutcome";
+import { onAssistantPrompt, chatRateLimitedText } from "@/lib/assistantPanelBus";
 import { RubyWatchesStrip } from "./RubyWatchesStrip";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -88,7 +91,7 @@ const STORAGE_CHIPS_KEY = "arx.assistant.chips.v2";
 
 type Status = "idle" | "thinking" | "streaming" | "tool" | "speaking" | "listening" | "recording" | "realtime" | "error";
 
-interface ToolEvent { name: string; status?: string; durationMs?: number; result?: { action?: string; mute?: boolean; [key: string]: unknown } }
+interface ToolEvent { name: string; status?: string; durationMs?: number }
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import type { RubyReasoningBlockData } from "@/lib/rubyReasoningBlock";
@@ -342,21 +345,31 @@ export function ArxAssistantLivePanel() {
   // Voice plumbing
   const workletPath = `${BASE}/audio-playback-worklet.js`;
   const recorder = useVoiceRecorder();
+  // Spoken-turn bookkeeping: the transcript of what the user said (filled by
+  // user_transcript events) and the id of its optimistic bubble.
+  const voiceUserTranscriptRef = useRef("");
+  const voiceUserBubbleIdRef = useRef<string | null>(null);
+  // Set once runRubyCommand exists (declared further down) so the voice
+  // completion handler can route spoken commands through the same pre-filter.
+  const runRubyCommandRef = useRef<((text: string, confirm?: boolean, opts?: { source?: "ruby_text" | "ruby_voice"; userBubble?: boolean }) => Promise<boolean>) | null>(null);
   const { streamVoiceResponse, cancelVoiceResponse } = useVoiceStream({
     workletPath,
     onUserTranscript: (chunk) => {
-      // Show what Ruby heard as a user bubble. If we already placed an
-      // optimistic "transcribing…" placeholder on send, fill that in so the
-      // user can confirm the transcription was correct; otherwise append.
+      // Show what Ruby heard as a user bubble. Fill the optimistic
+      // "transcribing…" placeholder (chunks accumulate); otherwise append.
+      voiceUserTranscriptRef.current += chunk;
+      const heard = voiceUserTranscriptRef.current;
       setMessages((cur) => {
-        const idx = [...cur].reverse().findIndex((m) => m.role === "user" && m.voicePending);
+        const bubbleId = voiceUserBubbleIdRef.current;
+        const idx = bubbleId ? cur.findIndex((m) => m.id === bubbleId) : -1;
         if (idx !== -1) {
-          const realIdx = cur.length - 1 - idx;
           const next = cur.slice();
-          next[realIdx] = { ...next[realIdx], content: chunk, voicePending: false };
+          next[idx] = { ...next[idx], content: heard, voicePending: false };
           return next;
         }
-        return [...cur, { id: `u-v-${Date.now()}`, role: "user", content: chunk }];
+        const id = `u-v-${Date.now()}`;
+        voiceUserBubbleIdRef.current = id;
+        return [...cur, { id, role: "user", content: heard }];
       });
     },
     onTranscript: (_chunk, full) => {
@@ -370,12 +383,25 @@ export function ArxAssistantLivePanel() {
       });
     },
     onComplete: () => {
+      const heard = voiceUserTranscriptRef.current.trim();
       setMessages((cur) => {
-        const last = cur[cur.length - 1];
-        if (!last || last.role !== "assistant") return cur;
-        return [...cur.slice(0, -1), { ...last, pending: false }];
+        // Never leave the user bubble on "Transcribing…" forever: with no
+        // transcript it settles as a plain "voice message" marker.
+        let next = cur.map((m) => (m.role === "user" && m.voicePending
+          ? { ...m, content: "(voice message)", voicePending: false }
+          : m));
+        const last = next[next.length - 1];
+        if (last && last.role === "assistant" && last.pending) {
+          next = [...next.slice(0, -1), { ...last, pending: false }];
+        }
+        return next;
       });
       setStatus("idle");
+      // AC8 — a spoken direct command ("close it", "keep it", "buy EURUSD
+      // 0.01") goes through the same gated command route as typed text.
+      if (heard && looksLikeRubyCommand(heard)) {
+        void runRubyCommandRef.current?.(heard, false, { source: "ruby_voice", userBubble: false });
+      }
     },
     onError: (e) => {
       setStatus("error");
@@ -646,6 +672,13 @@ export function ArxAssistantLivePanel() {
   }, [open, conversation]);
 
   useEffect(() => { if(!open)return;const timer=setTimeout(()=>{const active=document.activeElement;if(panelRef.current?.contains(active)||active!==document.body&&active!==triggerRef.current)return;if(mobileChartRef.current)panelRef.current?.focus({preventScroll:true});else inputRef.current?.focus();},120);return()=>clearTimeout(timer); }, [open]); // Retain current focus on viewport/mode changes; mobile does not summon the keyboard on open.
+  // "Ask <name>" from other surfaces (e.g. the position side card): open the
+  // panel with the question typed in; the user reviews and presses send.
+  useEffect(() => onAssistantPrompt((text) => {
+    setOpen(true);
+    setInput(text);
+    setTimeout(() => inputRef.current?.focus(), 150);
+  }), []);
   useEffect(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = chartCompact ? 0 : scrollRef.current.scrollHeight;
@@ -767,7 +800,10 @@ export function ArxAssistantLivePanel() {
     setIsVoiceUploading(true);
     // Optimistic user bubble so the spoken message is represented in the chat
     // immediately; onUserTranscript fills it with the transcribed text.
-    setMessages((cur) => [...cur, { id: `u-v-${Date.now()}`, role: "user", content: "", voicePending: true }]);
+    const bubbleId = `u-v-${Date.now()}`;
+    voiceUserTranscriptRef.current = "";
+    voiceUserBubbleIdRef.current = bubbleId;
+    setMessages((cur) => [...cur, { id: bubbleId, role: "user", content: "", voicePending: true }]);
     try {
       await streamVoiceResponse(`${BASE}/api/me/assistant/conversations/${conversation.id}/voice`, blob);
     } catch (e) {
@@ -779,7 +815,7 @@ export function ArxAssistantLivePanel() {
     } finally {
       if(ownsUpload())setIsVoiceUploading(false);
     }
-  }, [conversation, isVoiceUploading, streamVoiceResponse]);
+  }, [conversation, isVoiceUploading, streamVoiceResponse, name]);
 
   const stopVoiceAndSend = useCallback(async () => {
     if (recordTimeoutRef.current) { clearTimeout(recordTimeoutRef.current); recordTimeoutRef.current = null; }
@@ -847,31 +883,63 @@ export function ArxAssistantLivePanel() {
     setOpen(true);
     setWatchesRefresh((n) => n + 1);
   }, [search]);
-  const runRubyCommand = useCallback(async (text: string, confirm = false): Promise<boolean> => {
-    const accountMode: "live" | "demo" = tradingMode.isLiveArmed ? "live" : "demo";
+  // Bounded follow-up on a dispatched command (AC6): poll the live command
+  // status and post one fill / reject / still-pending line. Cancelled on unmount.
+  const panelMountedRef = useRef(true);
+  useEffect(() => { panelMountedRef.current = true; return () => { panelMountedRef.current = false; }; }, []);
+  const followUpRubyCommand = useCallback((commandId: string) => {
+    void pollRubyCommandOutcome(commandId, { isCancelled: () => !panelMountedRef.current }).then((outcome) => {
+      if (!outcome || !panelMountedRef.current) return;
+      setMessages((cur) => [...cur, {
+        id: `a-cmd-${commandId}-${Date.now()}`, role: "assistant", content: rubyCommandOutcomeText(outcome), intent: "ruby_command",
+      }]);
+      setWatchesRefresh((n) => n + 1);
+    });
+  }, []);
+
+  // AC3 — send the account mode the instant route executes: a LIVE_SHARED user
+  // is live whether or not they armed one-click (same rule as QuickTradeModal);
+  // while the mode is loading we fail closed to "demo".
+  const rubyAccountMode = rubyCommandAccountMode(tradingMode);
+  const runRubyCommand = useCallback(async (
+    text: string,
+    confirm = false,
+    opts: { source?: "ruby_text" | "ruby_voice"; userBubble?: boolean } = {},
+  ): Promise<boolean> => {
+    const accountMode = rubyAccountMode;
     let resp: RubyCommandResponse;
     try {
-      resp = await sendRubyTradeCommand({ text, accountMode, source: "ruby_text", confirm });
+      const source = opts.source ?? "ruby_text";
+      // Typed commands are saved in the conversation (AC7) so they survive a
+      // reload and the analyst sees them; the voice route already saves the
+      // spoken transcript, so voice commands are not saved twice.
+      resp = await sendRubyTradeCommand({
+        text, accountMode, source, confirm,
+        conversationId: source === "ruby_text" ? conversation?.id ?? null : null,
+      });
     } catch {
       return false;
     }
     if (!rubyCommandHandled(resp)) return false;
-    const reply = resp.message
-      ?? (resp.ok ? "Done." : resp.error === "rate_limited"
-        ? `Too many commands — try again in ${resp.retryAfterSeconds ?? 60} s.`
-        : `I couldn't do that${resp.error ? `: ${resp.error}` : ""}.`);
+    // A non-live account can't execute from chat. Say so plainly instead of
+    // offering Confirm and then failing with a raw code.
+    const blockedNotLive = resp.confirmationRequired === true && accountMode !== "live";
+    const reply = blockedNotLive ? rubyNotLiveReply(name) : rubyCommandReplyText(resp, name);
+    const showUserBubble = !confirm && opts.userBubble !== false;
     setMessages((cur) => [
       ...cur,
-      ...(confirm ? [] : [{ id: `u-${Date.now()}`, role: "user" as const, content: text }]),
+      ...(showUserBubble ? [{ id: `u-${Date.now()}`, role: "user" as const, content: text }] : []),
       {
         id: `a-${Date.now() + 1}`, role: "assistant" as const, content: reply, intent: "ruby_command",
-        rubyCommand: { text, accountMode, classification: resp.classification, confirmationRequired: resp.confirmationRequired === true },
+        rubyCommand: { text, accountMode, classification: resp.classification, confirmationRequired: resp.confirmationRequired === true && !blockedNotLive },
       },
     ]);
     setInput("");
     setWatchesRefresh((n) => n + 1);
+    if (resp.ok && typeof resp.commandId === "string" && resp.commandId) followUpRubyCommand(resp.commandId);
     return true;
-  }, [tradingMode.isLiveArmed]);
+  }, [rubyAccountMode, name, followUpRubyCommand, conversation?.id]);
+  useEffect(() => { runRubyCommandRef.current = runRubyCommand; }, [runRubyCommand]);
 
   const resolveRubyConfirmation = useCallback(async (m: ChatMessage, decision: "confirmed" | "cancelled") => {
     setMessages((cur) => cur.map((x) => x.id === m.id && x.rubyCommand ? { ...x, rubyCommand: { ...x.rubyCommand, resolved: decision } } : x));
@@ -957,7 +1025,22 @@ export function ArxAssistantLivePanel() {
     if (!res.ok || !res.body) {
       markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
       setStatus("error");
-      setErrorBanner(res.status === 401 ? "Sign in to chat with ARX AI." : `Assistant error (${res.status}).`);
+      if (res.status === 429) {
+        let retry: number | null = null;
+        try {
+          const j = (await res.json()) as { retryAfterSeconds?: number };
+          if (typeof j?.retryAfterSeconds === "number" && j.retryAfterSeconds > 0) retry = Math.ceil(j.retryAfterSeconds);
+        } catch { /* not JSON */ }
+        if (retry == null) {
+          const h = Number(res.headers.get("Retry-After"));
+          if (Number.isFinite(h) && h > 0) retry = Math.ceil(h);
+        }
+        setErrorBanner(chatRateLimitedText(retry));
+        // Drop the empty placeholder; keep the user's message visible.
+        setMessages((cur) => cur.filter((m) => m.id !== placeholder.id));
+      } else {
+        setErrorBanner(res.status === 401 ? `Sign in to chat with ${name}.` : `Assistant error (${res.status}).`);
+      }
       markActionEnd(rubyPid, { bottleneck: "api" });
       return;
     }
@@ -1172,17 +1255,11 @@ export function ArxAssistantLivePanel() {
             if (!last || last.role !== "assistant") return cur;
             return [...cur.slice(0, -1), { ...last, pending: false, intent, toolCalls: tools.slice() }];
           });
-          // Handle voice mode change from Ruby tool
-          const allTools = tools.slice();
-          const voiceCmd = allTools.find((t: {name?: string; result?: {action?: string; mute?: boolean}}) =>
-            t.name === "setVoiceMode" && t.result?.action === "voice_mode_change"
-          );
-          if (voiceCmd?.result?.mute !== undefined) {
-            tts.setEnabled(!voiceCmd.result.mute);
-          }
-
           setStatus("idle");
-          // Speak the final reply — on by default, user can mute via chat command
+          // Speak the final reply — on by default; the user mutes it with the
+          // speaker toggle in the panel header (there is no chat mute command:
+          // the server has no voice-mode tool and tool_result events carry no
+          // result payload).
           const voiceModeActive =
             realtime.state === "listening" ||
             realtime.state === "speaking" ||
@@ -1217,7 +1294,7 @@ export function ArxAssistantLivePanel() {
     // the action doesn't leak as "still running" in the ring buffer.
     // markActionEnd is idempotent (returns null on the second call).
     markActionEnd(rubyPid);
-  }, [conversation]);
+  }, [conversation, runRubyCommand, tts, activeTTS, realtime, name]);
 
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void sendText(input); };
 
@@ -1551,7 +1628,7 @@ export function ArxAssistantLivePanel() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-success/15 text-success"><Volume2 className="h-3.5 w-3.5" /></span>
-                    <span className="text-txt-secondary"><span className="text-foreground font-medium">I can speak back</span> — turn on the speaker icon above and I’ll read my answers aloud.</span>
+                    <span className="text-txt-secondary"><span className="text-foreground font-medium">I can speak back</span> — turn on the speaker icon below and I’ll read my answers aloud.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Sparkles className="h-3.5 w-3.5" /></span>
@@ -1559,7 +1636,7 @@ export function ArxAssistantLivePanel() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-warning/15 text-warning"><ShieldCheck className="h-3.5 w-3.5" /></span>
-                    <span className="text-txt-secondary">I follow your account permissions and risk controls — I never place a trade without your confirmation.</span>
+                    <span className="text-txt-secondary">I follow your account permissions and risk controls — I only trade on your direct command, within the permissions you set; a monitored trade can be closed after 3 unanswered reversal alerts.</span>
                   </li>
                 </ul>
                 <div className="mt-2.5 text-txt-muted text-xs">
@@ -1858,14 +1935,18 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
     previewVoice(voiceId, provider, name).finally(() => setPreviewing(false));
   };
 
+  // One voice store: save locally (shared key that proactive speech also
+  // reads) AND per-user on the server so the pick follows the user.
+  const userVoiceSettings = useUserVoiceSettings();
   const selectVoice = (voiceId: string, provider: "elevenlabs"|"openai"|"browser") => {
     setSelected(voiceId);
     if (provider === "browser") {
-      saveServerVoicePref(null);
+      saveServerVoicePref(null, voiceId);
       saveVoiceName(voiceId);
     } else {
       saveServerVoicePref({ provider, voiceId });
     }
+    void userVoiceSettings.update({ provider, voiceId }).catch(() => { /* local pick still applies */ });
     preview(voiceId, provider);
   };
 

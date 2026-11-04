@@ -28,12 +28,14 @@ type Settings = {
   // Ruby execution-authority model (Task #319).
   rubyExecutionAuthority?: string | null;
   rubyRequireExtraConfirmation?: boolean | null;
+  allowRubyOpenCommands?: boolean | null;
+  allowRubyCloseCommands?: boolean | null;
+  allowRubyModifyCommands?: boolean | null;
   allowRubyBreakEven?: boolean | null;
   allowRubyPartialClose?: boolean | null;
   allowRubyMonitor?: boolean | null;
   allowRubyWatchEnter?: boolean | null;
   allowRubyWatchClose?: boolean | null;
-  allowRubyModifyCommands?: boolean | null;
   maxRubyLotPerTrade?: number | null;
   maxRubyOpenPositions?: number | null;
   maxRubyDailyTrades?: number | null;
@@ -350,6 +352,8 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
   }
 
   const perms: Array<{ key: keyof Settings; field: string; label: string }> = [
+    { key: "allowRubyOpenCommands", field: "allowRubyOpenCommands", label: "Open new trades (\"buy EURUSD 0.01\")" },
+    { key: "allowRubyCloseCommands", field: "allowRubyCloseCommands", label: "Close trades (\"close my XAUUSD\", \"close all\")" },
     { key: "allowRubyBreakEven", field: "allowRubyBreakEven", label: "Move stop to break-even" },
     { key: "allowRubyPartialClose", field: "allowRubyPartialClose", label: "Partial close" },
     { key: "allowRubyMonitor", field: "allowRubyMonitor", label: "Monitor a position (reversal alerts ×3, then protective close)" },

@@ -72,6 +72,21 @@ import {
 
 /** A position row whose last broker sync is older than this is not acted on. */
 export const POSITION_MAX_SYNC_AGE_MS = 2 * 60_000;
+// WATCH_AND_ENTER rows store the SL/TP the user typed ("buy EURUSD at 1.09 sl
+// 1.085 tp 1.10") as JSON in risk_params. Malformed / absent → no protection
+// fields (the router's own require-stop-loss gate still applies).
+export function parseEntryProtection(raw: string | null | undefined): { stopLoss?: number; takeProfit?: number } {
+  if (!raw) return {};
+  try {
+    const j = JSON.parse(raw) as { stopLoss?: unknown; takeProfit?: unknown };
+    const out: { stopLoss?: number; takeProfit?: number } = {};
+    if (typeof j.stopLoss === "number" && Number.isFinite(j.stopLoss) && j.stopLoss > 0) out.stopLoss = j.stopLoss;
+    if (typeof j.takeProfit === "number" && Number.isFinite(j.takeProfit) && j.takeProfit > 0) out.takeProfit = j.takeProfit;
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 export interface EvaluateOptions {
   ip?: string | null;
@@ -606,8 +621,9 @@ async function evaluateTrigger(w: RubyWatchInstruction, c: Ctx): Promise<void> {
     }
     intent = {
       source: w.source as InstantTradeIntent["source"], action: w.side === "SELL" ? "SELL" : "BUY",
-      accountMode: "live", symbol: w.symbol,
-      volume: w.lot, aiCommand: true, parsedByRuby: true,
+      accountMode: w.accountMode === "demo" ? "demo" : "live", symbol: w.symbol,
+      volume: w.lot ?? undefined, aiCommand: true, parsedByRuby: true,
+      ...parseEntryProtection(w.riskParams),
       rawUserCommand: w.rawUserCommand, rubyCommandKind: "OPEN",
     };
     commandKind = "OPEN_TRADE";

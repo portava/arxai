@@ -91,7 +91,11 @@ mock.module("../../positions/openPositions.js", {
   },
 });
 mock.module("../../data/marketDataRouter.js", {
-  namedExports: { routeCandles: async (_s: string, _tf: string, _n: number, o?: { bridgeConnectionId?: number | null }) => { candleCalls.push({ ...o }); return candleSeries; } },
+  namedExports: {
+    routeCandles: async (_s: string, _tf: string, _n: number, o?: { bridgeConnectionId?: number | null }) => { candleCalls.push({ ...o }); return candleSeries; },
+    // This line's evaluator reads the pinned decision series.
+    routeCandlesForDecision: async (_s: string, _tf: string, o?: { limit?: number; bridgeConnectionId?: number | null }) => { candleCalls.push({ bridgeConnectionId: o?.bridgeConnectionId }); return candleSeries; },
+  },
 });
 mock.module("../../data/feedScope.js", {
   namedExports: {

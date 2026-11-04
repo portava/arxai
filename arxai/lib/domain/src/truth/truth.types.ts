@@ -86,6 +86,12 @@ export interface TruthLevelInput {
 
 export interface ComposeVerdictInput {
   dataState: TruthDataState;
+  /**
+   * The feed is not live because the market is in its scheduled close. Only
+   * changes the wording of a WAIT_FOR_DATA verdict ("market is closed", not
+   * "feed not confirmed"); the action itself is unchanged.
+   */
+  marketClosed?: boolean;
   /** Last confirmed price (close of newest closed bar), or null. */
   price: number | null;
   /** True only when a connected calendar reports a high-impact window now. */

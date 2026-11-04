@@ -13,6 +13,7 @@ import { runHandshake } from "../handshake/coordinator.js";
 import { isUniqueViolation } from "../pgError.js";
 import { routeQuote } from "../data/marketDataRouter.js";
 import { readMt5Quote } from "../data/providers/mt5Provider.js";
+import { MT5_FEED_FRESH_MS } from "../data/freshness.js";
 import { boundQuotePrice } from "./boundQuote.js";
 
 export const MAX_ACTIVE_RUBY_WATCHES = 10;
@@ -45,6 +46,11 @@ export async function ownBridgePriceOf(symbol: string, bridgeConnectionId: numbe
     const r = readMt5Quote(symbol, { bridgeConnectionId });
     if (!r.quote || r.bridgeConnectionId !== bridgeConnectionId) return null;
     const q = r.quote;
+    // Only a FRESH observed tick may be acted on: the quote's timestamp is the
+    // EA-UTC first sight of this tick (a weekend re-post keeps the old stamp),
+    // so an old stamp means no live price, however recently it was re-sent.
+    const measuredAtMs = q.timestamp ? Date.parse(q.timestamp) : Number.NaN;
+    if (!Number.isFinite(measuredAtMs) || Date.now() - measuredAtMs > MT5_FEED_FRESH_MS) return null;
     const p = q.bid != null && q.ask != null ? (q.bid + q.ask) / 2 : q.last ?? q.bid ?? q.ask ?? null;
     return typeof p === "number" && Number.isFinite(p) && p > 0 ? p : null;
   } catch { return null; }

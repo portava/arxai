@@ -93,7 +93,7 @@ describe("SetupSignalStrip — honest per-signal readout", () => {
   it("renders an honest 'not consulted' for every null signal — never a fabricated value", () => {
     render(
       <ChartSetupPreviewPanel
-        data={makeData(makePreview())}
+        data={makeData(makePreview({ timeframe: "M15" }))}
         canUseSetup={false}
         onUseSetup={() => {}}
       />,

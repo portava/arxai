@@ -16,6 +16,8 @@ import {
   providerInfo,
   relativeTime,
   formatTrailingGap,
+  feedProvenanceChips,
+  isServerReceiveBasis,
   type FeedSeverity,
   type FeedProviderTier,
 } from "@/lib/feed-confidence";
@@ -115,6 +117,30 @@ export function FeedConfidenceBadge({
   // the badge can never look more confident than the rest of the panel.
   const conf = capConfidence(rawConf, aiUsableResolved);
   const fs = feedStatus ?? null;
+  // The State row follows the same cap: a raw isLive is not shown as "Live"
+  // while the resolved verdict is unconfirmed (false) or still checking (null).
+  // A server-named not-live reason wins: stored bars are "Stored history" and a
+  // scheduled close is "Market closed", never "Delayed" (the same words the
+  // scanner strip and the chart chip use).
+  const rawFeedState = fs
+    ? fs.isLive !== true && fs.notLiveReason === "stored_history"
+      ? "Stored history"
+      : fs.isLive !== true && fs.notLiveReason === "market_closed"
+        ? "Market closed"
+        : fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed"
+    : "—";
+  // Whose feed this is, and whether two bridges were pushing it (Truth T2).
+  // Read loosely: this line's chart feed status does not state these yet.
+  const fsLoose = fs as { feedScope?: string | null; contention?: boolean | null; lastTickTimeBasis?: string | null } | null;
+  const provenance = feedProvenanceChips(fsLoose ? { feedScope: fsLoose.feedScope ?? null, contention: fsLoose.contention ?? null } : null);
+  // "Last tick" may be only when ARX received the tick, not the tick's own time.
+  const tickReceived = isServerReceiveBasis(fsLoose?.lastTickTimeBasis);
+  const feedStateLabel =
+    rawFeedState === "Live" && aiUsableResolved === false
+      ? "Unconfirmed (feed reports live)"
+      : rawFeedState === "Live" && aiUsableResolved === null
+        ? "Checking…"
+        : rawFeedState;
   const provider = providerInfo(fs?.source);
   const ProviderIcon = TIER_ICON[provider.tier];
   // Task #776 — a synthetic served by the MT5 broker has NO separate Deriv tick
@@ -174,6 +200,17 @@ export function FeedConfidenceBadge({
               </span>
             )}
           </Badge>
+          {provenance.map((chip) => (
+            <Badge
+              key={chip.key}
+              variant="outline"
+              data-testid={`arx-feed-scope-${chip.key}`}
+              title={chip.title}
+              className="text-[10px] font-medium border-amber-500/50 bg-amber-500/10 text-amber-200"
+            >
+              {chip.text}
+            </Badge>
+          ))}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 space-y-2" data-testid="arx-feed-detail">
@@ -197,10 +234,15 @@ export function FeedConfidenceBadge({
           <span className="text-xs font-medium text-zinc-200">{conf.statusLabel} feed</span>
         </div>
         <p className="text-xs text-muted-foreground">{conf.message}</p>
+        {provenance.map((chip) => (
+          <p key={chip.key} className="text-xs text-amber-300" data-testid={`arx-feed-scope-note-${chip.key}`}>
+            {chip.text}. {chip.title}
+          </p>
+        ))}
 
         <div className="space-y-1 rounded-md border border-zinc-800 p-2">
           <Row label="Source" value={fs?.source || "—"} />
-          <Row label="State" value={fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—"} />
+          <Row label="State" value={feedStateLabel} />
           <Row label="Latency" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
           <Row label="Last candle" value={relativeTime(fs?.lastCandleTime)} />
           <Row
@@ -208,7 +250,9 @@ export function FeedConfidenceBadge({
             value={
               brokerSynthetic && !fs?.lastTickTime
                 ? "broker candles"
-                : relativeTime(fs?.lastTickTime)
+                : fs?.lastTickTime && tickReceived
+                  ? `${relativeTime(fs.lastTickTime)} (received)`
+                  : relativeTime(fs?.lastTickTime)
             }
           />
           <Row label="Missing candles" value={fs ? fs.missingCandleCount : "—"} />

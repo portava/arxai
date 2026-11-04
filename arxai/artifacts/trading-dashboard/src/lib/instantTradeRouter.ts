@@ -94,6 +94,8 @@ export async function sendRubyTradeCommand(args: {
   source?: "ruby_text" | "ruby_voice";
   accountMode?: "live" | "demo";
   confirm?: boolean;
+  /** Chat conversation to save the command and its reply in (typed commands only). */
+  conversationId?: number | null;
 }): Promise<RubyCommandResponse> {
   const r = await fetch("/api/me/assistant/instant-trade-command", {
     method: "POST",
@@ -104,6 +106,7 @@ export async function sendRubyTradeCommand(args: {
       source: args.source ?? "ruby_text",
       accountMode: args.accountMode ?? "live",
       ...(args.confirm === true ? { confirm: true } : {}),
+      ...(args.conversationId != null ? { conversationId: args.conversationId } : {}),
     }),
   });
   try { return (await r.json()) as RubyCommandResponse; }
