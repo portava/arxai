@@ -87,7 +87,7 @@ test("[A4] MN1 opens on the broker-calendar 1st; months are their real length", 
 });
 
 test("[A5] minute and H1 buckets are unchanged by whole-hour offsets", () => {
-  const t = utc(2026, 11, 4, 10, 37, 0) + 12_345;
+  const t = utc(2026, 11, 4, 10, 37) + 12_345;
   for (const off of [0, 2 * HOUR, 3 * HOUR]) {
     assert.equal(brokerBucketOpenMs(t, "M5", off), utc(2026, 11, 4, 10, 35));
     assert.equal(brokerBucketOpenMs(t, "H1", off), utc(2026, 11, 4, 10));
