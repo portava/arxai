@@ -209,13 +209,15 @@ export type DemoCommandOutcome = {
   commandId: string | null;
 };
 
-export const DEMO_TERMINAL_STATUSES = new Set(["FILLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
+export const DEMO_TERMINAL_STATUSES = new Set(["FILLED_DEMO", "PLACED_DEMO", "CANCELLED_DEMO", "REJECTED", "FAILED", "BLOCKED"]);
+/** Broker-confirmed outcomes: a fill, a pending order placed (v1.32), or a pending order cancelled. */
+export const DEMO_SUCCESS_STATUSES = new Set(["FILLED_DEMO", "PLACED_DEMO", "CANCELLED_DEMO"]);
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export async function runDemoCommand(
   base: string,
-  commandType: "PLACE_MARKET_ORDER" | "PLACE_PENDING_ORDER" | "CLOSE_POSITION" | "MODIFY_SLTP",
+  commandType: "PLACE_MARKET_ORDER" | "PLACE_PENDING_ORDER" | "CLOSE_POSITION" | "MODIFY_SLTP" | "CANCEL_PENDING_ORDER",
   payload: Record<string, unknown>,
   opts: { fetchImpl?: FetchLike; pollMs?: number; timeoutMs?: number; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<DemoCommandOutcome> {
@@ -253,7 +255,7 @@ export async function runDemoCommand(
     const c = j?.command;
     if (!c) continue;
     if (DEMO_TERMINAL_STATUSES.has(c.status)) {
-      return { ok: c.status === "FILLED_DEMO", status: c.status, reason: c.reason ?? null, commandId };
+      return { ok: DEMO_SUCCESS_STATUSES.has(c.status), status: c.status, reason: c.reason ?? null, commandId };
     }
   }
   return { ok: false, status: "TIMEOUT", reason: "No terminal status within 60 s. Check Recent demo commands.", commandId };
