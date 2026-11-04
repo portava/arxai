@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { RubyTypingIndicator, friendlyToolText } from "@/components/ui/RubyTypingIndicator";
 import { useVoiceStream, useVoiceRecorder } from "@workspace/integrations-openai-ai-react/audio";
 import { AnimatedArxAssistantIcon, useAssistantIconState, usePrefersReducedMotion } from "./AnimatedArxAssistantIcon";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useRealtimeVoice, type RealtimeMode } from "./useRealtimeVoice";
 import { useSpeakResponses, getAvailableVoices, saveVoiceName, getSavedVoiceName, getServerVoicePref, saveServerVoicePref } from "./useSpeakResponses";
 import { previewVoice } from "./useRubyTTS";
@@ -839,6 +839,14 @@ export function ArxAssistantLivePanel() {
   // confirmation and runs every backend gate. VAGUE/UNKNOWN falls through to
   // the analytical chat. Returns true when the message was handled here.
   const [watchesRefresh, setWatchesRefresh] = useState(0);
+  // Ruby's alert notifications link to "/?ruby=watches": open the panel (the
+  // watches strip with Keep it / Close it sits at its top) and refresh it.
+  const search = useSearch();
+  useEffect(() => {
+    if (new URLSearchParams(search).get("ruby") !== "watches") return;
+    setOpen(true);
+    setWatchesRefresh((n) => n + 1);
+  }, [search]);
   const runRubyCommand = useCallback(async (text: string, confirm = false): Promise<boolean> => {
     const accountMode: "live" | "demo" = tradingMode.isLiveArmed ? "live" : "demo";
     let resp: RubyCommandResponse;
