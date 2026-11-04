@@ -146,6 +146,9 @@ export async function listBridgeV2CommandsForEa(
       and(
         eq(arxLiveCommandsTable.userId, userId),
         eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+        // Already served once (by this channel's claim, or by another
+        // transport's pickup) — never projected again.
+        isNull(arxLiveCommandsTable.pickedByEaAt),
         // Scope to this bridge connection when known; tolerate legacy rows that
         // never recorded a connection id.
         bridgeConnectionId == null
