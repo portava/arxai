@@ -55,6 +55,7 @@ export const WRITERS: Record<string, Entry> = {
   "lib/mt5/demoCommandReconciler.ts": { role: "LIFECYCLE", why: "demo outcome reconciliation" },
   "lib/mt5/executionReconciler.ts": { role: "LIFECYCLE", why: "EA result reconciliation" },
   "lib/mt5/stuckCommandWatchdog.ts": { role: "LIFECYCLE", why: "expires stuck commands" },
+  "lib/bridgeV2/commandClaim.ts": { role: "LIFECYCLE", why: "bridge v2 one-time delivery claim (pickedByEaAt CAS on a dispatched row)" },
   "routes/adminLiveSharedActivation.ts": { role: "LIFECYCLE", why: "admin rollback / stale cancel" },
   "routes/adminTrading.ts": { role: "LIFECYCLE", why: "admin cancel / needs-review" },
   "routes/tradesLiveShared.ts": { role: "LIFECYCLE", why: "blocks a draft whose attribution failed" },

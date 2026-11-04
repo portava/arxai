@@ -91,7 +91,7 @@ export function DiscrepancySection() {
             </>
           ) : null}
         </div>
-        <Link href="/admin/reconciliation-center">
+        <Link asChild href="/admin/reconciliation-center">
           <a>
             <Button variant="outline" size="sm" data-testid="link-recon-center">
               <ExternalLink className="mr-1 h-3 w-3" /> Reconciliation Center

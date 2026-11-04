@@ -84,6 +84,9 @@ const IntentSchema = z.object({
   positionId: z.string().min(1).max(64).optional(),
   newStopLoss: z.number().nullable().optional(),
   newTakeProfit: z.number().nullable().optional(),
+  // CLOSE only: reduce this many lots (partial close). Absent / >= the full
+  // position size = full close. The router validates it against the position.
+  closeVolume: z.number().positive().nullable().optional(),
   oneClick: z.boolean().optional(),
   aiCommand: z.boolean().optional(),
   rawUserCommand: z.string().max(1024).nullable().optional(),

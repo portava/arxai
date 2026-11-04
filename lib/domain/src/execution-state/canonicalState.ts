@@ -38,6 +38,8 @@
 //   DEMO_APPROVED               → authorized              lossless
 //   SENT_TO_MT5_DEMO            → submitting              LOSSY (no acknowledged stage; EA pickup is not represented in the status)
 //   FILLED_DEMO                 → filled                  lossless
+//   PLACED_DEMO                 → acknowledged            LOSSY (a pending order resting at the broker; "acknowledged" does not say the order is waiting for its trigger price)
+//   CANCELLED_DEMO              → cancelled               lossless
 //   REJECTED                    → rejected                lossless
 //   BLOCKED                     → risk_rejected           LOSSY (covers every gate refusal, not only risk gates)
 //   FAILED                      → rejected                LOSSY (conflates broker failure with the 2-minute no-pickup sweep — audit G1d)
@@ -156,6 +158,12 @@ export const MT5_DEMO_STATUS_MAP: MappingTable = Object.freeze({
     note: "no acknowledged stage; EA pickup is not represented in the status",
   },
   FILLED_DEMO: { state: "filled", lossy: false },
+  PLACED_DEMO: {
+    state: "acknowledged",
+    lossy: true,
+    note: "pending order resting at the broker, waiting for its trigger price",
+  },
+  CANCELLED_DEMO: { state: "cancelled", lossy: false },
   REJECTED: { state: "rejected", lossy: false },
   BLOCKED: {
     state: "risk_rejected",

@@ -29,6 +29,12 @@ export type RunOnQualityBand = "strong" | "moderate" | "weak";
 
 export interface SetupSignals {
   scannerScore: number | null;
+  /**
+   * The timeframe the scanner score was actually computed on. Only ever equal
+   * to the chart timeframe (a different-timeframe candidate is never used), or
+   * null when the scanner has no score for the chart's timeframe.
+   */
+  scannerTimeframe?: string | null;
   riskScore: number | null;
   flameStage: string | null;
   runOnQuality: RunOnQualityBand | null;
@@ -60,19 +66,20 @@ export function mapGovernanceVerdict(outcome: GovernanceOutcome): GovernanceVerd
 }
 
 // ── Scanner-candidate selection ─────────────────────────────────────────────
-// Prefer the candidate matching the requested timeframe, else the top-ranked
-// candidate for this symbol. Returns null when the scanner is absent /
-// disconnected or has no candidate for the symbol.
+// Only the candidate scored on the chart's OWN timeframe counts. The live
+// scanner scores just M15/H1 (liveScanner LIVE_TIMEFRAMES); on any other chart timeframe
+// there is no scanner score, and a different-timeframe candidate is never
+// substituted (it would show an M15/H1 score as if it described the chart, and
+// feed it to the agent-team verdict as such). Returns null when the scanner is
+// absent / disconnected or has no candidate for this symbol + timeframe.
 export function selectScannerCandidate(
   scannerRes: LiveScannerResult | null,
   symbol: string,
   timeframe: string,
 ): LiveCandidate | null {
   if (!scannerRes || !scannerRes.connected) return null;
-  const forSymbol = scannerRes.candidates.filter((c) => c.symbol === symbol);
   return (
-    forSymbol.find((c) => c.timeframe === timeframe) ??
-    [...forSymbol].sort((a, b) => b.score - a.score)[0] ??
+    scannerRes.candidates.find((c) => c.symbol === symbol && c.timeframe === timeframe) ??
     null
   );
 }
@@ -81,10 +88,10 @@ export function deriveScannerSignals(
   scannerRes: LiveScannerResult | null,
   symbol: string,
   timeframe: string,
-): { scannerScore: number | null; riskScore: number | null } {
+): { scannerScore: number | null; riskScore: number | null; scannerTimeframe: string | null } {
   const match = selectScannerCandidate(scannerRes, symbol, timeframe);
-  if (!match) return { scannerScore: null, riskScore: null };
-  return { scannerScore: match.score, riskScore: match.riskScore };
+  if (!match) return { scannerScore: null, riskScore: null, scannerTimeframe: null };
+  return { scannerScore: match.score, riskScore: match.riskScore, scannerTimeframe: match.timeframe };
 }
 
 // ── Run-on quality banding ──────────────────────────────────────────────────
@@ -173,7 +180,11 @@ export async function assembleSetupSignals(
     deps.evaluateScalpForSymbol().catch(() => null),
   ]);
 
-  const { scannerScore, riskScore } = deriveScannerSignals(scannerRes, symbol, timeframe);
+  const { scannerScore, riskScore, scannerTimeframe } = deriveScannerSignals(
+    scannerRes,
+    symbol,
+    timeframe,
+  );
   const { flameStage, runOnQuality } = deriveFlameSignals(scalpRes);
 
   let governanceOutcome: GovernanceVerdict | null = null;
@@ -196,6 +207,7 @@ export async function assembleSetupSignals(
 
   return {
     scannerScore,
+    scannerTimeframe,
     riskScore,
     flameStage,
     runOnQuality,

@@ -87,3 +87,16 @@ export const FUNDBOOK_MIRROR_DELAYED_MS = 60_000;
 
 /** 120 s — the cached broker-health verdict is stale for the handshake monitor (advisory). */
 export const BROKER_HEALTH_VERDICT_STALE_MS = 120_000;
+
+/** Whole seconds since a heartbeat stamp at `nowMs`; null when absent, unparsable or in the future. */
+export function heartbeatAgeSecondsFrom(
+  lastHeartbeatAt: Date | string | number | null | undefined,
+  nowMs: number,
+): number | null {
+  if (lastHeartbeatAt == null) return null;
+  const t = lastHeartbeatAt instanceof Date ? lastHeartbeatAt.getTime()
+    : typeof lastHeartbeatAt === "number" ? lastHeartbeatAt : Date.parse(lastHeartbeatAt);
+  if (!Number.isFinite(t)) return null;
+  const ageMs = nowMs - t;
+  return !Number.isFinite(ageMs) || ageMs < 0 ? null : Math.floor(ageMs / 1000);
+}

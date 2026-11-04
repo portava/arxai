@@ -54,15 +54,13 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
     return;
   }
 
-  // v1.26 EA clarity — opportunistic stale-SENT sweep on every read.
-  // Bounded to this user; transitions SENT_TO_MT5_DEMO older than 2min →
-  // FAILED with reason EXPIRED_DEMO_NO_EA_PICKUP_2MIN. Audited per row.
-  // Safe to run on every poll: short-circuits when nothing is stale.
+  // Opportunistic stale-SENT sweep on every read (the server interval does
+  // the same for every user). Bounded to this user; SENT_TO_MT5_DEMO with no
+  // EA result after TTL + grace → FAILED / EXPIRED_DEMO_NO_EA_RESULT.
   let staleExpiredCommandIds: string[] = [];
   try {
     const sweep = await expireStaleSentCommands({
       userId,
-      olderThanMs: 2 * 60_000,
       actorIp: req.ip ?? null,
       actorUserAgent: (req.headers["user-agent"] as string | undefined) ?? null,
     });
@@ -218,7 +216,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
     .orderBy(desc(mt5DemoCommandsTable.id))
     .limit(5);
   const lastTerminal = recentCmds.find((c) =>
-    ["REJECTED", "FILLED_DEMO", "FAILED", "BLOCKED"].includes(c.status),
+    ["REJECTED", "FILLED_DEMO", "PLACED_DEMO", "CANCELLED_DEMO", "FAILED", "BLOCKED"].includes(c.status),
   );
 
   const lastHeartbeatAt = conn?.lastHeartbeat ?? null;
@@ -340,7 +338,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
 
   if (staleExpiredCommandIds.length > 0) {
     diagnoses.push(
-      `${staleExpiredCommandIds.length} stale SENT_TO_MT5_DEMO command(s) older than 2 minutes were auto-expired to FAILED with reason EXPIRED_DEMO_NO_EA_PICKUP_2MIN. Ids: ${staleExpiredCommandIds.map((id) => id.slice(0, 14)).join(", ")}.`,
+      `${staleExpiredCommandIds.length} stale SENT_TO_MT5_DEMO command(s) with no EA result within the command TTL were auto-expired to FAILED with reason EXPIRED_DEMO_NO_EA_RESULT. Ids: ${staleExpiredCommandIds.map((id) => id.slice(0, 14)).join(", ")}.`,
     );
   }
 

@@ -1,5 +1,6 @@
 import { mt5StatusReadOptions } from "@/hooks/readSharedAccountSummary";
 import React from "react";
+import { Link } from "wouter";
 import { useGetMt5Status, useGetBotStatus, getGetMt5StatusQueryKey, getGetBotStatusQueryKey } from "@workspace/api-client-react";
 import { SymbolPicker } from "./SymbolPicker";
 import { NotificationBell } from "@/components/alerts/NotificationBell";
@@ -206,10 +207,10 @@ function CompactStatusRow(p: CompactStatusRowProps) {
         </>
       )}
       <div className="pt-2 border-t space-y-1">
-        <a className="block text-primary underline" href="/mt5-setup">MT5 setup &amp; bridge token →</a>
-        <a className="block text-primary underline" href="/operator-dashboard">Operator dashboard →</a>
-        <a className="block text-primary underline" href="/admin-diagnostics">Admin diagnostics →</a>
-        <a className="block text-primary underline" href="/risk-command-center">Kill switch / risk controls →</a>
+        <Link className="block text-primary underline" href="/mt5-setup">MT5 setup &amp; bridge token →</Link>
+        <Link className="block text-primary underline" href="/admin/operator-command-center">Operator dashboard →</Link>
+        <Link className="block text-primary underline" href="/admin/diagnostics">Admin diagnostics →</Link>
+        <Link className="block text-primary underline" href="/risk-command-center">Kill switch / risk controls →</Link>
       </div>
       <p className="text-[10px] text-muted-foreground pt-2 border-t">
         Live broker dispatch stays OFF unless an operator flips

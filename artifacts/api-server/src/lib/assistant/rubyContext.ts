@@ -64,6 +64,11 @@ export interface RubyContext {
       aiUsable: boolean;
       isLive: boolean;
       lastPrice: number | null;
+      /** The chart's reason the series is not live (weekend close, stored
+       *  history), or null. Absent on contexts built before it existed. */
+      notLiveReason?: "market_closed" | "stored_history" | null;
+      /** Whose feed: the trader's own bridge, another bridge's MT5 series, or a provider. */
+      feedScope?: "own_bridge" | "platform_shared" | "provider" | null;
     } | null;
   } | null;
   bridge: {
@@ -502,6 +507,32 @@ export function newsRiskStatement(
  * from state + time, so it naturally varies session-to-session and never
  * repeats an identical static greeting.
  */
+/**
+ * The briefing's per-symbol feed block from the shared symbol snapshot (the
+ * SAME resolver the chart uses), including the chart's not-live reason.
+ */
+export function marketFeedFromSnapshot(snap: {
+  source: string | null;
+  quality: string;
+  freshness: string;
+  aiUsable: boolean;
+  isLive: boolean;
+  lastPrice: number | null;
+  notLiveReason?: "market_closed" | "stored_history" | null;
+  feedScope?: "own_bridge" | "platform_shared" | "provider" | null;
+}): NonNullable<NonNullable<RubyContext["symbol"]>["marketFeed"]> {
+  return {
+    source: snap.source,
+    quality: snap.quality,
+    freshness: snap.freshness,
+    aiUsable: snap.aiUsable,
+    isLive: snap.isLive,
+    lastPrice: snap.lastPrice,
+    notLiveReason: snap.notLiveReason ?? null,
+    feedScope: snap.feedScope ?? null,
+  };
+}
+
 export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
   const lines: string[] = [];
 
@@ -540,6 +571,11 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
         lines.push(`Live data for ${ctx.symbol.symbol} is clean right now — I can read it confidently.`);
       } else {
         lines.push(`Live data for ${ctx.symbol.symbol} is ${mf.freshness.toLowerCase()} right now — I'll read it cautiously.`);
+      }
+      // Another bridge's series is served when the trader's own bridge is not
+      // pushing this symbol: say whose feed it is, as the chart does.
+      if (mf.feedScope === "platform_shared" && mf.notLiveReason == null) {
+        lines.push(`These ${ctx.symbol.symbol} prices come from the platform's shared MetaTrader 5 feed, not your own bridge — your broker's quotes can differ slightly.`);
       }
     }
   }

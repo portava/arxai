@@ -54,7 +54,7 @@ until the ticket is valid. Market orders are disabled while the quote is stale.
 | live, one-click ON | instant-trade router `/api/trades/instant/execute` with `orderType`, `price`, `stopLimitPrice`, `expiration`, SL/TP |
 | live, one-click OFF | standard `/api/me/live/commands` draft → confirm → dispatch; pending fields ride in `payload` |
 | demo, market | governed demo queue `PLACE_MARKET_ORDER` |
-| demo, pending | **refused up front**: the demo EA (v1.31) answers `PLACE_PENDING_ORDER` with `REJECTED_COMMAND_TYPE_NOT_IMPLEMENTED`. The ticket says so instead of letting the click fail. |
+| demo, pending | governed demo queue `PLACE_PENDING_ORDER` (EA v1.32+). The server refuses the draft for an older bridge EA with `EA_VERSION_TOO_OLD_FOR_COMMAND:PLACE_PENDING_ORDER:<v><1.32` (v1.31 and earlier answer `REJECTED_UNKNOWN_COMMAND_TYPE`); the ticket shows that refusal in plain words. |
 | modify live | instant router `MODIFY_SL_TP` |
 | modify demo | demo queue `MODIFY_SLTP` |
 
@@ -98,5 +98,62 @@ in chat. Stored in the monitor's `risk_params` (no migration). Policy
 `pnpm --filter @workspace/trading-dashboard run test:mt5-order-controls` (24 new +
 strip), both wired into root `ci`. All three packages typecheck; 87/87 guards.
 
-Not done here (boundaries): no broker/terminal test, no demo EA change (pending
-orders on demo would need a v1.32 EA handler), no migration.
+Not done here (boundaries): no broker/terminal test, no migration. Demo pending
+orders landed afterwards — see below.
+
+## Update — demo pending orders (EA v1.32) and demo delivery fixes
+
+**EA** `mt5-bridge/ReplitMT5BridgeEA_v132.mq5` (v1.31 + changes; v1.31 file untouched)
+and `ArxDemoExecution.mqh` (`ExecuteDemoRequest`; v1.31's `ExecuteDemoCommand` unchanged):
+
+* `PLACE_PENDING_ORDER`: the existing demo guards (demo hedging account, arms,
+  maintenance, volume step, `DemoMaxLot`, finite SL/TP); entry / stop-limit / SL /
+  TP rounded to tick size and digits; `expirationEpoch` (UTC) converted to
+  trade-server time (offset rounded to 30 min), `ORDER_TIME_SPECIFIED` when set,
+  else GTC. Limit/Stop via CTrade, Stop Limit via a raw `TRADE_ACTION_PENDING`
+  request. Success only on retcode PLACED/DONE with an order ticket that
+  `OrderSelect` finds → `PLACED_DEMO`; anything else `FAILED
+  BROKER_OUTCOME_UNCONFIRMED_DO_NOT_RETRY`.
+* `CANCEL_PENDING_ORDER`: `OrderSelect`, symbol match, pending type, `OrderDelete`,
+  verified gone (and not filled in history) → `CANCELLED_DEMO`.
+* Every served command carries `secondsUntilExpiry`; one still waiting when it runs
+  out is answered `FAILED EXPIRED_BEFORE_EXECUTION` with no broker call.
+* Reports EA version `1.32`. **Needs a MetaEditor compile** before release (the
+  offline C++ harness `mt5-bridge/tests/run_demo_core.py` compiles the core for
+  v1.31 and v1.32; it is not a MetaEditor check).
+
+**Server**
+
+* Statuses `PLACED_DEMO` (order resting at the broker — not a position) and
+  `CANCELLED_DEMO` (text column, no migration). `SENT → PLACED/CANCELLED`,
+  `PLACED → FILLED/CANCELLED/FAILED`. Position readers keep reading `FILLED_DEMO`
+  only; the risk governor counts a `PLACED_DEMO` order as pending exposure. When the
+  EA position snapshot shows a position under a placed order's ticket
+  (`applyOwnPositionSnapshot`), the row becomes `FILLED_DEMO`
+  (`PENDING_ORDER_FILLED_AT_BROKER`) and is tracked like any governed fill.
+* Version gate: `PLACE_PENDING_ORDER` / `CANCEL_PENDING_ORDER` need EA ≥ 1.32
+  (`DEMO_COMMAND_MIN_EA_VERSION`), checked at draft and again at dispatch; every
+  other demo command keeps `EA_MIN_DEMO_VERSION` 1.26.
+* Draft validation (`lib/mt5/demoPendingOrder.ts`) uses the server MT5 rules
+  (`pendingOrderRules.ts`); a cancel may only name the trader's own `PLACED_DEMO`
+  order. `GET /api/me/demo-pending-orders` lists them (user-scoped); the dashboard's
+  Open Demo Positions card shows a **Pending orders** section with Cancel.
+* The trade pipeline emits `entry`, `stopLimitPrice`, `expirationEpoch` for DEMO
+  and for the LIVE pending draft (the v154 mirror forwards them).
+* Poll: oldest-sent first, `secondsUntilExpiry` / `expiresAtEpoch` per command
+  (TTL 120 s), expired rows not served. A server interval (30 s, unref'd;
+  `ARX_DEMO_EXPIRY_SWEEP_ENABLED=false` opts out) FAILs rows with no EA result
+  after TTL + 60 s grace (`EXPIRED_DEMO_NO_EA_RESULT`). A broker success that
+  arrives after that is recorded and flagged (`LATE_RESULT_AFTER_EXPIRY`,
+  `brokerRawResult.lateAfterExpiry`) instead of a 409.
+* `/api/mt5/demo-command-result` matches the command's `bridgeConnectionId` to the
+  reporting connection as well as the user.
+
+**v154 Universal Agent → 1.55** (edited in place): pending orders run
+`RunPreflight`, prices tick-normalised, UTC expiry → server time, retcode PLACED
+accepted; pending modify keeps the order's expiry / price / stop-limit when not
+given; `CLOSE_POSITION` closes `lot` when it is smaller than the position
+(`PositionClosePartial`, volume-step checked). Needs a MetaEditor compile.
+
+Tests: `pnpm --filter @workspace/api-server run test:demo-pending-orders`,
+`test:mt5-demo-ea` (C++ harness), dashboard `test:mt5-order-controls`.

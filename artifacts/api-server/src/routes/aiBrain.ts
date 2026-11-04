@@ -172,7 +172,7 @@ router.get("/performance/scorecard", requireUser, async (req, res) => {
       perUserScoped: true,
       intentsNote: "Live-intent count not shown — liveIntentsTable has no per-user ownership column.",
       isEmpty: total === 0,
-      emptyMessage: total === 0 ? "No journal entries yet. Add a paper trade or journal entry to start building your scorecard." : undefined,
+      emptyMessage: total === 0 ? "No journal entries yet. Log a few trades in your Trade Journal (demo or live) to start building your scorecard." : undefined,
       generatedAt: new Date().toISOString(),
     });
   } catch (e) {
@@ -236,12 +236,12 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
     if (journal.length === 0) {
       return res.json({
         isEmpty: true,
-        doingWell: "Not enough journal data yet — log a few paper trades to build your scorecard.",
+        doingWell: "Not enough journal data yet — log a few trades in your Trade Journal (demo or live) to build your scorecard.",
         doingPoorly: "Not enough journal data yet.",
         bestStrategy: null, worstStrategy: null,
         bestSymbol: null, weakestSymbol: null,
         mostCommonMistake: "none",
-        recommendedFocus: "Place a paper trade and add a journal note to begin.",
+        recommendedFocus: "Log a trade in your Trade Journal (demo or live) and add a note to begin.",
         suggestedRuleChanges: [],
         confidenceCalibration: "No trades yet — confidence cannot be calibrated.",
         dataSource: "SIMULATOR",

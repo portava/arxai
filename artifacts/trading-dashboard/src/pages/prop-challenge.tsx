@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Link } from "wouter";
+import { useEffect, useRef, useState } from "react";
 import {
   PropChallengeProgressCard, PropProfitTargetMeter, PropDrawdownMeter,
   PropDailyLossLimitCard, PropRuleViolationFeed, PropChallengeCalendar, PropPassFailBanner,
@@ -89,6 +90,9 @@ export default function PropChallengePage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Prop Firm Challenge Mode</h1>
           <p className="text-xs text-amber-300">Practice/training only — does not promise funded-account approval or guaranteed profits.</p>
+          <p className="text-xs text-slate-400" data-testid="prop-challenge-separate">
+            Challenges here are scored from your closed paper orders. This is separate from <Link href="/prop-firm-mode" className="underline">Prop Firm Risk Mode</Link>, which has its own target, limits and status; a status on one page says nothing about the other.
+          </p>
         </div>
         <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>

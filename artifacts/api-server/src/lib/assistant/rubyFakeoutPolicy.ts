@@ -52,6 +52,10 @@ export interface FakeoutDecisionInput {
   adjustmentsSoFar: number;
   lastAdjustAt: string | null;
   nowMs: number;
+  /** The stop when the monitor first saw the position. The widening cap is
+   *  measured from it, so a second shift cannot add another half-risk on top
+   *  of the first. Falls back to the current stop when unknown. */
+  originalStopLoss?: number | null;
   /** Digits for rounding the new level (defaults to 5). */
   digits?: number;
 }
@@ -97,11 +101,15 @@ export function decideFakeoutAdjustment(i: FakeoutDecisionInput): FakeoutDecisio
     const wickExtreme = i.side === "BUY" ? b.l : b.h;
     const stopInsideWick = i.side === "BUY" ? i.stopLoss > wickExtreme - buffer : i.stopLoss < wickExtreme + buffer;
     if (stopInsideWick) {
-      const originalRisk = Math.abs(i.entryPrice - i.stopLoss);
+      const baseStop = typeof i.originalStopLoss === "number" && Number.isFinite(i.originalStopLoss) ? i.originalStopLoss : i.stopLoss;
+      const originalRisk = Math.abs(i.entryPrice - baseStop);
       if (!(originalRisk > 0)) return none("no measurable risk distance");
       const maxWiden = originalRisk * FAKEOUT_MAX_SL_WIDEN_RATIO;
       const wanted = i.side === "BUY" ? wickExtreme - buffer : wickExtreme + buffer;
-      const capped = i.side === "BUY" ? Math.max(wanted, i.stopLoss - maxWiden) : Math.min(wanted, i.stopLoss + maxWiden);
+      const capped = i.side === "BUY" ? Math.max(wanted, baseStop - maxWiden) : Math.min(wanted, baseStop + maxWiden);
+      // The total widening allowance (from the ORIGINAL stop) is used up.
+      const widens = i.side === "BUY" ? round(capped, digits) < round(i.stopLoss, digits) : round(capped, digits) > round(i.stopLoss, digits);
+      if (!widens) return none("stop already widened to the cap from the original stop");
       // Never cross to the wrong side of the current price.
       const safe = i.side === "BUY" ? capped < i.currentPrice : capped > i.currentPrice;
       if (!safe) return none("new stop would sit on the wrong side of price");

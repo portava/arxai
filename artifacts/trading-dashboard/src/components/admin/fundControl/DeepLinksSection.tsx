@@ -56,7 +56,7 @@ export function DeepLinksSection() {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="deeplinks-section">
       {LINKS.map((l) => (
-        <Link key={l.href} href={l.href}>
+        <Link asChild key={l.href} href={l.href}>
           <a data-testid={l.testid}>
             <Card className="h-full transition-colors hover:border-primary/60">
               <CardContent className="flex items-start gap-3 p-4">

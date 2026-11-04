@@ -42,6 +42,12 @@ export function scrub<T = unknown>(value: T): T {
   if (value == null) return value;
   if (typeof value === "string") return scrubString(value) as unknown as T;
   if (Array.isArray(value)) return value.map((v) => scrub(v)) as unknown as T;
+  // A Date (e.g. a timestamp column from a DB row) has no own enumerable keys,
+  // so walking it below would turn it into {} and every scrubbed timestamp
+  // would reach the client as an empty object. Keep it as-is; JSON turns it
+  // into an ISO string. Same for other non-plain value objects.
+  if (value instanceof Date) return value;
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(value)) return value;
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {

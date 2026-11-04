@@ -29,6 +29,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
+import { currentQuote } from "../tradeEngine/marketQuote.js";
 import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
 import { checkEligibility } from "./eligibility.js";
 import { loadEffectiveLimits } from "../riskGovernor/enforce.js";
@@ -184,11 +185,26 @@ export async function executePaperFromDecision(
     });
   }
 
+  // ── Execution price: the market data router only (audit H4, owner decision
+  //    2026-11-04). The DD snapshot above still gates data quality and is kept
+  //    as provenance, but the fill is priced on the same quote the Risk
+  //    Governor sizes on; no current real quote → no simulated fill.
+  const exec = await currentQuote(symbol);
+  if (!exec.ok) {
+    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
+      executionId, decisionId, symbol, action, decision,
+      reason: `No current execution price: ${exec.reasons.join("; ")}`,
+      warnings: [...eligibility.warnings, ...snapshot.dataQuality.warnings],
+      mdSnapshot: snapshot,
+    });
+  }
+  const execMd = { bid: exec.bid, ask: exec.ask, mid: (exec.bid + exec.ask) / 2, spread: exec.ask - exec.bid };
+
   // ── Simulated fill ──
   const fillType: FillType = "SIMULATED_MARKET";
   // Eligibility ensured action ∈ {BUY, SELL}.
   const dir = action as "BUY" | "SELL";
-  const { fillPrice, slippage, spread } = applySimulatedFill(dir, snapshot);
+  const { fillPrice, slippage, spread } = applySimulatedFill(dir, execMd);
   const stopLoss = decision.stopLoss as number;
   const takeProfit = decision.takeProfit as number;
 
@@ -245,11 +261,7 @@ export async function executePaperFromDecision(
     strategyId: "build_ee_paper_execution",
     origin: opts.origin ?? "manual",
     governedEntryPrice: null,
-    quote: {
-      bid: snapshot.bid, ask: snapshot.ask,
-      at: snapshot.timestamp ? new Date(snapshot.timestamp) : null,
-      source: `${snapshot.source}:${snapshot.provider}`,
-    },
+    quote: { bid: exec.bid, ask: exec.ask, at: exec.at, source: exec.source },
     auditContext: { caller: "paper_execution", executionId, decisionId },
     placedMessage: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
   });
@@ -271,6 +283,9 @@ export async function executePaperFromDecision(
     source: snapshot.source, provider: snapshot.provider,
     bid: snapshot.bid, ask: snapshot.ask, mid: snapshot.mid, spread: snapshot.spread,
     timestamp: snapshot.timestamp, timeframe: snapshot.timeframe,
+    // The price the fill was actually struck on (router quote), distinct from
+    // the DD snapshot's own numbers above.
+    executionQuote: { bid: exec.bid, ask: exec.ask, at: exec.at.toISOString(), source: exec.source },
     candlesAvailable: snapshot.dataQuality.candlesAvailable,
     sessionContext: snapshot.sessionContext,
     dataQuality: snapshot.dataQuality,

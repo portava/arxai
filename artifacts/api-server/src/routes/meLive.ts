@@ -18,9 +18,10 @@
 
 import { createAccountSnapshotScheduler } from "../lib/live/accountSnapshotScheduler.js";
 import { createSseWriter } from "../lib/perf/sseWriter.js";
-import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
-import { classifyOrderType, validatePendingOrder, validateProtection } from "../lib/live/pendingOrderRules.js";
+import { classifyHeartbeatAgeMs, heartbeatAgeSecondsFrom, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { classifyOrderType, validatePendingOrder, validateProtection, validateExpiration, twoSidedQuote } from "../lib/live/pendingOrderRules.js";
 import { routeQuote } from "../lib/data/marketDataRouter.js";
+import { listMyLivePendingOrders } from "../lib/live/livePendingOrders.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
@@ -251,9 +252,7 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
     let bid: number | null = null, ask: number | null = null;
     try {
       const q = await routeQuote(String(b.symbol ?? ""));
-      const pos = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
-      bid = pos(q.quote?.bid) ?? pos(q.quote?.last);
-      ask = pos(q.quote?.ask) ?? pos(q.quote?.last);
+      ({ bid, ask } = twoSidedQuote(q.quote));
     } catch { /* no quote: the broker enforces the side */ }
     const pendingCheck = validatePendingOrder({
       orderType: String(b.orderType ?? (side === "SELL" ? "MARKET_SELL" : "MARKET_BUY")), action: side,
@@ -266,6 +265,12 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
       : (side === "BUY" ? bid : ask);
     const prot = validateProtection({ side, reference, stopLoss: num(b.stopLoss), takeProfit: num(b.takeProfit) });
     if (!prot.ok) { res.status(400).json({ ok: false, reason: prot.code, detail: prot.detail, ...envelope() }); return; }
+    if (cls.pending) {
+      // A past / unreadable expiry is refused, never silently good-till-cancelled.
+      const rawExp = payload.expirationEpoch ?? payload.expiration ?? b.expiration ?? null;
+      const exp = validateExpiration(typeof rawExp === "number" || typeof rawExp === "string" ? rawExp : null);
+      if (!exp.ok) { res.status(400).json({ ok: false, reason: exp.code, detail: exp.detail, ...envelope() }); return; }
+    }
   }
   const result = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
@@ -325,6 +330,27 @@ router.get("/me/live/commands/:commandId", requireUser, async (req, res) => {
   const row = await getMyLiveCommand(userId, String(req.params.commandId ?? ""));
   if (!row) { res.status(404).json({ error: "COMMAND_NOT_FOUND" }); return; }
   res.json({ command: row, ...envelope() });
+});
+
+// ── Live pending orders — PLACE_LIVE_PENDING_ORDER rows the EA answered with a
+// broker order ticket, minus those that filled into a position or expired.
+// Read-only and user-scoped. The state is the last EA result (no terminal
+// pending-order snapshot exists yet), and the response says so.
+router.get("/me/live/pending-orders", requireUser, async (req, res) => {
+  const userId = uid(req);
+  if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  try {
+    const items = await listMyLivePendingOrders(userId);
+    res.json({
+      ok: true, items, count: items.length,
+      stateBasis: "LAST_EA_RESULT",
+      note: "From the last terminal answer for each order. An order may since have filled, expired or been removed in MT5.",
+      ...envelope(),
+    });
+  } catch (e) {
+    req.log?.error?.({ err: (e as Error).message, userId }, "live pending orders list failed");
+    res.status(500).json({ ok: false, error: "LIVE_PENDING_ORDERS_READ_FAILED", ...envelope() });
+  }
 });
 
 // ── Live positions — Phase B reads `arx_live_positions` (EA-synced) ────────

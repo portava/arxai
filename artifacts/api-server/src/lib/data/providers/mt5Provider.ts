@@ -1,3 +1,4 @@
+import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import type { Candle, DataProvider, MarketQuote } from "../types.js";
 import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS } from "../freshness.js";
 
@@ -165,6 +166,9 @@ let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
 const contentionWarnAt = new Map<string, number>();
+registerHeapWatchGauge("mt5Provider.candleSeries", () => { let n = 0; for (const m of candleStore.values()) n += m.size; return n; });
+registerHeapWatchGauge("mt5Provider.candleBars", () => { let n = 0; for (const m of candleStore.values()) for (const s of m.values()) n += s.candles.length; return n; });
+registerHeapWatchGauge("mt5Provider.quotes", () => { let n = 0; for (const m of quoteStore.values()) n += m.size; return n; });
 
 type ContentionWarnSink = (payload: Record<string, unknown>) => void;
 let contentionWarnSink: ContentionWarnSink | null = null;
@@ -719,6 +723,14 @@ export class Mt5Provider implements DataProvider {
     // CopyRates push ships, nothing calls the update fns and this stays false.
     return lastUpdate > 0 && Date.now() - lastUpdate < FEED_FRESH_MS;
   }
+}
+
+/** Server wall-clock ms when the quote `getQuote` would serve for this symbol
+ *  was pushed (its receive time); null when nothing is stored. Lets the router
+ *  label a push older than MT5_FEED_FRESH_MS STALE instead of LIVE_TICK. */
+export function readServingQuoteReceivedAtMs(symbol: string): number | null {
+  const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
+  return q ? q.updatedAt : null;
 }
 
 export const mt5Provider = new Mt5Provider();

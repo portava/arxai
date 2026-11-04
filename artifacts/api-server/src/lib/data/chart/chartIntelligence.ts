@@ -14,6 +14,7 @@
 //  - Adds NO new data source; reads ONLY the truth layer.
 //  - Pure Fast-Brain work — never invokes the Slow Brain (background-only).
 
+import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import {
   getChartCandles,
   type ChartFeedStatus,
@@ -74,6 +75,7 @@ import type {
   ChartEvidenceDirection,
   ChartQualityLabel,
 } from "./engines/marketUnderstandingTypes.js";
+import { boundedCacheSet } from "./boundedCache.js";
 
 export interface ChartCandleStats {
   barsAnalyzed: number;
@@ -206,6 +208,9 @@ interface CacheEntry {
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
+registerHeapWatchGauge("chartIntelligence.cache", () => cache.size);
+/** Entry cap; expired entries are swept on every write (boundedCacheSet). */
+const CACHE_MAX_ENTRIES = 500;
 
 /**
  * Return the cached intelligence context (state + truth result + feed status)
@@ -636,11 +641,12 @@ export async function buildChartIntelligenceState(
     marketSentences,
   };
 
-  cache.set(cacheKey, {
+  const writtenAt = Date.now();
+  boundedCacheSet(cache, cacheKey, {
     state,
     truthResult: truth.truthResult,
     feedStatus: truth.feedStatus,
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  });
+    expiresAt: writtenAt + CACHE_TTL_MS,
+  }, { max: CACHE_MAX_ENTRIES, isExpired: (e) => e.expiresAt <= writtenAt });
   return state;
 }

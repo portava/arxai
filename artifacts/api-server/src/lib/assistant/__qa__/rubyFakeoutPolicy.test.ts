@@ -92,3 +92,31 @@ test("monitor state carries the per-monitor fakeout authority and adjustments ac
   // Old rows without the field default to no authority.
   assert.equal(parseMonitorState(JSON.stringify({ monitor: { alertsSinceAck: 1 } })).fakeoutAuthority, false);
 });
+
+// Sweep 2026-11-04: the widening cap is measured from the ORIGINAL stop, so a
+// second shift cannot add another half-risk on top of the first.
+test("SHIFT_SL cap does not compound across adjustments when the original stop is known", () => {
+  const deepBar = { o: 1.0990, h: 1.0995, l: 1.0800, c: 1.0992 };
+  // First shift from the original stop 1.0950: capped at 1.0950 - 0.0025 = 1.0925.
+  const first = decideFakeoutAdjustment({ ...base, lastBar: deepBar, originalStopLoss: 1.0950 });
+  assert.equal(first.action, "SHIFT_SL");
+  assert.equal(first.newStopLoss, 1.0925);
+  // Second deep wick, stop now at 1.0925. Without the original stop the cap
+  // would allow 1.0925 - 0.00375 = 1.08875; with it, the allowance is used up.
+  const compounding = decideFakeoutAdjustment({ ...base, lastBar: deepBar, stopLoss: 1.0925, adjustmentsSoFar: 1 });
+  assert.equal(compounding.action, "SHIFT_SL", "legacy behaviour without the original stop");
+  assert.ok(compounding.newStopLoss! < 1.0925 - 0.0025 + 1e-9);
+  const bounded = decideFakeoutAdjustment({ ...base, lastBar: deepBar, stopLoss: 1.0925, adjustmentsSoFar: 1, originalStopLoss: 1.0950 });
+  assert.equal(bounded.action, "NONE");
+  assert.match(bounded.reason, /cap from the original stop/);
+});
+
+test("SHIFT_SL rounds to the symbol's digits", () => {
+  const gold = decideFakeoutAdjustment({
+    side: "BUY", entryPrice: 2400, currentPrice: 2399.2, stopLoss: 2395, takeProfit: 2420,
+    lastBar: { o: 2399, h: 2399.5, l: 2393.777, c: 2399.3 }, fakeoutRiskScore: 90, reversalRiskScore: 30, reversalThreshold: 65,
+    atOrThroughStop: false, adjustmentsSoFar: 0, lastAdjustAt: null, nowMs: now, digits: 2, originalStopLoss: 2395,
+  });
+  assert.equal(gold.action, "SHIFT_SL");
+  assert.equal(gold.newStopLoss, Number(gold.newStopLoss!.toFixed(2)));
+});

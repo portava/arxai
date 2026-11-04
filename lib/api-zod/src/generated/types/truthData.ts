@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { TruthDataNotLiveReason } from "./truthDataNotLiveReason";
 import type { TruthDataState } from "./truthDataState";
 
 export interface TruthData {
@@ -19,4 +20,6 @@ export interface TruthData {
   price: number | null;
   lastCandleAt: string | null;
   lastTickAt: string | null;
+  /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
+  notLiveReason?: TruthDataNotLiveReason;
 }

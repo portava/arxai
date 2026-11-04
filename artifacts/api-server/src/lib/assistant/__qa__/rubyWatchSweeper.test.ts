@@ -4,11 +4,16 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 let users: number[] = [];
+let lockGranted = true;
+let released = 0;
+const lockQueries: string[] = [];
 mock.module("@workspace/db", {
   namedExports: {
     db: {
       selectDistinct: () => ({ from: () => ({ where: async () => users.map((userId) => ({ userId })) }) }),
     },
+    // Advisory-lock connection: lock granted unless a test says otherwise.
+    pool: { connect: async () => ({ query: async (q: string) => { lockQueries.push(q); return { rows: [{ ok: lockGranted }] }; }, release: () => { released++; } }) },
     rubyWatchInstructionsTable: { userId: "user_id", status: "status" },
   },
 });
@@ -53,4 +58,28 @@ test("no users → an empty, error-free cycle", async () => {
   users = [];
   const r = await runRubySweepOnce(async () => { throw new Error("must not be called"); });
   assert.deepEqual(r, { users: 0, watches: 0, fired: 0, alerted: 0, errors: 0 });
+});
+
+test("a cycle runs under the cross-instance advisory lock and releases it", async () => {
+  users = [3];
+  lockGranted = true; released = 0; lockQueries.length = 0;
+  const seen: number[] = [];
+  const r = await runRubySweepOnce(async (u) => { seen.push(u); return { evaluated: 1, fired: [], alerted: [], skipped: [], adjusted: [] }; });
+  assert.deepEqual(seen, [3]);
+  assert.equal(r.users, 1);
+  assert.match(lockQueries[0]!, /pg_try_advisory_lock/);
+  assert.match(lockQueries[1]!, /pg_advisory_unlock/);
+  assert.equal(released, 1, "connection back to the pool");
+});
+
+test("another instance holds the lock → this instance skips the cycle without evaluating", async () => {
+  users = [3, 4];
+  lockGranted = false; released = 0; lockQueries.length = 0;
+  const before = getRubySweeperStatus().lockSkips;
+  const r = await runRubySweepOnce(async () => { throw new Error("must not be called"); });
+  assert.deepEqual(r, { users: 0, watches: 0, fired: 0, alerted: 0, errors: 0, lockSkipped: true });
+  assert.equal(lockQueries.length, 1, "no unlock when the lock was never held");
+  assert.equal(released, 1);
+  assert.equal(getRubySweeperStatus().lockSkips, before + 1);
+  lockGranted = true;
 });

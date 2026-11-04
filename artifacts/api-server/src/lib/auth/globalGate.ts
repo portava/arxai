@@ -64,6 +64,12 @@ const PUBLIC_EXACT = new Set<string>([
   // CLOSED bars into the market-data read path; no execution, no gate, and
   // malformed/stale/out-of-sequence bars are rejected (never fabricated).
   "/mt5/candles/ingest",
+  // EA symbol-spec push (v1.31 SyncSymbolSpecs) and closed-bar history push.
+  // Same contract: per-user X-MT5-Bridge-Token only, checked by
+  // `bridgeAuthPerUserOnly` inside each handler. Without these entries the EA
+  // got HTTP 401 AUTH_REQUIRED here before its token was ever checked.
+  "/mt5/sync-symbol-specs",
+  "/mt5/sync-candle-history",
   // Phase 28-MT5-DEMO-ARMING sub-phase 3B: EA-side demo dispatch endpoints.
   // Both are gated by bridgeAuthPerUserOnly inside the route handler — the
   // global gate must let them through so the per-user token check can run.

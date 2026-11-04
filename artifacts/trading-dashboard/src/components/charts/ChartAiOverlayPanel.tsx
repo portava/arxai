@@ -38,6 +38,8 @@ export function ChartAiOverlayPanel({
 }) {
   const { name } = useAssistantName();
   const { signal, ruby, suppressed, suppressedReason, requestRubyRead } = data;
+  const scannerStatus = data.scannerStatus ?? "ok";
+  const fvg = data.fvg ?? null;
 
   return (
     <div
@@ -122,9 +124,32 @@ export function ChartAiOverlayPanel({
                 <div className="text-zinc-400">{signal.finalReadHeadline}</div>
               )}
             </div>
+          ) : scannerStatus === "unavailable" ? (
+            <div className="text-amber-400/90" data-testid="chart-ai-overlay-scanner-unavailable">
+              Scanner unavailable right now — couldn't check for a signal.
+            </div>
+          ) : scannerStatus === "loading" ? (
+            <div className="text-zinc-500" data-testid="chart-ai-overlay-scanner-loading">
+              Checking the scanner…
+            </div>
           ) : (
             <div className="text-zinc-500" data-testid="chart-ai-overlay-no-signal">
               No scanner signal for this symbol right now.
+            </div>
+          )}
+
+          {/* FVG legend: explains the FVG zones/markers drawn from the scanner row. */}
+          {fvg && (
+            <div className="text-zinc-400" data-testid="chart-ai-overlay-fvg">
+              <span className="text-zinc-500">FVG pullback:</span>{" "}
+              {fvg.direction === "WAIT" ? "waiting" : fvg.direction} · {fvg.stage.replace(/_/g, " ").toLowerCase()}
+              <span className="text-zinc-500">
+                {" "}({fvg.entryTimeframe} read
+                {fvg.asOf && Number.isFinite(Date.parse(fvg.asOf))
+                  ? ` as of ${new Date(Date.parse(fvg.asOf)).toISOString().slice(11, 16)} UTC`
+                  : ""}
+                ; advisory, not a trade signal)
+              </span>
             </div>
           )}
 
@@ -147,7 +172,15 @@ export function ChartAiOverlayPanel({
                 <span className={`font-semibold ${biasTone(ruby.read.bias)}`}>{ruby.read.bias}</span>
                 <span className="text-zinc-500">·</span>
                 <span className="text-zinc-400">{ruby.read.confidence}</span>
+                <span className="text-zinc-500" data-testid="chart-ai-overlay-ruby-asof">
+                  · as of {ruby.asOf ?? "unknown time"}
+                </span>
               </div>
+              {ruby.expired && (
+                <div className="text-amber-400/90" data-testid="chart-ai-overlay-ruby-expired">
+                  Read expired — a newer candle has closed. Zones removed from the chart; re-read for current levels.
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-x-3 text-zinc-400">
                 <div><span className="text-zinc-500">Support:</span> {ruby.read.supportZone}</div>
                 <div><span className="text-zinc-500">Resistance:</span> {ruby.read.resistanceZone}</div>

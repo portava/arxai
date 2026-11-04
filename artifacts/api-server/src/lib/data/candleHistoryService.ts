@@ -192,6 +192,37 @@ function normalizeTimeframe(tf: string): string {
 }
 
 /** Milliseconds per bar for a canonical timeframe (best-effort; defaults to 5m). */
+/**
+ * Seed the deep cache from a live router answer. Only CLOSED bars are stored
+ * (a bar whose interval has not ended is the provider's forming bar, never
+ * history). The mt5_broker slot is the broker mirror brokerCandleStore writes
+ * with bridge attribution: a routed MT5 window is mirrored only when its
+ * writing bridge is known and is attributed to it. An unattributed MT5 read is
+ * still seeded (closed bars, no bridge named) because this page is served from
+ * the cache; skipping it would leave a live series with no history.
+ */
+async function seedCacheFromRoute(
+  symbol: string,
+  timeframe: string,
+  source: string,
+  candles: Candle[],
+  bridgeConnectionId: number | null,
+): Promise<void> {
+  const chartTf = normalizeChartTimeframe(timeframe);
+  const intervalMs = chartTf ? chartTimeframeMs(chartTf) : timeframeMs(timeframe);
+  const now = Date.now();
+  const closed = candles.filter((c) => {
+    const t = Date.parse(c.time);
+    return Number.isFinite(t) && t + intervalMs <= now;
+  });
+  if (closed.length === 0) return;
+  if (source === "mt5_broker" && bridgeConnectionId != null) {
+    await upsertCandles(symbol, timeframe, source, closed, { bridgeConnectionId });
+    return;
+  }
+  await upsertCandles(symbol, timeframe, source, closed);
+}
+
 function timeframeMs(tf: string): number {
   const m = /^([MHD])(\d+)$/.exec(tf);
   if (!m) return 5 * 60_000;
@@ -312,7 +343,7 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
     if (routed.ok && routed.primaryProvider && routed.candles.length > 0) {
       source = routed.primaryProvider;
       cacheHit = false;
-      await upsertCandles(symbol, timeframe, source, routed.candles);
+      await seedCacheFromRoute(symbol, timeframe, source, routed.candles, routed.provenance?.bridgeConnectionId ?? null);
     } else {
       // Router could not answer fresh — fall back to the deepest cached source
       // (if any) so a previously-seeded series still scrolls.

@@ -61,7 +61,7 @@ export function BrokerMirrorsSection() {
   return (
     <div className="space-y-4" data-testid="mirrors-section">
       <div className="flex justify-end">
-        <Link href="/admin/master-bridge">
+        <Link asChild href="/admin/master-bridge">
           <a>
             <Button variant="outline" size="sm" data-testid="link-master-bridge">
               <ExternalLink className="mr-1 h-3 w-3" /> Master Bridge controls

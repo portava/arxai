@@ -68,6 +68,11 @@ import {
   ASSISTANT_ORDER_EXECUTION_NOTE,
 } from "./derivedEnvelope.js";
 import { getAssistantDisplayName } from "./assistantName.js";
+import {
+  resolveClosedTradeLedger,
+  resolveLedgerBasis,
+  type LedgerBasis,
+} from "../performanceCC/closedTradeLedger.js";
 
 // Shared "feed not confirmed" honesty caveat (mirrors the chart-read signal).
 // A market read is only "confirmed" when the data quality is good AND the most
@@ -331,8 +336,51 @@ export async function getMT5Heartbeat(userId: number) {
   return { items,};
 }
 
-// ── 5. getAccountSnapshot (paper) ───────────────────────────────────────
+// ── Performance ledger basis (AICS-2) ───────────────────────────────────
+// The account/positions/journal/calendar/performance tools read the SAME book
+// the Performance Calendar shows this user (lib/performanceCC/closedTradeLedger):
+// live_trades for a LIVE trading mode, paper_trades otherwise, and nothing for
+// a LIVE_SHARED user (withheld — never stale paper rows in a live view). Every
+// result carries `source` + `sourceNote` + `currentAccountMode` so Ruby labels
+// the numbers with the book they came from.
+function ledgerLabel(b: LedgerBasis) {
+  return { source: b.source, sourceNote: b.sourceNote, currentAccountMode: b.currentAccountMode };
+}
+
+// ── 5. getAccountSnapshot ───────────────────────────────────────────────
 export async function getAccountSnapshot(userId: number) {
+  const basis = await resolveLedgerBasis(userId);
+  if (basis.source === "withheld_live_shared") {
+    return {
+      accountMode: await reportedAccountMode(userId),
+      ...ledgerLabel(basis),
+      session: null,
+      closedCount: null, openCount: null, totalPnl: null, wins: null, losses: null, winRate: null,
+      isEmpty: true,
+      note: "No per-user closed-trade ledger for a shared-master live account. Call getMyAccountShell for balance / today's P&L and getMyLiveOpenTrades for open trades.",
+    };
+  }
+  if (basis.source === "live_trades") {
+    const [ledger, open] = await Promise.all([
+      resolveClosedTradeLedger(userId),
+      readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED" }),
+    ]);
+    const closed = ledger.rows;
+    const wins = closed.filter((r) => (r.pnl ?? 0) > 0).length;
+    const losses = closed.filter((r) => (r.pnl ?? 0) < 0).length;
+    const totalPnl = Number(closed.reduce((a, r) => a + (r.pnl ?? 0), 0).toFixed(4));
+    return {
+      accountMode: await reportedAccountMode(userId),
+      ...ledgerLabel(ledger),
+      session: null,
+      closedCount: closed.length, openCount: open.length,
+      totalPnl, wins, losses,
+      winRate: closed.length > 0 ? Math.round((wins / closed.length) * 1000) / 10 : null,
+      pnlNotRecorded: closed.filter((r) => r.pnl == null).length,
+      isEmpty: closed.length === 0 && open.length === 0,
+      note: "Live book. For balance / equity call getMyAccountShell; for open-trade P&L call getMyLiveOpenTrades.",
+    };
+  }
   const sessions = await db.select().from(paperSessionsTable)
     .where(eq(paperSessionsTable.userId, userId))
     .orderBy(desc(paperSessionsTable.createdAt))
@@ -349,6 +397,7 @@ export async function getAccountSnapshot(userId: number) {
   const winRate = t.closedCount > 0 ? Math.round((t.wins / t.closedCount) * 1000) / 10 : null;
   return {
     accountMode: await reportedAccountMode(userId),
+    ...ledgerLabel(basis),
     session: session ? {
       id: session.id, name: (session as Record<string, unknown>).name ?? null,
       startingBalance: (session as Record<string, unknown>).startingBalance ?? null,
@@ -363,6 +412,24 @@ export async function getAccountSnapshot(userId: number) {
 }
 
 // ── 6. getOpenPositions ─────────────────────────────────────────────────
+// The getOpenPositions TOOL is mode-aware: live / shared-live users get their
+// routing-aware live open trades (the same reader as getMyLiveOpenTrades);
+// paper users get open paper_trades. `getOpenPositions` (below) stays the
+// paper-only reader other server code composes with its own MT5 reads.
+export async function getMyOpenPositionsForTool(userId: number) {
+  const basis = await resolveLedgerBasis(userId);
+  if (basis.source !== "paper_trades") {
+    const live = await getMyLiveOpenTrades(userId);
+    return {
+      ...ledgerLabel(basis),
+      sourceNote: "Your open live trades (same as getMyLiveOpenTrades).",
+      ...live,
+    };
+  }
+  return { ...ledgerLabel(basis), ...(await getOpenPositions(userId)) };
+}
+
+// Paper-only open positions (paper_trades).
 export async function getOpenPositions(userId: number) {
   const rows = await db.select().from(paperTradesTable)
     .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "open")))
@@ -382,11 +449,8 @@ export async function getOpenPositions(userId: number) {
 // ── 7. getTradeJournalSummary ───────────────────────────────────────────
 export async function getTradeJournalSummary(userId: number, lookbackDays = 30) {
   const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
-  const rows = await db.select().from(paperTradesTable)
-    .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "closed")))
-    .orderBy(desc(paperTradesTable.closedAt))
-    .limit(200);
-  const recent = rows.filter((r) => r.closedAt && new Date(r.closedAt) >= since);
+  const ledger = await resolveClosedTradeLedger(userId, { fromIso: since.toISOString() });
+  const recent = ledger.rows.filter((r) => r.closedAt && new Date(r.closedAt) >= since);
   const bySymbol = new Map<string, { count: number; pnl: number }>();
   for (const t of recent) {
     const key = t.symbol ?? "unknown";
@@ -395,6 +459,7 @@ export async function getTradeJournalSummary(userId: number, lookbackDays = 30) 
     bySymbol.set(key, cur);
   }
   return {
+    ...ledgerLabel(ledger),
     lookbackDays,
     totalClosed: recent.length,
     perSymbol: Array.from(bySymbol, ([symbol, v]) => ({ symbol, ...v })).sort((a, b) => b.count - a.count).slice(0, 10),
@@ -405,30 +470,65 @@ export async function getTradeJournalSummary(userId: number, lookbackDays = 30) 
 // ── 8. getDailyPnLCalendar ──────────────────────────────────────────────
 export async function getDailyPnLCalendar(userId: number, days = 30) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const rows = await db.select().from(paperTradesTable)
-    .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "closed")));
-  const map = new Map<string, { date: string; tradesCount: number; totalPnl: number; wins: number; losses: number }>();
-  for (const t of rows) {
+  const ledger = await resolveClosedTradeLedger(userId, { fromIso: since.toISOString() });
+  const map = new Map<string, { date: string; tradesCount: number; totalPnl: number; wins: number; losses: number; pnlNotRecorded: number }>();
+  for (const t of ledger.rows) {
     if (!t.closedAt) continue;
     const d = new Date(t.closedAt);
     if (d < since) continue;
     const k = dayKey(d);
-    const cur = map.get(k) ?? { date: k, tradesCount: 0, totalPnl: 0, wins: 0, losses: 0 };
+    const cur = map.get(k) ?? { date: k, tradesCount: 0, totalPnl: 0, wins: 0, losses: 0, pnlNotRecorded: 0 };
     cur.tradesCount += 1;
+    if (t.pnl == null) cur.pnlNotRecorded += 1;
     const pnl = Number(t.pnl ?? 0);
-    cur.totalPnl += pnl;
+    cur.totalPnl = Number((cur.totalPnl + pnl).toFixed(4));
     if (pnl > 0) cur.wins += 1; else if (pnl < 0) cur.losses += 1;
     map.set(k, cur);
   }
   const days_ = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  return { days: days_, isEmpty: days_.length === 0,};
+  return { ...ledgerLabel(ledger), days: days_, isEmpty: days_.length === 0 };
 }
 
 // ── 9. getRiskLimits ────────────────────────────────────────────────────
+// `limits` is the trader's own saved row (user_risk_settings). `effectiveLimits`
+// is what the Risk Governor actually applies on every order: the trader's row,
+// the operator's user_risk_limits and the platform ceilings, strictest wins
+// (loadEffectiveLimits — the governor's own reader), with `sources` naming
+// which stored value won each limit.
 export async function getRiskLimits(userId: number) {
-  const r = await readTraderRiskSettings(userId);
+  const [r, effective] = await Promise.all([
+    readTraderRiskSettings(userId),
+    loadEffectiveLimits(userId).catch(() => null),
+  ]);
+  const effectiveLimits = effective ? {
+    maxLotSize: effective.maxLotSize,
+    maxRiskPerTradePercent: effective.maxRiskPerTradePercent,
+    maxRiskPerTradeAmount: effective.maxRiskPerTradeAmount,
+    maxDailyLossPercent: effective.maxDailyLossPercent,
+    maxDailyLossAmount: effective.maxDailyLossAmount,
+    requireStopLoss: effective.requireStopLoss,
+    maxPortfolioRiskPercent: effective.maxPortfolioRiskPercent,
+    maxLeverage: effective.maxLeverage,
+    maxPositionsPerSymbol: effective.maxPositionsPerSymbol,
+    maxDrawdownPercent: effective.maxDrawdownPercent,
+    allowedSymbols: effective.allowedSymbols,
+    allowedDirection: effective.allowedDirection,
+    liveAllowed: effective.liveAllowed,
+    symbolLimits: effective.symbolLimits,
+  } : null;
+  const effectiveFields = {
+    effectiveLimits,
+    effectiveLimitSources: effective?.sources ?? null,
+    effectiveLimitsNote: effective
+      ? "effectiveLimits are the limits the Risk Governor applies on every order: your own settings, your operator's limits and the platform ceilings — the strictest wins. effectiveLimitSources names which one set each limit."
+      : "The limits in force could not be read right now — do not say which limits apply.",
+  };
   if (!r) {
-    return { hasRiskSettings: false, defaults: true, note: "No personal risk settings yet — defaults apply.",};
+    return {
+      hasRiskSettings: false, defaults: true,
+      note: "No personal risk settings saved — the operator limits and platform ceilings in effectiveLimits still apply.",
+      ...effectiveFields,
+    };
   }
   return {
     hasRiskSettings: true,
@@ -444,6 +544,7 @@ export async function getRiskLimits(userId: number) {
       requirePlaybook: r.requirePlaybook,
       requireJournalReason: r.requireJournalReason,
     },
+    ...effectiveFields,
   };
 }
 
@@ -468,25 +569,40 @@ export async function getRiskLimits(userId: number) {
 export async function getMyPerformanceSummary(userId: number, lookbackDays = 30) {
   const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
   const todayKey = dayKey(new Date());
-  const [closedRows, openRows, journalRows] = await Promise.all([
-    db.select().from(paperTradesTable)
-      .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "closed")))
-      .orderBy(desc(paperTradesTable.closedAt)).limit(500),
-    db.select().from(paperTradesTable)
-      .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "open"))),
+  // Same book as the Performance Calendar (live_trades for LIVE mode,
+  // paper_trades otherwise, withheld for LIVE_SHARED).
+  const ledger = await resolveClosedTradeLedger(userId, { fromIso: since.toISOString() });
+  const label = ledgerLabel(ledger);
+  if (ledger.source === "withheld_live_shared") {
+    return {
+      isEmpty: true,
+      ...label,
+      emptyMessage: ledger.sourceNote,
+      lookbackDays, openTrades: null,
+    };
+  }
+  const [openCount, journalRows] = await Promise.all([
+    ledger.source === "live_trades"
+      ? readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED" }).then((r) => r.length)
+      : db.select({ id: paperTradesTable.id }).from(paperTradesTable)
+        .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "open")))
+        .then((r) => r.length),
     db.select().from(tradeJournalTable)
       .where(eq(tradeJournalTable.userId, userId))
       .orderBy(desc(tradeJournalTable.createdAt)).limit(200),
   ]);
 
-  const recent = closedRows.filter((r) => r.closedAt && new Date(r.closedAt) >= since);
+  const recent = ledger.rows.filter((r) => r.closedAt && new Date(r.closedAt) >= since);
   const totalClosed = recent.length;
 
   if (totalClosed === 0 && journalRows.length === 0) {
     return {
       isEmpty: true,
-      emptyMessage: "Not enough trade history yet. Place a paper trade and journal it to start building your performance picture.",
-      lookbackDays, openTrades: openRows.length,
+      ...label,
+      emptyMessage: ledger.source === "live_trades"
+        ? "No closed live trades in this window yet, and nothing journaled."
+        : "Not enough trade history yet. Log a demo trade on My Demo Trades and journal it to start building your performance picture.",
+      lookbackDays, openTrades: openCount,
     };
   }
 
@@ -569,7 +685,7 @@ export async function getMyPerformanceSummary(userId: number, lookbackDays = 30)
     isEmpty: false,
     lookbackDays,
     headline: {
-      totalClosed, openTrades: openRows.length,
+      totalClosed, openTrades: openCount,
       wins: wins.length, losses: losses.length, breakeven,
       winRate, // null when no closed trades
       realizedPnl,
@@ -591,7 +707,8 @@ export async function getMyPerformanceSummary(userId: number, lookbackDays = 30)
     overtradingNote,
     reviewSuggestion,
     unrealizedPnlNote: "Unrealized P&L on open trades is not included — requires fresh live price per symbol. Call getMyLiveOpenTrades + getTradeIntelligence per trade for that.",
-    dataSource: "user_paper_trades_and_journal_only",
+    ...label,
+    dataSource: ledger.source === "live_trades" ? "user_live_trades_and_journal" : "user_paper_trades_and_journal_only",
     perUserScoped: true,
   };
 }
@@ -818,37 +935,97 @@ export async function getReconciliationStatus(userId: number) {
 }
 
 // ── 10. runPreTradeRiskCheck (advisory only) ────────────────────────────
+// AICS-3: runs the REAL pre-trade Risk Governor (enforcePreTradeRisk) in
+// preview mode — the same rules, limits (trader + operator + platform
+// ceilings) and facts (account, open positions, daily P/L, halts) an order on
+// this account's venue is checked against, with no audit row and no equity-peak
+// write. It never returns wouldPass:true unless the governor evaluated the
+// trade; if it cannot run, wouldPass is null and limitsEvaluated is false.
+// Live dispatch gates (approval, kill switch, bridge) are separate checks.
+export type PreTradeVenueMode = "SIMULATED" | "DEMO" | "LIVE";
+export function preTradeVenueFor(tradingMode: string | null | undefined): { mode: PreTradeVenueMode; venue: "PAPER" | "DEMO" | "LIVE" } {
+  if (tradingMode === "LIVE") return { mode: "LIVE", venue: "LIVE" };
+  if (tradingMode === "DEMO") return { mode: "DEMO", venue: "DEMO" };
+  return { mode: "SIMULATED", venue: "PAPER" };
+}
+
 export async function runPreTradeRiskCheck(userId: number, args: {
   symbol: string; side: "buy" | "sell"; size: number; stopLoss?: number; takeProfit?: number; entry?: number;
-}) {
-  const limitsRes = await getRiskLimits(userId);
-  const limits = (limitsRes as { limits?: Record<string, unknown> }).limits ?? null;
-  const reasons: string[] = [];
-  const warnings: string[] = [];
-  if (!args.stopLoss && limits && limits.requireStopLoss) reasons.push("STOP_LOSS_REQUIRED");
-  if (!args.symbol) reasons.push("SYMBOL_REQUIRED");
-  if (!Number.isFinite(args.size) || args.size <= 0) reasons.push("SIZE_INVALID");
-  if (limits && args.entry && args.stopLoss && args.takeProfit) {
-    const risk = Math.abs(args.entry - args.stopLoss);
-    const reward = Math.abs(args.takeProfit - args.entry);
-    const rr = risk > 0 ? reward / risk : 0;
-    const minRr = Number(limits.minRewardRiskRatio ?? 1.5);
-    if (rr < minRr) warnings.push(`R:R ${rr.toFixed(2)} below minimum ${minRr}`);
-  }
-  // Open-trade count check
-  const openRes = await getOpenPositions(userId);
-  if (limits && Number(openRes.count) >= Number(limits.maxOpenTrades ?? 3)) {
-    reasons.push("MAX_OPEN_TRADES_REACHED");
-  }
-  const env = await deriveAssistantEnvelope(userId);
+}, envIn?: SafetyEnvelope) {
+  const env = envIn ?? await deriveAssistantEnvelope(userId);
   const assistantName = await getAssistantDisplayName(userId);
-  return {
-    advisoryOnly: true,
-    wouldPass: reasons.length === 0,
-    blockingReasons: reasons,
-    warnings,
-    note: `This is an advisory pre-trade check. ${liveExecutionAvailabilityNote(env, assistantName)}`,
-  };
+  const execNote = liveExecutionAvailabilityNote(env, assistantName);
+  const symbol = String(args.symbol ?? "").trim().toUpperCase();
+  const side = String(args.side ?? "").toLowerCase() === "sell" ? "SELL" as const
+    : String(args.side ?? "").toLowerCase() === "buy" ? "BUY" as const : null;
+  const lots = Number(args.size);
+
+  const inputReasons: string[] = [];
+  if (!symbol) inputReasons.push("SYMBOL_REQUIRED");
+  if (!side) inputReasons.push("SIDE_REQUIRED");
+  if (!Number.isFinite(lots) || lots <= 0) inputReasons.push("SIZE_INVALID");
+  if (inputReasons.length > 0) {
+    return {
+      advisoryOnly: true, limitsEvaluated: false,
+      wouldPass: false, blockingReasons: inputReasons, warnings: [],
+      note: `The trade details are incomplete, so the Risk Governor was not run. ${execNote}`,
+    };
+  }
+
+  const warnings: string[] = [];
+  let venue: "PAPER" | "DEMO" | "LIVE" = "PAPER";
+  try {
+    const { getEnvelope } = await import("../adminTrading/safetyEnvelope.js");
+    const userEnv = await getEnvelope(userId);
+    const v = preTradeVenueFor(userEnv.tradingMode);
+    venue = v.venue;
+    let connectionId: number | null = null;
+    let virtualAccountId: number | null = null;
+    if (v.mode !== "SIMULATED") {
+      const { resolveRouting } = await import("../adminTrading/routingResolver.js");
+      const routing = await resolveRouting({ userId, mode: v.mode });
+      connectionId = routing.connectionId;
+      virtualAccountId = routing.virtualAccountId;
+      if (!routing.ok && routing.blockReason) warnings.push(`ROUTING:${routing.blockReason}`);
+    }
+    const { enforcePreTradeRisk } = await import("../riskGovernor/enforce.js");
+    const risk = await enforcePreTradeRisk({
+      userId, venue, origin: "ruby", action: "OPEN", symbol, side, lots,
+      entryPrice: null,
+      stopLoss: args.stopLoss ?? null, takeProfit: args.takeProfit ?? null,
+    }, { preview: true, connectionId, virtualAccountId });
+    // Measured R:R for the reply (advisory; the governor's discipline rules
+    // above decide whether it blocks).
+    if (args.entry && args.stopLoss && args.takeProfit) {
+      const riskDist = Math.abs(args.entry - args.stopLoss);
+      const reward = Math.abs(args.takeProfit - args.entry);
+      if (riskDist > 0) warnings.push(`R:R ${(reward / riskDist).toFixed(2)} (entry ${args.entry}, SL ${args.stopLoss}, TP ${args.takeProfit})`);
+    }
+    return {
+      advisoryOnly: true,
+      limitsEvaluated: true,
+      evaluatedBy: "pre_trade_risk_governor_preview",
+      venue,
+      wouldPass: risk.allowed,
+      blockingReasons: risk.blockedBy,
+      primaryReason: risk.primaryReason,
+      blockedRules: risk.rules.filter((r) => r.outcome === "BLOCK").map((r) => ({ rule: r.rule, reason: r.reason })),
+      rulesChecked: risk.rules.length,
+      warnings,
+      note: `Checked with the Risk Governor's own rules for your ${venue.toLowerCase()} venue (your limits, operator limits and platform ceilings), without placing or recording anything. Market price, spread and live dispatch gates are re-checked when an order is actually sent, so this is a preview, not a guarantee. ${execNote}`,
+    };
+  } catch (e) {
+    return {
+      advisoryOnly: true,
+      limitsEvaluated: false,
+      venue,
+      wouldPass: null,
+      blockingReasons: [],
+      warnings,
+      error: errReason(e),
+      note: `The Risk Governor could not be run for this preview, so no limits were evaluated — do not say the trade would pass. ${execNote}`,
+    };
+  }
 }
 
 // ── 11–13. Market tools (provider adapter, "not connected" by default) ──
@@ -1670,20 +1847,24 @@ export const TOOL_DEFINITIONS = [
   { name: "getAppFeatureMap", description: "Returns the full ARX AI feature map (pages, routes, what each does). Use for 'what is X' or 'where do I find Y'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMT5BridgeStatus", description: "Returns the user's MT5 bridge connections and per-user connection status. Use for any MT5/EA/bridge question.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMT5Heartbeat", description: "Returns the user's MT5 connection heartbeat health (healthy/stale/unhealthy/unknown).", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getAccountSnapshot", description: "Returns the user's paper account snapshot: open/closed counts, total P&L, win rate, current session.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getOpenPositions", description: "Returns the user's currently open paper positions.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getTradeJournalSummary", description: "Summarizes the user's recent closed paper trades grouped by symbol.", parameters: { type: "object", properties: { lookbackDays: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
-  { name: "getDailyPnLCalendar", description: "Returns the user's daily P&L for the last N days.", parameters: { type: "object", properties: { days: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
-  { name: "getMyPerformanceSummary", description: "Phase 25 — Per-user trade journal + performance summary. ONE call answers: 'how am I performing', 'what trades did I take today', 'biggest mistake', 'best/worst strategy', 'which trade hurt me most', 'am I overtrading', 'what should I review', 'lessons from closed trades'. Per-user-scoped on paper_trades + trade_journal. Returns isEmpty:true with an honest emptyMessage when there is no data — NEVER fabricates win rate, P&L, strategy ranking, mistakes, or lessons. Win rate is computed ONLY from closed trades. Unrealized P&L on open trades is intentionally excluded (requires fresh price data — call getMyLiveOpenTrades + getTradeIntelligence per trade for that). Profit factor is null when there is not at least one win and one loss. Overtrading hint is null when there is not enough trading-day history to judge.", parameters: { type: "object", properties: { lookbackDays: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
-  { name: "getRiskLimits", description: "Returns the user's risk governor limits.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getAccountSnapshot", description: "Returns the user's account snapshot: open/closed counts, total P&L, win rate (and the demo session for a demo account). Reads the SAME book as the Performance Calendar: closed live trades when the account is in LIVE mode, otherwise the demo trades the user logs on My Demo Trades (source paper_trades — call them demo trades, never paper trading), and nothing (withheld) for a shared-master live account. ALWAYS read `source` (live_trades | paper_trades | withheld_live_shared) and say which book the numbers come from; when withheld, repeat sourceNote and use getMyAccountShell / getMyLiveOpenTrades instead.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getOpenPositions", description: "Returns the user's currently open positions: open live trades (same as getMyLiveOpenTrades) for a live account, otherwise the open demo trades logged on My Demo Trades. Read `source` and say which book.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getTradeJournalSummary", description: "Summarizes the user's recent closed trades grouped by symbol. Reads the SAME book as the Performance Calendar: closed live trades when the account is in LIVE mode, otherwise the demo trades the user logs on My Demo Trades (source paper_trades — call them demo trades, never paper trading), and nothing (withheld) for a shared-master live account. ALWAYS read `source` (live_trades | paper_trades | withheld_live_shared) and say which book the numbers come from; when withheld, repeat sourceNote and use getMyAccountShell / getMyLiveOpenTrades instead.", parameters: { type: "object", properties: { lookbackDays: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
+  { name: "getDailyPnLCalendar", description: "Returns the user's daily P&L for the last N days. Reads the SAME book as the Performance Calendar: closed live trades when the account is in LIVE mode, otherwise the demo trades the user logs on My Demo Trades (source paper_trades — call them demo trades, never paper trading), and nothing (withheld) for a shared-master live account. ALWAYS read `source` (live_trades | paper_trades | withheld_live_shared) and say which book the numbers come from; when withheld, repeat sourceNote and use getMyAccountShell / getMyLiveOpenTrades instead.", parameters: { type: "object", properties: { days: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
+  { name: "getMyPerformanceSummary", description: "Phase 25 — Per-user trade journal + performance summary. ONE call answers: 'how am I performing', 'what trades did I take today', 'biggest mistake', 'best/worst strategy', 'which trade hurt me most', 'am I overtrading', 'what should I review', 'lessons from closed trades'. Per-user-scoped on the closed-trade book + trade_journal. Reads the SAME book as the Performance Calendar: closed live trades when the account is in LIVE mode, otherwise the demo trades the user logs on My Demo Trades (source paper_trades — call them demo trades, never paper trading), and nothing (withheld) for a shared-master live account. ALWAYS read `source` (live_trades | paper_trades | withheld_live_shared) and say which book the numbers come from; when withheld, repeat sourceNote and use getMyAccountShell / getMyLiveOpenTrades instead. Returns isEmpty:true with an honest emptyMessage when there is no data — NEVER fabricates win rate, P&L, strategy ranking, mistakes, or lessons. Win rate is computed ONLY from closed trades. Unrealized P&L on open trades is intentionally excluded (requires fresh price data — call getMyLiveOpenTrades + getTradeIntelligence per trade for that). Profit factor is null when there is not at least one win and one loss. Overtrading hint is null when there is not enough trading-day history to judge.", parameters: { type: "object", properties: { lookbackDays: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
+  { name: "getRiskLimits", description: "Returns the user's own saved risk settings (limits, hasRiskSettings) AND effectiveLimits — what the Risk Governor actually applies (own settings + operator limits + platform ceilings, strictest wins) with effectiveLimitSources. Answer 'what are my limits' from effectiveLimits.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getOpenExposure", description: "Phase 26 — Portfolio awareness. Returns the user's total open exposure broken down by symbol and side (long lots / short lots / net lots / positions count). Paper-trade lot totals only. Per-user-scoped — never returns another user's positions. Use for 'am I overexposed', 'what symbols do I have open', 'how much am I trading right now', 'what's my net exposure on EURUSD'. To convert lots → USD notional honestly, call getMarketSnapshot per symbol; never fabricate a notional number.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRiskUtilization", description: "Phase 26 — Portfolio awareness. Reports how much of the user's configured risk envelope is currently used: open trades vs maxOpenTrades, today's realized loss, and which limits are at/over threshold. Returns hasRiskSettings:false when the user has none — never invents defaults. Per-user-scoped. Use for 'how much risk am I taking', 'am I close to my daily loss limit', 'should I reduce risk', 'how many open trades can I still take', 'am I at my limit'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. NEVER imply broker execution is enabled (placementLayer is always BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED today). Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "runPreTradeRiskCheck", description: "Advisory: would this trade pass the risk governor? Returns blocking reasons + warnings. Does NOT execute anything.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },
-  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status. ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
-  { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getRecentMarketNews", description: "Returns recent market headlines from the configured market provider, or empty + connected:false if no provider is wired. SYMBOL-SCOPED FINANCIAL NEWS ONLY. For geopolitical / real-world / current-events context, call getCurrentEvents instead.", parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } }, required: ["query"], additionalProperties: false } },
-  { name: "getCurrentEvents", description: "Phase 24 — SEPARATE current-events / real-world / geopolitical news channel. Distinct from getRecentMarketNews (which is symbol-scoped financial news). Use for: 'what's happening in the world', 'any geopolitical risk', 'wars / conflicts / supply shocks', 'major news today', 'current events affecting markets'. Returns connected:false today (no adapter wired). If connected:false, you MUST say 'current events are unavailable' — do NOT substitute symbol-scoped market news. Treat events as CONTEXT/RISK MODIFIER only, never as a trading signal.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
+  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED — a connection label only, NOT the account's live permission; repeat bridge.modeNote rather than calling the account read-only), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. For whether live orders can be placed, read placementLayer (LIVE_DISPATCH_GATED = live orders are possible for this account but every one still needs the user's confirmation and every live gate; LIVE_LOCKED_FOR_ACCOUNT = live orders are not available) and repeat placementLayerNote — never claim live execution is on or off beyond what it says. Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "runPreTradeRiskCheck", description: "Advisory preview: runs the real pre-trade Risk Governor (your limits, operator limits, platform ceilings, open positions, daily P/L, halts) for this trade on your current venue, without placing or recording anything. Returns wouldPass, blockingReasons, blockedRules[].reason and primaryReason. If limitsEvaluated is false (wouldPass null), the governor could not run — say the limits were NOT checked, never that it would pass. Live dispatch gates and the price at send time are re-checked when an order is sent, so present it as a preview, not a guarantee.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },
+  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status; when present, state quote.observedAt / quote.observationNote, and if quote.stale is true call its price last-known (never current). ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired. ALWAYS read calendarChecked and repeat note: when calendarChecked is false the calendar was NOT checked and upcoming events are unknown — never say there are no events.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getRecentMarketNews", description: "Returns recent market headlines from the configured market provider, or empty + connected:false if no provider is wired. SYMBOL-SCOPED FINANCIAL NEWS ONLY. There is no geopolitical / real-world / current-events feed in this build — never present these headlines as world news.", parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } }, required: ["query"], additionalProperties: false } },
+  // getCurrentEvents is intentionally NOT advertised (AICS-9): no provider
+  // implements a current-events / geopolitical feed, so the tool could only
+  // ever answer "unavailable". The prompt tells the assistant to say so directly. The
+  // dispatcher case stays so an old cached call still gets the honest
+  // connected:false answer instead of unknown_tool.
   { name: "explainFeature", description: "Look up an ARX AI feature or route and return its summary.", parameters: { type: "object", properties: { routeOrFeatureName: { type: "string" } }, required: ["routeOrFeatureName"], additionalProperties: false } },
   { name: "getCurrentPageContext", description: "Returns the page the user is currently looking at (pathname + matched feature). Use for 'what page am I on' or 'explain this page'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getPaperSafetyStatus", description: "Returns the paper-only / liveLocked / readOnlyMode safety status with the reason. Use when the user asks why the app is paper-only, whether you can place a live trade, or what live execution requires.", parameters: { type: "object", properties: {}, additionalProperties: false } },
@@ -2260,7 +2441,7 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
     case "getMT5BridgeStatus": return getMT5BridgeStatus(userId);
     case "getMT5Heartbeat": return getMT5Heartbeat(userId);
     case "getAccountSnapshot": return getAccountSnapshot(userId);
-    case "getOpenPositions": return getOpenPositions(userId);
+    case "getOpenPositions": return getMyOpenPositionsForTool(userId);
     case "getTradeJournalSummary": return getTradeJournalSummary(userId, Number(args.lookbackDays ?? 30));
     case "getDailyPnLCalendar": return getDailyPnLCalendar(userId, Number(args.days ?? 30));
     case "getMyPerformanceSummary": return getMyPerformanceSummary(userId, Number(args.lookbackDays ?? 30));
@@ -2268,7 +2449,7 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
     case "getOpenExposure": return getOpenExposure(userId);
     case "getRiskUtilization": return getRiskUtilization(userId);
     case "getReconciliationStatus": return getReconciliationStatus(userId);
-    case "runPreTradeRiskCheck": return runPreTradeRiskCheck(userId, args as Parameters<typeof runPreTradeRiskCheck>[1]);
+    case "runPreTradeRiskCheck": return runPreTradeRiskCheck(userId, args as Parameters<typeof runPreTradeRiskCheck>[1], env);
     case "getMarketSnapshot": return getMarketSnapshot(String(args.symbol ?? ""));
     case "getEconomicCalendar": return getEconomicCalendar();
     case "getRecentMarketNews": return getRecentMarketNews(String(args.query ?? ""), Number(args.limit ?? 5));
@@ -3564,7 +3745,7 @@ import {
 import { validateOrderTicket as ttValidate } from "../tradeAction/orderTicketValidation.js";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { isNotNull } from "drizzle-orm";
-import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
+import { readTraderRiskSettings, loadEffectiveLimits } from "../riskGovernor/limitSettings.js";
 
 const ORDER_TYPE_INFO: Record<string, { whatItIs: string; whenToUse: string; requiredFields: string[]; placementRule: string; typicalUseCase: string; slTpRule: string }> = {
   BUY_MARKET: {

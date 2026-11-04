@@ -42,6 +42,19 @@ interface MintResponse {
   safety?: { liveLocked?: boolean; safetyMode?: string };
 }
 
+const REALTIME_VALID_SAFETY_MODES = new Set(["off", "simulated", "demo", "live", "paper_only"]);
+
+/** Accept the per-user envelope the server mints; refuse only when it is
+ *  missing or carries a mode the server never sends. */
+export function isRealtimeSafetyEnvelopeAcceptable(
+  safety: { liveLocked?: unknown; safetyMode?: unknown } | null | undefined,
+): boolean {
+  if (!safety || typeof safety !== "object") return false;
+  if (typeof safety.safetyMode !== "string") return false;
+  if (typeof safety.liveLocked !== "boolean") return false;
+  return REALTIME_VALID_SAFETY_MODES.has(safety.safetyMode);
+}
+
 export interface UseRealtimeVoiceOptions {
   onUserTranscript?: (text: string, isFinal: boolean) => void;
   onAssistantTranscript?: (text: string, isFinal: boolean) => void;
@@ -212,13 +225,11 @@ export function useRealtimeVoice(opts: UseRealtimeVoiceOptions = {}): UseRealtim
       optsRef.current.onError?.("Realtime voice not available. Use the gpt-audio mic or typed chat.");
       return;
     }
-    // Fail-closed: require explicit paper-only + liveLocked envelope.
-    // Missing/unrecognized envelope ⇒ refuse to open the WebRTC session.
-    if (
-      !mint.safety ||
-      mint.safety.safetyMode !== "paper_only" ||
-      mint.safety.liveLocked !== true
-    ) {
+    // Fail-closed on a missing / malformed envelope only. The server sends the
+    // derived per-user envelope (off | simulated | demo | live | paper_only),
+    // the same contract the typed-chat SSE validator accepts. Realtime voice
+    // has no order tools (tools: []), so the execution posture is irrelevant.
+    if (!isRealtimeSafetyEnvelopeAcceptable(mint.safety)) {
       setState("failed");
       optsRef.current.onError?.("Safety envelope missing or mismatched — Realtime voice disabled.");
       return;

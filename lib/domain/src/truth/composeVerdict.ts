@@ -136,6 +136,9 @@ const BEST_ACTION_TEXT: Record<TruthBestAction, string> = {
   WATCH_ONLY: "Watch only — there is no clean setup right now.",
 };
 
+const MARKET_CLOSED_TEXT =
+  "Wait — the market is closed; these are the last session's bars.";
+
 function opposite(side: "BULLISH" | "BEARISH"): "BULLISH" | "BEARISH" {
   return side === "BULLISH" ? "BEARISH" : "BULLISH";
 }
@@ -318,14 +321,24 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     bestAction = "WATCH_ONLY";
   }
 
+  let headline = buildHeadline(bias, bestAction);
+  let bestActionText = BEST_ACTION_TEXT[bestAction];
+  // A scheduled close is not a feed fault: say so, so this verdict agrees with
+  // the chart and scanner banners that read "Market closed" for the same bars.
+  if (bestAction === "WAIT_FOR_DATA" && input.marketClosed === true) {
+    bestActionText = MARKET_CLOSED_TEXT;
+    headline = bias === "BULLISH" || bias === "BEARISH"
+      ? `The last session leaned ${bias === "BULLISH" ? "bullish" : "bearish"}; the market is closed now.`
+      : "The market is closed — this is the last session's data.";
+  }
   return {
     stage,
     bias,
-    headline: buildHeadline(bias, bestAction),
+    headline,
     evidenceFor,
     evidenceAgainst,
     bestAction,
-    bestActionText: BEST_ACTION_TEXT[bestAction],
+    bestActionText,
     invalidation,
     levels,
   };

@@ -1720,6 +1720,7 @@ export * from "./truthComponent";
 export * from "./truthComponentAlignment";
 export * from "./truthComponents";
 export * from "./truthData";
+export * from "./truthDataNotLiveReason";
 export * from "./truthDataState";
 export * from "./truthLevels";
 export * from "./truthNews";

@@ -79,9 +79,27 @@ export function feedConfidence(
   const cleanButNotLive = fs.quality === "clean" && !fs.stale && fs.isLive !== true;
   if (cleanButStale || cleanButNotLive) severity = "caution";
 
-  const statusLabel = cleanButStale ? "Stale" : cleanButNotLive ? "Not live" : QUALITY_LABEL[fs.quality] ?? "Unknown";
+  // The server names WHY a series is not live (scheduled weekend close, or bars
+  // served from storage). That specific reason and its own message win over the
+  // generic not-live / stale wording. Integrity faults (partial / invalid /
+  // empty / unavailable) keep their own label.
+  const integrityOk = fs.quality === "clean" || fs.quality === "delayed" || fs.quality === "stale";
+  const reason = integrityOk && fs.isLive !== true ? fs.notLiveReason ?? null : null;
+  const reasonLabel =
+    reason === "market_closed" ? "Market closed" : reason === "stored_history" ? "Stored history" : null;
+  const reasonMessage = reasonLabel
+    ? fs.message?.trim() ||
+      (reason === "market_closed"
+        ? "The market is closed — these are the last session's candles, not a live feed."
+        : "Stored history — no live feed is pushing these candles.")
+    : null;
+  if (reasonLabel && severity === "clean") severity = "caution";
+
+  const statusLabel =
+    reasonLabel ?? (cleanButStale ? "Stale" : cleanButNotLive ? "Not live" : QUALITY_LABEL[fs.quality] ?? "Unknown");
 
   const message =
+    reasonMessage ? reasonMessage :
     cleanButStale ? "Stored candles are stale; a current feed is not confirmed." :
     cleanButNotLive ? "These candles are not confirmed as a live feed." :
     fs.message?.trim() ||
@@ -267,4 +285,48 @@ export function relativeTime(iso: string | null | undefined): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   return `${d}d ago`;
+}
+
+// ── Feed provenance chips (Truth audit T2) ───────────────────────────────────
+//
+// The server says whose feed a series rests on (feedScope), whether two bridges
+// were pushing it at once (contention), and whether the "last tick" stamp is the
+// producer's own tick time or only when ARX received it. These helpers turn
+// those optional fields into short labels; every field is optional (older
+// servers omit them) and an absent field yields nothing.
+
+export interface FeedProvenanceInput {
+  feedScope?: string | null;
+  contention?: boolean | null;
+}
+
+export interface FeedProvenanceChip {
+  key: "platform_shared" | "contention";
+  text: string;
+  title: string;
+}
+
+export function feedProvenanceChips(fs: FeedProvenanceInput | null | undefined): FeedProvenanceChip[] {
+  if (!fs) return [];
+  const chips: FeedProvenanceChip[] = [];
+  if (fs.feedScope === "platform_shared") {
+    chips.push({
+      key: "platform_shared",
+      text: "Shared feed — not your bridge",
+      title: "These bars come from another MT5 bridge's feed on the platform, not your own broker connection.",
+    });
+  }
+  if (fs.contention === true) {
+    chips.push({
+      key: "contention",
+      text: "Two bridges pushing",
+      title: "Two connected bridges were pushing this series when it was read; bars may mix both feeds.",
+    });
+  }
+  return chips;
+}
+
+/** True when a last-tick stamp is the server's receive time, not the producer's tick time. */
+export function isServerReceiveBasis(basis: string | null | undefined): boolean {
+  return basis === "server_receive";
 }

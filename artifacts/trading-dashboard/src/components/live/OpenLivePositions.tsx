@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { structureRejection } from "@/lib/structuredRejection";
 import { executeInstantTrade } from "@/lib/instantTradeRouter";
 import { ModifySlTpButton } from "@/components/trade/ModifySlTpDialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useOneClickMode } from "@/hooks/useOneClickMode";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -29,10 +32,26 @@ type LivePos = {
   confirmation?: "BROKER_CONFIRMED" | "BROKER_CONFIRMATION_PENDING";
 };
 
+type CloseAllRow = { positionId: string | null; symbol: string; ok: boolean; reason: string | null };
+
+/** Per-position results from a close-all answer (the server reports one per row). */
+export function closeAllRowResults(detail: unknown): CloseAllRow[] {
+  const rows = (detail as { results?: unknown } | null | undefined)?.results;
+  return Array.isArray(rows) ? (rows as CloseAllRow[]) : [];
+}
+
 export function OpenLivePositions() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const q = useQuery<{ items: LivePos[]; count: number; note?: string; snapshotWarning?: string | null; notLiveReason?: string | null }>({
+  // One-click mode ON → Close / Close all act on the first click (MT5). OFF →
+  // a confirmation dialog first, mirroring the demo positions table.
+  const oneClickOn = useOneClickMode().mode.on;
+  const [confirmClose, setConfirmClose] = useState<{ kind: "one"; ticket: string; label: string } | { kind: "all"; count: number } | null>(null);
+  const q = useQuery<{
+    items: LivePos[]; count: number; note?: string; snapshotWarning?: string | null; notLiveReason?: string | null;
+    /** False when the server could not read the account's mode and filtered rows as PAPER. */
+    modeResolved?: boolean; modeScopeNote?: string | null;
+  }>({
     queryKey: ["live", "positions"],
     // P0-3 — a non-OK response MUST throw. This was previously
     // `.then((r) => r.json())` with NO r.ok check: a 500/502/401 error body has
@@ -86,8 +105,15 @@ export function OpenLivePositions() {
       oneClick: true,
     }),
     onSuccess: (j) => {
+      const rows = closeAllRowResults(j.detail);
+      const failed = rows.filter((r) => !r.ok);
       if (j.ok) {
-        toast({ title: "Closing all positions", description: "Reduce-only commands sent." });
+        toast({ title: "Closing all positions", description: rows.length ? `Reduce-only close sent for ${rows.length} position(s).` : "Reduce-only commands sent." });
+      } else if (rows.length > 0) {
+        // Per-row answer: say which closed and which did not, never "all done".
+        const sent = rows.length - failed.length;
+        const list = failed.slice(0, 4).map((r) => `#${r.positionId ?? "?"} ${r.symbol}: ${structureRejection({ primaryReason: r.reason }).title}`).join("; ");
+        toast({ variant: "destructive", title: `Close all: ${sent} of ${rows.length} sent`, description: `Not closed — ${list}${failed.length > 4 ? ` and ${failed.length - 4} more` : ""}.` });
       } else {
         const s = structureRejection({ primaryReason: j.primaryReason ?? j.error, reason: (j as { reason?: string }).reason ?? null });
         toast({ variant: "destructive", title: s.title, description: `${s.userMessage} ${s.suggestedFix}`.trim() });
@@ -126,7 +152,7 @@ export function OpenLivePositions() {
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => closeAll.mutate()}
+            onClick={() => (oneClickOn ? closeAll.mutate() : setConfirmClose({ kind: "all", count: open.length }))}
             disabled={closeAll.isPending}
             data-testid="btn-close-all-live"
           >
@@ -252,7 +278,11 @@ export function OpenLivePositions() {
                           variant="outline"
                           className="border-rose-500/50 hover:bg-rose-500/10 text-rose-200 h-8"
                           disabled={!ticket || closing}
-                          onClick={() => ticket && closeOne.mutate(ticket)}
+                          onClick={() => {
+                            if (!ticket) return;
+                            if (oneClickOn) closeOne.mutate(ticket);
+                            else setConfirmClose({ kind: "one", ticket, label: `${p.direction} ${p.lotSize} ${p.symbol}` });
+                          }}
                           data-testid={`btn-close-live-${p.id}`}
                         >
                           <X className="h-3.5 w-3.5 mr-1" />
@@ -267,6 +297,37 @@ export function OpenLivePositions() {
           </div>
         )}
       </CardContent>
+      <Dialog open={!!confirmClose} onOpenChange={(o) => { if (!o) setConfirmClose(null); }}>
+        <DialogContent className="max-w-sm" data-testid="live-close-confirm">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {confirmClose?.kind === "all" ? `Close all ${confirmClose.count} live positions?` : "Close this live position?"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {confirmClose?.kind === "one"
+                ? <>Ticket <span className="font-mono">#{confirmClose.ticket}</span> — {confirmClose.label}. </>
+                : null}
+              Real money: the close is sent to your broker at the market price. Turn on one-click mode to close on the first click.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmClose(null)} data-testid="live-close-confirm-cancel">Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const c = confirmClose;
+                setConfirmClose(null);
+                if (!c) return;
+                if (c.kind === "all") closeAll.mutate();
+                else closeOne.mutate(c.ticket);
+              }}
+              data-testid="live-close-confirm-ok"
+            >
+              {confirmClose?.kind === "all" ? "Close all" : "Close position"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

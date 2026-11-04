@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,19 @@ import { PageTabs } from "@/components/ui/PageTabs";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { fetchRiskBudget, type RiskBudgetSnapshot } from "@/lib/risk-budget";
+
+// Prop-firm status wording: an unmeasured status is said to be unmeasured, a
+// reached target with unchecked rules is not a confirmed pass.
+type PropFirmCardLike = { status: string; profitTargetProgress?: number | null; measured?: boolean; equityMeasured?: boolean };
+const propFirmStatusText = (pf: PropFirmCardLike) => {
+  if (pf.status === "FAILED" || pf.status === "OFF") return pf.status;
+  if (pf.equityMeasured === false) return "NOT MEASURED (no paper equity measured)";
+  if (pf.status === "NOT_MEASURED" || pf.measured === false) return "NOT MEASURED";
+  return pf.status === "TARGET_REACHED" ? "TARGET REACHED (not a confirmed pass)" : pf.status;
+};
+const propFirmProgressText = (pf: PropFirmCardLike) =>
+  (pf.equityMeasured === false ? "Not measured (no paper equity measured)"
+    : pf.profitTargetProgress == null || pf.measured === false ? "Not measured" : `${pf.profitTargetProgress}%`);
 
 type Settings = { maxRiskPerTradeAmount: number | null; maxDailyLossAmount: number | null; maxPositionSize: number | null; minRewardRiskRatio: number; maxTradesPerDay: number; maxOpenTrades: number };
 type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null; discipline: { maxTradesPerDay: number | null; maxOpenTrades: number | null } };
@@ -170,12 +184,12 @@ export default function RiskCommandCenter() {
       >
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress}%</span></div>
-            <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
+            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{propFirmStatusText(cards.propFirm)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{propFirmProgressText(cards.propFirm)}</span></div>
+            <Link className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</Link>
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">No active prop-firm challenge. Open <a href="/prop-firm-mode" className="underline">prop-firm mode</a> to enroll.</p>
+          <p className="text-xs text-muted-foreground">No active prop-firm challenge. Open <Link href="/prop-firm-mode" className="underline">prop-firm mode</Link> to enroll.</p>
         )}
       </CollapsibleSection>
     </div>
@@ -204,10 +218,10 @@ export default function RiskCommandCenter() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Audit links</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-          <a className="underline text-primary" href="/risk-events">Risk events log →</a>
-          <a className="underline text-primary" href="/risk-profile">Edit profile JSON →</a>
-          <a className="underline text-primary" href="/audit-log">Full audit log →</a>
-          <a className="underline text-primary" href="/risk-settings">Detailed risk settings →</a>
+          <Link className="underline text-primary" href="/risk-events">Risk events log →</Link>
+          <Link className="underline text-primary" href="/risk-profile">Edit profile JSON →</Link>
+          <Link className="underline text-primary" href="/audit-log">Full audit log →</Link>
+          <Link className="underline text-primary" href="/risk-settings">Detailed risk settings →</Link>
         </CardContent>
       </Card>
     </div>
