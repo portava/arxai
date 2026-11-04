@@ -31,6 +31,22 @@ export async function currentPriceOf(symbol: string): Promise<number | null> {
   } catch { return null; }
 }
 
+// The price a watch may ACT on (sweep 2026-11-04): only a fresh observed tick
+// from the watch owner's OWN bridge. The quote is pinned to that writer (no
+// platform-wide MT5 fallback, no third-party provider) and its provenance must
+// name the same bridge. No own bridge, or no own-bridge tick → null: the
+// evaluator does nothing this cycle rather than close on someone else's price.
+export async function ownBridgePriceOf(symbol: string, bridgeConnectionId: number | null): Promise<number | null> {
+  if (bridgeConnectionId == null) return null;
+  try {
+    const q = await routeQuote(symbol, { mt5Writer: { bridgeConnectionId } });
+    if (!q.ok || q.provenance?.providerId !== "mt5_broker" || q.provenance.bridgeConnectionId !== bridgeConnectionId) return null;
+    return boundQuotePrice(q).price;
+  } catch { return null; }
+}
+
+export { rubyWatchPermissionBlock, type RubyWatchPermissionBlock } from "./rubyWatchPermissions.js";
+
 // Build a dedupe fingerprint for a Ruby command. Two semantically-identical
 // commands (same kind/symbol/side/size/level) produce the same fingerprint, so
 // the partial-unique in-flight index refuses an accidental repeat while the
