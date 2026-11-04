@@ -381,6 +381,8 @@ export interface Mt5QuoteRead {
   tickTimeObserved: boolean;
   /** Broker-clock offset (ms) the ingest removed from the stamp; null = raw. */
   brokerClockOffsetMs: number | null;
+  /** Server wall-clock ms when this quote was pushed (receive time). */
+  receivedAtMs: number;
 }
 
 /**
@@ -414,6 +416,7 @@ export function readMt5Quote(
     userId: entry.userId,
     tickTimeObserved: entry.tickTimeObserved,
     brokerClockOffsetMs: entry.brokerClockOffsetMs,
+    receivedAtMs: entry.updatedAt,
   };
 }
 

@@ -7,6 +7,9 @@
 //   POST   /api/me/demo-commands/:id/cancel    -> BLOCKED (terminal)
 //   GET    /api/me/demo-commands               -> list owned commands
 //   GET    /api/me/demo-commands/:id           -> single owned command
+//   GET    /api/me/demo-pending-orders         -> owned PLACE_PENDING_ORDER rows
+//                                                 resting at the broker (PLACED_DEMO);
+//                                                 cancel = CANCEL_PENDING_ORDER command
 //
 // Dispatch to the EA is a SEPARATE per-user endpoint
 // (`POST /api/me/demo-commands/:id/dispatch`) that re-evaluates every
@@ -21,6 +24,7 @@ import {
   cancelCommand,
   cancelOrphanedSentCommands,
   getUserCommand,
+  listPlacedPendingOrders,
   listUserCommands,
 } from "../lib/mt5/demoCommandQueue.js";
 import { draftTrade, confirmTrade } from "../lib/tradeEngine/pipeline.js";
@@ -167,6 +171,31 @@ router.get("/me/demo-commands", requireUser, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const items = await listUserCommands({ userId, limit: Number.isFinite(limit) ? limit : 50 });
   res.json({ items, count: items.length, canDispatchToMt5: false });
+});
+
+router.get("/me/demo-pending-orders", requireUser, async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  const rows = await listPlacedPendingOrders(userId);
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const items = rows.map((r) => {
+    const p = (r.payload ?? {}) as Record<string, unknown>;
+    return {
+      commandId: r.commandId,
+      orderTicket: r.brokerTicket,
+      symbol: typeof p["symbol"] === "string" ? p["symbol"] : null,
+      side: typeof p["side"] === "string" ? p["side"] : null,
+      orderType: typeof p["orderType"] === "string" ? p["orderType"] : null,
+      lotSize: num(p["lotSize"]),
+      price: num(p["entry"]) ?? num(p["price"]),
+      stopLimitPrice: num(p["stopLimitPrice"]),
+      stopLoss: num(p["stopLoss"]),
+      takeProfit: num(p["takeProfit"]),
+      expirationEpoch: num(p["expirationEpoch"]),
+      placedAt: r.updatedAt,
+    };
+  });
+  res.json({ items, count: items.length });
 });
 
 router.get("/me/demo-commands/:commandId", requireUser, async (req, res) => {

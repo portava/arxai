@@ -38,6 +38,7 @@ vi.mock("@/components/charts/ChartModes", () => ({
 vi.mock("@/components/charts/SmartChartLayout", () => ({ SmartChartLayout: ({ children }: { children: unknown }) => children }));
 vi.mock("@/components/charts/TradingViewLiveChart", () => ({ default: () => null }));
 vi.mock("@/components/charts/ChartPositionOverlayPanel", () => ({ ChartPositionOverlayPanel: () => null }));
+vi.mock("@/components/live/LivePendingOrders", () => ({ LivePendingOrders: () => null }));
 vi.mock("@/components/charts/ChartAiOverlayPanel", () => ({ ChartAiOverlayPanel: () => null }));
 vi.mock("@/components/charts/ChartSetupPreviewPanel", () => ({ ChartSetupPreviewPanel: () => null }));
 vi.mock("@/components/charts/ChartTradeEntry", () => ({ ChartTradeEntry: () => null }));

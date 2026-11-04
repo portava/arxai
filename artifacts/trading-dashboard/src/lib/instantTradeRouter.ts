@@ -19,11 +19,19 @@ export type InstantTradeIntent = {
   symbol?: string;
   volume?: number;
   orderType?: string;
+  /** Pending orders (MT5): the trigger price. Buy Limit below Ask, Sell Limit above Bid, Buy Stop above Ask, Sell Stop below Bid. */
+  price?: number | null;
+  /** Stop-limit orders: the limit leg placed once the stop price is reached. */
+  stopLimitPrice?: number | null;
+  /** ISO datetime; null/absent = Good Till Cancelled. */
+  expiration?: string | null;
   stopLoss?: number | null;
   takeProfit?: number | null;
   positionId?: string;
   newStopLoss?: number | null;
   newTakeProfit?: number | null;
+  /** CLOSE only: lots to close (partial close). Absent = full close. */
+  closeVolume?: number | null;
   oneClick?: boolean;
   aiCommand?: boolean;
   rawUserCommand?: string | null;
@@ -121,8 +129,23 @@ export type RubyWatchView = {
     keepCount: number;
     awaitingAnswer: boolean;
     lastAlert: { at: string; price: number | null; reversalRiskScore: number | null; health: string; reason: string } | null;
+    /** Per-monitor: the trader let Ruby shift SL/TP on a fakeout (bounded, audited). */
+    fakeoutAuthority?: boolean;
+    /** Count of fakeout shifts Ruby has sent for this monitor. */
+    fakeoutAdjustments?: number;
+    lastFakeoutAdjustment?: { at: string; toStopLoss: number | null; toTakeProfit: number | null; reason: string; ok: boolean; blocked: string | null } | null;
   } | null;
 };
+
+/** Grant or withdraw Ruby's authority to shift this monitor's SL/TP on a fakeout. Server audits both ways. */
+export async function setRubyWatchFakeoutAuthority(watchId: number, enabled: boolean): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const r = await fetch(`/api/me/assistant/watches/${encodeURIComponent(String(watchId))}/fakeout-authority`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+    body: JSON.stringify({ enabled }),
+  });
+  try { return (await r.json()) as { ok: boolean; message?: string; error?: string }; }
+  catch { return { ok: false, error: `HTTP_${r.status}` }; }
+}
 
 export async function fetchRubyWatches(): Promise<{ ok: boolean; watches: RubyWatchView[]; sweeper?: { enabled: boolean; running: boolean; intervalMs: number } }> {
   const r = await fetch("/api/me/assistant/watches", { credentials: "include" });

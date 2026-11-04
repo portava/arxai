@@ -26,6 +26,7 @@ import { db, mt5DemoCommandsTable, sharedTradeAttributionTable, type Mt5DemoComm
 import {
   buildSafetyGateSnapshot,
   canDispatchToMt5,
+  demoCommandEaVersionBlocker,
   EA_MIN_DEMO_VERSION,
   eaVersionAtLeast,
   type PerUserDispatchInputs,
@@ -259,6 +260,39 @@ export async function consumeApprovedCommand(args: ConsumeArgs): Promise<Consume
       stage: "PER_USER_GATE",
       command: row,
       perUserBlockers: gate.eligibility.blockers,
+      canDispatchToMt5Allowed: false,
+    };
+  }
+
+  // 4a. Command-specific EA minimum: PLACE_PENDING_ORDER / CANCEL_PENDING_ORDER
+  //     need v1.32 (earlier builds answer REJECTED_UNKNOWN_COMMAND_TYPE).
+  const versionBlocker = demoCommandEaVersionBlocker(row.commandType, gate.evidence.reportedEaVersion);
+  if (versionBlocker) {
+    await audit({
+      userId: args.userId,
+      commandId: args.commandId,
+      eventType: "DEMO_DISPATCH_REFUSED",
+      severity: "WARNING",
+      status: "DENIED",
+      message: `Consumer refused: the bridge EA does not handle ${row.commandType} (${versionBlocker}).`,
+      metadata: {
+        commandId: args.commandId,
+        commandType: row.commandType,
+        bridgeConnectionId: row.bridgeConnectionId,
+        reportedEaVersion: gate.evidence.reportedEaVersion,
+        result: "REFUSED",
+        reason: versionBlocker,
+        safetyGateSnapshot: row.safetyGateSnapshot,
+      },
+      actorIp: args.actorIp,
+      actorUserAgent: args.actorUserAgent,
+    });
+    return {
+      ok: false,
+      reason: versionBlocker,
+      stage: "PER_USER_GATE",
+      command: row,
+      perUserBlockers: [versionBlocker],
       canDispatchToMt5Allowed: false,
     };
   }

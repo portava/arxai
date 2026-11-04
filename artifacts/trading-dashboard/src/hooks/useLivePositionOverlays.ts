@@ -3,7 +3,7 @@ import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useToast } from "@/hooks/use-toast";
 import { humanizeReason } from "@/lib/humanize";
-import { executeInstantTrade } from "@/lib/instantTradeRouter";
+import { closePositionByScope } from "@/lib/positionActions";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 
@@ -247,23 +247,22 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
   const closePosition = useCallback(async (p: ChartPosition) => {
     if (!p.brokerTicket || !tradeMode) return;
     setBusyTicket(p.brokerTicket);
+    // The row's own account decides the route: live → instant router, demo →
+    // governed demo queue (the instant router refuses accountMode "demo").
+    const scope: "live" | "demo" = p.scope === "demo" || p.accountMode === "DEMO" ? "demo" : "live";
     try {
-      const res = await executeInstantTrade({
-        source: "chart",
-        action: "CLOSE",
-        accountMode: tradeMode,
-        positionId: p.brokerTicket,
-        oneClick: true,
+      const res = await closePositionByScope({
+        scope, ticket: p.brokerTicket, symbol: p.symbol ?? normalized, side: p.side,
+        positionVolume: p.lotSize, source: "chart", sourcePage: "CHART_OVERLAY_CLOSE",
       });
       if (!res.ok) {
-        const h = humanizeReason(res.primaryReason || res.error);
+        const h = humanizeReason(res.reason || res.status);
         toast({ variant: "destructive", title: "Close blocked", description: h.description });
         return;
       }
-      toast({
-        title: "Close sent to bridge",
-        description: "Waiting for the broker to confirm. Check Open Positions or Trade Logs for the final result.",
-      });
+      toast(scope === "live"
+        ? { title: "Close sent to bridge", description: "Waiting for the broker to confirm. Check Open Positions or Trade Logs for the final result." }
+        : { title: "Position closed on demo", description: `Demo terminal answered ${res.status}.` });
       setReloadAt(Date.now());
     } catch (e) {
       toast({
@@ -274,7 +273,7 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
     } finally {
       setBusyTicket(null);
     }
-  }, [tradeMode, toast]);
+  }, [tradeMode, toast, normalized]);
 
   return {
     overlays,

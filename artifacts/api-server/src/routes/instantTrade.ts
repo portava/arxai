@@ -77,9 +77,16 @@ const IntentSchema = z.object({
   orderType: z.string().min(1).max(32).optional(),
   stopLoss: z.number().nullable().optional(),
   takeProfit: z.number().nullable().optional(),
+  // MT5 pending-order fields (see lib/live/pendingOrderRules.ts).
+  price: z.number().positive().nullable().optional(),
+  stopLimitPrice: z.number().positive().nullable().optional(),
+  expiration: z.string().datetime().nullable().optional(),
   positionId: z.string().min(1).max(64).optional(),
   newStopLoss: z.number().nullable().optional(),
   newTakeProfit: z.number().nullable().optional(),
+  // CLOSE only: reduce this many lots (partial close). Absent / >= the full
+  // position size = full close. The router validates it against the position.
+  closeVolume: z.number().positive().nullable().optional(),
   oneClick: z.boolean().optional(),
   aiCommand: z.boolean().optional(),
   rawUserCommand: z.string().max(1024).nullable().optional(),

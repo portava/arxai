@@ -19,6 +19,16 @@ enum { ACCOUNT_TRADE_MODE, ACCOUNT_MARGIN_MODE, ACCOUNT_TRADE_MODE_DEMO,
  SYMBOL_POINT, POSITION_SYMBOL, POSITION_VOLUME, POSITION_SL, POSITION_TP,
  POSITION_IDENTIFIER, DEAL_POSITION_ID, ORDER_TYPE_SELL, ORDER_TYPE_BUY,
  TRADE_RETCODE_DONE, TRADE_RETCODE_DONE_PARTIAL, TRADE_RETCODE_NO_CHANGES };
+// v1.32 pending-order vocabulary (values are arbitrary test doubles).
+enum { ORDER_TYPE_BUY_LIMIT=200, ORDER_TYPE_SELL_LIMIT, ORDER_TYPE_BUY_STOP, ORDER_TYPE_SELL_STOP,
+ ORDER_TYPE_BUY_STOP_LIMIT, ORDER_TYPE_SELL_STOP_LIMIT, ORDER_TIME_GTC, ORDER_TIME_SPECIFIED,
+ TRADE_RETCODE_PLACED, TRADE_ACTION_PENDING, SYMBOL_TRADE_TICK_SIZE, SYMBOL_DIGITS, SYMBOL_FILLING_MODE,
+ ORDER_SYMBOL, ORDER_PRICE_OPEN, ORDER_VOLUME_INITIAL, ORDER_TYPE, ORDER_STATE, ORDER_STATE_CANCELED,
+ ORDER_STATE_FILLED, ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN };
+const long SYMBOL_FILLING_FOK=1, SYMBOL_FILLING_IOC=2;
+using datetime = long;
+typedef int ENUM_ORDER_TYPE;
+typedef int ENUM_ORDER_TYPE_TIME;
 const int INVALID_HANDLE=-1;
 const int FILE_READ=1, FILE_WRITE=2, FILE_TXT=4, FILE_UNICODE=8, FILE_COMMON=16;
 bool EnableDemoExecution=true, ReadOnlyMode=false, g_maintenanceMode=false;
@@ -44,16 +54,54 @@ string ShortToString(ushort c) { return string(1,(char)c); }
 long StringToInteger(const string &s) { try{return std::stol(s);}catch(...){return 0;} }
 double StringToDouble(const string &s) { try{return std::stod(s);}catch(...){return 0;} }
 void StringToLower(string &s) {std::transform(s.begin(),s.end(),s.begin(),[](unsigned char c){return std::tolower(c);});}
+void StringToUpper(string &s) {std::transform(s.begin(),s.end(),s.begin(),[](unsigned char c){return std::toupper(c);});}
 string IntegerToString(long n) { return std::to_string(n); }
 bool MathIsValidNumber(double n) { return std::isfinite(n); }
 double MathAbs(double n) { return std::abs(n); }
 double MathRound(double n) { return std::round(n); }
+double NormalizeDouble(double v,int d) { double f=std::pow(10.0,d);return std::round(v*f)/f; }
 long AccountInfoInteger(int k) { return info[k]; }
 long TerminalInfoInteger(int k) { return info[k]; }
 long MQLInfoInteger(int k) { return info[k]; }
 string AccountInfoString(int) { return "TEST_SERVER"; }
 bool SymbolSelect(const string&,bool) { return symbolOk; }
 double SymbolInfoDouble(const string&,int k) { return k==SYMBOL_VOLUME_MIN?minimum:k==SYMBOL_VOLUME_STEP?step:k==SYMBOL_VOLUME_MAX?maximum:.00001; }
+long SymbolInfoInteger(const string&,int k) { return k==SYMBOL_DIGITS?5:k==SYMBOL_FILLING_MODE?SYMBOL_FILLING_IOC:0; }
+// Fake trade server clock (UTC + 2h, with 13 s of tick jitter) and order book.
+datetime gmtNow=1800000000, serverNow=1800000000+7200+13;
+datetime TimeGMT() { return gmtNow; }
+datetime TimeTradeServer() { return serverNow; }
+ulong tickNow=1000, tickStep=0;
+ulong GetTickCount64() { ulong t=tickNow; tickNow+=tickStep; return t; }
+struct FakeOrder { string symbol; int type; double price; double volume; };
+std::map<ulong,FakeOrder> book;
+ulong brokerOrder=5001, selectedOrder=0;
+bool bookOnPlace=true, deleteRemoves=true, historyHas=true;
+long historyState=ORDER_STATE_CANCELED;
+double placedPrice=0, placedLimit=0, placedSL=0, placedTP=0;
+int placedType=-1, placedTime=-1, placedFilling=-1;
+datetime placedExpiry=-1;
+bool OrderSelect(ulong t) { if(!book.count(t))return false;selectedOrder=t;return true; }
+string OrderGetString(int) { return book.at(selectedOrder).symbol; }
+double OrderGetDouble(int k) { auto &o=book.at(selectedOrder);return k==ORDER_PRICE_OPEN?o.price:o.volume; }
+long OrderGetInteger(int) { return book.at(selectedOrder).type; }
+bool HistoryOrderSelect(ulong) { return historyHas; }
+long HistoryOrderGetInteger(ulong,int) { return historyState; }
+struct MqlTradeRequest { int action=0; string symbol; double volume=0; int type=0; double price=0, stoplimit=0, sl=0, tp=0;
+ int type_time=0; datetime expiration=0; int type_filling=0; string comment; };
+struct MqlTradeResult { uint retcode=0; ulong order=0; };
+template<class T> void ZeroMemory(T &t) { t=T{}; }
+void place(const string &op,const string &sym,int type,double v,double price,double limit,double sl,double tp,int tmode,datetime exp)
+{
+ ++calls;operation=op;requested=v;placedType=type;placedPrice=price;placedLimit=limit;placedSL=sl;placedTP=tp;placedTime=tmode;placedExpiry=exp;
+ if((brokerCode==TRADE_RETCODE_PLACED||brokerCode==TRADE_RETCODE_DONE)&&brokerBool&&bookOnPlace&&brokerOrder>0)book[brokerOrder]={sym,type,price,v};
+}
+bool OrderSend(const MqlTradeRequest &r,MqlTradeResult &res)
+{
+ if(r.action!=TRADE_ACTION_PENDING)throw std::runtime_error("raw request must be TRADE_ACTION_PENDING");
+ placedFilling=r.type_filling;place("pending_raw",r.symbol,r.type,r.volume,r.price,r.stoplimit,r.sl,r.tp,r.type_time,r.expiration);
+ res.retcode=brokerCode;res.order=brokerOrder;return brokerBool;
+}
 bool PositionSelectByTicket(ulong t) { return positionExists && t==42; }
 string PositionGetString(int) { return "EURUSD"; }
 double PositionGetDouble(int k) { return k==POSITION_VOLUME?currentVolume:k==POSITION_SL?currentSL:currentTP; }
@@ -75,6 +123,12 @@ struct CTrade {
  double ResultPrice() {return brokerPrice;}
  double ResultVolume() {return brokerVolume;}
  ulong ResultDeal() {return 900;}
+ ulong ResultOrder() {return brokerOrder;}
+ bool BuyLimit(double v,double p,const string &s,double sl,double tp,int tt,datetime e,const string&) {place("buy_limit",s,ORDER_TYPE_BUY_LIMIT,v,p,0,sl,tp,tt,e);return brokerBool;}
+ bool SellLimit(double v,double p,const string &s,double sl,double tp,int tt,datetime e,const string&) {place("sell_limit",s,ORDER_TYPE_SELL_LIMIT,v,p,0,sl,tp,tt,e);return brokerBool;}
+ bool BuyStop(double v,double p,const string &s,double sl,double tp,int tt,datetime e,const string&) {place("buy_stop",s,ORDER_TYPE_BUY_STOP,v,p,0,sl,tp,tt,e);return brokerBool;}
+ bool SellStop(double v,double p,const string &s,double sl,double tp,int tt,datetime e,const string&) {place("sell_stop",s,ORDER_TYPE_SELL_STOP,v,p,0,sl,tp,tt,e);return brokerBool;}
+ bool OrderDelete(ulong t) {++calls;operation="order_delete";selectedTicket=t;if(brokerBool&&deleteRemoves)book.erase(t);return brokerBool;}
 } g_demoTrade;
 void ResetLastError() {errorCode=0;}
 int GetLastError() {return errorCode;}
@@ -115,10 +169,80 @@ void reset() {
  brokerBool=true;filling=true;guardPass=true;updateModify=true;symbolOk=true;dealAvailable=true;
  brokerCode=TRADE_RETCODE_DONE;calls=0;operation="";posted="";handles.clear();disk.clear();
  fileBlocked=false;writeFails=false;flushFails=false;g_demoJournal=INVALID_HANDLE;
+ book.clear();brokerOrder=5001;selectedOrder=0;bookOnPlace=true;deleteRemoves=true;historyHas=true;historyState=ORDER_STATE_CANCELED;
+ placedPrice=placedLimit=placedSL=placedTP=0;placedType=placedTime=placedFilling=-1;placedExpiry=-1;tickNow=1000;tickStep=0;
+ gmtNow=1800000000;serverNow=1800000000+7200+13;last=ArxDemoOutcome();
 }
 ArxDemoOutcome run(const string &kind="CLOSE_POSITION",double v=.01,const string &sym="EURUSD",const string &side="buy",ulong ticket=42) {
  ArxDemoOutcome o;ExecuteDemoCommand(kind,sym,side,ticket,v,1.11,1.21,o);return o;
 }
+#ifdef ARX_V132
+ArxDemoRequest pendingReq(const string &type="BUY_LIMIT",double entry=1.100004,double limit=0,long exp=0,const string &side="buy") {
+ ArxDemoRequest r;r.kind="PLACE_PENDING_ORDER";r.symbol="EURUSD";r.side=side;r.ticket=0;r.volume=.02;
+ r.sl=1.090004;r.tp=1.120006;r.orderType=type;r.entry=entry;r.stopLimit=limit;r.expirationEpoch=exp;r.orderTicket=0;return r;
+}
+ArxDemoRequest cancelReq(ulong t=5001,const string &sym="EURUSD") {
+ ArxDemoRequest r;r.kind="CANCEL_PENDING_ORDER";r.symbol=sym;r.side="";r.ticket=0;r.volume=0;r.sl=0;r.tp=0;
+ r.orderType="";r.entry=0;r.stopLimit=0;r.expirationEpoch=0;r.orderTicket=t;return r;
+}
+ArxDemoOutcome exec(const ArxDemoRequest &r) { ArxDemoOutcome o;ExecuteDemoRequest(r,o);return o; }
+void pendingChecks() {
+ bool near=true;
+ reset();brokerCode=TRADE_RETCODE_PLACED;auto o=exec(pendingReq());
+ near=std::abs(placedPrice-1.1)<1e-12 && std::abs(placedSL-1.09)<1e-12 && std::abs(placedTP-1.12001)<1e-12;
+ check(o.status=="PLACED_DEMO" && o.ticket==5001 && operation=="buy_limit" && near && placedTime==ORDER_TIME_GTC && placedExpiry==0
+   && o.volume==.02 && std::abs(o.price-1.1)<1e-12,"buy limit: tick-normalised prices, GTC, PLACED_DEMO with the verified order ticket");
+ reset();o=exec(pendingReq());check(o.status=="PLACED_DEMO","TRADE_RETCODE_DONE also confirms a placement");
+ for(auto t:{std::make_pair("SELL_LIMIT","sell_limit"),std::make_pair("BUY_STOP","buy_stop"),std::make_pair("SELL_STOP","sell_stop")}){
+  reset();brokerCode=TRADE_RETCODE_PLACED;o=exec(pendingReq(t.first,1.1,0,0,t.first[0]=='S'?"sell":"buy"));
+  check(o.status=="PLACED_DEMO" && operation==t.second,"CTrade helper per pending type");}
+ reset();brokerCode=TRADE_RETCODE_PLACED;o=exec(pendingReq("BUY_LIMIT",1.1,0,gmtNow+3600));
+ check(o.status=="PLACED_DEMO" && placedTime==ORDER_TIME_SPECIFIED && placedExpiry==gmtNow+3600+7200,"UTC expiry -> trade-server time (offset rounded to 30 min), ORDER_TIME_SPECIFIED");
+ reset();serverNow=gmtNow-3*3600+5;brokerCode=TRADE_RETCODE_PLACED;o=exec(pendingReq("BUY_LIMIT",1.1,0,gmtNow+3600));
+ check(placedExpiry==gmtNow+3600-3*3600,"negative server offset");
+ reset();o=exec(pendingReq("BUY_LIMIT",1.1,0,gmtNow-60));check(calls==0 && o.reason=="REJECTED_EXPIRATION_IN_PAST","expired order time refused before the broker");
+ reset();brokerCode=TRADE_RETCODE_PLACED;o=exec(pendingReq("BUY_STOP_LIMIT",1.105,1.103004));
+ check(o.status=="PLACED_DEMO" && operation=="pending_raw" && placedType==ORDER_TYPE_BUY_STOP_LIMIT && std::abs(placedLimit-1.103)<1e-12
+   && std::abs(placedPrice-1.105)<1e-12 && placedFilling==ORDER_FILLING_IOC,"stop limit uses a raw TRADE_ACTION_PENDING request with stoplimit");
+ reset();o=exec(pendingReq("SELL_STOP_LIMIT",1.095,0,0,"sell"));check(calls==0 && o.reason=="REJECTED_INVALID_STOP_LIMIT_PRICE","stop limit needs its limit price");
+ reset();o=exec(pendingReq("BUY_LIMIT",0));check(calls==0 && o.reason=="REJECTED_INVALID_PENDING_PRICE","pending price required");
+ reset();o=exec(pendingReq("MARKET_BUY"));check(calls==0 && o.reason=="REJECTED_INVALID_ORDER_TYPE","non-pending type refused");
+ reset();o=exec(pendingReq("BUY_LIMIT",1.1,0,0,"sell"));check(calls==0 && o.reason=="REJECTED_INVALID_SIDE","side must match order type");
+ reset();g_maintenanceMode=true;o=exec(pendingReq());check(calls==0 && o.reason=="REJECTED_MAINTENANCE_MODE","maintenance blocks new pending orders");
+ reset();ReadOnlyMode=true;o=exec(pendingReq());check(calls==0 && o.reason=="REJECTED_READ_ONLY_MODE_ACTIVE","demo guard precedes pending");
+ reset();{auto r=pendingReq();r.volume=2;o=exec(r);}check(calls==0 && o.reason=="REJECTED_LOT_EXCEEDS_CEILING","lot ceiling");
+ reset();{auto r=pendingReq();r.volume=.025;o=exec(r);}check(calls==0 && o.reason=="REJECTED_INVALID_VOLUME_PAYLOAD","volume step");
+ reset();{auto r=pendingReq();r.sl=NAN;o=exec(r);}check(calls==0 && o.reason=="REJECTED_INVALID_STOPS","non-finite stop");
+ reset();filling=false;o=exec(pendingReq());check(calls==0,"unsupported filling");
+ reset();brokerCode=999;o=exec(pendingReq());check(o.status=="FAILED" && o.reason.find("DO_NOT_RETRY")!=string::npos,"other retcode is uncertain, never retried");
+ reset();brokerCode=TRADE_RETCODE_PLACED;bookOnPlace=false;o=exec(pendingReq());check(o.status=="FAILED","order not found by OrderSelect is uncertain");
+ reset();brokerCode=TRADE_RETCODE_PLACED;brokerOrder=0;o=exec(pendingReq());check(o.status=="FAILED","no order ticket is uncertain");
+ reset();brokerCode=TRADE_RETCODE_PLACED;brokerBool=false;o=exec(pendingReq());check(o.status=="FAILED","false send is uncertain");
+ // Cancel.
+ reset();book[5001]={"EURUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};o=exec(cancelReq());
+ check(o.status=="CANCELLED_DEMO" && o.ticket==5001 && operation=="order_delete" && !book.count(5001),"cancel deletes and verifies the order is gone");
+ reset();g_maintenanceMode=true;book[5001]={"EURUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};o=exec(cancelReq());check(o.status=="CANCELLED_DEMO","maintenance never blocks a cancel");
+ reset();o=exec(cancelReq());check(calls==0 && o.reason=="REJECTED_ORDER_NOT_FOUND","missing order");
+ reset();book[5001]={"GBPUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};o=exec(cancelReq());check(calls==0 && o.reason=="REJECTED_ORDER_SYMBOL_MISMATCH","symbol must match");
+ reset();book[5001]={"EURUSD",ORDER_TYPE_BUY,1.1,.02};o=exec(cancelReq());check(calls==0 && o.reason=="REJECTED_NOT_A_PENDING_ORDER","market order is not cancellable");
+ reset();deleteRemoves=false;book[5001]={"EURUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};o=exec(cancelReq());check(o.status=="FAILED","order still active after delete is uncertain");
+ reset();historyState=ORDER_STATE_FILLED;book[5001]={"EURUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};o=exec(cancelReq());check(o.status=="FAILED","history says filled: not a cancel");
+ reset();brokerCode=999;book[5001]={"EURUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};o=exec(cancelReq());check(o.status=="FAILED","cancel retcode must be DONE");
+ // TTL.
+ check(!DemoCommandExpired(-1,999999999) && DemoCommandExpired(0,0) && !DemoCommandExpired(5,4999) && DemoCommandExpired(5,5000),"command TTL arithmetic");
+ // Wire.
+ reset();brokerCode=TRADE_RETCODE_PLACED;response=R"({"commands":[{"commandId":"wire-p1","commandType":"PLACE_PENDING_ORDER","payload":{"symbol":"EURUSD","side":"BUY","lotSize":0.02,"orderType":"BUY_STOP_LIMIT","price":1.105,"stopLimitPrice":1.103,"expirationEpoch":1800003600,"stopLoss":1.09,"takeProfit":1.12},"sentAt":"x","secondsUntilExpiry":90,"expiresAtEpoch":1800000090}]})";
+ PollAndExecuteDemoCommands();check(calls==1 && last.status=="PLACED_DEMO" && last.ticket==5001 && std::abs(placedPrice-1.105)<1e-12 && std::abs(placedLimit-1.103)<1e-12 && placedExpiry==1800003600+7200,"wire: pending fields with price fallback, stop limit and expiry");
+ reset();tickStep=6000;response=R"({"commands":[{"commandId":"wire-p2","commandType":"PLACE_PENDING_ORDER","payload":{"symbol":"EURUSD","side":"BUY","lotSize":0.02,"orderType":"BUY_LIMIT","entry":1.1},"secondsUntilExpiry":5}]})";
+ PollAndExecuteDemoCommands();check(calls==0 && last.status=="FAILED" && last.reason=="EXPIRED_BEFORE_EXECUTION","wire: TTL elapsed before execution -> FAILED, no broker call");
+ reset();brokerCode=TRADE_RETCODE_PLACED;response=R"({"commands":[{"commandId":"wire-p3","commandType":"PLACE_PENDING_ORDER","payload":{"symbol":"EURUSD","side":"SELL","lotSize":0.02,"orderType":"SELL_LIMIT","entry":1.13,"price":1.2}}]})";
+ PollAndExecuteDemoCommands();check(calls==1 && operation=="sell_limit" && std::abs(placedPrice-1.13)<1e-12,"wire: entry wins over price; no TTL key keeps legacy behaviour");
+ reset();book[5001]={"EURUSD",ORDER_TYPE_BUY_LIMIT,1.1,.02};response=R"({"commands":[{"commandId":"wire-c1","commandType":"CANCEL_PENDING_ORDER","payload":{"symbol":"EURUSD","orderTicket":"5001","ticket":"5001"},"secondsUntilExpiry":60}]})";
+ PollAndExecuteDemoCommands();check(calls==1 && last.status=="CANCELLED_DEMO" && last.ticket==5001,"wire: cancel by string orderTicket");
+ reset();response=R"({"commands":[{"commandId":"wire-m1","commandType":"CLOSE_POSITION","payload":{"ticket":"42","symbol":"EURUSD","lotSize":0.01},"secondsUntilExpiry":60}]})";
+ PollAndExecuteDemoCommands();check(calls==1 && requested==.01 && last.status=="FILLED_DEMO","wire: existing commands still route through ExecuteDemoCommand");
+}
+#endif
 int main() {
  try {
  reset();auto o=run();check(o.status=="FILLED_DEMO" && requested==.01 && selectedTicket==42 && operation=="close_partial" && o.ticket==42 && o.volume==.01,"partial keeps exact size/ticket/fill");
@@ -161,6 +285,9 @@ int main() {
  reset();response=R"({"commands":[{"commandId":"governed-close","commandType":"CLOSE_POSITION","payload":{"ticket":"42","symbol":"EURUSD","side":"BUY","lotSize":0.01}}]})";PollAndExecuteDemoCommands();check(calls==1 && requested==.01,"governed close lotSize");
  reset();response=R"({"commands":[{"commandId":"governed-modify","commandType":"MODIFY_SLTP","payload":{"ticket":"42","symbol":"EURUSD","lotSize":0.02,"stopLoss":1.12,"takeProfit":null}}]})";PollAndExecuteDemoCommands();check(calls==1 && currentSL==1.12 && currentTP==0 && last.ticket==42,"governed modify stopLoss and null takeProfit");
  reset();response=R"({"commands":[{"commandId":"governed-invalid","commandType":"CLOSE_POSITION","payload":{"ticket":"42","symbol":"EURUSD","lotSize":0,"volume":0.01}}]})";PollAndExecuteDemoCommands();check(calls==0,"governed invalid lotSize cannot use alias");
+ #ifdef ARX_V132
+ pendingChecks();
+ #endif
  std::cout<<checks<<" DEMO bridge behavioral checks passed; zero broker/network calls.\n";
  } catch(const std::exception &e){std::cerr<<"FAIL: "<<e.what()<<"\n";return 1;}
 }

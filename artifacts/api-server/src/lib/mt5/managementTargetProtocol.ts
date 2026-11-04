@@ -32,3 +32,25 @@ export function legacyManagementPickupPredicate(supported: boolean) {
       AND ${boundManagementSql()})) OR
     (${supported} AND jsonb_typeof(${mailbox.payload}->'managementTargetV1') = 'object'))`;
 }
+
+/**
+ * Legacy Replit bridge EAs (v1.2x/v1.3x, e.g. v1.31) poll /mt5/commands only to
+ * ACKNOWLEDGE (EA_READ_ONLY_MODE_ACTIVE / EA_EXECUTION_NOT_IMPLEMENTED) and
+ * execute live commands through /mt5/live-commands-poll instead. If their
+ * mailbox poll claimed a live mirror, the claim would stamp pickedByEaAt and
+ * live-commands-poll would never serve the command. Unknown versions keep the
+ * mailbox behaviour (fail toward today's delivery).
+ */
+export function isAckOnlyMailboxEa(eaVersion: string | null | undefined): boolean {
+  const m = /^\s*v?(\d+)\.(\d+)/i.exec(eaVersion ?? "");
+  if (!m) return false;
+  const major = Number(m[1]), minor = Number(m[2]);
+  return major === 1 && minor < 40;
+}
+/** Mailbox SELECT/CAS predicate: withhold Phase B live mirrors from an
+ *  acknowledgement-only legacy EA. */
+export function liveMirrorMailboxPickupPredicate(eaVersion: string | null | undefined) {
+  return isAckOnlyMailboxEa(eaVersion)
+    ? sql`COALESCE(${mailbox.payload}->>'bridged','') <> 'LIVE_PHASE_B'`
+    : sql`TRUE`;
+}

@@ -26,8 +26,12 @@ import {
   getFormingBar,
   getFormingTickAgeMs,
   getFeedFreshness,
+  resolveFormingPartition,
+  type FormingPartition,
 } from "../lib/data/chart/formingBarComposer.js";
-import { isChartTimeframe, timeframeMs, type ChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { brokerBucketCloseMs } from "../lib/data/chart/brokerBucket.js";
+import { isChartTimeframe, type ChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { currentFeedScopeBridge, currentFeedScopeBridgeSync } from "../lib/data/feedScope.js";
 import { normalizeSymbolKey } from "../lib/data/providers/mt5Provider.js";
 import { FORMING_TIP_LIVE_MS } from "../lib/data/freshness.js";
 
@@ -55,13 +59,25 @@ export function handleChartTickStream(req: Request, res: Response): void {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
-  const intervalMs = timeframeMs(timeframe);
-  const emitForming = () => {
-    if (aborted) return;
-    const now = Date.now();
-    const forming = getFormingBar(rawSymbol, timeframe, now, source);
+  // Whose ticks: the reader's own bridge (the request's feed scope) when it is
+  // ticking this symbol, else the partition this stream already follows while
+  // it keeps ticking, else the most recent one — the same own-bridge-first
+  // rule the chart's bars follow. Never a blend of two brokers' ticks.
+  let readerBridge: FormingPartition = currentFeedScopeBridgeSync() ?? null;
+  if (currentFeedScopeBridgeSync() === undefined) {
+    void currentFeedScopeBridge().then((id) => { readerBridge = id; }, () => {});
+  }
+  let followed: FormingPartition | undefined;
+  const partitionNow = (now: number): FormingPartition | undefined => {
+    followed = resolveFormingPartition(rawSymbol, source, readerBridge, followed, now);
+    return followed;
+  };
+
+  const emitForming = (now: number = Date.now(), partition = partitionNow(now)) => {
+    if (aborted || partition === undefined) return;
+    const forming = getFormingBar(rawSymbol, timeframe, now, source, partition);
     if (!forming) return; // no current-interval tip yet → nothing to push
-    const ageMs = getFormingTickAgeMs(rawSymbol, timeframe, now, source) ?? 0;
+    const ageMs = getFormingTickAgeMs(rawSymbol, timeframe, now, source, partition) ?? 0;
     send({
       type: "forming_bar",
       symbol: rawSymbol,
@@ -69,7 +85,7 @@ export function handleChartTickStream(req: Request, res: Response): void {
       timeframe,
       bar: {
         openTimeMs: forming.openMs,
-        closeTimeMs: forming.openMs + intervalMs,
+        closeTimeMs: brokerBucketCloseMs(forming.openMs, timeframe, forming.brokerOffsetMs),
         open: forming.open,
         high: forming.high,
         low: forming.low,
@@ -96,10 +112,9 @@ export function handleChartTickStream(req: Request, res: Response): void {
   // can show the state even when there is no current-interval tip (the
   // stale-bucket case, where getFormingBar returns null). No tokens, account
   // numbers, or gate data are ever emitted; no execution path is touched.
-  const emitStatus = () => {
-    if (aborted) return;
-    const now = Date.now();
-    const fresh = getFeedFreshness(rawSymbol, now, source);
+  const emitStatus = (now: number = Date.now(), partition = partitionNow(now)) => {
+    if (aborted || partition === undefined) return;
+    const fresh = getFeedFreshness(rawSymbol, now, source, partition);
     if (!fresh) return; // no tick seen yet → assert nothing (honest unknown)
     send({
       type: "feed_status",
@@ -118,9 +133,13 @@ export function handleChartTickStream(req: Request, res: Response): void {
   // synchronously from within the ingest call stack (formingBarBus.emit), so the
   // server path adds no batching latency. A chatty EA simply produces more
   // frames; the browser's series.update() per frame is cheap.
-  const onTick = () => {
-    emitForming();
-    emitStatus();
+  const onTick = (ticked: FormingPartition) => {
+    const now = Date.now();
+    const partition = partitionNow(now);
+    // Another bridge's tick on this symbol: not this reader's series.
+    if (partition === undefined || ticked !== partition) return;
+    emitForming(now, partition);
+    emitStatus(now, partition);
   };
   formingBarBus.on(symbolKey, onTick, source);
 

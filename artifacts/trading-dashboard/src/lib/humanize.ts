@@ -435,6 +435,21 @@ const REASON_MAP: Record<string, Omit<HumanizedReason, "technicalCode" | "catego
       "This is an ARX app setting — separate from your MT5 terminal's One Click Trading checkbox (which ARX cannot read and does not require). Turn on Single Confirm for LIVE in MT5 Setup → One-Click Trade to place live orders straight from the chart. Every safety gate still runs.",
     severity: "info",
   },
+  LOT_EXCEEDS_ONE_CLICK_CAP: {
+    title: "Lot above your one-click cap",
+    description: "This one-click order is larger than the per-click lot cap in your one-click settings. Lower the lot, or raise the cap in settings.",
+    severity: "warning",
+  },
+  EXPIRATION_IN_PAST: {
+    title: "Expiry time has passed",
+    description: "The pending order's expiry time is already in the past. Pick a later time, or use GTC.",
+    severity: "warning",
+  },
+  EXPIRATION_INVALID: {
+    title: "Expiry time not readable",
+    description: "The pending order's expiry time could not be read. Pick a date and time, or use GTC.",
+    severity: "warning",
+  },
   MASTER_LIVE_USER_ACCESS_BLOCKED: {
     title: "Live trading access is restricted",
     description: "Your account doesn't currently have access to live trading. Contact an admin.",

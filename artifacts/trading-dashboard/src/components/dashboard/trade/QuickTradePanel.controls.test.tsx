@@ -7,6 +7,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 
 vi.mock("wouter", () => ({ useLocation: () => ["/trade-command-room", vi.fn()] }));
 vi.mock("@/components/charts/ChartFeedConfidence", () => ({ ChartFeedConfidence: () => null }));
+vi.mock("@/hooks/useOneClickMode", () => ({ useOneClickMode: () => ({ mode: { on: false, scope: "live", defaultVolume: 0.01, maxLotPerClick: null, canEnable: true, blockReason: null, loading: false }, busyKey: null, execute: vi.fn(), closePosition: vi.fn() }) }));
+vi.mock("@/hooks/useSymbolLotSpec", () => ({ useSymbolLotSpec: () => ({ volumeMin: null, volumeStep: null, volumeMax: null, point: null, stopsLevel: null }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { QuickTradePanel } = await import("./QuickTradePanel");
 
@@ -41,13 +44,14 @@ describe("Quick Trade server-check controls", () => {
 });
 
 describe("Quick Trade ticket handoff", () => {
-  it("does not claim to execute a trade; says only the symbol reaches the manual ticket", () => {
+  it("one-click OFF: SELL/BUY open the order window with the panel's settings (no order on the click)", () => {
     render(panel());
     expect(document.body.textContent).not.toMatch(/Execute a trade in seconds/);
     const note = screen.getByTestId("trade-ticket-handoff-note").textContent ?? "";
-    expect(note).toMatch(/open the manual ticket with EURUSD selected/);
-    expect(note).toMatch(/no order is sent from this panel/);
-    expect(note).toMatch(/side, lot size, order type, stop loss and take profit set here are not carried over/);
+    expect(note).toMatch(/SELL and BUY open the order window for EURUSD/);
+    expect(note).toMatch(/its button sends the order/);
+    // The MT5-style order window (Buy/Sell Limit, Buy/Sell Stop, Stop Limit, SL/TP, expiry).
+    expect(screen.getByTestId("order-ticket-open").textContent).toMatch(/Open order window/);
   });
 
   it("there is no Cancel button that opens the ticket", () => {

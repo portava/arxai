@@ -1,3 +1,4 @@
+import { LivePendingOrders } from "@/components/live/LivePendingOrders";
 import { LiveTradingUnlockCard } from "@/components/live/LiveTradingUnlockCard";
 import { RequestLiveBridgeAccessCard } from "@/components/live/RequestLiveBridgeAccessCard";
 import { LiveKillSwitchButton } from "@/components/live/LiveKillSwitchButton";
@@ -42,6 +43,7 @@ export default function LiveTradingPage() {
       </div>
 
       <OpenLivePositions />
+      <LivePendingOrders />
       <RecentLiveCommands />
     </div>
   );

@@ -17,6 +17,18 @@
 // Mount path: /api/me/live/*
 
 import { classifyHeartbeatAgeMs, heartbeatAgeSecondsFrom, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { classifyOrderType, validatePendingOrder, validateProtection, validateExpiration, twoSidedQuote } from "../lib/live/pendingOrderRules.js";
+import { routeQuote } from "../lib/data/marketDataRouter.js";
+import { listMyLivePendingOrders } from "../lib/live/livePendingOrders.js";
+import {
+  CANCEL_LIVE_PENDING_ORDER, MODIFY_LIVE_PENDING_ORDER, parsePendingModifyBody,
+  pendingControlNeedsConfirmation, pendingControlRefusalStatus, type PendingControlCommandType,
+} from "../lib/live/livePendingControl.js";
+import { denyInvestorExecution } from "../lib/auth/productRole.js";
+import { loadAndEvaluateUserMasterLiveAccessGate } from "../lib/mt5/userMasterLiveAccessGate.js";
+import { enforceSensitiveAction } from "../lib/security/handshake.js";
+import { tryConsumeToken } from "../lib/concurrency/rateLimit.js";
+import { userOneClickSettingsTable } from "@workspace/db";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
@@ -234,6 +246,39 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const b = req.body ?? {};
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.ip;
+  // MT5 order rules for the standard (draft → confirm → dispatch) path, same as
+  // the instant router: a pending order needs its price, on the correct side of
+  // the current Bid/Ask (Buy Limit below Ask, Sell Limit above Bid, Buy Stop
+  // above Ask, Sell Stop below Bid; Stop Limit's limit leg on the correct side
+  // of the stop). SL/TP must sit on the correct side of the reference. The
+  // broker enforces its own stops level after this.
+  if (String(b.commandType ?? "") === "PLACE_LIVE_PENDING_ORDER" || String(b.commandType ?? "") === "PLACE_LIVE_MARKET_ORDER") {
+    const side: "BUY" | "SELL" = String(b.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+    const payload = (b.payload ?? {}) as Record<string, unknown>;
+    const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+    let bid: number | null = null, ask: number | null = null;
+    try {
+      const q = await routeQuote(String(b.symbol ?? ""));
+      ({ bid, ask } = twoSidedQuote(q.quote));
+    } catch { /* no quote: the broker enforces the side */ }
+    const pendingCheck = validatePendingOrder({
+      orderType: String(b.orderType ?? (side === "SELL" ? "MARKET_SELL" : "MARKET_BUY")), action: side,
+      price: num(payload.price ?? payload.entry ?? b.price), stopLimitPrice: num(payload.stopLimitPrice ?? b.stopLimitPrice), bid, ask,
+    });
+    if (!pendingCheck.ok) { res.status(400).json({ ok: false, reason: pendingCheck.code, detail: pendingCheck.detail, ...envelope() }); return; }
+    const cls = classifyOrderType(String(b.orderType ?? ""), side);
+    const reference = cls.pending
+      ? (cls.kind === "STOP_LIMIT" ? num(payload.stopLimitPrice ?? b.stopLimitPrice) : num(payload.price ?? payload.entry ?? b.price))
+      : (side === "BUY" ? bid : ask);
+    const prot = validateProtection({ side, reference, stopLoss: num(b.stopLoss), takeProfit: num(b.takeProfit) });
+    if (!prot.ok) { res.status(400).json({ ok: false, reason: prot.code, detail: prot.detail, ...envelope() }); return; }
+    if (cls.pending) {
+      // A past / unreadable expiry is refused, never silently good-till-cancelled.
+      const rawExp = payload.expirationEpoch ?? payload.expiration ?? b.expiration ?? null;
+      const exp = validateExpiration(typeof rawExp === "number" || typeof rawExp === "string" ? rawExp : null);
+      if (!exp.ok) { res.status(400).json({ ok: false, reason: exp.code, detail: exp.detail, ...envelope() }); return; }
+    }
+  }
   const result = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: b.commandType,
@@ -293,6 +338,122 @@ router.get("/me/live/commands/:commandId", requireUser, async (req, res) => {
   if (!row) { res.status(404).json({ error: "COMMAND_NOT_FOUND" }); return; }
   res.json({ command: row, ...envelope() });
 });
+
+// ── Live pending orders — PLACE_LIVE_PENDING_ORDER rows the EA answered with a
+// broker order ticket, minus those that filled into a position or expired.
+// Read-only and user-scoped. The state is the last EA result (no terminal
+// pending-order snapshot exists yet), and the response says so.
+router.get("/me/live/pending-orders", requireUser, async (req, res) => {
+  const userId = uid(req);
+  if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  try {
+    const items = await listMyLivePendingOrders(userId);
+    res.json({
+      ok: true, items, count: items.length,
+      stateBasis: "LAST_EA_RESULT",
+      note: "From the last terminal answer for each order. An order may since have filled, expired or been removed in MT5.",
+      ...envelope(),
+    });
+  } catch (e) {
+    req.log?.error?.({ err: (e as Error).message, userId }, "live pending orders list failed");
+    res.status(500).json({ ok: false, error: "LIVE_PENDING_ORDERS_READ_FAILED", ...envelope() });
+  }
+});
+
+// ── Live pending orders — cancel / modify from ARX ─────────────────────────
+// POST /me/live/pending-orders/:commandId/cancel  {confirmedByUser?}
+// POST /me/live/pending-orders/:commandId/modify  {price?, sl?, tp?, confirmedByUser?}
+//
+// The same governed path as a live close / SL-TP change: createLiveOpsDraft
+// (ownership + MT5 rules checked on the locked order row) → confirm →
+// dispatch (all Phase B gates, the Risk Governor) → the EA's CANCEL_PENDING /
+// MODIFY_PENDING. Before the draft, the checks the instant router runs for a
+// reduce-only action: investor refusal, master-live access, sensitive-action
+// handshake, per-user submit rate. One-click: when live one-click is ON the
+// press dispatches at once (like a one-click close); when OFF the client must
+// have confirmed in its dialog (`confirmedByUser: true`), else 412.
+async function runPendingControl(req: Request, res: Response, commandType: PendingControlCommandType) {
+  const userId = uid(req);
+  if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  const targetCommandId = String(req.params.commandId ?? "");
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const kind = commandType === CANCEL_LIVE_PENDING_ORDER ? "cancel" : "modify";
+  req.log.info({ action: "PENDING_CONTROL_REQUESTED", userId, targetCommandId, kind }, "trade.pending-control.requested");
+
+  let modify: { price: number | null; stopLoss: number | null; takeProfit: number | null } | undefined;
+  if (commandType === MODIFY_LIVE_PENDING_ORDER) {
+    const parsed = parsePendingModifyBody(b);
+    if (!parsed.ok) { res.status(400).json({ ok: false, reason: parsed.code, detail: parsed.detail, ...envelope() }); return; }
+    modify = { price: parsed.price, stopLoss: parsed.stopLoss, takeProfit: parsed.takeProfit };
+  }
+
+  const [settings] = await db.select().from(userOneClickSettingsTable)
+    .where(eq(userOneClickSettingsTable.userId, userId)).limit(1);
+  const oneClickOn = !!settings && (!!settings.liveOneClickEnabled || !!settings.oneClickArmed);
+  if (pendingControlNeedsConfirmation({ oneClickOn, confirmedByUser: b.confirmedByUser })) {
+    res.status(412).json({ ok: false, reason: "CONFIRMATION_REQUIRED",
+      detail: "Confirm the change in the dialog, or turn on one-click mode.", ...envelope() });
+    return;
+  }
+  const access = await loadAndEvaluateUserMasterLiveAccessGate(userId);
+  if (access.decision === "BLOCKED") {
+    res.status(403).json({ ok: false, reason: "MASTER_LIVE_USER_ACCESS_BLOCKED", primaryReason: access.primaryReason, ...envelope() });
+    return;
+  }
+  if (!tryConsumeToken(`user:${userId}`, settings?.perUserSubmitsPerMinute ?? 20)) {
+    res.status(429).json({ ok: false, reason: "USER_SUBMIT_RATE_LIMITED", ...envelope() });
+    return;
+  }
+  const hs = await enforceSensitiveAction(kind === "cancel" ? "CLOSE_POSITION" : "LIVE_TRADE_EXECUTION", { userId, authenticated: true });
+  if (!hs.ok) { res.status(403).json({ ok: false, reason: hs.reasonCode, detail: hs.userMessage, ...envelope() }); return; }
+
+  // A fresh two-sided quote for the modify side checks; none → the broker enforces them.
+  let quote: { bid: number | null; ask: number | null } | null = null;
+  if (modify) {
+    const [o] = await db.select({ symbol: arxLiveCommandsTable.symbol }).from(arxLiveCommandsTable)
+      .where(and(eq(arxLiveCommandsTable.commandId, targetCommandId), eq(arxLiveCommandsTable.userId, userId))).limit(1);
+    if (o) {
+      try {
+        const q = await routeQuote(o.symbol);
+        quote = twoSidedQuote(q.quote);
+      } catch { quote = null; }
+    }
+  }
+
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
+    userId, commandType, targetCommandId, modify, quote,
+    sourcePage: kind === "cancel" ? "LIVE_PENDING_ORDERS_CANCEL" : "LIVE_PENDING_ORDERS_MODIFY",
+  });
+  if (!draft.ok) {
+    req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, targetCommandId, kind, stage: "draft", reason: draft.reason }, "trade.pending-control.blocked");
+    res.status(pendingControlRefusalStatus(draft.reason)).json({ ...draft, ...envelope() });
+    return;
+  }
+  // Confirm + dispatch in ONE per-user lock scope (as the live close route).
+  const locked = await withUserSubmitLock(userId, res, async () => {
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
+    if (!conf.ok) return { stage: "confirm" as const, result: conf };
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
+    return { stage: "dispatch" as const, result: d };
+  });
+  if (!locked.ran) return;
+  if (locked.value.stage === "confirm") {
+    res.status(409).json({ ...locked.value.result, commandId: draft.command.commandId, ...envelope() });
+    return;
+  }
+  const disp = locked.value.result as { ok?: boolean; primaryReason?: string; reason?: string };
+  if (disp.ok === false) {
+    req.log.warn({ action: "SAFETY_GATE_BLOCKED", userId, targetCommandId, kind, stage: "dispatch", reason: disp.primaryReason ?? disp.reason ?? null }, "trade.pending-control.blocked");
+  } else {
+    req.log.info({ action: "COMMAND_SUBMITTED_AFTER_APPROVAL", userId, targetCommandId, commandType }, "trade.pending-control.dispatched");
+  }
+  res.status(200).json({ ...locked.value.result, commandId: draft.command.commandId, ...envelope() });
+}
+
+router.post("/me/live/pending-orders/:commandId/cancel", denyInvestorExecution, requireUser, (req, res) =>
+  runPendingControl(req, res, CANCEL_LIVE_PENDING_ORDER));
+router.post("/me/live/pending-orders/:commandId/modify", denyInvestorExecution, requireUser, (req, res) =>
+  runPendingControl(req, res, MODIFY_LIVE_PENDING_ORDER));
 
 // ── Live positions — Phase B reads `arx_live_positions` (EA-synced) ────────
 

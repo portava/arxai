@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { Activity, RefreshCw, X, Loader2, ShieldCheck } from "lucide-react";
+import { DemoPendingOrders } from "@/components/demo/DemoPendingOrders";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -107,8 +108,23 @@ export function OpenDemoPositions() {
     return () => clearInterval(id);
   }, []);
 
+  // Double-submit guard: one close in flight per ticket, and every retry of
+  // that close reuses the SAME idempotency key until it reaches a terminal
+  // answer, so a double click can never queue two CLOSE_POSITION commands.
+  const closeInFlight = useRef<Set<string>>(new Set());
+  const closeKeys = useRef<Map<string, string>>(new Map());
+
   async function performClose(pos: OpenPos) {
     if (!pos.brokerTicket) return;
+    const ticket = pos.brokerTicket;
+    if (closeInFlight.current.has(ticket)) return;
+    closeInFlight.current.add(ticket);
+    let idempotencyKey = closeKeys.current.get(ticket);
+    if (!idempotencyKey) {
+      idempotencyKey = `close-${ticket}-${Date.now()}`;
+      closeKeys.current.set(ticket, idempotencyKey);
+    }
+    let reachedTerminal = false;
     setCloseBusy(true);
     setCloseResult(null);
     try {
@@ -125,7 +141,7 @@ export function OpenDemoPositions() {
             brokerTicket: pos.brokerTicket,
             ticket: pos.brokerTicket,
             source: "OPEN_DEMO_POSITIONS_CLOSE",
-            idempotencyKey: `close-${pos.brokerTicket}-${Date.now()}`,
+            idempotencyKey,
           },
         }),
       });
@@ -168,6 +184,7 @@ export function OpenDemoPositions() {
         const c = j.command;
         if (!c) continue;
         if (TERMINAL.has(c.status)) {
+          reachedTerminal = true;
           setCloseResult({ status: c.status, reason: c.reason ?? null, ticket: pos.brokerTicket });
           if (c.status === "FILLED_DEMO") {
             toast({ title: "Position closed", description: `Ticket ${pos.brokerTicket} (${pos.symbol}) closed on demo.` });
@@ -189,6 +206,11 @@ export function OpenDemoPositions() {
       setCloseResult({ status: "FAILED", reason, ticket: pos.brokerTicket });
       toast({ title: "Close error", description: reason, variant: "destructive" });
     } finally {
+      closeInFlight.current.delete(ticket);
+      // A terminal answer ends this close: the next click is a new close with
+      // a new key. A refusal before queueing, a timeout or a network error keeps
+      // the key, so a retry is recognised by the server as the same close.
+      if (reachedTerminal) closeKeys.current.delete(ticket);
       setCloseBusy(false);
     }
   }
@@ -282,8 +304,9 @@ export function OpenDemoPositions() {
                             size="sm"
                             variant="outline"
                             className="h-6 px-2 text-[10px]"
-                            disabled={!p.brokerTicket}
+                            disabled={!p.brokerTicket || closeBusy}
                             onClick={() => (oneClickOn ? void performClose(p) : setCloseTarget(p))}
+                            data-testid={`demo-close-${p.brokerTicket ?? "none"}`}
                           >
                             <X className="h-3 w-3 mr-0.5" />Close
                           </Button>
@@ -297,6 +320,9 @@ export function OpenDemoPositions() {
           )}
         </CardContent>
       </Card>
+
+      {/* Demo pending orders (EA v1.32) — not positions; listed apart with Cancel. */}
+      <DemoPendingOrders onChanged={() => void load()} />
 
       <Dialog
         open={!!closeTarget}

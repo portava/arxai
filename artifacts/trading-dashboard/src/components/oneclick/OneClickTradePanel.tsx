@@ -21,7 +21,10 @@ import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { OneClickModeDisclaimer } from "@/components/oneclick/OneClickModeDisclaimer";
 import { humanizeReason } from "@/lib/humanize";
 import { normalizeLot, stepLot } from "@/lib/oneClickMode";
+import { useSymbolLotSpec } from "@/hooks/useSymbolLotSpec";
 import type { ChartPosition } from "@/hooks/useLivePositionOverlays";
+import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
+import { ModifySlTpButton } from "@/components/trade/ModifySlTpDialog";
 import { cn } from "@/lib/utils";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -42,9 +45,10 @@ export type OneClickQuote = {
 export function quoteReady(q: OneClickQuote | null | undefined): { ok: boolean; why: string | null } {
   if (!q) return { ok: false, why: "No price yet." };
   if (q.available === false) return { ok: false, why: q.observationNote ?? "No price from the feed." };
-  const bid = typeof q.bid === "number" ? q.bid : typeof q.last === "number" ? q.last : null;
-  const ask = typeof q.ask === "number" ? q.ask : typeof q.last === "number" ? q.last : null;
-  if (bid == null || ask == null) return { ok: false, why: "No bid/ask from the feed." };
+  // A last-trade-only quote is not two-sided: Buy needs the Ask, Sell the Bid.
+  const bid = typeof q.bid === "number" ? q.bid : null;
+  const ask = typeof q.ask === "number" ? q.ask : null;
+  if (bid == null || ask == null) return { ok: false, why: typeof q.last === "number" ? "Only a last-trade price, no Bid/Ask from the feed." : "No bid/ask from the feed." };
   if (q.stale) return { ok: false, why: "Price is stale. Waiting for a fresh tick." };
   return { ok: true, why: null };
 }
@@ -87,7 +91,8 @@ export function OneClickTradePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode.defaultVolume]);
 
-  const lot = useMemo(() => normalizeLot(lotText, mode.maxLotPerClick), [lotText, mode.maxLotPerClick]);
+  const lotSpec = useSymbolLotSpec(symbol, mode.on);
+  const lot = useMemo(() => normalizeLot(lotText, mode.maxLotPerClick, lotSpec), [lotText, mode.maxLotPerClick, lotSpec]);
 
   const quoteQ = useQuery<OneClickQuote>({
     queryKey: ["one-click-quote", symbol],
@@ -102,8 +107,8 @@ export function OneClickTradePanel({
   });
   const quote = quoteQ.data ?? null;
   const ready = quoteReady(quote);
-  const bid = quote?.bid ?? quote?.last ?? null;
-  const ask = quote?.ask ?? quote?.last ?? null;
+  const bid = quote?.bid ?? null;
+  const ask = quote?.ask ?? null;
   const spread = typeof bid === "number" && typeof ask === "number" ? ask - bid : null;
 
   const scopePositions = useMemo(
@@ -163,10 +168,15 @@ export function OneClickTradePanel({
         <div className={cn("flex items-center gap-2 rounded-md border border-zinc-800/80 bg-zinc-950/70 px-2 py-1.5 text-xs", className)} data-testid="one-click-panel-off">
           <Zap className="h-3.5 w-3.5 text-amber-400" />
           <span className="text-txt-secondary">One-click trading is off.</span>
+          {/* The MT5 order window is always available: Buy/Sell by Market, Limit,
+              Stop, Stop Limit, SL/TP, expiry. Off = the ticket's button confirms. */}
+          {mode.scope && (
+            <OrderTicketButton symbol={symbol} source="chart" prefill={{ lot: lot ?? mode.defaultVolume }} onPlaced={onPositionsChanged} className="ml-auto h-7" />
+          )}
           <Button
             size="sm"
             variant="outline"
-            className="ml-auto h-7 text-xs"
+            className={cn("h-7 text-xs", !mode.scope && "ml-auto")}
             disabled={mode.loading || !mode.canEnable}
             title={mode.canEnable ? undefined : mode.blockReason ?? undefined}
             onClick={() => setDisclaimerOpen(true)}
@@ -198,7 +208,7 @@ export function OneClickTradePanel({
         </Button>
 
         <div className="flex w-[132px] items-center gap-1">
-          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, -1, mode.maxLotPerClick)))} disabled={executing} aria-label="Decrease lot" data-testid="one-click-lot-minus">
+          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, -1, mode.maxLotPerClick, lotSpec)))} disabled={executing} aria-label="Decrease lot" data-testid="one-click-lot-minus">
             <Minus className="h-3.5 w-3.5" />
           </Button>
           <Input
@@ -209,7 +219,7 @@ export function OneClickTradePanel({
             aria-label="Lot size"
             data-testid="one-click-lot"
           />
-          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, 1, mode.maxLotPerClick)))} disabled={executing} aria-label="Increase lot" data-testid="one-click-lot-plus">
+          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, 1, mode.maxLotPerClick, lotSpec)))} disabled={executing} aria-label="Increase lot" data-testid="one-click-lot-plus">
             <Plus className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -224,6 +234,10 @@ export function OneClickTradePanel({
           <span className="text-[10px] font-semibold tracking-wide opacity-80">BUY</span>
           <span className="font-mono text-base leading-tight" data-testid="one-click-ask">{fmtPrice(ask)}</span>
         </Button>
+
+        {/* Pending orders (Buy/Sell Limit, Buy/Sell Stop, Stop Limit) with SL/TP and
+            expiry — MT5 places those from the order window, never one-click. */}
+        <OrderTicketButton symbol={symbol} source="chart" prefill={{ lot: lot ?? mode.defaultVolume }} onPlaced={onPositionsChanged} className="h-12 px-2" label="Pending…" />
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-txt-secondary" data-testid="one-click-meta">
@@ -249,10 +263,17 @@ export function OneClickTradePanel({
                 {pnl != null && (
                   <span className={cn("ml-auto font-mono", pnl >= 0 ? "text-emerald-400" : "text-rose-400")}>{pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}</span>
                 )}
+                <ModifySlTpButton
+                  compact
+                  className={cn(pnl == null && "ml-auto")}
+                  source="chart"
+                  onModified={onPositionsChanged}
+                  target={{ scope: p.scope, ticket: p.brokerTicket!, symbol: p.symbol ?? symbol, side: p.side, entryPrice: p.entryPrice, currentPrice: p.currentPrice, stopLoss: p.stopLoss, takeProfit: p.takeProfit }}
+                />
                 <Button
                   size="icon"
                   variant="ghost"
-                  className={cn("h-6 w-6 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200", pnl == null && "ml-auto")}
+                  className="h-6 w-6 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
                   onClick={() => void close(p)}
                   disabled={executing}
                   aria-label={`Close position ${p.brokerTicket}`}

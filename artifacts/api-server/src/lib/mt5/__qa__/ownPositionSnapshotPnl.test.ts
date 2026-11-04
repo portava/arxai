@@ -29,6 +29,9 @@ mock.module("../../positions/ledger.js", {
 let governedTickets: string[] = [];
 const fakeDb = {
   select: () => ({ from: () => ({ where: async () => governedTickets.map((t) => ({ t })) }) }),
+  // The reconciler promotes a filled PLACED_DEMO pending order with a CAS
+  // update (demo pending orders, 2026-11-04); this suite only checks P/L.
+  update: () => ({ set: () => ({ where: async () => undefined }) }),
 };
 mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 

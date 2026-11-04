@@ -56,6 +56,7 @@ const ALLOWED_SOURCE_PREFIXES: readonly string[] = [
   "INSTANT_", // Global Instant Trade Router: place / modify / close (chart, scanner, …)
   "LIVE_TRADE_TICKET", // Live shared trade ticket (createLiveDraft default)
   "LIVE_POSITIONS_", // Open Live Positions: CLOSE / CLOSE_ALL / MODIFY
+  "LIVE_PENDING_ORDERS_", // Live pending orders: CANCEL / MODIFY (createLiveOpsDraft pending control)
   "LIVE_POSITION_OPS", // createLiveOpsDraft default
   "CONTROLLED_LIVE_TEST", // MT5 Setup → Controlled Live Test
   "LIVE_TEST_CYCLE", // Live Test Cycle (bare dispatch)
@@ -89,6 +90,10 @@ export function actionTypeForCommand(commandType: string): string {
       return "CLOSE_POSITION";
     case "MODIFY_LIVE_SLTP":
       return "MODIFY_SL_TP";
+    case "CANCEL_LIVE_PENDING_ORDER":
+      return "CANCEL_PENDING_ORDER";
+    case "MODIFY_LIVE_PENDING_ORDER":
+      return "MODIFY_PENDING_ORDER";
     default:
       return "LIVE_COMMAND";
   }

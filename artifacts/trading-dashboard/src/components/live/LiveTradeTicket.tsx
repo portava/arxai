@@ -36,6 +36,8 @@ import { humanizeReason } from "@/lib/humanize";
 import { useAssistantName } from "@/lib/assistant-name";
 import { RejectionDisplay } from "@/components/live/RejectionDisplay";
 import { executeInstantTrade } from "@/lib/instantTradeRouter";
+import { BROKER_CLOCK_UNKNOWN_HINT, useBrokerClockOffset } from "@/hooks/useBrokerClockOffset";
+import { expirationIso, orderTypeInfo, parseNum, validateTicket, type ExpirationChoice } from "@/lib/orderTicketRules";
 import { EventImpactBadge } from "@/components/news/EventImpactBadge";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -201,7 +203,15 @@ export function LiveTradeTicket({
   const [volume, setVolume] = useState("0.01");
   const [stopLoss, setSL] = useState("");
   const [takeProfit, setTP] = useState("");
+  // Pending orders (MT5): trigger price, stop-limit leg, expiry. Same rules as
+  // the order window (orderTicketRules.validateTicket); the server re-checks.
+  const [priceText, setPriceText] = useState("");
+  const [stopLimitText, setStopLimitText] = useState("");
+  const [expiration, setExpiration] = useState<ExpirationChoice>("GTC");
+  const [expiresAt, setExpiresAt] = useState("");
   const [lastResult, setLastResult] = useState<{ status: string; reason: string | null } | null>(null);
+  // "Today" ends at the end of the broker's day (own bridge's measured offset).
+  const brokerClock = useBrokerClockOffset();
 
   // Seed defaults from one-click settings when they load (only if user
   // didn't pass an explicit defaultSymbol/defaultSide override).
@@ -284,6 +294,30 @@ export function LiveTradeTicket({
   const slRequired = (!oneClickActive || !allowNoSl) && !isOwnerUnrestricted;
   const missingSLRaw = slRequired && sl == null && isMarket(orderType);
   const missingSL = missingSLRaw;
+  // Pending-order fields: the first rule the ticket breaks (price missing or on
+  // the wrong side of the stop leg, expiry in the past, SL/TP on the wrong side
+  // of the pending price). No live quote here, so the Bid/Ask side check is the
+  // server's and the broker's.
+  const pendingDraft = {
+    orderType, lot: vol > 0 ? vol : null,
+    price: parseNum(priceText), stopLimitPrice: parseNum(stopLimitText),
+    stopLoss: sl, takeProfit: tp,
+    expiration, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+    brokerClockOffsetMs: brokerClock.offsetMs,
+  };
+  const pendingError = isMarket(orderType)
+    ? null
+    : (validateTicket(pendingDraft, { bid: null, ask: null }).errors.find((e) => !/lot size/i.test(e)) ?? null);
+  const pendingPayload = (): Record<string, unknown> => {
+    if (isMarket(orderType)) return {};
+    const iso = expirationIso(pendingDraft);
+    return {
+      price: pendingDraft.price,
+      stopLimitPrice: orderTypeInfo(orderType).kind === "STOP_LIMIT" ? pendingDraft.stopLimitPrice : null,
+      expiration: iso,
+      expirationEpoch: iso ? Math.floor(Date.parse(iso) / 1000) : null,
+    };
+  };
 
   // One-click BUY/SELL routed through the Global Instant Trade Router
   // (`/api/trades/instant/execute`). Same 16-gate Phase B evaluator as
@@ -341,6 +375,7 @@ export function LiveTradeTicket({
           requestedVolume: vol, stopLoss: sl, takeProfit: tp,
           sourcePage: sourcePage ?? "LIVE_TRADE_TICKET",
           rubyExplanationSummary: rubyExplanationSummary ?? null,
+          payload: pendingPayload(),
         }),
       });
       const j = await r.json();
@@ -511,7 +546,7 @@ export function LiveTradeTicket({
   // acknowledgement checkbox). Pressing Confirm submits directly; every
   // server gate still runs. SL stays required for non-owner profiles
   // (owner-unrestricted waives it via slRequired above).
-  const canSubmit = armed && vol > 0 && !overLot && !missingSL && !submitStandard.isPending && !tradabilityBlocked;
+  const canSubmit = armed && vol > 0 && !overLot && !missingSL && !pendingError && !submitStandard.isPending && !tradabilityBlocked;
   // Single explicit reason the Confirm button is disabled (shown verbatim
   // beneath it) so the user always knows what to fix.
   const submitDisabledReason = (() => {
@@ -522,6 +557,7 @@ export function LiveTradeTicket({
     if (!(vol > 0)) return "Enter a volume greater than 0 to confirm.";
     if (overLot) return `Volume exceeds the max lot ${maxLot}.`;
     if (missingSL) return "A stop loss is required by your settings. Enter one to confirm.";
+    if (pendingError) return pendingError;
     if (tradabilityBlocked) return "This symbol can't be traded right now.";
     return null;
   })();
@@ -613,6 +649,37 @@ export function LiveTradeTicket({
               <Input type="number" step="0.0001" value={takeProfit} onChange={(e) => setTP(e.target.value)} data-testid="input-live-tp" />
             </div>
           </div>
+          {!isMarket(orderType) && (
+            <div className="grid grid-cols-2 gap-2" data-testid="live-pending-fields">
+              <div>
+                <Label>{orderTypeInfo(orderType).kind === "STOP_LIMIT" ? "Stop price" : "Price"}</Label>
+                <Input type="number" step="0.0001" value={priceText} onChange={(e) => setPriceText(e.target.value)} data-testid="input-live-price" />
+              </div>
+              {orderTypeInfo(orderType).kind === "STOP_LIMIT" && (
+                <div>
+                  <Label>Stop Limit price</Label>
+                  <Input type="number" step="0.0001" value={stopLimitText} onChange={(e) => setStopLimitText(e.target.value)} data-testid="input-live-stop-limit" />
+                </div>
+              )}
+              <div className="col-span-2 flex flex-wrap items-center gap-1">
+                <Label className="mr-1">Expiration</Label>
+                {(["GTC", "TODAY", "SPECIFIED"] as ExpirationChoice[]).map((c) => (
+                  <Button key={c} type="button" size="sm" variant={expiration === c ? "default" : "outline"} className="h-7 text-xs"
+                    onClick={() => setExpiration(c)} data-testid={`btn-live-exp-${c}`}>
+                    {c === "GTC" ? "GTC" : c === "TODAY" ? "Today" : "Specified"}
+                  </Button>
+                ))}
+                {expiration === "SPECIFIED" && (
+                  <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} aria-label="Expiry date and time"
+                    className="h-7 rounded border border-zinc-800 bg-transparent px-1 text-xs" data-testid="input-live-exp-at" />
+                )}
+              </div>
+              {expiration === "TODAY" && brokerClock.offsetMs == null && !brokerClock.loading && (
+                <div className="col-span-2 text-[11px] text-muted-foreground" data-testid="live-exp-broker-clock-hint">{BROKER_CLOCK_UNKNOWN_HINT}</div>
+              )}
+              <div className="col-span-2 text-[11px] text-muted-foreground" data-testid="live-pending-hint">{orderTypeInfo(orderType).hint}</div>
+            </div>
+          )}
         </div>
 
         {rubyExplanationSummary && (

@@ -24,7 +24,7 @@
 //     accepted as payload or written to the table.
 
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, lt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   db,
@@ -34,6 +34,8 @@ import {
 import {
   buildSafetyGateSnapshot,
   DEMO_COMMAND_TYPES,
+  DEMO_EXPIRED_NO_RESULT_PREFIX,
+  demoCommandEaVersionBlocker,
   isValidDemoCommandTransition,
   type DemoCommandStatus,
   type DemoCommandType,
@@ -47,6 +49,8 @@ import {
   buildArxOrderComment,
 } from "./masterBridgeRouting.js";
 import { recordSecurityEvent } from "../security/events.js";
+import { cancelPendingTicket, normaliseDemoPendingPayload } from "./demoPendingOrder.js";
+import { selectExpirableSentRows } from "./demoBridgeContract.js";
 
 function maskAccountLogin(login: string | null | undefined): string | null {
   if (!login) return null;
@@ -87,6 +91,31 @@ export async function createDraftCommand(args: DraftCommandArgs): Promise<QueueO
   }
   if (!isAcceptablePayload(args.payload)) {
     return { ok: false, reason: "INVALID_PAYLOAD" };
+  }
+  // Pending orders: validate against the server's MT5 order rules and shape
+  // the payload the v1.32 EA reads. A cancel may only name the trader's own
+  // order that is resting at the broker (PLACED_DEMO).
+  if (args.commandType === "PLACE_PENDING_ORDER") {
+    const n = normaliseDemoPendingPayload(args.payload);
+    if (!n.ok) return { ok: false, reason: n.reason };
+    args = { ...args, payload: n.payload };
+  } else if (args.commandType === "CANCEL_PENDING_ORDER") {
+    const ticket = cancelPendingTicket(args.payload);
+    if (!ticket) return { ok: false, reason: "ORDER_TICKET_REQUIRED" };
+    const placed = await findPlacedPendingOrder(args.userId, ticket);
+    if (!placed) return { ok: false, reason: "PENDING_ORDER_NOT_FOUND" };
+    const p = (placed.payload ?? {}) as Record<string, unknown>;
+    args = {
+      ...args,
+      payload: {
+        ...args.payload,
+        symbol: String(p["symbol"] ?? args.payload["symbol"] ?? ""),
+        side: p["side"] ?? null,
+        orderTicket: ticket,
+        ticket,
+        placeCommandId: placed.commandId,
+      },
+    };
   }
 
   // User must be armed for demo to even DRAFT a command.
@@ -133,6 +162,13 @@ export async function createDraftCommand(args: DraftCommandArgs): Promise<QueueO
   if (!conn) {
     return { ok: false, reason: "NO_ACTIVE_DEMO_BRIDGE:RACE_BRIDGE_GONE" };
   }
+  // Command-specific EA minimum (pending orders need v1.32). Refused before a
+  // row exists, so the trader sees why instead of an EA UNKNOWN_COMMAND.
+  const versionBlocker = demoCommandEaVersionBlocker(
+    args.commandType,
+    probeGate.evidence.reportedEaVersion ?? conn.eaVersion ?? null,
+  );
+  if (versionBlocker) return { ok: false, reason: versionBlocker };
 
   // MASTER_ACCOUNT_EXPOSURE guard (M06) — only relevant when routing
   // through the shared master bridge, and only for an entry: a close or a
@@ -273,6 +309,35 @@ export async function createDraftCommand(args: DraftCommandArgs): Promise<QueueO
   } catch { /* non-fatal */ }
 
   return { ok: true, command: row };
+}
+
+/** The trader's PLACE_PENDING_ORDER row whose order rests at the broker under `ticket`. */
+export async function findPlacedPendingOrder(userId: number, ticket: string): Promise<Mt5DemoCommand | null> {
+  const rows = await db
+    .select()
+    .from(mt5DemoCommandsTable)
+    .where(and(
+      eq(mt5DemoCommandsTable.userId, userId),
+      eq(mt5DemoCommandsTable.brokerTicket, ticket),
+      eq(mt5DemoCommandsTable.commandType, "PLACE_PENDING_ORDER"),
+      eq(mt5DemoCommandsTable.status, "PLACED_DEMO"),
+    ))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** The trader's demo pending orders resting at the broker, oldest first. */
+export async function listPlacedPendingOrders(userId: number): Promise<Mt5DemoCommand[]> {
+  return db
+    .select()
+    .from(mt5DemoCommandsTable)
+    .where(and(
+      eq(mt5DemoCommandsTable.userId, userId),
+      eq(mt5DemoCommandsTable.commandType, "PLACE_PENDING_ORDER"),
+      eq(mt5DemoCommandsTable.status, "PLACED_DEMO"),
+    ))
+    .orderBy(asc(mt5DemoCommandsTable.id))
+    .limit(100);
 }
 
 async function loadOwnedCommand(userId: number, commandId: string): Promise<Mt5DemoCommand | null> {
@@ -588,40 +653,55 @@ export async function cancelOrphanedSentCommands(args: {
   };
 }
 
+/** How long the EA may still start a SENT_TO_MT5_DEMO command. The poll
+ *  serves `secondsUntilExpiry`; v1.32 refuses an expired command with
+ *  FAILED EXPIRED_BEFORE_EXECUTION and never calls the broker. */
+export const DEMO_COMMAND_TTL_MS = 2 * 60_000;
+/** Extra time after the TTL before the server sweep gives up on a result: an
+ *  EA that started at the last second still has this long to report. */
+export const DEMO_COMMAND_RESULT_GRACE_MS = 60_000;
+export const DEMO_EXPIRED_NO_RESULT_REASON = `${DEMO_EXPIRED_NO_RESULT_PREFIX}RESULT` as const;
+
 /**
- * Expire stale SENT_TO_MT5_DEMO commands — v1.26 EA clarity.
+ * Expire SENT_TO_MT5_DEMO commands the EA never reported on.
  *
- * Finds rows in SENT_TO_MT5_DEMO whose sentAt is older than `olderThanMs`
- * (default 2 minutes) and transitions them to FAILED with reason
- * `EXPIRED_DEMO_NO_EA_PICKUP_2MIN`. This covers the case where the EA was
- * present at dispatch time but stopped polling (chart removed, MT5 closed,
- * EA paused) before the command was picked up. Without this sweep those
- * rows would block subsequent dispatches that share a fingerprint via the
- * partial unique index on (user_id, fingerprint).
+ * Rows sent more than `olderThanMs` ago (default TTL + grace) with no EA
+ * result go to FAILED / EXPIRED_DEMO_NO_EA_RESULT, so they stop blocking the
+ * fingerprint index and the risk governor's in-flight count. Runs on a server
+ * interval (startDemoCommandExpirySweep) for every user, and on the demo
+ * bridge debug read for one user.
  *
- * SAFETY: only acts on SENT_TO_MT5_DEMO → FAILED (already allowed by the
- * transition table). Never sends anything to MT5. liveLocked stays true.
+ * SAFETY: compare-and-swap on SENT_TO_MT5_DEMO, so an EA result that lands
+ * first wins. A result that lands AFTER the sweep is still recorded by the
+ * reconciler (isLateDemoResultAcceptable) and flagged, never orphaned.
+ * Never sends anything to MT5.
  */
 export async function expireStaleSentCommands(args: {
-  userId: number;
+  /** Omitted: every user (the server interval). */
+  userId?: number | null;
   olderThanMs?: number;
   actorIp?: string | null;
   actorUserAgent?: string | null;
+  now?: Date;
 }): Promise<{ expiredCommandIds: string[] }> {
-  const olderThanMs = args.olderThanMs ?? 2 * 60_000;
-  const cutoff = new Date(Date.now() - olderThanMs);
+  const olderThanMs = args.olderThanMs ?? DEMO_COMMAND_TTL_MS + DEMO_COMMAND_RESULT_GRACE_MS;
+  const now = args.now ?? new Date();
+  const cutoff = new Date(now.getTime() - olderThanMs);
+  const conds = [
+    eq(mt5DemoCommandsTable.status, "SENT_TO_MT5_DEMO"),
+    lt(mt5DemoCommandsTable.sentAt, cutoff),
+    isNull(mt5DemoCommandsTable.terminalAt),
+    isNull(mt5DemoCommandsTable.filledAt),
+    isNull(mt5DemoCommandsTable.brokerTicket),
+  ];
+  if (args.userId != null) conds.push(eq(mt5DemoCommandsTable.userId, args.userId));
   const rows = await db
     .select()
     .from(mt5DemoCommandsTable)
-    .where(
-      and(
-        eq(mt5DemoCommandsTable.userId, args.userId),
-        eq(mt5DemoCommandsTable.status, "SENT_TO_MT5_DEMO"),
-      ),
-    );
-  const stale = rows.filter(
-    (r) => r.sentAt != null && new Date(r.sentAt).getTime() < cutoff.getTime(),
-  );
+    .where(and(...conds))
+    .orderBy(asc(mt5DemoCommandsTable.sentAt))
+    .limit(500);
+  const stale = selectExpirableSentRows(rows, cutoff);
   const expired: string[] = [];
   for (const row of stale) {
     try {
@@ -633,8 +713,8 @@ export async function expireStaleSentCommands(args: {
         row,
         "FAILED",
         {
-          reason: "EXPIRED_DEMO_NO_EA_PICKUP_2MIN",
-          terminalAt: new Date(),
+          reason: DEMO_EXPIRED_NO_RESULT_REASON,
+          terminalAt: now,
         },
         { expectedStatus: "SENT_TO_MT5_DEMO" },
       );
@@ -644,18 +724,20 @@ export async function expireStaleSentCommands(args: {
           eventType: "DEMO_COMMAND_CANCELLED",
           severity: "INFO",
           status: "ALLOWED",
-          actorUserId: args.userId,
-          route: "/api/me/demo-bridge-debug",
-          method: "GET",
+          actorUserId: row.userId,
+          route: args.userId != null ? "/api/me/demo-bridge-debug" : "/internal/demoCommandExpirySweep",
+          method: args.userId != null ? "GET" : "INTERNAL",
           ipAddress: args.actorIp ?? null,
           userAgent: args.actorUserAgent ?? null,
-          message: `Stale demo command expired after ${Math.round(olderThanMs / 1000)}s with no EA pickup.`,
+          message: `Demo command expired after ${Math.round(olderThanMs / 1000)}s with no EA result.`,
           metadata: {
             commandId: row.commandId,
+            commandType: row.commandType,
+            bridgeConnectionId: row.bridgeConnectionId,
             previousStatus: row.status,
             sentAt: row.sentAt?.toISOString() ?? null,
-            ageSeconds: row.sentAt ? Math.round((Date.now() - new Date(row.sentAt).getTime()) / 1000) : null,
-            reason: "EXPIRED_DEMO_NO_EA_PICKUP_2MIN",
+            ageSeconds: row.sentAt ? Math.round((now.getTime() - new Date(row.sentAt).getTime()) / 1000) : null,
+            reason: DEMO_EXPIRED_NO_RESULT_REASON,
             result: "EXPIRED",
           },
         });
@@ -665,6 +747,22 @@ export async function expireStaleSentCommands(args: {
     }
   }
   return { expiredCommandIds: expired };
+}
+
+let expirySweepTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Server interval for expireStaleSentCommands (unref'd; opt out with ARX_DEMO_EXPIRY_SWEEP_ENABLED=false). */
+export function startDemoCommandExpirySweep(intervalMs = 30_000): void {
+  if (expirySweepTimer || process.env.ARX_DEMO_EXPIRY_SWEEP_ENABLED === "false") return;
+  let running = false;
+  expirySweepTimer = setInterval(() => {
+    if (running) return;
+    running = true;
+    void expireStaleSentCommands({})
+      .catch(() => { /* fail-soft; next tick retries */ })
+      .finally(() => { running = false; });
+  }, intervalMs);
+  expirySweepTimer.unref?.();
 }
 
 /**
