@@ -13,6 +13,7 @@ import { ChartAiOverlayPanel } from "@/components/charts/ChartAiOverlayPanel";
 import { ChartSetupPreviewPanel } from "@/components/charts/ChartSetupPreviewPanel";
 import { ChartModes } from "@/components/charts/ChartModes";
 import { ChartTradeEntry, type ChartTradePrefill } from "@/components/charts/ChartTradeEntry";
+import { OneClickTradePanel } from "@/components/oneclick/OneClickTradePanel";
 import { PositionPickerPanel } from "@/components/positions/PositionPickerPanel";
 import { useLivePositionOverlays } from "@/hooks/useLivePositionOverlays";
 import { useAiChartOverlays } from "@/hooks/useAiChartOverlays";
@@ -190,6 +191,16 @@ export default function LiveChartPage() {
           <TradingViewLiveChart defaultSymbol={chartSymbol || "V75"} height={680} />
         ) : (
           <div className="min-w-0 space-y-4">
+            {/* MT5-style one-click bar. Off → a single "Turn on" button (disclaimer
+                first). On → SELL bid | lot | BUY ask + × close, first click trades.
+                Same gated router / demo queue underneath; nothing bypasses a gate. */}
+            {canSeeTradeEntry && (
+              <OneClickTradePanel
+                symbol={bareSymbol(chartSymbol)}
+                positions={overlayData.positions}
+                onPositionsChanged={overlayData.reload}
+              />
+            )}
             <SmartChartLayout symbol={chartSymbol}>
               <ARXNativeChart
                 symbol={chartSymbol}

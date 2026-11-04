@@ -2,6 +2,7 @@ import React from "react";
 import { useGetMt5Status, useGetBotStatus, getGetMt5StatusQueryKey, getGetBotStatusQueryKey } from "@workspace/api-client-react";
 import { SymbolPicker } from "./SymbolPicker";
 import { NotificationBell } from "@/components/alerts/NotificationBell";
+import { OneClickModeToggle } from "@/components/oneclick/OneClickModeToggle";
 import { WifiOff, Lock, Zap, Plug, Globe2, Sun, Moon, CloudMoon } from "lucide-react";
 import { getCurrentSession } from "@/lib/symbol-context";
 import { safeDate } from "@/lib/safeFormat";
@@ -157,6 +158,7 @@ export function Topbar({ onMobileMenu }: { onMobileMenu?: React.ReactNode }) {
         />
 
         <div className="ml-auto flex items-center gap-1">
+          <OneClickModeToggle />
           <ViewModeSwitch />
           <NotificationBell />
           <UserMenu />

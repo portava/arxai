@@ -3,7 +3,8 @@
 // is currently showing.
 //
 // SAFETY:
-//  - This component NEVER fires an order. It only opens LiveTradeTicket
+//  - With one-click mode OFF this component never fires an order. It only
+//    opens LiveTradeTicket
 //    (which itself requires armed status, one-click toggle OR manual
 //    typed confirmation, then runs every Phase B / master / one-click /
 //    exposure / cooldown gate on the server).
@@ -11,6 +12,10 @@
 //  - High-impact economic events for the symbol's currencies are surfaced
 //    via EventImpactBadge so the user can see news risk before opening
 //    the ticket.
+//  - With one-click mode ON (user accepted the disclaimer, see
+//    useOneClickMode) Buy/Sell send a market order on the first click with the
+//    saved default lot, through the same gated router / demo queue. A
+//    setup-preview prefill still opens the ticket for review, never auto-fires.
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -24,6 +29,9 @@ import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
 import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { EventImpactBadge } from "@/components/news/EventImpactBadge";
 import { HighImpactEventBanner } from "@/components/news/HighImpactEventBanner";
+import { useOneClickMode } from "@/hooks/useOneClickMode";
+import { humanizeReason } from "@/lib/humanize";
+import { useToast } from "@/hooks/use-toast";
 
 // A setup-preview "Use this setup" prefill. `token` changes on every fresh
 // pick so the same setup can be re-applied. This NEVER places an order — it only
@@ -73,9 +81,25 @@ export function ChartTradeEntry({
   // ticket's one-click auto-confirm is suppressed so a drawing can never
   // auto-dispatch — the user must click Confirm explicitly.
   const [openedFromPrefill, setOpenedFromPrefill] = useState(false);
+  const oneClick = useOneClickMode();
+  const oneClickOn = oneClick.mode.on;
+  const { toast } = useToast();
+
+  // One-click mode: the first click IS the order. Default lot, market order,
+  // same gated path as the one-click bar. Blocked clicks surface the reason.
+  const fireOneClick = async (s: "BUY" | "SELL") => {
+    const r = await oneClick.execute({ side: s, symbol, volume: oneClick.mode.defaultVolume, source: "chart" });
+    if (r.ok) {
+      toast({ title: `${s} ${symbol} ${oneClick.mode.defaultVolume}`, description: oneClick.mode.scope === "live" ? "Sent to your broker through the live router." : "Filled on demo." });
+    } else {
+      const h = humanizeReason(r.reason ?? r.status);
+      toast({ title: `${s} blocked`, description: h.description || r.reason || r.status, variant: "destructive" });
+    }
+  };
 
   const openTicket = (s: "BUY" | "SELL", fromPrefill = false) => {
     if (accessLoading) return; // wait until access resolves; button disabled below
+    if (oneClickOn && !fromPrefill) { void fireOneClick(s); return; }
     setSide(s);
     setOpenedAsShared(access.canTrade === true);
     setOpenedFromPrefill(fromPrefill);
@@ -99,8 +123,10 @@ export function ChartTradeEntry({
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <CardTitle className="text-base">Trade from chart</CardTitle>
-              <CardDescription className="text-xs">
-                Opens trade ticket. Final confirmation required.
+              <CardDescription className="text-xs" data-testid="chart-trade-entry-mode">
+                {oneClickOn
+                  ? `One-click ON: Buy/Sell execute immediately (${oneClick.mode.defaultVolume} lot, ${oneClick.mode.scope?.toUpperCase()}).`
+                  : "Opens trade ticket. Final confirmation required."}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -124,7 +150,7 @@ export function ChartTradeEntry({
               variant="default"
               className="bg-emerald-600 hover:bg-emerald-500 text-white"
               onClick={() => openTicket("BUY")}
-              disabled={accessLoading}
+              disabled={accessLoading || oneClick.busyKey != null}
               data-testid="btn-chart-open-buy"
             >
               <TrendingUp className="h-4 w-4 mr-2" />
@@ -134,7 +160,7 @@ export function ChartTradeEntry({
               variant="default"
               className="bg-rose-600 hover:bg-rose-500 text-white"
               onClick={() => openTicket("SELL")}
-              disabled={accessLoading}
+              disabled={accessLoading || oneClick.busyKey != null}
               data-testid="btn-chart-open-sell"
             >
               <TrendingDown className="h-4 w-4 mr-2" />
