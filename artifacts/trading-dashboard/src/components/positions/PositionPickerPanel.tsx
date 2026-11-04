@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { PositionSideCard, type UnifiedPosition } from "./PositionSideCard";
+import { PositionSideCard, positionReportState, useNowMs, type PositionReportClock, type UnifiedPosition } from "./PositionSideCard";
 import { resolveSafetyError } from "./safetyMessages";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -12,7 +12,13 @@ const u = (p: string) => `${BASE}${p}`;
 
 const POLL_MS = 5000;
 
-type Resp = { ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null };
+type Resp = {
+  ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null;
+  /** False when the server could not read the account's mode and filtered rows as PAPER. */
+  modeResolved?: boolean; modeScopeNote?: string | null;
+  /** Server clock reading the rows' freshness verdicts were taken against. */
+  generatedAt?: string | null;
+};
 
 // Lightweight in-card confirm dialogs. We do NOT use the existing
 // ClosePositionConfirmModal / StopLossTakeProfitEditor here because those are
@@ -30,11 +36,15 @@ type ConfirmState =
 export function PositionPickerPanel() {
   const [data, setData] = useState<Resp | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: "none" });
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
   const { user } = useCurrentUser();
+  // Same clock and freshness rule as the side card, so a row's P/L is only
+  // shown as current while the bridge report behind it is.
+  const nowMs = useNowMs();
   const isAdmin = user?.role === "ADMIN" || user?.role === "OWNER";
   const describe = (payload: unknown, status?: number) => {
     const r = resolveSafetyError(payload, status);
@@ -45,11 +55,16 @@ export function PositionPickerPanel() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
+      // The answer is stamped with when the request was sent, not when it
+      // arrived: the server reads its clock (generatedAt) after the request
+      // reaches it, then still reads more and sends the answer. Ageing from
+      // the send time counts that time too, so an age can only be overstated.
+      const sentAt = Date.now();
       try {
         const r = await fetch(u("/api/me/positions/all"), { credentials: "include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as Resp;
-        if (!cancelled) { setData(j); setErr(null); }
+        if (!cancelled) { setData(j); setErr(null); setLoadedAt(sentAt); }
       } catch (e) {
         if (!cancelled) setErr((e as Error).message);
       } finally {
@@ -60,6 +75,14 @@ export function PositionPickerPanel() {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, []);
 
+  // Report ages are computed on one clock at a time (server age at read +
+  // browser time since the request was sent), never a server timestamp
+  // against this browser's clock.
+  const serverNowMs = data?.generatedAt ? Date.parse(data.generatedAt) : NaN;
+  const reportClock: PositionReportClock | undefined = loadedAt == null
+    ? undefined
+    : { receivedAtMs: loadedAt, serverNowMs: Number.isFinite(serverNowMs) ? serverNowMs : null };
+
   const all: UnifiedPosition[] = [...(data?.live ?? []), ...(data?.demo ?? [])];
   const selectedPos = all.find((p) => `${p.scope}:${p.brokerTicket}` === selected) ?? null;
   // Canonical cross-surface rule: live rows are withheld because the account
@@ -68,6 +91,17 @@ export function PositionPickerPanel() {
   // raw reason token is never rendered to the user.
   const notLiveMode = data?.notLiveReason === "ACCOUNT_NOT_IN_LIVE_MODE";
   const hasLive = (data?.live?.length ?? 0) > 0;
+  // The server could not read the account's mode and filtered rows as PAPER.
+  // That is not "not in live mode" and not "no positions": the account may be
+  // live and hold positions, so the count and the empty copy are withheld.
+  const modeUnread = data?.modeResolved === false;
+  // The count comes only from an answer that was read: before the first
+  // answer, after a failed first load, or with the mode unread and nothing
+  // listed, there is no count (never a 0 nobody counted).
+  const openCount: number | null =
+    !data || (modeUnread && all.length === 0) || !Number.isFinite(data.liveCount) || !Number.isFinite(data.demoCount)
+      ? null
+      : data.liveCount + data.demoCount;
 
   const submitClose = async (pos: UnifiedPosition) => {
     if (!pos.brokerTicket) return;
@@ -120,18 +154,39 @@ export function PositionPickerPanel() {
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             My open positions
-            <Badge variant="outline" className="text-[10px]">{(data?.liveCount ?? 0) + (data?.demoCount ?? 0)}</Badge>
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              data-testid="badge-open-positions-count"
+              title={openCount == null
+                ? (err ? "Positions could not be loaded, so they were not counted." : modeUnread ? "Your account's trading mode could not be read, so positions were not counted." : "Positions have not loaded yet.")
+                : err && loadedAt != null ? `Count from the last successful load at ${new Date(loadedAt).toLocaleTimeString()}.` : undefined}
+            >
+              {openCount ?? "—"}
+            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {err && <div className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">Couldn't load positions: {err}</div>}
-          {!err && notLiveMode && !hasLive && (
+          {err && (
+            <div data-testid="positions-load-error" className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">
+              {data && loadedAt != null
+                ? `Could not refresh positions (${err}). The list below is from the last successful load at ${new Date(loadedAt).toLocaleTimeString()}.`
+                : `Positions could not be loaded: ${err}`}
+            </div>
+          )}
+          {!err && modeUnread && all.length === 0 && (
+            <div data-testid="positions-mode-unread" className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200">
+              <div>{data?.modeScopeNote ?? "Your account's trading mode could not be read."}</div>
+              <div className="mt-0.5 text-[11px]">Positions were not loaded. Do not assume you are flat — check MT5 directly.</div>
+            </div>
+          )}
+          {!err && !modeUnread && notLiveMode && !hasLive && (
             <div data-testid="positions-not-live" className="rounded border border-zinc-700 bg-zinc-900/40 p-2 text-xs text-zinc-400">
               <div>You are not currently in live trading mode.</div>
               <div className="mt-0.5 text-[11px] text-zinc-500">Live positions will appear here when live mode is active.</div>
             </div>
           )}
-          {!err && all.length === 0 && !notLiveMode && (
+          {!err && all.length === 0 && !notLiveMode && !modeUnread && (
             <div data-testid="text-no-open-positions" className="text-xs text-zinc-500">
               You have no open demo or live positions right now.
             </div>
@@ -139,6 +194,10 @@ export function PositionPickerPanel() {
           {all.map((p) => {
             const key = `${p.scope}:${p.brokerTicket}`;
             const isSel = key === selected;
+            const report = positionReportState(p, nowMs, reportClock);
+            const pnlClass = !report.confirmed || p.floatingPnl == null
+              ? "text-zinc-400"
+              : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300";
             return (
               <button
                 key={key}
@@ -157,7 +216,11 @@ export function PositionPickerPanel() {
                       {p.accountMode}
                     </Badge>
                   </div>
-                  <span className={`font-mono ${(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  <span
+                    data-testid={`text-row-pnl-${p.scope}-${p.brokerTicket}`}
+                    className={`font-mono ${pnlClass}`}
+                    title={report.confirmed ? "Floating P/L" : "Last reported P/L — not confirmed as current"}
+                  >
                     {p.floatingPnl == null ? "—" : (p.floatingPnl >= 0 ? "+" : "") + p.floatingPnl.toFixed(2)}
                   </span>
                 </div>
@@ -165,6 +228,11 @@ export function PositionPickerPanel() {
                   <span>#{p.brokerTicket ?? "—"}</span>
                   <span>lot {p.lotSize ?? "—"}</span>
                   <span>entry {p.entryPrice ?? "—"}</span>
+                  {!report.confirmed && (
+                    <span data-testid={`text-row-report-${p.scope}-${p.brokerTicket}`} className="text-amber-300">
+                      {report.status}
+                    </span>
+                  )}
                 </div>
               </button>
             );
@@ -175,6 +243,7 @@ export function PositionPickerPanel() {
       {selectedPos && (
         <PositionSideCard
           position={selectedPos}
+          reportClock={reportClock}
           onClose={() => setSelected(null)}
           onCloseTrade={(pos) => setConfirm({ kind: "close", pos })}
           onModifySLTP={(pos) => setConfirm({ kind: "modify", pos, sl: pos.stopLoss?.toString() ?? "", tp: pos.takeProfit?.toString() ?? "" })}

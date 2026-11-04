@@ -129,6 +129,9 @@ export function LiveEaHeartbeatDebugCard() {
     if (isNone) return { tone: "bad", label: "Bridge not connected", sub: "Add your MT5 bridge from the MT5 Setup page to start." };
     if (isMock) return { tone: "bad", label: "Bridge not ready for live", sub: "Attach the latest MT5 Expert Advisor from a real MetaTrader 5 terminal so a real heartbeat is recorded." };
     if (!b) return { tone: "bad", label: "Bridge details unavailable", sub: "We couldn't read the bridge status. We'll keep retrying." };
+    // A heartbeat on record with no age is dated after the server's clock: its
+    // age cannot be verified, so it counts as stale (not "not heard from").
+    if (!b.heartbeatFresh && b.heartbeatAgeSeconds === null && b.lastHeartbeatAt) return { tone: "warn", label: "MT5 heartbeat age cannot be verified", sub: "The last heartbeat is dated after the server's clock, so its age cannot be checked and it counts as stale. This usually means the clocks disagree; it clears when a heartbeat arrives with a time the server can verify." };
     if (!b.heartbeatFresh) return { tone: "warn", label: "MT5 connection needs attention", sub: "We haven't heard from MetaTrader 5 in over 15 seconds. Make sure MT5 is open and the Expert Advisor is attached to a chart." };
     if (!eaVerOk) return { tone: "warn", label: "MT5 Expert Advisor needs updating", sub: "Install the latest Expert Advisor (v1.27 or newer) in MetaTrader 5." };
     if (b.eaInputs.readOnlyMode === true) return { tone: "warn", label: "MT5 EA is in read-only mode", sub: "In MetaTrader 5, open the EA's inputs and set ReadOnlyMode to false to allow order dispatch." };

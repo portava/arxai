@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PropChallengeProgressCard, PropProfitTargetMeter, PropDrawdownMeter,
   PropDailyLossLimitCard, PropRuleViolationFeed, PropChallengeCalendar, PropPassFailBanner,
@@ -29,10 +29,40 @@ interface EvalResp {
     tradeCount: number; profitTarget: number; maxDailyLoss: number;
     maxTotalDrawdown: number; minTradingDays: number; maxTradingDays: number;
     currentBalance: number;
+    /** True when the challenge is finished: judged only up to its end. */
+    final?: boolean;
+    evaluatedThrough?: string;
+    /** Drawdown / daily loss are built from closed paper trades only. */
+    drawdownBasis?: "CLOSED_TRADES_ONLY";
+    /** Open positions left out of drawdown / daily loss (floating P&L not read). */
+    openPositionsNotCounted?: number;
+    drawdownNote?: string;
+    /** Closes whose P&L could not be sized, and the plain-English disclosure. */
+    unsizedCloses?: number;
+    unsizedClosesNote?: string | null;
+    /** The pass/fail rules are checked on the booked figures shown and again at the paper risk model (x100); how the two differ. */
+    ruleBasisNote?: string | null;
+    /** Why a challenge whose booked figures meet the pass rules is not PASSED. */
+    passBlockedReason?: string | null;
   };
   days: Array<{ tradeDate: string; dailyProfitLoss: number; tradesTaken: number; dailyLossPercent: number }>;
   violations: Array<{ type: string; severity: "INFO"|"WARN"|"HARD"; message: string }>;
 }
+
+// Reads a JSON response and throws with the server's reason (or the HTTP
+// status) on a non-2xx, so a failed read is an error state, never data.
+async function jsonOrThrow<T>(r: Response): Promise<T> {
+  let body: unknown = null;
+  try { body = await r.json(); } catch { body = null; }
+  if (!r.ok) {
+    const reason = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string" ? (body as { error: string }).error : null;
+    throw new Error(reason ? `${reason} (HTTP ${r.status})` : `HTTP ${r.status}`);
+  }
+  if (body == null) throw new Error("empty response");
+  return body as T;
+}
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : "unknown error");
+const timeOf = (ms: number): string => new Date(ms).toLocaleTimeString();
 
 export default function PropChallengePage() {
   const qc = useQueryClient();
@@ -41,23 +71,44 @@ export default function PropChallengePage() {
 
   const list = useQuery<{ challenges: Challenge[] }>({
     queryKey: ["prop-list"],
-    queryFn: async () => (await fetch("/api/prop-challenges")).json(),
+    queryFn: async () => {
+      const body = await jsonOrThrow<{ challenges?: unknown }>(await fetch("/api/prop-challenges"));
+      if (!Array.isArray(body.challenges)) throw new Error("unexpected response");
+      return body as { challenges: Challenge[] };
+    },
     refetchInterval: 8000,
   });
-  const active = list.data?.challenges.find((c) => c.status === "ACTIVE" || c.status === "PAUSED")
-              ?? list.data?.challenges[0]
-              ?? null;
+  const challenges = list.data?.challenges ?? [];
+  // Only an ACTIVE or PAUSED challenge is the current one. A finished one
+  // (PASSED, FAILED, CANCELED) is shown as the last result, is not polled,
+  // and does not hide the form to start a new challenge.
+  const current = challenges.find((c) => c.status === "ACTIVE" || c.status === "PAUSED") ?? null;
+  const active = current ?? challenges[0] ?? null;
+  const finished = active != null && current == null;
 
   const evalQ = useQuery<EvalResp>({
     queryKey: ["prop-eval", active?.id],
     queryFn: async () => {
       const r = await fetch(`/api/prop-challenges/${active!.id}/evaluate`, { method: "POST" });
-      if (!r.ok) throw new Error("failed");
-      return r.json();
+      return jsonOrThrow<EvalResp>(r);
     },
     enabled: active != null,
-    refetchInterval: 8000,
+    refetchInterval: finished ? false : 8000,
   });
+  // A finished challenge is judged only up to its end (summary.final). When a
+  // challenge ends while this page is open (Cancel, or an evaluate poll that
+  // resolved it to PASSED/FAILED) the cached evaluation is the last ACTIVE
+  // one, so the final evaluation is requested once, and only a final one is
+  // shown for a finished challenge.
+  const evalIsFinal = evalQ.data?.summary.final === true;
+  const finalRequestedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!finished || active == null || evalQ.data == null || evalIsFinal || evalQ.isFetching) return;
+    if (finalRequestedFor.current === active.id) return;
+    finalRequestedFor.current = active.id;
+    void evalQ.refetch();
+  }, [finished, active?.id, evalQ.data, evalIsFinal, evalQ.isFetching]);
+  const showResults = evalQ.data != null && (!finished || evalIsFinal);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -87,17 +138,33 @@ export default function PropChallengePage() {
     <div className="space-y-4 p-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Prop Firm Challenge Mode</h1>
+          <h1 className="text-xl font-semibold text-slate-100">Prop Challenge Practice</h1>
           <p className="text-xs text-amber-300">Practice/training only — does not promise funded-account approval or guaranteed profits.</p>
+          <p className="text-xs text-slate-400" data-testid="prop-challenge-separate">
+            Challenges here are scored from your closed paper orders. This is separate from <a href="/prop-firm-mode" className="underline">Prop Firm Risk Mode</a>, which has its own target, limits and status; a status on one page says nothing about the other.
+          </p>
         </div>
         <span className="rounded bg-amber-700 px-3 py-1 text-xs font-bold text-white">SIMULATED</span>
       </header>
 
-      {!active && (
+      {list.isError && !list.data && (
+        <div role="alert" className="rounded-lg border border-rose-700 p-3 text-xs text-rose-300" data-testid="prop-list-error">
+          Your challenges could not be loaded ({errorText(list.error)}). Nothing is shown because nothing was read.
+          <button onClick={() => void list.refetch()} className="ml-2 underline">Retry</button>
+        </div>
+      )}
+      {list.isError && list.data && (
+        <p role="status" className="text-xs text-amber-300" data-testid="prop-list-stale">
+          Your challenges could not be refreshed ({errorText(list.error)}). What is shown is from the last successful read at {timeOf(list.dataUpdatedAt)}.
+        </p>
+      )}
+      {list.isPending && <p className="text-xs text-slate-400">Loading your challenges…</p>}
+
+      {!current && list.data && (
         <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4 space-y-2">
           <h3 className="text-sm font-semibold text-slate-100">Start a practice challenge</h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <label><span className="text-slate-400">Demo account ID</span>
+            <label><span className="text-slate-400">Paper account ID</span>
               <input type="number" value={paperAccountId} onChange={(e)=>setPaperAccountId(Number(e.target.value))} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
             </label>
             <label><span className="text-slate-400">Challenge name</span>
@@ -113,6 +180,33 @@ export default function PropChallengePage() {
 
       {active && (
         <>
+          {finished && (
+            <p className="text-xs text-slate-400" data-testid="prop-finished-note">
+              Your last challenge, {active.challengeName}, ended{active.completedAt ? ` on ${new Date(active.completedAt).toLocaleString()}` : ""} ({active.status}).
+              {showResults && " The results below cover only trades closed up to that time. Later paper trades are not part of it."}
+            </p>
+          )}
+          {evalQ.isError && !showResults && (
+            <p role="alert" className="rounded border border-rose-700 p-2 text-xs text-rose-300" data-testid="prop-eval-error">
+              {finished ? "The final result of this challenge could not be loaded" : "This challenge's evaluation could not be loaded"} ({errorText(evalQ.error)}).
+              <button onClick={() => void evalQ.refetch()} className="ml-2 underline">Retry</button>
+            </p>
+          )}
+          {evalQ.isError && showResults && (
+            <p role="status" className="text-xs text-amber-300" data-testid="prop-eval-stale">
+              The latest evaluation could not be loaded ({errorText(evalQ.error)}). The results below are from the evaluation loaded at {timeOf(evalQ.dataUpdatedAt)}.
+            </p>
+          )}
+          {finished && !showResults && !evalQ.isError && (
+            <p className="text-xs text-slate-400" data-testid="prop-final-result-state">
+              {evalQ.isFetching || evalQ.isPending
+                ? "Loading the final result of this challenge…"
+                : "The final result of this challenge was not returned."}
+              {!(evalQ.isFetching || evalQ.isPending) && (
+                <button onClick={() => void evalQ.refetch()} className="ml-2 underline">Retry</button>
+              )}
+            </p>
+          )}
           <PropPassFailBanner status={active.status} reason={active.failureReason} />
           <div className="flex flex-wrap gap-2">
             {active.status === "ACTIVE" && (
@@ -124,15 +218,26 @@ export default function PropChallengePage() {
             {(active.status === "ACTIVE" || active.status === "PAUSED") && (
               <button onClick={()=>transition.mutate("CANCELED")} className="rounded bg-slate-700 px-3 py-1 text-xs text-white hover:bg-slate-600">Cancel</button>
             )}
-            <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
+            {!finished && (
+              <button onClick={()=>evalQ.refetch()} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">Re-evaluate</button>
+            )}
           </div>
-          {evalQ.data && (
+          {showResults && evalQ.data && (
             <>
               <PropChallengeProgressCard summary={evalQ.data.summary} />
+              {evalQ.data.summary.passBlockedReason && (
+                <p className="text-xs text-amber-300" data-testid="prop-pass-blocked-reason">{evalQ.data.summary.passBlockedReason}</p>
+              )}
+              {evalQ.data.summary.unsizedClosesNote && (
+                <p className="text-xs text-amber-300" data-testid="prop-unsized-closes-note">{evalQ.data.summary.unsizedClosesNote}</p>
+              )}
+              {evalQ.data.summary.ruleBasisNote && (
+                <p className="text-xs text-muted-foreground" data-testid="prop-rule-basis-note">{evalQ.data.summary.ruleBasisNote}</p>
+              )}
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <PropProfitTargetMeter totalPct={evalQ.data.summary.totalPct} target={evalQ.data.summary.profitTarget} />
-                <PropDrawdownMeter ddPct={evalQ.data.summary.maxDrawdownPct} limit={evalQ.data.summary.maxTotalDrawdown} />
-                <PropDailyLossLimitCard worstPct={evalQ.data.summary.worstDayPct} worstDate={evalQ.data.summary.worstDayDate} limit={evalQ.data.summary.maxDailyLoss} />
+                <PropDrawdownMeter ddPct={evalQ.data.summary.maxDrawdownPct} limit={evalQ.data.summary.maxTotalDrawdown} openPositions={evalQ.data.summary.openPositionsNotCounted ?? null} />
+                <PropDailyLossLimitCard worstPct={evalQ.data.summary.worstDayPct} worstDate={evalQ.data.summary.worstDayDate} limit={evalQ.data.summary.maxDailyLoss} openPositions={evalQ.data.summary.openPositionsNotCounted ?? null} />
               </div>
               <PropRuleViolationFeed violations={evalQ.data.violations} />
               <PropChallengeCalendar days={evalQ.data.days} />

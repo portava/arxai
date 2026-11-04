@@ -149,6 +149,26 @@ describe("(6)+(7) Trade Health splits this-symbol from account-wide exposure", (
     expect(screen.getByTestId("trade-health-empty")).toBeTruthy();
     expect(screen.queryByTestId("trade-health-this-symbol")).toBeNull();
   });
+
+  it("positions that could not be read are not shown as 'No open positions'", () => {
+    const note = "Your MT5 account state could not be attributed to you.";
+    mockUseGetMeTradeHealth.mockReturnValue(
+      hookState({
+        data: resp({
+          assessments: [],
+          summary: `Your demo positions could not be checked. ${note}`,
+          positionsMeasured: false,
+          positionsNote: note,
+        }),
+      }),
+    );
+    render(<TradeHealthPanel chartSymbol="EURUSD" />);
+    expect(screen.queryByTestId("trade-health-empty")).toBeNull();
+    const el = screen.getByTestId("trade-health-not-measured");
+    expect(el.textContent).toMatch(/could not be checked/);
+    expect(el.textContent).toContain(note);
+    expect(screen.getByTestId("trade-health-panel").textContent).not.toMatch(/No open positions/);
+  });
 });
 
 describe("(Task #604) Trade Health header count badge is symbol-aware", () => {

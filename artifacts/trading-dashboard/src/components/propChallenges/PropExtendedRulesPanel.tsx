@@ -100,15 +100,25 @@ export function PropExtendedRulesPanel({ challengeId, rules, disabled }: Props) 
               </select>
             </label>
           </div>
+          {/* The evaluator walks the same closed-trade running balance as
+              total drawdown; open positions are not marked to market. */}
+          <p className="mt-2 text-[10px] text-amber-400" data-testid="prop-trailing-drawdown-basis">
+            Measured from closed trades only: a running balance of realised P&amp;L. Open positions&rsquo;
+            floating profit or loss is not counted.
+          </p>
         </div>
 
         {/* Per-trade limits */}
         <div className="rounded border border-slate-800 p-3">
           <div className="font-medium text-slate-100">Per-trade limits</div>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <label className="text-slate-400">Max risk per trade (0..1)
+            {/* The evaluator compares each closed trade's realised loss with
+                that day's starting balance; stop-distance risk at entry is
+                not measured, so the label says what is checked. */}
+            <label className="text-slate-400">Max loss per closed trade (0..1)
               <input type="number" step="0.005" min="0.001" max="1" value={draft.maxRiskPerTrade}
                 onChange={num("maxRiskPerTrade")} disabled={disabled}
+                aria-describedby="prop-risk-per-trade-basis"
                 className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-slate-100" />
             </label>
             <label className="text-slate-400">Max position size (lots)
@@ -117,6 +127,11 @@ export function PropExtendedRulesPanel({ challengeId, rules, disabled }: Props) 
                 className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-slate-100" />
             </label>
           </div>
+          <p id="prop-risk-per-trade-basis" className="mt-2 text-[10px] text-amber-400" data-testid="prop-risk-per-trade-basis">
+            Checked after each trade closes: its realised loss vs that day&rsquo;s starting balance.
+            Risk at entry (stop-loss distance) is not measured, so a trade that risked more but
+            closed at a small loss or a profit is not flagged.
+          </p>
         </div>
 
         {/* Concurrency */}
@@ -171,9 +186,13 @@ export function PropExtendedRulesPanel({ challengeId, rules, disabled }: Props) 
               onChange={bool("strictGuardrailsEnabled")} disabled={disabled} />
             <span className="font-medium text-slate-100">Strict guardrails</span>
           </label>
-          <p className="mt-1 text-[11px] text-slate-400">
-            When enabled, HARD rule violations escalate demo rule status to <span className="font-mono text-amber-300">BLOCKED</span>{" "}
-            (demo actions are flagged, never executed). Live execution remains locked at all times.
+          {/* Only the assistant's prop-status tool reads this flag. The challenge
+              evaluator and the paper order path do not, so the copy must not
+              promise BLOCKED status or flagged demo actions. */}
+          <p data-testid="text-strict-guardrails-scope" className="mt-1 text-[11px] text-slate-400">
+            Saved with this challenge. Today it only changes what the assistant reports: with it on, a hard rule
+            violation is reported as <span className="font-mono text-amber-300">BLOCKED</span> instead of VIOLATION.
+            It does not block, flag or change any order, and the challenge evaluation on this page ignores it.
           </p>
         </div>
       </div>
