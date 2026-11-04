@@ -808,3 +808,62 @@ it("changed command owner cannot acknowledge a new result while leaving its inte
   assert.equal((await snapshot()).events.length,1);
   assert.equal((await jobs())[0].user_id,9);assert.equal((await jobs())[0].generation,1);
 });
+
+// ── Live pending-order cancel: the original order row and its reservation ──
+async function seedPendingCancel(originalStatus = "LIVE_ACKNOWLEDGED") {
+  const [original] = await db.insert(commands).values({
+    commandId: "qa-pending-order", userId: 9, bridgeConnectionId: 1, commandType: "PLACE_LIVE_PENDING_ORDER",
+    symbol: "EURUSD.a", side: "BUY", orderType: "BUY_LIMIT", requestedVolume: 0.2, status: originalStatus,
+    brokerTicket: "5001", accountLogin: "A", brokerServer: "Company", payload: { price: 1.09 },
+  }).returning();
+  await db.insert(reservations).values({ userId: 9, commandId: original!.commandId, symbol: original!.symbol, lotSize: 0.2, status: "RESERVED" });
+  const [control] = await db.insert(commands).values({
+    commandId: "qa-pending-cancel", userId: 9, bridgeConnectionId: 1, commandType: "CANCEL_LIVE_PENDING_ORDER",
+    symbol: "EURUSD.a", side: "BUY", orderType: "CANCEL_PENDING", requestedVolume: 0.2, status: "SENT_TO_MT5_LIVE",
+    accountLogin: "A", brokerServer: "Company", payload: { targetCommandId: "qa-pending-order", orderTicket: "5001" },
+  }).returning();
+  return { original: original!, control: control! };
+}
+const cancelReport = () => ({ userId: 9, commandId: "qa-pending-cancel", reportingBridgeConnectionId: 1,
+  outcome: "LIVE_CANCELLED" as const, brokerTicket: "5001", brokerMessage: "Pending order cancelled." });
+const rowOf = async (commandId: string) => (await db.select().from(commands).where(eq(commands.commandId, commandId)))[0]!;
+const reservationOf = async (commandId: string) =>
+  (await pool.query("select status from arx_dispatch_exposure_reservations where command_id=$1", [commandId])).rows.map((r) => r.status);
+
+it("pending cancel: broker CANCELLED cancels the original order row and releases its reservation", async () => {
+  await seedPendingCancel();
+  const reply = await recordLiveCommandResult(cancelReport());
+  assert.equal(reply.ok, true);
+  assert.equal((await rowOf("qa-pending-cancel")).status, "LIVE_CANCELLED");
+  const original = await rowOf("qa-pending-order");
+  assert.equal(original.status, "LIVE_CANCELLED");
+  assert.ok(original.closedAt);
+  assert.deepEqual(await reservationOf("qa-pending-order"), ["RELEASED"]);
+  // the original carries its own applied receipt (outbox certification basis)
+  const originalEvents = (await db.select().from(events)).filter((e) => e.commandId === original.id);
+  assert.equal(originalEvents.length, 1);
+  assert.equal((originalEvents[0]!.payload as Record<string, unknown>).finalStatus, "LIVE_CANCELLED");
+  // an exact retry changes nothing
+  const again = await recordLiveCommandResult(cancelReport());
+  assert.equal(again.reason, "DUPLICATE_IGNORED");
+  assert.equal((await db.select().from(events)).filter((e) => e.commandId === original.id).length, 1);
+});
+it("pending cancel: an order that already left LIVE_ACKNOWLEDGED is left as it is (reservation held, audited)", async () => {
+  await seedPendingCancel("LIVE_FILLED");
+  await recordLiveCommandResult(cancelReport());
+  assert.equal((await rowOf("qa-pending-order")).status, "LIVE_FILLED");
+  assert.deepEqual(await reservationOf("qa-pending-order"), ["RESERVED"]);
+  assert.ok((await db.select().from(audit)).some((a) => a.eventType === "LIVE_PENDING_CANCEL_ORIGINAL_NOT_APPLIED"));
+});
+it("pending cancel: a REJECTED answer keeps the order working and its reservation held", async () => {
+  await seedPendingCancel();
+  await recordLiveCommandResult({ ...cancelReport(), outcome: "LIVE_REJECTED", brokerTicket: null, eaReason: "PENDING_ORDER_NOT_FOUND" });
+  assert.equal((await rowOf("qa-pending-cancel")).status, "LIVE_REJECTED");
+  assert.equal((await rowOf("qa-pending-order")).status, "LIVE_ACKNOWLEDGED");
+  assert.deepEqual(await reservationOf("qa-pending-order"), ["RESERVED"]);
+});
+it("LIVE_CANCELLED is never applied to a command that is not a pending cancel", async () => {
+  const reply = await recordLiveCommandResult({ ...report(), outcome: "LIVE_CANCELLED" });
+  assert.equal(reply.ok, true);
+  assert.equal((await db.select().from(commands))[0]!.status, "SENT_TO_MT5_LIVE");
+});
