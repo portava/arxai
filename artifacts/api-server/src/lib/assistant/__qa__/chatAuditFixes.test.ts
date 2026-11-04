@@ -12,24 +12,26 @@ const { SlidingWindowLimiter, rateLimitBody } = await import("../chatRateLimit.j
 const { toolResultText, isTruncatedToolResultText } = await import("../toolResultText.js");
 const { boundQuotePrice, BOUND_QUOTE_MAX_AGE_MS } = await import("../boundQuote.js");
 
-const liveUnlockedEnv = {
+type SafetyEnvelope = typeof FAIL_CLOSED_ENVELOPE;
+type ToolName = Parameters<typeof dispatchTool>[0];
+const liveUnlockedEnv: SafetyEnvelope = {
   ...FAIL_CLOSED_ENVELOPE,
-  tradingMode: "LIVE" as const,
+  tradingMode: "LIVE",
   globalLiveEnabled: true,
   userLiveApproved: true,
   emergencyKillSwitch: false,
-  accountType: "live" as const,
+  accountType: "live",
   allowOrderExecution: true,
   liveLocked: false,
   readOnlyMode: false,
   bannerLabel: "Live Trading Active",
   bannerReason: "Live trading active for your approved account.",
-  safetyMode: "live" as const,
+  safetyMode: "live",
 };
 
 // ── A2: no order tools ───────────────────────────────────────────────────────
 test("A2: the tool list advertises no order-placement tool", () => {
-  const names = TOOL_DEFINITIONS.map((t) => t.name);
+  const names: string[] = TOOL_DEFINITIONS.map((t) => t.name);
   assert.ok(!names.includes("requestDemoOrder"), "requestDemoOrder still advertised");
   assert.ok(!names.includes("requestLiveOrder"), "requestLiveOrder still advertised");
   assert.ok(names.includes("createTradeActionDraft"));
@@ -41,7 +43,7 @@ test("A2: the tool list advertises no order-placement tool", () => {
 });
 
 test("A2: dispatching a removed order tool is unknown_tool with the envelope and no result payload — even live-unlocked and confirmed", async () => {
-  for (const name of ["requestLiveOrder", "requestDemoOrder"]) {
+  for (const name of ["requestLiveOrder", "requestDemoOrder"] as unknown as ToolName[]) {
     const r = (await dispatchTool(name, { symbol: "EURUSD", side: "BUY", lotSize: 0.01, confirmedByUser: true }, 1, undefined, liveUnlockedEnv)) as Record<string, unknown>;
     assert.equal(r.error, "unknown_tool", name);
     assert.equal(r.name, name);
