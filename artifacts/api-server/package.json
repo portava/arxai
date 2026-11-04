@@ -42,6 +42,8 @@
     "test:mt5-order-controls-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/live/__qa__/pendingOrderRules.test.ts src/lib/live/__qa__/orderSweep20261104.test.ts src/lib/assistant/__qa__/rubyFakeoutPolicy.test.ts",
     "test:ruby-execution-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/rubyMonitorPolicy.test.ts src/lib/assistant/__qa__/rubyWatchSweeper.test.ts src/lib/assistant/__qa__/rubyExecutionWiring.test.ts src/lib/assistant/__qa__/rubyWatchEvaluator.test.ts src/lib/assistant/__qa__/rubyOwnBridgePrice.test.ts src/lib/assistant/__qa__/rubyWatchPermissions.test.ts src/lib/assistant/__qa__/rubyAlertAnswers.test.ts",
     "test:demo-pending-orders": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/mt5/__qa__/demoPendingOrders.test.ts",
+    "test:bridge-sweep-20261104": "node --import tsx --test --test-force-exit src/lib/mt5/__qa__/bridgeSweepFixes20261104.test.ts src/lib/brokerHub/__qa__/brokerClockOffset.test.ts src/lib/live/__qa__/ackPartialFill.test.ts src/routes/__qa__/mt5ResultReceipt.test.ts",
+    "test:broker-clock-persistence-20261104": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/brokerClockOffsetPersistence.test.ts",
     "test:bridge-scoped-candle-serving": "node --import tsx --test --test-force-exit src/lib/data/__qa__/bridgeScopedCandleServing.test.ts",
     "test:broker-confirmed-gate": "node --import tsx --test --test-force-exit src/lib/data/__qa__/brokerConfirmedGate.test.ts",
     "test:decision-grade-wait": "node --import tsx --test --test-force-exit src/lib/data/__qa__/decisionGradeWait.test.ts",

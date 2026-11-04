@@ -28,7 +28,16 @@
 //   - Unknown stays unknown: a consumer without an offset keeps today's
 //     behaviour (no conversion, fail closed on freshness).
 
-export type BrokerClockSampleBasis = "candle_push" | "heartbeat" | "v2_tick";
+//   - Persistence (best-effort, optional): an accepted sample that changes the
+//     offset in force, or the first one BROKER_CLOCK_PERSIST_INTERVAL_MS after
+//     the last write, is handed to the registered persister (mt5_connection
+//     broker_clock_offset_ms / _measured_at). After a restart a bridge with no
+//     samples is seeded with ONE "persisted" sample from that row when it was
+//     measured within the TTL — from the heartbeat's connection row, or by the
+//     registered async seeder on a lookup miss. Nothing here ever awaits I/O:
+//     a miss answers unknown now and the seeded value serves the next call.
+
+export type BrokerClockSampleBasis = "candle_push" | "heartbeat" | "v2_tick" | "persisted";
 
 export interface BrokerClockOffset {
   /** broker clock − UTC, in ms (positive = broker ahead of UTC). */
@@ -56,6 +65,88 @@ export const UNATTRIBUTED_BROKER_CLOCK_KEY = "unattributed";
 interface Sample { offsetMs: number; atMs: number; basis: BrokerClockSampleBasis }
 
 const samplesByBridge = new Map<string, Sample[]>();
+
+/** Write the offset in force at most this often when it has not changed. */
+export const BROKER_CLOCK_PERSIST_INTERVAL_MS = 10 * 60_000;
+/** A failed / empty seed lookup is retried no more often than this. */
+export const BROKER_CLOCK_SEED_RETRY_MS = 10 * 60_000;
+
+export type BrokerClockOffsetPersister = (bridgeConnectionId: number, offsetMs: number, measuredAtMs: number) => Promise<void>;
+export type BrokerClockOffsetSeeder = (bridgeConnectionId: number) => Promise<{ offsetMs: number | null; measuredAtMs: number | null } | null>;
+
+let persister: BrokerClockOffsetPersister | null = null;
+let seeder: BrokerClockOffsetSeeder | null = null;
+const lastPersisted = new Map<number, { offsetMs: number; atMs: number }>();
+const seedAttemptAt = new Map<number, number>();
+
+/** Register (or clear with null) the durable writer/reader. Boot wiring only. */
+export function setBrokerClockOffsetPersistence(p: { persist: BrokerClockOffsetPersister; seed: BrokerClockOffsetSeeder } | null): void {
+  persister = p?.persist ?? null;
+  seeder = p?.seed ?? null;
+}
+
+function maybePersist(bridgeConnectionId: number | null | undefined, nowMs: number): void {
+  if (!persister || bridgeConnectionId == null) return;
+  const inForce = getBrokerClockOffset(bridgeConnectionId, nowMs);
+  if (!inForce) return;
+  const prev = lastPersisted.get(bridgeConnectionId);
+  if (prev && prev.offsetMs === inForce.offsetMs && nowMs - prev.atMs < BROKER_CLOCK_PERSIST_INTERVAL_MS) return;
+  lastPersisted.set(bridgeConnectionId, { offsetMs: inForce.offsetMs, atMs: nowMs });
+  const write = persister;
+  void (async () => {
+    try { await write(bridgeConnectionId, inForce.offsetMs, inForce.measuredAtMs); }
+    // Best-effort: forget the write so the next accepted sample retries it.
+    catch { lastPersisted.set(bridgeConnectionId, { offsetMs: Number.NaN, atMs: Number.NEGATIVE_INFINITY }); }
+  })();
+}
+
+/**
+ * Seed a bridge that has NO in-memory samples with one "persisted" sample.
+ * Ignored when samples exist, when the stored value is missing, off the
+ * 30-minute grid, or older than the TTL. Returns true when seeded.
+ */
+export function seedBrokerClockOffset(
+  bridgeConnectionId: number | null | undefined,
+  stored: { offsetMs: number | null | undefined; measuredAtMs: number | null | undefined },
+  nowMs: number = Date.now(),
+): boolean {
+  if (bridgeConnectionId == null) return false;
+  const key = brokerClockKey(bridgeConnectionId);
+  if ((samplesByBridge.get(key)?.length ?? 0) > 0) return false;
+  const { offsetMs, measuredAtMs } = stored;
+  if (offsetMs == null || measuredAtMs == null || !Number.isFinite(offsetMs) || !Number.isFinite(measuredAtMs)) return false;
+  if (quantizeBrokerClockOffset(offsetMs) !== offsetMs) return false;
+  if (measuredAtMs > nowMs + 60_000 || nowMs - measuredAtMs > BROKER_CLOCK_OFFSET_TTL_MS) return false;
+  samplesByBridge.set(key, [{ offsetMs, atMs: measuredAtMs, basis: "persisted" }]);
+  lastPersisted.set(bridgeConnectionId, { offsetMs, atMs: nowMs });
+  return true;
+}
+
+/** Seed from an mt5_connection row the caller already holds (no I/O). */
+export function seedBrokerClockOffsetFromConnection(
+  row: { id: number; brokerClockOffsetMs?: number | null; brokerClockOffsetMeasuredAt?: Date | null } | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!row) return false;
+  return seedBrokerClockOffset(row.id, {
+    offsetMs: row.brokerClockOffsetMs ?? null,
+    measuredAtMs: row.brokerClockOffsetMeasuredAt?.getTime() ?? null,
+  }, nowMs);
+}
+
+function requestSeed(bridgeConnectionId: number | null | undefined, nowMs: number): void {
+  if (!seeder || bridgeConnectionId == null) return;
+  const last = seedAttemptAt.get(bridgeConnectionId);
+  if (last != null && nowMs - last < BROKER_CLOCK_SEED_RETRY_MS) return;
+  seedAttemptAt.set(bridgeConnectionId, nowMs);
+  const read = seeder;
+  void (async () => {
+    try {
+      const stored = await read(bridgeConnectionId);
+      if (stored) seedBrokerClockOffset(bridgeConnectionId, stored, Date.now());
+    } catch { /* unknown stays unknown; retried after BROKER_CLOCK_SEED_RETRY_MS */ }
+  })();
+}
 
 export function brokerClockKey(bridgeConnectionId: number | null | undefined): string {
   return bridgeConnectionId != null ? String(bridgeConnectionId) : UNATTRIBUTED_BROKER_CLOCK_KEY;
@@ -90,9 +181,11 @@ export function recordBrokerClockSample(input: {
   if (q == null) return null;
   const key = brokerClockKey(input.bridgeConnectionId);
   const list = samplesByBridge.get(key) ?? [];
-  list.push({ offsetMs: q, atMs: input.nowMs ?? Date.now(), basis: input.basis });
+  const nowMs = input.nowMs ?? Date.now();
+  list.push({ offsetMs: q, atMs: nowMs, basis: input.basis });
   while (list.length > BROKER_CLOCK_SAMPLE_WINDOW) list.shift();
   samplesByBridge.set(key, list);
+  maybePersist(input.bridgeConnectionId, nowMs);
   return q;
 }
 
@@ -102,7 +195,7 @@ export function getBrokerClockOffset(
   nowMs: number = Date.now(),
 ): BrokerClockOffset | null {
   const list = samplesByBridge.get(brokerClockKey(bridgeConnectionId));
-  if (!list || list.length === 0) return null;
+  if (!list || list.length === 0) { requestSeed(bridgeConnectionId, nowMs); return null; }
   const counts = new Map<number, number>();
   for (const s of list) counts.set(s.offsetMs, (counts.get(s.offsetMs) ?? 0) + 1);
   let mode = list[list.length - 1]!.offsetMs;
@@ -137,11 +230,16 @@ export function brokerStampToUtcMs(
   return { utcMs: brokerMs - offset.offsetMs, offset };
 }
 
-/** Parse an EA display stamp ("2026.11.04 05:07:07", MQL TimeToString) as a
- *  clock reading in ms. The reading is in whatever clock produced it. */
+/** Parse an EA display stamp as a clock reading in ms: the MQL TimeToString
+ *  spelling ("2026.11.04 05:07:07", v154/v15x) or the zone-less ISO spelling
+ *  ("2026-11-04T05:07:07", v131 IsoFromTime). The reading is in whatever clock
+ *  produced it. A stamp carrying a zone ("Z", "+02:00") is an instant, not a
+ *  clock reading, and is rejected (ISO instants have their own parsers). */
 export function parseMqlTimeString(value: unknown): number | null {
   if (typeof value !== "string") return null;
-  const m = /^(\d{4})\.(\d{2})\.(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value.trim());
+  const v = value.trim();
+  const m = /^(\d{4})\.(\d{2})\.(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(v)
+    ?? /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(v);
   if (!m) return null;
   const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0), Number(m[6] ?? 0));
   return Number.isFinite(ms) ? ms : null;
@@ -150,4 +248,6 @@ export function parseMqlTimeString(value: unknown): number | null {
 /** Test helper. */
 export function __resetBrokerClockOffsets(): void {
   samplesByBridge.clear();
+  lastPersisted.clear();
+  seedAttemptAt.clear();
 }

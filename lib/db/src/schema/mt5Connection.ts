@@ -92,6 +92,13 @@ export const mt5ConnectionTable = pgTable("mt5_connection", {
   heartbeatReceivedAt: timestamp("heartbeat_received_at"),
   clockDriftSeconds: real("clock_drift_seconds"),
   clockDriftSeverity: text("clock_drift_severity"), // OK | WARN | SEVERE
+  // Truth audit T1 follow-up (2026-11-04) — the bridge's last measured broker
+  // clock offset (broker − UTC, ms) and when it was measured, persisted
+  // best-effort so a restart does not reset the offset to unknown. Read back
+  // only within the in-memory TTL (24 h) as one "persisted" sample.
+  // Migration: lib/db/migrations/2026-11-04_broker_clock_offset.sql.
+  brokerClockOffsetMs: integer("broker_clock_offset_ms"),
+  brokerClockOffsetMeasuredAt: timestamp("broker_clock_offset_measured_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({

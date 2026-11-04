@@ -1,7 +1,7 @@
 import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
 import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
 import { appendExecutionEvidence as recordExecutionEvent } from "../lib/live/executionEvidence.js";
-import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
+import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate, liveMirrorMailboxPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
 import {
   MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
   MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
@@ -45,7 +45,7 @@ import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
-import { brokerStampToUtcMs, parseMqlTimeString, recordBrokerClockSample } from "../lib/brokerHub/brokerClockOffset.js";
+import { brokerStampToUtcMs, parseMqlTimeString, recordBrokerClockSample, seedBrokerClockOffsetFromConnection } from "../lib/brokerHub/brokerClockOffset.js";
 import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
 const router = Router();
@@ -430,7 +430,10 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
     const heartbeatReceivedAt = new Date();
     // Broker-clock offset sample (Truth audit T1): the EA's broker server time
     // (`brokerTime`, TimeCurrent) beside its GMT clock (`eaTimeGmt`), read at
-    // the same instant. Measurement only; nothing here gates.
+    // the same instant. Measurement only; nothing here gates. A bridge with no
+    // in-memory samples (fresh process) is first seeded from its own row's
+    // persisted offset when that is within the TTL (no I/O: row in hand).
+    seedBrokerClockOffsetFromConnection(userConn, heartbeatReceivedAt.getTime());
     recordBrokerClockSample({
       bridgeConnectionId: userConn?.id ?? null,
       brokerMs: parseMqlTimeString(extras.brokerTime),
@@ -586,7 +589,13 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
 
 // ── Diagnostic surfaces (read-only, no execution effect) ───────────────────
 
-router.get("/mt5/heartbeat/status", async (_req, res) => {
+router.get("/mt5/heartbeat/status", async (req, res) => {
+  // The diagnostics below are PLATFORM-WIDE (the last heartbeat accepted from
+  // ANY user's bridge). Operator-only identifiers — account login, remote IP,
+  // user agent, rejected IP — are shown to an admin/owner session only, the
+  // same redaction as /mt5/bridge-ops-monitor.
+  const isAdmin = operatorRoleFromSession(readRoleFromRequest(req)) != null;
+  const operatorOnly = <T,>(v: T): T | "REDACTED" => (isAdmin ? v : "REDACTED");
   // Per-user tokens are the ONLY valid EA auth (the server-wide env token is
   // rejected on every EA endpoint), so "token configured" = an active
   // per-user bridge token exists. Boolean shape preserved for consumers.
@@ -612,10 +621,11 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
     rejectedHeartbeatCount: bridgeDiag.rejectedCount,
     lastRejectedHeartbeatAt: bridgeDiag.lastRejectedHeartbeatAt?.toISOString() ?? null,
     lastRejectReason: bridgeDiag.lastRejectReason,
-    lastRejectRemoteIp: bridgeDiag.lastRejectRemoteIp,
-    lastAcceptedAccount: bridgeDiag.lastAcceptedAccount,
-    lastAcceptedRemoteIp: bridgeDiag.lastAcceptedRemoteIp,
-    lastAcceptedUserAgent: bridgeDiag.lastAcceptedUserAgent,
+    lastRejectRemoteIp: operatorOnly(bridgeDiag.lastRejectRemoteIp),
+    lastAcceptedAccount: operatorOnly(bridgeDiag.lastAcceptedAccount),
+    lastAcceptedRemoteIp: operatorOnly(bridgeDiag.lastAcceptedRemoteIp),
+    lastAcceptedUserAgent: operatorOnly(bridgeDiag.lastAcceptedUserAgent),
+    requesterScope: isAdmin ? "admin" : "user_redacted",
     expectedPostEndpoint: "/api/mt5/heartbeat",
     expectedHeader: "X-MT5-Bridge-Token",
     freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
@@ -948,6 +958,7 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
       eq(mt5CommandsTable.userId, conn.userId!),
       eq(mt5CommandsTable.mt5ConnectionId, conn.id),
       legacyManagementPickupPredicate(targetSupported),
+      liveMirrorMailboxPickupPredicate(conn.eaVersion),
       sql`octet_length(to_jsonb(${mt5CommandsTable})::text) <= ${MAX_COMMAND_JSON_BYTES}`,
     )).orderBy(asc(mt5CommandsTable.createdAt), asc(mt5CommandsTable.id))
       .limit(50).for("update", { skipLocked: true });
@@ -998,6 +1009,7 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
         eq(mt5CommandsTable.userId, conn.userId!),
         eq(mt5CommandsTable.mt5ConnectionId, conn.id),
         legacyManagementPickupPredicate(targetSupported),
+        liveMirrorMailboxPickupPredicate(conn.eaVersion),
       )).returning();
     if (claimed.length !== selected.length) throw new Error("MT5_MAILBOX_CLAIM_CHANGED");
     // A delivered entry mirror is the EA's one pickup of that entry: stamp the
@@ -1106,8 +1118,12 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     // unknown, exactly as the direct result route treats them.
     const unproven = !terminal && ["LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED"].includes(body.status);
     const reportedStatus = terminal?.outcome ?? (unproven ? "LIVE_UNKNOWN" : body.status);
-    const isFailed = /fail|error|reject/i.test(reportedStatus);
-    const unresolved = ["LIVE_ACKNOWLEDGED","LIVE_PARTIALLY_FILLED","LIVE_UNKNOWN"].includes(reportedStatus);
+    // Failure = the EA/broker confirms NON-execution: an explicit failure or
+    // rejection, the EA's own expiry refusal (v154 EXPIRED/COMMAND_EXPIRED),
+    // or a refusal to run at all (v131 EA_EXECUTION_NOT_IMPLEMENTED /
+    // EA_READ_ONLY_MODE_ACTIVE, UNSUPPORTED_COMMAND). None of those is ever a
+    // completion.
+    const isFailed = /fail|error|reject|expired|not_implemented|read_only|unsupported/i.test(reportedStatus);
     // Versioned reports use only actual broker evidence, never requestedVolume.
     const fillPrice = terminal ? terminal.fillPrice : unproven ? null : num(raw["fillPrice"] ?? raw["price"] ?? rp["fillPrice"]);
     const filledLotSize = terminal ? terminal.executedVolume : unproven ? null : num(raw["filledLotSize"] ?? raw["requestedVolume"] ?? rp["filledLotSize"]);
@@ -1116,6 +1132,10 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     const mt5OrderTicket = (rawTicket != null && String(rawTicket) !== "0") ? String(rawTicket) : null;
     const rawPosTicket = raw["mt5PositionTicket"] ?? rp["mt5PositionTicket"] ?? rp["positionTicket"];
     const mt5PositionTicket = (rawPosTicket != null && String(rawPosTicket) !== "0") ? String(rawPosTicket) : null;
+    // A success-looking pending placement with no order ticket proves nothing
+    // is working at the broker: unresolved, never PLACED.
+    const unresolved = ["LIVE_ACKNOWLEDGED","LIVE_PARTIALLY_FILLED","LIVE_UNKNOWN"].includes(reportedStatus)
+      || (!isFailed && ownedMailbox.action === "PLACE_PENDING_ORDER" && mt5OrderTicket == null);
     const updated = await db.update(mt5CommandsTable).set({
       status: reportedStatus,
       detail: body.detail ?? null,
@@ -1134,24 +1154,34 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       eq(mt5CommandsTable.id, body.commandId),
       eq(mt5CommandsTable.userId, conn.userId!),
       eq(mt5CommandsTable.mt5ConnectionId, conn.id),
+      // A result applies only to a command the EA was served and that has no
+      // final outcome yet: delivered/claimed, or still unresolved (an ack, a
+      // partial, an unknown, the watchdog's unverified live-mirror stamp). A
+      // never-delivered (PENDING) or already-terminal row is never rewritten.
+      inArray(mt5CommandsTable.status, ["DELIVERED", "claimed", "sent", "unknown", "LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED", "LIVE_UNKNOWN"]),
     )).returning();
-    if (!updated[0]) {
-      req.log.warn({ commandId: body.commandId, userId: conn.userId, connectionId: conn.id }, "MT5 command-result rejected: not owner");
-      res.status(404).json({ error: "Command not found for this connection." });
+    // A later report for a linked Phase B mirror whose mailbox row is already
+    // final is still forwarded: recordLiveCommandResult adjudicates late and
+    // duplicate reports exactly-once (LATE_RESULT_RETAINED). The mailbox row
+    // and its side effects stay untouched. Anything else is refused.
+    const mailboxApplied = !!updated[0];
+    if (!mailboxApplied && (!linkedCommand || ownedMailbox.status === "PENDING")) {
+      req.log.warn({ commandId: body.commandId, userId: conn.userId, connectionId: conn.id, status: ownedMailbox.status }, "MT5 command-result rejected: command not awaiting a result");
+      res.status(409).json({ received: false, error: "COMMAND_NOT_AWAITING_RESULT", status: ownedMailbox.status });
       return;
     }
 
     // Phase TV — write back to the linked pending-order draft when the
     // command was one of the new pending-order types. Per-user scoped on
     // BOTH sides (mt5_commands.userId AND trade_action_requests.userId).
-    const cmd = updated[0];
+    const cmd = updated[0] ?? ownedMailbox;
     const action = cmd.action as Mt5GatedAction;
-    if (
+    if (mailboxApplied && (
       action === "PLACE_PENDING_ORDER" ||
       action === "MODIFY_PENDING_ORDER" ||
       action === "CANCEL_PENDING_ORDER" ||
       action === "MODIFY_POSITION_PROTECTION"
-    ) {
+    )) {
       const { tradeActionRequestsTable } = await import("@workspace/db/schema");
       let nextPendingStatus: string | null = null;
       let setMt5OrderTicket: string | null = null;
@@ -1186,7 +1216,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     // not model `data`, so we read it from the raw req.body and translate via
     // the v1.50 mapper into the arx_symbol_specs directory. Per-user scoped on
     // the connection. Malformed payloads are logged precisely, never crash.
-    if (String(cmd.action) === "ENUMERATE_SYMBOLS" && !isFailed) {
+    if (mailboxApplied && String(cmd.action) === "ENUMERATE_SYMBOLS" && !isFailed) {
       try {
         const rawData = (req.body as { data?: { symbols?: unknown[] } } | undefined)?.data ?? null;
         const specItems = mapV150Enumeration(rawData as { symbols?: V150EnumEntry[] } | null);
@@ -1268,7 +1298,10 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       const liveCommandId = bridgePayload["liveCommandId"] as string;
       const liveOwnerUserId =
         num(bridgePayload["liveCommandOwnerUserId"]) ?? cmd.requestedByUserId ?? conn.userId!;
-      const eaReason = str(raw["reason"] ?? rp["reason"]);
+      // v154 PostResultStruct names it reasonCode; v131 refusals carry none,
+      // so their status (EA_READ_ONLY_MODE_ACTIVE, ...) is the reason.
+      const eaReason = str(raw["reason"] ?? raw["reasonCode"] ?? rp["reason"])
+        ?? (/^EA_/.test(reportedStatus) ? reportedStatus : null);
       const liveBrokerTicket = terminal ? terminal.brokerTicket : mt5PositionTicket ?? mt5OrderTicket;
       try {
         const { recordLiveCommandResult, mapBridgedLiveOutcome } = await import(
@@ -1283,6 +1316,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           hasBrokerTicket: liveBrokerTicket != null,
           executedVolume: filledLotSize,
           requestedVolume: linkedCommand?.requestedVolume,
+          commandType: linkedCommand?.commandType,
         });
         const fwd = await recordLiveCommandResult({
           userId: liveOwnerUserId,
