@@ -40,6 +40,19 @@ mock.module("../../candleCache.js", {
   },
 });
 
+// broker_candles (bridge-scoped) rows, keyed bridge|symbol|tf.
+const bridgeStored = new Map<string, Bar[]>();
+mock.module("../../bridgeStoredCandles.js", {
+  namedExports: {
+    async readBridgeStoredCandles(bridgeId: number, symbol: string, tf: string, limit: number) {
+      const all = bridgeStored.get(`${bridgeId}|${symbol.trim().toUpperCase()}|${tf}`) ?? [];
+      const page = all.slice(-limit);
+      if (page.length === 0) return null;
+      return { candles: page, brokerSymbol: symbol, userId: 1, newest: page.at(-1)!.time };
+    },
+  },
+});
+
 const { getChartCandles, getChartFeedStatus } = await import("../chartDataService.js");
 const { routeCandles } = await import("../../marketDataRouter.js");
 const { __resetMt5ProviderStore } = await import("../../providers/mt5Provider.js");
@@ -56,6 +69,7 @@ function bars(base: number, newestOpenMs: number, n = 80): Bar[] {
 
 beforeEach(() => {
   stored.clear();
+  bridgeStored.clear();
   __resetMt5ProviderStore();
 });
 
@@ -124,4 +138,34 @@ test("nothing stored at all: still the honest empty state", async () => {
   const out = await getChartCandles("XAGUSD", "M30", 300, true, { storedHistoryFallback: true });
   assert.equal(out.candles.length, 0);
   assert.equal(out.feedStatus.isLive, false);
+});
+
+test("stale mirror: an MT5 mirror months older than another stored source does not win", async () => {
+  const newest = Math.floor(Date.now() / M30) * M30 - 4 * M30;
+  stored.set(key("XAUUSD", "M30", "mt5_broker"), bars(2400, newest - 90 * 24 * 2 * M30, 50));
+  stored.set(key("XAUUSD", "M30", "assistant_real:twelve_data"), bars(2500, newest, 60));
+  const out = await getChartCandles("XAUUSD", "M30", 300, true, { storedHistoryFallback: true });
+  assert.equal(out.source, "assistant_real:twelve_data");
+  assert.ok(out.candles.every((c) => c.close > 2450), "the current provider series, not the months-old mirror");
+});
+
+test("pinned reader: their own bridge's stored broker bars are served, labelled own_bridge", async () => {
+  const newest = Math.floor(Date.now() / M30) * M30 - 6 * M30;
+  stored.set(key("XAUUSD", "M30", "mt5_broker"), bars(9000, newest, 50)); // another broker's mirror
+  bridgeStored.set("11|XAUUSD|M30", bars(2400, newest - M30, 40));
+  const out = await getChartCandles("XAUUSD", "M30", 300, true, { storedHistoryFallback: true, bridgeConnectionId: 11 });
+  assert.equal(out.candles.length, 40);
+  assert.ok(out.candles.every((c) => c.close < 9000), "never the shared mirror's prices");
+  assert.equal(out.feedStatus.notLiveReason, "stored_history");
+  assert.equal(out.feedStatus.feedScope, "own_bridge");
+  assert.equal(out.feedStatus.isLive, false);
+});
+
+test("pinned reader with no stored bars of their own: the shared mirror, labelled platform_shared", async () => {
+  const newest = Math.floor(Date.now() / M30) * M30 - 6 * M30;
+  stored.set(key("XAUUSD", "M30", "mt5_broker"), bars(9000, newest, 50));
+  bridgeStored.set("22|XAUUSD|M30", bars(2400, newest, 40));
+  const out = await getChartCandles("XAUUSD", "M30", 300, true, { storedHistoryFallback: true, bridgeConnectionId: 11 });
+  assert.equal(out.candles.length, 50);
+  assert.equal(out.feedStatus.feedScope, "platform_shared");
 });

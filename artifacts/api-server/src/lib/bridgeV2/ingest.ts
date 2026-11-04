@@ -326,7 +326,12 @@ function feedMarketDataStore(
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
     // analysis/execution input.
-    foldFormingTick(symbol, bid, tickUtcMs, Date.now(), "mt5_broker");
+    // Partitioned by the writing bridge and bucketed on its broker grid, so
+    // another bridge's ticks never fold into this broker's tip.
+    foldFormingTick(symbol, bid, tickUtcMs, Date.now(), "mt5_broker", {
+      bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+      brokerOffsetMs: tickUtc ? tickUtc.offset.offsetMs : null,
+    });
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
   }
