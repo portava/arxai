@@ -3499,6 +3499,7 @@ export const ChartFeedStatusQuality = {
 } as const;
 
 export interface ChartFeedStatus {
+  notLiveReason?: string | null;
   symbol: string;
   displaySymbol: string;
   assetClass: ChartFeedStatusAssetClass;

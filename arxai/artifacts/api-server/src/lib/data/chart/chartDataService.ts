@@ -32,6 +32,7 @@ import { unavailableCandleVolume } from "../candleVolumeEvidence.js";
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
+import { routeStoredCandleHistory, STORED_HISTORY_SUB_PROVIDER } from "../storedCandleHistory.js";
 import {
   getDerivSymbolFeedStatus,
   resolveDerivSymbol,
@@ -58,6 +59,8 @@ import {
 export type ChartQuality = FeedQuality;
 
 export interface ChartFeedStatus {
+  /** Display-only history never grants live or AI authority. */
+  notLiveReason?: "stored_history" | null;
   symbol: string;
   displaySymbol: string;
   assetClass: AssetClass;
@@ -111,6 +114,11 @@ export interface ChartCandlesResponse {
   truthResult: TimeframeTruthResult | null;
   /** Phase 3: weighted Chart Truth Score derived from Phase 1 signals. */
   chartTruthScore: ChartTruthScore;
+}
+
+export interface ChartFeedOptions {
+  /** Only chart display routes opt in; analysis defaults remain unchanged. */
+  storedHistoryFallback?: boolean;
 }
 
 function resolveDisplaySymbol(symbol: string, assetClass: AssetClass): string {
@@ -185,12 +193,17 @@ async function buildChartFeed(
   timeframe: ChartTimeframe,
   limit: number,
   includeFormingTip: boolean = false,
+  opts: ChartFeedOptions = {},
 ): Promise<BuiltFeed> {
   const assetClass = classifySymbol(symbol);
   const displaySymbol = resolveDisplaySymbol(symbol, assetClass);
   const now = Date.now();
 
-  const result = await routeCandles(symbol, timeframe, limit);
+  let result = await routeCandles(symbol, timeframe, limit);
+  if (!result.ok && opts.storedHistoryFallback === true) {
+    result = await routeStoredCandleHistory(symbol, timeframe, limit, result);
+  }
+  const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
   const source = result.primaryProvider;
   const providerDelayed = result.provenance?.delayed === true;
 
@@ -228,10 +241,10 @@ async function buildChartFeed(
     });
     candles = tr.verifiedCandles;
     truthResult = tr.truthResult;
-    if (providerDelayed) truthResult = {...truthResult, sourceDocumentation: {
+    if (providerDelayed || storedHistory) truthResult = {...truthResult, sourceDocumentation: {
       ...truthResult.sourceDocumentation,
-      dataMode: "HISTORICAL — source delayed or real-time entitlement unverified",
-      freshnessNote: "Provider history is delayed or not confirmed real-time. Recent candle timestamps do not prove a live feed.",
+      dataMode: storedHistory ? "HISTORICAL — stored bars, not live" : "HISTORICAL — source delayed or real-time entitlement unverified",
+      freshnessNote: storedHistory ? "Stored history is display only, not current-market AI evidence." : "Provider history is delayed or not confirmed real-time. Recent candle timestamps do not prove a live feed.",
     }};
   } else {
     candles = [];
@@ -266,7 +279,7 @@ async function buildChartFeed(
   // WS was not independently ticking that exact symbol. A genuinely
   // stale/historical feed is unaffected — trailing-interval staleness below
   // still demotes it honestly and keeps it entry-blocked.
-  const derivBacked = synthetic && (source?.startsWith("deriv") ?? false);
+  const derivBacked = !storedHistory && synthetic && (source?.startsWith("deriv") ?? false);
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
@@ -291,7 +304,7 @@ async function buildChartFeed(
   // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && lastCandle && isFormingTickSource(source)) {
+  if (includeFormingTip && !storedHistory && lastCandle && isFormingTickSource(source)) {
     const forming = getFormingBar(symbol, timeframe, now, source);
     if (forming) {
       const tipOpenMs = forming.openMs;
@@ -354,22 +367,26 @@ async function buildChartFeed(
     formingTickAgeMs,
   });
   const quality = verdict.quality;
-  const warning = verdict.warning;
+  const historyMessage = storedHistory
+    ? storedHistoryMessage(source, displaySymbol, lastCandle?.openTime ?? null, now)
+    : null;
+  const warning = historyMessage ?? verdict.warning;
   const stale = verdict.stale;
-  const aiUsable = verdict.aiUsable;
+  const aiUsable = !storedHistory && verdict.aiUsable;
 
   // isLive: reachable, current, and (for synthetics) confirmed ticking. When a
   // forming tip is present its tick freshness (folded into the verdict) governs
   // liveness — a frozen tip (>15s silent) reads NOT live even though a closed
   // bar still trails by only one interval.
   const reachable = source != null && candles.length > 0;
-  const isLive = !providerDelayed && (formingTipPresent
+  const isLive = !storedHistory && !providerDelayed && (formingTipPresent
     ? reachable && !verdict.stale
     : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick));
 
-  const message = buildMessage(quality, source, displaySymbol);
+  const message = historyMessage ?? buildMessage(quality, source, displaySymbol);
 
   const status: ChartFeedStatus = {
+    ...(storedHistory ? { notLiveReason: "stored_history" as const } : {}),
     symbol,
     displaySymbol,
     assetClass,
@@ -396,7 +413,16 @@ async function buildChartFeed(
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
   return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
-    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
+    marketEvidence: storedHistory ? null : prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
+}
+
+function storedHistoryMessage(source: string | null, symbol: string, opened: string | null, now: number): string {
+  const ms = opened == null ? NaN : Date.parse(opened);
+  const mins = Number.isFinite(ms) ? Math.max(0, Math.floor((now - ms) / 60_000)) : null;
+  const age = mins == null ? "unknown age" : mins < 60 ? `${mins} min ago`
+    : mins < 2880 ? `${Math.floor(mins / 60)} h ago` : `${Math.floor(mins / 1440)} days ago`;
+  const utc = Number.isFinite(ms) ? new Date(ms).toISOString().replace("T", " ").replace(".000Z", " UTC") : "unknown";
+  return `Showing stored ${friendlyFeedSource(source)} candles for ${symbol} up to the last bar (opened ${utc}, ${age}). No live feed is available right now, so this is history, not live data.`;
 }
 
 /**
@@ -444,11 +470,12 @@ export async function getChartCandles(
   timeframe: ChartTimeframe,
   limit: number,
   includeFormingTip: boolean = false,
+  opts: ChartFeedOptions = {},
 ): Promise<ChartCandlesResponse> {
   // `includeFormingTip` defaults FALSE so every analysis caller (flame signal,
   // chart-intelligence, timeframe agreement, market overview, truth audit) gets
   // closed bars only. The chart DISPLAY route passes true.
-  const feed = await buildChartFeed(symbol, timeframe, limit, includeFormingTip);
+  const feed = await buildChartFeed(symbol, timeframe, limit, includeFormingTip, opts);
   return {
     symbol,
     displaySymbol: feed.displaySymbol,
@@ -477,10 +504,11 @@ export async function getChartFeedStatus(
   symbol: string,
   timeframe: ChartTimeframe,
   includeFormingTip: boolean = false,
+  opts: ChartFeedOptions = {},
 ): Promise<ChartFeedStatus> {
   // Defaults FALSE so market-availability + provider-health probes read closed-
   // bar provider truth (a forming tip must never mask a stale provider). The
   // chart DISPLAY feed-status route passes true.
-  const feed = await buildChartFeed(symbol, timeframe, FEED_STATUS_PROBE_LIMIT, includeFormingTip);
+  const feed = await buildChartFeed(symbol, timeframe, FEED_STATUS_PROBE_LIMIT, includeFormingTip, opts);
   return feed.status;
 }

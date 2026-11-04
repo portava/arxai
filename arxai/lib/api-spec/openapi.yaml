@@ -13733,6 +13733,9 @@ components:
          outOfOrderCount, invalidOhlcCount, trailingIntervals, stale, quality,
          warning, aiUsable, message]
       properties:
+        notLiveReason:
+          type: ["string", "null"]
+          description: stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable
         symbol: { type: string }
         displaySymbol: { type: string }
         assetClass: { type: string, enum: [synthetic, forex, metals, indices, crypto, stocks, unknown] }

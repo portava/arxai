@@ -60,6 +60,7 @@ import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
 import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { feedConfidence } from "@/lib/feed-confidence";
+import { StoredHistoryChip } from "./StoredHistoryChip";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
@@ -553,7 +554,8 @@ export function ARXNativeChart({
   // detection rationale and timings.
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
   const tickSource = chartTickSource(data?.feedStatus?.source);
-  const streamEnabled = resolvedSymbol.length > 0 && tickSource !== null && typeof EventSource === "function";
+  const streamEnabled = data?.feedStatus?.notLiveReason !== "stored_history" &&
+    resolvedSymbol.length > 0 && tickSource !== null && typeof EventSource === "function";
   const streamWatchdog = useTickStreamWatchdog({enabled: streamEnabled, streamKey: chartContext});
 
   // Chart Brain v2 (Task 1) — centralized Chart Intelligence State. This is a
@@ -1526,6 +1528,7 @@ export function ARXNativeChart({
                 {positionCount} open
               </Badge>
             )}
+            <StoredHistoryChip status={feedStatus} newestOpenIso={candles.at(-1)?.openTime ?? null} />
             {showFeedStatus && feedStatus && (
               <FeedConfidenceBadge
                 feedStatus={feedStatus}
