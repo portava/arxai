@@ -377,7 +377,7 @@ describe("display time zone controls",()=>{
     goTo("UTC","2020-01-01T00:00");
     expect(engine.goToTime).toHaveBeenCalledExactlyOnceWith(1577836800);
   });
-  it("prints the PNG capture time in the selected zone with the UTC ISO time",()=>{
+  it("prints the PNG export time in the selected zone with the UTC ISO time",()=>{
     const texts:string[]=[];
     vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({font:"",fillStyle:"",measureText:()=>({width:10}),fillRect(){},fillText:(text:string)=>texts.push(text),drawImage(){}} as unknown as CanvasRenderingContext2D);
     vi.spyOn(HTMLCanvasElement.prototype,"toDataURL").mockReturnValue("data:image/png;base64,");
@@ -387,10 +387,12 @@ describe("display time zone controls",()=>{
     const engine={...adapter,exportImage:()=>"data:image/png;base64,"} as unknown as ChartEngineAdapter;
     show({timeZone:"Asia/Tokyo"},"M15",engine as never);
     fireEvent.click(screen.getByRole("button",{name:"Export PNG"}));
-    expect(texts).toContain("Captured 2026-10-28 14:46:11 GMT+9 (2026-10-28T05:46:11.123Z)");
+    expect(texts).toContain("Image exported 2026-10-28 14:46:11 GMT+9 (2026-10-28T05:46:11.123Z)");
     texts.length=0;chooseZone("UTC");
     fireEvent.click(screen.getByRole("button",{name:"Export PNG"}));
-    expect(texts).toContain("Captured 2026-10-28T05:46:11.123Z");
+    expect(texts).toContain("Image exported 2026-10-28T05:46:11.123Z");
+    // The export wall clock is never presented as a capture of the data.
+    expect(texts.some(text=>/^Captured /.test(text))).toBe(false);
   });
 });
 

@@ -35,10 +35,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   RotateCcw,
-  Lock,
-  Unlock,
   RefreshCw,
-  GitMerge,
   AlertCircle,
   LineChart,
   Clock,
@@ -46,20 +43,24 @@ import {
   Minimize2,
   ArrowRightToLine,
 } from "lucide-react";
-import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { SmartChartReader } from "./SmartChartReader";
 import { AssistantDockSlot, useAssistantChartPane } from "@/components/help/AssistantDock";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
-import { effectiveDisplayZone, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
-import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
+import { effectiveDisplayZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
+import { publishChartPricePrecision } from "@/components/charts/chartPricePrecisionStore";
+import { CHART_TIME_AXIS_LABEL, CHART_TIME_AXIS_TITLE, type ServerClockSample } from "@/components/scanner/scannerChartFormat";
+import { publishScannerTip } from "@/lib/scannerLiveTipStore";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
-import { formatMarketClosedLabel } from "@/components/charts/marketFrozenFormat";
+import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
+import { scheduledWeekendClosureFor, nextWeekendClosureBoundaryMs } from "@/lib/scannerTruth";
 import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
-import { feedConfidence } from "@/lib/feed-confidence";
+import { capConfidence, feedConfidence } from "@/lib/feed-confidence";
 import { StoredHistoryChip } from "./StoredHistoryChip";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
@@ -104,10 +105,9 @@ const ChartResearchWorkbench = lazy(() => import("@/components/testing-lab/Chart
 //  - Smart visible range: default shows last 150 candles (mobile: 80) so the
 //    chart opens to recent price action, not a compressed full-history view.
 //  - Reset Scale button: always-available control to restore the default range.
-//  - Chart Mirror Layer: compact status bar (Mirrored/Syncing/Stale/Conflict/
-//    Refreshing) with a Mirror Lock toggle. When locked the chart's symbol and
-//    timeframe stay in sync with the rest of the UI; when unlocked an
-//    "Inspection mode" badge shows clearly.
+//  - Feed strip: compact status bar naming the server's grade of the current
+//    candle response (the same capped label as the header chip), with a
+//    separate "Refreshing…" marker that never hides a stale/invalid verdict.
 //  - Chart Safe Mode: when the quality is "invalid" (integrity check failed),
 //    an overlay shows a clean user message and pauses AI confidence. Overlays
 //    (open positions) remain visible because execution state is independent.
@@ -130,6 +130,8 @@ const MORE_TIMEFRAMES = CHART_INTERVALS.filter(id => !(CHART_QUICK_INTERVALS as 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
 const EMPTY_OVERLAYS: ChartOverlay[] = [];
+/** Candle poll cadence; the header chip's truth cap polls at the same rate. */
+const CANDLE_POLL_MS = 8000;
 
 // Comparison engine init is staged out of the frame that mounts the card.
 // The card, its controls and its sized canvas container commit synchronously;
@@ -192,49 +194,18 @@ function loadTimeframe(): ArxTimeframe {
   return restoreChartInterval(v, DEFAULT_TF);
 }
 
-// Mirror status — derived from feed quality + fetch state.
-type MirrorStatus = "Mirrored" | "Syncing" | "Stale" | "Conflict" | "Refreshing";
+// Feed strip — the one-line status bar under the header. It states the server's
+// own grade of THIS candle response (quality / stale / live flags), capped by
+// the same shared scanner-truth verdict as the header chip so the two never
+// disagree. It measures nothing else: there is no broker-mirror comparison
+// behind it, so it never claims the chart is "mirrored" or "syncing".
+type FeedStripTone = "clean" | "caution" | "danger" | "unknown";
 
-function getMirrorStatus(
-  quality: string | null | undefined,
-  stale: boolean | undefined,
-  isFetching: boolean,
-): MirrorStatus {
-  if (isFetching) return "Refreshing";
-  if (!quality) return "Syncing";
-  if (quality === "clean") return stale ? "Stale" : "Mirrored";
-  if (quality === "delayed" || quality === "partial") return "Mirrored";
-  if (quality === "stale") return "Stale";
-  if (quality === "invalid") return "Conflict";
-  return "Syncing"; // empty / unavailable
-}
-
-const MIRROR_STYLE: Record<MirrorStatus, { dot: string; text: string; label: string }> = {
-  Mirrored: {
-    dot: "bg-emerald-400",
-    text: "text-emerald-300",
-    label: "Mirrored",
-  },
-  Refreshing: {
-    dot: "bg-sky-400 animate-pulse",
-    text: "text-sky-300",
-    label: "Refreshing",
-  },
-  Syncing: {
-    dot: "bg-amber-400 animate-pulse",
-    text: "text-amber-300",
-    label: "Syncing",
-  },
-  Stale: {
-    dot: "bg-amber-400",
-    text: "text-amber-300",
-    label: "Stale",
-  },
-  Conflict: {
-    dot: "bg-red-400",
-    text: "text-red-300",
-    label: "Conflict",
-  },
+const FEED_STRIP_STYLE: Record<FeedStripTone, { dot: string; text: string }> = {
+  clean: { dot: "bg-emerald-400", text: "text-emerald-300" },
+  caution: { dot: "bg-amber-400", text: "text-amber-300" },
+  danger: { dot: "bg-red-400", text: "text-red-300" },
+  unknown: { dot: "bg-zinc-400", text: "text-zinc-300" },
 };
 
 // OHLC diversity check: a bar is "flat" when high==low (or effectively so).
@@ -283,8 +254,21 @@ export interface ARXNativeChartProps {
     isError: boolean;
     refetch: () => unknown;
     livePriceAllowed: boolean;
+    /** When the last successful response arrived (epoch ms; 0/absent = unknown). */
+    dataUpdatedAt?: number;
   };
   onScannerSurfaceChange?: (surface: ScannerChartSurface | null) => void;
+  /**
+   * Scanner only: the shared live-tip key (lib/scannerLiveTipStore). When set,
+   * the forming-bar tip this chart applies to its axis is published there (at
+   * the instrument precision, only while the live-price affordance holds) so
+   * the Scanner header and badge show the SAME observation. Withdrawn on a
+   * frozen or barless frame, a poll that replaces the tip, a context switch,
+   * a non-live display and unmount. Display only.
+   */
+  liveTipKey?: string | null;
+  /** Scanner only: the stream's market-frozen verdict, reported to the host. */
+  onMarketFrozenChange?: (frozen: { lastBrokerTimeMs: number | null } | null) => void;
   canvasEvents?: Pick<HTMLAttributes<HTMLDivElement>, "onContextMenu" | "onPointerDown" | "onPointerUp" | "onPointerMove">;
   canvasOverlay?: ReactNode;
   /** Max candles to request (default 300; contract caps at 5000). */
@@ -297,7 +281,8 @@ export interface ARXNativeChartProps {
   overlays?: ChartOverlay[];
   /**
    * Level 5 — reports the chart's resolved symbol, current timeframe, and the
-   * Level 3 `aiUsable` verdict (true only on a clean feed) whenever any of them
+   * AI-usability verdict (true only on a clean feed whose shared scanner truth
+   * is confirmed — the same verdict the header chip shows) whenever any of them
    * change. Lets a parent source AI overlays (scanner/Ruby) against the exact
    * instrument the chart is showing and suppress them on an unconfirmed feed —
    * WITHOUT duplicating the candle fetch. Pure read-out: never gates candles
@@ -317,12 +302,6 @@ export interface ARXNativeChartProps {
    * chart never executes from it.
    */
   onIntelligenceChange?: (state: ChartIntelligenceResponse["state"]) => void;
-  /**
-   * Phase 2 — Mirror lock initial state. When true (default) the chart's
-   * displayed symbol and timeframe are locked to the shared chart-symbol bus.
-   * When false the chart enters inspection mode and can diverge.
-   */
-  mirrorLockDefault?: boolean;
 }
 
 /** The first canvas and later viewport changes use the same sizing policy. */
@@ -348,13 +327,14 @@ export function ARXNativeChart({
   showFeedStatus = true,
   externalFeed,
   onScannerSurfaceChange,
+  liveTipKey = null,
+  onMarketFrozenChange,
   canvasEvents,
   canvasOverlay,
   limit = 300,
   overlays: suppliedOverlays = EMPTY_OVERLAYS,
   onChartContextChange,
   onIntelligenceChange,
-  mirrorLockDefault = true,
 }: ARXNativeChartProps) {
   // Normalize the incoming symbol to the bare, upper-cased form the contract
   // expects ("FX:EURUSD" -> "EURUSD"); the endpoint classifies from there.
@@ -381,17 +361,20 @@ export function ARXNativeChart({
   // effect below, immediately before it relabels the engine and the legend.
   const timeZoneRef = useRef<ChartTimeZone>("UTC");
   const utcClockRef = useRef(false);
+  const pricePrecisionRef = useRef<number | null>(null);
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
     inspectedCandleRef.current = bar;
     if (!legendRef.current) return;
-    const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
+    // Same instrument precision as the axis and header (pricePrecisionRef).
+    const p = pricePrecisionRef.current;
+    const px = (value: number) => formatInstrumentPrice(value, p);
     // Canonical OHLC always comes first. In Heikin Ashi style the averaged
     // display bar is appended, labelled HA; it is re-queried here so every
     // caller shows the same text.
     const ha = bar ? adapterRef.current?.getDisplayCandle?.(bar.time) ?? null : null;
     legendRef.current.textContent = bar
-      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}${ha ? `  ·  HA O ${ha.open.toFixed(digits)}  H ${ha.high.toFixed(digits)}  L ${ha.low.toFixed(digits)}  C ${ha.close.toFixed(digits)}` : ""}`
+      ? `${formatSourceChartTime(bar.time, utcClockRef.current, timeZoneRef.current)}  ·  O ${px(bar.open)}  H ${px(bar.high)}  L ${px(bar.low)}  C ${px(bar.close)}${ha ? `  ·  HA O ${px(ha.open)}  H ${px(ha.high)}  L ${px(ha.low)}  C ${px(ha.close)}` : ""}`
       : "Move the crosshair over a candle to inspect it";
     if (studyInspectorRef.current && dataWindowRef.current?.open) {
       const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
@@ -443,12 +426,6 @@ export function ARXNativeChart({
   const researchExplanation = useRef<{context:string;evidence:ChartResearchExplanation}|null>(null);
   const [researchLayer,setResearchLayer] = useState<{context:string;rows:ChartOverlay[]}|null>(null);
 
-  // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
-  // as "mirrored" with the rest of the UI. When off, an inspection-mode
-  // indicator shows. This is visual state only; the symbol/timeframe come from
-  // the parent regardless — this flag only changes how the Mirror Layer reads.
-  const [mirrorLocked, setMirrorLocked] = useState(mirrorLockDefault);
-
   // Bumped each time the chart/series is (re)built so overlay effects redraw
   // onto the fresh series instead of a stale handle.
   const [engineGeneration, setEngineGeneration] = useState(0);
@@ -485,7 +462,7 @@ export function ARXNativeChart({
       query: {
         queryKey: getGetChartCandlesQueryKey({ symbol: resolvedSymbol, timeframe, limit }),
         enabled: externalFeed == null && resolvedSymbol.length > 0 && supportedTimeframe,
-        refetchInterval: 8000,
+        refetchInterval: CANDLE_POLL_MS,
         staleTime: 4000,
       },
     },
@@ -502,6 +479,10 @@ export function ARXNativeChart({
     ? response : undefined, [response, resolvedSymbol, timeframe, supportedTimeframe]);
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
+  // The latest refetch failed while React Query keeps the previous response on
+  // screen. Those bars are a frozen cache, so every live / AI / clean claim
+  // derived from them is withdrawn until a refresh succeeds again.
+  const refreshFailed = query.isError && hasCandles;
 
   // ── Deep history scroll-back (Task #438) ────────────────────────────────────
   // Accumulates OLDER bars from GET /api/chart/history as the user pans left.
@@ -517,6 +498,19 @@ export function ARXNativeChart({
     data?.feedStatus?.source ?? null, evidenceIdentity, true);
   const utcClockQualified = deepHistory.olderCandles.length === 0 && chartUtcClockQualified(candles);
   const displayZone = utcClockQualified ? effectiveDisplayZone(preferences.timeZone, timeframe) : "UTC";
+  // The zone the axis and legend actually print in, stated beside the
+  // timeframe chips. UTC uses the shared chart label; a chosen display zone is
+  // named; bars whose UTC mapping is unverified say they are on the source clock.
+  const timeAxisLabel = !utcClockQualified
+    ? "Times: source clock (UTC unverified)"
+    : resolveTimeZone(displayZone) === "UTC"
+      ? CHART_TIME_AXIS_LABEL
+      : `Times: ${zoneShortLabel(displayZone)}`;
+  const timeAxisTitle = !utcClockQualified
+    ? SOURCE_CLOCK_NOTE
+    : resolveTimeZone(displayZone) === "UTC"
+      ? CHART_TIME_AXIS_TITLE
+      : `Chart time axis and candle times are shown in ${zoneShortLabel(displayZone)}. Candle data stays stamped in UTC.`;
 
   // ── Live-price affordance honesty (shared rule, Task #351) ──────────────────
   // The candlestick last-value label and the dashed "Last" price line are
@@ -524,9 +518,11 @@ export function ARXNativeChart({
   // the feed" rule the Scanner and position mini-charts use, so the verdict is
   // resolved through the shared chart-display-status module — not this chart's
   // own feed-confidence badge system (which stays as the header). The header
-  // here derives from the same feedStatus, so chart and header can never
-  // disagree and no separate header cap is needed.
-  const isLivePriceAffordance = externalFeed?.livePriceAllowed !== false && isLivePriceDisplay(
+  // chip's text derives from the same feedStatus; the chip is additionally
+  // capped (downgrade only) by the shared scanner truth further below. A
+  // supplied Scanner feed can only withdraw the affordance, and a failed
+  // refresh (frozen cached bars) always does.
+  const isLivePriceAffordance = !refreshFailed && externalFeed?.livePriceAllowed !== false && isLivePriceDisplay(
     resolveDisplayStatus(data?.feedStatus ?? null, hasCandles),
   );
   // NOTE (Theme C3.3): this verdict is NOT mirrored into a ref for the SSE tick
@@ -534,6 +530,11 @@ export function ARXNativeChart({
   // using it to gate live frames froze charts whose ticks were flowing fine.
   // Each frame carries its own server-computed `frozen` marker instead. This
   // value still drives the last-price affordance through setFeedState below.
+  // The ref below gates ONLY the tip published to the Scanner header (a header
+  // never shows a tick as current on a non-live display); frames still reach
+  // the axis on their own `frozen` marker.
+  const isLivePriceAffordanceRef = useRef(isLivePriceAffordance);
+  isLivePriceAffordanceRef.current = isLivePriceAffordance;
 
   // Market-frozen / closed-market indicator (display/telemetry only). Driven by
   // the tick-stream `feed_status` event, whose verdict is derived from the
@@ -541,9 +542,30 @@ export function ARXNativeChart({
   // forming bar reads as closed-market rather than a broken feed. null = not
   // frozen (or no tick seen yet → assert nothing).
   const [formingCloseMs, setFormingCloseMs] = useState<number | null>(null);
+  // Server clock + bar interval from the latest accepted forming-bar frame, so
+  // the candle-close countdown is measured against the SERVER clock (a client
+  // clock running fast/slow can neither shrink, inflate nor hide it).
+  const serverClockRef = useRef<(ServerClockSample & { intervalMs: number | null }) | null>(null);
   const [marketFrozen, setMarketFrozen] = useState<{ lastBrokerTimeMs: number | null } | null>(
     null,
   );
+  // Scanner host bindings (both optional; no effect on any other surface).
+  const liveTipKeyRef = useRef(liveTipKey);
+  liveTipKeyRef.current = liveTipKey;
+  const withdrawLiveTip = useCallback(() => {
+    if (liveTipKeyRef.current) publishScannerTip(liveTipKeyRef.current, null);
+  }, []);
+  useEffect(() => {
+    if (!liveTipKey) return;
+    return () => publishScannerTip(liveTipKey, null);
+  }, [liveTipKey]);
+  useEffect(() => {
+    if (!isLivePriceAffordance) withdrawLiveTip();
+  }, [isLivePriceAffordance, liveTipKey, withdrawLiveTip]);
+  useEffect(() => {
+    onMarketFrozenChange?.(marketFrozen);
+  }, [marketFrozen, onMarketFrozenChange]);
+  useEffect(() => () => onMarketFrozenChange?.(null), [onMarketFrozenChange]);
 
   // ── Tick-stream watchdog (Theme C3.4) ───────────────────────────────────
   // A dropped SSE stream used to be invisible: `es.onerror` was a no-op, and a
@@ -552,6 +574,9 @@ export function ARXNativeChart({
   // the chart sat frozen indefinitely while still presenting as live. The hook
   // owns silence detection and the reconnect signal; see its own file for the
   // detection rationale and timings.
+  // Only a candle source that HAS a tick stream (MT5 broker / Deriv) is watched:
+  // third-party sources, stored history and an empty feed never open one, so
+  // they can never be "reconnecting".
   const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
   const tickSource = chartTickSource(data?.feedStatus?.source);
   const streamEnabled = data?.feedStatus?.notLiveReason !== "stored_history" &&
@@ -934,6 +959,26 @@ export function ARXNativeChart({
       : null;
   }, [mergedEngineCandles]);
 
+  // ONE display precision for this instrument (lib/instrumentPriceFormat): the
+  // server-declared precision widened by the digits the loaded quotes carry —
+  // the same rule the Scanner chart, header and trade modal use. The axis
+  // (adapter.setDisplayPricePrecision), the header badge, the crosshair legend
+  // and the side panels (chartPricePrecisionStore) all print with it.
+  const serverPricePrecision = data?.truthResult?.pricePrecision ?? null;
+  const pricePrecision = useMemo(
+    () => resolveDisplayPricePrecision(
+      serverPricePrecision,
+      mergedEngineCandles.flatMap((c) => [c.open, c.high, c.low, c.close]),
+    ),
+    [serverPricePrecision, mergedEngineCandles],
+  );
+  pricePrecisionRef.current = pricePrecision;
+  const precisionOwner = useRef({}).current;
+  useEffect(
+    () => publishChartPricePrecision(resolvedSymbol, pricePrecision, precisionOwner),
+    [resolvedSymbol, pricePrecision, precisionOwner],
+  );
+
   const historySource = data?.feedStatus?.source ?? null;
 
   // ── Push data into the existing series on every poll WITHOUT recreating the
@@ -951,14 +996,18 @@ export function ARXNativeChart({
     // rule). chartEpoch re-runs this after a context reset so the retained engine
     // is populated immediately rather than waiting for the next poll.
     adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
+    adapter.setDisplayPricePrecision?.(pricePrecision);
     adapter.setCandles(mergedEngineCandles);
+    // setCandles just replaced any tick-stream tip on the axis with the poll's
+    // newest close, so a published Scanner tip no longer matches the axis.
+    withdrawLiveTip();
     // Keep the newest-bar watermark in sync with the authoritative closed
     // window. When the poll reconciles a new closed bar it advances here, so the
     // SSE tip for the next interval is accepted and a stale tip is rejected; the
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
+  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
   useLayoutEffect(() => {
     if (!onScannerSurfaceChange) return;
     const surface = hasCandles ? adapterRef.current?.getScannerOverlaySurface?.() : null;
@@ -1011,6 +1060,9 @@ export function ARXNativeChart({
     // tick yet emits no feed_status, so a stale badge would otherwise linger.
     setMarketFrozen(null);
     setFormingCloseMs(null);
+    serverClockRef.current = null;
+    // A published tip never outlives its stream key.
+    withdrawLiveTip();
     if (!streamEnabled || !tickSource) return;
     const url = u(
       `/api/chart/tick-stream?symbol=${encodeURIComponent(resolvedSymbol)}&timeframe=${encodeURIComponent(timeframe)}&source=${encodeURIComponent(tickSource)}`,
@@ -1049,6 +1101,8 @@ export function ARXNativeChart({
         timeframe?: string;
         frozen?: boolean;
         tickWallMs?: number;
+        /** Server wall clock when the frame was sent (epoch ms). */
+        ts?: number;
         marketFrozen?: boolean;
         lastBrokerTimeMs?: number | null;
         bar?: { openTimeMs?: number; closeTimeMs?: number; open?: number; high?: number; low?: number; close?: number };
@@ -1063,7 +1117,11 @@ export function ARXNativeChart({
       // guards below because it must surface even when no live tip is applied
       // (a frozen broker quote is exactly the case where we apply NO tip).
       if (msg.type === "feed_status") {
-        if (msg.marketFrozen === true) setFormingCloseMs(null);
+        if (msg.marketFrozen === true) {
+          setFormingCloseMs(null);
+          serverClockRef.current = null;
+          withdrawLiveTip();
+        }
         setMarketFrozen(
           msg.marketFrozen === true ? { lastBrokerTimeMs: msg.lastBrokerTimeMs ?? null } : null,
         );
@@ -1075,7 +1133,12 @@ export function ARXNativeChart({
       // Gate on THIS frame's own freshness marker (server-computed from the real
       // tick age), exactly like the Scanner — not on the sticky closed-feed grade.
       if (msg.type !== "forming_bar") return;
-      if (msg.frozen || !msg.bar) { setFormingCloseMs(null); return; }
+      if (msg.frozen || !msg.bar) {
+        setFormingCloseMs(null);
+        serverClockRef.current = null;
+        withdrawLiveTip();
+        return;
+      }
       // Task #496 latency addendum: measure ingest→browser latency in dev from
       // the ingest-accept wall clock the server stamped on the tip.
       if (typeof msg.tickWallMs === "number" && import.meta.env.DEV) {
@@ -1113,10 +1176,25 @@ export function ARXNativeChart({
         close: b.close,
       });
       newestBarSecRef.current = tipSec;
+      // Publish the axis' current tip for the Scanner header (rounded to the
+      // display precision so an unchanged label never re-renders a reader).
+      if (liveTipKeyRef.current) {
+        publishScannerTip(
+          liveTipKeyRef.current,
+          isLivePriceAffordanceRef.current ? Number(formatInstrumentPrice(b.close, pricePrecisionRef.current)) : null,
+        );
+      }
       const seconds = chartIntervalSeconds(timeframe);
       const closeMs = b.closeTimeMs;
-      setFormingCloseMs(seconds && typeof closeMs === "number" && Number.isFinite(closeMs)
-        && closeMs - b.openTimeMs === seconds * 1000 ? closeMs : null);
+      const validClose = seconds && typeof closeMs === "number" && Number.isFinite(closeMs)
+        && closeMs - b.openTimeMs === seconds * 1000 ? closeMs : null;
+      // Re-captured per frame so the server-clock offset stays fresh; a frame
+      // without a finite ts (older server) leaves no sample and the countdown
+      // falls back to the client clock.
+      serverClockRef.current = validClose != null && typeof msg.ts === "number" && Number.isFinite(msg.ts)
+        ? { serverTs: msg.ts, receivedPerf: performance.now(), intervalMs: seconds ? seconds * 1000 : null }
+        : null;
+      setFormingCloseMs(validClose);
     };
     es.onerror = () => {
       if (!accepts()) return;
@@ -1248,15 +1326,29 @@ export function ARXNativeChart({
   // symbol/timeframe is downgraded or still unresolved — mirroring RubyChartRead.
   // Normalize first: `timeframe` is contract-style ("M15") but useScannerTruth's
   // toApiTimeframe only understands chart ids, so a raw label would resolve the
-  // wrong (M5) feed. This is a read-only verdict for the badge ONLY; the Level 5
-  // context report below intentionally keeps using the raw conf.aiUsable.
+  // wrong (M5) feed.
+  //
+  // The truth hook runs its own request to the same /api/chart/candles endpoint
+  // (a different cache key from the generated hook above), so it is NOT the same
+  // response object as the chip text. It is asked for the SAME candle window and
+  // poll cadence as this chart so the chip and its cap describe the same bars at
+  // nearly the same moment. The cap can only downgrade the chip.
   const { truth: badgeTruth } = useScannerTruth(
     supportedTimeframe ? resolvedSymbol : "",
     normalizeChartTimeframe(timeframe),
+    { limit, refetchInterval: CANDLE_POLL_MS },
   );
-  const badgeAiUsableResolved = resolveFeedBadgeVerdict(
-    badgeTruth?.analysis.level ?? null,
-  );
+  // A failed refresh of THIS chart's candles caps the chip too: the response it
+  // describes is no longer current.
+  const badgeAiUsableResolved = refreshFailed
+    ? false
+    : resolveFeedBadgeVerdict(badgeTruth?.analysis.level ?? null);
+  // ONE AI-usability verdict for everything this panel shows or reports: the
+  // chip, the "Not AI-confirmed" badge, the structure lines and the context the
+  // page uses to draw scanner/Ruby AI overlays. The raw feed flag can only be
+  // narrowed by the shared truth (downgraded or still resolving => not usable),
+  // so the canvas can never draw AI-derived levels next to a "No AI" chip.
+  const aiUsable = conf.aiUsable && badgeAiUsableResolved === true;
 
   // ── Level 4 — read-only structural overlay (Task #651). Draw the detected
   //    trendlines / channel rails + break/retest/reclaim markers the backend
@@ -1268,7 +1360,7 @@ export function ARXNativeChart({
   //    DOUBLE-GATED honesty: the backend already fails the overlay closed
   //    (`visible:false`) unless the feed was live-confirmed AND a real trendline
   //    was detected; the frontend re-gates on this chart's OWN feed-confidence
-  //    verdict (`conf.aiUsable`) and the shared live-price affordance, so a
+  //    verdict (`aiUsable`: raw feed flag capped by the shared truth) and the shared live-price affordance, so a
   //    non-live / unconfirmed feed can never show structure. When any gate is
   //    false we CLEAR the structural channel (also covers symbol/timeframe switch
   //    via chartEpoch, so structure from instrument A never bleeds onto B).
@@ -1278,7 +1370,7 @@ export function ARXNativeChart({
 
     const overlay = intelligenceState?.trendlineOverlay;
     const mayDraw =
-      overlay != null && overlay.visible && conf.aiUsable && isLivePriceAffordance
+      overlay != null && overlay.visible && aiUsable && isLivePriceAffordance
       && intelligenceState?.truthState?.source === historySource
       && (!overlayRequiresEvidence || hasMatchingOverlayEvidence(evidence, intelligenceQuery.data));
 
@@ -1320,17 +1412,53 @@ export function ARXNativeChart({
 
     adapter.setStructureLines(lines, markers);
     // displayStatus is captured via `isLivePriceAffordance` (derived from it) +
-    // `conf.aiUsable`; chartEpoch re-runs this after a context reset so structure
+    // `aiUsable`; chartEpoch re-runs this after a context reset so structure
     // is applied only to the matching instrument, timeframe and provider.
-  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
+  }, [intelligenceState, aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
 
-  // Phase 2 — mirror status derived from feed quality + fetch state.
-  const mirrorStatus = getMirrorStatus(
-    feedStatus?.quality,
-    feedStatus?.stale,
-    query.isFetching && !query.isLoading,
-  );
-  const mirrorStyle = MIRROR_STYLE[mirrorStatus];
+  // Feed strip — the header chip's capped verdict, plus the specific reason for
+  // a stale / invalid / unavailable grade. A background refetch is shown as its
+  // own marker and never replaces the verdict.
+  const stripConf = capConfidence(conf, badgeAiUsableResolved);
+  const stripLabel = refreshFailed
+    ? "Refresh failed"
+    : feedStatus
+    ? stripConf.statusLabel
+    : query.isLoading
+      ? "Loading"
+      : query.isError
+        ? "Request failed"
+        : "Unknown";
+  const stripTone: FeedStripTone = refreshFailed ? "caution" : feedStatus ? stripConf.severity : "unknown";
+  const stripStyle = FEED_STRIP_STYLE[stripTone];
+  const stripIntegrityFailed = feedStatus?.quality === "invalid";
+  const stripStale = !stripIntegrityFailed && (feedStatus?.quality === "stale" || feedStatus?.stale === true);
+  // The stale chip names only the cause the evidence supports. Inside the
+  // instrument's scheduled weekend close with no bar since the close it is a
+  // closed market (the server's own feed warning says so), not a feed fault; a
+  // market with session closes may be closed (daily break, holiday) or its feed
+  // delayed; only a 24/7 market's stale grade is plainly a stale feed.
+  const stripNowMs = Date.now();
+  const stripAssetClass = feedStatus?.assetClass ?? null;
+  const stripClosure = stripStale ? scheduledWeekendClosureFor(stripAssetClass, stripNowMs) : null;
+  const stripNewestOpenMs = hasCandles ? Date.parse(candles[candles.length - 1]!.openTime) : Number.NaN;
+  // Cause wording (closed / may be closed) is only for a "stale" grade, as the
+  // server's own wording is: a stale flag on a partial feed (missing or
+  // duplicate bars plus a trailing gap) has a measured sequence fault, and the
+  // server never calls it closed or fault-free — it says only that the newest
+  // bars are not current.
+  const stripStaleGraded = feedStatus?.quality === "stale";
+  const stripStaleText = !stripStale
+    ? null
+    : !stripStaleGraded
+      ? "Newest bars are not current"
+    : stripClosure != null && Number.isFinite(stripNewestOpenMs) && stripNewestOpenMs < stripClosure.closedAtMs
+      ? "Market closed for the weekend — no new bars, not a feed fault"
+      : nextWeekendClosureBoundaryMs(stripAssetClass, stripNowMs) != null
+        ? "No new bars — the market may be closed or the feed delayed"
+        : "Feed is stale";
+  const stripUnavailable = feedStatus?.quality === "unavailable" || feedStatus?.quality === "empty";
+  const stripRefreshing = query.isFetching && !query.isLoading;
 
   // Phase 2 — Chart Safe Mode: active when candles exist but the integrity
   // check failed (quality="invalid"). We still show the candles (they are
@@ -1352,26 +1480,32 @@ export function ARXNativeChart({
   const lastCtxRef = useRef<string>("");
   useEffect(() => {
     if (!onChartContextChange) return;
-    const key = `${resolvedSymbol}|${timeframe}|${conf.aiUsable ? 1 : 0}`;
+    const key = `${resolvedSymbol}|${timeframe}|${aiUsable ? 1 : 0}`;
     if (lastCtxRef.current === key) return;
     lastCtxRef.current = key;
     onChartContextChange({
       symbol: resolvedSymbol,
       timeframe,
-      aiUsable: conf.aiUsable,
+      aiUsable,
     });
-  }, [resolvedSymbol, timeframe, conf.aiUsable, onChartContextChange]);
+  }, [resolvedSymbol, timeframe, aiUsable, onChartContextChange]);
 
   // Only surface the prominent banner once real candles are on screen — the
   // empty/error overlays already own the no-data story.
   const showPoorBanner =
     showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
-  const showNotAiConfirmed = showFeedStatus && hasCandles && !conf.aiUsable && !isSafeMode;
+  const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
-  const decimals = useMemo(() => {
-    const sample = lastClose ?? 1;
-    return sample < 10 ? 5 : sample < 1000 ? 3 : 2;
-  }, [lastClose]);
+
+  // The stream's marketFrozen flag means "the broker keeps repeating one
+  // quote"; only the instrument's scheduled weekend close (the same window the
+  // server's feed status uses) makes that a closed market.
+  const scheduledClosure = marketFrozen != null
+    && scheduledWeekendClosureFor(data?.feedStatus?.assetClass ?? null, Date.now()) != null;
+  const frozenChip = marketFrozen ? frozenQuoteChip(marketFrozen.lastBrokerTimeMs, scheduledClosure) : null;
+  // The header price reads as current only on a live-confirmed feed whose
+  // broker quote is still moving (downgrade-only).
+  const headerPriceLive = isLivePriceAffordance && marketFrozen == null;
 
   const isInitialLoading = query.isLoading && !hasCandles;
   const isError = query.isError && !hasCandles;
@@ -1387,6 +1521,11 @@ export function ARXNativeChart({
           <span className={mobileLayout ? "sr-only" : undefined}>{expanded ? "Exit fullscreen" : "Fullscreen"}</span>
         </Button>);
   const timeframeControls = (<div className={`flex items-center gap-1 ${compactDesktopWorkspace ? "w-full flex-nowrap overflow-x-auto py-0.5" : "flex-wrap"}`} data-testid="arx-native-tf-controls">
+            {hasCandles && (
+              <span className={`mr-1 text-[10px] text-zinc-500 ${compactDesktopWorkspace ? "shrink-0 whitespace-nowrap" : ""}`} data-testid="arx-native-timezone" title={timeAxisTitle}>
+                {timeAxisLabel}
+              </span>
+            )}
             {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>{setReplayError(null);void replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}).then(setReplayError);}}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
               <Button
@@ -1462,7 +1601,7 @@ export function ARXNativeChart({
         </div>
       </div>
 
-      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools studyEvidenceRevision={mergedEngineCandles} assistantActive={assistantPane.active} assistantIsCurrent={assistantPane.isCurrent} utcClockQualified={utcClockQualified} getSupportResistanceProposal={getSupportResistanceProposal} getFibonacciProposal={getFibonacciProposal} key={`${workbenchMarket}:${workbenchGeneration}`} chartTarget={containerRef} showTemplates={false} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: scheduledClosure, quoteFrozen: marketFrozen != null && !scheduledClosure })} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
 
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
@@ -1515,8 +1654,20 @@ export function ARXNativeChart({
               </Badge>
             )}
             {lastClose != null && (
-              <Badge variant="outline" className="font-mono text-xs" data-testid="arx-native-last">
-                {lastClose.toFixed(decimals)}{!isLivePriceAffordance && <span className="ml-1 text-[9px] text-zinc-400">last-known</span>}
+              // The canvas removes its live-price line/label when the feed is not
+              // live-confirmed; the header must say the same thing in words.
+              <Badge
+                variant="outline"
+                className={`font-mono text-xs ${headerPriceLive ? "" : "text-zinc-400"}`}
+                data-testid="arx-native-last"
+                title={headerPriceLive
+                  ? undefined
+                  : marketFrozen
+                    ? "Close of the newest bar received. The broker keeps sending the same quote, so this is not a moving price."
+                    : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
+              >
+                {headerPriceLive ? "" : "Last known "}
+                {formatInstrumentPrice(lastClose, pricePrecision)}
               </Badge>
             )}
             {positionCount > 0 && (
@@ -1535,6 +1686,19 @@ export function ARXNativeChart({
                 aiUsableResolved={badgeAiUsableResolved}
               />
             )}
+            {refreshFailed && (
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                data-testid="arx-native-refresh-failed"
+                title="The latest candle request failed. The bars shown are the last successful response and are not updating."
+              >
+                <AlertTriangle className="h-3 w-3" /> Refresh failed
+                {(query.dataUpdatedAt ?? 0) > 0
+                  ? ` — showing data from ${new Date(query.dataUpdatedAt!).toISOString().slice(11, 19)} UTC`
+                  : " — showing the last response"}
+              </Badge>
+            )}
             {showNotAiConfirmed && (
               <Badge
                 variant="outline"
@@ -1544,14 +1708,15 @@ export function ARXNativeChart({
                 <ShieldAlert className="h-3 w-3" /> Not AI-confirmed
               </Badge>
             )}
-            {marketFrozen && (
+            {frozenChip && (
               <Badge
                 variant="outline"
                 className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
                 data-testid="arx-native-market-closed"
-                title="The broker is replaying its last quote — the market is closed (derived from real tick broker-time staleness, not a calendar)."
+                data-scheduled-closure={scheduledClosure ? "true" : "false"}
+                title={frozenChip.title}
               >
-                <Clock className="h-3 w-3" /> {formatMarketClosedLabel(marketFrozen.lastBrokerTimeMs)}
+                <Clock className="h-3 w-3" /> {frozenChip.label}
               </Badge>
             )}
             {/* Theme C3.5 — an honestly-labelled stalled stream. A chart whose
@@ -1570,7 +1735,7 @@ export function ARXNativeChart({
               </Badge>
             )}
             {formingCloseMs != null && isLivePriceAffordance && !marketFrozen && (
-              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} />
+              <CandleCloseCountdown closeTimeMs={formingCloseMs} timeframe={normalizeChartTimeframe(timeframe)} clockRef={serverClockRef} />
             )}
             {hasCandles && (
               <ChartHistoryBadge
@@ -1581,6 +1746,7 @@ export function ARXNativeChart({
                 coverageDays={deepHistory.coverageDays}
                 depthTargetDays={deepHistory.depthTargetDays}
                 loadedAny={deepHistory.loadedAny}
+                loadError={deepHistory.loadError}
               />
             )}
           </div>
@@ -1595,92 +1761,63 @@ export function ARXNativeChart({
 
       {/* This is a presentation of the existing owners, not another verdict.
           Every active restriction stays outside the disclosure. Full original
-          explanations and the informational mirror control remain mounted in
-          normal flow, separate from the canvas/position coordinate origin. */}
+          explanations and the feed strip remain mounted in normal flow, separate from the canvas/position coordinate origin. */}
       <section aria-label="Chart evidence" className="border-b border-zinc-800/60">
-        {(isSafeMode || mirrorStatus === "Conflict" || (!utcClockQualified && hasCandles) ||
+        {(isSafeMode || stripIntegrityFailed || (!utcClockQualified && hasCandles) ||
           (hasCandles && !ohlcAvailable && !isSafeMode) || showPoorBanner || showNotAiConfirmed) && (
           <div className="flex flex-wrap gap-x-2 gap-y-1 px-3 pt-1 text-xs leading-4" data-testid="chart-evidence-restrictions">
-            {(isSafeMode || mirrorStatus === "Conflict") && <span className="font-semibold text-red-200">Data validation failed — AI analysis paused</span>}
+            {(isSafeMode || stripIntegrityFailed) && <span className="font-semibold text-red-200">Data validation failed — AI analysis paused</span>}
             {!utcClockQualified && hasCandles && <span className="text-amber-300">Source clock: UTC mapping unverified</span>}
             {hasCandles && !ohlcAvailable && !isSafeMode && <span className="text-amber-200">Line mode — OHLC candles are flat</span>}
             {showPoorBanner && <span className={conf.severity === "danger" ? "text-red-200" : "text-amber-200"}>{conf.statusLabel} feed</span>}
             {showNotAiConfirmed && <span className="text-amber-200">Not AI-confirmed</span>}
           </div>
         )}
-        {!mirrorLocked && <p className="px-3 pt-1 text-xs text-amber-200" data-testid="chart-evidence-inspection">Inspection mode — Mirror Lock OFF</p>}
         <details data-testid="chart-evidence-details">
           <summary className={`cursor-pointer px-3 ${compactDesktopWorkspace ? "py-1" : "py-1.5"} text-xs leading-4 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary`}>
-            <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{mirrorStatus} · {timeframe}</span>
+            <span>Chart evidence details</span><span className="ml-2 text-zinc-400">{stripLabel} · {timeframe}</span>
           </summary>
-      {/* Phase 2 — Chart Mirror Layer.
-          Compact status bar between the header and the canvas. Shows the
-          mirror state (Mirrored / Syncing / Stale / Conflict / Refreshing),
-          the locked symbol and timeframe, and a Mirror Lock toggle.
-          When locked: "Mirrored · SYMBOL · TF" — chart is in sync.
-          When unlocked: "Inspection mode" badge — chart may diverge.
-          This is purely informational; it never gates candles or trades. */}
+      {/* Feed strip — the server's grade of the candle response on screen
+          (capped exactly like the header chip) and the specific reason when it
+          is stale, invalid or unavailable. Informational only; it never gates
+          candles or trades. There is no broker-mirror comparison behind it, so
+          it never claims the chart is "mirrored", and it has no lock control. */}
       <div
-        className="flex items-center gap-2 border-b border-zinc-800/60 bg-zinc-950/20 px-3 py-1.5 text-[10px]"
+        className="flex flex-wrap items-center gap-2 border-b border-zinc-800/60 bg-zinc-950/20 px-3 py-1.5 text-[10px]"
         data-testid="arx-mirror-layer"
+        title="Feed grade the server reported for the candles on screen, capped by the shared scanner truth."
       >
-        {/* Status dot + label */}
         <span
-          className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${mirrorStyle.dot}`}
+          className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${stripStyle.dot}`}
         />
-        <span className={`font-medium ${mirrorStyle.text}`} data-testid="arx-mirror-status">
-          {mirrorStatus}
+        <span className={`font-medium ${stripStyle.text}`} data-testid="arx-mirror-status">
+          {stripLabel}
         </span>
-        {/* Symbol · Timeframe */}
         <span className="text-zinc-500">
           {resolvedSymbol} · {timeframe}
         </span>
-        {/* Mirror state detail */}
-        {mirrorStatus === "Conflict" && (
+        {stripIntegrityFailed && (
           <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300" data-testid="arx-mirror-conflict">
             Data integrity failed — analysis paused
           </span>
         )}
-        {mirrorStatus === "Stale" && (
+        {stripStaleText && (
           <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300" data-testid="arx-mirror-stale">
-            Feed is stale
+            {stripStaleText}
           </span>
         )}
-        {mirrorStatus === "Syncing" && (
-          <span className="rounded border border-zinc-700 bg-zinc-800/40 px-1.5 py-0.5 text-[9px] text-zinc-400" data-testid="arx-mirror-syncing">
-            Waiting for data
+        {stripUnavailable && (
+          <span className="rounded border border-zinc-700 bg-zinc-800/40 px-1.5 py-0.5 text-[9px] text-zinc-400" data-testid="arx-mirror-unavailable">
+            {feedStatus?.quality === "empty"
+              ? "The provider returned no candles"
+              : "No provider could serve this symbol"}
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1">
-          {!mirrorLocked && (
-            <Badge
-              variant="outline"
-              className="border-amber-500/40 bg-amber-500/10 text-[9px] text-amber-300"
-              data-testid="arx-mirror-inspection"
-            >
-              <GitMerge className="mr-0.5 h-2.5 w-2.5" />
-              Inspection mode
-            </Badge>
-          )}
-          <button
-            type="button"
-            className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
-              mirrorLocked
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                : "border-zinc-600 bg-zinc-800/40 text-zinc-400 hover:bg-zinc-700/40"
-            }`}
-            onClick={() => setMirrorLocked((l) => !l)}
-            title={mirrorLocked ? "Mirror Lock ON — click to inspect freely" : "Mirror Lock OFF — click to re-lock"}
-            data-testid="arx-mirror-lock"
-          >
-            {mirrorLocked ? (
-              <Lock className="h-2.5 w-2.5" />
-            ) : (
-              <Unlock className="h-2.5 w-2.5" />
-            )}
-            {mirrorLocked ? "Lock ON" : "Lock OFF"}
-          </button>
-        </span>
+        {stripRefreshing && (
+          <span className="ml-auto inline-flex items-center gap-1 text-sky-300" data-testid="arx-mirror-refreshing">
+            <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Refreshing…
+          </span>
+        )}
       </div>
 
       {!utcClockQualified && hasCandles && <p className="px-3 text-[11px] text-amber-300" data-testid="chart-clock-authority">{SOURCE_CLOCK_NOTE}</p>}
@@ -1831,12 +1968,15 @@ export function ARXNativeChart({
             <CandlestickChart className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm font-semibold">
               {feedStatus?.quality === "unavailable"
-                ? "Chart data is syncing"
+                ? "No live feed available"
                 : "No native candles available"}
             </p>
+            {/* The server's own explanation wins; the fallback names exactly
+                what was asked for and that no provider answered. */}
             <p className="max-w-md text-xs text-muted-foreground">
               {feedStatus?.quality === "unavailable"
-                ? "Waiting for a live feed to connect. Try again when the feed is available."
+                ? feedStatus.warning?.trim() || warning?.trim() ||
+                  `No data provider could serve ${resolvedSymbol} on ${timeframe} right now. Try a different symbol, or try again when the feed is available.`
                 : warning ||
                   `No native candles available for ${resolvedSymbol} on ${timeframe} right now.`}
             </p>

@@ -1631,3 +1631,37 @@ describe("comparison selected baseline containment", () => {
     expect(screen.getByTestId("opportunity-map-best-picks")).toBeTruthy();
   });
 });
+
+// No economic calendar is connected: newsRisk "none" was never observed, so
+// the row must say scheduled news was not checked rather than show nothing
+// (which reads as "no news risk").
+describe("news risk that was not checked", () => {
+  it("says 'news not checked' when no calendar looked at scheduled events", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([
+      row({ newsRisk: "none", newsRiskNotChecked: true }),
+    ]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-row-stats-EURUSD").textContent).toMatch(/news not checked/i);
+    expect(screen.getByTitle(/No economic calendar is connected/)).toBeTruthy();
+  });
+
+  // Review pass 2: a connected calendar that did not answer (or a news lookup
+  // that failed) also arrives as newsRiskNotChecked. The hover text must not
+  // blame a missing calendar then: the server marks it newsRiskUnchecked.
+  it("a failed check says the news check failed, never 'no economic calendar is connected'", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([
+      row({ newsRisk: "none", newsRiskNotChecked: true, newsRiskUnchecked: true }),
+    ]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    const stats = screen.getByTestId("opportunity-row-stats-EURUSD");
+    expect(stats.textContent).toMatch(/news could not be checked/i);
+    expect(stats.innerHTML).not.toMatch(/No economic calendar is connected/);
+    expect(screen.getByTitle(/news lookup failed or the economic calendar did not answer/)).toBeTruthy();
+  });
+
+  it("a checked quiet row still shows no news chip", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([row({ newsRisk: "none" })]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-row-stats-EURUSD").textContent).not.toMatch(/news/i);
+  });
+});

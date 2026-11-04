@@ -21,8 +21,8 @@ import { useAiChartOverlays } from "@/hooks/useAiChartOverlays";
 import { useChartSetupPreview } from "@/hooks/useChartSetupPreview";
 import type { SetupPreview } from "@/lib/setup-preview";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { LiveChartModeNotice } from "@/components/charts/LiveChartModeNotice";
 import { useProductRole } from "@/hooks/useProductRole";
 import { bareSymbol, useChartSymbol } from "@/lib/use-chart-symbol";
 
@@ -128,6 +128,17 @@ export default function LiveChartPage() {
     (state: ChartIntelligenceResponse["state"]) => setChartIntelligence(state),
     [],
   );
+  // The chart only reports a state once one matches its instrument, so the
+  // last one held here can belong to the previous symbol/timeframe. Show it
+  // only for the instrument on screen (same normalisation as the chart);
+  // otherwise the panels show their waiting state until the new read lands.
+  const onScreenSymbol = bareSymbol(chartSymbol || "EURUSD").toUpperCase();
+  const shownIntelligence =
+    chartIntelligence != null
+    && chartIntelligence.symbol === onScreenSymbol
+    && chartIntelligence.timeframe === timeframe
+      ? chartIntelligence
+      : null;
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
       <div>
@@ -142,14 +153,7 @@ export default function LiveChartPage() {
         </p>
       </div>
       <SmartChartSymbolSelect symbol={chartSymbol} onSymbolChange={setChartSymbol} />
-      <div className="flex items-start gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
-        <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
-        <p>
-          {mode.isLiveShared
-            ? <>Read-only chart. Check the chart's feed status for current data. Orders only dispatch after you <strong>review and confirm</strong> in the trade ticket, and every server safety check still applies.</>
-            : <>Read-only chart. The trade ticket on this page still requires your confirmation, and in {mode.cleanModeLabel} no real broker order is placed.</>}
-        </p>
-      </div>
+      <LiveChartModeNotice mode={mode} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0 space-y-4">
             {/* MT5-style one-click bar. Off → a single "Turn on" button (disclaimer
@@ -185,13 +189,13 @@ export default function LiveChartPage() {
               canUseSetup={canSeeTradeEntry}
               onUseSetup={onUseSetup}
             />
-            <ChartModes state={chartIntelligence} />
+            <ChartModes state={shownIntelligence} />
           </div>
         <div className="space-y-4">
           {/* Trade entry is the single gated order surface. Hidden from view-only
               (investor) roles and while identity resolves; placement itself still
               routes through the server-side instant-trade router + 16-gate. */}
-          {canSeeTradeEntry && <ChartTradeEntry prefill={tradePrefill} />}
+          {canSeeTradeEntry && <ChartTradeEntry prefill={tradePrefill} timeframe={timeframe} />}
           <PositionPickerPanel />
         </div>
       </div>

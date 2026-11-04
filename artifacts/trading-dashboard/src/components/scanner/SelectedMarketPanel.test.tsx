@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, act } from "@testing-library/react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 
 // ── SelectedMarketPanel honesty safety-net (follow-up to the Broad Scan locks) ──
@@ -99,8 +99,8 @@ vi.mock("@/components/live/TradabilityBadge", () => ({
 // marker only when actually opened (default closed) so we never assert against,
 // or depend on, its internals.
 vi.mock("@/components/live/LiveTradeTicket", () => ({
-  LiveTradeTicket: (p: { open?: boolean }) =>
-    p.open ? <div data-testid="live-trade-ticket-stub" /> : null,
+  LiveTradeTicket: (p: { open?: boolean; feedWarning?: { warningTitle: string } | null }) =>
+    p.open ? <div data-testid="live-trade-ticket-stub">{p.feedWarning?.warningTitle ?? ""}</div> : null,
 }));
 
 // Imported AFTER the mocks (vi.mock is hoisted) so the component binds the stubs.
@@ -440,7 +440,7 @@ describe("selected-market evidence availability", () => {
     const text = screen.getByTestId("selected-market-panel").textContent!;
     expect(text).not.toMatch(/News risk:? none/);
     expect(text).not.toContain("No medium/high impact events");
-    expect(text).toContain(calendarAvailable === false ? "News risk: unavailable" : "News risk: unverified");
+    expect(text).toContain(calendarAvailable === false ? "News risk: unavailable" : "News risk: unknown");
   });
   it("retains independently checked calendar evidence when price analysis is unavailable", () => {
     const data = degradedOkSnapshot();
@@ -484,7 +484,7 @@ it("does not promote legacy calendar events without their availability evidence"
   mockSnapshotQuery.mockReturnValue(hookState({ data }));
   render(<SelectedMarketPanel />);
   const text = screen.getByTestId("selected-market-panel").textContent!;
-  expect(text).toContain("News risk: unverified");
+  expect(text).toContain("News risk: unknown");
   expect(text).not.toContain("Unverified old event");
 });
 
@@ -500,4 +500,254 @@ it("distinguishes an empty future calendar from active post-event risk", () => {
   expect(text).toContain("No medium/high impact events in the next 24h.");
   expect(text).toContain("Recently released events may still affect current news risk.");
   expect(text).toContain("5m ago");
+});
+
+// ── What the panel states must match what was observed ──────────────────────
+// A complete, live-confirmed snapshot (levels present) that individual tests
+// degrade one field at a time.
+function liveOkSnapshot(over: Record<string, unknown> = {}) {
+  return {
+    ...degradedOkSnapshot(),
+    highlights: {
+      bias: "BUY" as const,
+      confidenceLabel: "High",
+      confidenceScore: 82,
+      volatilityLabel: "Normal",
+      trendState: "bullish",
+      entryZone: { low: 1.103, high: 1.1036 },
+      suggestedStop: 1.1,
+      suggestedTakeProfit: 1.11,
+      riskRewardRatio: 2,
+      riskWarnings: [],
+    },
+    explanation: {
+      ...degradedOkSnapshot().explanation,
+      hedge: "This looks like a possible buy setup right now.",
+    },
+    newsRisk: { riskLevel: "none", blockTrading: false, summary: "", calendarChecked: true },
+    dataSource: "LIVE_FEED",
+    dataSourceLabel: "MT5 broker feed",
+    dataState: "LIVE_CONFIRMED" as const,
+    dataAsOf: new Date(Date.now() - 60_000).toISOString(),
+    levelsWithheld: false,
+    levelsWithheldReason: null,
+    ...over,
+  };
+}
+
+describe("SelectedMarketPanel — labels describe what was observed", () => {
+  it("a data time stamped in the future never reads as 'Data as of 0s ago'", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({ dataAsOf: new Date(Date.now() + 3 * 3600_000).toISOString() }),
+    }));
+    render(<SelectedMarketPanel />);
+    const label = screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label).not.toContain("0s ago");
+    expect(label).toContain("unconfirmed");
+  });
+
+  it("a STALE snapshot never shows BUY, confidence, trend or levels, even if the payload carries them", () => {
+    // A stale feed with the pre-fix envelope: BUY / High / bullish + levels.
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({ dataState: "STALE", readWithheldReason: undefined }),
+    }));
+    render(<SelectedMarketPanel />);
+    expect(screen.queryByTestId("badge-selected-bias")).toBeNull();
+    expect(screen.getByTestId("badge-read-withheld").textContent).toBe("No directional read");
+    expect(screen.queryByTestId("selected-market-levels")).toBeNull();
+    expect(screen.getByTestId("selected-market-levels-withheld").textContent).toContain("not confirmed live");
+    const panelText = screen.getByTestId("selected-market-panel").textContent ?? "";
+    expect(panelText).not.toContain("High confidence");
+    expect(panelText).not.toContain("Trend bullish");
+  });
+
+  it("a LIVE_CONFIRMED snapshot with levels still shows its read", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("badge-selected-bias").textContent).toBe("BUY");
+    expect(screen.getByTestId("selected-market-levels")).toBeTruthy();
+  });
+
+  it("an unchecked calendar never reads as a quiet day", () => {
+    for (const newsRisk of [
+      { riskLevel: "none", blockTrading: false, summary: "", calendarChecked: false,
+        calendarNote: "No economic-calendar provider is configured, so scheduled events were not checked." },
+      { riskLevel: "none", blockTrading: false, summary: "" },
+    ]) {
+      mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ newsRisk, upcomingEvents: [] }) }));
+      render(<SelectedMarketPanel />);
+      const text = screen.getByTestId("selected-market-panel").textContent ?? "";
+      expect(text).not.toContain("No medium/high impact events");
+      expect(screen.getByTestId("badge-selected-news-risk").textContent).toContain("unknown");
+      expect(screen.getByTestId("text-selected-calendar-note").textContent).toMatch(/not checked|could not be checked/);
+      cleanup();
+    }
+  });
+
+  it("a checked calendar with no events says so", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ upcomingEvents: [] }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("selected-market-panel").textContent).toContain("No medium/high impact events in the next 24h.");
+  });
+
+  it("an event countdown is computed from the event time, not a cached minute offset", () => {
+    // A cached envelope built ~45 s ago still says minutesUntil 1, but the
+    // release started 20 s ago.
+    const eventTime = new Date(Date.now() - 20_000).toISOString();
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({
+        upcomingEvents: [{ externalId: "e1", title: "US CPI", currency: "USD", impactLevel: "HIGH", eventTime, minutesUntil: 1 }],
+      }),
+    }));
+    render(<SelectedMarketPanel />);
+    const countdown = screen.getByTestId("text-selected-event-countdown").textContent ?? "";
+    expect(countdown).not.toBe("in 1m");
+    expect(countdown).toBe("just now");
+  });
+});
+
+// Truth fix — a STALE / SYNCING selected-market envelope whose levels passed the
+// stale-level guard used to print BUY + numeric entry/stop/target in Highlights
+// while the reasoning block beside it said "WAIT — live feed not confirmed" and
+// "withheld until a confirmed live feed".
+describe("SelectedMarketPanel — Highlights agree with the reasoning block on a non-live feed", () => {
+  function staleLevelsSnapshot(dataState: "STALE" | "SYNCING") {
+    const base = degradedOkSnapshot();
+    return {
+      ...base,
+      highlights: {
+        ...base.highlights,
+        bias: "BUY" as const,
+        confidenceLabel: "High",
+        entryZone: { low: 1.0841, high: 1.0849 },
+        suggestedStop: 1.0821,
+        suggestedTakeProfit: 1.0891,
+        riskRewardRatio: 2,
+      },
+      dataSource: "LIVE_FEED",
+      dataSourceLabel: "MT5 broker feed",
+      dataState,
+      dataAsOf: new Date(Date.now() - 120_000).toISOString(),
+      levelsWithheld: false,
+    };
+  }
+
+  it.each(["STALE", "SYNCING"] as const)("%s: no numeric levels and no bare BUY badge", (dataState) => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: staleLevelsSnapshot(dataState) }));
+    render(<SelectedMarketPanel />);
+    const reasoning = screen.getByTestId("opp-map-reasoning").textContent ?? "";
+    expect(reasoning).toMatch(/withheld until a confirmed live feed/);
+    expect(screen.queryByTestId("selected-market-levels")).toBeNull();
+    // Merged with the withheld-read rule: no bias badge at all on a non-live feed.
+    expect(screen.getByTestId("selected-market-levels-withheld")).toBeTruthy();
+    expect(screen.queryByTestId("badge-selected-bias")).toBeNull();
+    expect(screen.getByTestId("badge-read-withheld").textContent).toBe("No directional read");
+  });
+});
+
+// Truth fix — "Data as of Xs ago" used dataAsOf (the newest provider bar's
+// closeTime, a FUTURE scheduled close for a forming bar) with negatives clamped
+// to 0, and was computed once per render with no ticking clock.
+describe("SelectedMarketPanel — 'Data as of' is an observed, advancing age", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function liveSnapshot(dataAsOf: string) {
+    return { ...degradedOkSnapshot(), dataSource: "LIVE_FEED", dataState: "LIVE_CONFIRMED" as const, dataAsOf };
+  }
+
+  it("never reads 'Data as of 0s ago' for a forming bar's future close", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-10-28T10:40:00.000Z"); vi.setSystemTime(now);
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveSnapshot(new Date(now + 10 * 60_000).toISOString()) }));
+    render(<SelectedMarketPanel />);
+    const label = () => screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label()).not.toContain("0s ago");
+    expect(label()).toContain("Data time unconfirmed");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(label()).not.toContain("0s ago");
+  });
+
+  it("advances the age between renders", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const now = Date.parse("2026-10-28T10:40:00.000Z"); vi.setSystemTime(now);
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveSnapshot(new Date(now - 4_000).toISOString()) }));
+    render(<SelectedMarketPanel />);
+    const label = () => screen.getByTestId("text-selected-last-updated").textContent ?? "";
+    expect(label()).toBe("Data as of 4s ago");
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(label()).toBe("Data as of 1m ago");
+  });
+});
+
+// Truth audit 2026-10-28 (round 3) — one level is one string in this panel.
+// The Highlights box printed the raw number (1.08523, 33588.0069) while the
+// Ruby Reasoning S/R row beside it rounded with a fixed magnitude rule
+// (1.0852, 33588.01), so one level read at two precisions and the reasoning
+// row dropped digits the venue quoted.
+describe("SelectedMarketPanel — Highlights and the reasoning block print one level as one string", () => {
+  function levels(entryZone: { low: number; high: number }, stop: number, target: number) {
+    const base = liveOkSnapshot({ readWithheldReason: null });
+    return {
+      ...base,
+      highlights: { ...base.highlights, entryZone, suggestedStop: stop, suggestedTakeProfit: target },
+    };
+  }
+  function highlightsText(): string {
+    return screen.getByTestId("selected-market-levels").textContent ?? "";
+  }
+  function srText(): string {
+    return screen.getByTestId("opp-map-reasoning-evidence-supportResistance").textContent ?? "";
+  }
+
+  it("EURUSD 5-digit levels read the same in both boxes", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: levels({ low: 1.08523, high: 1.08561 }, 1.08401, 1.08811) }));
+    render(<SelectedMarketPanel />);
+    expect(highlightsText()).toContain("1.08523 – 1.08561");
+    expect(srText()).toContain("Entry 1.08523 – 1.08561");
+    expect(srText()).toContain("stop 1.08401");
+    expect(srText()).toContain("target 1.08811");
+    expect(highlightsText()).toContain("1.08401");
+    expect(highlightsText()).toContain("1.08811");
+  });
+
+  it("V75 levels keep the venue's 4 decimals in the reasoning row", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: levels({ low: 33588.0069, high: 33590.5 }, 33570.25, 33620.125) }));
+    render(<SelectedMarketPanel />);
+    expect(srText()).toContain("Entry 33588.0069 – 33590.5000");
+    expect(highlightsText()).toContain("33588.0069 – 33590.5000");
+    expect(srText()).toContain("stop 33570.2500");
+    expect(highlightsText()).toContain("33570.2500");
+    expect(srText()).not.toContain("33588.01");
+  });
+
+  it("the shared scanner truth's precision applies to both boxes", () => {
+    mockUseScannerTruth.mockReturnValue({ truth: { ...degradedTruth(), candles: { reason: "", pricePrecision: 5 } } as unknown as ScannerTruth });
+    mockSnapshotQuery.mockReturnValue(hookState({ data: levels({ low: 1.103, high: 1.1036 }, 1.1, 1.11) }));
+    render(<SelectedMarketPanel />);
+    expect(highlightsText()).toContain("1.10300 – 1.10360");
+    expect(srText()).toContain("Entry 1.10300 – 1.10360, stop 1.10000, target 1.11000");
+  });
+});
+
+// Truth audit 2026-10-28 (round 3) — /api/chart/candles can fail for the
+// focused symbol while the selected-market snapshot still answers (it fetches
+// candles server-side). useScannerTruth then returns truth=null + isError.
+// The Scanner trade modal already says "Feed status couldn't be checked"; this
+// panel and the live ticket it opens said nothing, as if the feed were fine.
+describe("SelectedMarketPanel — a failed feed read is stated, not silent", () => {
+  it("the panel and the live ticket it opens both say the feed status couldn't be checked", () => {
+    mockUseScannerTruth.mockReturnValue({ truth: null, isError: true });
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("selected-market-feed-warning").textContent).toContain("Feed status couldn't be checked");
+    act(() => { screen.getByTestId("btn-open-ticket-buy").click(); });
+    expect(screen.getByTestId("live-trade-ticket-stub").textContent).toBe("Feed status couldn't be checked");
+  });
+
+  it("a feed read still in flight (truth null, no error) does not warn", () => {
+    mockUseScannerTruth.mockReturnValue({ truth: null, isError: false });
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.queryByTestId("selected-market-feed-warning")).toBeNull();
+  });
 });

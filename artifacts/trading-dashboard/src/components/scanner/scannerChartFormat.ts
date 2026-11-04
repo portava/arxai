@@ -6,6 +6,7 @@
 
 import type { ChartDisplayStatus } from "@/lib/chart-display-status";
 import { chartIntervalDisplayId, chartIntervalLimitation, parseChartInterval, restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
+import { candleIntervalMs } from "@workspace/domain/market";
 
 export type Timeframe = { id: string; label: string };
 
@@ -122,3 +123,108 @@ export function resolveEventMarkerSec(
 // lightweight-charts' findBar() return null and the candlestick colorer throw
 // "Value is null" on every repaint (SeriesBarColorer.Candlestick → ensureNotNull).
 export { snapSecToCandle } from "@/lib/chart-engine/candleSanitize";
+
+// ── Chart time zone + candle-close countdown (owner screenshots 2026-10-27) ──
+//
+// lightweight-charts formats the time axis and crosshair from the UTC fields of
+// each bar's timestamp, so the axis read 14:00 … 16:00 at 16:04 UTC for a
+// viewer whose wall clock said 12:04 (New York) — with no zone stated anywhere.
+// The repo's explicit-time convention is UTC (market-closed chip, ARX native
+// legend, heat-card event times), so every chart states it with ONE shared
+// label rather than switching the axis to local time.
+
+/** Visible zone label rendered beside the timeframe chips on every chart. */
+export const CHART_TIME_AXIS_LABEL = "Times: UTC";
+export const CHART_TIME_AXIS_TITLE =
+  "Chart time axis and candle times are shown in UTC (coordinated universal time), not your local time.";
+
+/** "HH:MM UTC" for an epoch-ms / ISO time, or null when it cannot be parsed. */
+export function formatUtcClock(time: number | string | null | undefined): string | null {
+  if (time == null) return null;
+  const ms = typeof time === "number" ? time : Date.parse(time);
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/**
+ * A candle close time that says which day it was: "HH:MM UTC" when it is
+ * today (UTC), otherwise "Fri 30 Oct 22:00 UTC" (with the year when it is not
+ * this year). A bare clock for a close days ago reads as today. Null when the
+ * time cannot be parsed.
+ */
+export function formatUtcCandleClose(time: number | string | null | undefined, nowMs: number): string | null {
+  const clock = formatUtcClock(time);
+  if (clock == null) return null;
+  const d = new Date(typeof time === "number" ? time : Date.parse(time as string));
+  const n = new Date(nowMs);
+  const sameYear = Number.isFinite(nowMs) && d.getUTCFullYear() === n.getUTCFullYear();
+  if (sameYear && d.getUTCMonth() === n.getUTCMonth() && d.getUTCDate() === n.getUTCDate()) return clock;
+  const day = `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_SHORT[d.getUTCMonth()]}`;
+  return `${day}${sameYear ? "" : ` ${d.getUTCFullYear()}`} ${clock}`;
+}
+
+/** A closed bar cannot close later than now beyond this clock-skew allowance. */
+const CLOSED_BAR_SKEW_MS = 5_000;
+
+/**
+ * Close time (epoch ms) of the newest CLOSED candle on the chart, or null when
+ * there is none or the timeframe is unknown. Not feedStatus.lastCandleTime:
+ * that is the newest provider bar's scheduled close, which for a still-forming
+ * bar is a FUTURE instant. A bar the server marks forming (isComplete=false),
+ * or whose open + one interval is still ahead of now, is skipped.
+ */
+export function lastClosedCandleCloseMs(
+  candles: ReadonlyArray<{ time: number; isComplete?: boolean }>,
+  timeframe: string,
+  nowMs: number,
+): number | null {
+  const intervalMs = candleIntervalMs(timeframe);
+  if (intervalMs == null || !Number.isFinite(nowMs)) return null;
+  for (let i = candles.length - 1; i >= 0; i--) {
+    const c = candles[i];
+    if (!c || c.isComplete === false || !Number.isFinite(c.time)) continue;
+    const closeMs = c.time + intervalMs;
+    if (closeMs > nowMs + CLOSED_BAR_SKEW_MS) continue;
+    return closeMs;
+  }
+  return null;
+}
+
+/** Server clock captured from one accepted tick-stream frame. */
+export interface ServerClockSample {
+  /** Server wall clock (`ts`) stamped on the frame, epoch ms. */
+  serverTs: number;
+  /** performance.now() when the frame was received. */
+  receivedPerf: number;
+}
+
+/**
+ * Time left until the forming candle closes, measured against the SERVER clock
+ * (the frame's `ts` advanced by monotonic performance.now() elapsed) so a
+ * client wall clock running fast/slow can neither shrink, inflate nor hide the
+ * countdown. Without a server sample (older server) it falls back to the client
+ * wall clock — never a fabricated offset. Residual: closeTimeMs is bucketed on
+ * the provider tick epoch while `ts` is the API server clock, so provider-vs-
+ * server skew is not removed, only client skew.
+ */
+export function computeCandleRemainingMs(args: {
+  closeTimeMs: number;
+  clock: ServerClockSample | null;
+  nowPerf: number;
+  fallbackNowMs: number;
+}): number {
+  const { closeTimeMs, clock, nowPerf, fallbackNowMs } = args;
+  if (clock && Number.isFinite(clock.serverTs) && Number.isFinite(clock.receivedPerf) && Number.isFinite(nowPerf)) {
+    return closeTimeMs - (clock.serverTs + Math.max(0, nowPerf - clock.receivedPerf));
+  }
+  return closeTimeMs - fallbackNowMs;
+}
+
+/** Chip text for the candle-close countdown, e.g. "closes in 0:15". */
+export function candleCountdownLabel(remainingMs: number, timeframe: string): string {
+  return `closes in ${formatCandleCountdown(remainingMs, timeframe)}`;
+}

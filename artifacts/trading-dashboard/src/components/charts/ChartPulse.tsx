@@ -6,15 +6,23 @@ import { Activity, AlertTriangle } from "lucide-react";
 import { feedConfidence } from "@/lib/feed-confidence";
 import { toneClasses } from "@/lib/chart-sentence-tone";
 import { useAssistantName } from "@/lib/assistant-name";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { useStatePricePrecision } from "./chartPricePrecisionStore";
+import { chartReadVerification } from "./chartReadVerification";
 
 // ChartPulse — Chart Brain v2 (Task 3) compact at-a-glance state panel.
 //
 // A small, mobile-friendly grid that summarises the live Chart Intelligence
-// State: feed status, regime, bias, active level, momentum, risk, readiness,
-// best action, setup age — plus honest standby chips for the agent court and
-// Ruby (those consumers land in a later task). EVERYTHING is generated from the
+// State: feed status, regime, bias, active level, last bar, risk, readiness,
+// best action, setup age — plus the agent-court chip (from the state's agent
+// consensus, withheld on an unverified read) and the Ruby chip. EVERYTHING is generated from the
 // state object; nothing is hardcoded and no verdict is invented. PURE DISPLAY —
 // it never places, modifies, or closes a trade.
+//
+// FEED BASIS: the feed chip grades `state.truthState`, which the server builds
+// from CLOSED bars only (the forming tip is excluded). The chart header chip
+// grades the display feed (closed bars + live forming tip), so the chip says
+// "Closed bars · …" to make the different basis explicit.
 
 type ChartState = ChartIntelligenceResponse["state"];
 
@@ -23,14 +31,10 @@ interface PulseItem {
   value: string;
   tone: ChartMarketSentenceTone;
   testid: string;
+  /** Hover text saying exactly what the tile measures. */
+  title?: string;
 }
 
-function fmtPrice(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const decimals = abs < 10 ? 5 : abs < 1000 ? 3 : 2;
-  return n.toFixed(decimals);
-}
 
 function titleCase(s: string): string {
   return s
@@ -44,7 +48,13 @@ function biasTone(b: string): ChartMarketSentenceTone {
   return "neutral";
 }
 
-function buildItems(state: ChartState): PulseItem[] {
+// Prices print at the precision the chart resolved for this symbol (shared
+// rule, lib/instrumentPriceFormat), so a level never disagrees with the axis.
+function buildItems(
+  state: ChartState,
+  pricePrecision: number | null,
+  verified: boolean,
+): PulseItem[] {
   const mu = state.marketUnderstanding;
   const items: PulseItem[] = [];
 
@@ -91,56 +101,80 @@ function buildItems(state: ChartState): PulseItem[] {
   items.push({
     label: "Active level",
     value: nearest
-      ? `${nearest.kind === "support" ? "Sup" : "Res"} ${fmtPrice(nearest.price)}`
+      ? `${nearest.kind === "support" ? "Sup" : "Res"} ${formatInstrumentPrice(nearest.price, pricePrecision)}`
       : "None",
     tone: nearest ? "info" : "neutral",
     testid: "pulse-level",
   });
 
-  // Momentum.
-  const burst = state.fastFlags.momentumBurst;
+  // Last closed bar. candleStats.direction is ONE close compared with the
+  // previous close — not momentum — so the tile says exactly that. A momentum
+  // burst (wide-range bar) is coloured by the burst bar's OWN body, never by
+  // the close-to-close direction (a wide bearish bar can still close above the
+  // prior close).
+  const flags = state.fastFlags;
+  const burst = flags.populated && flags.momentumBurst;
+  const closeVsPrior =
+    state.candleStats.direction === "unknown"
+      ? "No prior close"
+      : `${titleCase(state.candleStats.direction)} vs prior close`;
+  const bar = state.latestClosedCandle;
+  const barTone: ChartMarketSentenceTone =
+    bar && bar.close > bar.open ? "bullish" : bar && bar.close < bar.open ? "bearish" : "neutral";
+  const barBody =
+    barTone === "bullish" ? "bullish" : barTone === "bearish" ? "bearish" : "no clear body";
   items.push({
-    label: "Momentum",
-    value: burst
-      ? "Burst"
-      : state.candleStats.direction === "flat"
-        ? "Flat"
-        : titleCase(state.candleStats.direction),
-    tone: burst
-      ? state.candleStats.direction === "down"
-        ? "bearish"
-        : "bullish"
-      : "neutral",
+    label: "Last bar",
+    value: burst ? `Wide-range bar · ${barBody}` : closeVsPrior,
+    tone: burst ? barTone : "neutral",
     testid: "pulse-momentum",
+    title: !flags.populated
+      ? "Last closed bar's close compared with the previous close. Not enough closed bars to check for a wide-range (burst) bar."
+      : burst
+        ? `The last closed bar's range is well above the recent average; coloured by that bar's own body (${barBody}). ${closeVsPrior}.`
+        : "Last closed bar's close compared with the previous close — one bar, not a momentum measure.",
   });
 
-  // Risk — reuse the deterministic risk sentence tone.
+  // Risk — reuse the deterministic risk sentence tone. "Normal" only for the
+  // server's all-clear read (tone "info"); a sentence that assessed nothing
+  // ("Risk not assessed", tone "neutral") or any other tone is "Not assessed".
+  const riskTone = state.marketSentences.risk.tone;
   items.push({
     label: "Risk",
     value:
-      state.marketSentences.risk.tone === "danger"
+      riskTone === "danger"
         ? "High"
-        : state.marketSentences.risk.tone === "caution"
+        : riskTone === "caution"
           ? "Elevated"
-          : "Normal",
-    tone: state.marketSentences.risk.tone,
+          : riskTone === "info"
+            ? "Normal"
+            : "Not assessed",
+    tone: riskTone,
     testid: "pulse-risk",
   });
 
-  // Readiness (quality + actionability).
+  // Readiness (quality + actionability). An unverified read is at most
+  // "watch" (the server caps it too; an uncapped "ready"/"prepare" from an
+  // older server is downgraded here, never the other way round).
   const d = state.decisionState;
+  const actionability =
+    !verified && (d.actionability === "ready" || d.actionability === "prepare")
+      ? "watch"
+      : d.actionability;
   items.push({
     label: "Readiness",
     value: d.populated
-      ? `${d.quality} · ${titleCase(d.actionability)}`
+      ? `${d.quality} · ${titleCase(actionability)}`
       : "—",
     tone: d.vetoed
       ? "danger"
-      : d.actionability === "ready"
-        ? "bullish"
-        : d.actionability === "prepare"
-          ? "caution"
-          : "neutral",
+      : !verified && d.populated
+        ? "caution"
+        : actionability === "ready"
+          ? "bullish"
+          : actionability === "prepare"
+            ? "caution"
+            : "neutral",
     testid: "pulse-readiness",
   });
 
@@ -162,7 +196,24 @@ function buildItems(state: ChartState): PulseItem[] {
   return items;
 }
 
+function agentCourtChip(state: ChartState, verified: boolean): { text: string; title: string } {
+  const c = (state as { agentConsensus?: ChartState["agentConsensus"] | null }).agentConsensus ?? null;
+  if (!c) return { text: "Agent court: could not be loaded", title: "The agent consensus was not returned with this read." };
+  if (!c.populated) return { text: "Agent court: no read", title: c.note };
+  if (!verified) {
+    return {
+      text: "Agent court: withheld (read not verified)",
+      title: "Chart data not verified — agent consensus withheld.",
+    };
+  }
+  return {
+    text: `Agent court: ${c.stance}${c.conflict ? " · conflict" : ""} (advisory)`,
+    title: c.note,
+  };
+}
+
 export function ChartPulse({ state }: { state: ChartState | null }) {
+  const pricePrecision = useStatePricePrecision(state);
   const { name } = useAssistantName();
   if (!state) {
     return (
@@ -177,7 +228,9 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
 
   const conf = feedConfidence(state.truthState);
   const dirty = state.stale || !state.aiUsable || conf.severity === "danger";
-  const items = buildItems(state);
+  const verification = chartReadVerification(state);
+  const items = buildItems(state, pricePrecision, verification.verified);
+  const court = agentCourtChip(state, verification.verified);
   const bestAction = state.marketSentences.bestNextAction;
   const baTone = toneClasses(bestAction.tone);
 
@@ -203,8 +256,10 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
                   : "bg-zinc-800 text-zinc-400"
           }`}
           data-testid="pulse-feed"
+          data-basis="closed-bars"
+          title="Server grade of the closed bars this Chart Intelligence read was built from (the live forming bar is excluded). The chart header grades the display feed, including the forming bar, so the two can differ."
         >
-          {conf.statusLabel}
+          Closed bars · {conf.statusLabel}
         </span>
       </div>
 
@@ -218,6 +273,19 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         </div>
       )}
 
+      {!dirty && !verification.verified && (
+        <div
+          className="mt-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-300"
+          data-testid="chart-pulse-unverified"
+        >
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            Read not verified — {verification.reasons.join("; ")}. Readiness and
+            best action are watch-only until the chart verifies.
+          </span>
+        </div>
+      )}
+
       <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
         {items.map((it) => {
           const tc = toneClasses(it.tone);
@@ -226,6 +294,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
               key={it.testid}
               className={`rounded border ${tc.border} ${tc.bg} px-2 py-1`}
               data-testid={it.testid}
+              title={it.title}
             >
               <div className="text-[9px] uppercase tracking-wide text-zinc-500">
                 {it.label}
@@ -249,14 +318,16 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         <div className={`text-[11px] ${baTone.text}`}>{bestAction.text}</div>
       </div>
 
-      {/* Honest standby chips: the agent court + Ruby consumers land in a later
-          task, so we never fake a verdict here. */}
+      {/* Agent court chip — read from state.agentConsensus, never hard-coded.
+          An unverified read withholds the stance, exactly as Ruby and the
+          consensus panel do. */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
         <span
           className="rounded border border-zinc-800 px-1.5 py-0.5"
           data-testid="pulse-agent-court"
+          title={court.title}
         >
-          Agent court: standby
+          {court.text}
         </span>
         <span
           className="rounded border border-zinc-800 px-1.5 py-0.5"
