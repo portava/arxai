@@ -13,7 +13,7 @@ mock.module("@workspace/db", {
   },
 });
 mock.module("drizzle-orm", { namedExports: { eq: () => ({}) } });
-mock.module("../rubyWatchEvaluator.js", { namedExports: { evaluateRubyWatchesForUser: async () => ({ evaluated: 0, fired: [], alerted: [], skipped: [] }) } });
+mock.module("../rubyWatchEvaluator.js", { namedExports: { evaluateRubyWatchesForUser: async () => ({ evaluated: 0, fired: [], alerted: [], skipped: [], adjusted: [] }) } });
 
 const { isSweeperEnabled, sweeperIntervalMs, runRubySweepOnce, getRubySweeperStatus, RUBY_SWEEPER_DEFAULT_INTERVAL_MS } = await import("../rubyWatchSweeper.js");
 
@@ -36,7 +36,7 @@ test("one sweep evaluates every user with ACTIVE watches, isolates per-user erro
   const r = await runRubySweepOnce(async (userId) => {
     seen.push(userId);
     if (userId === 8) throw new Error("boom");
-    return { evaluated: 2, fired: userId === 9 ? [{ watchId: 1, kind: "WATCH_AND_ENTER" }] : [], alerted: userId === 7 ? [{ watchId: 2, alertNumber: 1, reason: "r" }] : [], skipped: [] };
+    return { evaluated: 2, fired: userId === 9 ? [{ watchId: 1, kind: "WATCH_AND_ENTER" }] : [], alerted: userId === 7 ? [{ watchId: 2, alertNumber: 1, reason: "r" }] : [], skipped: [], adjusted: [] };
   });
   assert.deepEqual(seen, [7, 8, 9]);
   assert.deepEqual(r, { users: 3, watches: 4, fired: 1, alerted: 1, errors: 1 });

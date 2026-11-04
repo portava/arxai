@@ -21,6 +21,8 @@ import { findUserBySessionToken, USER_SESSION_COOKIE } from "../lib/auth/userSes
 import { getUserAllocationView, resolveActiveMasterConnectionId } from "../lib/live/masterBridgePool.js";
 import { createAccountSnapshotScheduler } from "../lib/live/accountSnapshotScheduler.js";
 import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { classifyOrderType, validatePendingOrder, validateProtection } from "../lib/live/pendingOrderRules.js";
+import { routeQuote } from "../lib/data/marketDataRouter.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, getUserActiveConnection, listUserConnections } from "../lib/brokerHub/connections.js";
@@ -238,6 +240,35 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const b = req.body ?? {};
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.ip;
+  // MT5 order rules for the standard (draft → confirm → dispatch) path, same as
+  // the instant router: a pending order needs its price, on the correct side of
+  // the current Bid/Ask (Buy Limit below Ask, Sell Limit above Bid, Buy Stop
+  // above Ask, Sell Stop below Bid; Stop Limit's limit leg on the correct side
+  // of the stop). SL/TP must sit on the correct side of the reference. The
+  // broker enforces its own stops level after this.
+  if (String(b.commandType ?? "") === "PLACE_LIVE_PENDING_ORDER" || String(b.commandType ?? "") === "PLACE_LIVE_MARKET_ORDER") {
+    const side: "BUY" | "SELL" = String(b.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+    const payload = (b.payload ?? {}) as Record<string, unknown>;
+    const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+    let bid: number | null = null, ask: number | null = null;
+    try {
+      const q = await routeQuote(String(b.symbol ?? ""));
+      const pos = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+      bid = pos(q.quote?.bid) ?? pos(q.quote?.last);
+      ask = pos(q.quote?.ask) ?? pos(q.quote?.last);
+    } catch { /* no quote: the broker enforces the side */ }
+    const pendingCheck = validatePendingOrder({
+      orderType: String(b.orderType ?? (side === "SELL" ? "MARKET_SELL" : "MARKET_BUY")), action: side,
+      price: num(payload.price ?? payload.entry ?? b.price), stopLimitPrice: num(payload.stopLimitPrice ?? b.stopLimitPrice), bid, ask,
+    });
+    if (!pendingCheck.ok) { res.status(400).json({ ok: false, reason: pendingCheck.code, detail: pendingCheck.detail, ...envelope() }); return; }
+    const cls = classifyOrderType(String(b.orderType ?? ""), side);
+    const reference = cls.pending
+      ? (cls.kind === "STOP_LIMIT" ? num(payload.stopLimitPrice ?? b.stopLimitPrice) : num(payload.price ?? payload.entry ?? b.price))
+      : (side === "BUY" ? bid : ask);
+    const prot = validateProtection({ side, reference, stopLoss: num(b.stopLoss), takeProfit: num(b.takeProfit) });
+    if (!prot.ok) { res.status(400).json({ ok: false, reason: prot.code, detail: prot.detail, ...envelope() }); return; }
+  }
   const result = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: b.commandType,

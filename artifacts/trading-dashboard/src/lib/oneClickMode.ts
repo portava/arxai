@@ -163,7 +163,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export async function runDemoCommand(
   base: string,
-  commandType: "PLACE_MARKET_ORDER" | "CLOSE_POSITION",
+  commandType: "PLACE_MARKET_ORDER" | "PLACE_PENDING_ORDER" | "CLOSE_POSITION" | "MODIFY_SLTP",
   payload: Record<string, unknown>,
   opts: { fetchImpl?: FetchLike; pollMs?: number; timeoutMs?: number; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<DemoCommandOutcome> {

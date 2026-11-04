@@ -7,6 +7,7 @@ import type {
   ChartPosition,
   UseLivePositionOverlaysResult,
 } from "@/hooks/useLivePositionOverlays";
+import { ModifySlTpButton } from "@/components/trade/ModifySlTpDialog";
 
 // ChartPositionOverlayPanel — Level 4 legend + gated close for the overlays
 // drawn on ARXNativeChart. It is a thin presentation layer over
@@ -33,7 +34,7 @@ export function ChartPositionOverlayPanel({
   symbol,
   data,
 }: ChartPositionOverlayPanelProps) {
-  const { positions, canTrade, busyTicket, noTradeReason, closePosition } = data;
+  const { positions, canTrade, busyTicket, noTradeReason, closePosition, reload } = data;
 
   // Clean no-position state: render nothing at all.
   if (positions.length === 0) return null;
@@ -99,6 +100,14 @@ export function ChartPositionOverlayPanel({
                   {formatReportedPositionPnl(pnl)}
                 </span>
               </div>
+              <div className="flex items-center gap-1">
+              {canTrade && p.brokerTicket && (
+                <ModifySlTpButton
+                  source="chart"
+                  onModified={() => void reload()}
+                  target={{ scope: p.scope, ticket: p.brokerTicket, symbol: p.symbol ?? symbol, side: p.side, entryPrice: p.entryPrice, currentPrice: p.currentPrice, stopLoss: p.stopLoss, takeProfit: p.takeProfit }}
+                />
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -116,6 +125,7 @@ export function ChartPositionOverlayPanel({
                   "Close"
                 )}
               </Button>
+              </div>
             </div>
           );
         })}

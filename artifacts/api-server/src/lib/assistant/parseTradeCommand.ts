@@ -32,7 +32,7 @@ export type RubyParsedCommand =
   | { kind: "PARTIAL_CLOSE"; symbol: string; fraction?: number; volume?: number }
   | { kind: "MODIFY"; positionRef: { symbol?: string }; newStopLoss?: number | "BREAK_EVEN"; newTakeProfit?: number }
   | { kind: "MOVE_SL_TO_BREAKEVEN"; positionRef: { symbol?: string } }
-  | { kind: "MONITOR_TRADE"; symbol?: string }
+  | { kind: "MONITOR_TRADE"; symbol?: string; fakeoutAuthority?: boolean }
   // WATCH_AND_ENTER is ARX's working conditional/pending entry: the watch
   // evaluator polls live price and fires a MARKET order through the same
   // gated router when the trigger is met (genuine LIMIT/STOP semantics).
@@ -329,7 +329,10 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
   if (/\b(monitor|keep\s+an?\s+eye\s+on|watch\s+(my|the))\b/i.test(text)
       && !extractTrigger(text)) {
     const symbol = extractSymbol(text) ?? defaults.defaultSymbol ?? undefined;
-    return { kind: "MONITOR_TRADE", ...(symbol ? { symbol } : {}) };
+    // "monitor EURUSD and move my stop on fakeouts" — the trader grants the
+    // bounded SL/TP shift authority for this monitor (rubyFakeoutPolicy.ts).
+    const fakeoutAuthority = /\b(fake\s*-?\s*outs?|whipsaws?|shift|move|adjust)\b[^.]*\b(stop|sl|tp|take\s*profit|target)s?\b|\b(fake\s*-?\s*outs?|whipsaws?)\b/i.test(text);
+    return { kind: "MONITOR_TRADE", ...(symbol ? { symbol } : {}), ...(fakeoutAuthority ? { fakeoutAuthority: true } : {}) };
   }
 
   // Move stop to break-even — "move SL to break even", "breakeven my EURUSD",

@@ -4717,6 +4717,8 @@ export function buildBridgedMt5CommandPayload(liveRow: {
   commandType: string;
   brokerTicket: string | null;
   payload: Record<string, unknown> | null;
+  /** The live row's order type; required for the EA to place a PENDING order. */
+  orderType?: string | null;
 }): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     bridged: "LIVE_PHASE_B",
@@ -4725,6 +4727,24 @@ export function buildBridgedMt5CommandPayload(liveRow: {
     liveCommandType: liveRow.commandType,
     confirmedByUser: true,
   };
+  // PLACE_PENDING: the EA (HandlePlacePending) reads `orderType`, `entry`,
+  // `stopLimitPrice` and `expirationEpoch` from the command JSON. Without them
+  // every pending order came back UNSUPPORTED_COMMAND (orderType "") — the
+  // instant router stores them on the draft payload; mirror them here.
+  if (liveRow.commandType === "PLACE_LIVE_PENDING_ORDER") {
+    const src = liveRow.payload ?? {};
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+    const entry = num(src["price"]) ?? num(src["entry"]);
+    // Never throw here (an entry mirror must not fail after the dispatch CAS):
+    // a draft that somehow lacks these reaches the EA as-is and the terminal
+    // refuses it honestly (UNSUPPORTED_COMMAND / BROKER_REJECTED).
+    if (liveRow.orderType) payload.orderType = liveRow.orderType;
+    if (entry) payload.entry = entry;
+    const stopLimit = num(src["stopLimitPrice"]);
+    if (stopLimit) payload.stopLimitPrice = stopLimit;
+    const exp = num(src["expirationEpoch"]);
+    if (exp) payload.expirationEpoch = Math.floor(exp);
+  }
   const positionTicket = resolveBridgedPositionTicket({
     commandType: liveRow.commandType,
     brokerTicketColumn: liveRow.brokerTicket,
@@ -4761,6 +4781,7 @@ async function enqueueBridgedMt5Command(opts: {
     commandType: opts.liveRow.commandType,
     brokerTicket: opts.liveRow.brokerTicket,
     payload: opts.liveRow.payload as Record<string, unknown> | null,
+    orderType: opts.liveRow.orderType,
   });
 
   const [ins] = await db.insert(mt5CommandsTable).values({

@@ -32,6 +32,7 @@ import { HighImpactEventBanner } from "@/components/news/HighImpactEventBanner";
 import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { humanizeReason } from "@/lib/humanize";
 import { useToast } from "@/hooks/use-toast";
+import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
 
 // A setup-preview "Use this setup" prefill. `token` changes on every fresh
 // pick so the same setup can be re-applied. This NEVER places an order — it only
@@ -156,6 +157,18 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
               <TrendingDown className="h-4 w-4 mr-2" />
               Sell {symbol}
             </Button>
+          </div>
+
+          {/* MT5 order window: Limit / Stop / Stop Limit orders with price, SL/TP
+              and expiry. Market Buy/Sell above stay the fast path. */}
+          <div className="flex items-center gap-2">
+            <OrderTicketButton
+              symbol={symbol}
+              source="chart"
+              label="Buy Limit · Sell Limit · Buy Stop · Sell Stop…"
+              prefill={prefill ? { stopLoss: prefill.stopLoss, takeProfit: prefill.takeProfit, lot: oneClick.mode.defaultVolume } : { lot: oneClick.mode.defaultVolume }}
+              className="w-full justify-start"
+            />
           </div>
 
           {openedFromPrefill && prefill?.sourceNote && (

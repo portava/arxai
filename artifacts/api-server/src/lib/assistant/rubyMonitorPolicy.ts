@@ -35,10 +35,30 @@ export interface MonitorAlertState {
   /** Set when the trader answered "keep it" — Ruby keeps monitoring but the
    *  executive close needs a fresh run of alerts. */
   keepCount: number;
+  /** Owner spec 2026-11-04: the trader may give Ruby authority to SHIFT the
+   *  stop loss / take profit of this position when a fakeout (a spike through
+   *  a level that snaps back) is in progress. Off unless the trader opted in
+   *  for this monitor. See rubyFakeoutPolicy.ts for the bounded rule. */
+  fakeoutAuthority: boolean;
+  fakeoutAdjustments: FakeoutAdjustmentRecord[];
+  lastFakeoutAdjustAt: string | null;
+}
+
+export interface FakeoutAdjustmentRecord {
+  at: string;
+  price: number | null;
+  fakeoutRiskScore: number | null;
+  fromStopLoss: number | null;
+  toStopLoss: number | null;
+  fromTakeProfit: number | null;
+  toTakeProfit: number | null;
+  reason: string;
+  ok: boolean;
+  blocked: string | null;
 }
 
 export function emptyMonitorState(): MonitorAlertState {
-  return { version: 1, alerts: [], alertsSinceAck: 0, acknowledgedAt: null, lastAlertAt: null, keepCount: 0 };
+  return { version: 1, alerts: [], alertsSinceAck: 0, acknowledgedAt: null, lastAlertAt: null, keepCount: 0, fakeoutAuthority: false, fakeoutAdjustments: [], lastFakeoutAdjustAt: null };
 }
 
 export function parseMonitorState(raw: string | null | undefined): MonitorAlertState {
@@ -54,6 +74,11 @@ export function parseMonitorState(raw: string | null | undefined): MonitorAlertS
       acknowledgedAt: typeof src.acknowledgedAt === "string" ? src.acknowledgedAt : null,
       lastAlertAt: typeof src.lastAlertAt === "string" ? src.lastAlertAt : null,
       keepCount: Number.isInteger(src.keepCount) ? (src.keepCount as number) : 0,
+      fakeoutAuthority: src.fakeoutAuthority === true,
+      fakeoutAdjustments: Array.isArray(src.fakeoutAdjustments)
+        ? src.fakeoutAdjustments.filter((a): a is FakeoutAdjustmentRecord => !!a && typeof a === "object" && typeof (a as FakeoutAdjustmentRecord).at === "string")
+        : [],
+      lastFakeoutAdjustAt: typeof src.lastFakeoutAdjustAt === "string" ? src.lastFakeoutAdjustAt : null,
     };
   } catch {
     return emptyMonitorState();
@@ -62,7 +87,7 @@ export function parseMonitorState(raw: string | null | undefined): MonitorAlertS
 
 export function serializeMonitorState(state: MonitorAlertState): string {
   // Keep the row small: the last 10 alerts are enough evidence.
-  return JSON.stringify({ monitor: { ...state, alerts: state.alerts.slice(-10) } });
+  return JSON.stringify({ monitor: { ...state, alerts: state.alerts.slice(-10), fakeoutAdjustments: state.fakeoutAdjustments.slice(-10) } });
 }
 
 export type MonitorAction =
@@ -153,4 +178,12 @@ export function alertCopy(args: { assistantName: string; symbol: string; alertNu
         ? `Reply "keep it" to stay in, or "close it" to exit now. If I get no answer after ${args.maxAlerts} alerts I will close the trade to protect you.`
         : `This is the last alert. If you do not answer within the next few minutes I will close the trade to protect you.`),
   };
+}
+
+export function setFakeoutAuthority(state: MonitorAlertState, enabled: boolean): MonitorAlertState {
+  return { ...state, fakeoutAuthority: enabled };
+}
+
+export function recordFakeoutAdjustment(state: MonitorAlertState, rec: FakeoutAdjustmentRecord): MonitorAlertState {
+  return { ...state, fakeoutAdjustments: [...state.fakeoutAdjustments, rec], lastFakeoutAdjustAt: rec.ok ? rec.at : state.lastFakeoutAdjustAt };
 }

@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Eye, Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ackRubyWatch, fetchRubyWatches, type RubyWatchView } from "@/lib/instantTradeRouter";
+import { Switch } from "@/components/ui/switch";
+import { ackRubyWatch, fetchRubyWatches, setRubyWatchFakeoutAuthority, type RubyWatchView } from "@/lib/instantTradeRouter";
 
 const POLL_MS = 15_000;
 
@@ -37,6 +38,20 @@ export function RubyWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (t
   }, [load, refreshKey]);
 
   if (!watches || watches.length === 0) return null;
+
+  // Per-monitor authority (owner spec 2026-11-04): let Ruby shift the stop or
+  // target on a fakeout — bounded (≤50% of the original risk, TP only tightened,
+  // 2 shifts per monitor) and audited; the broker confirms every change.
+  async function toggleFakeout(w: RubyWatchView, enabled: boolean) {
+    setBusyId(w.id);
+    try {
+      const r = await setRubyWatchFakeoutAuthority(w.id, enabled);
+      onMessage?.(r.message ?? (r.ok ? (enabled ? "Fakeout authority granted for this position." : "Fakeout authority withdrawn.") : `Couldn't change that: ${r.error ?? "unknown error"}.`));
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function answer(w: RubyWatchView, decision: "keep" | "close") {
     setBusyId(w.id);
@@ -71,6 +86,20 @@ export function RubyWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (t
                   reversal alert {w.monitor.alertsSinceAck}/{w.monitor.maxAlerts}
                   {w.monitor.alertsSinceAck >= w.monitor.maxAlerts ? " — closing soon unless you answer" : ""}
                 </span>
+              )}
+              {w.kind === "MONITOR_TRADE" && w.monitor && (
+                <label className="inline-flex items-center gap-1 text-[11px] text-txt-secondary" title="Bounded: stop moved at most 50% of your original risk beyond the fakeout wick, target only tightened, two shifts per position. Every shift is announced and audited.">
+                  <Switch
+                    checked={w.monitor.fakeoutAuthority === true}
+                    disabled={busyId === w.id}
+                    onCheckedChange={(v) => void toggleFakeout(w, v)}
+                    aria-label="Let Ruby shift SL/TP on a fakeout"
+                    className="scale-75"
+                    data-testid={`ruby-watch-${w.id}-fakeout`}
+                  />
+                  Shift SL/TP on fakeout
+                  {(w.monitor.fakeoutAdjustments ?? 0) > 0 && <span data-testid={`ruby-watch-${w.id}-fakeout-count`}>· {w.monitor.fakeoutAdjustments} shift{w.monitor.fakeoutAdjustments === 1 ? "" : "s"}</span>}
+                </label>
               )}
               {awaiting && (
                 <span className="inline-flex gap-1">

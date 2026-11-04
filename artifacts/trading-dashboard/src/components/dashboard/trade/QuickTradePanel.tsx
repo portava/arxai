@@ -12,6 +12,18 @@ import { Zap, TrendingUp, TrendingDown, ShieldCheck, Bot, ShieldQuestion } from 
 import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
+import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
+import type { OrderTypeId } from "@/lib/orderTicketRules";
+
+/** Map the panel's MT5 order-type label to the ticket's id ("Market" → the side is picked on the ticket). */
+export function quickTradeOrderTypeId(label: string, side: "BUY" | "SELL" = "BUY"): OrderTypeId {
+  const key = label.trim().toUpperCase().replace(/\s+/g, "_");
+  const known: Record<string, OrderTypeId> = {
+    BUY_LIMIT: "BUY_LIMIT", SELL_LIMIT: "SELL_LIMIT", BUY_STOP: "BUY_STOP", SELL_STOP: "SELL_STOP",
+    BUY_STOP_LIMIT: "BUY_STOP_LIMIT", SELL_STOP_LIMIT: "SELL_STOP_LIMIT",
+  };
+  return known[key] ?? (side === "SELL" ? "MARKET_SELL" : "MARKET_BUY");
+}
 
 export type Quote = { bid: number; ask: number; spread: number; mid: number } | null;
 
@@ -187,6 +199,7 @@ export function QuickTradePanel({
 
       {/* Actions */}
       {canTrade ? (
+        <>
         <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-2">
           <button onClick={goTicket} data-testid="trade-action-sell"
             className="flex h-12 items-center justify-center gap-2 rounded-xl bg-danger font-semibold text-white hover:bg-danger/90">
@@ -201,6 +214,28 @@ export function QuickTradePanel({
             <TrendingUp className="h-4 w-4" /> BUY {buy ?? ""}
           </button>
         </div>
+        {/* MT5 order window, pre-filled from this panel (order type, lot, SL/TP).
+            Its button places the order through the gated router / demo queue. */}
+        <div className="mt-2">
+          <OrderTicketButton
+            symbol={symbol}
+            source="trade_panel"
+            label={`Open order window (${orderType})`}
+            className="w-full"
+            prefill={{
+              orderType: quickTradeOrderTypeId(orderType),
+              lot: Number(lot) > 0 ? Number(lot) : null,
+              stopLoss: slTpOn && Number(stopLoss) > 0 ? Number(stopLoss) : null,
+              takeProfit: slTpOn && Number(takeProfit) > 0 ? Number(takeProfit) : null,
+            }}
+          />
+        </div>
+        {/* The manual ticket only picks up the shared chart symbol; nothing else on
+            this panel reaches it, and no order is sent from the SELL/BUY buttons. */}
+        <p className="mt-2 text-xs text-txt-muted" data-testid="trade-ticket-handoff-note">
+          SELL and BUY open the manual ticket with {symbol} selected; no order is sent from those buttons. The side, lot size, order type, stop loss and take profit set here are not carried over to the manual ticket, so set them again there before you submit. The order window above does carry them.
+        </p>
+        </>
       ) : (
         <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3 text-center text-sm font-medium text-warning" data-testid="trade-action-blocked">
           {blockedLabel}

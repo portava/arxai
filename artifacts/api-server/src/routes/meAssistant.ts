@@ -40,9 +40,9 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
 import type { InstantTradeIntent } from "../lib/live/instantTrade.js";
 import { MAX_ACTIVE_RUBY_WATCHES, currentPriceOf, recordAndExecuteRuby } from "../lib/assistant/rubyExecution.js";
-import { evaluateRubyWatchesForUser, acknowledgeRubyWatch, listRubyWatches } from "../lib/assistant/rubyWatchEvaluator.js";
+import { evaluateRubyWatchesForUser, acknowledgeRubyWatch, listRubyWatches, setRubyWatchFakeoutAuthority } from "../lib/assistant/rubyWatchEvaluator.js";
 import { isSweeperEnabled, getRubySweeperStatus } from "../lib/assistant/rubyWatchSweeper.js";
-import { parseMonitorState } from "../lib/assistant/rubyMonitorPolicy.js";
+import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/rubyMonitorPolicy.js";
 import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
 import { toolResultText } from "../lib/assistant/toolResultText.js";
 import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
@@ -2030,6 +2030,10 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // (pending) entry. ARX arms it as a watch that fires a market order at the
     // trigger, which is functionally the requested limit/stop entry.
     const pendingKind = parsed.kind === "WATCH_AND_ENTER" ? parsed.pendingKind : undefined;
+    // Owner spec 2026-11-04: a monitor may carry the trader's authority for Ruby
+    // to shift SL/TP on a fakeout (bounded; see rubyFakeoutPolicy.ts). Stored in
+    // risk_params; also toggled later via POST /me/assistant/watches/:id/fakeout-authority.
+    const fakeoutAuthority = parsed.kind === "MONITOR_TRADE" && parsed.fakeoutAuthority === true;
     const [w] = await db.insert(rubyWatchInstructionsTable).values({
       userId, kind: parsed.kind, accountMode, source,
       symbol: symbol ?? null,
@@ -2040,10 +2044,11 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       rawUserCommand: text,
       status: "ACTIVE",
       expiresAt,
+      ...(fakeoutAuthority ? { riskParams: serializeMonitorState(setFakeoutAuthority(emptyMonitorState(), true)) } : {}),
     }).returning({ id: rubyWatchInstructionsTable.id });
     await db.insert(oneClickAuditTable).values({
       userId, action: "RUBY_WATCH_ARMED", ip, userAgent: ua,
-      metadata: JSON.stringify({ text, kind: parsed.kind, symbol, triggerCondition, positionTicket, expiresAt, pendingKind: pendingKind ?? null, source, channel: "ELEANOR_CHAT" }),
+      metadata: JSON.stringify({ text, kind: parsed.kind, symbol, triggerCondition, positionTicket, expiresAt, pendingKind: pendingKind ?? null, fakeoutAuthority, source, channel: "ELEANOR_CHAT" }),
     });
     const expirySuffix = expiresAt
       ? ` (expires in ${expiresInMinutes} min if it doesn't trigger)`
@@ -2051,7 +2056,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     res.json({
       ok: true, classification: parsed.kind, watchId: w!.id,
       message: parsed.kind === "MONITOR_TRADE"
-        ? `Watching your ${symbol} position (checked about every ${Math.round(getRubySweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.`
+        ? `Watching your ${symbol} position (checked about every ${Math.round(getRubySweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.${fakeoutAuthority ? " You also let me shift the stop loss or take profit when I see a fakeout (a spike that snaps back); each shift is bounded, announced, and confirmed by the broker." : ""}`
         : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${expirySuffix}.`,
     });
     return;
@@ -2401,6 +2406,30 @@ router.post("/me/assistant/watches/:id/ack", requireUser, safe(async (req, res) 
       : skipped ? `I couldn't close it: ${skipped.reason}.`
       : "Nothing to do.",
   });
+}));
+
+// POST /me/assistant/watches/:id/fakeout-authority { enabled } — the trader
+// grants or withdraws Ruby's bounded authority to shift SL/TP on a fakeout for
+// one monitor (owner spec 2026-11-04). The user-level modify permission and
+// AI-Assisted authority are still required at fire time.
+router.post("/me/assistant/watches/:id/fakeout-authority", requireUser, safe(async (req, res) => {
+  const userId = (req.authUser!).id;
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id) || id <= 0) { err(res, 400, "invalid_id"); return; }
+  const enabled = (req.body as { enabled?: unknown } | undefined)?.enabled;
+  if (typeof enabled !== "boolean") { err(res, 400, "invalid_enabled"); return; }
+  const r = await setRubyWatchFakeoutAuthority(userId, id, enabled);
+  if (!r.ok) { res.status(r.error === "WATCH_NOT_FOUND" ? 404 : 409).json(r); return; }
+  const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
+  await db.insert(oneClickAuditTable).values({
+    userId, action: enabled ? "RUBY_FAKEOUT_AUTHORITY_GRANTED" : "RUBY_FAKEOUT_AUTHORITY_WITHDRAWN", ip,
+    userAgent: (req.headers["user-agent"] as string | undefined) ?? null,
+    metadata: JSON.stringify({ watchId: id, enabled }),
+  });
+  const assistantName = await getAssistantDisplayName(userId);
+  res.json({ ...r, message: enabled
+    ? `${assistantName} may now shift this position's stop loss or take profit when a fakeout is in progress — bounded, announced, broker-confirmed.`
+    : `${assistantName} will only alert and close on this position; no SL/TP shifts.` });
 }));
 
 export { router as meAssistantRouter };
