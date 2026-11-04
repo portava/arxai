@@ -37,7 +37,7 @@ describe("replay authentication and current-surface isolation",()=>{
  it("preserves approved, pending and investor containment on the actual route guard",async()=>{
   expect(isNormalUserAllowedPath("/chart-replay")).toBe(true);expect(isPendingTraderAllowedPath("/chart-replay")).toBe(false);expect(isInvestorAllowedPath("/chart-replay")).toBe(false);
   h.path="/chart-replay";h.approved=false;render(<ChartReplayBoundary><LiveSurfaces/></ChartReplayBoundary>);
-  expect(screen.queryByText("Replay unavailable")).toBeNull();await waitFor(()=>expect(h.path).toBe("/"));
+  expect(screen.queryByText("Replay unavailable")).toBeNull();expect(screen.getByTestId("routeaccess-pending-locked")).toBeTruthy();expect(screen.queryByTestId("live-surfaces")).toBeNull();
  });
  it("browser Back withholds all cached live surfaces until a fresh document loads",async()=>{
   vi.spyOn(console,"error").mockImplementation(()=>{});render(<ChartReplayBoundary><LiveSurfaces/></ChartReplayBoundary>);
