@@ -8,6 +8,14 @@ interface UpcomingEvent {
   impactLevel: string; eventTime: string;
 }
 
+/** Server statement of whether the stored calendar reaches the end of the window. */
+export interface CalendarCoverage {
+  windowCovered: boolean;
+  coveredThrough: string | null;
+  storedEventCount: number;
+  note: string | null;
+}
+
 const IMPACT_STYLES: Record<string, string> = {
   CRITICAL: "bg-red-700 text-white",
   HIGH:     "bg-orange-700 text-white",
@@ -16,7 +24,7 @@ const IMPACT_STYLES: Record<string, string> = {
 };
 
 export function UpcomingEventsList({ hours = 24, minImpact = "MEDIUM" }: { hours?: number; minImpact?: string }) {
-  const { data, isLoading } = useQuery<{ events: UpcomingEvent[] }>({
+  const { data, isLoading } = useQuery<{ events: UpcomingEvent[]; calendarCoverage?: CalendarCoverage }>({
     queryKey: ["upcoming-events", hours, minImpact],
     queryFn: async () => {
       const r = await fetch(`/api/economic-events/upcoming?hours=${hours}&minImpact=${minImpact}`);
@@ -26,11 +34,20 @@ export function UpcomingEventsList({ hours = 24, minImpact = "MEDIUM" }: { hours
     refetchInterval: 120_000,
   });
   const events = data?.events ?? [];
+  // An empty list is a real "no events" only when the server says the stored
+  // calendar reaches the end of the window.
+  const coverage = data?.calendarCoverage;
+  const notCovered = coverage?.windowCovered === false;
 
   return (
     <div className="space-y-1">
       {isLoading && <p className="text-xs text-slate-500">Loading…</p>}
-      {!isLoading && events.length === 0 && (
+      {!isLoading && notCovered && (
+        <p data-testid="upcoming-events-not-covered" className="rounded-md border border-amber-800/60 bg-amber-950/30 p-2 text-xs text-amber-200">
+          {coverage?.note ?? `The stored economic calendar does not cover the next ${hours}h, so events cannot be ruled out.`}
+        </p>
+      )}
+      {!isLoading && events.length === 0 && !notCovered && (
         <p className="text-xs text-slate-500">No upcoming events in the next {hours}h at {minImpact}+ impact.</p>
       )}
       {events.map((e) => {

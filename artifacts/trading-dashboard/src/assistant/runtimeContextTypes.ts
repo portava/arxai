@@ -40,16 +40,31 @@ export interface HealthSummary {
 export interface BridgeDiagnosticSummary {
   bridgeMode: BridgeMode;
   heartbeatPresent: boolean;
+  /** Whose heartbeat this is: the caller's own EA connection, none (the
+   * caller has no connection), or the platform bridge (anonymous caller). */
+  heartbeatScope?: "your_connection" | "no_connection" | "platform";
   lastHeartbeatAt: string | null;
   heartbeatAgeSeconds: number | null;
   brokerExecutionEnabled: boolean;
   brokerReadOnly: boolean;
   liveTradingEnabled: boolean;
   paperOnly: boolean;
+  /**
+   * false: the server says liveTradingEnabled, brokerExecutionEnabled,
+   * brokerReadOnly and paperOnly are fixed values (paperOnly only reflects the
+   * caller's own EA bridge), not readings of the live master switch, live
+   * arming or the account mode. Clients must not show them as measured.
+   */
+  executionPostureMeasured?: boolean;
+  /** The server's plain-English explanation of executionPostureMeasured. */
+  executionPostureNote?: string;
   safestNextStep: string;
   reason: string;
   fetchedAt: string;
 }
+
+/** Outcome of the latest read of a diagnostic endpoint by the runtime collector. */
+export type RuntimeFetchStatus = "loading" | "loaded" | "unavailable";
 
 export interface RuntimeContext {
   /** Wall-clock when context was captured. */
@@ -68,16 +83,35 @@ export interface RuntimeContext {
 
   selectedSymbol: string | null;
   tradingMode: "paper" | "simulator" | "broker-readonly" | "live" | "unknown";
-  paperOnly: boolean;
-  simulatorMode: boolean;
-  liveTradingDisabled: boolean;
-  brokerExecutionDisabled: boolean;
-  brokerReadOnly: boolean;
+  /*
+   * Posture flags read from /api/mt5/diagnostic-summary. `null` means the
+   * summary was not read (still loading, request failed, or the field was
+   * missing) — it is unknown, never the default safe posture. They are also
+   * `null` when the summary says it did not read them (see
+   * executionPostureUnmeasured).
+   */
+  paperOnly: boolean | null;
+  simulatorMode: boolean | null;
+  liveTradingDisabled: boolean | null;
+  brokerExecutionDisabled: boolean | null;
+  brokerReadOnly: boolean | null;
+  /**
+   * true when the diagnostic summary was read but says its live-trading,
+   * broker-execution, read-only and demo-only flags are fixed values, not
+   * readings (executionPostureMeasured=false). The flags above are then null
+   * because they were not read — not because the request failed.
+   */
+  executionPostureUnmeasured?: boolean;
   mt5Deferred: boolean;
   mt5BridgeConnected: boolean;
-  heartbeatPresent: boolean;
+  heartbeatPresent: boolean | null;
   heartbeatAgeSeconds: number | null;
-  emergencyStopActive: boolean;
+  /**
+   * Platform emergency stop / kill switch. `null` means no source read on this
+   * page reports it — it is NOT a measured "off". Only `true`/`false` from a
+   * server reading may be shown as engaged/off.
+   */
+  emergencyStopActive: boolean | null;
   /** Free-form readiness label, e.g. "incomplete" / "ready" / "unknown". */
   readiness: "ready" | "incomplete" | "unknown";
 
@@ -92,6 +126,10 @@ export interface RuntimeContext {
 
   health: HealthSummary | null;
   bridge: BridgeDiagnosticSummary | null;
+  /** Latest /api/mt5/diagnostic-summary read outcome (absent = not tracked). */
+  bridgeStatus?: RuntimeFetchStatus;
+  /** Latest /api/app/health-summary read outcome (absent = not tracked). */
+  healthStatus?: RuntimeFetchStatus;
 }
 
 export type DoctorIssueCategory =
