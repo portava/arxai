@@ -236,6 +236,109 @@ No API restart, backend/data-hook change, database operation, permission/risk
 policy change, order, broker call, publication/deployment or GitHub push occurred.
 The frontend workflow remains running and receives source through Vite.
 
+## Saved side-rail follow-up — 2026-11-04
+
+Application commit: `938b900f6438a336fa3932d500fbfbfdb64a06e4`.
+Recovery baseline: `16b1f77d39eb9e0a33ca6cef38b28885599ca107`.
+
+### Interaction and persistence
+
+- Both desktop side columns can collapse to 50px rails. Each panel has a labeled
+  icon; activating it **expands that side and focuses the selected panel**.
+  The implementation consistently uses expand/focus, not flyouts.
+- Individual panel headers can move their unpinned panel to the rail. The last
+  visible panel moving to the rail collapses the whole side. Partly railed
+  columns retain icons for the hidden panels and fill their remaining height.
+- Pin protection applies to individual controls, whole-side requests, presets
+  and restored storage. Pinned panels never disappear into the rail.
+- The existing per-user/per-route browser record gains an optional `railed`
+  list; existing layouts and legacy migration remain compatible. It is not an
+  account setting or a backend preference.
+- The shared Layout menu includes Left tools and Right tools Shown/Rail choices.
+  Analyze rails unpinned right tools; Trade shows both sides; Review rails
+  unpinned left tools. Existing vertical-collapse preset behavior is retained.
+- Order entry's rail includes a separate one-click **Review order** action that
+  opens the existing reviewed-order sheet. This does not execute an order.
+  Emergency Stop and safety notices remain outside the collapsible columns.
+- Desktop rails apply at 1024px and above. Mobile focus, bottom tray, ordinary
+  chart controls and tablet presentation are unchanged.
+- `SidePanelArea` is shared, and `RouteLayoutPanel` accepts a side-area option
+  with the same saved behavior. The current specialist routes use full-width
+  top-level sections rather than dedicated shared-panel side columns; those
+  sections were not arbitrarily narrowed or moved. Reuse on a specialist side
+  panel is covered by the focused component test.
+
+### Verification on the combined application
+
+- Focused shell/model/panel checks: **23 passed**, including seven new rail
+  cases for collapse/expand, draft and focus preservation, partial rails,
+  pins, user/route isolation, reload/remount, Layout controls, mobile mode,
+  specialist side reuse and preset/storage sanitization.
+- Existing Scanner comparison/source regression: **10 passed** in isolation.
+- Final serial full frontend run: **3,475 passed / 11 skipped / 0 failed,
+  exit 0**; 230 test files passed and one was skipped. The existing jsdom
+  navigation-not-implemented warning remained non-fatal.
+- Typecheck and production frontend build passed. Existing large-chunk warning
+  remains; no warning threshold was raised.
+- Initial JavaScript budget passed: **692,690 raw / 201,302 gzip bytes** against
+  unchanged limits of 720,000 / 210,000.
+- Existing fill/header/account-strip check: **768 combinations passed**.
+- Actual Cockpit offline production fixture: **12/12 size/preset cases passed**
+  at 1366×768, 1440×900 and 1920×1080, plus rail interactions and a 390px phone
+  check. Price plots stayed at least 362px on the two smaller desktop sizes.
+- At 1440×900 the chart's actual container width changed **541 → 777 → 1049px**
+  for shown sides → left rail → both rails. Both rail widths measured exactly
+  50px. The chart engine's plot geometry resized with the container; no browser
+  page errors, including disposed-chart errors, were recorded.
+- The browser exercised rail icons, focus, pinning Order entry, one-click
+  reviewed-order opening, reload persistence and Enter-key expansion. Emergency
+  Stop remained visible. Desktop rail controls were absent on the phone layout
+  and there was no phone horizontal document overflow.
+
+The browser used clearly synthetic EURUSD history, actual application
+components, intercepted API responses and blocked all writes/external traffic.
+No authenticated owner/V25_1S/provider acceptance, first-navigation speedup or
+production readiness is inferred.
+
+### Retained attempts and evidence
+
+- Initial focused run: 22 passed / 1 failed, with one unhandled error because
+  jsdom lacks `scrollIntoView`. The test now supplies that DOM-method stub;
+  focus assertions remain intact. Production code does not suppress errors.
+- Initial typecheck found an Element-versus-HTMLElement query type; the query
+  is now explicitly typed and the final check passes.
+- Browser attempt 1 completed four size/preset cases, then timed out attempting
+  an expand control inside a previously railed side. Eight matrix cases and
+  the subsequent rail journey were unstarted. The All-expanded case now first
+  expands each side using its actual rail control.
+- Browser attempt 2 completed all twelve matrix cases and the resize/review
+  sequence, then failed reload persistence because the offline harness cleared
+  local storage on every reload. Its existing explicit preservation option is
+  now enabled. The subsequent complete run passed.
+- A pre-refinement run passed the initial width-growth assertions but gave the
+  chart only 9px from left collapse because the opposite column also grew.
+  Grid sizing now preserves the opposite column's share; stronger assertions
+  require at least 100px growth per side at the measured viewport. The final
+  run passed with the widths above.
+- The first full suite had **3,474 passed / 1 failed / 11 skipped**: the existing
+  Scanner comparison test exceeded its unchanged 5-second timeout while a
+  concurrent build was running. Its isolated rerun passed without source,
+  timeout or assertion changes. This observation alone does not prove the
+  cause of the timeout.
+- Local receipts and synthetic screenshots are under ignored
+  `generated-artifacts/arx-side-rails/`: `browser-attempt1.log`,
+  `browser-attempt2.log`, `browser-before-width-refinement.log`,
+  `browser-final.log`, `frontend-attempt1.log`, `frontend-final.log`,
+  `scanner-intervals.log`, `build.log`,
+  `both-rails-desktop.png` and `mobile-focus.png`. Final fixture build:
+  `b6be0937ec9d9f21`.
+
+No backend, trading/risk policy, account, permission or data-hook changes were
+made. No API restart, database operation, broker call, executed order,
+publication/deployment or GitHub push occurred. Independent enlarged-text and
+short-landscape QA merges were waiting on the workspace lock and were not
+part of this measured application.
+
 ## Isolated long-content browser regression (2026-11-04)
 
 Added a standalone fixture in `arxai/scripts/shell-qa/`. Run from the workspace
