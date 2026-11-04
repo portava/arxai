@@ -93,7 +93,7 @@ export function OneClickArmModal({ open, onClose, status, onArmed }: Props) {
           <DialogDescription>
             {status.armed
               ? "Disarming restores the confirmation step before every Buy or Sell."
-              : "Once armed, Buy and Sell buttons execute immediately — no extra confirmation."}
+              : "Arming turns on one-click mode for the whole app: every Buy, Sell and Close executes immediately — no ticket, no confirmation."}
           </DialogDescription>
         </DialogHeader>
 
@@ -132,7 +132,8 @@ export function OneClickArmModal({ open, onClose, status, onArmed }: Props) {
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 <AlertTitle>What arming means</AlertTitle>
                 <AlertDescription className="text-xs space-y-1">
-                  <p>• Buy and Sell execute immediately with your saved defaults (lot: <b>{status.defaultVolume}</b>, symbol: <b>{status.defaultSymbol}</b>).</p>
+                  <p>• Buy and Sell on the chart, scanner, trade panel and watchlist execute immediately with your saved defaults (lot: <b>{status.defaultVolume}</b>, symbol: <b>{status.defaultSymbol}</b>).</p>
+                  <p>• Close (×) on any open position closes it immediately — no confirmation dialog.</p>
                   <p>• All 16 Phase B safety gates still run on every trade — arm only removes the manual confirmation step.</p>
                   <p>• You can disarm at any time from this screen.</p>
                 </AlertDescription>

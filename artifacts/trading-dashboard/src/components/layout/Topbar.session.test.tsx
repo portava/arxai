@@ -11,6 +11,7 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 vi.mock("@/components/layout/SymbolPicker", () => ({ SymbolPicker: () => <span>V25_1S</span> }));
 vi.mock("@/components/alerts/NotificationBell", () => ({ NotificationBell: () => null }));
+vi.mock("@/components/oneclick/OneClickModeToggle", () => ({ OneClickModeToggle: () => null }));
 vi.mock("@/hooks/useFeatureUnlock", () => ({ useAllUnlocks: () => ({ mt5: true, simulator: false }) }));
 vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: null }), useLogout: () => ({ mutate: vi.fn() }) }));
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ canToggle: false }) }));
