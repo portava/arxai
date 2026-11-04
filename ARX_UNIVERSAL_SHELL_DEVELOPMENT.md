@@ -132,6 +132,110 @@ change was performed. The running frontend receives these changes through Vite.
 All previously reported signed-in, provider and navigation limitations remain
 open unless separately verified.
 
+## Usable plot and expanded-content follow-up — 2026-11-04
+
+Validated application: `58dcba733c376497e704ffb27e2186963e0e5617`.
+Baseline: `f94c7bcbe2c5c0175c1055c68b6d75972c5e5612`, preserving the merged RTL
+shell work as well as the earlier column-fill and account-strip corrections.
+
+### What changed
+
+- Desktop content may scroll vertically rather than compressing expanded panels.
+  Their bodies retain intrinsic content height, without the earlier body-height
+  caps. The existing last-expanded-panel fill rule remains.
+- The compact desktop chart reserves a 390px canvas, leaving approximately
+  360px for the price plot after the time axis. Older 180/240px desktop
+  reductions are removed. Spare centre-column height grows the chart, with a
+  scoped observer resizing the existing engine to the rendered container.
+  Observer/listener cleanup ignores delayed callbacks after unmount.
+- Single-chart layout wrappers pass spare height through to that same chart.
+  No chart/calculation engine was duplicated. Mobile sizing/focus logic and
+  fullscreen sizing remain separate.
+- Risk labels and amounts use two columns of stacked, wrapping text rather than
+  four competing inline cells. Budget calculation and permission logic are
+  unchanged.
+
+### Actual verification
+
+| Check | Final result |
+| --- | --- |
+| Full frontend suite | **3,468 passed, 11 skipped, 0 failed; exit 0** |
+| Test files | 229 passed, 1 skipped |
+| Chart lifecycle focused suite | 98 passed, 0 failed |
+| Typecheck | Passed |
+| Production frontend build | Passed; existing large-chunk warning retained |
+| Unchanged initial-JS budget | Passed: 688,479 raw bytes / 200,158 gzip bytes; limits remain 720,000 / 210,000 |
+| Previous column-fill geometry regression | Passed: 768 collapse combinations, plus strip/header checks |
+| Actual Cockpit offline production fixture | **12/12 viewport/preset cases passed**, 0 skipped |
+| Development root HTTP | 200 |
+
+The actual-Cockpit fixture imports the application and existing data hooks,
+intercepts API responses with synthetic inputs and blocks writes and external
+traffic. It is not the deployed build or a signed-in user's account. The default
+synthetic instrument was EURUSD; authenticated V25_1S/provider acceptance is not
+claimed. This is layout evidence, not trading, freshness or performance evidence.
+
+| Viewport | Preset | Price plot px | Canvas px | Main client/scroll height px |
+| --- | --- | ---: | ---: | ---: |
+| 1366×768 | All expanded | 362 | 390 | 690 / 962 |
+| 1366×768 | Analyze | 362 | 390 | 690 / 939 |
+| 1366×768 | Trade | 362 | 390 | 690 / 902 |
+| 1366×768 | Review | 362 | 390 | 690 / 962 |
+| 1440×900 | All expanded | 362 | 390 | 822 / 960 |
+| 1440×900 | Analyze | 362 | 390 | 822 / 937 |
+| 1440×900 | Trade | 362 | 390 | 822 / 900 |
+| 1440×900 | Review | 362 | 390 | 822 / 960 |
+| 1920×1080 | All expanded | 404 | 432.5 | 1002 / 1002 |
+| 1920×1080 | Analyze | 426 | 455 | 1002 / 1002 |
+| 1920×1080 | Trade | 464 | 492 | 1002 / 1002 |
+| 1920×1080 | Review | 404 | 432.5 | 1002 / 1002 |
+
+Every case checked the actual price plot, expanded-body scroll/clipping geometry,
+Review order containment when expanded, clock time containment, nonoverlapping
+risk cells, equal column bottoms and absence of document horizontal overflow.
+No Review order or execution action was clicked. There were no browser page
+errors; the two recorded POST attempts (activity ping and chart AI-alert scan)
+were blocked with fixture 503 responses, not sent to the app API.
+
+Run the new acceptance check with:
+
+```sh
+cd arxai
+node --test scripts/scanner-qa/desktop-content-fit.test.mjs
+```
+
+This replaces the earlier no-scroll acceptance policy for this request. The
+older `compact-workspace-geometry.test.mjs` script's strict all-tools-in-viewport
+expectations were not rerun or claimed as passing.
+
+### Retained failures, limitations and concurrent work
+
+- Initial focused attempt: 99 passed / 5 failed because the new observer path
+  was absent from jsdom. The component now explicitly supports a resize-event
+  fallback where ResizeObserver is unavailable. Height assertions were updated
+  from the obsolete 180/240px desktop behavior, not skipped.
+- Browser attempt 1: an overly broad test selector opened chart details and then
+  timed out; 12 matrix cases were unstarted. Attempt 2: dynamic nth locators
+  changed as panels opened and timed out; 12 cases were unstarted. The selector
+  now snapshots stable panel test IDs. Both failed attempt logs are retained.
+- First full frontend attempt: 3,467 passed / 1 failed / 11 skipped. The new
+  lifecycle test referenced its mock engine without defining the local variable.
+  After correction, the 98-test focused suite and full suite passed. No test or
+  unhandled error was suppressed.
+- Receipts are retained locally under ignored
+  `generated-artifacts/arx-desktop-content-fit-20261104/`: browser-attempt1.log,
+  browser-attempt2.log, browser-final.log, frontend-attempt1.log,
+  frontend-final.log and build.log. Fixture build ID: `ab3d94078f34ec19`.
+- A fresh 1440×900 native capture still reached normal login. No authenticated
+  screenshot or real-account/provider result is claimed. Previous navigation,
+  provider and signed-in limitations remain open.
+- Short-landscape shell work was reported implemented concurrently but had not
+  merged into this validated source. No concurrent changes were overwritten.
+
+No API restart, backend/data-hook change, database operation, permission/risk
+policy change, order, broker call, publication/deployment or GitHub push occurred.
+The frontend workflow remains running and receives source through Vite.
+
 ## Isolated long-content browser regression (2026-11-04)
 
 Added a standalone fixture in `arxai/scripts/shell-qa/`. Run from the workspace
