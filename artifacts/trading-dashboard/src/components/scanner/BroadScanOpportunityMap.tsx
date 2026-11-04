@@ -693,6 +693,21 @@ const OpportunityRowCard = memo(function OpportunityRowCard({
               per-trade execution quality. */}
           {validHeuristic(row.executionQuality) && <span>· Feed {Math.round(row.executionQuality)}</span>}
           {row.newsRisk !== "none" && <span className="text-warning">· news {row.newsRisk}</span>}
+          {/* A failed check (lookup failed / calendar did not answer) also
+              arrives as newsRiskNotChecked: name the failure, never blame a
+              missing calendar for it. */}
+          {row.newsRisk === "none" && row.newsRiskUnchecked === true ? (
+            <span
+              className="text-warning"
+              title="The news lookup failed or the economic calendar did not answer, so scheduled news for this market could not be checked."
+            >
+              · news could not be checked
+            </span>
+          ) : row.newsRisk === "none" && row.newsRiskNotChecked === true ? (
+            <span title="No economic calendar is connected, so scheduled news for this market was not checked.">
+              · news not checked
+            </span>
+          ) : null}
         </div>
       )}
       {/* Reason can echo the simulator read for a no-data row, so only show it

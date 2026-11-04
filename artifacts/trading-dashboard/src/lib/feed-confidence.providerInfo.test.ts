@@ -20,6 +20,10 @@ describe("providerInfo — provider label + trust tier mapping", () => {
     expect(info.trustNote).toMatch(/check feed status/i);
     expect(info.trustNote).toMatch(/execution prices can differ/i);
     expect(info.trustNote).not.toMatch(/live bars|matches the prices|highest-trust/i);
+    // The same id also serves the stored market_candles mirror when no bridge
+    // is pushing, so the note must not claim the bars come from a bridge now.
+    expect(info.trustNote).not.toMatch(/supplied by the MT5 broker bridge/i);
+    expect(info.trustNote).toMatch(/stored copy/i);
   });
 
   it("maps deriv to the synthetic tier (never broker)", () => {

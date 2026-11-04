@@ -123,12 +123,21 @@ export function capConfidence(
   resolved: boolean | null | undefined,
 ): FeedConfidence {
   if (resolved === undefined || resolved === true) return conf;
+  // A raw "clean" verdict carries the server's live-sounding message (e.g.
+  // "Live feed active for EURUSD …"). Once the cap withholds "clean", that
+  // message would contradict the capped label in the same popover, so it is
+  // replaced with what is actually known. A non-clean raw message (stale /
+  // delayed / partial) is already an honest limitation and is kept.
   if (resolved === null) {
     return {
       ...conf,
       severity: "unknown",
       statusLabel: "Checking…",
       aiUsable: false,
+      message:
+        conf.severity === "clean"
+          ? "Still checking whether this feed is confirmed for this market and timeframe."
+          : conf.message,
     };
   }
   // resolved === false → not confirmed.
@@ -137,6 +146,10 @@ export function capConfidence(
     severity: conf.severity === "clean" ? "caution" : conf.severity,
     statusLabel: conf.severity === "clean" ? "Unconfirmed" : conf.statusLabel,
     aiUsable: false,
+    message:
+      conf.severity === "clean"
+        ? "The feed reports clean bars, but this market and timeframe's read is not confirmed current — treat it as unconfirmed."
+        : conf.message,
   };
 }
 
@@ -199,7 +212,7 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
       label: "MT5 broker",
       tier: "broker",
       trustNote:
-        "Candles supplied by the MT5 broker bridge, the primary broker-data source. Check feed status for freshness; actual execution prices can differ.",
+        "Candles from the MT5 broker data path, the primary broker-data source: either a bridge's live push or the server's stored copy of earlier pushes. Check feed status for whether they are live; actual execution prices can differ.",
     };
   }
   if (source === "deriv" || source === "deriv_public") {
@@ -252,19 +265,51 @@ export function formatTrailingGap(
   return `${trailingIntervals} missing`;
 }
 
-/** Compact "12s ago" style relative time; honest "—" when missing/invalid. */
+function compactSpan(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+/**
+ * Compact "12s ago" style relative time; honest "—" when missing/invalid.
+ * A timestamp in the future (e.g. a forming bar's scheduled close) reads
+ * "in 45m" — never "just now", which would assert a recent arrival.
+ */
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return "—";
   const diffMs = Date.now() - t;
-  if (diffMs < 0) return "just now";
-  const s = Math.floor(diffMs / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+  if (diffMs < 0) return `in ${compactSpan(-diffMs)}`;
+  return `${compactSpan(diffMs)} ago`;
+}
+
+/** True when the timestamp is valid and later than now. */
+export function isFutureTime(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) && t > Date.now();
+}
+
+const FEED_READINESS_LABELS: Record<string, string> = {
+  UNCONFIGURED: "Deriv market data not set up",
+  CONNECTING: "Connecting to Deriv",
+  AUTH_FAILED: "Deriv sign-in rejected; no live ticks",
+  CONNECTED_AWAITING_FEED: "Connected to Deriv, waiting for data",
+  HISTORY_READY_AWAITING_LIVE_TICK: "History ready, waiting for first live tick",
+  LIVE_FEED: "Deriv reports live ticks",
+};
+
+/**
+ * Plain-English copy for the server's Deriv warm-up readiness state. An
+ * unrecognised state is reported as such rather than leaking the raw token.
+ */
+export function feedReadinessLabel(state: string | null | undefined): string {
+  if (!state) return "—";
+  return FEED_READINESS_LABELS[state] ?? "Unrecognised readiness state";
 }

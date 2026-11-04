@@ -25,7 +25,7 @@
 //   stubbed — everything CI cannot supply headlessly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act, fireEvent, waitFor } from "@testing-library/react";
+import { render, cleanup, act, fireEvent, waitFor, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { ChartViewLink } from "@/lib/chart-engine/chartViewLink";
 import { ChartLinkContext } from "./ChartLinkContext";
@@ -298,6 +298,30 @@ afterEach(() => {
 });
 
 describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
+  it("states the chart time zone (the axis is UTC) with the shared label", async () => {
+    // "Times: UTC" is only stated when every candle carries original-UTC clock
+    // evidence (the Smart Chart's source-clock rule); this feed's bars do.
+    const response = makeResponse(liveFeedStatus());
+    currentCandleResponse = {
+      ...response,
+      candles: response.candles.map((c) => ({
+        ...c,
+        timeBasisEvidence: { kind: "original_utc", basis: "UTC", authority: "offline:utc-clock-fixture-v1", reason: null },
+      })),
+    } as unknown as ChartCandlesResponse;
+    renderChart();
+    const label = await screen.findByTestId("arx-native-timezone");
+    expect(label.textContent).toBe("Times: UTC");
+    expect(label.getAttribute("title")).toMatch(/UTC/);
+  });
+
+  it("never states UTC for candles without clock evidence: it names the source clock instead", async () => {
+    renderChart();
+    const label = await screen.findByTestId("arx-native-timezone");
+    expect(label.textContent).toBe("Times: source clock (UTC unverified)");
+    expect(label.textContent).not.toBe("Times: UTC");
+  });
+
   it("subscribes to the same /api/chart/tick-stream SSE endpoint for the resolved symbol + timeframe", () => {
     renderChart();
     expect(openedStreams).toHaveLength(1);
@@ -1001,5 +1025,49 @@ describe("pending initial candle engine", () => {
     const wrap=(ready:boolean)=><ChartLinkContext.Provider value={link}>{tree(ready?makeResponse(liveFeedStatus()):undefined,!ready)}</ChartLinkContext.Provider>;
     const view=render(wrap(false));expect(adapterSpies.setLinkedTimeRange).not.toHaveBeenCalled();
     view.rerender(wrap(true));expect(adapterSpies.setLinkedTimeRange).toHaveBeenCalledTimes(1);expect(adapterSpies.setLinkedTimeRange).toHaveBeenLastCalledWith(range);
+  });
+});
+
+// Scanner host bindings: ScannerChartPanel mounts this chart and names a
+// shared live-tip key, so its header and badge show the SAME tick the axis
+// applied (lib/scannerLiveTipStore), and it reads the stream's frozen-quote
+// verdict. Both props are optional and inert on every other surface.
+describe("ARXNativeChart Scanner live-tip and frozen-quote bindings", () => {
+  const TIP_KEY = `${SYMBOL}|5m`;
+  function renderScanner(onMarketFrozenChange = vi.fn()) {
+    const view = render(
+      <ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}
+        liveTipKey={TIP_KEY} onMarketFrozenChange={onMarketFrozenChange} />,
+    );
+    return { view, onMarketFrozenChange };
+  }
+
+  it("publishes the applied tick at the instrument precision and withdraws it on a frozen frame", async () => {
+    const { readScannerTip } = await import("@/lib/scannerLiveTipStore");
+    renderScanner();
+    const stream = openedStreams[0]!;
+    act(() => stream.emit(formingBarEvent({ openTimeMs: NEWEST_OPEN_MS, open: 1.102, high: 1.1035, low: 1.1018, close: 1.103 })));
+    expect(adapterSpies.updateActiveCandle).toHaveBeenCalledTimes(1);
+    expect(readScannerTip(TIP_KEY)).toBe(1.103);
+    act(() => stream.emit(formingBarEvent({ openTimeMs: NEWEST_OPEN_MS, open: 1.102, high: 1.1035, low: 1.1018, close: 1.104, frozen: true })));
+    expect(readScannerTip(TIP_KEY)).toBeNull();
+  });
+
+  it("never publishes a tick as current on a non-live feed, and withdraws on unmount", async () => {
+    const { readScannerTip } = await import("@/lib/scannerLiveTipStore");
+    currentCandleResponse = makeResponse({ ...liveFeedStatus(), isLive: false, stale: true, quality: "stale", aiUsable: false } as ChartFeedStatus);
+    const { view } = renderScanner();
+    act(() => openedStreams[0]!.emit(formingBarEvent({ openTimeMs: NEWEST_OPEN_MS, open: 1.102, high: 1.1035, low: 1.1018, close: 1.103 })));
+    expect(readScannerTip(TIP_KEY)).toBeNull();
+    view.unmount();
+    expect(readScannerTip(TIP_KEY)).toBeNull();
+  });
+
+  it("reports the stream's frozen-quote verdict to the host and clears it", () => {
+    const { onMarketFrozenChange } = renderScanner();
+    act(() => openedStreams[0]!.emit(feedStatusEvent({ marketFrozen: true, lastBrokerTimeMs: NEWEST_OPEN_MS })));
+    expect(onMarketFrozenChange).toHaveBeenLastCalledWith({ lastBrokerTimeMs: NEWEST_OPEN_MS });
+    act(() => openedStreams[0]!.emit(feedStatusEvent({ marketFrozen: false, lastBrokerTimeMs: NEWEST_OPEN_MS })));
+    expect(onMarketFrozenChange).toHaveBeenLastCalledWith(null);
   });
 });

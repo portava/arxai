@@ -4,4 +4,4 @@ export { EdgeConfidenceMeter } from "./EdgeConfidenceMeter";
 export { EdgeBreakdownTable } from "./EdgeBreakdownTable";
 export { EdgeWarningPanel } from "./EdgeWarningPanel";
 export { AiEdgeSummaryCard } from "./AiEdgeSummaryCard";
-export type { EdgeReport, EdgeWarning } from "./types";
+export type { EdgeBehaviourBasis, EdgeReport, EdgeWarning } from "./types";

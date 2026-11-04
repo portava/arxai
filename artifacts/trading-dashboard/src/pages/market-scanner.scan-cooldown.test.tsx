@@ -212,6 +212,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("Market Scanner — operator auto-scan state sits with its controls", () => {
+  // Owner screenshot 2026-10-27: the header's market row read "V75 · 1m ·
+  // 33,588.01 · Idle · Bullish …" — "Idle" was the auto-scan engine, not V75.
+  // It now reads "Auto-scan off/on" beside the Scan / Start controls, and only
+  // once the status endpoint has answered.
+  it("labels the engine state as auto-scan beside the Scan button, after status answers", async () => {
+    render(<MarketScanner />);
+    await settle();
+    const state = screen.getByTestId("scanner-autoscan-state");
+    expect(state.textContent).toBe("Auto-scan off");
+    expect(state.parentElement?.contains(scanButton())).toBe(true);
+    expect(screen.queryByText("Idle")).toBeNull();
+  });
+});
+
 describe("Market Scanner — Scan-button cooldown countdown", () => {
   it("shows busy feedback and a short retry without claiming a completed scan", async () => {
     render(<MarketScanner />);

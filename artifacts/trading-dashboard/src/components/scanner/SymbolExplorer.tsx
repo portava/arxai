@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { chartSymbolCatalogue, exactChartSymbol, restoreChartSymbols, searchChartAnalysisSymbols, type ChartSymbolScope } from "@/lib/chart-engine/chartAnalysisCatalogue";
 import {
+  SYMBOL_REGISTRY,
   groupByMarketType,
   searchSymbols,
   resolveSymbol,
@@ -13,13 +14,15 @@ import {
   type SymbolEntry,
   type ResolvedSymbol,
 } from "@/lib/symbolRegistry";
+import { derivFeedNoteText, type DerivFeedState } from "@/lib/derivFeedState";
 
 /**
  * Unified Symbol Explorer — search + horizontal category chips +
  * click-to-switch.
  *
  * Categories appear as horizontally scrollable chips with count badges
- * (Favorites · Forex · Metals · Indices · Crypto · Stocks · Synthetic …).
+ * (Favorites · Forex · Metals · Indices · Crypto · Synthetic); a category
+ * with no approved market gets no chip.
  * Only one category is active at a time; tapping a chip expands its
  * symbols in a compact grid below. Synthetic Indices stays visible even
  * when the Deriv feed is not configured — the status appears as a small
@@ -47,6 +50,46 @@ const CATEGORY_ORDER: Array<{ id: MarketType; label: string }> = [
   { id: "commodities", label: "Commodities" },
   { id: "synthetic", label: "Synthetic" },
 ];
+
+// Search examples shown in the placeholder. Each one must resolve to an
+// approved ARX Focus market (pinned by SymbolExplorer.truth.test.tsx) — the
+// placeholder never suggests a market that would answer "isn't in the
+// approved market list".
+export const SYMBOL_SEARCH_EXAMPLES = ["EURUSD", "gold", "V75", "btc", "us30"] as const;
+
+const SCOPE_WORDS: Record<MarketType, string> = {
+  forex: "forex pairs",
+  metals: "metals",
+  indices: "indices",
+  crypto: "crypto",
+  stocks: "stocks",
+  energy: "energy",
+  commodities: "commodities",
+  synthetic: "Deriv synthetics",
+};
+
+// Synthetic families named only when the registry holds at least one member.
+const SYNTHETIC_FAMILIES: Array<{ label: string; test: RegExp }> = [
+  { label: "Volatility", test: /^V\d+/ },
+  { label: "Boom/Crash", test: /^(BOOM|CRASH)\d+/ },
+  { label: "Jump", test: /^JUMP\d+/ },
+  { label: "Step", test: /^STEP/ },
+];
+
+/** What the symbol search covers, derived from the approved registry so the
+ *  copy can never promise a category or index family that does not exist. */
+export function approvedMarketScopeText(entries: SymbolEntry[] = SYMBOL_REGISTRY): string {
+  const groups = groupByMarketType(entries);
+  const parts = CATEGORY_ORDER.filter((g) => groups[g.id].length > 0).map((g) => {
+    if (g.id !== "synthetic") return SCOPE_WORDS[g.id];
+    const families = SYNTHETIC_FAMILIES
+      .filter((f) => groups.synthetic.some((e) => f.test.test(e.canonicalSymbol)))
+      .map((f) => f.label);
+    return families.length > 0 ? `${SCOPE_WORDS.synthetic} (${families.join(", ")})` : SCOPE_WORDS.synthetic;
+  });
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}` : parts.join("");
+  return `Search the ${entries.length} approved markets — ${list}.`;
+}
 
 function loadJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -76,10 +119,13 @@ export interface SymbolExplorerProps {
   onSelect: (canonicalSymbol: string, entry: ResolvedSymbol) => void;
   /** When false, synthetic symbols stay selectable but are flagged. */
   derivFeedConfigured?: boolean;
-  derivFeedConnected?: boolean;
-  derivFeedConnecting?: boolean;
+  /** The synthetic feed's state from the server's status (null/absent = no note). */
+  derivFeedState?: DerivFeedState | null;
   /** Show dev-only diagnostics row (typed/resolved/source). */
   showDiagnostics?: boolean;
+  /** When set, a line above the search states what the search covers (from
+   *  the approved registry) followed by this note. */
+  scopeNote?: string;
 }
 
 export function SymbolExplorer(props: SymbolExplorerProps) {
@@ -93,7 +139,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
   const recentKey=analysis?"arx.symbolExplorer.chart-analysis.recent.v1":RECENT_KEY;
   const favKey=analysis?"arx.symbolExplorer.chart-analysis.favs.v1":FAV_KEY;
   const activeKey=analysis?"arx.symbolExplorer.chart-analysis.activeCat.v1":ACTIVE_KEY;
-  const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedConnected = false, derivFeedConnecting = false, compactWorkspace = false } = props;
+  const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedState = null, compactWorkspace = false } = props;
   const showDiagnostics = props.showDiagnostics ?? import.meta.env.DEV;
 
   const [query, setQuery] = useState("");
@@ -184,9 +230,9 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
   }, [categories, activeCat]);
 
   const active = activeCat === null ? null : categories.find((c) => c.id === activeCat) ?? null;
-  // Show the synthetic-feed note when (a) it's not configured, or (b) it's
-  // configured but still connecting / connected — so users see live status.
-  const showDerivNote = active?.id === "synthetic" && (!derivFeedConfigured || derivFeedConnecting || derivFeedConnected);
+  // The synthetic-feed note shows whatever the server's status says (live,
+  // connected without ticks, connecting, failing, off, or could not be loaded).
+  const showDerivNote = active?.id === "synthetic" && derivFeedState != null;
 
   function submitTyped() {
     const q = query.trim();
@@ -204,6 +250,13 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
   return (
     <div className="space-y-2" data-testid="symbol-explorer" data-symbol-scope={scope}>
       {analysis && <p className="text-xs text-amber-300">Comparison analysis only · choose a result or enter its exact symbol. Data availability is checked by this chart; trading and Scanner selection stay unchanged.</p>}
+      {/* The approved-market scope line describes the Focus registry only; the
+          comparison picker states its own scope above. */}
+      {!analysis && props.scopeNote != null && (
+        <p className="text-xs text-muted-foreground" data-testid="symbol-explorer-scope">
+          {approvedMarketScopeText()} {props.scopeNote}
+        </p>
+      )}
       {/* Search row */}
       <div className={compactWorkspace ? "flex min-w-0 items-center gap-1.5" : "flex flex-wrap items-center gap-2"}>
         <div className={`relative min-w-0 flex-1 ${compactWorkspace ? "" : "min-w-[180px]"}`}>
@@ -216,7 +269,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
               if (e.key === "Enter") { e.preventDefault(); submitTyped(); }
               if (e.key === "Escape") setQuery("");
             }}
-            placeholder={analysis ? "Search comparison charts — AAPL, Apple, EURUSD…" : "Search any market — EURUSD, gold, V75, btc, nas…"}
+            placeholder={analysis ? "Search comparison charts — AAPL, Apple, EURUSD…" : `Search approved markets — ${SYMBOL_SEARCH_EXAMPLES.join(", ")}…`}
             className={compactWorkspace ? "h-8 pl-7 text-xs" : "pl-7"}
             data-testid="input-symbol-search"
             autoComplete="off"
@@ -301,7 +354,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
       {/* Active category symbols */}
         {active && compactWorkspace ? (
           <div className="arx-scanner-market-rows" role="tabpanel" aria-label={`${active.label} markets`} data-testid={`category-panel-${active.id}`}>
-            {showDerivNote && <div className="mb-1 text-[10px] text-warning/90" data-testid="deriv-feed-note">{derivFeedConnecting ? "Connecting synthetic feed…" : derivFeedConnected ? "Synthetic feed connected." : "Synthetic prices unavailable until the feed is set up."}</div>}
+            {showDerivNote && derivFeedState && <div className={`mb-1 text-[10px] ${derivFeedState.kind === "live" ? "text-txt-secondary" : "text-warning/90"}`} data-testid="deriv-feed-note" data-feed-state={derivFeedState.kind}>{derivFeedNoteText(derivFeedState)}</div>}
             {active.symbols.slice(0, 4).map(sym => {
               const item = exactChartSymbol(sym, scope, { derivFeedConfigured });
               if (!item) return null;
@@ -332,13 +385,13 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
           aria-label={`${active.label} symbols`}
           data-testid={`category-panel-${active.id}`}
         >
-          {showDerivNote && (
-            <div className="mb-2 text-[11px] text-warning/90" data-testid="deriv-feed-note">
-              {derivFeedConnecting
-                ? "Connecting to live feed for synthetic indices…"
-                : derivFeedConnected
-                  ? "Live feed connected for synthetic indices."
-                  : "Synthetic-index live feed isn't active yet — these markets are visible for selection but won't show live prices until the feed is set up."}
+          {showDerivNote && derivFeedState && (
+            <div
+              className={`mb-2 text-[11px] ${derivFeedState.kind === "live" ? "text-txt-secondary" : "text-warning/90"}`}
+              data-testid="deriv-feed-note"
+              data-feed-state={derivFeedState.kind}
+            >
+              {derivFeedNoteText(derivFeedState)}
             </div>
           )}
           <ChipRow

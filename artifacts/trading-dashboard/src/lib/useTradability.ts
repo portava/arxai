@@ -17,7 +17,10 @@ export interface SymbolTradability {
   mt5Tradable: TradabilityState;
   executionProvider: "mt5" | "none";
   liveExecutionAllowed: boolean;
-  badgeLabel: "Tradable via MT5" | "Data-only via Deriv" | "Analysis only" | "Tradability not verified";
+  // "Allowed for MT5 live" = on the live market list and an ARX Focus market;
+  // the bridge, broker symbols, governance and live gates are checked only at
+  // submit. "Tradable via MT5" / "Data-only via Deriv" are no longer sent.
+  badgeLabel: "Allowed for MT5 live" | "Tradable via MT5" | "Data-only via Deriv" | "Analysis only" | "Tradability not verified";
   userMessage: string;
 }
 

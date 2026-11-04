@@ -3,6 +3,7 @@ import { Lock, FlaskConical, Target, Inbox, Eye } from "lucide-react";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useAllUnlocks } from "@/hooks/useFeatureUnlock";
 import { useTradingMode } from "@/hooks/useTradingMode";
+import { intentCountNumber, readIntentQueueCount, type IntentQueueCount } from "@/lib/intentQueueCount";
 
 type Defer = { deferred: boolean; systemState: string; bannerText: string; brokerProvider: string; bridgeConnected: boolean };
 
@@ -19,7 +20,9 @@ export function SafetyHeader() {
   const mode = useTradingMode();
   const [defer, setDefer] = useState<Defer | null>(null);
   const [chartSymbol] = useChartSymbol();
-  const [intentCount, setIntentCount] = useState<number | null>(null);
+  // The queue counts only its newest window (default 100); a failed read is
+  // "not loaded", never the last count or 0. See lib/intentQueueCount.
+  const [intentQueue, setIntentQueue] = useState<IntentQueueCount | null>(null);
   const [simRunning, setSimRunning] = useState(false);
 
   useEffect(() => {
@@ -32,7 +35,10 @@ export function SafetyHeader() {
     }
     const refresh = () => {
       if (unlocks.simulator) {
-        void fetch("/api/live-intent/queue", { headers: { "x-security-role": "ADMIN" } }).then(r => r.ok ? r.json() : null).then(d => { if (!cancelled && d?.counts) setIntentCount(d.counts.total ?? 0); }).catch(() => {});
+        void fetch("/api/live-intent/queue", { headers: { "x-security-role": "ADMIN" } })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+          .then(d => { if (!cancelled) setIntentQueue(readIntentQueueCount(d)); });
         void fetch("/api/market/session-status").then(r => r.ok ? r.json() : null).then(d => { if (!cancelled && d) setSimRunning(!!d.running); }).catch(() => {});
       }
     };
@@ -88,9 +94,24 @@ export function SafetyHeader() {
               <FlaskConical className="h-3 w-3" /> Sim Engine
             </span>
           )}
-          {unlocks.simulator && intentCount !== null && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-cyan-500/15 text-cyan-600 border border-cyan-500/30 px-2 py-0.5 font-semibold" title="Live intents captured (no broker placement)">
-              <Inbox className="h-3 w-3" /> {intentCount} {intentCount === 1 ? "Intent" : "Intents"}
+          {unlocks.simulator && intentQueue && (intentQueue.kind === "exact" || intentQueue.kind === "at_least") && (
+            <span
+              data-testid="safety-header-intents"
+              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-cyan-500/15 text-cyan-600 border border-cyan-500/30 px-2 py-0.5 font-semibold"
+              title={intentQueue.kind === "at_least"
+                ? `Live intents captured (no broker placement). Only the newest ${intentQueue.total} were counted; older intents exist.`
+                : "Live intents captured (no broker placement)"}
+            >
+              <Inbox className="h-3 w-3" /> {intentCountNumber(intentQueue)} {intentQueue.kind === "exact" && intentQueue.total === 1 ? "Intent" : "Intents"}
+            </span>
+          )}
+          {unlocks.simulator && intentQueue?.kind === "error" && (
+            <span
+              data-testid="safety-header-intents"
+              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-zinc-500/15 text-muted-foreground border border-zinc-500/30 px-2 py-0.5 font-semibold"
+              title="The live intent queue could not be loaded."
+            >
+              <Inbox className="h-3 w-3" /> Intents: not loaded
             </span>
           )}
         </div>

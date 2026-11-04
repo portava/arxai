@@ -19,7 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AdminDiagnosticsGate } from "@/components/admin/AdminDiagnosticsGate";
 import { RefreshCw, AlertTriangle, CheckCircle2, KeyRound, Ban, Copy } from "lucide-react";
 
-type ApiResp<T> = T & { ok?: boolean; error?: string; detail?: string };
+type ApiResp<T> = T & { ok?: boolean; error?: string; detail?: string; reason?: string };
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 async function apiJson<T>(path: string, init?: RequestInit): Promise<ApiResp<T>> {
   const r = await fetch(`${BASE}${path}`, {
@@ -35,6 +35,7 @@ type Conn = {
   accountType: string | null; broker: string | null; server: string | null;
   eaVersion: string | null; tokenLast4: string | null; tokenRotatedAt: string | null;
   previousTokenExpiresAt: string | null; graceWindowActive: boolean;
+  tokenRevokedAt?: string | null;
   lastHeartbeatAt: string | null; heartbeatAgeSeconds: number | null;
 };
 type Verdict = {
@@ -48,6 +49,22 @@ type ReconIssue = {
   brokerTicket: string | null; symbol: string | null; status: string;
   reason: string; recommendedAction: string; createdAt: string | null; updatedAt: string | null;
 };
+type ReconFeed = {
+  issues?: ReconIssue[];
+  /** True only when every reconciliation detector ran this pass. */
+  complete?: boolean;
+  /** Issue types whose detector could not run (unknown, not zero). */
+  uncheckedTypes?: string[];
+  /** Lists that hit their row cap: more matched than were listed. */
+  truncatedChecks?: Array<{ check: string; type: string; limit: number }>;
+  reason?: string;
+};
+// "loading" before the first answer, "failed" when the feed could not be
+// loaded: neither may render as "No orphan positions detected".
+type ReconLoad =
+  | { state: "loading" }
+  | { state: "failed"; reason: string | null }
+  | { state: "loaded"; complete: boolean; uncheckedTypes: string[]; cut: Array<{ type: string; limit: number }> };
 type SymbolCap = {
   userId: number; symbol: string; brokerSymbol: string | null; accountType: string | null;
   visible: boolean | null; tradeAllowed: boolean | null; tradeMode: string | null;
@@ -56,14 +73,45 @@ type SymbolCap = {
   reportedAgeSeconds: number | null;
 };
 
-function livenessBadge(l: string) {
+function livenessBadge(l: string, testId?: string) {
   const map: Record<string, string> = {
     fresh: "border-success/40 text-success",
     stale: "border-warning/40 text-warning",
     offline: "border-danger/40 text-danger",
     revoked: "border-border/40 text-txt-secondary",
   };
-  return <Badge variant="outline" className={map[l] ?? ""}>{l.toUpperCase()}</Badge>;
+  return <Badge variant="outline" className={map[l] ?? ""} data-testid={testId}>{l.toUpperCase()}</Badge>;
+}
+
+// The five endpoints this page reads. Each one loads or fails on its own; a
+// failed one is "could not be loaded" (its earlier data is dropped, never
+// shown as current), and never reads as empty, clean or offline.
+type Section = "connections" | "watchdog" | "retcodes" | "issues" | "symbols";
+type SectionStatus = "loading" | "loaded" | "failed";
+const SECTION_LABEL: Record<Section, string> = {
+  connections: "Bridge list",
+  watchdog: "Watchdog liveness",
+  retcodes: "Retcode dictionary",
+  issues: "Reconciliation issues",
+  symbols: "Symbol capabilities",
+};
+type Fetched<T> = { ok: true; body: ApiResp<T> } | { ok: false; error: string; reason?: string };
+async function fetchSection<T>(path: string): Promise<Fetched<T>> {
+  try {
+    const body = await apiJson<T>(path);
+    if (body.ok === true) return { ok: true, body };
+    return {
+      ok: false,
+      error: body.detail || body.error || "the server did not answer ok",
+      reason: typeof body.reason === "string" && body.reason ? body.reason : undefined,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "request failed" };
+  }
+}
+
+function Unavailable({ what, testId }: { what: string; testId: string }) {
+  return <div className="text-xs text-danger" data-testid={testId}>{what} could not be loaded — not checked.</div>;
 }
 
 function BridgeDiagnosticsInner() {
@@ -71,35 +119,50 @@ function BridgeDiagnosticsInner() {
   const [verdicts, setVerdicts] = useState<Verdict[]>([]);
   const [retcodes, setRetcodes] = useState<Retcode[]>([]);
   const [issues, setIssues] = useState<ReconIssue[]>([]);
+  const [recon, setRecon] = useState<ReconLoad>({ state: "loading" });
   const [symbols, setSymbols] = useState<SymbolCap[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [rawToken, setRawToken] = useState<string | null>(null);
   const [retcodeFilter, setRetcodeFilter] = useState("");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<Record<Section, SectionStatus>>({
+    connections: "loading", watchdog: "loading", retcodes: "loading", issues: "loading", symbols: "loading",
+  });
+  const [loadErrors, setLoadErrors] = useState<Partial<Record<Section, string>>>({});
 
   async function load() {
-    try {
-      setLoading(true);
-      const [c, w, rc, ri, sc] = await Promise.all([
-        apiJson<{ connections: Conn[] }>("/api/admin/bridge/connections"),
-        apiJson<{ verdicts: Verdict[] }>("/api/admin/bridge/watchdog"),
-        apiJson<{ retcodes: Retcode[] }>("/api/admin/ea/retcodes"),
-        apiJson<{ issues: ReconIssue[] }>("/api/admin/ea/reconciliation-issues"),
-        apiJson<{ symbols: SymbolCap[] }>("/api/admin/ea/symbol-capabilities"),
-      ]);
-      if (c.ok) setConns(c.connections ?? []);
-      if (w.ok) setVerdicts(w.verdicts ?? []);
-      if (rc.ok) setRetcodes(rc.retcodes ?? []);
-      if (ri.ok) setIssues(ri.issues ?? []);
-      if (sc.ok) setSymbols(sc.symbols ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load bridge diagnostics");
-    } finally {
-      setLoading(false);
+    // fetchSection never throws: each endpoint resolves to loaded or failed.
+    const [c, w, rc, ri, sc] = await Promise.all([
+      fetchSection<{ connections: Conn[] }>("/api/admin/bridge/connections"),
+      fetchSection<{ verdicts: Verdict[] }>("/api/admin/bridge/watchdog"),
+      fetchSection<{ retcodes: Retcode[] }>("/api/admin/ea/retcodes"),
+      fetchSection<ReconFeed>("/api/admin/ea/reconciliation-issues"),
+      fetchSection<{ symbols: SymbolCap[] }>("/api/admin/ea/symbol-capabilities"),
+    ]);
+    const errors: Partial<Record<Section, string>> = {};
+    // A failed section drops what an earlier poll loaded: it is not current.
+    setConns(c.ok ? c.body.connections ?? [] : []); if (!c.ok) errors.connections = c.error;
+    setVerdicts(w.ok ? w.body.verdicts ?? [] : []); if (!w.ok) errors.watchdog = w.error;
+    setRetcodes(rc.ok ? rc.body.retcodes ?? [] : []); if (!rc.ok) errors.retcodes = rc.error;
+    setIssues(ri.ok ? ri.body.issues ?? [] : []); if (!ri.ok) errors.issues = ri.error;
+    if (ri.ok) {
+      setRecon({
+        state: "loaded", complete: ri.body.complete === true, uncheckedTypes: ri.body.uncheckedTypes ?? [],
+        cut: (ri.body.truncatedChecks ?? []).map((t) => ({ type: t.type, limit: t.limit })),
+      });
+    } else {
+      setRecon({ state: "failed", reason: ri.reason ?? ri.error ?? null });
     }
+    setSymbols(sc.ok ? sc.body.symbols ?? [] : []); if (!sc.ok) errors.symbols = sc.error;
+    setLoadErrors(errors);
+    setStatus({
+      connections: c.ok ? "loaded" : "failed",
+      watchdog: w.ok ? "loaded" : "failed",
+      retcodes: rc.ok ? "loaded" : "failed",
+      issues: ri.ok ? "loaded" : "failed",
+      symbols: sc.ok ? "loaded" : "failed",
+    });
   }
 
   useEffect(() => {
@@ -125,8 +188,22 @@ function BridgeDiagnosticsInner() {
         i.type !== "COMMAND_RESULT_MISMATCH" &&
         i.type !== "STALE_HEARTBEAT",
     );
-    return { orphans, stale, duplicates, other };
-  }, [issues, verdicts]);
+    // A group is "unchecked" when a detector behind it did not run. When the
+    // server did not say which ones failed, every group is unchecked.
+    const unchecked = (types: string[]): boolean =>
+      recon.state === "loaded" && !recon.complete &&
+      (recon.uncheckedTypes.length === 0 || types.some((t) => recon.uncheckedTypes.includes(t)));
+    return {
+      orphans, stale, duplicates, other,
+      orphansUnchecked: unchecked(["ORPHAN_BROKER_POSITION"]),
+      staleUnchecked: unchecked(["COMMAND_RESULT_MISMATCH", "STALE_HEARTBEAT"]),
+      // Capped lists: "first N listed, more exist" — never presented as all.
+      orphansCut: recon.state === "loaded" ? recon.cut.filter((c) => c.type === "ORPHAN_BROKER_POSITION") : [],
+      staleCut: recon.state === "loaded"
+        ? recon.cut.filter((c) => c.type === "COMMAND_RESULT_MISMATCH" || c.type === "STALE_HEARTBEAT")
+        : [],
+    };
+  }, [issues, verdicts, recon]);
 
   const filteredRetcodes = useMemo(() => {
     const q = retcodeFilter.trim().toLowerCase();
@@ -176,6 +253,20 @@ function BridgeDiagnosticsInner() {
       </div>
 
       {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+      {Object.keys(loadErrors).length > 0 && (
+        <Alert variant="destructive" data-testid="bridge-diag-load-failures">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Some diagnostics could not be loaded</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc list-inside text-xs">
+              {(Object.keys(loadErrors) as Section[]).map((k) => (
+                <li key={k}>{SECTION_LABEL[k]}: {loadErrors[k]}</li>
+              ))}
+            </ul>
+            <div className="text-xs mt-1">Those sections show nothing rather than earlier or empty results.</div>
+          </AlertDescription>
+        </Alert>
+      )}
       {notice && <Alert><CheckCircle2 className="h-4 w-4" /><AlertTitle>Done</AlertTitle><AlertDescription>{notice}</AlertDescription></Alert>}
       {rawToken && (
         <Alert className="border-warning/40">
@@ -192,8 +283,9 @@ function BridgeDiagnosticsInner() {
       <Card>
         <CardHeader><CardTitle className="text-base">Bridges & token lifecycle</CardTitle><CardDescription>Masked connection list. Rotate keeps the old token valid during a bounded grace window; revoke kills it immediately.</CardDescription></CardHeader>
         <CardContent>
-          {loading && conns.length === 0 && <div className="text-sm text-txt-secondary">Loading…</div>}
-          {!loading && conns.length === 0 && <div className="text-sm text-txt-secondary">No bridges registered.</div>}
+          {status.connections === "loading" && conns.length === 0 && <div className="text-sm text-txt-secondary">Loading…</div>}
+          {status.connections === "failed" && <Unavailable what="Bridge list" testId="conns-unavailable" />}
+          {status.connections === "loaded" && conns.length === 0 && <div className="text-sm text-txt-secondary">No bridges registered.</div>}
           <div className="space-y-2">
             {conns.map((c) => {
               const v = verdictById[c.id];
@@ -203,7 +295,12 @@ function BridgeDiagnosticsInner() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold">{c.connectionName ?? `Connection ${c.id}`}</span>
                       <span className="text-xs text-txt-muted">user #{c.userId ?? "—"}</span>
-                      {v ? livenessBadge(v.liveness) : livenessBadge(c.status === "revoked" ? "revoked" : "offline")}
+                      {v ? livenessBadge(v.liveness, `liveness-${c.id}`)
+                        : c.tokenRevokedAt != null || c.status === "revoked" ? livenessBadge("revoked", `liveness-${c.id}`)
+                        // No verdict is not evidence the bridge is offline.
+                        : <Badge variant="outline" className="text-txt-secondary" data-testid={`liveness-${c.id}`}>
+                            {status.watchdog === "loaded" ? "NO WATCHDOG VERDICT" : "LIVENESS NOT CHECKED"}
+                          </Badge>}
                       <Badge variant="outline" className={c.accountType === "live" || c.accountType === "real" ? "border-danger/40 text-danger" : ""}>{(c.accountType ?? "unknown").toUpperCase()}</Badge>
                       <Badge variant="outline">EA v{c.eaVersion ?? "?"}</Badge>
                       {c.graceWindowActive && <Badge variant="outline" className="border-warning/40 text-warning">grace token active</Badge>}
@@ -235,13 +332,33 @@ function BridgeDiagnosticsInner() {
           <CardDescription>Read-only detectors. Resolve from the Reconciliation Center — this view never auto-assigns ownership or closes anything.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {recon.state === "failed" && (
+            <div className="rounded-md border border-danger/40 bg-danger/5 p-2 text-xs text-danger" data-testid="recon-load-failed">
+              Reconciliation issues could not be loaded{recon.reason ? `: ${recon.reason}` : ""}. This is a load failure, not an all-clear — orphan positions and stale commands were not checked.
+            </div>
+          )}
+          {recon.state === "loaded" && !recon.complete && (
+            <div className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-warning" data-testid="recon-partial">
+              Not every reconciliation check ran this pass{recon.uncheckedTypes.length > 0 ? `: ${recon.uncheckedTypes.join(", ")} could not be checked` : ""}. Issues of those types may exist.
+            </div>
+          )}
           {/* Orphan broker positions */}
           <div>
             <div className="text-xs uppercase tracking-wider text-txt-secondary mb-1">Orphan broker positions</div>
-            {reconGroups.orphans.length === 0 ? (
+            {recon.state !== "loaded" ? (
+              recon.state === "failed" ? <Unavailable what="Reconciliation issues" testId="orphans-unavailable" />
+                : <div className="text-xs text-txt-muted">Loading…</div>
+            ) : reconGroups.orphans.length === 0 && reconGroups.orphansUnchecked ? (
+              <div className="text-xs text-warning" data-testid="orphans-unchecked">Orphan positions could not be checked — the detector did not run this pass.</div>
+            ) : reconGroups.orphans.length === 0 ? (
               <div className="text-xs text-txt-muted" data-testid="orphans-none">No orphan positions detected.</div>
             ) : (
               <div className="space-y-1">
+                {reconGroups.orphansCut.length > 0 && (
+                  <div className="text-xs text-warning" data-testid="orphans-capped">
+                    Showing the first {reconGroups.orphansCut[0]!.limit} orphan positions; more exist.
+                  </div>
+                )}
                 {reconGroups.orphans.map((i) => (
                   <div key={i.id} className="rounded-md border border-danger/40 bg-danger/5 p-2 text-xs" data-testid={`orphan-${i.id}`}>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -260,10 +377,20 @@ function BridgeDiagnosticsInner() {
           {/* Stale commands / heartbeats */}
           <div>
             <div className="text-xs uppercase tracking-wider text-txt-secondary mb-1">Stale commands & heartbeats</div>
-            {reconGroups.stale.length === 0 ? (
+            {recon.state !== "loaded" ? (
+              recon.state === "failed" ? <Unavailable what="Reconciliation issues" testId="stale-unavailable" />
+                : <div className="text-xs text-txt-muted">Loading…</div>
+            ) : reconGroups.stale.length === 0 && reconGroups.staleUnchecked ? (
+              <div className="text-xs text-warning" data-testid="stale-unchecked">Stale commands and heartbeats could not be fully checked — a detector did not run this pass.</div>
+            ) : reconGroups.stale.length === 0 ? (
               <div className="text-xs text-txt-muted" data-testid="stale-none">No stale commands or heartbeats.</div>
             ) : (
               <div className="space-y-1">
+                {reconGroups.staleCut.map((c) => (
+                  <div key={c.type} className="text-xs text-warning" data-testid={`stale-capped-${c.type}`}>
+                    {c.type}: showing the first {c.limit}; more exist.
+                  </div>
+                ))}
                 {reconGroups.stale.map((i) => (
                   <div key={i.id} className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs" data-testid={`stale-${i.id}`}>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -282,7 +409,10 @@ function BridgeDiagnosticsInner() {
           {/* Duplicate / conflicting bridges */}
           <div>
             <div className="text-xs uppercase tracking-wider text-txt-secondary mb-1">Duplicate / conflicting bridges</div>
-            {reconGroups.duplicates.length === 0 ? (
+            {status.watchdog !== "loaded" ? (
+              status.watchdog === "failed" ? <Unavailable what="Watchdog liveness" testId="duplicates-unavailable" />
+                : <div className="text-xs text-txt-muted">Loading…</div>
+            ) : reconGroups.duplicates.length === 0 ? (
               <div className="text-xs text-txt-muted" data-testid="duplicates-none">No duplicate-bridge conflicts detected.</div>
             ) : (
               <div className="space-y-1">
@@ -322,7 +452,9 @@ function BridgeDiagnosticsInner() {
       <Card>
         <CardHeader><CardTitle className="text-base">Broker symbol capabilities</CardTitle><CardDescription>EA-reported per-symbol rules. Stale rows (large age) mean the EA hasn't re-synced.</CardDescription></CardHeader>
         <CardContent>
-          {symbols.length === 0 && <div className="text-sm text-txt-secondary">No symbol specs reported yet.</div>}
+          {status.symbols === "loading" && symbols.length === 0 && <div className="text-sm text-txt-secondary">Loading…</div>}
+          {status.symbols === "failed" && <Unavailable what="Symbol capabilities" testId="symbols-unavailable" />}
+          {status.symbols === "loaded" && symbols.length === 0 && <div className="text-sm text-txt-secondary">No symbol specs reported yet.</div>}
           {symbols.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -339,8 +471,9 @@ function BridgeDiagnosticsInner() {
                       <td className="py-1 pr-3 text-txt-muted">#{s.userId}</td>
                       <td className="py-1 pr-3 font-medium">{s.symbol}</td>
                       <td className="py-1 pr-3 text-txt-secondary">{s.brokerSymbol ?? "—"}</td>
-                      <td className="py-1 pr-3">{s.visible ? "yes" : "no"}</td>
-                      <td className="py-1 pr-3">{s.tradeAllowed ? "yes" : "no"}</td>
+                      {/* null = the EA did not report it: "—", never "no". */}
+                      <td className="py-1 pr-3">{s.visible == null ? "—" : s.visible ? "yes" : "no"}</td>
+                      <td className="py-1 pr-3">{s.tradeAllowed == null ? "—" : s.tradeAllowed ? "yes" : "no"}</td>
                       <td className="py-1 pr-3">{s.marketOpen === null ? "—" : s.marketOpen ? "open" : "closed"}</td>
                       <td className="py-1 pr-3 text-txt-secondary">{s.minVolume ?? "—"}/{s.volumeStep ?? "—"}/{s.maxVolume ?? "—"}</td>
                       <td className="py-1 pr-3">{s.spreadPoints ?? "—"}</td>
@@ -364,7 +497,8 @@ function BridgeDiagnosticsInner() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredRetcodes.length === 0 && <div className="text-sm text-txt-secondary">No retcodes match.</div>}
+          {status.retcodes === "failed" && <Unavailable what="Retcode dictionary" testId="retcodes-unavailable" />}
+          {status.retcodes === "loaded" && filteredRetcodes.length === 0 && <div className="text-sm text-txt-secondary">No retcodes match.</div>}
           <div className="space-y-1">
             {filteredRetcodes.map((r) => (
               <div key={r.code} className="flex items-start gap-2 text-xs border-b border-border pb-1" data-testid={`retcode-${r.code}`}>

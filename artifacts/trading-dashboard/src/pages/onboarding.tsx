@@ -83,7 +83,7 @@ export default function OnboardingPage() {
             {status.status !== "NOT_STARTED" && <Button variant="outline" onClick={reset} disabled={busy !== null}><RotateCcw className="h-3 w-3 mr-1" />Reset</Button>}
           </div>
           {status.walkthroughCompleted && (
-            <Alert><AlertTitle>Onboarding complete</AlertTitle><AlertDescription className="text-xs">Live trading remains DISABLED. Use the Trading Cockpit as your home base.</AlertDescription></Alert>
+            <Alert><AlertTitle>Onboarding complete</AlertTitle><AlertDescription className="text-xs" data-testid="onboarding-complete-note">Onboarding does not change your account's live-trading status. Your trading mode is shown on your dashboard's Trading Permission card.</AlertDescription></Alert>
           )}
         </CardContent>
       </Card>
@@ -138,7 +138,7 @@ export default function OnboardingPage() {
         </CardContent>
       </Card>
 
-      <p className="text-[10px] text-muted-foreground text-center">onboarding_id {status.onboardingId} · DEMO_ONLY · LIVE TRADING DISABLED</p>
+      <p className="text-[10px] text-muted-foreground text-center" data-testid="onboarding-footer">onboarding_id {status.onboardingId} · acknowledgements never change live-trading status</p>
     </div>
   );
 }
