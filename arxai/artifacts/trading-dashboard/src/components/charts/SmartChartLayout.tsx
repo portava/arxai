@@ -50,7 +50,7 @@ export function SmartChartLayout({symbol,children,primaryTimeframe,storageKey=CH
     {layout.count > 1 && <p className="text-xs text-zinc-400">Primary setup and trade-ticket context: {symbol}{primaryTimeframe ? ` · ${primaryTimeframe}` : ""}. Comparison charts are analysis only. Linked views follow the chart you navigate, within loaded history; crosshairs use each view’s candle close.</p>}
     {!saved && <p role="alert" className="text-xs text-amber-300">Browser storage is unavailable. This layout will reset when you close the page.</p>}
   </>;
-  return <ChartLinkContext.Provider value={links}><div className="flex min-w-0 flex-col gap-3" data-testid="smart-chart-layout">
+  return <ChartLinkContext.Provider value={links}><div className="flex min-w-0 flex-col gap-3" data-testid="smart-chart-layout" data-chart-count={layout.count}>
     {compactWorkspace
       ? <details className={`arx-chart-layout-details ${controlsBelowSingleChart ? "order-1" : ""}`}>
           <summary>Chart layout &amp; comparison settings · {layout.count} chart{layout.count === 1 ? "" : "s"}</summary>

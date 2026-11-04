@@ -329,8 +329,8 @@ function viewportChartHeight(height:number,mobileHeight:number|undefined,expande
   if(typeof window === "undefined")return height;
   if(expanded)return Math.max(240,window.innerHeight-240);
   if(window.innerWidth<768)return mobileHeight??Math.max(320,Math.min(height,380));
-  if(compactWorkspace && window.innerWidth >= 1024 && window.innerWidth <= 1200)return Math.min(height,240);
-  if(compactWorkspace && window.innerWidth > 1200 && window.innerHeight <= 740)return Math.min(height,180);
+  // Reserve the time axis as well as at least ~360px of usable price plot.
+  if(compactWorkspace && window.innerWidth >= 1024)return Math.max(height,390);
   return height;
 }
 
@@ -799,6 +799,25 @@ export function ARXNativeChart({
   }, [displayZone, utcClockQualified, chartEpoch, updateLegend]);
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
+  useEffect(() => {
+    if (!compactDesktopWorkspace || expanded) return;
+    const container = containerRef.current;
+    if (!container) return;
+    let active = true;
+    const syncHeight = () => {
+      if (!active || !container.isConnected || container.clientHeight < 360) return;
+      adapterRef.current?.resize(undefined, container.clientHeight);
+    };
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", syncHeight);
+      syncHeight();
+      return () => { active = false; window.removeEventListener("resize", syncHeight); };
+    }
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(container);
+    syncHeight();
+    return () => { active = false; observer.disconnect(); };
+  }, [compactDesktopWorkspace, expanded, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceOnlyScale?.(preferences.priceOnlyScale === true); }, [preferences.priceOnlyScale, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
@@ -1715,7 +1734,7 @@ export function ARXNativeChart({
         </details>
       </section>
 
-      <CardContent key="plot" className="relative p-0">
+      <CardContent key="plot" className={compactWorkspace ? "arx-native-plot relative p-0" : "relative p-0"}>
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
         <div

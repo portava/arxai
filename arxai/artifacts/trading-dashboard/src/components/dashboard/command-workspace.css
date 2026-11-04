@@ -539,13 +539,24 @@
 /* The shared header owns its natural height; the desk uses only the remainder.
    Reset legacy two-column/row-span rules at every desktop width. */
 @media (min-width: 1024px) {
-  .arx-shell-frame[data-variant="cockpit"] .arx-dashboard-root {
-    height: 100%;
-    min-height: 0;
+  .arx-shell-frame[data-variant="cockpit"] #main-content.arx-root-main { overflow-y: auto; }
+  .arx-shell-frame[data-variant="cockpit"] #main-content > .arx-root-main-content {
+    height: auto;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
   }
+  .arx-shell-frame[data-variant="cockpit"] .arx-dashboard-root {
+    height: auto;
+    min-height: 0;
+    flex: 1 0 auto;
+    display: flex;
+  }
+  .arx-workspace-body { height: auto; flex: 1 0 auto; }
   .arx-workspace-body > .arx-workspace-grid {
     grid-template-columns: minmax(175px,.82fr) minmax(0,1.7fr) minmax(205px,.9fr);
-    grid-template-rows: minmax(0,1fr);
+    grid-template-rows: auto;
+    flex: 1 0 auto;
   }
   .arx-workspace-body > .arx-workspace-grid > .arx-col {
     display: flex;
@@ -561,22 +572,70 @@
   }
   .arx-workspace-grid > .arx-col > .arx-panel > .arx-panel-head { flex: 0 0 auto; }
   .arx-workspace-grid > .arx-col > .arx-panel > .arx-panel-body {
-    min-height: 0;
-    flex: 1 1 auto;
+    min-height: min-content;
+    flex: 1 0 auto;
   }
-  .arx-workspace-grid > .arx-col > .arx-panel:not(.arx-chart-panel) > .arx-panel-body { overflow-y: auto; }
+  #main-content .arx-workspace-grid > .arx-col > .arx-panel > .arx-panel-body {
+    max-height: none;
+    overflow: visible;
+  }
   /* Prefer the last expanded panel. If every panel is collapsed, the last
      card still fills its column without reopening content or changing state. */
   .arx-workspace-grid > .arx-col > .arx-panel[data-collapsed="false"]:not(:has(~ .arx-panel[data-collapsed="false"])),
   .arx-workspace-grid > .arx-col:not(:has(> .arx-panel[data-collapsed="false"])) > .arx-panel:last-child {
-    flex: 1 1 0;
+    flex: 1 0 auto;
   }
   /* The price plot, not intelligence, receives the centre column's spare room. */
-  .arx-workspace-grid > .arx-col-center > .arx-chart-panel[data-collapsed="false"] { flex: 1 1 0; }
+  .arx-workspace-grid > .arx-col-center > .arx-chart-panel[data-collapsed="false"] { flex: 1 0 auto; }
   .arx-workspace-grid > .arx-col-center:has(> .arx-chart-panel[data-collapsed="false"]) > #workspace-intelligence {
     flex: 0 0 auto;
   }
+  #main-content .arx-chart-panel [data-testid="scanner-chart-panel"] {
+    height: auto;
+    min-height: min-content;
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+  }
+  .arx-chart-panel > .arx-panel-body,
+  .arx-chart-panel .arx-scanner-chart-content,
+  .arx-chart-panel [data-testid="smart-chart-layout"][data-chart-count="1"],
+  .arx-chart-panel [data-chart-count="1"] > div,
+  .arx-chart-panel [data-chart-count="1"] > div > div {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+  }
+  .arx-chart-panel [data-testid="arx-native-chart"]:not([aria-modal="true"]) {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+  }
+  .arx-chart-panel [data-testid="arx-native-chart"]:not([aria-modal="true"]) > .arx-native-plot {
+    display: flex;
+    flex: 1 0 390px;
+    min-height: 390px;
+  }
+  .arx-chart-panel [data-testid="arx-native-chart"]:not([aria-modal="true"]) > .arx-native-plot > [data-testid="arx-native-canvas"] {
+    flex: 1 0 390px;
+    height: auto !important;
+    min-height: 390px;
+  }
 }
+
+/* Labels and amounts must not compete for the same narrow inline row. */
+.arx-risk-usage > .arx-risk-usage-heading { flex-wrap: wrap; min-width: 0; }
+.arx-risk-usage > .arx-risk-amounts { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px 10px; }
+.arx-risk-usage > .arx-risk-amounts > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.arx-risk-amounts > span > b { margin-inline: 0; }
 
 @media (max-width: 1023px) and (min-width: 768px) {
   .arx-dashboard-root,

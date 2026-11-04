@@ -11,13 +11,13 @@ export function RiskUtilizationSummary() {
   const budget = query.data;
   const utilization = budget ? riskUtilizationPercent(budget) : null;
   return <div className="arx-risk-usage" aria-label="Account risk utilization">
-    <div className="flex items-center gap-2">
+    <div className="arx-risk-usage-heading flex items-center gap-2">
       <Shield size={14} className="text-cyan-300"/>
       <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Daily risk utilization</span>
       <span className="ml-auto text-[11px] font-mono font-semibold text-cyan-200">{query.isLoading ? "Loading…" : utilization == null ? "Unavailable" : `${utilization}%`}</span>
     </div>
     <div className="arx-risk-meter" aria-hidden="true"><span style={{ transform: `scaleX(${Math.min(1, Math.max(0, (utilization ?? 0) / 100))})` }}/></div>
-    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+    <div className="arx-risk-amounts grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
       <span className="text-slate-400">Used <b className="ml-1 font-mono text-slate-200">{budget ? cash(budget.dailyRiskUsed) : "—"}</b></span>
       <span className="text-right text-slate-400">Remaining <b className="ml-1 font-mono text-slate-200">{budget ? cash(budget.dailyRiskRemaining) : "—"}</b></span>
       <span className="text-slate-400">Open risk <b className="ml-1 font-mono text-slate-200">{budget ? cash(budget.openRisk) : "—"}</b></span>

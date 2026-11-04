@@ -175,8 +175,10 @@ describe("initial responsive chart height", () => {
     {width:768,height:520,mobileHeight:360,expected:520},
     {width:390,height:280,mobileHeight:undefined,expected:320},
     {width:390,height:520,mobileHeight:undefined,expected:380},
-    {width:1280,height:320,viewportHeight:720,mobileHeight:undefined,compactWorkspace:true,expected:180},
-    {width:1440,height:320,viewportHeight:900,mobileHeight:undefined,compactWorkspace:true,expected:320},
+    {width:1100,height:320,viewportHeight:700,mobileHeight:undefined,compactWorkspace:true,expected:390},
+    {width:1280,height:320,viewportHeight:720,mobileHeight:undefined,compactWorkspace:true,expected:390},
+    {width:1440,height:320,viewportHeight:900,mobileHeight:undefined,compactWorkspace:true,expected:390},
+    {width:1920,height:520,viewportHeight:1080,mobileHeight:undefined,compactWorkspace:true,expected:520},
     {width:1440,height:640,mobileHeight:undefined,expected:640},
   ])("initializes cached candles at $expected px for width $width and viewport height $viewportHeight", ({width,height,viewportHeight=height,mobileHeight,compactWorkspace=false,expected}) => {
     vi.stubGlobal("innerWidth",width);
@@ -1175,13 +1177,40 @@ describe("native selected historical follow-up routing",()=>{
 });
 
 describe("compact command-workspace chart", () => {
-  it("uses a shorter plot in the embedded desktop range and keeps advanced tools separate", () => {
+  it("resizes to spare desktop space and ignores delayed observer callbacks after unmount", () => {
+    let notify = () => {};
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { notify = callback; }
+      observe() {}
+      disconnect = disconnect;
+    });
+    const width = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+    try {
+      const view = render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={320} compactWorkspace showFeedStatus={false} overlays={NO_OVERLAYS}/>);
+      const engine = created[0]!;
+      const canvas = screen.getByTestId("arx-native-canvas");
+      Object.defineProperty(canvas, "clientHeight", { configurable: true, value: 480 });
+      engine.resize.mockClear();
+      notify();
+      expect(engine.resize).toHaveBeenCalledWith(undefined, 480);
+      view.unmount();
+      const calls = engine.resize.mock.calls.length;
+      notify();
+      expect(engine.resize).toHaveBeenCalledTimes(calls);
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    }
+  });
+  it("keeps a usable plot in the embedded desktop range and keeps advanced tools separate", () => {
     const previousWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1100 });
     try {
       const view = render(<ARXNativeChart symbol="EURUSD" timeframe="H1" height={320} mobileHeight={270} compactWorkspace showFeedStatus={false} overlays={NO_OVERLAYS}/>);
       const canvas = screen.getByTestId("arx-native-canvas");
-      expect(canvas.style.height).toBe("240px");
+      expect(canvas.style.height).toBe("390px");
       const details = screen.getByTestId("arx-native-advanced-details") as HTMLDivElement;
       expect(details.hidden).toBe(true);
       const advancedToggle = screen.getByRole("button", { name: "Advanced chart details" });
