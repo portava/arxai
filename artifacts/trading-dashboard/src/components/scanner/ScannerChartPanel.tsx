@@ -7,6 +7,7 @@ import { ARXNativeChart, type ArxTimeframe } from "@/components/charts/ARXNative
 import type { ScannerChartSurface } from "@/lib/chart-engine/scannerChartSurface";
 import { isChartInterval, parseChartInterval } from "@/lib/chart-engine/chartIntervals";
 import { sharedChartResponse } from "@/lib/chart-engine/sharedChartResponse";
+import { chartUtcClockQualified } from "@/lib/chart-engine/chartClockEvidence";
 import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "./useDerivedOverlayContext";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createSeriesMarkers, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
@@ -20,6 +21,7 @@ import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { adaptChartCandles, type Candle } from "@/components/scanner/scannerCandleAdapter";
 import {
   coerceVisibleTimeframe,
+  formatSourceClockCandleClose,
   formatUtcCandleClose,
   lastClosedCandleCloseMs,
   NEWS_MARKER_LOOKAHEAD_BARS,
@@ -987,8 +989,13 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     hasCandles: candles.length > 0,
   });
   // Close time of the newest CLOSED candle for the strip's "last candle closed"
-  // note (null when none: the note is then omitted, never guessed).
-  const lastClosedCloseMs = lastClosedCandleCloseMs(candles, timeframe, Date.now());
+  // note (null when none: the note is then omitted, never guessed). It is a
+  // UTC time only when the candles carry original-UTC clock evidence (the same
+  // rule as the chart's "Times: UTC" axis label). MT5 bars stay on the broker's
+  // trade-server clock (audit H7): those are printed as source-clock times and
+  // are never compared with the viewer's clock to decide which bar has closed.
+  const candleClockUtc = useMemo(() => chartUtcClockQualified(originalResponse?.candles ?? []), [originalResponse]);
+  const lastClosedCloseMs = lastClosedCandleCloseMs(candles, timeframe, Date.now(), candleClockUtc ? "utc" : "source");
 
   // The user's own alert preferences govern whether a high-impact news event is
   // allowed to interrupt with a toast. Market-condition news routes through the
@@ -2425,7 +2432,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
               <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300" data-testid="scanner-chart-status-market-closed">
                 <span className="font-medium">Market closed · last session's candles</span>
                 {lastClosedCloseMs != null && (
-                  <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcCandleClose(lastClosedCloseMs, Date.now())}</span>
+                  <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {candleClockUtc ? formatUtcCandleClose(lastClosedCloseMs, Date.now()) : formatSourceClockCandleClose(lastClosedCloseMs, Date.now())}</span>
                 )}
                 <span className="ml-auto text-amber-400/50 text-[10px]">No live price until the market reopens</span>
               </div>
@@ -2440,7 +2447,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
               <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stale">
                 <span className="font-medium">Stale · last-known candles</span>
                 {lastClosedCloseMs != null && (
-                  <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcCandleClose(lastClosedCloseMs, Date.now())}</span>
+                  <span className="text-orange-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {candleClockUtc ? formatUtcCandleClose(lastClosedCloseMs, Date.now()) : formatSourceClockCandleClose(lastClosedCloseMs, Date.now())}</span>
                 )}
                 <span className="ml-auto text-orange-400/50 text-[10px]">No live price marker</span>
               </div>

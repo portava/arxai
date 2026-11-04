@@ -161,7 +161,8 @@ describe("closed market is described as closed, not as a feed fault", () => {
   }
 
   it("weekend forex M1: the Data pill, reason, health and action say market closed", () => {
-    const t = weekendStale();
+    // Bars with original-UTC clock evidence (the newest bar's open is a UTC time).
+    const t = weekendStale({ barClockUtc: true });
     expect(t.strip.data.verdict).toBe("Market closed");
     expect(t.candles.reason).toMatch(/^Market closed/);
     expect(t.candles.reason).toContain("Fri 22:00 UTC");
@@ -178,6 +179,19 @@ describe("closed market is described as closed, not as a feed fault", () => {
     expect(t.actionable).toBe(false);
     expect(resolveChartFeedStrip(t.displayStatus, { marketClosed: t.marketClosure != null, hasCandles: true }))
       .toBe("market_closed");
+  });
+
+  it("broker-server bar times (no UTC clock evidence) are never named as UTC in the closure reason", () => {
+    // MT5 bars stay on the broker's trade-server clock (audit H7). The
+    // scheduled close is a UTC schedule; the newest bar's open is not.
+    for (const t of [weekendStale(), weekendStale({ barClockUtc: false })]) {
+      expect(t.strip.data.verdict).toBe("Market closed");
+      expect(t.candles.reason).toContain("since Fri 22:00 UTC");
+      expect(t.candles.reason).toContain("the newest bar opened Fri 21:59 source clock (UTC unverified)");
+      expect(t.candles.reason).not.toContain("21:59 UTC");
+      expect(t.isLivePrice).toBe(false);
+      expect(t.actionable).toBe(false);
+    }
   });
 
   it("a 24/7 market on the same weekend keeps the stale-feed wording", () => {

@@ -29,6 +29,8 @@ import {
   type ScannerTruthMode,
 } from "@/lib/scannerTruth";
 import { candleIntervalMs } from "@workspace/domain/market";
+import { sharedChartResponse } from "@/lib/chart-engine/sharedChartResponse";
+import { chartUtcClockQualified } from "@/lib/chart-engine/chartClockEvidence";
 
 export interface UseScannerTruthResult {
   truth: ScannerTruth | null;
@@ -101,6 +103,13 @@ export function useScannerTruth(
 
   const candles = candlesQ.data?.candles ?? [];
   const feedStatus = candlesQ.data?.feedStatus ?? null;
+  // Bar times are UTC only with original-UTC clock evidence on every bar (the
+  // chart axis rule); MT5 bars stay on the broker's trade-server clock.
+  const originalResponse = candlesQ.data?.originalResponse;
+  const barClockUtc = useMemo(
+    () => chartUtcClockQualified(sharedChartResponse(originalResponse, symbol, apiTf)?.candles ?? []),
+    [originalResponse, symbol, apiTf],
+  );
   const last = candles.length > 0 ? candles[candles.length - 1] : null;
   const first = candles.length > 0 ? candles[0] : null;
   const lastTime = candleTimeIso(last?.time);
@@ -169,6 +178,7 @@ export function useScannerTruth(
           ? candles.filter((c) => c.isComplete !== false).length
           : undefined,
         lastClosedTime,
+        barClockUtc,
         requestedCount: limit,
         firstTime: candleTimeIso(first?.time),
         lastTime,

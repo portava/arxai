@@ -590,6 +590,22 @@ describe("SelectedMarketPanel — labels describe what was observed", () => {
     expect(screen.getByTestId("selected-market-panel").textContent).toContain("No medium/high impact events in the next 24h.");
   });
 
+  it("a checked calendar whose note limits the list never adds an all-clear", () => {
+    // The server checked the calendar but had no currency mapping for the
+    // symbol, so only events tagged to it were listed: the note says so, and an
+    // empty list is not "no medium/high impact events".
+    const note = "No currency mapping for XYZABC, so only calendar events tagged to XYZABC are listed.";
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({
+        newsRisk: { riskLevel: "none", blockTrading: false, summary: "", calendarChecked: true, calendarNote: note },
+        upcomingEvents: [],
+      }),
+    }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("text-selected-calendar-note").textContent).toBe(note);
+    expect(screen.getByTestId("selected-market-panel").textContent).not.toContain("No medium/high impact events");
+  });
+
   it("an event countdown is computed from the event time, not a cached minute offset", () => {
     // A cached envelope built ~45 s ago still says minutesUntil 1, but the
     // release started 20 s ago.

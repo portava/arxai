@@ -167,6 +167,25 @@ export function formatUtcCandleClose(time: number | string | null | undefined, n
   return `${day}${sameYear ? "" : ` ${d.getUTCFullYear()}`} ${clock}`;
 }
 
+/** Suffix for a time whose UTC mapping is unverified (same words as the chart axis). */
+export const SOURCE_CLOCK_SUFFIX = "source clock (UTC unverified)";
+
+/**
+ * A candle close time on the SOURCE clock: candles without original-UTC clock
+ * evidence (MT5 bars stay on the broker's trade-server clock, audit H7). It is
+ * never labelled UTC, and it always names its day, because whether it is
+ * "today" cannot be judged against the viewer's UTC clock:
+ * "Fri 30 Oct 23:00 source clock (UTC unverified)". Null when unparseable.
+ */
+export function formatSourceClockCandleClose(time: number | string | null | undefined, nowMs: number): string | null {
+  const utc = formatUtcClock(time);
+  if (utc == null) return null;
+  const d = new Date(typeof time === "number" ? time : Date.parse(time as string));
+  const sameYear = Number.isFinite(nowMs) && d.getUTCFullYear() === new Date(nowMs).getUTCFullYear();
+  const day = `${WEEKDAY_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_SHORT[d.getUTCMonth()]}`;
+  return `${day}${sameYear ? "" : ` ${d.getUTCFullYear()}`} ${utc.replace(/ UTC$/, "")} ${SOURCE_CLOCK_SUFFIX}`;
+}
+
 /** A closed bar cannot close later than now beyond this clock-skew allowance. */
 const CLOSED_BAR_SKEW_MS = 5_000;
 
@@ -174,21 +193,33 @@ const CLOSED_BAR_SKEW_MS = 5_000;
  * Close time (epoch ms) of the newest CLOSED candle on the chart, or null when
  * there is none or the timeframe is unknown. Not feedStatus.lastCandleTime:
  * that is the newest provider bar's scheduled close, which for a still-forming
- * bar is a FUTURE instant. A bar the server marks forming (isComplete=false),
- * or whose open + one interval is still ahead of now, is skipped.
+ * bar is a FUTURE instant. A bar the server marks forming (isComplete=false)
+ * is always skipped.
+ *
+ * `clock` says what the bar times are measured on:
+ * - "utc": the candles carry original-UTC clock evidence
+ *   (chartUtcClockQualified). A bar whose open + one interval is still ahead
+ *   of now is also skipped.
+ * - "source": no UTC evidence (e.g. MT5 broker-server bar times). Those times
+ *   cannot be compared with the viewer's clock (a broker clock ahead of UTC
+ *   would make every recent close look like the future), so no bar is judged
+ *   by now: only a bar the server explicitly marks closed (isComplete=true)
+ *   counts, and a shape that states no completeness yields null.
  */
 export function lastClosedCandleCloseMs(
   candles: ReadonlyArray<{ time: number; isComplete?: boolean }>,
   timeframe: string,
   nowMs: number,
+  clock: "utc" | "source",
 ): number | null {
   const intervalMs = candleIntervalMs(timeframe);
   if (intervalMs == null || !Number.isFinite(nowMs)) return null;
   for (let i = candles.length - 1; i >= 0; i--) {
     const c = candles[i];
     if (!c || c.isComplete === false || !Number.isFinite(c.time)) continue;
+    if (clock !== "utc" && c.isComplete !== true) continue;
     const closeMs = c.time + intervalMs;
-    if (closeMs > nowMs + CLOSED_BAR_SKEW_MS) continue;
+    if (clock === "utc" && closeMs > nowMs + CLOSED_BAR_SKEW_MS) continue;
     return closeMs;
   }
   return null;

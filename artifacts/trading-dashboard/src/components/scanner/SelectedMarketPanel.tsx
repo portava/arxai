@@ -433,8 +433,14 @@ export function SelectedMarketPanel() {
               {calendarNote && (
                 <div className="text-xs text-muted-foreground mb-1" data-testid="text-selected-calendar-note">{calendarNote}</div>
               )}
+              {/* An empty list reads as a quiet day only for a checked calendar
+                  with no note. A calendar note (calendar not checked; no
+                  currency mapping, so only events tagged to the symbol are
+                  listed; synthetic market) already says what the list does not
+                  cover, so it is never followed by "No medium/high impact
+                  events" (a partial check is not an all-clear). */}
               {!newsDisplay.showEvents || (ok.upcomingEvents ?? []).length === 0
-                ? (calendarNote && !newsDisplay.showEvents
+                ? (calendarNote
                   ? null
                   : <div className="text-xs text-muted-foreground">{newsDisplay.eventsMessage}</div>)
                 : (

@@ -378,6 +378,13 @@ export interface ScannerTruthInputs {
    * market from one that has traded since its scheduled close.
    */
   lastClosedTime?: string | null;
+  /**
+   * true only when the candles carry original-UTC clock evidence
+   * (chartUtcClockQualified). Otherwise (MT5 bars stay on the broker's
+   * trade-server clock, audit H7) the bar times are named on the source clock,
+   * never as UTC.
+   */
+  barClockUtc?: boolean;
   lastClose: number | null;
   /** Resolved display precision for the instrument (see ScannerTruth.candles). */
   pricePrecision?: number | null;
@@ -519,6 +526,11 @@ function utcDayClock(ms: number): string {
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${WEEKDAY_SHORT[d.getUTCDay()]} ${hh}:${mm} UTC`;
 }
+/** A bar time whose UTC mapping is unverified: same digits, never called UTC. */
+function barDayClock(ms: number, utcQualified: boolean): string {
+  const utc = utcDayClock(ms);
+  return utcQualified ? utc : utc.replace(/ UTC$/, " source clock (UTC unverified)");
+}
 
 /** Which feed-status notice strip the scanner chart shows under its canvas. */
 export type ChartFeedStripKind = "market_closed" | "delayed" | "stale" | "analysis_only" | null;
@@ -626,7 +638,7 @@ export function resolveScannerTruth(
   } else if (marketClosure) {
     // Closed market: the data is not live, but it is not a feed fault either.
     candleStatus = "stale";
-    candleReason = `Market closed — ${input.symbolDisplay} is in its scheduled weekend close (since ${utcDayClock(marketClosure.closedAtMs)}); the newest bar opened ${utcDayClock(newestBarMs)}. This is the last session's data, not a live read.`;
+    candleReason = `Market closed — ${input.symbolDisplay} is in its scheduled weekend close (since ${utcDayClock(marketClosure.closedAtMs)}); the newest bar opened ${barDayClock(newestBarMs, input.barClockUtc === true)}. This is the last session's data, not a live read.`;
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";
