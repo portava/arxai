@@ -423,8 +423,12 @@ export function ARXNativeChart({
     && evidence.source === data?.feedStatus?.source ? evidence.sourceIdentity : null;
   const overlayRequiresEvidence = useDerivedOverlayContext(JSON.stringify([resolvedSymbol, timeframe]),
     hasCandles ? JSON.stringify([data?.feedStatus?.source ?? null, evidenceIdentity]) : null);
+  // Stored history (no live feed answered) carries no market evidence, so an
+  // evidence-bound pager would refuse every page. Those bars are display-only
+  // already; older stored pages are paged the same way, never as evidence.
+  const storedHistoryFeed = data?.feedStatus?.notLiveReason === "stored_history";
   const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles,
-    data?.feedStatus?.source ?? null, evidenceIdentity, true);
+    data?.feedStatus?.source ?? null, evidenceIdentity, !storedHistoryFeed);
 
   // ── Live-price affordance honesty (shared rule, Task #351) ──────────────────
   // The candlestick last-value label and the dashed "Last" price line are
@@ -462,7 +466,9 @@ export function ARXNativeChart({
   // Only a candle source that HAS a tick stream (MT5 broker / Deriv) is watched:
   // third-party sources and an empty feed never open one, so they can never be
   // "reconnecting".
-  const tickSource = chartTickSource(data?.feedStatus?.source);
+  // Stored history is the market up to its last stored bar: no live tip is
+  // drawn over it (the tick stream may belong to another bridge or session).
+  const tickSource = storedHistoryFeed ? null : chartTickSource(data?.feedStatus?.source);
   const streamWatchdog = useTickStreamWatchdog({
     active: resolvedSymbol.length > 0 && tickSource != null,
   });
