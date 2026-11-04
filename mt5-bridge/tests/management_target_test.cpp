@@ -12,7 +12,7 @@
 #include <vector>
 using string=std::string;using ushort=unsigned short;using ulong=unsigned long;
 enum {ACCOUNT_LOGIN,ACCOUNT_SERVER,ACCOUNT_TRADE_MODE,ACCOUNT_TRADE_MODE_REAL,ACCOUNT_TRADE_MODE_DEMO,
- TERMINAL_CONNECTED,POSITION_SYMBOL,POSITION_TYPE,POSITION_TYPE_BUY,POSITION_TYPE_SELL,POSITION_VOLUME,POSITION_SL,POSITION_TP,SYMBOL_ASK,SYMBOL_BID,ORDER_TYPE_BUY,ORDER_TYPE_SELL,TRADE_RETCODE_DONE=10009};
+ TERMINAL_CONNECTED,POSITION_SYMBOL,POSITION_TYPE,POSITION_TYPE_BUY,POSITION_TYPE_SELL,POSITION_VOLUME,POSITION_SL,POSITION_TP,SYMBOL_ASK,SYMBOL_BID,ORDER_TYPE_BUY,ORDER_TYPE_SELL,SYMBOL_VOLUME_MIN,SYMBOL_VOLUME_STEP,TRADE_RETCODE_DONE=10009};
 long login=100,mode=ACCOUNT_TRADE_MODE_REAL,positionSide=POSITION_TYPE_BUY;
 string server="Venue-Server-1",native="EURUSD.a",response,posted,lastSuccessAction;
 double volume=.02,oldSL=1.1,oldTP=1.3;
@@ -59,7 +59,9 @@ string AccountInfoString(int){return server;}long TerminalInfoInteger(int){retur
 bool PositionSelectByTicket(ulong t){++selections;if(selectHook)selectHook();return exists&&t==42;}
 string PositionGetString(int){return native;}long PositionGetInteger(int){return positionSide;}
 double PositionGetDouble(int k){return k==POSITION_VOLUME?volume:k==POSITION_SL?oldSL:oldTP;}
-double SymbolInfoDouble(const string&,int){return 1.2;}
+double volMin=.01,volStep=.01;
+double SymbolInfoDouble(const string&,int k){return k==SYMBOL_VOLUME_MIN?volMin:k==SYMBOL_VOLUME_STEP?volStep:1.2;}
+double MathRound(double n){return std::round(n);}
 const char* formatArg(const string&s){return s.c_str();}template<class T>T formatArg(T v){return v;}
 template<class... A>string StringFormat(string fmt,A...args){
  for(auto spec:{string("%I64u"),string("%I64d")})for(size_t p;(p=fmt.find(spec))!=string::npos;)fmt.replace(p,5,spec.back()=='u'?"%lu":"%ld");
@@ -72,6 +74,7 @@ bool HttpPost(const string&path,const string&body,string&out,const string&){if(p
 void SendAccountSnapshotNow(){}void SyncLivePositionsNow(){}
 bool IsCommandTypeAllowedRemotely(const string&){return true;}double EffectiveMaxLiveLot(){return MaxLiveLot;}
 bool PreTradeBrokerGuard(const string&,const string&,double,double,double,double,double,string&){return true;}
+double closedPartial=-1;
 bool tradeResultOk=true;int resultRetcode=10009;ulong resultDeal=43,resultOrder=42;double resultVolume=.02,resultPrice=1.2;
 using ENUM_ORDER_TYPE=int;
 struct Preflight{bool ok=true;string resolvedSymbol="EURUSD.a";double ask=1.2,bid=1.19,minVol=.001,maxVol=1,stepVol=.001;long tradeMode=1,fillingMode=1,stopsLevel=0;};
@@ -87,7 +90,8 @@ struct CTrade{
  void SetTypeFillingBySymbol(const string&){}
  void SetDeviationInPoints(double){}bool Buy(double lot,const string&,double,double sl,double tp,const string&){++calls;tradedLot=lot;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
  bool Sell(double lot,const string&,double,double sl,double tp,const string&){++calls;tradedLot=lot;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
- bool PositionClose(ulong){++calls;return tradeResultOk;}bool PositionModify(ulong,double sl,double tp){++calls;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
+ bool PositionClose(ulong){++calls;closedPartial=0;return tradeResultOk;}
+ bool PositionClosePartial(ulong,double v){++calls;closedPartial=v;return tradeResultOk;}bool PositionModify(ulong,double sl,double tp){++calls;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
  ulong ResultOrder(){return resultOrder;}ulong ResultDeal(){return resultDeal;}double ResultPrice(){return resultPrice;}double ResultVolume(){return resultVolume;}
  int ResultRetcode(){return resultRetcode;}string ResultComment(){return "fixture";}
 }trade;
@@ -117,6 +121,16 @@ int main(int argc,char**argv){
    auto raw=times;std::sort(times.begin(),times.end());std::cout<<"{\"baseline\":"<<ARX_BASELINE<<",\"path\":\""<<(live?"live":"legacy")<<"\",\"action\":\""<<(modify?"modify":"close")<<"\",\"unit\":\"microseconds\",\"samples\":1000,\"median\":"<<times[499]<<",\"p95\":"<<times[949]<<",\"p99\":"<<times[989]<<",\"max\":"<<times.back()<<",\"rawMicroseconds\":[";for(size_t i=0;i<raw.size();i++)std::cout<<(i?",":"")<<raw[i];std::cout<<"]}\n";
   }
   return 0;
+ }
+ if(!ARX_BASELINE){
+  // v1.55 CLOSE_POSITION honours a smaller requested `lot` (manual close, legacy v154 path).
+  auto lotWire=[](const string&lot){return replace(wire(false,false,false),"\"positionTicket\":\"42\"","\"lot\":"+lot+",\"positionTicket\":\"42\"");};
+  reset();closedPartial=-1;run(false,lotWire("0.01"));check(calls==1&&closedPartial==.01,"partial close of the requested lot");
+  reset();closedPartial=-1;run(false,lotWire("0.02"));check(calls==1&&closedPartial==0,"lot equal to the position closes it fully");
+  reset();closedPartial=-1;run(false,lotWire("0.5"));check(calls==1&&closedPartial==0,"lot above the position closes what is there");
+  reset();closedPartial=-1;run(false,wire(false,false,false));check(calls==1&&closedPartial==0,"no lot keeps the full close");
+  reset();closedPartial=-1;run(false,lotWire("0.015"));check(calls==0&&JsonReadString(posted,"reason")=="INVALID_VOLUME","off-step partial refuses");
+  reset();closedPartial=-1;volMin=.015;run(false,lotWire("0.01"));check(calls==0,"remainder below the minimum refuses");volMin=.01;
  }
  for(bool live:{false,true})for(bool modify:{false,true}){
   auto w=wire(live,modify);reset();run(live,w,modify);check(calls==1,"matching native target passes");
