@@ -324,7 +324,7 @@ export function OneClickToggleCard() {
 const RUBY_AUTHORITY_OPTIONS = (name: string): Array<{ value: string; label: string; hint: string }> => [
   { value: "OFF", label: "Off", hint: `${name} never trades. Read-only answers only.` },
   { value: "ADVISE_ONLY", label: "Advise only", hint: `${name} explains and proposes, but never executes.` },
-  { value: "AI_ASSISTED", label: "AI-Assisted", hint: `Reserved for chat-driven execution. In this build ${name} never places orders itself — it prepares tickets you confirm in the Trade Action Center — so this setting changes nothing yet. Every safety gate still runs on every action you confirm.` },
+  { value: "AI_ASSISTED", label: "AI-Assisted", hint: `${name} executes your direct chat commands ("buy EURUSD 0.01", "close my XAUUSD"), runs the watches and monitors you arm, and can close a monitored trade after 3 unanswered reversal alerts — every safety gate still runs on every action.` },
 ];
 
 function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Settings) => void }) {
@@ -351,9 +351,9 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
   const perms: Array<{ key: keyof Settings; field: string; label: string }> = [
     { key: "allowRubyBreakEven", field: "allowRubyBreakEven", label: "Move stop to break-even" },
     { key: "allowRubyPartialClose", field: "allowRubyPartialClose", label: "Partial close" },
-    { key: "allowRubyMonitor", field: "allowRubyMonitor", label: "Monitor a position (protective close on trigger) — not active in this build" },
-    { key: "allowRubyWatchEnter", field: "allowRubyWatchEnter", label: "Watch & enter at a level — not active in this build" },
-    { key: "allowRubyWatchClose", field: "allowRubyWatchClose", label: "Watch & close at a level — not active in this build" },
+    { key: "allowRubyMonitor", field: "allowRubyMonitor", label: "Monitor a position (reversal alerts ×3, then protective close)" },
+    { key: "allowRubyWatchEnter", field: "allowRubyWatchEnter", label: "Watch & enter at a level" },
+    { key: "allowRubyWatchClose", field: "allowRubyWatchClose", label: "Watch & close at a level" },
   ];
 
   const caps: Array<{ key: keyof Settings; field: string; label: string; step: string }> = [
@@ -369,11 +369,12 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
           <Zap className="w-4 h-4 text-violet-400" /> {name} execution authority
         </Label>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Reserved for chat-driven execution. In this build {name} does not place,
-          modify or close orders and does not run watches or monitors; it prepares
-          tickets that you confirm in the Trade Action Center. These settings are
-          stored but change nothing yet — every backend safety gate still runs on
-          every action you confirm yourself.
+          Controls whether {name} may act on the direct commands you type in chat
+          and on the watches and monitors you arm. AI-Assisted requires live access;
+          "ask me one more time" keeps a confirmation step before each command.
+          A monitored position gets up to 3 reversal alerts — answer "keep it" or
+          "close it" — and is closed if you do not answer. Every backend safety
+          gate still runs on every action.
         </p>
       </div>
 

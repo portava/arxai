@@ -63,6 +63,27 @@ import { join, posix } from "node:path";
 import { ROOT, walk, read, rel, reportResult, type CheckResult } from "./_lib.js";
 
 const ASSISTANT_ROUTE = "artifacts/api-server/src/routes/meAssistant.ts";
+// 2026-11-04: the Ruby ledger/dispatch wrapper and the watch evaluator moved
+// out of the route so the sweeper worker can run them. They are part of the
+// same execution surface and are scanned with the same forbidden needles; each
+// declares the sanctioned anchor it must carry.
+const ASSISTANT_EXECUTION_SURFACES: Array<{ file: string; required: Needle[] }> = [
+  {
+    file: ASSISTANT_ROUTE,
+    required: [{ rx: /\brecordAndExecuteRuby\b/, why: "every Ruby trade action in the route must flow through the append-only ledger boundary (recordAndExecuteRuby → submitInstantTrade → executeInstant)" }],
+  },
+  {
+    file: "artifacts/api-server/src/lib/assistant/rubyExecution.ts",
+    required: [
+      { rx: /\bsubmitInstantTrade\b/, why: "the Ruby ledger wrapper must dispatch through the instant-trade router via the Trade Engine (submitInstantTrade → executeInstant)" },
+      { rx: /\bexport async function recordAndExecuteRuby\b/, why: "the append-only ledger boundary (recordAndExecuteRuby) must be defined here" },
+    ],
+  },
+  {
+    file: "artifacts/api-server/src/lib/assistant/rubyWatchEvaluator.ts",
+    required: [{ rx: /\brecordAndExecuteRuby\b/, why: "the watch evaluator must fire through the append-only ledger boundary (recordAndExecuteRuby)" }],
+  },
+];
 
 // Source trees scanned for re-export aliases of the forbidden symbols.
 const REEXPORT_SCAN_ROOTS = ["artifacts/api-server/src", "lib/db/src"];
@@ -562,22 +583,21 @@ export function collectReexportAliases(): {
 }
 
 export function checkAssistantNoDirectExecution(): CheckResult {
-  const abs = join(ROOT, ASSISTANT_ROUTE);
-  let src: string;
-  try {
-    src = read(abs);
-  } catch {
-    return {
-      name: "assistant-no-direct-execution",
-      ok: false,
-      violations: [`${ASSISTANT_ROUTE}: cannot read (assistant route is missing)`],
-    };
-  }
-
   const { aliases, integrity } = collectReexportAliases();
-  const violations = scanAssistantForViolations(src, aliases).map(
-    (v) => `${ASSISTANT_ROUTE}${v}`,
-  );
+  const violations: string[] = [];
+  const notes: string[] = [];
+  for (const surface of ASSISTANT_EXECUTION_SURFACES) {
+    const abs = join(ROOT, surface.file);
+    let src: string;
+    try {
+      src = read(abs);
+    } catch {
+      violations.push(`${surface.file}: cannot read (assistant execution surface is missing)`);
+      continue;
+    }
+    for (const v of scanForViolations(src, aliases, surface.required)) violations.push(`${surface.file}${v}`);
+    notes.push(`scanned ${rel(abs)}`);
+  }
   // Curation rot is a guard-integrity failure: provenance can no longer be
   // trusted, so fail loudly rather than silently under-ban.
   for (const issue of integrity) {
@@ -589,7 +609,7 @@ export function checkAssistantNoDirectExecution(): CheckResult {
     ok: violations.length === 0,
     violations,
     notes: [
-      `scanned ${rel(abs)}`,
+      ...notes,
       `provenance-resolved re-export alias bindings: ${aliases.length}`,
       `curated forbidden-origin integrity issues: ${integrity.length}`,
     ],

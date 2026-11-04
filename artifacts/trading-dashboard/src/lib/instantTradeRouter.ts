@@ -61,19 +61,32 @@ export async function validateInstantTrade(intent: InstantTradeIntent): Promise<
   return post("/api/trades/instant/validate", intent);
 }
 
-export async function sendRubyTradeCommand(args: {
-  text: string;
-  source?: "ruby_text" | "ruby_voice";
-  accountMode?: "live" | "demo" | "paper";
-}): Promise<{
+export type RubyCommandResponse = {
   ok: boolean;
   classification?: string;
   message?: string;
   action?: string;
   commandId?: string;
+  watchId?: number;
   error?: string;
   primaryReason?: string | null;
-}> {
+  confirmationRequired?: boolean;
+  pendingAction?: { kind: string; action: string; symbol: string | null; volume: number | null };
+  deferred?: boolean;
+  reason?: string;
+  retryAfterSeconds?: number;
+};
+
+// Ruby's gated command path (2026-11-04: now called by the chat panel for
+// direct commands). The server parses, checks AI-Assisted authority and
+// per-action permissions, asks for confirmation (confirm:true on the resend)
+// and runs the full instant-trade gate chain. Nothing here bypasses a gate.
+export async function sendRubyTradeCommand(args: {
+  text: string;
+  source?: "ruby_text" | "ruby_voice";
+  accountMode?: "live" | "demo";
+  confirm?: boolean;
+}): Promise<RubyCommandResponse> {
   const r = await fetch("/api/me/assistant/instant-trade-command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -82,8 +95,47 @@ export async function sendRubyTradeCommand(args: {
       text: args.text,
       source: args.source ?? "ruby_text",
       accountMode: args.accountMode ?? "live",
+      ...(args.confirm === true ? { confirm: true } : {}),
     }),
   });
-  try { return (await r.json()) as { ok: boolean }; }
+  try { return (await r.json()) as RubyCommandResponse; }
+  catch { return { ok: false, error: `HTTP_${r.status}` }; }
+}
+
+export type RubyWatchView = {
+  id: number;
+  kind: string;
+  status: string;
+  symbol: string | null;
+  side: string | null;
+  lot: number | null;
+  positionTicket: string | null;
+  trigger: { op: string; price: number } | null;
+  expiresAt: string | null;
+  createdAt: string;
+  monitor: {
+    alertsSinceAck: number;
+    maxAlerts: number;
+    lastAlertAt: string | null;
+    acknowledgedAt: string | null;
+    keepCount: number;
+    awaitingAnswer: boolean;
+    lastAlert: { at: string; price: number | null; reversalRiskScore: number | null; health: string; reason: string } | null;
+  } | null;
+};
+
+export async function fetchRubyWatches(): Promise<{ ok: boolean; watches: RubyWatchView[]; sweeper?: { enabled: boolean; running: boolean; intervalMs: number } }> {
+  const r = await fetch("/api/me/assistant/watches", { credentials: "include" });
+  try { return (await r.json()) as { ok: boolean; watches: RubyWatchView[] }; }
+  catch { return { ok: false, watches: [] }; }
+}
+
+export async function ackRubyWatch(watchId: number, decision: "keep" | "close"): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const r = await fetch(`/api/me/assistant/watches/${watchId}/ack`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
+  try { return (await r.json()) as { ok: boolean; message?: string; error?: string }; }
   catch { return { ok: false, error: `HTTP_${r.status}` }; }
 }

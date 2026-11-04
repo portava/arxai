@@ -37,20 +37,17 @@ import {
   type RubyCommandKind,
 } from "@workspace/db";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
-import type { InstantTradeIntent, InstantTradeResult } from "../lib/live/instantTrade.js";
-import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
-import { runHandshake } from "../lib/handshake/coordinator.js";
-import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
-import { routeQuote } from "../lib/data/marketDataRouter.js";
-import { boundQuotePrice } from "../lib/assistant/boundQuote.js";
+import type { InstantTradeIntent } from "../lib/live/instantTrade.js";
+import { MAX_ACTIVE_RUBY_WATCHES, currentPriceOf, recordAndExecuteRuby } from "../lib/assistant/rubyExecution.js";
+import { evaluateRubyWatchesForUser, acknowledgeRubyWatch, listRubyWatches } from "../lib/assistant/rubyWatchEvaluator.js";
+import { isSweeperEnabled, getRubySweeperStatus } from "../lib/assistant/rubyWatchSweeper.js";
+import { parseMonitorState } from "../lib/assistant/rubyMonitorPolicy.js";
 import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
 import { toolResultText } from "../lib/assistant/toolResultText.js";
 import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
-import { isUniqueViolation } from "../lib/pgError.js";
 import { chatProviderConfigured, streamToolChat, voiceAudio, type ToolChatStreamChunk } from "../lib/ai/llmGateway.js";
 import {
   TOOL_DEFINITIONS, dispatchTool, classifyIntent,
@@ -1646,140 +1643,16 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // ───────────────────────────────────────────────────────────────────────
 // Cap on concurrent ACTIVE Ruby watches per user — keeps the evaluator cheap
 // and prevents an accidental flood of armed conditionals.
-const MAX_ACTIVE_RUBY_WATCHES = 10;
-// AI chat audit 2026-11-04 (A1/A3): nothing in this build calls the watch
-// evaluator (POST /me/assistant/watch/evaluate) — no worker, cron, hook or EA
-// callback — so an armed WATCH_AND_ENTER / WATCH_AND_CLOSE / MONITOR_TRADE row
-// would never fire or expire while the reply promised action. Arming stays off
-// until a sweeper exists AND the owner enables chat-driven execution. The
-// evaluator route itself is kept so the sweeper can be wired without a rewrite.
-const WATCH_ARMING_ENABLED = false;
-// Chat-driven direct execution (OPEN/CLOSE/MODIFY via the instant-trade router)
-// is likewise not reachable from the shipped UI: the dashboard's
-// sendRubyTradeCommand has no caller. The route keeps its full gate chain; this
-// flag only controls whether the reply may describe the path as available.
-export const CHAT_EXECUTION_WIRED_IN_UI = false;
+// Ruby ledger/dispatch wrapper, price binding and watch constants live in
+// lib/assistant/rubyExecution.ts; the evaluator in lib/assistant/rubyWatchEvaluator.ts
+// (called by the sweeper worker and by POST /me/assistant/watch/evaluate).
+// Arming a watch is honest by construction: it is only offered when the sweeper
+// that evaluates watches is enabled in this process.
+const WATCH_ARMING_ENABLED = isSweeperEnabled();
+export const CHAT_EXECUTION_WIRED_IN_UI = true;
 export const WATCH_UNAVAILABLE_MESSAGE =
-  "Conditional orders and position monitoring from chat are not active in this build: nothing would check the price after I armed it, so I won't pretend to watch. Place the pending order yourself from the Trade Action Center, or ask me to prepare the ticket.";
+  "Conditional orders and position monitoring are switched off on this server (the watch sweeper is disabled), so I won't pretend to watch. Place the pending order yourself from the Trade Action Center, or ask me to prepare the ticket.";
 export const WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON = "WATCH_EVALUATION_UNAVAILABLE";
-// Watch-and-enter "late" tolerance: if the trigger level is reached but price
-// has already run beyond it by more than this fraction, the setup has moved on
-// and the watch is skipped rather than chasing a worse fill.
-const LATE_ENTRY_TOLERANCE = 0.003;
-
-// Current price for a symbol from the feed-scoped quote router (read-only).
-// AI chat audit 2026-11-04 (A4): the price must be a producer-observed tick no
-// older than BOUND_QUOTE_MAX_AGE_MS; a stale, unobserved or missing quote
-// returns null and the caller must refuse rather than act on it. The last 1m
-// candle close is NOT acceptable here — it carries no freshness evidence.
-async function currentPriceOf(symbol: string): Promise<number | null> {
-  try {
-    const q = await routeQuote(symbol);
-    return boundQuotePrice(q).price;
-  } catch { return null; }
-}
-
-// Build a dedupe fingerprint for a Ruby command. Two semantically-identical
-// commands (same kind/symbol/side/size/level) produce the same fingerprint, so
-// the partial-unique in-flight index refuses an accidental repeat while the
-// first is still PENDING/EXECUTING.
-function rubyFingerprint(commandKind: string, intent: InstantTradeIntent): string {
-  return [
-    commandKind,
-    (intent.symbol ?? "").toUpperCase(),
-    intent.action,
-    intent.volume ?? "",
-    intent.positionId ?? "",
-    intent.newStopLoss ?? "",
-    intent.newTakeProfit ?? "",
-    intent.closeVolume ?? "",
-  ].join("|");
-}
-
-// Record a Ruby command in the ledger, run the advisory RUBY_EXECUTION
-// handshake, dispatch through the EXISTING instant-trade router, and link the
-// outcome back onto the ledger row. There is NO second execution path — this
-// only WRAPS submitInstantTrade (→ executeInstant) with idempotency + evidence + an advisory check.
-async function recordAndExecuteRuby(args: {
-  userId: number;
-  intent: InstantTradeIntent;
-  commandKind: RubyCommandKind;
-  symbol: string | null;
-  rawText: string;
-  ip: string | null;
-  ua: string | null;
-  params: unknown;
-}): Promise<
-  | { duplicate: true }
-  | { duplicate: false; commandRowId: number; result: InstantTradeResult; handshakeStatus: string }
-> {
-  const { userId, intent, commandKind, symbol, rawText, ip, ua, params } = args;
-  const fingerprint = rubyFingerprint(commandKind, intent);
-  const idempotencyKey = randomUUID();
-  // OPEN rows carry action "OPEN_TRADE" so the per-Ruby daily-trade cap (which
-  // counts OPEN_TRADE rows) sees them; other kinds store the live action.
-  const ledgerAction = commandKind === "OPEN_TRADE" ? "OPEN_TRADE" : intent.action;
-
-  let commandRowId: number;
-  try {
-    const [row] = await db.insert(rubyCommandsTable).values({
-      userId,
-      accountMode: intent.accountMode,
-      source: intent.source,
-      commandKind,
-      symbol: symbol ?? null,
-      action: ledgerAction,
-      params: params != null ? JSON.stringify(params) : null,
-      rawUserCommand: rawText,
-      fingerprint,
-      idempotencyKey,
-      status: "PENDING",
-    }).returning({ id: rubyCommandsTable.id });
-    commandRowId = row!.id;
-  } catch (err) {
-    // 23505 = unique violation on the in-flight partial index → a matching
-    // command is already pending. Refuse the duplicate honestly. The insert
-    // above uses the top-level `db` (never a tx executor), so the 23505 is not
-    // wrapped today; isUniqueViolation walks the cause chain anyway so this stays
-    // correct if the insert is ever moved inside db.transaction(...).
-    if (isUniqueViolation(err)) return { duplicate: true };
-    throw err;
-  }
-
-  // Advisory cross-layer readiness check. Fails open to UNKNOWN; NEVER a gate.
-  let handshakeStatus = "UNKNOWN";
-  try {
-    const hs = await runHandshake("RUBY_EXECUTION", { context: { userId } });
-    handshakeStatus = hs.aggregateStatus;
-  } catch { /* advisory only */ }
-
-  await db.update(rubyCommandsTable)
-    .set({ status: "EXECUTING", handshakeStatus, updatedAt: new Date() })
-    .where(eq(rubyCommandsTable.id, commandRowId));
-
-  const result = await submitInstantTrade({ userId, intent, ip, ua });
-
-  if (result.ok) {
-    await db.update(rubyCommandsTable).set({
-      status: "COMPLETED",
-      liveCommandId: result.commandId ?? null,
-      resultDetail: result.detail != null ? JSON.stringify(result.detail).slice(0, 2000) : null,
-      updatedAt: new Date(),
-    }).where(eq(rubyCommandsTable.id, commandRowId));
-  } else {
-    // A gate refusal (httpStatus < 500) is BLOCKED evidence; a server/pipeline
-    // error is FAILED. Both keep the row as permanent evidence.
-    const blocked = result.httpStatus < 500;
-    await db.update(rubyCommandsTable).set({
-      status: blocked ? "BLOCKED" : "FAILED",
-      blockReason: blocked ? (result.primaryReason ?? result.error) : null,
-      errorReason: blocked ? null : result.error,
-      updatedAt: new Date(),
-    }).where(eq(rubyCommandsTable.id, commandRowId));
-  }
-
-  return { duplicate: false, commandRowId, result, handshakeStatus };
-}
 
 router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req, res) => {
   const userId = (req as Request & { authUser?: { id: number } }).authUser!.id;
@@ -1824,6 +1697,42 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     defaultVolume: settings?.defaultAiTradeVolume ?? settings?.defaultVolume ?? null,
     defaultOrderType: settings?.defaultAiOrderType ?? settings?.defaultOrderType ?? null,
   };
+  // Answer to a reversal alert, in plain words. "keep it / hold / stay in"
+  // resets the unanswered-alert count on the monitor that is waiting for an
+  // answer; "close it" parses as a normal CLOSE command below. Only consulted
+  // when a monitor is actually awaiting an answer, so ordinary chat is untouched.
+  const keepMatch = /^(?:ok(?:ay)?[,\s]*)?(?:keep(?:\s+(?:it|the\s+trade|running))?|hold(?:\s+it)?|stay\s+in|leave\s+it(?:\s+open)?|don'?t\s+close(?:\s+it)?)[.!\s]*$/i.test(text);
+  if (keepMatch) {
+    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
+    if (awaiting.length === 1) {
+      const ipK = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
+      const uaK = (req.headers["user-agent"] as string | undefined) ?? null;
+      const r = await acknowledgeRubyWatch(userId, awaiting[0]!.id, "keep", { ip: ipK, ua: uaK, trigger: "ack" });
+      res.json({
+        ok: r.ok, classification: "MONITOR_ALERT_ACK_KEEP", watchId: awaiting[0]!.id,
+        message: r.ok
+          ? `Understood — staying in ${awaiting[0]!.symbol ?? "the trade"}. I'll keep monitoring and only start a fresh count if the reversal evidence persists.`
+          : `I couldn't record that: ${(r as { error: string }).error}.`,
+      });
+      return;
+    }
+    if (awaiting.length > 1) {
+      res.json({ ok: false, classification: "MONITOR_ALERT_ACK_AMBIGUOUS", message: `Several positions are waiting for your answer (${awaiting.map((w) => w.symbol).join(", ")}) — tell me which one to keep, e.g. "keep EURUSD".` });
+      return;
+    }
+  }
+  const keepSymbol = /^(?:keep|hold)\s+([A-Za-z0-9._#-]{3,20})[.!\s]*$/i.exec(text);
+  if (keepSymbol) {
+    const sym = keepSymbol[1]!.toUpperCase();
+    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer && (w.symbol ?? "").toUpperCase() === sym);
+    if (awaiting.length >= 1) {
+      const ipK = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
+      const uaK = (req.headers["user-agent"] as string | undefined) ?? null;
+      const r = await acknowledgeRubyWatch(userId, awaiting[0]!.id, "keep", { ip: ipK, ua: uaK, trigger: "ack" });
+      res.json({ ok: r.ok, classification: "MONITOR_ALERT_ACK_KEEP", watchId: awaiting[0]!.id, message: r.ok ? `Understood — staying in ${sym}. I'll keep monitoring.` : `I couldn't record that: ${(r as { error: string }).error}.` });
+      return;
+    }
+  }
   const parsed = parseTradeCommand(text, parseDefaults);
 
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
@@ -1901,10 +1810,14 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     ));
     res.json({
       ok: true, classification: "STATUS_CHECK",
-      activeWatches: watches.map((w) => ({
-        kind: w.kind, symbol: w.symbol, side: w.side,
-        trigger: w.triggerCondition, createdAt: w.createdAt,
-      })),
+      activeWatches: watches.map((w) => {
+        const m = w.kind === "MONITOR_TRADE" ? parseMonitorState(w.riskParams) : null;
+        return {
+          id: w.id, kind: w.kind, symbol: w.symbol, side: w.side,
+          trigger: w.triggerCondition, createdAt: w.createdAt,
+          alertsAwaitingAnswer: m ? m.alertsSinceAck : 0,
+        };
+      }),
       pendingCommands: pending.length,
       watchEvaluationActive: WATCH_ARMING_ENABLED,
       retiredWatches,
@@ -2138,7 +2051,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     res.json({
       ok: true, classification: parsed.kind, watchId: w!.id,
       message: parsed.kind === "MONITOR_TRADE"
-        ? `Watching your ${symbol} position — if its idea is invalidated or price reaches your stop I'll close it to protect you; otherwise I'll leave it running.`
+        ? `Watching your ${symbol} position (checked about every ${Math.round(getRubySweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.`
         : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${expirySuffix}.`,
     });
     return;
@@ -2445,227 +2358,49 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
     ?? req.socket.remoteAddress ?? null;
   const ua = (req.headers["user-agent"] as string | undefined) ?? null;
+  const r = await evaluateRubyWatchesForUser(userId, { ip, ua, trigger: "route" });
+  res.json({ ok: true, ...r, sweeper: getRubySweeperStatus() });
+}));
 
-  const active = await db.select().from(rubyWatchInstructionsTable).where(and(
-    eq(rubyWatchInstructionsTable.userId, userId),
-    eq(rubyWatchInstructionsTable.status, "ACTIVE"),
-  ));
+// GET /me/assistant/watches — the signed-in user's Ruby watches (active by
+// default) with monitor alert state, for the chat panel strip and the
+// getMyRubyWatches tool. Read-only.
+router.get("/me/assistant/watches", requireUser, safe(async (req, res) => {
+  const userId = (req.authUser!).id;
+  const includeFinished = String(req.query["includeFinished"] ?? "") === "true";
+  const watches = await listRubyWatches(userId, { includeFinished, limit: 25 });
+  res.json({ ok: true, watches, sweeper: getRubySweeperStatus() });
+}));
 
-  const fired: Array<{ watchId: number; commandId?: string; blocked?: string }> = [];
-  const skipped: Array<{ watchId: number; reason: string }> = [];
-
-  // Re-read the CURRENT settings so watch permissions/authority are enforced at
-  // FIRE-time, not only at arm-time. If a user/admin revokes watch-enter,
-  // watch-close, or drops authority below AI_ASSISTED after a watch was armed,
-  // the armed intent must NOT fire — default-deny, same posture as arm-time.
-  const evalSettingsRows = await db.select().from(userOneClickSettingsTable)
-    .where(eq(userOneClickSettingsTable.userId, userId)).limit(1);
-  const evalSettings = evalSettingsRows[0];
-  const evalAuthority = (evalSettings?.rubyExecutionAuthority ?? "OFF").trim().toUpperCase();
-
-  for (const w of active) {
-    // Expiry first.
-    if (w.expiresAt && w.expiresAt.getTime() <= Date.now()) {
-      await db.update(rubyWatchInstructionsTable)
-        .set({ status: "EXPIRED", updatedAt: new Date() })
-        .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")));
-      skipped.push({ watchId: w.id, reason: "EXPIRED" });
-      continue;
-    }
-
-    // MONITOR_TRADE — permission-bounded monitor-and-manage. Build a Trade
-    // Management Plan from the real position + live price and fire a single
-    // protective CLOSE when the trade is invalidated or price is at/through the
-    // user's own stop. Permission + authority are re-checked at fire-time below.
-    if (w.kind === "MONITOR_TRADE") {
-      if (!w.symbol) continue;
-      const openRows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
-      const row = w.positionTicket
-        ? openRows.find((o) => o.brokerTicket === w.positionTicket)
-        : (openRows.length === 1 ? openRows[0] : undefined);
-      if (!row) {
-        await db.update(rubyWatchInstructionsTable)
-          .set({ status: "SKIPPED", skipReason: "POSITION_GONE", updatedAt: new Date() })
-          .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")));
-        skipped.push({ watchId: w.id, reason: "POSITION_GONE" });
-        continue;
-      }
-      const mpx = await currentPriceOf(w.symbol);
-      if (mpx == null) { skipped.push({ watchId: w.id, reason: "NO_PRICE" }); continue; }
-      const monSide: "BUY" | "SELL" =
-        ["SELL", "SHORT"].includes(String(row.side).trim().toUpperCase()) ? "SELL" : "BUY";
-      const posInput: OpenPositionInput = {
-        ticket: row.brokerTicket, symbol: w.symbol, side: monSide,
-        lotSize: Number(row.volume ?? 0),
-        entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null,
-        currentPrice: mpx,
-        stopLoss: row.stopLoss == null ? null : Number(row.stopLoss),
-        takeProfit: row.takeProfit == null ? null : Number(row.takeProfit),
-        floatingPnl: row.floatingPl == null ? null : Number(row.floatingPl),
-        openedAtMs: row.openedAt ? row.openedAt.getTime() : null,
-        priceAgeMs: null,
-        accountMode: w.accountMode === "demo" ? "DEMO" : "LIVE",
-      };
-      // Trade Management Plan: protective exit ONLY on hard evidence — the
-      // original thesis invalidated, or price at/through the user's own stop.
-      // A healthy/weakening trade keeps running (no fabricated exit level).
-      const { state } = classifyTradeHealth(posInput, null);
-      const sl = computeSlDistance(posInput);
-      const atOrThroughStop = sl.known && sl.bufferRemainingPct != null && sl.bufferRemainingPct <= 0;
-      const protectiveExit = state === "invalidated" || atOrThroughStop;
-      if (!protectiveExit) continue; // still monitoring — nothing to manage yet
-
-      // Fire-time permission/authority gate (default-deny), same posture as the
-      // other executing watches.
-      const monRevoked =
-        evalAuthority !== "AI_ASSISTED"
-          ? "RUBY_EXECUTION_NOT_AUTHORIZED"
-          : evalSettings?.allowRubyMonitor !== true
-            ? "RUBY_MONITOR_NOT_ENABLED"
-            : null;
-      if (monRevoked) {
-        await db.update(rubyWatchInstructionsTable)
-          .set({ status: "SKIPPED", skipReason: monRevoked, updatedAt: new Date() })
-          .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")));
-        skipped.push({ watchId: w.id, reason: monRevoked });
-        continue;
-      }
-
-      // CAS single-fire: only the update that flips ACTIVE→FIRED may dispatch.
-      const monClaim = await db.update(rubyWatchInstructionsTable)
-        .set({ status: "FIRED", firedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")))
-        .returning({ id: rubyWatchInstructionsTable.id });
-      if (monClaim.length === 0) continue; // lost the race — another poll fired it
-
-      const monIntent: InstantTradeIntent = {
-        source: w.source as InstantTradeIntent["source"], action: "CLOSE",
-        accountMode: w.accountMode === "demo" ? "demo" : "live", symbol: w.symbol,
-        positionId: row.brokerTicket, aiCommand: true, parsedByRuby: true,
-        rawUserCommand: w.rawUserCommand, rubyCommandKind: "CLOSE",
-      };
-      const monLedger = await recordAndExecuteRuby({
-        userId, intent: monIntent, commandKind: "CLOSE_TRADE", symbol: w.symbol,
-        rawText: w.rawUserCommand ?? `[monitor ${w.id}]`, ip, ua,
-        params: { watchId: w.id, managed: true, healthState: state, firedPrice: mpx },
-      });
-      if (monLedger.duplicate) { skipped.push({ watchId: w.id, reason: "DUPLICATE_PREVENTED" }); continue; }
-      await db.update(rubyWatchInstructionsTable)
-        .set({ firedCommandId: monLedger.result.ok ? (monLedger.result.commandId ?? null) : null, updatedAt: new Date() })
-        .where(eq(rubyWatchInstructionsTable.id, w.id));
-      fired.push({
-        watchId: w.id,
-        commandId: monLedger.result.ok ? monLedger.result.commandId : undefined,
-        blocked: monLedger.result.ok ? undefined : (monLedger.result.primaryReason ?? monLedger.result.error),
-      });
-      continue;
-    }
-
-    if (!w.symbol || !w.triggerCondition) continue;
-
-    let cond: { op: ">=" | "<="; price: number };
-    try { cond = JSON.parse(w.triggerCondition); } catch { continue; }
-    const px = await currentPriceOf(w.symbol);
-    if (px == null) continue; // honest skip — no fabricated price
-    const met = cond.op === ">=" ? px >= cond.price : px <= cond.price;
-    if (!met) continue;
-
-    // LATE skip (watch-and-enter): the entry level was reached but price has
-    // already run beyond it by more than a small tolerance — the setup has moved
-    // on, so skip rather than chase a worse fill. (Cost/slippage and any spread
-    // danger are additionally enforced downstream by the instant-trade preflight
-    // + the 16-gate dispatch; there is no fabricated news gate here.)
-    if (w.kind === "WATCH_AND_ENTER" && cond.price !== 0) {
-      const overshoot = Math.abs(px - cond.price) / Math.abs(cond.price);
-      if (overshoot > LATE_ENTRY_TOLERANCE) {
-        await db.update(rubyWatchInstructionsTable)
-          .set({ status: "SKIPPED", skipReason: "LATE_SETUP_MOVED", updatedAt: new Date() })
-          .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")));
-        skipped.push({ watchId: w.id, reason: "LATE_SETUP_MOVED" });
-        continue;
-      }
-    }
-
-    // Fire-time permission/authority gate (default-deny). A watch armed earlier
-    // must NOT fire if the relevant permission was revoked or authority dropped
-    // below AI_ASSISTED in the meantime. Mark SKIPPED with an honest reason and
-    // void the armed intent — never silently fire on stale permission.
-    const permRevoked =
-      evalAuthority !== "AI_ASSISTED"
-        ? "RUBY_EXECUTION_NOT_AUTHORIZED"
-        : w.kind === "WATCH_AND_ENTER" && evalSettings?.allowRubyWatchEnter !== true
-          ? "RUBY_WATCH_ENTER_NOT_ENABLED"
-          : w.kind === "WATCH_AND_CLOSE" && evalSettings?.allowRubyWatchClose !== true
-            ? "RUBY_WATCH_CLOSE_NOT_ENABLED"
-            : null;
-    if (permRevoked) {
-      await db.update(rubyWatchInstructionsTable)
-        .set({ status: "SKIPPED", skipReason: permRevoked, updatedAt: new Date() })
-        .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")));
-      skipped.push({ watchId: w.id, reason: permRevoked });
-      continue;
-    }
-
-    // CAS single-fire: only the update that flips ACTIVE→FIRED may dispatch.
-    const claim = await db.update(rubyWatchInstructionsTable)
-      .set({ status: "FIRED", firedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(rubyWatchInstructionsTable.id, w.id), eq(rubyWatchInstructionsTable.status, "ACTIVE")))
-      .returning({ id: rubyWatchInstructionsTable.id });
-    if (claim.length === 0) continue; // lost the race — another poll fired it
-
-    // Build the intent for the underlying instant-trade command.
-    let intent: InstantTradeIntent;
-    let commandKind: RubyCommandKind;
-    if (w.kind === "WATCH_AND_ENTER") {
-      intent = {
-        source: w.source as InstantTradeIntent["source"], action: w.side === "SELL" ? "SELL" : "BUY",
-        accountMode: w.accountMode === "demo" ? "demo" : "live", symbol: w.symbol,
-        volume: w.lot ?? undefined, aiCommand: true, parsedByRuby: true,
-        rawUserCommand: w.rawUserCommand, rubyCommandKind: "OPEN",
-      };
-      commandKind = "OPEN_TRADE";
-    } else {
-      // WATCH_AND_CLOSE — confirm the position still exists.
-      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
-      const row = w.positionTicket
-        ? open.find((o) => o.brokerTicket === w.positionTicket)
-        : (open.length === 1 ? open[0] : undefined);
-      if (!row) {
-        await db.update(rubyWatchInstructionsTable)
-          .set({ status: "SKIPPED", skipReason: "POSITION_GONE", updatedAt: new Date() })
-          .where(eq(rubyWatchInstructionsTable.id, w.id));
-        skipped.push({ watchId: w.id, reason: "POSITION_GONE" });
-        continue;
-      }
-      intent = {
-        source: w.source as InstantTradeIntent["source"], action: "CLOSE",
-        accountMode: w.accountMode === "demo" ? "demo" : "live", symbol: w.symbol,
-        positionId: row.brokerTicket, aiCommand: true, parsedByRuby: true,
-        rawUserCommand: w.rawUserCommand, rubyCommandKind: "CLOSE",
-      };
-      commandKind = "CLOSE_TRADE";
-    }
-
-    const ledger = await recordAndExecuteRuby({
-      userId, intent, commandKind, symbol: w.symbol,
-      rawText: w.rawUserCommand ?? `[watch ${w.id}]`, ip, ua,
-      params: { watchId: w.id, trigger: cond, firedPrice: px },
-    });
-    if (ledger.duplicate) {
-      skipped.push({ watchId: w.id, reason: "DUPLICATE_PREVENTED" });
-      continue;
-    }
-    await db.update(rubyWatchInstructionsTable)
-      .set({ firedCommandId: ledger.result.ok ? (ledger.result.commandId ?? null) : null, updatedAt: new Date() })
-      .where(eq(rubyWatchInstructionsTable.id, w.id));
-    fired.push({
-      watchId: w.id,
-      commandId: ledger.result.ok ? ledger.result.commandId : undefined,
-      blocked: ledger.result.ok ? undefined : (ledger.result.primaryReason ?? ledger.result.error),
-    });
+// POST /me/assistant/watches/:id/ack { decision: "keep" | "close" } — the
+// trader's answer to a reversal alert. "keep" resets the unanswered-alert count;
+// "close" fires the close now through the same gated path.
+router.post("/me/assistant/watches/:id/ack", requireUser, safe(async (req, res) => {
+  const userId = (req.authUser!).id;
+  const id = Number(req.params["id"]);
+  if (!Number.isInteger(id) || id <= 0) { err(res, 400, "invalid_id"); return; }
+  const decision = (req.body as { decision?: unknown } | undefined)?.decision;
+  if (decision !== "keep" && decision !== "close") { err(res, 400, "invalid_decision"); return; }
+  const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
+    ?? req.socket.remoteAddress ?? null;
+  const ua = (req.headers["user-agent"] as string | undefined) ?? null;
+  const r = await acknowledgeRubyWatch(userId, id, decision, { ip, ua, trigger: "ack" });
+  if (!r.ok) { res.status(r.error === "WATCH_NOT_FOUND" ? 404 : 409).json(r); return; }
+  const assistantName = await getAssistantDisplayName(userId);
+  if (r.decision === "keep") {
+    res.json({ ...r, message: `Understood — staying in. I'll keep monitoring and start a fresh count if the reversal evidence persists.` });
+    return;
   }
-
-  res.json({ ok: true, evaluated: active.length, fired, skipped });
+  const fired = r.result.fired[0];
+  const skipped = r.result.skipped[0];
+  res.json({
+    ...r,
+    message: fired
+      ? (fired.blocked ? `I tried to close it but a safety gate refused: ${fired.blocked}.` : `Closing now — ${assistantName} sent the close to the broker; I'll confirm when it fills.`)
+      : skipped?.reason === "POSITION_GONE" ? "That position is already closed."
+      : skipped ? `I couldn't close it: ${skipped.reason}.`
+      : "Nothing to do.",
+  });
 }));
 
 export { router as meAssistantRouter };

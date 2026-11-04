@@ -36,6 +36,7 @@
     "test:paper-intelligence-real-bars": "node --import tsx --test --test-force-exit src/lib/__qa__/paperIntelligenceRealBars.test.ts",
     "test:synthetic-candle-fence": "node --import tsx --test --test-force-exit src/lib/__qa__/syntheticCandleFence.test.ts",
     "test:ai-chat-audit-fixes-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/chatAuditFixes.test.ts",
+    "test:ruby-execution-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/rubyMonitorPolicy.test.ts src/lib/assistant/__qa__/rubyWatchSweeper.test.ts src/lib/assistant/__qa__/rubyExecutionWiring.test.ts",
     "test:bridge-scoped-candle-serving": "node --import tsx --test --test-force-exit src/lib/data/__qa__/bridgeScopedCandleServing.test.ts",
     "test:broker-confirmed-gate": "node --import tsx --test --test-force-exit src/lib/data/__qa__/brokerConfirmedGate.test.ts",
     "test:decision-grade-wait": "node --import tsx --test --test-force-exit src/lib/data/__qa__/decisionGradeWait.test.ts",
