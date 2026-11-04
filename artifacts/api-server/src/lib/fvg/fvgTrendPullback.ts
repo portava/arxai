@@ -81,6 +81,8 @@ export interface FvgTruthBlock {
   usingSimulator: boolean;
   missingTimeframes: string[];
   staleTimeframes: string[];
+  /** True when the caller reported H4/H1/M5 bars from different sources. */
+  mixedSources: boolean;
   reasonIfNotReady: string | null;
 }
 
@@ -716,14 +718,20 @@ export interface FvgAnalysisInput {
   m5Candles: FvgCandle[];
   /** Mark the input data as simulator-sourced — gates canSignal=false. */
   isSimulator?: boolean;
-  /** Stale timeframe labels reported by the caller. */
+  /** Timeframes whose newest closed bar is not current (stale or delayed). */
   staleTimeframes?: string[];
+  /**
+   * True when the H4, H1 and M5 series were not served by one source. Bars
+   * from different feeds are not one market read — gates canAnalyze=false.
+   */
+  mixedSources?: boolean;
 }
 
 export function analyzeFvgTrendPullback(input: FvgAnalysisInput): FvgTrendPullbackResult {
   const { symbol, h4Candles, h1Candles, m5Candles } = input;
   const isSimulator = input.isSimulator === true;
   const staleTimeframes = input.staleTimeframes ?? [];
+  const mixedSources = input.mixedSources === true;
 
   // ── Truth / data-readiness ───────────────────────────────────────────────
   const h4Ok = h4Candles.length >= MIN_H4_BARS;
@@ -735,13 +743,14 @@ export function analyzeFvgTrendPullback(input: FvgAnalysisInput): FvgTrendPullba
   if (!m5Ok) missing.push("M5");
 
   // Stale timeframes prevent analysis: stale data can produce false trend reads.
-  const canAnalyze = h4Ok && h1Ok && m5Ok && !isSimulator && staleTimeframes.length === 0;
+  const canAnalyze = h4Ok && h1Ok && m5Ok && !isSimulator && staleTimeframes.length === 0 && !mixedSources;
   const noData = !canAnalyze;
 
   const reasonIfNotReady =
     isSimulator ? "Data is simulator-sourced — FVG analysis requires a live feed." :
     missing.length > 0 ? `Missing or insufficient candle data for: ${missing.join(", ")}.` :
-    staleTimeframes.length > 0 ? `Stale feed on: ${staleTimeframes.join(", ")} — canSignal blocked until data is live.` :
+    staleTimeframes.length > 0 ? `Stale or delayed feed on: ${staleTimeframes.join(", ")} — no signal until those bars are current.` :
+    mixedSources ? "The H4, H1 and M5 bars come from different sources, so they can't be read as one market — FVG read withheld." :
     null;
 
   const baseTruth: FvgTruthBlock = {
@@ -755,6 +764,7 @@ export function analyzeFvgTrendPullback(input: FvgAnalysisInput): FvgTrendPullba
     usingSimulator: isSimulator,
     missingTimeframes: missing,
     staleTimeframes,
+    mixedSources,
     reasonIfNotReady,
   };
 

@@ -47,11 +47,19 @@ mock.module("../../marketScanner.js", {
         recommendedAction: "BUY", bias: "bullish", entry: 1.1, stopLoss, takeProfit: 1.12,
         entrySniperScore: 70, confidenceScore: 70, riskRewardRatio: 2,
         setupType: "Trend continuation", opportunity: { score: 70 },
+        // The Chart Truth gate passed for this symbol/timeframe: without it the
+        // real final read is WAIT_FOR_CONFIRMATION, never TRADE_WATCH.
+        chartConfirmed: true,
       } as ScannerOpportunity, scannerSourceIdentity({ primaryProvider: "mt5_broker", provenance: provenance(symbol, timeframe) }));
     },
     decorateOpportunitiesWithHistory: identity,
     decorateOpportunitiesWithNewsRisk: identity,
-    decorateOpportunitiesWithFinalRead: (rows: ScannerOpportunity[]) => rows,
+    // The real (pure) final read, not a pass-through: since 81105b03 the map
+    // files a row as "Ready now" only when its own final read is TRADE_WATCH,
+    // and a row with no final read is withheld. With the chart-confirmed live
+    // row above it reads TRADE_WATCH, so the fresh case reaches READY_NOW and
+    // every switch below proves it withholds readiness (not a vacuous 0 == 0).
+    decorateOpportunitiesWithFinalRead: scanner.decorateOpportunitiesWithFinalRead,
   },
 });
 const { buildOpportunityMapCore } = await import("../opportunityMapService.js");
