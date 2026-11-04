@@ -7,6 +7,16 @@
 //|  structured errors, validate-only preflight, account/position/   |
 //|  pending sync, idempotency, health + self-test.                  |
 //|                                                                  |
+//|  v1.55 fixes (file name kept for the extraction tests):          |
+//|    * PLACE_PENDING runs RunPreflight like OPEN_MARKET, rounds     |
+//|      entry / stop-limit / SL / TP to tick size, converts the UTC  |
+//|      expirationEpoch to trade-server time, and accepts           |
+//|      TRADE_RETCODE_PLACED (10008) as a placement.                 |
+//|    * MODIFY_PENDING keeps the order's own expiry, price and       |
+//|      stop-limit when the command does not change them.           |
+//|    * CLOSE_POSITION closes `lot` when it is smaller than the      |
+//|      position (PositionClosePartial, volume-step checked).        |
+//|                                                                  |
 //|  v1.52 (Task #473) adds the LIVE broker market-data stream: on a |
 //|  fast cadence the EA POSTs the just-closed CANDLE (and, opt-in,  |
 //|  throttled TICK) per subscribed symbol+timeframe to the v2       |
@@ -54,9 +64,9 @@
 //|  current EURUSD live path keeps working unchanged.                |
 //+------------------------------------------------------------------+
 #property copyright "ARX AI"
-#property version   "1.54"
+#property version   "1.55"
 #property strict
-#property description "ARX AI Universal MT5 Agent v1.54 — supports ALL 21 native MT5 candle timeframes (M1-MN1) in producer + live v2 stream; CandleTimeframes input selects the streamed set (requires matching server enum)."
+#property description "ARX AI Universal MT5 Agent v1.55 — v1.54 + pending orders run the full preflight with tick-normalised prices and UTC->server expiry, pending modify keeps its expiry, close honours a partial size. All 21 native MT5 candle timeframes in producer + live v2 stream."
 
 #include <Trade\Trade.mqh>
 #include "ArxManagementTarget.mqh"
@@ -121,9 +131,9 @@ datetime      lastCandlePushAt  = 0;
 datetime      lastCommandAt     = 0;
 string        lastSuccessAction = "";
 string        lastErrorSeen     = "";
-string        EA_VERSION        = "1.54";
+string        EA_VERSION        = "1.55";
 string        EA_NAME           = "ARX_AI_Universal_Agent";
-string        EA_BUILD          = "1540";
+string        EA_BUILD          = "1550";
 string        BRIDGE_VERSION    = "2";   // command-protocol version
 
 //─── Live v2 broker-stream state (Task #473) ───────────────────────
@@ -896,12 +906,36 @@ void HandleClosePosition(long cmdId, const string slice)
       PostResultStruct(cmdId,"REJECTED",managementReason,0,"Automatic position target no longer matches this terminal.","",
          "CLOSE_POSITION","","",0,0,0,0,0,0,0,0,0); return;
    }
-   bool ok = trade.PositionClose(ticket);
+   double requested=PositionGetDouble(POSITION_VOLUME);
+   // v1.55: a requested size below the position is a partial close of exactly
+   // that size. It must sit on the volume step and leave a valid remainder;
+   // otherwise refuse rather than round or close more than was asked.
+   double closeVol = JsonNum(slice, "lot");
+   bool partial = false;
+   bool ok = false;
+   if(MathIsValidNumber(closeVol) && closeVol > 0 && closeVol < requested - 1e-9) {
+      string psym = PositionGetString(POSITION_SYMBOL);
+      double vmin = SymbolInfoDouble(psym, SYMBOL_VOLUME_MIN);
+      double vstep = SymbolInfoDouble(psym, SYMBOL_VOLUME_STEP);
+      double remainder = requested - closeVol;
+      if(vmin <= 0 || vstep <= 0 || closeVol < vmin - 1e-9 || remainder < vmin - 1e-9 ||
+         MathAbs(closeVol - MathRound(closeVol / vstep) * vstep) > 1e-8 ||
+         MathAbs(remainder - MathRound(remainder / vstep) * vstep) > 1e-8) {
+         PostResultStruct(cmdId, "REJECTED", "INVALID_VOLUME", 0,
+            "That close size doesn't match the market's volume step.",
+            StringFormat("close %.4f of %.4f; min %.4f step %.4f.", closeVol, requested, vmin, vstep),
+            "CLOSE_POSITION", psym, psym, closeVol,0,0,0,0,0,0,0,0); return;
+      }
+      ok = trade.PositionClosePartial(ticket, closeVol);
+      partial = true;
+   } else {
+      ok = trade.PositionClose(ticket);
+   }
    if(ok && trade.ResultRetcode() == TRADE_RETCODE_DONE) {
       lastSuccessAction = "CLOSE_POSITION";
       PostResultStruct(cmdId, "CLOSED", "", (long)trade.ResultOrder(),
-         "Position closed.", StringFormat("retcode=%d", trade.ResultRetcode()),
-         "CLOSE_POSITION", "", "", 0,0,0,0,0,0,0,0,0);
+         partial ? "Part of the position closed." : "Position closed.", StringFormat("retcode=%d", trade.ResultRetcode()),
+         "CLOSE_POSITION", "", "", partial ? closeVol : 0,0,0,0,0,0,0,0,0);
    } else {
       PostResultStruct(cmdId, "REJECTED", "BROKER_REJECTED", 0,
          "The broker rejected the close.", StringFormat("retcode=%d comment=%s", trade.ResultRetcode(), trade.ResultComment()),
@@ -1005,6 +1039,26 @@ void HandleBreakEven(long cmdId, const string slice)
 //+------------------------------------------------------------------+
 //|  PENDING ORDER HANDLERS (preserved semantics from v1.40)          |
 //+------------------------------------------------------------------+
+// v1.55: round a price to the symbol's tick size and digits (0 stays 0).
+double ArxNormalizePrice(const string sym, const double price)
+{
+   if(!MathIsValidNumber(price) || price <= 0) return 0;
+   double tick = SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_SIZE);
+   int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+   double v = price;
+   if(tick > 0) v = MathRound(price / tick) * tick;
+   return NormalizeDouble(v, digits);
+}
+
+// v1.55: the server sends UTC epoch seconds; ORDER_TIME_SPECIFIED is
+// trade-server time. The offset is rounded to the nearest half hour.
+datetime ArxUtcToServerTime(const long utcEpoch)
+{
+   if(utcEpoch <= 0) return 0;
+   long offset = (long)MathRound((double)(TimeTradeServer() - TimeGMT()) / 1800.0) * 1800;
+   return (datetime)(utcEpoch + offset);
+}
+
 void HandlePlacePending(long cmdId, const string slice)
 {
    if(!AllowPendingOrders) { ArmReject(cmdId, "PLACE_PENDING", "AllowPendingOrders"); return; }
@@ -1015,40 +1069,59 @@ void HandlePlacePending(long cmdId, const string slice)
    double sl        = JsonNum(slice, "sl");
    double tp        = JsonNum(slice, "tp");
    double stopLimit = JsonNum(slice, "stopLimitPrice");
-
-   string amb=""; string sym = ResolveBrokerSymbol(symbolReq, amb);
-   if(sym == "") {
-      PostResultStruct(cmdId, "REJECTED", (amb!=""?"SYMBOL_AMBIGUOUS":"SYMBOL_NOT_FOUND"), 0,
-         "That market isn't available.", (amb!=""?("Candidates: "+amb):("No symbol for "+symbolReq)),
-         "PLACE_PENDING", symbolReq, "", lot,0,0,0,0,0,0,0,0); return;
+   StringToUpper(ot);
+   string side = (StringFind(ot, "BUY") == 0) ? "BUY" : (StringFind(ot, "SELL") == 0) ? "SELL" : "";
+   bool isStopLimit = (ot == "BUY_STOP_LIMIT" || ot == "SELL_STOP_LIMIT");
+   if(side == "" || (ot != "BUY_LIMIT" && ot != "SELL_LIMIT" && ot != "BUY_STOP" && ot != "SELL_STOP" && !isStopLimit)) {
+      PostResultStruct(cmdId,"REJECTED","UNSUPPORTED_COMMAND",0,"That pending order type isn't supported.",StringFormat("orderType='%s'",ot),"PLACE_PENDING",symbolReq,"",lot,0,0,0,0,0,0,0,0); return;
    }
-   SymbolSelect(sym, true);
-   trade.SetTypeFillingBySymbol(sym);
-   datetime exp = (datetime)JsonLong(slice, "expirationEpoch");
+
+   // v1.55: the same broker preflight as a market entry (terminal/account
+   // trading, exact symbol + select, quotes, trade mode, volume, margin). SL/TP
+   // are relative to the pending price, not the market, so their stops-level
+   // distance is left to the broker here.
+   Preflight p; RunPreflight(symbolReq, side, lot, 0, 0, p);
+   if(!p.ok) { PostPreflightReject(cmdId, "PLACE_PENDING", symbolReq, side, lot, p); return; }
+   string sym = p.resolvedSymbol;
+
+   entry     = ArxNormalizePrice(sym, entry);
+   stopLimit = isStopLimit ? ArxNormalizePrice(sym, stopLimit) : 0;
+   sl        = ArxNormalizePrice(sym, sl);
+   tp        = ArxNormalizePrice(sym, tp);
+   if(entry <= 0 || (isStopLimit && stopLimit <= 0)) {
+      PostResultStruct(cmdId,"REJECTED","INVALID_PRICE",0,"The pending order needs a valid price.",StringFormat("entry=%.5f stopLimit=%.5f",entry,stopLimit),ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0); return;
+   }
+   datetime exp = ArxUtcToServerTime(JsonLong(slice, "expirationEpoch"));
+   if(exp > 0 && exp <= TimeTradeServer()) {
+      PostResultStruct(cmdId,"REJECTED","INVALID_EXPIRATION",0,"The order's expiry time has already passed.",StringFormat("expiration(server)=%s",TimeToString(exp, TIME_DATE|TIME_SECONDS)),ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0); return;
+   }
    ENUM_ORDER_TYPE_TIME tmode = (exp > 0) ? ORDER_TIME_SPECIFIED : ORDER_TIME_GTC;
+   trade.SetTypeFillingBySymbol(sym);
 
    bool ok = false;
    if(ot == "BUY_LIMIT")        ok = trade.BuyLimit(lot, entry, sym, sl, tp, tmode, exp, "ARX buy_limit");
    else if(ot == "SELL_LIMIT")  ok = trade.SellLimit(lot, entry, sym, sl, tp, tmode, exp, "ARX sell_limit");
    else if(ot == "BUY_STOP")    ok = trade.BuyStop(lot, entry, sym, sl, tp, tmode, exp, "ARX buy_stop");
    else if(ot == "SELL_STOP")   ok = trade.SellStop(lot, entry, sym, sl, tp, tmode, exp, "ARX sell_stop");
-   else if(ot == "BUY_STOP_LIMIT" || ot == "SELL_STOP_LIMIT") {
+   else {
       MqlTradeRequest req; MqlTradeResult rs; ZeroMemory(req); ZeroMemory(rs);
       req.action=TRADE_ACTION_PENDING; req.symbol=sym; req.volume=lot;
       req.type=(ot=="BUY_STOP_LIMIT")?ORDER_TYPE_BUY_STOP_LIMIT:ORDER_TYPE_SELL_STOP_LIMIT;
       req.price=entry; req.stoplimit=stopLimit; req.sl=sl; req.tp=tp;
       req.type_time=tmode; req.expiration=exp; req.magic=MagicNumber; req.comment="ARX stop_limit";
       ok = OrderSend(req, rs);
-      if(ok && rs.retcode==TRADE_RETCODE_DONE) { PostResultStruct(cmdId,"PLACED","",(long)rs.order,"Pending placed.","",ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0); return; }
+      if(ok && (rs.retcode==TRADE_RETCODE_PLACED || rs.retcode==TRADE_RETCODE_DONE) && rs.order > 0) {
+         lastSuccessAction="PLACE_PENDING";
+         PostResultStruct(cmdId,"PLACED","",(long)rs.order,"Pending placed.","",ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0); return;
+      }
       PostResultStruct(cmdId,"REJECTED","BROKER_REJECTED",0,"Broker rejected the pending order.",StringFormat("retcode=%d %s",rs.retcode,rs.comment),ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0); return;
-   } else {
-      PostResultStruct(cmdId,"REJECTED","UNSUPPORTED_COMMAND",0,"That pending order type isn't supported.",StringFormat("orderType='%s'",ot),"PLACE_PENDING",symbolReq,sym,lot,0,0,0,0,0,0,0,0); return;
    }
-   if(ok && trade.ResultRetcode()==TRADE_RETCODE_DONE) {
+   uint rc = trade.ResultRetcode();
+   if(ok && (rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE) && trade.ResultOrder() > 0) {
       lastSuccessAction="PLACE_PENDING";
       PostResultStruct(cmdId,"PLACED","",(long)trade.ResultOrder(),"Pending placed.","",ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0);
    } else {
-      PostResultStruct(cmdId,"REJECTED","BROKER_REJECTED",0,"Broker rejected the pending order.",StringFormat("retcode=%d %s",trade.ResultRetcode(),trade.ResultComment()),ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0);
+      PostResultStruct(cmdId,"REJECTED","BROKER_REJECTED",0,"Broker rejected the pending order.",StringFormat("retcode=%d %s",rc,trade.ResultComment()),ot,symbolReq,sym,lot,0,0,0,0,0,0,0,0);
    }
 }
 
@@ -1091,8 +1164,24 @@ void HandleModifyPending(long cmdId, const string slice)
    if(!OrderSelect(ticket)) {
       PostResultStruct(cmdId,"REJECTED","PENDING_ORDER_NOT_FOUND",0,"That pending order no longer exists.",StringFormat("ticket %I64u",ticket),"MODIFY_PENDING","","",0,0,0,0,0,0,0,0,0); return;
    }
-   bool ok = trade.OrderModify(ticket, entry, sl, tp, ORDER_TIME_GTC, 0);
-   if(ok && trade.ResultRetcode()==TRADE_RETCODE_DONE)
+   // v1.55: keep what the command does not change. The old call forced
+   // ORDER_TIME_GTC / no expiry (silently dropping a timed order's expiry),
+   // and stop-limit 0 (breaking a stop-limit order's limit leg).
+   string osym = OrderGetString(ORDER_SYMBOL);
+   ENUM_ORDER_TYPE_TIME tmode = (ENUM_ORDER_TYPE_TIME)OrderGetInteger(ORDER_TYPE_TIME);
+   datetime exp = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
+   double stopLimit = OrderGetDouble(ORDER_PRICE_STOPLIMIT);
+   long newExp = JsonLong(slice, "expirationEpoch");
+   if(newExp > 0) { exp = ArxUtcToServerTime(newExp); tmode = ORDER_TIME_SPECIFIED; }
+   if(entry <= 0) entry = OrderGetDouble(ORDER_PRICE_OPEN);
+   double newStopLimit = JsonNum(slice, "stopLimitPrice");
+   if(newStopLimit > 0) stopLimit = newStopLimit;
+   entry = ArxNormalizePrice(osym, entry);
+   stopLimit = ArxNormalizePrice(osym, stopLimit);
+   sl = ArxNormalizePrice(osym, sl);
+   tp = ArxNormalizePrice(osym, tp);
+   bool ok = trade.OrderModify(ticket, entry, sl, tp, tmode, exp, stopLimit);
+   if(ok && (trade.ResultRetcode()==TRADE_RETCODE_DONE || trade.ResultRetcode()==TRADE_RETCODE_PLACED))
       PostResultStruct(cmdId,"MODIFIED","",(long)ticket,"Pending order updated.","","MODIFY_PENDING","","",0,0,0,0,0,0,0,0,0);
    else
       PostResultStruct(cmdId,"REJECTED","BROKER_REJECTED",0,"Couldn't update the pending order.",StringFormat("retcode=%d %s",trade.ResultRetcode(),trade.ResultComment()),"MODIFY_PENDING","","",0,0,0,0,0,0,0,0,0);
