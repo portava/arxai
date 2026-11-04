@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +34,20 @@ export default function PropFirmMode() {
       <div className="flex items-center gap-3">
         <Trophy className="h-6 w-6 text-primary" />
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">Prop Firm Challenge Mode</h1>
-          <p className="text-sm text-muted-foreground">Practise a prop-firm challenge on your paper account. Saving writes the daily and total drawdown, lot and position caps into your own risk limits, which the Risk Governor enforces. Turning it off keeps those limits until you change them.</p>
+          <h1 className="text-2xl font-bold">Prop Firm Risk Mode</h1>
+          {/* Progress is read from the paper ledger, but saving writes the caps
+              into user_risk_settings, which the venue-agnostic Risk Governor
+              applies to paper, demo and live orders alike. The daily loss cap
+              only counts while blockAfterDailyLossHit is on. */}
+          <p className="text-sm text-muted-foreground" data-testid="prop-firm-scope">Practise a prop-firm challenge. Progress is measured on your paper account only. Saving also writes the daily loss, total drawdown, lot size and open-position caps into your own risk limits. The Risk Governor applies the total drawdown, lot size and open-position caps to every order you place on every venue, including demo and live broker orders. It applies the daily loss cap the same way only while "Block after daily loss" is on in your risk settings. Turning the mode off keeps those limits until you change them.</p>
+          {dailyLoss && (
+            <p className={`text-xs ${dailyLoss.propCapEnforced ? "text-muted-foreground" : "text-amber-500"}`} data-testid="prop-firm-daily-loss-enforcement">
+              {dailyLoss.text}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground" data-testid="prop-firm-separate">
+            This is separate from <Link href="/prop-challenge" className="underline">Prop Challenge Practice</Link>, which tracks its own challenges with their own balance, rules and status. A status on one page says nothing about the other.
+          </p>
         </div>
         <Badge variant="outline">PAPER</Badge>
         {s && <Badge className={STATUS_COLOR[s.status]}>{s.status}</Badge>}

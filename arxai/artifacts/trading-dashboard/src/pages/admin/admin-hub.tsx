@@ -249,7 +249,7 @@ export const ADMIN_HUB_HREFS: readonly string[] = Array.from(
 function LinkCard({ link }: { link: AdminLink }) {
   const { name } = useAssistantName();
   return (
-    <Link href={link.href}>
+    <Link asChild href={link.href}>
       <a
         className="group flex items-start justify-between gap-3 rounded-xl border border-border bg-background/40 p-3 transition-colors hover:border-primary/40"
         data-testid={`admin-hub-link-${link.href.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`}

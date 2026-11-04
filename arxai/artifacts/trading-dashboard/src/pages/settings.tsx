@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getGetBotSettingsQueryKey,
@@ -624,7 +625,7 @@ export default function SettingsPage() {
                 Your trades route through the shared master MT5 bridge. You don&apos;t need to configure a personal MT5 EA — it&apos;s already handled by your operator.
               </div>
               <div className="text-txt-muted text-[11px]">
-                You can optionally set up a personal MT5 bridge as an alternative on <a className="underline" href="/my-account">My Account → Bridge Preference</a>.
+                You can optionally set up a personal MT5 bridge as an alternative on <Link className="underline" href="/my-account">My Account → Bridge Preference</Link>.
               </div>
             </div>
           ) : (
@@ -634,7 +635,7 @@ export default function SettingsPage() {
                 <span className="text-txt-secondary text-sm">Personal MT5 bridge: Not configured</span>
               </div>
               <div className="text-txt-muted text-xs leading-relaxed">
-                Generate a per-user bridge token from <a className="underline" href="/mt5-setup">MT5 Setup</a> and paste it into your EA inputs. Personal MT5 bridge is optional — most users route through the shared master in live mode.
+                Generate a per-user bridge token from <Link className="underline" href="/mt5-setup">MT5 Setup</Link> and paste it into your EA inputs. Personal MT5 bridge is optional — most users route through the shared master in live mode.
               </div>
             </div>
           )}

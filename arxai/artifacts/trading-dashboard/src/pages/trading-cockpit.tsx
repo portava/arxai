@@ -100,7 +100,7 @@ function SafetyHeader({ s }: { s: CockpitSummary }) {
           <AlertTitle>Critical safety alert must be acknowledged</AlertTitle>
           <AlertDescription className="text-xs">
             Starting a new paper session is disabled until critical alerts are reviewed.
-            <Link href="/notifications"><a className="underline ml-1">Open Notifications →</a></Link>
+            <Link asChild href="/notifications"><a className="underline ml-1">Open Notifications →</a></Link>
           </AlertDescription>
         </Alert>
       )}
@@ -186,7 +186,7 @@ function ActiveSessionPanel({ s }: { s: CockpitSummary }) {
             {a.activeWarnings.map((w, i) => <li key={i}>{w.message}</li>)}
           </ul>
         )}
-        <Link href="/demo-trading"><a className="text-xs underline">Open session detail →</a></Link>
+        <Link asChild href="/demo-trading"><a className="text-xs underline">Open session detail →</a></Link>
       </CardContent>
     </Card>
   );
@@ -260,7 +260,7 @@ function CoachPanel({ s }: { s: CockpitSummary }) {
         {c.setupsToWatch.length > 0 && <div><div className="text-[10px] uppercase text-muted-foreground">Setups to watch</div><ul className="list-disc pl-5">{c.setupsToWatch.slice(0, 3).map((x, i) => <li key={i}>{x}</li>)}</ul></div>}
         {c.setupsToAvoid.length > 0 && <div><div className="text-[10px] uppercase text-muted-foreground">Setups to avoid</div><ul className="list-disc pl-5">{c.setupsToAvoid.slice(0, 3).map((x, i) => <li key={i}>{x}</li>)}</ul></div>}
         <div><div className="text-[10px] uppercase text-muted-foreground">Next best actions</div><ul className="list-disc pl-5">{c.nextBestActions.slice(0, 3).map((x, i) => <li key={i}>{x}</li>)}</ul></div>
-        <Link href="/trader-coach"><a className="text-xs underline">Open full coach report →</a></Link>
+        <Link asChild href="/trader-coach"><a className="text-xs underline">Open full coach report →</a></Link>
       </CardContent>
     </Card>
   );
@@ -285,7 +285,7 @@ function AlertsPanel({ s }: { s: CockpitSummary }) {
             ))}
           </ul>
         )}
-        <Link href="/notifications"><a className="text-xs underline">Open notifications →</a></Link>
+        <Link asChild href="/notifications"><a className="text-xs underline">Open notifications →</a></Link>
       </CardContent>
     </Card>
   );
@@ -329,7 +329,7 @@ function HealthPanel({ s }: { s: CockpitSummary }) {
             {h.majorWarnings.slice(0, 3).map((w, i) => <li key={i}>{w.message}</li>)}
           </ul>
         )}
-        <Link href="/system-health"><a className="text-xs underline">Open system health →</a></Link>
+        <Link asChild href="/system-health"><a className="text-xs underline">Open system health →</a></Link>
       </CardContent>
     </Card>
   );

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useGetMt5Status,
   useGetMeSharedAccountSummary,
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useAssistantName } from "@/lib/assistant-name";
+import { useToast } from "@/hooks/use-toast";
 
 const RUBY_OPEN_KEY = "arx.assistant.open.v2";
 function openRubyLiveChat() {
@@ -132,6 +133,34 @@ export default function MT5BridgePage() {
 
   const connected = !!s?.connected;
   const checking = status.isLoading || (mode as any).isLoading;
+  // "Notify me when restored": a watch held by this open tab. When the bridge
+  // status read flips from not-connected to connected while armed, show a
+  // toast and (if the browser allows) a desktop notification. Nothing is
+  // stored server-side, so the watch ends when the tab closes.
+  const { toast } = useToast();
+  const [notifyArmed, setNotifyArmed] = useState(false);
+  const prevBridgeUp = useRef(bridgeUp);
+  useEffect(() => {
+    const wasUp = prevBridgeUp.current;
+    prevBridgeUp.current = bridgeUp;
+    if (!notifyArmed || wasUp || !bridgeUp) return;
+    setNotifyArmed(false);
+    toast({ title: "MT5 bridge restored", description: "Your trading route reports connected again." });
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("ARX: MT5 bridge restored", { body: "Your trading route reports connected again." });
+      }
+    } catch { /* desktop notification unavailable */ }
+  }, [bridgeUp, notifyArmed, toast]);
+  async function armNotify() {
+    setNotifyArmed(true);
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+    } catch { /* permission prompt unavailable */ }
+  }
+
   const frozen = !!(mode as any).isFrozen;
 
   const bridgeState: { label: string; tone: Tone } = useMemo(() => {
@@ -337,10 +366,19 @@ export default function MT5BridgePage() {
             <Row label="Scanner" value="Still available" tone="success" />
             <Row label="Account Values" value="Update when restored" tone="muted" />
           </div>
-          <button disabled title="Notification coming soon"
-            className="mt-3 inline-flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-txt-muted opacity-70">
-            <Bell className="h-4 w-4" /> Notify me when restored
-          </button>
+          {bridgeUp ? (
+            <p className="mt-3 text-center text-xs text-txt-muted" data-testid="bridge-notify-connected">Connected now. Nothing to wait for.</p>
+          ) : notifyArmed ? (
+            <button type="button" onClick={() => setNotifyArmed(false)} data-testid="bridge-notify-cancel"
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/15">
+              <Bell className="h-4 w-4" /> Watching while this tab is open (cancel)
+            </button>
+          ) : (
+            <button type="button" onClick={armNotify} data-testid="bridge-notify-arm"
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium hover:bg-muted">
+              <Bell className="h-4 w-4" /> Notify me when restored
+            </button>
+          )}
         </SectionCard>
       </div>
 

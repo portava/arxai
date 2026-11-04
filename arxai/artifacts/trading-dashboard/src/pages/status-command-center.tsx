@@ -230,7 +230,7 @@ function FixFirstBlock({ primary, alternates }: { primary: ReturnType<typeof fix
             <li><span className="text-amber-300">Don't:</span> {primary.doNotDo}</li>
           </ul>
           {primary.relatedRoute && (
-            <Link href={primary.relatedRoute}>
+            <Link asChild href={primary.relatedRoute}>
               <a className="inline-block mt-2 px-3 py-1.5 rounded bg-amber-800 hover:bg-amber-700 text-amber-50" data-testid="scc-fix-first-route">
                 Open {resolveRoute(primary.relatedRoute)?.title ?? primary.relatedRoute}
               </a>
@@ -303,7 +303,7 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
               <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Why:</span> {item.safeNextAction}</div>
               {item.blockerReason && <div className="text-xs text-rose-300">Blocker: {item.blockerReason}</div>}
               {item.related && (
-                <Link href={item.related.route}>
+                <Link asChild href={item.related.route}>
                   <a className="inline-block mt-1 text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100" data-testid={`scc-checklist-route-${item.id}`}>
                     Open {item.related.label}
                   </a>
@@ -345,7 +345,7 @@ function BlockersCard({ cards }: { cards: BlockerCard[] }) {
                 <div className="text-xs text-emerald-300"><span className="text-zinc-500">Safe next:</span> {b.safeNextStep}</div>
                 <div className="text-xs text-rose-300"><span className="text-zinc-500">Don't:</span> {b.doNotDo}</div>
                 {b.relatedRoute && (
-                  <Link href={b.relatedRoute.route}>
+                  <Link asChild href={b.relatedRoute.route}>
                     <a className="inline-block mt-2 text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100" data-testid={`scc-blocker-route-${b.kind}`}>
                       {b.relatedRoute.label}
                     </a>
@@ -394,7 +394,7 @@ function SafestNextCard({ primaryStep, nextRoute }: { primaryStep: string; nextR
       <h2 className="font-semibold text-emerald-100">Safest next step</h2>
       <p className="mt-2 text-sm text-emerald-100/90">{primaryStep}</p>
       {nextRoute && (
-        <Link href={nextRoute}>
+        <Link asChild href={nextRoute}>
           <a className="inline-block mt-2 text-sm px-3 py-1.5 rounded bg-emerald-800 hover:bg-emerald-700 text-emerald-50" data-testid="scc-safest-next-route">
             Open {resolveRoute(nextRoute)?.title ?? nextRoute}
           </a>
@@ -441,7 +441,7 @@ function WizardCard({ steps }: { steps: WizardStep[] }) {
                   <p><span className="text-zinc-500">Done when:</span> {step.completionCondition}</p>
                   <div className="flex flex-wrap gap-2 pt-1">
                     {step.pageRoute && (
-                      <Link href={step.pageRoute}>
+                      <Link asChild href={step.pageRoute}>
                         <a className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700" data-testid={`scc-wizard-route-${step.id}`}>
                           Open {step.pageLabel}
                         </a>
@@ -494,7 +494,7 @@ function DiagnosticsCard({ diagnoses, reportContext }: { diagnoses: number; repo
         or attach this safe context when you submit feedback.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Link href="/feedback-center">
+        <Link asChild href="/feedback-center">
           <a className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100" data-testid="scc-diagnostics-report">
             Open Feedback Center
           </a>

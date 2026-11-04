@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -170,12 +171,12 @@ export default function RiskCommandCenter() {
       >
         {cards?.propFirm ? (
           <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{cards.propFirm.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{cards.propFirm.profitTargetProgress}%</span></div>
-            <a className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</a>
+            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="font-mono">{propFirmStatusText(cards.propFirm)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Profit target progress</span><span className="font-mono">{propFirmProgressText(cards.propFirm)}</span></div>
+            <Link className="text-xs underline text-primary block mt-2" href="/prop-firm-mode">Open prop-firm mode →</Link>
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">No active prop-firm challenge. Open <a href="/prop-firm-mode" className="underline">prop-firm mode</a> to enroll.</p>
+          <p className="text-xs text-muted-foreground">No active prop-firm challenge. Open <Link href="/prop-firm-mode" className="underline">prop-firm mode</Link> to enroll.</p>
         )}
       </CollapsibleSection>
     </div>
@@ -204,10 +205,10 @@ export default function RiskCommandCenter() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Audit links</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-          <a className="underline text-primary" href="/risk-events">Risk events log →</a>
-          <a className="underline text-primary" href="/risk-profile">Edit profile JSON →</a>
-          <a className="underline text-primary" href="/audit-log">Full audit log →</a>
-          <a className="underline text-primary" href="/risk-settings">Detailed risk settings →</a>
+          <Link className="underline text-primary" href="/risk-events">Risk events log →</Link>
+          <Link className="underline text-primary" href="/risk-profile">Edit profile JSON →</Link>
+          <Link className="underline text-primary" href="/audit-log">Full audit log →</Link>
+          <Link className="underline text-primary" href="/risk-settings">Detailed risk settings →</Link>
         </CardContent>
       </Card>
     </div>

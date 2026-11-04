@@ -44,6 +44,7 @@ const TradingSchoolLesson = lazy(() => import("@/features/trading-school/pages/T
 const TradingSchoolGlossary = lazy(() => import("@/features/trading-school/pages/TradingSchoolGlossary"));
 const TradingSchoolRiskSimulator = lazy(() => import("@/features/trading-school/pages/TradingSchoolRiskSimulator"));
 const TradingSchoolLabs = lazy(() => import("@/features/trading-school/pages/TradingSchoolLabs"));
+const TradingSchoolLab = lazy(() => import("@/features/trading-school/pages/TradingSchoolLab"));
 const TradingSchoolProgress = lazy(() => import("@/features/trading-school/pages/TradingSchoolProgress"));
 
 // Lazy: every other route is code-split for fast initial load
@@ -263,6 +264,7 @@ function Router() {
           <Route path="/school/lesson/:id" component={TradingSchoolLesson} />
           <Route path="/school/glossary" component={TradingSchoolGlossary} />
           <Route path="/school/risk-simulator" component={TradingSchoolRiskSimulator} />
+          <Route path="/school/labs/:labId" component={TradingSchoolLab} />
           <Route path="/school/labs" component={TradingSchoolLabs} />
           <Route path="/school/progress" component={TradingSchoolProgress} />
           <Route path="/school" component={TradingSchoolHome} />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,7 +58,7 @@ function BrokerReadOnlyContent() {
             <a href="/api/mt5/bridge-package/zip" download>Download MT5 Bridge Package</a>
           </Button>
           <Button size="sm" variant="outline" asChild data-testid="button-open-setup-wizard">
-            <a href="/mt5-setup">MT5 Setup Wizard</a>
+            <Link href="/mt5-setup">MT5 Setup Wizard</Link>
           </Button>
           <Button size="sm" disabled={busy} onClick={runDemo}>{busy ? "Loading…" : "Run demo snapshot"}</Button>
           <Button size="sm" variant="outline" onClick={loadStatus}>Refresh status</Button>

@@ -148,7 +148,7 @@ export default function PositionsPage() {
                 )}
                 {p.environment === "LIVE_TESTER_INTENT" && (
                   <div className="flex flex-wrap gap-2 border-t border-border pt-2">
-                    <Button size="sm" variant="outline" disabled>Send to broker (MT5 deferred)</Button>
+                    <span className="text-[11px] text-muted-foreground" data-testid="tester-intent-note">Tester intent only. It is recorded here and is not sent to a broker.</span>
                   </div>
                 )}
               </div>
