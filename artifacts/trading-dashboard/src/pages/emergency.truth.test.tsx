@@ -149,6 +149,8 @@ describe("Control Tower — status read failures", () => {
     h.status = { data: undefined, isLoading: false, isError: true, refetch };
     const { container } = renderPage();
     expect(screen.getByTestId("status-load-error").textContent).toMatch(/could not be loaded/);
+    // Plain English for every user: no raw API route in the error card.
+    expect(screen.getByTestId("status-load-error").textContent).not.toMatch(/\/api\/|GET \//);
     expect(container.querySelector(".animate-pulse")).toBeNull();
     screen.getByTestId("button-retry-status").click();
     expect(refetch).toHaveBeenCalled();

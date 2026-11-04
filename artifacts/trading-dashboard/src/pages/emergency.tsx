@@ -652,8 +652,8 @@ export default function Emergency() {
               <AlertTriangle size={20} /> Safety core status could not be loaded
             </CardTitle>
             <CardDescription>
-              GET /api/system/status failed, so the kill switch, operational mode and the other stops are unknown
-              here. Nothing on this page is shown until a read succeeds.
+              The safety status could not be loaded, so the kill switch, operating mode and the other stops are
+              unknown here. Nothing on this page is shown until a read succeeds.
             </CardDescription>
           </CardHeader>
           <CardFooter>

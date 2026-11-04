@@ -50,11 +50,28 @@ export default function ReportsPage() {
   const [includePlaybooks, setIncP] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A failed history read is never shown as "No reports yet.": "loading"
+  // until the first read answers, "error" when the latest read failed (rows
+  // kept on screen are from the last good read).
+  const [listState, setListState] = useState<"loading" | "ok" | "error">("loading");
+  const [hasListRead, setHasListRead] = useState(false);
 
   async function refresh() {
-    const r = await api<{ reports: ReportRow[]; isEmpty: boolean; emptyHints: string[] }>("/api/me/reports");
-    setReports(r.reports ?? []);
-    setEmptyHints(r.emptyHints ?? []);
+    let body: { reports?: unknown; emptyHints?: unknown } | null = null;
+    try {
+      const r = await fetch("/api/me/reports", { credentials: "include", headers: { "Content-Type": "application/json" } });
+      if (r.ok) body = (await r.json()) as { reports?: unknown; emptyHints?: unknown } | null;
+    } catch {
+      body = null;
+    }
+    if (!body || !Array.isArray(body.reports)) {
+      setListState("error");
+      return;
+    }
+    setReports(body.reports as ReportRow[]);
+    setEmptyHints(Array.isArray(body.emptyHints) ? (body.emptyHints as string[]) : []);
+    setListState("ok");
+    setHasListRead(true);
   }
   useEffect(() => { void refresh(); }, []);
 
@@ -148,7 +165,19 @@ export default function ReportsPage() {
       {/* History */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold">Report History</h2>
-        {reports.length === 0 ? (
+        {listState === "error" && (
+          <div className="mb-3 text-sm text-warning" data-testid="reports-load-error">
+            {hasListRead
+              ? "Your reports could not be refreshed. The list below is from the last successful read and may not be current."
+              : "Your reports could not be loaded; this is not an empty list."}
+            <button className="ml-2 text-primary hover:underline" onClick={() => void refresh()} data-testid="button-retry-reports">Retry</button>
+          </div>
+        )}
+        {!hasListRead ? (
+          listState === "loading" ? (
+            <div className="py-4 text-sm text-txt-muted" data-testid="reports-loading">Loading reports…</div>
+          ) : null
+        ) : reports.length === 0 ? (
           <div className="space-y-1 py-4 text-sm text-txt-muted" data-testid="reports-empty-state">
             {(emptyHints.length ? emptyHints : ["No reports yet.", "Your reports will appear here once generated."]).map((h) => <div key={h}>{h}</div>)}
           </div>

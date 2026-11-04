@@ -35,6 +35,44 @@ describe("Reports — Rows column", () => {
   });
 });
 
+// A failed history read used to leave the list empty (api() returned the
+// error body as-is, then `r.reports ?? []`), so it read "No reports yet."
+describe("Reports — failed history read", () => {
+  async function renderReply(reply: { ok: boolean; status: number; body: unknown } | "network") {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      if (reply === "network") throw new TypeError("Failed to fetch");
+      return { ok: reply.ok, status: reply.status, json: async () => reply.body } as Response;
+    }));
+    render(<ReportsPage />);
+    await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+  }
+
+  it("a 401/500 says the reports could not be loaded, never 'No reports yet.'", async () => {
+    await renderReply({ ok: false, status: 500, body: { error: "internal" } });
+    expect(screen.getByTestId("reports-load-error").textContent).toMatch(/could not be loaded; this is not an empty list/);
+    expect(screen.queryByTestId("reports-empty-state")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/No reports yet/);
+  });
+
+  it("a network error is a load failure too", async () => {
+    await renderReply("network");
+    expect(screen.getByTestId("reports-load-error")).toBeTruthy();
+    expect(screen.queryByTestId("reports-empty-state")).toBeNull();
+  });
+
+  it("an ok reply without a reports array is not read as empty", async () => {
+    await renderReply({ ok: true, status: 200, body: { error: "unexpected" } });
+    expect(screen.getByTestId("reports-load-error")).toBeTruthy();
+    expect(screen.queryByTestId("reports-empty-state")).toBeNull();
+  });
+
+  it("a good empty read still shows the empty state", async () => {
+    await renderWith([]);
+    expect(screen.getByTestId("reports-empty-state")).toBeTruthy();
+    expect(screen.queryByTestId("reports-load-error")).toBeNull();
+  });
+});
+
 describe("Reports — demo-trade book and date range are named", () => {
   it("says which demo-trade record the reports read and that the end day is included", async () => {
     await renderWith([]);

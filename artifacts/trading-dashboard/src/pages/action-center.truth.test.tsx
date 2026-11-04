@@ -8,6 +8,12 @@ vi.mock("@/components/action-center/TradeActionReviewModal", () => ({
   TradeActionReviewModal: () => null,
 }));
 
+// The assistant's name comes from the per-user resolver; a custom name here
+// proves the copy reads it instead of hard-coding one.
+vi.mock("@/lib/assistant-name", () => ({
+  useAssistantName: () => ({ name: "Nova", isLoading: false, isDefault: false }),
+}));
+
 const { default: ActionCenterPage } = await import("./action-center");
 
 let actions: unknown[];
@@ -120,5 +126,20 @@ describe("Trade Action Center subtitle", () => {
     expect(subtitle).toMatch(/move stops on or close MT5 positions/i);
     expect(subtitle).toMatch(/restores a missing or widened stop/i);
     expect(subtitle).toMatch(/not listed on this page/i);
+  });
+
+  it("names the assistant's trade watches, which open and close trades without a confirmation here", async () => {
+    // Assistant watches (WATCH_AND_ENTER / WATCH_AND_CLOSE / MONITOR_TRADE) are
+    // evaluated by the server sweeper and record their orders outside trade
+    // actions, so this page must not read as the complete list.
+    render(<ActionCenterPage />);
+    await flush();
+    const subtitle = screen.getByTestId("text-action-center-scope").textContent ?? "";
+    expect(subtitle).toMatch(/Nova's trade watches/);
+    expect(subtitle).toMatch(/AI-Assisted authority/);
+    expect(subtitle).toMatch(/open a trade at your chosen level or close a watched trade by themselves/i);
+    expect(subtitle).toMatch(/after three unanswered reversal alerts/i);
+    expect(subtitle).toMatch(/shown in Nova's watch list and notifications, not here/i);
+    expect(subtitle).not.toMatch(/Eleanor/);
   });
 });

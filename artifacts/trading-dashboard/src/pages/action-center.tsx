@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, RefreshCw, ShieldCheck, Eye, History } from "lucide-react";
 import { TradeActionReviewModal, type TradeActionSummary } from "@/components/action-center/TradeActionReviewModal";
 import { humanizeReason } from "@/lib/friendlyLabels";
+import { useAssistantName } from "@/lib/assistant-name";
 
 const PENDING_STATUSES = new Set([
   "ai_suggested","user_reviewing","awaiting_confirmation","confirmed","guard_checking","queued","sent_to_mt5",
@@ -64,6 +65,7 @@ interface AuditEvent {
 }
 
 export default function ActionCenterPage() {
+  const { name: assistantName } = useAssistantName();
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [actions, setActions] = useState<ListedAction[]>([]);
   const [loading, setLoading] = useState(false);
@@ -115,7 +117,7 @@ export default function ActionCenterPage() {
             <ShieldCheck className="h-6 w-6 text-primary" /> Trade Action Center
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl" data-testid="text-action-center-scope">
-            Review, confirm, and audit trade actions. Actions drafted for you here — AI suggestions and your own requests — are never sent until you confirm them. Other automation does not wait for that, and its orders are not listed on this page: autopilot sessions place simulator and paper trades on their own; Self-Trade AI agents, once an operator starts them, can open trades and move stops on or close MT5 positions; and the post-fill protection check restores a missing or widened stop loss by itself. Protective Auto-Close does appear here: when its policy allows, it confirms its own close actions. Decision support only — not guaranteed.
+            Review, confirm, and audit trade actions. Actions drafted for you here — AI suggestions and your own requests — are never sent until you confirm them. Other automation does not wait for that, and its orders are not listed on this page: autopilot sessions place simulator and paper trades on their own; Self-Trade AI agents, once an operator starts them, can open trades and move stops on or close MT5 positions; the post-fill protection check restores a missing or widened stop loss by itself; and {assistantName}'s trade watches, once you allow AI-Assisted authority, can open a trade at your chosen level or close a watched trade by themselves (at your level, straight away when the trade is invalidated or reaches your stop, or after three unanswered reversal alerts). Those orders are shown in {assistantName}'s watch list and notifications, not here. Protective Auto-Close does appear here: when its policy allows, it confirms its own close actions. Decision support only — not guaranteed.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={reload} disabled={loading} data-testid="button-refresh-actions">
