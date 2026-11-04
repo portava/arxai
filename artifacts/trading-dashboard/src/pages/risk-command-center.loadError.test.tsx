@@ -52,6 +52,37 @@ describe("Risk Command Center failed reads", () => {
     expect(alert.textContent).toMatch(/HTTP 500/);
   });
 
+  it("a 2xx risk budget body that is not JSON says the response was not readable, not a parser error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/api/risk/budget")) return { ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected token < in JSON at position 0"); } };
+      return { ok: true, status: 200, json: async () => okBody(u) };
+    }));
+    render(<RiskCommandCenter />);
+    const alert = await screen.findByTestId("risk-load-error");
+    expect(alert.textContent).toMatch(/Risk budget could not be loaded \(the response was not readable\)/);
+    expect(alert.textContent).not.toMatch(/Unexpected token/);
+    expect(alert.textContent).not.toMatch(/Risk profile|Risk summary/);
+  });
+
+  it("a non-2xx risk budget answer names the server's error text, or the HTTP status when it sent none", async () => {
+    let budgetAnswer: { ok: false; status: number; json: () => Promise<unknown> } = { ok: false, status: 500, json: async () => ({ error: "budget store down" }) };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/api/risk/budget")) return budgetAnswer;
+      return { ok: true, status: 200, json: async () => okBody(u) };
+    }));
+    render(<RiskCommandCenter />);
+    const alert = await screen.findByTestId("risk-load-error");
+    expect(alert.textContent).toMatch(/Risk budget could not be loaded \(budget store down\)/);
+    expect(alert.textContent).not.toMatch(/Risk budget unavailable/);
+    cleanup();
+    budgetAnswer = { ok: false, status: 502, json: async () => { throw new SyntaxError("Unexpected token <"); } };
+    render(<RiskCommandCenter />);
+    const alert2 = await screen.findByTestId("risk-load-error");
+    expect(alert2.textContent).toMatch(/Risk budget could not be loaded \(HTTP 502\)/);
+  });
+
   it("when a later poll fails, the old figures are labelled as the last successful read", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let round = 0;

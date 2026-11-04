@@ -143,6 +143,9 @@ export function CanonicalBalancePanel({ live, className, title, updatesPaused = 
       : livePositionsRead
         ? "Live equity"
         : "Equity";
+  // The incomplete-figure notes name the equity tile as it is shown, so a
+  // paused or stale panel never points at a "live equity" figure it does not show.
+  const equityNoun = equityLabel.charAt(0).toLowerCase() + equityLabel.slice(1);
 
   return (
     <div className={cn("rounded-xl border border-border bg-surface/40 p-3", className)}>
@@ -198,19 +201,19 @@ export function CanonicalBalancePanel({ live, className, title, updatesPaused = 
       )}
       {floatingUnavailable && livePositionsRead && live != null && live.openTradeCount > 0 && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-floating-missing-note">
-          Live equity and equity after reserve are incomplete: the floating P/L of {live.openTradeCount} open
+          {equityLabel} and equity after reserve are incomplete: the floating P/L of {live.openTradeCount} open
           trade{live.openTradeCount === 1 ? "" : "s"} could not be read, so it is not included. No estimate is shown in its place.
         </p>
       )}
       {floatingPartial && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-floating-partial-note">
-          Floating P/L, live equity and equity after reserve are incomplete: the P/L of {partialOf} could not be read,
+          Floating P/L, {equityNoun} and equity after reserve are incomplete: the P/L of {partialOf} could not be read,
           so it is not included. No estimate is shown in its place.
         </p>
       )}
       {pending && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-pnl-pending-note">
-          Realized P/L and live equity are incomplete: {pendingCount} closed trade{pendingCount === 1 ? " is" : "s are"} awaiting
+          Realized P/L and {equityNoun} are incomplete: {pendingCount} closed trade{pendingCount === 1 ? " is" : "s are"} awaiting
           their broker contract size, so their P/L is not included. No estimate is shown in its place.
         </p>
       )}

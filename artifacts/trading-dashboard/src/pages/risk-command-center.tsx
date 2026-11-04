@@ -7,7 +7,7 @@ import { Shield, Pause, Play, Gauge, SlidersHorizontal, ClipboardList, ScrollTex
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
-import { fetchRiskBudget } from "@/lib/risk-budget";
+import { fetchRiskBudget, RiskBudgetReadError } from "@/lib/risk-budget";
 
 type Settings = { maxRiskPerTradeAmount: number | null; maxDailyLossAmount: number | null; maxPositionSize: number | null; minRewardRiskRatio: number; maxTradesPerDay: number; maxOpenTrades: number };
 type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null; discipline: { maxTradesPerDay: number | null; maxOpenTrades: number | null } };
@@ -188,9 +188,13 @@ export default function RiskCommandCenter() {
     const order: Source[] = ["profile", "budget", "cards"];
     const results = await Promise.allSettled(order.map(async (src) => {
       // The budget goes through the shared account-scoped read the workspace
-      // uses too (fetchRiskBudget, same /api/risk/budget route).
+      // uses too (fetchRiskBudget, same /api/risk/budget route). Its failure
+      // is named the way the other sources name theirs: the server's {error}
+      // text, the HTTP status, or an unreadable response.
       const body = src === "budget"
-        ? (await fetchRiskBudget()) as unknown as Record<string, unknown> | null
+        ? (await fetchRiskBudget().catch((e: unknown) => {
+            throw e instanceof RiskBudgetReadError ? new Error(e.reason) : e;
+          })) as unknown as Record<string, unknown> | null
         : await api(paths[src]);
       if (body == null || typeof body !== "object") throw new Error("the response was not readable");
       if (!SHAPE_OK[src](body)) throw new Error("the response did not have the expected fields");

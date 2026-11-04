@@ -217,4 +217,22 @@ describe("canonical balance presentation", () => {
     expect(screen.queryByText("Live equity")).toBeNull();
     expect(screen.getByTestId("canonical-balance-stale-note").textContent).toContain("last known");
   });
+  it("a paused or stale panel's incomplete-figure notes name the last-known equity tile it shows, never live equity", () => {
+    const incomplete: InvestorLiveBalance = { ...live, floatingPnL: null, openTradeCount: 2, realizedPnLPendingCount: 1 };
+    render(<CanonicalBalancePanel live={incomplete} updatesPaused />);
+    expect(screen.getByText("Last-known equity")).toBeTruthy();
+    expect(screen.getByTestId("canonical-balance-floating-missing-note").textContent).toMatch(/^\s*Last-known equity and equity after reserve are incomplete/);
+    expect(screen.getByTestId("canonical-balance-pnl-pending-note").textContent).toMatch(/Realized P\/L and last-known equity are incomplete/);
+    expect(document.body.textContent).not.toMatch(/live equity/i);
+    cleanup();
+    render(<CanonicalBalancePanel live={{ ...live, floatingPnL: 40, openTradeCount: 2, floatingPnLUnknownCount: 1, freshness: { ...live.freshness, status: "stale" } }} />);
+    expect(screen.getByText("Last-known equity")).toBeTruthy();
+    expect(screen.getByTestId("canonical-balance-floating-partial-note").textContent).toMatch(/Floating P\/L, last-known equity and equity after reserve are incomplete/);
+    expect(document.body.textContent).not.toMatch(/live equity/i);
+  });
+  it("a fresh Live Shared panel's notes still name Live equity", () => {
+    render(<CanonicalBalancePanel live={{ ...live, floatingPnL: null, openTradeCount: 2, realizedPnLPendingCount: 1 }} />);
+    expect(screen.getByTestId("canonical-balance-floating-missing-note").textContent).toMatch(/^\s*Live equity and equity after reserve are incomplete/);
+    expect(screen.getByTestId("canonical-balance-pnl-pending-note").textContent).toMatch(/Realized P\/L and live equity are incomplete/);
+  });
 });
