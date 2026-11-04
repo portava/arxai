@@ -38,6 +38,7 @@ import {
   type PendingSubmitStatus,
 } from "../lib/mt5/bridgeCapabilities.js";
 import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
+import { eaPendingPlacementPayload, eaPendingCancelPayload } from "../lib/mt5/pendingPayloadWire.js";
 
 const router: IRouter = Router();
 
@@ -535,14 +536,9 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
         lot: draft.lotSize,
         sl: draft.stopLoss,
         tp: draft.takeProfit,
-        pendingPayload: {
-          orderType: draft.orderType,
-          entryPrice: draft.requestedPrice,
-          stopTriggerPrice: draft.stopTriggerPrice,
-          stopLimitPrice: draft.stopLimitPrice,
-          expiration: draft.expiration?.toISOString() ?? null,
-          confirmedByUser: true,
-        },
+        // EA wire keys (entry, stopLimitPrice, expirationEpoch) beside the
+        // draft-side names; see lib/mt5/pendingPayloadWire.ts.
+        pendingPayload: { ...eaPendingPlacementPayload(draft), confirmedByUser: true },
       }, userId);
 
       // queueMt5CommandWithGate currently force-stamps BLOCKED. Treat anything
@@ -635,7 +631,7 @@ router.post("/me/pending-order-draft/:id/cancel-via-bridge", async (req, res): P
     }
     const queued = await queueMt5CommandWithGate("CANCEL_PENDING_ORDER", {
       symbol: draft.symbol,
-      pendingPayload: { mt5OrderTicket: draft.mt5OrderTicket, confirmedByUser: true },
+      pendingPayload: { ...eaPendingCancelPayload(draft.mt5OrderTicket), confirmedByUser: true },
     }, userId);
     const isReallyQueued = queued.command.status === "PENDING";
     const nextStatus = isReallyQueued ? "CANCEL_QUEUED" : "BLOCKED_BY_PAPER_LOCK";
