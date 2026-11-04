@@ -51,10 +51,14 @@ test("a provider window is seeded without its forming bar", async () => {
   assert.equal(writes[0]!.times.includes(new Date(formingOpen).toISOString()), false);
 });
 
-test("an unattributed MT5 window is never written into the broker mirror", async () => {
+test("an unattributed MT5 window is still seeded closed-only, with no bridge named", async () => {
+  // The chart history page reads from the cache, so skipping the seed would
+  // leave a live MT5 series with no history (candleDepthDiagnosticsTest).
   route("mt5_broker", null);
   await getCandleHistory({ symbol: "EURUSD", timeframe: "M5", limit: 50 });
-  assert.equal(writes.length, 0);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]!.bridgeConnectionId, null);
+  assert.equal(writes[0]!.times.length, 2);
 });
 
 test("an attributed MT5 window is mirrored closed-only, naming its bridge", async () => {
