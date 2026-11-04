@@ -270,7 +270,7 @@ async function buildChartFeed(
   // Nothing live answered: the display chart still shows the market up to its
   // last stored bar (closed market or a down feed), labelled as stored.
   if (!result.ok && opts.storedHistoryFallback === true) {
-    result = await routeStoredCandleHistory(symbol, timeframe, limit, result);
+    result = await routeStoredCandleHistory(symbol, timeframe, limit, result, { bridgeConnectionId: pinnedBridge });
   }
   const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
   const source = result.primaryProvider;
