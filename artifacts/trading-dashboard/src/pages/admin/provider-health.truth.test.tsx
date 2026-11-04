@@ -97,10 +97,36 @@ describe("Provider Health status truth", () => {
   });
 
   it("an empty consumer list does not claim surfaces are on a fallback", async () => {
-    await renderPage(snapshot());
+    // A server that states its basis (as the current server always does).
+    await renderPage(snapshot({
+      activeConsumersBasis: "Providers that answered this snapshot's self-test (or, for MT5 and Deriv, reported live data), mapped to the surfaces wired to them. Not a trace of each surface's reads — the router still picks a provider per request.",
+    }));
     const card = await screen.findByTestId("card-active-consumers");
     expect(card.textContent).not.toMatch(/on a fallback/i);
     expect(card.textContent).toMatch(/No provider answered/i);
+  });
+
+  it("without a stated basis the consumer card does not claim any provider answered a check", async () => {
+    // An older server marks a provider "healthy" because its key is set and
+    // sends no activeConsumersBasis; the card must not say a self-test ran.
+    const healthy = provider({ status: "healthy", statusReason: "Key is set.", usedBy: ["scanner"] });
+    await renderPage(snapshot({
+      providers: [healthy],
+      activeConsumers: [{ consumer: "scanner", providers: ["finnhub"] }],
+      summary: { totalProviders: 1, healthy: 1, degraded: 0, failing: 0, notConfigured: 0, reserved: 0, configuredButUnused: 0 },
+    }));
+    const card = await screen.findByTestId("card-active-consumers");
+    expect(card.textContent).not.toMatch(/answered/i);
+    expect(card.textContent).not.toMatch(/self-test/i);
+    expect(card.textContent).toMatch(/does not say whether they were checked/i);
+    expect(card.textContent).toMatch(/not a trace/i);
+    cleanup();
+    vi.unstubAllGlobals();
+
+    await renderPage(snapshot());
+    const empty = await screen.findByTestId("card-active-consumers");
+    expect(empty.textContent).not.toMatch(/answered/i);
+    expect(empty.textContent).not.toMatch(/on a fallback/i);
   });
 
   it("the MT5 heartbeat row names the master-live candidate and the freshest bridge is shown separately", async () => {

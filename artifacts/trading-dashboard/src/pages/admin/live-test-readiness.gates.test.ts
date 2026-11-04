@@ -53,6 +53,17 @@ describe("live-test readiness gate checklist", () => {
     expect(buildGateChecklist(s, null).every((g) => g.pass === true)).toBe(false);
   });
 
+  it("the not-checked reason names a missing access row only when the server says so", () => {
+    // Field never sent (older server): no claim about an access row.
+    const notSent = row(state({}), "Take profit required");
+    expect(notSent?.unknown).toMatch(/not reported by the server/i);
+    expect(notSent?.unknown).not.toMatch(/no operator access row/i);
+    // Server reports no access row.
+    const noRow = row(state({ requireStopLoss: null, requireTakeProfit: null, operatorAccessRowFound: false }), "Stop loss required");
+    expect(noRow?.pass).toBeNull();
+    expect(noRow?.unknown).toMatch(/no operator access row/i);
+  });
+
   it("stored settings are shown as stored", () => {
     const on = state({ requireStopLoss: true, requireTakeProfit: true });
     expect(row(on, "Stop loss required")?.pass).toBe(true);

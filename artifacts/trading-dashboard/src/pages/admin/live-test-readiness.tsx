@@ -104,6 +104,14 @@ export function buildGateChecklist(state: State, pre: Preflight | null): GateChe
   const B = state.panelB_masterLiveGates;
   const C = state.panelC_operatorAccess;
 
+  // Why a stored setting is unknown: a server that reports
+  // operatorAccessRowFound === false had no access row to read; any other
+  // missing value is simply a field this server did not send.
+  const settingUnknown = (what: string): string =>
+    C.operatorAccessRowFound === false
+      ? `Not reported: no operator access row for this admin, so the ${what} setting could not be read`
+      : `Not reported by the server, so the ${what} setting could not be read`;
+
   const preGate = (key: string): boolean | null => {
     if (!pre) return null;
     const g = pre.gates.find((x) => x.key === key);
@@ -125,9 +133,9 @@ export function buildGateChecklist(state: State, pre: Preflight | null): GateChe
     { label: "Risk disclosure accepted",      pass: !!C.riskDisclosureAcceptedAt,           blocker: "Risk disclosure has not been accepted" },
     { label: "Risk template assigned",        pass: C.maxLot != null,                       blocker: "No risk template assigned — max lot is unset" },
     { label: "Stop loss required",            pass: reportedSetting(C.requireStopLoss),     blocker: "Stop loss requirement is disabled",
-      unknown: "Not reported: no operator access row for this admin, so the stop-loss setting could not be read" },
+      unknown: settingUnknown("stop-loss") },
     { label: "Take profit required",          pass: reportedSetting(C.requireTakeProfit),   blocker: "Take profit requirement is disabled",
-      unknown: "Not reported: no operator access row for this admin, so the take-profit setting could not be read" },
+      unknown: settingUnknown("take-profit") },
     { label: "Max lot cap active",            pass: C.maxLot != null && C.maxLot <= 0.01,  blocker: `Lot cap too high (${C.maxLot ?? "unset"}) — must be ≤ 0.01` },
     { label: "Max open trades cap active",    pass: C.maxOpenPositions != null && C.maxOpenPositions <= 1, blocker: "Max open positions cap not set or too high" },
     { label: "Algo trading allowed by broker",pass: A.algoTradingAllowed === true,          blocker: "Algo trading is disabled on the broker account" },
@@ -266,6 +274,10 @@ export default function FinalLiveTestPage() {
   const gates = buildGateChecklist(state, pre);
   const allGatesPass = gates.every((g) => g.pass === true);
   const blockers = gates.filter((g) => g.pass === false).map((g) => g.blocker);
+  // Unchecked gates (pass === null) also keep the send button disabled, so the
+  // summary counts them instead of reading "0 gate(s) not passing".
+  const notCheckedCount = gates.filter((g) => g.pass === null).length;
+  const notPassingCount = blockers.length + notCheckedCount;
 
   const slNum = Number(stopLoss);
   const tpNum = Number(takeProfit);
@@ -503,7 +515,11 @@ export default function FinalLiveTestPage() {
             <div className="text-xs text-txt-muted space-y-0.5">
               {!slOk          && <div className="text-danger">⚠ Stop loss required</div>}
               {!tpOk          && <div className="text-danger">⚠ Take profit required</div>}
-              {!allGatesPass  && <div className="text-warning">⚠ {blockers.length} gate(s) not passing</div>}
+              {!allGatesPass  && (
+                <div className="text-warning" data-testid="gates-not-passing">
+                  ⚠ {notPassingCount} gate(s) not passing{notCheckedCount > 0 ? ` (${notCheckedCount} not checked)` : ""}
+                </div>
+              )}
               {!preflightPassed && <div className="text-warning">⚠ Run preflight check first</div>}
             </div>
           )}
