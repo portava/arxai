@@ -189,6 +189,40 @@ const e2 = explainMarketRead(buildRubyMarketEdge(baseInput({})));
 check("deterministic: same signal → same headline", e1.headline === e2.headline);
 check("deterministic: same signal → same bestAction", e1.bestAction === e2.bestAction);
 
+// ----- explainMarketRead: levelsWithheldReason (levels-withheld-vs-shown) ---
+// A live, sufficient read with NO scanner geometry publishes no level. The
+// explanation must say why from the signal's own facts, never blame the feed,
+// and stay null whenever any level is present.
+check("levels: clean read with geometry → levelsWithheldReason null", clean.levelsWithheldReason === null);
+const unboundSignal = buildRubyMarketEdge(baseInput({ scanner: null }));
+const unbound = explainMarketRead(unboundSignal);
+check("levels: no-scanner read publishes no stop/invalidation", unbound.levels.stopLoss === null && unbound.levels.invalidation === null);
+check(
+  "levels: no-scanner live read names the missing scanner geometry",
+  unbound.levelsWithheldReason === "No scanner entry or stop is attached to this read yet.",
+);
+check("levels: reason never blames the feed on a live read", !/feed/i.test(unbound.levelsWithheldReason ?? ""));
+check(
+  "levels: entry line carries the reason",
+  unbound.simple.entryZone.includes("no scanner entry or stop is attached to this read yet"),
+);
+check(
+  "levels: risk line carries the reason",
+  unbound.simple.risk.includes("no scanner entry or stop is attached to this read yet"),
+);
+const unboundCopy = [unbound.levelsWithheldReason ?? "", ...modeStrings(unbound.simple), ...modeStrings(unbound.advanced)];
+check("levels: reason copy never leaks an UPPER_SNAKE token", !unboundCopy.some((x) => UPPER_SNAKE.test(x)));
+const blindNoScanner = explainMarketRead(buildRubyMarketEdge(baseInput({ candles: null, currentPrice: null, scanner: null })));
+check(
+  "levels: blind read says there aren't enough live candles",
+  blindNoScanner.levelsWithheldReason === "There aren't enough confirmed live candles for this read yet.",
+);
+const delayedNoScanner = explainMarketRead(buildRubyMarketEdge(baseInput({ scanner: null, dataSource: "LIVE_DELAYED" })));
+check(
+  "levels: non-live read says the data isn't a confirmed live feed",
+  delayedNoScanner.levelsWithheldReason === "The data behind this read isn't a confirmed live feed.",
+);
+
 // ----- categorizeOpportunities --------------------------------------------
 function row(overrides: Partial<OpportunityInput>): OpportunityInput {
   return {

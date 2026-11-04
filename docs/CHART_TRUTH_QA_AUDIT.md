@@ -96,7 +96,7 @@ Volume is always 0 for Deriv synthetics (algorithm-generated; no traded volume).
 - [x] **17. Candles readable** — `VISIBLE_CANDLES_DESKTOP=150`, `VISIBLE_CANDLES_MOBILE=80`; chart opens on recent price action, not full compressed history. Reset Scale button available.
 - [x] **18. Price alignment checked** — `brokerPriceAlignment.ts` provides broker-vs-feed alignment metrics; displayed in admin diagnostics.
 - [x] **19. Scale pass** — Phase 2 `rightOffset=8`, `lockVisibleTimeRangeOnResize=false`, smart `setVisibleRange` on first paint; Reset Scale button restores default view.
-- [x] **20. Mirror status reported** — `getMirrorStatus()` in `ARXNativeChart` maps quality/stale/fetching to `MirrorStatus` (Mirrored/Syncing/Stale/Conflict/Refreshing). Mirror Lock toggle present.
+- [x] **20. Feed strip reported** — the strip under the `ARXNativeChart` header shows the same capped feed label as the header chip (never "Mirrored"/"Syncing"), names the stale / invalid / unavailable reason, and shows "Refreshing…" separately so a poll never hides the verdict. The former Mirror Lock toggle (which changed nothing) was removed.
 - [x] **21. Mobile readable** — responsive `effectiveHeight` with `mobileHeight` prop; `VISIBLE_CANDLES_MOBILE=80` for narrow viewports. `mobileHeight` defaults to `Math.max(320, Math.min(height, 380))` on screens < 768px.
 - [x] **22. Chart Safe Mode present** — when quality="invalid", `ARXNativeChart` shows a clean user message overlay and pauses AI confidence. Defined in Phase 2.
 

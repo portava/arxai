@@ -196,7 +196,11 @@ async function run() {
   record(
     "benchmark: every null score declares insufficient / no activity (no silent zero)",
     base.scores.every(
-      (s) => s.score !== null || /insufficient|no chart-brain activity|need ≥/i.test(s.note),
+      // The notes name why nothing was scored: too few rows ("Insufficient
+      // data (need ≥N …)"), no reads in the window ("No chart-brain reads
+      // recorded in the last N days."), or a dimension the stored data cannot
+      // measure ("Not measured: …", since 63bc6ef8 / 15da98e1).
+      (s) => s.score !== null || /insufficient|no chart-brain (activity|reads recorded)|need ≥|^not measured: \S/i.test(s.note),
     ),
   );
 
