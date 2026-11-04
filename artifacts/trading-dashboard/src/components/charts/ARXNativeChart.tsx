@@ -1198,8 +1198,11 @@ export function ARXNativeChart({
 
   // Only surface the prominent banner once real candles are on screen — the
   // empty/error overlays already own the no-data story.
+  // The banner renders the SAME capped verdict as the header chip and the feed
+  // strip (stripConf), so the canvas can never stay silent while the chip,
+  // the scanner badge and the AI read for this market say "Unconfirmed".
   const showPoorBanner =
-    showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
+    showFeedStatus && hasCandles && !isSafeMode && (refreshFailed || stripConf.severity !== "clean");
   const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
 
@@ -1540,19 +1543,19 @@ export function ARXNativeChart({
         {showPoorBanner && (
           <div
             data-testid="arx-native-feed-banner"
-            data-severity={conf.severity}
+            data-severity={stripTone}
             className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
-              conf.severity === "danger"
+              stripTone === "danger"
                 ? "bg-red-950/70 text-red-100"
-                : conf.severity === "caution"
+                : stripTone === "caution"
                   ? "bg-amber-950/60 text-amber-100"
                   : "bg-zinc-900/70 text-zinc-100"
             }`}
           >
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span className="font-semibold">{conf.statusLabel} feed</span>
+            <span className="font-semibold">{stripLabel} feed</span>
             <span className="min-w-0 flex-1 truncate text-[11px] opacity-90">
-              {conf.message}
+              {refreshFailed ? "The last refresh failed; the bars shown may be behind the market." : stripConf.message}
             </span>
             {query.isFetching && !query.isLoading && (
               <RefreshCw className="h-3 w-3 animate-spin opacity-60" />

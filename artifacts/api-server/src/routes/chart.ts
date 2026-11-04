@@ -4,7 +4,26 @@ import {
   GetChartFeedStatusQueryParams,
   GetChartHistoryQueryParams,
 } from "@workspace/api-zod";
-import { getChartCandles, getChartFeedStatus } from "../lib/data/chart/chartDataService.js";
+import { getChartCandles, getChartFeedStatus, type ChartFeedOptions } from "../lib/data/chart/chartDataService.js";
+import { getUserActiveConnection } from "../lib/brokerHub/connections.js";
+import type { Request } from "express";
+
+/**
+ * The signed-in reader's own bridge, so the chart feed is THEIR feed (Truth
+ * audit T2). Anonymous readers, or readers without a bridge, get the
+ * platform-wide series labelled platform_shared. Read-only lookup; a failed
+ * lookup pins nothing rather than failing the chart.
+ */
+async function readerFeedOptions(req: Request): Promise<ChartFeedOptions> {
+  const userId = req.authUser?.id ?? null;
+  if (userId == null) return {};
+  try {
+    const conn = await getUserActiveConnection(userId);
+    return { bridgeConnectionId: conn?.id ?? null };
+  } catch {
+    return {};
+  }
+}
 import { getCandleHistory } from "../lib/data/candleHistoryService.js";
 import { handleChartTickStream } from "./chartTickStream.js";
 import { resolveArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
@@ -43,7 +62,7 @@ router.get("/chart/candles", async (req, res) => {
   // Task #496 — display route opts INTO the synthesized real-time forming tip.
   // Analysis / Ruby / chart-intelligence callers keep the default (false) and
   // stay strictly closed-bars-only.
-  const out = await getChartCandles(q.symbol, q.timeframe, q.limit, true);
+  const out = await getChartCandles(q.symbol, q.timeframe, q.limit, true, await readerFeedOptions(req));
   res.json(out);
 });
 
@@ -66,7 +85,7 @@ router.get("/chart/feed-status", async (req, res) => {
   // Task #496 — display feed-status reflects the live forming tip so the badge
   // reads LIVE while ticks flow (and frozen-stale when silent). Analysis / health
   // callers keep the default (false).
-  const out = await getChartFeedStatus(q.symbol, q.timeframe, true);
+  const out = await getChartFeedStatus(q.symbol, q.timeframe, true, await readerFeedOptions(req));
   res.json(out);
 });
 

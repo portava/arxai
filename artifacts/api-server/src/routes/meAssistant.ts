@@ -43,7 +43,10 @@ import type { InstantTradeIntent, InstantTradeResult } from "../lib/live/instant
 import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
 import { runHandshake } from "../lib/handshake/coordinator.js";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
-import { getMarketData } from "../lib/data/dataManager.js";
+import { routeQuote } from "../lib/data/marketDataRouter.js";
+import { boundQuotePrice } from "../lib/assistant/boundQuote.js";
+import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
+import { toolResultText } from "../lib/assistant/toolResultText.js";
 import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -125,6 +128,8 @@ async function buildPerUserEnvelope(userId: number | null | undefined) {
 // Synchronous fail-closed envelope fields for error responses (err() can't await).
 const FAIL_CLOSED_FIELDS = assistantEnvelopeFields(FAIL_CLOSED_ENVELOPE);
 const MAX_TURNS_PER_REQUEST = 4;
+// Audit A9: tool results handed to the model are bounded but stay valid JSON.
+const TOOL_RESULT_MODEL_CHARS = 8000;
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_USER_MESSAGE_CHARS = 4000;
 const MODEL = "gpt-5.4";
@@ -306,6 +311,8 @@ router.get("/me/assistant/conversations", requireUser, safe(async (req, res) => 
 
 router.post("/me/assistant/conversations", requireUser, safe(async (req, res) => {
   const userId = req.authUser!.id;
+  const rl = conversationCreateLimiter.check(String(userId));
+  if (!rl.allowed) { res.status(429).set("Retry-After", String(rl.retryAfterSeconds)).json(rateLimitBody(rl)); return; }
   const parsed = CreateConvBody.safeParse(req.body);
   if (!parsed.success) { err(res, 400, "invalid_body"); return; }
   const title = parsed.data.title ?? "New chat";
@@ -1101,6 +1108,10 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   if (!Number.isInteger(id) || id <= 0) { err(res, 400, "invalid_id"); return; }
   const parsed = SendMessageBody.safeParse(req.body);
   if (!parsed.success) { err(res, 400, "invalid_body"); return; }
+  // AI chat audit 2026-11-04 (A6): per-user token budget guard. Each message
+  // can fan out into up to MAX_TURNS_PER_REQUEST model calls.
+  const rl = chatMessageLimiter.check(String(userId));
+  if (!rl.allowed) { res.status(429).set("Retry-After", String(rl.retryAfterSeconds)).json(rateLimitBody(rl)); return; }
 
   const conv = await db.select().from(arxAssistantConversationsTable)
     .where(and(eq(arxAssistantConversationsTable.id, id), eq(arxAssistantConversationsTable.userId, userId)))
@@ -1427,7 +1438,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
           result: result as Record<string, unknown>, status, durationMs: ms,
         });
       } catch { /* tool log non-fatal */ }
-      messages.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(result).slice(0, 8000) });
+      messages.push({ role: "tool", tool_call_id: c.id, content: toolResultText(result, TOOL_RESULT_MODEL_CHARS) });
     }
 
     if (finishReason && finishReason !== "tool_calls") break;
@@ -1508,6 +1519,8 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   if (!Number.isInteger(id) || id <= 0) { err(res, 400, "invalid_id"); return; }
   const file = (req as unknown as { file?: { buffer: Buffer; size: number; mimetype: string } }).file;
   if (!file || !file.buffer || file.size === 0) { err(res, 400, "missing_audio"); return; }
+  const rl = chatMessageLimiter.check(String(userId));
+  if (!rl.allowed) { res.status(429).set("Retry-After", String(rl.retryAfterSeconds)).json(rateLimitBody(rl)); return; }
   const conv = await db.select().from(arxAssistantConversationsTable)
     .where(and(eq(arxAssistantConversationsTable.id, id), eq(arxAssistantConversationsTable.userId, userId)))
     .limit(1);
@@ -1658,19 +1671,35 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // Cap on concurrent ACTIVE Ruby watches per user — keeps the evaluator cheap
 // and prevents an accidental flood of armed conditionals.
 const MAX_ACTIVE_RUBY_WATCHES = 10;
+// AI chat audit 2026-11-04 (A1/A3): nothing in this build calls the watch
+// evaluator (POST /me/assistant/watch/evaluate) — no worker, cron, hook or EA
+// callback — so an armed WATCH_AND_ENTER / WATCH_AND_CLOSE / MONITOR_TRADE row
+// would never fire or expire while the reply promised action. Arming stays off
+// until a sweeper exists AND the owner enables chat-driven execution. The
+// evaluator route itself is kept so the sweeper can be wired without a rewrite.
+const WATCH_ARMING_ENABLED = false;
+// Chat-driven direct execution (OPEN/CLOSE/MODIFY via the instant-trade router)
+// is likewise not reachable from the shipped UI: the dashboard's
+// sendRubyTradeCommand has no caller. The route keeps its full gate chain; this
+// flag only controls whether the reply may describe the path as available.
+export const CHAT_EXECUTION_WIRED_IN_UI = false;
+export const WATCH_UNAVAILABLE_MESSAGE =
+  "Conditional orders and position monitoring from chat are not active in this build: nothing would check the price after I armed it, so I won't pretend to watch. Place the pending order yourself from the Trade Action Center, or ask me to prepare the ticket.";
+export const WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON = "WATCH_EVALUATION_UNAVAILABLE";
 // Watch-and-enter "late" tolerance: if the trigger level is reached but price
 // has already run beyond it by more than this fraction, the setup has moved on
 // and the watch is skipped rather than chasing a worse fill.
 const LATE_ENTRY_TOLERANCE = 0.003;
 
-// Latest validated close for a symbol (read-only quote). Returns null on any
-// empty/insufficient feed — never fabricates a price.
+// Current price for a symbol from the feed-scoped quote router (read-only).
+// AI chat audit 2026-11-04 (A4): the price must be a producer-observed tick no
+// older than BOUND_QUOTE_MAX_AGE_MS; a stale, unobserved or missing quote
+// returns null and the caller must refuse rather than act on it. The last 1m
+// candle close is NOT acceptable here — it carries no freshness evidence.
 async function currentPriceOf(symbol: string): Promise<number | null> {
   try {
-    const candles = await getMarketData(symbol, "1m", 2);
-    const last = candles[candles.length - 1];
-    const px = last ? Number(last.close) : NaN;
-    return Number.isFinite(px) && px > 0 ? px : null;
+    const q = await routeQuote(symbol);
+    return boundQuotePrice(q).price;
   } catch { return null; }
 }
 
@@ -1784,6 +1813,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   const { detectLegacyPaperModeRequest } = await import("../lib/safety/rejectLegacyPaperMode.js");
   const legacyPaper = detectLegacyPaperModeRequest(req.body);
   if (legacyPaper) { res.status(400).json({ ok: false, ...legacyPaper }); return; }
+  const rl = tradeCommandLimiter.check(String(userId));
+  if (!rl.allowed) { res.status(429).set("Retry-After", String(rl.retryAfterSeconds)).json({ ok: false, ...rateLimitBody(rl) }); return; }
 
   const body = (req.body ?? {}) as {
     text?: string;
@@ -1867,10 +1898,27 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // ── Bookkeeping commands — never touch the broker ──────────────────────
   // STATUS_CHECK: honestly report what Ruby is currently watching / pending.
   if (parsed.kind === "STATUS_CHECK") {
-    const watches = await db.select().from(rubyWatchInstructionsTable).where(and(
+    let watches = await db.select().from(rubyWatchInstructionsTable).where(and(
       eq(rubyWatchInstructionsTable.userId, userId),
       eq(rubyWatchInstructionsTable.status, "ACTIVE"),
     ));
+    // Audit A1: with no evaluator running, an ACTIVE row is a promise nobody
+    // keeps. Retire it honestly (SKIPPED + reason) and tell the user.
+    let retiredWatches = 0;
+    if (!WATCH_ARMING_ENABLED && watches.length > 0) {
+      const retired = await db.update(rubyWatchInstructionsTable)
+        .set({ status: "SKIPPED", skipReason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON, updatedAt: new Date() })
+        .where(and(
+          eq(rubyWatchInstructionsTable.userId, userId),
+          eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+        )).returning({ id: rubyWatchInstructionsTable.id });
+      retiredWatches = retired.length;
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_WATCH_RETIRED_NO_EVALUATOR", ip, userAgent: ua,
+        metadata: JSON.stringify({ retired: retired.map((r) => r.id), reason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON, source }),
+      });
+      watches = [];
+    }
     const pending = await db.select({ id: rubyCommandsTable.id }).from(rubyCommandsTable).where(and(
       eq(rubyCommandsTable.userId, userId),
       inArray(rubyCommandsTable.status, ["PENDING", "EXECUTING"]),
@@ -1882,7 +1930,11 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         trigger: w.triggerCondition, createdAt: w.createdAt,
       })),
       pendingCommands: pending.length,
-      message: watches.length === 0 && pending.length === 0
+      watchEvaluationActive: WATCH_ARMING_ENABLED,
+      retiredWatches,
+      message: retiredWatches > 0
+        ? `I'm not watching anything. ${retiredWatches} earlier watch${retiredWatches === 1 ? "" : "es"} ${retiredWatches === 1 ? "was" : "were"} never being evaluated in this build, so I've marked ${retiredWatches === 1 ? "it" : "them"} as not active — please manage ${retiredWatches === 1 ? "that order" : "those orders"} yourself.${pending.length > 0 ? ` ${pending.length} command${pending.length === 1 ? "" : "s"} in progress.` : ""}`
+        : watches.length === 0 && pending.length === 0
         ? "I'm not watching anything and have nothing pending right now."
         : `I have ${watches.length} active watch${watches.length === 1 ? "" : "es"} and ${pending.length} command${pending.length === 1 ? "" : "s"} in progress.`,
     });
@@ -1976,6 +2028,19 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // (POST /me/assistant/watch/evaluate) checks live price and CAS-fires each
   // exactly once through the SAME instant-trade router. Arming touches no
   // broker — only the evaluator can dispatch, and only after all gates pass.
+  if (!WATCH_ARMING_ENABLED && (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE"
+      || parsed.kind === "MONITOR_TRADE")) {
+    await db.insert(oneClickAuditTable).values({
+      userId, action: "RUBY_WATCH_ARM_UNAVAILABLE", ip, userAgent: ua,
+      metadata: JSON.stringify({ text, kind: parsed.kind, reason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON, source }),
+    });
+    res.json({
+      ok: false, classification: parsed.kind, deferred: true,
+      reason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON,
+      message: WATCH_UNAVAILABLE_MESSAGE,
+    });
+    return;
+  }
   if (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE"
       || parsed.kind === "MONITOR_TRADE") {
     // Per-action Ruby authorization for arming a watch/monitor. Default-deny

@@ -63,6 +63,8 @@ import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntellig
 import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
+import { getUserActiveConnection } from "../brokerHub/connections.js";
+import { feedScopeForUser, runWithFeedScope } from "../data/feedScope.js";
 
 // ── Public snapshot shape ────────────────────────────────────────────────────
 
@@ -114,6 +116,11 @@ export interface TruthNews {
   /** Single clean-English disclaimer when no calendar provider is connected. */
   disclaimer: string | null;
   /**
+   * ISO time the connected calendar was last fetched from its provider, or
+   * null. Lets the news claim be verified (recent fetch) or stale (old one).
+   */
+  fetchedAt?: string | null;
+  /**
    * Present (true) only for a synthetic market: scheduled economic events do
    * not apply and the calendar is not consulted, so riskLabel is the shared
    * SYNTHETIC_EVENT_RISK_LABEL, riskUnchecked is false, no events or
@@ -137,6 +144,20 @@ export interface TruthData {
   lastCandleAt: string | null;
   /** DATA timestamp of the newest tick, or null. */
   lastTickAt: string | null;
+  /**
+   * What lastTickAt is: the producer's own tick time, or the time this server
+   * received the tick (identified, never verified current). null when none.
+   */
+  lastTickBasis?: "producer_tick" | "server_receive" | null;
+  /**
+   * Whose feed the block rests on: this trader's own bridge, another bridge's
+   * MT5 series served platform-wide, or a non-MT5 provider (Truth audit T2).
+   */
+  feedScope?: "own_bridge" | "platform_shared" | "provider" | null;
+  /** Two bridges were pushing this series when it was read. */
+  contention?: boolean;
+  /** Measured broker-clock offset (ms) behind the serving bridge's UTC stamps; null = unknown. */
+  brokerClockOffsetMs?: number | null;
 }
 
 export interface TruthVerdict {
@@ -201,6 +222,8 @@ export interface TruthSnapshotDeps {
   buildScannerFn: typeof buildRubyMarketEdgeForUser;
   evaluateScalpFn: typeof evaluateScalpForSymbol;
   computeTimingFn: typeof computeTimingRead;
+  /** The reader's own active bridge connection id, or null (read-only lookup). */
+  getUserBridgeFn: (userId: number) => Promise<number | null>;
 }
 
 const REAL_DEPS: TruthSnapshotDeps = {
@@ -209,6 +232,7 @@ const REAL_DEPS: TruthSnapshotDeps = {
   buildScannerFn: buildRubyMarketEdgeForUser,
   evaluateScalpFn: evaluateScalpForSymbol,
   computeTimingFn: computeTimingRead,
+  getUserBridgeFn: async (userId) => (await getUserActiveConnection(userId))?.id ?? null,
 };
 
 const CANDLE_LIMIT = 200;
@@ -420,6 +444,8 @@ function buildNews(radar: RadarResult | null, synthetic: boolean): TruthNews {
   }
   const { radar: r } = radar;
   const providerConnected = r.provider.connected;
+  const fetchedAt = providerConnected && typeof r.provider.fetchedAt === "string" && Number.isFinite(Date.parse(r.provider.fetchedAt))
+    ? r.provider.fetchedAt : null;
 
   // Dedupe events by id (a single event must never show as two rows).
   const deduped = Array.from(
@@ -460,6 +486,7 @@ function buildNews(radar: RadarResult | null, synthetic: boolean): TruthNews {
     riskLabel,
     highImpactWindowActive: r.highImpactWindowActive,
     riskUnchecked,
+    fetchedAt,
     disclaimer: providerConnected
       ? null
       : riskUnchecked
@@ -511,12 +538,19 @@ export async function buildSymbolTruthSnapshot(
   // Evaluate it ONCE here and reuse it for the scanner so a single snapshot
   // build never runs evaluateScalpForSymbol twice. It runs in parallel with the
   // other independent SOURCEs; only the scanner build waits on it.
-  const [chartR, newsR, scalpR, timingR] = await Promise.allSettled([
-    deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false),
+  // The data block is THIS trader's feed (Truth audit T2): the chart read is
+  // pinned to their own bridge; a platform-wide fallback is labelled as such.
+  // Every component SOURCE (scanner, scalp/flame, timing) reads candles and
+  // quotes under the same scope (lib/data/feedScope.ts), so the snapshot's
+  // components describe the same bridge's bars as its data block.
+  const scope = feedScopeForUser(userId, deps.getUserBridgeFn);
+  const ownBridgeId = await scope.bridgeConnectionId();
+  const [chartR, newsR, scalpR, timingR] = await runWithFeedScope(scope, () => Promise.allSettled([
+    deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false, { bridgeConnectionId: ownBridgeId }),
     deps.buildNewsFn(symbol),
     deps.evaluateScalpFn(userId, { symbol, mode: "ANY" }),
     deps.computeTimingFn({ symbol, timeframe, persistSnapshot: false }),
-  ]);
+  ]));
 
   const chart = valueOrNull(chartR);
   const news = valueOrNull(newsR);
@@ -526,13 +560,13 @@ export async function buildSymbolTruthSnapshot(
   // Compose the scanner edge reusing the scalp we already have, and skip the
   // advisory signalMemoryTable upsert on this read-side polled path (mirrors
   // the timing dep's persistSnapshot:false discipline).
-  const [scannerR] = await Promise.allSettled([
+  const [scannerR] = await runWithFeedScope(scope, () => Promise.allSettled([
     deps.buildScannerFn(
       userId,
       { symbol, timeframe },
       { skipPersist: true, scalp: timeframe === "M5" ? scalp : null },
     ),
-  ]);
+  ]));
   const scanner = valueOrNull(scannerR);
 
   // ── data block (single source of freshness + price) ────────────────────────
@@ -547,6 +581,10 @@ export async function buildSymbolTruthSnapshot(
     // closeTime, which for a forming bar is a scheduled future instant.
     lastCandleAt: lastClosedCandleAt(candles, Date.now()),
     lastTickAt: feedStatus?.lastTickTime ?? null,
+    lastTickBasis: feedStatus?.lastTickTime != null ? (feedStatus.lastTickTimeBasis ?? "server_receive") : null,
+    feedScope: feedStatus?.feedScope ?? null,
+    contention: feedStatus?.contention === true,
+    brokerClockOffsetMs: feedStatus?.brokerClockOffsetMs ?? null,
   };
 
   // A current chart cannot refresh another engine's older/different input.

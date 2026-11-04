@@ -31,6 +31,10 @@ import {
   updateQuoteFromMT5,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
+import {
+  brokerStampToUtcMs,
+  recordBrokerClockSample,
+} from "../brokerHub/brokerClockOffset.js";
 import type { Candle, MarketQuote } from "../data/types.js";
 import { isUniqueViolation } from "../pgError.js";
 
@@ -227,7 +231,8 @@ export async function ingestBridgeV2Message(
     // failure is swallowed so it can never corrupt the honest ingest response.
     if (result.accepted) {
       feedMarketDataStore(envelope.messageType, payload, freshnessVerdict,
-        bridgeConnectionId != null ? { bridgeConnectionId, userId } : null);
+        bridgeConnectionId != null ? { bridgeConnectionId, userId } : null,
+        envelope.eaCreatedAtEpochMs);
     }
 
     return result;
@@ -248,6 +253,9 @@ function feedMarketDataStore(
   freshnessVerdict: string | null,
   // Authenticated writer; null (no bridge connection) → unattributed partition.
   bridge: { bridgeConnectionId: number; userId: number } | null,
+  // The envelope's EA GMT clock at send time: paired with a TICK's broker time
+  // it is one broker-clock offset sample (see brokerClockOffset.ts).
+  eaCreatedAtEpochMs: number | null = null,
 ): void {
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
@@ -259,8 +267,12 @@ function feedMarketDataStore(
       const timeframe = typeof p.timeframe === "string" ? p.timeframe : null;
       const openTimeEpochMs = typeof p.openTimeEpochMs === "number" ? p.openTimeEpochMs : null;
       if (!symbol || !timeframe || openTimeEpochMs == null) return;
+      // Bar OPEN times arrive in the broker's clock (MqlRates.time). Convert to
+      // UTC with the bridge's measured offset when one is known; otherwise the
+      // raw stamp is stored and freshness consumers fail closed (Truth audit T1).
+      const openUtc = brokerStampToUtcMs(bridge?.bridgeConnectionId ?? null, openTimeEpochMs);
       const candle: Candle = {
-        time: new Date(openTimeEpochMs).toISOString(),
+        time: new Date(openUtc ? openUtc.utcMs : openTimeEpochMs).toISOString(),
         open: Number(p.open),
         high: Number(p.high),
         low: Number(p.low),
@@ -276,30 +288,45 @@ function feedMarketDataStore(
     const ask = typeof p.ask === "number" ? p.ask : null;
     const brokerTimeEpochMs = typeof p.brokerTimeEpochMs === "number" ? p.brokerTimeEpochMs : null;
     if (!symbol || bid == null || ask == null) return;
+    // One broker-clock sample per tick: the tick's broker time against the EA's
+    // GMT clock at send time (the tick is sent as it arrives). Samples far from a
+    // 30-minute multiple (an old tick replayed on a quiet market) are rejected.
+    if (brokerTimeEpochMs != null && eaCreatedAtEpochMs != null) {
+      recordBrokerClockSample({
+        bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+        brokerMs: brokerTimeEpochMs, gmtMs: eaCreatedAtEpochMs, basis: "v2_tick",
+      });
+    }
+    const tickUtc = brokerTimeEpochMs != null
+      ? brokerStampToUtcMs(bridge?.bridgeConnectionId ?? null, brokerTimeEpochMs)
+      : null;
+    const tickUtcMs = tickUtc ? tickUtc.utcMs : brokerTimeEpochMs;
     const quote: MarketQuote = {
       symbol,
       bid,
       ask,
       spread: ask - bid,
-      timestamp: new Date(brokerTimeEpochMs ?? Date.now()).toISOString(),
+      timestamp: new Date(tickUtcMs ?? Date.now()).toISOString(),
     };
     // The v2 TICK contract requires brokerTimeEpochMs; should the defensive
     // receive-time fallback ever be used, the store records that it is not an
     // observed tick time.
     //
-    // Limit (documented, not repaired): tickTimeObserved=true means only that
-    // the PRODUCER supplied the tick's own time. brokerTimeEpochMs is broker
-    // server time per the contract; it is a UTC instant only if the EA
-    // converted it, and nothing here can verify that. No timezone conversion
-    // is attempted. Consumers compare it with server UTC and fail closed: an
-    // un-converted clock ahead of UTC beyond the 5 s skew allowance reads
-    // QUOTE_TIME_FUTURE / not fresh, and one behind reads stale.
-    updateQuoteFromMT5(symbol, quote, bridge, { tickTimeObserved: brokerTimeEpochMs != null });
+    // tickTimeObserved=true means the PRODUCER supplied the tick's own time.
+    // brokerTimeEpochMs is broker server time per the contract. When this
+    // bridge's clock offset has been measured (brokerClockOffset.ts) the stamp
+    // is converted to UTC at ingest and the offset used is recorded on the
+    // quote; when it has not, the raw stamp is kept and consumers compare it
+    // with server UTC and fail closed (QUOTE_TIME_FUTURE / QUOTE_STALE).
+    updateQuoteFromMT5(symbol, quote, bridge, {
+      tickTimeObserved: brokerTimeEpochMs != null,
+      brokerClockOffsetMs: tickUtc ? tickUtc.offset.offsetMs : null,
+    });
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
     // analysis/execution input.
-    foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now(), "mt5_broker");
+    foldFormingTick(symbol, bid, tickUtcMs, Date.now(), "mt5_broker");
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
   }
@@ -338,3 +365,6 @@ async function safeInsertRejected(
     // Never let trace-logging failure propagate into the EA response path.
   }
 }
+
+/** Test seam: the market-data fold of one accepted v2 message (no DB). */
+export const __feedMarketDataStoreForTests = feedMarketDataStore;

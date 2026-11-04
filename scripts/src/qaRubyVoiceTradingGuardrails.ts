@@ -31,11 +31,13 @@ import { eq, inArray } from "drizzle-orm";
 type DispatchToolResult = Record<string, unknown>;
 type DispatchTool = (toolName: string, args: Record<string, unknown>, userId: number) => Promise<DispatchToolResult>;
 let _dispatchTool: DispatchTool | null = null;
+let TOOL_DEFINITIONS: Array<{ name: string }> = [];
 async function dispatchTool(toolName: string, args: Record<string, unknown>, userId: number): Promise<DispatchToolResult> {
   if (!_dispatchTool) {
     const modPath: string = "../../artifacts/api-server/src/lib/assistant/tools.js";
-    const mod = (await import(modPath)) as { dispatchTool: DispatchTool };
+    const mod = (await import(modPath)) as { dispatchTool: DispatchTool; TOOL_DEFINITIONS: Array<{ name: string }> };
     _dispatchTool = mod.dispatchTool;
+    TOOL_DEFINITIONS = mod.TOOL_DEFINITIONS;
   }
   return _dispatchTool(toolName, args, userId);
 }
@@ -131,54 +133,46 @@ async function main() {
     check("01c-authed-voice-status-ok", false, `err=${(e as Error).message}`);
   }
 
-  // ── 2. requestLiveOrder without confirmedByUser is REJECTED with a
-  // structured reason (status=REJECTED + non-empty reason field). The
-  // exact reason can be USER_TRADING_DISABLED (earlier gate firing) or
-  // LIVE_CONFIRMATION_REQUIRED — either is a hard no. We assert the
-  // STRUCTURE of the refusal, not the specific reason, so the test
-  // catches a regression where status flips to something non-REJECTED.
+  // ── 2. requestLiveOrder no longer exists as a tool (AI chat audit
+  // 2026-11-04, A2): the assistant never places orders. The dispatcher must
+  // answer unknown_tool with NO side effect, and the tool list must not
+  // advertise either order tool.
   const mt5Mid1 = await countMt5Commands();
   const liveMid = await countLiveCommands();
-  let unconfirmedReason = "";
   try {
     const r = await dispatchTool("requestLiveOrder", {
       symbol: "EURUSD", side: "BUY", lotSize: 0.01, stopLoss: 1.05, takeProfit: 1.10,
       confirmedByUser: false,
     }, userA.id);
     const s = JSON.stringify(r);
-    const rec = r as { result?: { status?: string; reason?: string } };
-    const status = rec.result?.status ?? "";
-    unconfirmedReason = rec.result?.reason ?? "";
-    check("02a-unconfirmed-status-REJECTED", status === "REJECTED", `status=${status}`);
-    check("02b-unconfirmed-has-reason", unconfirmedReason.length > 0, `reason=${unconfirmedReason}`);
-    check("02c-unconfirmed-no-mt5-side-effect", /BLOCK|REFUS|DENIED|DISABLED|NOT_IMPLEMENTED|LOCKED|NOT_APPROVED|UNAVAILABLE|REJECTED|REQUIRED/i.test(s), `resp~=${s.slice(0, 160)}`);
+    const rec = r as { error?: string; result?: unknown };
+    check("02a-unconfirmed-unknown-tool", rec.error === "unknown_tool", `resp~=${s.slice(0, 160)}`);
+    check("02b-unconfirmed-no-result-payload", rec.result === undefined, `resp~=${s.slice(0, 160)}`);
+    check("02c-order-tools-not-advertised", !TOOL_DEFINITIONS.some((t) => t.name === "requestLiveOrder" || t.name === "requestDemoOrder"), `tools=${TOOL_DEFINITIONS.length}`);
   } catch (e) {
-    check("02a-unconfirmed-status-REJECTED", false, `err=${(e as Error).message}`);
-    check("02b-unconfirmed-has-reason", false, "n/a");
-    check("02c-unconfirmed-no-mt5-side-effect", false, "n/a");
+    check("02a-unconfirmed-unknown-tool", false, `err=${(e as Error).message}`);
+    check("02b-unconfirmed-no-result-payload", false, "n/a");
+    check("02c-order-tools-not-advertised", false, "n/a");
   }
   const mt5After2 = await countMt5Commands();
   const liveAfter2 = await countLiveCommands();
   check("02d-no-mt5_commands-after-unconfirmed", mt5After2 === mt5Mid1, `mid=${mt5Mid1} after=${mt5After2}`);
   check("02e-no-arx_live_commands-after-unconfirmed", liveAfter2 === liveMid, `mid=${liveMid} after=${liveAfter2}`);
 
-  // ── 3. requestLiveOrder WITH confirmedByUser=true STILL refused, and
-  // no command row inserted into EITHER queue (arx_live_commands OR
-  // mt5_commands). The voice/text dispatch path uses brokerPlacement
-  // which queues into mt5_commands when (and only when) all guards pass;
-  // since our seeded user is not approved + master switch is off, no row
-  // should ever be created.
+  // ── 3. Even "confirmedByUser=true" (and the demo variant) reach no order
+  // path: unknown_tool, and no command row in EITHER queue.
   try {
     const r = await dispatchTool("requestLiveOrder", {
       symbol: "EURUSD", side: "BUY", lotSize: 0.01, stopLoss: 1.05, takeProfit: 1.10,
       confirmedByUser: true,
     }, userA.id);
+    const d = await dispatchTool("requestDemoOrder", { symbol: "EURUSD", side: "BUY", lotSize: 0.01 }, userA.id);
     const s = JSON.stringify(r);
-    const rec = r as { result?: { status?: string; reason?: string } };
-    const status = rec.result?.status ?? "";
-    check("03a-confirmed-status-REJECTED", status === "REJECTED", `status=${status} resp~=${s.slice(0, 160)}`);
+    const rec = r as { error?: string };
+    const drec = d as { error?: string };
+    check("03a-confirmed-unknown-tool", rec.error === "unknown_tool" && drec.error === "unknown_tool", `resp~=${s.slice(0, 160)}`);
   } catch (e) {
-    check("03a-confirmed-status-REJECTED", true, `threw=${(e as Error).message.slice(0, 120)}`);
+    check("03a-confirmed-unknown-tool", false, `threw=${(e as Error).message.slice(0, 120)}`);
   }
   const mt5After3 = await countMt5Commands();
   const liveAfter3 = await countLiveCommands();
