@@ -1,95 +1,63 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, type LucideIcon } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ChevronDown, ChevronUp, type LucideIcon } from "lucide-react";
 import type { RoutePanelLayout } from "./shellLayoutModel";
-import { railPanels, revealPanel, sideIsRailed } from "./sidePanelModel";
+import { railPanels, sideIsRailed, panelIsClosed } from "./sidePanelModel";
+import { PanelController, usePanelController, type PanelEdge } from "./PanelController";
 import "./side-panel-area.css";
+import "./panel-motion.css";
 
-type Side = "left" | "right";
 export type SidePanelItem = { id: string; title: string; icon: LucideIcon };
-const SidePanelContext = createContext<{
-  side: Side;
-  railed: string[];
-  sendToRail: (id: string) => void;
-} | null>(null);
-
+const SidePanelContext = createContext<{ side: PanelEdge } | null>(null);
 export const useSidePanelArea = () => useContext(SidePanelContext);
+type Props<T extends RoutePanelLayout> = {
+  side: PanelEdge; panels: readonly SidePanelItem[]; layout: T; onChange: (layout: T) => void;
+  children: ReactNode; className?: string; quickAction?: ReactNode;
+  columnIds?: readonly string[]; showGroupToggle?: boolean;
+};
 
-/** Presentation only: data and account providers stay owned by the authorized page. */
-export function SidePanelArea<T extends RoutePanelLayout>({
-  side, panels, layout, onChange, children, className = "", quickAction,
-}: {
-  side: Side;
-  panels: readonly SidePanelItem[];
-  layout: T;
-  onChange: (layout: T) => void;
-  children: ReactNode;
-  className?: string;
-  quickAction?: ReactNode;
-}) {
-  const [desktop, setDesktop] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024);
+/** Can share a page-wide controller, or own a specialist route's controller. */
+export function SidePanelArea<T extends RoutePanelLayout>(props: Props<T>) {
+  const controller = usePanelController();
+  return controller ? <Area {...props}/> : <PanelController layout={props.layout} onChange={props.onChange}><Area {...props}/></PanelController>;
+}
+
+function Area<T extends RoutePanelLayout>({
+  side, panels, layout, onChange, children, className = "", quickAction, columnIds, showGroupToggle = true,
+}: Props<T>) {
+  const controller = usePanelController()!;
   const [slot, setSlot] = useState<HTMLElement | null>(null);
-  const frame = useRef<number | null>(null);
-  useEffect(() => {
-    const update = () => setDesktop(window.innerWidth >= 1024);
-    window.addEventListener("resize", update);
-    setSlot(document.querySelector<HTMLElement>("[data-route-layout-slot]"));
-    return () => {
-      window.removeEventListener("resize", update);
-      if (frame.current !== null) window.cancelAnimationFrame(frame.current);
-    };
-  }, []);
+  useEffect(() => { setSlot(document.querySelector<HTMLElement>("[data-route-layout-slot]")); }, []);
   const ids = panels.map(panel => panel.id);
-  const railed = desktop ? (layout.railed ?? []).filter(id => ids.includes(id) && !layout.pinned.includes(id)) : [];
-  const fullRail = desktop && sideIsRailed(layout, ids);
-  const Open = side === "left" ? PanelLeftOpen : PanelRightOpen;
-  const Close = side === "left" ? PanelLeftClose : PanelRightClose;
-  const changeSide = (rail: boolean) => onChange(railPanels(layout, ids, rail));
-  const focusAfterRender = (selector: string, scroll: boolean) => {
-    const ownerDocument = document;
-    if (frame.current !== null) window.cancelAnimationFrame(frame.current);
-    frame.current = window.requestAnimationFrame(() => {
-      frame.current = null;
-      const target = ownerDocument.querySelector<HTMLElement>(selector);
-      if (scroll) target?.scrollIntoView({ block: "nearest" });
-      target?.focus({ preventScroll: true });
-    });
-  };
-  const openPanel = (id: string) => {
-    onChange(revealPanel(layout, id));
-    focusAfterRender(`[data-layout-panel="${id}"]`, true);
-  };
-  return <SidePanelContext.Provider value={{
-    side, railed,
-    sendToRail: id => {
-      onChange(railPanels(layout, [id], true));
-      focusAfterRender(`[data-side-panel-open="${side}-${id}"]`, false);
-    },
-  }}>
+  const closed = controller.enabled ? ids.filter(id => controller.mode(id) !== "open") : [];
+  const fullRail = controller.enabled && (columnIds ?? ids).every(id => controller.mode(id) !== "open");
+  const Open = side === "left" ? PanelLeftOpen : side === "right" ? PanelRightOpen : ChevronUp;
+  const Close = side === "left" ? PanelLeftClose : side === "right" ? PanelRightClose : ChevronDown;
+  const changeSide = (rail: boolean) => onChange(railPanels(layout, columnIds ?? ids, rail));
+  const label = side[0].toUpperCase() + side.slice(1);
+  return <SidePanelContext.Provider value={{ side }}>
     <div className={`arx-side-area ${className}`} data-side={side} data-railed={fullRail}>
-      <div className="arx-side-tools" role="toolbar" aria-label={`${side === "left" ? "Left" : "Right"} tools`}>
-        <button type="button" className="arx-side-toggle"
+      <div className="arx-side-tools" role="toolbar" aria-label={`${label} tools`}>
+        {showGroupToggle && <button type="button" className="arx-side-toggle"
           aria-label={`${fullRail ? "Expand" : "Collapse"} ${side} tools`}
-          title={`${fullRail ? "Expand" : "Collapse"} ${side} tools`}
-          aria-expanded={!fullRail}
-          disabled={!fullRail && ids.every(id => layout.pinned.includes(id))}
-          onClick={() => changeSide(!fullRail)}>
+          title={`${fullRail ? "Expand" : "Collapse"} ${side} tools`} aria-expanded={!fullRail}
+          disabled={!fullRail && ids.every(id => layout.pinned.includes(id))} onClick={() => changeSide(!fullRail)}>
           {fullRail ? <Open size={17} aria-hidden="true"/> : <Close size={17} aria-hidden="true"/>}
-        </button>
+        </button>}
         <div className="arx-side-tool-buttons">
-          {panels.filter(panel => railed.includes(panel.id)).map(({ id, title, icon: Icon }) =>
-            <button key={id} type="button" className="arx-side-icon"
-              data-side-panel-open={`${side}-${id}`} aria-controls={`workspace-${id}`}
-              aria-label={`Open ${title}`} title={`Open ${title}`} onClick={() => openPanel(id)}>
+          {panels.filter(panel => closed.includes(panel.id)).map(({ id, title, icon: Icon }) =>
+            <button key={id} type="button" className="arx-side-icon" data-panel-rail-icon={id}
+              aria-controls={`workspace-${id}`} aria-expanded={controller.mode(id) === "peek"}
+              aria-label={`Open ${title}`} title={`Open ${title}`} onClick={() => controller.peek(id)}>
               <Icon size={17} aria-hidden="true"/>
             </button>)}
-          {railed.includes("order") && quickAction}
+          {closed.includes("order") && quickAction}
         </div>
       </div>
       {children}
     </div>
-    {slot && desktop && createPortal(<fieldset className="arx-side-layout-options">
-      <legend>{side === "left" ? "Left" : "Right"} tools</legend>
+    {slot && controller.enabled && createPortal(<fieldset className="arx-side-layout-options">
+      <legend>{label} tools</legend>
       <button type="button" aria-pressed={!fullRail} onClick={() => changeSide(false)}>Shown</button>
       <button type="button" aria-pressed={fullRail} disabled={ids.every(id => layout.pinned.includes(id))}
         onClick={() => changeSide(true)}>Rail</button>

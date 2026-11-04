@@ -1,4 +1,6 @@
 import { TickingTime } from "@/components/ui/TickingTime";
+import { usePanelController } from "@/components/layout/PanelController";
+import { ChartDetailPanel } from "@/components/layout/ChartDetailPanel";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { SCANNER_CHART_LAYOUT_KEY } from "@/lib/chart-engine/chartLayout";
 import { ARXNativeChart, type ArxTimeframe } from "@/components/charts/ARXNativeChart";
@@ -420,12 +422,18 @@ export function useScannerChartRead(
 
 export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspace?: boolean } = {}) {
   const [feedDetailsOpen, setFeedDetailsOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
-  const [chartDetailsOpen, setChartDetailsOpen] = useState(false);
+  const [localChartDetailsOpen, setLocalChartDetailsOpen] = useState(false);
+  const panelController = usePanelController();
+  const sharedDetails = !!panelController?.enabled;
+  const chartDetailsOpen = sharedDetails ? panelController!.mode("chart-details") !== "closed" : localChartDetailsOpen;
+  const setChartDetailsOpen = (open: boolean) => sharedDetails
+    ? open ? panelController!.peek("chart-details") : panelController!.close("chart-details")
+    : setLocalChartDetailsOpen(open);
   const chartDetailsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const chartDetailsCloseRef = useRef<HTMLButtonElement | null>(null);
   const chartDetailsDrawerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!chartDetailsOpen) return;
+    if (!chartDetailsOpen || sharedDetails) return;
     const previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     chartDetailsCloseRef.current?.focus();
@@ -456,7 +464,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       document.removeEventListener("keydown", onKeyDown);
       chartDetailsTriggerRef.current?.focus();
     };
-  }, [chartDetailsOpen]);
+  }, [chartDetailsOpen, sharedDetails]);
   useEffect(() => {
     let wide = window.innerWidth >= 768;
     const onResize = () => { const next = window.innerWidth >= 768; if (next !== wide) { wide = next; setFeedDetailsOpen(next); } };
@@ -2151,20 +2159,21 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
           </>}
         />
         </SmartChartLayout>
-        {(hasCandles || compactWorkspace) && (
+        {(hasCandles || compactWorkspace || sharedDetails) && (
+          <ChartDetailPanel compact={compactWorkspace || sharedDetails}>
           <div
             id="scanner-chart-details-drawer"
             ref={chartDetailsDrawerRef}
-            className={compactWorkspace ? "arx-chart-details-drawer" : "mt-3 space-y-3"}
-            hidden={compactWorkspace && !chartDetailsOpen}
-            role={compactWorkspace ? "dialog" : undefined}
-            aria-modal={compactWorkspace && chartDetailsOpen ? true : undefined}
-            aria-labelledby={compactWorkspace ? "scanner-chart-details-title" : undefined}
+            className={sharedDetails ? "arx-chart-details-content" : compactWorkspace ? "arx-chart-details-drawer" : "mt-3 space-y-3"}
+            hidden={compactWorkspace && !sharedDetails && !chartDetailsOpen}
+            role={compactWorkspace && !sharedDetails ? "dialog" : undefined}
+            aria-modal={compactWorkspace && !sharedDetails && chartDetailsOpen ? true : undefined}
+            aria-labelledby={compactWorkspace && !sharedDetails ? "scanner-chart-details-title" : undefined}
             data-testid="scanner-chart-details-drawer"
           >
             {compactWorkspace && <div className="arx-chart-details-header">
-              <div><h2 id="scanner-chart-details-title">Smart Chart details</h2><p>{symbol} · additional controls and evidence</p></div>
-              <button type="button" ref={chartDetailsCloseRef} onClick={() => setChartDetailsOpen(false)} className="arx-chart-details-close" data-testid="scanner-chart-details-close">Return to compact desk</button>
+              <div>{!sharedDetails && <h2 id="scanner-chart-details-title">Smart Chart details</h2>}<p>{symbol} · additional controls and evidence</p></div>
+              <button type="button" ref={chartDetailsCloseRef} disabled={sharedDetails && panelController!.isPinned("chart-details")} onClick={() => setChartDetailsOpen(false)} className="arx-chart-details-close" data-testid="scanner-chart-details-close">Return to compact desk</button>
             </div>}
             {hasCandles ? <div className="mt-3 space-y-3">
 
@@ -2548,6 +2557,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
             )}
             </div> : <p className="p-4 text-sm text-slate-300">Additional chart details are unavailable until confirmed candle data is available.</p>}
           </div>
+          </ChartDetailPanel>
         )}
       </CardContent>
     </Card>

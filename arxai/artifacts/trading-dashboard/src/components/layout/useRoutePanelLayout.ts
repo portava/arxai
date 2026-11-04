@@ -18,7 +18,9 @@ export function useRoutePanelLayout(
   const userId = user?.id ?? null;
   const panelIdKey = panelIds.join("|");
   const stablePanelIds = useMemo(() => panelIdKey ? panelIdKey.split("|") : [], [panelIdKey]);
-  const [layout, setLayoutState] = useState<RoutePanelLayout>(() => ({
+  const [layout, setLayoutState] = useState<RoutePanelLayout>(() => userId != null && typeof window !== "undefined"
+    ? readRoutePanelLayout(window.localStorage, userId, routeKey, stablePanelIds, options)
+    : ({
     collapsed: [],
     pinned: [],
     ...(options.defaultPreset ? { preset: options.defaultPreset } : {}),

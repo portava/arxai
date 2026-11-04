@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import { Activity, type LucideIcon } from "lucide-react";
 import { LayoutPanel } from "./LayoutPanel";
 import { useRoutePanelLayout } from "./useRoutePanelLayout";
 import { SidePanelArea } from "./SidePanelArea";
@@ -24,9 +24,10 @@ export function RouteLayoutPanel({
   /** For routes with a real side area; full-width sections remain full-width. */
   side?: "left" | "right";
 }) {
-  const { layout, setLayout } = useRoutePanelLayout(routeKey, [id]);
+  const { layout, setLayout } = useRoutePanelLayout(routeKey, [id, "chart-details"]);
   const collapsed = layout.collapsed.includes(id);
   const pinned = layout.pinned.includes(id);
+  const chartPage = routeKey.replace(/^\//, "") === "market-scanner";
 
   const panel = <LayoutPanel
     id={id}
@@ -54,9 +55,13 @@ export function RouteLayoutPanel({
         ? layout.collapsed
         : layout.collapsed.filter(panelId => panelId !== id),
       railed: (layout.railed ?? []).filter(panelId => panelId !== id),
+      ...(layout.peek === id ? { peek: undefined } : {}),
     })}
   >{children}</LayoutPanel>;
-  return side ? <SidePanelArea side={side} panels={[{ id, title, icon }]} layout={layout} onChange={setLayout}>
+  return <SidePanelArea side={side ?? "left"} panels={[{ id, title, icon },
+    ...(chartPage ? [{ id: "chart-details", title: "Smart Chart details", icon: Activity }] : [])]}
+    layout={layout} onChange={setLayout} className="arx-route-panel-area" showGroupToggle={false}>
     {panel}
-  </SidePanelArea> : panel;
+    {chartPage && <div data-panel-details-slot/>}
+  </SidePanelArea>;
 }

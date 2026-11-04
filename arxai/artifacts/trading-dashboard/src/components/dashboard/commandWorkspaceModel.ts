@@ -24,7 +24,7 @@ export function dashboardPanelForTool(href: string): WorkspacePanelId | null {
   return cockpitPanelForRoute(href);
 }
 
-export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: string[]; railed?: string[]; preset: WorkspacePreset }>(current: T, preset: WorkspacePreset): T {
+export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: string[]; railed?: string[]; peek?: string; preset: WorkspacePreset }>(current: T, preset: WorkspacePreset): T {
   const visible: Record<WorkspacePreset, string[]> = {
     Analyze: ["discovery", "chart", "heat", "intelligence", "clock", "ruby", "risk"],
     Trade: ["discovery", "chart", "heat", "clock", "risk", "order", "positions"],
@@ -33,12 +33,13 @@ export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: st
   return {
     ...current, preset,
     collapsed: WORKSPACE_PANEL_IDS.filter(id => !visible[preset].includes(id) && !current.pinned.includes(id)),
-    railed: (preset === "Analyze" ? ["ruby", "risk", "order"] : preset === "Review" ? ["discovery", "heat", "clock"] : [])
-      .filter(id => !current.pinned.includes(id)),
+    railed: [...WORKSPACE_PANEL_IDS.filter(id => !visible[preset].includes(id) && !current.pinned.includes(id)),
+      ...(!current.pinned.includes("chart-details") ? ["chart-details"] : [])],
+    peek: undefined,
   };
 }
 
-export function toggleWorkspacePanel<T extends { collapsed: string[]; pinned: string[]; railed?: string[] }>(
+export function toggleWorkspacePanel<T extends { collapsed: string[]; pinned: string[]; railed?: string[]; peek?: string }>(
   current: T, id: string, action: "collapse" | "pin",
 ): T {
   const field = action === "collapse" ? "collapsed" : "pinned";

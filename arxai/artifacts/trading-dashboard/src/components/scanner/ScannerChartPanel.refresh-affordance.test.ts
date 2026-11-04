@@ -70,9 +70,10 @@ describe("ScannerChartPanel reload button — spins + disables, never double-fir
   });
 
   it("keeps long chart detail content mounted in a focusable drawer with a close/return path", () => {
-    expect(code).toContain('hidden={compactWorkspace && !chartDetailsOpen}');
-    expect(code).toContain('role={compactWorkspace ? "dialog" : undefined}');
-    expect(code).toContain('aria-modal={compactWorkspace && chartDetailsOpen ? true : undefined}');
+    expect(code).toContain('hidden={compactWorkspace && !sharedDetails && !chartDetailsOpen}');
+    expect(code).toContain('role={compactWorkspace && !sharedDetails ? "dialog" : undefined}');
+    expect(code).toContain('aria-modal={compactWorkspace && !sharedDetails && chartDetailsOpen ? true : undefined}');
+    expect(code).toContain('<ChartDetailPanel compact={compactWorkspace || sharedDetails}>');
     expect(code).toContain('data-testid="scanner-chart-details-close"');
     expect(code).toContain("Return to compact desk");
     expect(code).toContain('if (event.key === "Escape")');

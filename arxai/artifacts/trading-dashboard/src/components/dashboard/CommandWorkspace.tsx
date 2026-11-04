@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "reac
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { SidePanelArea } from "@/components/layout/SidePanelArea";
-import { revealPanel, sideIsRailed } from "@/components/layout/sidePanelModel";
+import { revealPanel, sideIsRailed, panelIsClosed, withSlidingPanels } from "@/components/layout/sidePanelModel";
+import { PanelController } from "@/components/layout/PanelController";
 import { useAssistantName } from "@/lib/assistant-name";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { ScannerChartPanel } from "@/components/scanner/ScannerChartPanel";
@@ -46,16 +47,19 @@ const PANELS = [
 ] as const;
 type PanelId = WorkspacePanelId;
 const LAYOUT_KEY = "arx.command-workspace.layout.v1";
-type LayoutState = { collapsed: PanelId[]; pinned: PanelId[]; railed?: string[]; preset: WorkspacePreset };
+type LayoutState = { collapsed: PanelId[]; pinned: PanelId[]; railed?: string[]; peek?: string; slidingVersion?: 1; preset: WorkspacePreset };
 const LEFT_SIDE_PANELS = [
   { id: "discovery", title: "Market scanner", icon: Search },
   { id: "heat", title: "Market heat", icon: BarChart3 },
   { id: "clock", title: "Desk and world time", icon: CalendarDays },
+  { id: "chart", title: "Smart Chart", icon: Activity },
 ];
 const RIGHT_SIDE_PANELS = [
   { id: "ruby", title: "AI read", icon: Brain },
   { id: "risk", title: "Risk and permission", icon: Shield },
   { id: "order", title: "Order entry", icon: Crosshair },
+  { id: "intelligence", title: "Market intelligence", icon: ScanLine },
+  { id: "chart-details", title: "Smart Chart details", icon: Activity },
 ];
 const DEFAULT_LAYOUT: LayoutState = { collapsed: [], pinned: [], preset: "Analyze" };
 
@@ -106,6 +110,7 @@ export function WorkspacePanel({
     id={id}
     title={title}
     icon={Icon}
+    edge={id === "positions" ? "bottom" : id === "intelligence" ? "right" : undefined}
     collapsed={collapsed}
     pinned={pinned}
     onCollapse={onCollapse}
@@ -127,13 +132,15 @@ export function CommandWorkspace({
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const routeLayout = useRoutePanelLayout(
     "cockpit",
-    PANELS.map(panel => panel.id),
+    [...PANELS.map(panel => panel.id), "chart-details"],
     { legacyKey: LAYOUT_KEY, defaultPreset: "Analyze" },
   );
   const layout = {
     collapsed: routeLayout.layout.collapsed as PanelId[],
     pinned: routeLayout.layout.pinned as PanelId[],
     railed: routeLayout.layout.railed,
+    peek: routeLayout.layout.peek,
+    slidingVersion: routeLayout.layout.slidingVersion,
     preset: routeLayout.layout.preset ?? "Analyze",
   } satisfies LayoutState;
   const [isDesktopWorkspace, setIsDesktopWorkspace] = useState(() => typeof window !== "undefined" && window.innerWidth > 767);
@@ -236,6 +243,7 @@ export function CommandWorkspace({
   const cockpitHeaderPortal = headerSlot ? createPortal(cockpitHeaderControls, headerSlot) : null;
 
   return <>
+  <PanelController layout={layout} onChange={next => { setSavedLayoutControlsUsed(true); updateLayout(next); }}>
   <div className="arx-dashboard-root arx-workspace">
     <div className="arx-workspace-body">
       <AccountCommandStrip />
@@ -244,9 +252,11 @@ export function CommandWorkspace({
         Focus view · {PANELS.find(panel => panel.id === mobileFocusedPanel)?.title ?? "Chart"} · Chart and positions stay available; use the tool tray to switch.
       </div>}
       <div className="arx-workspace-grid"
+        data-center-closed={panelIsClosed(layout, "chart") && panelIsClosed(layout, "intelligence")}
         data-left-rail={sideIsRailed(layout, ["discovery", "heat", "clock"])}
-        data-right-rail={sideIsRailed(layout, ["ruby", "risk", "order"])}>
+        data-right-rail={sideIsRailed(withSlidingPanels(layout), ["ruby", "risk", "order", "chart-details"])}>
         <SidePanelArea side="left" className="arx-col arx-col-left" panels={LEFT_SIDE_PANELS}
+          columnIds={["discovery", "heat", "clock"]}
           layout={layout} onChange={next => { setSavedLayoutControlsUsed(true); updateLayout(next); }}>
           <WorkspacePanel id="discovery" hidden={mobileHidden("discovery")} title="Market scanner" icon={Search} collapsed={visibleLayout.collapsed.includes("discovery")} pinned={layout.pinned.includes("discovery")} onCollapse={() => togglePanel("discovery")} onPin={() => togglePin("discovery")}><SymbolExplorer compactWorkspace activeSymbol={symbol} onSelect={canonical => setSymbol(canonical)}/></WorkspacePanel>
           <WorkspacePanel id="heat" hidden={mobileHidden("heat")} title="Market heat" icon={BarChart3} collapsed={visibleLayout.collapsed.includes("heat")} pinned={layout.pinned.includes("heat")} onCollapse={() => togglePanel("heat")} onPin={() => togglePin("heat")}><GlobalMarketHeatCard compactWorkspace/></WorkspacePanel>
@@ -257,17 +267,23 @@ export function CommandWorkspace({
           <WorkspacePanel id="intelligence" hidden={mobileHidden("intelligence")} title="Market intelligence" icon={ScanLine} collapsed={visibleLayout.collapsed.includes("intelligence")} pinned={layout.pinned.includes("intelligence")} onCollapse={() => togglePanel("intelligence")} onPin={() => togglePin("intelligence")}><div className="arx-intelligence-grid"><CriticalEventsCard compactWorkspace/><BestMarketsCard compactWorkspace/><AvoidMarketsCard compactWorkspace/><AlertsSummaryCard compactWorkspace/></div></WorkspacePanel>
         </div>
         <SidePanelArea side="right" className="arx-col arx-col-right" panels={RIGHT_SIDE_PANELS}
+          columnIds={["ruby", "risk", "order", "chart-details"]}
           layout={layout} onChange={next => { setSavedLayoutControlsUsed(true); updateLayout(next); }}
-          quickAction={<button type="button" className="arx-side-quick-action" aria-label="Review order" title="Review order" onClick={() => setOrderReviewOpen(true)}><Crosshair size={17} aria-hidden="true"/></button>}>
+          quickAction={<button type="button" className="arx-side-quick-action" aria-label="Review order" title="Review order" onClick={() => { updateLayout({ ...layout, peek: undefined }); setOrderReviewOpen(true); }}><Crosshair size={17} aria-hidden="true"/></button>}>
           <WorkspacePanel id="ruby" hidden={mobileHidden("ruby")} title={`${name} · AI read`} icon={Brain} collapsed={visibleLayout.collapsed.includes("ruby")} pinned={layout.pinned.includes("ruby")} onCollapse={() => togglePanel("ruby")} onPin={() => togglePin("ruby")}><RubyMarketReadCard compactWorkspace symbol={active}/></WorkspacePanel>
           <WorkspacePanel id="risk" hidden={mobileHidden("risk")} title="Risk & permission" icon={Shield} collapsed={visibleLayout.collapsed.includes("risk")} pinned={layout.pinned.includes("risk")} onCollapse={() => togglePanel("risk")} onPin={() => togglePin("risk")}><div className="arx-risk-compact-stack"><RiskUtilizationSummary/><TradingPermissionSummaryCard compactWorkspace/></div></WorkspacePanel>
-          <WorkspacePanel id="order" hidden={mobileHidden("order")} title="Order entry" icon={Crosshair} collapsed={visibleLayout.collapsed.includes("order")} pinned={layout.pinned.includes("order")} onCollapse={() => togglePanel("order")} onPin={() => togglePin("order")}><ReviewedOrderCallout symbol={active} onOpen={() => setOrderReviewOpen(true)}/></WorkspacePanel>
+          <WorkspacePanel id="order" hidden={mobileHidden("order")} title="Order entry" icon={Crosshair} collapsed={visibleLayout.collapsed.includes("order")} pinned={layout.pinned.includes("order")} onCollapse={() => togglePanel("order")} onPin={() => togglePin("order")}><ReviewedOrderCallout symbol={active} onOpen={() => { updateLayout({ ...layout, peek: undefined }); setOrderReviewOpen(true); }}/></WorkspacePanel>
+          <div data-panel-details-slot/>
         </SidePanelArea>
       </div>
-      <WorkspacePanel id="positions" hidden={mobileHidden("positions")} title="Open positions" icon={Briefcase} collapsed={visibleLayout.collapsed.includes("positions")} pinned={layout.pinned.includes("positions")} onCollapse={() => togglePanel("positions")} onPin={() => togglePin("positions")} className="arx-positions"><OpenPositionsCard compactWorkspace/></WorkspacePanel>
+      <SidePanelArea side="bottom" panels={[{ id: "positions", title: "Open positions", icon: Briefcase }]} layout={layout}
+        onChange={next => { setSavedLayoutControlsUsed(true); updateLayout(next); }}>
+        <WorkspacePanel id="positions" hidden={mobileHidden("positions")} title="Open positions" icon={Briefcase} collapsed={visibleLayout.collapsed.includes("positions")} pinned={layout.pinned.includes("positions")} onCollapse={() => togglePanel("positions")} onPin={() => togglePin("positions")} className="arx-positions"><OpenPositionsCard compactWorkspace/></WorkspacePanel>
+      </SidePanelArea>
     </div>
     <ReviewedOrderFlowSheet open={orderReviewOpen} onOpenChange={setOrderReviewOpen} symbol={active}/>
   </div>
+  </PanelController>
   {cockpitHeaderPortal}
   </>;
 }

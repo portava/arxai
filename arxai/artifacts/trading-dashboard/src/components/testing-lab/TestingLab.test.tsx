@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import TestingLab from "@/pages/testing-lab";
 import { routePanelLayoutKey } from "@/components/layout/shellLayoutModel";
 
@@ -65,44 +65,45 @@ function selectTab(name: string) {
 }
 
 describe("Testing Lab page", () => {
-  it("remembers collapse per tab and user without hiding strategy or tab navigation", () => {
+  it("remembers edge closing per tab and user without hiding strategy or tab navigation", async () => {
     const view = render(<TestingLab />);
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Historical testing" }));
-    expect(screen.getByRole("button", { name: "Expand Historical testing" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Close Historical testing" }));
+    expect(screen.getByRole("button", { name: "Open Historical testing" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByTestId("shared-strategy-select")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Forward Testing" })).toBeTruthy();
     // The form stays mounted even while hidden, preserving ongoing local work.
-    expect(screen.getByTestId("strategy-form").closest("[hidden]")).not.toBeNull();
-    expect(JSON.parse(localStorage.getItem(routePanelLayoutKey(101, "/testing-lab/backtesting"))!).collapsed).toEqual(["lab-backtesting"]);
+    await waitFor(() => expect(screen.getByTestId("strategy-form").closest("[hidden]")).not.toBeNull());
+    expect(JSON.parse(localStorage.getItem(routePanelLayoutKey(101, "/testing-lab/backtesting"))!).railed).toEqual(["chart-details", "lab-backtesting"]);
 
     selectTab("Forward Testing");
-    expect(screen.getByRole("button", { name: "Collapse Forward testing workspace" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close Forward testing workspace" })).toBeTruthy();
     selectTab("Backtesting");
-    expect(screen.getByRole("button", { name: "Expand Historical testing" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Historical testing" })).toBeTruthy();
     view.unmount();
 
     const restored = render(<TestingLab />);
-    expect(screen.getByRole("button", { name: "Expand Historical testing" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Historical testing" })).toBeTruthy();
     identity.id = 102;
     restored.rerender(<TestingLab />);
-    expect(screen.getByRole("button", { name: "Collapse Historical testing" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close Historical testing" })).toBeTruthy();
   });
 
   it("pins a collapsed panel open and restores the pin after remounting", () => {
     const view = render(<TestingLab />);
-    const collapse = screen.getByRole("button", { name: "Collapse Historical testing" });
+    const collapse = screen.getByRole("button", { name: "Close Historical testing" });
     collapse.focus();
     expect(document.activeElement).toBe(collapse);
     expect(collapse.getAttribute("type")).toBe("button");
     fireEvent.click(collapse);
+    fireEvent.click(screen.getByRole("button", { name: "Open Historical testing" }));
     fireEvent.click(screen.getByRole("button", { name: "Pin Historical testing" }));
-    expect(screen.getByRole("button", { name: "Collapse Historical testing" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Close Historical testing" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Unpin Historical testing" }).getAttribute("aria-pressed")).toBe("true");
     view.unmount();
     render(<TestingLab />);
     expect(screen.getByRole("button", { name: "Unpin Historical testing" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Unpin Historical testing" }));
-    expect(screen.getByRole("button", { name: "Collapse Historical testing" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Close Historical testing" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("renders the header and subtitle", () => {

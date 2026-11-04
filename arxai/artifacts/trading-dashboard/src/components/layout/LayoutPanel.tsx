@@ -3,6 +3,8 @@ import type { LucideIcon } from "lucide-react";
 import { ChevronDown, ChevronUp, Pin, PinOff, Search, PanelLeftClose, PanelRightClose } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidePanelArea } from "./SidePanelArea";
+import { usePanelController, type PanelEdge } from "./PanelController";
+import { usePanelPresence } from "./usePanelPresence";
 
 export type LayoutPanelProps = {
   id: string;
@@ -18,6 +20,7 @@ export type LayoutPanelProps = {
   hidden?: boolean;
   /** Preserve stateful forms and running views while their panel is collapsed. */
   keepMounted?: boolean;
+  edge?: PanelEdge;
 };
 
 /** Shared accessible pin/collapse surface for Cockpit and specialist routes. */
@@ -34,19 +37,35 @@ export function LayoutPanel({
   bodyClassName,
   hidden = false,
   keepMounted = false,
+  edge,
 }: LayoutPanelProps) {
-  const isCollapsed = collapsed && !pinned;
   const sideArea = useSidePanelArea();
-  const SendToRail = sideArea?.side === "right" ? PanelRightClose : PanelLeftClose;
+  const controller = usePanelController();
+  const desktop = !!controller?.enabled;
+  const mode = desktop ? controller!.mode(id) : "open";
+  const presence = usePanelPresence(mode);
+  const isCollapsed = !desktop && collapsed && !pinned;
+  const panelEdge = edge ?? sideArea?.side ?? "left";
+  const CloseIcon = panelEdge === "right" ? PanelRightClose : panelEdge === "bottom" ? ChevronDown : PanelLeftClose;
+  const peeking = desktop && mode === "peek";
   return (
     <section
+      ref={presence.ref}
       id={`workspace-${id}`}
-      hidden={hidden || (!pinned && sideArea?.railed.includes(id))}
-      className={cn("arx-panel min-w-0", className)}
+      hidden={hidden || (desktop && presence.phase === "closed")}
+      className={cn("arx-panel min-w-0", peeking && "arx-panel--peek", className)}
+      style={desktop ? presence.style : undefined}
+      data-panel-state={desktop ? presence.phase : undefined}
+      data-panel-edge={panelEdge}
+      data-reduced-motion={presence.reduced}
+      role={peeking ? "dialog" : undefined}
+      aria-modal={peeking ? true : undefined}
+      aria-hidden={desktop && presence.phase === "closing" ? true : undefined}
+      inert={desktop && presence.phase === "closing" ? true : undefined}
       aria-label={title}
       tabIndex={-1}
       data-layout-panel={id}
-      data-collapsed={isCollapsed}
+      data-collapsed={desktop ? mode !== "open" : isCollapsed}
     >
       <div className="arx-panel-head">
         <div className="flex min-w-0 items-center gap-2">
@@ -55,20 +74,14 @@ export function LayoutPanel({
           {pinned && <span className="arx-pin-label">PINNED</span>}
         </div>
         <div className="flex items-center gap-1">
-          {sideArea && <button type="button"
-            className="arx-icon-btn arx-panel-send-to-rail"
-            disabled={pinned}
-            aria-label={`Move ${title} to ${sideArea.side} rail`}
-            title={pinned ? "Pinned panels stay shown" : `Move to ${sideArea.side} rail`}
-            onClick={() => sideArea.sendToRail(id)}>
-            <SendToRail size={14} aria-hidden="true"/>
-          </button>}
+          {peeking && <button type="button" className="arx-panel-keep-open"
+            onClick={() => controller!.dock(id)} aria-label={`Keep ${title} open`}>Keep open</button>}
           <button
             type="button"
             aria-pressed={pinned}
             aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
             title={pinned ? "Unpin panel" : "Pin panel"}
-            onClick={onPin}
+            onClick={desktop ? () => controller!.togglePin(id) : onPin}
             className="arx-icon-btn"
             data-testid={`layout-panel-pin-${id}`}
           >
@@ -77,18 +90,18 @@ export function LayoutPanel({
           <button
             type="button"
             disabled={pinned}
-            aria-expanded={!isCollapsed}
-            aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${title}`}
+            aria-expanded={desktop ? mode !== "closed" : !isCollapsed}
+            aria-label={desktop ? `Close ${title}` : `${isCollapsed ? "Expand" : "Collapse"} ${title}`}
             title={pinned ? "Pinned panels stay expanded" : `${isCollapsed ? "Expand" : "Collapse"} panel`}
-            onClick={onCollapse}
+            onClick={desktop ? () => { presence.capture(); controller!.close(id); } : onCollapse}
             className="arx-icon-btn"
             data-testid={`layout-panel-collapse-${id}`}
           >
-            {isCollapsed ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronUp size={14} aria-hidden="true" />}
+            {desktop ? <CloseIcon size={14} aria-hidden="true"/> : isCollapsed ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronUp size={14} aria-hidden="true" />}
           </button>
         </div>
       </div>
-      {(keepMounted || !isCollapsed) && <div hidden={isCollapsed} className={cn("arx-panel-body", bodyClassName)}>{children}</div>}
+      {(desktop || keepMounted || !isCollapsed) && <div hidden={isCollapsed} className={cn("arx-panel-body", bodyClassName)}>{children}</div>}
     </section>
   );
 }

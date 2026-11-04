@@ -12,6 +12,8 @@ export type RoutePanelLayout = {
   collapsed: string[];
   pinned: string[];
   railed?: string[];
+  peek?: string;
+  slidingVersion?: 1;
   preset?: "Analyze" | "Trade" | "Review";
 };
 
@@ -111,13 +113,19 @@ function sanitizePanelLayout(
       ? [...new Set(list.filter((id): id is string => typeof id === "string" && validIds.includes(id)))]
       : [];
   const pinned = valid(value.pinned);
+  const railed = valid(value.railed).filter(id => !pinned.includes(id));
+  const peek = typeof value.peek === "string" && validIds.includes(value.peek)
+    && !pinned.includes(value.peek) && (railed.includes(value.peek) || valid(value.collapsed).includes(value.peek))
+    ? value.peek : undefined;
   const preset = value.preset === "Analyze" || value.preset === "Trade" || value.preset === "Review"
     ? value.preset
     : defaultPreset;
   return {
     collapsed: valid(value.collapsed).filter((id) => !pinned.includes(id)),
     pinned,
-    ...(Array.isArray(value.railed) ? { railed: valid(value.railed).filter(id => !pinned.includes(id)) } : {}),
+    ...(Array.isArray(value.railed) ? { railed } : {}),
+    ...(peek ? { peek } : {}),
+    ...(value.slidingVersion === 1 ? { slidingVersion: 1 as const } : {}),
     ...(preset ? { preset } : {}),
   };
 }

@@ -81,7 +81,9 @@ if (!serve) {
     if(await journal(req,res))return;
     const pathname=new URL(req.url,`http://127.0.0.1:${port}`).pathname;
     if(req.method!=='GET' || pathname.startsWith('/api/')) {res.writeHead(503,{'content-type':'application/json'});res.end('{"error":"OFFLINE_API_NOT_INTERCEPTED"}');return;}
-    const relative=pathname===`/${metadataFile}`?metadataFile:(isOfflineChartPagePath(pathname)?'index.html':pathname.slice(1));
+    // Existing Open Trades SPA route, used only by the offline panel journey.
+    // API paths remain explicitly rejected above; other unknown paths stay 404.
+    const relative=pathname===`/${metadataFile}`?metadataFile:((isOfflineChartPagePath(pathname)||pathname==='/my-trades')?'index.html':pathname.slice(1));
     if(relative!==metadataFile && !(relative in info.hashes)){res.writeHead(404);res.end();return;}
     try {const data=await readFile(path.join(out,relative));res.writeHead(200,{'content-type':relative===metadataFile?'application/json':types[path.extname(relative)]??'application/octet-stream','cache-control':'no-store'});res.end(data);}
     catch {res.writeHead(500);res.end();}

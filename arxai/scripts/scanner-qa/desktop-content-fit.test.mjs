@@ -11,6 +11,7 @@ import { chromium } from "playwright";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const builder = path.join(repo, "scripts/scanner-qa/shared-chart-fixture/build.mjs");
+const evidenceDir = path.resolve(repo, "../generated-artifacts/arx-sliding-panels");
 function executable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
   if (existsSync(chromium.executablePath())) return chromium.executablePath();
@@ -41,9 +42,20 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
   }
   assert.ok(ready, "isolated fixture server failed");
   const browser = await chromium.launch({ executablePath: executable(), headless: true, args: ["--no-sandbox"] });
-  t.after(() => browser.close());
+  mkdirSync(evidenceDir, { recursive: true });
+  let page;
+  t.after(async () => {
+    try {
+      if (page && !page.isClosed()) {
+        console.log(JSON.stringify({ terminalFixtureLog: await page.evaluate(() => window.__readFixtureLog?.() ?? null) }));
+        await page.screenshot({ path: path.join(evidenceDir, "terminal-attempt.png") });
+      }
+    } finally { await browser.close(); }
+  });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
-  const page = await context.newPage();
+  page = await context.newPage();
+  const browserErrors = [];
+  page.on("pageerror", error => { browserErrors.push(error.message); console.log(JSON.stringify({ browserError: error.message })); });
   const setup = vm.runInNewContext(`(${readFileSync(path.join(repo, "scripts/scanner-qa/shared-chart-setup.js"), "utf8")})`, {
     SCANNER_QA_BASE_URL: origin, SCANNER_QA_START_PATH: "/", SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD: true, URL, setTimeout,
   });
@@ -69,6 +81,13 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
   await page.reload();
   assert.equal(await page.evaluate(() => window.__arxScannerQaBuildId), meta.buildId);
   const results = [];
+  const dock = async id => {
+    const icon = page.locator(`[data-panel-rail-icon="${id}"]`);
+    if (await icon.count()) {
+      await icon.click();
+      await page.locator(`[data-layout-panel="${id}"] .arx-panel-keep-open`).click();
+    }
+  };
   // Keep every case's result; assertions happen after the bounded matrix.
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(viewport);
@@ -76,13 +95,7 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
       if (preset !== "All") {
         await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: preset, exact: true }).click();
       } else {
-        for (const side of ["left", "right"]) {
-          const expand = page.getByRole("button", { name: `Expand ${side} tools`, exact: true });
-          if (await expand.count()) await expand.click();
-        }
-        const collapsedIds = await page.locator(".arx-workspace button[data-testid^='layout-panel-collapse-'][aria-expanded='false']")
-          .evaluateAll(buttons => buttons.map(button => button.getAttribute("data-testid")));
-        for (const id of collapsedIds) await page.getByTestId(id).click();
+        for (const id of ["discovery","heat","clock","ruby","risk","order","intelligence","positions","chart"]) await dock(id);
       }
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const receipt = await page.evaluate(() => {
@@ -131,8 +144,7 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(viewport);
     await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: "Trade", exact: true }).click();
-    const rubyExpand = page.getByTestId("layout-panel-collapse-ruby");
-    if (await rubyExpand.getAttribute("aria-expanded") === "false") await rubyExpand.click();
+    await dock("ruby");
     const summary = page.locator(".arx-ruby-details > summary");
     await summary.waitFor({ state: "visible" });
     for (const open of [false, true]) {
@@ -172,6 +184,97 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
     }
   }
   console.log(JSON.stringify({ rationaleCases: rationaleResults.length, passed: true }));
+  const slidingResults = [];
+  for (const id of ["discovery","heat","clock","ruby","risk","order","intelligence","positions","chart"]) await dock(id);
+  for (const id of ["discovery","heat","clock","ruby","risk","order","intelligence","positions","chart","chart-details"]) {
+    const panel = page.locator(`[data-layout-panel="${id}"]`);
+    if (await panel.getAttribute("data-panel-state") !== "closed") {
+      await page.getByTestId(`layout-panel-collapse-${id}`).click();
+      await panel.waitFor({ state: "hidden" });
+    }
+    await page.locator(`[data-panel-rail-icon="${id}"]`).click();
+    assert.equal(await panel.getAttribute("role"), "dialog");
+    const peek = await panel.evaluate(element => ({ edge: element.dataset.panelEdge,
+      animation: getComputedStyle(element).animationName, duration: getComputedStyle(element).animationDuration,
+      width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height }));
+    assert.ok(peek.animation.startsWith("arx-panel-in-") && peek.duration === "0.2s", JSON.stringify(peek));
+    assert.ok(peek.width > 200 && peek.height < 1080, JSON.stringify(peek));
+    if (id === "order" || id === "chart-details") await page.screenshot({ path: path.join(evidenceDir, `peek-${id}.png`), animations: "disabled" });
+    await page.getByTestId("panel-peek-backdrop").click({ position: { x: 5, y: 5 } });
+    await panel.waitFor({ state: "hidden" });
+    await page.locator(`[data-panel-rail-icon="${id}"]`).click();
+    await panel.locator(".arx-panel-keep-open").click();
+    await page.waitForFunction(id => document.querySelector(`[data-layout-panel="${id}"]`)?.dataset.panelState === "open", id);
+    assert.equal(await page.getByTestId("panel-peek-backdrop").count(), 0);
+    assert.ok(await page.evaluate(() => window.__arxChartQa.layoutGeometry().plot.height >= 360));
+    slidingResults.push({ id, ...peek, closed: true, peeked: true, docked: true });
+  }
+  // Secondary chart tools dock into the right area, independently of the plot.
+  assert.equal(await page.locator(".arx-col-right [data-layout-panel='chart-details']").count(), 1);
+  await page.getByTestId("layout-panel-collapse-chart-details").click();
+  await page.locator("[data-layout-panel='chart-details']").waitFor({ state: "hidden" });
+  // Both centre panels can close without hiding their subsequent flyouts.
+  for (const id of ["chart", "intelligence"]) {
+    await page.getByTestId(`layout-panel-collapse-${id}`).click();
+    await page.locator(`[data-layout-panel="${id}"]`).waitFor({ state: "hidden" });
+  }
+  assert.equal(await page.locator(".arx-workspace-grid").getAttribute("data-center-closed"), "true");
+  await dock("chart");
+  await dock("intelligence");
+  assert.ok(await page.evaluate(() => window.__arxChartQa.layoutGeometry().plot.width > 300));
+  await page.getByTestId("layout-panel-collapse-intelligence").click();
+  await page.locator("[data-layout-panel='intelligence']").waitFor({ state: "hidden" });
+  await page.locator('[data-panel-rail-icon="intelligence"]').click();
+  await page.reload();
+  await page.locator('[data-layout-panel="intelligence"][role="dialog"]').waitFor({ state: "visible" });
+  await page.keyboard.press("Control+k");
+  await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
+    .some(element => element.getAttribute("data-layout-panel") !== "intelligence" && element.getClientRects().length));
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator('[data-layout-panel="intelligence"]').getAttribute("role"), "dialog", "Escape closed two modal layers");
+  await page.keyboard.press("Escape");
+  await page.locator('[data-layout-panel="intelligence"]').waitFor({ state: "hidden" });
+  await dock("intelligence");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.getByTestId("layout-panel-collapse-positions").click();
+  assert.equal(await page.locator('[data-layout-panel="positions"]').getAttribute("data-panel-state"), "closed");
+  await page.locator('[data-panel-rail-icon="positions"]').click();
+  assert.equal(await page.locator('[data-layout-panel="positions"]').evaluate(element => getComputedStyle(element).animationName), "none");
+  await page.locator('[data-layout-panel="positions"] .arx-panel-keep-open').click();
+  assert.equal(await page.locator('[data-layout-panel="positions"]').getAttribute("data-panel-state"), "open");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  console.log(JSON.stringify({ slidingResults, persistedPeek: true, escape: true, reducedMotion: true }));
+  const routeResults = [];
+  for (const pathname of ["/market-scanner", "/my-trades"]) {
+    await page.goto(`${origin}${pathname}`);
+    const primary = page.locator(".arx-route-panel-area > [data-layout-panel]").first();
+    await primary.waitFor({ state: "visible" });
+    const id = await primary.getAttribute("data-layout-panel");
+    await page.getByTestId(`layout-panel-collapse-${id}`).click();
+    await primary.waitFor({ state: "hidden" });
+    await page.locator(`[data-panel-rail-icon="${id}"]`).click();
+    assert.equal(await primary.getAttribute("role"), "dialog");
+    await primary.locator(".arx-panel-keep-open").click();
+    await page.getByTestId(`layout-panel-collapse-${id}`).click();
+    await primary.waitFor({ state: "hidden" });
+    await page.reload();
+    await page.locator(`[data-panel-rail-icon="${id}"]`).waitFor({ state: "visible" });
+    assert.equal(await primary.evaluate(element => element.hidden), true);
+    await dock(id);
+    if (pathname === "/market-scanner") {
+      await page.locator('[data-panel-rail-icon="chart-details"]').click();
+      await page.locator('[data-layout-panel="chart-details"] .arx-panel-keep-open').click();
+      assert.equal(await page.locator('[data-panel-details-slot] > [data-layout-panel="chart-details"]').count(), 1);
+      await page.getByTestId("layout-panel-collapse-chart-details").click();
+      await page.locator('[data-layout-panel="chart-details"]').waitFor({ state: "hidden" });
+    }
+    const routeLog = await page.evaluate(() => window.__readFixtureLog());
+    assert.deepEqual(routeLog.errors, [], pathname);
+    routeResults.push({ pathname, id, closed: true, peeked: true, docked: true, reloaded: true });
+  }
+  console.log(JSON.stringify({ routeResults }));
+  await page.goto(`${origin}/`);
+  await page.locator('[data-testid="arx-native-canvas"]').waitFor({ state: "visible" });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: "Trade", exact: true }).click();
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -193,13 +296,14 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
     const actual = await page.locator(`.arx-side-area[data-side="${side}"]`).evaluate(element => element.getBoundingClientRect().width);
     assert.equal(actual, 50, `${side} rail width`);
   }
-  const screenshotDir = path.resolve(repo, "../generated-artifacts/arx-side-rails");
+  const screenshotDir = evidenceDir;
   mkdirSync(screenshotDir, { recursive: true });
   await page.screenshot({ path: path.join(screenshotDir, "both-rails-desktop.png") });
   await page.getByRole("button", { name: "Review order", exact: true }).click();
   assert.equal(await page.getByRole("dialog").count(), 1, "one-click Review order did not open its existing sheet");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Open Order entry", exact: true }).click();
+  await page.locator('[data-layout-panel="order"] .arx-panel-keep-open').click();
   await settle();
   assert.equal(await page.evaluate(() => document.activeElement?.id), "workspace-order");
   await page.getByRole("button", { name: "Pin Order entry", exact: true }).click();
@@ -225,6 +329,7 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
   console.log(JSON.stringify({ buildId: meta.buildId, cases: results.length, errors: log.errors, blocked: log.blocked }));
   assert.equal(results.filter(result => result.errors.length).length, 0, JSON.stringify(results.filter(result => result.errors.length)));
   assert.deepEqual(log.errors, []);
+  assert.deepEqual(browserErrors, []);
   assert.ok(log.blocked.every(item => item.kind === "mutation"), JSON.stringify(log.blocked));
   assert.equal(meta.sourceUnchanged, true);
 });
