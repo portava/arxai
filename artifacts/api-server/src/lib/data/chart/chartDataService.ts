@@ -266,12 +266,13 @@ async function buildChartFeed(
   // tries this bridge's MT5 series, then the platform-wide MT5 series, then
   // the other providers (marketDataRouter's scope fallback), instead of a
   // second full chain after a miss.
-  let result = pinnedBridge != null
-    ? await runWithFeedScope(
-        fixedFeedScope(pinnedBridge, currentFeedScope()?.userId ?? null),
-        () => routeCandles(symbol, timeframe, limit),
-      )
-    : await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null });
+  let pinnedResult: Awaited<ReturnType<typeof routeCandles>> | null = null;
+  if (pinnedBridge != null) {
+    const pinScope = fixedFeedScope(pinnedBridge, currentFeedScope()?.userId ?? null);
+    await runWithFeedScope(pinScope, async () => { pinnedResult = await routeCandles(symbol, timeframe, limit); });
+  }
+  let result = (pinnedResult as Awaited<ReturnType<typeof routeCandles>> | null)
+    ?? (await routeCandles(symbol, timeframe, limit, { bridgeConnectionId: null }));
   // Nothing live answered: the display chart still shows the market up to its
   // last stored bar (closed market or a down feed), labelled as stored.
   if (!result.ok && opts.storedHistoryFallback === true) {
