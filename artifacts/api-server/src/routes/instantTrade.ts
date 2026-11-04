@@ -77,6 +77,10 @@ const IntentSchema = z.object({
   orderType: z.string().min(1).max(32).optional(),
   stopLoss: z.number().nullable().optional(),
   takeProfit: z.number().nullable().optional(),
+  // MT5 pending-order fields (see lib/live/pendingOrderRules.ts).
+  price: z.number().positive().nullable().optional(),
+  stopLimitPrice: z.number().positive().nullable().optional(),
+  expiration: z.string().datetime().nullable().optional(),
   positionId: z.string().min(1).max(64).optional(),
   newStopLoss: z.number().nullable().optional(),
   newTakeProfit: z.number().nullable().optional(),

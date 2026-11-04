@@ -116,6 +116,7 @@ import type {
   GetMeChartSmartLayersTimeframe,
 } from "@workspace/api-client-react";
 import { buildOverlayHandshake, isWithinQuietHoursUtc, newsToastDecision } from "@workspace/domain/smart-chart";
+import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
 
 // The overlay contracts (chart annotations + smart layers) intentionally stay on
 // the original 7-value timeframe vocabulary (M1,M5,M15,M30,H1,H4,D1) — they are
@@ -2959,6 +2960,8 @@ export function ScannerChartPanel() {
                       <Button size="sm" className="h-8 bg-danger px-3 text-xs font-semibold text-white hover:bg-danger/90" onClick={() => startDraft("SELL")} data-testid="scanner-chart-draft-sell">
                         Plan Sell
                       </Button>
+                      {/* MT5 order window: market + Limit / Stop / Stop Limit with SL/TP and expiry. */}
+                      <OrderTicketButton symbol={symbol} source="scanner" prefill={{ lot: Number(lot) > 0 ? Number(lot) : null }} onPlaced={() => setReloadAt(Date.now())} />
                       <OneClickArmedBadge className="ml-auto" />
                     </>
                   ) : (

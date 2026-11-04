@@ -33,6 +33,7 @@ type Settings = {
   allowRubyMonitor?: boolean | null;
   allowRubyWatchEnter?: boolean | null;
   allowRubyWatchClose?: boolean | null;
+  allowRubyModifyCommands?: boolean | null;
   maxRubyLotPerTrade?: number | null;
   maxRubyOpenPositions?: number | null;
   maxRubyDailyTrades?: number | null;
@@ -354,6 +355,7 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
     { key: "allowRubyMonitor", field: "allowRubyMonitor", label: "Monitor a position (reversal alerts ×3, then protective close)" },
     { key: "allowRubyWatchEnter", field: "allowRubyWatchEnter", label: "Watch & enter at a level" },
     { key: "allowRubyWatchClose", field: "allowRubyWatchClose", label: "Watch & close at a level" },
+    { key: "allowRubyModifyCommands", field: "allowRubyModifyCommands", label: "Change Stop Loss / Take Profit (your chat commands, and bounded fakeout shifts on positions you opt in per monitor)" },
   ];
 
   const caps: Array<{ key: keyof Settings; field: string; label: string; step: string }> = [
