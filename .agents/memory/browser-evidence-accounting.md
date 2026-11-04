@@ -17,6 +17,19 @@ For focus-ring comparisons, capture an actually unfocused baseline; modal
 autofocus may otherwise make a correctly visible ring appear unchanged. Include
 portaled controls: ancestor-scoped CSS variables do not cross portal boundaries.
 
+In short-height fixtures, distinguish viewport-positioned overlays from
+normal-flow content. Natural document scrolling is valid for long notices and
+in-flow menus, but every focused control must still be inside the viewport and
+pass hit testing after real Tab navigation.
+
+**Why:** Requiring all long content to fit simultaneously encourages clipping;
+checking viewport bounds alone misses a sticky header or fixed tray covering a
+focused safety control.
+
+**How to apply:** Require fixed/absolute overlays to fit vertically, retain
+clipping checks, and use native keyboard scrolling rather than probe-driven
+scrolling to establish reachability of normal-flow controls.
+
 Inspect an imported probe's internal viewport matrix before wrapping it. Run
 each defined probe once unless repetition is deliberate, and distinguish
 viewport-qualified coverage from repeated executions of the same whole probe.

@@ -503,6 +503,29 @@
   .arx-shell-header { position: relative; }
 }
 
+/* A wrapped header and long notices can exceed a landscape viewport. Let the
+   document reveal focused controls instead of trapping them under sticky chrome
+   or inside the desktop Cockpit's fixed-height clipping boundary. */
+@media (max-height: 500px) {
+  .arx-shell-header { position: relative; }
+  .arx-shell-frame[data-variant="cockpit"] { height: auto; min-height: 100dvh; overflow: visible; }
+  .arx-shell-frame[data-variant="cockpit"] .arx-shell-main-column { height: auto; overflow: visible; }
+  .arx-shell-frame[data-variant="cockpit"] .arx-shell-content { overflow: visible; }
+  /* Keep choices in document flow so opening the menu never places its last
+     row beyond the viewport with no way to scroll it into view. */
+  .arx-shell-layout-menu { flex-basis: 100%; width: 100%; }
+  .arx-shell-layout-popover {
+    position: static;
+    margin-block-start: 7px;
+    margin-inline-start: auto;
+    max-height: calc(100dvh - 84px);
+  }
+  .arx-shell-frame :is(button, a, select, summary) { scroll-margin-block: 8px 84px; }
+}
+@media (max-height: 500px) and (max-width: 767px) {
+  .arx-shell-layout-popover { margin-inline-start: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .arx-shell-frame *,
   .arx-shell-frame *::before,

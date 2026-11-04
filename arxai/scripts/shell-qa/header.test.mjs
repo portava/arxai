@@ -11,11 +11,19 @@ import { buildFixture } from "./build.mjs";
 
 const workspace = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const widths = [390, 900, 1100, 1366];
+const landscapeViewports = [
+  { width: 667, height: 375 }, { width: 767, height: 320 },
+  { width: 900, height: 400 }, { width: 1366, height: 480 },
+];
 const locales = ["de", "ar", "he"];
 const zoomExtension = fileURLToPath(new URL("./zoom-extension", import.meta.url));
 const keyboardEvidence = new WeakMap();
 const scenarios = [
   ...widths.map(width => ({ id: `baseline-${width}`, width, height: 900, zoom: 1, text: 100 })),
+  ...landscapeViewports.map(viewport => ({
+    ...viewport, id: `landscape-${viewport.width}x${viewport.height}`,
+    zoom: 1, text: 100, stress: "vertical",
+  })),
   { id: "short-desktop", width: 1100, height: 480, zoom: 1, text: 100 },
   { id: "short-phone", width: 390, height: 480, zoom: 1, text: 100 },
   { id: "zoom-200-desktop", width: 1800, height: 900, zoom: 2, text: 100 },
@@ -125,7 +133,7 @@ async function assertGeometry(page, observations, zoom = 1) {
       return failures.length ? [{ text: el.textContent, ancestors: failures }] : [];
     });
     return {
-      width: innerWidth, height: innerHeight, scale: visualViewport.scale, dpr: devicePixelRatio,
+      width: innerWidth, height: innerHeight, scrollY, scale: visualViewport.scale, dpr: devicePixelRatio,
       scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth,
       scrollHeight: document.documentElement.scrollHeight, clientHeight: document.documentElement.clientHeight,
       cockpit: document.querySelector(".arx-shell-frame")?.dataset.variant === "cockpit",
@@ -140,13 +148,18 @@ async function assertGeometry(page, observations, zoom = 1) {
           baseline: Number(el.dataset.fixtureBaseFont),
           computed: parseFloat(getComputedStyle(el).fontSize),
         })),
+      overlays: [...document.querySelectorAll(".arx-shell-mobile-tray, .arx-shell-layout-popover, [role=dialog]")]
+        // In short viewports the layout menu uses normal document flow. Like
+        // notices, it may scroll; fixed/absolute overlays must fit immediately.
+        .filter(shown).filter(el => ["fixed", "absolute"].includes(getComputedStyle(el).position))
+        .map(el => ({ name: el.className, ...box(el) })),
     };
   });
   observations?.push(geometry);
   assert.equal(geometry.scale, 1, "Page zoom must not be substituted with pinch zoom");
   assert.equal(geometry.dpr, zoom, "Real browser zoom must change CSS pixel density");
   assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, `Document overflow: ${JSON.stringify(geometry)}`);
-  if (geometry.cockpit && geometry.width >= 768) {
+  if (geometry.cockpit && geometry.width >= 768 && geometry.height > 500) {
     assert.ok(geometry.scrollHeight <= geometry.clientHeight + 1, "Desktop Cockpit must scroll internally, not overflow the document");
   }
   assert.deepEqual(geometry.clipped, [], "Clipping must not conceal overflow");
@@ -166,6 +179,10 @@ async function assertGeometry(page, observations, zoom = 1) {
         `Text must genuinely double, including portals: ${JSON.stringify(el)}`);
       if (initial.has(el.name)) assert.equal(el.baseline, initial.get(el.name), "Text baseline must not compound after interactions");
     }
+  }
+  for (const el of geometry.overlays) {
+    assert.ok(el.y >= -1 && el.bottom <= geometry.height + 1 && el.height > 0,
+      `Overlay must fit vertically: ${JSON.stringify(el)}`);
   }
   return geometry;
 }
@@ -284,6 +301,7 @@ async function keyboardReachability(page, selector = ".arx-shell-frame button, .
           (style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0 && style.outlineColor !== "rgba(0, 0, 0, 0)") ||
           (style.boxShadow !== "none" && style.boxShadow !== el.dataset.unfocusedShadow)
         ),
+        rect: { top: r.top, bottom: r.bottom }, scrollY,
         inside: r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0 && r.bottom <= innerHeight + 1,
         unobscured: !!hit && (hit === el || el.contains(hit)),
         bounds: { x: r.x, y: r.y, width: r.width, height: r.height },
@@ -312,7 +330,7 @@ async function keyboardReachability(page, selector = ".arx-shell-frame button, .
   return receipts;
 }
 
-test("shared shell long-content, enlargement and RTL browser regression", { timeout: 720_000 }, async t => {
+test("shared shell long-content, landscape, enlargement and RTL browser regression", { timeout: 900_000 }, async t => {
   const parent = path.join(workspace, "generated-artifacts/shell-header");
   await mkdir(parent, { recursive: true });
   const evidence = await mkdtemp(path.join(parent, "run-"));
@@ -380,9 +398,9 @@ test("shared shell long-content, enlargement and RTL browser regression", { time
   });
 
   const results = [];
-  for (const scenario of scenarios) for (const locale of scenario.id.startsWith("baseline") ? locales : ["de"]) for (const variant of ["page", "cockpit"]) for (const dock of ["expanded", "compact"]) {
-    const { width, height, zoom, text } = scenario;
-    const checkDirection = scenario.id.startsWith("baseline");
+  for (const scenario of scenarios) for (const locale of scenario.id.startsWith("baseline") || scenario.stress ? locales : ["de"]) for (const variant of ["page", "cockpit"]) for (const dock of ["expanded", "compact"]) {
+    const { width, height, zoom, text, stress } = scenario;
+    const checkDirection = scenario.id.startsWith("baseline") || !!stress;
     const name = `${locale}-${variant}-${dock}-${scenario.id}`;
     await t.test(name, async () => {
       // Chromium's actual per-tab zoom API, not CSS zoom, deviceScaleFactor,
@@ -397,11 +415,11 @@ test("shared shell long-content, enlargement and RTL browser regression", { time
       const blocked = [], errors = [];
       const page = await context.newPage();
       page.setDefaultTimeout(5_000);
-      const receipt = { locale, width, variant, dock, scenario, stage: "navigation", observations: [], direction: [] };
+      const receipt = { locale, width, height, stress, variant, dock, scenario, stage: "navigation", observations: [], direction: [] };
       try {
         await restrictTraffic(context, origin, files, blocked);
         page.on("pageerror", error => errors.push(error.message));
-        await page.goto(`${origin}/?variant=${variant}&dock=${dock}&count=999&text=${text}&locale=${locale}`);
+        await page.goto(`${origin}/?variant=${variant}&dock=${dock}&count=999&text=${text}&locale=${locale}&stress=${stress ?? ""}`);
         await page.getByRole("heading", { level: 1 }).waitFor();
         await page.evaluate(() => document.fonts.ready);
         if (zoom !== 1) {
@@ -440,6 +458,10 @@ test("shared shell long-content, enlargement and RTL browser regression", { time
         }
         await keyboardReachability(page, undefined, "Sign out");
         assert.equal(await page.getByTestId("fixture-action").textContent(), "signout");
+        if (stress) {
+          await keyboardReachability(page, undefined, "End of fixture content");
+          assert.equal(await page.getByTestId("fixture-action").textContent(), "content-end");
+        }
         receipt.stage = "layout";
         await keyboardReachability(page, undefined, "Open layout menu");
         await assertGeometry(page, receipt.observations, zoom);

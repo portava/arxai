@@ -54,6 +54,7 @@ const items = [
 
 function Fixture() {
   const cockpit = params.get("variant") === "cockpit";
+  const verticalStress = params.get("stress") === "vertical";
   const [allToolsOpen, setAllToolsOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [compact, setCompact] = useState(params.get("dock") === "compact");
@@ -73,12 +74,19 @@ function Fixture() {
         <button aria-pressed={!compact} onClick={() => setCompact(false)}>Expanded</button>
         <button aria-pressed={compact} onClick={() => setCompact(true)}>Compact</button>
       </div></fieldset>
+      {verticalStress && ["Density", "Content width"].map(label =>
+        <fieldset key={label} className="arx-shell-layout-choice"><legend>{label}</legend><div>
+          <button onClick={() => setAction(label)}>Default {label}</button>
+          <button onClick={() => setAction(label)}>Alternate {label}</button>
+        </div></fieldset>)}
     </div>,
     allToolsContent: <div className="arx-shell-tools">
       <button className="arx-shell-tool-result" onClick={() => { setAction("tools"); setAllToolsOpen(false); }}>Fixture risk information</button>
       {Array.from({ length: 8 }, (_, i) => <button key={i} className="arx-shell-tool-result" onClick={() => setAction(`reference-${i + 1}`)}>
         Read-only safety reference {i + 1} — international account permissions
       </button>)}
+      {verticalStress && Array.from({ length: 12 }, (_, i) =>
+        <button key={i} className="arx-shell-tool-result" onClick={() => setAction(`tool-${i}`)}>Read-only fixture tool {i + 1}</button>)}
     </div>,
     // Same slot hierarchy as AppLayout; account/notice text is deliberately controlled.
     // These inert actions never impersonate an authenticated or live account.
@@ -105,7 +113,9 @@ function Fixture() {
         <button className="arx-shell-emergency-link" data-fixture-action="review" onClick={() => setAction("review")}>Review safety information</button>
       </div>
     </div>,
-    children: <section className="p-3"><h2>Isolated shell content</h2><p>Not a signed-in workspace.</p><output data-testid="fixture-action">{action}</output><output data-testid="fixture-panel">{selected}</output></section>,
+    children: <section className="p-3"><h2>Isolated shell content</h2><p>Not a signed-in workspace.</p><output data-testid="fixture-action">{action}</output><output data-testid="fixture-panel">{selected}</output>
+      {verticalStress && <button className="arx-shell-emergency-link" data-fixture-action="content-end" onClick={() => setAction("content-end")}>End of fixture content</button>}
+    </section>,
   };
   return cockpit
     ? <ARXShellFrame {...common} variant="cockpit" dockItems={items.map(({ href, ...item }) => ({ ...item, onSelect: () => setSelected(item.id) }))} />

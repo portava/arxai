@@ -759,3 +759,78 @@ and zoom performance gaps remain unverified/open. Synthetic layout checks do not
 establish launch readiness or competitor parity. No unrelated concurrent edits
 were observed in this application's working tree during the implementation.
 
+## Short landscape shell regression — 2026-11-04
+
+The isolated header browser matrix now includes 667×375, 767×320, 900×400 and
+1366×480 alongside the original four 900px-high viewports. Page/Cockpit,
+expanded/compact dock, German LTR, Arabic RTL and Hebrew RTL remain covered:
+96 distinct combinations, including 48 short-height combinations.
+
+Short-height fixture cases add three layout-choice groups, thirteen inert tools
+and an end-of-content button. Checks require viewport-fitting positioned
+overlays and real Tab navigation with visible focus, full control bounds and
+unobscured centers. Normal-flow notices and menus may scroll. Both portaled
+sheet types remain covered; tools-body scrolling is exercised by keyboard.
+Each receipt records height and scroll offsets as well as the existing
+direction, geometry, focus, network and runtime-error evidence.
+
+The initial run `generated-artifacts/shell-header/run-SGavAS/` demonstrated:
+- A sticky phone header covering the focused safety-review button.
+- The fixed phone tray covering that button in some RTL cases.
+- Desktop Cockpit clipping long notices or the end-of-content control.
+- An expanded-dock layout menu extending below a 900×400 viewport.
+
+That diagnostic run was deliberately stopped after 56 matrix cases; it is not
+a completed acceptance run. Its failures, screenshots and partial results are
+retained, with the command log at `generated-artifacts/shell-landscape-first.log`.
+
+Evidence-backed changes are limited to heights of 500 CSS pixels or less:
+the header stops sticking, Cockpit permits natural document scrolling, layout
+choices use bounded normal flow rather than an off-screen absolute popover,
+and control scroll margins leave room above the fixed tray. Taller layouts,
+authentication, providers and trading behavior are unchanged.
+
+The static-file allowlist, negative containment test, service-worker block and
+WebSocket/API/external/mutation rejection remain intact. No API or credentials
+are needed by the fixture.
+
+Final validation: **all 96 matrix cases plus containment and notification-count
+checks passed**, exit 0 (98 subtests; Node reports 99 including the parent).
+Receipts: `generated-artifacts/shell-header/run-m4iTjY/`; command log:
+`generated-artifacts/shell-landscape-final.log`. All 96 normal cases recorded
+zero blocked-request attempts and zero runtime errors. The existing sheet
+sourcemap diagnostic and large-chunk build warning remain visible. Screenshots
+include keyboard focus in the scrollable tools list and both portal types.
+
+**Authenticated workspace screenshots and interactions remain blocked.**
+The short-height preview screenshot still shows the normal sign-in page, not
+an authenticated shell; its identity request returned 502 with the API workflow
+not running. The frontend workflow restarted cleanly and Vite reported ready.
+No claim is made that the signed-in shell or live services were verified.
+The first required shared-preview smoke check likewise failed on
+`/api/healthz` with 502. Starting the existing safe-preview API workflow then
+confirmed API readiness, a reachable database, disabled live master switch,
+paused background jobs and no schema migration. This service-startup repair
+does not change the authenticated acceptance blocker or the isolated results.
+
+### Combined enlargement and landscape regression after integration
+
+The shared fixture now retains both suites: 16 scenarios yield 128 distinct
+page/Cockpit, dock and locale combinations. Baseline and landscape scenarios
+cover all three locales (96 cases); the eight additional short/zoom/text
+scenarios preserve their German LTR coverage (32 cases). Genuine tab zoom,
+text-only enlargement, required-content and negative-probe assertions,
+keyboard activation and the static-only traffic boundary are retained.
+
+The header remains non-sticky through 600px height for enlarged screens.
+At 500px or less, the landscape rules permit document scrolling and put layout
+choices in normal flow. Above 500px, the existing desktop Cockpit internal-scroll
+check remains in force. Both sets of inert long tools remain in the fixture.
+
+Combined validation passed with exit 0: **128 matrix cases and all three
+containment/negative-probe/notification subtests** (132 reported tests including
+the parent). Receipts: `generated-artifacts/shell-header/run-SiZVjb/`;
+log: `generated-artifacts/shell-merged-landscape.log`. All normal cases recorded
+zero blocked-request attempts and zero browser runtime errors.
+This does not remove the authenticated acceptance blocker above.
+
