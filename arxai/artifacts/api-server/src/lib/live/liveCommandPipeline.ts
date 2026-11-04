@@ -4837,6 +4837,10 @@ export type BridgedLiveOutcome =
   | "STALE_COMMAND_REJECTED";
 
 const LIVE_FAILED_STATUS_RE = /fail|error|reject/i;
+/** EA statuses that confirm the command was NOT executed but match none of
+ *  LIVE_FAILED_STATUS_RE (v131 EA_EXECUTION_NOT_IMPLEMENTED /
+ *  EA_READ_ONLY_MODE_ACTIVE, UNSUPPORTED_COMMAND). */
+export const LIVE_NOT_EXECUTED_STATUS_RE = /not_implemented|read_only|unsupported/i;
 
 /**
  * Pure, honest mapping of an EA/broker terminal result into a Phase B outcome.
@@ -4892,26 +4896,40 @@ export function mapBridgedLiveOutcome(input: {
   executedVolume?: number | null;
   /** R2 S5 — the command row's requested volume. */
   requestedVolume?: number | null;
+  /** The linked live command's type; a pending placement is never a fill. */
+  commandType?: string | null;
 }): BridgedLiveOutcome {
   const status = input.status ?? "";
   const statusLc = status.toLowerCase();
   const reasonLc = (input.reason ?? "").toLowerCase();
-  if (statusLc.includes("stale") || reasonLc.includes("stale")) {
+  // v154 refuses a command older than CommandExpirySeconds with status EXPIRED
+  // (reasonCode COMMAND_EXPIRED) before any broker call: the EA's own stale
+  // refusal, so terminal LIVE_EXPIRED and the reservation is released.
+  if (statusLc.includes("stale") || reasonLc.includes("stale")
+    || statusLc === "expired" || statusLc === "command_expired" || reasonLc === "command_expired") {
     return "STALE_COMMAND_REJECTED";
   }
   if (LIVE_FAILED_STATUS_RE.test(status)) {
     return statusLc.includes("reject") ? "LIVE_REJECTED" : "LIVE_FAILED";
   }
+  // The EA confirms it did NOT execute: v131 read-only / no execution code
+  // path, or an action the EA has no handler for. Confirmed non-execution.
+  if (LIVE_NOT_EXECUTED_STATUS_RE.test(status)) return "LIVE_REJECTED";
   // Explicit uncertainty/acceptance is never promoted by an existing ticket.
   if (["unknown","live_unknown"].includes(statusLc)) return "LIVE_UNKNOWN";
-  // Only an explicit acknowledgement. Unversioned PLACED/ACCEPTED keep their
-  // existing mapping: nothing yet resolves an ACK for pending orders.
+  // Only an explicit acknowledgement (or, below, an accepted live pending order).
   if (["acknowledged","live_acknowledged"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
   if (["partially_filled","live_partially_filled"].includes(statusLc))
     return input.hasBrokerTicket && typeof input.executedVolume === "number" && Number.isFinite(input.executedVolume) && input.executedVolume>0 ? "LIVE_PARTIALLY_FILLED" : "LIVE_UNKNOWN";
   // R2 S5 — a ticket with a short fill is a PARTIAL, not a full fill. Checked
   // before the full-fill branch so a partial can never be recorded as
   // complete (spec §12: partial fills update exposure immediately).
+  // A pending order the broker accepted (v154 "PLACED" + order ticket) is
+  // working at the broker, not filled: acknowledged, reservation held, no
+  // filledAt. Its fill is learned later from broker truth. Checked before the
+  // partial test: a pending ack's echoed requestedVolume is not a fill size.
+  if (input.commandType === "PLACE_LIVE_PENDING_ORDER")
+    return input.hasBrokerTicket ? "LIVE_ACKNOWLEDGED" : "LIVE_UNKNOWN";
   if (isPartialFill(input)) return "LIVE_PARTIALLY_FILLED";
   return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_UNKNOWN";
 }
