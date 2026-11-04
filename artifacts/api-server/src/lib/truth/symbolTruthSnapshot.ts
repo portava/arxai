@@ -64,6 +64,7 @@ import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
+import { feedScopeForUser, runWithFeedScope } from "../data/feedScope.js";
 
 // ── Public snapshot shape ────────────────────────────────────────────────────
 
@@ -539,14 +540,17 @@ export async function buildSymbolTruthSnapshot(
   // other independent SOURCEs; only the scanner build waits on it.
   // The data block is THIS trader's feed (Truth audit T2): the chart read is
   // pinned to their own bridge; a platform-wide fallback is labelled as such.
-  let ownBridgeId: number | null = null;
-  try { ownBridgeId = await deps.getUserBridgeFn(userId); } catch { ownBridgeId = null; }
-  const [chartR, newsR, scalpR, timingR] = await Promise.allSettled([
+  // Every component SOURCE (scanner, scalp/flame, timing) reads candles and
+  // quotes under the same scope (lib/data/feedScope.ts), so the snapshot's
+  // components describe the same bridge's bars as its data block.
+  const scope = feedScopeForUser(userId, deps.getUserBridgeFn);
+  const ownBridgeId = await scope.bridgeConnectionId();
+  const [chartR, newsR, scalpR, timingR] = await runWithFeedScope(scope, () => Promise.allSettled([
     deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false, { bridgeConnectionId: ownBridgeId }),
     deps.buildNewsFn(symbol),
     deps.evaluateScalpFn(userId, { symbol, mode: "ANY" }),
     deps.computeTimingFn({ symbol, timeframe, persistSnapshot: false }),
-  ]);
+  ]));
 
   const chart = valueOrNull(chartR);
   const news = valueOrNull(newsR);
@@ -556,13 +560,13 @@ export async function buildSymbolTruthSnapshot(
   // Compose the scanner edge reusing the scalp we already have, and skip the
   // advisory signalMemoryTable upsert on this read-side polled path (mirrors
   // the timing dep's persistSnapshot:false discipline).
-  const [scannerR] = await Promise.allSettled([
+  const [scannerR] = await runWithFeedScope(scope, () => Promise.allSettled([
     deps.buildScannerFn(
       userId,
       { symbol, timeframe },
       { skipPersist: true, scalp: timeframe === "M5" ? scalp : null },
     ),
-  ]);
+  ]));
   const scanner = valueOrNull(scannerR);
 
   // ── data block (single source of freshness + price) ────────────────────────

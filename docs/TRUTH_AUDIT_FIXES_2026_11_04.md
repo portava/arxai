@@ -85,3 +85,35 @@ opened and that the shown price is its close, not a fresh tick.
 expiry; v2 tick/candle conversion with and without a measurement (UTC+2, UTC−5,
 unattributed writer); own-bridge / platform-shared / contention labelling over
 the real router and store; receive-time and calendar fetch-time evidence rules.
+
+## Truth banners — every surface on one page reads one series
+
+Owner ask (2026-11-04): the AI, the Smart Chart and every other banner must be
+on the same page. Two causes, both read-side:
+
+1. **Server.** After T2 the chart route pinned its read to the signed-in trader's
+   bridge, but the AI chat's structural read, the scanner edge, scalp/flame, the
+   timing brain, chart intelligence and the execution preview still called
+   `routeCandles` / `routeQuote` / `getChartFeedStatus` unpinned, i.e. the most
+   recently pushing bridge of ANY user. `lib/data/feedScope.ts` binds a feed
+   scope per API request (`bindFeedScope`, mounted on `/api` after the body
+   parsers; `AsyncLocalStorage`). With no explicit pin the router tries the bound
+   reader's bridge first, then the platform-wide MT5 series (attributed to its
+   real writer, labelled `platform_shared` by the chart feed), then the provider
+   chain. An explicit `bridgeConnectionId: null` stays platform-wide on purpose;
+   outside a request (sweeps, health probes) nothing changes. The Truth snapshot
+   composes its components under the owner's scope. The chart-intelligence and
+   timeframe-agreement caches are keyed by the reader's bridge, so one trader's
+   derived read is never served to another (the `provenance-no-collapse` guard
+   now classifies chartIntelligence as bridge-keyed; its allowlist pin is gone).
+2. **Client.** The native chart's canvas banner rendered the raw socket verdict
+   (`feedConfidence`) while its header chip, feed strip, the scanner badge and
+   the AI read render the verdict capped by the shared scanner truth. The banner
+   now renders the same capped verdict (and says so on a failed refresh). The
+   cockpit's "why no signal" line read its own M5 feed-status poll with its own
+   wording; it now words the shared scanner-truth data verdict
+   (`rubyWaitingReason`).
+
+Tests: `lib/data/__qa__/feedScopeRequestPin.test.ts` (in the fix suite),
+`CockpitRubyWaitingReason.truth.test.tsx`, banner cases in
+`ARXNativeChart.truth-labels.test.tsx`.
