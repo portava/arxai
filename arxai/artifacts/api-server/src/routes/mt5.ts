@@ -5,7 +5,7 @@ import type { Candle } from "../lib/data/types.js";
 import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
 import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
 import { appendExecutionEvidence as recordExecutionEvent } from "../lib/live/executionEvidence.js";
-import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
+import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate, liveMirrorMailboxPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
 import {
   MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
   MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
@@ -996,6 +996,7 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
       eq(mt5CommandsTable.userId, conn.userId!),
       eq(mt5CommandsTable.mt5ConnectionId, conn.id),
       legacyManagementPickupPredicate(targetSupported),
+      liveMirrorMailboxPickupPredicate(conn.eaVersion),
       sql`octet_length(to_jsonb(${mt5CommandsTable})::text) <= ${MAX_COMMAND_JSON_BYTES}`,
     )).orderBy(asc(mt5CommandsTable.createdAt), asc(mt5CommandsTable.id))
       .limit(50).for("update", { skipLocked: true });
@@ -1046,6 +1047,7 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
         eq(mt5CommandsTable.userId, conn.userId!),
         eq(mt5CommandsTable.mt5ConnectionId, conn.id),
         legacyManagementPickupPredicate(targetSupported),
+        liveMirrorMailboxPickupPredicate(conn.eaVersion),
       )).returning();
     if (claimed.length !== selected.length) throw new Error("MT5_MAILBOX_CLAIM_CHANGED");
     // A delivered entry mirror is the EA's one pickup of that entry: stamp the
