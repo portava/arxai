@@ -197,8 +197,9 @@ function normalizeTimeframe(tf: string): string {
  * (a bar whose interval has not ended is the provider's forming bar, never
  * history). The mt5_broker slot is the broker mirror brokerCandleStore writes
  * with bridge attribution: a routed MT5 window is mirrored only when its
- * writing bridge is known and is attributed to it; an unattributed MT5 read
- * (the durable mirror itself, an anonymous writer) is not written back.
+ * writing bridge is known and is attributed to it. An unattributed MT5 read is
+ * still seeded (closed bars, no bridge named) because this page is served from
+ * the cache; skipping it would leave a live series with no history.
  */
 async function seedCacheFromRoute(
   symbol: string,
@@ -215,8 +216,7 @@ async function seedCacheFromRoute(
     return Number.isFinite(t) && t + intervalMs <= now;
   });
   if (closed.length === 0) return;
-  if (source === "mt5_broker") {
-    if (bridgeConnectionId == null) return;
+  if (source === "mt5_broker" && bridgeConnectionId != null) {
     await upsertCandles(symbol, timeframe, source, closed, { bridgeConnectionId });
     return;
   }
