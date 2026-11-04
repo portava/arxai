@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 const { isAckOnlyMailboxEa } = await import("../managementTargetProtocol.js");
 const { eaPendingPlacementPayload, eaPendingCancelPayload } = await import("../pendingPayloadWire.js");
 const { requireAuthOrPublic } = await import("../../auth/globalGate.js");
-const { isLivePartialCloseRequest, LIVE_PARTIAL_CLOSE_UNSUPPORTED } = await import("../../live/liveCommandPipeline.js");
+const { isLivePartialCloseRequest, eaHonoursLiveCloseVolume, LIVE_PARTIAL_CLOSE_UNSUPPORTED } = await import("../../live/liveCommandPipeline.js");
 const { claimBridgeV2CommandsForEa } = await import("../../bridgeV2/commandClaim.js");
 
 const mt5Src = readFileSync(new URL("../../../routes/mt5.ts", import.meta.url), "utf8");
@@ -85,7 +85,17 @@ test("the live mailbox still maps CLOSE_LIVE_POSITION to the full-close CLOSE_PO
   assert.match(pipe, /isLivePartialCloseRequest\(Number\(row\.requestedVolume\), positionVolume\)/);
   assert.ok(pipe.indexOf("LIVE PARTIAL CLOSE PRE-GATE") > pipe.indexOf("COMMAND INTEGRITY PRE-GATE"), "the basis is read only after integrity verification");
   const close = v154.slice(v154.indexOf("void HandleClosePosition"), v154.indexOf("void HandlePartialClose"));
-  assert.doesNotMatch(close, /"volume"/, "v1.54 CLOSE_POSITION reads no volume: it always closes in full");
+  assert.match(close, /PositionClosePartial/, "v1.55 CLOSE_POSITION honours a smaller lot");
+  assert.match(pipe, /!eaHonoursLiveCloseVolume\(bridge\?\.eaVersion\)/, "the block applies only to EAs older than 1.55");
+});
+test("only a Universal Agent v1.55+ is trusted with a live partial close", () => {
+  assert.equal(eaHonoursLiveCloseVolume("1.55"), true);
+  assert.equal(eaHonoursLiveCloseVolume("v1.60"), true);
+  assert.equal(eaHonoursLiveCloseVolume("2.0"), true);
+  assert.equal(eaHonoursLiveCloseVolume("1.54"), false);
+  assert.equal(eaHonoursLiveCloseVolume("1.31"), false);
+  assert.equal(eaHonoursLiveCloseVolume(null), false);
+  assert.equal(eaHonoursLiveCloseVolume("garbage"), false);
 });
 
 // ── 8. bridge v2 command channel serves a row once ─────────────────────────

@@ -1904,6 +1904,16 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
 }
 
 export const LIVE_PARTIAL_CLOSE_UNSUPPORTED = "LIVE_PARTIAL_CLOSE_UNSUPPORTED";
+
+/** PURE — the live Universal Agent honours a CLOSE_POSITION `lot` below the
+ *  position volume from v1.55 (PositionClosePartial). Unknown → false. */
+export function eaHonoursLiveCloseVolume(eaVersion: string | null | undefined): boolean {
+  if (!eaVersion) return false;
+  const m = /^(\d+)\.(\d+)/.exec(String(eaVersion).trim().replace(/^v/i, ""));
+  if (!m) return false;
+  const major = Number(m[1]), minor = Number(m[2]);
+  return major > 1 || (major === 1 && minor >= 55);
+}
 /** PURE — a close volume strictly below the known open position volume. An
  *  unknown position volume is not provably partial. */
 export function isLivePartialCloseRequest(requestedVolume: number, positionVolume: number | null | undefined): boolean {
@@ -2458,45 +2468,6 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     }
   }
 
-  // ── LIVE PARTIAL CLOSE PRE-GATE (bridge sweep 2026-11-04) ───────────────
-  // The live mailbox maps CLOSE_LIVE_POSITION to the EA's CLOSE_POSITION,
-  // which v1.54 executes as a FULL close (it reads no volume); its
-  // PARTIAL_CLOSE handler skips the management preflight and reports no
-  // versioned close evidence, so it is not used. A close whose volume is below
-  // the position volume recorded at draft time (manualClosePositionBasisV1,
-  // integrity-verified just above) is refused here instead of closing the whole position.
-  // Server-side partial-close accounting is unchanged for when the EA honours
-  // volume. Additive: only ADDS a block.
-  if (row.commandType === "CLOSE_LIVE_POSITION") {
-    const basis = (row.payload as Record<string, unknown> | null)?.["manualClosePositionBasisV1"] as { volume?: unknown } | undefined;
-    const positionVolume = typeof basis?.volume === "number" ? basis.volume : null;
-    if (isLivePartialCloseRequest(Number(row.requestedVolume), positionVolume)) {
-      const reason = LIVE_PARTIAL_CLOSE_UNSUPPORTED;
-      const [blocked] = await db.update(arxLiveCommandsTable).set({
-        status: "LIVE_BLOCKED",
-        rejectionReason: reason,
-        rejectedAt: new Date(),
-        dispatchGateSnapshot: {
-          decision: "BLOCKED", primaryReason: reason, blockReasons: [reason],
-          phase: "PARTIAL_CLOSE_UNSUPPORTED", requestedVolume: row.requestedVolume, positionVolume,
-          at: new Date().toISOString(),
-        } as unknown as Record<string, unknown>,
-      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
-        eq(arxLiveCommandsTable.userId, args.userId),
-        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
-      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
-      await audit({
-        eventType: "LIVE_DISPATCH_BLOCKED", severity: "WARNING",
-        userId: args.userId, symbol: row.symbol,
-        message: `Live dispatch BLOCKED: partial close ${row.requestedVolume} of ${positionVolume} is not supported by the MT5 bridge`,
-        metadata: { commandId: args.commandId, reason, requestedVolume: row.requestedVolume, positionVolume },
-      });
-      return {
-        ok: false as const, reason, command: blocked,
-        userMessage: "Partial closes of live positions are not supported by the MT5 bridge yet. Close the full position, or reduce it in MT5.",
-      };
-    }
-  }
 
   // ── ALLOCATION FREEZE PRE-GATE (Phase ALLOC) — OUTERMOST WALL ──────────
   // Operator-controlled per-user trading freeze. Runs BEFORE the pilot
@@ -3473,6 +3444,48 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   };
   const liveModeBridges = nonRevoked.filter((b) => b.mode === "LIVE").sort(byFreshness);
   const bridge = liveModeBridges[0] ?? nonRevoked.sort(byFreshness)[0] ?? null;
+
+  // ── LIVE PARTIAL CLOSE PRE-GATE (bridge sweep 2026-11-04) ───────────────
+  // The live mailbox maps CLOSE_LIVE_POSITION to the EA's CLOSE_POSITION,
+  // which v1.54 executes as a FULL close (it reads no volume); its
+  // PARTIAL_CLOSE handler skips the management preflight and reports no
+  // versioned close evidence, so it is not used. A close whose volume is below
+  // the position volume recorded at draft time (manualClosePositionBasisV1,
+  // integrity-verified just above) is refused here instead of closing the whole position.
+  // The Universal Agent from v1.55 honours a smaller `lot` on CLOSE_POSITION
+  // (PositionClosePartial with a volume-step check), so the block applies only
+  // when the dispatch bridge reports an older (or unknown) EA version.
+  // Additive: only ADDS a block.
+  if (row.commandType === "CLOSE_LIVE_POSITION") {
+    const basis = (row.payload as Record<string, unknown> | null)?.["manualClosePositionBasisV1"] as { volume?: unknown } | undefined;
+    const positionVolume = typeof basis?.volume === "number" ? basis.volume : null;
+    if (isLivePartialCloseRequest(Number(row.requestedVolume), positionVolume) && !eaHonoursLiveCloseVolume(bridge?.eaVersion)) {
+      const reason = LIVE_PARTIAL_CLOSE_UNSUPPORTED;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED", primaryReason: reason, blockReasons: [reason],
+          phase: "PARTIAL_CLOSE_UNSUPPORTED", requestedVolume: row.requestedVolume, positionVolume,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+      await audit({
+        eventType: "LIVE_DISPATCH_BLOCKED", severity: "WARNING",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED: partial close ${row.requestedVolume} of ${positionVolume} is not supported by the MT5 bridge`,
+        metadata: { commandId: args.commandId, reason, requestedVolume: row.requestedVolume, positionVolume },
+      });
+      return {
+        ok: false as const, reason, command: blocked,
+        userMessage: "Partial closes need the ARX Universal Agent v1.55 or newer on your MT5 bridge. Close the full position, update the EA, or reduce it in MT5.",
+      };
+    }
+  }
 
   // Phase B MOCK short-circuit (TOCTOU guard layer). The Phase B evaluator
   // does NOT inspect bridge.mode (it is a pure function over the heartbeat
