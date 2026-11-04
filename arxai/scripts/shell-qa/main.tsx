@@ -7,20 +7,51 @@ import { SafetyHeader } from "@/components/ss/SafetyHeader";
 import { EnvironmentPill } from "@/components/dashboard/cockpit/EnvironmentPill";
 import "@/index.css";
 
-const title = "Risikoüberwachung und Sicherheitsbenachrichtigungen für internationale Handelskonten";
-const account = "Demonstrationskonto — Internationales Sicherheitsprüfungsportfolio — Nur lesender Zugriff";
-const notices = [
-  "Trading remains paused while account permissions and the independent risk review are checked. No order can be submitted from this fixture.",
-  "Die Verbindung zum Broker ist nicht verfügbar. Bitte überprüfen Sie die Sicherheitsinformationen und die Kontoberechtigungen.",
-  "RiskReviewReferenceWithoutWhitespace".repeat(5),
-];
+const copy = {
+  de: {
+    dir: "ltr", title: "Risikoüberwachung und Sicherheitsbenachrichtigungen für internationale Handelskonten",
+    accountLabel: "Account",
+    account: "Demonstrationskonto — Internationales Sicherheitsprüfungsportfolio — Nur lesender Zugriff",
+    notices: [
+      "Trading remains paused while account permissions and the independent risk review are checked. No order can be submitted from this fixture.",
+      "Die Verbindung zum Broker ist nicht verfügbar. Bitte überprüfen Sie die Sicherheitsinformationen und die Kontoberechtigungen.",
+      "RiskReviewReferenceWithoutWhitespace".repeat(5),
+    ],
+  },
+  ar: {
+    dir: "rtl", title: "مراقبة المخاطر وإشعارات السلامة للحسابات التجارية الدولية ومراجعة صلاحيات الوصول",
+    accountLabel: "الحساب التجريبي المخصص لمراجعة السلامة",
+    account: "حساب تجريبي — محفظة مراجعة السلامة الدولية — صلاحية القراءة فقط — EURUSD 12345",
+    notices: [
+      "يبقى التداول متوقفاً أثناء مراجعة صلاحيات الحساب وتقييم المخاطر المستقل. لا يمكن إرسال أي أمر من بيئة الاختبار المعزولة.",
+      "الاتصال بالوسيط غير متاح. يرجى مراجعة معلومات السلامة وصلاحيات الحساب قبل المتابعة. EURUSD 12345",
+      "مرجعمراجعةالمخاطروالسلامةبدونمسافات".repeat(5),
+    ],
+  },
+  he: {
+    dir: "rtl", title: "ניטור סיכונים והתראות בטיחות עבור חשבונות מסחר בינלאומיים ובדיקת הרשאות גישה",
+    accountLabel: "חשבון הדגמה לבדיקת הרשאות ובטיחות",
+    account: "חשבון הדגמה — תיק בדיקת בטיחות בינלאומי — גישה לקריאה בלבד — EURUSD 12345",
+    notices: [
+      "המסחר נשאר מושהה בזמן בדיקת הרשאות החשבון וסקירת הסיכונים העצמאית. לא ניתן לשלוח הוראות מסביבת הבדיקה המבודדת.",
+      "החיבור לברוקר אינו זמין. יש לבדוק את מידע הבטיחות ואת הרשאות החשבון לפני המשך העבודה. EURUSD 12345",
+      "אסמכתתבדיקתסיכוניםובטיחותללארווחים".repeat(5),
+    ],
+  },
+};
+// Set the document direction before mounting, including Radix portals outside root.
+const params = new URLSearchParams(location.search);
+const locale = params.get("locale") ?? "de";
+if (!Object.hasOwn(copy, locale)) throw new Error(`Unsupported fixture locale: ${locale}`);
+const { dir, title, accountLabel, account, notices } = copy[locale as keyof typeof copy];
+document.documentElement.dir = dir;
+document.documentElement.lang = locale;
 const items = [
   { id: "cockpit", label: "Cockpit", shortLabel: "Desk", href: "/", icon: Home },
   { id: "risk", label: "Risk", href: "/risk-command-center", icon: Shield },
 ];
 
 function Fixture() {
-  const params = new URLSearchParams(location.search);
   const cockpit = params.get("variant") === "cockpit";
   const [allToolsOpen, setAllToolsOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
@@ -51,7 +82,7 @@ function Fixture() {
       <NotificationBell />
       <button className="arx-shell-signout" aria-label="Sign out" onClick={() => setAction("signout")}><LogOut size={15} /></button>
       <div className="arx-shell-cockpit-controls">
-        <label className="min-w-0 max-w-full text-xs">Account
+        <label className="min-w-0 max-w-full text-xs">{accountLabel}
           <select aria-label="Fixture account" className="block w-full min-w-0 max-w-full rounded border border-border bg-background p-1" onChange={() => setAction("account")}>
             <option>{account}</option><option>Alternate read-only fixture account</option>
           </select>

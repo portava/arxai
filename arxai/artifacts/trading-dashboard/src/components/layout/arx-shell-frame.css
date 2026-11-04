@@ -221,7 +221,7 @@
 }
 .arx-shell-header-actions :is(button, a, input, select) { max-width: 100%; }
 
-/* Anchor the popover to the bounded header, not a wrapped summary near its left edge. */
+/* Anchor to the bounded header, not a wrapped summary near its inline-start edge. */
 .arx-shell-layout-menu { position: static; flex: 0 0 auto; }
 .arx-shell-layout-menu summary {
   display: inline-flex;
@@ -244,7 +244,7 @@
   /* SafetyHeader uses z-40; an open layout menu must remain operable above it. */
   z-index: 45;
   top: calc(100% + 7px);
-  right: 0;
+  inset-inline-end: 0;
   width: min(340px, calc(100vw - 24px));
   max-height: min(70dvh, 560px);
   overflow: auto;
@@ -429,7 +429,7 @@
   .arx-shell-heading h1 { font-size: clamp(19px, 6vw, 23px); line-height: 1.2; }
   .arx-shell-layout-menu { grid-area: layout; }
   .arx-shell-layout-menu summary { min-height: 34px; padding: 0 9px; }
-  .arx-shell-layout-popover { right: auto; left: 0; }
+  .arx-shell-layout-popover { inset-inline-end: auto; inset-inline-start: 0; }
   .arx-shell-header-actions {
     grid-area: actions;
     justify-content: flex-start;

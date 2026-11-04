@@ -11,6 +11,7 @@ import { buildFixture } from "./build.mjs";
 
 const workspace = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const widths = [390, 900, 1100, 1366];
+const locales = ["de", "ar", "he"];
 
 function chromiumExecutable() {
   const explicit = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
@@ -76,7 +77,7 @@ async function assertGeometry(page, observations) {
       const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
     };
-    const elements = [...document.querySelectorAll(".arx-shell-header, .arx-shell-heading h1, .arx-shell-safety-notice, [data-fixture-notice], .arx-shell-header button, .arx-shell-header select, .arx-shell-layout-menu summary, .arx-shell-layout-popover, .arx-shell-status-strip button, [role=dialog], [role=dialog] button")].filter(shown);
+    const elements = [...document.querySelectorAll(".arx-shell-header, .arx-shell-heading h1, .arx-shell-safety-notice, [data-fixture-notice], .arx-shell-header button, .arx-shell-header select, [data-testid=badge-alert-unread-count], .arx-shell-layout-menu summary, .arx-shell-layout-popover, .arx-shell-status-strip button, .arx-shell-mobile-tray, .arx-shell-mobile-tray > *, [role=dialog], [role=dialog] button, [role=dialog] a")].filter(shown);
     const clipped = elements.flatMap(el => {
       const r = el.getBoundingClientRect();
       // Viewport-fixed Radix portals are not clipped by the normal-flow body's
@@ -113,6 +114,84 @@ async function assertGeometry(page, observations) {
     assert.ok(el.x >= -1 && el.right <= geometry.width + 1 && el.width > 0, `Off-screen element: ${JSON.stringify(el)}`);
   }
   return geometry;
+}
+
+async function assertDirection(page, locale, observations) {
+  const direction = await page.evaluate(() => {
+    const rect = el => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    };
+    const visible = selector => [...document.querySelectorAll(selector)]
+      .filter(el => el.checkVisibility({ checkVisibilityCSS: true }));
+    const ordered = selector => visible(selector).map(el => ({ text: el.textContent, ...rect(el) }));
+    const header = document.querySelector(".arx-shell-header");
+    const popover = visible(".arx-shell-layout-popover")[0];
+    const badge = document.querySelector("[data-testid=badge-alert-unread-count]");
+    const bell = document.querySelector("[data-testid=button-notification-bell]");
+    const b = rect(badge);
+    return {
+      lang: document.documentElement.lang, dir: getComputedStyle(header).direction,
+      portalDirections: visible("[role=dialog]").map(el => getComputedStyle(el).direction),
+      header: rect(header), popover: popover ? rect(popover) : null,
+      bell: rect(bell), badge: rect(badge),
+      badgeOverlaps: visible(".arx-shell-header button, .arx-shell-header select, .arx-shell-layout-menu summary")
+        .filter(el => el !== bell).filter(el => {
+          const r = rect(el);
+          return Math.min(b.right, r.right) - Math.max(b.left, r.left) > 1 &&
+            Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top) > 1;
+        }).map(el => el.getAttribute("aria-label") || el.textContent),
+      // These DOM-order siblings must read from inline-start to inline-end.
+      tray: ordered(".arx-shell-mobile-tray > *"),
+      mobileHeader: ordered(".arx-shell-mobile-brand, .arx-shell-heading, .arx-shell-mobile-tools"),
+      mobileItems: ordered(".arx-shell-mobile-sheet-items > *"),
+      layoutChoices: ordered(".arx-shell-layout-popover button"),
+      dock: visible(".arx-shell-dock").map(rect),
+      main: rect(document.querySelector(".arx-shell-main-column")),
+    };
+  });
+  observations.push(direction);
+  const rtl = locale !== "de";
+  assert.equal(direction.lang, locale);
+  assert.equal(direction.dir, rtl ? "rtl" : "ltr");
+  assert.ok(direction.portalDirections.every(dir => dir === direction.dir), "Portaled sheets must inherit document direction");
+  for (const group of ["tray", "mobileHeader", "mobileItems", "layoutChoices"]) {
+    const items = direction[group];
+    for (let i = 1; i < items.length; i++) {
+      const previous = items[i - 1], current = items[i];
+      if (Math.min(previous.bottom, current.bottom) <= Math.max(previous.top, current.top)) continue; // different grid rows
+      assert.ok(rtl ? previous.left >= current.right - 1 : previous.right <= current.left + 1,
+        `${group} must follow ${direction.dir} reading order: ${JSON.stringify(items)}`);
+    }
+  }
+  if (direction.dock.length) {
+    assert.ok(rtl ? direction.dock[0].left >= direction.main.right - 1 : direction.dock[0].right <= direction.main.left + 1,
+      "Desktop dock must occupy inline-start");
+  }
+  if (direction.popover) {
+    const mobile = page.viewportSize().width < 768;
+    const edge = mobile === rtl ? "right" : "left";
+    assert.ok(Math.abs(direction.popover[edge] - direction.header[edge]) <= 1,
+      `Layout popover must anchor at inline-${mobile ? "start" : "end"}: ${JSON.stringify(direction)}`);
+  }
+  // Production badges intentionally protrude 4px above/right of the bell.
+  // Require their center inside the bell and no overlap with adjacent controls.
+  const { badge, bell } = direction;
+  assert.deepEqual(direction.badgeOverlaps, [], "Unread badge must not overlap another header control");
+  assert.ok((badge.left + badge.right) / 2 >= bell.left && (badge.left + badge.right) / 2 <= bell.right &&
+    (badge.top + badge.bottom) / 2 >= bell.top && (badge.top + badge.bottom) / 2 <= bell.bottom,
+  "Unread badge must stay attached to the bell");
+  const badgeHit = await page.evaluate(() => {
+    const badge = document.querySelector("[data-testid=badge-alert-unread-count]");
+    const r = badge.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!hit && (hit === badge || badge.contains(hit));
+  });
+  // A modal/popover can intentionally cover the background notification bell.
+  if (!direction.portalDirections.length && !direction.popover) {
+    assert.ok(badge.top >= 0 && badge.bottom <= page.viewportSize().height, "Unread badge must stay vertically in view");
+    assert.ok(badgeHit, "Unread badge must not be obscured");
+  }
 }
 
 async function keyboardReachability(page, selector = ".arx-shell-frame button, .arx-shell-frame a, .arx-shell-frame select, .arx-shell-frame summary") {
@@ -153,11 +232,17 @@ async function keyboardReachability(page, selector = ".arx-shell-frame button, .
       reached.add(focused.id); receipts.push(focused);
     }
   }
-  assert.deepEqual([...reached].sort(), expected.sort(), "Every visible shell control must be reachable by Tab");
+  assert.deepEqual([...reached].sort(), [...expected].sort(), "Every visible shell control must be reachable by Tab");
+  // A modal may start from Close; compare the complete cyclic DOM order rather
+  // than assuming the initial focus position. RTL must not reverse Tab order.
+  const actual = receipts.map(receipt => receipt.id);
+  const start = expected.indexOf(actual[0]);
+  assert.deepEqual(actual, [...expected.slice(start), ...expected.slice(0, start)],
+    "Tab must visit visible controls in DOM order without skips or repeats");
   return receipts;
 }
 
-test("shared shell long-content browser regression", { timeout: 180_000 }, async t => {
+test("shared shell long-content and RTL browser regression", { timeout: 480_000 }, async t => {
   const parent = path.join(workspace, "generated-artifacts/shell-header");
   await mkdir(parent, { recursive: true });
   const evidence = await mkdtemp(path.join(parent, "run-"));
@@ -196,22 +281,23 @@ test("shared shell long-content browser regression", { timeout: 180_000 }, async
   });
 
   const results = [];
-  for (const width of widths) for (const variant of ["page", "cockpit"]) for (const dock of ["expanded", "compact"]) {
-    const name = `${variant}-${dock}-${width}`;
+  for (const locale of locales) for (const width of widths) for (const variant of ["page", "cockpit"]) for (const dock of ["expanded", "compact"]) {
+    const name = `${locale}-${variant}-${dock}-${width}`;
     await t.test(name, async () => {
       const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, serviceWorkers: "block", reducedMotion: "reduce" });
       const blocked = [], errors = [];
       const page = await context.newPage();
-      const receipt = { observations: [] };
+      const receipt = { locale, width, variant, dock, observations: [], direction: [] };
       try {
         await restrictTraffic(context, origin, files, blocked);
         page.on("pageerror", error => errors.push(error.message));
-        await page.goto(`${origin}/?variant=${variant}&dock=${dock}&count=999`);
+        await page.goto(`${origin}/?variant=${variant}&dock=${dock}&count=999&locale=${locale}`);
         await page.getByRole("heading", { level: 1 }).waitFor();
         await page.evaluate(() => document.fonts.ready);
         assert.equal(await page.locator("[data-fixture-notice]").count(), 3);
         assert.equal(await page.getByTestId("badge-alert-unread-count").textContent(), "9+");
         await assertGeometry(page, receipt.observations);
+        await assertDirection(page, locale, receipt.direction);
         receipt.keyboard = await keyboardReachability(page);
         await page.screenshot({ path: path.join(evidence, `${name}-keyboard-focus.png`) });
         await page.getByLabel("Fixture account", { exact: true }).selectOption({ index: 1 });
@@ -224,20 +310,26 @@ test("shared shell long-content browser regression", { timeout: 180_000 }, async
         assert.equal(await page.getByTestId("fixture-action").textContent(), "signout");
         await page.getByLabel("Open layout menu", { exact: true }).click();
         await assertGeometry(page, receipt.observations);
+        await assertDirection(page, locale, receipt.direction);
+        await page.screenshot({ path: path.join(evidence, `${name}-layout.png`) });
         receipt.layoutKeyboard = await keyboardReachability(page, ".arx-shell-layout-popover button");
         await page.getByRole("button", { name: dock === "expanded" ? "Compact" : "Expanded", exact: true }).click();
         await page.getByLabel("Open layout menu", { exact: true }).click();
         await page.getByTestId(width < 768 ? "button-shell-tray-tools" : "button-shell-all-tools").click();
         await page.getByRole("dialog").waitFor();
         await assertGeometry(page, receipt.observations);
+        await assertDirection(page, locale, receipt.direction);
         receipt.toolsKeyboard = await keyboardReachability(page, "[role=dialog] button");
+        await page.screenshot({ path: path.join(evidence, `${name}-tools-focus.png`) });
         await page.getByRole("button", { name: "Fixture risk information" }).click();
         assert.equal(await page.getByTestId("fixture-action").textContent(), "tools");
         if (width < 768) {
           await page.getByLabel("Open mobile tools", { exact: true }).click();
           await page.getByRole("dialog").waitFor();
           await assertGeometry(page, receipt.observations);
+          await assertDirection(page, locale, receipt.direction);
           receipt.mobileKeyboard = await keyboardReachability(page, "[role=dialog] button, [role=dialog] a");
+          await page.screenshot({ path: path.join(evidence, `${name}-mobile-focus.png`) });
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "hidden" });
         }

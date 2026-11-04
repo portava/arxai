@@ -15,13 +15,18 @@ fails the check rather than skipping it. No credentials or running API are neede
 ## Coverage
 
 - 390, 900, 1100 and 1366 CSS pixels, 900px high, 100% zoom and 1× device scale.
-- Page and Cockpit frames, each with expanded and compact docks: 16 combinations.
-- Translated-length title, long account options, three safety notices (including
-  an unbroken reference), real notification counts of 0, 1, 9 and 999.
+- Page and Cockpit frames, each with expanded and compact docks, for German LTR,
+  Arabic RTL and Hebrew RTL: 48 combinations (32 RTL, 16 LTR).
+- Controlled translated-length titles, long account labels/options, three safety
+  notices (including an unbroken reference and mixed Latin/numeric RTL content),
+  real notification counts of 0, 1, 9 and 999.
 - Document and nested header/notice overflow, ancestor clipping, real Tab focus
   with outline/ring evidence, viewport bounds and unobscured control centers.
 - Local account selection, inert emergency/sign-out/review callbacks, layout
   choices, tools sheets, mobile sheets and the real notification bell.
+- Direction-aware popover anchoring, inline-start desktop dock, mirrored phone
+  header/tray/sheet navigation, badge bounds and attachment, portaled sheet
+  direction, cyclic DOM tab order and visible focus in both directions.
 - Exact static-file request allowlist installed before navigation; service
   workers blocked; all WebSockets, external requests, API requests and non-GET
   requests blocked. A separate negative test proves these restrictions.
@@ -40,6 +45,10 @@ An ephemeral loopback static server closes when the test finishes; it cannot
 proxy requests to the app or a provider. No persistent workflow is added.
 Screenshots (including visible keyboard focus), DOM, geometry/focus/network/error
 JSON and incremental results are retained there on pass and failure.
+Layout popovers and focused tools/mobile sheets have separate screenshots.
+Each receipt identifies locale, width, variant and dock mode. The fixture sets
+`lang` and `dir` on the document before mounting so body-level portals participate
+in RTL; it does not translate or enable localization in the real app.
 Build diagnostics are left visible; warnings do not count as assertions.
 
 Native closed-details contents are excluded using browser visibility checks.

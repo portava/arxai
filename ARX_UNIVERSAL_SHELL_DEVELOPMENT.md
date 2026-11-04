@@ -207,3 +207,43 @@ Startup confirmed background jobs paused, the live master switch disabled and
 no schema migration performed. The fixture itself still neither starts nor
 depends on that API. No unrelated runtime issues were resolved or reclassified.
 
+## Isolated right-to-left regression coverage
+
+The same static-only browser fixture now sets document-level `dir`/`lang` before
+mounting for controlled Arabic and Hebrew copy, retaining the German LTR
+baseline. Each locale covers page/Cockpit, expanded/compact docks and all four
+existing widths (390/900/1100/1366): **48 unique cases, 32 RTL and 16 LTR**.
+Long titles, account labels/options and safety notices include mixed Latin
+symbols/numbers and unbroken references. This is not a production localization
+feature and does not mount authentication or account services.
+
+Additional assertions cover logical popover anchoring, inline-start dock
+placement, mirrored phone header/tray/sheet items, portaled sheet direction,
+badge viewport/clipping/overlap bounds and attachment to its bell, and forward
+cyclic DOM tab order with visible, unobscured focus. Layout, tools-focus and
+mobile-sheet-focus screenshots complement the per-case DOM/JSON receipts.
+
+The initial run (`generated-artifacts/shell-header/run-2uOGL1/`, command log
+`generated-artifacts/shell-rtl-initial.log`) passed all 16 LTR cases and failed
+all 32 RTL cases specifically on physical popover anchoring. The only production
+change replaces desktop `right` and phone `left` anchors with their logical
+inline equivalents. Other physical positioning in the stylesheet was inspected
+but left unchanged without failure evidence; the explicitly right-sided tools
+sheet and symmetric fixed tray are not indiscriminately mirrored.
+
+Final browser validation: **48 matrix cases plus containment and notification
+count checks passed** (50 subtests; Node reports 51 including the parent), exit 0.
+Receipts: `generated-artifacts/shell-header/run-nXL0Kb/`; command log:
+`generated-artifacts/shell-rtl-final.log`. All normal cases recorded zero
+blocked-request attempts and zero runtime errors. The existing sheet sourcemap
+diagnostic and large-chunk warning remain visible, not suppressed. Shell frame,
+layout-model and catalog unit tests passed (8 tests across 3 files).
+The managed frontend workflow restarted cleanly with Vite ready.
+
+**Authenticated workspace screenshots and interactions remain blocked.** The
+normal preview capture at `generated-artifacts/shell-rtl-preview.jpg` shows the
+sign-in page, not an authenticated shell. Its initial API 502 occurred before
+starting the existing safe-preview API workflow; startup then confirmed paused
+background jobs, disabled live master switch and no schema migration. The
+isolated tests neither depend on nor call that API.
+
