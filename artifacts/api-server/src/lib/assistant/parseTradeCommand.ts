@@ -23,7 +23,9 @@
 export type RubyPriceTrigger = { price: number; direction?: "ABOVE" | "BELOW" };
 
 export type RubyParsedCommand =
-  | { kind: "OPEN"; side: "BUY" | "SELL"; symbol: string; volume: number; orderType: string }
+  // stopLoss / takeProfit are the protective levels the user typed on the
+  // open itself ("buy EURUSD 0.01 sl 1.0850 tp 1.0950"); absent when not said.
+  | { kind: "OPEN"; side: "BUY" | "SELL"; symbol: string; volume: number; orderType: string; stopLoss?: number; takeProfit?: number }
   | { kind: "CLOSE_ONE"; symbol: string }
   | { kind: "CLOSE_ALL" }
   | { kind: "CLOSE_ALL_SYMBOL_UNSUPPORTED"; symbol: string }
@@ -39,7 +41,7 @@ export type RubyParsedCommand =
   // `pendingKind` is a copy hint (the user said "limit"/"stop"); it does NOT
   // place a broker-native pending order. `expiresInMinutes`, when present,
   // arms the watch with an expiry the evaluator already honors.
-  | { kind: "WATCH_AND_ENTER"; side: "BUY" | "SELL"; symbol: string; volume?: number; trigger: RubyPriceTrigger; pendingKind?: "LIMIT" | "STOP"; expiresInMinutes?: number }
+  | { kind: "WATCH_AND_ENTER"; side: "BUY" | "SELL"; symbol: string; volume?: number; trigger: RubyPriceTrigger; pendingKind?: "LIMIT" | "STOP"; expiresInMinutes?: number; stopLoss?: number; takeProfit?: number }
   | { kind: "WATCH_AND_CLOSE"; symbol: string; trigger: RubyPriceTrigger; expiresInMinutes?: number }
   // A limit/stop entry was clearly intended but no trigger price was given —
   // ask for the price rather than guess (never place a priceless pending).
@@ -53,6 +55,10 @@ export type RubyParsedCommand =
   // Risk-percent sizing: a lot cannot be computed safely without trusted
   // broker contract specs, so Ruby asks the user to confirm an exact lot.
   | { kind: "RISK_PERCENT_SIZING"; side: "BUY" | "SELL"; symbol: string; riskPercent: number; orderType: string }
+  // An entry with SL/TP given as a pip/point DISTANCE ("sl 20 pips"). The
+  // execution path takes price levels only, so ask for the level instead of
+  // silently opening without the protection the user asked for.
+  | { kind: "SLTP_NEEDS_PRICE"; side: "BUY" | "SELL"; symbol: string }
   | { kind: "SCALP_BEST_SETUP" }
   | { kind: "CANCEL" }
   | { kind: "STATUS_CHECK" }
@@ -154,6 +160,44 @@ function extractPrice(text: string, label: "tp" | "sl"): number | null {
   if (!m) return null;
   const v = Number(m[1]);
   return Number.isFinite(v) ? v : null;
+}
+
+// Protective SL/TP spans typed on an entry command: "sl 1.0850", "SL at
+// 1.0850", "stop loss: 1.08", "with SL above 2400", "tp 1.0950", "take
+// profit at 1.10". A level followed by pips/points is a DISTANCE, not a price.
+const PROTECTIVE_SPAN_RE =
+  /\b(sl|stop\s*loss|tp|take\s*profit)\b[^0-9\n]{0,32}?(\d+(?:\.\d+)?)(\s*(?:pips?|points?|pts)\b)?/gi;
+
+export type ProtectiveLevels = {
+  stopLoss?: number;
+  takeProfit?: number;
+  // true when an SL/TP was given as a pip/point distance (not a price level).
+  distanceGiven: boolean;
+  // The command text with every protective span blanked out, so "sl at X" /
+  // "tp above X" can never be read as an entry trigger or a lot size.
+  stripped: string;
+};
+
+export function extractProtectiveLevels(text: string): ProtectiveLevels {
+  let stopLoss: number | undefined;
+  let takeProfit: number | undefined;
+  let distanceGiven = false;
+  const stripped = text.replace(PROTECTIVE_SPAN_RE, (_m, label: string, num: string, unit?: string) => {
+    const v = Number(num);
+    const isSl = /^(sl|stop)/i.test(label);
+    if (unit) distanceGiven = true;
+    else if (Number.isFinite(v) && v > 0) {
+      if (isSl && stopLoss === undefined) stopLoss = v;
+      if (!isSl && takeProfit === undefined) takeProfit = v;
+    }
+    return " ";
+  });
+  return {
+    ...(stopLoss !== undefined ? { stopLoss } : {}),
+    ...(takeProfit !== undefined ? { takeProfit } : {}),
+    distanceGiven,
+    stripped,
+  };
 }
 
 // Conditional/trigger phrasing: "when it hits 1.09", "at 1.0950",
@@ -285,11 +329,29 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
   // Watch-and-enter — "buy EURUSD when it hits 1.09", "sell XAUUSD at 1850".
   // Must precede the immediate OPEN block (which would otherwise treat the
   // trigger price as a stray number / report MISSING_VOLUME).
+  // Protective SL/TP typed on an entry: parsed into the intent's own fields and
+  // blanked out of the text used for trigger / lot extraction.
+  const protective = extractProtectiveLevels(text);
+  const entryText = protective.stripped;
+  const protectiveFields = {
+    ...(protective.stopLoss !== undefined ? { stopLoss: protective.stopLoss } : {}),
+    ...(protective.takeProfit !== undefined ? { takeProfit: protective.takeProfit } : {}),
+  };
+
+  if (protective.distanceGiven) {
+    const wantBuy = /\b(buy|long)\b/i.test(entryText);
+    const wantSell = /\b(sell|short)\b/i.test(entryText);
+    const symbol = extractSymbol(entryText) ?? defaults.defaultSymbol ?? null;
+    if ((wantBuy || wantSell) && symbol) {
+      return { kind: "SLTP_NEEDS_PRICE", side: wantBuy ? "BUY" : "SELL", symbol };
+    }
+  }
+
   {
-    const trigger = extractTrigger(text);
+    const trigger = extractTrigger(entryText);
     const wantBuy = /\b(buy|long|go\s+long|enter\s+long)\b/i.test(text);
     const wantSell = /\b(sell|short|go\s+short|enter\s+short)\b/i.test(text);
-    const pendingKind = extractPendingKind(text);
+    const pendingKind = extractPendingKind(entryText);
     const expiresInMinutes = extractExpiryMinutes(text);
     if (trigger && (wantBuy || wantSell)) {
       const side: "BUY" | "SELL" = wantBuy ? "BUY" : "SELL";
@@ -297,10 +359,10 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
       if (symbol) {
         // The first number is the trigger price; a second explicit "x lots"
         // is the size. Fall back to the configured default volume.
-        const lotMatch = /\b(\d+(?:\.\d+)?)\s*(?:lots?|lot)\b/i.exec(text);
+        const lotMatch = /\b(\d+(?:\.\d+)?)\s*(?:lots?|lot)\b/i.exec(entryText);
         const volume = lotMatch ? Number(lotMatch[1]) : (defaults.defaultVolume ?? undefined);
         return {
-          kind: "WATCH_AND_ENTER", side, symbol, trigger,
+          kind: "WATCH_AND_ENTER", side, symbol, trigger, ...protectiveFields,
           ...(typeof volume === "number" && volume > 0 ? { volume } : {}),
           ...(pendingKind ? { pendingKind } : {}),
           ...(expiresInMinutes != null ? { expiresInMinutes } : {}),
@@ -327,7 +389,7 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
   // Monitor a position — "monitor my EURUSD", "watch my XAUUSD trade",
   // "keep an eye on EURUSD". No trigger price (that would be a watch-and-*).
   if (/\b(monitor|keep\s+an?\s+eye\s+on|watch\s+(my|the))\b/i.test(text)
-      && !extractTrigger(text)) {
+      && !extractTrigger(entryText)) {
     const symbol = extractSymbol(text) ?? defaults.defaultSymbol ?? undefined;
     return { kind: "MONITOR_TRADE", ...(symbol ? { symbol } : {}) };
   }
@@ -412,8 +474,8 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
     // the user gave no explicit lot — a lot is never silently fabricated from
     // a percent (broker contract specs aren't trusted here), so Ruby asks the
     // user to confirm an exact lot instead of mis-sizing live money.
-    const explicitVolume = extractVolume(text);
-    const riskPercent = explicitVolume == null ? extractRiskPercent(text) : null;
+    const explicitVolume = extractVolume(entryText);
+    const riskPercent = explicitVolume == null ? extractRiskPercent(entryText) : null;
     const orderType = defaults.defaultOrderType ?? (side === "BUY" ? "MARKET_BUY" : "MARKET_SELL");
     if (riskPercent != null && symbol) {
       return { kind: "RISK_PERCENT_SIZING", side, symbol, riskPercent, orderType };
@@ -421,7 +483,7 @@ export function parseTradeCommand(rawText: string, defaults: ParseDefaults = {})
     const volume = explicitVolume ?? defaults.defaultVolume ?? null;
     if (!symbol && volume != null) return { kind: "MISSING_SYMBOL", side, volume };
     if (symbol && volume == null) return { kind: "MISSING_VOLUME", side, symbol };
-    if (symbol && volume != null) return { kind: "OPEN", side, symbol, volume, orderType };
+    if (symbol && volume != null) return { kind: "OPEN", side, symbol, volume, orderType, ...protectiveFields };
     return { kind: "VAGUE", reason: "MISSING_SYMBOL_AND_VOLUME" };
   }
 

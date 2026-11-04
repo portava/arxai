@@ -99,15 +99,17 @@ export function isExpired(preview: SetupPreview, nowMs: number = Date.now()): bo
 }
 
 /**
- * The effective client status for a preview: a confirmed/discarded preview keeps
- * its set status; an un-acted preview becomes "stale" once it expires.
+ * The effective client status for a preview: a discarded preview stays
+ * discarded; any other preview (including a user_confirmed one) becomes
+ * "stale" once it expires — expiry always wins over confirmation, so an old
+ * drawing can never keep pre-filling a ticket or stay drawn on the chart.
  */
 export function deriveStatus(
   preview: SetupPreview,
   setStatus: SetupPreviewStatus,
   nowMs: number = Date.now(),
 ): SetupPreviewStatus {
-  if (setStatus === "user_confirmed" || setStatus === "discarded") return setStatus;
+  if (setStatus === "discarded") return setStatus;
   if (isExpired(preview, nowMs)) return "stale";
   return setStatus;
 }
@@ -125,8 +127,14 @@ export function hasDrawableLevels(preview: SetupPreview): boolean {
 export function canUseSetup(
   preview: SetupPreview,
   status: SetupPreviewStatus,
+  nowMs: number = Date.now(),
 ): boolean {
-  return hasDrawableLevels(preview) && status !== "stale" && status !== "discarded";
+  return (
+    hasDrawableLevels(preview) &&
+    status !== "stale" &&
+    status !== "discarded" &&
+    !isExpired(preview, nowMs)
+  );
 }
 
 // ── Signal-strip readouts (Task #382) ────────────────────────────────────────
@@ -188,4 +196,26 @@ export function governanceSignal(
 export function formatSignalScore(score: number | null): string | null {
   if (score == null || !Number.isFinite(score)) return null;
   return Number.isInteger(score) ? String(score) : score.toFixed(1);
+}
+
+// ── Scanner chip context (CS2) ───────────────────────────────────────────────
+// The draw-setup scanner score comes from the assistant's live candidate
+// scanner, which scores only these timeframes. The server only returns a score
+// computed on the chart's own timeframe, so a non-null score is labelled with
+// the preview timeframe; a null on any other timeframe says so plainly.
+export const ASSISTANT_SCANNER_TIMEFRAMES: readonly string[] = ["M15", "H1"];
+
+export function setupScannerChipContext(preview: Pick<SetupPreview, "scannerScore" | "timeframe">): {
+  timeframe: string | null;
+  nullNote: string | null;
+  help: string;
+} {
+  const tf = preview.timeframe;
+  const scored = ASSISTANT_SCANNER_TIMEFRAMES.includes(tf);
+  return {
+    timeframe: preview.scannerScore != null ? tf : null,
+    nullNote: preview.scannerScore == null && !scored ? `no scanner score for ${tf}` : null,
+    help:
+      "The assistant's live candidate-scanner score for this setup on the chart timeframe (it scores M15 and H1 only; higher is cleaner). It is a different engine from the market-scanner read in the AI overlay panel.",
+  };
 }

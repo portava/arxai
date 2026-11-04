@@ -7,6 +7,7 @@
  */
 import type { TruthDataFeedScope } from "./truthDataFeedScope";
 import type { TruthDataLastTickBasis } from "./truthDataLastTickBasis";
+import type { TruthDataNotLiveReason } from "./truthDataNotLiveReason";
 import type { TruthDataState } from "./truthDataState";
 
 export interface TruthData {
@@ -24,4 +25,6 @@ export interface TruthData {
   contention?: boolean;
   /** Measured broker-clock offset (ms, broker minus UTC) used to convert the serving bridge's stamps to UTC at ingest; null when unknown. */
   brokerClockOffsetMs?: number | null;
+  /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
+  notLiveReason?: TruthDataNotLiveReason;
 }

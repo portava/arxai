@@ -71,6 +71,8 @@ export interface SymbolSnapshot {
    * closed market or stored history a "delayed" feed.
    */
   notLiveReason: "market_closed" | "stored_history" | null;
+  /** Whose feed this is (Truth audit T2): own bridge, another bridge's series, or a provider. */
+  feedScope: "own_bridge" | "platform_shared" | "provider" | null;
   /** Honest cause when degraded/unavailable; null when clean + AI-usable. */
   cause: string | null;
   /** User-safe message straight from the shared feed status. */
@@ -137,6 +139,7 @@ export async function getSymbolSnapshot(
       lastCandleTime: fs.lastCandleTime,
       freshness: deriveFreshness(fs),
       notLiveReason: fs.notLiveReason ?? null,
+      feedScope: fs.feedScope ?? null,
       cause,
       message: fs.message,
     };
@@ -154,6 +157,7 @@ export async function getSymbolSnapshot(
       lastCandleTime: null,
       freshness: "UNAVAILABLE",
       notLiveReason: null,
+      feedScope: null,
       cause: "Market data resolver error.",
       message: "Market data is unavailable for this symbol right now.",
     };

@@ -52,7 +52,7 @@ import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/char
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
-import { resolveChartFeedStrip, scheduledWeekendClosureFor } from "@/lib/scannerTruth";
+import { resolveChartFeedStrip, scheduledWeekendClosureFor, storedHistoryNotice } from "@/lib/scannerTruth";
 import { candlestickPriceFormat, formatInstrumentPrice, resolveDisplayClose } from "@/lib/instrumentPriceFormat";
 import { publishScannerTip, scannerTipKey, useScannerTip } from "@/lib/scannerLiveTipStore";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
@@ -1030,6 +1030,7 @@ export function ScannerChartPanel() {
   const feedStrip = resolveChartFeedStrip(displayStatus, {
     marketClosed: truth?.marketClosure != null || scheduledClosure,
     hasCandles: candles.length > 0,
+    storedHistory: feedStatus?.notLiveReason === "stored_history",
   });
   // Close time of the newest CLOSED candle for the strip's "last candle closed"
   // note (null when none: the note is then omitted, never guessed).
@@ -2915,6 +2916,12 @@ export function ScannerChartPanel() {
                   <span className="text-amber-400/70" data-testid="scanner-chart-stale-last-candle">· last candle closed {formatUtcCandleClose(lastClosedCloseMs, Date.now())}</span>
                 )}
                 <span className="ml-auto text-amber-400/50 text-[10px]">No live price until the market reopens</span>
+              </div>
+            )}
+            {feedStrip === "stored_history" && (
+              <div className="flex items-center gap-2 rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-1.5 text-[11px] text-orange-300" data-testid="scanner-chart-status-stored-history">
+                <span className="font-medium">{storedHistoryNotice(candles.length > 0 ? new Date(candles[candles.length - 1]!.time).toISOString() : null, Date.now())}</span>
+                <span className="ml-auto text-orange-400/50 text-[10px]">Not live — no live price marker</span>
               </div>
             )}
             {feedStrip === "delayed" && (

@@ -70,6 +70,8 @@ export interface RubyContext {
       /** The chart's reason the series is not live (weekend close, stored
        *  history), or null. Absent on contexts built before it existed. */
       notLiveReason?: "market_closed" | "stored_history" | null;
+      /** Whose feed: the trader's own bridge, another bridge's MT5 series, or a provider. */
+      feedScope?: "own_bridge" | "platform_shared" | "provider" | null;
     } | null;
   } | null;
   bridge: {
@@ -585,6 +587,7 @@ export function marketFeedFromSnapshot(snap: {
   isLive: boolean;
   lastPrice: number | null;
   notLiveReason?: "market_closed" | "stored_history" | null;
+  feedScope?: "own_bridge" | "platform_shared" | "provider" | null;
 }): NonNullable<NonNullable<RubyContext["symbol"]>["marketFeed"]> {
   return {
     source: snap.source,
@@ -594,6 +597,7 @@ export function marketFeedFromSnapshot(snap: {
     isLive: snap.isLive,
     lastPrice: snap.lastPrice,
     notLiveReason: snap.notLiveReason ?? null,
+    feedScope: snap.feedScope ?? null,
   };
 }
 
@@ -665,6 +669,11 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
         lines.push(`Market data for ${sym} is stale right now — I won't treat it as a current read.`);
       } else {
         lines.push(`Market data for ${sym} is unavailable right now, so I can't read it.`);
+      }
+      // Another bridge's series is served when the trader's own bridge is not
+      // pushing this symbol: say whose feed it is, as the chart does.
+      if (mf.feedScope === "platform_shared" && mf.notLiveReason == null) {
+        lines.push(`These ${sym} prices come from the platform's shared MetaTrader 5 feed, not your own bridge — your broker's quotes can differ slightly.`);
       }
     }
   }

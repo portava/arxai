@@ -2,11 +2,13 @@
 // Computed on-demand from paper_trades (no separate cache table; avoids stale
 // rows). Returns daily aggregates only for the requesting user.
 import { Router, type Request } from "express";
-import { db, paperTradesTable } from "@workspace/db";
-import { sharedTradeAttributionTable } from "@workspace/db/schema";
-import { and, eq, isNotNull, gte, lte } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import {
+  loadClosedRows,
+  sourceFields,
+  type CalendarSource,
+  type ClosedRow,
+} from "../lib/performanceCC/closedTradeLedger.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
@@ -42,97 +44,9 @@ function dayKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// Normalized closed-trade row the calendar aggregates over. Both the live
-// (shared_trade_attribution) and paper (paper_trades) sources map into this.
-type ClosedRow = {
-  id: number;
-  symbol: string;
-  side: string;
-  pnl: number | null;
-  lotSize: number | null;
-  entryPrice: number | null;
-  exitPrice: number | null;
-  strategyTag: string | null;
-  riskAmount: number | null;
-  closedAt: Date | null;
-};
-
-/**
- * Which book a response read, so a caller never labels one book as another:
- *  - paper_trades: closed demo paper trades (the same rows /me/paper-trades lists);
- *  - live_trades: closed live trades (shared_trade_attribution), read because
- *    the safety envelope's tradingMode is LIVE;
- *  - withheld_live_shared: the LIVE_SHARED mode scope returns no book here.
- */
-type CalendarSource = "paper_trades" | "live_trades" | "withheld_live_shared";
-
-// The ledger a loaded response was computed from, and a note naming it. The
-// demo ledger is the trades a trader logs by hand (paper_trades) — not the
-// simulated orders (paper_orders) the Trading Calendar reads — so the two
-// pages' figures differ for a date.
-type LedgerSource = Exclude<CalendarSource, "withheld_live_shared">;
-const SOURCE_NOTE: Record<LedgerSource, string> = {
-  live_trades: "From your closed live trades recorded against your account.",
-  paper_trades:
-    "From the demo trades you log by hand on My Demo Trades. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.",
-};
-function sourceFields(source: LedgerSource) {
-  return { source, sourceNote: SOURCE_NOTE[source] };
-}
-
-// Mode-aware loader. In LIVE mode the calendar reflects ONLY closed live trades
-// (shared_trade_attribution). In demo/paper/simulated it reflects paper_trades.
-// No mixing — a live calendar never shows paper P&L and vice-versa.
-async function loadClosedRows(
-  userId: number, fromIso?: string, toIso?: string,
-): Promise<{ rows: ClosedRow[]; source: LedgerSource }> {
-  const env = await getEnvelope(userId);
-  const isLive = env.tradingMode === "LIVE";
-
-  if (isLive) {
-    const conds = [
-      eq(sharedTradeAttributionTable.userId, userId),
-      eq(sharedTradeAttributionTable.status, "closed"),
-      isNotNull(sharedTradeAttributionTable.closedAt),
-    ];
-    if (fromIso) conds.push(gte(sharedTradeAttributionTable.closedAt, new Date(fromIso)));
-    if (toIso) conds.push(lte(sharedTradeAttributionTable.closedAt, new Date(toIso)));
-    const rows = await db.select().from(sharedTradeAttributionTable).where(and(...conds));
-    return { source: "live_trades", rows: rows.map((r) => ({
-      id: r.id,
-      symbol: r.symbol,
-      side: r.side,
-      pnl: r.pnl ?? null,
-      lotSize: r.lotSize ?? null,
-      entryPrice: r.entryPrice ?? null,
-      exitPrice: r.closePrice ?? null,
-      strategyTag: null,
-      riskAmount: null,
-      closedAt: r.closedAt ?? null,
-    })) };
-  }
-
-  const conds = [
-    eq(paperTradesTable.userId, userId),
-    eq(paperTradesTable.status, "closed"),
-    isNotNull(paperTradesTable.closedAt),
-  ];
-  if (fromIso) conds.push(gte(paperTradesTable.closedAt, new Date(fromIso)));
-  if (toIso) conds.push(lte(paperTradesTable.closedAt, new Date(toIso)));
-  const rows = await db.select().from(paperTradesTable).where(and(...conds));
-  return { source: "paper_trades", rows: rows.map((r) => ({
-    id: r.id,
-    symbol: r.symbol,
-    side: r.side,
-    pnl: r.pnl ?? null,
-    lotSize: r.lotSize ?? null,
-    entryPrice: r.entryPrice ?? null,
-    exitPrice: r.exitPrice ?? null,
-    strategyTag: r.strategyTag ?? null,
-    riskAmount: r.riskAmount ?? null,
-    closedAt: r.closedAt ?? null,
-  })) };
-}
+// The mode-aware closed-trade ledger (ClosedRow, loadClosedRows, source notes)
+// lives in lib/performanceCC/closedTradeLedger.ts so Ruby's performance tools
+// read the same book this calendar shows.
 
 function aggregate(rows: ClosedRow[]): Record<string, DayAgg> {
   const out: Record<string, DayAgg> = {};

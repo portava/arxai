@@ -273,16 +273,18 @@ async function buildChartFeed(
   const storedHistory = result.ok && result.provenance?.subProviderId === STORED_HISTORY_SUB_PROVIDER;
   const source = result.primaryProvider;
   const servingBridgeId = result.ok ? (result.provenance?.bridgeConnectionId ?? null) : null;
-  const feedScope: ChartFeedScope | null = source == null
+  // Stored history has no bridge pushing it: it is nobody's live feed, so it
+  // carries no feed scope, no contention and no broker-clock reading.
+  const feedScope: ChartFeedScope | null = source == null || storedHistory
     ? null
     : source === "mt5_broker"
       ? (pinnedBridge != null && servingBridgeId === pinnedBridge ? "own_bridge" : "platform_shared")
       : "provider";
   // A pinned read never reports contention itself (it never blends), so ask the
   // store directly whether two bridges are pushing this series.
-  const contention = result.ok && source === "mt5_broker" &&
+  const contention = result.ok && !storedHistory && source === "mt5_broker" &&
     ((result.provenanceNotes ?? []).includes(MULTI_BRIDGE_CONTENTION_NOTE) || mt5SeriesContention(symbol, timeframe, now));
-  const brokerClock = source === "mt5_broker" ? getBrokerClockOffset(servingBridgeId, now) : null;
+  const brokerClock = source === "mt5_broker" && !storedHistory ? getBrokerClockOffset(servingBridgeId, now) : null;
 
   // Latency: the winning provider's server-side read time (ms). When nothing
   // was served there is no read to time — the cost of failed probes is not a
@@ -490,9 +492,6 @@ async function buildChartFeed(
   const quality = verdict.quality;
   let warning = verdict.warning;
   const stale = verdict.stale;
-  // Stored bars are a record of the past, never an input the AI may read as
-  // the current market, however recent the newest one is.
-  const aiUsable = verdict.aiUsable && !storedHistory;
 
   // isLive: reachable, current, and (for synthetics) confirmed ticking. When a
   // forming tip is present its tick freshness (folded into the verdict) governs
@@ -505,6 +504,11 @@ async function buildChartFeed(
   // are real stored broker bars (quality still describes them), but nothing
   // backs a "live" claim.
   const durableMirror = result.ok && result.provenance?.subProviderId === DURABLE_MIRROR_SUB_PROVIDER;
+  // Stored bars are a record of the past, never an input the AI may read as
+  // the current market, however recent the newest one is. That holds for the
+  // chart's stored-history serve AND the router's own durable-mirror fallback:
+  // neither has a bridge pushing the series, so neither may feed analysis.
+  const aiUsable = verdict.aiUsable && !storedHistory && !durableMirror;
   //
   // Scheduled weekend closure: on coarse timeframes the newest bar of a closed
   // market stays within one interval of the epoch-aligned "current" bar for

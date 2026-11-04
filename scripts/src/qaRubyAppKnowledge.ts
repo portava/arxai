@@ -164,7 +164,8 @@ async function main(): Promise<void> {
       ["user-state:getRiskUtilization", "getRiskUtilization"],
       ["trading-context:getMarketScannerOpportunities", "getMarketScannerOpportunities"],
       ["trading-context:getEconomicCalendar", "getEconomicCalendar"],
-      ["trading-context:getCurrentEvents", "getCurrentEvents"],
+      // getCurrentEvents is deliberately not advertised (no current-events
+      // provider exists — AICS-9, 2026-11-04).
       ["why-blocked:getTradingMode", "getTradingMode"],
       ["why-blocked:getReconciliationStatus", "getReconciliationStatus"],
       ["next-action:getTradeDecision", "getTradeDecision"],

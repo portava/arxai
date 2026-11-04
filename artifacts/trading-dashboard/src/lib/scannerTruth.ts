@@ -520,21 +520,35 @@ function utcDayClock(ms: number): string {
   return `${WEEKDAY_SHORT[d.getUTCDay()]} ${hh}:${mm} UTC`;
 }
 
+/**
+ * One wording for stored-history bars (scanner strip, candle reason): no feed
+ * is pushing them, and the newest bar's open age. Matches the meaning of the
+ * ARX chart's "Stored history … not live" chip.
+ */
+export function storedHistoryNotice(newestOpenIso: string | null | undefined, nowMs: number): string {
+  const opened = newestOpenIso ? Date.parse(newestOpenIso) : Number.NaN;
+  if (!Number.isFinite(opened)) return "Stored history — no live feed";
+  return `Stored history — no live feed; newest bar opened ${formatLag(Math.max(0, nowMs - opened))} ago`;
+}
+
 /** Which feed-status notice strip the scanner chart shows under its canvas. */
-export type ChartFeedStripKind = "market_closed" | "delayed" | "stale" | "analysis_only" | null;
+export type ChartFeedStripKind = "market_closed" | "stored_history" | "delayed" | "stale" | "analysis_only" | null;
 
 /**
  * The chart's feed notice strip. A closed market — from the truth's scheduled
  * closure or the server's closed-market stream signal — is labelled as closed,
  * never as "Stale" or "Delayed", so the strip cannot contradict the chart's
- * "Market closed" chip. A LIVE display shows no strip.
+ * "Market closed" chip. Bars the server served from storage (feedStatus
+ * notLiveReason "stored_history") are labelled as stored history, never as
+ * "Delayed market data". A LIVE display shows no strip.
  */
 export function resolveChartFeedStrip(
   displayStatus: ChartDisplayStatus,
-  opts: { marketClosed: boolean; hasCandles: boolean },
+  opts: { marketClosed: boolean; hasCandles: boolean; storedHistory?: boolean },
 ): ChartFeedStripKind {
   if (displayStatus === "LIVE" || displayStatus === "UNAVAILABLE") return null;
   if (opts.marketClosed && opts.hasCandles) return "market_closed";
+  if (opts.storedHistory && opts.hasCandles) return "stored_history";
   if (displayStatus === "FALLBACK_COMPOSITE") return "delayed";
   if (displayStatus === "STALE") return "stale";
   return opts.hasCandles ? "analysis_only" : null;
@@ -566,8 +580,10 @@ export function resolveScannerTruth(
         warning: fs.warning,
         message: fs.message,
         lastCandleTime: fs.lastCandleTime,
+        notLiveReason: fs.notLiveReason ?? null,
       }
     : null;
+  const storedHistory = fs?.notLiveReason === "stored_history";
   const rawDisplay = resolveDisplayStatus(feedForDisplay, count > 0);
   const displayStatus = applyHeaderCap(rawDisplay, input.headerOk);
   // The cap, not the candles, demoted the display: say so instead of blaming
@@ -627,6 +643,11 @@ export function resolveScannerTruth(
     // Closed market: the data is not live, but it is not a feed fault either.
     candleStatus = "stale";
     candleReason = `Market closed — ${input.symbolDisplay} is in its scheduled weekend close (since ${utcDayClock(marketClosure.closedAtMs)}); the newest bar opened ${utcDayClock(newestBarMs)}. This is the last session's data, not a live read.`;
+  } else if (displayStatus === "STALE" && storedHistory) {
+    // Served from storage — no feed is pushing these bars. Not "delayed" and
+    // not "syncing": they will not catch up on their own.
+    candleStatus = "stale";
+    candleReason = `${storedHistoryNotice(input.lastTime, nowMs)}. Historical context only, not a live read.`;
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";
@@ -900,8 +921,11 @@ export function resolveScannerTruth(
   const brokerFeedActive = provider.tier === "broker";
 
   const marketClosedRead = marketClosure != null && candleStatus === "stale";
+  const storedHistoryRead = storedHistory && !marketClosedRead && candleStatus === "stale";
   const healthHeadline = marketClosedRead
     ? "Market closed — last session's data"
+    : storedHistoryRead
+      ? "Stored history — no live feed"
     : resolvedDisplayStatus === "LIVE"
       ? "Live market data"
       : resolvedDisplayStatus === "FALLBACK_COMPOSITE"

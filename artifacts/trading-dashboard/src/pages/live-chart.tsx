@@ -11,6 +11,7 @@ import type { ChartIntelligenceResponse } from "@workspace/api-client-react";
 import { ChartPositionOverlayPanel } from "@/components/charts/ChartPositionOverlayPanel";
 import { ChartAiOverlayPanel } from "@/components/charts/ChartAiOverlayPanel";
 import { ChartSetupPreviewPanel } from "@/components/charts/ChartSetupPreviewPanel";
+import { ChartDecisionReceiptsPanel } from "@/components/charts/ChartDecisionReceiptsPanel";
 import { ChartModes } from "@/components/charts/ChartModes";
 import { ChartTradeEntry, type ChartTradePrefill } from "@/components/charts/ChartTradeEntry";
 import { OneClickTradePanel } from "@/components/oneclick/OneClickTradePanel";
@@ -226,6 +227,15 @@ export default function LiveChartPage() {
               canUseSetup={canSeeTradeEntry}
               onUseSetup={onUseSetup}
             />
+            {/* Decision receipts: the trader's own recorded chart reads, outcome
+                recording (append-only), similar past setups and behavior cautions.
+                Hidden from view-only roles; never places a trade. */}
+            {canSeeTradeEntry && (
+              <ChartDecisionReceiptsPanel
+                symbol={bareSymbol(chartCtx.symbol || chartSymbol || "").toUpperCase()}
+                timeframe={chartCtx.timeframe || timeframe}
+              />
+            )}
             <ChartModes state={shownIntelligence} />
           </div>
         )}
