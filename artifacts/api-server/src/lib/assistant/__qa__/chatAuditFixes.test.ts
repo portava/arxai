@@ -55,9 +55,9 @@ test("A2: dispatching a removed order tool is unknown_tool with the envelope and
 test("A2: system prompt never names an order tool and states the assistant does not place orders", () => {
   const p = buildArxAssistantSystemPrompt("Ruby");
   assert.doesNotMatch(p, /requestLiveOrder|requestDemoOrder/);
-  assert.match(p, /YOU NEVER PLACE, MODIFY OR CLOSE ORDERS/);
+  assert.match(p, /HAVE NO ORDER-EXECUTION TOOL/);
   assert.match(p, /Trade Action Center/);
-  assert.match(p, /conditional orders and position monitoring from chat are not active/i);
+  assert.match(p, /never claim to have placed, queued, sent, armed or closed anything/);
   for (const env of [liveUnlockedEnv, FAIL_CLOSED_ENVELOPE, null]) {
     const msgs = buildSessionSystemMessages(1, null, null, env, "Ruby").map((m) => m.content).join("\n");
     assert.doesNotMatch(msgs, /requestLiveOrder|requestDemoOrder/);
@@ -67,6 +67,7 @@ test("A2: system prompt never names an order tool and states the assistant does 
   assert.match(live, /Live execution IS currently available for this user/);
   assert.match(live, /You have NO order-execution tool/);
   assert.match(live, /executed by the USER from the Trade Action Center/);
+  assert.match(live, /direct command to type/);
 });
 
 test("A2: capability note keeps the live posture honest both ways but never claims a chat execution path", () => {
@@ -154,17 +155,18 @@ test("A4: bound quote accepts only a fresh producer-observed tick and prefers th
 });
 
 // ── A1/A3/A7: honest copy for watches / monitors ────────────────────────────
-test("A1/A3: the command route exports the watch-unavailable posture", async () => {
+test("A1/A3: arming is tied to the sweeper that evaluates watches; the unavailable branch stays honest", async () => {
   const src = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../../../routes/meAssistant.ts", import.meta.url), "utf8"));
-  assert.match(src, /const WATCH_ARMING_ENABLED = false;/);
+  assert.match(src, /const WATCH_ARMING_ENABLED = isSweeperEnabled\(\);/);
   assert.match(src, /RUBY_WATCH_ARM_UNAVAILABLE/);
   assert.match(src, /WATCH_EVALUATION_UNAVAILABLE/);
   assert.match(src, /skipReason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON/);
   // The unavailable branch must come BEFORE the arming branch so no row is written.
   assert.ok(src.indexOf("!WATCH_ARMING_ENABLED && (parsed.kind === \"WATCH_AND_ENTER\"") < src.indexOf("action: \"RUBY_WATCH_ARMED\""));
-  // A4: the old unvalidated candle-close price source is gone.
+  // A4: the old unvalidated candle-close price source is gone (price binding lives in rubyExecution.ts).
   assert.doesNotMatch(src, /getMarketData\(symbol, "1m", 2\)/);
-  assert.match(src, /boundQuotePrice\(q\)\.price/);
+  const exec = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../rubyExecution.ts", import.meta.url), "utf8"));
+  assert.match(exec, /boundQuotePrice\(q\)\.price/);
   // A9: no raw slice truncation of tool results handed to the model.
   assert.doesNotMatch(src, /JSON\.stringify\(result\)\.slice\(0, 8000\)/);
 });
