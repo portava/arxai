@@ -1003,3 +1003,14 @@ describe("pending initial candle engine", () => {
     view.rerender(wrap(true));expect(adapterSpies.setLinkedTimeRange).toHaveBeenCalledTimes(1);expect(adapterSpies.setLinkedTimeRange).toHaveBeenLastCalledWith(range);
   });
 });
+
+describe("stored-history chart (no live feed answered)", () => {
+  it("opens no tick stream, so no live tip is drawn over stored bars", () => {
+    currentCandleResponse = makeResponse({
+      ...liveFeedStatus(), isLive: false, aiUsable: false, notLiveReason: "stored_history",
+    } as unknown as ChartFeedStatus);
+    renderChart();
+    expect(openedStreams).toHaveLength(0);
+    expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+  });
+});
