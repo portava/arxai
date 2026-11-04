@@ -36,7 +36,7 @@ describe("command workspace catalog and preferences", () => {
   });
 
   it("suppresses shared navigation only on the root workspace", () => {
-    expect(showSharedNavigation("/")).toBe(false);
+    expect(showSharedNavigation("/")).toBe(true);
     expect(showSharedNavigation("/market-scanner")).toBe(true);
     expect(showSharedNavigation("/trade-command-room")).toBe(true);
   });

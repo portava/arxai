@@ -7,7 +7,7 @@
 // the remaining (non-admin) set is a safe subset of the normal-user route
 // allowlist (see routeAccess.ts), so a regular trader never sees admin pages,
 // tester tools, or raw `/admin/*` internal paths in the palette, and no entry
-// redirects home. INVESTOR (view-only) accounts get no palette at all. Backend
+// redirects home. Investors receive only their existing portal/account routes. Backend
 // route guards remain authoritative either way.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,7 +21,7 @@ import { useTraderTier } from "@/hooks/useTraderTier";
 import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { DEFAULT_ASSISTANT_NAME, useAssistantName } from "@/lib/assistant-name";
 
-export interface CommandPaletteItem { label: string; hint?: string; href: string; admin?: boolean; approvedOnly?: boolean; }
+export interface CommandPaletteItem { label: string; hint?: string; href: string; admin?: boolean; approvedOnly?: boolean; investorOnly?: boolean; }
 
 /**
  * Source-of-truth command registry. Exported so the regression guard
@@ -38,6 +38,7 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   { label: "Account",                    href: "/my-account" },
   { label: "Settings",                   href: "/settings" },
   { label: "Help",                       href: "/help" },
+  { label: "Investor Portal",            href: "/investor", investorOnly: true },
   { label: "Trade Command Room",         href: "/trade-command-room", approvedOnly: true },
   { label: "Live Chart",                 href: "/live-chart", approvedOnly: true },
   { label: "Testing Control Center",     href: "/testing-control-center", admin: true },
@@ -114,8 +115,8 @@ export const COMMAND_PALETTE_ITEMS: CommandPaletteItem[] = buildCommandPaletteIt
 /**
  * Pure resolver of which command items a given session may see — the single
  * source of truth for palette role-visibility. INVESTOR (view-only) accounts
- * see NONE; admin/owner sees everything. Human traders are two-tier (Task
- * #768): an APPROVED (live / shared-bridge) trader sees every non-admin item,
+ * see only their portal/account routes; admin/owner sees everything. Human traders are two-tier:
+ * an APPROVED (live / shared-bridge) trader sees every non-admin item,
  * while a PENDING / unapproved trader (or one whose approval is still loading)
  * sees only the non-admin, non-`approvedOnly` subset (dashboard, ARX status,
  * school, account, settings, help, notifications, emergency). The regression
@@ -125,8 +126,12 @@ export function visibleCommandPaletteItems(
   opts: { isAdmin: boolean; isInvestor: boolean; isApprovedTrader?: boolean },
   items: CommandPaletteItem[] = COMMAND_PALETTE_ITEMS,
 ): CommandPaletteItem[] {
-  if (opts.isInvestor) return [];
+  if (opts.isInvestor) {
+    const investorRoutes = new Set(["/investor", "/my-account", "/settings", "/help"]);
+    return items.filter((item) => item.investorOnly || investorRoutes.has(item.href));
+  }
   return items.filter((i) => {
+    if (i.investorOnly) return false;
     if (i.admin) return opts.isAdmin;
     if (i.approvedOnly) return opts.isAdmin || Boolean(opts.isApprovedTrader);
     return true;
@@ -185,9 +190,6 @@ export function CommandPalette({
   }, [q, visibleItems]);
 
   function go(item: CommandPaletteItem) { warmScanner(item.href); setOpen(false); setLocation(item.href); }
-
-  // INVESTOR (view-only) accounts never get the command palette.
-  if (isInvestor) return null;
 
   if (!open) {
     const trigger = (

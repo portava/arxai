@@ -19,8 +19,8 @@ import { FloatingActionPanel } from "@/components/trading/FloatingActionPanel";
  *   1. MobileBottomNav  — an INVESTOR sees ONLY Portal/Account/Settings/Help,
  *      never Cockpit/Trade/Scanner/AI or the admin "More" tail.
  *   2. FloatingActionPanel ("+") — renders nothing for an INVESTOR (no FAB).
- *   3. CommandPalette (Ctrl/Cmd+K) — renders nothing for an INVESTOR (no
- *      trigger, no dialog).
+ *   3. CommandPalette (Ctrl/Cmd+K) — exposes only investor portal/account
+ *      routes, with no trading or operator destinations.
  *
  * Each surface is also asserted in its NON-investor (normal trader) state so a
  * "component always returns null" regression cannot make this test pass
@@ -144,19 +144,21 @@ describe("FloatingActionPanel — investor containment", () => {
 });
 
 describe("CommandPalette — investor containment", () => {
-  it("renders nothing (no trigger) for an investor", () => {
+  it("keeps the launcher available to an investor", () => {
     asInvestor();
-    const { container } = render(<CommandPalette />);
-    expect(screen.queryByTestId("cmdk-trigger")).toBeNull();
-    expect(container.firstChild).toBeNull();
+    render(<CommandPalette />);
+    expect(screen.getByTestId("cmdk-trigger")).toBeTruthy();
   });
 
-  it("ignores the Ctrl/Cmd+K hotkey for an investor", () => {
+  it("shows only investor-safe routes from Ctrl/Cmd+K", () => {
     asInvestor();
     render(<CommandPalette />);
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    expect(screen.queryByTestId("cmdk-dialog")).toBeNull();
-    expect(screen.queryByTestId("cmdk-input")).toBeNull();
+    expect(screen.getByTestId("cmdk-dialog")).toBeTruthy();
+    expect(screen.getByText("Investor Portal")).toBeTruthy();
+    expect(screen.getByText("Account")).toBeTruthy();
+    expect(screen.queryByText("Trade Command Room")).toBeNull();
+    expect(screen.queryByText("Market Scanner")).toBeNull();
   });
 
   it("renders the launcher trigger for a normal trader (guards against vacuous pass)", () => {

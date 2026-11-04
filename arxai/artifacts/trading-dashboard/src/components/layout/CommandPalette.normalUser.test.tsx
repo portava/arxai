@@ -68,9 +68,14 @@ describe("normal-user command palette only links to allowlisted routes", () => {
     expect(COMMAND_PALETTE_ITEMS.every((i) => typeof i.href === "string" && i.href.length > 0)).toBe(true);
   });
 
-  it("an investor sees no palette items at all", () => {
-    expect(visibleCommandPaletteItems({ isAdmin: false, isInvestor: true })).toEqual([]);
-    expect(visibleCommandPaletteItems({ isAdmin: true, isInvestor: true })).toEqual([]);
+  it("an investor sees only the existing portal/account routes", () => {
+    for (const isAdmin of [false, true]) {
+      const visible = visibleCommandPaletteItems({ isAdmin, isInvestor: true });
+      expect(visible.map(item => item.href)).toEqual(expect.arrayContaining([
+        "/investor", "/my-account", "/settings", "/help",
+      ]));
+      expect(visible.every(item => ["/investor", "/my-account", "/settings", "/help"].includes(item.href))).toBe(true);
+    }
   });
 
   it("a pending (unapproved) trader sees only the reduced non-execution subset", () => {

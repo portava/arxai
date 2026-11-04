@@ -22,9 +22,6 @@ import { useAssistantName } from "@/lib/assistant-name";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
 import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey, useGetMeSharedAccountPositions, getGetMeSharedAccountPositionsQueryKey } from "@workspace/api-client-react";
 
-import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
-import { MobileMenuTrigger } from "@/components/layout/Topbar";
-import { SidebarContent } from "@/components/layout/AppLayout";
 import { QuickTradePanel, type Quote } from "@/components/dashboard/trade/QuickTradePanel";
 import { PreTradeHeatChecklist } from "@/components/dashboard/trade/PreTradeHeatChecklist";
 import {
@@ -218,13 +215,6 @@ export default function TradeCommandRoom() {
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-4 pb-32 md:pb-6">
-      <CockpitHeader
-        onMobileMenu={
-          <MobileMenuTrigger>
-            {(close) => <SidebarContent onNavigate={close} />}
-          </MobileMenuTrigger>
-        }
-      />
       <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} />
       <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} broker={broker} account={account} />
 

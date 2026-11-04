@@ -35,9 +35,10 @@ describe("workspace panel controls", () => {
     expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["ruby"], pinned: ["chart"], preset: "Review" });
     persistWorkspaceLayout({ collapsed: ["heat"], pinned: ["clock"], preset: "Trade" }, storage);
     expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["heat"], pinned: ["clock"], preset: "Trade" });
+    memory.delete("arx.shell.panel-layout.v1:anonymous:cockpit");
     memory.set("arx.command-workspace.layout.v1", JSON.stringify({ collapsed: ["accounts", "clock"], pinned: ["clock"], preset: "Trade", balance: 9000 }));
     expect(readWorkspaceLayout(storage)).toEqual({ collapsed: [], pinned: ["clock"], preset: "Trade" });
-    memory.set("arx.command-workspace.layout.v1", "{");
+    memory.set("arx.shell.panel-layout.v1:anonymous:cockpit", "{");
     expect(readWorkspaceLayout(storage).preset).toBe("Analyze");
   });
 

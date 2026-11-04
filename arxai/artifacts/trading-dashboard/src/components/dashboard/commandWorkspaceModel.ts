@@ -1,4 +1,5 @@
 import { getDashboardToolCatalog } from "@/components/layout/AppLayout";
+import { cockpitPanelForRoute } from "@/components/layout/cockpitPanelMap";
 
 export type WorkspacePreset = "Analyze" | "Trade" | "Review";
 export type WorkspaceTool = { href: string; label: string; group: string; aliases?: string[]; description?: string };
@@ -20,15 +21,7 @@ export function filterDashboardCatalog(catalog: WorkspaceTool[], query: string):
 }
 
 export function dashboardPanelForTool(href: string): WorkspacePanelId | null {
-  if (["/market-scanner", "/watchlists", "/sniper-watchlist"].includes(href)) return "discovery";
-  if (["/live-chart"].includes(href)) return "chart";
-  if (["/market-heat-map"].includes(href)) return "heat";
-  if (["/economic-calendar", "/trading-calendar", "/market-health", "/news-risk", "/alerts"].includes(href)) return "intelligence";
-  if (["/ai-command-center", "/ai-coach", "/scalp-journal"].includes(href)) return "ruby";
-  if (["/risk-command-center", "/risk-settings"].includes(href)) return "risk";
-  if (["/positions", "/my-trades"].includes(href)) return "positions";
-  if (href === "/trade-command-room") return "order";
-  return null;
+  return cockpitPanelForRoute(href);
 }
 
 export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: string[]; preset: WorkspacePreset }>(current: T, preset: WorkspacePreset): T {

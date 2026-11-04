@@ -18,7 +18,6 @@ import { AdminTesterCards } from "@/components/dashboard/AdminTesterCards";
 import { FirstRunReadinessPanel } from "@/components/readiness/FirstRunReadinessPanel";
 import { GettingStartedChecklist } from "@/components/dashboard/GettingStartedChecklist";
 import { TradingSetupReadinessCard } from "@/components/readiness";
-import "@/components/dashboard/command-workspace.css";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 function SystemSection({

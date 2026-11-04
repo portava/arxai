@@ -506,3 +506,51 @@
   .arx-positions-blotter { grid-column: 1 / -1; }
   .arx-positions-manage { grid-column: 1 / -1; justify-self: end; }
 }
+
+/* The app-wide shell now owns navigation and the page header. Keep only the
+   Cockpit's data layout here and let its five content rows share the viewport. */
+.arx-dashboard-root { height: 100%; min-height: 0; }
+.arx-workspace {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: none;
+  gap: 0;
+  padding-bottom: 0;
+}
+.arx-workspace-body {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+.arx-workspace-body > .arx-account-strip { flex: 0 0 auto; margin: 0; }
+.arx-workspace-body > .arx-workspace-warnings,
+.arx-workspace-body > .arx-mobile-focus-hint { flex: 0 0 auto; }
+.arx-workspace-body > .arx-workspace-grid { flex: 1 1 auto; min-height: 0; align-items: stretch; gap: 8px; }
+.arx-workspace-body > .arx-positions { flex: 0 0 auto; margin-top: 0; }
+#main-content.arx-root-main { height: 100%; min-height: 0; overflow: hidden; }
+#main-content.arx-root-main > .arx-root-main-content { height: 100%; min-height: 0; padding: 8px 10px; }
+.arx-shell-cockpit-controls .arx-preset-group { margin-left: 0; }
+.arx-shell-cockpit-controls .arx-refresh-control { max-width: 260px; }
+
+@media (max-width: 1023px) and (min-width: 768px) {
+  .arx-dashboard-root,
+  .arx-workspace,
+  .arx-workspace-body { height: auto; min-height: calc(100dvh - 64px); }
+  .arx-workspace-body > .arx-workspace-grid { flex: 0 0 auto; min-height: 500px; }
+  #main-content.arx-root-main { height: auto; overflow-y: auto; }
+  #main-content.arx-root-main > .arx-root-main-content { height: auto; min-height: calc(100dvh - 64px); }
+}
+@media (max-width: 767px) {
+  .arx-dashboard-root,
+  .arx-workspace,
+  .arx-workspace-body { height: auto; min-height: 0; }
+  .arx-workspace-body { display: block; }
+  .arx-workspace-body > * + * { margin-top: 7px; }
+  .arx-workspace-body > .arx-workspace-grid { min-height: 0; }
+  #main-content.arx-root-main { height: auto; overflow: visible; }
+  #main-content.arx-root-main > .arx-root-main-content { height: auto; min-height: 0; }
+}
