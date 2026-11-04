@@ -25,13 +25,13 @@ import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { fillPaperTrade, settlePaperTrade } from "../tradeEngine/pipeline.js";
+import { paperMoveSign, paperPnl, resolvePaperContract } from "./paperPnl.js";
 
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
-function unrealizedPnl(direction: string, lotSize: number, entry: number, current: number): number {
-  const dir = direction === "BUY" ? 1 : -1;
-  return dir * (current - entry) * lotSize * 100;
-}
+// P&L sizing lives in ./paperPnl.ts (contract-size aware), shared with the
+// PAPER venue so an order is valued in one unit whichever path closes it. The
+// old `move × lots × 100` here mis-sized every instrument (EURUSD 1,000×).
 
 function detectHit(direction: string, current: number, sl: number, tp: number): "TP" | "SL" | null {
   if (direction === "BUY") {
@@ -55,7 +55,11 @@ export interface MonitorSummary {
     direction: string;
     hit: "TP" | "SL";
     exitPrice: number;
-    pnl: number;
+    /** Realized P&L in the paper account currency; null = could not be sized. */
+    pnl: number | null;
+    /** From the price move at the exit, known even when pnl is not sized. */
+    outcome: "WIN" | "LOSS" | "BREAK_EVEN";
+    pnlUnavailableReason: string | null;
     bbStatus?: string;
     bbDebriefId?: number;
   }>;
@@ -64,7 +68,9 @@ export interface MonitorSummary {
     decisionId: number | null;
     symbol: string;
     currentPrice: number;
-    unrealizedPnl: number;
+    /** null = could not be sized (see pnlUnavailableReason); never a guess. */
+    unrealizedPnl: number | null;
+    pnlUnavailableReason: string | null;
     mdSource: string;
     mdQuality: string;
   }>;
@@ -110,29 +116,37 @@ export async function runPaperMonitor(opts?: {
     }
 
     const hit = detectHit(order.direction, currentPrice, order.stopLoss, order.takeProfit);
-    const u = unrealizedPnl(order.direction, order.lotSize, order.entryPrice, currentPrice);
+    const contract = await resolvePaperContract(order.userId, order.symbol);
+    const sizing = { symbol: order.symbol, direction: order.direction, lots: order.lotSize, entry: order.entryPrice, contract };
+    const u = paperPnl({ ...sizing, price: currentPrice });
     summary.updates.push({
       paperOrderId: order.id, decisionId: order.decisionId,
       symbol: order.symbol, currentPrice: Number(currentPrice.toFixed(5)),
-      unrealizedPnl: Number(u.toFixed(2)), mdSource, mdQuality,
+      unrealizedPnl: u.amount, pnlUnavailableReason: u.unavailableReason, mdSource, mdQuality,
     });
 
     if (!hit) { summary.stillOpen++; continue; }
 
     const exitPrice = hit === "SL" ? order.stopLoss : order.takeProfit;
-    const realized = unrealizedPnl(order.direction, order.lotSize, order.entryPrice, exitPrice);
+    const r = paperPnl({ ...sizing, price: exitPrice });
+    const sign = paperMoveSign(order.direction, order.entryPrice, exitPrice);
+    const outcome = sign > 0 ? "WIN" : sign < 0 ? "LOSS" : "BREAK_EVEN";
     const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";
 
-    // Settle the paper order in the PAPER venue (a stop/target fill).
+    // Settle the paper order in the PAPER venue (a stop/target fill). The
+    // stop/target hit is real even when the amount cannot be sized; then the
+    // ledger's NOT NULL profit_loss holds 0 and the event says it was not sized.
     await settlePaperTrade({
-      order, status, exitPrice, pnl: realized,
-      eventMessage: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
+      order, status, exitPrice, pnl: r.amount ?? 0,
+      eventMessage: r.amount != null
+        ? `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${r.amount.toFixed(2)}`
+        : `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L not sized: ${r.unavailableReason}. The 0 stored for this order is a placeholder, not a result.`,
     });
 
     // Sync paper_executions row (if one exists for this decision_id).
     if (order.decisionId != null) {
       const eeStatus = hit === "TP" ? "PAPER_CLOSED_WIN"
-                     : (realized < 0 ? "PAPER_CLOSED_LOSS" : "PAPER_CLOSED_BREAK_EVEN");
+                     : (outcome === "LOSS" ? "PAPER_CLOSED_LOSS" : "PAPER_CLOSED_BREAK_EVEN");
       await db.update(paperExecutionsTable)
         .set({ status: eeStatus, updatedAt: new Date() })
         .where(and(
@@ -159,7 +173,8 @@ export async function runPaperMonitor(opts?: {
     summary.closures.push({
       paperOrderId: order.id, decisionId: order.decisionId,
       symbol: order.symbol, direction: order.direction,
-      hit, exitPrice: Number(exitPrice.toFixed(5)), pnl: Number(realized.toFixed(2)),
+      hit, exitPrice: Number(exitPrice.toFixed(5)), pnl: r.amount,
+      outcome, pnlUnavailableReason: r.unavailableReason,
       bbStatus, bbDebriefId,
     });
   }
@@ -196,6 +211,7 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
       ? { ok: false, error: `Order not open (status=${order.status})` }
       : { ok: false, error: "Paper order not found" };
   }
+  // null = the amount could not be sized (the venue stored the 0 placeholder).
   const pnl = closed.pnl;
 
   if (order.decisionId != null) {
@@ -211,5 +227,8 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
   } catch (err) {
     log.warn({ err: String(err) }, "Build EE manual close: BB trigger failed");
   }
-  return { ok: true, orderId, exitPrice: Number(exitPrice.toFixed(5)), pnl: Number(pnl.toFixed(2)), bb };
+  return {
+    ok: true, orderId, exitPrice: Number(exitPrice.toFixed(5)),
+    pnl: pnl != null ? Number(pnl.toFixed(2)) : null, pnlUnavailableReason: closed.pnlUnavailableReason, bb,
+  };
 }

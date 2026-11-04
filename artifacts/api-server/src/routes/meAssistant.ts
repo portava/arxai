@@ -45,7 +45,7 @@ import { isSweeperEnabled, getRubySweeperStatus } from "../lib/assistant/rubyWat
 import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/rubyMonitorPolicy.js";
 import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
 import { toolResultText } from "../lib/assistant/toolResultText.js";
-import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
+import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { chatProviderConfigured, streamToolChat, voiceAudio, type ToolChatStreamChunk } from "../lib/ai/llmGateway.js";
@@ -67,7 +67,8 @@ import { buildRubyContext, composeRubyBriefing, type RubyRole } from "../lib/ass
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
-import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
+import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
+import { buildRubyChartContext, buildGatedTrustLine, gatedReadReason } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
 import { buildRubyDraftRead, type RubyDraftIntent } from "../lib/assistant/rubyDraftRead.js";
@@ -76,6 +77,7 @@ import { classifySymbol } from "../lib/data/marketDataRouter.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   buildSetupPreview,
+  setupPreviewProviderSource,
   type SetupSide,
   type SetupPreviewProviderSource,
 } from "../lib/assistant/setupPreview.js";
@@ -458,7 +460,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
   const cautions: string[] = [];
   if ((s.riskScore ?? 0) >= 70) cautions.push("Volatility risk elevated — size smaller.");
   if (conf < 50) cautions.push("Confidence is not high — wait for confirmation if momentum is weak.");
-  if (s.statusBadge && /SPREAD|CHOPPY|REJECT/i.test(s.statusBadge)) {
+  if (s.statusBadge && /SPREAD|CHOPPY|REJECT|LOW_OPPORTUNITY/i.test(s.statusBadge)) {
     cautions.push(`Scanner flagged ${s.statusBadge.replace(/_/g, " ").toLowerCase()}.`);
   }
 
@@ -675,6 +677,10 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   ]);
   res.json({
     chartRead: outcome.chartRead,
+    // The service's own read layer, beside chartRead, so the Scanner panel and
+    // the chat tool (tools.ts forwards outcome.readLayer) share one source.
+    // Display-only; the client may only use it to DOWNGRADE a missing layer.
+    readLayer: outcome.readLayer,
     ...(aaci ? { aaci } : {}),
     ...envelope,
     readOnlyMode: true,
@@ -721,15 +727,15 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   // null context (→ INSUFFICIENT basis → the producer refuses a drawing).
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200);
+    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200, { userId: req.authUser?.id });
   } catch {
     // fail-safe — handled as a gated (non-VERIFIED) read below.
   }
 
   const candles = rubyCtx?.candles ?? [];
-  let htfBias: StructureBias = "No clear edge";
-  if ((rubyCtx?.htfCandles.length ?? 0) >= 10) htfBias = quickTrend(rubyCtx!.htfCandles);
-  const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null });
+  const htfTimeframe = rubyCtx?.htfTimeframe ?? null;
+  const htfBias: StructureBias | null = readHigherTimeframeBias(rubyCtx?.htfCandles, htfTimeframe);
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, pricePrecision: knownPricePrecision(symbol) });
   if (clientFeedUnconfirmed) {
     read.dataQuality = "insufficient";
     if (!read.cautions.includes("Feed not confirmed at draw-time — limited visibility.")) {
@@ -738,18 +744,31 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   }
 
   const basis = rubyCtx?.basis ?? "INSUFFICIENT";
-  const trustLine = rubyCtx?.trustLine ?? `${timeframe} candles syncing`;
-  const blockReason = rubyCtx?.blockReason ?? null;
+  // HONESTY (same rule as draft-read and read-chart): a gated read never shows
+  // the success-path "Verified … · Live feed …" line, which is composed from
+  // raw gate flags and can disagree with the feed state that set the basis.
+  const trustLine = rubyCtx && basis === "VERIFIED"
+    ? rubyCtx.trustLine
+    : buildGatedTrustLine(timeframe, {
+        available: rubyCtx != null,
+        stale: rubyCtx?.state.stale ?? false,
+        aiUsable: rubyCtx?.state.aiUsable ?? false,
+        basis,
+        quality: rubyCtx?.state.truthState?.quality ?? null,
+        notLiveReason: rubyCtx?.state.truthState?.notLiveReason ?? null,
+      });
+  // Name what is actually not confirmed (feed, candles, or the specific chart
+  // check) so the refusal never says "the feed isn't confirmed" when it is.
+  const blockReason = gatedReadReason(rubyCtx);
 
-  // Provider honesty: no broker-native quote feed is active yet
-  // (MT5_BROKER_FEED_NOT_ACTIVE), so every current feed is a composite /
-  // synthetic source — the producer must never use broker-native language.
+  // Provider honesty: name the source that actually served this series. Only
+  // the MetaTrader 5 broker bridge is broker-native; any other (or unreported)
+  // source is composite, and the producer then never uses broker-native language.
   const assetClass = classifySymbol(symbol);
-  const providerSource: SetupPreviewProviderSource = {
+  const providerSource: SetupPreviewProviderSource = setupPreviewProviderSource(
     assetClass,
-    composite: true,
-    label: assetClass === "synthetic" ? "synthetic index" : "composite market-data",
-  };
+    rubyCtx?.state.truthState.source ?? null,
+  );
 
   // Bridge + allocation truth (per-user). Allocation is used only to decide
   // whether account-currency risk can be shown — never to fabricate a number.
@@ -870,6 +889,9 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
       direction: (side ?? draft?.side) ?? null,
       symbol,
       timeframe,
+      // The state this drawing was built from (enriched with the user's own
+      // broker quote), so the receipt records the read the user saw.
+      state: rubyCtx?.state,
     });
   }
 
@@ -934,7 +956,7 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
   // gate-blocked (basis !== "VERIFIED") below.
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit);
+    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit, { userId: req.authUser?.id });
   } catch {
     // fail-safe — treat as gate-blocked below
   }
@@ -956,6 +978,8 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
       stale: rubyCtx?.state.stale ?? state.stale,
       aiUsable: rubyCtx?.state.aiUsable ?? state.aiUsable,
       basis: rubyCtx?.basis ?? "INSUFFICIENT",
+      quality: (rubyCtx?.state ?? state).truthState?.quality ?? null,
+      notLiveReason: (rubyCtx?.state ?? state).truthState?.notLiveReason ?? null,
     });
   }
   // Chart Brain v2 (Task 5): record an immutable Decision Receipt + the implied

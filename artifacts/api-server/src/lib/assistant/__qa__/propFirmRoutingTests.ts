@@ -276,15 +276,24 @@ check("C4.7  catch fallback uses distinct UNAVAILABLE status (not INSUFFICIENT_D
   "catch branch must use UNAVAILABLE, not INSUFFICIENT_DATA");
 
 // C4c: tool math must mirror evaluateChallenge's daily-loss denominator
-// (DAY-START balance, not startingBalance) so AI numbers match UI.
-check("C4.8  daily-loss denominator = day-start balance (matches route)",
-  /dayPnl\s*<\s*0\s*&&\s*startBal\s*>\s*0\s*\?\s*Math\.abs\(dayPnl\)\s*\/\s*startBal/.test(toolsSrc),
-  "daily-loss denominator drifted from evaluateChallenge's startBal");
+// (DAY-START balance, not startingBalance) so AI numbers match UI. The tool
+// runs the route's own rule function (evaluateChallengeRules), the one
+// evaluateChallenge runs, so its math cannot drift from the route's.
+const toolRunsRouteRules =
+  /evaluateChallengeRules\(ch,\s*orders,\s*now\)/.test(toolsSrc) &&
+  /return evaluateChallengeRules\(ch,\s*orders,\s*new Date\(\)\)/.test(propRoutesSrc);
+check("C4.8  daily-loss denominator = day-start balance (tool runs the route's evaluator)",
+  toolRunsRouteRules &&
+    /lossPctOf\(b\.dayStart,\s*b\.dayPnl\)/.test(propRoutesSrc) &&
+    /dayPnl\s*<\s*0\s*\?\s*Math\.abs\(dayPnl\)\s*\/\s*startBal/.test(propRoutesSrc),
+  "tool no longer runs evaluateChallengeRules, or the route's daily-loss denominator is not the day-start balance");
 
 // C4d: tool must evaluate consistency rule (mirrors route).
 check("C4.9  tool evaluates consistency rule",
-  /consistencyTopShare\s*>\s*ch\.consistencyRulePercent/.test(toolsSrc) &&
-    /Single best day/.test(toolsSrc),
+  toolRunsRouteRules &&
+    /c\.share\s*>\s*ch\.consistencyRulePercent/.test(propRoutesSrc) &&
+    /Single best day/.test(propRoutesSrc) &&
+    /"CONSISTENCY"/.test(toolsSrc.slice(toolsSrc.indexOf("PROP_TWO_BASIS_RULES"))),
   "consistency rule not evaluated in tool");
 
 // C4e: tool must emit overtrading warning (mirrors route).

@@ -73,10 +73,13 @@ function paperPrice(): number {
   return generateDeterministicCandles({ symbol: SYMBOL, count: 1, timeframe: "M1", seed: `paper-mtm|${bucket}`, baseTimeMs: bucket })[0]!.close;
 }
 
+// 0.01 lot: the governor prices a paper EURUSD order at the 100,000-unit lot
+// the venue books, so a 2% stop on 0.01 lot risks about $22, inside the
+// default 1% per-trade cap of the $10,000 account (0.1 lot would risk ~$217).
 const paperOpen = (userId: number, paperAccountId: number, over: Partial<Extract<TradeRequest, { mode: "PAPER"; intent: "OPEN" }>> = {}) => {
   const px = paperPrice();
   return submitTrade({
-    mode: "PAPER", intent: "OPEN", userId, paperAccountId, symbol: SYMBOL, side: "BUY", lots: 0.1,
+    mode: "PAPER", intent: "OPEN", userId, paperAccountId, symbol: SYMBOL, side: "BUY", lots: 0.01,
     orderType: "MARKET", entryPrice: null, stopLoss: px * 0.98, takeProfit: px * 1.04, sourcePage: "QA trade engine",
     ...over,
   });

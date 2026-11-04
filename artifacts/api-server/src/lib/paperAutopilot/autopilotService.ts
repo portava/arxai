@@ -79,7 +79,10 @@ async function applyCooldown(symbol: string, action: string, reason: string, min
 const eeBook = (ownerUserId: number | null) => ({ owner: ownerUserId, strategyId: "build_ee_paper_execution" });
 
 async function dailyPaperPnl(ownerUserId: number | null): Promise<number> {
-  // Realized P/L of EE-owned settled paper_orders since UTC midnight (the governor's trading day).
+  // Realized P/L of EE-owned settled paper_orders since UTC midnight (the
+  // governor's trading day), as the paper book's risk count: the lower of
+  // today's booked total and today's paper risk model total
+  // (sumPaperRealizedSince).
   return sumPaperRealizedSince(eeBook(ownerUserId), tradingDayStart(new Date()));
 }
 
@@ -186,9 +189,9 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
     // 3. Daily-loss safety check.
     const dpnl = await dailyPaperPnl(ownerUserId);
     if (dpnl <= -Math.abs(settings.maxDailyPaperLoss)) {
-      summary.warnings.push(`Daily paper loss limit hit (${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss}) — no new trades`);
+      summary.warnings.push(`Daily paper loss limit hit (${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss}, the paper risk count: the lower of today's booked total and its paper risk model total) — no new trades`);
       await logCycle({ cycleId, step: "SAFETY_SHUTDOWN", status: "WARN",
-        message: `Daily paper loss ${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss} — refusing new trades`,
+        message: `Daily paper loss ${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss} (the paper risk count: the lower of today's booked total and its paper risk model total) — refusing new trades`,
         details: { dailyPnl: dpnl, limit: settings.maxDailyPaperLoss } });
     }
     const allowNewTrades = dpnl > -Math.abs(settings.maxDailyPaperLoss);
@@ -315,7 +318,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
       // post-loss cooldown for any losing closure & count debriefs.
       for (const cl of monitor.closures) {
         await logCycle({ cycleId, symbol: cl.symbol, step: "CLOSE", status: "OK",
-          message: `Paper trade #${cl.paperOrderId} closed via ${cl.hit} pnl=${cl.pnl}`,
+          message: `Paper trade #${cl.paperOrderId} closed via ${cl.hit} pnl=${cl.pnl ?? `not sized (${cl.pnlUnavailableReason})`}`,
           details: { closure: cl } });
         if (cl.bbStatus === "created") {
           summary.debriefs_triggered += 1;
@@ -333,7 +336,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
                 details: { learningEventId: lev[0].id, mistakeTags: lev[0].mistakeTags } });
             }
           }
-          if (cl.pnl < 0) {
+          if (cl.outcome === "LOSS") {
             await applyCooldown(cl.symbol, cl.direction,
               `Post-loss cooldown after trade #${cl.paperOrderId}`,
               settings.cooldownMinutesAfterLoss, { tradeId: cl.paperOrderId });
