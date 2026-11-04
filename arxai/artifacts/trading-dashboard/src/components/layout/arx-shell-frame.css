@@ -175,7 +175,12 @@
 }
 
 .arx-shell-header {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  isolation: isolate;
+  flex: 0 0 auto;
+  background: var(--arx-shell-ink);
   display: flex;
   min-width: 0;
   min-height: 48px;

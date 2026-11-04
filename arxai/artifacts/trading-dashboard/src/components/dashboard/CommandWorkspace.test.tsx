@@ -23,6 +23,7 @@ describe("workspace panel controls", () => {
     expect(screen.getByRole("button", { name: "Unpin Smart Chart" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("chart body")).toBeTruthy();
     expect(screen.getByText("PINNED")).toBeTruthy();
+    expect(containerPanel(pinnedCollapse).getAttribute("data-collapsed")).toBe("false");
   });
 
   it("persists layout preferences only and ignores malformed or unknown panel data", () => {
@@ -50,5 +51,20 @@ describe("workspace panel controls", () => {
     rerender(<WorkspacePanel id="ruby" title="AI read" icon={Search} collapsed={false} pinned={false} hidden={false} onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
     expect(panel.hidden).toBe(false);
     expect(screen.getByText("AI summary")).toBeTruthy();
+  });
+});
+
+function containerPanel(control: HTMLElement) {
+  return control.closest("[data-layout-panel]")!;
+}
+
+describe("desktop fill state", () => {
+  it("exposes actual collapse state without treating a pinned panel as collapsed", () => {
+    const { container, rerender } = render(<WorkspacePanel id="clock" title="Clock" icon={Search} collapsed pinned={false} onCollapse={vi.fn()} onPin={vi.fn()}>clock values</WorkspacePanel>);
+    expect(container.querySelector("[data-layout-panel]")?.getAttribute("data-collapsed")).toBe("true");
+    expect(screen.queryByText("clock values")).toBeNull();
+    rerender(<WorkspacePanel id="clock" title="Clock" icon={Search} collapsed pinned onCollapse={vi.fn()} onPin={vi.fn()}>clock values</WorkspacePanel>);
+    expect(container.querySelector("[data-layout-panel]")?.getAttribute("data-collapsed")).toBe("false");
+    expect(screen.getByText("clock values")).toBeTruthy();
   });
 });

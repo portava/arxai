@@ -531,10 +531,52 @@
 .arx-workspace-body > .arx-mobile-focus-hint { flex: 0 0 auto; }
 .arx-workspace-body > .arx-workspace-grid { flex: 1 1 auto; min-height: 0; align-items: stretch; gap: 8px; }
 .arx-workspace-body > .arx-positions { flex: 0 0 auto; margin-top: 0; }
-#main-content.arx-root-main { height: 100%; min-height: 0; overflow: hidden; }
+#main-content.arx-root-main { height: auto; flex: 1 1 0; min-height: 0; overflow: hidden; }
 #main-content.arx-root-main > .arx-root-main-content { height: 100%; min-height: 0; padding: 8px 10px; }
 .arx-shell-cockpit-controls .arx-preset-group { margin-left: 0; }
 .arx-shell-cockpit-controls .arx-refresh-control { max-width: 260px; }
+
+/* The shared header owns its natural height; the desk uses only the remainder.
+   Reset legacy two-column/row-span rules at every desktop width. */
+@media (min-width: 1024px) {
+  .arx-shell-frame[data-variant="cockpit"] .arx-dashboard-root {
+    height: 100%;
+    min-height: 0;
+  }
+  .arx-workspace-body > .arx-workspace-grid {
+    grid-template-columns: minmax(175px,.82fr) minmax(0,1.7fr) minmax(205px,.9fr);
+    grid-template-rows: minmax(0,1fr);
+  }
+  .arx-workspace-body > .arx-workspace-grid > .arx-col {
+    display: flex;
+    grid-column: auto;
+    align-self: stretch;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .arx-workspace-grid > .arx-col > .arx-panel {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+  }
+  .arx-workspace-grid > .arx-col > .arx-panel > .arx-panel-head { flex: 0 0 auto; }
+  .arx-workspace-grid > .arx-col > .arx-panel > .arx-panel-body {
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  .arx-workspace-grid > .arx-col > .arx-panel:not(.arx-chart-panel) > .arx-panel-body { overflow-y: auto; }
+  /* Prefer the last expanded panel. If every panel is collapsed, the last
+     card still fills its column without reopening content or changing state. */
+  .arx-workspace-grid > .arx-col > .arx-panel[data-collapsed="false"]:not(:has(~ .arx-panel[data-collapsed="false"])),
+  .arx-workspace-grid > .arx-col:not(:has(> .arx-panel[data-collapsed="false"])) > .arx-panel:last-child {
+    flex: 1 1 0;
+  }
+  /* The price plot, not intelligence, receives the centre column's spare room. */
+  .arx-workspace-grid > .arx-col-center > .arx-chart-panel[data-collapsed="false"] { flex: 1 1 0; }
+  .arx-workspace-grid > .arx-col-center:has(> .arx-chart-panel[data-collapsed="false"]) > #workspace-intelligence {
+    flex: 0 0 auto;
+  }
+}
 
 @media (max-width: 1023px) and (min-width: 768px) {
   .arx-dashboard-root,

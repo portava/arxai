@@ -22,6 +22,19 @@ vi.mock("@/components/ui/sheet", () => ({
 beforeEach(() => { route.value = "/risk-command-center"; });
 
 describe("shared ARX shell on specialist routes", () => {
+  it("keeps the complete account strip in content after the header, outside its controls", () => {
+    const { container } = render(<ARXShellFrame variant="cockpit" title="Market desk" dockItems={[]}
+      allToolsOpen={false} onAllToolsOpenChange={vi.fn()} mobileToolsOpen={false} onMobileToolsOpenChange={vi.fn()}
+      headerActions={<div data-cockpit-header-slot>Analyze · Trade · Review</div>}>
+      <section aria-label="Account overview">{["Equity", "Today's P/L", "Available margin", "Risk utilization", "Account mode"].map(label => <small key={label}>{label}</small>)}</section>
+    </ARXShellFrame>);
+    const strip = screen.getByRole("region", { name: "Account overview" });
+    const header = container.querySelector("header")!;
+    expect(header.contains(strip)).toBe(false);
+    expect(container.querySelector("main")?.contains(strip)).toBe(true);
+    expect(header.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(strip.querySelectorAll("small")).toHaveLength(5);
+  });
   it("keeps the current page highlighted with layout, safety and emergency controls", () => {
     render(<ARXShellFrame
       variant="page"

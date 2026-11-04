@@ -43,6 +43,7 @@ export function LayoutPanel({
       aria-label={title}
       tabIndex={-1}
       data-layout-panel={id}
+      data-collapsed={isCollapsed}
     >
       <div className="arx-panel-head">
         <div className="flex min-w-0 items-center gap-2">
