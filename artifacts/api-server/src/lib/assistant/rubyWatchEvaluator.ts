@@ -51,7 +51,7 @@ import { notify } from "../notifications/service.js";
 import { getAssistantDisplayName } from "./assistantName.js";
 import { LATE_ENTRY_TOLERANCE, ownBridgePriceOf, recordAndExecuteRuby, type RubyLedgerOutcome } from "./rubyExecution.js";
 import { rubyWatchPermissionBlock } from "./rubyWatchPermissions.js";
-import { decideFakeoutAdjustment, fakeoutCopy, type FakeoutBar } from "./rubyFakeoutPolicy.js";
+import { adverseWickPct, decideFakeoutAdjustment, fakeoutCopy, type FakeoutBar } from "./rubyFakeoutPolicy.js";
 import {
   MONITOR_MAX_UNANSWERED_ALERTS,
   acknowledgeKeep,
@@ -205,7 +205,7 @@ async function reversalScoreFor(symbol: string, pos: OpenPositionInput, bridge: 
     // The newest bar may still be forming; the fakeout rule reads the last
     // COMPLETED bar so a half-formed wick never triggers a shift.
     const completed = candlesM15 && candlesM15.length >= 2 ? candlesM15[candlesM15.length - 2]! : null;
-    const lastCompletedBar: FakeoutBar | null = completed ? { o: completed.o, h: completed.h, l: completed.l, c: completed.c } : null;
+    const lastCompletedBar: FakeoutBar | null = completed ? { o: completed.o, h: completed.h, l: completed.l, c: completed.c, t: Number.isFinite(completed.t) ? completed.t : null } : null;
     const fakeoutOut = completed ? computeTradeIntelligence({
       symbol, side: pos.side, entryPrice: pos.entryPrice, currentPrice: pos.currentPrice, stopLoss: pos.stopLoss, takeProfit: pos.takeProfit,
       unrealizedPnl: pos.floatingPnl, ageMinutes: null, candlesM15: candlesM15!.slice(0, -1),
@@ -403,21 +403,24 @@ async function maybeShiftOnFakeout(
     lastBar: a.intel.lastCompletedBar, fakeoutRiskScore: a.intel.fakeoutRiskScore, reversalRiskScore: a.intel.reversalRiskScore,
     reversalThreshold: MONITOR_REVERSAL_SCORE_THRESHOLD, atOrThroughStop: a.atOrThroughStop,
     adjustmentsSoFar: a.monitorState.fakeoutAdjustments.filter((r) => r.ok).length, lastAdjustAt: a.monitorState.lastFakeoutAdjustAt, nowMs: c.nowMs,
+    failedSoFar: a.monitorState.fakeoutAdjustments.filter((r) => !r.ok).length,
+    lastFakeoutBarAt: a.monitorState.lastFakeoutBarAt,
     digits: priceDigits(w.symbol),
   });
+  const barAt = a.intel.lastCompletedBar?.t ?? null;
   if (decision.action === "NONE") return;
   const revoked = c.authority !== "AI_ASSISTED" ? "RUBY_EXECUTION_NOT_AUTHORIZED"
     : c.settings?.allowRubyModifyCommands !== true ? "RUBY_MODIFY_COMMANDS_NOT_ENABLED" : null;
   const at = new Date(c.nowMs).toISOString();
-  const rec = (ok: boolean, blocked: string | null) => ({ at, price: a.mpx, fakeoutRiskScore: a.intel.fakeoutRiskScore, fromStopLoss: a.pos.stopLoss, toStopLoss: decision.newStopLoss, fromTakeProfit: a.pos.takeProfit, toTakeProfit: decision.newTakeProfit, reason: decision.reason, ok, blocked });
+  const rec = (ok: boolean, blocked: string | null) => ({ at, price: a.mpx, fakeoutRiskScore: adverseWickPct(a.pos.side, a.intel.lastCompletedBar), fromStopLoss: a.pos.stopLoss, toStopLoss: decision.newStopLoss, fromTakeProfit: a.pos.takeProfit, toTakeProfit: decision.newTakeProfit, reason: decision.reason, ok, blocked });
   if (revoked) {
-    await casMonitorState(w.id, a.expectedRaw, { ...recordFakeoutAdjustment(a.monitorState, rec(false, revoked)), lastFakeoutAdjustAt: at });
+    await casMonitorState(w.id, a.expectedRaw, { ...recordFakeoutAdjustment(a.monitorState, rec(false, revoked)), lastFakeoutAdjustAt: at, lastFakeoutBarAt: barAt });
     await audit(c.userId, "RUBY_FAKEOUT_SHIFT_NOT_AUTHORIZED", { watchId: w.id, symbol: w.symbol, wanted: decision.action, reason: revoked }, c.opts);
     return;
   }
   // Claim the shift first (cooldown stamp, CAS on the state this evaluation
   // read): a concurrent withdrawal of fakeout authority makes the claim miss.
-  if (!(await casMonitorState(w.id, a.expectedRaw, { ...a.monitorState, lastFakeoutAdjustAt: at }))) {
+  if (!(await casMonitorState(w.id, a.expectedRaw, { ...a.monitorState, lastFakeoutAdjustAt: at, lastFakeoutBarAt: barAt }))) {
     c.out.skipped.push({ watchId: w.id, reason: "STATE_CHANGED" });
     return;
   }
@@ -434,7 +437,7 @@ async function maybeShiftOnFakeout(
     const ledger = await recordAndExecuteRuby({
       userId: c.userId, intent, commandKind: "MODIFY_SL_TP", symbol: w.symbol,
       rawText: w.rawUserCommand ?? `[monitor ${w.id} fakeout]`, ip: c.opts.ip ?? null, ua: c.opts.ua ?? null,
-      params: { watchId: w.id, managed: true, fakeout: true, reason: decision.reason, price: a.mpx, fakeoutRiskScore: a.intel.fakeoutRiskScore },
+      params: { watchId: w.id, managed: true, fakeout: true, reason: decision.reason, price: a.mpx, adverseWickPct: adverseWickPct(a.pos.side, a.intel.lastCompletedBar) },
     });
     if (ledger.duplicate) { c.out.skipped.push({ watchId: w.id, reason: "DUPLICATE_PREVENTED" }); return; }
     ok = ledger.result.ok;
