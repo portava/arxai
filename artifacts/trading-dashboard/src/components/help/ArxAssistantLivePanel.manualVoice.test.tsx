@@ -99,6 +99,7 @@ vi.mock("./AnimatedArxAssistantIcon", () => ({
 
 vi.mock("wouter", () => ({
   useLocation: () => ["/help", vi.fn()],
+  useSearch: () => "",
 }));
 
 import { ArxAssistantLivePanel } from "./ArxAssistantLivePanel";
