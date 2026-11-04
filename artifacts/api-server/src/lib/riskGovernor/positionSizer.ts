@@ -6,12 +6,14 @@
 // uses and keeps the result shapes its callers read:
 //   - calculatePositionSize       instrument-class model (risk calculator,
 //                                 missions, paper intelligence)
-//   - calculatePaperPositionSize  paper execution (100 per point per lot)
+//   - calculatePaperPositionSize  paper execution (100 per point per lot, or
+//                                 the governor's contract pricing when larger)
 // It replaces lib/positionSizing.ts and lib/paperExecution/positionSizing.ts,
 // which each carried their own copy of the formula.
 
 import { lotForRisk } from "@workspace/domain/risk";
 import type { PositionSizingResult } from "../paperExecution/types.js";
+import { resolveCanonicalSymbol } from "../instruments/index.js";
 
 const NO_MAX = Number.MAX_SAFE_INTEGER;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -27,6 +29,18 @@ export interface PositionSizeInput {
   maxLotSize?: number;
 }
 
+/**
+ * Which value model sized the lot (money per 1.0 price move per 1.0 lot).
+ * This is an instrument-class heuristic, not the broker's contract spec:
+ *   forex_usd_quote      XXXUSD currency pair: $10 per 0.0001 pip (standard lot, USD account)
+ *   forex_other_quote    other currency pair: pip value is in the quote currency, $10 assumed
+ *   synthetic_per_point  synthetic index: $1 per point per lot assumed
+ *   per_point            index, stock or ETF CFD known to the ARX market list: $1 per point per lot assumed
+ *   unknown_contract     anything else (metals, energy, crypto, a pair not written as one, an unknown
+ *                        name): sized with a model that does not fit it, so the lot is not usable
+ */
+export type SizingValueModel = "forex_usd_quote" | "forex_other_quote" | "synthetic_per_point" | "per_point" | "unknown_contract";
+
 export interface PositionSizeResult {
   riskAmount: number;
   stopDistance: number;
@@ -34,6 +48,14 @@ export interface PositionSizeResult {
   maxLotAllowed: number;
   finalLot: number;
   warning: string | null;
+  /** The value model behind the lot (see SizingValueModel). */
+  valueModel: SizingValueModel;
+  /** true unless the model is the standard USD-quoted forex lot. */
+  estimate: boolean;
+  /** The assumed money per 1.0 price move per 1.0 lot. */
+  valuePerUnitPerLot: number;
+  /** Plain-English statement of the assumption, for display. */
+  basis: string;
 }
 
 function isSynthetic(symbol: string): boolean {
@@ -42,6 +64,55 @@ function isSynthetic(symbol: string): boolean {
 
 function isForex(symbol: string): boolean {
   return /^[A-Z]{6}$/.test(symbol.replace(/\s/g, "")) || symbol.includes("USD") || symbol.includes("EUR") || symbol.includes("GBP");
+}
+
+const ISO_CURRENCIES = new Set([
+  "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "SEK", "NOK", "DKK", "SGD", "HKD", "ZAR", "MXN", "TRY", "PLN", "CNH", "HUF", "CZK",
+]);
+
+/**
+ * Which model valuePerUnitPerLot() applies, classified by the same tests it
+ * uses, so the label always describes the number that was computed.
+ */
+function sizingModelOf(symbol: string, unitValue: number): { model: SizingValueModel; basis: string } {
+  if (isSynthetic(symbol)) {
+    return { model: "synthetic_per_point", basis: `Synthetic index: assumes $${unitValue} per 1.0 price move per lot. Your broker's contract size may differ, so the lot is an estimate.` };
+  }
+  if (!isForex(symbol)) {
+    // valuePerUnitPerLot() values everything here at $1 per point. That fits
+    // only a market positively known to be an index, stock or ETF CFD (or a
+    // synthetic named without "Volatility", such as V75); gold, oil, crypto
+    // or a pair typed in lowercase is none of these, so its lot is not usable.
+    const known = resolveCanonicalSymbol(symbol);
+    if (known.family === "synthetic") {
+      return { model: "synthetic_per_point", basis: `Synthetic index: assumes $${unitValue} per 1.0 price move per lot. Your broker's contract size may differ, so the lot is an estimate.` };
+    }
+    const cfd = known.family === "index" || known.family === "stock" || known.family === "etf"
+      // Outside the market list only the legacy index list identifies a
+      // market (its 1-5 letter "stock" fallback is a guess).
+      || (known.universeStatus === "not_in_universe" && known.assetClass === "indices");
+    if (cfd) {
+      return { model: "per_point", basis: `${symbol} is an index, stock or ETF CFD: assumes $${unitValue} per 1.0 price move per lot. Contract sizes vary by broker, so the lot is an estimate.` };
+    }
+    return {
+      model: "unknown_contract",
+      basis: `${symbol} is not an index, stock or currency pair this calculator can value (metals, energy, crypto and similar), but it was sized at $${unitValue} per 1.0 price move per lot. `
+        + "That can be wrong by a factor of 100 or more, so the lot is not usable. Use your broker's contract specification.",
+    };
+  }
+  const compact = symbol.replace(/\s/g, "");
+  const base = compact.slice(0, 3); const quote = compact.slice(3);
+  if (/^[A-Z]{6}$/.test(compact) && ISO_CURRENCIES.has(base) && ISO_CURRENCIES.has(quote)) {
+    const pip = symbol.includes("JPY") ? "0.01" : "0.0001";
+    return quote === "USD"
+      ? { model: "forex_usd_quote", basis: `Standard forex lot (100,000 units) of a USD-quoted pair: $10 per ${pip} pip, with the balance in USD.` }
+      : { model: "forex_other_quote", basis: `${compact}'s pip value is in ${quote}, not USD. The calculator assumes $10 per ${pip} pip, so the lot is an estimate.` };
+  }
+  return {
+    model: "unknown_contract",
+    basis: `${symbol} is not a currency pair this calculator knows (metals, crypto and similar), but it was sized as one at $10 per pip. `
+      + "That can be wrong by a factor of 1,000 or more, so the lot is not usable. Use your broker's contract specification.",
+  };
 }
 
 /** Money per 1.0 price move per 1.0 lot for a symbol class. */
@@ -56,21 +127,24 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizeRes
   const { accountBalance, riskPercent, entry, stopLoss, symbol, maxLotSize = 10 } = input;
   const riskAmount = accountBalance * (riskPercent / 100);
   const stopDistance = Math.abs(entry - stopLoss);
+  // V75 (1s) requires a smaller lot: halve it by doubling the value per unit.
+  const isV75_1s = symbol.includes("(1s)") || symbol.toLowerCase().includes("1s");
+  const unitValue = valuePerUnitPerLot(symbol) * (isV75_1s ? 2 : 1);
+  const { model, basis } = sizingModelOf(symbol, unitValue);
+  const disclosure = { valueModel: model, estimate: model !== "forex_usd_quote", valuePerUnitPerLot: unitValue, basis };
 
   if (stopDistance === 0) {
     return {
       riskAmount: round2(riskAmount), stopDistance: 0, suggestedLot: 0, maxLotAllowed: maxLotSize, finalLot: 0,
-      warning: "Stop loss distance is zero — cannot calculate lot size.",
+      warning: "Stop loss distance is zero — cannot calculate lot size.", ...disclosure,
     };
   }
 
   let warning: string | null = null;
-  // V75 (1s) requires a smaller lot: halve it by doubling the value per unit.
-  const isV75_1s = symbol.includes("(1s)") || symbol.toLowerCase().includes("1s");
   if (isV75_1s) warning = "V75 (1s): lot size halved due to extreme tick volatility.";
 
   const sized = lotForRisk({
-    riskAmount, stopDistance, valuePerUnitPerLot: valuePerUnitPerLot(symbol) * (isV75_1s ? 2 : 1),
+    riskAmount, stopDistance, valuePerUnitPerLot: unitValue,
     minLot: 0.01, maxLot: NO_MAX, lotStep: 0.01, rounding: "nearest",
   });
   const suggestedLot = sized.invalid ? 0.01 : sized.lot;
@@ -86,6 +160,7 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizeRes
     maxLotAllowed: maxLotSize,
     finalLot,
     warning: warning?.trim() ?? null,
+    ...disclosure,
   };
 }
 
@@ -102,26 +177,47 @@ export const PAPER_DEFAULTS = {
   pointValuePerLot: 100,        // matches existing paperTrading pnlFor()
 } as const;
 
-/** Conservative bounded paper sizing. Never asks a broker for margin or leverage. */
+/**
+ * Conservative bounded paper sizing. Never asks a broker for margin or leverage.
+ *
+ * With no value given it sizes at the paper risk model, 100 per 1.0 price move
+ * per lot, rounded to the nearest step. Paper execution passes the money per
+ * price move per lot the Risk Governor prices the symbol at (the contract
+ * size the paper venue books it at); a value below the paper risk model is
+ * ignored, so a given value can only make the lot smaller.
+ */
 export function calculatePaperPositionSize(args: {
   accountEquity: number;
   entryPrice: number;
   stopLoss: number;
   riskPercentOverride?: number;
   maxLotSizeOverride?: number;
+  /** Money per 1.0 price move per 1.0 lot; never below PAPER_DEFAULTS.pointValuePerLot. */
+  valuePerUnitPerLot?: number;
+  /** Step rounding: "nearest" (default) or "floor", which keeps the loss at stop inside the risk amount. */
+  rounding?: "floor" | "nearest";
+  /** The per-trade money limit, when one is set: the risk amount never exceeds it. */
+  maxRiskAmount?: number | null;
 }): PositionSizingResult {
   const equity = Math.max(0, args.accountEquity || 0);
   const riskPct = args.riskPercentOverride ?? PAPER_DEFAULTS.riskPercent;
   const maxLot = args.maxLotSizeOverride ?? PAPER_DEFAULTS.maxLotSize;
-  const riskAmount = equity * riskPct;
+  const pctRisk = equity * riskPct;
+  const amountCap = args.maxRiskAmount != null && Number.isFinite(args.maxRiskAmount) ? Math.max(0, args.maxRiskAmount) : null;
+  const riskAmount = amountCap != null ? Math.min(pctRisk, amountCap) : pctRisk;
   const stopDistance = Math.abs(args.entryPrice - args.stopLoss);
+  const value = args.valuePerUnitPerLot != null && Number.isFinite(args.valuePerUnitPerLot)
+    && args.valuePerUnitPerLot > PAPER_DEFAULTS.pointValuePerLot
+    ? args.valuePerUnitPerLot
+    : PAPER_DEFAULTS.pointValuePerLot;
 
   const sized = lotForRisk({
-    riskAmount, stopDistance, valuePerUnitPerLot: PAPER_DEFAULTS.pointValuePerLot,
-    minLot: PAPER_DEFAULTS.minLotSize, maxLot, lotStep: 0.01, rounding: "nearest",
+    riskAmount, stopDistance, valuePerUnitPerLot: value,
+    minLot: PAPER_DEFAULTS.minLotSize, maxLot, lotStep: 0.01, rounding: args.rounding ?? "nearest",
   });
   let reason = "ok";
   if (!Number.isFinite(stopDistance) || stopDistance <= 0) reason = "stop distance is zero or invalid — cannot size";
+  else if (riskAmount <= 0 && pctRisk > 0) reason = "risk amount is zero — the per-trade money limit is zero";
   else if (riskAmount <= 0) reason = "risk amount is zero — equity is zero or risk percent is zero";
   else if (sized.clampedToMax) reason = `capped at maxLotSize=${maxLot}`;
   else if (sized.rawLot < PAPER_DEFAULTS.minLotSize) reason = `floored at minLotSize=${PAPER_DEFAULTS.minLotSize}`;

@@ -81,7 +81,9 @@ function decision(): Parameters<typeof executePaperFromDecision>[0] {
   return {
     shouldTrade: true, action: "BUY", symbol: SYMBOL, confidence: 75, riskScore: 40,
     entryReason: "QA automation", invalidationReason: "qa",
-    stopLoss: 1.08, takeProfit: 1.14, positionSize: 0.05,
+    // A 42-pip stop: at the 100,000-unit EURUSD lot the paper venue books (and the
+    // governor prices), the sized 0.2 lot risks ~$84, inside the 1% cap of $10,000.
+    stopLoss: 1.096, takeProfit: 1.14, positionSize: 0.05,
     tradeWindow: { status: "GOOD", reason: "qa" }, signalsUsed: [], warnings: [], blockers: [],
     operationalMode: "PAPER_DEMO", syntheticData: false, timestamp: new Date().toISOString(),
     marketDataSummary: {
