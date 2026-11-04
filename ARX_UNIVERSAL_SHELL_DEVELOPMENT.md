@@ -339,6 +339,92 @@ publication/deployment or GitHub push occurred. Independent enlarged-text and
 short-landscape QA merges were waiting on the workspace lock and were not
 part of this measured application.
 
+## Chart ceiling, bounded rationale and left-fill follow-up — 2026-11-04
+
+Application: `ca350e26b14b29b02a3e2ddf29ccf45dfd90b375`.
+Recovery baseline: `495da744ffc84e24eb70aeb6e73105022116e827`.
+
+### Correction
+
+The compact plot previously grew with its flex column and passed the resulting
+height back into the chart engine. That created a feedback path between the
+engine's intrinsic canvas height and the flex layout, especially when sibling
+content grew.
+
+The plot now uses fixed viewport-derived height rather than unbounded flex
+growth. Its normal target is 60% of viewport height, limited by 65% and the
+available main-content height after the account strip. A 390px canvas reserves
+roughly 360px of price plot where there is sufficient space; unusually short
+windows respect the upper bound rather than overflowing it. Initial engine
+creation is capped too, including restored oversized height inputs.
+
+The existing observer watches the container, main content and account strip,
+and responds to window resize. It never sends an unbounded observed height to
+the engine. The listener/observer still retire on cleanup, including late
+callbacks. Opening evidence or settings cannot enlarge the fixed plot beyond
+its ceiling.
+
+The AI read's full rationale is a labeled, keyboard-focusable region with
+maximum 320px height, native vertical scrolling and wrapping of long words,
+code and paragraphs. This changes presentation only, not the read, Truth gate
+or trading authority.
+
+The existing last-expanded-panel fill rule is retained. Left-column geometry
+is checked against the final visible panel, including rationale-open cases;
+side rails still release horizontal space to the chart.
+
+### Actual desktop results
+
+| Viewport | Canvas px | Price plot px | Rationale closed/open | Gap below last left panel |
+| --- | ---: | ---: | --- | ---: |
+| 1366×768 | 460 | 432 | Both passed | 0px |
+| 1440×900 | 540 | 512 | Both passed | 0px |
+| 1920×1080 | 648 | 620 | Both passed | 0px |
+
+All six closed/open cases passed. Open rationale areas measured 320px high,
+with thousands of pixels of deliberately long synthetic text scrollable
+inside; scroll widths equalled client widths (272/291/332px), not overflowing
+their panel. Risk followed the AI panel normally and the expanded order body
+retained at least 72px. These checks do not claim that every panel can remain
+inside one short viewport when all details are open; the desk remains scrollable.
+
+The actual application fixture also passed twelve existing size/preset cases,
+evidence/settings open-close bounds, rail resize/reload/pin/keyboard checks and
+the phone overflow check. The chart still widened 541 → 777 → 1049px with side
+collapse. No browser page errors were recorded.
+
+The long AI read was provided by a specific intercepted endpoint response:
+clearly synthetic, non-actionable, with no claimed provider evidence. The
+ordinary application Truth gate remained in place; no bypass was installed.
+All external calls and mutations remained blocked. This is not an
+authenticated owner/provider/V25_1S acceptance result.
+
+### Validation and limitations
+
+- Focused chart lifecycle and AI read tests: **107 passed**, no failures.
+  Coverage includes a 1,500px observed height clamped back to its viewport
+  target, oversized initial height and ignored callbacks after unmount.
+- Typecheck: passed.
+- Serial full frontend suite: **3,476 passed / 11 skipped / 0 failed, exit 0**;
+  230 test files passed and one was skipped.
+- Production frontend build: passed, retaining the existing large-chunk warning.
+- Unchanged initial-JS budget: passed, **692,690 raw / 201,298 gzip bytes**
+  against 720,000 / 210,000 limits.
+- Prior column-fill/header/account-strip geometry: **768 combinations passed**.
+- Development root HTTP: 200. The agent's native browser remains signed out;
+  its login rendering is not an authenticated desk acceptance claim.
+- This round had no failed focused or browser attempts. The existing jsdom
+  navigation warning and previously recorded failures remain documented.
+- Final offline fixture build: `d28e8c605fe0e2fb`.
+- Evidence is retained under ignored `generated-artifacts/arx-desk-bounds/`.
+  Native signed-in acceptance remains for the owner; no credentials were
+  requested or account state changed.
+
+No backend/data-hook, risk-policy, permission, authentication, database or
+operational setting changes; no API restart, worker/trading activation, broker
+test, order, email, publishing/deployment or GitHub push. Pending independent
+shell QA merges were not included in this application.
+
 ## Isolated long-content browser regression (2026-11-04)
 
 Added a standalone fixture in `arxai/scripts/shell-qa/`. Run from the workspace
