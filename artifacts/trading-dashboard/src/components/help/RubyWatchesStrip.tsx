@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Eye, Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { useAssistantName } from "@/lib/assistant-name";
 import { ackRubyWatch, fetchRubyWatches, setRubyWatchFakeoutAuthority, type RubyWatchView } from "@/lib/instantTradeRouter";
 
 const POLL_MS = 15_000;
@@ -19,6 +20,7 @@ export function describeWatch(w: RubyWatchView): string {
 }
 
 export function RubyWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (text: string) => void; refreshKey?: number }) {
+  const { name: assistantName } = useAssistantName();
   const [watches, setWatches] = useState<RubyWatchView[] | null>(null);
   const [sweeperRunning, setSweeperRunning] = useState<boolean | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -46,7 +48,7 @@ export function RubyWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (t
     setBusyId(w.id);
     try {
       const r = await setRubyWatchFakeoutAuthority(w.id, enabled);
-      onMessage?.(r.message ?? (r.ok ? (enabled ? "Fakeout authority granted for this position." : "Fakeout authority withdrawn.") : `Couldn't change that: ${r.error ?? "unknown error"}.`));
+      onMessage?.(r.message ?? (r.ok ? (enabled ? "Fakeout authority granted for this position." : "Fakeout authority removed.") : `Couldn't change that: ${r.error ?? "unknown error"}.`));
       await load();
     } finally {
       setBusyId(null);
@@ -68,7 +70,7 @@ export function RubyWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (t
     <div className="mx-4 mt-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-xs space-y-1.5" data-testid="ruby-watches-strip">
       <div className="flex items-center gap-1.5 font-semibold text-foreground">
         <Eye className="h-3.5 w-3.5 text-ruby" />
-        Ruby is watching {watches.length} {watches.length === 1 ? "thing" : "things"}
+        {assistantName} is watching {watches.length} {watches.length === 1 ? "thing" : "things"}
         {sweeperRunning === false && (
           <span className="ml-auto inline-flex items-center gap-1 text-danger" data-testid="ruby-watches-sweeper-off">
             <ShieldAlert className="h-3.5 w-3.5" /> sweeper off — not being evaluated
@@ -93,7 +95,7 @@ export function RubyWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (t
                     checked={w.monitor.fakeoutAuthority === true}
                     disabled={busyId === w.id}
                     onCheckedChange={(v) => void toggleFakeout(w, v)}
-                    aria-label="Let Ruby shift SL/TP on a fakeout"
+                    aria-label={`Let ${assistantName} shift SL/TP on a fakeout`}
                     className="scale-75"
                     data-testid={`ruby-watch-${w.id}-fakeout`}
                   />
