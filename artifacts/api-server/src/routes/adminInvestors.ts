@@ -290,6 +290,20 @@ router.get("/admin/investors", requireUser, async (req, res) => {
   res.json({ ok: true, investors });
 });
 
+// ── GET /admin/investors/performance-batches ────────────────────────────────
+// Must be registered before "/admin/investors/:id", otherwise ":id" captures
+// "performance-batches" and the list answers 400 BAD_ID. batchToDto is a
+// hoisted function declaration further down.
+router.get("/admin/investors/performance-batches", requireUser, async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+  const rows = await db
+    .select()
+    .from(investorPerformanceBatchesTable)
+    .orderBy(desc(investorPerformanceBatchesTable.createdAt))
+    .limit(200);
+  res.json({ ok: true, batches: rows.map(batchToDto) });
+
 // ── GET /admin/investors/:id ────────────────────────────────────────────────
 router.get("/admin/investors/:id", requireUser, async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -558,15 +572,8 @@ function batchToDto(b: typeof investorPerformanceBatchesTable.$inferSelect) {
   };
 }
 
-router.get("/admin/investors/performance-batches", requireUser, async (req, res) => {
-  const admin = requireAdmin(req, res);
-  if (!admin) return;
-  const rows = await db
-    .select()
-    .from(investorPerformanceBatchesTable)
-    .orderBy(desc(investorPerformanceBatchesTable.createdAt))
-    .limit(200);
-  res.json({ ok: true, batches: rows.map(batchToDto) });
+// GET /admin/investors/performance-batches is registered above GET
+// /admin/investors/:id so Express does not route it into the :id handler.
 });
 
 // ── POST /admin/investors/performance-batches/:batchId/reverse ──────────────

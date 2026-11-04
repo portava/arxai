@@ -110,7 +110,7 @@ export default function TradingSchoolLesson() {
 
           {/* practice + take quiz CTAs */}
           <div className="flex flex-wrap gap-2">
-            <Link href="/school/labs" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
+            <Link href={`/school/labs/${step.practiceLabId}`} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
               <FlaskConical className="h-4 w-4 text-primary" /> Practice this
             </Link>
             <button onClick={() => setTab("quiz")} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90">

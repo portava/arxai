@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient, type QueryClient, type Query } from "@tanstack/react-query";
+import { suppressNextReturnTo } from "@/lib/authReturnTo";
 
 // Per-user identity client. Reads /api/me; null when logged out.
 // All requests use credentials: "include" so the httpOnly arx_user_session
@@ -174,6 +175,7 @@ export function useLogout() {
       // browser sees a Fresh First-Load state — no leftover trading context,
       // no stale empty/non-empty heuristics, no other user's preferences.
       clearCrossUserLocalStorage();
+      suppressNextReturnTo();
     },
   });
 }

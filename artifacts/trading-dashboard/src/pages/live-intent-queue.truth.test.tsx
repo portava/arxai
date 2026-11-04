@@ -1,6 +1,6 @@
 // Live Intent Queue: an admin-only scoped payload is not an empty queue, and
-// a failed read is not "Total 0". The Convert button never promises that
-// connecting the bridge will enable it (it is disabled unconditionally).
+// a failed read is not "Total 0". Queued intents are labelled "Record only"
+// and never promise that connecting the bridge will route them.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 
@@ -46,7 +46,7 @@ describe("Live Intent Queue truth labels", () => {
     }
   });
 
-  it("the always-disabled Convert button does not promise bridge-dependent enablement", async () => {
+  it("a queued intent says it is a record only and does not promise bridge-dependent enablement", async () => {
     stubFetch(200, {
       intents: [{
         id: 1, intentId: "i-1", source: "MANUAL", symbol: "EURUSD", direction: "BUY",
@@ -58,9 +58,10 @@ describe("Live Intent Queue truth labels", () => {
       counts: { total: 1, pendingMt5: 1, ready: 0, rejected: 0, executedLater: 0 },
     });
     render(<LiveIntentQueuePage />);
-    const btn = await screen.findByRole("button", { name: /Convert to Broker Order/ });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
-    expect(btn.getAttribute("title") ?? "").not.toMatch(/Connect MT5 bridge to enable/i);
+    const note = await screen.findByTestId("intent-not-routed");
+    expect(note.textContent).toBe("Record only");
+    expect(screen.queryByRole("button", { name: /Convert to Broker Order/ })).toBeNull();
+    expect(note.getAttribute("title") ?? "").not.toMatch(/Connect MT5 bridge to enable/i);
     expect(screen.queryByText(/No intents match filters/)).toBeNull();
     const tiles = screen.getAllByTestId("intent-count-value").map((t) => t.textContent);
     expect(tiles[0]).toBe("1");

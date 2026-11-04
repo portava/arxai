@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -296,7 +297,7 @@ function TestingControlCenterPageInner() {
             <RefreshCw className={`w-4 h-4 mr-2 ${busy ? "animate-spin" : ""}`} /> Run all checks
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <a href="/mt5-setup">Open MT5 Setup Wizard</a>
+            <Link href="/mt5-setup">Open MT5 Setup Wizard</Link>
           </Button>
           <Button size="sm" variant="outline" data-testid="seed-demo" onClick={async () => {
             const r = await fetch("/api/tester-data/seed", { method: "POST", headers: { "x-security-role": "ADMIN" } });
