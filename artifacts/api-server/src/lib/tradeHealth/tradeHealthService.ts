@@ -24,7 +24,7 @@ import {
   type TradeHealthReport,
   type TradeSide,
 } from "@workspace/domain/trade-health";
-import { getUserModeScope } from "../modeScope/getUserModeScope.js";
+import { getUserModeScope, unresolvedModeNote } from "../modeScope/getUserModeScope.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
 import { readLatestUserMt5State, MT5_STATE_NOT_ATTRIBUTED_NOTE } from "../brokerHub/mt5StateReader.js";
@@ -408,6 +408,19 @@ export async function buildTradeHealthForUser(
     nowMs,
     evaluatedAtIso: new Date(nowMs).toISOString(),
   });
+
+  if (scope.modeResolved === false) {
+    // The mode could not be read: the scope is the PAPER fallback (a row
+    // filter), so no live or demo position was read at all. The engine's
+    // empty-book summary would present that as a measured flat book.
+    const note = `${scope.modeNote ?? unresolvedModeNote()} Your live and demo positions were not loaded here. Do not assume you are flat; check MT5 directly.`;
+    return {
+      report: { ...report, summary: `Your open positions could not be checked. ${note}` },
+      chartSymbol,
+      positionsMeasured: false,
+      positionsNote: note,
+    };
+  }
 
   if (!positionsMeasured) {
     // The engine's empty-book summary ("You have no open positions…") would

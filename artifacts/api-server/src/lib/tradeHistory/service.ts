@@ -269,14 +269,18 @@ export async function getTradeHistorySummary(userId: number) {
     return { hasTrades: false, count: 0 };
   }
 
+  // Only a closed trade with a recorded net P/L has an outcome. With none,
+  // win rate and P/L are unknown (null), never 0% / 0; an average with no
+  // trade to average is null too.
   const closed = trades.filter((t) => t.closedAt && t.netPnl !== null);
   const wins   = closed.filter((t) => (t.netPnl ?? 0) > 0);
   const losses = closed.filter((t) => (t.netPnl ?? 0) < 0);
 
-  const totalNetPnl = closed.reduce((s, t) => s + (t.netPnl ?? 0), 0);
-  const avgWin  = wins.length   ? wins.reduce((s, t) => s + (t.netPnl ?? 0), 0) / wins.length   : 0;
-  const avgLoss = losses.length ? losses.reduce((s, t) => s + (t.netPnl ?? 0), 0) / losses.length : 0;
-  const winRate = closed.length ? (wins.length / closed.length) * 100 : 0;
+  const totalNetPnl = closed.length ? closed.reduce((s, t) => s + (t.netPnl ?? 0), 0) : null;
+  const avgWin  = wins.length   ? wins.reduce((s, t) => s + (t.netPnl ?? 0), 0) / wins.length   : null;
+  const avgLoss = losses.length ? losses.reduce((s, t) => s + (t.netPnl ?? 0), 0) / losses.length : null;
+  const winRate = closed.length ? (wins.length / closed.length) * 100 : null;
+  const round2 = (v: number | null) => (v == null ? null : Math.round(v * 100) / 100);
 
   // Symbol breakdown
   const bySymbol: Record<string, { count: number; netPnl: number; wins: number }> = {};
@@ -304,19 +308,45 @@ export async function getTradeHistorySummary(userId: number) {
   const imports = await listTradeHistoryImports(userId);
   const sources = [...new Set(imports.map((i) => i.source))];
 
+  // Date range from the rows that record an open time. opened_at is nullable
+  // and DESC ordering puts NULLs first, so trades[0] / trades[last] are not
+  // the range; rows without an open time are counted, not dropped silently.
+  const openTimes = trades
+    .map((t) => (t.openedAt instanceof Date ? t.openedAt : t.openedAt ? new Date(t.openedAt) : null))
+    .filter((d): d is Date => d != null && Number.isFinite(d.getTime()));
+  let dateFrom: Date | null = null;
+  let dateTo: Date | null = null;
+  for (const d of openTimes) {
+    if (dateFrom == null || d.getTime() < dateFrom.getTime()) dateFrom = d;
+    if (dateTo == null || d.getTime() > dateTo.getTime()) dateTo = d;
+  }
+
   return {
     hasTrades: true,
     count: trades.length,
     closedCount: closed.length,
-    winRate: Math.round(winRate * 10) / 10,
-    totalNetPnl: Math.round(totalNetPnl * 100) / 100,
-    avgWin:  Math.round(avgWin  * 100) / 100,
-    avgLoss: Math.round(avgLoss * 100) / 100,
+    /** Imported rows with no outcome yet: still open, or closed with no net P/L in the file. */
+    withoutOutcomeCount: trades.length - closed.length,
+    winRate: winRate == null ? null : Math.round(winRate * 10) / 10,
+    totalNetPnl: round2(totalNetPnl),
+    avgWin:  round2(avgWin),
+    avgLoss: round2(avgLoss),
+    /** netPnl is in the trading account's currency, which an import does not record. */
+    pnlCurrency: null,
+    pnlCurrencyNote: "P/L is in your trading account's currency as exported; the import does not record which currency that is.",
     topSymbols: symbols,
+    /** topSymbols is ordered by number of closed trades, not by performance. */
+    topSymbolsOrder: "CLOSED_TRADE_COUNT" as const,
     sessions: bySession,
     sources,
-    dateFrom: trades[trades.length - 1]?.openedAt ?? null,
-    dateTo:   trades[0]?.openedAt ?? null,
+    /** Sources are uploaded history files, not live connections. */
+    sourcesKind: "IMPORTED_FILES" as const,
+    importCount: imports.length,
+    /** Earliest / latest recorded open time; null only when no row records one. */
+    dateFrom,
+    dateTo,
+    /** Imported rows with no open time; they are not inside dateFrom..dateTo. */
+    withoutOpenTimeCount: trades.length - openTimes.length,
   };
 }
 

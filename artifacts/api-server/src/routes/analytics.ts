@@ -15,10 +15,12 @@ import {
   db, analyticsSnapshotsTable, analyticsHeatmapsTable,
   paperOrdersTable, postTradeDebriefsTable, tradeJournalEntriesTable,
   traderSkillProfilesTable, weeklyPerformanceReviewsTable,
-  edgeDiscoveryReportsTable, vaultEventsTable,
+  vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { paperMoveSign, paperPnl } from "../lib/paperExecution/paperPnl.js";
+import { loadLatestSlices } from "./edgeDiscovery.js";
 
 const router = Router();
 const ANALYTICS_DISCLAIMER =
@@ -39,16 +41,58 @@ async function vaultAnalytics(kind: string, payload: Record<string, unknown>) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-// Paper-order statuses are OPEN | CLOSED_TP | CLOSED_SL | CLOSED_MANUAL
-// (and the legacy "CLOSED" used by some seeders). A trade is closed iff
-// status starts with CLOSED OR exitPrice is set and status !== OPEN.
+// Paper-order statuses are OPEN | CLOSED_TP | CLOSED_SL | CLOSED_MANUAL |
+// CANCELLED (and the legacy "CLOSED" used by some seeders). A trade is closed
+// when it is neither open nor cancelled and has an exit price to measure it
+// by. A cancelled order was voided — it is not a trade (Ruby Memory does not
+// count it either); it used to count here whenever it carried an exit price.
 function isClosed(o: typeof paperOrdersTable.$inferSelect): boolean {
-  return o.status !== "OPEN" && o.exitPrice != null;
+  return o.status !== "OPEN" && o.status !== "CANCELLED" && o.exitPrice != null;
 }
-function pnlOf(o: typeof paperOrdersTable.$inferSelect): number {
-  if (!isClosed(o) || o.exitPrice == null) return 0;
-  const dir = o.direction === "BUY" ? 1 : -1;
-  return (o.exitPrice - o.entryPrice) * dir * o.lotSize * 100; // synthetic $/lot
+// P&L of a closed order in USD at the instrument's contract size (the sizing
+// rule in lib/mt5/contractSize.ts, via paperPnl). It used to be
+// Δprice × lots × 100 for every symbol, so a 1.00-lot, 100-pip EURUSD trade
+// read $1 instead of $1,000. null = the order cannot be sized honestly (no
+// broker contract spec and not a fiat currency pair, or no FX conversion):
+// it is left out of every money figure and counted in pnlCoverage, never
+// booked as $0.
+function pnlOf(o: typeof paperOrdersTable.$inferSelect): number | null {
+  if (!isClosed(o) || o.exitPrice == null) return null;
+  return paperPnl({
+    symbol: o.symbol, direction: o.direction, lots: o.lotSize,
+    entry: o.entryPrice, price: o.exitPrice,
+  }).amount;
+}
+/** Win / loss by the direction of the price move — needs no contract size. */
+function outcomeSign(o: typeof paperOrdersTable.$inferSelect): 1 | -1 | 0 {
+  return o.exitPrice == null ? 0 : paperMoveSign(o.direction, o.entryPrice, o.exitPrice);
+}
+export interface PnlCoverage {
+  closedTrades: number;
+  /** Closed trades whose P&L could be sized in USD; every money figure uses only these. */
+  sizedTrades: number;
+  unsizedTrades: number;
+  /** Symbols with at least one closed trade that could not be sized. */
+  unsizedSymbols: string[];
+  /** Plain-English basis of the money figures. */
+  note: string;
+}
+function pnlCoverageOf(closed: Array<typeof paperOrdersTable.$inferSelect>): PnlCoverage {
+  const unsized = closed.filter((o) => pnlOf(o) == null);
+  const sizedTrades = closed.length - unsized.length;
+  const unsizedSymbols = [...new Set(unsized.map((o) => o.symbol))].sort();
+  // Ruby Memory and the demo account sum the P&L the paper venue BOOKED on
+  // each close. Closes are now booked in USD at contract size, but older rows
+  // may hold price move × lots × 100; an unsized close is left out of Ruby
+  // Memory and counted in the demo balance at the paper risk model when it
+  // lost (0 when it won), so the same trades can give a different figure.
+  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close: closes booked before contract sizing may carry price move × lots × 100, and a close it could not size is left out of Ruby Memory and counted in your demo balance at the paper risk model when it lost (0 when it won), so their Net P&L can differ from this one.";
+  const note = unsized.length === 0
+    ? basis
+    : sizedTrades === 0
+      ? `P&L not measured: none of your ${closed.length} closed trades could be sized in USD (${unsizedSymbols.join(", ")} — no contract size or no USD conversion). Money figures here are not results.`
+      : `${basis} ${unsized.length} of ${closed.length} closed trades (${unsizedSymbols.join(", ")}) could not be sized and are left out of every money figure.`;
+  return { closedTrades: closed.length, sizedTrades, unsizedTrades: unsized.length, unsizedSymbols, note };
 }
 function maxDrawdown(equityCurve: Array<{ pnl: number }>): number {
   let peak = 0, cum = 0, mdd = 0;
@@ -60,81 +104,265 @@ function maxDrawdown(equityCurve: Array<{ pnl: number }>): number {
   }
   return mdd;
 }
-function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK" {
+// Session of a trade by its open time (UTC hour). New York closes at 21:00
+// UTC (the same boundary as lib/domain resolveSession); 21:00–07:00 is the
+// Sydney and Tokyo (Asia-Pacific) session, not New York.
+export const SESSION_BASIS =
+  "Sessions are by each trade's open time in UTC: ASIA 21:00–07:00 (Sydney and Tokyo), LONDON 07:00–13:00, NEWYORK 13:00–21:00.";
+export function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK" {
   const h = d.getUTCHours();
-  if (h >= 0 && h < 7) return "ASIA";
   if (h >= 7 && h < 13) return "LONDON";
-  return "NEWYORK";
+  if (h >= 13 && h < 21) return "NEWYORK";
+  return "ASIA";
+}
+
+// Every analytics board reads ALL of the caller's paper orders, oldest first
+// (chronological order is needed for the peak-to-trough drawdown math). They
+// used to read `.limit(1000)`: the OLDEST 1000 for the snapshot tiles and the
+// drawdown, an unordered 1000 for the strategy table and the newest 1000 by id
+// for the heatmaps, so past 1000 orders the newest trades fell out of some
+// panels while others counted them.
+async function loadPaperOrders(userId: number) {
+  return db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
+    .orderBy(asc(paperOrdersTable.openedAt), asc(paperOrdersTable.id));
 }
 
 // ── Compute snapshot from current data ──────────────────────────────────────
 // EXPORTED so Build BB's auto-debrief service can recompute analytics
 // in-process after a closed-trade event without an internal HTTP hop.
+/** Debrief questions whose answers set a user debrief's followed_plan flag (postTradeDebriefs followedPlanFlag). */
+const PLAN_QUESTIONS = new Set(["followed_plan", "respected_stop", "exited_per_plan"]);
+
 export async function computeSnapshot(userId: number) {
   const [orders, skill, debriefs, edges] = await Promise.all([
-    // Chronological order — required for correct peak-to-trough drawdown math.
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
-      .orderBy(paperOrdersTable.openedAt).limit(1000),
+    loadPaperOrders(userId),
     db.select().from(traderSkillProfilesTable).where(eq(traderSkillProfilesTable.userId, userId))
       .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
       .orderBy(desc(postTradeDebriefsTable.id)).limit(200),
-    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
+    // The edge board's current picture (newest generation of each slice,
+    // legacy no-losses-marker rows re-derived), not the raw report rows.
+    loadLatestSlices(userId),
   ]);
   const closed = orders.filter((o) => isClosed(o));
-  const pnls = closed.map((o) => pnlOf(o));
+  // Money figures use only trades whose P&L could be sized (see pnlOf).
+  const pnls = closed.map((o) => pnlOf(o)).filter((p): p is number => p != null);
   const totalTrades = closed.length;
   const wins = pnls.filter((p) => p > 0);
   const losses = pnls.filter((p) => p < 0);
   const grossWin = wins.reduce((s, p) => s + p, 0);
   const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
-  const netProfitLoss = pnls.reduce((s, p) => s + p, 0);
-  const winRate = totalTrades ? wins.length / totalTrades : 0;
-  const expectancy = totalTrades ? netProfitLoss / totalTrades : 0;
-  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 999 : 0);
-  // Average reward/risk per trade (R-multiple).
-  const rrs = closed.map((o) => {
+  // Nothing measured is null, never 0: with no closed trade there is no win
+  // rate, and with no sized trade there is no P&L, expectancy or drawdown (a
+  // 0 read as a measured break-even, a 0% win rate or a $0 drawdown).
+  const sized = pnls.length > 0;
+  const netProfitLoss: number | null = sized ? pnls.reduce((s, p) => s + p, 0) : null;
+  // A win is a favourable price move, so unsized trades still count here.
+  const winCount = closed.filter((o) => outcomeSign(o) > 0).length;
+  const winRate: number | null = totalTrades ? winCount / totalTrades : null;
+  const expectancy: number | null = sized ? netProfitLoss! / pnls.length : null;
+  // Profit factor is gross win / gross loss: undefined with no losing trade
+  // (it was stored as the 999 marker and shown as "∞") or no sized trade.
+  const profitFactorBasis: "MEASURED" | "NO_LOSING_TRADE" | "NO_WIN_OR_LOSS" | "NO_SIZED_TRADES" =
+    !sized ? "NO_SIZED_TRADES" : grossLoss > 0 ? "MEASURED" : grossWin > 0 ? "NO_LOSING_TRADE" : "NO_WIN_OR_LOSS";
+  const profitFactor: number | null = profitFactorBasis === "MEASURED" ? grossWin / grossLoss : null;
+  // Average reward/risk per trade (R-multiple). A trade with no stop distance
+  // has no R; it is left out (it used to count as 0R).
+  const rrs = closed.flatMap((o) => {
     const risk = Math.abs(o.entryPrice - o.stopLoss);
-    if (risk <= 0 || o.exitPrice == null) return 0;
+    if (risk <= 0 || o.exitPrice == null) return [];
     const dir = o.direction === "BUY" ? 1 : -1;
-    return ((o.exitPrice - o.entryPrice) * dir) / risk;
+    return [((o.exitPrice - o.entryPrice) * dir) / risk];
   }).filter((r) => Number.isFinite(r));
-  const averageRr = rrs.length ? rrs.reduce((s, r) => s + r, 0) / rrs.length : 0;
-  const mdd = maxDrawdown(pnls.map((p) => ({ pnl: p })));
+  const averageRr: number | null = rrs.length ? rrs.reduce((s, r) => s + r, 0) / rrs.length : null;
+  const mdd: number | null = sized ? maxDrawdown(pnls.map((p) => ({ pnl: p }))) : null;
 
-  // Strongest/weakest strategy by edge confidence.
-  const byStrategy = new Map<string, { wins: number; total: number; pnl: number }>();
+  // Best / worst SYMBOL by the net P&L of its sized trades. These were called
+  // "strategy", but they group by symbol: paper_orders.strategy_id holds the
+  // execution path (e.g. build_ee_paper_execution) or nothing, not a strategy.
+  // The best must be net profitable and the worst net losing, so one symbol
+  // is never both and a losing symbol is never "strongest".
+  const bySymbol = new Map<string, number>();
   for (const o of closed) {
-    const key = o.symbol;  // proxy for strategy when no strategy field on paper orders
-    const cur = byStrategy.get(key) ?? { wins: 0, total: 0, pnl: 0 };
     const p = pnlOf(o);
-    cur.wins += p > 0 ? 1 : 0; cur.total += 1; cur.pnl += p;
-    byStrategy.set(key, cur);
+    if (p == null) continue; // ranked by P&L, so only sized trades rank
+    bySymbol.set(o.symbol, (bySymbol.get(o.symbol) ?? 0) + p);
   }
-  const stratEntries = [...byStrategy.entries()];
-  stratEntries.sort((a, b) => b[1].pnl - a[1].pnl);
-  const strongestStrategy = stratEntries[0]?.[0] ?? null;
-  const weakestStrategy   = stratEntries.at(-1)?.[0] ?? null;
+  const symbolsByPnl = [...bySymbol.entries()].sort((a, b) => b[1] - a[1]);
+  const top = symbolsByPnl[0];
+  const bottom = symbolsByPnl.at(-1);
+  const strongestSymbol = top && top[1] > 0 ? top[0] : null;
+  const weakestSymbol = bottom && bottom[1] < 0 ? bottom[0] : null;
 
-  // Strongest/weakest market condition from edge reports.
-  const sortedEdges = [...edges].sort((a, b) => b.confidenceScore - a.confidenceScore);
-  const strongestMarketCondition = sortedEdges[0]?.marketCondition ?? sortedEdges[0]?.edgeName ?? null;
-  const weakestMarketCondition   = sortedEdges.at(-1)?.marketCondition ?? sortedEdges.at(-1)?.edgeName ?? null;
+  // Strongest / weakest EDGE SLICE from Edge Discovery's current reports.
+  // These were called "market condition", but no report records one (the
+  // column is always null), so the card showed a slice name such as
+  // "symbol=EURUSD", ranked by report confidence alone. Now: the strongest is
+  // a STRONG/DEVELOPING slice (strong first, then confidence), the weakest a
+  // NO/WEAK slice (no edge first, then confidence); a slice with too little
+  // data is neither.
+  const statusRank: Record<string, number> = { STRONG_EDGE: 2, DEVELOPING_EDGE: 1, NO_EDGE: 2, WEAK_EDGE: 1 };
+  const byStatusThenConfidence = (a: typeof edges[number], b: typeof edges[number]) =>
+    ((statusRank[b.status] ?? 0) - (statusRank[a.status] ?? 0)) || (b.confidenceScore - a.confidenceScore);
+  const positive = edges.filter((e) => e.status === "STRONG_EDGE" || e.status === "DEVELOPING_EDGE").sort(byStatusThenConfidence);
+  const negative = edges.filter((e) => e.status === "NO_EDGE" || e.status === "WEAK_EDGE").sort(byStatusThenConfidence);
+  const strongestEdgeSlice = positive[0] ? describeEdgeSlice(positive[0]) : null;
+  const weakestEdgeSlice = negative[0] ? describeEdgeSlice(negative[0]) : null;
+  // Stored columns keep their names (no schema change): the "strategy"
+  // columns have always held a symbol, the "market condition" columns a slice.
+  // The "strategy" columns also keep their meaning — the plain top and bottom
+  // symbol by net P&L, so one traded symbol is both — because
+  // tradeDecision.orchestrate (the paper autopilot's decision) reads them:
+  // weakest === symbol is a WARN, strongest === symbol a +10 PASS. The
+  // sign-gated strongestSymbol / weakestSymbol above are display-only, so the
+  // truthful cards can never loosen that decision input.
+  const strongestStrategy = top?.[0] ?? null;
+  const weakestStrategy = bottom?.[0] ?? null;
+  const strongestMarketCondition = strongestEdgeSlice?.edgeName ?? null;
+  const weakestMarketCondition = weakestEdgeSlice?.edgeName ?? null;
 
-  // Behavioral averages.
+  // Behavioral averages. Discipline, execution and consistency come from the
+  // Trader Skill profile, which is null when none has been computed (they
+  // read 0/100, a failing score, for a user nothing was measured on). Each
+  // pillar counts as measured only from its own evidence, as Trader Skill
+  // (computeSubScores) scores it, and only from debriefs that existed when the
+  // profile was computed — a profile computed before them stored 0 for want
+  // of data. Discipline reads a debrief's followed-plan flag only where it was
+  // observed (recordsPlanFollowing); execution only checklist answers;
+  // emotional control only a recorded emotion. An automatic debrief (written
+  // on every paper close) has an empty checklist and no emotion, and its
+  // followed-plan flag is a placeholder 0 when the trade had no orchestrator
+  // decision. Consistency is measured only from edge reports.
   const sk = skill[0] ?? null;
-  const calmCount = debriefs.filter((d) => d.traderEmotionAfter === "CALM").length;
-  const emotionalScoreAvg = debriefs.length ? (calmCount / debriefs.length) * 100 : 0;
+  const msOf = (v: unknown): number =>
+    v instanceof Date ? v.getTime() : typeof v === "string" ? Date.parse(v) : NaN;
+  const profileMs = msOf(sk?.updatedAt);
+  const debriefsBeforeProfile = debriefs.filter((d) => {
+    const at = msOf(d.createdAt);
+    return Number.isFinite(at) && Number.isFinite(profileMs) && at <= profileMs;
+  });
+  const hasDebriefs = debriefsBeforeProfile.length > 0;
+  // followed_plan is observed on a user debrief that answered a plan question
+  // (postTradeDebriefs followedPlanFlag: followed_plan, respected_stop,
+  // exited_per_plan), and on an automatic debrief of a trade with an
+  // orchestrator decision (autoMeta.did_follow_decision true or false). An
+  // automatic debrief of a manual or scanner paper trade (no decision_id)
+  // stores 0 as a placeholder, not an observation.
+  const recordsPlanFollowing = (d: (typeof debriefs)[number]): boolean => {
+    if (d.createdBy === "SYSTEM_AUTO_DEBRIEF") {
+      const meta = d.autoMeta && typeof d.autoMeta === "object" ? d.autoMeta as Record<string, unknown> : {};
+      return d.decisionId != null && typeof meta["did_follow_decision"] === "boolean";
+    }
+    return Array.isArray(d.checklist) && d.checklist.some((c) =>
+      c != null && typeof c === "object" && PLAN_QUESTIONS.has(String((c as { id?: unknown }).id)));
+  };
+  const hasPlanEvidence = debriefsBeforeProfile.some(recordsPlanFollowing);
+  const hasChecklistAnswers = debriefsBeforeProfile.some((d) => Array.isArray(d.checklist) && d.checklist.length > 0);
+  const hasRecordedEmotion = debriefsBeforeProfile.some((d) => typeof d.traderEmotionAfter === "string" && d.traderEmotionAfter !== "");
+  const hasEdgeReports = edges.length > 0;
+  // Emotional control is the Trader Skill profile's own score, so this board
+  // and Trader Skill give one number. It used to be the CALM share of the
+  // last 200 debriefs (NEUTRAL and RELIEVED counted as not calm, no revenge
+  // penalty), which disagreed with Trader Skill's "Emotional control".
+  // A pillar the profile scored above 0 was measured (Trader Skill stores 0
+  // when it has no evidence), even if its debriefs are older than the newest
+  // 200 read here. So a stored value only ever changes from a measured score
+  // to null when that score is 0, and the stored row is as before.
+  const measured = (score: number, evidence: boolean): boolean => score > 0 || evidence;
+  const emotionalScoreAvg: number | null =
+    sk && measured(sk.emotionalControlScore, hasRecordedEmotion) ? sk.emotionalControlScore : null;
+  const disciplineScoreAvg: number | null = sk && measured(sk.disciplineScore, hasPlanEvidence) ? sk.disciplineScore : null;
+  const executionScoreAvg: number | null = sk && measured(sk.executionScore, hasChecklistAnswers) ? sk.executionScore : null;
+  const consistencyScoreAvg: number | null = sk && hasEdgeReports ? sk.consistencyScore : null;
+  const noProfile = "No Trader Skill profile has been computed yet.";
+  // The debrief read is the newest 200, so say which debriefs were looked at.
+  const debriefScope = debriefs.length >= 200 ? "of your latest 200 post-trade debriefs" : "of your post-trade debriefs";
+  const debriefWhy = (lacking: string): string =>
+    debriefs.length === 0
+      ? "No post-trade debriefs yet."
+      : !hasDebriefs
+        ? `None ${debriefScope} is from before your Trader Skill profile was computed. Recalculate it on Trader Skill to score this.`
+        : `None ${debriefScope} from before your Trader Skill profile was computed ${lacking}.`;
+  const unmeasured: Record<string, string> = {};
+  if (winRate == null) unmeasured["winRate"] = "No closed paper trades yet.";
+  if (!sized) {
+    const why = totalTrades ? "None of your closed trades could be sized in USD." : "No closed paper trades yet.";
+    for (const k of ["netProfitLoss", "expectancy", "profitFactor", "maxDrawdown"]) unmeasured[k] = why;
+  } else if (profitFactor == null) {
+    unmeasured["profitFactor"] = profitFactorBasis === "NO_LOSING_TRADE"
+      ? "No losing trade yet, so gross win ÷ gross loss is undefined."
+      : "No winning or losing trade yet (every sized trade broke even).";
+  }
+  if (averageRr == null) unmeasured["averageRr"] = totalTrades ? "No closed trade has a stop distance to measure R from." : "No closed paper trades yet.";
+  if (disciplineScoreAvg == null) {
+    unmeasured["disciplineScoreAvg"] = !sk ? noProfile
+      : debriefWhy("records whether you followed your plan (automatic debriefs of trades with no orchestrator decision do not)");
+  }
+  if (executionScoreAvg == null) {
+    unmeasured["executionScoreAvg"] = !sk ? noProfile : debriefWhy("has checklist answers (automatic debriefs have none)");
+  }
+  if (emotionalScoreAvg == null) {
+    unmeasured["emotionalScoreAvg"] = !sk ? noProfile : debriefWhy("records how you felt (automatic debriefs do not)");
+  }
+  if (consistencyScoreAvg == null) unmeasured["consistencyScoreAvg"] = !sk ? noProfile : "No edge reports yet.";
 
   return {
     totalTrades, netProfitLoss, winRate, averageRr, expectancy, profitFactor,
     maxDrawdown: mdd,
-    disciplineScoreAvg: sk?.disciplineScore ?? 0,
-    executionScoreAvg:  sk?.executionScore  ?? 0,
-    emotionalScoreAvg,
-    consistencyScoreAvg:sk?.consistencyScore ?? 0,
+    disciplineScoreAvg, executionScoreAvg, emotionalScoreAvg, consistencyScoreAvg,
     strongestStrategy, weakestStrategy,
     strongestMarketCondition, weakestMarketCondition,
+    // Not snapshot columns: what the highlights really are, and their basis.
+    strongestSymbol, weakestSymbol, strongestEdgeSlice, weakestEdgeSlice,
+    highlightBasis: HIGHLIGHT_BASIS,
+    // Not snapshot columns: why each null figure was not measured, the
+    // profit-factor basis, and when the Trader Skill profile was computed.
+    unmeasured, profitFactorBasis,
+    behaviorAsOf: sk?.updatedAt instanceof Date ? sk.updatedAt.toISOString() : (sk?.updatedAt ? String(sk.updatedAt) : null),
+    // Not a snapshot column: what the money figures above cover.
+    pnlCoverage: pnlCoverageOf(closed),
+  };
+}
+
+/**
+ * The analytics_snapshots columns of a computed snapshot. The extra fields
+ * (coverage, highlight details, basis) are not columns and are not stored.
+ * The columns are NOT NULL, so an unmeasured figure is stored as the column
+ * default 0 (and a profit factor with no losing trade as the 999 marker) —
+ * exactly what was stored before; only the live figures carry the null.
+ */
+export function toSnapshotRow(c: Awaited<ReturnType<typeof computeSnapshot>>) {
+  return {
+    totalTrades: c.totalTrades, netProfitLoss: c.netProfitLoss ?? 0, winRate: c.winRate ?? 0,
+    averageRr: c.averageRr ?? 0, expectancy: c.expectancy ?? 0,
+    profitFactor: c.profitFactor ?? (c.profitFactorBasis === "NO_LOSING_TRADE" ? 999 : 0),
+    maxDrawdown: c.maxDrawdown ?? 0,
+    disciplineScoreAvg: c.disciplineScoreAvg ?? 0, executionScoreAvg: c.executionScoreAvg ?? 0,
+    emotionalScoreAvg: c.emotionalScoreAvg ?? 0, consistencyScoreAvg: c.consistencyScoreAvg ?? 0,
+    strongestStrategy: c.strongestStrategy, weakestStrategy: c.weakestStrategy,
+    strongestMarketCondition: c.strongestMarketCondition, weakestMarketCondition: c.weakestMarketCondition,
+  };
+}
+
+export const HIGHLIGHT_BASIS = {
+  symbols: "Best and worst symbol by the net P&L of their closed paper trades sized in USD. The best must be net profitable and the worst net losing.",
+  edgeSlices: "From Edge Discovery's current reports, ranked by edge status and then by the report's confidence score — not by your results in a market condition. A slice with too little data is not ranked.",
+};
+
+const EDGE_STATUS_WORDS: Record<string, string> = {
+  STRONG_EDGE: "strong edge", DEVELOPING_EDGE: "developing edge",
+  WEAK_EDGE: "weak edge", NO_EDGE: "no edge", INSUFFICIENT_DATA: "not enough data",
+};
+type EdgeSliceRow = Awaited<ReturnType<typeof loadLatestSlices>>[number];
+/** "symbol=EURUSD" → "EURUSD (by symbol)", with the board's status and confidence. */
+function describeEdgeSlice(e: EdgeSliceRow) {
+  const sep = e.edgeName.indexOf("=");
+  const label = sep >= 0 ? `${e.edgeName.slice(sep + 1)} (by ${e.edgeName.slice(0, sep)})` : e.edgeName;
+  const at = e.createdAt instanceof Date ? e.createdAt.toISOString() : (e.createdAt ? String(e.createdAt) : null);
+  return {
+    edgeName: e.edgeName, label, status: e.status,
+    statusWords: EDGE_STATUS_WORDS[e.status] ?? e.status,
+    confidenceScore: Math.round(e.confidenceScore), sampleSize: e.sampleSize, reportedAt: at,
   };
 }
 
@@ -142,11 +370,13 @@ export async function computeSnapshot(userId: number) {
 router.post("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
     const userId = req.authUser!.id;
-    const computed = await computeSnapshot(userId);
+    const figures = await computeSnapshot(userId);
+    const computed = toSnapshotRow(figures);
+    const { pnlCoverage } = figures;
     const ins = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId }).returning();
     await vaultAnalytics("ANALYTICS_SNAPSHOT_GENERATED",
       { snapshotId: ins[0]!.id, totalTrades: computed.totalTrades });
-    ok(res, { snapshot: ins[0] });
+    ok(res, { snapshot: ins[0], pnlCoverage });
   } catch (err) {
     res.req.log?.error?.({ err: String(err) }, "POST /analytics/snapshot failed");
     fail(res, 500, "Failed to generate analytics snapshot");
@@ -154,12 +384,27 @@ router.post("/analytics/snapshot", requireUser, async (req, res): Promise<void> 
 });
 
 // ── GET /analytics/snapshot — latest ────────────────────────────────────────
+// `snapshot` is the last SAVED snapshot (Recompute, or the auto-debrief after a
+// close); a trade closed without a debrief is not in it, and its createdAt is
+// when it was computed. `current` is the same figures computed now from every
+// paper order, stamped with `asOf`, so the page's tiles agree with the tables
+// below them (which are always computed live). `current` is null, with
+// `currentError`, when that computation failed — never a stand-in of zeros.
 router.get("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const row = (await db.select().from(analyticsSnapshotsTable)
-      .where(eq(analyticsSnapshotsTable.userId, req.authUser!.id))
+      .where(eq(analyticsSnapshotsTable.userId, userId))
       .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1))[0] ?? null;
-    ok(res, { snapshot: row });
+    let current: (Awaited<ReturnType<typeof computeSnapshot>> & { asOf: string }) | null = null;
+    let currentError: string | null = null;
+    try {
+      current = { ...(await computeSnapshot(userId)), asOf: new Date().toISOString() };
+    } catch (err) {
+      req.log?.error?.({ err: String(err) }, "GET /analytics/snapshot: live figures failed");
+      currentError = "The figures could not be computed from your paper orders just now.";
+    }
+    ok(res, { snapshot: row, current, currentError });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/snapshot failed");
     fail(res, 500, "Failed to load snapshot");
@@ -181,39 +426,33 @@ router.get("/analytics/heatmaps", requireUser, async (req, res): Promise<void> =
 
 async function buildAllHeatmaps(userId: number): Promise<Array<{ heatmapType: string; dataset: unknown }>> {
   const [orders, debriefs] = await Promise.all([
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
-      .orderBy(desc(paperOrdersTable.id)).limit(1000),
+    loadPaperOrders(userId),
     db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
       .orderBy(desc(postTradeDebriefsTable.id)).limit(500),
   ]);
   const closed = orders.filter((o) => isClosed(o));
 
-  // SESSION_PNL: bucket P&L by ASIA/LONDON/NEWYORK.
-  const sess: Record<string, { trades: number; pnl: number; wins: number }> = {
-    ASIA: { trades: 0, pnl: 0, wins: 0 },
-    LONDON: { trades: 0, pnl: 0, wins: 0 },
-    NEWYORK: { trades: 0, pnl: 0, wins: 0 },
-  };
-  for (const o of closed) {
-    const s = sessionOf(o.openedAt);
+  // Every bucket counts all closed trades and wins by price move; `pnl` sums
+  // only the trades that could be sized, and `sizedTrades` says how many.
+  type Bucket = { trades: number; pnl: number; wins: number; sizedTrades: number };
+  const bucket = (): Bucket => ({ trades: 0, pnl: 0, wins: 0, sizedTrades: 0 });
+  const add = (b: Bucket, o: typeof closed[number]) => {
     const p = pnlOf(o);
-    sess[s]!.trades++; sess[s]!.pnl += p; sess[s]!.wins += p > 0 ? 1 : 0;
-  }
+    b.trades++; b.wins += outcomeSign(o) > 0 ? 1 : 0;
+    if (p != null) { b.pnl += p; b.sizedTrades++; }
+  };
+
+  // SESSION_PNL: bucket P&L by ASIA/LONDON/NEWYORK.
+  const sess: Record<string, Bucket> = { ASIA: bucket(), LONDON: bucket(), NEWYORK: bucket() };
+  for (const o of closed) add(sess[sessionOf(o.openedAt)]!, o);
 
   // DAY_OF_WEEK: 0..6
-  const dow = Array.from({ length: 7 }, () => ({ trades: 0, pnl: 0, wins: 0 }));
-  for (const o of closed) {
-    const d = o.openedAt.getUTCDay();
-    const p = pnlOf(o);
-    dow[d]!.trades++; dow[d]!.pnl += p; dow[d]!.wins += p > 0 ? 1 : 0;
-  }
+  const dow = Array.from({ length: 7 }, bucket);
+  for (const o of closed) add(dow[o.openedAt.getUTCDay()]!, o);
 
   // ENTRY_TIMING: bucket by hour 0..23
-  const hours = Array.from({ length: 24 }, () => ({ trades: 0, pnl: 0 }));
-  for (const o of closed) {
-    const h = o.openedAt.getUTCHours();
-    hours[h]!.trades++; hours[h]!.pnl += pnlOf(o);
-  }
+  const hours = Array.from({ length: 24 }, bucket);
+  for (const o of closed) add(hours[o.openedAt.getUTCHours()]!, o);
 
   // EMOTIONAL: count by emotion-after
   const emo: Record<string, number> = {};
@@ -233,15 +472,15 @@ async function buildAllHeatmaps(userId: number): Promise<Array<{ heatmapType: st
 // ── GET /analytics/strategy ─────────────────────────────────────────────────
 router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> => {
   try {
-  const orders = await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.userId, req.authUser!.id)).limit(1000);
+  const orders = await loadPaperOrders(req.authUser!.id);
   const closed = orders.filter((o) => isClosed(o));
-  const groups = new Map<string, { trades: number; wins: number; pnl: number; rrSum: number; rrN: number }>();
+  const groups = new Map<string, { trades: number; wins: number; pnl: number; sized: number; rrSum: number; rrN: number }>();
   for (const o of closed) {
     const k = o.symbol;
-    const cur = groups.get(k) ?? { trades: 0, wins: 0, pnl: 0, rrSum: 0, rrN: 0 };
+    const cur = groups.get(k) ?? { trades: 0, wins: 0, pnl: 0, sized: 0, rrSum: 0, rrN: 0 };
     const p = pnlOf(o);
-    cur.trades++; cur.pnl += p; cur.wins += p > 0 ? 1 : 0;
+    cur.trades++; cur.wins += outcomeSign(o) > 0 ? 1 : 0;
+    if (p != null) { cur.pnl += p; cur.sized++; }
     const risk = Math.abs(o.entryPrice - o.stopLoss);
     if (risk > 0 && o.exitPrice != null) {
       const dir = o.direction === "BUY" ? 1 : -1;
@@ -250,12 +489,14 @@ router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> =
     }
     groups.set(k, cur);
   }
-  const rows = [...groups.entries()].map(([symbol, g]) => ({
+  // A symbol whose trades could not be sized has no P&L to show: it is
+  // listed in pnlCoverage.unsizedSymbols instead of a $0.00 row.
+  const rows = [...groups.entries()].filter(([, g]) => g.sized > 0).map(([symbol, g]) => ({
     symbol, trades: g.trades, winRate: g.trades ? g.wins / g.trades : 0,
-    totalPnl: g.pnl, expectancy: g.trades ? g.pnl / g.trades : 0,
+    totalPnl: g.pnl, expectancy: g.pnl / g.sized, sizedTrades: g.sized,
     averageRr: g.rrN ? g.rrSum / g.rrN : 0,
   })).sort((a, b) => b.totalPnl - a.totalPnl);
-  ok(res, { strategies: rows });
+  ok(res, { strategies: rows, pnlCoverage: pnlCoverageOf(closed) });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/strategy failed");
     fail(res, 500, "Failed to load strategy analytics");
@@ -266,7 +507,7 @@ router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> =
 router.get("/analytics/session", requireUser, async (req, res): Promise<void> => {
   try {
     const all = await buildAllHeatmaps(req.authUser!.id);
-    ok(res, { session: all.find((h) => h.heatmapType === "SESSION_PNL")?.dataset ?? {} });
+    ok(res, { session: all.find((h) => h.heatmapType === "SESSION_PNL")?.dataset ?? {}, sessionBasis: SESSION_BASIS });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/session failed");
     fail(res, 500, "Failed to load session analytics");
@@ -294,18 +535,19 @@ router.get("/analytics/emotional", requireUser, async (req, res): Promise<void> 
 // ── GET /analytics/drawdown ─────────────────────────────────────────────────
 router.get("/analytics/drawdown", requireUser, async (req, res): Promise<void> => {
   try {
-    const orders = await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.userId, req.authUser!.id))
-      .orderBy(paperOrdersTable.openedAt).limit(1000);
+    const orders = await loadPaperOrders(req.authUser!.id);
     const closed = orders.filter((o) => isClosed(o));
     let peak = 0, cum = 0;
-    const curve = closed.map((o) => {
-      cum += pnlOf(o);
+    // The curve steps only on trades whose P&L could be sized.
+    const curve = closed.flatMap((o) => {
+      const p = pnlOf(o);
+      if (p == null) return [];
+      cum += p;
       if (cum > peak) peak = cum;
-      return { tradeId: o.id, openedAt: o.openedAt, equity: cum, peak, drawdown: peak - cum };
+      return [{ tradeId: o.id, openedAt: o.openedAt, equity: cum, peak, drawdown: peak - cum }];
     });
     const maxDd = curve.reduce((m, p) => Math.max(m, p.drawdown), 0);
-    ok(res, { equityCurve: curve, maxDrawdown: maxDd });
+    ok(res, { equityCurve: curve, maxDrawdown: maxDd, pnlCoverage: pnlCoverageOf(closed) });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/drawdown failed");
     fail(res, 500, "Failed to load drawdown");

@@ -14,15 +14,16 @@
 import { Router } from "express";
 import { db, tradePlansTable, executionConfirmationsTable, vaultEventsTable } from "@workspace/db";
 import { readBrokerHealthState } from "../lib/brokerHub/brokerHealthState.js";
+import { BROKER_HEALTH_VERDICT_STALE_MS } from "../lib/brokerHub/freshness.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
-import { evaluateChecklist, summarizePlan, type ChecklistInputs } from "@workspace/domain/trade-plan";
+import { evaluateChecklist, planRewardToRisk, summarizePlan, type ChecklistInputs, type ChecklistItem } from "@workspace/domain/trade-plan";
 import { gatherInputsAndEvaluate } from "./permission.js";
 import { getCachedIntelligenceContext } from "../lib/data/chart/chartIntelligence.js";
 import type { ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
-import { generateNewsRiskForSymbol } from "./newsCalendar.js";
+import { generateNewsRiskForSymbol, readStoredCalendarCoverage } from "./newsCalendar.js";
 import { getLatestPortfolioRiskOrCompute } from "./portfolioRisk.js";
 import crypto from "node:crypto";
 
@@ -49,17 +50,82 @@ async function gatherPermissionContext(userId: number): Promise<{
   };
 }
 
-async function gatherBrokerStatus(): Promise<"CONNECTED" | "DEGRADED" | "DOWN" | "DISABLED" | "UNKNOWN"> {
+type BrokerStatus = "CONNECTED" | "DEGRADED" | "DOWN" | "DISABLED" | "UNKNOWN";
+
+interface BrokerEvidence {
+  status: BrokerStatus;
+  /** The cached verdict is too old (or has no time) to describe the connection now. */
+  stale: boolean;
+  /** Plain statement for the checklist: which check, when, what it said. */
+  detail: string;
+}
+
+function agoText(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 120) return `${s} second${s === 1 ? "" : "s"} ago`;
+  const m = Math.round(s / 60);
+  if (m < 120) return `${m} minutes ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hours ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+const PLATFORM_SCOPE = "This is the platform's MT5 bridge, not a check of your own broker account.";
+
+// broker_health_state is the platform-wide cache of the last broker health
+// evaluation, rewritten only when an operator runs a health check. Its
+// lastStatus is "what the broker was when we last checked", so it is only
+// current within BROKER_HEALTH_VERDICT_STALE_MS of lastEvaluatedAt. An older
+// (or undated) CONNECTED / DEGRADED verdict does not describe the connection
+// now: it is reported as not confirmed (WARN), never as a PASS. Bad verdicts
+// (DOWN / disabled / none) keep failing whatever their age.
+async function gatherBrokerStatus(nowMs = Date.now()): Promise<BrokerEvidence> {
   const row = await readBrokerHealthState();
-  if (!row) return "UNKNOWN";
-  if (!row.executionEnabled) return "DISABLED";
-  switch (row.lastStatus) {
-    case "CONNECTED": return "CONNECTED";
-    case "DEGRADED":  return "DEGRADED";
-    case "DISCONNECTED":
-    case "ERROR":     return "DOWN";
-    default:          return "UNKNOWN";
+  if (!row) {
+    return { status: "UNKNOWN", stale: false, detail: "No platform broker health check has been recorded, so the broker connection is unknown." };
   }
+  if (!row.executionEnabled) {
+    return { status: "DISABLED", stale: false, detail: "Execution is turned off in the platform broker health settings." };
+  }
+  const evaluatedMs = row.lastEvaluatedAt ? new Date(row.lastEvaluatedAt).getTime() : NaN;
+  const ageMs = Number.isFinite(evaluatedMs) ? nowMs - evaluatedMs : NaN;
+  const current = Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= BROKER_HEALTH_VERDICT_STALE_MS;
+  const when = Number.isFinite(ageMs) && ageMs >= 0 ? agoText(ageMs) : null;
+  const status: BrokerStatus =
+    row.lastStatus === "CONNECTED" ? "CONNECTED"
+    : row.lastStatus === "DEGRADED" ? "DEGRADED"
+    : row.lastStatus === "DISCONNECTED" || row.lastStatus === "ERROR" ? "DOWN"
+    : "UNKNOWN";
+  const said = row.lastStatus ?? "no status";
+  if (status === "CONNECTED" || status === "DEGRADED") {
+    if (!current) {
+      const age = when
+        ? `said ${said} ${when}`
+        : `said ${said}, but when it ran could not be confirmed`;
+      return {
+        status, stale: true,
+        detail: `Not confirmed — the last platform broker health check ${age}, too old to describe the connection now ` +
+          `(a check is current for ${Math.round(BROKER_HEALTH_VERDICT_STALE_MS / 1000)} seconds). ${PLATFORM_SCOPE}`,
+      };
+    }
+    return { status, stale: false, detail: `${said} at the platform broker health check ${when}. ${PLATFORM_SCOPE}` };
+  }
+  return {
+    status, stale: false,
+    detail: `${said} at the last platform broker health check${when ? ` (${when})` : ""}. ${PLATFORM_SCOPE}`,
+  };
+}
+
+// The checklist domain maps a status to PASS / WARN / FAIL with a bare
+// detail. Here the broker item gets the evidence detail, and a stale
+// CONNECTED / DEGRADED verdict (PASS / WARN) becomes a WARN: a downgrade only,
+// a FAIL is never softened.
+function withBrokerEvidence(items: ChecklistItem[], broker: BrokerEvidence): ChecklistItem[] {
+  return items.map((i) => {
+    if (i.key !== "BROKER_HEALTH") return i;
+    const status = broker.stale && i.status === "PASS" ? "WARN" : i.status;
+    return { ...i, status, detail: broker.detail };
+  });
 }
 
 function serializePlan(row: typeof tradePlansTable.$inferSelect) {
@@ -84,6 +150,12 @@ function serializePlan(row: typeof tradePlansTable.$inferSelect) {
     status: row.status,
     aiSummary: row.aiSummary,
     checklist: row.checklistJson ?? null,
+    // The stored checklist and AI review describe the values they were
+    // computed on. A DRAFT only carries one when it was edited after a
+    // validate (validate always leaves READY or INVALIDATED), so its checklist
+    // describes earlier values: out of date, never "ready". Derived from the
+    // row, so plans edited before this flag existed read the same way.
+    checklistStale: row.status === "DRAFT" && row.checklistJson != null,
     executionConfirmationId: row.executionConfirmationId,
     createdAtIso: row.createdAt.toISOString(),
     updatedAtIso: row.updatedAt.toISOString(),
@@ -184,10 +256,14 @@ router.patch("/trade-plans/:id", requireUser, async (req, res): Promise<void> =>
       .limit(1);
     if (!cur[0]) { res.status(404).json({ error: "Not found" }); return; }
     if (cur[0].status === "EXECUTED" || cur[0].status === "CANCELED") {
-      res.status(409).json({ error: `Plan is ${cur[0].status} and cannot be edited.` }); return;
+      res.status(409).json({ error: cur[0].status === "EXECUTED"
+        ? "Plan was already sent to the Pre-Trade Confirmation flow and cannot be edited."
+        : "Plan is CANCELED and cannot be edited." }); return;
     }
-    // Editing a READY plan demotes it to DRAFT — must re-validate.
-    const nextStatus = cur[0].status === "READY" ? "DRAFT" : cur[0].status;
+    // Editing a READY or INVALIDATED plan demotes it to DRAFT — the last
+    // checklist (pass or fail) was computed on the previous values, so the
+    // edited plan is unchecked until validated again.
+    const nextStatus = cur[0].status === "READY" || cur[0].status === "INVALIDATED" ? "DRAFT" : cur[0].status;
     const updated = await db.update(tradePlansTable)
       .set({ ...body, status: nextStatus, updatedAt: new Date() })
       .where(and(eq(tradePlansTable.id, id), eq(tradePlansTable.userId, userId))).returning();
@@ -210,7 +286,7 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // calls serialize instead of stomping each other. The lock is released on
     // commit, so multiple concurrent validates each produce a fresh consistent
     // checklist + summary based on the most recent committed plan state.
-    const [perm, brokerStatus] = await Promise.all([
+    const [perm, broker] = await Promise.all([
       gatherPermissionContext(userId),
       gatherBrokerStatus(),
     ]);
@@ -223,6 +299,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // (O) Portfolio-risk gate — also runs before the validate transaction.
     // Blocks ONLY when overall portfolio risk is CRITICAL (rule per spec).
     // HIGH/MODERATE warnings flow through to the user but do not block.
+    //
+    // Either check may fail (throw) or not run (no symbol). Validate carries
+    // on, as before, but those risks were NOT checked: each one adds a WARN
+    // item that says so. A WARN does not change readiness (isReady counts
+    // FAILs only), so no gate moves; the checklist, summary and alert simply
+    // stop implying the risk was considered.
+    const notChecked: ChecklistItem[] = [];
     try {
       const port = await getLatestPortfolioRiskOrCompute(req.authUser);
       if (port.portfolioRiskLevel === "CRITICAL") {
@@ -240,6 +323,10 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
       }
     } catch (err) {
       req.log.warn({ err: String(err) }, "portfolio-risk check failed (non-fatal); continuing validate");
+      notChecked.push({
+        key: "PORTFOLIO_RISK", label: "Portfolio risk (critical exposure)", status: "WARN",
+        detail: "Could not be checked — the portfolio-risk check failed, so your open positions and total exposure were not considered.",
+      });
     }
 
     const preRow = await db.select().from(tradePlansTable)
@@ -262,9 +349,43 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
           });
           return;
         }
+        // The news check scores only the stored economic_events rows (filled
+        // by a manual sync) in the next 24h. An empty table, or one that ends
+        // before the window does, returns CLEAR without throwing; that is not
+        // "no events" (same rule as the News Risk card's calendarCoverage).
+        // A WARN only: readiness and every gate are unchanged.
+        try {
+          const coverage = await readStoredCalendarCoverage(new Date(Date.now() + 24 * 3600 * 1000));
+          if (!coverage.windowCovered) {
+            // "Partly" only when the stored calendar reaches past now, i.e.
+            // some of the upcoming window was checked. A calendar whose last
+            // event is already in the past covered none of it: not checked.
+            const throughMs = coverage.coveredThrough != null ? Date.parse(coverage.coveredThrough) : NaN;
+            const partly = coverage.storedEventCount > 0 && Number.isFinite(throughMs) && throughMs > Date.now();
+            notChecked.push({
+              key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+              detail: `${partly ? "Only partly checked" : "Not checked"} — ${coverage.note ?? "the stored economic calendar does not cover the next 24 hours, so upcoming events cannot be ruled out."}`,
+            });
+          }
+        } catch (err) {
+          req.log.warn({ err: String(err) }, "calendar coverage read failed (non-fatal); continuing validate");
+          notChecked.push({
+            key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+            detail: "Could not be checked — the stored economic calendar's coverage could not be read, so it is not known whether every upcoming economic event was considered.",
+          });
+        }
       } catch (err) {
         req.log.warn({ err: String(err) }, "news-risk check failed (non-fatal); continuing validate");
+        notChecked.push({
+          key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+          detail: "Could not be checked — the news-risk check failed, so upcoming economic events were not considered.",
+        });
       }
+    } else {
+      notChecked.push({
+        key: "NEWS_RISK", label: "News risk (no-trade window)", status: "WARN",
+        detail: "Not checked — the plan has no symbol, so upcoming economic events could not be matched to it.",
+      });
     }
 
     const result = await db.transaction(async (tx) => {
@@ -283,14 +404,23 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         takeProfit: plan.takeProfit, riskAmount: plan.riskAmount, maxLossAllowed: plan.maxLossAllowed,
         rewardToRiskTarget: plan.rewardToRiskTarget, confidenceLevel: plan.confidenceLevel,
         permissionStatus: perm.status, permissionBlockers: perm.blockers, permissionWarnings: perm.warnings,
-        brokerStatus, hasActiveRiskLock: perm.hasActiveRiskLock,
+        brokerStatus: broker.status, hasActiveRiskLock: perm.hasActiveRiskLock,
       };
-      const checklist = evaluateChecklist(inputs);
+      const checkedAtIso = new Date().toISOString();
+      const evaluated = evaluateChecklist(inputs);
+      const items = [...withBrokerEvidence(evaluated.items, broker), ...notChecked];
+      const checklist = {
+        ...evaluated,
+        items,
+        passCount: items.filter((i) => i.status === "PASS").length,
+        warnCount: items.filter((i) => i.status === "WARN").length,
+        checkedAtIso,
+      };
       const aiSummary = summarizePlan({
         symbol: plan.symbol, directionBias: plan.directionBias, strategyId: plan.strategyId,
         rewardToRisk: checklist.rewardToRisk, rewardToRiskTarget: plan.rewardToRiskTarget,
         confidenceLevel: plan.confidenceLevel,
-      }, checklist, new Date().toISOString());
+      }, checklist, checkedAtIso);
       const nextStatus = checklist.isReady ? "READY" : "INVALIDATED";
 
       const updated = await tx.update(tradePlansTable).set({
@@ -314,12 +444,21 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     const checklist = result.checklist!;
     const itemSig = checklist.items.map((i) => `${i.key}:${i.status}`).join(",");
     const revision = createHashShort(`${result.nextStatus}|${itemSig}`);
+    // Items the user typed (market condition, confidence, risk amount) are
+    // UNKNOWN — not checks ARX ran — so "passed all readiness checks" would
+    // overstate what was verified.
+    const uncheckedCount = checklist.items.filter((i) => i.status === "UNKNOWN").length;
     if (result.nextStatus === "READY") {
       void createAlert({
         userId: plan.userId,
         type: "TRADE_PLAN_READY", priority: "MEDIUM", severity: "success",
         title: `Trade plan ready: ${plan.symbol ?? `#${plan.id}`}`,
-        message: `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
+        message: `Plan #${plan.id} passed every blocking check` +
+          (checklist.warnCount > 0 ? ` (${checklist.warnCount} warning${checklist.warnCount === 1 ? "" : "s"} to review)` : "") +
+          "." +
+          (uncheckedCount > 0 ? ` ${uncheckedCount} item${uncheckedCount === 1 ? " is your own input" : "s are your own inputs"} that ARX did not verify.` : "") +
+          (notChecked.length > 0 ? ` Not checked: ${notChecked.map((i) => i.label.toLowerCase()).join("; ")}.` : "") +
+          " Final execution remains gated by the live-execution safety layer.",
         symbol: plan.symbol ?? undefined, relatedTradePlanId: plan.id, actionRequired: true,
         dedupeKey: `plan-ready:${plan.id}:${revision}`,
       });
@@ -338,8 +477,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // Planning confidence is limited — the plan may still be prepared and the
     // status stands, but the note communicates that the chart basis is unverified.
     // Fail-open: absent cache → no note (honest unknown, not a false degradation).
+    // chartTruthStatus always says which it was, so a missing note is never
+    // read as "the chart verified": PASSED (cached read passed every chart
+    // gate), LIMITED (a note explains what did not), NOT_CHECKED (no symbol,
+    // no recent cached read, or the read failed).
     let chartQualityNote: string | null = null;
     let chartTruthScore: number | null = null;
+    let chartTruthStatus: "PASSED" | "LIMITED" | "NOT_CHECKED" = "NOT_CHECKED";
     if (plan.symbol) {
       try {
         const PLAN_TF: ChartTimeframe = "M15";
@@ -365,9 +509,13 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
               "Chart data is partially degraded (mirror or freshness issue). " +
               "Your plan is saved; review the chart feed before trading.";
           }
+          chartTruthStatus = chartQualityNote != null ? "LIMITED" : "PASSED";
         }
       } catch {
         // fail-open: chart quality is advisory, never blocks plan save
+        chartQualityNote = null;
+        chartTruthScore = null;
+        chartTruthStatus = "NOT_CHECKED";
       }
     }
 
@@ -386,6 +534,8 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     }
     res.json({
       ...planResponse,
+      chartTruthStatus,
+      ...(chartTruthScore != null ? { chartTruthScore } : {}),
       ...(chartQualityNote != null
         ? { chartQualityNote, chartTruthScore, effectiveConfidenceLevel }
         : {}),
@@ -405,7 +555,7 @@ router.post("/trade-plans/:id/cancel", requireUser, async (req, res): Promise<vo
       .where(and(eq(tradePlansTable.id, id), eq(tradePlansTable.userId, userId)))
       .limit(1);
     if (!cur[0]) { res.status(404).json({ error: "Not found" }); return; }
-    if (cur[0].status === "EXECUTED") { res.status(409).json({ error: "Cannot cancel an executed plan." }); return; }
+    if (cur[0].status === "EXECUTED") { res.status(409).json({ error: "Cannot cancel a plan that was already sent to the Pre-Trade Confirmation flow." }); return; }
     if (cur[0].status === "CANCELED") { res.json(serializePlan(cur[0])); return; }
     const updated = await db.update(tradePlansTable)
       .set({ status: "CANCELED", updatedAt: new Date() })
@@ -422,6 +572,10 @@ router.post("/trade-plans/:id/cancel", requireUser, async (req, res): Promise<vo
 // Plan transitions to EXECUTED (= "submitted to confirmation flow"); the
 // confirmation row is what safetyCore continues to gate. Idempotent:
 // re-converting returns the existing confirmation id.
+// EXECUTED here never means an order was placed: the request is a practice
+// confirmation (practiceMode, LIVE_TRADING_DISABLED) that expires in 5 minutes
+// unless confirmed. The dashboard labels it "Sent to confirmation" and reads
+// the confirmation's own status (GET /execution-confirmations/:id).
 router.post("/trade-plans/:id/convert", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
@@ -447,9 +601,14 @@ router.post("/trade-plans/:id/convert", requireUser, async (req, res): Promise<v
           (plan.directionBias !== "BUY" && plan.directionBias !== "SELL")) {
         return { error: { code: 400, msg: "Plan is missing required execution fields (symbol, directionBias=BUY|SELL, entryPrice, stopLoss, takeProfit, lotSize)." } };
       }
-      const slDist = Math.abs(plan.entryPrice - plan.stopLoss);
-      const tpDist = Math.abs(plan.takeProfit - plan.entryPrice);
-      const rr = slDist > 0 ? tpDist / slDist : 0;
+      // Directional R:R (the same rule validation uses): a stop or target on
+      // the wrong side of entry is an impossible plan, never a 2.0 R:R. A
+      // READY row stored before validation checked sides is refused here.
+      const geo = planRewardToRisk(plan.directionBias, plan.entryPrice, plan.stopLoss, plan.takeProfit);
+      if (geo.stopSide === "WRONG" || geo.targetSide === "WRONG") {
+        return { error: { code: 409, msg: `Stop loss or take profit is on the wrong side of entry for a ${plan.directionBias.toLowerCase()} — fix the plan and validate it again.` } };
+      }
+      const rr = geo.rr ?? 0;
 
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute confirmation window
       const conf = await tx.insert(executionConfirmationsTable).values({

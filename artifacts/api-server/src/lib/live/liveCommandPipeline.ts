@@ -20,6 +20,7 @@ import { readBoundManagementRiskPosition, withBoundManagementClose, managementFu
 import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
+import { heartbeatAgeSecondsFrom } from "../brokerHub/freshness.js";
 import { randomUUID } from "node:crypto";
 import { resultReceiptScheduler, ResultReceiptCapacityError } from "./resultReceiptScheduler.js";
 import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
@@ -3466,9 +3467,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     };
   }
 
-  const hbAge = bridge?.lastHeartbeat
-    ? Math.max(0, Math.floor((Date.now() - new Date(bridge.lastHeartbeat).getTime()) / 1000))
-    : null;
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age (null, so gate 7 fails), never clamped to a fresh 0s.
+  const hbAge = heartbeatAgeSecondsFrom(bridge?.lastHeartbeat ?? null, Date.now());
+  const hbObservedAt = bridge?.lastHeartbeat ? new Date(bridge.lastHeartbeat) : null;
   const caps = (bridge?.capabilities ?? {}) as { eaInputs?: Record<string, unknown> };
   const ea = (caps.eaInputs ?? {}) as Record<string, unknown>;
 
@@ -3926,6 +3928,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     killSwitchEngaged: effectiveKillSwitchEngaged(!!arming?.killSwitchEngaged, killSwitchBypassActive),
     bridgeAccountType: bridge?.accountType ?? null,
     bridgeHeartbeatAgeSec: hbAge,
+    bridgeLastHeartbeatAt: hbObservedAt && Number.isFinite(hbObservedAt.getTime()) ? hbObservedAt.toISOString() : null,
     bridgeEaVersion: bridge?.eaVersion ?? null,
     bridgeEnableLiveExecution: typeof ea["enableLiveExecution"] === "boolean" ? (ea["enableLiveExecution"] as boolean) : null,
     bridgeReadOnlyMode: typeof ea["readOnlyMode"] === "boolean" ? (ea["readOnlyMode"] as boolean) : null,
