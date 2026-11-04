@@ -67,13 +67,14 @@ export interface Mt5SymbolsResponse {
  * The user's EA-reported symbol inventory. Empty/MISSING until the EA has run
  * ENUMERATE_SYMBOLS against the connected terminal. Never returns a mock list.
  */
-export function useMt5Symbols(opts: { includeStale?: boolean; tradableOnly?: boolean } = {}) {
+export function useMt5Symbols(opts: { includeStale?: boolean; tradableOnly?: boolean; enabled?: boolean } = {}) {
   const params = new URLSearchParams();
   if (opts.includeStale) params.set("includeStale", "1");
   if (opts.tradableOnly) params.set("tradableOnly", "1");
   const qs = params.toString();
   return useQuery<Mt5SymbolsResponse>({
     queryKey: ["mt5-symbols", opts.includeStale ?? false, opts.tradableOnly ?? false],
+    enabled: opts.enabled ?? true,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: 1,

@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { humanizeReason } from "@/lib/humanize";
 import { normalizeLot, stepLot } from "@/lib/oneClickMode";
+import { useSymbolLotSpec } from "@/hooks/useSymbolLotSpec";
 import {
   ORDER_TYPE_INFO, isPendingType, orderTypeInfo, parseNum, validateTicket,
   type ExpirationChoice, type OrderTypeId, type TicketDraft,
@@ -104,13 +105,18 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
     staleTime: 1_000,
   });
   const q = quoteQ.data ?? null;
-  const bid = q?.available === false ? null : (q?.bid ?? q?.last ?? null);
-  const ask = q?.available === false ? null : (q?.ask ?? q?.last ?? null);
+  // Bid and Ask only — a last-trade-only quote is not two-sided, so it is never
+  // shown as Bid = Ask = last. Market orders need both; pending orders can still
+  // be placed (the broker enforces the price side).
+  const bid = q?.available === false ? null : (q?.bid ?? null);
+  const ask = q?.available === false ? null : (q?.ask ?? null);
   const quoteUsable = bid != null && ask != null && !q?.stale;
+  const lastOnly = (bid == null || ask == null) && q?.available !== false && q?.last != null;
+  const spec = useSymbolLotSpec(symbol);
 
   const info = orderTypeInfo(orderType);
   const pending = isPendingType(orderType);
-  const lot = normalizeLot(lotText, oc.mode.maxLotPerClick);
+  const lot = normalizeLot(lotText, oc.mode.maxLotPerClick, spec);
   const draft: TicketDraft = useMemo(() => ({
     orderType, lot,
     price: parseNum(priceText), stopLimitPrice: parseNum(stopLimitText),
@@ -118,14 +124,14 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
     expiration, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
   }), [orderType, lot, priceText, stopLimitText, slText, tpText, expiration, expiresAt]);
   // Side checks use the live quote only while it is usable; otherwise the broker decides.
-  const v = validateTicket(draft, quoteUsable ? { bid, ask } : { bid: null, ask: null });
+  const v = validateTicket(draft, quoteUsable ? { bid, ask } : { bid: null, ask: null }, spec);
 
   const demoBlocked = scope === "demo" && !demoSupportsOrderType(orderType);
   const marketNeedsQuote = !pending && !quoteUsable;
   const disabledWhy = scope == null
     ? "Trading is not available in this account mode."
     : demoBlocked ? DEMO_PENDING_UNSUPPORTED_NOTE
-    : marketNeedsQuote ? (q?.stale ? "Price is stale. Waiting for a fresh tick." : "No Bid/Ask yet — a market order needs a live price.")
+    : marketNeedsQuote ? (q?.stale ? "Price is stale. Waiting for a fresh tick." : lastOnly ? "Only a last-trade price is available, no Bid/Ask — a market order needs both. Pending orders can still be placed." : "No Bid/Ask yet — a market order needs a live price.")
     : v.errors[0] ?? null;
   const canPlace = !busy && disabledWhy == null;
 
@@ -223,10 +229,10 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
             <span className="text-[11px] font-semibold text-txt-secondary">Volume (lots)</span>
             <div className="mt-1 flex items-center gap-1">
               <Button type="button" size="icon" variant="outline" className="h-9 w-9" aria-label="Decrease lot" disabled={busy}
-                onClick={() => setLotText(String(stepLot(lot ?? oc.mode.defaultVolume, -1, oc.mode.maxLotPerClick)))} data-testid="order-ticket-lot-minus">−</Button>
+                onClick={() => setLotText(String(stepLot(lot ?? oc.mode.defaultVolume, -1, oc.mode.maxLotPerClick, spec)))} data-testid="order-ticket-lot-minus">−</Button>
               <Input value={lotText} onChange={(e) => setLotText(e.target.value)} inputMode="decimal" aria-label="Lot size" className={cn(field, "text-center")} data-testid="order-ticket-lot" />
               <Button type="button" size="icon" variant="outline" className="h-9 w-9" aria-label="Increase lot" disabled={busy}
-                onClick={() => setLotText(String(stepLot(lot ?? oc.mode.defaultVolume, 1, oc.mode.maxLotPerClick)))} data-testid="order-ticket-lot-plus">+</Button>
+                onClick={() => setLotText(String(stepLot(lot ?? oc.mode.defaultVolume, 1, oc.mode.maxLotPerClick, spec)))} data-testid="order-ticket-lot-plus">+</Button>
             </div>
           </label>
           {oc.mode.maxLotPerClick != null && <span className="pb-2 text-[10px] text-txt-secondary">max {oc.mode.maxLotPerClick}</span>}
