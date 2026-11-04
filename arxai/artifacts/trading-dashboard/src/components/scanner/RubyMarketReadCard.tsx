@@ -243,7 +243,8 @@ export function RubyMarketReadCard({
         {downgraded && <p className="arx-ruby-warning" role="status" data-testid="ruby-market-read-best-action-downgraded">{reason ?? "This read is not actionable on the current feed."}</p>}
         <details className="arx-ruby-details">
           <summary>Why, evidence &amp; full rationale</summary>
-          <div className="mt-2 space-y-2 text-xs text-slate-300">
+          <div className="arx-ruby-rationale-scroll mt-2 space-y-2 text-xs text-slate-300"
+            role="region" aria-label="AI read rationale" tabIndex={0}>
             {reasoning && <RubyReasoningBlock data={reasoning} testid="ruby-market-read-reasoning"/>}
             <p><b>What is happening:</b> {chosen.whatIsHappening}</p>
             <p><b>Why this market:</b> {chosen.whyThisMarket}</p>

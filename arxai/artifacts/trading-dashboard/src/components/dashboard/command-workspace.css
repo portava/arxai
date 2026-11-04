@@ -613,15 +613,31 @@
   }
   .arx-chart-panel [data-testid="arx-native-chart"]:not([aria-modal="true"]) > .arx-native-plot {
     display: flex;
-    flex: 1 0 390px;
-    min-height: 390px;
+    flex: 0 0 auto;
+    height: var(--arx-compact-plot-height, clamp(390px,60dvh,65dvh));
+    min-height: 0;
+    max-height: var(--arx-compact-plot-max,65dvh);
   }
   .arx-chart-panel [data-testid="arx-native-chart"]:not([aria-modal="true"]) > .arx-native-plot > [data-testid="arx-native-canvas"] {
-    flex: 1 0 390px;
-    height: auto !important;
-    min-height: 390px;
+    flex: 1 1 auto;
+    height: 100% !important;
+    min-height: 0;
   }
 }
+
+.arx-ruby-details,
+.arx-ruby-rationale-scroll { min-width: 0; max-width: 100%; }
+.arx-ruby-rationale-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  scrollbar-gutter: stable;
+  padding-inline-end: 8px;
+}
+.arx-ruby-rationale-scroll * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.arx-ruby-rationale-scroll :is(p,li,span,dd,b,strong,code) { white-space: normal; }
+.arx-ruby-rationale-scroll pre { white-space: pre-wrap; }
 
 /* Labels and amounts must not compete for the same narrow inline row. */
 .arx-risk-usage > .arx-risk-usage-heading { flex-wrap: wrap; min-width: 0; }

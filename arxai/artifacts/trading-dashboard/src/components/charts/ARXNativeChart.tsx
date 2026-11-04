@@ -330,7 +330,7 @@ function viewportChartHeight(height:number,mobileHeight:number|undefined,expande
   if(expanded)return Math.max(240,window.innerHeight-240);
   if(window.innerWidth<768)return mobileHeight??Math.max(320,Math.min(height,380));
   // Reserve the time axis as well as at least ~360px of usable price plot.
-  if(compactWorkspace && window.innerWidth >= 1024)return Math.max(height,390);
+  if(compactWorkspace && window.innerWidth >= 1024)return Math.min(Math.max(height,390), Math.floor(window.innerHeight * .65));
   return height;
 }
 
@@ -803,20 +803,38 @@ export function ARXNativeChart({
     if (!compactDesktopWorkspace || expanded) return;
     const container = containerRef.current;
     if (!container) return;
+    const plot = container.parentElement;
+    const main = container.closest<HTMLElement>("#main-content");
+    const accountStrip = container.closest(".arx-workspace-body")?.querySelector<HTMLElement>(".arx-account-strip");
     let active = true;
+    let lastApplied: number | undefined;
     const syncHeight = () => {
-      if (!active || !container.isConnected || container.clientHeight < 360) return;
-      adapterRef.current?.resize(undefined, container.clientHeight);
+      const view = container.ownerDocument.defaultView;
+      if (!active || !container.isConnected || !view || view.innerWidth < 1024) return;
+      const deskHeight = (main?.clientHeight || view.innerHeight) - (accountStrip?.getBoundingClientRect().height || 0) - 8;
+      const ceiling = Math.max(1, Math.floor(Math.min(view.innerHeight * .65, deskHeight)));
+      const target = Math.min(Math.max(390, Math.floor(view.innerHeight * .60)), ceiling);
+      // Fixed viewport-derived sizing breaks the flex/engine intrinsic-height
+      // feedback loop. Never use an unbounded observed height as engine input.
+      plot?.style.setProperty("--arx-compact-plot-height", `${target}px`);
+      plot?.style.setProperty("--arx-compact-plot-max", `${ceiling}px`);
+      const next = Math.min(container.clientHeight, target);
+      if (next > 0 && next !== lastApplied) {
+        adapterRef.current?.resize(undefined, next);
+        lastApplied = next;
+      }
     };
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", syncHeight);
-      syncHeight();
-      return () => { active = false; window.removeEventListener("resize", syncHeight); };
-    }
-    const observer = new ResizeObserver(syncHeight);
-    observer.observe(container);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncHeight);
+    for (const target of [container, main, accountStrip]) if (target) observer?.observe(target);
+    window.addEventListener("resize", syncHeight);
     syncHeight();
-    return () => { active = false; observer.disconnect(); };
+    return () => {
+      active = false;
+      observer?.disconnect();
+      window.removeEventListener("resize", syncHeight);
+      plot?.style.removeProperty("--arx-compact-plot-height");
+      plot?.style.removeProperty("--arx-compact-plot-max");
+    };
   }, [compactDesktopWorkspace, expanded, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
   useEffect(() => { adapterRef.current?.setPriceOnlyScale?.(preferences.priceOnlyScale === true); }, [preferences.priceOnlyScale, chartEpoch]);

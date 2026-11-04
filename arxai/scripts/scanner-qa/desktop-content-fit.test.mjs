@@ -48,6 +48,25 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
     SCANNER_QA_BASE_URL: origin, SCANNER_QA_START_PATH: "/", SCANNER_QA_PRESERVE_STORAGE_ON_RELOAD: true, URL, setTimeout,
   });
   await setup(page);
+  // Explicitly synthetic, non-actionable read, including an unbroken token.
+  // The normal Truth gate still decides whether the card may display it.
+  const longText = `OFFLINE layout fixture only. ${"Support/resistance explanation with no trading authority. ".repeat(35)} ${"long-token-".repeat(35)}`;
+  await context.route("**/api/me/market-edge**", async route => {
+    const fields = Object.fromEntries(["whatIsHappening","why","whyThisMarket","whyThisDirection","whyNow","timingState","entryZone","risk","whatConfirms","whatInvalidates","whatToDoNext"].map(key => [key, longText]));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true,
+      signal: { symbol: "EURUSD", displayName: "EURUSD", timeframe: "M15", assetClass: "forex",
+        generatedAt: "2026-01-02T12:00:00Z", dataSource: "OFFLINE_FIXTURE", hasSufficientData: false,
+        bias: "NEUTRAL", direction: "NONE", regime: "RANGING", lifecycleStage: "WATCH", lifecycleReasons: [],
+        confidenceBand: "LOW", edgeScore: 0, scores: { direction:0, entry:0, execution:0, risk:0, newsSafety:0, timing:0, survivability:0, overall:0, edge:0 },
+        evidence: { for: [{ key: "fixture", label: longText, weight: 0 }], against: [], conflicts: [], meetsMinimum: false, netScore: 0 },
+        freshness: "STALE", late: { isLate: false, doNotChase: true, reason: "Offline fixture" } },
+      explanation: { headline: "Offline visual fixture — not a market read", defaultMode: "SIMPLE",
+        simple: fields, advanced: fields, levels: null, bestAction: "WAIT", noTrade: { isNoTrade: true, confidence: 0, reason: "Offline only" },
+        hasSufficientData: false, actionable: false, missingContext: ["No provider evidence"], disclaimer: "OFFLINE QA ONLY" },
+    }) });
+  });
+  await page.reload();
   assert.equal(await page.evaluate(() => window.__arxScannerQaBuildId), meta.buildId);
   const results = [];
   // Keep every case's result; assertions happen after the bounded matrix.
@@ -72,7 +91,7 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
         const main = document.getElementById("main-content");
         const canvas = document.querySelector('[data-testid="arx-native-canvas"]');
         const engine = window.__arxChartQa?.layoutGeometry?.();
-        if (!canvas || rect(canvas).height < 390) errors.push("canvas below 390px including axes");
+        if (!canvas || rect(canvas).height < 390 || rect(canvas).height > innerHeight * .65 + 1) errors.push("canvas outside desktop bounds");
         if (!engine || engine.plot.height < 360) errors.push(`price plot below 360px: ${engine?.plot.height}`);
         for (const panel of document.querySelectorAll(".arx-col > .arx-panel[data-collapsed='false']:not([hidden])")) {
           const body = panel.querySelector(".arx-panel-body");
@@ -108,6 +127,51 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
       console.log(JSON.stringify(result));
     }
   }
+  const rationaleResults = [];
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(viewport);
+    await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: "Trade", exact: true }).click();
+    const rubyExpand = page.getByTestId("layout-panel-collapse-ruby");
+    if (await rubyExpand.getAttribute("aria-expanded") === "false") await rubyExpand.click();
+    const summary = page.locator(".arx-ruby-details > summary");
+    await summary.waitFor({ state: "visible" });
+    for (const open of [false, true]) {
+      const details = page.locator(".arx-ruby-details");
+      if (await details.evaluate(element => element.open) !== open) await summary.click();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const result = await page.evaluate(() => {
+        const canvas = document.querySelector('[data-testid="arx-native-canvas"]');
+        const content = document.querySelector(".arx-ruby-rationale-scroll");
+        const left = document.querySelector(".arx-col-left");
+        const lastLeft = [...left.querySelectorAll(":scope > .arx-panel:not([hidden])")].at(-1);
+        const risk = document.getElementById("workspace-risk"), order = document.getElementById("workspace-order");
+        const ruby = document.getElementById("workspace-ruby");
+        return { canvas: canvas.getBoundingClientRect().height, plot: window.__arxChartQa.layoutGeometry().plot.height,
+          rationaleHeight: content.clientHeight, rationaleScrollHeight: content.scrollHeight,
+          rationaleWidth: content.clientWidth, rationaleScrollWidth: content.scrollWidth,
+          leftGap: left.getBoundingClientRect().bottom - lastLeft.getBoundingClientRect().bottom,
+          riskFollowsRuby: risk.getBoundingClientRect().top >= ruby.getBoundingClientRect().bottom - 1
+            && risk.getBoundingClientRect().top - ruby.getBoundingClientRect().bottom < 20,
+          orderBodyHeight: order.querySelector(".arx-panel-body").clientHeight };
+      });
+      rationaleResults.push({ viewport, open, ...result });
+      console.log(JSON.stringify({ rationaleCase: { viewport, open, ...result } }));
+      assert.ok(result.canvas >= 390 && result.canvas <= viewport.height * .65 + 1 && result.plot >= 360);
+      assert.ok(Math.abs(result.leftGap) < 2 && result.riskFollowsRuby && result.orderBodyHeight > 30);
+      if (open) {
+        assert.ok(result.rationaleHeight <= 320 && result.rationaleScrollHeight > result.rationaleHeight);
+        assert.ok(result.rationaleScrollWidth <= result.rationaleWidth + 1, "rationale text overflows horizontally");
+      }
+      for (const toggle of [page.locator("summary").filter({ hasText: "Chart evidence details" }).first(),
+        page.getByRole("button", { name: "Advanced chart details", exact: true })]) {
+        await toggle.click();
+        const height = await page.locator('[data-testid="arx-native-canvas"]').evaluate(element => element.clientHeight);
+        assert.ok(height >= 390 && height <= viewport.height * .65 + 1, "chart escaped bounds after details/settings toggle");
+        await toggle.click();
+      }
+    }
+  }
+  console.log(JSON.stringify({ rationaleCases: rationaleResults.length, passed: true }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: "Trade", exact: true }).click();
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

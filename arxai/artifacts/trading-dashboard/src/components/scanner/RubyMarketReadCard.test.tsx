@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type {
   MeMarketEdgeResp,
   RubyMarketReadExplanation,
@@ -313,6 +313,10 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.getByTestId("ruby-market-read-freshness").textContent).toMatch(/updated \d+s ago/);
     expect(screen.getByTestId("ruby-market-read-what").textContent).toContain("simple:");
     expect(screen.getByText("Why, evidence & full rationale")).toBeTruthy();
+    fireEvent.click(screen.getByText("Why, evidence & full rationale"));
+    const rationale = screen.getByRole("region", { name: "AI read rationale" });
+    expect(rationale.classList.contains("arx-ruby-rationale-scroll")).toBe(true);
+    expect(rationale.getAttribute("tabindex")).toBe("0");
     expect(screen.getByRole("link", { name: "Full Eleanor workspace" })).toBeTruthy();
   });
 });
