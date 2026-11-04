@@ -11,8 +11,8 @@ The desktop Cockpit must retain approximately 360px of usable price plot where t
 
 **Upper-bound priority:** Growing a column to fill spare space must not make the price plot unbounded. The owner subsequently reported a roughly 1,500px candle area and asked for a visible-desk ceiling. Keep long AI rationale contained and wrapping rather than letting it enlarge sibling columns.
 
-Desktop side-rail interactions use expand-and-focus on both sides, not flyouts. Pinned panels stay shown; rail access to Review order opens the existing reviewed flow directly.
+Desktop panels slide fully into edge rails rather than folding vertically. Rail icons open temporary peeks; Keep open docks them back into the layout. Pinned panels stay open. Review order remains directly reachable.
 
-**Why:** The owner requested side collapse as an alternative to vertical folding and allowed either focus expansion or flyouts. Consistent focus expansion avoids introducing another overlay workspace.
+**Why:** The owner subsequently requested every panel to slide completely closed, with brief peek views and an option to keep them open. This supersedes the earlier expand-and-focus choice.
 
-**How to apply:** Preserve saved user/route rail choices and pin protection when adjusting layouts. Keep mobile focus independent of desktop rail preferences.
+**How to apply:** Preserve saved per-user/per-page states and pin protection. Respect reduced motion, keep existing dialogs and safety actions usable, and keep mobile focus independent of desktop rail preferences.

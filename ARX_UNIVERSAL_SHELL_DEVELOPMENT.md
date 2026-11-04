@@ -540,3 +540,106 @@ starting the existing safe-preview API workflow; startup then confirmed paused
 background jobs, disabled live master switch and no schema migration. The
 isolated tests neither depend on nor call that API.
 
+## 2026-11-04 — Shared sliding panels, peeks and docking
+
+- Recovery checkpoint: `1c2da4619bba31362b46929bd7d249c7da7e03ad`.
+- Tested application/source commit: `2c97673cd4c00064a13c19dcd37378a99d12ecb5`.
+- Branch: `codex/pr103-smart-chart-development-20261031`.
+- The final documentation checkpoint is returned in the completion response.
+
+### Changes
+
+Desktop close controls now send panels fully into their edge rail. The nine
+Cockpit panels and existing Smart Chart secondary details support icon-to-peek,
+outside-click/Escape dismissal, Keep open docking and protected pins. Positions
+use the bottom rail. Panels remain mounted to preserve drafts and running views;
+closed panels release their layout space. Both center panels can be closed
+without making their peeks unreachable. Chart details retain their existing
+React providers while docking into the tools area.
+
+The shared route-panel wrapper supplies the same behavior on existing specialist
+sections. State is scoped to the existing user/page browser preferences, including
+peek restoration. Presets set the open panels, excluding protected pins. Legacy
+fold/rail preferences are retained; the newly separate chart-details panel starts
+closed unless pinned. Mobile keeps its existing focus behavior.
+
+Slides are 200ms; reduced motion disables both the animation and the delayed exit.
+Keyboard focus returns to rail icons, peeks contain Tab focus, and existing
+command-palette/fullscreen/alert dialogs retain ownership of their own Escape key.
+Emergency Stop, safety notices and the existing reviewed-order action remain
+available; no order, permission or financial logic was changed.
+
+### Final validation
+
+| Check | Actual result |
+| --- | --- |
+| Full frontend suite | **3,480 passed, 0 failed, 11 skipped; exit 0** |
+| Test files | 230 passed, 0 failed, 1 skipped |
+| Frontend TypeScript | Passed |
+| Production frontend build | Passed; chunk-size advisory remains |
+| Unchanged initial-download budget | **696,986 raw / 202,765 gzip bytes**, below 720,000 / 210,000 |
+| Actual production-app offline browser test | **1 passed, 0 failed, 0 skipped** |
+| Fixture builder syntax / Git whitespace check | Passed |
+
+The browser run served a frozen production frontend on loopback with synthetic
+inputs. All API writes and external/model/provider/broker traffic were blocked.
+It exercised 12 desktop size/preset combinations (1366×768, 1440×900, 1920×1080;
+All/Analyze/Trade/Review), six rationale-open/closed cases, and close/peek/dock for
+all ten desk/chart-detail panels. It also checked both center panels closed,
+outside dismissal, nested command-palette Escape, saved peek after reload,
+reduced motion, protected pins, one-click reviewed-order access and keyboard
+expansion. Market Scanner and Open Trades each passed close/peek/dock and reload
+persistence. The 390×844 mobile case retained focus mode without horizontal
+overflow or desktop rails.
+
+Measured chart widths in the side-rail case were 541px initially, 777px with the
+left rail and 1,049px with both rails. No page/disposed-chart errors were recorded.
+These are layout/interaction observations, not navigation or streaming-speed
+acceptance. The successful fixture build ID was `73d85decea2fb3a6`.
+
+### Retained failures and adaptations
+
+The first focused run was 16 pass/7 fail; the next was 28 pass/1 fail. The
+remaining reload failure exposed a saved-state initialization flash, which was
+fixed. A subsequent focused run passed 29/29; the added nested-modal case was
+then covered by the successful full suite.
+
+The first full run was **3,475 pass/5 fail/11 skip**: legacy specialist tests still
+expected Collapse/Expand and immediate unmounting. They now assert Close/Open,
+retained-but-hidden content after the exit, saved rail state and pinning through
+a peek. No affected test was skipped or unhandled error suppressed.
+
+An extended browser attempt stopped at `/my-trades` because the isolated static
+server did not serve that SPA route. Cockpit cases and the Market Scanner journey
+had completed. Only the fixture's existing-route whitelist was extended; unknown
+paths stay 404 and API paths stay rejected. The corrected complete browser run
+passed. No application routing or security policy was relaxed. Full frontend,
+typecheck, build and budget results remain valid: the subsequent correction was
+only to offline test serving.
+
+Receipts and screenshots are retained in the ignored workspace directory
+`generated-artifacts/arx-sliding-panels/`:
+
+- `frontend-final.log`, `typecheck.log`, `build.log`, `budget.log`, `browser-final.log`
+- `initial-full-failures.log`, `initial-focused-failures.log`,
+  `second-focused-failure.log`, `first-browser-pass.log`
+- `failed-static-route.log`, `failed-static-route.png`
+- `peek-order.png`, `peek-chart-details.png`, `both-rails-desktop.png`,
+  `mobile-focus.png`, `terminal-attempt.png`
+
+### Scope and remaining limits
+
+Only frontend/presentation, browser preferences and offline QA tooling changed.
+No backend, data hooks, trading/risk/permission policy, credentials, database,
+worker settings or broker connection changed. No API restart, migration, email,
+trade, publication or GitHub push was performed. Existing automatic activity,
+alert-scan and focus POST attempts were denied by the fixture; they were not
+sent to a real API.
+
+The native preview capture reached the normal sign-in screen (expected anonymous
+401), not an authenticated owner workspace. Signed-in owner/provider acceptance,
+all specialist-page visual combinations, streaming-burst soak, earlier navigation
+and zoom performance gaps remain unverified/open. Synthetic layout checks do not
+establish launch readiness or competitor parity. No unrelated concurrent edits
+were observed in this application's working tree during the implementation.
+
