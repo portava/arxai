@@ -458,13 +458,16 @@ export function newsAvoidanceFilter(signal: SignalOutput, marketType: string): S
 
 // ─── Master scan function ─────────────────────────────────────────────────────
 
+/** Fewer candles than this → runStrategyScan does not scan ("Insufficient candle data"). */
+export const MIN_STRATEGY_SCAN_CANDLES = 5;
+
 export function runStrategyScan(
   symbol: string,
   candles: Candle[],
   minConfidence = 65,
   marketType: "forex" | "indices" | "stocks" | "synthetic" = "synthetic"
 ): SignalOutput {
-  if (candles.length < 5) {
+  if (candles.length < MIN_STRATEGY_SCAN_CANDLES) {
     const price = candles[candles.length - 1]?.close ?? 0;
     return { symbol, marketType, direction: "WAIT", confidence: 0, entryPrice: price, stopLoss: 0, takeProfit: 0, reason: "Insufficient candle data", strategy: "None", riskWarning: "", advisory: STRATEGY_ADVISORY_LABEL };
   }

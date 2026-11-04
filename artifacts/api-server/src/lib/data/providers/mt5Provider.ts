@@ -210,6 +210,22 @@ export function mt5BarBrokerClockOffsetMs(
   return plausibleBrokerClockOffsetMs(getMt5BridgeClockOffset({ bridgeConnectionId })?.offsetMs);
 }
 
+/**
+ * The measured broker-clock offset for a ROUTED series' bars (same rule as
+ * chartDataService / candleHistoryService): only an in-memory MT5 broker
+ * series (providerId mt5_broker, no sub-provider) gets one, via
+ * mt5BarBrokerClockOffsetMs with its serving bridge. Every other provider, an
+ * MT5 mirror and an unmeasured bridge get null, so their stamps are compared
+ * as given (fail closed). For freshness comparisons only.
+ */
+export function servedSeriesBrokerClockOffsetMs(
+  provenance: { providerId?: string | null; subProviderId?: string | null; bridgeConnectionId?: number | null } | null | undefined,
+  newestBar?: { timeBasisEvidence?: unknown } | null,
+): number | null {
+  if (provenance?.providerId !== "mt5_broker" || provenance.subProviderId != null) return null;
+  return mt5BarBrokerClockOffsetMs(newestBar ?? null, provenance.bridgeConnectionId ?? null);
+}
+
 function writerFutureStamped(s: CandleSeries): boolean {
   return futureStampMarks.has(s.bridgeConnectionId != null ? String(s.bridgeConnectionId) : UNATTRIBUTED_BRIDGE_KEY);
 }

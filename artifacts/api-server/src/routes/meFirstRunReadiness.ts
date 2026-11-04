@@ -9,7 +9,10 @@
 // - Per-user scoped on every query.
 // - Never returns or stores any secret. Returns booleans only for setup
 //   gates (e.g. whether an active per-user bridge token exists), not values.
-// - Envelope shows liveLocked:true so any UI consumer can reflect it.
+// - liveLocked / allowOrderExecution / readOnlyMode come from the user's own
+//   safety envelope (getEnvelope, fail-closed). liveLockRead says whether that
+//   envelope was actually read; an unread one keeps liveLocked:true but is
+//   never reported as a passed check. Display only — the order guard decides.
 
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
@@ -24,6 +27,7 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { getMarketProvider } from "../lib/assistant/marketProvider.js";
 import { getPreferences } from "../lib/notifications/service.js";
+import { envelopeUnread, getEnvelope, type SafetyEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 
 const router = Router();
 
@@ -38,16 +42,26 @@ export interface ReadinessItem {
   cta?: { label: string; href: string } | null;
 }
 
-const SAFETY_ENVELOPE = Object.freeze({
-  safetyMode: "paper_only" as const,
-  liveLocked: true,
-  readOnlyMode: true,
-  allowOrderExecution: false,
-});
+// safetyMode is a legacy constant naming the paper stack this checklist is
+// about; it is not the account's mode (liveLocked below is).
+const SAFETY_MODE = "paper_only" as const;
+
+/** The user's safety envelope, or null when it could not be read. */
+async function readLivePosture(userId: number): Promise<SafetyEnvelope | null> {
+  try {
+    const env = await getEnvelope(userId);
+    // getEnvelope fails closed when the settings or the user's permissions
+    // could not be read: that lock is a default, not a reading.
+    return envelopeUnread(env) ? null : env;
+  } catch {
+    return null;
+  }
+}
 
 router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<void> => {
   try {
     const userId = req.authUser!.id;
+    const posture = await readLivePosture(userId);
 
     // 1. Account / session verified — implicit: requireUser passed.
     const accountItem: ReadinessItem = {
@@ -58,21 +72,37 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
       cta: null,
     };
 
-    // 2. Paper mode enabled — appMode is permanently PAPER_ONLY in this build.
+    // 2. Paper mode — paper trading is always available; whether the account
+    // is limited to it is the safety envelope's live lock (read per user).
+    // The label says only what holds in every case (paper is available); the
+    // status and detail carry whether the account is paper-only.
     const paperModeItem: ReadinessItem = {
       key: "paper_mode",
-      label: "Paper mode enabled",
-      status: "PASS",
-      detail: "All order flows route to the paper engine. No live broker order can be placed.",
+      label: "Paper trading available",
+      status: !posture ? "WARN" : posture.liveLocked ? "PASS" : "INFO",
+      detail: !posture
+        ? "Paper trading is available. Whether your account is limited to it could not be read just now."
+        : posture.liveLocked
+          ? `Paper trading is available. Live order execution is locked for your account (${posture.bannerLabel}).`
+          : `Paper trading is available, but your account is not paper-only: its safety envelope permits live order execution (${posture.bannerLabel}).`,
       cta: null,
     };
 
-    // 3. Live trading locked — hard-coded for this build.
+    // 3. Live trading lock — from the user's safety envelope, never a constant.
+    // The label is the row's headline, so it follows the reading too.
     const liveLockedItem: ReadinessItem = {
       key: "live_locked",
-      label: "Live trading locked",
-      status: "PASS",
-      detail: "Live execution is BLOCKED by the safety core. This cannot be flipped from the UI.",
+      label: !posture
+        ? "Live trading lock could not be read"
+        : posture.liveLocked
+          ? "Live trading locked"
+          : "Live trading not locked",
+      status: !posture ? "WARN" : posture.liveLocked ? "PASS" : "INFO",
+      detail: !posture
+        ? "Your account's live-trading lock could not be read just now, so this check cannot confirm it."
+        : posture.liveLocked
+          ? `Live order execution is locked for your account. ${posture.bannerReason}`
+          : `Not locked: your account's safety envelope permits live order execution. ${posture.bannerReason} Every live order is still checked by the server's order guard.`,
       cta: null,
     };
 
@@ -93,7 +123,8 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
       mt5Detail = `${conns.length} connection${conns.length === 1 ? "" : "s"} on file but no active per-user bridge token (revoked or never issued) — reissue one from the MT5 Setup page.`;
     } else if (anyConnected) {
       mt5Status = "PASS";
-      mt5Detail = `Connected (${conns.length} connection${conns.length === 1 ? "" : "s"}). Bridge stays read-only; orders still execute on paper.`;
+      // Where orders go is the live lock above, not this connection row.
+      mt5Detail = `Connected (${conns.length} connection${conns.length === 1 ? "" : "s"}).`;
     } else {
       mt5Status = "WARN";
       mt5Detail = `Configured but not connected (${conns.length} connection${conns.length === 1 ? "" : "s"}). Check the EA and its per-user bridge token.`;
@@ -185,8 +216,7 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
       cta: null,
     };
 
-    // 10. Ready to place paper trade — paper account present + critical items
-    // (account, paper mode, live locked) all PASS.
+    // 10. Ready to place paper trade — paper account present and no FAIL.
     const accounts = await db.select({ id: paperAccountsTable.id })
       .from(paperAccountsTable).where(eq(paperAccountsTable.userId, userId));
     const openTrades = await db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) })
@@ -229,7 +259,12 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
         blockingFailures: blocking,
         readyForFirstTrade: blocking === 0 && hasAccount,
       },
-      ...SAFETY_ENVELOPE,
+      safetyMode: SAFETY_MODE,
+      // Fail closed when the envelope was not read (same shape as before).
+      liveLocked: posture ? posture.liveLocked : true,
+      readOnlyMode: posture ? posture.readOnlyMode : true,
+      allowOrderExecution: posture ? posture.allowOrderExecution : false,
+      liveLockRead: posture !== null,
     });
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /me/first-run-readiness failed");

@@ -105,3 +105,45 @@ test("an insufficient series still reports INSUFFICIENT_DATA first", () => {
   });
   assert.equal(r.result.alignmentLabel, "INSUFFICIENT_DATA");
 });
+
+// Codex line (audit H7): MT5 bars stay stamped on the broker-server clock and
+// carry a MEASURED broker-clock offset. Aging such a stamp as UTC calls a
+// current UTC+2 series "future" and, worse, a series stalled about two hours
+// "current". With the measured offset each newest bar is aged on the UTC
+// clock (bar time minus offset); the bar's own time is never rewritten.
+test("broker-stamped bars are aged on the UTC clock with their measured offset", () => {
+  const now = Date.UTC(2026, 9, 28, 12, 2);
+  const OFFSET = 2 * H1; // broker clock UTC+2
+  const at = Date.UTC(2026, 9, 28, 12, 0) + OFFSET; // current bars, broker-stamped
+  const offsets = { lower: OFFSET, middle: OFFSET, higher: OFFSET };
+  const current = buildReport({
+    symbol: "EURUSD", lowerTimeframe: "M5", middleTimeframe: "H1", higherTimeframe: "H4",
+    lowerCandles: trend(60, M5, at), middleCandles: trend(60, H1, at), higherCandles: trend(60, H4, at),
+    nowMs: now, clockOffsetsMs: offsets,
+  });
+  assert.equal(current.result.alignmentLabel, "STRONG_BULLISH_ALIGNMENT");
+  for (const tf of [current.lower, current.middle, current.higher]) assert.equal(tf.snapshot.freshness, "CURRENT");
+  assert.equal(current.lower.snapshot.newestBarTime, new Date(at).toISOString(), "the bar's own stamp is kept");
+
+  // Without a measured offset the same stamps cannot be confirmed (fail closed).
+  const unmeasured = report(now, { m5: at, h1: at, h4: at });
+  assert.equal(unmeasured.result.alignmentLabel, "DATA_NOT_CURRENT");
+  assert.equal(unmeasured.lower.snapshot.freshness, "UNKNOWN");
+
+  // A feed stalled 2h05m: read as UTC it would look current; aged with the
+  // offset it is stale, and the warning names the stamp as broker time.
+  const stalledAt = Date.UTC(2026, 9, 28, 9, 55) + OFFSET;
+  const asUtc = report(now, { m5: stalledAt, h1: Date.UTC(2026, 9, 28, 9, 0) + OFFSET, h4: Date.UTC(2026, 9, 28, 8, 0) + OFFSET });
+  assert.equal(asUtc.lower.snapshot.freshness, "CURRENT", "control: read as UTC the stalled bar looks current");
+  const stalled = buildReport({
+    symbol: "EURUSD", lowerTimeframe: "M5", middleTimeframe: "H1", higherTimeframe: "H4",
+    lowerCandles: trend(60, M5, stalledAt), middleCandles: trend(60, H1, Date.UTC(2026, 9, 28, 9, 0) + OFFSET),
+    higherCandles: trend(60, H4, Date.UTC(2026, 9, 28, 8, 0) + OFFSET),
+    nowMs: now, clockOffsetsMs: offsets,
+  });
+  assert.equal(stalled.result.alignmentLabel, "DATA_NOT_CURRENT");
+  assert.equal(stalled.result.bestBias, "NEUTRAL");
+  assert.equal(stalled.lower.snapshot.freshness, "STALE");
+  assert.match(stalled.result.conflictWarning ?? "", /M5 newest bar opened Wed 11:55 broker time \(2h ago\)/);
+  assert.doesNotMatch(stalled.aiSummary, /11:55 UTC/);
+});

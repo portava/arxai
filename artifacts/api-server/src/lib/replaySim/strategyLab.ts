@@ -107,17 +107,47 @@ async function runExperimentBody(
     totalNet += report.net_pnl; totalTrades += report.total_trades; totalWins += report.wins;
   }
   const aggregateWinRate = totalTrades > 0 ? +((totalWins / totalTrades) * 100).toFixed(2) : 0;
-  const ranking = [...perScenario].sort((a, b) => b.netPnl - a.netPnl);
+  // A scenario that was not found was never replayed: its placeholder row
+  // (replayRunId "", net 0) stays in perScenario, marked as such, but has no
+  // result to rank, so it is never ranked or named best/worst.
+  const notReplayed = perScenario.filter(p => p.replayRunId === "").map(p => p.scenarioId);
+  const ranking = perScenario.filter(p => p.replayRunId !== "").sort((a, b) => b.netPnl - a.netPnl);
   const recommendations: { type: string; message: string }[] = [];
   if (perScenario.every(p => p.promote)) recommendations.push({ type: "PROMOTE_ALL", message: "Setup promoted across every scenario in this experiment (REPLAY-only evidence)." });
   if (perScenario.every(p => p.review))  recommendations.push({ type: "REVIEW_ALL",  message: "Setup flagged for REVIEW across every scenario." });
-  if (ranking[0])                        recommendations.push({ type: "BEST_SCENARIO", message: `Best scenario: ${ranking[0].scenarioId} with net ${ranking[0].netPnl}` });
-  if (ranking[ranking.length - 1])       recommendations.push({ type: "WORST_SCENARIO", message: `Worst scenario: ${ranking[ranking.length - 1].scenarioId} with net ${ranking[ranking.length - 1].netPnl}` });
+  // Best/worst need at least two replayed results to compare; one scenario is
+  // not both "best" and "worst" (a losing scenario must not read "Best").
+  // Equal nets are not a comparison either: when every replayed net is the
+  // same none is best or worst, and a tie at the top or bottom names every
+  // tied scenario (the stable sort would otherwise pick one by input order).
+  if (ranking.length >= 2) {
+    const top = ranking[0]!.netPnl, bottom = ranking[ranking.length - 1]!.netPnl;
+    if (top === bottom) {
+      recommendations.push({ type: "SCENARIOS_TIED", message: `All ${ranking.length} replayed scenarios had the same net (${top}), so none is best or worst.` });
+    } else {
+      const named = (word: string, net: number) => {
+        const ids = ranking.filter(r => r.netPnl === net).map(r => r.scenarioId);
+        return ids.length === 1
+          ? `${word} scenario: ${ids[0]} with net ${net}`
+          : `${word} scenarios (tied): ${ids.join(", ")} with net ${net}`;
+      };
+      recommendations.push({ type: "BEST_SCENARIO", message: named("Best", top) });
+      recommendations.push({ type: "WORST_SCENARIO", message: named("Worst", bottom) });
+    }
+  } else if (ranking.length === 1) {
+    recommendations.push({ type: "SINGLE_SCENARIO", message: `Only one scenario was replayed (${ranking[0]!.scenarioId}, net ${ranking[0]!.netPnl}), so there is nothing to compare.` });
+  }
+  if (notReplayed.length > 0) {
+    recommendations.push({
+      type: "NOT_REPLAYED",
+      message: `${notReplayed.length} scenario${notReplayed.length === 1 ? " was" : "s were"} not found and ${notReplayed.length === 1 ? "was" : "were"} not replayed: ${notReplayed.join(", ")}. ${notReplayed.length === 1 ? "It has" : "They have"} no result and ${notReplayed.length === 1 ? "is" : "are"} not ranked.`,
+    });
+  }
 
   const summary = {
     scenariosRun: perScenario.length,
     totalTrades, totalNet: +totalNet.toFixed(4), aggregateWinRate,
-    perScenario, ranking, recommendations,
+    perScenario, ranking, notReplayed, recommendations,
     safetyNotes: [
       "REPLAY_ONLY: experiment never placed live trades.",
       "Strategy Lab does not modify Build II playbook entries automatically.",

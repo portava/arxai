@@ -99,22 +99,44 @@ export function assessTimeframeFreshness(
   timeframe: string,
   newest: CandleLike | null | undefined,
   nowMs: number,
+  barClockOffsetMs?: number | null,
 ): { freshness: TimeframeFreshness; newestBarTime: string | null; ageMs: number | null } {
   const openMs = barTimeMs(newest?.time);
   const interval = TIMEFRAME_INTERVAL_MS[timeframe];
+  // newestBarTime is the bar's own stamp, never rewritten.
   const newestBarTime = openMs == null ? null : new Date(openMs).toISOString();
   if (openMs == null || interval == null || !Number.isFinite(nowMs)) {
     return { freshness: "UNKNOWN", newestBarTime, ageMs: null };
   }
-  const ageMs = nowMs - openMs;
+  // A bar stamped on another clock (an MT5 broker-server clock) is aged on
+  // the UTC clock as bar time minus its MEASURED offset. With no measured
+  // offset the stamp is compared as given (fail closed: ahead looks future).
+  const ageMs = nowMs - barOpenOnNowClockMs(openMs, barClockOffsetMs);
   if (ageMs < -interval) return { freshness: "UNKNOWN", newestBarTime, ageMs };
   return { freshness: ageMs < CURRENT_WITHIN_BARS * interval ? "CURRENT" : "STALE", newestBarTime, ageMs };
 }
+
+/** Bar open on the clock `nowMs` is read from: minus a measured, finite offset; else as stamped. */
+function barOpenOnNowClockMs(openMs: number, barClockOffsetMs: number | null | undefined): number {
+  return barClockOffsetMs != null && Number.isFinite(barClockOffsetMs) ? openMs - barClockOffsetMs : openMs;
+}
+
+/**
+ * Measured clock offset of each series' bar stamps (bar clock minus UTC, ms),
+ * e.g. an MT5 broker-server clock. Used only to age the newest bar; bar times
+ * are never rewritten. Absent or null: the stamps are read as UTC.
+ */
+export interface SeriesClockOffsets { lower?: number | null; middle?: number | null; higher?: number | null }
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 function utcStamp(iso: string): string {
   const d = new Date(iso);
   return `${WEEKDAY[d.getUTCDay()]} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+/** A bar's own stamp, named by its clock: "UTC", or "broker time" when it carries a measured broker-clock offset. */
+function barStamp(iso: string, barClockOffsetMs: number | null | undefined): string {
+  if (barClockOffsetMs == null || !Number.isFinite(barClockOffsetMs)) return utcStamp(iso);
+  return `${utcStamp(iso).slice(0, -" UTC".length)} broker time`;
 }
 function ageText(ms: number): string {
   const h = ms / 3_600_000;
@@ -299,15 +321,19 @@ export function applyFreshness(
   higher: TimeframeReport,
   result: AlignmentResult,
   nowMs: number,
+  clockOffsetsMs?: SeriesClockOffsets,
 ): AlignmentResult {
   if (result.alignmentLabel === "INSUFFICIENT_DATA") return result;
-  const notCurrent = [lower, middle, higher].filter((tf) => tf.snapshot.freshness !== "CURRENT");
+  const judged: Array<[TimeframeReport, number | null | undefined]> = [
+    [lower, clockOffsetsMs?.lower], [middle, clockOffsetsMs?.middle], [higher, clockOffsetsMs?.higher],
+  ];
+  const notCurrent = judged.filter(([tf]) => tf.snapshot.freshness !== "CURRENT");
   if (notCurrent.length === 0) return result;
-  const parts = notCurrent.map((tf) => {
+  const parts = notCurrent.map(([tf, offset]) => {
     const t = tf.snapshot.newestBarTime;
     if (!t) return `${tf.timeframe} bars carry no timestamp, so their age could not be checked`;
     if (tf.snapshot.freshness === "UNKNOWN") return `${tf.timeframe} newest bar time (${t}) could not be checked against the clock`;
-    return `${tf.timeframe} newest bar opened ${utcStamp(t)} (${ageText(nowMs - Date.parse(t))})`;
+    return `${tf.timeframe} newest bar opened ${barStamp(t, offset)} (${ageText(nowMs - barOpenOnNowClockMs(Date.parse(t), offset))})`;
   });
   const was = result.alignmentLabel.replace(/_/g, " ").toLowerCase();
   const warning = `Not a current read: ${parts.join("; ")}. On these bars the timeframes showed ${was} (score ${result.alignmentScore}/100), but the market may be closed or the feed stalled, so no bias is given.`;
@@ -328,6 +354,8 @@ export function summarizeAlignment(args: {
   middle: TimeframeReport;
   higher: TimeframeReport;
   result: AlignmentResult;
+  /** Measured clock offset of each series' bar stamps (see SeriesClockOffsets). */
+  clockOffsetsMs?: SeriesClockOffsets;
 }): string {
   const { symbol, lower, middle, higher, result } = args;
   if (result.alignmentLabel === "INSUFFICIENT_DATA") {
@@ -335,8 +363,9 @@ export function summarizeAlignment(args: {
     return `${symbol}: not enough candles to analyse (candles received: ${counts}; ${MIN_CANDLES_FOR_TREND} needed per timeframe). No trend, alignment or bias is reported — the market data source returned too little history for this symbol.`;
   }
   if (result.alignmentLabel === "DATA_NOT_CURRENT") {
+    const offsets = [args.clockOffsetsMs?.lower, args.clockOffsetsMs?.middle, args.clockOffsetsMs?.higher];
     const tfLine = [lower, middle, higher]
-      .map((tf) => `${tf.timeframe} ${tf.snapshot.trend} (${tf.snapshot.strength}) as of ${tf.snapshot.newestBarTime ? utcStamp(tf.snapshot.newestBarTime) : "an unknown time"}`)
+      .map((tf, i) => `${tf.timeframe} ${tf.snapshot.trend} (${tf.snapshot.strength}) as of ${tf.snapshot.newestBarTime ? barStamp(tf.snapshot.newestBarTime, offsets[i]) : "an unknown time"}`)
       .join(", ");
     return `${symbol}: data is not current — ${tfLine}. ${result.conflictWarning ?? ""} No trend, alignment or bias is reported as current. Final execution remains gated by the live-execution safety layer.`;
   }
@@ -361,19 +390,22 @@ export function buildReport(args: {
   nowMs?: number;
   /** Provider that served each series, carried onto its snapshot. */
   sources?: { lower?: string | null; middle?: string | null; higher?: string | null };
+  /** Measured clock offset of each series' bar stamps (see SeriesClockOffsets). */
+  clockOffsetsMs?: SeriesClockOffsets;
 }) {
   const nowMs = args.nowMs ?? Date.now();
-  const snap = (tf: string, candles: CandleLike[], source: string | null | undefined): TimeframeReport => {
-    const f = assessTimeframeFreshness(tf, candles[candles.length - 1], nowMs);
+  const offsets = args.clockOffsetsMs;
+  const snap = (tf: string, candles: CandleLike[], source: string | null | undefined, offset: number | null | undefined): TimeframeReport => {
+    const f = assessTimeframeFreshness(tf, candles[candles.length - 1], nowMs, offset);
     return {
       timeframe: tf,
       snapshot: { ...detectTrend(candles), newestBarTime: f.newestBarTime, freshness: f.freshness, source: source ?? null },
     };
   };
-  const lower  = snap(args.lowerTimeframe,  args.lowerCandles,  args.sources?.lower);
-  const middle = snap(args.middleTimeframe, args.middleCandles, args.sources?.middle);
-  const higher = snap(args.higherTimeframe, args.higherCandles, args.sources?.higher);
-  const result = applyFreshness(lower, middle, higher, classifyAlignment(lower, middle, higher), nowMs);
-  const aiSummary = summarizeAlignment({ symbol: args.symbol, lower, middle, higher, result });
+  const lower  = snap(args.lowerTimeframe,  args.lowerCandles,  args.sources?.lower,  offsets?.lower);
+  const middle = snap(args.middleTimeframe, args.middleCandles, args.sources?.middle, offsets?.middle);
+  const higher = snap(args.higherTimeframe, args.higherCandles, args.sources?.higher, offsets?.higher);
+  const result = applyFreshness(lower, middle, higher, classifyAlignment(lower, middle, higher), nowMs, offsets);
+  const aiSummary = summarizeAlignment({ symbol: args.symbol, lower, middle, higher, result, clockOffsetsMs: offsets });
   return { lower, middle, higher, result, aiSummary };
 }

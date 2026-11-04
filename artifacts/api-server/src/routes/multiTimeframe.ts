@@ -6,7 +6,9 @@
 // GET  /api/multi-timeframe/history?symbol=...&limit=N — time-series.
 //
 // Defaults to (M5, H1, H4) but accepts custom triplet. Composes:
-//   - dataManager.getMarketData (existing candle source, mock-friendly)
+//   - dataManager.getMarketDataWithProvenance (existing candle source; bar
+//     times and the serving provider are kept so the report can say whether
+//     each timeframe is current and where it came from)
 //   - @workspace/domain/multi-timeframe (pure detector + classifier)
 //   - vault audit (BEHAVIOR truth domain) for traceability
 //
@@ -20,7 +22,9 @@ import { z } from "zod/v4";
 import {
   buildReport, ALIGNMENT_LABELS, type AlignmentLabel, type Bias,
 } from "@workspace/domain/multi-timeframe";
-import { getMarketData } from "../lib/data/dataManager.js";
+import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
+import { servedSeriesBrokerClockOffsetMs } from "../lib/data/providers/mt5Provider.js";
+import type { SeriesProvenance } from "../lib/data/types.js";
 
 const router = Router();
 
@@ -47,6 +51,12 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
   });
 }
 
+/** Provider label carried onto a timeframe snapshot ("mt5_broker", "assistant_real:twelve_data"). */
+export function provenanceLabel(p: SeriesProvenance | null): string | null {
+  if (!p) return null;
+  return p.subProviderId ? `${p.providerId}:${p.subProviderId}` : p.providerId;
+}
+
 function serialize(r: typeof multiTimeframeReportsTable.$inferSelect) {
   return { ...r, createdAt: r.createdAt.toISOString() };
 }
@@ -59,16 +69,36 @@ router.post("/multi-timeframe/generate", async (req, res): Promise<void> => {
     const higherTf = body.higherTimeframe ?? DEFAULT_TF_TRIPLET.higher;
     const limit    = body.candlesPerTimeframe ?? 120;
 
-    const [lowerCandles, middleCandles, higherCandles] = await Promise.all([
-      getMarketData(body.symbol, TF_TO_PROVIDER[lowerTf]  ?? lowerTf,  limit),
-      getMarketData(body.symbol, TF_TO_PROVIDER[middleTf] ?? middleTf, limit),
-      getMarketData(body.symbol, TF_TO_PROVIDER[higherTf] ?? higherTf, limit),
+    const [lowerSeries, middleSeries, higherSeries] = await Promise.all([
+      getMarketDataWithProvenance(body.symbol, TF_TO_PROVIDER[lowerTf]  ?? lowerTf,  limit),
+      getMarketDataWithProvenance(body.symbol, TF_TO_PROVIDER[middleTf] ?? middleTf, limit),
+      getMarketDataWithProvenance(body.symbol, TF_TO_PROVIDER[higherTf] ?? higherTf, limit),
     ]);
 
+    // Bar times and the serving provider travel with the bars: a report built
+    // from stale (weekend / stalled-feed) or untimestamped bars is
+    // DATA_NOT_CURRENT with no bias, never a confident current alignment.
     const built = buildReport({
       symbol: body.symbol,
       lowerTimeframe: lowerTf, middleTimeframe: middleTf, higherTimeframe: higherTf,
-      lowerCandles, middleCandles, higherCandles,
+      lowerCandles: lowerSeries.candles,
+      middleCandles: middleSeries.candles,
+      higherCandles: higherSeries.candles,
+      nowMs: Date.now(),
+      sources: {
+        lower: provenanceLabel(lowerSeries.provenance),
+        middle: provenanceLabel(middleSeries.provenance),
+        higher: provenanceLabel(higherSeries.provenance),
+      },
+      // Broker clock (audit H7): MT5 bars stay broker-stamped. A series with a
+      // measured broker-clock offset is aged on the UTC clock (bar time minus
+      // the offset); with none its stamps are compared as given (fail closed).
+      // Bar times are not rewritten.
+      clockOffsetsMs: {
+        lower: servedSeriesBrokerClockOffsetMs(lowerSeries.provenance),
+        middle: servedSeriesBrokerClockOffsetMs(middleSeries.provenance),
+        higher: servedSeriesBrokerClockOffsetMs(higherSeries.provenance),
+      },
     });
 
     const inserted = await db.insert(multiTimeframeReportsTable).values({

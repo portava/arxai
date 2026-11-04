@@ -162,6 +162,15 @@ router.get("/admin/operator-command-center", async (req, res) => {
       medium: recon.countsBySeverity?.medium ?? 0,
       low: recon.countsBySeverity?.low ?? 0,
       byType: recon.countsByType ?? {},
+      // False when a detector could not run: the counts above then cover
+      // only the checks that ran, and the unchecked types are unknown.
+      complete: recon.complete,
+      uncheckedTypes: recon.uncheckedTypes,
+      // True when a detector's list hit its row cap: the counts for these
+      // types/severities are "at least", not totals.
+      truncated: recon.truncated,
+      truncatedTypes: recon.truncatedTypes,
+      truncatedSeverities: recon.truncatedSeverities,
     };
 
     // Audit (one row per panel view).
