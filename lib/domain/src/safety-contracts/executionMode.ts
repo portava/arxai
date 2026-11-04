@@ -55,6 +55,33 @@ export const EXECUTION_PATHS_BUILT = BROKER_DISPATCH_BUILT;
  *  consumer. Lower versions are refused at dispatch with EA_VERSION_TOO_OLD. */
 export const EA_MIN_DEMO_VERSION = "1.26" as const;
 
+/** First demo EA build with a PLACE_PENDING_ORDER / CANCEL_PENDING_ORDER
+ *  handler (ReplitMT5BridgeEA_v132). v1.26–v1.31 answer both with
+ *  REJECTED_UNKNOWN_COMMAND_TYPE, so they are refused before dispatch. */
+export const EA_MIN_DEMO_PENDING_VERSION = "1.32" as const;
+
+/** Per-command EA minimum above EA_MIN_DEMO_VERSION. A command type not
+ *  listed needs only EA_MIN_DEMO_VERSION. */
+export const DEMO_COMMAND_MIN_EA_VERSION: Readonly<Partial<Record<DemoCommandType, string>>> = {
+  PLACE_PENDING_ORDER: EA_MIN_DEMO_PENDING_VERSION,
+  CANCEL_PENDING_ORDER: EA_MIN_DEMO_PENDING_VERSION,
+};
+
+export function minEaVersionForDemoCommand(commandType: string): string {
+  return DEMO_COMMAND_MIN_EA_VERSION[commandType as DemoCommandType] ?? EA_MIN_DEMO_VERSION;
+}
+
+/** null when the reported EA handles `commandType`, else the refusal code
+ *  `EA_VERSION_TOO_OLD_FOR_COMMAND:<type>:<reported><<minimum>`. */
+export function demoCommandEaVersionBlocker(
+  commandType: string,
+  reportedEaVersion: string | null | undefined,
+): string | null {
+  const minimum = minEaVersionForDemoCommand(commandType);
+  if (eaVersionAtLeast(reportedEaVersion, minimum)) return null;
+  return `EA_VERSION_TOO_OLD_FOR_COMMAND:${commandType}:${reportedEaVersion ?? "unknown"}<${minimum}`;
+}
+
 /** Pure semver-major.minor comparator. EA reports e.g. "1.26", "1.21".
  *  Returns true when `reported` parses as >= `minimum`. */
 export function eaVersionAtLeast(reported: string | null | undefined, minimum: string): boolean {
@@ -96,6 +123,13 @@ export type DemoCommandStatus =
   | "DEMO_APPROVED"
   | "SENT_TO_MT5_DEMO"
   | "FILLED_DEMO"
+  /** A pending order resting at the broker (PLACE_PENDING_ORDER, EA v1.32+).
+   *  Not a position: nothing reads it as open exposure until the order fills
+   *  (the EA position snapshot shows its ticket) and it becomes FILLED_DEMO. */
+  | "PLACED_DEMO"
+  /** CANCEL_PENDING_ORDER confirmed by the broker, and the PLACE_PENDING_ORDER
+   *  row whose order it removed. */
+  | "CANCELLED_DEMO"
   | "REJECTED"
   | "BLOCKED"
   | "FAILED";
@@ -106,6 +140,8 @@ export const DEMO_COMMAND_STATUSES: readonly DemoCommandStatus[] = [
   "DEMO_APPROVED",
   "SENT_TO_MT5_DEMO",
   "FILLED_DEMO",
+  "PLACED_DEMO",
+  "CANCELLED_DEMO",
   "REJECTED",
   "BLOCKED",
   "FAILED",
@@ -115,8 +151,12 @@ export const DEMO_COMMAND_TRANSITIONS: Readonly<Record<DemoCommandStatus, readon
   DRAFT: ["USER_CONFIRMATION_REQUIRED", "BLOCKED", "REJECTED"],
   USER_CONFIRMATION_REQUIRED: ["DEMO_APPROVED", "BLOCKED", "REJECTED"],
   DEMO_APPROVED: ["SENT_TO_MT5_DEMO", "BLOCKED", "FAILED"],
-  SENT_TO_MT5_DEMO: ["FILLED_DEMO", "REJECTED", "FAILED"],
+  SENT_TO_MT5_DEMO: ["FILLED_DEMO", "PLACED_DEMO", "CANCELLED_DEMO", "REJECTED", "FAILED"],
   FILLED_DEMO: [],
+  // A resting order fills (seen as a position), is cancelled, or is removed
+  // by the broker (expiry / rejection after placement).
+  PLACED_DEMO: ["FILLED_DEMO", "CANCELLED_DEMO", "FAILED"],
+  CANCELLED_DEMO: [],
   REJECTED: [],
   BLOCKED: [],
   FAILED: [],
@@ -127,6 +167,37 @@ export function isValidDemoCommandTransition(
   to: DemoCommandStatus,
 ): boolean {
   return (DEMO_COMMAND_TRANSITIONS[from] as readonly DemoCommandStatus[]).includes(to);
+}
+
+/** EA-reportable result statuses (POST /api/mt5/demo-command-result). */
+export const DEMO_BROKER_RESULT_STATUSES = ["FILLED_DEMO", "PLACED_DEMO", "CANCELLED_DEMO", "REJECTED", "FAILED"] as const;
+export type DemoBrokerResultStatus = (typeof DEMO_BROKER_RESULT_STATUSES)[number];
+
+/** The only result status each command type may be confirmed with. */
+export function demoResultStatusFitsCommand(commandType: string, status: DemoBrokerResultStatus): boolean {
+  if (status === "REJECTED" || status === "FAILED") return true;
+  if (commandType === "PLACE_PENDING_ORDER") return status === "PLACED_DEMO";
+  if (commandType === "CANCEL_PENDING_ORDER") return status === "CANCELLED_DEMO";
+  return status === "FILLED_DEMO";
+}
+
+/** Reason prefix written by the server's no-result expiry sweep. */
+export const DEMO_EXPIRED_NO_RESULT_PREFIX = "EXPIRED_DEMO_NO_EA_" as const;
+
+/**
+ * A broker success that arrives after the server's expiry sweep already
+ * FAILED the row. The EA may have executed just before the sweep: the fill is
+ * real and must be recorded (and flagged), never 409-orphaned. Only a row the
+ * sweep expired qualifies; any other terminal row stays immutable.
+ */
+export function isLateDemoResultAcceptable(
+  row: { status: string; reason: string | null | undefined },
+  reported: DemoBrokerResultStatus,
+): boolean {
+  return row.status === "FAILED"
+    && typeof row.reason === "string"
+    && row.reason.startsWith(DEMO_EXPIRED_NO_RESULT_PREFIX)
+    && (reported === "FILLED_DEMO" || reported === "PLACED_DEMO" || reported === "CANCELLED_DEMO");
 }
 
 export interface DemoVerificationDecision {
