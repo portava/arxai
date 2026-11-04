@@ -730,9 +730,25 @@ export async function getMyPerformanceSummary(userId: number, lookbackDays = 30)
  * for the signed-in user only. Reads paper_trades WHERE userId=userId AND
  * status='open'. Never reads another user's rows. Never invents prices.
  */
+// Open positions on the SAME book the Performance Calendar / getOpenPositions
+// tool use: the user's demo trades when that is their book, otherwise their
+// broker-recorded live positions (mode-scoped). Lots and side only.
+export async function openBookPositions(userId: number): Promise<{
+  basis: Awaited<ReturnType<typeof resolveLedgerBasis>>;
+  rows: Array<{ symbol: string | null; side: string | null; lotSize: number | null }>;
+}> {
+  const basis = await resolveLedgerBasis(userId);
+  if (basis.source === "paper_trades") {
+    const paper = await db.select().from(paperTradesTable)
+      .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "open")));
+    return { basis, rows: paper.map((r) => ({ symbol: r.symbol ?? null, side: r.side ?? null, lotSize: r.lotSize == null ? null : Number(r.lotSize) })) };
+  }
+  const live = await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", modeScope: { currentAccountMode: basis.currentAccountMode } });
+  return { basis, rows: live.map((p) => ({ symbol: p.symbol, side: p.side, lotSize: p.lots })) };
+}
+
 export async function getOpenExposure(userId: number) {
-  const rows = await db.select().from(paperTradesTable)
-    .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "open")));
+  const { basis, rows } = await openBookPositions(userId);
   const bySymbol = new Map<string, { symbol: string; longLots: number; shortLots: number; netLots: number; positions: number }>();
   let totalLongLots = 0, totalShortLots = 0;
   for (const r of rows) {
@@ -753,7 +769,8 @@ export async function getOpenExposure(userId: number) {
     netLots: totalLongLots - totalShortLots,
     bySymbol: Array.from(bySymbol.values()).sort((a, b) => b.positions - a.positions),
     isEmpty: rows.length === 0,
-    note: "Lot totals are paper-trade lot counts. Notional/USD exposure requires connected market data per symbol — call getMarketSnapshot per symbol to compute that honestly.",
+    ...ledgerLabel(basis),
+    note: `Lot totals are ${basis.source === "paper_trades" ? "your demo-trade" : "your broker-recorded live"} lot counts. Notional/USD exposure requires connected market data per symbol — call getMarketSnapshot per symbol to compute that honestly.`,
   };
 }
 
@@ -769,12 +786,12 @@ export async function getOpenExposure(userId: number) {
 export async function getRiskUtilization(userId: number) {
   const limitsRes = await getRiskLimits(userId);
   const limits = (limitsRes as { hasRiskSettings: boolean; limits?: Record<string, unknown> });
-  const openRes = await getOpenPositions(userId);
-  const openCount = Number(openRes.count ?? 0);
-  // Today's realized P&L (closed paper trades since 00:00 UTC)
+  // Same book as the Performance Calendar: demo trades or live trades.
+  const { basis, rows: openRows } = await openBookPositions(userId);
+  const openCount = openRows.length;
+  // Today's realized P&L (closed trades on that book since 00:00 UTC)
   const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
-  const closedToday = await db.select().from(paperTradesTable)
-    .where(and(eq(paperTradesTable.userId, userId), eq(paperTradesTable.status, "closed")));
+  const closedToday = (await resolveClosedTradeLedger(userId, { fromIso: dayStart.toISOString() })).rows;
   let todaysRealizedPnl = 0, todaysLoss = 0;
   for (const r of closedToday) {
     if (!r.closedAt || new Date(r.closedAt) < dayStart) continue;
@@ -785,6 +802,7 @@ export async function getRiskUtilization(userId: number) {
   if (!limits.hasRiskSettings) {
     return {
       hasRiskSettings: false,
+      ...ledgerLabel(basis),
       openTrades: openCount,
       todaysRealizedPnl,
       todaysLoss,
@@ -799,6 +817,7 @@ export async function getRiskUtilization(userId: number) {
   if (maxOpen && openCount >= maxOpen) blocking.push(`MAX_OPEN_TRADES_REACHED (${openCount}/${maxOpen})`);
   return {
     hasRiskSettings: true,
+    ...ledgerLabel(basis),
     openTrades: openCount,
     maxOpenTrades: maxOpen,
     openTradesUtilization: maxOpen ? Math.round((openCount / maxOpen) * 100) : null,
@@ -1700,15 +1719,15 @@ export async function getPropFirmModeStatus(userId: number) {
       note: hasData
         ? "Prop firm tracking is paper/simulator only. Numbers reflect simulated paper P&L, not a real funded account. Run /prop-challenges/:id/evaluate for the authoritative pass/fail and to persist day-bucket history."
         : evaluateWouldFail
-          ? `Prop firm challenge has no closed paper trades, but /evaluate would end it as FAILED now (${ev.failureReason ?? "a rule is breached"}). Prop firm tracking is paper/simulator only.`
-          : "Prop firm challenge is configured but has no closed paper trades yet — INSUFFICIENT_DATA. Take some paper trades to start tracking rule progress.",
+          ? `Prop firm challenge has no closed demo trades, but /evaluate would end it as FAILED now (${ev.failureReason ?? "a rule is breached"}). Prop firm tracking is simulator only (demo trades), never a funded account.`
+          : "Prop firm challenge is configured but has no closed demo trades yet — INSUFFICIENT_DATA. Log some demo trades on My Demo Trades to start tracking rule progress.",
       honestyDisclaimer: "Prop firm tracking is paper/simulator only. We do not claim to be connected to any real prop firm or funded account. Rules shown are user-entered; not official prop firm rules unless explicitly verified.",
       dataSource: "USER_PROP_CHALLENGE",
       perUserScoped: true as const,
     };
   } catch {
     // Tool/DB outage. MUST NOT collide with INSUFFICIENT_DATA (which the
-    // prompt routes to "no closed paper trades yet"). Use UNAVAILABLE so
+    // prompt routes to "no closed demo trades yet"). Use UNAVAILABLE so
     // the assistant says the status is unavailable, not that the user
     // has no trades.
     return {
@@ -2028,7 +2047,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getDailyPnLCalendar", description: "Returns the user's daily P&L for the last N days. Reads the SAME book as the Performance Calendar: closed live trades when the account is in LIVE mode, otherwise the demo trades the user logs on My Demo Trades (source paper_trades — call them demo trades, never paper trading), and nothing (withheld) for a shared-master live account. ALWAYS read `source` (live_trades | paper_trades | withheld_live_shared) and say which book the numbers come from; when withheld, repeat sourceNote and use getMyAccountShell / getMyLiveOpenTrades instead.", parameters: { type: "object", properties: { days: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
   { name: "getMyPerformanceSummary", description: "Phase 25 — Per-user trade journal + performance summary. ONE call answers: 'how am I performing', 'what trades did I take today', 'biggest mistake', 'best/worst strategy', 'which trade hurt me most', 'am I overtrading', 'what should I review', 'lessons from closed trades'. Per-user-scoped on the closed-trade book + trade_journal. Reads the SAME book as the Performance Calendar: closed live trades when the account is in LIVE mode, otherwise the demo trades the user logs on My Demo Trades (source paper_trades — call them demo trades, never paper trading), and nothing (withheld) for a shared-master live account. ALWAYS read `source` (live_trades | paper_trades | withheld_live_shared) and say which book the numbers come from; when withheld, repeat sourceNote and use getMyAccountShell / getMyLiveOpenTrades instead. Returns isEmpty:true with an honest emptyMessage when there is no data — NEVER fabricates win rate, P&L, strategy ranking, mistakes, or lessons. Win rate is computed ONLY from closed trades. Unrealized P&L on open trades is intentionally excluded (requires fresh price data — call getMyLiveOpenTrades + getTradeIntelligence per trade for that). Profit factor is null when there is not at least one win and one loss. Overtrading hint is null when there is not enough trading-day history to judge.", parameters: { type: "object", properties: { lookbackDays: { type: "integer", minimum: 1, maximum: 365, default: 30 } }, additionalProperties: false } },
   { name: "getRiskLimits", description: "Returns the user's own saved risk settings (limits, hasRiskSettings) AND effectiveLimits — what the Risk Governor actually applies (own settings + operator limits + platform ceilings, strictest wins) with effectiveLimitSources. Answer 'what are my limits' from effectiveLimits.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getOpenExposure", description: "Phase 26 — Portfolio awareness. Returns the user's total open exposure broken down by symbol and side (long lots / short lots / net lots / positions count). Paper-trade lot totals only. Per-user-scoped — never returns another user's positions. Use for 'am I overexposed', 'what symbols do I have open', 'how much am I trading right now', 'what's my net exposure on EURUSD'. To convert lots → USD notional honestly, call getMarketSnapshot per symbol; never fabricate a notional number.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getOpenExposure", description: "Phase 26 — Portfolio awareness. Returns the user's total open exposure broken down by symbol and side (long lots / short lots / net lots / positions count). Lot totals on the same book as the Performance Calendar (demo trades, or broker-recorded live positions for a live account; read `source`). Per-user-scoped — never returns another user's positions. Use for 'am I overexposed', 'what symbols do I have open', 'how much am I trading right now', 'what's my net exposure on EURUSD'. To convert lots → USD notional honestly, call getMarketSnapshot per symbol; never fabricate a notional number.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRiskUtilization", description: "Phase 26 — Portfolio awareness. Reports how much of the user's configured risk envelope is currently used: open trades vs maxOpenTrades, today's realized loss, and which limits are at/over threshold. Returns hasRiskSettings:false when the user has none — never invents defaults. Per-user-scoped. Use for 'how much risk am I taking', 'am I close to my daily loss limit', 'should I reduce risk', 'how many open trades can I still take', 'am I at my limit'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED — a connection label only, NOT the account's live permission; repeat bridge.modeNote rather than calling the account read-only), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. For whether live orders can be placed, read placementLayer (LIVE_DISPATCH_GATED = live orders are possible for this account but every one still needs the user's confirmation and every live gate; LIVE_LOCKED_FOR_ACCOUNT = live orders are not available) and repeat placementLayerNote — never claim live execution is on or off beyond what it says. Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "runPreTradeRiskCheck", description: "Advisory preview: runs the real pre-trade Risk Governor (your limits, operator limits, platform ceilings, open positions, daily P/L, halts) for this trade on your current venue, without placing or recording anything. Returns wouldPass, blockingReasons, blockedRules[].reason and primaryReason. If limitsEvaluated is false (wouldPass null), the governor could not run — say the limits were NOT checked, never that it would pass. Live dispatch gates and the price at send time are re-checked when an order is sent, so present it as a preview, not a guarantee.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },

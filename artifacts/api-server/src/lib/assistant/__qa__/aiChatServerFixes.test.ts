@@ -56,6 +56,14 @@ mock.module("../../riskGovernor/limitSettings.js", { namedExports: {
 const realName = await import("../assistantName.js");
 mock.module("../assistantName.js", { namedExports: { ...realName, getAssistantDisplayName: async () => "Ruby" } });
 
+let livePositions: Array<Record<string, unknown>> = [];
+let openPositionCalls: Array<Record<string, unknown>> = [];
+const realOpen = await import("../../positions/openPositions.js");
+mock.module("../../positions/openPositions.js", { namedExports: {
+  ...realOpen,
+  readOpenPositions: async (opts: Record<string, unknown>) => { openPositionCalls.push(opts); return livePositions; },
+} });
+
 const { parseTradeCommand } = await import("../parseTradeCommand.js");
 const { parseEntryProtection } = await import("../rubyWatchEvaluator.js");
 const { resolveAssistantToolChoice } = await import("../chartReadRouting.js");
@@ -275,4 +283,32 @@ test("copy: the performance empty-state and routing say demo trades, not paper t
   assert.match(p, /Log a demo trade on My Demo Trades/);
   const d = tools.TOOL_DEFINITIONS.find((t) => t.name === "getOpenPositions")!;
   assert.doesNotMatch(d.description, /paper trades/);
+});
+
+// ── Follow-up (2026-11-04): exposure + risk utilization use the same book ─────
+test("exposure and risk utilization for a live account read broker-recorded live positions, not demo trades", async () => {
+  basis = { source: "live_trades", sourceNote: "From your closed live trades recorded against your account.", currentAccountMode: "LIVE_SHARED" };
+  livePositions = [
+    { id: 1, userId: 7, symbol: "EURUSD", side: "BUY", lots: 0.3, entryPrice: 1.1, stopLoss: null, takeProfit: null, currentPrice: null, floatingPnl: null, openedAt: null, recordedAt: new Date(), observedAt: null },
+    { id: 2, userId: 7, symbol: "EURUSD", side: "SELL", lots: 0.1, entryPrice: 1.1, stopLoss: null, takeProfit: null, currentPrice: null, floatingPnl: null, openedAt: null, recordedAt: new Date(), observedAt: null },
+  ];
+  openPositionCalls = [];
+  ledgerRows = [{ id: 3, symbol: "EURUSD", side: "BUY", pnl: -4, closedAt: new Date(), strategyTag: null }];
+  const exp = await tools.getOpenExposure(7) as Record<string, unknown>;
+  assert.equal(exp.source, "live_trades");
+  assert.equal(exp.openPositionsCount, 2);
+  assert.equal(Number((exp.netLots as number).toFixed(2)), 0.2);
+  assert.match(String(exp.note), /live/);
+  assert.equal(openPositionCalls[0]!.venue, "LIVE");
+  assert.deepEqual(openPositionCalls[0]!.modeScope, { currentAccountMode: "LIVE_SHARED" });
+  const util = await tools.getRiskUtilization(7) as Record<string, unknown>;
+  assert.equal(util.source, "live_trades");
+  assert.equal(util.openTrades, 2);
+  assert.equal(util.todaysLoss, 4);
+});
+
+test("prop-firm copy speaks of demo trades, not paper trades", () => {
+  const src = readFileSync(`${here}../tools.ts`, "utf8");
+  assert.doesNotMatch(src, /no closed paper trades|Take some paper trades/);
+  assert.match(buildArxAssistantSystemPrompt("Ruby"), /no closed demo trades yet/);
 });

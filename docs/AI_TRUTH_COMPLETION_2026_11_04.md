@@ -54,9 +54,14 @@ Nothing here re-opens the settled T1/T2/T4 decisions or the #108 audit fixes.
 | AC9, AC11–13 | One voice preference; corrected empty-state copy; 429 shows retry time; demo-trade wording. |
 | AC10, AC14 | AC10 resolved server-side (AICS-8); AC14 already fixed on PR #111. |
 
-## Not done / for the owner
-- PR #111 (MT5 order controls + Ruby fakeout SL/TP authority) is not in this stack (#112 is based on #110). The fakeout authority was not re-swept here.
-- Remaining paper-trade wording: prop-firm copy in `tools.ts` (~1700), `systemPrompt.ts` (~471), `evaluatePaperTradePlan` description.
+## Follow-up (owner: "fix all findings", 2026-11-04 19:14Z)
+- `getOpenExposure` and `getRiskUtilization` used the demo-trade table for everyone; they now read the same book as the Performance Calendar (broker-recorded live positions for live accounts, mode-scoped) and label it.
+- Prop-firm copy in the tools and prompt says demo trades, not paper trades.
+- AC14 applied here too: the watches strip uses the user's assistant name (same change as on PR #111).
+
+## Not in this PR
+- PR #111 (MT5 order controls + Ruby fakeout SL/TP authority) is not in this stack (#112 is based on #110).
+- Internal identifiers (`paper_trades`, `evaluatePaperTradePlan`) keep their names; only user-facing wording changed.
 - Voice replies now start after one transcription (the user's words are shown first).
 
 ## Tests
