@@ -9,6 +9,7 @@
   --arx-shell-muted: #acbfce;
   --arx-shell-cyan: #23eff1;
 }
+:root:has(.arx-shell-frame) { scroll-padding-block: 80px; }
 
 .arx-shell-frame {
   position: relative;
@@ -32,8 +33,11 @@
 .arx-shell-frame[data-variant="cockpit"] .arx-shell-main-column {
   height: 100dvh;
   min-height: 0;
-  overflow: hidden;
+  /* Keep tall headers/notices reachable when zoom or text consumes the height. */
+  overflow-y: auto;
+  scroll-padding-block: 80px;
 }
+.arx-shell-frame[data-variant="cockpit"] :is(.arx-shell-header, .arx-shell-safety-notice) { flex-shrink: 0; }
 .arx-shell-frame[data-variant="cockpit"] .arx-shell-content { min-height: 0; overflow: hidden; }
 
 .arx-shell-frame *,
@@ -333,6 +337,7 @@
 .arx-shell-layout-choice legend { margin-bottom: 5px; color: #91a9b8; font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .arx-shell-layout-choice > div { display: flex; gap: 5px; }
 .arx-shell-layout-choice button {
+  min-width: 0;
   min-height: 32px;
   flex: 1;
   border: 1px solid rgba(40,71,90,.9);
@@ -341,6 +346,7 @@
   padding: 0 8px;
   color: #b7c8d3;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .arx-shell-layout-choice button[aria-pressed="true"] { border-color: rgba(35,239,241,.45); background: rgba(35,239,241,.1); color: var(--arx-shell-cyan); }
 .arx-shell-layout-choice button:focus-visible,
@@ -402,6 +408,8 @@
 .arx-shell-mobile-tray { display: none; }
 
 @media (max-width: 767px) {
+  :root:has(.arx-shell-mobile-tray) { scroll-padding-block: 90px; }
+  .arx-shell-frame :is(button, a, select, summary) { scroll-margin-block: 90px; }
   .arx-shell-frame {
     display: block;
     min-height: 100dvh;
@@ -487,6 +495,12 @@
   }
   .arx-shell-mobile-tray > .arx-shell-mobile-emergency { display: none; }
   .arx-shell-tray-tools { color: var(--arx-shell-cyan); }
+}
+
+/* A sticky header taller than the available screen traps its lower controls.
+   Preserve normal-height docking while letting short/zoomed screens scroll. */
+@media (max-height: 600px) {
+  .arx-shell-header { position: relative; }
 }
 
 @media (prefers-reduced-motion: reduce) {

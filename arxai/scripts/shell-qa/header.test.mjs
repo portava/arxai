@@ -12,6 +12,19 @@ import { buildFixture } from "./build.mjs";
 const workspace = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const widths = [390, 900, 1100, 1366];
 const locales = ["de", "ar", "he"];
+const zoomExtension = fileURLToPath(new URL("./zoom-extension", import.meta.url));
+const keyboardEvidence = new WeakMap();
+const scenarios = [
+  ...widths.map(width => ({ id: `baseline-${width}`, width, height: 900, zoom: 1, text: 100 })),
+  { id: "short-desktop", width: 1100, height: 480, zoom: 1, text: 100 },
+  { id: "short-phone", width: 390, height: 480, zoom: 1, text: 100 },
+  { id: "zoom-200-desktop", width: 1800, height: 900, zoom: 2, text: 100 },
+  { id: "zoom-200-short", width: 1800, height: 640, zoom: 2, text: 100 },
+  { id: "zoom-200-reflow", width: 1100, height: 640, zoom: 2, text: 100 },
+  { id: "text-200-desktop", width: 1100, height: 480, zoom: 1, text: 200 },
+  { id: "text-200-phone", width: 390, height: 480, zoom: 1, text: 200 },
+  { id: "zoom-and-text-200", width: 1800, height: 640, zoom: 2, text: 200 },
+];
 
 function chromiumExecutable() {
   const explicit = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
@@ -62,7 +75,7 @@ async function restrictTraffic(context, origin, files, blocked) {
   await context.routeWebSocket(/.*/, socket => { blocked.push({ method: "WS", url: socket.url() }); socket.close(); });
 }
 
-async function assertGeometry(page, observations) {
+async function settle(page) {
   // A visible Radix sheet may still be entering from outside the viewport.
   // Measure its settled geometry, without disabling production animations.
   await page.evaluate(async () => {
@@ -71,6 +84,20 @@ async function assertGeometry(page, observations) {
       .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
       .map(animation => animation.finished.catch(() => {})));
   });
+}
+
+async function assertRequiredContent(page) {
+  for (const selector of [".arx-shell-heading h1", "[data-fixture-notice]", "[data-fixture-action=emergency]", "[data-fixture-action=review]", ".arx-shell-signout", ".arx-shell-layout-menu summary"]) {
+    const elements = await page.locator(selector).all();
+    assert.ok(elements.length > 0, `Required shell content must exist: ${selector}`);
+    for (const element of elements) {
+      assert.ok(await element.isVisible(), `Required shell content must not be hidden: ${selector}`);
+    }
+  }
+}
+
+async function assertGeometry(page, observations, zoom = 1) {
+  await settle(page);
   const geometry = await page.evaluate(() => {
     const shown = el => el.checkVisibility({ checkVisibilityCSS: true });
     const box = el => {
@@ -84,34 +111,61 @@ async function assertGeometry(page, observations) {
       // content box. Descendants are still checked against their dialog itself.
       let ancestor = getComputedStyle(el).position === "fixed" ? null : el.parentElement;
       const failures = [];
+      let scrollReachableY = false;
       while (ancestor) {
         const style = getComputedStyle(ancestor), a = ancestor.getBoundingClientRect();
         if (/(hidden|clip)/.test(style.overflowX) && (r.left < a.left - 1 || r.right > a.right + 1)) failures.push(ancestor.className);
-        if (/(hidden|clip)/.test(style.overflowY) && (r.top < a.top - 1 || r.bottom > a.bottom + 1)) failures.push(ancestor.className);
+        if (!scrollReachableY && /(hidden|clip)/.test(style.overflowY) && (r.top < a.top - 1 || r.bottom > a.bottom + 1)) failures.push(ancestor.className);
+        // A bounded scrollport inside a clipped Cockpit is reachable, not hidden
+        // content. The Tab/hit-test probe separately proves controls scroll in.
+        if (/(auto|scroll)/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight) scrollReachableY = true;
         if (style.position === "fixed") break;
         ancestor = ancestor.parentElement;
       }
       return failures.length ? [{ text: el.textContent, ancestors: failures }] : [];
     });
     return {
-      width: innerWidth, scale: visualViewport.scale, dpr: devicePixelRatio,
+      width: innerWidth, height: innerHeight, scale: visualViewport.scale, dpr: devicePixelRatio,
       scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth,
+      scrollHeight: document.documentElement.scrollHeight, clientHeight: document.documentElement.clientHeight,
+      cockpit: document.querySelector(".arx-shell-frame")?.dataset.variant === "cockpit",
       elements: elements.map(el => ({ name: el.getAttribute("aria-label") || el.textContent.slice(0, 100), ...box(el) })),
       contentWidths: [...document.querySelectorAll(".arx-shell-heading h1, [data-fixture-notice], .arx-shell-header-actions, .arx-shell-actions-main, .arx-shell-cockpit-controls, .arx-shell-status-strip")]
-        .filter(shown).map(el => ({ name: el.className || el.textContent.slice(0, 60), scroll: el.scrollWidth, client: el.clientWidth })),
+        .filter(shown).map(el => ({ name: el.className || el.textContent.slice(0, 60), scroll: el.scrollWidth, client: el.clientWidth,
+          scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, overflowY: getComputedStyle(el).overflowY })),
       clipped,
+      enlargedText: [...document.querySelectorAll("h1, [data-fixture-notice], .arx-shell-layout-popover button, [role=dialog] button, [role=dialog] h2")]
+        .filter(shown).map(el => ({
+          name: el.textContent,
+          baseline: Number(el.dataset.fixtureBaseFont),
+          computed: parseFloat(getComputedStyle(el).fontSize),
+        })),
     };
   });
   observations?.push(geometry);
-  assert.equal(geometry.scale, 1, "Browser must be at 100% zoom");
-  assert.equal(geometry.dpr, 1, "Use deterministic 1× device scale");
+  assert.equal(geometry.scale, 1, "Page zoom must not be substituted with pinch zoom");
+  assert.equal(geometry.dpr, zoom, "Real browser zoom must change CSS pixel density");
   assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, `Document overflow: ${JSON.stringify(geometry)}`);
+  if (geometry.cockpit && geometry.width >= 768) {
+    assert.ok(geometry.scrollHeight <= geometry.clientHeight + 1, "Desktop Cockpit must scroll internally, not overflow the document");
+  }
   assert.deepEqual(geometry.clipped, [], "Clipping must not conceal overflow");
   for (const content of geometry.contentWidths) {
     assert.ok(content.scroll <= content.client + 1, `Hidden horizontal content overflow: ${JSON.stringify(content)}`);
+    if (/(hidden|clip)/.test(content.overflowY)) {
+      assert.ok(content.scrollHeight <= content.clientHeight + 1, `Hidden vertical text overflow: ${JSON.stringify(content)}`);
+    }
   }
   for (const el of geometry.elements) {
     assert.ok(el.x >= -1 && el.right <= geometry.width + 1 && el.width > 0, `Off-screen element: ${JSON.stringify(el)}`);
+  }
+  if (new URL(page.url()).searchParams.get("text") === "200") {
+    const initial = new Map(observations?.[0]?.enlargedText.map(el => [el.name, el.baseline]));
+    for (const el of geometry.enlargedText) {
+      assert.ok(el.baseline > 0 && Math.abs(el.computed - el.baseline * 2) < 0.01,
+        `Text must genuinely double, including portals: ${JSON.stringify(el)}`);
+      if (initial.has(el.name)) assert.equal(el.baseline, initial.get(el.name), "Text baseline must not compound after interactions");
+    }
   }
   return geometry;
 }
@@ -194,7 +248,8 @@ async function assertDirection(page, locale, observations) {
   }
 }
 
-async function keyboardReachability(page, selector = ".arx-shell-frame button, .arx-shell-frame a, .arx-shell-frame select, .arx-shell-frame summary") {
+async function keyboardReachability(page, selector = ".arx-shell-frame button, .arx-shell-frame a, .arx-shell-frame select, .arx-shell-frame summary", activateLabel) {
+  await settle(page);
   await page.locator("[data-keyboard-probe]").evaluateAll(elements => elements.forEach(el => delete el.dataset.keyboardProbe));
   const expected = await page.locator(selector).evaluateAll(elements => {
     // Radix initially autofocuses Close. Capture an actually unfocused style,
@@ -209,8 +264,14 @@ async function keyboardReachability(page, selector = ".arx-shell-frame button, .
   });
   const reached = new Set();
   const receipts = [];
+  assert.ok(expected.length > 0, `Keyboard probe must include controls: ${selector}`);
+  const attempts = keyboardEvidence.get(page) ?? [];
+  keyboardEvidence.set(page, attempts);
+  attempts.push({ selector, activateLabel, expected, receipts });
+  // A scoped popover probe may start elsewhere in the document's Tab order.
+  const tabBudget = await page.locator("button, a, select, summary, input, [tabindex]").count() * 2 + 6;
   // Fresh navigation starts with no focused controls; do not use locator.focus().
-  for (let step = 0; step < expected.length + 3 && reached.size < expected.length; step++) {
+  for (let step = 0; step < tabBudget && (activateLabel || reached.size < expected.length); step++) {
     await page.keyboard.press("Tab");
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const focused = await page.evaluate(() => {
@@ -225,24 +286,33 @@ async function keyboardReachability(page, selector = ".arx-shell-frame button, .
         ),
         inside: r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0 && r.bottom <= innerHeight + 1,
         unobscured: !!hit && (hit === el || el.contains(hit)),
+        bounds: { x: r.x, y: r.y, width: r.width, height: r.height },
+        hit: hit?.getAttribute("aria-label") || hit?.className,
+        scroll: { x: scrollX, y: scrollY },
       };
     });
+    receipts.push(focused);
     if (focused.id !== undefined) {
       assert.ok(focused.visibleFocus && focused.inside && focused.unobscured, `Keyboard control not visibly reachable: ${JSON.stringify(focused)}`);
-      reached.add(focused.id); receipts.push(focused);
+      reached.add(focused.id);
+      if (focused.label === activateLabel) {
+        await page.keyboard.press("Enter");
+        return receipts;
+      }
     }
   }
   assert.deepEqual([...reached].sort(), [...expected].sort(), "Every visible shell control must be reachable by Tab");
   // A modal may start from Close; compare the complete cyclic DOM order rather
   // than assuming the initial focus position. RTL must not reverse Tab order.
-  const actual = receipts.map(receipt => receipt.id);
+  const actual = receipts.filter(receipt => receipt.id !== undefined).map(receipt => receipt.id);
   const start = expected.indexOf(actual[0]);
   assert.deepEqual(actual, [...expected.slice(start), ...expected.slice(0, start)],
     "Tab must visit visible controls in DOM order without skips or repeats");
+  assert.ok(!activateLabel, `Keyboard activation target not reached: ${activateLabel}`);
   return receipts;
 }
 
-test("shared shell long-content and RTL browser regression", { timeout: 480_000 }, async t => {
+test("shared shell long-content, enlargement and RTL browser regression", { timeout: 720_000 }, async t => {
   const parent = path.join(workspace, "generated-artifacts/shell-header");
   await mkdir(parent, { recursive: true });
   const evidence = await mkdtemp(path.join(parent, "run-"));
@@ -280,60 +350,127 @@ test("shared shell long-content and RTL browser regression", { timeout: 480_000 
     } finally { await context.close(); }
   });
 
+  await t.test("probes reject hidden controls, clipped Cockpit content and obscured keyboard focus", async () => {
+    const context = await browser.newContext({ viewport: { width: 1100, height: 320 }, serviceWorkers: "block", reducedMotion: "reduce" });
+    const blocked = [], observations = [];
+    const page = await context.newPage();
+    try {
+      await restrictTraffic(context, origin, files, blocked);
+      await page.goto(`${origin}/?variant=cockpit`);
+      await page.getByRole("heading", { level: 1 }).waitFor();
+      await assertRequiredContent(page);
+      await assertGeometry(page, observations);
+      const hide = await page.addStyleTag({ content: ".arx-shell-signout { display: none !important; }" });
+      await assert.rejects(() => assertRequiredContent(page), /must not be hidden/);
+      await hide.evaluate(el => el.remove());
+      const clip = await page.addStyleTag({ content: ".arx-shell-main-column { height: 80px !important; overflow: hidden !important; }" });
+      await assert.rejects(() => assertGeometry(page, observations), /Clipping must not conceal overflow/);
+      await clip.evaluate(el => el.remove());
+      await page.evaluate(() => {
+        const cover = document.createElement("div");
+        cover.style.cssText = "position:fixed;inset:0;z-index:99999;background:black";
+        document.body.append(cover);
+      });
+      await assert.rejects(() => keyboardReachability(page), /not visibly reachable/);
+      assert.deepEqual(blocked, []);
+    } finally {
+      await writeFile(path.join(evidence, "negative-probes.json"), JSON.stringify({ observations, keyboard: keyboardEvidence.get(page), blocked }, null, 2));
+      await context.close();
+    }
+  });
+
   const results = [];
-  for (const locale of locales) for (const width of widths) for (const variant of ["page", "cockpit"]) for (const dock of ["expanded", "compact"]) {
-    const name = `${locale}-${variant}-${dock}-${width}`;
+  for (const scenario of scenarios) for (const locale of scenario.id.startsWith("baseline") ? locales : ["de"]) for (const variant of ["page", "cockpit"]) for (const dock of ["expanded", "compact"]) {
+    const { width, height, zoom, text } = scenario;
+    const checkDirection = scenario.id.startsWith("baseline");
+    const name = `${locale}-${variant}-${dock}-${scenario.id}`;
     await t.test(name, async () => {
-      const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, serviceWorkers: "block", reducedMotion: "reduce" });
+      // Chromium's actual per-tab zoom API, not CSS zoom, deviceScaleFactor,
+      // a smaller viewport alone, or CDP's pinch-only pageScaleFactor.
+      const context = zoom === 1
+        ? await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, serviceWorkers: "block", reducedMotion: "reduce" })
+        : await chromium.launchPersistentContext("", {
+          headless: true, executablePath: chromiumExecutable(),
+          viewport: { width, height }, deviceScaleFactor: 1, reducedMotion: "reduce", serviceWorkers: "block",
+          args: [`--disable-extensions-except=${zoomExtension}`, `--load-extension=${zoomExtension}`],
+        });
       const blocked = [], errors = [];
       const page = await context.newPage();
-      const receipt = { locale, width, variant, dock, observations: [], direction: [] };
+      page.setDefaultTimeout(5_000);
+      const receipt = { locale, width, variant, dock, scenario, stage: "navigation", observations: [], direction: [] };
       try {
         await restrictTraffic(context, origin, files, blocked);
         page.on("pageerror", error => errors.push(error.message));
-        await page.goto(`${origin}/?variant=${variant}&dock=${dock}&count=999&locale=${locale}`);
+        await page.goto(`${origin}/?variant=${variant}&dock=${dock}&count=999&text=${text}&locale=${locale}`);
         await page.getByRole("heading", { level: 1 }).waitFor();
         await page.evaluate(() => document.fonts.ready);
+        if (zoom !== 1) {
+          const worker = context.serviceWorkers()[0] ?? await context.waitForEvent("serviceworker");
+          receipt.browserZoom = await worker.evaluate(async ({ origin, zoom }) => {
+            const tabs = await chrome.tabs.query({});
+            const tab = tabs.find(tab => tab.url?.startsWith(origin));
+            if (!tab) throw new Error("Fixture tab unavailable for browser zoom");
+            await chrome.tabs.setZoom(tab.id, zoom);
+            return chrome.tabs.getZoom(tab.id);
+          }, { origin, zoom });
+          assert.equal(receipt.browserZoom, zoom);
+          await page.waitForFunction(({ width, height, zoom }) =>
+            devicePixelRatio === zoom && Math.abs(innerWidth - width / zoom) <= 1 &&
+            Math.abs(innerHeight - height / zoom) <= 1, { width, height, zoom });
+          // Initialize text enlargement at the effective zoomed viewport.
+          await page.reload();
+          await page.getByRole("heading", { level: 1 }).waitFor();
+        }
+        const effectiveWidth = await page.evaluate(() => innerWidth);
         assert.equal(await page.locator("[data-fixture-notice]").count(), 3);
         assert.equal(await page.getByTestId("badge-alert-unread-count").textContent(), "9+");
-        await assertGeometry(page, receipt.observations);
-        await assertDirection(page, locale, receipt.direction);
+        await assertRequiredContent(page);
+        receipt.stage = "shell geometry and Tab order";
+        await assertGeometry(page, receipt.observations, zoom);
+        if (checkDirection) await assertDirection(page, locale, receipt.direction);
         receipt.keyboard = await keyboardReachability(page);
         await page.screenshot({ path: path.join(evidence, `${name}-keyboard-focus.png`) });
+        receipt.stage = "keyboard safety actions";
         await page.getByLabel("Fixture account", { exact: true }).selectOption({ index: 1 });
         assert.equal(await page.getByTestId("fixture-action").textContent(), "account");
         for (const action of ["emergency", "review"]) {
-          await page.locator(`[data-fixture-action=${action}]`).click();
+          const label = await page.locator(`[data-fixture-action=${action}]`).textContent();
+          await keyboardReachability(page, undefined, label);
           assert.equal(await page.getByTestId("fixture-action").textContent(), action);
         }
-        await page.getByRole("button", { name: "Sign out", exact: true }).click();
+        await keyboardReachability(page, undefined, "Sign out");
         assert.equal(await page.getByTestId("fixture-action").textContent(), "signout");
-        await page.getByLabel("Open layout menu", { exact: true }).click();
-        await assertGeometry(page, receipt.observations);
-        await assertDirection(page, locale, receipt.direction);
+        receipt.stage = "layout";
+        await keyboardReachability(page, undefined, "Open layout menu");
+        await assertGeometry(page, receipt.observations, zoom);
+        if (checkDirection) await assertDirection(page, locale, receipt.direction);
         await page.screenshot({ path: path.join(evidence, `${name}-layout.png`) });
         receipt.layoutKeyboard = await keyboardReachability(page, ".arx-shell-layout-popover button");
-        await page.getByRole("button", { name: dock === "expanded" ? "Compact" : "Expanded", exact: true }).click();
-        await page.getByLabel("Open layout menu", { exact: true }).click();
-        await page.getByTestId(width < 768 ? "button-shell-tray-tools" : "button-shell-all-tools").click();
+        await keyboardReachability(page, ".arx-shell-layout-popover button", dock === "expanded" ? "Compact" : "Expanded");
+        await keyboardReachability(page, undefined, "Open layout menu");
+        await keyboardReachability(page, undefined, "Open all tools");
+        receipt.stage = "tools sheet";
         await page.getByRole("dialog").waitFor();
-        await assertGeometry(page, receipt.observations);
-        await assertDirection(page, locale, receipt.direction);
+        await assertGeometry(page, receipt.observations, zoom);
+        if (checkDirection) await assertDirection(page, locale, receipt.direction);
         receipt.toolsKeyboard = await keyboardReachability(page, "[role=dialog] button");
         await page.screenshot({ path: path.join(evidence, `${name}-tools-focus.png`) });
-        await page.getByRole("button", { name: "Fixture risk information" }).click();
+        await keyboardReachability(page, "[role=dialog] button", "Fixture risk information");
         assert.equal(await page.getByTestId("fixture-action").textContent(), "tools");
-        if (width < 768) {
-          await page.getByLabel("Open mobile tools", { exact: true }).click();
+        await page.getByRole("dialog").waitFor({ state: "hidden" });
+        if (effectiveWidth < 768) {
+          receipt.stage = "mobile tools sheet";
+          await keyboardReachability(page, undefined, "Open mobile tools");
           await page.getByRole("dialog").waitFor();
-          await assertGeometry(page, receipt.observations);
-          await assertDirection(page, locale, receipt.direction);
+          await assertGeometry(page, receipt.observations, zoom);
+          if (checkDirection) await assertDirection(page, locale, receipt.direction);
           receipt.mobileKeyboard = await keyboardReachability(page, "[role=dialog] button, [role=dialog] a");
           await page.screenshot({ path: path.join(evidence, `${name}-mobile-focus.png`) });
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "hidden" });
         }
         await page.getByTestId("button-notification-bell").click();
+        receipt.stage = "alerts";
         await page.getByRole("button", { name: "Close fixture alerts" }).click();
         assert.deepEqual(blocked, [], "The normal fixture must attempt no external/API/mutating traffic");
         assert.deepEqual(errors, [], "No browser runtime errors");
@@ -342,7 +479,13 @@ test("shared shell long-content and RTL browser regression", { timeout: 480_000 
         results.push({ name, status: "failed", error: error.stack });
         throw error;
       } finally {
-        await page.screenshot({ path: path.join(evidence, `${name}.png`), fullPage: true });
+        receipt.keyboardAttempts = keyboardEvidence.get(page);
+        receipt.capture = await page.evaluate(() => ({
+          width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight,
+        }));
+        // An overflow bug must not exhaust Chromium while recording failure.
+        const fullPage = receipt.capture.width <= 6000 && receipt.capture.height <= 6000;
+        await page.screenshot({ path: path.join(evidence, `${name}.png`), fullPage });
         await writeFile(path.join(evidence, `${name}.json`), JSON.stringify({ receipt, blocked, errors }, null, 2));
         await writeFile(path.join(evidence, `${name}.html`), await page.content());
         await writeFile(path.join(evidence, "results.json"), JSON.stringify(results, null, 2));

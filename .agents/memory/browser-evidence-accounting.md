@@ -104,6 +104,31 @@ full-precision exported ledger, never from rounded table text or a tolerance.
 Keep incidental assistant bootstrap writes distinct from local answer traffic;
 diagnosing a blocked write does not make it approved background traffic.
 
+Distinguish permanently hidden overflow from reachable scroll content and
+visible font overhang when measuring enlarged text.
+
+**Why:** Normal line metrics can yield a scroll height a few pixels larger
+than the element box without concealing glyphs. A scrollable column inside a
+clipped outer frame can also expose its entire content through native keyboard
+scrolling; treating either as irreversible clipping produces false failures.
+
+**How to apply:** Inspect the overflow semantics along each axis before rejecting
+geometry. Keep strict checks for hidden/clip boundaries, document horizontal
+overflow and required controls. Prove scroll accessibility separately with real
+Tab presses, full viewport bounds, visible focus and hit testing; do not fix false
+positives by removing clipping checks or substituting programmatic scrolling.
+
+Pin text-enlargement baselines before interactions instead of accepting a fresh
+self-relative “twice baseline” receipt after every update.
+
+**Why:** A synthetic text override compounded after interactions while its
+recomputed baseline drifted with it, so the ratio still appeared valid. The
+resulting oversized page also exhausted the renderer during failure capture.
+
+**How to apply:** Scale from immutable original typography inputs, require
+existing baseline values to stay fixed, and bound full-page failure screenshots.
+Retain DOM and geometry when a viewport-only failure capture is necessary.
+
 **Why:** Rounded displayed P&L left a genuinely positive residual that the
 assistant correctly called positive. Opening the panel also attempted remote
 conversation creation even though the historical reply itself was local.

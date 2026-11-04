@@ -466,7 +466,7 @@ The checks exposed and now protect against three presentation issues:
 - Mobile sheet navigation lost the shell-scoped focus color across its portal.
   Shell color variables now apply to sheet roots as well.
 
-Final validation:
+Historical validation (100%-zoom baseline):
 
 | Check | Result |
 | --- | --- |
@@ -477,11 +477,11 @@ Final validation:
 | Frontend managed workflow | Restarted successfully; Vite ready |
 | Shared-preview smoke check | Passed after starting the existing safe-preview API workflow |
 
-Final browser receipts: `generated-artifacts/shell-header/run-jpXrjg/`.
+Historical browser receipts: `generated-artifacts/shell-header/run-jpXrjg/`.
 The ignored directory retains screenshots, keyboard-focus screenshots, DOM,
 geometry/focus/network/error JSON and incremental per-case results, including
-failure evidence in earlier unique run directories. The final command log is
-`generated-artifacts/shell-header-final.log`. Earlier attempts include fixture
+failure evidence in earlier unique run directories. The latest command log is
+listed in the enlargement section below. Earlier baseline attempts include fixture
 resolution/visibility/focus-baseline/animation measurement errors and an
 interrupted timeout run; they are not additional accepted coverage. The fixture
 build still prints a sheet sourcemap-location diagnostic and large-chunk warning;
@@ -499,6 +499,122 @@ restored the check: `/`, `/login`, `/src/main.tsx` and `/api/healthz` all passed
 Startup confirmed background jobs paused, the live master switch disabled and
 no schema migration performed. The fixture itself still neither starts nor
 depends on that API. No unrelated runtime issues were resolved or reclassified.
+
+## Enlarged-text and short-height synthetic regression
+
+The standalone shell fixture now retains the original 16 baseline combinations
+and adds 32 enlargement/height combinations: both frame variants and both dock
+modes in every scenario below. These results are separate from the historical
+100%-zoom run above.
+
+| Scenario | Browser window | Effective CSS viewport | Tab zoom | Text size |
+| --- | --- | --- | --- | --- |
+| Baseline (four widths) | 390/900/1100/1366 × 900 | Same | 100% | 100% |
+| Short desktop / phone | 1100×480 / 390×480 | Same | 100% | 100% |
+| Zoomed desktop | 1800×900 | 900×450 | 200% | 100% |
+| Zoomed short desktop | 1800×640 | 900×320 | 200% | 100% |
+| Zoomed mobile reflow | 1100×640 | 550×320 | 200% | 100% |
+| Enlarged text desktop / phone | 1100×480 / 390×480 | Same | 100% | 200% |
+| Combined zoom and text | 1800×640 | 900×320 | 200% | 200% |
+
+Real Chromium tab zoom is set using a test-only extension's
+`chrome.tabs.setZoom` and verified with `getZoom`, effective viewport dimensions,
+device pixel density and unchanged pinch scale. No CSS zoom, transform,
+deviceScaleFactor shortcut or viewport-only simulation is used.
+Controlled text-only enlargement doubles the actual computed font sizes,
+including fixed-pixel production type and subsequently mounted sheet portals;
+assertions compare each title/notice/menu/sheet font against its baseline.
+It is not evidence for other browsers' native font-preference settings.
+
+Every case checks the long title, account labels, all three notices, required
+emergency/review/sign-out controls, layout menu and tools sheets. Real Tab/Enter
+presses activate safety actions and open/operate the layout and tools controls.
+The all-tools fixture contains nine inert entries to force scrolling at short
+heights. Focus must have a visible indicator, fit fully inside the viewport and
+have an unobscured hit-test center. Layout labels may wrap rather than overflow.
+Negative probes deliberately hide Sign out, clip Cockpit content and obscure
+keyboard focus; all three must be rejected by the corresponding assertions.
+
+The checks exposed presentation-only issues corrected in shared shell CSS:
+Cockpit's header/notices no longer flex-shrink into overlapping controls, and its
+main column scrolls internally when enlarged content exceeds the available
+height. Layout choices permit wrapping and mobile controls reserve scroll margin
+above the fixed tray. No chart behavior, role or trading gate was changed.
+There must be no horizontal document or nested text overflow; desktop Cockpit
+must also avoid vertical **document** overflow. Normal page/mobile vertical
+scrolling and accessible internal scrollports are expected, not failures.
+
+The exact static-only GET allowlist, blocked API/mutation/external/WebSocket
+traffic and independent containment test remain intact. Web-page service workers
+are blocked even in the temporary zoom browser profiles; only the extension's
+background worker supplies the browser zoom API. No auth/account provider,
+authorization gate, trading gate or production route is bypassed or exposed.
+The fixture never contacts the normal API, database, market-data or broker.
+
+**Authenticated acceptance remains blocked.** The ordinary preview capture
+still showed sign-in, not a workspace; it initially logged an API 502 because
+the API workflow was stopped. The existing safe-preview API launcher was started
+unchanged for the shared-router check, independently of this static fixture.
+Neither the synthetic matrix nor the preview sign-in screenshot establishes
+signed-in Cockpit/Scanner/Risk geometry or live-execution safety.
+
+Evidence includes scenario/zoom metrics, immutable text-baseline comparisons,
+stage, every Tab attempt (also on failure), hit-test/viewport/scroll receipts,
+screenshots, DOM, blocked traffic and browser errors. Failure screenshots use
+the viewport instead of a full-page capture if overflow exceeds 6000px, so an
+overflow defect cannot exhaust Chromium while saving its evidence.
+Earlier unique runs and focused continuations are retained as failed or partial
+diagnostics, not extra accepted matrix coverage. In particular, a discarded
+computed-font override could compound text after interactions and exhaust the
+renderer. The final text-only fixture instead scales immutable original CSS
+font declarations; existing baseline receipts must not drift after interactions.
+
+Final enlargement validation before integration with the RTL regression:
+
+| Check | Result |
+| --- | --- |
+| Full 48-case matrix + containment + negative probes + badge counts | **51 subtests passed** (52 including parent), 0 failures/skips, exit 0 |
+| Existing frame/preferences/catalog/navigation unit checks | **31 passed**, 4 files, exit 0 |
+| Frontend TypeScript, incremental output disabled | Passed, exit 0 |
+| JavaScript syntax and whitespace checks | Passed |
+| Managed frontend workflow | Restarted after the CSS batch; Vite ready |
+| Safe-preview API workflow | Running unchanged; background jobs paused, live master switch disabled, no schema migration |
+
+Accepted enlargement receipts: `generated-artifacts/shell-header/run-Iik7zR/`.
+The full command log is `generated-artifacts/shell-header-final.log`; unit and
+type-check logs are `generated-artifacts/shell-unit-check.log` and
+`generated-artifacts/shell-types-check.log`. Earlier failed full runs and focused
+diagnostics remain in other unique run directories and their separate logs.
+The pre-existing sheet sourcemap-location diagnostic and large-chunk warning
+remain visible in the build output and are not counted as passing assertions.
+
+### Integration with the separate RTL regression
+
+The shared runner now preserves both suites without multiplying unrelated
+coverage: all 48 German LTR height/enlargement cases plus 32 Arabic/Hebrew RTL
+baseline cases, for 80 configured cases (and three auxiliary subtests). Direction
+assertions, cyclic DOM Tab-order checks, translated account labels and separate
+layout/tools/mobile focus screenshots are retained. Direction assertions run
+on the original baseline scenarios; combined RTL plus enlargement is not claimed.
+The 48-case receipt above predates this integration and is not presented as an
+80-case run. Two attempted merge-only name filters selected no browser cases;
+their file-load-only results are not accepted browser coverage.
+
+Merge verification selected 32 cases: 24 baseline combinations at 390/1100px
+across all three locales passed, but eight enlarged-phone/combined cases exposed
+the incoming sticky header trapping controls below a short viewport. The header
+now remains sticky at normal heights and becomes normal-flow at heights up to
+600 CSS pixels. The unaffected 900px-high baseline checks are unchanged.
+
+The focused correction run passed **all eight affected cases plus the three
+auxiliary subtests** (12 including the parent), exit 0, with no failed or skipped
+executed tests. Corrected receipts: `generated-artifacts/shell-header/run-VNJLv6/`;
+log: `generated-artifacts/shell-header-merge-fixed.log`. The earlier selected run,
+including its 24 passing baseline cases and eight failures, remains at
+`generated-artifacts/shell-header/run-Xsl4RJ/` with log
+`generated-artifacts/shell-header-merge-selected.log`. These complementary checks
+are not represented as a single passing full 80-case run. The managed frontend
+was restarted after the correction and came up cleanly.
 
 ## Isolated right-to-left regression coverage
 

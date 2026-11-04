@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Home, Shield, AlertOctagon, LogOut } from "lucide-react";
 import { ARXShellFrame } from "@/components/layout/ARXShellFrame";
@@ -6,6 +6,7 @@ import { NotificationBell } from "@/components/alerts/NotificationBell";
 import { SafetyHeader } from "@/components/ss/SafetyHeader";
 import { EnvironmentPill } from "@/components/dashboard/cockpit/EnvironmentPill";
 import "@/index.css";
+import { enlargeFixtureText } from "./textEnlargement";
 
 const copy = {
   de: {
@@ -58,6 +59,10 @@ function Fixture() {
   const [compact, setCompact] = useState(params.get("dock") === "compact");
   const [selected, setSelected] = useState("cockpit");
   const [action, setAction] = useState("");
+  useLayoutEffect(() => {
+    if (params.get("text") !== "200") return;
+    return enlargeFixtureText();
+  }, []);
   const common = {
     title, eyebrow: "ARX · KONTROLLIERTE SICHERHEITSÜBERPRÜFUNG · ISOLATED FIXTURE",
     dockMode: compact ? "compact" as const : "expanded" as const,
@@ -71,6 +76,9 @@ function Fixture() {
     </div>,
     allToolsContent: <div className="arx-shell-tools">
       <button className="arx-shell-tool-result" onClick={() => { setAction("tools"); setAllToolsOpen(false); }}>Fixture risk information</button>
+      {Array.from({ length: 8 }, (_, i) => <button key={i} className="arx-shell-tool-result" onClick={() => setAction(`reference-${i + 1}`)}>
+        Read-only safety reference {i + 1} — international account permissions
+      </button>)}
     </div>,
     // Same slot hierarchy as AppLayout; account/notice text is deliberately controlled.
     // These inert actions never impersonate an authenticated or live account.
