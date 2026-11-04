@@ -56,6 +56,9 @@ import {
 } from "../lib/chart/aiAlerts.js";
 import { deriveChartFlameSignal } from "../lib/chart/chartFlameSignal.js";
 import { getOpenPositions } from "../lib/assistant/tools.js";
+import { gatherChartAlertPositions } from "../lib/chart/chartAlertPositions.js";
+import { readOpenPositions } from "../lib/positions/openPositions.js";
+import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
@@ -461,30 +464,37 @@ router.post(
       const flame = await deriveChartFlameSignal(symbol, timeframe, limit).catch(
         () => null,
       );
-      let openPositions: ChartAlertOpenPosition[] = [];
-      try {
-        const open = await getOpenPositions(userId);
-        openPositions = open.positions
-          .filter(
-            (p) =>
-              typeof p.symbol === "string" &&
-              p.symbol.toUpperCase() === symbol.toUpperCase(),
-          )
-          .map((p) => {
-            const sl = p.stopLoss == null ? null : Number(p.stopLoss);
-            const tp = p.takeProfit == null ? null : Number(p.takeProfit);
-            return {
+      // Paper trades AND the trader's MT5 DEMO/LIVE positions (same mode scope
+      // and read model as /me/positions/all), matched on the canonical symbol
+      // so broker-suffixed MT5 symbols are included. Each source fails open.
+      const isAdmin = operatorRoleFromSession(req.authUser!.role) != null;
+      const openPositions: ChartAlertOpenPosition[] = await gatherChartAlertPositions(
+        userId,
+        symbol,
+        {
+          readPaper: async (uid) => (await getOpenPositions(uid)).positions,
+          readMt5: async (uid) => {
+            const scope = await getUserModeScope(uid, { isAdmin });
+            const [live, demo] = await Promise.all([
+              readOpenPositions({ userId: uid, venue: "LIVE", basis: "EXPOSURE", modeScope: scope }),
+              readOpenPositions({ userId: uid, venue: "DEMO", basis: "CONFIRMED_OPEN", modeScope: scope }),
+            ]);
+            return [...live, ...demo].map((p) => ({
+              venue: p.venue,
               id: p.id,
-              side: String(p.side).toUpperCase() === "SELL" ? "SELL" : "BUY",
-              entry: Number(p.entryPrice),
-              sl: sl != null && Number.isFinite(sl) ? sl : null,
-              tp: tp != null && Number.isFinite(tp) ? tp : null,
-            } satisfies ChartAlertOpenPosition;
-          })
-          .filter((p) => Number.isFinite(p.entry));
-      } catch {
-        openPositions = [];
-      }
+              ticket: p.ticket,
+              symbol: p.symbol,
+              side: p.side,
+              entryPrice: p.entryPrice,
+              stopLoss: p.stopLoss,
+              takeProfit: p.takeProfit,
+              currentPrice: p.currentPrice,
+              observedAt: p.observedAt,
+              closedAt: p.row.closedAt ?? null,
+            }));
+          },
+        },
+      ).catch(() => []);
       signals = {
         flame: flame
           ? { stage: flame.stage, entryTiming: flame.entryTiming, blind: flame.blind }

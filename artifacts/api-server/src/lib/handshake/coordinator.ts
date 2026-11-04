@@ -12,6 +12,7 @@
 // investor-scoped handshake reads ONLY the supplied investor's rows, and
 // returns SKIPPED when no investor context is supplied (admin monitor view).
 
+import { registerHeapWatchGauge } from "../perf/heapWatch.js";
 import {
   aggregateHandshake,
   buildAdminDetails,
@@ -37,6 +38,7 @@ import { logHandshakeResult } from "./handshakeLog.js";
 // calls. Keyed per handshake type AND investor scope (system vs per-investor).
 const RESULT_TTL_MS = 10_000;
 const cache = new Map<string, { at: number; result: HandshakeResult }>();
+registerHeapWatchGauge("handshake.resultCache", () => cache.size);
 
 function cacheKey(type: HandshakeType, ctx?: HandshakeContext): string {
   // Per-user isolation: the cache key MUST capture every context dimension a

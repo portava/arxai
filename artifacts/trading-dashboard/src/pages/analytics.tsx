@@ -22,13 +22,14 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import {
-  Sparkles, Download, Settings, MessageCircle, Activity, ShieldCheck,
+  Sparkles, Download, MessageCircle, Activity, ShieldCheck,
   Wallet, PieChart as PieIcon, Gauge, Globe, Clock, Bell, ChevronRight,
   ChevronLeft, ShieldAlert, BookOpen, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPnl, formatPercent } from "@/lib/format";
 import { useAssistantName } from "@/lib/assistant-name";
+import { downloadCsv, csvTimestamp } from "@/lib/csvExport";
 
 const RUBY_OPEN_KEY = "arx.assistant.open.v2";
 function openRubyLiveChat() {
@@ -73,6 +74,27 @@ export default function Analytics() {
   const balance = acct?.balance ?? null;
   const openPnl = acct?.pnl ?? null;
 
+  // Client-side CSV of what this page already shows: the performance summary
+  // and the 30-day daily P/L rows. Nothing is fetched.
+  function exportCsv() {
+    const s = summary as { totalTrades?: number; winRate?: number | null; totalPnl?: number | null; profitFactor?: number | null; maxDrawdown?: number | null } | undefined;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      ["Section", "Field", "Value"],
+      ["Summary", "Total trades", s?.totalTrades ?? ""],
+      ["Summary", "Win rate %", s?.winRate ?? ""],
+      ["Summary", "Realized P/L", s?.totalPnl ?? ""],
+      ["Summary", "Profit factor", s?.profitFactor ?? ""],
+      ["Summary", "Max drawdown", s?.maxDrawdown ?? ""],
+      ["Account", "Balance", balance ?? ""],
+      ["Account", "Equity", equity ?? ""],
+      ["Account", "Open P/L", openPnl ?? ""],
+      [],
+      ["Date", "Daily P/L", "End balance"],
+      ...daily.map((d) => [d.date, d.pnl, d.endBalance ?? ""]),
+    ];
+    downloadCsv(`account-analytics-${csvTimestamp()}.csv`, rows);
+  }
+
   const tabs: Array<[Tab, string]> = [
     ["overview", "Overview"], ["calendar", "Calendar P/L"], ["risk", "Risk"],
     ["allocation", "Allocation"], ["timeline", "Timeline"],
@@ -95,12 +117,16 @@ export default function Analytics() {
           <button onClick={openRubyLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/15">
             <MessageCircle className="h-4 w-4" /> Ask {name}
           </button>
-          <span title="Export coming soon" className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-txt-muted opacity-70">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={daily.length === 0 && summary == null}
+            title={daily.length === 0 && summary == null ? "Nothing to export yet" : "Download the 30-day daily P/L and summary shown on this page as CSV"}
+            data-testid="analytics-export-csv"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          >
             <Download className="h-4 w-4" /> Export
-          </span>
-          <span title="Settings coming soon" className="hidden cursor-not-allowed items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-txt-muted opacity-70 sm:inline-flex">
-            <Settings className="h-4 w-4" />
-          </span>
+          </button>
         </div>
       </div>
 

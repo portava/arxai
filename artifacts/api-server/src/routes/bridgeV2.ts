@@ -26,7 +26,8 @@ import { listRecentBridgeV2StreamStates } from "../lib/brokerHub/bridgeV2StreamS
 import { and, desc, eq, sql } from "drizzle-orm";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { ingestBridgeV2Message } from "../lib/bridgeV2/ingest.js";
-import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "../lib/bridgeV2/egress.js";
+import { loadBridgeV2ConfigForEa } from "../lib/bridgeV2/egress.js";
+import { claimBridgeV2CommandsForEa } from "../lib/bridgeV2/commandClaim.js";
 import { buildBridgeV2AdminStatus } from "../lib/bridgeV2/status.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
@@ -115,16 +116,18 @@ router.get("/bridge/v2/config", bridgeAuthPerUserOnly, async (req: ConnReq, res:
 // EA polls its whitelisted-command channel. PURE READ-PROJECTION of
 // arx_live_commands rows that already passed all 16 Phase B gates (status
 // SENT_TO_MT5_LIVE), scoped to this user + bridge connection. This endpoint
-// ORIGINATES nothing and MUTATES nothing — it can never be a second execution
-// path. Empty in steady state (production bridge is v1.50). State-flip on poll
-// and the result-loop are deferred to the live-cycle task.
+// ORIGINATES nothing and changes no lifecycle status — it can never be a second
+// execution path. Each row is served at most once: the poll stamps the shared
+// pickup marker (pickedByEaAt, compare-and-set) and returns only the rows it
+// won (lib/bridgeV2/commandClaim.ts). Empty in steady state (production bridge
+// is v1.50). The result-loop is deferred to the live-cycle task.
 router.get("/bridge/v2/commands", bridgeAuthPerUserOnly, async (req: ConnReq, res: Response): Promise<void> => {
   const conn = req.mt5Connection;
   if (!conn || conn.userId == null) {
     res.status(401).json({ ok: false, error: "BRIDGE_NOT_ATTRIBUTED" });
     return;
   }
-  const commands = await listBridgeV2CommandsForEa(conn.userId, conn.id ?? null);
+  const commands = await claimBridgeV2CommandsForEa(conn.userId, conn.id ?? null);
   res.json({ ok: true, count: commands.length, commands });
 });
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { safeDate } from "@/lib/safeFormat";
 
 interface ReadinessReport {
   liveTradingEligible: boolean;
@@ -275,7 +276,7 @@ export default function LiveTradingControl() {
         <div className="space-y-1 max-h-96 overflow-auto text-xs font-mono">
           {audit.map(e => (
             <div key={e.eventId} className="flex gap-2 border-b pb-1">
-              <span className="text-muted-foreground">{new Date(e.createdAt).toISOString().slice(11, 19)}</span>
+              <span className="text-muted-foreground">{safeDate(e.createdAt, "iso")}</span>
               <span className={`font-bold ${e.severity === "CRITICAL" ? "text-red-600" : e.severity === "HIGH" ? "text-orange-600" : e.severity === "WARNING" ? "text-yellow-600" : "text-emerald-600"}`}>
                 [{e.severity}]
               </span>

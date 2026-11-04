@@ -95,12 +95,19 @@ describe("OrderTicketOverlay", () => {
     expect((screen.getByTestId("order-ticket-submit") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("demo: pending types are refused up front with the EA note", async () => {
+  it("demo: pending types are sent and the server's EA-version refusal is shown in plain words", async () => {
     ocState.mode.scope = "demo";
+    const { DEMO_PENDING_UNSUPPORTED_NOTE } = await import("@/lib/tradeActions");
+    placeOrder.mockImplementationOnce(async () => ({ ok: false, status: "FAILED", reason: DEMO_PENDING_UNSUPPORTED_NOTE, commandId: null, via: "demo" as const }) as never);
     renderTicket();
+    await waitFor(() => expect(screen.getByTestId("order-ticket-ask").textContent).toBe("1.10020"));
     fireEvent.click(screen.getByTestId("order-type-BUY_STOP"));
-    expect(screen.getByTestId("order-ticket-error").textContent).toMatch(/demo terminal bridge/);
-    expect((screen.getByTestId("order-ticket-submit") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId("order-ticket-price"), { target: { value: "1.1050" } });
+    const submit = screen.getByTestId("order-ticket-submit") as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId("order-ticket-error").textContent).toMatch(/older than v1\.32/));
   });
 
   it("the trigger button opens the ticket", () => {

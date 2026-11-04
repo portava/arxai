@@ -139,6 +139,12 @@ export interface TruthData {
   lastCandleAt: string | null;
   /** DATA timestamp of the newest tick, or null. */
   lastTickAt: string | null;
+  /**
+   * The feed is not live because the market is in its scheduled close (the
+   * chart feed's own notLiveReason). Lets every banner say "market closed"
+   * instead of "feed stale" for the same bars. null otherwise.
+   */
+  notLiveReason?: "market_closed" | null;
 }
 
 export interface TruthVerdict {
@@ -630,6 +636,7 @@ export async function buildSymbolTruthSnapshot(
   // honest UNKNOWN bias/stage), and the actionable trade idea is withheld below.
   const composeInput: ComposeVerdictInput = {
     dataState: data.state,
+    marketClosed: data.notLiveReason === "market_closed",
     price: data.price,
     highImpactWindowActive: newsBlock.highImpactWindowActive,
     // Synthetic instruments are immune to macro events (same rule as the radar).
@@ -706,7 +713,8 @@ export async function buildSymbolTruthSnapshot(
 export function capExpiredTruthSnapshot(snapshot: SymbolTruthSnapshot, now = Date.now()): SymbolTruthSnapshot {
   if (snapshot.validUntil == null || now < Date.parse(snapshot.validUntil)) return snapshot;
   const levels = { entryFrom: null, entryTo: null, stopLoss: null, invalidation: null, takeProfit: [] };
-  const composed = composeVerdict({ dataState: snapshot.data.state, price: snapshot.data.price,
+  const composed = composeVerdict({ dataState: snapshot.data.state,
+    marketClosed: snapshot.data.notLiveReason === "market_closed", price: snapshot.data.price,
     highImpactWindowActive: snapshot.news.highImpactWindowActive, components: [], levels });
   const expired = (component: TruthComponent): TruthComponent => component.present
     ? { ...component, present: false, alignment: "UNKNOWN", label: "This read expired; waiting for current evidence." } : component;

@@ -30,6 +30,7 @@ import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { EventImpactBadge } from "@/components/news/EventImpactBadge";
 import { HighImpactEventBanner } from "@/components/news/HighImpactEventBanner";
 import { useOneClickMode } from "@/hooks/useOneClickMode";
+import { oneClickVolume } from "@/lib/oneClickMode";
 import { humanizeReason } from "@/lib/humanize";
 import { useToast } from "@/hooks/use-toast";
 import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
@@ -88,10 +89,13 @@ export function ChartTradeEntry({
 
   // One-click mode: the first click IS the order. Default lot, market order,
   // same gated path as the one-click bar. Blocked clicks surface the reason.
+  // The default lot never exceeds the per-click cap (the server refuses
+  // LOT_EXCEEDS_ONE_CLICK_CAP above it).
+  const oneClickLot = oneClickVolume(oneClick.mode.defaultVolume, oneClick.mode.maxLotPerClick);
   const fireOneClick = async (s: "BUY" | "SELL") => {
-    const r = await oneClick.execute({ side: s, symbol, volume: oneClick.mode.defaultVolume, source: "chart" });
+    const r = await oneClick.execute({ side: s, symbol, volume: oneClickLot, source: "chart" });
     if (r.ok) {
-      toast({ title: `${s} ${symbol} ${oneClick.mode.defaultVolume}`, description: oneClick.mode.scope === "live" ? "Sent to your broker through the live router." : "Filled on demo." });
+      toast({ title: `${s} ${symbol} ${oneClickLot}`, description: oneClick.mode.scope === "live" ? "Sent to your broker through the live router." : "Filled on demo." });
     } else {
       const h = humanizeReason(r.reason ?? r.status);
       toast({ title: `${s} blocked`, description: h.description || r.reason || r.status, variant: "destructive" });
@@ -126,7 +130,7 @@ export function ChartTradeEntry({
               <CardTitle className="text-base">Trade from chart</CardTitle>
               <CardDescription className="text-xs" data-testid="chart-trade-entry-mode">
                 {oneClickOn
-                  ? `One-click ON: Buy/Sell execute immediately (${oneClick.mode.defaultVolume} lot, ${oneClick.mode.scope?.toUpperCase()}).`
+                  ? `One-click ON: Buy/Sell execute immediately (${oneClickLot} lot, ${oneClick.mode.scope?.toUpperCase()}).`
                   : "Opens trade ticket. Final confirmation required."}
               </CardDescription>
             </div>

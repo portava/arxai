@@ -140,6 +140,9 @@ const BEST_ACTION_TEXT: Record<TruthBestAction, string> = {
 const EVENT_RISK_UNCHECKED_TEXT =
   "Watch only — scheduled news risk could not be checked right now.";
 
+const MARKET_CLOSED_TEXT =
+  "Wait — the market is closed; these are the last session's bars.";
+
 function opposite(side: "BULLISH" | "BEARISH"): "BULLISH" | "BEARISH" {
   return side === "BULLISH" ? "BEARISH" : "BULLISH";
 }
@@ -357,6 +360,16 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     headline = `The read leans ${bestAction === "BUY" ? "bullish" : "bearish"}, but scheduled news risk could not be checked.`;
     bestAction = "WATCH_ONLY";
     bestActionText = EVENT_RISK_UNCHECKED_TEXT;
+  }
+
+  // A scheduled close is not a feed fault: say so, so this verdict agrees with
+  // the chart and scanner banners that read "Market closed" for the same bars.
+  // Wording only: the action stays WAIT_FOR_DATA.
+  if (bestAction === "WAIT_FOR_DATA" && input.marketClosed === true) {
+    bestActionText = MARKET_CLOSED_TEXT;
+    headline = bias === "BULLISH" || bias === "BEARISH"
+      ? `The last session leaned ${bias === "BULLISH" ? "bullish" : "bearish"}; the market is closed now.`
+      : "The market is closed — this is the last session's data.";
   }
 
   // ── Lean qualifier (label-only; the vote is unchanged) ─────────────────────

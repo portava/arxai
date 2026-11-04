@@ -10,8 +10,10 @@ import {
 import { CHART_ENGINE_DESCRIPTORS, DEFAULT_CHART_ENGINE_ID } from "@/lib/chart-engine";
 import type { ChartIntelligenceResponse } from "@workspace/api-client-react";
 import { ChartPositionOverlayPanel } from "@/components/charts/ChartPositionOverlayPanel";
+import { LivePendingOrders } from "@/components/live/LivePendingOrders";
 import { ChartAiOverlayPanel } from "@/components/charts/ChartAiOverlayPanel";
 import { ChartSetupPreviewPanel } from "@/components/charts/ChartSetupPreviewPanel";
+import { ChartDecisionReceiptsPanel } from "@/components/charts/ChartDecisionReceiptsPanel";
 import { ChartModes } from "@/components/charts/ChartModes";
 import { ChartTradeEntry, type ChartTradePrefill } from "@/components/charts/ChartTradeEntry";
 import { OneClickTradePanel } from "@/components/oneclick/OneClickTradePanel";
@@ -183,12 +185,22 @@ export default function LiveChartPage() {
               Rendering engine: {activeEngine.label}
             </p>
             <ChartPositionOverlayPanel symbol={chartSymbol} data={overlayData} />
+            <LivePendingOrders symbol={chartSymbol} enabled={mode.isLiveShared} compact />
             <ChartAiOverlayPanel data={aiOverlays} />
             <ChartSetupPreviewPanel
               data={setupPreview}
               canUseSetup={canSeeTradeEntry}
               onUseSetup={onUseSetup}
             />
+            {/* Decision receipts: the trader's own recorded chart reads, outcome
+                recording (append-only), similar past setups and behavior cautions.
+                Hidden from view-only roles; never places a trade. */}
+            {canSeeTradeEntry && (
+              <ChartDecisionReceiptsPanel
+                symbol={bareSymbol(chartCtx.symbol || chartSymbol || "").toUpperCase()}
+                timeframe={chartCtx.timeframe || timeframe}
+              />
+            )}
             <ChartModes state={shownIntelligence} />
           </div>
         <div className="space-y-4">

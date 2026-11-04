@@ -39,7 +39,9 @@ import {
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
 import type { InstantTradeIntent } from "../lib/live/instantTrade.js";
-import { MAX_ACTIVE_RUBY_WATCHES, currentPriceOf, recordAndExecuteRuby } from "../lib/assistant/rubyExecution.js";
+import { MAX_ACTIVE_RUBY_WATCHES, ownBridgePriceOf, recordAndExecuteRuby, rubyWatchPermissionBlock } from "../lib/assistant/rubyExecution.js";
+import { currentFeedScopeBridge } from "../lib/data/feedScope.js";
+import { cancelScope, isCloseAlertAnswer, pickWatchesToCancel } from "../lib/assistant/rubyAlertAnswers.js";
 import { evaluateRubyWatchesForUser, acknowledgeRubyWatch, listRubyWatches, setRubyWatchFakeoutAuthority } from "../lib/assistant/rubyWatchEvaluator.js";
 import { isSweeperEnabled, getRubySweeperStatus } from "../lib/assistant/rubyWatchSweeper.js";
 import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/rubyMonitorPolicy.js";
@@ -93,7 +95,7 @@ import { aaciRecommendedActionLabel, aaciCohesionTone } from "@workspace/domain/
 import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { neutralizeFeedCopyDeep } from "../lib/honesty/feedTruthCopy.js";
 import { recordSignalOnAppear } from "../lib/rubyQuality/index.js";
-import { mintRealtimeSession, getVoiceModeStatus } from "../lib/assistant/realtimeSession.js";
+import { mintRealtimeSession, getVoiceModeStatus, VOICE_NO_TOOLS_INSTRUCTION } from "../lib/assistant/realtimeSession.js";
 import { computeRubySignalAdvisory, recordAdvisoryTrace } from "../lib/agentEcosystem/advisoryInfluence.js";
 import {
   computeSurfaceGovernance,
@@ -125,6 +127,8 @@ async function buildPerUserEnvelope(userId: number | null | undefined) {
 // Synchronous fail-closed envelope fields for error responses (err() can't await).
 const FAIL_CLOSED_FIELDS = assistantEnvelopeFields(FAIL_CLOSED_ENVELOPE);
 const MAX_TURNS_PER_REQUEST = 4;
+// Shown when the tool loop produced no answer text (AICS-4).
+export const EMPTY_REPLY_MESSAGE = "I ran out of steps before I could answer — please ask again, a bit more narrowly.";
 // Audit A9: tool results handed to the model are bounded but stay valid JSON.
 const TOOL_RESULT_MODEL_CHARS = 8000;
 const MAX_HISTORY_MESSAGES = 20;
@@ -1245,8 +1249,10 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   // finish. Cap memory load at 1500ms — Ruby will still answer if the
   // long-term memory snapshot is slow; she just won't have it for this
   // turn. Better than blocking the whole response.
-  const [envelope, memoryTriple, chatAssistantName] = await Promise.all([
-    buildPerUserEnvelope(userId),
+  const [safetyEnvelope, memoryTriple, chatAssistantName] = await Promise.all([
+    // AICS-10: derive the SafetyEnvelope ONCE per request and hand it to every
+    // tool call below (dispatchTool would otherwise re-derive it per call).
+    deriveAssistantEnvelope(userId),
     Promise.race([
       memoryLoadPromise,
       new Promise<readonly [typeof EMPTY_MEMORY_SNAPSHOT, null, never[]]>((resolve) =>
@@ -1259,6 +1265,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   // memory/envelope — no point spending tokens on an answer nobody is
   // listening for.
   if (aborted) { cleanupStream(); res.end(); return; }
+  const envelope = assistantEnvelopeFields(safetyEnvelope);
   send({ type: "safety", ...envelope });
   const memSnapshot = memoryTriple[0];
   const pending = memoryTriple[1];
@@ -1283,7 +1290,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
         maxTokens: 8192,
         messages,
         tools,
-        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead),
+        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead, MAX_TURNS_PER_REQUEST),
       });
     } catch (e) {
       try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, "assistant_openai_failed"); } catch { /* noop */ }
@@ -1388,7 +1395,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
       let result: unknown;
       let status = "ok";
       try {
-        result = await dispatchTool(c.name, parsedArgs, userId, req);
+        result = await dispatchTool(c.name, parsedArgs, userId, req, safetyEnvelope);
       } catch (e) {
         status = "error";
         result = { error: "tool_failed", name: c.name, message: (e as Error)?.message ?? "unknown" };
@@ -1439,6 +1446,13 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     }
 
     if (finishReason && finishReason !== "tool_calls") break;
+  }
+
+  // AICS-4: never end on a blank bubble. The last turn runs with
+  // tool_choice "none", so this only fires if the model still returned no
+  // text (or a provider quirk ended the loop on tool calls).
+  if (!aborted && assistantText.trim().length === 0) {
+    send({ type: "error", message: EMPTY_REPLY_MESSAGE });
   }
 
   // Persist final assistant message
@@ -1573,6 +1587,9 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   const voiceMemoryBlock = formatMemoryForSystemPrompt(voiceMem, voicePending, voiceToolHistory);
   const voicePriorMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     ...buildSessionSystemMessages(userId, null, voiceMemoryBlock, voiceEnvelope, voiceAssistantName),
+    // AICS-5: gpt-audio gets no tools, so the "call X first" rules above
+    // cannot be followed — say so explicitly (same text as the realtime path).
+    { role: "system", content: `${VOICE_NO_TOOLS_INSTRUCTION} This overrides every instruction above that tells you to call a tool.` },
     ...voiceOrdered.map((m) => ({
       role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
       content: m.content,
@@ -1584,6 +1601,19 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   try {
     const audio = await voiceAudio();
     const { buffer, format } = await audio.ensureCompatibleFormat(audioBuffer);
+    // AC1: gpt-audio never yields the user's words, so transcribe the clip
+    // first and emit it as `user_transcript` — the client shows the user
+    // bubble and runs a spoken trade command through the command pre-filter.
+    // A failed transcription is non-fatal: the spoken reply still streams.
+    try {
+      const heard = (await audio.speechToText(buffer, format)).trim();
+      if (heard && !voiceAborted) {
+        userTranscript = heard;
+        sendVoice({ type: "user_transcript", data: heard });
+      }
+    } catch (e) {
+      try { (req as { log?: { warn: (...a: unknown[]) => void } }).log?.warn({ err: (e as Error)?.message }, "assistant_voice_transcribe_failed"); } catch { /* noop */ }
+    }
     const stream = await audio.voiceChatStream(buffer, "alloy", format, voicePriorMessages);
     for await (const event of stream) {
       if (voiceAborted) break;
@@ -1593,9 +1623,14 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
         assistantTranscript += ev.data;
         sendVoice({ type: "transcript", data: ev.data });
       } else if (evType === "user_transcript" && typeof ev.data === "string") {
-        userTranscript += ev.data;
-        sendVoice({ type: "user_transcript", data: ev.data });
-      } else if (evType === "audio_chunk" && typeof ev.data === "string") {
+        // Only if a provider ever supplies it AND transcription above failed.
+        if (!userTranscript) {
+          userTranscript += ev.data;
+          sendVoice({ type: "user_transcript", data: ev.data });
+        }
+      } else if ((evType === "audio" || evType === "audio_chunk") && typeof ev.data === "string") {
+        // The provider yields {type:"audio"} (base64 pcm16); the canonical
+        // client event is audio_chunk.
         // Pass through base64 audio chunk, no transformation. Frontend
         // already understands this canonical shape.
         sendVoice({ type: "audio_chunk", data: ev.data });
@@ -1674,9 +1709,68 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // that evaluates watches is enabled in this process.
 const WATCH_ARMING_ENABLED = isSweeperEnabled();
 export const CHAT_EXECUTION_WIRED_IN_UI = true;
+/** Default lifetime of a price watch (WATCH_AND_ENTER / WATCH_AND_CLOSE) with no stated expiry. */
+export const DEFAULT_WATCH_TTL_MINUTES = 24 * 60;
+
 export const WATCH_UNAVAILABLE_MESSAGE =
   "Conditional orders and position monitoring are switched off on this server (the watch sweeper is disabled), so I won't pretend to watch. Place the pending order yourself from the Trade Action Center, or ask me to prepare the ticket.";
 export const WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON = "WATCH_EVALUATION_UNAVAILABLE";
+
+// The chat bubble text for an instant-trade-command reply.
+export function commandReplyText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  for (const k of ["message", "primaryReason", "error"] as const) {
+    const v = p[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+// Wrap res.json so the first JSON reply is persisted with the user's command
+// into the user's own conversation. Persistence is best-effort and never
+// changes the response.
+export async function attachCommandTranscript(
+  res: { json: (body: unknown) => unknown },
+  userId: number,
+  rawConversationId: unknown,
+  text: string,
+): Promise<number | null> {
+  const convId = Number(rawConversationId);
+  if (!Number.isInteger(convId) || convId <= 0) return null;
+  let owned: Array<{ id: number }> = [];
+  try {
+    owned = await db.select({ id: arxAssistantConversationsTable.id }).from(arxAssistantConversationsTable)
+      .where(and(eq(arxAssistantConversationsTable.id, convId), eq(arxAssistantConversationsTable.userId, userId)))
+      .limit(1);
+  } catch { return null; }
+  if (owned.length === 0) return null;
+  const original = res.json.bind(res);
+  let done = false;
+  res.json = (payload: unknown) => {
+    if (!done) {
+      done = true;
+      const reply = commandReplyText(payload);
+      void (async () => {
+        try {
+          await db.insert(arxAssistantMessagesTable).values({
+            userId, conversationId: convId, role: "user", content: text, intent: "trade_command",
+          });
+          if (reply) {
+            await db.insert(arxAssistantMessagesTable).values({
+              userId, conversationId: convId, role: "assistant", content: reply, intent: "trade_command",
+            });
+          }
+          await db.update(arxAssistantConversationsTable)
+            .set({ updatedAt: new Date(), lastIntent: "trade_command" })
+            .where(and(eq(arxAssistantConversationsTable.id, convId), eq(arxAssistantConversationsTable.userId, userId)));
+        } catch { /* best-effort */ }
+      })();
+    }
+    return original(payload);
+  };
+  return convId;
+}
 
 router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req, res) => {
   const userId = (req as Request & { authUser?: { id: number } }).authUser!.id;
@@ -1694,6 +1788,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     accountMode?: "live" | "demo";
     source?: "ruby_text" | "ruby_voice";
     confirm?: boolean;
+    conversationId?: number | string;
   };
   const text = (body.text ?? "").trim();
   const source = body.source === "ruby_voice" ? "ruby_voice" : "ruby_text";
@@ -1710,6 +1805,15 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     res.status(400).json({ ok: false, error: "MISSING_TEXT" });
     return;
   }
+
+  // AC7 (additive): with a `conversationId` the user owns, the command text
+  // and this route's reply are saved as messages in that conversation, so
+  // they survive a reload and the analyst model sees them in history. An
+  // unknown / foreign id is ignored (nothing persisted, command unaffected).
+  // The confirm resend repeats the same text: store it as the confirmation,
+  // not as a second copy of the command.
+  await attachCommandTranscript(res, userId, body.conversationId,
+    body.confirm === true ? `Confirm: ${text}` : text);
 
   // Pull per-user Ruby defaults so commands like "buy EURUSD" without a
   // size can still resolve when the user has configured a default volume.
@@ -1742,6 +1846,35 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     }
     if (awaiting.length > 1) {
       res.json({ ok: false, classification: "MONITOR_ALERT_ACK_AMBIGUOUS", message: `Several positions are waiting for your answer (${awaiting.map((w) => w.symbol).join(", ")}) — tell me which one to keep, e.g. "keep EURUSD".` });
+      return;
+    }
+  }
+  // "close it" / "close that" / "yes close" answers the alert too. Without this
+  // it parsed as UNKNOWN, or as CLOSE_ONE of the default symbol, which may not
+  // be the position the alert was about. Only consulted when a monitor is
+  // awaiting an answer; otherwise the text parses as before.
+  const closeAnswer = isCloseAlertAnswer(text);
+  if (closeAnswer) {
+    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
+    if (awaiting.length === 1) {
+      const ipC = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
+      const uaC = (req.headers["user-agent"] as string | undefined) ?? null;
+      const target = awaiting[0]!;
+      const r = await acknowledgeRubyWatch(userId, target.id, "close", { ip: ipC, ua: uaC, trigger: "ack" });
+      const fired = r.ok && r.decision === "close" ? r.result.fired[0] : undefined;
+      const skipped = r.ok && r.decision === "close" ? r.result.skipped[0] : undefined;
+      res.json({
+        ok: r.ok && !!fired && !fired.blocked, classification: "MONITOR_ALERT_ACK_CLOSE", watchId: target.id,
+        message: !r.ok ? `I couldn't record that: ${r.error}.`
+          : fired ? (fired.blocked ? `I tried to close ${target.symbol ?? "it"} but it did not go through: ${fired.blocked}.` : `Closing ${target.symbol ?? "the trade"} now — I sent the close to the broker and will confirm when it fills.`)
+          : skipped?.reason === "POSITION_GONE" ? `Your ${target.symbol ?? ""} position is already closed.`
+          : skipped ? `I couldn't close it: ${skipped.reason}.`
+          : "Nothing to do.",
+      });
+      return;
+    }
+    if (awaiting.length > 1) {
+      res.json({ ok: false, classification: "MONITOR_ALERT_ACK_AMBIGUOUS", message: `Several positions are waiting for your answer (${awaiting.map((w) => w.symbol).join(", ")}) — tell me which one to close, e.g. "close EURUSD".` });
       return;
     }
   }
@@ -1861,12 +1994,26 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // same handler with explicit "pending order" copy.
   if (parsed.kind === "CANCEL" || parsed.kind === "CANCEL_PENDING_ORDER") {
     const isPending = parsed.kind === "CANCEL_PENDING_ORDER";
-    const cancelledWatches = await db.update(rubyWatchInstructionsTable)
+    // Scope (sweep 2026-11-04): "never mind" used to stand down EVERY watch,
+    // monitors included, so a casual "cancel that" silently removed the
+    // protection on open trades. Now: "all"/"everything" → every watch;
+    // "stop monitoring …" → the most recent monitor; a pending-order cancel →
+    // the pending entries (of that symbol when named); otherwise the most
+    // recent non-monitor watch.
+    const scope = cancelScope(text, parsed.kind);
+    const activeRows = await db.select().from(rubyWatchInstructionsTable).where(and(
+      eq(rubyWatchInstructionsTable.userId, userId),
+      eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+    ));
+    const targets = pickWatchesToCancel(activeRows, scope, parsed.kind === "CANCEL_PENDING_ORDER" ? parsed.symbol : null);
+    const cancelledWatches = targets.length === 0 ? [] : await db.update(rubyWatchInstructionsTable)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(
         eq(rubyWatchInstructionsTable.userId, userId),
         eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+        inArray(rubyWatchInstructionsTable.id, targets.map((w) => w.id)),
       )).returning({ id: rubyWatchInstructionsTable.id });
+    const monitorsLeft = activeRows.filter((w) => w.kind === "MONITOR_TRADE" && !cancelledWatches.some((c) => c.id === w.id));
     const cancelledCmds = await db.update(rubyCommandsTable)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(
@@ -1876,17 +2023,20 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     const n = cancelledWatches.length + cancelledCmds.length;
     await db.insert(oneClickAuditTable).values({
       userId, action: "RUBY_PENDING_ACTION_CANCELLED", ip, userAgent: ua,
-      metadata: JSON.stringify({ text, kind: parsed.kind, watches: cancelledWatches.length, commands: cancelledCmds.length, source, channel: "ELEANOR_CHAT" }),
+      metadata: JSON.stringify({ text, kind: parsed.kind, watches: cancelledWatches.length, watchIds: cancelledWatches.map((c) => c.id), commands: cancelledCmds.length, scope, source, channel: "ELEANOR_CHAT" }),
     });
+    const monitorNote = monitorsLeft.length > 0
+      ? ` Still monitoring ${monitorsLeft.map((w) => w.symbol ?? "a position").join(", ")} — say "stop monitoring" or "cancel all" to stop that too.`
+      : "";
     res.json({
       ok: true, classification: parsed.kind, cancelled: n,
-      message: n === 0
+      message: (n === 0
         ? (isPending
           ? "No pending orders to cancel — you have no conditional entries armed right now."
-          : "Nothing to cancel — I had no active watches or pending commands.")
+          : "Nothing to cancel — I had no matching watches or pending commands.")
         : (isPending
           ? `Cancelled ${n} pending order${n === 1 ? "" : "s"}.`
-          : `Stood down ${n} pending item${n === 1 ? "" : "s"}.`),
+          : `Stood down ${n} pending item${n === 1 ? "" : "s"}.`)) + monitorNote,
     });
     return;
   }
@@ -1918,6 +2068,20 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     res.json({
       ok: false, classification: "RISK_PERCENT_SIZING",
       message: `I won't guess a lot size from ${parsed.riskPercent}% — I could mis-size your risk. Tell me an exact lot (e.g. "${parsed.side.toLowerCase()} ${parsed.symbol} 0.01") and I'll take it.`,
+    });
+    return;
+  }
+
+  // SL/TP given as a pip/point distance — the order path takes price levels
+  // only, so ask for the level rather than open without the protection.
+  if (parsed.kind === "SLTP_NEEDS_PRICE") {
+    await db.insert(oneClickAuditTable).values({
+      userId, action: "RUBY_TRADE_COMMAND_NEEDS_PRICE", ip, userAgent: ua,
+      metadata: JSON.stringify({ text, reason: "SLTP_NEEDS_PRICE", symbol: parsed.symbol, side: parsed.side, source, channel: "ELEANOR_CHAT" }),
+    });
+    res.json({
+      ok: false, classification: "SLTP_NEEDS_PRICE",
+      message: `I can only set a stop loss / take profit as a price level, not in pips or points. Tell me the levels (e.g. "${parsed.side.toLowerCase()} ${parsed.symbol} 0.01 sl 1.0850 tp 1.0950") and I'll take it.`,
     });
     return;
   }
@@ -1963,30 +2127,46 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // is an executing watch too. This is an UP-FRONT guard — the evaluator still
     // re-runs every gate (incl. authority + per-action perms) through
     // executeInstant at fire time. It never relaxes a backend gate.
-    const armAuthority = (settings?.rubyExecutionAuthority ?? "OFF").trim().toUpperCase();
-    const armPermOk =
-      parsed.kind === "WATCH_AND_ENTER" ? settings?.allowRubyWatchEnter === true
-      : parsed.kind === "WATCH_AND_CLOSE" ? settings?.allowRubyWatchClose === true
-      : settings?.allowRubyMonitor === true;
-    const armNeedsExecAuthority = parsed.kind === "WATCH_AND_ENTER"
-      || parsed.kind === "WATCH_AND_CLOSE" || parsed.kind === "MONITOR_TRADE";
-    const armBlockReason = !armPermOk
-      ? (parsed.kind === "WATCH_AND_ENTER" ? "RUBY_WATCH_ENTER_NOT_ENABLED"
-        : parsed.kind === "WATCH_AND_CLOSE" ? "RUBY_WATCH_CLOSE_NOT_ENABLED"
-        : "RUBY_MONITOR_NOT_ENABLED")
-      : (armNeedsExecAuthority && armAuthority !== "AI_ASSISTED") ? "RUBY_TRADING_NOT_ENABLED"
-      : null;
+    // Watches run on the LIVE account only: the evaluator reads live positions
+    // and instant trading refuses demo, so a demo watch could only ever fire
+    // and fail. Refuse honestly at arm time (sweep 2026-11-04).
+    if (accountMode !== "live") {
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_WATCH_ARM_BLOCKED", ip, userAgent: ua,
+        metadata: JSON.stringify({ text, kind: parsed.kind, reason: "LIVE_ACCOUNT_ONLY", accountMode, source }),
+      });
+      res.json({
+        ok: false, classification: "WATCH_LIVE_ONLY",
+        message: `Watches run on your live account only in this build; switch to live to arm one.`,
+      });
+      return;
+    }
+    // The same permission rule the evaluator applies at fire time, including
+    // the pipeline's open/close command permissions (rubyWatchPermissionBlock).
+    const armBlockReason = rubyWatchPermissionBlock(parsed.kind, settings);
     if (armBlockReason) {
       await db.insert(oneClickAuditTable).values({
         userId, action: "RUBY_WATCH_ARM_BLOCKED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, kind: parsed.kind, reason: armBlockReason, source }),
       });
       res.status(403).json({
-        ok: false, classification: "RUBY_NOT_AUTHORIZED",
-        message: armNeedsExecAuthority && armAuthority !== "AI_ASSISTED" && armPermOk
+        ok: false, classification: "RUBY_NOT_AUTHORIZED", reason: armBlockReason,
+        message: armBlockReason === "RUBY_EXECUTION_NOT_AUTHORIZED"
           ? `Turn on ${assistantName} AI-Assisted execution before I can arm that.`
+          : armBlockReason === "RUBY_OPEN_COMMANDS_NOT_ENABLED"
+          ? `That watch would open a trade, but ${assistantName} isn't allowed to open trades in your settings — turn on open commands first.`
+          : armBlockReason === "RUBY_CLOSE_COMMANDS_NOT_ENABLED"
+          ? `That watch may close your trade, but ${assistantName} isn't allowed to close trades in your settings — turn on close commands first.`
           : `That ${assistantName} action isn't enabled in your settings.`,
       });
+      return;
+    }
+    if (parsed.kind === "WATCH_AND_ENTER" && !(typeof parsed.volume === "number" && parsed.volume > 0)) {
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
+        metadata: JSON.stringify({ text, reason: "MISSING_VOLUME", symbol: parsed.symbol, kind: parsed.kind, source }),
+      });
+      res.json({ ok: false, classification: "MISSING_VOLUME", message: `How much ${parsed.symbol} should I ${parsed.side.toLowerCase()} when it triggers? Tell me a lot size like 0.01.` });
       return;
     }
 
@@ -2013,7 +2193,9 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       const { price, direction } = parsed.trigger;
       let op: ">=" | "<=" | null = direction === "ABOVE" ? ">=" : direction === "BELOW" ? "<=" : null;
       if (op == null && symbol) {
-        const px = await currentPriceOf(symbol);
+        // Direction from the trader's OWN bridge tick only — the same feed the
+        // evaluator will fire on (never a platform-wide or third-party price).
+        const px = await ownBridgePriceOf(symbol, await currentFeedScopeBridge());
         if (px != null) op = price >= px ? ">=" : "<=";
       }
       triggerCondition = op != null ? { op, price } : null;
@@ -2030,7 +2212,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which open position should I watch?" });
         return;
       }
-      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol })).map((p) => p.row);
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "CONFIRMED_OPEN", symbol })).map((p) => p.row);
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${symbol} position to watch.` });
         return;
@@ -2046,8 +2228,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // expiresInMinutes. The watch evaluator sweeps past-expiry rows to EXPIRED
     // before it can fire, so a conditional entry/close that never triggers
     // doesn't linger live forever.
-    const expiresInMinutes = (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE")
+    // A price watch without a stated expiry lasts DEFAULT_WATCH_TTL_MINUTES
+    // (sweep 2026-11-04) so a forgotten conditional entry never fires days
+    // later. A monitor ends when its position is no longer open.
+    const statedExpiry = (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE")
       ? parsed.expiresInMinutes : undefined;
+    const expiresInMinutes = parsed.kind === "MONITOR_TRADE" ? undefined
+      : typeof statedExpiry === "number" && statedExpiry > 0 ? statedExpiry : DEFAULT_WATCH_TTL_MINUTES;
     const expiresAt = typeof expiresInMinutes === "number" && expiresInMinutes > 0
       ? new Date(Date.now() + expiresInMinutes * 60_000) : null;
     // Pending-entry wording — "limit"/"stop" phrasing describes a conditional
@@ -2058,11 +2245,46 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // to shift SL/TP on a fakeout (bounded; see rubyFakeoutPolicy.ts). Stored in
     // risk_params; also toggled later via POST /me/assistant/watches/:id/fakeout-authority.
     const fakeoutAuthority = parsed.kind === "MONITOR_TRADE" && parsed.fakeoutAuthority === true;
+    const expirySuffix = expiresAt
+      ? ` (expires in ${expiresInMinutes! >= 60 && expiresInMinutes! % 60 === 0 ? `${expiresInMinutes! / 60} h` : `${expiresInMinutes} min`} if it doesn't trigger)`
+      : "";
+    const armDescription = parsed.kind === "MONITOR_TRADE"
+      ? `monitor your ${symbol} position: alert you on reversal evidence up to 3 times and close it if you don't answer${fakeoutAuthority ? ", and shift the stop loss / take profit on a fakeout" : ""}`
+      : `${parsed.kind === "WATCH_AND_ENTER" ? `${parsed.side.toLowerCase()} ${symbol} ${parsed.volume}` : `close ${symbol}`} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${expirySuffix}`;
+
+    // Extra-confirmation gate, same rule as an immediate command (see below):
+    // arming a watch is a decision to trade later, so it is confirmed before
+    // the row exists, not after it fires.
+    if (settings?.rubyRequireExtraConfirmation !== false && body.confirm !== true) {
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_TRADE_COMMAND_CONFIRM_REQUIRED", ip, userAgent: ua,
+        metadata: JSON.stringify({ text, kind: parsed.kind, action: "ARM_WATCH", symbol, triggerCondition, source }),
+      });
+      res.json({
+        ok: false, classification: parsed.kind, confirmationRequired: true,
+        pendingAction: {
+          kind: parsed.kind, action: "ARM_WATCH", symbol,
+          volume: parsed.kind === "WATCH_AND_ENTER" && typeof parsed.volume === "number" ? parsed.volume : null,
+        },
+        message: `Confirm and I'll ${armDescription}. Resend with confirmation to proceed.`,
+      });
+      return;
+    }
+
     const [w] = await db.insert(rubyWatchInstructionsTable).values({
       userId, kind: parsed.kind, accountMode, source,
       symbol: symbol ?? null,
       side: parsed.kind === "WATCH_AND_ENTER" ? parsed.side : null,
       lot: parsed.kind === "WATCH_AND_ENTER" && typeof parsed.volume === "number" ? parsed.volume : null,
+      // WATCH_AND_ENTER carries the SL/TP the user typed; the evaluator applies
+      // them to the OPEN it fires. (MONITOR_TRADE uses this column for its own
+      // monitor state — never both on one row.)
+      riskParams: parsed.kind === "WATCH_AND_ENTER" && (parsed.stopLoss !== undefined || parsed.takeProfit !== undefined)
+        ? JSON.stringify({
+          ...(parsed.stopLoss !== undefined ? { stopLoss: parsed.stopLoss } : {}),
+          ...(parsed.takeProfit !== undefined ? { takeProfit: parsed.takeProfit } : {}),
+        })
+        : null,
       positionTicket,
       triggerCondition: triggerCondition ? JSON.stringify(triggerCondition) : null,
       rawUserCommand: text,
@@ -2074,14 +2296,11 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       userId, action: "RUBY_WATCH_ARMED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, kind: parsed.kind, symbol, triggerCondition, positionTicket, expiresAt, pendingKind: pendingKind ?? null, fakeoutAuthority, source, channel: "ELEANOR_CHAT" }),
     });
-    const expirySuffix = expiresAt
-      ? ` (expires in ${expiresInMinutes} min if it doesn't trigger)`
-      : "";
     res.json({
       ok: true, classification: parsed.kind, watchId: w!.id,
       message: parsed.kind === "MONITOR_TRADE"
         ? `Watching your ${symbol} position (checked about every ${Math.round(getRubySweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.${fakeoutAuthority ? " You also let me shift the stop loss or take profit when I see a fakeout (a spike that snaps back); each shift is bounded, announced, and confirmed by the broker." : ""}`
-        : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${expirySuffix}.`,
+        : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${parsed.kind === "WATCH_AND_ENTER" && parsed.stopLoss !== undefined ? `, SL ${parsed.stopLoss}` : ""}${parsed.kind === "WATCH_AND_ENTER" && parsed.takeProfit !== undefined ? `, TP ${parsed.takeProfit}` : ""}${expirySuffix}.`,
     });
     return;
   }
@@ -2106,6 +2325,9 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       intent = {
         source, action: parsed.side, accountMode, symbol: parsed.symbol,
         volume: parsed.volume, orderType: parsed.orderType,
+        // SL/TP typed on the command itself ("buy EURUSD 0.01 sl 1.0850 tp 1.0950").
+        ...(parsed.stopLoss !== undefined ? { stopLoss: parsed.stopLoss } : {}),
+        ...(parsed.takeProfit !== undefined ? { takeProfit: parsed.takeProfit } : {}),
         aiCommand: true, parsedByRuby: true, rawUserCommand: text,
         rubyCommandKind: "OPEN",
       };

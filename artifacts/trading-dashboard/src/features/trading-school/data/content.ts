@@ -47,7 +47,7 @@ export interface LessonStep {
   vocab: VocabItem[];
   beginnerExample: string;
   arxTieIn: string;
-  practiceLabId: string; // links to a Practice Lab (may be "coming next")
+  practiceLabId: string; // links to a Practice Lab at /school/labs/:labId
   quiz: QuizQuestion[];
 }
 
@@ -69,7 +69,8 @@ export interface PracticeLab {
   id: string;
   title: string;
   blurb: string;
-  status: "available" | "coming-next";
+  /** every lab is interactive; kept as a field so new labs can be staged later */
+  status: "available";
 }
 
 /* ------------------------------------------------------------------ */
@@ -454,7 +455,7 @@ export function buildSteps(assistantName: string = DEFAULT_ASSISTANT_NAME): Less
     number: 10,
     title: "Build a Complete Trade Plan",
     subtitle: "Putting all 9 steps into one disciplined plan",
-    blurb: `The capstone: assemble a full, written trade plan ${assistantName} can grade.`,
+    blurb: "The capstone: assemble a full, written trade plan and check it against a checklist.",
     lesson: [
       "A complete trade plan answers everything before you risk a cent: which market, which timeframe, and which direction. Then the precise levels: entry, stop-loss, and take-profit.",
       "Next, the risk: the dollar amount risked, the dollar reward aimed for, and the risk-to-reward ratio. Then the reasoning: why the trade makes sense, and — crucially — what would prove it wrong (your invalidation).",
@@ -472,7 +473,7 @@ export function buildSteps(assistantName: string = DEFAULT_ASSISTANT_NAME): Less
       { term: "Confidence rating", meaning: "Your honest read of how strong the setup is." },
     ],
     beginnerExample: "Market: EUR/USD. Direction: buy. Entry 1.1000, stop 1.0980 (risk 20 pips), target 1.1060 (reward 60 pips) = 1:3. Wrong if it closes below 1.0980. Style: day trade. Confidence: medium.",
-    arxTieIn: `ARX's trade ticket mirrors this plan: symbol, direction, entry, stop, target. The final school project below has ${assistantName} grade a practice plan 0–100 — education only, not a profit promise.`,
+    arxTieIn: `ARX's trade ticket mirrors this plan: symbol, direction, entry, stop, target. The Full Trade Plan Lab gives a practice plan a 0–100 checklist score — education only, not a profit promise.`,
     practiceLabId: "lab-trade-plan",
     quiz: [
       { id: "s10q1", kind: "beginner", prompt: "A trade plan should be written…", options: ["After the trade", "Before you open the trade", "Never", "Only if you lose"], answerIndex: 1, rubyWhy: "Planning before entry keeps emotion out of the decision. Writing it after is just a story." },
@@ -508,18 +509,18 @@ export const BADGES: Badge[] = [
   { id: "badge-graduate", label: "ARX Trading School Graduate — Beginner", earnedAfterStep: 10, note: "Completed all 10 beginner steps. Education only — not a financial qualification or profit guarantee." },
 ];
 
-export function buildPracticeLabs(assistantName: string = DEFAULT_ASSISTANT_NAME): PracticeLab[] {
+export function buildPracticeLabs(_assistantName: string = DEFAULT_ASSISTANT_NAME): PracticeLab[] {
   return [
   { id: "lab-risk-calculator", title: "Risk Calculator Lab", blurb: "Practice position sizing and risk-to-reward with live math.", status: "available" },
-  { id: "lab-market-basics", title: "Market Basics Lab", blurb: "Spot buyer vs seller pressure in simple scenarios.", status: "coming-next" },
-  { id: "lab-products", title: "Products Lab", blurb: "Match markets to their behavior and sessions.", status: "coming-next" },
-  { id: "lab-entry-sl-tp", title: "Entry / SL / TP Drag Lab", blurb: "Drag entry, stop, and target onto a practice chart.", status: "coming-next" },
-  { id: "lab-candle-reading", title: "Candle Reading Lab", blurb: "Identify bullish, bearish, and rejection candles.", status: "coming-next" },
-  { id: "lab-support-resistance", title: "Support / Resistance Drawing Lab", blurb: "Draw reaction zones on a practice chart.", status: "coming-next" },
-  { id: "lab-indicators", title: "Indicator Lab", blurb: "See how indicators react to price — without overloading.", status: "coming-next" },
-  { id: "lab-scalp-flame", title: "Scalp Flame Lab", blurb: "Practice spotting fast-momentum scalp conditions.", status: "coming-next" },
-  { id: "lab-psychology", title: "Psychology Mistake Lab", blurb: "Catch FOMO, revenge, and overtrading in scenarios.", status: "coming-next" },
-  { id: "lab-trade-plan", title: "Full Trade Plan Lab", blurb: `Build a complete plan and have ${assistantName} grade it 0–100.`, status: "coming-next" },
+  { id: "lab-market-basics", title: "Market Basics Lab", blurb: "Spot buyer vs seller pressure in simple scenarios.", status: "available" },
+  { id: "lab-products", title: "Products Lab", blurb: "Match markets to their behavior and sessions.", status: "available" },
+  { id: "lab-entry-sl-tp", title: "Entry / SL / TP Drag Lab", blurb: "Drag entry, stop, and target onto a practice chart.", status: "available" },
+  { id: "lab-candle-reading", title: "Candle Reading Lab", blurb: "Identify bullish, bearish, and rejection candles.", status: "available" },
+  { id: "lab-support-resistance", title: "Support / Resistance Drawing Lab", blurb: "Draw reaction zones on a practice chart.", status: "available" },
+  { id: "lab-indicators", title: "Indicator Lab", blurb: "See how indicators react to price — without overloading.", status: "available" },
+  { id: "lab-scalp-flame", title: "Scalp Flame Lab", blurb: "Practice spotting fast-momentum scalp conditions.", status: "available" },
+  { id: "lab-psychology", title: "Psychology Mistake Lab", blurb: "Catch FOMO, revenge, and overtrading in scenarios.", status: "available" },
+  { id: "lab-trade-plan", title: "Full Trade Plan Lab", blurb: "Build a complete plan and get a 0–100 checklist score.", status: "available" },
   ];
 }
 

@@ -5968,6 +5968,8 @@ export interface ChartAiAlertsScanResult {
   fired: ChartFiredAlert[];
   cleared: string[];
   evaluated: boolean;
+  /** Plain-English reasons alert families were held back this scan (e.g. momentum and stop/target alerts while the feed is stale). */
+  suppressed?: string[];
 }
 
 export type ChartAiAlertsScanResponseSafetyMode =
@@ -6519,6 +6521,17 @@ export const TruthDataState = {
   UNAVAILABLE: "UNAVAILABLE",
 } as const;
 
+/**
+ * Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise.
+ */
+export type TruthDataNotLiveReason =
+  | (typeof TruthDataNotLiveReason)[keyof typeof TruthDataNotLiveReason]
+  | null;
+
+export const TruthDataNotLiveReason = {
+  market_closed: "market_closed",
+} as const;
+
 export interface TruthData {
   state: TruthDataState;
   source: string | null;
@@ -6531,6 +6544,8 @@ export interface TruthData {
   price: number | null;
   lastCandleAt: string | null;
   lastTickAt: string | null;
+  /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
+  notLiveReason?: TruthDataNotLiveReason;
 }
 
 export interface TruthComponents {

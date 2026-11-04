@@ -144,3 +144,29 @@ describe("G-FINISH — Economic Calendar has no fake reminder toggles", () => {
     expect(econCalendar).toMatch(/Manage Alerts/);
   });
 });
+
+// App pages/UI sweep (2026-11-04): the last permanently-disabled placebos.
+const analytics = code("pages/analytics.tsx");
+const mt5Bridge = code("pages/mt5-bridge.tsx");
+const positionsPage = code("pages/positions.tsx");
+const intentQueue = code("pages/live-intent-queue.tsx");
+
+describe("UI sweep — no permanently-disabled placebo controls remain", () => {
+  it("Account Analytics export is a real CSV download and the dead settings cog is gone", () => {
+    expect(analytics).not.toMatch(/coming soon/i);
+    expect(analytics).toMatch(/downloadCsv\(/);
+    expect(analytics).toMatch(/data-testid="analytics-export-csv"/);
+  });
+
+  it("MT5 Bridge 'Notify me when restored' arms a real in-tab watch", () => {
+    expect(mt5Bridge).not.toMatch(/coming soon/i);
+    expect(mt5Bridge).toMatch(/bridge-notify-arm/);
+    expect(mt5Bridge).toMatch(/MT5 bridge restored/);
+  });
+
+  it("tester intents and queued intents say what they are instead of showing a dead button", () => {
+    expect(positionsPage).not.toMatch(/MT5 deferred/);
+    expect(intentQueue).not.toMatch(/Convert to Broker Order Later/);
+    expect(intentQueue).toMatch(/Record only/);
+  });
+});

@@ -12,6 +12,8 @@ import { submitInstantTrade } from "../tradeEngine/pipeline.js";
 import { runHandshake } from "../handshake/coordinator.js";
 import { isUniqueViolation } from "../pgError.js";
 import { routeQuote } from "../data/marketDataRouter.js";
+import { readMt5Quote } from "../data/providers/mt5Provider.js";
+import { MT5_FEED_FRESH_MS } from "../data/freshness.js";
 import { boundQuotePrice } from "./boundQuote.js";
 
 export const MAX_ACTIVE_RUBY_WATCHES = 10;
@@ -30,6 +32,31 @@ export async function currentPriceOf(symbol: string): Promise<number | null> {
     return boundQuotePrice(q).price;
   } catch { return null; }
 }
+
+// The price a watch may ACT on (sweep 2026-11-04): only a fresh observed tick
+// from the watch owner's OWN bridge. The quote is pinned to that writer (no
+// platform-wide MT5 fallback, no third-party provider) and its provenance must
+// name the same bridge. No own bridge, or no own-bridge tick → null: the
+// evaluator does nothing this cycle rather than close on someone else's price.
+export async function ownBridgePriceOf(symbol: string, bridgeConnectionId: number | null): Promise<number | null> {
+  if (bridgeConnectionId == null) return null;
+  try {
+    // Bridge-scoped store read (this line's pinned read): only this bridge's own
+    // partition is served, never another bridge's or the unattributed one.
+    const r = readMt5Quote(symbol, { bridgeConnectionId });
+    if (!r || !r.quote || r.bridgeConnectionId !== bridgeConnectionId) return null;
+    const q = r.quote;
+    // Only a FRESH observed tick may be acted on: the quote's timestamp is the
+    // EA-UTC first sight of this tick (a weekend re-post keeps the old stamp),
+    // so an old stamp means no live price, however recently it was re-sent.
+    const measuredAtMs = q.timestamp ? Date.parse(q.timestamp) : Number.NaN;
+    if (!Number.isFinite(measuredAtMs) || Date.now() - measuredAtMs > MT5_FEED_FRESH_MS) return null;
+    const p = q.bid != null && q.ask != null ? (q.bid + q.ask) / 2 : q.last ?? q.bid ?? q.ask ?? null;
+    return typeof p === "number" && Number.isFinite(p) && p > 0 ? p : null;
+  } catch { return null; }
+}
+
+export { rubyWatchPermissionBlock, type RubyWatchPermissionBlock } from "./rubyWatchPermissions.js";
 
 // Build a dedupe fingerprint for a Ruby command. Two semantically-identical
 // commands (same kind/symbol/side/size/level) produce the same fingerprint, so

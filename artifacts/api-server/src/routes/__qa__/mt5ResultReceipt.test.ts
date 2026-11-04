@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+// The real classifier: unversioned EA bodies take the legacy mapping path.
+import { normalizeTerminalResultEvidence } from "../../lib/mt5/terminalResultEvidence.js";
 const source = readFileSync(new URL("../mt5.ts", import.meta.url), "utf8");
 const tree = ts.createSourceFile(
   "mt5.ts",
@@ -53,11 +55,12 @@ const compiled = ts.transpileModule(`const handler=${handler.getText(tree)};`, {
 }).outputText;
 async function run(
   forward: () => Promise<unknown>,
-  { bridged = true, owned = true } = {},
+  { bridged = true, owned = true, awaiting = true, status = "FILLED", action = "PLACE_MARKET", mt5Ticket = "123" as string | undefined } = {},
 ) {
   const cmd = {
     id: 1,
-    action: "PLACE_MARKET",
+    action,
+    status: awaiting ? "DELIVERED" : "FILLED",
     requestedByUserId: 9,
     payload: bridged
       ? {
@@ -67,10 +70,27 @@ async function run(
         }
       : {},
   };
+  // Table sentinels let the ownership lookup and the linked-command lookup
+  // answer differently; a row is only visible to the connection that owns it.
+  const mt5CommandsTable = { table: "mt5_commands" };
+  const arxLiveCommandsTable = { table: "arx_live_commands" };
+  const linked = { commandId: "cmd", commandType: "PLACE_LIVE_MARKET_ORDER", requestedVolume: 0.1, brokerTicket: null, payload: {} };
+  const updates: Record<string, unknown>[] = [];
   const db = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => (table === mt5CommandsTable ? (owned ? [cmd] : []) : table === arxLiveCommandsTable ? [linked] : []),
+        }),
+      }),
+    }),
     update: () => ({
-      set: () => ({
-        where: () => ({ returning: async () => (owned ? [cmd] : []) }),
+      set: (values: Record<string, unknown>) => (updates.push(values), {
+        where: () => ({ returning: async () => {
+          // The status precondition is part of the WHERE: a row not awaiting a
+          // result (terminal or never delivered) matches nothing.
+          return owned && awaiting ? [{ ...cmd, ...values }] : [];
+        } }),
       }),
     }),
   };
@@ -80,6 +100,7 @@ async function run(
         recordLiveCommandResult: forward,
         mapBridgedLiveOutcome: () => "LIVE_FILLED",
       };
+    if (path === "@workspace/db/schema") return { tradeActionRequestsTable: { table: "trade_action_requests" } };
     if (path.endsWith("managementConsumers.js"))
       return { reportedManagementIdentity: () => [] };
     throw new Error(`Unexpected module ${path}`);
@@ -88,14 +109,20 @@ async function run(
     "db",
     "PostMt5CommandResultBody",
     "mt5CommandsTable",
+    "arxLiveCommandsTable",
+    "normalizeTerminalResultEvidence",
     "and",
     "eq",
+    "inArray",
     "loadModule",
     `${compiled};return handler;`,
   )(
     db,
     { parse: (x: unknown) => x },
-    {},
+    mt5CommandsTable,
+    arxLiveCommandsTable,
+    normalizeTerminalResultEvidence,
+    () => true,
     () => true,
     () => true,
     loadModule,
@@ -117,8 +144,8 @@ async function run(
       mt5Connection: { id: 1, userId: 9 },
       body: {
         commandId: 1,
-        status: "FILLED",
-        mt5Ticket: "123",
+        status,
+        ...(mt5Ticket !== undefined ? { mt5Ticket } : {}),
         filledLotSize: 0.1,
         fillPrice: 1.1,
       },
@@ -126,7 +153,7 @@ async function run(
     },
     reply,
   );
-  return reply;
+  return Object.assign(reply, { updates });
 }
 test("bridge persistence failure returns retryable503 and never acknowledges received", async () => {
   const reply = await run(async () => {
@@ -218,4 +245,46 @@ test("durable receipt with pending recovery explicitly reports default-off worke
   const reply=await run(async()=>({ok:true,receiptPersisted:true,positionSettlement:"PENDING",settlementRecovery:recovery}));
   assert.equal(reply.code,200);
   assert.deepEqual(reply.body,{received:true,receiptPersisted:true,positionSettlement:"PENDING",settlementRecovery:recovery});
+});
+
+test("a result for a terminal unlinked row is refused 409 and never rewrites it", async () => {
+  const reply = await run(async () => { throw new Error("must not forward"); }, { awaiting: false, bridged: false });
+  assert.equal(reply.code, 409);
+  assert.deepEqual(reply.body, { received: false, error: "COMMAND_NOT_AWAITING_RESULT", status: "FILLED" });
+  assert.equal(reply.updates.length, 1, "the guarded update matched nothing; no draft write-back");
+});
+
+test("a late report for a final linked mirror is still forwarded for exactly-once adjudication", async () => {
+  let forwarded = 0;
+  const reply = await run(async () => { forwarded++; return { ok: true, reason: "DUPLICATE_IGNORED", receiptPersisted: true, positionSettlement: "APPLIED" }; }, { awaiting: false });
+  assert.equal(reply.code, 200);
+  assert.equal(forwarded, 1);
+});
+
+test("EA refusals and expiries are failures, never completions", async () => {
+  for (const status of ["EA_EXECUTION_NOT_IMPLEMENTED", "EA_READ_ONLY_MODE_ACTIVE", "EXPIRED", "COMMAND_EXPIRED", "UNSUPPORTED_COMMAND"]) {
+    const reply = await run(async () => { throw new Error("must not forward"); }, { bridged: false, status, mt5Ticket: undefined });
+    assert.equal(reply.code, 200, status);
+    const set = reply.updates[0]!;
+    assert.equal(set.completedAt, null, status);
+    assert.ok(set.failedAt instanceof Date, status);
+  }
+});
+
+test("a pending placement without an order ticket is unresolved and never marks the draft PLACED", async () => {
+  const reply = await run(async () => { throw new Error("must not forward"); },
+    { bridged: false, status: "PLACED", action: "PLACE_PENDING_ORDER", mt5Ticket: "0" });
+  assert.equal(reply.code, 200);
+  assert.equal(reply.updates.length, 1, "only the mailbox row; no draft write-back");
+  assert.equal(reply.updates[0]!.completedAt, null);
+  assert.equal(reply.updates[0]!.failedAt, null);
+});
+
+test("a pending placement with an order ticket marks the draft PLACED with that ticket", async () => {
+  const reply = await run(async () => { throw new Error("must not forward"); },
+    { bridged: false, status: "PLACED", action: "PLACE_PENDING_ORDER", mt5Ticket: "777" });
+  assert.equal(reply.code, 200);
+  assert.equal(reply.updates.length, 2);
+  assert.equal(reply.updates[1]!.pendingStatus, "PLACED");
+  assert.equal(reply.updates[1]!.mt5OrderTicket, "777");
 });

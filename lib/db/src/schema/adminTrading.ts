@@ -30,13 +30,15 @@ export const globalTradingSettingsTable = pgTable("global_trading_settings", {
   // SIMULATED = internal paper-trade simulator only.
   // DEMO = orders routed to broker demo accounts only.
   // LIVE = orders routed to verified live accounts, subject to per-user gates.
-  // Owner decision (2026-10-24): the platform starts available — LIVE mode
-  // with paper, demo and live enabled. Per-user gates (permissions, live
-  // approval, risk disclosure, verified live account) still apply.
-  platformMode: text("platform_mode").notNull().default("LIVE"),
+  // Owner decision (2026-11-04, replacing 2026-10-24): a fresh install fails
+  // closed — platform OFF with only the paper simulator enabled. An operator
+  // switches demo/live on in Admin. Per-user gates (permissions, live
+  // approval, risk disclosure, verified live account) still apply after that.
+  // Migration: lib/db/migrations/2026-11-04_global_trading_settings_fail_closed.sql
+  platformMode: text("platform_mode").notNull().default("OFF"),
   simulatedEnabled: boolean("simulated_enabled").notNull().default(true),
-  demoEnabled: boolean("demo_enabled").notNull().default(true),
-  liveEnabled: boolean("live_enabled").notNull().default(true),
+  demoEnabled: boolean("demo_enabled").notNull().default(false),
+  liveEnabled: boolean("live_enabled").notNull().default(false),
   // Master emergency stop. Owner decision (2026-10-24): defaults FALSE, so a
   // fresh install, restart or redeploy does not halt trading. Only the owner or
   // an operator engages it. When engaged, no new DEMO/LIVE risk is accepted;

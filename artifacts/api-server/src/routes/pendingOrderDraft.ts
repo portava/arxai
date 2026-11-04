@@ -21,7 +21,7 @@ import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { ORDER_TYPES, isMarketOrder, directionOf, type OrderType } from "../lib/tradeAction/orderTypes.js";
 import { enforceTradeTicketRules } from "../lib/tradeAction/riskGovernorEnforcement.js";
@@ -38,6 +38,7 @@ import {
   type PendingSubmitStatus,
 } from "../lib/mt5/bridgeCapabilities.js";
 import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
+import { eaPendingPlacementPayload, eaPendingCancelPayload } from "../lib/mt5/pendingPayloadWire.js";
 
 const router: IRouter = Router();
 
@@ -380,6 +381,8 @@ router.get("/me/pending-order-drafts", async (req, res): Promise<void> => {
         stopLoss: r.stopLoss,
         takeProfit: r.takeProfit,
         expiration: r.expiration?.toISOString() ?? null,
+        // Set once MT5 placed the order: cancelling then needs the bridge.
+        mt5OrderTicket: r.mt5OrderTicket != null ? String(r.mt5OrderTicket) : null,
         pendingStatus: r.pendingStatus,
         status: r.status,
         reason: r.reason,
@@ -409,16 +412,38 @@ router.delete("/me/pending-order-draft/:id", async (req, res): Promise<void> => 
   }
 
   try {
+    // A draft that reached the broker (has an MT5 order ticket) is a LIVE
+    // pending order: marking it CANCELLED here would leave the order working at
+    // the broker while ARX says it is gone. Those must be cancelled through
+    // POST /me/pending-order-draft/:id/cancel-via-bridge; only that path's
+    // MT5 confirmation writes the final CANCELLED.
     const result = await db.update(tradeActionRequestsTable)
       .set({ pendingStatus: "CANCELLED", status: "cancelled", updatedAt: new Date() })
       .where(and(
         eq(tradeActionRequestsTable.id, draftId),
         eq(tradeActionRequestsTable.userId, userId),
         isNotNull(tradeActionRequestsTable.pendingStatus),
+        isNull(tradeActionRequestsTable.mt5OrderTicket),
       ))
       .returning({ id: tradeActionRequestsTable.id });
 
     if (result.length === 0) {
+      const [placed] = await db.select({ id: tradeActionRequestsTable.id, mt5OrderTicket: tradeActionRequestsTable.mt5OrderTicket })
+        .from(tradeActionRequestsTable)
+        .where(and(
+          eq(tradeActionRequestsTable.id, draftId),
+          eq(tradeActionRequestsTable.userId, userId),
+          isNotNull(tradeActionRequestsTable.pendingStatus),
+        ))
+        .limit(1);
+      if (placed?.mt5OrderTicket) {
+        res.status(409).json({
+          ok: false, error: "placed_at_broker",
+          reason: "This pending order is placed at the broker. Cancel it through cancel-via-bridge so the broker removes it.",
+          mt5OrderTicket: String(placed.mt5OrderTicket), ...SAFETY,
+        });
+        return;
+      }
       res.status(404).json({ ok: false, error: "draft_not_found", ...SAFETY });
       return;
     }
@@ -535,14 +560,9 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
         lot: draft.lotSize,
         sl: draft.stopLoss,
         tp: draft.takeProfit,
-        pendingPayload: {
-          orderType: draft.orderType,
-          entryPrice: draft.requestedPrice,
-          stopTriggerPrice: draft.stopTriggerPrice,
-          stopLimitPrice: draft.stopLimitPrice,
-          expiration: draft.expiration?.toISOString() ?? null,
-          confirmedByUser: true,
-        },
+        // EA wire keys (entry, stopLimitPrice, expirationEpoch) beside the
+        // draft-side names; see lib/mt5/pendingPayloadWire.ts.
+        pendingPayload: { ...eaPendingPlacementPayload(draft), confirmedByUser: true },
       }, userId);
 
       // queueMt5CommandWithGate currently force-stamps BLOCKED. Treat anything
@@ -635,7 +655,7 @@ router.post("/me/pending-order-draft/:id/cancel-via-bridge", async (req, res): P
     }
     const queued = await queueMt5CommandWithGate("CANCEL_PENDING_ORDER", {
       symbol: draft.symbol,
-      pendingPayload: { mt5OrderTicket: draft.mt5OrderTicket, confirmedByUser: true },
+      pendingPayload: { ...eaPendingCancelPayload(draft.mt5OrderTicket), confirmedByUser: true },
     }, userId);
     const isReallyQueued = queued.command.status === "PENDING";
     const nextStatus = isReallyQueued ? "CANCEL_QUEUED" : "BLOCKED_BY_PAPER_LOCK";

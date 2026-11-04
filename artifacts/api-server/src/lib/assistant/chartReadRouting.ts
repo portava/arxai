@@ -129,6 +129,7 @@ export function detectTradeOptionsIntent(text: string): boolean {
 // OpenAI chat-completions tool_choice union (the subset we use).
 export type AssistantToolChoice =
   | "auto"
+  | "none"
   | { type: "function"; function: { name: string } };
 
 // Pure resolver for the chat handler's per-turn tool_choice. We force the
@@ -137,10 +138,16 @@ export type AssistantToolChoice =
 // model finalizes the natural-language answer and can call follow-up tools
 // (e.g. getTradeMarketContext for P&L context). Forcing first-turn-only also
 // prevents an infinite re-force loop.
+//
+// `maxTurns` (optional): on the LAST allowed turn tool_choice is "none", so the
+// model must answer in text from the tool results it already has. Without it a
+// final-turn tool call would end the loop with no reply (a blank bubble).
 export function resolveAssistantToolChoice(
   turn: number,
   chartReadIntent: boolean,
+  maxTurns?: number,
 ): AssistantToolChoice {
+  if (typeof maxTurns === "number" && turn >= maxTurns - 1 && turn > 0) return "none";
   if (turn === 0 && chartReadIntent) {
     return { type: "function", function: { name: "readChartStructure" } };
   }

@@ -1904,6 +1904,25 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
   return { ok: true };
 }
 
+export const LIVE_PARTIAL_CLOSE_UNSUPPORTED = "LIVE_PARTIAL_CLOSE_UNSUPPORTED";
+
+/** PURE — the live Universal Agent honours a CLOSE_POSITION `lot` below the
+ *  position volume from v1.55 (PositionClosePartial). Unknown → false. */
+export function eaHonoursLiveCloseVolume(eaVersion: string | null | undefined): boolean {
+  if (!eaVersion) return false;
+  const m = /^(\d+)\.(\d+)/.exec(String(eaVersion).trim().replace(/^v/i, ""));
+  if (!m) return false;
+  const major = Number(m[1]), minor = Number(m[2]);
+  return major > 1 || (major === 1 && minor >= 55);
+}
+/** PURE — a close volume strictly below the known open position volume. An
+ *  unknown position volume is not provably partial. */
+export function isLivePartialCloseRequest(requestedVolume: number, positionVolume: number | null | undefined): boolean {
+  if (!Number.isFinite(requestedVolume) || requestedVolume <= 0) return false;
+  if (positionVolume == null || !Number.isFinite(positionVolume) || positionVolume <= 0) return false;
+  return requestedVolume < positionVolume - LIVE_VOLUME_EPSILON;
+}
+
 /**
  * Phase B — Create a draft for CLOSE_LIVE_POSITION or MODIFY_LIVE_SLTP.
  * These ops are bound to an existing live position (ticket) and skip the
@@ -2449,6 +2468,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       };
     }
   }
+
 
   // ── ALLOCATION FREEZE PRE-GATE (Phase ALLOC) — OUTERMOST WALL ──────────
   // Operator-controlled per-user trading freeze. Runs BEFORE the pilot
@@ -3425,6 +3445,48 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   };
   const liveModeBridges = nonRevoked.filter((b) => b.mode === "LIVE").sort(byFreshness);
   const bridge = liveModeBridges[0] ?? nonRevoked.sort(byFreshness)[0] ?? null;
+
+  // ── LIVE PARTIAL CLOSE PRE-GATE (bridge sweep 2026-11-04) ───────────────
+  // The live mailbox maps CLOSE_LIVE_POSITION to the EA's CLOSE_POSITION,
+  // which v1.54 executes as a FULL close (it reads no volume); its
+  // PARTIAL_CLOSE handler skips the management preflight and reports no
+  // versioned close evidence, so it is not used. A close whose volume is below
+  // the position volume recorded at draft time (manualClosePositionBasisV1,
+  // integrity-verified just above) is refused here instead of closing the whole position.
+  // The Universal Agent from v1.55 honours a smaller `lot` on CLOSE_POSITION
+  // (PositionClosePartial with a volume-step check), so the block applies only
+  // when the dispatch bridge reports an older (or unknown) EA version.
+  // Additive: only ADDS a block.
+  if (row.commandType === "CLOSE_LIVE_POSITION") {
+    const basis = (row.payload as Record<string, unknown> | null)?.["manualClosePositionBasisV1"] as { volume?: unknown } | undefined;
+    const positionVolume = typeof basis?.volume === "number" ? basis.volume : null;
+    if (isLivePartialCloseRequest(Number(row.requestedVolume), positionVolume) && !eaHonoursLiveCloseVolume(bridge?.eaVersion)) {
+      const reason = LIVE_PARTIAL_CLOSE_UNSUPPORTED;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED", primaryReason: reason, blockReasons: [reason],
+          phase: "PARTIAL_CLOSE_UNSUPPORTED", requestedVolume: row.requestedVolume, positionVolume,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+      await audit({
+        eventType: "LIVE_DISPATCH_BLOCKED", severity: "WARNING",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED: partial close ${row.requestedVolume} of ${positionVolume} is not supported by the MT5 bridge`,
+        metadata: { commandId: args.commandId, reason, requestedVolume: row.requestedVolume, positionVolume },
+      });
+      return {
+        ok: false as const, reason, command: blocked,
+        userMessage: "Partial closes need the ARX Universal Agent v1.55 or newer on your MT5 bridge. Close the full position, update the EA, or reduce it in MT5.",
+      };
+    }
+  }
 
   // Phase B MOCK short-circuit (TOCTOU guard layer). The Phase B evaluator
   // does NOT inspect bridge.mode (it is a pure function over the heartbeat
@@ -4840,6 +4902,10 @@ export type BridgedLiveOutcome =
   | "STALE_COMMAND_REJECTED";
 
 const LIVE_FAILED_STATUS_RE = /fail|error|reject/i;
+/** EA statuses that confirm the command was NOT executed but match none of
+ *  LIVE_FAILED_STATUS_RE (v131 EA_EXECUTION_NOT_IMPLEMENTED /
+ *  EA_READ_ONLY_MODE_ACTIVE, UNSUPPORTED_COMMAND). */
+export const LIVE_NOT_EXECUTED_STATUS_RE = /not_implemented|read_only|unsupported/i;
 
 /**
  * Pure, honest mapping of an EA/broker terminal result into a Phase B outcome.
@@ -4895,26 +4961,40 @@ export function mapBridgedLiveOutcome(input: {
   executedVolume?: number | null;
   /** R2 S5 — the command row's requested volume. */
   requestedVolume?: number | null;
+  /** The linked live command's type; a pending placement is never a fill. */
+  commandType?: string | null;
 }): BridgedLiveOutcome {
   const status = input.status ?? "";
   const statusLc = status.toLowerCase();
   const reasonLc = (input.reason ?? "").toLowerCase();
-  if (statusLc.includes("stale") || reasonLc.includes("stale")) {
+  // v154 refuses a command older than CommandExpirySeconds with status EXPIRED
+  // (reasonCode COMMAND_EXPIRED) before any broker call: the EA's own stale
+  // refusal, so terminal LIVE_EXPIRED and the reservation is released.
+  if (statusLc.includes("stale") || reasonLc.includes("stale")
+    || statusLc === "expired" || statusLc === "command_expired" || reasonLc === "command_expired") {
     return "STALE_COMMAND_REJECTED";
   }
   if (LIVE_FAILED_STATUS_RE.test(status)) {
     return statusLc.includes("reject") ? "LIVE_REJECTED" : "LIVE_FAILED";
   }
+  // The EA confirms it did NOT execute: v131 read-only / no execution code
+  // path, or an action the EA has no handler for. Confirmed non-execution.
+  if (LIVE_NOT_EXECUTED_STATUS_RE.test(status)) return "LIVE_REJECTED";
   // Explicit uncertainty/acceptance is never promoted by an existing ticket.
   if (["unknown","live_unknown"].includes(statusLc)) return "LIVE_UNKNOWN";
-  // Only an explicit acknowledgement. Unversioned PLACED/ACCEPTED keep their
-  // existing mapping: nothing yet resolves an ACK for pending orders.
+  // Only an explicit acknowledgement (or, below, an accepted live pending order).
   if (["acknowledged","live_acknowledged"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
   if (["partially_filled","live_partially_filled"].includes(statusLc))
     return input.hasBrokerTicket && typeof input.executedVolume === "number" && Number.isFinite(input.executedVolume) && input.executedVolume>0 ? "LIVE_PARTIALLY_FILLED" : "LIVE_UNKNOWN";
   // R2 S5 — a ticket with a short fill is a PARTIAL, not a full fill. Checked
   // before the full-fill branch so a partial can never be recorded as
   // complete (spec §12: partial fills update exposure immediately).
+  // A pending order the broker accepted (v154 "PLACED" + order ticket) is
+  // working at the broker, not filled: acknowledged, reservation held, no
+  // filledAt. Its fill is learned later from broker truth. Checked before the
+  // partial test: a pending ack's echoed requestedVolume is not a fill size.
+  if (input.commandType === "PLACE_LIVE_PENDING_ORDER")
+    return input.hasBrokerTicket ? "LIVE_ACKNOWLEDGED" : "LIVE_UNKNOWN";
   if (isPartialFill(input)) return "LIVE_PARTIALLY_FILLED";
   return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_UNKNOWN";
 }

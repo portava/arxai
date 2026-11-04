@@ -90,8 +90,31 @@ export function RouteAccessGuard({ children }: { children: React.ReactNode }) {
     }
     // Approved (live / shared-bridge) traders get the full product allowlist.
     if (isApprovedTrader && isNormalUserAllowedPath(location)) return <>{children}</>;
-    // Everyone else — a pending/unapproved trader on an execution surface, or
-    // any trader on an admin/investor/experimental URL — is redirected home to
+    // A not-yet-approved trader on a page that approval unlocks: say so in
+    // place instead of silently bouncing them to the cockpit.
+    if (!isApprovedTrader && isNormalUserAllowedPath(location)) {
+      return (
+        <div
+          className="max-w-xl mx-auto mt-12 rounded-xl border border-border bg-card p-6 text-center space-y-4"
+          data-testid="routeaccess-pending-locked"
+        >
+          <div className="text-base font-semibold">This page unlocks after your account is approved</div>
+          <p className="text-sm text-muted-foreground">
+            While your trading access is pending you can use the Cockpit, Onboarding, Trading School and your account pages.
+            The full trading menu appears once an operator approves your account.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button size="sm" variant="default" onClick={() => setLocation("/")} data-testid="button-pending-go-home">
+              Go to Cockpit
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setLocation("/onboarding")} data-testid="button-pending-onboarding">
+              Review onboarding
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    // Everyone else — any trader on an admin/investor/experimental URL — is redirected home to
     // the cockpit (not shown a dead-end page). Backend route guards remain
     // authoritative for data either way.
     queueMicrotask(() => setLocation("/"));

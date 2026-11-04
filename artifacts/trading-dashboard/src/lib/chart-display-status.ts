@@ -21,6 +21,12 @@ export type FeedStatus = {
   warning: string | null;
   message: string;
   lastCandleTime: string | null;
+  /**
+   * Why a series whose bars may be clean is still not live: the scheduled
+   * weekend close (market_closed) or bars served from storage with no feed
+   * pushing them (stored_history). Optional: absent from older servers.
+   */
+  notLiveReason?: string | null;
 };
 
 export type ChartDisplayStatus =
@@ -47,6 +53,9 @@ export function resolveDisplayStatus(fs: FeedStatus | null, hasCandles: boolean)
   const { quality, isLive, stale, source, aiUsable } = fs;
   if (quality === "empty" || quality === "unavailable") return "UNAVAILABLE";
   if (quality === "invalid" || quality === "partial") return "ANALYSIS_ONLY";
+  // Stored history (no feed is pushing these bars): last-known candles, never a
+  // delayed composite feed that is "syncing" — so it can't read as one.
+  if (fs.notLiveReason === "stored_history") return "STALE";
   if (quality === "stale" || stale) return "STALE";
   if (quality === "delayed") return "FALLBACK_COMPOSITE";
   if (quality === "clean" && isLive) return "LIVE";

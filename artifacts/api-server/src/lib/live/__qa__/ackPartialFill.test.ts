@@ -126,3 +126,26 @@ test("results after an ack or partial are APPLIED, not parked for reconciliation
   assert.ok(!epistemic.includes("LIVE_PARTIALLY_FILLED"));
   assert.ok(!epistemic.includes("LIVE_ACKNOWLEDGED"));
 });
+
+test("bridge audit: an accepted live pending order is ACKNOWLEDGED, never FILLED", () => {
+  const pending = { commandType: "PLACE_LIVE_PENDING_ORDER" };
+  assert.equal(mapBridgedLiveOutcome({ status: "PLACED", hasBrokerTicket: true, executedVolume: 0.1, requestedVolume: 0.1, ...pending }), "LIVE_ACKNOWLEDGED");
+  assert.equal(mapBridgedLiveOutcome({ status: "PLACED", hasBrokerTicket: true, executedVolume: 0.05, requestedVolume: 0.1, ...pending }), "LIVE_ACKNOWLEDGED");
+  assert.equal(mapBridgedLiveOutcome({ status: "PLACED", hasBrokerTicket: false, ...pending }), "LIVE_UNKNOWN");
+  assert.equal(mapBridgedLiveOutcome({ status: "REJECTED", hasBrokerTicket: false, ...pending }), "LIVE_REJECTED");
+  assert.equal(settleReservationForStatus("LIVE_ACKNOWLEDGED"), "HOLD");
+  // Market entries keep the ticket-is-a-fill mapping.
+  assert.equal(mapBridgedLiveOutcome({ status: "FILLED", hasBrokerTicket: true, commandType: "PLACE_LIVE_MARKET_ORDER" }), "LIVE_FILLED");
+});
+
+test("bridge audit: v154 EXPIRED / COMMAND_EXPIRED is the EA's stale refusal (released)", () => {
+  assert.equal(mapBridgedLiveOutcome({ status: "EXPIRED", reason: "COMMAND_EXPIRED", hasBrokerTicket: false }), "STALE_COMMAND_REJECTED");
+  assert.equal(mapBridgedLiveOutcome({ status: "COMMAND_EXPIRED", hasBrokerTicket: false }), "STALE_COMMAND_REJECTED");
+  assert.equal(settleReservationForStatus("LIVE_EXPIRED"), "RELEASE");
+});
+
+test("bridge audit: v131 refusals and unsupported actions are confirmed non-execution", () => {
+  for (const status of ["EA_EXECUTION_NOT_IMPLEMENTED", "EA_READ_ONLY_MODE_ACTIVE", "UNSUPPORTED_COMMAND"])
+    assert.equal(mapBridgedLiveOutcome({ status, hasBrokerTicket: false }), "LIVE_REJECTED", status);
+  assert.equal(settleReservationForStatus("LIVE_REJECTED"), "RELEASE");
+});

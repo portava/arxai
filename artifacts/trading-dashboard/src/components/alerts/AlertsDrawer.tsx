@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import {
   useGetAlerts,
   useMarkAllAlertsRead,
@@ -117,9 +118,9 @@ export function AlertsDrawer({ open, onClose }: Props) {
             <CheckCheck className="h-4 w-4 mr-1" />
             Mark all read
           </Button>
-          <a href="/alert-preferences" className="ml-auto text-xs text-muted-foreground hover:underline" data-testid="link-alert-preferences">
+          <Link href="/alert-preferences" className="ml-auto text-xs text-muted-foreground hover:underline" data-testid="link-alert-preferences">
             Preferences
-          </a>
+          </Link>
         </div>
 
         <ScrollArea className="flex-1 -mx-6 px-6">

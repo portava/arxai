@@ -22,7 +22,7 @@ import {
 } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
-import { getMarketData } from "../marketData/marketDataService.js";
+import { currentQuote } from "../tradeEngine/marketQuote.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { fillPaperTrade, settlePaperTrade } from "../tradeEngine/pipeline.js";
 import { paperMoveSign, paperPnl, resolvePaperContract } from "./paperPnl.js";
@@ -104,10 +104,16 @@ export async function runPaperMonitor(opts?: {
         currentPrice = opts.forcePrice;
         mdSource = "FORCED";
       } else {
-        const { snapshot } = await getMarketData({ symbol: order.symbol, timeframe: "M5", limit: 100 });
-        currentPrice = snapshot.mid;
-        mdSource = snapshot.source;
-        mdQuality = snapshot.dataQuality.status;
+        // One execution price source (audit H4): the router quote the venue
+        // fills on. A stale or missing quote never marks an SL/TP hit.
+        const q = await currentQuote(order.symbol);
+        if (!q.ok) {
+          summary.warnings.push(`order=${order.id}: no current execution price (${q.reasons.join("; ").slice(0, 160)})`);
+          continue;
+        }
+        currentPrice = (q.bid + q.ask) / 2;
+        mdSource = q.source;
+        mdQuality = "CURRENT";
       }
     } catch (err) {
       summary.warnings.push(`order=${order.id}: market data failed (${String(err).slice(0, 120)})`);
@@ -193,8 +199,9 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
 
   let exitPrice = opts?.exitPrice;
   if (exitPrice == null) {
-    const { snapshot } = await getMarketData({ symbol: order.symbol, timeframe: "M5", limit: 100 });
-    exitPrice = snapshot.mid;
+    const q = await currentQuote(order.symbol);
+    if (!q.ok) return { ok: false, error: `No current execution price to close at: ${q.reasons.join("; ")}` };
+    exitPrice = (q.bid + q.ask) / 2;
   }
   // Governed (Risk Governor CLOSE, venue PAPER) and booked in the PAPER venue.
   const closed = await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, {

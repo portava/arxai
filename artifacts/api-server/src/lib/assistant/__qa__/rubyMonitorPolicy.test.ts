@@ -93,3 +93,80 @@ test("alert copy tells the trader how to answer and what happens after the last 
   const c3 = alertCopy({ assistantName: "Ruby", symbol: "EURUSD", alertNumber: 3, maxAlerts: 3, reason: "r", price: null, floatingPnl: null });
   assert.match(c3.message, /last alert/);
 });
+
+// ── Sweep 2026-11-04: alert runs decay; close retries back off ─────────────
+import {
+  MONITOR_ALERT_WINDOW_MS, MONITOR_CLOSE_RETRY_BASE_MS, MONITOR_MAX_CLOSE_ATTEMPTS, MONITOR_QUIET_RESET_EVALUATIONS,
+  expireStaleAlertRun, inCloseBackoff, noteEvaluation, recordCloseFailure,
+} from "../rubyMonitorPolicy.js";
+
+const alertAt = (s: ReturnType<typeof emptyMonitorState>, ms: number) =>
+  recordAlert(s, { at: new Date(ms).toISOString(), price: 1.1, reversalRiskScore: 80, health: "weakening", reason: "r" });
+
+test("quiet evaluations: three NONE in a row end the unanswered run; evidence resets the quiet count", () => {
+  let s = alertAt(alertAt(emptyMonitorState(), T0), T0 + MONITOR_ALERT_COOLDOWN_MS);
+  assert.equal(s.alertsSinceAck, 2);
+  s = noteEvaluation(s, "NONE");
+  s = noteEvaluation(s, "NONE");
+  assert.equal(s.quietEvaluations, 2);
+  s = noteEvaluation(s, "COOLDOWN");
+  assert.equal(s.quietEvaluations, 0, "evidence again → quiet count restarts");
+  assert.equal(s.alertsSinceAck, 2);
+  for (let i = 0; i < MONITOR_QUIET_RESET_EVALUATIONS; i++) s = noteEvaluation(s, "NONE");
+  assert.equal(s.alertsSinceAck, 0);
+  assert.equal(s.alerts.length, 2, "history is kept");
+  // The next alert starts a fresh run at 1.
+  const d = decideMonitorAction({ ...reversing, state: s, nowMs: T0 + 3 * MONITOR_ALERT_COOLDOWN_MS });
+  assert.equal(d.action, "ALERT");
+  assert.equal(d.alertNumber, 1);
+});
+
+test("noteEvaluation outside a run changes nothing (no write per quiet cycle)", () => {
+  const s = emptyMonitorState();
+  assert.equal(noteEvaluation(s, "NONE"), s);
+});
+
+test("a run whose first alert is older than the window no longer counts toward the executive close", () => {
+  let s = emptyMonitorState();
+  s = alertAt(s, T0);
+  s = alertAt(s, T0 + MONITOR_ALERT_COOLDOWN_MS);
+  s = alertAt(s, T0 + 2 * MONITOR_ALERT_COOLDOWN_MS);
+  const soon = T0 + 3 * MONITOR_ALERT_COOLDOWN_MS;
+  assert.equal(expireStaleAlertRun(s, soon), s, "inside the window: unchanged");
+  assert.equal(decideMonitorAction({ ...reversing, state: expireStaleAlertRun(s, soon), nowMs: soon }).action, "EXECUTIVE_CLOSE");
+  const late = T0 + MONITOR_ALERT_WINDOW_MS + 1;
+  const expired = expireStaleAlertRun(s, late);
+  assert.equal(expired.alertsSinceAck, 0);
+  const d = decideMonitorAction({ ...reversing, state: expired, nowMs: late });
+  assert.equal(d.action, "ALERT");
+  assert.equal(d.alertNumber, 1);
+});
+
+test("close failures back off exponentially and give up after the max attempts", () => {
+  let s = emptyMonitorState();
+  const f1 = recordCloseFailure(s, T0);
+  assert.equal(f1.giveUp, false);
+  assert.equal(f1.retryInMs, MONITOR_CLOSE_RETRY_BASE_MS);
+  assert.equal(inCloseBackoff(f1.state, T0 + MONITOR_CLOSE_RETRY_BASE_MS - 1), true);
+  assert.equal(inCloseBackoff(f1.state, T0 + MONITOR_CLOSE_RETRY_BASE_MS), false);
+  s = f1.state;
+  const f2 = recordCloseFailure(s, T0);
+  assert.equal(f2.retryInMs, 2 * MONITOR_CLOSE_RETRY_BASE_MS);
+  let st = f2.state;
+  for (let i = 2; i < MONITOR_MAX_CLOSE_ATTEMPTS; i++) {
+    const f = recordCloseFailure(st, T0);
+    st = f.state;
+    if (i === MONITOR_MAX_CLOSE_ATTEMPTS - 1) assert.equal(f.giveUp, true);
+  }
+  assert.equal(st.closeAttempts, MONITOR_MAX_CLOSE_ATTEMPTS);
+});
+
+test("new monitor-state fields survive serialize/parse; legacy rows parse with defaults", () => {
+  const s = { ...emptyMonitorState(), originalStopLoss: 1.095, quietEvaluations: 2, closeAttempts: 1, nextCloseAttemptAt: new Date(T0).toISOString() };
+  assert.deepEqual(parseMonitorState(serializeMonitorState(s)), s);
+  const legacy = parseMonitorState(JSON.stringify({ monitor: { alerts: [], alertsSinceAck: 1 } }));
+  assert.equal(legacy.originalStopLoss, null);
+  assert.equal(legacy.quietEvaluations, 0);
+  assert.equal(legacy.closeAttempts, 0);
+  assert.equal(legacy.nextCloseAttemptAt, null);
+});

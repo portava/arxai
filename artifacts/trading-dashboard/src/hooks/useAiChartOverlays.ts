@@ -6,6 +6,14 @@ import {
   canUseScannerOpportunity,
   nextScannerMapFreshnessChange,
 } from "@/components/scanner/scannerMapFreshness";
+import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
+// A chart read describes the chart until the next candle closes (observedAt +
+// one interval): the shared Truth helpers the scanner's Ruby read uses. A
+// gated read has nothing directional to expire (null); an unknown data time or
+// interval reads as already expired (NaN), never as "still valid".
+import { chartReadExpiresAtMs, chartReadAsOfLabel } from "@/lib/rubyReadPanelState";
+import { candleIntervalMs } from "@workspace/domain/market";
 
 // useAiChartOverlays — ARX Native Chart Level 5 AI-overlay FOUNDATION.
 //
@@ -154,6 +162,14 @@ export interface RubyReadSummary {
   supportZone: string;
   resistanceZone: string;
   dataQuality: "ok" | "insufficient";
+  /**
+   * Data time of the read (latest CLOSED candle close, ISO) as the server sent
+   * it. The read stops describing the chart once the next candle closes
+   * (chartReadExpiresAtMs); unknown → treated as already expired.
+   */
+  observedAt?: string | null;
+  /** Server gated the read (not confirmed); nothing directional to expire. */
+  gated?: boolean;
   /**
    * Gold Strategy Mode block (Task #657) — present ONLY for gold symbols.
    * Display/decision-support only; carries no trade affordance.
@@ -488,16 +504,30 @@ export function buildRubyOverlays(
   return overlays;
 }
 
+/**
+ * Whether the last scanner poll answered. "unavailable" = the request failed
+ * (network error, outage, throttled) — NOT "the scanner found nothing".
+ */
+export type ScannerFetchStatus = "loading" | "ok" | "unavailable";
+
 export interface UseAiChartOverlaysResult {
   /** Combined AI overlays for the chart (scanner + Ruby). Empty when suppressed. */
   overlays: ChartOverlay[];
   /** User-safe scanner-signal summary for the panel legend, when one matches. */
   signal: AiSignalSummary | null;
+  /** Whether the scanner could be reached on the last poll. */
+  scannerStatus?: ScannerFetchStatus;
+  /** FVG advisory currently drawn from the scanner row (canSignal only), for the legend. */
+  fvg?: { direction: "BUY" | "SELL" | "WAIT"; stage: string; entryTimeframe: string; asOf: string | null } | null;
   /** On-demand Ruby read state for the panel. */
   ruby: {
     status: RubyReadStatus;
     read: RubyReadSummary | null;
     error: string | null;
+    /** True once the next candle has closed after the read (zones no longer drawn). */
+    expired?: boolean;
+    /** "HH:MM UTC" data time of the read, or null when unknown. */
+    asOf?: string | null;
   };
   /** True when the chart feed is not AI-confirmed (Level 3) — overlays hidden. */
   suppressed: boolean;
@@ -529,6 +559,7 @@ export function useAiChartOverlays({
   );
 
   const [signal, setSignal] = useState<AiSignalSummary | null>(null);
+  const [scannerStatus, setScannerStatus] = useState<ScannerFetchStatus>("loading");
   // FVG advisory block from the raw scanner opportunity — separate from signal
   // so buildFvgOverlays can always access fvgRead even when signal is null.
   const [fvgOpp, setFvgOpp] = useState<Pick<ScannerOpportunityLite, "fvgRead" | "symbol"> | null>(null);
@@ -555,11 +586,15 @@ export function useAiChartOverlays({
     // overwriting newer context.
     setSignal(null);
     setFvgOpp(null);
+    setScannerStatus("loading");
     const load = async () => {
       try {
-        const res = await fetch(u("/api/market-scanner/opportunities?limit=50"), {
+        const r = await fetch(u("/api/market-scanner/opportunities?limit=50"), {
           credentials: "include",
-        }).then((r) => (r.ok ? r.json() : null));
+        });
+        // A failed / throttled request is "scanner unavailable", never "no signal".
+        if (!r.ok) throw new Error(`scanner ${r.status}`);
+        const res = await r.json();
         if (cancelled) return;
         const list: ScannerOpportunityLite[] = Array.isArray(res?.opportunities)
           ? res.opportunities
@@ -585,9 +620,11 @@ export function useAiChartOverlays({
           null;
         setSignal(signalRow ? toSignalSummary(signalRow, normalized, timeframe, scanGeneratedAt, now) : null);
         setFvgOpp(match ? { symbol: match.symbol, fvgRead: match.fvgRead ?? null } : null);
+        setScannerStatus("ok");
       } catch {
-        // Honest empty on failure — never fabricate a signal.
-        if (!cancelled) { setSignal(null); setFvgOpp(null); }
+        // Honest empty on failure — never fabricate a signal — and say the
+        // scanner could not be reached rather than "no signal".
+        if (!cancelled) { setSignal(null); setFvgOpp(null); setScannerStatus("unavailable"); }
       }
     };
     void load();
@@ -629,6 +666,35 @@ export function useAiChartOverlays({
     setRubyError(null);
   }, [normalized, timeframe]);
 
+  // A read taken before the feed went unconfirmed must not come back when the
+  // feed recovers: drop it (and any in-flight request) as soon as we suppress.
+  useEffect(() => {
+    if (!suppressed) return;
+    rubyReqRef.current += 1;
+    setRubyStatus("idle");
+    setRubyRead(null);
+    setRubyError(null);
+  }, [suppressed]);
+
+  // A Ruby read describes the chart only until the next candle closes
+  // (observedAt + one interval) — the same rule the scanner's Ruby read uses.
+  const rubyExpiresAtMs = rubyRead
+    ? chartReadExpiresAtMs(
+        { observedAt: rubyRead.observedAt ?? null, gated: rubyRead.gated },
+        candleIntervalMs(normalizeChartTimeframe(timeframe)) ?? Number.NaN,
+      )
+    : null;
+  const rubyNowMs = useEvidenceDeadline(
+    rubyExpiresAtMs != null && Number.isFinite(rubyExpiresAtMs) ? rubyExpiresAtMs : null,
+  );
+  const rubyExpired =
+    rubyRead != null &&
+    rubyExpiresAtMs != null &&
+    !(Number.isFinite(rubyExpiresAtMs) && rubyNowMs < rubyExpiresAtMs);
+  const rubyAsOf = rubyRead
+    ? chartReadAsOfLabel({ observedAt: rubyRead.observedAt ?? null })
+    : null;
+
   const requestRubyRead = useCallback(() => {
     if (!normalized || suppressed) return;
     const reqId = (rubyReqRef.current += 1);
@@ -665,17 +731,31 @@ export function useAiChartOverlays({
     if (suppressed) return [];
     const out: ChartOverlay[] = [];
     if (signal) out.push(...buildSignalOverlays(signal, normalized));
-    if (rubyRead) out.push(...buildRubyOverlays(rubyRead, normalized, name));
+    if (rubyRead && !rubyExpired) out.push(...buildRubyOverlays(rubyRead, normalized, name));
     // HTF Trend FVG Pullback overlays (Task #675) — additive, display-only.
     // Emits chart zones/lines ONLY when the backend engine set canSignal=true.
     if (fvgOpp) out.push(...buildFvgOverlays(fvgOpp));
     return out;
-  }, [suppressed, signal, rubyRead, fvgOpp, normalized, name]);
+  }, [suppressed, signal, rubyRead, rubyExpired, fvgOpp, normalized, name]);
+
+  const fvgRead = fvgOpp?.fvgRead ?? null;
+  const fvg =
+    !suppressed && fvgRead && fvgRead.canSignal && buildFvgOverlays(fvgOpp!).length > 0
+      ? {
+          direction: fvgRead.direction,
+          stage: fvgRead.stage,
+          // Optional on this line's scanner row: read loosely.
+          entryTimeframe: (fvgRead as { entryTimeframe?: string }).entryTimeframe || "M5",
+          asOf: typeof (fvgRead as { asOf?: unknown }).asOf === "string" ? ((fvgRead as { asOf?: string }).asOf ?? null) : null,
+        }
+      : null;
 
   return {
     overlays,
     signal: suppressed ? null : signal,
-    ruby: { status: rubyStatus, read: rubyRead, error: rubyError },
+    scannerStatus,
+    fvg,
+    ruby: { status: rubyStatus, read: rubyRead, error: rubyError, expired: rubyExpired, asOf: rubyAsOf },
     suppressed,
     suppressedReason,
     requestRubyRead,

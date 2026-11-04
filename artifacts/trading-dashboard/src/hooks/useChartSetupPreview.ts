@@ -93,7 +93,8 @@ export function useChartSetupPreview(
   // flips to "stale" without a user action. Cleared once nothing is pending.
   useEffect(() => {
     if (!preview) return;
-    if (lifecycle === "user_confirmed" || lifecycle === "discarded") return;
+    // Keep ticking for user_confirmed too: expiry wins over confirmation.
+    if (lifecycle === "discarded") return;
     const id = window.setInterval(() => {
       if (isExpired(preview)) forceTick((n) => n + 1);
     }, 1_000);
@@ -164,8 +165,8 @@ export function useChartSetupPreview(
     reqSeq.current += 1;
   }, [aiUsable]);
 
-  // Effective lifecycle accounts for expiry (preview → stale) without mutating
-  // a confirmed/discarded status.
+  // Effective lifecycle accounts for expiry (preview/user_confirmed → stale);
+  // only a discarded status is kept as-is.
   const effectiveLifecycle = preview
     ? deriveStatus(preview, lifecycle)
     : lifecycle;
@@ -176,8 +177,9 @@ export function useChartSetupPreview(
     if (!aiUsable) return [];
     if (!preview) return [];
     if (effectiveLifecycle === "discarded" || effectiveLifecycle === "stale") return [];
+    if (expired) return [];
     return aiChartCommandsToOverlays(setupPreviewToCommands(preview));
-  }, [aiUsable, preview, effectiveLifecycle]);
+  }, [aiUsable, preview, effectiveLifecycle, expired]);
 
   return {
     preview,

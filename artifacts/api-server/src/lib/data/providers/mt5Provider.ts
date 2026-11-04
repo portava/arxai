@@ -1,3 +1,4 @@
+import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import type { Candle, DataProvider, MarketQuote } from "../types.js";
 import {
   MT5_CANDLE_TTL_MS,
@@ -378,6 +379,9 @@ let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
 const contentionWarnAt = new Map<string, { at: number; setKey: string }>();
+registerHeapWatchGauge("mt5Provider.candleSeries", () => { let n = 0; for (const m of candleStore.values()) n += m.size; return n; });
+registerHeapWatchGauge("mt5Provider.candleBars", () => { let n = 0; for (const m of candleStore.values()) for (const s of m.values()) n += s.candles.length; return n; });
+registerHeapWatchGauge("mt5Provider.quotes", () => { let n = 0; for (const m of quoteStore.values()) n += m.size; return n; });
 
 type ContentionWarnSink = (payload: Record<string, unknown>) => void;
 let contentionWarnSink: ContentionWarnSink | null = null;
@@ -689,6 +693,10 @@ export interface Mt5QuoteRead {
   /** First-sight provenance of the quote's tick (`recordMt5Tick`); null when
    *  the quote was written without it. */
   tick: Mt5TickProvenance | null;
+  /** Server wall-clock ms when THIS partition's quote was pushed (its receive
+   *  time). Lets the router label a push older than MT5_FEED_FRESH_MS STALE
+   *  instead of LIVE_TICK for the partition actually read (pinned or not). */
+  receivedAtMs: number;
 }
 
 /**
@@ -749,6 +757,7 @@ export function readMt5Quote(
     userId: entry.userId,
     tickTimeObserved: entry.tickTimeObserved,
     tick: entry.tick ? publicProvenance(entry.tick) : null,
+    receivedAtMs: entry.updatedAt,
   };
 }
 
@@ -1024,6 +1033,14 @@ export class Mt5Provider implements DataProvider {
     // CopyRates push ships, nothing calls the update fns and this stays false.
     return lastUpdate > 0 && Date.now() - lastUpdate < FEED_FRESH_MS;
   }
+}
+
+/** Server wall-clock ms when the quote `getQuote` would serve for this symbol
+ *  was pushed (its receive time); null when nothing is stored. Lets the router
+ *  label a push older than MT5_FEED_FRESH_MS STALE instead of LIVE_TICK. */
+export function readServingQuoteReceivedAtMs(symbol: string): number | null {
+  const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
+  return q ? q.updatedAt : null;
 }
 
 export const mt5Provider = new Mt5Provider();

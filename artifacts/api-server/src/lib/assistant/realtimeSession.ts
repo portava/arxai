@@ -55,6 +55,13 @@ function rateAllow(userId: number): { ok: boolean; remaining: number } {
   return { ok: true, remaining: RATE_LIMIT_PER_USER_PER_HOUR - arr.length };
 }
 
+
+// Shared by the WebRTC realtime session and the push-to-talk (gpt-audio)
+// voice route: neither voice path can run tools, so the text-chat prompt's
+// "call X first" rules must be overridden explicitly (AICS-5 / audit A8).
+export const VOICE_NO_TOOLS_INSTRUCTION =
+  `Voice mode has NO tools in this build: you cannot look up account data, quotes, trades or settings while speaking. Do not pretend to call a tool or quote a number you did not hear from the user. For anything that needs live data, tell the user to ask in the text chat, where the tools are available.`;
+
 export interface RealtimeSessionResult {
   configured: boolean;
   mode: "true_webrtc_realtime" | "degraded_gpt_audio_fallback" | "text_only_fallback";
@@ -98,7 +105,7 @@ export async function mintRealtimeSession(userId: number): Promise<RealtimeSessi
     `Voice mode is active. Per-user-isolated session for user id ${userId}.`,
     `Market data provider connected: ${market.connected ? "yes" : "no"}. If not connected, never fabricate quotes.`,
     `Trading mode is admin-controlled per user. You never place, modify or close orders; the user confirms every trade in the Trade Action Center.`,
-    `Voice mode has NO tools in this build: you cannot look up account data, quotes, trades or settings while speaking. Do not pretend to call a tool or quote a number you did not hear from the user. For anything that needs live data, tell the user to ask in the text chat, where the tools are available.`,
+    VOICE_NO_TOOLS_INSTRUCTION,
   ].join("\n\n");
 
   // AI chat audit 2026-11-04 (A8): the browser voice client answers every

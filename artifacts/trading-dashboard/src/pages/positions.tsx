@@ -183,7 +183,7 @@ export default function PositionsPage() {
 
       {tab === "MT5" ? (
         <div data-testid="positions-mt5-panel" className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
-          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">Not on this page</span>
+          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby" data-testid="mt5-positions-bridge-note" title="This page does not read broker positions. MT5-confirmed positions are on Open Trades.">Not on this page</span>
           This page lists the simulator book only and does not read broker positions, whether or not the MT5 bridge is connected.
           {" "}MT5-confirmed positions are listed on{" "}
           <Link href="/my-trades" className="text-primary underline">Open Trades</Link>.
@@ -239,7 +239,7 @@ export default function PositionsPage() {
                 )}
                 {p.environment === "LIVE_TESTER_INTENT" && (
                   <div className="flex flex-wrap gap-2 border-t border-border pt-2">
-                    <Button size="sm" variant="outline" disabled>Send to broker (MT5 deferred)</Button>
+                    <span className="text-[11px] text-muted-foreground" data-testid="tester-intent-note">Tester intent only. It is recorded here and is not sent to a broker.</span>
                   </div>
                 )}
               </div>

@@ -47,6 +47,7 @@ function SignalChip({
   testid,
   nullBehavior,
   help,
+  nullNote,
 }: {
   label: string;
   value: string | null;
@@ -55,6 +56,8 @@ function SignalChip({
   nullBehavior: "placeholder" | "hide";
   /** One-line plain-English explanation of what the signal measures. */
   help: string;
+  /** Replaces "not consulted" when the null has a known, more specific reason. */
+  nullNote?: string | null;
 }) {
   if (value == null) {
     if (nullBehavior === "hide") return null;
@@ -66,7 +69,7 @@ function SignalChip({
             data-testid={`${testid}-not-consulted`}
           >
             <span className="uppercase tracking-wide text-zinc-600">{label}</span>
-            <span className="italic">not consulted</span>
+            <span className="italic">{nullNote ?? "not consulted"}</span>
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-[16rem] text-[11px] leading-snug">
@@ -104,12 +107,28 @@ export interface SetupSignalStripValues {
   governanceOutcome: string | null;
 }
 
+/**
+ * Optional context for the scanner chip: which timeframe the score was
+ * computed on, an honest reason when there is no score, and help text naming
+ * which scanner produced it (so it is not confused with another engine's score).
+ */
+export interface ScannerChipContext {
+  timeframe: string | null;
+  nullNote: string | null;
+  help: string;
+}
+
+const DEFAULT_SCANNER_HELP =
+  "How strongly the market scanner rates this setup right now — a higher score means a cleaner, higher-conviction pattern.";
+
 export function SetupSignalStrip({
   signals,
   testIdPrefix,
   nullBehavior = "placeholder",
+  scannerContext,
 }: {
   signals: SetupSignalStripValues;
+  scannerContext?: ScannerChipContext;
   /** Prefix for the strip + chip test ids, e.g. "chart-setup-signal". */
   testIdPrefix: string;
   /** How to treat a null (not-consulted) signal: placeholder text or hide it. */
@@ -121,12 +140,13 @@ export function SetupSignalStrip({
   const chips = (
     <>
       <SignalChip
-        label="Scanner"
+        label={scannerContext?.timeframe ? `Scanner (${scannerContext.timeframe})` : "Scanner"}
         value={formatSignalScore(signals.scannerScore)}
         tone="neutral"
         testid={`${testIdPrefix}-scanner`}
         nullBehavior={nullBehavior}
-        help="How strongly the market scanner rates this setup right now — a higher score means a cleaner, higher-conviction pattern."
+        nullNote={scannerContext?.nullNote ?? null}
+        help={scannerContext?.help ?? DEFAULT_SCANNER_HELP}
       />
       <SignalChip
         label="Risk"

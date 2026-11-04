@@ -494,8 +494,12 @@ export function ARXNativeChart({
     && evidence.source === data?.feedStatus?.source ? evidence.sourceIdentity : null;
   const overlayRequiresEvidence = useDerivedOverlayContext(JSON.stringify([resolvedSymbol, timeframe]),
     hasCandles ? JSON.stringify([data?.feedStatus?.source ?? null, evidenceIdentity]) : null);
+  // Stored history (no live feed answered) carries no market evidence, so an
+  // evidence-bound pager would refuse every page. Those bars are display-only
+  // already; older stored pages are paged the same way, never as evidence.
+  const storedHistoryFeed = data?.feedStatus?.notLiveReason === "stored_history";
   const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles,
-    data?.feedStatus?.source ?? null, evidenceIdentity, true);
+    data?.feedStatus?.source ?? null, evidenceIdentity, !storedHistoryFeed);
   const utcClockQualified = deepHistory.olderCandles.length === 0 && chartUtcClockQualified(candles);
   const displayZone = utcClockQualified ? effectiveDisplayZone(preferences.timeZone, timeframe) : "UTC";
   // The zone the axis and legend actually print in, stated beside the

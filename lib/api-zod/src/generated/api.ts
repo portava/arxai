@@ -8156,6 +8156,12 @@ export const GetMeMarketTruthResponse = zod.object({
     price: zod.number().nullable(),
     lastCandleAt: zod.string().nullable(),
     lastTickAt: zod.string().nullable(),
+    notLiveReason: zod
+      .enum(["market_closed"])
+      .nullish()
+      .describe(
+        "Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null\/absent otherwise.",
+      ),
   }),
   news: zod.object({
     providerConnected: zod.boolean(),
@@ -10213,6 +10219,12 @@ export const PostMeChartAiAlertsScanResponse = zod.object({
     ),
     cleared: zod.array(zod.string()),
     evaluated: zod.boolean(),
+    suppressed: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Plain-English reasons alert families were held back this scan (e.g. momentum and stop\/target alerts while the feed is stale).",
+      ),
   }),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),

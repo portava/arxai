@@ -24,6 +24,7 @@ import type {
   ChartTimeframeAgreement,
   ChartTimeframeBias,
 } from "./marketUnderstandingTypes.js";
+import { boundedCacheSet } from "../boundedCache.js";
 
 const AGREEMENT_TFS: ChartTimeframe[] = ["M15", "M30", "H1", "H4"];
 const FETCH_LIMIT = 150;
@@ -36,6 +37,17 @@ interface CacheEntry {
   refreshing: boolean;
 }
 const cache = new Map<string, CacheEntry>();
+// Bounded: entries unread-and-unrefreshed for this long are swept on write,
+// and the cache never holds more than CACHE_MAX_ENTRIES (symbol × bridge).
+const CACHE_EVICT_AFTER_MS = 30 * 60_000;
+const CACHE_MAX_ENTRIES = 500;
+function cacheSet(key: string, entry: CacheEntry): void {
+  const now = Date.now();
+  boundedCacheSet(cache, key, entry, {
+    max: CACHE_MAX_ENTRIES,
+    isExpired: (e) => !e.refreshing && now - e.computedAtMs >= CACHE_EVICT_AFTER_MS,
+  });
+}
 
 function unpopulated(note: string): ChartTimeframeAgreement {
   return {
@@ -177,11 +189,11 @@ export function getTimeframeAgreement(symbol: string): ChartTimeframeAgreement {
       refreshing: false,
     };
     placeholder.refreshing = true;
-    cache.set(key, placeholder);
+    cacheSet(key, placeholder);
     // Fire-and-forget background recompute — never blocks the caller.
     void recompute(key)
       .then((result) => {
-        cache.set(key, { result, computedAtMs: Date.now(), refreshing: false });
+        cacheSet(key, { result, computedAtMs: Date.now(), refreshing: false });
         markSlowBrainRun();
       })
       .catch((err) => {

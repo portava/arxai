@@ -30,10 +30,18 @@ test("the command route arms watches only when the sweeper is enabled, and deleg
 test("evaluator: feed-scoped, bound price, fire-time permission re-check, policy-driven monitor", async () => {
   const ev = await read("../rubyWatchEvaluator.ts");
   assert.match(ev, /runWithFeedScope\(feedScopeForUser\(userId, lookupActiveBridge\)/);
-  assert.match(ev, /currentPriceOf\(w\.symbol\)/);
+  // Sweep 2026-11-04: an acting price comes only from the owner's own bridge.
+  assert.match(ev, /ownBridgePriceOf\(w\.symbol, c\.bridge\)/);
+  assert.doesNotMatch(ev, /currentPriceOf\(/, "no unpinned price may drive a watch");
+  assert.match(ev, /basis: "CONFIRMED_OPEN"/);
+  assert.doesNotMatch(ev, /basis: "UNCLOSED"/);
   assert.match(ev, /decideMonitorAction\(/);
-  assert.match(ev, /RUBY_EXECUTION_NOT_AUTHORIZED/);
-  assert.match(ev, /RUBY_MONITOR_NOT_ENABLED/);
+  // Fire-time permission: one shared rule (also used at arm time) that adds
+  // the pipeline's own open/close permissions.
+  assert.match(ev, /rubyWatchPermissionBlock\("MONITOR_TRADE", c\.settings\)/);
+  assert.match(ev, /rubyWatchPermissionBlock\(w\.kind, c\.settings\)/);
+  const ex = await read("../rubyWatchPermissions.ts");
+  for (const code of ["RUBY_EXECUTION_NOT_AUTHORIZED", "RUBY_MONITOR_NOT_ENABLED", "RUBY_OPEN_COMMANDS_NOT_ENABLED", "RUBY_CLOSE_COMMANDS_NOT_ENABLED"]) assert.match(ex, new RegExp(code));
   assert.match(ev, /RUBY_MONITOR_EXECUTIVE_CLOSE/);
   assert.match(ev, /RUBY_MONITOR_REVERSAL_ALERT/);
   assert.match(ev, /claimFire\(w\.id\)/, "CAS single-fire");
@@ -52,4 +60,21 @@ test("tool list has the read-only watches tool and still no order tool; prompt n
   assert.match(p, /"monitor my EURUSD"/);
   assert.match(p, /alert up to 3 times on reversal evidence/);
   assert.match(p, /getMyRubyWatches/);
+});
+
+test("sweep 2026-11-04: watch arming is live-only, permission-checked like the pipeline, confirmed before insert, and expires", async () => {
+  const src = await read("../../../routes/meAssistant.ts");
+  const armStart = src.indexOf("if (accountMode !== \"live\") {");
+  const insertAt = src.indexOf("await db.insert(rubyWatchInstructionsTable).values(");
+  assert.ok(armStart > 0 && insertAt > armStart, "live-only refusal precedes the insert");
+  assert.match(src, /Watches run on your live account only in this build; switch to live to arm one\./);
+  const perm = src.indexOf("rubyWatchPermissionBlock(parsed.kind, settings)");
+  assert.ok(perm > armStart && perm < insertAt);
+  const confirm = src.indexOf("settings?.rubyRequireExtraConfirmation !== false && body.confirm !== true", armStart);
+  assert.ok(confirm > armStart && confirm < insertAt, "extra confirmation is asked before the watch row exists");
+  assert.match(src, /export const DEFAULT_WATCH_TTL_MINUTES = 24 \* 60;/);
+  assert.match(src, /classification: "MISSING_VOLUME", message: `How much \$\{parsed\.symbol\} should I/);
+  assert.match(src, /isCloseAlertAnswer\(text\)/);
+  assert.match(src, /acknowledgeRubyWatch\(userId, target\.id, "close"/);
+  assert.match(src, /pickWatchesToCancel\(activeRows, scope/);
 });
