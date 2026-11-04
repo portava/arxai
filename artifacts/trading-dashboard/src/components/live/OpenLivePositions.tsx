@@ -6,6 +6,7 @@ import { AlertTriangle, Briefcase, Loader2, X, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { structureRejection } from "@/lib/structuredRejection";
 import { executeInstantTrade } from "@/lib/instantTradeRouter";
+import { ModifySlTpButton } from "@/components/trade/ModifySlTpDialog";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -256,6 +257,14 @@ export function OpenLivePositions() {
                         {p.openedAt ? new Date(p.openedAt).toLocaleString() : "—"}
                       </td>
                       <td className="py-2 pr-2 text-right">
+                        {ticket && (
+                          <ModifySlTpButton
+                            className="mr-1 h-8"
+                            source="position_card"
+                            onModified={() => void qc.invalidateQueries({ queryKey: ["live"] })}
+                            target={{ scope: "live", ticket, symbol: p.symbol, side: p.direction === "SELL" ? "SELL" : "BUY", entryPrice: p.entryPrice, currentPrice: p.currentPrice, stopLoss: p.stopLoss, takeProfit: p.takeProfit }}
+                          />
+                        )}
                         <Button
                           size="sm"
                           variant="outline"

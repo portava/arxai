@@ -34,6 +34,7 @@ import { computeTradeIntelligence } from "../intelligence/scoring.js";
 import { notify } from "../notifications/service.js";
 import { getAssistantDisplayName } from "./assistantName.js";
 import { LATE_ENTRY_TOLERANCE, currentPriceOf, recordAndExecuteRuby } from "./rubyExecution.js";
+import { decideFakeoutAdjustment, fakeoutCopy, type FakeoutBar } from "./rubyFakeoutPolicy.js";
 import {
   MONITOR_MAX_UNANSWERED_ALERTS,
   acknowledgeKeep,
@@ -41,6 +42,9 @@ import {
   decideMonitorAction,
   parseMonitorState,
   recordAlert,
+  recordFakeoutAdjustment,
+  setFakeoutAuthority,
+  MONITOR_REVERSAL_SCORE_THRESHOLD,
   serializeMonitorState,
   type MonitorAlertState,
 } from "./rubyMonitorPolicy.js";
@@ -56,6 +60,8 @@ export interface EvaluateResult {
   evaluated: number;
   fired: Array<{ watchId: number; kind: string; commandId?: string; blocked?: string; executive?: boolean }>;
   alerted: Array<{ watchId: number; alertNumber: number; reason: string }>;
+  /** Fakeout SL/TP shifts Ruby sent (or tried to) under the trader's per-monitor authority. */
+  adjusted: Array<{ watchId: number; action: "SHIFT_SL" | "SHIFT_TP"; newStopLoss: number | null; newTakeProfit: number | null; commandId?: string; blocked?: string }>;
   skipped: Array<{ watchId: number; reason: string }>;
 }
 
@@ -87,12 +93,20 @@ async function audit(userId: number, action: string, metadata: Record<string, un
   } catch { /* evidence write must never block the evaluation */ }
 }
 
-async function reversalScoreFor(symbol: string, pos: OpenPositionInput): Promise<{ reversalRiskScore: number | null; recommendedAction: string | null }> {
+async function reversalScoreFor(symbol: string, pos: OpenPositionInput): Promise<{ reversalRiskScore: number | null; recommendedAction: string | null; fakeoutRiskScore: number | null; lastCompletedBar: FakeoutBar | null }> {
   try {
     const series = await routeCandles(symbol, "15m", 60);
     const candlesM15 = series.ok
       ? series.candles.map((c) => ({ t: Date.parse(c.time), o: c.open, h: c.high, l: c.low, c: c.close, v: c.volume }))
       : null;
+    // The newest bar may still be forming; the fakeout rule reads the last
+    // COMPLETED bar so a half-formed wick never triggers a shift.
+    const completed = candlesM15 && candlesM15.length >= 2 ? candlesM15[candlesM15.length - 2]! : null;
+    const lastCompletedBar: FakeoutBar | null = completed ? { o: completed.o, h: completed.h, l: completed.l, c: completed.c } : null;
+    const fakeoutOut = completed ? computeTradeIntelligence({
+      symbol, side: pos.side, entryPrice: pos.entryPrice, currentPrice: pos.currentPrice, stopLoss: pos.stopLoss, takeProfit: pos.takeProfit,
+      unrealizedPnl: pos.floatingPnl, ageMinutes: null, candlesM15: candlesM15!.slice(0, -1),
+    }) : null;
     const out = computeTradeIntelligence({
       symbol,
       side: pos.side,
@@ -104,9 +118,9 @@ async function reversalScoreFor(symbol: string, pos: OpenPositionInput): Promise
       ageMinutes: pos.openedAtMs != null ? Math.max(0, (Date.now() - pos.openedAtMs) / 60_000) : null,
       candlesM15,
     });
-    return { reversalRiskScore: out.scores.reversalRiskScore, recommendedAction: out.recommendedAction };
+    return { reversalRiskScore: out.scores.reversalRiskScore, recommendedAction: out.recommendedAction, fakeoutRiskScore: fakeoutOut?.scores.fakeoutRiskScore ?? null, lastCompletedBar };
   } catch {
-    return { reversalRiskScore: null, recommendedAction: null };
+    return { reversalRiskScore: null, recommendedAction: null, fakeoutRiskScore: null, lastCompletedBar: null };
   }
 }
 
@@ -127,7 +141,7 @@ async function evaluateInner(userId: number, opts: EvaluateOptions): Promise<Eva
     eq(rubyWatchInstructionsTable.userId, userId),
     eq(rubyWatchInstructionsTable.status, "ACTIVE"),
   ));
-  const out: EvaluateResult = { evaluated: active.length, fired: [], alerted: [], skipped: [] };
+  const out: EvaluateResult = { evaluated: active.length, fired: [], alerted: [], adjusted: [], skipped: [] };
   if (active.length === 0) return out;
 
   // Re-read the CURRENT settings so permissions/authority are enforced at
@@ -207,6 +221,60 @@ async function fireClose(w: RubyWatchInstruction, ctx: Ctx, args: { positionId: 
   }).catch(() => undefined);
 }
 
+// Owner spec 2026-11-04: with the trader's per-monitor opt-in, Ruby may shift
+// the stop loss / take profit when a fakeout is in progress. Authority is
+// re-checked at fire time (AI_ASSISTED + allowRubyModifyCommands + the
+// monitor's own opt-in); the shift goes through recordAndExecuteRuby →
+// instant-trade MODIFY_SL_TP, so every server gate runs. The watch stays
+// ACTIVE (a shift is management, not a fire).
+async function maybeShiftOnFakeout(
+  w: RubyWatchInstruction,
+  c: Ctx & { assistantName: string },
+  a: { row: { brokerTicket: string | null }; pos: OpenPositionInput; mpx: number; atOrThroughStop: boolean; monitorState: MonitorAlertState;
+       intel: { reversalRiskScore: number | null; fakeoutRiskScore: number | null; lastCompletedBar: FakeoutBar | null } },
+): Promise<void> {
+  if (!a.row.brokerTicket || !w.symbol) return;
+  const decision = decideFakeoutAdjustment({
+    side: a.pos.side, entryPrice: a.pos.entryPrice, currentPrice: a.mpx, stopLoss: a.pos.stopLoss, takeProfit: a.pos.takeProfit,
+    lastBar: a.intel.lastCompletedBar, fakeoutRiskScore: a.intel.fakeoutRiskScore, reversalRiskScore: a.intel.reversalRiskScore,
+    reversalThreshold: MONITOR_REVERSAL_SCORE_THRESHOLD, atOrThroughStop: a.atOrThroughStop,
+    adjustmentsSoFar: a.monitorState.fakeoutAdjustments.filter((r) => r.ok).length, lastAdjustAt: a.monitorState.lastFakeoutAdjustAt, nowMs: c.nowMs,
+  });
+  if (decision.action === "NONE") return;
+  const revoked = c.authority !== "AI_ASSISTED" ? "RUBY_EXECUTION_NOT_AUTHORIZED"
+    : c.settings?.allowRubyModifyCommands !== true ? "RUBY_MODIFY_COMMANDS_NOT_ENABLED" : null;
+  const at = new Date(c.nowMs).toISOString();
+  if (revoked) {
+    await saveMonitorState(w.id, recordFakeoutAdjustment(a.monitorState, { at, price: a.mpx, fakeoutRiskScore: a.intel.fakeoutRiskScore, fromStopLoss: a.pos.stopLoss, toStopLoss: decision.newStopLoss, fromTakeProfit: a.pos.takeProfit, toTakeProfit: decision.newTakeProfit, reason: decision.reason, ok: false, blocked: revoked }));
+    await audit(c.userId, "RUBY_FAKEOUT_SHIFT_NOT_AUTHORIZED", { watchId: w.id, symbol: w.symbol, wanted: decision.action, reason: revoked }, c.opts);
+    return;
+  }
+  const intent: InstantTradeIntent = {
+    source: w.source as InstantTradeIntent["source"], action: "MODIFY_SL_TP",
+    accountMode: w.accountMode === "demo" ? "demo" : "live", symbol: w.symbol,
+    positionId: a.row.brokerTicket, newStopLoss: decision.newStopLoss, newTakeProfit: decision.newTakeProfit,
+    aiCommand: true, parsedByRuby: true, rawUserCommand: w.rawUserCommand, rubyCommandKind: "MODIFY",
+  };
+  const ledger = await recordAndExecuteRuby({
+    userId: c.userId, intent, commandKind: "MODIFY_SL_TP", symbol: w.symbol,
+    rawText: w.rawUserCommand ?? `[monitor ${w.id} fakeout]`, ip: c.opts.ip ?? null, ua: c.opts.ua ?? null,
+    params: { watchId: w.id, managed: true, fakeout: true, reason: decision.reason, price: a.mpx, fakeoutRiskScore: a.intel.fakeoutRiskScore },
+  });
+  if (ledger.duplicate) { c.out.skipped.push({ watchId: w.id, reason: "DUPLICATE_PREVENTED" }); return; }
+  const ok = ledger.result.ok;
+  const blocked = ok ? null : (ledger.result.primaryReason ?? ledger.result.error ?? "REFUSED");
+  await saveMonitorState(w.id, recordFakeoutAdjustment(a.monitorState, { at, price: a.mpx, fakeoutRiskScore: a.intel.fakeoutRiskScore, fromStopLoss: a.pos.stopLoss, toStopLoss: decision.newStopLoss, fromTakeProfit: a.pos.takeProfit, toTakeProfit: decision.newTakeProfit, reason: decision.reason, ok, blocked }));
+  c.out.adjusted.push({ watchId: w.id, action: decision.action, newStopLoss: decision.newStopLoss, newTakeProfit: decision.newTakeProfit, commandId: ok ? ledger.result.commandId : undefined, blocked: blocked ?? undefined });
+  await audit(c.userId, "RUBY_FAKEOUT_SHIFT", { watchId: w.id, symbol: w.symbol, positionId: a.row.brokerTicket, action: decision.action, newStopLoss: decision.newStopLoss, newTakeProfit: decision.newTakeProfit, reason: decision.reason, ok, blocked }, c.opts);
+  const copy = fakeoutCopy({ assistantName: c.assistantName, symbol: w.symbol, decision, ok, blocked });
+  await notify({
+    userId: c.userId, type: "TRADE", severity: ok ? "HIGH" : "CRITICAL", sourceBuild: "LL",
+    dedupeKey: `RUBY:WATCH:${w.id}:FAKEOUT:${a.monitorState.fakeoutAdjustments.length + 1}`,
+    title: copy.title, message: copy.message, symbol: w.symbol, actionRequired: !ok,
+    metadata: { watchId: w.id, action: decision.action, newStopLoss: decision.newStopLoss, newTakeProfit: decision.newTakeProfit, commandId: ok ? ledger.result.commandId : null },
+  }).catch(() => undefined);
+}
+
 async function evaluateMonitor(w: RubyWatchInstruction, c: Ctx & { assistantName: string }): Promise<void> {
   if (!w.symbol) { c.out.skipped.push({ watchId: w.id, reason: "NO_SYMBOL" }); return; }
   const openRows = (await readOpenPositions({ userId: c.userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
@@ -241,7 +309,14 @@ async function evaluateMonitor(w: RubyWatchInstruction, c: Ctx & { assistantName
     health, atOrThroughStop, reversalRiskScore: intel.reversalRiskScore, recommendedAction: intel.recommendedAction,
     state: monitorState, nowMs: c.nowMs,
   });
-  if (decision.action === "NONE" || decision.action === "COOLDOWN") return;
+  if (decision.action === "NONE" || decision.action === "COOLDOWN") {
+    // No close is due. If the trader gave fakeout authority for this monitor,
+    // Ruby may shift SL/TP once per cooldown under the bounded fakeout rule.
+    if (monitorState.fakeoutAuthority) {
+      await maybeShiftOnFakeout(w, c, { row, pos, mpx, atOrThroughStop, monitorState, intel });
+    }
+    return;
+  }
 
   // Anything that executes needs AI_ASSISTED + allowRubyMonitor NOW.
   const revoked = c.authority !== "AI_ASSISTED" ? "RUBY_EXECUTION_NOT_AUTHORIZED"
@@ -384,7 +459,7 @@ export async function acknowledgeRubyWatch(userId: number, watchId: number, deci
     return { ok: true, decision: "keep", alertsSinceAck: next.alertsSinceAck };
   }
   return runWithFeedScope(feedScopeForUser(userId, lookupActiveBridge), async () => {
-    const out: EvaluateResult = { evaluated: 1, fired: [], alerted: [], skipped: [] };
+    const out: EvaluateResult = { evaluated: 1, fired: [], alerted: [], adjusted: [], skipped: [] };
     const [settings] = await db.select().from(userOneClickSettingsTable).where(eq(userOneClickSettingsTable.userId, userId)).limit(1);
     const authority = (settings?.rubyExecutionAuthority ?? "OFF").trim().toUpperCase();
     const ctx: Ctx = { userId, settings, authority, nowMs: opts.nowMs ?? Date.now(), opts, out };
@@ -426,7 +501,29 @@ export async function listRubyWatches(userId: number, opts: { includeFinished?: 
         lastAlertAt: m.lastAlertAt, acknowledgedAt: m.acknowledgedAt, keepCount: m.keepCount,
         lastAlert: m.alerts.at(-1) ?? null,
         awaitingAnswer: m.alertsSinceAck > 0,
+        fakeoutAuthority: m.fakeoutAuthority,
+        fakeoutAdjustments: m.fakeoutAdjustments.filter((r) => r.ok).length,
+        lastFakeoutAdjustment: m.fakeoutAdjustments.at(-1) ?? null,
       } : null,
     };
   });
+}
+
+/**
+ * The trader grants or withdraws Ruby's authority to shift SL/TP on a fakeout
+ * for ONE monitor. Stored in the watch row's risk_params (no schema change).
+ * Granting here does not bypass the user-level permission: the evaluator still
+ * requires AI_ASSISTED + allowRubyModifyCommands at fire time.
+ */
+export async function setRubyWatchFakeoutAuthority(userId: number, watchId: number, enabled: boolean): Promise<
+  | { ok: false; error: "WATCH_NOT_FOUND" | "WATCH_NOT_ACTIVE" | "NOT_A_MONITOR" }
+  | { ok: true; watchId: number; fakeoutAuthority: boolean }
+> {
+  const [w] = await db.select().from(rubyWatchInstructionsTable)
+    .where(and(eq(rubyWatchInstructionsTable.id, watchId), eq(rubyWatchInstructionsTable.userId, userId))).limit(1);
+  if (!w) return { ok: false, error: "WATCH_NOT_FOUND" };
+  if (w.status !== "ACTIVE") return { ok: false, error: "WATCH_NOT_ACTIVE" };
+  if (w.kind !== "MONITOR_TRADE") return { ok: false, error: "NOT_A_MONITOR" };
+  await saveMonitorState(w.id, setFakeoutAuthority(parseMonitorState(w.riskParams), enabled));
+  return { ok: true, watchId: w.id, fakeoutAuthority: enabled };
 }

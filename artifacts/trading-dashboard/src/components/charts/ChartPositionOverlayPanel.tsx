@@ -7,6 +7,7 @@ import type {
   UseLivePositionOverlaysResult,
 } from "@/hooks/useLivePositionOverlays";
 import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
+import { ModifySlTpButton } from "@/components/trade/ModifySlTpDialog";
 import { useChartPricePrecision } from "./chartPricePrecisionStore";
 
 // ChartPositionOverlayPanel — Level 4 legend + gated close for the overlays
@@ -28,7 +29,7 @@ export function ChartPositionOverlayPanel({
   symbol,
   data,
 }: ChartPositionOverlayPanelProps) {
-  const { positions, canTrade, busyTicket, noTradeReason, closePosition } = data;
+  const { positions, canTrade, busyTicket, noTradeReason, closePosition, reload } = data;
   // Same digits as the chart's price axis for this symbol (shared rule).
   const pricePrecision = useChartPricePrecision(symbol);
   const fmtPrice = (n: number | null | undefined) => formatInstrumentPrice(n, pricePrecision);
@@ -96,6 +97,14 @@ export function ChartPositionOverlayPanel({
                   {pnl == null ? "P/L —" : `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`}
                 </span>
               </div>
+              <div className="flex items-center gap-1">
+              {canTrade && p.brokerTicket && (
+                <ModifySlTpButton
+                  source="chart"
+                  onModified={() => void reload()}
+                  target={{ scope: p.scope, ticket: p.brokerTicket, symbol: p.symbol ?? symbol, side: p.side, entryPrice: p.entryPrice, currentPrice: p.currentPrice, stopLoss: p.stopLoss, takeProfit: p.takeProfit }}
+                />
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -113,6 +122,7 @@ export function ChartPositionOverlayPanel({
                   "Close"
                 )}
               </Button>
+              </div>
             </div>
           );
         })}
