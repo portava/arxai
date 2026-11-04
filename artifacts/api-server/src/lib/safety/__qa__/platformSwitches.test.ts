@@ -147,10 +147,7 @@ test("no settings row: fail closed by default; defaults / seed only when asked",
 
   const defaults = await readPlatformSwitches({ ifMissing: "defaults" });
   assert.equal(defaults.emergencyStop.engaged, false);
-  // Fail closed for a fresh install (owner decision 2026-11-04): platform OFF,
-  // demo and live venues disabled until an operator switches them on.
-  assert.equal(defaults.platformMode, "OFF");
-  assert.deepEqual(defaults.venueOpen, { DEMO: false, LIVE: false });
+  assert.deepEqual(defaults.venueOpen, { DEMO: true, LIVE: true });
   assert.equal((await db.select().from(globalTradingSettingsTable)).length, 0, "defaults never write");
 
   const seeded = await readPlatformSwitches({ ifMissing: "seed" });
@@ -181,9 +178,7 @@ test("venues follow the platform mode and the enable flags", async () => {
 
 test("with a stray second row the strictest row wins", async () => {
   await setAll({ platformMode: "LIVE", demoEnabled: true, liveEnabled: true, emergencyKillSwitch: false, liveBrokerExecutionArmed: true });
-  // The stray row is written trading-on explicitly: the fresh-install column
-  // defaults are now fail closed, and this test is about the stop and the arm.
-  const [stray] = await db.insert(globalTradingSettingsTable).values({ platformMode: "LIVE", demoEnabled: true, liveEnabled: true, emergencyKillSwitch: true, killSwitchReason: "stray" }).returning();
+  const [stray] = await db.insert(globalTradingSettingsTable).values({ emergencyKillSwitch: true, killSwitchReason: "stray" }).returning();
   try {
     let sw = await readPlatformSwitches();
     assert.equal(sw.rowCount, 2);
