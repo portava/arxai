@@ -139,6 +139,15 @@ export function buildPaperSafetyStatus(
  * Reporting only; it authorizes nothing. Accepts the full SafetyEnvelope or the
  * projected AssistantEnvelopeFields (both carry these four fields).
  */
+/**
+ * The assistant never places, modifies or closes orders itself (AI chat audit
+ * 2026-11-04, A2). It prepares drafts the user confirms in the Trade Action
+ * Center; the live envelope below describes the ACCOUNT's posture, not a chat
+ * execution path.
+ */
+export const ASSISTANT_ORDER_EXECUTION_NOTE =
+  "The assistant does not place, modify or close orders. It prepares trade drafts (createTradeActionDraft / prepareOpenTicket / prepareCloseTicket) that you review and confirm yourself in the Trade Action Center.";
+
 export function liveExecutionAvailabilityNote(
   env: Pick<SafetyEnvelope, "liveLocked" | "allowOrderExecution" | "bannerLabel" | "bannerReason">,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
@@ -146,8 +155,8 @@ export function liveExecutionAvailabilityNote(
   if (!env.liveLocked && env.allowOrderExecution) {
     return (
       `Live order execution is available for your account (mode: ${env.bannerLabel}). ` +
-      `Every live order still requires your explicit per-trade confirmation and must pass ` +
-      `all live safety gates at dispatch — ${assistantName} never bypasses a gate or the confirmation step.`
+      `Every live order still requires your explicit per-trade confirmation in the Trade Action Center and must pass ` +
+      `all live safety gates at dispatch — ${assistantName} never places an order itself and never bypasses a gate or the confirmation step.`
     );
   }
   return (
