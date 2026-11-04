@@ -586,7 +586,13 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
 
 // ── Diagnostic surfaces (read-only, no execution effect) ───────────────────
 
-router.get("/mt5/heartbeat/status", async (_req, res) => {
+router.get("/mt5/heartbeat/status", async (req, res) => {
+  // The diagnostics below are PLATFORM-WIDE (the last heartbeat accepted from
+  // ANY user's bridge). Operator-only identifiers — account login, remote IP,
+  // user agent, rejected IP — are shown to an admin/owner session only, the
+  // same redaction as /mt5/bridge-ops-monitor.
+  const isAdmin = operatorRoleFromSession(readRoleFromRequest(req)) != null;
+  const operatorOnly = <T,>(v: T): T | "REDACTED" => (isAdmin ? v : "REDACTED");
   // Per-user tokens are the ONLY valid EA auth (the server-wide env token is
   // rejected on every EA endpoint), so "token configured" = an active
   // per-user bridge token exists. Boolean shape preserved for consumers.
@@ -612,10 +618,11 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
     rejectedHeartbeatCount: bridgeDiag.rejectedCount,
     lastRejectedHeartbeatAt: bridgeDiag.lastRejectedHeartbeatAt?.toISOString() ?? null,
     lastRejectReason: bridgeDiag.lastRejectReason,
-    lastRejectRemoteIp: bridgeDiag.lastRejectRemoteIp,
-    lastAcceptedAccount: bridgeDiag.lastAcceptedAccount,
-    lastAcceptedRemoteIp: bridgeDiag.lastAcceptedRemoteIp,
-    lastAcceptedUserAgent: bridgeDiag.lastAcceptedUserAgent,
+    lastRejectRemoteIp: operatorOnly(bridgeDiag.lastRejectRemoteIp),
+    lastAcceptedAccount: operatorOnly(bridgeDiag.lastAcceptedAccount),
+    lastAcceptedRemoteIp: operatorOnly(bridgeDiag.lastAcceptedRemoteIp),
+    lastAcceptedUserAgent: operatorOnly(bridgeDiag.lastAcceptedUserAgent),
+    requesterScope: isAdmin ? "admin" : "user_redacted",
     expectedPostEndpoint: "/api/mt5/heartbeat",
     expectedHeader: "X-MT5-Bridge-Token",
     freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
