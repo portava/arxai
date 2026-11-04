@@ -106,6 +106,7 @@ export async function buildMarketImpactRadar(
   let calendarConnected = false;
   let calendarProvider = "none";
   let calendarProviderState: CalendarProviderState = "not_configured";
+  let calendarFetchedAt: string | null = null;
   let rawEvents: RawCalendarEvent[] = [];
   let headlinesConnected = false;
   try {
@@ -113,6 +114,9 @@ export async function buildMarketImpactRadar(
     calendarConnected = calendar.connected;
     calendarProvider = calendar.provider;
     calendarProviderState = calendar.providerState;
+    // The provider's last successful fetch time, so the Truth snapshot can say
+    // when the calendar was observed (verified when recent, stale when old).
+    calendarFetchedAt = calendar.connected ? (calendar.lastSuccessAt ?? null) : null;
     // Real-or-absent: only trust the provider's events when it reports connected.
     rawEvents = calendar.connected ? calendar.events : [];
   } catch {
@@ -184,6 +188,7 @@ export async function buildMarketImpactRadar(
       provider: {
         connected: calendarConnected,
         name: calendarProvider,
+        fetchedAt: calendarFetchedAt,
         note: calendarConnected
           ? "Live economic-calendar feed connected. Events are mapped to this symbol with severity and countdown."
           : calendarProviderState === "fetch_error"

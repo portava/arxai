@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ChartFeedStatusAssetClass } from "./chartFeedStatusAssetClass";
+import type { ChartFeedStatusFeedScope } from "./chartFeedStatusFeedScope";
+import type { ChartFeedStatusLastTickTimeBasis } from "./chartFeedStatusLastTickTimeBasis";
 import type { ChartFeedStatusNotLiveReason } from "./chartFeedStatusNotLiveReason";
 import type { ChartFeedStatusQuality } from "./chartFeedStatusQuality";
 
@@ -53,4 +55,24 @@ export interface ChartFeedStatus {
    * @nullable
    */
   notLiveReason?: ChartFeedStatusNotLiveReason;
+  /**
+   * Whose feed this is: the signed-in trader's own bridge, another bridge's MT5 series served platform-wide, or a non-MT5 provider. null when nothing was served. Absent from older servers.
+
+   * @nullable
+   */
+  feedScope?: ChartFeedStatusFeedScope;
+  /** Two attributed bridges were pushing this series at read time. */
+  contention?: boolean;
+  /**
+   * Measured broker-clock offset (ms, broker minus UTC) in force for the serving bridge; its stamps were converted to UTC with it at ingest. null when unknown (raw broker clock; freshness fails closed).
+
+   * @nullable
+   */
+  brokerClockOffsetMs?: number | null;
+  /**
+   * What lastTickTime is: the producer's own tick time, or the time this server received the tick (never proof the tick is current).
+
+   * @nullable
+   */
+  lastTickTimeBasis?: ChartFeedStatusLastTickTimeBasis;
 }

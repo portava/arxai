@@ -17,4 +17,6 @@ export interface TruthNews {
   disclaimer: string | null;
   /** Present (true) only for a synthetic market: scheduled economic events do not apply and the economic calendar is not consulted. riskLabel is then the shared synthetic sentence, riskUnchecked is false and no events or disclaimer are carried. Absent means not synthetic (or an older server). */
   synthetic?: boolean;
+  /** ISO time the connected calendar was last fetched from its provider. Lets the news claim be verified (recent) or stale (old). Absent on older servers. */
+  fetchedAt?: string | null;
 }
