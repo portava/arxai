@@ -23,7 +23,7 @@ import {
   buildReport, ALIGNMENT_LABELS, type AlignmentLabel, type Bias,
 } from "@workspace/domain/multi-timeframe";
 import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
-import { servedSeriesBrokerClockOffsetMs } from "../lib/data/providers/mt5Provider.js";
+import { servedSeriesBrokerClockOffsetMs, servedSeriesBrokerStamped } from "../lib/data/providers/mt5Provider.js";
 import type { SeriesProvenance } from "../lib/data/types.js";
 
 const router = Router();
@@ -78,6 +78,19 @@ router.post("/multi-timeframe/generate", async (req, res): Promise<void> => {
     // Bar times and the serving provider travel with the bars: a report built
     // from stale (weekend / stalled-feed) or untimestamped bars is
     // DATA_NOT_CURRENT with no bias, never a confident current alignment.
+    //
+    // Broker clock (audit H7): MT5 bars stay broker-stamped. A series with a
+    // measured broker-clock offset is aged on the UTC clock (bar time minus
+    // the offset). An MT5 series with NO measured offset (durable mirror,
+    // unattributed writer, bridge with no broker-time tick yet) cannot be
+    // aged: as stamped, a UTC+2 series silent about two hours reads current.
+    // It is flagged so its freshness is UNKNOWN, never CURRENT (fail closed).
+    // Bar times are not rewritten.
+    const offsets = {
+      lower: servedSeriesBrokerClockOffsetMs(lowerSeries.provenance),
+      middle: servedSeriesBrokerClockOffsetMs(middleSeries.provenance),
+      higher: servedSeriesBrokerClockOffsetMs(higherSeries.provenance),
+    };
     const built = buildReport({
       symbol: body.symbol,
       lowerTimeframe: lowerTf, middleTimeframe: middleTf, higherTimeframe: higherTf,
@@ -90,14 +103,11 @@ router.post("/multi-timeframe/generate", async (req, res): Promise<void> => {
         middle: provenanceLabel(middleSeries.provenance),
         higher: provenanceLabel(higherSeries.provenance),
       },
-      // Broker clock (audit H7): MT5 bars stay broker-stamped. A series with a
-      // measured broker-clock offset is aged on the UTC clock (bar time minus
-      // the offset); with none its stamps are compared as given (fail closed).
-      // Bar times are not rewritten.
-      clockOffsetsMs: {
-        lower: servedSeriesBrokerClockOffsetMs(lowerSeries.provenance),
-        middle: servedSeriesBrokerClockOffsetMs(middleSeries.provenance),
-        higher: servedSeriesBrokerClockOffsetMs(higherSeries.provenance),
+      clockOffsetsMs: offsets,
+      brokerClockUnmeasured: {
+        lower: servedSeriesBrokerStamped(lowerSeries.provenance) && offsets.lower == null,
+        middle: servedSeriesBrokerStamped(middleSeries.provenance) && offsets.middle == null,
+        higher: servedSeriesBrokerStamped(higherSeries.provenance) && offsets.higher == null,
       },
     });
 

@@ -279,8 +279,10 @@ export function mt5BarBrokerClockOffsetMs(
  * chartDataService / candleHistoryService): only an in-memory MT5 broker
  * series (providerId mt5_broker, no sub-provider) gets one, via
  * mt5BarBrokerClockOffsetMs with its serving bridge. Every other provider, an
- * MT5 mirror and an unmeasured bridge get null, so their stamps are compared
- * as given (fail closed). For freshness comparisons only.
+ * MT5 mirror and an unmeasured bridge get null. null does NOT make an MT5
+ * stamp safe to compare as given: a broker clock ahead of UTC makes a stalled
+ * series look current, so a caller pairs null with servedSeriesBrokerStamped
+ * and never confirms such a series current. For freshness comparisons only.
  */
 export function servedSeriesBrokerClockOffsetMs(
   provenance: { providerId?: string | null; subProviderId?: string | null; bridgeConnectionId?: number | null } | null | undefined,
@@ -288,6 +290,21 @@ export function servedSeriesBrokerClockOffsetMs(
 ): number | null {
   if (provenance?.providerId !== "mt5_broker" || provenance.subProviderId != null) return null;
   return mt5BarBrokerClockOffsetMs(newestBar ?? null, provenance.bridgeConnectionId ?? null);
+}
+
+/**
+ * The ROUTED series' bar stamps are MT5 broker-server-clock time (audit H7),
+ * not UTC: the MT5 broker venue served it, through any channel (in-memory push
+ * or the durable mirror). Such a series is aged on the UTC clock only with a
+ * MEASURED offset (servedSeriesBrokerClockOffsetMs). With none — the mirror,
+ * an unattributed writer, a bridge with no broker-time tick yet — its age
+ * cannot be checked: compared as stamped, a UTC+2 series silent for about two
+ * hours reads current. Callers never confirm such a series current.
+ */
+export function servedSeriesBrokerStamped(
+  provenance: { providerId?: string | null; brokerCode?: string | null } | null | undefined,
+): boolean {
+  return provenance?.providerId === "mt5_broker" || provenance?.brokerCode === "mt5";
 }
 
 /** The serving writer's future-stamp mark stands. A mark set with no

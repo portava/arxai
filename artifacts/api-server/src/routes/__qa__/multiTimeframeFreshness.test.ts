@@ -24,22 +24,29 @@ function upSeries(tf: string, n: number): Bar[] {
   }
   return out;
 }
-// The broker-clock offset measured for the serving MT5 bridge (MT5 bars stay
-// broker-stamped on the Codex line; audit H7). Default: none measured.
-let measuredOffsetMs: number | null = null;
+// The serving provider: an in-memory MT5 series from bridge 11 by default (MT5
+// bars stay broker-stamped on the Codex line; audit H7). Its broker-clock
+// offset is the REAL MT5 store's, measured from a tick the bridge posts with
+// its broker time (see measure()). Default: none measured.
+const BRIDGE = { bridgeConnectionId: 11, userId: 1 };
+const MT5_IN_MEMORY = { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: 11 };
+let provenance: { providerId: string; subProviderId: string | null; brokerCode: string; bridgeConnectionId: number | null } = MT5_IN_MEMORY;
 mock.module("../../lib/data/dataManager.js", {
   namedExports: {
     getMarketDataWithProvenance: async (_s: string, tf: string, limit: number) => ({
       candles: upSeries(tf, limit),
-      provenance: { providerId: "mt5_broker", subProviderId: null },
+      provenance,
     }),
   },
 });
-mock.module("../../lib/data/providers/mt5Provider.js", {
-  namedExports: {
-    servedSeriesBrokerClockOffsetMs: (p: { providerId?: string } | null) => (p?.providerId === "mt5_broker" ? measuredOffsetMs : null),
-  },
-});
+const { recordMt5Tick, __resetMt5ProviderStore } = await import("../../lib/data/providers/mt5Provider.js");
+/** Bridge 11's measured broker-clock offset: a tick stamped `offsetMs` ahead of the EA's UTC clock, or none (null). */
+function measure(offsetMs: number | null): void {
+  __resetMt5ProviderStore();
+  if (offsetMs == null) return;
+  const eaUtcMs = Date.now();
+  recordMt5Tick("EURUSD", { bid: 1.1, ask: 1.1002, brokerTimeMs: eaUtcMs + offsetMs, eaUtcMs }, BRIDGE);
+}
 const inserted: Record<string, unknown>[] = [];
 mock.module("@workspace/db", {
   namedExports: {
@@ -71,23 +78,40 @@ async function generate(): Promise<Record<string, any>> {
 
 test("a weekend series is stored as DATA_NOT_CURRENT with no bias", async () => {
   newestOpenMs = Date.now() - 40 * 3_600_000;
-  const r = await generate();
-  assert.equal(r.alignmentLabel, "DATA_NOT_CURRENT");
-  assert.equal(r.bestBias, "NEUTRAL");
-  assert.match(r.conflictWarning, /Not a current read/);
-  assert.equal(r.lowerTrend.freshness, "STALE");
-  assert.equal(r.lowerTrend.source, "mt5_broker");
-  assert.equal(typeof r.lowerTrend.newestBarTime, "string");
+  measure(0); // the bridge's broker clock is measured (UTC+0), so the bars can be aged
+  try {
+    const r = await generate();
+    assert.equal(r.alignmentLabel, "DATA_NOT_CURRENT");
+    assert.equal(r.bestBias, "NEUTRAL");
+    assert.match(r.conflictWarning, /Not a current read/);
+    assert.equal(r.lowerTrend.freshness, "STALE");
+    assert.equal(r.lowerTrend.source, "mt5_broker");
+    assert.equal(typeof r.lowerTrend.newestBarTime, "string");
+
+    // Clock not measured: the bars cannot be aged at all — still no current read.
+    measure(null);
+    const unmeasured = await generate();
+    assert.equal(unmeasured.alignmentLabel, "DATA_NOT_CURRENT");
+    assert.equal(unmeasured.bestBias, "NEUTRAL");
+    assert.equal(unmeasured.lowerTrend.freshness, "UNKNOWN");
+  } finally {
+    measure(null);
+  }
 });
 
 test("current bars keep their measured alignment and say where they came from", async () => {
   newestOpenMs = Date.now() - 60_000;
-  const r = await generate();
-  assert.equal(r.alignmentLabel, "STRONG_BULLISH_ALIGNMENT");
-  assert.equal(r.bestBias, "BUY");
-  for (const s of [r.lowerTrend, r.middleTrend, r.higherTrend]) {
-    assert.equal(s.freshness, "CURRENT");
-    assert.equal(s.source, "mt5_broker");
+  measure(0); // the bridge's broker clock is measured at UTC+0
+  try {
+    const r = await generate();
+    assert.equal(r.alignmentLabel, "STRONG_BULLISH_ALIGNMENT");
+    assert.equal(r.bestBias, "BUY");
+    for (const s of [r.lowerTrend, r.middleTrend, r.higherTrend]) {
+      assert.equal(s.freshness, "CURRENT");
+      assert.equal(s.source, "mt5_broker");
+    }
+  } finally {
+    measure(null);
   }
 });
 
@@ -98,17 +122,68 @@ test("broker-stamped MT5 bars are judged on the UTC clock with the measured offs
   const OFFSET = 2 * 3_600_000;
   newestOpenMs = Date.now() - 60_000 + OFFSET;
   try {
-    measuredOffsetMs = OFFSET;
+    measure(OFFSET);
     const r = await generate();
     assert.equal(r.alignmentLabel, "STRONG_BULLISH_ALIGNMENT");
     for (const s of [r.lowerTrend, r.middleTrend, r.higherTrend]) assert.equal(s.freshness, "CURRENT");
     assert.equal(r.lowerTrend.newestBarTime, new Date(newestOpenMs).toISOString());
 
-    measuredOffsetMs = null;
+    measure(null);
     const unmeasured = await generate();
     assert.equal(unmeasured.alignmentLabel, "DATA_NOT_CURRENT");
     assert.equal(unmeasured.bestBias, "NEUTRAL");
   } finally {
-    measuredOffsetMs = null;
+    measure(null);
+  }
+});
+
+// No measured offset is never "compare as stamped": a UTC+2 series stalled
+// about two hours reads current as UTC. An MT5 series whose clock was not
+// measured (no broker-time tick yet, an unattributed writer, the durable
+// mirror) is UNKNOWN on every timeframe and the report gives no bias; the
+// warning names the stamp as broker time, never UTC. A UTC-stamped provider's
+// current bars are unaffected.
+test("an MT5 series with no measured offset is never a current read, even when its stamps look current", async () => {
+  const OFFSET = 2 * 3_600_000;
+  // Newest bars 2h05m old on the UTC clock, stamped +2h: they read current as UTC.
+  newestOpenMs = Date.now() - 125 * 60_000 + OFFSET;
+  try {
+    for (const p of [
+      MT5_IN_MEMORY,
+      { ...MT5_IN_MEMORY, bridgeConnectionId: null },
+      { ...MT5_IN_MEMORY, subProviderId: "durable_mirror", bridgeConnectionId: null },
+    ]) {
+      provenance = p;
+      measure(null);
+      const r = await generate();
+      const what = `${p.subProviderId ?? "in-memory"} bridge ${p.bridgeConnectionId}`;
+      assert.equal(r.alignmentLabel, "DATA_NOT_CURRENT", what);
+      assert.equal(r.bestBias, "NEUTRAL", what);
+      for (const s of [r.lowerTrend, r.middleTrend, r.higherTrend]) {
+        assert.equal(s.freshness, "UNKNOWN", what);
+        assert.equal(s.newestBarTime, new Date(newestOpenMs).toISOString(), "the bar's own stamp is kept");
+      }
+      assert.match(r.conflictWarning, /broker time/, what);
+      assert.match(r.conflictWarning, /offset to UTC was not measured/, what);
+      assert.doesNotMatch(r.aiSummary, /\d{2}:\d{2} UTC/, `${what}: a broker stamp is never named UTC`);
+
+      // Bridge 11 measures its offset: only its own in-memory series is aged
+      // (2h05m old → stale); the others stay unconfirmed.
+      measure(OFFSET);
+      const after = await generate();
+      assert.equal(after.alignmentLabel, "DATA_NOT_CURRENT", what);
+      const expected = p.subProviderId == null && p.bridgeConnectionId === 11 ? "STALE" : "UNKNOWN";
+      assert.equal(after.lowerTrend.freshness, expected, what);
+    }
+
+    provenance = { providerId: "deriv", subProviderId: null, brokerCode: "deriv", bridgeConnectionId: null };
+    measure(null);
+    newestOpenMs = Date.now() - 60_000;
+    const utc = await generate();
+    assert.equal(utc.alignmentLabel, "STRONG_BULLISH_ALIGNMENT", "control: UTC-stamped current bars are a current read");
+    for (const s of [utc.lowerTrend, utc.middleTrend, utc.higherTrend]) assert.equal(s.freshness, "CURRENT");
+  } finally {
+    provenance = MT5_IN_MEMORY;
+    measure(null);
   }
 });

@@ -14,24 +14,25 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 let bars: Array<{ time: string; open: number; high: number; low: number; close: number; volume?: number }> = [];
-// The serving provider, and the broker-clock offset measured for it (MT5 bars
-// stay broker-stamped on the Codex line; audit H7). Default: no provenance.
-let provenance: { providerId: string; subProviderId: string | null; bridgeConnectionId: number | null } | null = null;
-let measuredOffsetMs: number | null = null;
+// The serving provider (MT5 bars stay broker-stamped on the Codex line; audit
+// H7). Default: no provenance. The broker-clock offset is the REAL MT5 store's:
+// measured from a tick the bridge posts with its broker time (see measure()).
+let provenance: { providerId: string; subProviderId: string | null; brokerCode?: string; bridgeConnectionId: number | null } | null = null;
 mock.module("../../lib/data/dataManager.js", {
   namedExports: {
     getMarketData: async () => bars,
     getMarketDataWithProvenance: async () => ({ candles: bars, provenance }),
   },
 });
-const mt5Provider = await import("../../lib/data/providers/mt5Provider.js");
-mock.module("../../lib/data/providers/mt5Provider.js", {
-  namedExports: {
-    ...mt5Provider,
-    servedSeriesBrokerClockOffsetMs: (p: typeof provenance) =>
-      p?.providerId === "mt5_broker" && p.subProviderId == null && p.bridgeConnectionId != null ? measuredOffsetMs : null,
-  },
-});
+const { recordMt5Tick, __resetMt5ProviderStore } = await import("../../lib/data/providers/mt5Provider.js");
+const BRIDGE = { bridgeConnectionId: 11, userId: 1 };
+/** Bridge 11's measured broker-clock offset: a tick stamped `offsetMs` ahead of the EA's UTC clock, or none (null). */
+function measure(offsetMs: number | null): void {
+  __resetMt5ProviderStore();
+  if (offsetMs == null) return;
+  const eaUtcMs = Date.now();
+  recordMt5Tick("EURUSD", { bid: 1.1, ask: 1.1002, brokerTimeMs: eaUtcMs + offsetMs, eaUtcMs }, BRIDGE);
+}
 mock.module("../../lib/news/calendar/newsRiskResolver.js", {
   namedExports: {
     resolveNewsRiskEvents: async () => ({ available: false, reason: "fixture", events: [] }),
@@ -86,9 +87,9 @@ test("current bars: the scan's signal is shown with its as-of bar time", async (
 test("broker-stamped MT5 bars: current with a measured offset, unconfirmed without, stale when stalled", async () => {
   const OFFSET = 2 * 3600_000;
   const lastClosedUtc = Math.floor(Date.now() / 60_000) * 60_000 - 60_000;
-  provenance = { providerId: "mt5_broker", subProviderId: null, bridgeConnectionId: 11 };
+  provenance = { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: 11 };
   try {
-    measuredOffsetMs = OFFSET;
+    measure(OFFSET);
     bars = series(lastClosedUtc + OFFSET);
     let [row] = await enrichWatchlistItems([ITEM]);
     assert.equal(row!.signalStatus, "OK");
@@ -99,22 +100,75 @@ test("broker-stamped MT5 bars: current with a measured offset, unconfirmed witho
     // behind); aged with the measured offset it is stale and no signal is shown.
     const stalledStamp = lastClosedUtc - 120 * 60_000 + OFFSET;
     bars = series(stalledStamp);
-    measuredOffsetMs = 0; // control: a zero offset reads the stamp as UTC
+    measure(0); // control: a measured zero offset reads the stamp as UTC
     [row] = await enrichWatchlistItems([ITEM]);
     assert.notEqual(row!.signalStatus, "STALE_DATA", "control: read as UTC the stalled series looks current");
-    measuredOffsetMs = OFFSET;
+    measure(OFFSET);
     [row] = await enrichWatchlistItems([ITEM]);
     assert.equal(row!.signalStatus, "STALE_DATA");
     assert.equal(row!.signal, null);
 
     // No measured offset: a stamp two hours ahead is not confirmed current.
-    measuredOffsetMs = null;
+    measure(null);
     bars = series(lastClosedUtc + OFFSET);
     [row] = await enrichWatchlistItems([ITEM]);
     assert.equal(row!.signalStatus, "STALE_DATA");
     assert.equal(row!.signal, null);
   } finally {
     provenance = null;
-    measuredOffsetMs = null;
+    measure(null);
+  }
+});
+
+// No measured offset is never "compare as stamped": the same series stalled
+// about two hours on a UTC+2 broker clock reads current as UTC (see the
+// control above), so an MT5 series whose clock was not measured — no
+// broker-time tick yet, an unattributed writer, the durable mirror — is never
+// confirmed current. A UTC-stamped provider is unaffected.
+test("an MT5 series with no measured offset is never confirmed current, whatever its stamps look like", async () => {
+  const OFFSET = 2 * 3600_000;
+  const lastClosedUtc = Math.floor(Date.now() / 60_000) * 60_000 - 60_000;
+  const stalledStamp = lastClosedUtc - 120 * 60_000 + OFFSET; // reads current as UTC
+  try {
+    for (const p of [
+      { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: 11 }, // no tick yet
+      { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: null }, // unattributed writer
+      { providerId: "mt5_broker", subProviderId: "durable_mirror", brokerCode: "mt5", bridgeConnectionId: null }, // stored mirror
+    ]) {
+      provenance = p;
+      measure(null);
+      bars = series(stalledStamp);
+      let [row] = await enrichWatchlistItems([ITEM]);
+      assert.equal(row!.signalStatus, "STALE_DATA", `${p.subProviderId ?? "in-memory"} bridge ${p.bridgeConnectionId}: stalled series`);
+      assert.equal(row!.signal, null);
+      assert.equal(row!.signalAsOf, new Date(stalledStamp).toISOString(), "the bar's own stamp is reported");
+
+      // Bridge 11 measures its offset: its own series is now aged on the UTC
+      // clock (two hours old); the mirror and an unattributed writer stay
+      // unconfirmed, since bridge 11's offset is not theirs.
+      measure(OFFSET);
+      [row] = await enrichWatchlistItems([ITEM]);
+      assert.equal(row!.signalStatus, "STALE_DATA");
+      assert.equal(row!.signal, null);
+      bars = series(lastClosedUtc + OFFSET);
+      [row] = await enrichWatchlistItems([ITEM]);
+      if (p.subProviderId == null && p.bridgeConnectionId === 11) {
+        assert.equal(row!.signalStatus, "OK", "control: with its own measured offset the current series is confirmed");
+      } else {
+        assert.equal(row!.signalStatus, "STALE_DATA", "current-looking stamps without a measured offset are not confirmed");
+        assert.equal(row!.signal, null);
+      }
+    }
+
+    // A UTC-stamped provider's current bars are unaffected (no broker clock).
+    provenance = { providerId: "deriv", subProviderId: null, brokerCode: "deriv", bridgeConnectionId: null };
+    measure(null);
+    bars = series(lastClosedUtc);
+    const [row] = await enrichWatchlistItems([ITEM]);
+    assert.equal(row!.signalStatus, "OK");
+    assert.notEqual(row!.signal, null);
+  } finally {
+    provenance = null;
+    measure(null);
   }
 });

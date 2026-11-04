@@ -147,3 +147,57 @@ test("broker-stamped bars are aged on the UTC clock with their measured offset",
   assert.match(stalled.result.conflictWarning ?? "", /M5 newest bar opened Wed 11:55 broker time \(2h ago\)/);
   assert.doesNotMatch(stalled.aiSummary, /11:55 UTC/);
 });
+
+// The control above is why "no measured offset" can never mean "read as UTC"
+// for a stamp known to be broker time: a series stalled about the broker's
+// offset reads current. A series flagged as broker-clock with no measured
+// offset is UNKNOWN on every timeframe — current-looking or not — the report
+// gives no bias, and its stamp is named broker time, never UTC.
+test("broker-stamped bars with no measured offset are never a current read", () => {
+  const now = Date.UTC(2026, 9, 28, 12, 2);
+  const OFFSET = 2 * H1;
+  const unmeasured = { lower: true, middle: true, higher: true };
+  const build = (m5: number, h1: number, h4: number, flags?: { lower?: boolean; middle?: boolean; higher?: boolean }) => buildReport({
+    symbol: "EURUSD", lowerTimeframe: "M5", middleTimeframe: "H1", higherTimeframe: "H4",
+    lowerCandles: trend(60, M5, m5), middleCandles: trend(60, H1, h1), higherCandles: trend(60, H4, h4),
+    nowMs: now, brokerClockUnmeasured: flags,
+  });
+
+  // Stalled 2h05m on a UTC+2 broker clock: as UTC it looks current (control above).
+  const stalled = build(Date.UTC(2026, 9, 28, 9, 55) + OFFSET, Date.UTC(2026, 9, 28, 9, 0) + OFFSET, Date.UTC(2026, 9, 28, 8, 0) + OFFSET, unmeasured);
+  assert.equal(stalled.result.alignmentLabel, "DATA_NOT_CURRENT");
+  assert.equal(stalled.result.bestBias, "NEUTRAL");
+  for (const tf of [stalled.lower, stalled.middle, stalled.higher]) assert.equal(tf.snapshot.freshness, "UNKNOWN");
+  assert.equal(stalled.lower.snapshot.newestBarTime, new Date(Date.UTC(2026, 9, 28, 9, 55) + OFFSET).toISOString(), "the bar's own stamp is kept");
+  assert.match(stalled.result.conflictWarning ?? "", /M5 newest bar opened Wed 11:55 broker time, and the broker clock's offset to UTC was not measured, so its age could not be checked/);
+  assert.match(stalled.result.conflictWarning ?? "", /their age could not be confirmed, so no bias is given/);
+  assert.doesNotMatch(stalled.result.conflictWarning ?? "", /\d{2}:\d{2} UTC/);
+  assert.doesNotMatch(stalled.aiSummary, /\d{2}:\d{2} UTC/);
+  assert.match(stalled.aiSummary, /as of Wed 11:55 broker time/);
+  assert.doesNotMatch(stalled.aiSummary, /BUY bias/);
+
+  // Truly current broker-stamped bars cannot be confirmed either: same verdict.
+  const at = Date.UTC(2026, 9, 28, 12, 0) + OFFSET;
+  const current = build(at, at, at, unmeasured);
+  assert.equal(current.result.alignmentLabel, "DATA_NOT_CURRENT");
+  for (const tf of [current.lower, current.middle, current.higher]) assert.equal(tf.snapshot.freshness, "UNKNOWN");
+
+  // One unmeasured timeframe is enough to withhold the bias; the others are
+  // judged as usual (UTC stamps here).
+  const utcAt = Date.UTC(2026, 9, 28, 12, 0);
+  const oneFlagged = build(utcAt, utcAt, utcAt, { higher: true });
+  assert.equal(oneFlagged.result.alignmentLabel, "DATA_NOT_CURRENT");
+  assert.equal(oneFlagged.lower.snapshot.freshness, "CURRENT");
+  assert.equal(oneFlagged.higher.snapshot.freshness, "UNKNOWN");
+
+  // A flag wins over an offset passed alongside it (never confirmed current).
+  assert.equal(assessTimeframeFreshness("M5", { open: 1, high: 1, low: 1, close: 1, time: new Date(at).toISOString() }, now, OFFSET, true).freshness, "UNKNOWN");
+  assert.equal(assessTimeframeFreshness("M5", { open: 1, high: 1, low: 1, close: 1, time: new Date(at).toISOString() }, now, OFFSET, false).freshness, "CURRENT");
+});
+
+test("a stale timeframe still names a closed market or stalled feed as the possible cause", () => {
+  const r = report(SUN_NOON, { m5: FRI_CLOSE, h1: Date.UTC(2026, 9, 30, 21, 0), h4: Date.UTC(2026, 9, 30, 20, 0) });
+  assert.match(r.result.conflictWarning ?? "", /the market may be closed or the feed stalled, so no bias is given/);
+  const untimed = report(Date.UTC(2026, 9, 28, 12, 2), { m5: null, h1: null, h4: null });
+  assert.match(untimed.result.conflictWarning ?? "", /their age could not be confirmed, so no bias is given/);
+});

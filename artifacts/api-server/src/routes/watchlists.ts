@@ -6,7 +6,7 @@ import { resolveArxMarket, isApprovedArxMarket, arxFocusApprovedEnvelope } from 
 import { MIN_STRATEGY_SCAN_CANDLES, runStrategyScan } from "../lib/strategyEngine.js";
 import { barOpenUtcMs, classifyCandleFreshness, feedTimestampsUnconfirmed, newestBarLeadMs } from "../lib/data/freshness.js";
 import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
-import { servedSeriesBrokerClockOffsetMs } from "../lib/data/providers/mt5Provider.js";
+import { servedSeriesBrokerClockOffsetMs, servedSeriesBrokerStamped } from "../lib/data/providers/mt5Provider.js";
 import { newsRiskFrom, resolveNewsRiskEvents } from "../lib/news/calendar/newsRiskResolver.js";
 import { requireUser } from "../lib/auth/middleware.js";
 
@@ -26,7 +26,8 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
     // Why there is (or is not) a signal, and the open time of the newest 1m
     // bar it was computed from. A signal is shown only for a scan of current
     // bars: no / too few candles → NO_DATA; newest bar stale (>= 3 intervals
-    // behind) or future-stamped → STALE_DATA; either way signal stays null.
+    // behind), future-stamped, or on an MT5 broker clock with no measured
+    // offset → STALE_DATA; either way signal stays null.
     let signalStatus: "OK" | "DELAYED" | "STALE_DATA" | "NO_DATA" | "UNAVAILABLE" = "UNAVAILABLE";
     let signalAsOf: string | null = null;
     try {
@@ -42,15 +43,20 @@ export async function enrichWatchlistItems(items: typeof watchlistItemsTable.$in
         // Broker clock (audit H7): MT5 bars stay broker-stamped. With a
         // measured broker-clock offset the newest bar is aged on the UTC
         // clock (bar time minus the offset) for both the stale and the
-        // future-stamp check; with none it is compared as stamped (fail closed).
-        const newestUtcMs = barOpenUtcMs(newestMs, servedSeriesBrokerClockOffsetMs(series.provenance));
+        // future-stamp check. An MT5 series with NO measured offset (durable
+        // mirror, unattributed writer, bridge with no broker-time tick yet)
+        // cannot be aged at all: as stamped, a UTC+2 series silent about two
+        // hours reads current. It is never confirmed current (fail closed).
+        const brokerClockOffsetMs = servedSeriesBrokerClockOffsetMs(series.provenance);
+        const brokerClockUnmeasured = servedSeriesBrokerStamped(series.provenance) && brokerClockOffsetMs == null;
+        const newestUtcMs = barOpenUtcMs(newestMs, brokerClockOffsetMs);
         const currentBarOpen = Math.floor(now / BAR_MS) * BAR_MS;
         const trailing = Math.floor((currentBarOpen - newestUtcMs) / BAR_MS);
         const fresh = classifyCandleFreshness(trailing);
         const unconfirmed = feedTimestampsUnconfirmed({
           trailingIntervals: trailing, newestOpenLeadMs: newestBarLeadMs(newestUtcMs, now),
         });
-        if (!fresh || fresh.stale || unconfirmed) {
+        if (brokerClockUnmeasured || !fresh || fresh.stale || unconfirmed) {
           signalStatus = "STALE_DATA";
         } else {
           const sig = runStrategyScan(it.symbol, candles, 60);
