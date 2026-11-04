@@ -141,13 +141,15 @@ export async function run(): Promise<CiTestResultLike> {
     );
   }
 
-  // ── 2b. mt5_demo_commands vocabulary (8 writer literals + 1 forward-declared) ──
+  // ── 2b. mt5_demo_commands vocabulary (10 writer literals + 1 forward-declared) ──
   const DEMO_EXPECTED = [
     ["DRAFT", "created", false],
     ["USER_CONFIRMATION_REQUIRED", "awaiting_confirmation", false],
     ["DEMO_APPROVED", "authorized", false],
     ["SENT_TO_MT5_DEMO", "submitting", true],
     ["FILLED_DEMO", "filled", false],
+    ["PLACED_DEMO", "acknowledged", true],
+    ["CANCELLED_DEMO", "cancelled", false],
     ["REJECTED", "rejected", false],
     ["BLOCKED", "risk_rejected", true],
     ["FAILED", "rejected", true],

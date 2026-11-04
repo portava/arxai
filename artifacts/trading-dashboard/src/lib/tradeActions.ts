@@ -11,10 +11,12 @@
 //                           "Place" button is the explicit confirmation step.
 //     demo                → governed demo queue (/api/me/demo-commands):
 //                           PLACE_MARKET_ORDER or PLACE_PENDING_ORDER, polled to
-//                           a terminal status. NOTE: the demo EA (v1.31) still
-//                           answers PLACE_PENDING_ORDER with
-//                           REJECTED_COMMAND_TYPE_NOT_IMPLEMENTED; the ticket
-//                           says so up front instead of letting the click fail.
+//                           a terminal status (FILLED_DEMO / PLACED_DEMO). Pending
+//                           orders need the demo EA v1.32: the server refuses the
+//                           draft for an older bridge EA
+//                           (EA_VERSION_TOO_OLD_FOR_COMMAND — v1.31 and earlier
+//                           would answer REJECTED_UNKNOWN_COMMAND_TYPE) and the
+//                           ticket shows that refusal in plain words.
 //
 //   modifyPosition()
 //     live → instant-trade router MODIFY_SL_TP (positionId + new levels).
@@ -27,7 +29,7 @@
 // the authority; the client rules only save a round trip.
 import { executeInstantTrade, type InstantTradeResponse, type InstantTradeSource } from "@/lib/instantTradeRouter";
 import { runDemoCommand } from "@/lib/oneClickMode";
-import { expirationIso, isPendingType, orderTypeInfo, type TicketDraft } from "@/lib/orderTicketRules";
+import { expirationIso, orderTypeInfo, type TicketDraft } from "@/lib/orderTicketRules";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -44,10 +46,12 @@ export type TradeActionResult = {
 };
 
 export const DEMO_PENDING_UNSUPPORTED_NOTE =
-  "The demo terminal bridge (v1.31) does not accept pending orders yet; it answers them REJECTED_COMMAND_TYPE_NOT_IMPLEMENTED. Place pending orders on live, or use a market order on demo.";
+  "Your demo terminal bridge EA is older than v1.32 and does not handle pending orders (v1.31 and earlier answer them REJECTED_UNKNOWN_COMMAND_TYPE). Install ReplitMT5BridgeEA v1.32 from MT5 Setup, or use a market order on demo.";
 
-export function demoSupportsOrderType(orderType: TicketDraft["orderType"]): boolean {
-  return !isPendingType(orderType);
+/** The server's version-gate refusal for a demo pending order, in plain words. */
+export function demoRefusalText(reason: string | null): string | null {
+  if (reason && /EA_VERSION_TOO_OLD_FOR_COMMAND:(PLACE|CANCEL)_PENDING_ORDER/.test(reason)) return DEMO_PENDING_UNSUPPORTED_NOTE;
+  return reason;
 }
 
 function fromInstant(res: InstantTradeResponse, via: TradeActionResult["via"]): TradeActionResult {
@@ -86,7 +90,18 @@ export async function placeOrder(a: PlaceOrderArgs): Promise<TradeActionResult> 
 
   if (a.scope === "demo") {
     if (pending) {
-      return { ok: false, status: "DEMO_PENDING_UNSUPPORTED", reason: DEMO_PENDING_UNSUPPORTED_NOTE, commandId: null, via: "demo" };
+      // The server is the authority on whether this bridge's EA handles
+      // pending orders (v1.32+); its refusal comes back as the reason.
+      const expEpoch = expiration ? Math.floor(Date.parse(expiration) / 1000) : null;
+      const out = await runDemoCommand(BASE, "PLACE_PENDING_ORDER", {
+        symbol: a.symbol, volume, lotSize: volume, side: info.side, orderType: info.id,
+        price: a.draft.price, entry: a.draft.price,
+        stopLimitPrice: info.kind === "STOP_LIMIT" ? a.draft.stopLimitPrice : null,
+        ...(expEpoch ? { expirationEpoch: expEpoch } : {}),
+        stopLoss: a.draft.stopLoss, takeProfit: a.draft.takeProfit,
+        notes: null, idempotencyKey: `ticket-${a.symbol}-${info.id}-${Date.now()}`, source: sourcePage, sourcePage,
+      }, { fetchImpl: f });
+      return { ...out, reason: demoRefusalText(out.reason), via: "demo" };
     }
     const out = await runDemoCommand(BASE, "PLACE_MARKET_ORDER", {
       symbol: a.symbol, volume, lotSize: volume, side: info.side, orderType: info.id,
@@ -142,6 +157,18 @@ export async function placeOrder(a: PlaceOrderArgs): Promise<TradeActionResult> 
   const ok = disp.ok === true;
   const reason = ok ? null : String(disp.reason ?? disp.blockReason ?? disp.primaryReason ?? disp.error ?? "BLOCKED");
   return { ok, status: ok ? "sent" : (reason ?? "BLOCKED"), reason, commandId: cmd.commandId, via: "standard" };
+}
+
+/** Cancel a demo pending order resting at the broker (CANCEL_PENDING_ORDER, EA v1.32). */
+export async function cancelDemoPendingOrder(a: {
+  orderTicket: string; symbol: string; sourcePage?: string; fetchImpl?: typeof fetch;
+}): Promise<TradeActionResult> {
+  const sourcePage = a.sourcePage ?? "DEMO_PENDING_ORDERS";
+  const out = await runDemoCommand(BASE, "CANCEL_PENDING_ORDER", {
+    symbol: a.symbol, orderTicket: a.orderTicket, ticket: a.orderTicket,
+    source: sourcePage, sourcePage, idempotencyKey: `cancel-pending-${a.orderTicket}-${Date.now()}`,
+  }, { fetchImpl: a.fetchImpl ?? ((i: string, init?: RequestInit) => fetch(i, init)) });
+  return { ...out, reason: demoRefusalText(out.reason), via: "demo" };
 }
 
 export interface ModifyPositionArgs {

@@ -1,6 +1,6 @@
 // tradeActions: which gated route each order takes, and what it carries.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEMO_PENDING_UNSUPPORTED_NOTE, modifyPosition, placeOrder } from "./tradeActions";
+import { DEMO_PENDING_UNSUPPORTED_NOTE, cancelDemoPendingOrder, demoRefusalText, modifyPosition, placeOrder } from "./tradeActions";
 import type { TicketDraft } from "./orderTicketRules";
 
 const draft = (over: Partial<TicketDraft> = {}): TicketDraft => ({
@@ -61,12 +61,28 @@ describe("placeOrder", () => {
     expect(r).toMatchObject({ ok: true, status: "FILLED_DEMO", via: "demo" });
     expect(calls[0]!.body).toMatchObject({ commandType: "PLACE_MARKET_ORDER", payload: { symbol: "EURUSD", lotSize: 0.2, side: "BUY", orderType: "MARKET_BUY" } });
   });
-  it("demo pending orders are refused honestly before any request (EA v1.31 does not implement them)", async () => {
-    const calls = stubFetch(() => ({}));
+  it("demo pending orders go to the governed queue with entry, stop-limit and expiry; PLACED_DEMO is success", async () => {
+    const calls = stubFetch((url) => url.endsWith("/api/me/demo-commands") ? { ok: true, command: { commandId: "D2" } } : url.endsWith("/D2") ? { command: { status: "PLACED_DEMO" } } : { ok: true });
+    const r = await placeOrder({ scope: "demo", symbol: "EURUSD", draft: draft({ orderType: "BUY_STOP_LIMIT", price: 1.105, stopLimitPrice: 1.103, expiration: "SPECIFIED", expiresAt: "2030-01-01T00:00:00.000Z" }), source: "chart", oneClickOn: false });
+    expect(r).toMatchObject({ ok: true, status: "PLACED_DEMO", via: "demo" });
+    expect(calls[0]!.body).toMatchObject({
+      commandType: "PLACE_PENDING_ORDER",
+      payload: { symbol: "EURUSD", lotSize: 0.2, side: "BUY", orderType: "BUY_STOP_LIMIT", price: 1.105, entry: 1.105, stopLimitPrice: 1.103, expirationEpoch: Date.parse("2030-01-01T00:00:00.000Z") / 1000 },
+    });
+  });
+  it("demo pending refused by the server's EA version gate shows the corrected note", async () => {
+    stubFetch((url) => url.endsWith("/api/me/demo-commands") ? { ok: false, reason: "EA_VERSION_TOO_OLD_FOR_COMMAND:PLACE_PENDING_ORDER:1.31<1.32" } : { ok: true });
     const r = await placeOrder({ scope: "demo", symbol: "EURUSD", draft: draft(), source: "chart", oneClickOn: false });
     expect(r.ok).toBe(false);
     expect(r.reason).toBe(DEMO_PENDING_UNSUPPORTED_NOTE);
-    expect(calls).toHaveLength(0);
+    expect(DEMO_PENDING_UNSUPPORTED_NOTE).toContain("REJECTED_UNKNOWN_COMMAND_TYPE");
+    expect(demoRefusalText("RISK_GATE_FAILED:x")).toBe("RISK_GATE_FAILED:x");
+  });
+  it("cancelDemoPendingOrder queues CANCEL_PENDING_ORDER with the order ticket", async () => {
+    const calls = stubFetch((url) => url.endsWith("/api/me/demo-commands") ? { ok: true, command: { commandId: "D3" } } : url.endsWith("/D3") ? { command: { status: "CANCELLED_DEMO" } } : { ok: true });
+    const r = await cancelDemoPendingOrder({ orderTicket: "5001", symbol: "EURUSD" });
+    expect(r).toMatchObject({ ok: true, status: "CANCELLED_DEMO" });
+    expect(calls[0]!.body).toMatchObject({ commandType: "CANCEL_PENDING_ORDER", payload: { symbol: "EURUSD", orderTicket: "5001", ticket: "5001" } });
   });
 });
 

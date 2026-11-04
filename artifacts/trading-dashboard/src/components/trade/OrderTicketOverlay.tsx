@@ -30,7 +30,7 @@ import {
   ORDER_TYPE_INFO, isPendingType, orderTypeInfo, parseNum, validateTicket,
   type ExpirationChoice, type OrderTypeId, type TicketDraft,
 } from "@/lib/orderTicketRules";
-import { DEMO_PENDING_UNSUPPORTED_NOTE, demoSupportsOrderType, placeOrder } from "@/lib/tradeActions";
+import { DEMO_PENDING_UNSUPPORTED_NOTE, placeOrder } from "@/lib/tradeActions";
 import type { InstantTradeSource } from "@/lib/instantTradeRouter";
 import { cn } from "@/lib/utils";
 
@@ -126,11 +126,11 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
   // Side checks use the live quote only while it is usable; otherwise the broker decides.
   const v = validateTicket(draft, quoteUsable ? { bid, ask } : { bid: null, ask: null }, spec);
 
-  const demoBlocked = scope === "demo" && !demoSupportsOrderType(orderType);
+  // Demo pending orders are not refused here: the server knows the bridge
+  // EA's version (pending needs v1.32) and its refusal is shown after the click.
   const marketNeedsQuote = !pending && !quoteUsable;
   const disabledWhy = scope == null
     ? "Trading is not available in this account mode."
-    : demoBlocked ? DEMO_PENDING_UNSUPPORTED_NOTE
     : marketNeedsQuote ? (q?.stale ? "Price is stale. Waiting for a fresh tick." : lastOnly ? "Only a last-trade price is available, no Bid/Ask — a market order needs both. Pending orders can still be placed." : "No Bid/Ask yet — a market order needs a live price.")
     : v.errors[0] ?? null;
   const canPlace = !busy && disabledWhy == null;
@@ -148,14 +148,17 @@ export function OrderTicketOverlay({ open, onOpenChange, symbol, source, prefill
           title: `${info.label} ${symbol} ${lot}`,
           description: scope === "live"
             ? (r.via === "instant" ? "Sent to your broker through the live router. The terminal confirms the fill." : "Confirmed and dispatched to your broker. The terminal confirms the fill.")
-            : "Filled on demo.",
+            : r.status === "PLACED_DEMO" ? "Pending order placed on demo. It waits at the broker for its price." : "Filled on demo.",
         });
         onPlaced?.();
         onOpenChange(false);
       } else {
-        const h = humanizeReason(r.reason ?? r.status);
-        setLastError(h.description || r.reason || r.status);
-        toast({ title: `${info.label} refused`, description: h.description || r.reason || r.status, variant: "destructive" });
+        // The server's demo EA-version refusal is already plain words.
+        const text = r.reason === DEMO_PENDING_UNSUPPORTED_NOTE
+          ? r.reason
+          : (humanizeReason(r.reason ?? r.status).description || r.reason || r.status);
+        setLastError(text);
+        toast({ title: `${info.label} refused`, description: text, variant: "destructive" });
       }
     } catch (e) {
       setLastError((e as Error).message);
