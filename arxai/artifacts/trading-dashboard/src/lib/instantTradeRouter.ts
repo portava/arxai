@@ -135,7 +135,7 @@ export type RubyWatchView = {
   } | null;
 };
 
-/** Grant or withdraw Ruby's authority to shift this monitor's SL/TP on a fakeout. Server audits both ways. */
+/** Grant or revoke the assistant's authority to shift this monitor's SL/TP on a fakeout. Server audits both ways. */
 export async function setRubyWatchFakeoutAuthority(watchId: number, enabled: boolean): Promise<{ ok: boolean; message?: string; error?: string }> {
   const r = await fetch(`/api/me/assistant/watches/${encodeURIComponent(String(watchId))}/fakeout-authority`, {
     method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
