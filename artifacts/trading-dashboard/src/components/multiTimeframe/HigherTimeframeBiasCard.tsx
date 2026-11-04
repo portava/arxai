@@ -1,7 +1,7 @@
 // (M) Higher-timeframe bias card. Surfaces the dominant HTF condition
 // separately so traders see "what the daily/H4 thinks" at a glance.
 
-type Trend = "UP" | "DOWN" | "SIDEWAYS";
+type Trend = "UP" | "DOWN" | "SIDEWAYS" | "INSUFFICIENT_DATA";
 
 interface Props {
   higherTimeframe: string;
@@ -13,6 +13,7 @@ const TREND_COPY: Record<Trend, { color: string; word: string }> = {
   UP:       { color: "text-green-400", word: "uptrend" },
   DOWN:     { color: "text-red-400",   word: "downtrend" },
   SIDEWAYS: { color: "text-slate-400", word: "ranging" },
+  INSUFFICIENT_DATA: { color: "text-slate-500", word: "not read (not enough candles)" },
 };
 
 export function HigherTimeframeBiasCard({ higherTimeframe, higherTrend, bestBias }: Props) {
