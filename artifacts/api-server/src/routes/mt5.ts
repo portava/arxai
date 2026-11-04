@@ -45,7 +45,7 @@ import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
-import { brokerStampToUtcMs, parseMqlTimeString, recordBrokerClockSample } from "../lib/brokerHub/brokerClockOffset.js";
+import { brokerStampToUtcMs, parseMqlTimeString, recordBrokerClockSample, seedBrokerClockOffsetFromConnection } from "../lib/brokerHub/brokerClockOffset.js";
 import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
 const router = Router();
@@ -430,7 +430,10 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
     const heartbeatReceivedAt = new Date();
     // Broker-clock offset sample (Truth audit T1): the EA's broker server time
     // (`brokerTime`, TimeCurrent) beside its GMT clock (`eaTimeGmt`), read at
-    // the same instant. Measurement only; nothing here gates.
+    // the same instant. Measurement only; nothing here gates. A bridge with no
+    // in-memory samples (fresh process) is first seeded from its own row's
+    // persisted offset when that is within the TTL (no I/O: row in hand).
+    seedBrokerClockOffsetFromConnection(userConn, heartbeatReceivedAt.getTime());
     recordBrokerClockSample({
       bridgeConnectionId: userConn?.id ?? null,
       brokerMs: parseMqlTimeString(extras.brokerTime),
