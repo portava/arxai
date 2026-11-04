@@ -26,6 +26,7 @@ interface RouteState {
   provenance: Record<string, unknown> | null;
   assetClass: string;
 }
+const routeCalls: Array<number | null | undefined> = [];
 const route: RouteState = { ok: true, candles: [], primaryProvider: "mt5_broker", attempts: [], provenance: null, assetClass: "forex" };
 
 function series(n: number, newestOpenMs: number, intervalMs: number) {
@@ -37,7 +38,7 @@ function series(n: number, newestOpenMs: number, intervalMs: number) {
 
 mock.module("../../marketDataRouter.js", { namedExports: {
   classifySymbol: () => route.assetClass,
-  routeCandles: async (symbol: string) => ({
+  routeCandles: async (symbol: string, _tf?: string, _limit?: number, opts?: { bridgeConnectionId?: number | null }) => (routeCalls.push(opts?.bridgeConnectionId), {
     ok: route.ok, symbol, assetClass: route.assetClass, candles: route.candles,
     primaryProvider: route.primaryProvider, attempts: route.attempts,
     provenance: route.provenance, userMessage: route.ok ? null : "No feed.",
@@ -259,4 +260,20 @@ test("24/7 synthetic is never treated as weekend-closed", async () => {
   route.primaryProvider = "mt5_broker";
   const out = await withNow(now, () => getChartCandles("V75", "D1", 60));
   assert.equal(out.feedStatus.isLive, true);
+});
+
+test("A pinned read whose bridge is not serving runs the provider chain once (no second full chain)", async () => {
+  const now = WEEKDAY_NOW;
+  route.ok = true;
+  route.primaryProvider = "assistant_real:twelve_data";
+  route.assetClass = "forex";
+  route.candles = series(60, Math.floor(now / M5) * M5 - M5, M5);
+  route.attempts = [{ provider: "assistant_real:twelve_data", ok: true, reason: null, candleCount: 60, ms: 1 }];
+  route.provenance = { providerId: "assistant_real", subProviderId: "twelve_data", brokerCode: "third_party", bridgeConnectionId: null, userId: null,
+    brokerSymbol: null, environment: "unknown", receivedAt: new Date(now).toISOString(), delayed: null, source: "DERIVED", sourceId: "x" };
+  routeCalls.length = 0;
+  const out = await withNow(now, () => getChartCandles("EURUSD", "M5", 60, false, { bridgeConnectionId: 11 }));
+  assert.equal(routeCalls.length, 1, "the router's own scope fallback handles the shared MT5 retry");
+  assert.equal(routeCalls[0], undefined, "the pin travels as the scope so the router may fall back to the shared MT5 series");
+  assert.equal(out.feedStatus.feedScope, "provider");
 });
