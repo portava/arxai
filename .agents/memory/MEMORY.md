@@ -20,3 +20,4 @@
 - [Chart research boundaries](chart-research-boundaries.md) — extend existing authorities; keep API activation deferred and missing optional evidence unavailable.
 - [Source-only validation](source-only-validation.md) — inspect actual source watchers before edits; isolate outputs/caches and run guards from the real repository root.
 - [Preview verification accounts](preview-verification-accounts.md) — keep preview QA users on normal signup with standard access only; no broker, funds, existing-user data, or live execution.
+- [Shared shell account scope](shared-shell-account-scope.md) — moving Cockpit controls into shared chrome must not lift account providers above the route guard.
