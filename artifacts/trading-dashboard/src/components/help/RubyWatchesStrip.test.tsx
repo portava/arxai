@@ -58,3 +58,28 @@ describe("RubyWatchesStrip", () => {
     await screen.findByTestId("ruby-watches-sweeper-off");
   });
 });
+
+describe("RubyWatchesStrip — fakeout authority", () => {
+  it("shows the per-monitor toggle and posts the grant to the gated route", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}${init?.body ? ` ${String(init.body)}` : ""}`);
+      if (url.includes("/fakeout-authority")) return new Response(JSON.stringify({ ok: true, message: "Granted." }));
+      return new Response(JSON.stringify({ ok: true, watches: [{ ...monitor, monitor: { ...monitor.monitor!, awaitingAnswer: false, fakeoutAuthority: false, fakeoutAdjustments: 0 } }, entry], sweeper: { enabled: true, running: true, intervalMs: 10000 } }));
+    }));
+    const onMessage = vi.fn();
+    render(<RubyWatchesStrip onMessage={onMessage} />);
+    const sw = await screen.findByTestId("ruby-watch-5-fakeout");
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByTestId("ruby-watch-6-fakeout")).toBeNull(); // entries have no SL/TP to shift
+    fireEvent.click(sw);
+    await waitFor(() => expect(calls.some((c) => c.startsWith("POST /api/me/assistant/watches/5/fakeout-authority") && c.includes('"enabled":true'))).toBe(true));
+    await waitFor(() => expect(onMessage).toHaveBeenCalledWith("Granted."));
+  });
+  it("shows how many shifts Ruby has already sent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true, watches: [{ ...monitor, monitor: { ...monitor.monitor!, fakeoutAuthority: true, fakeoutAdjustments: 2 } }], sweeper: { enabled: true, running: true, intervalMs: 10000 } }))));
+    render(<RubyWatchesStrip />);
+    expect((await screen.findByTestId("ruby-watch-5-fakeout")).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("ruby-watch-5-fakeout-count").textContent).toBe("· 2 shifts");
+  });
+});
