@@ -875,7 +875,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   </div>;
 
   const shellHeaderActions = <div className="arx-shell-actions-main">
-    {!isRootWorkspace && <>
+    {!isRootWorkspace && !isInvestor && <>
       <div className="arx-shell-symbol-picker"><SymbolPicker /></div>
       <ViewModeSwitch />
     </>}
@@ -949,7 +949,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         Skip to main content
       </a>
-      {isRootWorkspace
+      {isRootWorkspace && roleReady && !isInvestor
         ? <ARXShellFrame
             {...sharedFrame}
             variant="cockpit"

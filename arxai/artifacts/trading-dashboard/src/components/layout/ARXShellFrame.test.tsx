@@ -43,8 +43,8 @@ describe("shared ARX shell on specialist routes", () => {
       <div>Risk page content</div>
     </ARXShellFrame>);
 
-    expect(screen.getByTestId("shell-dock-page-risk").getAttribute("aria-current")).toBe("page");
-    expect(screen.getByTestId("shell-tray-page-risk").getAttribute("aria-current")).toBe("page");
+    expect(screen.getByTestId("shell-dock-risk").getAttribute("aria-current")).toBe("page");
+    expect(screen.getByTestId("shell-tray-risk").getAttribute("aria-current")).toBe("page");
     expect(screen.getByTestId("shell-emergency-stop")).toBeTruthy();
     expect(screen.getByTestId("shell-safety-notice")).toBeTruthy();
     expect(screen.getByText("Risk page content")).toBeTruthy();

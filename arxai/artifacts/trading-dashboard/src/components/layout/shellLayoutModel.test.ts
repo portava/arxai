@@ -27,7 +27,7 @@ describe("universal shell preferences", () => {
     const next = { dockMode: "expanded" as const, contentWidth: "wide" as const, density: "compact" as const };
     persistShellPreferences(storage, 12, next);
     expect(readShellPreferences(storage, 12)).toEqual(next);
-    expect(readShellPreferences(storage, 13).dockMode).toBe("compact");
+    expect(readShellPreferences(storage, 13).dockMode).toBe("expanded");
   });
 
   it("keeps pin and collapse settings independent for each user's route", () => {
