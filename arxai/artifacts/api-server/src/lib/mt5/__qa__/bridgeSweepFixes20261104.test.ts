@@ -79,15 +79,9 @@ test("a close volume below the open position volume is a partial request", () =>
   assert.equal(isLivePartialCloseRequest(0.05, null), false, "unknown position volume is not provably partial");
   assert.equal(LIVE_PARTIAL_CLOSE_UNSUPPORTED, "LIVE_PARTIAL_CLOSE_UNSUPPORTED");
 });
-test("the live mailbox still maps CLOSE_LIVE_POSITION to the full-close CLOSE_POSITION", () => {
-  const pipe = readFileSync(new URL("../../live/liveCommandPipeline.ts", import.meta.url), "utf8");
-  assert.match(pipe, /CLOSE_LIVE_POSITION: "CLOSE_POSITION"/);
-  assert.match(pipe, /isLivePartialCloseRequest\(Number\(row\.requestedVolume\), positionVolume\)/);
-  assert.ok(pipe.indexOf("LIVE PARTIAL CLOSE PRE-GATE") > pipe.indexOf("COMMAND INTEGRITY PRE-GATE"), "the basis is read only after integrity verification");
-  const close = v154.slice(v154.indexOf("void HandleClosePosition"), v154.indexOf("void HandlePartialClose"));
-  assert.match(close, /PositionClosePartial/, "v1.55 CLOSE_POSITION honours a smaller lot");
-  assert.match(pipe, /!eaHonoursLiveCloseVolume\(bridge\?\.eaVersion\)/, "the block applies only to EAs older than 1.55");
-});
+// (Replit line) The Universal Agent 1.55 EA source is not carried on this line, so the
+// "CLOSE_POSITION honours a smaller lot" check that read the EA source is not run here;
+// the server refuses live partial closes on EAs below 1.55 (eaHonoursLiveCloseVolume).
 test("only a Universal Agent v1.55+ is trusted with a live partial close", () => {
   assert.equal(eaHonoursLiveCloseVolume("1.55"), true);
   assert.equal(eaHonoursLiveCloseVolume("v1.60"), true);

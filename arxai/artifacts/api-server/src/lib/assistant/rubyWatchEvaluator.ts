@@ -42,7 +42,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
 import type { InstantTradeIntent, InstantTradeResult } from "../live/instantTrade.js";
 import { readOpenPositions } from "../positions/openPositions.js";
-import { routeCandles } from "../data/marketDataRouter.js";
+import { routeCandlesForDecision } from "../data/marketDataRouter.js";
 import { currentFeedScopeBridge, feedScopeForUser, runWithFeedScope } from "../data/feedScope.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { computeTradeIntelligence } from "../intelligence/scoring.js";
@@ -196,7 +196,7 @@ async function reversalScoreFor(symbol: string, pos: OpenPositionInput, bridge: 
     // Only the owner's own bridge series may drive a decision: pinned read,
     // and a served series from any other writer/provider (incl. the
     // unattributed durable mirror) is ignored.
-    const series = bridge != null ? await routeCandles(symbol, "15m", 60, { bridgeConnectionId: bridge }) : null;
+    const series = bridge != null ? await routeCandlesForDecision(symbol, "15m", { limit: 60, bridgeConnectionId: bridge }) : null;
     const own = !!series && series.ok && series.provenance?.providerId === "mt5_broker"
       && series.provenance.subProviderId == null && series.provenance.bridgeConnectionId === bridge;
     const candlesM15 = own

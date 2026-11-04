@@ -12,6 +12,7 @@ import { submitInstantTrade } from "../tradeEngine/pipeline.js";
 import { runHandshake } from "../handshake/coordinator.js";
 import { isUniqueViolation } from "../pgError.js";
 import { routeQuote } from "../data/marketDataRouter.js";
+import { readMt5Quote } from "../data/providers/mt5Provider.js";
 import { boundQuotePrice } from "./boundQuote.js";
 
 export const MAX_ACTIVE_RUBY_WATCHES = 10;
@@ -39,9 +40,13 @@ export async function currentPriceOf(symbol: string): Promise<number | null> {
 export async function ownBridgePriceOf(symbol: string, bridgeConnectionId: number | null): Promise<number | null> {
   if (bridgeConnectionId == null) return null;
   try {
-    const q = await routeQuote(symbol, { mt5Writer: { bridgeConnectionId } });
-    if (!q.ok || q.provenance?.providerId !== "mt5_broker" || q.provenance.bridgeConnectionId !== bridgeConnectionId) return null;
-    return boundQuotePrice(q).price;
+    // Bridge-scoped store read (this line's pinned read): only this bridge's own
+    // partition is served, never another bridge's or the unattributed one.
+    const r = readMt5Quote(symbol, { bridgeConnectionId });
+    if (!r.quote || r.bridgeConnectionId !== bridgeConnectionId) return null;
+    const q = r.quote;
+    const p = q.bid != null && q.ask != null ? (q.bid + q.ask) / 2 : q.last ?? q.bid ?? q.ask ?? null;
+    return typeof p === "number" && Number.isFinite(p) && p > 0 ? p : null;
   } catch { return null; }
 }
 

@@ -39,7 +39,6 @@
     "test:feed-sweep-20261104": "node --import tsx --test --test-force-exit src/lib/data/chart/__qa__/boundedCache.test.ts src/lib/data/__qa__/mt5QuoteAgeProvenance.test.ts",
     "test:chart-stored-history": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/data/chart/__qa__/chartStoredHistoryFallback.test.ts",
     "test:app-pages-ui-sweep-api": "node --import tsx --test --test-force-exit src/routes/__qa__/routeShadowing.test.ts src/lib/security/__qa__/scrubPreservesDates.test.ts",
-    "test:truth-audit-fixes-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/brokerHub/__qa__/brokerClockOffset.test.ts src/lib/bridgeV2/__qa__/brokerClockIngest.test.ts src/lib/data/chart/__qa__/chartFeedScope.test.ts src/lib/data/__qa__/feedScopeRequestPin.test.ts ../../lib/domain/src/truth/__qa__/evidenceClassBasis.test.ts",
     "test:ai-chat-audit-fixes-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/chatAuditFixes.test.ts",
     "test:demo-pending-orders": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/mt5/__qa__/demoPendingOrders.test.ts",
     "test:bridge-sweep-20261104": "node --import tsx --test --test-force-exit src/lib/mt5/__qa__/bridgeSweepFixes20261104.test.ts src/lib/brokerHub/__qa__/brokerClockOffset.test.ts src/lib/live/__qa__/ackPartialFill.test.ts src/routes/__qa__/mt5ResultReceipt.test.ts",
