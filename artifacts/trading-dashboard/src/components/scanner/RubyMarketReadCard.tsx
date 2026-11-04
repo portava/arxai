@@ -18,6 +18,7 @@ import {
 } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventRiskLine } from "@/lib/eventRiskCopy";
+import { feedProvenanceChips, isServerReceiveBasis } from "@/lib/feed-confidence";
 import { useGetMeMarketEdge, getGetMeMarketEdgeQueryKey } from "@workspace/api-client-react";
 import type {
   RubyMarketReadExplanation,
@@ -93,7 +94,7 @@ function humanize(map: Record<string, string>, raw: string | null | undefined): 
 // Live "updated Xs ago" timer from a DATA timestamp (newest observed of the
 // snapshot's lastTickAt / closed lastCandleAt — never the signal build-time and
 // never a forming bar's scheduled close) against a ticking now.
-function ageLabel(dataIso: string | null | undefined, nowTs: number): string {
+function ageLabelOf(dataIso: string | null | undefined, nowTs: number): string {
   if (!dataIso) return "—";
   const t = Date.parse(dataIso);
   if (!Number.isFinite(t)) return "—";
@@ -111,15 +112,18 @@ function resolveDataUpdated(
   lastTickAt: string | null | undefined,
   lastCandleAt: string | null | undefined,
   nowTs: number,
-): { dataUpdatedIso: string | null; formingCloseOnly: boolean } {
+): { dataUpdatedIso: string | null; formingCloseOnly: boolean; anchorIsTick: boolean } {
   const tick = lastTickAt ? Date.parse(lastTickAt) : NaN;
   const candle = lastCandleAt ? Date.parse(lastCandleAt) : NaN;
   const stamps: number[] = [];
   if (Number.isFinite(tick)) stamps.push(tick);
   const candleIsScheduled = Number.isFinite(candle) && candle > nowTs;
   if (Number.isFinite(candle) && !candleIsScheduled) stamps.push(candle);
-  if (stamps.length === 0) return { dataUpdatedIso: null, formingCloseOnly: candleIsScheduled };
-  return { dataUpdatedIso: new Date(Math.max(...stamps)).toISOString(), formingCloseOnly: false };
+  if (stamps.length === 0) return { dataUpdatedIso: null, formingCloseOnly: candleIsScheduled, anchorIsTick: false };
+  const newest = Math.max(...stamps);
+  // Which stamp anchors the age: the tick (when it is the newest) or a closed bar.
+  const anchorIsTick = Number.isFinite(tick) && tick === newest;
+  return { dataUpdatedIso: new Date(newest).toISOString(), formingCloseOnly: false, anchorIsTick };
 }
 
 // The Market Read header's feed row, as one ordered downgrade (client can only
@@ -142,11 +146,31 @@ function resolveFeedRow(input: {
   formingCloseOnly?: boolean;
   snapshotState: string | null;
   nowTs: number;
+  /**
+   * The age anchor is a tick stamped when ARX RECEIVED it (lastTickBasis
+   * server_receive), not the producer's tick time: the age says "(received)".
+   */
+  receivedStamp?: boolean;
+  /**
+   * The Truth snapshot's data.notLiveReason: "market_closed" when the market is
+   * in its scheduled close. Absent on older servers.
+   */
+  notLiveReason?: string | null;
 }): { text: string; tone: string; feedDataNote: string | null } {
   const { signal, downgraded, dataUpdatedIso, snapshotState, nowTs } = input;
+  const received = input.receivedStamp === true ? " (received)" : "";
+  const ageLabel = (iso: string | null | undefined, now: number) => {
+    const text = ageLabelOf(iso, now);
+    return text === "—" ? text : `${text}${received}`;
+  };
   const scheduledOnly = dataUpdatedIso == null && input.formingCloseOnly === true;
   if (!signal) return { text: "", tone: "text-txt-muted", feedDataNote: null };
   const f = freshnessLabel(signal);
+  const marketClosed = input.notLiveReason === "market_closed";
+  if (downgraded && marketClosed) {
+    const age = dataUpdatedIso ? ` · ${ageLabel(dataUpdatedIso, nowTs)}` : "";
+    return { text: `Market closed — last session's data${age}`, tone: "text-warning", feedDataNote: null };
+  }
   if (downgraded) {
     const age = dataUpdatedIso
       ? ` · ${ageLabel(dataUpdatedIso, nowTs)}`
@@ -178,6 +202,13 @@ function resolveFeedRow(input: {
   }
   const age = ageLabel(dataUpdatedIso, nowTs);
   const state = String(snapshotState ?? "").toUpperCase();
+  if (state !== "LIVE_CONFIRMED" && marketClosed) {
+    return {
+      text: `Market closed — last session's data · ${age}`,
+      tone: "text-warning",
+      feedDataNote: "Market closed — the market is in its scheduled close; this is the last session's data, not a live feed.",
+    };
+  }
   if (state !== "LIVE_CONFIRMED") {
     const word = f.text === "Live feed" ? "Live (unconfirmed)" : f.text;
     const stateWord = state ? state.toLowerCase() : "unknown";
@@ -310,7 +341,7 @@ export function RubyMarketReadCard({
   // lastCandleAt is a candle's closeTime: for the still-forming bar it is the
   // SCHEDULED future close, not an observation, so it never anchors the age
   // (it would otherwise win the max and read "updated 0s ago" all bar long).
-  const { dataUpdatedIso, formingCloseOnly } = useMemo(
+  const { dataUpdatedIso, formingCloseOnly, anchorIsTick } = useMemo(
     () => resolveDataUpdated(truthData?.lastTickAt, truthData?.lastCandleAt, nowTs),
     [truthData?.lastTickAt, truthData?.lastCandleAt, nowTs],
   );
@@ -360,7 +391,12 @@ export function RubyMarketReadCard({
     formingCloseOnly,
     snapshotState: truthData?.state ?? null,
     nowTs,
+    receivedStamp: anchorIsTick && isServerReceiveBasis(truthData?.lastTickBasis),
+    // Optional field (TRUTH-3); read loosely so an older client build still compiles.
+    notLiveReason: truthData?.notLiveReason ?? null,
   });
+  // Whose feed the snapshot rests on, and bridge contention (Truth T2).
+  const provenanceChips = feedProvenanceChips(truthData);
   const level = gate.level;
   const reason = withheldCause === "expired"
     ? `This ${name} read has expired — refresh for a current read.`
@@ -496,6 +532,16 @@ export function RubyMarketReadCard({
                   >
                     <Clock className="h-3 w-3" /> {feedRow.text}
                   </span>
+                  {provenanceChips.map((chip) => (
+                    <span
+                      key={chip.key}
+                      className="rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning"
+                      data-testid={`ruby-market-read-feed-scope-${chip.key}`}
+                      title={chip.title}
+                    >
+                      {chip.text}
+                    </span>
+                  ))}
                 </div>
                 {!downgraded && signal.late?.isLate && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-warning" data-testid="ruby-market-read-late">

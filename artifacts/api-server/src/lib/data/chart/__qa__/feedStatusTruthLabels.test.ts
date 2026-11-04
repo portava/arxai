@@ -154,6 +154,8 @@ test("Durable mirror: stored broker candles are not a live bridge feed", async (
   assert.equal(out.feedStatus.isLive, false, "no bridge is pushing this series — not live");
   assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
   assert.doesNotMatch(out.feedStatus.message, /\byour\b/i);
+  // Stored bars are never an input the AI may read as the current market.
+  assert.equal(out.feedStatus.aiUsable, false, "durable mirror must not be AI-usable");
   assert.match(out.feedStatus.message, /stored/i);
 });
 

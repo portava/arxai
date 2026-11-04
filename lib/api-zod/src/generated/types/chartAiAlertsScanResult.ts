@@ -13,4 +13,6 @@ export interface ChartAiAlertsScanResult {
   fired: ChartFiredAlert[];
   cleared: string[];
   evaluated: boolean;
+  /** Plain-English reasons alert families were held back this scan (e.g. momentum and stop/target alerts while the feed is stale). */
+  suppressed?: string[];
 }

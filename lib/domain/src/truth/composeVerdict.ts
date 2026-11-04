@@ -137,6 +137,9 @@ const BEST_ACTION_TEXT: Record<TruthBestAction, string> = {
   WATCH_ONLY: "Watch only — there is no clean setup right now.",
 };
 
+const MARKET_CLOSED_TEXT =
+  "Wait — the market is closed; these are the last session's bars.";
+
 const EVENT_RISK_UNCHECKED_TEXT =
   "Watch only — scheduled news risk could not be checked right now.";
 
@@ -351,6 +354,14 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
 
   let headline = buildHeadline(bias, bestAction);
   let bestActionText = BEST_ACTION_TEXT[bestAction];
+  // A scheduled close is not a feed fault: say so, so this verdict agrees with
+  // the chart and scanner banners that read "Market closed" for the same bars.
+  if (bestAction === "WAIT_FOR_DATA" && input.marketClosed === true) {
+    bestActionText = MARKET_CLOSED_TEXT;
+    headline = bias === "BULLISH" || bias === "BEARISH"
+      ? `The last session leaned ${bias === "BULLISH" ? "bullish" : "bearish"}; the market is closed now.`
+      : "The market is closed — this is the last session's data.";
+  }
   // Event risk that could not be checked is not "no event risk": never present
   // an entry as clear of scheduled news when the calendar read failed.
   if (input.eventRiskUnchecked === true && (bestAction === "BUY" || bestAction === "SELL")) {

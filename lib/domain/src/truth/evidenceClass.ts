@@ -49,6 +49,7 @@ export type TruthEvidenceReason =
   | "RECEIVE_TIME_ONLY"
   // stale
   | "FEED_STALE"
+  | "MARKET_CLOSED"
   | "EXPIRED"
   // unavailable
   | "NO_FEED"
@@ -70,6 +71,7 @@ export const TRUTH_EVIDENCE_REASONS: readonly TruthEvidenceReason[] = [
   "SYNTHETIC_NO_EVENT_MAPPING",
   "RECEIVE_TIME_ONLY",
   "FEED_STALE",
+  "MARKET_CLOSED",
   "EXPIRED",
   "NO_FEED",
   "NO_VALUE",
@@ -98,6 +100,8 @@ const REASON_CLASS: Record<TruthEvidenceReason, TruthEvidenceClass> = {
   // current (Truth audit T3).
   RECEIVE_TIME_ONLY: "estimate",
   FEED_STALE: "stale",
+  // Not live, and not a fault: the instrument is in its scheduled close.
+  MARKET_CLOSED: "stale",
   EXPIRED: "stale",
   NO_FEED: "unavailable",
   NO_VALUE: "unavailable",
@@ -149,6 +153,8 @@ export interface TruthEvidenceInput {
      * Absent (older server) is treated as producer_tick for compatibility.
      */
     lastTickBasis?: "producer_tick" | "server_receive" | null;
+    /** The feed is not live because the market is in its scheduled close. */
+    notLiveReason?: "market_closed" | null;
   };
   news: {
     providerConnected: boolean;
@@ -201,8 +207,10 @@ function feedClaim(
   state: TruthDataState,
   source: string | null,
   observedAt: string | null,
+  marketClosed = false,
 ): TruthClaimEvidence {
   if (!source || state === "UNAVAILABLE") return claim("NO_FEED", observedAt);
+  if (marketClosed && (state === "STALE" || state === "SYNCING")) return claim("MARKET_CLOSED", observedAt);
   if (state === "STALE") return claim("FEED_STALE", observedAt);
   if (state === "SYNCING") return claim("FEED_UNCONFIRMED", observedAt);
   return claim("LIVE_FEED_OBSERVATION", observedAt);
@@ -218,6 +226,8 @@ function derivedFrom(feed: TruthClaimEvidence, observedAt: string | null): Truth
       return claim("FEED_UNCONFIRMED", observedAt);
     case "FEED_STALE":
       return claim("FEED_STALE", observedAt);
+    case "MARKET_CLOSED":
+      return claim("MARKET_CLOSED", observedAt);
     default:
       return claim("NO_FEED", observedAt);
   }
@@ -243,6 +253,7 @@ function oldest(stamps: (string | null)[]): string | null {
  */
 export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence {
   const { data, nowMs } = input;
+  const closed = data.notLiveReason === "market_closed";
 
   // ── Last candle: bar identity from the feed. A future scheduled close is the
   // normal forming-bar boundary, so it is NOT rejected here — only an absent or
@@ -252,7 +263,7 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
     ? claim("NO_VALUE", null)
     : !parsable(candleAt)
       ? claim("INVALID_TIMESTAMP", null)
-      : feedClaim(data.state, data.source, candleAt);
+      : feedClaim(data.state, data.source, candleAt, closed);
 
   // ── Price: newest close. Needs a value AND the bar it came from.
   const priceUsable = data.price != null && Number.isFinite(data.price) && data.price > 0;
@@ -260,7 +271,7 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
     ? claim("NO_VALUE", null)
     : lastCandle.reason === "NO_VALUE" || lastCandle.reason === "INVALID_TIMESTAMP"
       ? claim("NO_OBSERVATION_TIME", null)
-      : feedClaim(data.state, data.source, candleAt);
+      : feedClaim(data.state, data.source, candleAt, closed);
 
   // ── Last tick: a real observation time; a future one is not an observation.
   const tickAt = data.lastTickAt;
@@ -268,7 +279,7 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
     ? claim("NO_VALUE", null)
     : !parsable(tickAt) || Date.parse(tickAt) > nowMs + TRUTH_EVIDENCE_TICK_SKEW_MS
       ? claim("INVALID_TIMESTAMP", null)
-      : feedClaim(data.state, data.source, tickAt);
+      : feedClaim(data.state, data.source, tickAt, closed);
   // A receive-time stamp identifies the tick but does not prove it current.
   const lastTick = lastTickFeed.reason === "LIVE_FEED_OBSERVATION" && data.lastTickBasis === "server_receive"
     ? claim("RECEIVE_TIME_ONLY", tickAt)
@@ -294,7 +305,7 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
       : claim("NO_CALENDAR", null);
 
   // ── Components: heuristic reads over the feed.
-  const feed = feedClaim(data.state, data.source, candleAt);
+  const feed = feedClaim(data.state, data.source, candleAt, closed);
   const components = {} as Record<TruthComponentKey, TruthClaimEvidence>;
   for (const key of COMPONENT_KEYS) {
     const c = input.components[key];
@@ -418,6 +429,7 @@ export const TRUTH_EVIDENCE_REASON_TEXT: Record<TruthEvidenceReason, string> = {
   SYNTHETIC_NO_EVENT_MAPPING: "Synthetic market — scheduled events do not apply; calendar not consulted.",
   RECEIVE_TIME_ONLY: "Stamped when ARX received it, not when the broker observed it — identified, not verified current.",
   FEED_STALE: "The feed behind this has gone stale.",
+  MARKET_CLOSED: "The market is in its scheduled close; this is the last session's data.",
   EXPIRED: "This read expired; waiting for current evidence.",
   NO_FEED: "No usable market-data feed backs this.",
   NO_VALUE: "No value is available.",

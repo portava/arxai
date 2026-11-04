@@ -15205,6 +15205,10 @@ components:
           type: array
           items: { type: string }
         evaluated: { type: boolean }
+        suppressed:
+          type: array
+          description: Plain-English reasons alert families were held back this scan (e.g. momentum and stop/target alerts while the feed is stale).
+          items: { type: string }
 
     ChartAiAlertsScanResponse:
       type: object
@@ -15589,6 +15593,14 @@ components:
           description: >-
             Measured broker-clock offset (ms, broker minus UTC) used to convert
             the serving bridge's stamps to UTC at ingest; null when unknown.
+        notLiveReason:
+          type: string
+          nullable: true
+          enum: [market_closed]
+          description: >-
+            Why a not-live feed is not live when the reason is known and not a
+            fault: market_closed = the instrument is in its scheduled close and
+            the bars are the last session's. null/absent otherwise.
     TruthComponents:
       type: object
       required: [scanner, flame, timing, scalp]
@@ -15666,7 +15678,7 @@ components:
           type: string
           enum:
             [LIVE_FEED_OBSERVATION, MODEL_ESTIMATE, FEED_UNCONFIRMED,
-             CALENDAR_FETCH_TIME_UNKNOWN, SYNTHETIC_NO_EVENT_MAPPING, RECEIVE_TIME_ONLY, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
+             CALENDAR_FETCH_TIME_UNKNOWN, SYNTHETIC_NO_EVENT_MAPPING, RECEIVE_TIME_ONLY, FEED_STALE, MARKET_CLOSED, EXPIRED, NO_FEED, NO_VALUE,
              NO_OBSERVATION_TIME, INVALID_TIMESTAMP, NO_CALENDAR, CALENDAR_UNCHECKED,
              COMPONENT_ABSENT, LEVELS_WITHHELD, INSUFFICIENT_DATA, UNCLASSIFIED]
         observedAt:

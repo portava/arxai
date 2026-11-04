@@ -5925,6 +5925,8 @@ export interface ChartAiAlertsScanResult {
   fired: ChartFiredAlert[];
   cleared: string[];
   evaluated: boolean;
+  /** Plain-English reasons alert families were held back this scan (e.g. momentum and stop/target alerts while the feed is stale). */
+  suppressed?: string[];
 }
 
 export type ChartAiAlertsScanResponseSafetyMode =
@@ -6503,6 +6505,17 @@ export const TruthDataFeedScope = {
   provider: "provider",
 } as const;
 
+/**
+ * Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise.
+ */
+export type TruthDataNotLiveReason =
+  | (typeof TruthDataNotLiveReason)[keyof typeof TruthDataNotLiveReason]
+  | null;
+
+export const TruthDataNotLiveReason = {
+  market_closed: "market_closed",
+} as const;
+
 export interface TruthData {
   state: TruthDataState;
   source: string | null;
@@ -6518,6 +6531,8 @@ export interface TruthData {
   contention?: boolean;
   /** Measured broker-clock offset (ms, broker minus UTC) used to convert the serving bridge's stamps to UTC at ingest; null when unknown. */
   brokerClockOffsetMs?: number | null;
+  /** Why a not-live feed is not live when the reason is known and not a fault: market_closed = the instrument is in its scheduled close and the bars are the last session's. null/absent otherwise. */
+  notLiveReason?: TruthDataNotLiveReason;
 }
 
 export interface TruthComponents {
@@ -6628,6 +6643,7 @@ export const TruthEvidenceClaimReason = {
   SYNTHETIC_NO_EVENT_MAPPING: "SYNTHETIC_NO_EVENT_MAPPING",
   RECEIVE_TIME_ONLY: "RECEIVE_TIME_ONLY",
   FEED_STALE: "FEED_STALE",
+  MARKET_CLOSED: "MARKET_CLOSED",
   EXPIRED: "EXPIRED",
   NO_FEED: "NO_FEED",
   NO_VALUE: "NO_VALUE",

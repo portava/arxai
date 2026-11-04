@@ -202,18 +202,19 @@ describe("setup-preview lifecycle helpers", () => {
     expect(isExpired(p, now + 91_000)).toBe(true);
   });
 
-  it("deriveStatus keeps confirmed/discarded, ages un-acted to stale", () => {
+  it("deriveStatus keeps discarded, ages un-acted and confirmed to stale", () => {
     const p = mkPreview();
     expect(deriveStatus(p, "preview", now)).toBe("preview");
     expect(deriveStatus(p, "preview", now + 91_000)).toBe("stale");
-    expect(deriveStatus(p, "user_confirmed", now + 91_000)).toBe("user_confirmed");
+    expect(deriveStatus(p, "user_confirmed", now)).toBe("user_confirmed");
+    expect(deriveStatus(p, "user_confirmed", now + 91_000)).toBe("stale");
     expect(deriveStatus(p, "discarded", now + 91_000)).toBe("discarded");
   });
 
   it("hasDrawableLevels / canUseSetup gate honestly", () => {
     const good = mkPreview();
     expect(hasDrawableLevels(good)).toBe(true);
-    expect(canUseSetup(good, "preview")).toBe(true);
+    expect(canUseSetup(good, "preview", now)).toBe(true);
     expect(canUseSetup(good, "stale")).toBe(false);
     expect(canUseSetup(good, "discarded")).toBe(false);
 

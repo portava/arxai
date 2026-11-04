@@ -17,7 +17,7 @@ type TypedVoiceStreamEvent =
 
 type DoneEvent = { done: true };
 
-type VoiceStreamEvent = TypedVoiceStreamEvent | DoneEvent;
+export type VoiceStreamEvent = TypedVoiceStreamEvent | DoneEvent;
 
 type PlaybackHandle = ReturnType<typeof useAudioPlayback>;
 
@@ -47,26 +47,50 @@ function notifyError(callbacks: Pick<StreamCallbacks, "onError">, error: Error) 
   }
 }
 
-function isVoiceStreamEvent(value: unknown): value is VoiceStreamEvent {
-  if (!value || typeof value !== "object") return false;
+/**
+ * Normalise one parsed SSE payload into the canonical client event shape.
+ *
+ * The ARX voice route speaks a slightly different dialect than this lib
+ * originally expected:
+ *   - audio is sent as `{type:"audio_chunk", data}` (old name: `audio`)
+ *   - completion is `{type:"done"}` (old shape: `{done:true}`)
+ *   - errors are `{type:"error", message}` (old shape: `{type:"error", error}`)
+ * Both dialects are accepted. Anything else (safety, ping, future events)
+ * returns null so the caller drops it silently.
+ */
+export function normalizeVoiceStreamEvent(value: unknown): VoiceStreamEvent | null {
+  if (!value || typeof value !== "object") return null;
 
   const record = value as Record<string, unknown>;
 
-  if (record.done === true) return true;
+  if (record.done === true || record.type === "done") return { done: true };
 
   switch (record.type) {
     case "user_transcript":
     case "transcript":
+      return typeof record.data === "string"
+        ? { type: record.type, data: record.data }
+        : null;
     case "audio":
-      return typeof record.data === "string";
-    case "error":
-      return typeof record.error === "string";
+    case "audio_chunk":
+      return typeof record.data === "string"
+        ? { type: "audio", data: record.data }
+        : null;
+    case "error": {
+      const msg =
+        typeof record.error === "string" && record.error
+          ? record.error
+          : typeof record.message === "string" && record.message
+            ? record.message
+            : "voice_unavailable";
+      return { type: "error", error: msg };
+    }
     default:
-      return false;
+      return null;
   }
 }
 
-function parseVoiceStreamEvent(raw: string): VoiceStreamEvent | null {
+export function parseVoiceStreamEvent(raw: string): VoiceStreamEvent | null {
   // Phase 22F — be tolerant of non-canonical or future event shapes
   // (e.g. server heartbeat `{type:"ping"}`, provider events the lib
   // doesn't know about). Returning null lets the caller drop the
@@ -82,15 +106,17 @@ function parseVoiceStreamEvent(raw: string): VoiceStreamEvent | null {
     return null;
   }
 
-  if (!isVoiceStreamEvent(parsed)) {
-    if (typeof console !== "undefined") {
-      const t = (parsed && typeof parsed === "object") ? (parsed as Record<string, unknown>).type : undefined;
+  const event = normalizeVoiceStreamEvent(parsed);
+  if (!event) {
+    const t = (parsed && typeof parsed === "object") ? (parsed as Record<string, unknown>).type : undefined;
+    // safety envelope + heartbeat are expected; only warn on unknowns.
+    if (t !== "safety" && t !== "ping" && typeof console !== "undefined") {
       console.warn("[useVoiceStream] dropped non-canonical SSE event", t);
     }
     return null;
   }
 
-  return parsed;
+  return event;
 }
 
 function readSseDataFromBlock(block: string): string | null {
@@ -331,6 +357,16 @@ export function useVoiceStream({ workletPath, ...callbacks }: StreamCallbacks) {
                 state
               );
             }
+          }
+          // Server closed the stream without an explicit done event —
+          // still complete so the UI unlocks the mic and settles bubbles.
+          if (!state.didComplete) {
+            handleVoiceStreamEvent(
+              { done: true },
+              playbackRef.current,
+              callbacksRef.current,
+              state
+            );
           }
         } finally {
           try {

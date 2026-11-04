@@ -117,8 +117,8 @@ check("A11  prompt enforces PROP_MODE_OFF stop",
   "missing PROP_MODE_OFF + 'not configured yet' stop");
 
 check("A12  prompt enforces INSUFFICIENT_DATA stop",
-  routingNorm.includes("insufficient_data") && routingNorm.includes("no closed paper trades"),
-  "missing INSUFFICIENT_DATA + 'no closed paper trades' stop");
+  routingNorm.includes("insufficient_data") && routingNorm.includes("no closed demo trades"),
+  "missing INSUFFICIENT_DATA + 'no closed demo trades' stop");
 
 check("A13  prompt forbids funded-account claim",
   /never\s+(guarantee|claim).*(funded|payout|real prop firm)/i.test(routingBlock),

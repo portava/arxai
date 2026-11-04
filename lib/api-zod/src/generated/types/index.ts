@@ -1766,6 +1766,7 @@ export * from "./truthComponents";
 export * from "./truthData";
 export * from "./truthDataFeedScope";
 export * from "./truthDataLastTickBasis";
+export * from "./truthDataNotLiveReason";
 export * from "./truthDataState";
 export * from "./truthEvidence";
 export * from "./truthEvidenceClaim";

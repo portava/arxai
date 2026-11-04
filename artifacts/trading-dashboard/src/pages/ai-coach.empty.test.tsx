@@ -12,12 +12,12 @@ const { default: AiCoach } = await import("./ai-coach");
 // The exact empty payload the real route returns.
 const emptyPayload = {
   isEmpty: true,
-  doingWell: "Not enough journal data yet — log a few paper trades to build your scorecard.",
+  doingWell: "Not enough journal data yet — log a few trades in your Trade Journal (demo or live) to build your scorecard.",
   doingPoorly: "Not enough journal data yet.",
   bestStrategy: null, worstStrategy: null,
   bestSymbol: null, weakestSymbol: null,
   mostCommonMistake: "none",
-  recommendedFocus: "Place a paper trade and add a journal note to begin.",
+  recommendedFocus: "Log a trade in your Trade Journal (demo or live) and add a note to begin.",
   suggestedRuleChanges: [],
   confidenceCalibration: "No trades yet — confidence cannot be calibrated.",
   dataSource: "JOURNAL",
@@ -37,7 +37,7 @@ describe("AI Coach — empty journal", () => {
     expect(screen.queryByText(/Most common mistake/)).toBeNull();
     expect(screen.queryByText(/Best strategy/)).toBeNull();
     // The server's own next step is still shown.
-    expect(screen.getByText(/Place a paper trade and add a journal note to begin/)).toBeTruthy();
+    expect(screen.getByText(/Log a trade in your Trade Journal \(demo or live\) and add a note to begin/)).toBeTruthy();
   });
 
   it("never prints the literal 'none' as a scored mistake when no mistake tag was recorded", async () => {

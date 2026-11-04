@@ -131,24 +131,49 @@ export function saveVoiceName(name: string) {
 }
 
 // ── Server voice preference (ElevenLabs / OpenAI) ─────────────────────────
-const SERVER_VOICE_KEY = "arx.tts.server.v1";
+// ONE voice store: `arx.tts.preference.v1` is the key useUserVoiceSettings
+// mirrors the per-user server prefs into, and the one useRubyTTS /
+// RubyVoiceProvider read for proactive speech. The old chat-only key
+// (`arx.tts.server.v1`) is still read as a fallback so an earlier pick is
+// not lost, and is cleared on the next save.
+const SHARED_VOICE_KEY = "arx.tts.preference.v1";
+const LEGACY_SERVER_VOICE_KEY = "arx.tts.server.v1";
 
 export interface ServerVoicePref {
   provider: "elevenlabs" | "openai";
   voiceId:  string;
 }
 
-export function getServerVoicePref(): ServerVoicePref | null {
+function readPrefKey(key: string): { provider?: string; voiceId?: string } | null {
   try {
-    const v = localStorage.getItem(SERVER_VOICE_KEY);
-    return v ? JSON.parse(v) as ServerVoicePref : null;
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) as { provider?: string; voiceId?: string } : null;
   } catch { return null; }
 }
 
-export function saveServerVoicePref(p: ServerVoicePref | null) {
+export function getServerVoicePref(): ServerVoicePref | null {
+  const shared = readPrefKey(SHARED_VOICE_KEY);
+  if (shared) {
+    // A shared "browser" choice means: no server voice.
+    if ((shared.provider === "elevenlabs" || shared.provider === "openai") && shared.voiceId) {
+      return { provider: shared.provider, voiceId: shared.voiceId };
+    }
+    return null;
+  }
+  const legacy = readPrefKey(LEGACY_SERVER_VOICE_KEY);
+  if (legacy && (legacy.provider === "elevenlabs" || legacy.provider === "openai") && legacy.voiceId) {
+    return { provider: legacy.provider, voiceId: legacy.voiceId };
+  }
+  return null;
+}
+
+/** Save the chat voice locally in the shared key. `browserVoiceName` records a
+ *  browser-voice choice (provider "browser") so proactive speech follows it. */
+export function saveServerVoicePref(p: ServerVoicePref | null, browserVoiceName?: string) {
   try {
-    if (p) localStorage.setItem(SERVER_VOICE_KEY, JSON.stringify(p));
-    else localStorage.removeItem(SERVER_VOICE_KEY);
+    if (p) localStorage.setItem(SHARED_VOICE_KEY, JSON.stringify(p));
+    else localStorage.setItem(SHARED_VOICE_KEY, JSON.stringify({ provider: "browser", voiceId: browserVoiceName ?? "" }));
+    localStorage.removeItem(LEGACY_SERVER_VOICE_KEY);
   } catch { /* noop */ }
 }
 
