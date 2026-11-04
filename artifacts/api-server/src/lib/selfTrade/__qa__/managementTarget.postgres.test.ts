@@ -2462,6 +2462,9 @@ async function terminalBoundFixture(legacy:boolean,modify=false){
   await db.update(positions).set({accountLogin:"100",brokerTicket:"42",volume:.02,stopLoss:1.1,takeProfit:1.3}).where(eq(positions.id,1));
   await db.update(executions).set({brokerTicket:"42",intendedVolume:.02,managementState:{pendingManagement:{claimId:"claim-1",action:modify?"TIGHTEN_SL":"EXIT",stopLoss:modify?1.2:null,requestedAt:new Date().toISOString()}}}).where(eq(executions.id,1));
   const row=await queuedManagement();const mail=legacy?await mirror(row):null;
+  // The EA reports only what its poll was served: the mirror is DELIVERED
+  // (a result for a never-delivered PENDING mirror is refused 409).
+  if(mail)await db.update(mailbox).set({status:"DELIVERED",deliveredAt:new Date()}).where(eq(mailbox.id,mail.id));
   return {row,id:mail?.id??row.commandId};
 }
 for(const legacy of [false,true]){
