@@ -21,7 +21,7 @@ import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { ORDER_TYPES, isMarketOrder, directionOf, type OrderType } from "../lib/tradeAction/orderTypes.js";
 import { enforceTradeTicketRules } from "../lib/tradeAction/riskGovernorEnforcement.js";
@@ -253,6 +253,8 @@ router.get("/me/pending-order-drafts", async (req, res): Promise<void> => {
         stopLoss: r.stopLoss,
         takeProfit: r.takeProfit,
         expiration: r.expiration?.toISOString() ?? null,
+        // Set once MT5 placed the order: cancelling then needs the bridge.
+        mt5OrderTicket: r.mt5OrderTicket != null ? String(r.mt5OrderTicket) : null,
         pendingStatus: r.pendingStatus,
         status: r.status,
         reason: r.reason,
@@ -278,16 +280,38 @@ router.delete("/me/pending-order-draft/:id", async (req, res): Promise<void> => 
   }
 
   try {
+    // A draft that reached the broker (has an MT5 order ticket) is a LIVE
+    // pending order: marking it CANCELLED here would leave the order working at
+    // the broker while ARX says it is gone. Those must be cancelled through
+    // POST /me/pending-order-draft/:id/cancel-via-bridge; only that path's
+    // MT5 confirmation writes the final CANCELLED.
     const result = await db.update(tradeActionRequestsTable)
       .set({ pendingStatus: "CANCELLED", status: "cancelled", updatedAt: new Date() })
       .where(and(
         eq(tradeActionRequestsTable.id, draftId),
         eq(tradeActionRequestsTable.userId, userId),
         isNotNull(tradeActionRequestsTable.pendingStatus),
+        isNull(tradeActionRequestsTable.mt5OrderTicket),
       ))
       .returning({ id: tradeActionRequestsTable.id });
 
     if (result.length === 0) {
+      const [placed] = await db.select({ id: tradeActionRequestsTable.id, mt5OrderTicket: tradeActionRequestsTable.mt5OrderTicket })
+        .from(tradeActionRequestsTable)
+        .where(and(
+          eq(tradeActionRequestsTable.id, draftId),
+          eq(tradeActionRequestsTable.userId, userId),
+          isNotNull(tradeActionRequestsTable.pendingStatus),
+        ))
+        .limit(1);
+      if (placed?.mt5OrderTicket) {
+        res.status(409).json({
+          ok: false, error: "placed_at_broker",
+          reason: "This pending order is placed at the broker. Cancel it through cancel-via-bridge so the broker removes it.",
+          mt5OrderTicket: String(placed.mt5OrderTicket), ...SAFETY,
+        });
+        return;
+      }
       res.status(404).json({ ok: false, error: "draft_not_found", ...SAFETY });
       return;
     }

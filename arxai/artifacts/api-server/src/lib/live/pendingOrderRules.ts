@@ -141,7 +141,29 @@ export function validateProtection(args: {
   return { ok: true };
 }
 
-/** ISO expiration → epoch seconds for the EA (ORDER_TIME_SPECIFIED); null/invalid/past → null (GTC). */
+export type ExpirationCheck =
+  | { ok: true; epochSeconds: number | null }
+  | { ok: false; code: "EXPIRATION_INVALID" | "EXPIRATION_IN_PAST"; detail: string };
+
+/**
+ * Pending-order expiration (MT5 ORDER_TIME_SPECIFIED). Absent → GTC. A value
+ * that does not parse, or that is at/before now, is REFUSED — never silently
+ * turned into good-till-cancelled (a trader who asked for "expire today" must
+ * not get an order that lives forever). Accepts an ISO string or epoch seconds.
+ */
+export function validateExpiration(raw: string | number | null | undefined, nowMs: number = Date.now()): ExpirationCheck {
+  if (raw == null || raw === "") return { ok: true, epochSeconds: null };
+  const t = typeof raw === "number" ? raw * 1000 : Date.parse(raw);
+  if (!Number.isFinite(t) || t <= 0) {
+    return { ok: false, code: "EXPIRATION_INVALID", detail: "The expiry time could not be read. Pick a date and time, or use GTC." };
+  }
+  if (t <= nowMs) {
+    return { ok: false, code: "EXPIRATION_IN_PAST", detail: "The expiry time has already passed. Pick a later time, or use GTC." };
+  }
+  return { ok: true, epochSeconds: Math.floor(t / 1000) };
+}
+
+/** ISO expiration → epoch seconds for the EA (ORDER_TIME_SPECIFIED); null/invalid/past → null. Callers refuse past/invalid first with validateExpiration. */
 export function expirationEpochSeconds(iso: string | null | undefined, nowMs: number = Date.now()): number | null {
   if (!iso) return null;
   const t = Date.parse(iso);
@@ -153,4 +175,26 @@ export function label(canonical: string): string {
   const m = /^MARKET_(BUY|SELL)$/.exec(canonical);
   if (m) return `${m[1]} by Market`;
   return canonical.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
+}
+
+/**
+ * Bid/Ask for the side rules, only when the quote is genuinely two-sided. A
+ * last-trade-only quote (no bid or no ask) is NOT treated as bid = ask = last:
+ * that would check a Buy Limit against a price nobody can buy at. One-sided →
+ * both null, so the side check is skipped and the broker enforces it.
+ */
+export function twoSidedQuote(q: { bid?: unknown; ask?: unknown } | null | undefined): { bid: number | null; ask: number | null } {
+  const pos = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+  const bid = pos(q?.bid), ask = pos(q?.ask);
+  return bid != null && ask != null ? { bid, ask } : { bid: null, ask: null };
+}
+
+/**
+ * The one-click per-click lot cap (user setting). A one-click order above it is
+ * refused (LOT_EXCEEDS_ONE_CLICK_CAP); a missing / non-positive cap means none.
+ */
+export function exceedsOneClickCap(args: { oneClick?: boolean; volume?: number | null; maxLotPerClick?: number | null }): boolean {
+  const cap = args.maxLotPerClick;
+  return args.oneClick === true && typeof cap === "number" && Number.isFinite(cap) && cap > 0
+    && typeof args.volume === "number" && args.volume > cap + 1e-9;
 }
