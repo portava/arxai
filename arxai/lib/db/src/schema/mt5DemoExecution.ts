@@ -42,7 +42,9 @@ export const mt5DemoCommandsTable = pgTable("mt5_demo_commands", {
   payload: jsonb("payload").notNull(),
   // DemoCommandStatus (lib/domain/src/safety-contracts/executionMode.ts):
   // DRAFT | USER_CONFIRMATION_REQUIRED | DEMO_APPROVED | SENT_TO_MT5_DEMO |
-  // FILLED_DEMO | REJECTED | BLOCKED | FAILED.
+  // FILLED_DEMO | PLACED_DEMO | CANCELLED_DEMO | REJECTED | BLOCKED | FAILED.
+  // (PLACED_DEMO / CANCELLED_DEMO: demo pending orders, EA v1.32 — free text,
+  // no migration.)
   // R2 S5 (audit G2) — DEMO_PARTIALLY_FILLED is RESERVED as the demo path's
   // non-terminal partial-fill literal: the canonical read layer
   // (lib/domain/src/execution-state/canonicalState.ts) already maps it to

@@ -4,7 +4,10 @@
 //
 //   GET  /api/mt5/demo-commands-poll
 //     Returns SENT_TO_MT5_DEMO commands owned by the user whose bridge
-//     token authenticated the request. The per-user dispatch gate is
+//     token authenticated the request, sent to THIS bridge, oldest-sent
+//     first, each with `secondsUntilExpiry` / `expiresAtEpoch`. A command
+//     past its TTL is not served (the expiry sweep FAILs it); EA v1.32
+//     refuses one whose TTL ran out before it got to it. The per-user dispatch gate is
 //     re-evaluated at request time — if the user is no longer eligible
 //     (disarmed, gate failed, EA downgraded) the endpoint returns an
 //     empty list and audits the refusal. Tokens, hashes, broker secrets,
@@ -12,9 +15,11 @@
 //
 //   POST /api/mt5/demo-command-result
 //     EA-driven write-back. Body identifies the command by commandId and
-//     reports broker outcome (FILLED_DEMO | REJECTED | FAILED). Routed
-//     through `reconcileBrokerResult` which only mutates rows currently
-//     in SENT_TO_MT5_DEMO and is idempotent.
+//     reports broker outcome (FILLED_DEMO | PLACED_DEMO | CANCELLED_DEMO |
+//     REJECTED | FAILED). Routed through `reconcileBrokerResult`, scoped to
+//     the reporting user AND bridge connection; only mutates rows in
+//     SENT_TO_MT5_DEMO (or a row the expiry sweep FAILED, for a late broker
+//     success) and is idempotent.
 //
 // SAFETY:
 //   - bridgeAuthPerUserOnly enforces token -> userId.
@@ -26,7 +31,7 @@
 //     ACCOUNT_TRADE_MODE == ACCOUNT_TRADE_MODE_DEMO check passes.
 
 import { Router, type Request } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -41,6 +46,9 @@ import {
 import { recordSecurityEvent } from "../lib/security/events.js";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
+import { DEMO_BROKER_RESULT_STATUSES } from "@workspace/domain/safety-contracts/executionMode";
+import { buildDemoPollCommands, guardianTicketForResult } from "../lib/mt5/demoBridgeContract.js";
+import { DEMO_COMMAND_TTL_MS } from "../lib/mt5/demoCommandQueue.js";
 
 const router = Router();
 
@@ -48,20 +56,6 @@ function shortIp(req: Request): string {
   const xf = req.header("x-forwarded-for");
   if (xf) return xf.split(",")[0]?.trim() ?? "";
   return req.ip ?? "";
-}
-
-/** Backward-compat: ensure both `volume` and `lot` are present (mirrored) on
- *  outgoing demo-command payloads so any EA build — old (reads `lot`) or new
- *  (reads `volume` with `lot` fallback) — sees the same numeric size. Does
- *  NOT mutate the stored row; only the JSON we hand the EA. */
-function mirrorVolumeLot(payload: unknown): unknown {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
-  const p = payload as Record<string, unknown>;
-  const volNum = typeof p.volume === "number" && Number.isFinite(p.volume) ? p.volume : null;
-  const lotNum = typeof p.lot === "number" && Number.isFinite(p.lot) ? p.lot : null;
-  const v = volNum ?? lotNum;
-  if (v == null) return payload;
-  return { ...p, volume: v, lot: v };
 }
 
 // ── GET /api/mt5/demo-commands-poll ─────────────────────────────────────────
@@ -126,16 +120,14 @@ router.get("/mt5/demo-commands-poll", bridgeAuthPerUserOnly, async (req, res) =>
         eq(mt5DemoCommandsTable.status, "SENT_TO_MT5_DEMO"),
       ),
     )
+    // Oldest-sent first: the EA executes in the order served, so an entry
+    // is never run after a later close/modify of the same ticket.
+    .orderBy(asc(mt5DemoCommandsTable.sentAt), asc(mt5DemoCommandsTable.id))
     .limit(25);
 
   // Return ONLY safe fields — never expose safetyGateSnapshot blobs to EA.
-  const commands = rows.map((r) => ({
-    commandId: r.commandId,
-    commandType: r.commandType,
-    payload: mirrorVolumeLot(r.payload),
-    sentAt: r.sentAt?.toISOString() ?? null,
-    eaVersionAtDispatch: r.eaVersionAtDispatch,
-  }));
+  // Expired rows are dropped here (and FAILED by the sweep).
+  const commands = buildDemoPollCommands(rows, new Date(), DEMO_COMMAND_TTL_MS);
 
   try {
     await recordSecurityEvent({
@@ -168,7 +160,7 @@ router.get("/mt5/demo-commands-poll", bridgeAuthPerUserOnly, async (req, res) =>
 // ── POST /api/mt5/demo-command-result ───────────────────────────────────────
 const resultBodySchema = z.object({
   commandId: z.string().min(1).max(64),
-  status: z.enum(["FILLED_DEMO", "REJECTED", "FAILED"]),
+  status: z.enum(DEMO_BROKER_RESULT_STATUSES),
   brokerOrderId: z.string().max(64).nullish(),
   brokerTicket: z.string().max(64).nullish(),
   filledPrice: z.number().finite().nullish(),
@@ -195,7 +187,7 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
   // Defensive re-check: refuse FILLED_DEMO if account type isn't demo at
   // result time. The consumer wouldn't have dispatched, but a faulty EA
   // attempting to fake a fill on a live account is rejected here.
-  if (parsed.data.status === "FILLED_DEMO") {
+  if (parsed.data.status === "FILLED_DEMO" || parsed.data.status === "PLACED_DEMO" || parsed.data.status === "CANCELLED_DEMO") {
     const accountType = (conn.accountType ?? "unknown").toString();
     if (accountType !== "demo" && accountType !== "contest") {
       try {
@@ -208,7 +200,7 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
           method: "POST",
           ipAddress: shortIp(req),
           userAgent: req.header("user-agent") ?? null,
-          message: `EA reported FILLED_DEMO on non-demo account (accountType=${accountType}). Refused.`,
+          message: `EA reported ${parsed.data.status} on non-demo account (accountType=${accountType}). Refused.`,
           metadata: {
             bridgeConnectionId: conn.id,
             commandId: parsed.data.commandId,
@@ -225,6 +217,8 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
 
   const result = await reconcileBrokerResult({
     userId,
+    // Only the bridge the command was sent to may report on it.
+    bridgeConnectionId: conn.id,
     commandId: parsed.data.commandId,
     brokerResult: {
       status: parsed.data.status as BrokerReportedStatus,
@@ -248,15 +242,18 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
     });
     return;
   }
-  // Position Guardian — a confirmed entry fill starts protection checks on its
-  // ticket; a filled close re-checks whatever remains of the position.
-  if (parsed.data.status === "FILLED_DEMO" && result.command?.brokerTicket
-      && /^PLACE_/.test(result.command.commandType)) {
-    scheduleGuardian("DEMO", userId, result.command.brokerTicket, "fill");
-  } else if (parsed.data.status === "FILLED_DEMO" && result.command?.commandType === "CLOSE_POSITION") {
-    const p = (result.command.payload ?? {}) as Record<string, unknown>;
-    const t = p["ticket"] ?? p["positionTicket"];
-    if (t != null && String(t)) scheduleGuardian("DEMO", userId, String(t), "fill");
+  // Position Guardian — a confirmed MARKET entry fill starts protection
+  // checks on its position ticket; a filled close re-checks what remains. A
+  // PLACED_DEMO pending order is an order ticket, not a position: nothing is
+  // scheduled until the order fills (executionReconciler promotes it).
+  if (result.command) {
+    const ticket = guardianTicketForResult({
+      status: result.command.status,
+      commandType: result.command.commandType,
+      brokerTicket: result.command.brokerTicket,
+      payload: result.command.payload,
+    });
+    if (ticket) scheduleGuardian("DEMO", userId, ticket, "fill");
   }
   // Return only safe fields.
   res.json({

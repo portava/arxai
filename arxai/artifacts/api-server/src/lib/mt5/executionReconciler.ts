@@ -632,6 +632,30 @@ export async function applyOwnPositionSnapshot(userId: number,
   const open = new Map(rows.filter((r) => r.ticket && r.status !== "CLOSED").map((r) => [r.ticket!, r.id]));
   const known = new Set(rows.map((r) => r.ticket).filter((t): t is string => !!t));
   const untracked = positions.map((p) => String(p.ticket)).filter((t) => !known.has(t));
+  // A governed demo pending order (PLACED_DEMO, an ORDER ticket) is not a
+  // position. Once the broker reports a position under that ticket — MT5 opens
+  // a triggered pending order's position with the order's ticket — the order
+  // filled: record the fill (compare-and-swap on PLACED_DEMO) so it is tracked
+  // like any governed fill below.
+  if (untracked.length > 0) {
+    const placed = await db.select({ id: mt5DemoCommandsTable.id, t: mt5DemoCommandsTable.brokerTicket })
+      .from(mt5DemoCommandsTable).where(and(
+        eq(mt5DemoCommandsTable.userId, userId), eq(mt5DemoCommandsTable.status, "PLACED_DEMO"),
+        eq(mt5DemoCommandsTable.commandType, "PLACE_PENDING_ORDER"),
+        inArray(mt5DemoCommandsTable.brokerTicket, untracked),
+      ));
+    for (const row of placed) {
+      const p = positions.find((x) => String(x.ticket) === row.t);
+      if (!p) continue;
+      await db.update(mt5DemoCommandsTable).set({
+        status: "FILLED_DEMO",
+        reason: "PENDING_ORDER_FILLED_AT_BROKER",
+        fillPrice: typeof p.entry === "number" && Number.isFinite(p.entry) && p.entry > 0 ? p.entry : null,
+        fillVolume: Number.isFinite(p.lot) && p.lot > 0 ? p.lot : null,
+        filledAt: now, terminalAt: now, updatedAt: now,
+      }).where(and(eq(mt5DemoCommandsTable.id, row.id), eq(mt5DemoCommandsTable.status, "PLACED_DEMO")));
+    }
+  }
   const governed = untracked.length === 0 ? new Set<string>() : new Set((await db.select({ t: mt5DemoCommandsTable.brokerTicket })
     .from(mt5DemoCommandsTable).where(and(
       eq(mt5DemoCommandsTable.userId, userId), eq(mt5DemoCommandsTable.status, "FILLED_DEMO"),

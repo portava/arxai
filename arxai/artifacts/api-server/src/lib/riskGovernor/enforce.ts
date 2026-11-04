@@ -82,13 +82,15 @@ export const PAPER_ACCOUNT_LEVERAGE = 100;
 
 const IN_FLIGHT_ACTION_STATUSES = ["confirmed", "guard_checking", "queued", "sent_to_mt5"];
 const LIVE_TERMINAL = ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_CANCELLED", "LIVE_CLOSED", "LIVE_EXPIRED"];
-const DEMO_IN_FLIGHT = ["USER_CONFIRMATION_REQUIRED", "DEMO_APPROVED", "SENT_TO_MT5_DEMO"];
+// PLACED_DEMO: a pending order resting at the broker. Not a position, but it
+// can fill at any moment, so it counts as pending exposure (never as filled).
+const DEMO_IN_FLIGHT = ["USER_CONFIRMATION_REQUIRED", "DEMO_APPROVED", "SENT_TO_MT5_DEMO", "PLACED_DEMO"];
 
 // A command already handed to the bridge is in flight until the broker
 // answers. An unsent draft only counts while it could still be confirmed.
 const UNSENT_DRAFT_WINDOW_MS = 30 * 60_000;
 function isLiveQueueRow(status: string, createdAt: Date, now: Date): boolean {
-  if (status.startsWith("SENT_TO_MT5")) return true;
+  if (status.startsWith("SENT_TO_MT5") || status === "PLACED_DEMO") return true;
   return now.getTime() - createdAt.getTime() <= UNSENT_DRAFT_WINDOW_MS;
 }
 

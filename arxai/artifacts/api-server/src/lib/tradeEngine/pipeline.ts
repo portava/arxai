@@ -66,6 +66,7 @@ import type * as LiveQueue from "../live/liveCommandPipeline.js";
 import type * as DemoQueue from "../mt5/demoCommandQueue.js";
 import type * as Instant from "../live/instantTrade.js";
 import type * as PaperVenue from "./paperVenue.js";
+import { demoPendingFields } from "../mt5/demoPendingOrder.js";
 
 export const TRADE_MODES = ["LIVE", "DEMO", "PAPER"] as const;
 export type TradeMode = (typeof TRADE_MODES)[number];
@@ -79,8 +80,10 @@ export type BrokerTarget = { ticket: string; lots?: number | null } | { position
 export interface BrokerOpen {
   mode: BrokerMode; intent: "OPEN"; userId: number;
   symbol: string; side: Side; lots: number;
-  /** A pending order's type (e.g. BUY_LIMIT) and price; omitted → market order. */
-  pending?: { orderType: string; price: number } | null;
+  /** A pending order's type (e.g. BUY_LIMIT) and price; omitted → market order.
+   *  `stopLimitPrice`: the limit leg of a *_STOP_LIMIT order. `expirationEpoch`:
+   *  UTC seconds for ORDER_TIME_SPECIFIED (omitted → GTC). */
+  pending?: { orderType: string; price: number; stopLimitPrice?: number | null; expirationEpoch?: number | null } | null;
   /** LIVE only: the venue order type for a market order (defaults from side). */
   orderType?: string | null;
   stopLoss: number | null; takeProfit: number | null;
@@ -266,7 +269,9 @@ async function openDemo(r: BrokerOpen): Promise<TradeResult> {
     payload: {
       symbol: r.symbol, side: r.side, lotSize: r.lots, stopLoss: r.stopLoss, takeProfit: r.takeProfit,
       sourcePage: r.sourcePage,
-      ...(r.pending ? { orderType: r.pending.orderType, price: r.pending.price } : {}),
+      // EA v1.32 reads orderType / entry (fallback price) / stopLimitPrice /
+      // expirationEpoch — the same keys the live mirror sends v154.
+      ...(r.pending ? demoPendingFields(r.pending) : {}),
     },
   });
   if (!draft.ok || !draft.command) return fail(null, draft.reason ?? "DRAFT_REFUSED");
@@ -293,7 +298,9 @@ async function openLive(r: BrokerOpen): Promise<TradeResult> {
     requestedVolume: r.lots,
     stopLoss: r.stopLoss, takeProfit: r.takeProfit,
     sourcePage: r.sourcePage,
-    payload: r.pending ? { price: r.pending.price } : {},
+    // The live bridge mirror (buildBridgedMt5CommandPayload) forwards price /
+    // entry / stopLimitPrice / expirationEpoch to v154 HandlePlacePending.
+    payload: r.pending ? demoPendingFields(r.pending) : {},
   });
   if (!draft.ok) return fail(null, draft.reason);
   const commandId = draft.command.commandId;
