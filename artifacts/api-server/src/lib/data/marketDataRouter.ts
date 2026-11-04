@@ -41,7 +41,7 @@
 
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
-import { FUTURE_STAMPED_SERIES_NOTE } from "./freshness.js";
+import { FUTURE_STAMPED_SERIES_NOTE, MT5_FEED_FRESH_MS } from "./freshness.js";
 import { currentFeedScopeBridge } from "./feedScope.js";
 import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
@@ -416,19 +416,25 @@ async function tryMt5Quote(symbol: string, writer?: { bridgeConnectionId: number
       const reason = writer && readMt5Quote(symbol) ? "MT5_WRITER_QUOTE_MISSING" : "MT5_QUOTES_NOT_PUSHED";
       return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
+    // The store serves a quote for up to CANDLE_TTL_MS after its push, but
+    // only a push within MT5_FEED_FRESH_MS is a live reading. An older one is
+    // still served (a real last quote), labelled STALE with delayed unknown —
+    // never LIVE_TICK / delayed:false.
+    const pushAgeMs = Date.now() - read.receivedAtMs;
+    const livePush = Number.isFinite(pushAgeMs) && pushAgeMs <= MT5_FEED_FRESH_MS;
     return {
       provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q,
       tickTimeObserved: read.tickTimeObserved,
       brokerClockOffsetMs: read.brokerClockOffsetMs,
-      // A served quote is a fresh reading off the EA's real-time push → LIVE_TICK.
+      // A fresh push is a reading off the EA's real-time stream → LIVE_TICK.
       // Bridge/owner are the authenticated writer's identity when the ingest
       // path threaded it; an unattributed writer stays null. Broker-native
       // symbol and environment are not observed on this path → null/unknown.
       provenance: makeProvenance({
         providerId: "mt5_broker",
         brokerCode: "mt5",
-        delayed: false,
-        source: "LIVE_TICK",
+        delayed: livePush ? false : null,
+        source: livePush ? "LIVE_TICK" : "STALE",
         sourceId: `mt5_broker:${sourceSymbolKey(symbol)}`,
         bridgeConnectionId: read.bridgeConnectionId,
         userId: read.userId,
