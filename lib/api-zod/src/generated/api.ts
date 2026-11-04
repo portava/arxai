@@ -5153,6 +5153,12 @@ export const GetMt5StatusResponse = zod.object({
     .string()
     .optional()
     .describe("Plain statement of whether and where open positions were read."),
+  nativeAccountReport: zod
+    .record(zod.string(), zod.unknown())
+    .nullish()
+    .describe(
+      "The latest bridge v2 native account report attempt for the user's OWN connection, as the server projected it (status reported or unavailable with a reason; currentVerified is always false). Null when the user has no connection of their own. Never a shared-master or stored figure.",
+    ),
   accountSnapshot: zod.object({
     account: zod.string().nullable(),
     broker: zod.string().nullish(),

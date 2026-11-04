@@ -1271,6 +1271,7 @@ export * from "./mt5StatusAccountSnapshot";
 export * from "./mt5StatusAccountType";
 export * from "./mt5StatusExecutionMode";
 export * from "./mt5StatusMode";
+export * from "./mt5StatusNativeAccountReport";
 export * from "./mt5StatusPlacementLayer";
 export * from "./mt5StatusRoute";
 export * from "./multiTimeframeGenerateBody";

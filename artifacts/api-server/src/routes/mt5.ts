@@ -1609,6 +1609,10 @@ function serializeCommand(r: typeof mt5CommandsTable.$inferSelect) {
   };
 }
 
+// The status route does not read positions; said plainly instead of a confident empty list.
+const MT5_STATUS_POSITIONS_NOT_READ =
+  "Open positions are not read by this status. See Live Trades or My Trades for broker-reported positions.";
+
 router.get("/mt5/status", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   // ── Canonical safety posture ─────────────────────────────────────────
@@ -1657,17 +1661,32 @@ router.get("/mt5/status", requireUser, async (req, res) => {
   };
 
   if (!userConn) {
+    // No connection of the user's own. A shared-master user routes through
+    // the master bridge, so report THAT (re-aged now) alongside — `connected`
+    // stays about the user's own connection and is false.
+    const shared = await readSharedMasterBridgeForUser(userId);
     res.json({
       ...safetyEnvelope,
       connected: false,
       mode: "NOT_CONNECTED",
+      route: shared.route,
+      sharedMasterBridge: shared.sharedMasterBridge,
+      // Additive: the routing could not be read, so route NONE is not a
+      // confirmed absence of a bridge.
+      ...(shared.routeReadFailed ? { routeReadFailed: true } : {}),
       lastHeartbeatAt: null,
       secondsSinceHeartbeat: null,
       accountType: "NONE",
       openPositions: [],
+      openPositionsMeasured: false,
+      openPositionsNote: MT5_STATUS_POSITIONS_NOT_READ,
       accountSnapshot: null,
       nativeAccountReport: null,
-      userSafeMessage: "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
+      userSafeMessage: shared.sharedMasterBridge
+        ? `You trade through the shared MT5 bridge. ${shared.sharedMasterBridge.message}`
+        : shared.routeReadFailed
+          ? "You have no MT5 connection of your own. Whether you trade through the shared MT5 bridge could not be read right now."
+          : "MT5 bridge not connected for this user. Set up an MT5 connection in MT5 Bridge settings.",
     });
     return;
   }
@@ -1691,11 +1710,18 @@ router.get("/mt5/status", requireUser, async (req, res) => {
     ...safetyEnvelope,
     connected,
     mode,
+    route: "OWN_CONNECTION",
+    sharedMasterBridge: null,
     lastHeartbeatAt: lastHb?.toISOString() ?? null,
     secondsSinceHeartbeat,
     accountType,
     nativeAccountReport,
+    // This status reads the connection row only; it does not read the
+    // broker's open positions. The empty list is NOT a broker-confirmed
+    // "no open trades" (openPositionsMeasured false says so).
     openPositions: [],
+    openPositionsMeasured: false,
+    openPositionsNote: MT5_STATUS_POSITIONS_NOT_READ,
     accountSnapshot: lastHb ? {
       account: userConn.accountNumber,
       broker: userConn.brokerName,
@@ -1706,6 +1732,8 @@ router.get("/mt5/status", requireUser, async (req, res) => {
       freeMargin: userConn.freeMargin,
       marginLevel: null,
       currency: userConn.accountCurrency,
+      // When the EA last pushed the account figures (null = never).
+      syncedAt: userConn.accountSyncedAt ? new Date(userConn.accountSyncedAt).toISOString() : null,
     } : null,
     userSafeMessage: !lastHb
       ? "Bridge connection registered but no heartbeat received yet. Start the EA in MetaTrader."
@@ -1954,10 +1982,14 @@ const MT5_STATE_POSITIONS_NOT_READ =
 const MT5_STATE_LIVE_NOTE =
   "Live order placement is locked on this platform; this field is not a per-account permission.";
 
-// Tenant scoping (PR #101 port). The platform row is the install-wide EA feed:
-// whichever terminal heartbeated last. Only an operator may read it. Every
-// other signed-in user gets their OWN bridge connection, their shared-master
-// bridge status, or nothing — never another account's balance or positions.
+// Tenant scoping (PR #101 port). GET /mt5/state used to return the platform
+// mt5_state row (account number, balances, liveAllowed, positions) to anyone.
+// The platform row is the install-wide EA feed: whichever terminal heartbeated
+// last; it has no owner column, so it is never "your account". Only an
+// operator (ADMIN/OWNER) may read it, marked scope "platform". Every other
+// signed-in user gets their OWN bridge connection, their shared-master bridge
+// status, or nothing — never another account's balance or positions, and no
+// positions claimed. The bridge's own write paths are untouched.
 router.get("/mt5/state", requireUser, async (req, res) => {
   const user = req.authUser!;
   const now = Date.now();
@@ -1999,7 +2031,10 @@ router.get("/mt5/state", requireUser, async (req, res) => {
     positionsMeasured: false,
     positionsNote: MT5_STATE_POSITIONS_NOT_READ,
   };
-  const conn = await getUserActiveConnection(user.id);
+  // Same owner check as /mt5/status: only a connection row that names this
+  // user as its owner counts as "your own" connection.
+  const selectedConn = await getUserActiveConnection(user.id);
+  const conn = selectedConn?.userId === user.id ? selectedConn : null;
   if (conn) {
     const lastHb = conn.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
     const heartbeatFreshness = classifyHeartbeatAt(lastHb, now);
@@ -2045,7 +2080,9 @@ router.get("/mt5/state", requireUser, async (req, res) => {
   }
   res.json({
     scope: "none",
-    scopeNote: "You have no MT5 bridge connection. Set one up in MT5 Bridge settings.",
+    scopeNote: shared.routeReadFailed
+      ? "You have no MT5 connection of your own. Whether you trade through the shared MT5 bridge could not be read right now."
+      : "You have no MT5 bridge connection. Set one up in MT5 Bridge settings.",
     connected: false,
     heartbeatFreshness: classifyHeartbeatAt(null, now),
     ...emptyAccount,
@@ -2428,7 +2465,12 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
     return;
   }
 
-  updateCandlesFromMT5(symbol, candles, timeframe);
+  // Attribute the series to the authenticated bridge that pushed it, matching
+  // the bridge-scoped /mt5/candles/ingest mirror and the quote store. An
+  // attributed window MERGES into that bridge's partition by bar time, so this
+  // short rolling window never truncates deeper history the same bridge
+  // merged via /mt5/candles/ingest, v2 CANDLE or /mt5/sync-candle-history.
+  updateCandlesFromMT5(symbol, candles, timeframe, { bridgeConnectionId: userConn.id, userId: userConn.userId });
 
   // Honest freshness summary so the EA (and operators) can see exactly how the
   // server will treat this series: newest bar time, the serving TTL, and
@@ -2521,7 +2563,13 @@ router.post("/mt5/sync-quotes", bridgeAuthPerUserOnly, async (req, res) => {
 
   // Safe: if tsRaw was present it parsed successfully above (NaN already returned).
   const timestamp = tsRaw != null ? new Date(tsRaw).toISOString() : new Date().toISOString();
-  updateQuoteFromMT5(symbol, { symbol, bid, ask, spread, last, timestamp });
+  // The authenticated per-user bridge is the observed writer identity. A
+  // receive-time stamp (no EA timestamp) is NOT an observed tick time, so the
+  // store records tickTimeObserved=false and Truth consumers cannot treat it
+  // as a current tick.
+  updateQuoteFromMT5(symbol, { symbol, bid, ask, spread, last, timestamp },
+    { bridgeConnectionId: userConn.id, userId: userConn.userId },
+    { tickTimeObserved: tsRaw != null });
 
   req.log.info({ event: "mt5_quote_synced", connectionId: userConn.id, symbol }, "MT5 quote ingested");
   res.json({
@@ -2554,7 +2602,7 @@ router.post("/mt5/sync-candle-history", bridgeAuthPerUserOnly, async (req, res) 
   const parsed = Mt5CandleHistoryIngestSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid candle-history payload", details: parsed.error.issues }); return; }
 
-  const result = await ingestMt5CandleHistory(parsed.data);
+  const result = await ingestMt5CandleHistory(parsed.data, { bridge: { bridgeConnectionId: userConn.id, userId: userConn.userId } });
   req.log.info(
     {
       event: "mt5_candle_history_ingested",

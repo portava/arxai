@@ -18,8 +18,14 @@ import type {
 } from "../data/chart/chartIntelligence.js";
 import type { ChartEvidenceDirection } from "../data/chart/engines/marketUnderstandingTypes.js";
 import type { ChartConsensusStance } from "../data/chart/chartAgentConsensus.js";
-import { buildChartHandshake } from "../data/chart/chartHandshake.js";
+import { buildChartHandshake, type AaciChartHandshake } from "../data/chart/chartHandshake.js";
 import { mirrorTrustSegment } from "../data/chart/brokerPriceAlignment.js";
+import {
+  chartLevelPersonalityWords,
+  formatChartStatePrice,
+} from "../data/chart/marketSentenceEngine.js";
+import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause } from "../data/chart/chartGateOutput.js";
+import { truthResultOfState } from "../data/chart/stateTruthResult.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 export type RubyDraftIntent =
@@ -67,11 +73,16 @@ export interface RubyDraftReadResult {
   /** True when the state is fresh, understanding engines are populated, AND
    *  Phase 3 confidentReadAllowed gate passes (Chart Truth ≥ 75). */
   feedUsable: boolean;
-  /** Mirrors the chart-read honesty signal: "ok" when the feed is confirmed
+  /** Mirrors the chart-read honesty signal: "ok" when the read is usable
    *  (feedUsable), "insufficient" when the underlying feed for this
-   *  symbol/timeframe is stale/unverified. Decision-support only — this flag
-   *  NEVER gates execution (Ruby stays read-only) and never fabricates data. */
+   *  symbol/timeframe is stale/unverified OR a chart check did not pass.
+   *  Decision-support only — this flag NEVER gates execution (Ruby stays
+   *  read-only) and never fabricates data. */
   dataQuality: "ok" | "insufficient";
+  /** True when the candle feed itself passed its quality and freshness check
+   *  (clean and not stale). An insufficient read with feedConfirmed=true was
+   *  gated by another chart check (named in `points`), not by the feed. */
+  feedConfirmed: boolean;
   /** True when confidentReadAllowed from Phase 3 gate (Chart Truth ≥ 75). */
   confidentReadAllowed: boolean;
   /** True when the current candle is still forming (not yet closed). */
@@ -80,11 +91,15 @@ export interface RubyDraftReadResult {
   limitedHistory: boolean;
   /**
    * Compact trust line — always present. Shows the data source status.
-   * e.g. "Verified M5 candles · Live feed · Mirror synced"
+   * e.g. "M5 candles: Chart Truth 87 (Healthy) · Live feed · Mirror synced"
    */
   trustLine: string;
-  /** The bias the read is built around. */
+  /** The bias the read is built around; "unknown" on a gated read (the
+   *  direction was not read from verified data — never shown as "neutral"). */
   bias: ChartEvidenceDirection;
+  /** When the chart state this read describes was computed (ISO). The read
+   *  does not update after it is returned. */
+  asOf: string;
   /** Direct, plain-language answer to the asked intent. */
   headline: string;
   /** Supporting plain-language points drawn from the state. */
@@ -110,6 +125,10 @@ const disclaimerFor = (assistantName: string): string =>
 // gates execution and Ruby never fabricates a read from missing data.
 const FEED_NOT_CONFIRMED_CAUTION =
   "Feed not confirmed at read-time — limited visibility.";
+// The feed is clean and current but another chart check (truth score, broker
+// comparison, merge seam, …) did not pass: never call that feed unconfirmed.
+const CHECKS_NOT_PASSED_CAUTION =
+  "The feed is clean, but not every chart check passed at read-time — limited visibility.";
 
 const MIN_BARS_HISTORY = 50;
 
@@ -147,19 +166,15 @@ function feedUsable(state: ChartIntelligenceState): boolean {
 function buildTrustLine(state: ChartIntelligenceState, hasForming: boolean): string {
   const gate = state.gateOutput;
   const parts: string[] = [];
-  if (gate.confidentReadAllowed) {
-    parts.push(`Verified ${state.timeframe} candles`);
-  } else {
-    parts.push(`${state.timeframe} candles syncing`);
-  }
-  if (gate.autonomousChartActionAllowed) {
-    parts.push("Live feed");
-  } else {
-    parts.push("Feed stale");
-  }
+  // "Verified" only in the score's own Verified band; "Live feed" only for a
+  // clean feed confirmed live (not merely "not stale").
+  parts.push(candleTrustSegment(gate, state.timeframe));
+  parts.push(feedTrustSegment(gate.autonomousChartActionAllowed, state.truthState));
   // Honest mirror copy from the real broker-alignment granularity — never claims
   // sync while the price is only drifting (wide) or unverifiable (unknown).
-  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment);
+  // A missing truth result counts as an unobserved seam: never "Mirror synced".
+  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, state.brokerAlignment,
+    gateMirrorBlockCause(gate, truthResultOfState(state)));
   if (mirror) {
     parts.push(mirror);
   }
@@ -204,7 +219,17 @@ function sentence(
   return typeof s === "object" && s != null && "text" in s ? s.text : "";
 }
 
-function activeLevelLine(mu: ChartMarketUnderstanding): string | null {
+/**
+ * Ruby's nearest-level line: the price at the instrument's precision (the
+ * chart's own digit rule) and the personality in plain words.
+ */
+export function activeLevelLine(
+  state: Pick<
+    ChartIntelligenceState,
+    "symbol" | "assetClass" | "latestClosedCandle" | "currentCandle" | "marketUnderstanding"
+  >,
+): string | null {
+  const mu: ChartMarketUnderstanding = state.marketUnderstanding;
   const levels = mu.levels;
   const list = (levels.levels ?? []) as {
     kind: string;
@@ -224,7 +249,7 @@ function activeLevelLine(mu: ChartMarketUnderstanding): string | null {
     lv.distancePct == null
       ? ""
       : ` (${Math.abs(lv.distancePct).toFixed(2)}% away)`;
-  return `Nearest level: ${lv.kind} at ${lv.price}${dist}, behaving as ${lv.personality}.`;
+  return `Nearest level: ${lv.kind} at ${formatChartStatePrice(state, lv.price)}${dist}, ${chartLevelPersonalityWords(lv.personality)}.`;
 }
 
 function baseResult(
@@ -241,11 +266,13 @@ function baseResult(
     timeframe: state.timeframe,
     feedUsable: usable,
     dataQuality: usable ? "ok" : "insufficient",
+    feedConfirmed: state.aiUsable && !state.stale,
     confidentReadAllowed: state.gateOutput.confidentReadAllowed,
     hasFormingCandle,
     limitedHistory: closedBars > 0 && closedBars < MIN_BARS_HISTORY,
     trustLine: buildTrustLine(state, hasFormingCandle),
     bias: state.decisionState.bias,
+    asOf: state.lastUpdated,
     headline: "",
     points: [],
     cautions: [],
@@ -293,11 +320,13 @@ function pushCautions(state: ChartIntelligenceState, out: string[]): void {
  * confidenceScore — those fields would drive UI/state into directional
  * confidence from unverified data.
  *
- * Only neutral/null values are returned. agentConsensus is also wiped so
+ * Only unknown/null values are returned. agentConsensus is also wiped so
  * nothing downstream can pull a directional reading from the consensus block.
  */
 function neutralizeDirectionalFields(r: RubyDraftReadResult): RubyDraftReadResult {
-  r.bias = "neutral";
+  // Unknown, not "neutral": a gated read did not read the direction at all,
+  // and "neutral" would present that as a balanced market.
+  r.bias = "unknown";
   r.bestNextAction = "";
   r.confidenceLabel = "unverifiable";
   r.confidenceScore = null;
@@ -314,8 +343,71 @@ function neutralizeDirectionalFields(r: RubyDraftReadResult): RubyDraftReadResul
   return r;
 }
 
-// When Chart Truth < 75 OR freshness/mirror gate fails, every intent
-// degrades to the honest "syncing" explanation. Directional fields are
+// Handshake checks backed by a Chart Truth sub-metric, so an unmet check can
+// be named with what was (or was not) measured.
+const HANDSHAKE_SUBMETRIC: [keyof AaciChartHandshake, string][] = [
+  ["OHLCIntegrity", "ohlc_integrity"],
+  ["TimeframeAccuracy", "timeframe_accuracy"],
+  ["FeedFreshness", "feed_freshness"],
+  ["HistoricalLiveMerge", "historical_live_merge"],
+  ["BrokerPriceAlignment", "symbol_mirror_accuracy"],
+  ["RenderHealth", "render_accuracy"],
+];
+
+/**
+ * Plain-English reasons a read with a clean, current feed is still gated —
+ * each one the real check that did not pass, never a generic "syncing" or a
+ * threshold claim the score does not support.
+ */
+function gateShortfalls(state: ChartIntelligenceState): string[] {
+  const gate = state.gateOutput;
+  const reasons: string[] = [];
+  if (!state.marketUnderstanding.populated || !state.decisionState.populated) {
+    reasons.push(
+      "The chart has not produced a market read for this symbol and timeframe yet.",
+    );
+  }
+  if (!gate.confidentReadAllowed) {
+    reasons.push(
+      `Chart Truth score is ${gate.chartTruthScore}, below the 75 needed for a verified read.`,
+    );
+  }
+  if (!gate.candlestickModeAllowed) {
+    reasons.push("The provider does not deliver real OHLC candles for this series.");
+  }
+  if (!gate.autonomousChartActionAllowed) {
+    reasons.push("The feed is marked stale.");
+  }
+  if (!gate.tradeConfirmationAllowed) {
+    reasons.push(
+      "The broker-price mirror check failed (merge seam or broker price alignment).",
+    );
+  }
+  const hs = buildChartHandshake(gate, state.chartTruthScore);
+  for (const [check, key] of HANDSHAKE_SUBMETRIC) {
+    const verdict = hs[check];
+    if (verdict === "PASS") continue;
+    // Renderer telemetry only gates a candle read when it measured a FAIL.
+    if (check === "RenderHealth" && verdict !== "FAIL") continue;
+    if (check === "FeedFreshness" && !gate.autonomousChartActionAllowed) continue;
+    const m = state.chartTruthScore.subMetrics.find((sm) => sm.key === key);
+    const label = m?.label ?? check;
+    const detail = m?.detail ? ` — ${m.detail}` : ".";
+    if (!m || m.evidenceStatus !== "measured" || m.rawScore == null || !Number.isFinite(m.rawScore)) {
+      reasons.push(`${label} could not be measured${detail}`);
+    } else {
+      const band = verdict === "FAIL" ? "a failing score" : "below the 75 pass mark";
+      reasons.push(`${label} scored ${Math.round(m.rawScore)}/100, ${band}${detail}`);
+    }
+  }
+  return reasons.length > 0
+    ? reasons
+    : ["A chart check did not pass, and the check did not report why."];
+}
+
+// The feed is clean and current, but a chart check (truth score, broker
+// comparison, merge seam, engines) did not pass. Every intent degrades to an
+// honest explanation that names the checks. Directional fields are
 // neutralized — no bias, bestNextAction, confidenceLabel, or confidenceScore
 // is returned when the gate is blocked.
 function honestSyncing(
@@ -324,16 +416,12 @@ function honestSyncing(
 ): RubyDraftReadResult {
   const r = neutralizeDirectionalFields(baseResult(state, intent));
   r.headline =
-    "Chart data is syncing. I'll read the market once candles are verified.";
+    "The candle feed is clean, but not every chart check passed, so I'm not giving a directional read yet.";
   r.points = [
-    state.gateOutput.primaryBlockReason ??
-      "Chart Truth score is below the confidence threshold for a verified read.",
-    "No directional read, entry, or stop idea is being shown until verification passes.",
+    ...gateShortfalls(state),
+    "No directional read, entry, or stop idea is being shown until every check passes.",
   ];
-  r.cautions = [
-    "Wait for the chart to verify before acting on any signals.",
-    ...(state.gateOutput.blockedReasons.slice(1, 3)),
-  ].filter(Boolean);
+  r.cautions = ["Wait for every chart check to pass before acting on any signal."];
   return r;
 }
 
@@ -369,7 +457,7 @@ function answerAnalyze(state: ChartIntelligenceState): RubyDraftReadResult {
   const proving = sentence(state, "proving");
   const failed = sentence(state, "failedToProve");
   const fresh = sentence(state, "signalFreshness");
-  const lvl = activeLevelLine(state.marketUnderstanding);
+  const lvl = activeLevelLine(state);
   r.points = [proving, failed, lvl ?? "", fresh].filter(Boolean) as string[];
   pushCautions(state, r.cautions);
   return r;
@@ -474,17 +562,40 @@ function answerWhatInvalidates(
   return r;
 }
 
-function answerHoldOrClose(state: ChartIntelligenceState): RubyDraftReadResult {
+function answerHoldOrClose(
+  state: ChartIntelligenceState,
+  draft?: RubyDraftReadDraft | null,
+): RubyDraftReadResult {
   const r = baseResult(state, "hold-or-close");
   // Read-only: this restates evidence; it never closes or modifies anything.
+  // The chart's direction says nothing about the user's position until the
+  // position side is known: evidence leaning up holds a long and breaks a
+  // short. Only the side sent with the question is used — open positions are
+  // not looked up here, and the answer says so.
+  const side = draft?.side ?? null;
   if (state.decisionState.vetoed || state.decisionFork.downgrade) {
     r.headline =
       "The read has deteriorated — manage risk tightly; I can't act for you.";
-  } else if (r.bias !== "neutral" && r.bias !== "unknown") {
-    r.headline = `Evidence still ${biasWord(r.bias)} — the thesis isn't broken yet.`;
-  } else {
+  } else if (r.bias === "bullish" || r.bias === "bearish") {
+    const supports = r.bias === "bullish" ? "BUY" : "SELL";
+    if (side === null) {
+      const [withSide, againstSide] = supports === "BUY" ? ["long", "short"] : ["short", "long"];
+      r.headline = `Evidence is ${biasWord(r.bias)}. I don't know your position side: that supports a ${withSide} and runs against a ${againstSide}.`;
+    } else if (side === supports) {
+      r.headline = `Evidence still ${biasWord(r.bias)} — in line with your ${side}; the thesis isn't broken yet.`;
+    } else {
+      r.headline = `Evidence is ${biasWord(r.bias)} — against your ${side}; the chart no longer supports that side.`;
+    }
+  } else if (r.bias === "neutral") {
     r.headline = "Edge is fading to balanced — no strong reason to stay exposed.";
+  } else {
+    r.headline = "The chart's direction is unclear right now — I can't say whether it supports your position.";
   }
+  r.points.push(
+    side === null
+      ? "I did not check your open positions — this restates the chart only."
+      : `Based on the ${side} side sent with this question — your open positions were not checked.`,
+  );
   const fork = state.decisionFork;
   if (fork.populated) {
     for (const e of fork.expectations.slice(0, 2)) {
@@ -534,14 +645,14 @@ export function buildRubyDraftRead(
 ): RubyDraftReadResult {
   const result = computeDraftRead(state, intent, draft);
   result.disclaimer = disclaimerFor(assistantName);
-  // Honesty: an unconfirmed/insufficient feed always carries the visible
-  // "feed not confirmed" caveat — surfaced regardless of which read path ran.
-  // This never gates execution; Ruby is read-only.
-  if (
-    result.dataQuality === "insufficient" &&
-    !result.cautions.includes(FEED_NOT_CONFIRMED_CAUTION)
-  ) {
-    result.cautions = [FEED_NOT_CONFIRMED_CAUTION, ...result.cautions];
+  // Honesty: an insufficient read always carries a visible caveat, surfaced
+  // regardless of which read path ran: "feed not confirmed" when the feed
+  // itself is not clean/current. This never gates execution; Ruby is read-only.
+  // When the feed itself is clean the read was gated by another chart check,
+  // so it carries that caveat instead of calling the feed unconfirmed.
+  const caveat = result.feedConfirmed ? CHECKS_NOT_PASSED_CAUTION : FEED_NOT_CONFIRMED_CAUTION;
+  if (result.dataQuality === "insufficient" && !result.cautions.includes(caveat)) {
+    result.cautions = [caveat, ...result.cautions];
   }
   return result;
 }
@@ -549,7 +660,7 @@ export function buildRubyDraftRead(
 function computeDraftRead(
   state: ChartIntelligenceState,
   intent: RubyDraftIntent,
-  _draft?: RubyDraftReadDraft | null,
+  draft?: RubyDraftReadDraft | null,
 ): RubyDraftReadResult {
   try {
     if (!feedUsable(state)) return honestInsufficient(state, intent);
@@ -567,7 +678,7 @@ function computeDraftRead(
       case "what-invalidates":
         return answerWhatInvalidates(state);
       case "hold-or-close":
-        return answerHoldOrClose(state);
+        return answerHoldOrClose(state, draft);
       case "agent-consensus":
         return answerAgentConsensus(state);
       default:

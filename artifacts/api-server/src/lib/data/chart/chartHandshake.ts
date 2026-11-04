@@ -7,7 +7,7 @@
 // SAFETY: READ-ONLY, advisory only. Never an execution gate, never modifies the
 // 16-gate live pipeline, never fabricates a PASS when evidence is absent.
 
-import type { ChartGateOutput } from "./chartGateOutput.js";
+import { gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import type { ChartTruthScore } from "./chartTruthScore.js";
 
 export type ChartHandshakeVerdict = "PASS" | "WARN" | "FAIL";
@@ -39,6 +39,17 @@ export interface AaciChartHandshake {
    * WARN when ≥1 WARN and no FAIL. FAIL when ≥1 FAIL.
    */
   overall: ChartHandshakeVerdict;
+
+  /**
+   * Rollup of the nine checks about the candle data itself, i.e. every field
+   * except RenderHealth. Additive and descriptive: it names that the candle
+   * checks passed while client renderer telemetry is unmeasured (wording), and
+   * the decision-summary cap reads it as one more reason to lower a read. It
+   * never turns an unmeasured RenderHealth into a PASS (`overall` still
+   * carries it, and the Ruby read basis keeps `overall`), and a measured
+   * renderer FAIL still fails this rollup.
+   */
+  sourceOverall: ChartHandshakeVerdict;
 
   /** Compact Chart Truth Score (0–100) for AACI market-truth weighting. */
   chartTruthScore: number;
@@ -108,7 +119,8 @@ export function buildChartHandshake(
     ? scoreToVerdict(subMetricScore(truthScore, "symbol_mirror_accuracy"))
     : "WARN";
 
-  const MirrorSync = gate.tradeConfirmationAllowed
+  // A mirror that could not be checked at all is unknown (WARN), not FAIL.
+  const MirrorSync = gate.tradeConfirmationAllowed || gateMirrorBlockCause(gate).notChecked
     ? rollup([HistoricalLiveMerge, BrokerPriceAlignment]) : "FAIL";
 
   const RenderHealth = truthScore
@@ -131,6 +143,18 @@ export function buildChartHandshake(
     RubyReadAllowed,
     SelfTradeChartAllowed,
   ];
+  // Every check about the candle data itself (all but RenderHealth).
+  const source: ChartHandshakeVerdict[] = [
+    ChartSource,
+    OHLCIntegrity,
+    TimeframeAccuracy,
+    MirrorSync,
+    FeedFreshness,
+    HistoricalLiveMerge,
+    BrokerPriceAlignment,
+    RubyReadAllowed,
+    SelfTradeChartAllowed,
+  ];
 
   return {
     ChartSource,
@@ -144,6 +168,7 @@ export function buildChartHandshake(
     RubyReadAllowed,
     SelfTradeChartAllowed,
     overall: rollup(all),
+    sourceOverall: rollup(RenderHealth === "FAIL" ? ["FAIL"] : source),
     chartTruthScore: gate.chartTruthScore,
     chartReadScore: gate.chartReadScore,
     primaryBlockReason: gate.primaryBlockReason ?? (all.includes("WARN")

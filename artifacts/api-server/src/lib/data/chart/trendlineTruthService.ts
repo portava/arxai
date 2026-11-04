@@ -110,3 +110,38 @@ export function buildTrendlineTruthVerdict(
     return null;
   }
 }
+
+/**
+ * What the trendline DETECTOR saw over this window, independent of whether a
+ * dominant line exists: "insufficient" (too few closed bars for geometry),
+ * "none" (it looked and found no trendline / structure change), "detected", or
+ * null when the timeframe is unsupported or the detector failed. Lets a reader
+ * state absence as an observation ("no trendline detected") only when the
+ * detector actually looked — never on an error. Display-only; never a gate.
+ */
+export function classifyTrendlineDetection(input: {
+  symbol: string;
+  displaySymbol?: string;
+  timeframe: string;
+  rawCandles: Candle[];
+  source?: string | null;
+}): "insufficient" | "none" | "detected" | null {
+  try {
+    if (!isChartTimeframe(input.timeframe)) return null;
+    if (!Array.isArray(input.rawCandles)) return null;
+    if (input.rawCandles.length === 0) return "insufficient";
+    const { candles } = normalizeCandles(input.rawCandles, {
+      symbol: input.symbol,
+      displaySymbol: input.displaySymbol ?? input.symbol,
+      timeframe: input.timeframe as ChartTimeframe,
+      source: input.source ?? null,
+    });
+    const detection = detectTrendlines(candles);
+    if (detection.insufficient) return "insufficient";
+    return detection.trendlines.length === 0 && detection.patternChange.kind === "none"
+      ? "none"
+      : "detected";
+  } catch {
+    return null;
+  }
+}

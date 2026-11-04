@@ -23,8 +23,12 @@ export interface TradeManagementSnapshot {
 }
 
 export async function evaluateTrade(trade: Trade): Promise<TradeManagementSnapshot> {
+  // getLatestQuote answers null when no provider served a quote (it no longer
+  // stamps a priceless quote with the current time). Same fallback as before
+  // for this snapshot; the Truth quote-age handling arrives with this file's
+  // own port slice.
   const quote = await getLatestQuote(trade.symbol);
-  const currentPrice = quote.last ?? trade.entryPrice;
+  const currentPrice = quote?.last ?? trade.entryPrice;
   const risk = Math.abs(trade.entryPrice - trade.stopLoss) || 1e-6;
   const direction = trade.direction === "BUY" ? 1 : -1;
   const rMultiple = ((currentPrice - trade.entryPrice) * direction) / risk;

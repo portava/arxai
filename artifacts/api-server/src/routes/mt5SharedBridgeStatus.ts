@@ -28,7 +28,12 @@ export interface SharedMasterBridgeStatus {
 export type Mt5StatusRoute = "OWN_CONNECTION" | "SHARED_MASTER" | "NONE";
 
 export interface SharedBridgeDeps {
-  getEnvelope: (userId: number) => Promise<{ accountRoutingMode: string }>;
+  /**
+   * routingUnreadable: the routing could not be read (getEnvelope answered
+   * its fail-closed default because the platform settings were unreadable),
+   * so its accountRoutingMode is a default, not this user's routing.
+   */
+  getEnvelope: (userId: number) => Promise<{ accountRoutingMode: string; routingUnreadable?: boolean }>;
   getUserAllocationView: (userId: number) => Promise<{
     pool: { lastMt5SnapshotAt: Date | string | null } | null;
     bridgeAvailability: "HEALTHY" | "RECONCILING" | "UNAVAILABLE";
@@ -38,32 +43,50 @@ export interface SharedBridgeDeps {
 }
 
 async function defaultDeps(): Promise<SharedBridgeDeps> {
-  const [{ getEnvelope }, { getUserAllocationView }] = await Promise.all([
+  const [{ getEnvelope, FAIL_CLOSED_ENVELOPE }, { getUserAllocationView }] = await Promise.all([
     import("../lib/adminTrading/safetyEnvelope.js"),
     import("../lib/live/masterBridgePool.js"),
   ]);
-  return { getEnvelope, getUserAllocationView };
+  return {
+    getEnvelope: async (userId) => {
+      const env = await getEnvelope(userId);
+      // getEnvelope answers this very object when the platform settings could
+      // not be read; its USER_OWNED_MT5 routing is then a default, not a read.
+      return { accountRoutingMode: env.accountRoutingMode, routingUnreadable: env === FAIL_CLOSED_ENVELOPE };
+    },
+    getUserAllocationView,
+  };
+}
+
+export interface SharedMasterBridgeRead {
+  route: Mt5StatusRoute;
+  sharedMasterBridge: SharedMasterBridgeStatus | null;
+  /**
+   * True when the user's routing could not be read: route is then "NONE"
+   * only because nothing was read, not because the user has no bridge.
+   */
+  routeReadFailed?: true;
 }
 
 /**
  * For a user with no own connection: whether they route through the shared
  * master and, if so, what the master bridge looks like right now. A read
- * failure is UNKNOWN (never connected).
+ * failure is UNKNOWN (never connected); a routing read failure is flagged
+ * routeReadFailed, never reported as a confirmed absence.
  */
 export async function readSharedMasterBridgeForUser(
   userId: number,
   deps?: SharedBridgeDeps,
-): Promise<{ route: Mt5StatusRoute; sharedMasterBridge: SharedMasterBridgeStatus | null }> {
+): Promise<SharedMasterBridgeRead> {
   const d = deps ?? await defaultDeps();
   const now = (d.now ?? Date.now)();
   let routing: string;
   try {
-    routing = (await d.getEnvelope(userId)).accountRoutingMode;
+    const env = await d.getEnvelope(userId);
+    if (env.routingUnreadable === true) return { route: "NONE", sharedMasterBridge: null, routeReadFailed: true };
+    routing = env.accountRoutingMode;
   } catch {
-    return {
-      route: "NONE",
-      sharedMasterBridge: null,
-    };
+    return { route: "NONE", sharedMasterBridge: null, routeReadFailed: true };
   }
   if (routing !== "SHARED_MASTER_MT5") return { route: "NONE", sharedMasterBridge: null };
 

@@ -11,6 +11,7 @@ import type { Mt5StatusAccountSnapshot } from "./mt5StatusAccountSnapshot";
 import type { Mt5StatusAccountType } from "./mt5StatusAccountType";
 import type { Mt5StatusExecutionMode } from "./mt5StatusExecutionMode";
 import type { Mt5StatusMode } from "./mt5StatusMode";
+import type { Mt5StatusNativeAccountReport } from "./mt5StatusNativeAccountReport";
 import type { Mt5StatusPlacementLayer } from "./mt5StatusPlacementLayer";
 import type { Mt5StatusRoute } from "./mt5StatusRoute";
 
@@ -55,5 +56,10 @@ export interface Mt5Status {
   openPositionsMeasured?: boolean;
   /** Plain statement of whether and where open positions were read. */
   openPositionsNote?: string;
+  /**
+   * The latest bridge v2 native account report attempt for the user's OWN connection, as the server projected it (status reported or unavailable with a reason; currentVerified is always false). Null when the user has no connection of their own. Never a shared-master or stored figure.
+   * @nullable
+   */
+  nativeAccountReport?: Mt5StatusNativeAccountReport;
   accountSnapshot: Mt5StatusAccountSnapshot;
 }

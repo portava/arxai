@@ -17,6 +17,11 @@
 
 import type { Candle } from "../data/types.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import {
+  normalizeChartTimeframe,
+  timeframeMs,
+  type ChartTimeframe,
+} from "../data/chart/timeframes.js";
 
 export type StructureBias =
   | "Bullish"
@@ -37,9 +42,31 @@ export type ChartReadResult = {
   sellCondition: string;
   invalidation: string;
   riskNote: string;
-  htfBias: StructureBias;
+  /**
+   * Higher-timeframe bias, or `null` when the higher timeframe was NOT read
+   * (no HTF for this timeframe, the HTF fetch returned too few bars, or the
+   * newest HTF bar is stale). `null` must render as "not read" — never as a
+   * bias like "No clear edge", which would claim the HTF was looked at.
+   */
+  htfBias: StructureBias | null;
+  /** The canonical timeframe `htfBias` came from (or would have, when null). */
+  htfTimeframe: ChartTimeframe | null;
+  /**
+   * Bars this structure read actually ran over (the input series length). The
+   * chart read is a moving-average trend/location read over this window — a
+   * different classifier and window from the scanner's swing structure — so
+   * surfaces name it rather than present the two biases as one fact.
+   */
+  structureWindow: number;
   dataQuality: "ok" | "insufficient";
   cautions: string[];
+  /**
+   * What the momentum measurement saw on this read's candles (direction and
+   * size of the last few bars' move against the average bar range). The
+   * structure `confidence` above is a separate three-level structural scale and
+   * is not a momentum fact.
+   */
+  momentumNote?: string;
 };
 
 export type DraftPlan = {
@@ -90,13 +117,65 @@ function atr(candles: Candle[], period: number): number | null {
   return trs.reduce((a, b) => a + b, 0) / trs.length;
 }
 
-// Decimal precision suitable for the instrument's price magnitude.
+// Decimal precision suitable for the instrument's price magnitude. LAST-RESORT
+// fallback only: the instrument's own precision (symbolProfile, venue-pip-
+// derived) wins, then the precision the candles themselves are quoted in, so a
+// gold zone never reads in tenths and a 5-digit pair never loses a digit.
 function decimalsFor(price: number): number {
   const p = Math.abs(price);
   if (p >= 1000) return 1;
   if (p >= 100) return 2;
   if (p >= 1) return 4;
   return 5;
+}
+
+const MAX_PRICE_DECIMALS = 8;
+
+/** Fewest decimals that reproduce `x` (float noise tolerated), capped at 8. */
+function decimalsOf(x: number): number {
+  const tol = 1e-9 * Math.max(1, Math.abs(x));
+  for (let d = 0; d <= MAX_PRICE_DECIMALS; d++) {
+    const f = Math.pow(10, d);
+    if (Math.abs(Math.round(x * f) / f - x) <= tol) return d;
+  }
+  return MAX_PRICE_DECIMALS;
+}
+
+/**
+ * The decimal precision the candle data itself is quoted in: the most
+ * decimals any OHLC price in the most recent `maxBars` candles carries.
+ * Null when there is no finite price to look at.
+ */
+export function observedPriceDecimals(candles: readonly Candle[], maxBars = 60): number | null {
+  let best: number | null = null;
+  for (let i = Math.max(0, candles.length - maxBars); i < candles.length; i++) {
+    const c = candles[i]!;
+    for (const v of [c.open, c.high, c.low, c.close]) {
+      if (typeof v !== "number" || !Number.isFinite(v)) continue;
+      const d = decimalsOf(v);
+      if (best == null || d > best) best = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Display decimals for prices on this chart: the instrument's known precision
+ * when valid, else the precision observed in the candles, else the magnitude
+ * heuristic. Display only — never an order tick size.
+ */
+export function resolvePriceDecimals(
+  candles: readonly Candle[],
+  pricePrecision: number | null | undefined,
+  referencePrice: number,
+): number {
+  if (
+    pricePrecision != null && Number.isSafeInteger(pricePrecision)
+    && pricePrecision >= 0 && pricePrecision <= MAX_PRICE_DECIMALS
+  ) {
+    return pricePrecision;
+  }
+  return observedPriceDecimals(candles) ?? decimalsFor(referencePrice);
 }
 
 function fmt(price: number, decimals: number): string {
@@ -135,9 +214,17 @@ export const STRUCTURE_MIN_CLOSED_BARS = 20;
 // ── main analyzer ─────────────────────────────────────────────────────────
 export function analyzeChartStructure(
   rawCandles: Candle[],
-  opts: { htfBias?: StructureBias; draft?: DraftPlan; assistantName?: string } = {},
+  opts: {
+    htfBias?: StructureBias | null;
+    htfTimeframe?: ChartTimeframe | null;
+    draft?: DraftPlan;
+    assistantName?: string;
+    pricePrecision?: number | null;
+  } = {},
 ): ChartReadResult {
-  const htfBias: StructureBias = opts.htfBias ?? "No clear edge";
+  // Absent ⇒ the HTF was not read. Never default to a bias sentinel.
+  const htfBias: StructureBias | null = opts.htfBias ?? null;
+  const htfTimeframe: ChartTimeframe | null = opts.htfTimeframe ?? null;
   const draft = opts.draft ?? null;
   const assistantName = opts.assistantName ?? DEFAULT_ASSISTANT_NAME;
 
@@ -156,8 +243,11 @@ export function analyzeChartStructure(
       invalidation: "No structure to invalidate yet — treat any move as noise until the chart fills in.",
       riskNote: "Avoid acting on an unread chart. Let the data load, then re-read.",
       htfBias,
+      htfTimeframe,
+      structureWindow: rawCandles?.length ?? 0,
       dataQuality: "insufficient",
       cautions: ["Insufficient candle history for a structural read."],
+      momentumNote: "Momentum not read — not enough candle history on this timeframe.",
     };
   }
 
@@ -165,7 +255,7 @@ export function analyzeChartStructure(
   const closes = candles.map((c) => c.close);
   const n = closes.length;
   const last = closes[n - 1]!;
-  const decimals = decimalsFor(last);
+  const decimals = resolvePriceDecimals(candles, opts.pricePrecision, last);
 
   // Trend via SMA stack + slope.
   const sma20 = sma(closes, Math.min(20, n));
@@ -250,6 +340,11 @@ export function analyzeChartStructure(
     : rangePos >= 0.5
     ? "holding the upper half of its range"
     : "holding the lower half of its range";
+  // The measured move behind momWord below: last `momLen` bars vs the average range.
+  const momentumNote =
+    `${strongMomentum ? (momStrength > 0 ? "Upside momentum" : "Downside momentum") : "Momentum cooling"}: ` +
+    `the last ${momLen} bars moved ${momStrength >= 0 ? "+" : "−"}${Math.abs(momStrength).toFixed(1)}× ` +
+    `the average bar range (${Math.min(14, n - 1)}-bar); price is ${stateWord}.`;
   const trendWord = stackUp
     ? "the trend structure leans up"
     : stackDown
@@ -262,12 +357,11 @@ export function analyzeChartStructure(
       ? "with recent upside momentum"
       : "with recent downside momentum"
     : "with momentum cooling";
-  const htfWord =
-    htfBias === "No clear edge"
-      ? "Higher-timeframe bias is unclear"
-      : `Higher-timeframe bias leans ${htfBias.toLowerCase()}`;
+  // Only a higher timeframe that was ACTUALLY read is narrated, named by its
+  // timeframe. Not read ⇒ no HTF clause at all (never "bias is unclear").
+  const htfWord = htfBias == null ? null : describeHtfBias(htfBias, htfTimeframe);
 
-  const why = `${htfWord}. On this timeframe ${trendWord}, ${momWord}; price is ${stateWord}.`;
+  const why = `${htfWord ? `${htfWord}. ` : ""}On this timeframe ${trendWord}, ${momWord}; price is ${stateWord}.`;
 
   // Conditional triggers — never an unconditional "buy now".
   const buyCondition =
@@ -329,23 +423,83 @@ export function analyzeChartStructure(
     invalidation,
     riskNote,
     htfBias,
+    htfTimeframe,
+    structureWindow: candles.length,
     dataQuality: "ok",
     cautions,
+    momentumNote,
   };
 }
 
 // Map a chart timeframe to a sensible higher timeframe for bias context.
-export function higherTimeframeOf(timeframe: string): string | null {
-  const tf = timeframe.trim().toLowerCase();
-  const map: Record<string, string> = {
-    "1m": "15m",
-    "5m": "1h",
-    "15m": "1h",
-    "30m": "4h",
-    "1h": "4h",
-    "4h": "1d",
-    "1d": "1w",
-    "1w": "1w",
-  };
-  return map[tf] ?? null;
+// Accepts canonical codes ("M1") and aliases ("1m"), returns a CANONICAL code
+// (the HTF fetch and every chart-layer consumer is canonical). Returns null when
+// there is no higher timeframe to read (W1/MN1, or an unknown timeframe): the
+// same timeframe is never its own "higher timeframe".
+const HIGHER_TIMEFRAME: Partial<Record<ChartTimeframe, ChartTimeframe>> = {
+  M1: "M15", M2: "M15", M3: "M15", M4: "M15",
+  M5: "H1", M6: "H1", M10: "H1", M12: "H1", M15: "H1", M20: "H1",
+  M30: "H4", H1: "H4", H2: "H4", H3: "H4",
+  H4: "D1", H6: "D1", H8: "D1", H12: "D1",
+  D1: "W1",
+};
+
+export function higherTimeframeOf(timeframe: string): ChartTimeframe | null {
+  const tf = normalizeChartTimeframe(timeframe);
+  if (!tf) return null;
+  return HIGHER_TIMEFRAME[tf] ?? null;
+}
+
+/** Short human label for a canonical timeframe, matching the chart pills. */
+export function humanTimeframeLabel(tf: ChartTimeframe): string {
+  const m = /^([MHDW]|MN)(\d+)$/.exec(tf);
+  if (!m) return tf;
+  const unit = m[1]!;
+  const n = m[2]!;
+  if (unit === "M") return `${n}m`;
+  if (unit === "H") return `${n}h`;
+  if (unit === "D") return `${n}D`;
+  if (unit === "W") return `${n}W`;
+  return `${n}M`;
+}
+
+function describeHtfBias(bias: StructureBias, tf: ChartTimeframe | null): string {
+  const label = tf ? `Higher timeframe (${humanTimeframeLabel(tf)})` : "Higher timeframe";
+  switch (bias) {
+    case "Bullish":
+      return `${label} leans bullish`;
+    case "Bearish":
+      return `${label} leans bearish`;
+    case "Range-bound":
+      return `${label} is range-bound`;
+    case "Mixed":
+      return `${label} is mixed`;
+    default:
+      return `${label} shows no clear edge`;
+  }
+}
+
+/** Minimum HTF bars quickTrend needs before its answer means anything. */
+export const HTF_MIN_BARS = 10;
+
+/**
+ * Read the higher-timeframe bias from the HTF candles the chart context fetched.
+ * Fails closed to `null` ("not read") when there is no HTF, too few bars, or the
+ * newest HTF bar opened more than three HTF intervals ago (a cached/stale series
+ * must not be presented as the CURRENT higher-timeframe bias).
+ */
+export function readHigherTimeframeBias(
+  htfCandles: Candle[] | null | undefined,
+  htfTimeframe: ChartTimeframe | null | undefined,
+  nowMs: number = Date.now(),
+): StructureBias | null {
+  if (!htfTimeframe || !htfCandles || htfCandles.length < HTF_MIN_BARS) return null;
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const c of htfCandles) {
+    const t = Date.parse(c.time);
+    if (Number.isFinite(t) && t > newest) newest = t;
+  }
+  if (!Number.isFinite(newest)) return null;
+  if (nowMs - newest > 3 * timeframeMs(htfTimeframe)) return null;
+  return quickTrend(htfCandles);
 }

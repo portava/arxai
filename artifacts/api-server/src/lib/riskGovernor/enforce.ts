@@ -492,7 +492,7 @@ export async function loadQuote(userId: number, symbol: string): Promise<RiskQuo
     try { conn = await getUserActiveConnection(userId); } catch { conn = null; }
     if (conn) {
       const own = readMt5Quote(symbol, { bridgeConnectionId: conn.id });
-      if (own.quote) return toRiskQuote(own.quote, `${EXECUTION_PRICE_SOURCE}:mt5_broker:bridge:${conn.id}`);
+      if (own?.quote) return toRiskQuote(own.quote, `${EXECUTION_PRICE_SOURCE}:mt5_broker:bridge:${conn.id}`);
     }
     // Otherwise the router's serving quote (the chart's and the paper venue's price).
     const r = await routeQuote(symbol);

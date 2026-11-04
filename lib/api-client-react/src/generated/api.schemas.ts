@@ -10243,6 +10243,12 @@ export const Mt5StatusAccountType = {
   UNKNOWN: "UNKNOWN",
 } as const;
 
+/**
+ * The latest bridge v2 native account report attempt for the user's OWN connection, as the server projected it (status reported or unavailable with a reason; currentVerified is always false). Null when the user has no connection of their own. Never a shared-master or stored figure.
+ * @nullable
+ */
+export type Mt5StatusNativeAccountReport = { [key: string]: unknown } | null;
+
 export type Mt5StatusAccountSnapshot = {
   /** @nullable */
   account: string | null;
@@ -10347,6 +10353,11 @@ export interface Mt5Status {
   openPositionsMeasured?: boolean;
   /** Plain statement of whether and where open positions were read. */
   openPositionsNote?: string;
+  /**
+   * The latest bridge v2 native account report attempt for the user's OWN connection, as the server projected it (status reported or unavailable with a reason; currentVerified is always false). Null when the user has no connection of their own. Never a shared-master or stored figure.
+   * @nullable
+   */
+  nativeAccountReport?: Mt5StatusNativeAccountReport;
   accountSnapshot: Mt5StatusAccountSnapshot;
 }
 

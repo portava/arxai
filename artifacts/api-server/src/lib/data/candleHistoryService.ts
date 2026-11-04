@@ -39,7 +39,8 @@ import {
   getProviderRoute,
   sourceSupportsDeepCursor,
 } from "./providerRoutingMap.js";
-import { buildFeedStatus } from "./freshness.js";
+import { barOpenUtcMs, buildFeedStatus, newestBarLeadMs } from "./freshness.js";
+import { mt5BarBrokerClockOffsetMs } from "./providers/mt5Provider.js";
 import type { Candle } from "./types.js";
 import { prepareMarketRead } from "../truth/marketReadEvidence.js";
 import { normalizeChartTimeframe, timeframeMs as chartTimeframeMs } from "./chart/timeframes.js";
@@ -301,6 +302,9 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
   let providerLimitReached = false;
   let routerUserMessage: string | null = null;
   let routerOk = false;
+  // Measured broker-clock offset of the served MT5 bridge series (audit H7),
+  // for the newest-bar future-stamp bound only; null = none measured.
+  let routedBrokerClockOffsetMs: number | null = null;
 
   // Initial page (no explicit source): consult the router to learn the primary
   // provider and SEED the cache from the live newest window. We do this only
@@ -311,6 +315,13 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
     routerUserMessage = routed.userMessage || null;
     if (routed.ok && routed.primaryProvider && routed.candles.length > 0) {
       source = routed.primaryProvider;
+      // EA bars are broker-server-clock time: with the serving bridge's
+      // measured offset (bar evidence, else that bridge's ticks; in-memory
+      // attributed series only) the bound below compares on the UTC clock.
+      const p = routed.provenance;
+      if (p?.providerId === "mt5_broker" && p.subProviderId == null) {
+        routedBrokerClockOffsetMs = mt5BarBrokerClockOffsetMs(routed.candles[routed.candles.length - 1], p.bridgeConnectionId ?? null);
+      }
       cacheHit = false;
       await upsertCandles(symbol, timeframe, source, routed.candles);
     } else {
@@ -427,6 +438,9 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
       hasSource: true,
       candleCount: page.count,
       trailingIntervals,
+      // Absolute clock-skew bound on the newest bar (never "one interval");
+      // a broker-stamped bar is compared at bar time minus its measured offset.
+      newestOpenLeadMs: newestBarLeadMs(newestMs == null ? null : barOpenUtcMs(newestMs, routedBrokerClockOffsetMs), Date.now()),
       syntheticAwaitingTick: false,
       routerUserMessage,
     });

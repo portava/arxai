@@ -80,3 +80,156 @@ test("invalid user timezone fails soft to null local time", () => {
     mock.timers.reset();
   }
 });
+
+test("kill-zone description prints clock times, not decimal hours", () => {
+  const cases: Array<[number, number, string, string]> = [
+    [7, 30, "07:00-08:30 UTC", "8.5:00"],
+    [12, 30, "12:00-13:30 UTC", "13.5:00"],
+    [1, 0, "00:00-02:30 UTC", "2.5:00"],
+  ];
+  for (const [h, m, want, bad] of cases) {
+    atUtc(h, m);
+    try {
+      const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+      assert.ok(out.sessionDescription.includes(want), `${h}:${m} → ${out.sessionDescription}`);
+      assert.ok(!out.sessionDescription.includes(bad), `${h}:${m} → ${out.sessionDescription}`);
+    } finally {
+      mock.timers.reset();
+    }
+  }
+});
+
+test("16:30 UTC (London closed at 16:00, New York open) → session is New York, not London", () => {
+  atUtc(16, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.sessionName, "New York");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("14:30 UTC (both London and New York open) → London/NY Overlap", () => {
+  atUtc(14, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.sessionName, "London/NY Overlap");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+function atUtcDate(y: number, mo: number, d: number, h: number, m = 0): void {
+  mock.timers.enable({ apis: ["Date"], now: Date.UTC(y, mo, d, h, m, 0) });
+}
+
+test("Saturday 13:30 UTC → FX closed: no session, no kill zone, no bonuses, no best symbols", () => {
+  atUtcDate(2026, 9, 31, 13, 30); // Sat 2026-10-31
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.isKillZoneActive, false);
+    assert.equal(out.killZone, "OFF_KILLZONE");
+    assert.doesNotMatch(out.sessionName, /London|New York|Overlap|Asia|Sydney/);
+    assert.match(out.sessionName, /weekend/i);
+    assert.equal(out.sessionHeatBonus, 0);
+    assert.equal(out.tradeabilityBonus, 0);
+    assert.deepEqual(out.bestSymbols, []);
+    assert.match(out.sessionDescription, /closed/i);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("FX week boundary follows New York 17:00 (Friday close, Sunday open)", () => {
+  const closed = (y: number, mo: number, d: number, h: number, m = 0) => {
+    atUtcDate(y, mo, d, h, m);
+    try {
+      return /weekend/i.test(computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false }).sessionName);
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  // EDT (UTC-4): Friday 2026-10-30 close 21:00 UTC; Sunday 2026-10-25 open 21:00 UTC.
+  assert.equal(closed(2026, 9, 30, 20, 59), false);
+  assert.equal(closed(2026, 9, 30, 21, 0), true);
+  assert.equal(closed(2026, 9, 25, 20, 59), true);
+  assert.equal(closed(2026, 9, 25, 21, 0), false);
+  // EST (UTC-5): Friday 2026-11-06 close 22:00 UTC; Sunday 2026-11-08 open 22:00 UTC.
+  assert.equal(closed(2026, 10, 6, 21, 30), false);
+  assert.equal(closed(2026, 10, 6, 22, 0), true);
+  assert.equal(closed(2026, 10, 8, 21, 30), true);
+  assert.equal(closed(2026, 10, 8, 22, 0), false);
+});
+
+test("synthetic instruments still trade on the weekend", () => {
+  atUtcDate(2026, 9, 31, 13, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "Volatility 75 Index", isSynthetic: true });
+    assert.equal(out.sessionName, "24/7 Synthetic");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// The LONDON_NY_OVERLAP kill zone runs 13:00-17:00 UTC but London closes at
+// 16:00 UTC. The window is a trading-model choice and is NOT changed here; the
+// label must say what the window is and must not describe 16:00-17:00 as a
+// London/NY overlap while London is closed.
+test("16:30 UTC: overlap kill zone's last hour says London is closed, not 'London/NY Overlap active'", () => {
+  atUtc(16, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.killZone, "LONDON_NY_OVERLAP"); // window unchanged
+    assert.equal(out.sessionName, "New York");
+    assert.doesNotMatch(out.sessionDescription, /London\/NY Overlap active/);
+    assert.match(out.sessionDescription, /London closed at 16:00 UTC/);
+    assert.match(out.sessionDescription, /13:00-17:00 UTC/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("13:45 UTC: overlap kill zone label states the real overlap (13:00-16:00) and the window end (17:00)", () => {
+  atUtc(13, 45);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.killZone, "LONDON_NY_OVERLAP");
+    assert.equal(out.sessionName, "London/NY Overlap");
+    assert.match(out.sessionDescription, /13:00-17:00 UTC/);
+    assert.match(out.sessionDescription, /London and New York are both open 13:00-16:00 UTC/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// Crypto trades 24/7: the FX weekend close must not describe a live crypto
+// market as having "no trading session".
+test("Saturday 13:30 UTC, BTCUSD (crypto) → says crypto is trading 24/7, not 'FX market closed / no session'", () => {
+  atUtcDate(2026, 9, 31, 13, 30); // Sat 2026-10-31
+  try {
+    const out = computeSessionKillZone({ symbol: "BTCUSD", isSynthetic: false, assetClass: "crypto" });
+    assert.notEqual(out.sessionName, "Weekend — FX market closed");
+    assert.match(out.sessionName, /crypto/i);
+    assert.match(out.sessionName, /24\/7/);
+    assert.doesNotMatch(out.sessionDescription, /No trading session/i);
+    assert.match(out.sessionDescription, /crypto trades 24\/7/i);
+    assert.match(out.sessionDescription, /FX is closed for the weekend/);
+    // No FX session or kill zone is open at the weekend, so none is claimed.
+    assert.equal(out.killZone, "OFF_KILLZONE");
+    assert.equal(out.isKillZoneActive, false);
+    assert.doesNotMatch(out.sessionName, /London|New York|Overlap|Asia|Sydney/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("Saturday 13:30 UTC, EURUSD (forex) keeps the FX weekend-closed read", () => {
+  atUtcDate(2026, 9, 31, 13, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false, assetClass: "forex" });
+    assert.equal(out.sessionName, "Weekend — FX market closed");
+    assert.match(out.sessionDescription, /No trading session or kill zone is active/);
+  } finally {
+    mock.timers.reset();
+  }
+});
