@@ -15,7 +15,6 @@
 
 import { buildArxAssistantSystemPrompt } from "./systemPrompt.js";
 import { getAssistantDisplayName } from "./assistantName.js";
-import { TOOL_DEFINITIONS } from "./tools.js";
 import {
   deriveAssistantEnvelope,
   assistantEnvelopeFields,
@@ -98,15 +97,15 @@ export async function mintRealtimeSession(userId: number): Promise<RealtimeSessi
     buildArxAssistantSystemPrompt(assistantName),
     `Voice mode is active. Per-user-isolated session for user id ${userId}.`,
     `Market data provider connected: ${market.connected ? "yes" : "no"}. If not connected, never fabricate quotes.`,
-    `Trading mode is admin-controlled per user. Every order goes through the backend guard chain and may be rejected. Call getTradingMode before answering execution questions; never claim to have placed a trade unless requestDemoOrder / requestLiveOrder returned a QUEUED status.`,
+    `Trading mode is admin-controlled per user. You never place, modify or close orders; the user confirms every trade in the Trade Action Center.`,
+    `Voice mode has NO tools in this build: you cannot look up account data, quotes, trades or settings while speaking. Do not pretend to call a tool or quote a number you did not hear from the user. For anything that needs live data, tell the user to ask in the text chat, where the tools are available.`,
   ].join("\n\n");
 
-  const realtimeTools = TOOL_DEFINITIONS.map((t) => ({
-    type: "function" as const,
-    name: t.name,
-    description: t.description,
-    parameters: t.parameters,
-  }));
+  // AI chat audit 2026-11-04 (A8): the browser voice client answers every
+  // function call with VOICE_TOOL_DISPATCH_NOT_WIRED, so advertising the 80+
+  // text-chat tools to the realtime model only produced calls that could never
+  // run. Voice is tool-less until a server-side dispatcher exists.
+  const realtimeTools: Array<{ type: "function"; name: string; description: string; parameters: unknown }> = [];
 
   let resp: Response;
   try {

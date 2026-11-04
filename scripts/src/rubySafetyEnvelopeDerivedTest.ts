@@ -134,9 +134,10 @@ process.stdout.write("\n── Suite C — buildPaperSafetyStatus pure derivatio
 }
 
 // ── Suite D — choreography: NO envelope opens a Ruby dispatch path ────────────
-// Even with a fully live-unlocked envelope, Ruby's requestLiveOrder is blocked
-// at the AI action boundary (read-only actor) BEFORE any gate or confirmation —
-// regardless of confirmedByUser.
+// Even with a fully live-unlocked envelope there is no order tool to call (AI
+// chat audit 2026-11-04, A2): the dispatcher answers unknown_tool with the
+// derived envelope attached and no placement side effect — regardless of
+// confirmedByUser. The AI action boundary below stays as defense in depth.
 process.stdout.write("\n── Suite D — confirmation choreography preserved ──\n");
 for (const confirmed of [false, true]) {
   const r = rec(
@@ -148,9 +149,8 @@ for (const confirmed of [false, true]) {
       liveUnlockedEnv,
     ),
   );
-  const inner = rec(r["result"]);
-  check(`D1 requestLiveOrder(confirmedByUser=${confirmed}) → status REJECTED (never queued)`, inner["status"] === "REJECTED", `status=${inner["status"]}`);
-  check(`D2 requestLiveOrder(confirmedByUser=${confirmed}) → blocked at AI boundary`, typeof inner["reason"] === "string" && (inner["reason"] as string).startsWith("AI_DIRECT_EXECUTION_BLOCKED"), `reason=${inner["reason"]}`);
+  check(`D1 requestLiveOrder(confirmedByUser=${confirmed}) → unknown_tool (no order path)`, r["error"] === "unknown_tool", `error=${r["error"]}`);
+  check(`D2 requestLiveOrder(confirmedByUser=${confirmed}) → no result payload, envelope still attached`, r["result"] === undefined && r["liveLocked"] === false, `keys=${Object.keys(r).join(",")}`);
 }
 
 // Defense-in-depth: the boundary evaluator denies Ruby LIVE even on the fully
