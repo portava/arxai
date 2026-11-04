@@ -1904,6 +1904,15 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
   return { ok: true };
 }
 
+export const LIVE_PARTIAL_CLOSE_UNSUPPORTED = "LIVE_PARTIAL_CLOSE_UNSUPPORTED";
+/** PURE — a close volume strictly below the known open position volume. An
+ *  unknown position volume is not provably partial. */
+export function isLivePartialCloseRequest(requestedVolume: number, positionVolume: number | null | undefined): boolean {
+  if (!Number.isFinite(requestedVolume) || requestedVolume <= 0) return false;
+  if (positionVolume == null || !Number.isFinite(positionVolume) || positionVolume <= 0) return false;
+  return requestedVolume < positionVolume - LIVE_VOLUME_EPSILON;
+}
+
 /**
  * Phase B — Create a draft for CLOSE_LIVE_POSITION or MODIFY_LIVE_SLTP.
  * These ops are bound to an existing live position (ticket) and skip the
@@ -2446,6 +2455,46 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         reason,
         command: blocked,
         userMessage: verify.verdict.userMessage,
+      };
+    }
+  }
+
+  // ── LIVE PARTIAL CLOSE PRE-GATE (bridge sweep 2026-11-04) ───────────────
+  // The live mailbox maps CLOSE_LIVE_POSITION to the EA's CLOSE_POSITION,
+  // which v1.54 executes as a FULL close (it reads no volume); its
+  // PARTIAL_CLOSE handler skips the management preflight and reports no
+  // versioned close evidence, so it is not used. A close whose volume is below
+  // the position volume recorded at draft time (manualClosePositionBasisV1,
+  // integrity-verified just above) is refused here instead of closing the whole position.
+  // Server-side partial-close accounting is unchanged for when the EA honours
+  // volume. Additive: only ADDS a block.
+  if (row.commandType === "CLOSE_LIVE_POSITION") {
+    const basis = (row.payload as Record<string, unknown> | null)?.["manualClosePositionBasisV1"] as { volume?: unknown } | undefined;
+    const positionVolume = typeof basis?.volume === "number" ? basis.volume : null;
+    if (isLivePartialCloseRequest(Number(row.requestedVolume), positionVolume)) {
+      const reason = LIVE_PARTIAL_CLOSE_UNSUPPORTED;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        dispatchGateSnapshot: {
+          decision: "BLOCKED", primaryReason: reason, blockReasons: [reason],
+          phase: "PARTIAL_CLOSE_UNSUPPORTED", requestedVolume: row.requestedVolume, positionVolume,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+      await audit({
+        eventType: "LIVE_DISPATCH_BLOCKED", severity: "WARNING",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED: partial close ${row.requestedVolume} of ${positionVolume} is not supported by the MT5 bridge`,
+        metadata: { commandId: args.commandId, reason, requestedVolume: row.requestedVolume, positionVolume },
+      });
+      return {
+        ok: false as const, reason, command: blocked,
+        userMessage: "Partial closes of live positions are not supported by the MT5 bridge yet. Close the full position, or reduce it in MT5.",
       };
     }
   }
