@@ -303,7 +303,8 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
   let routerUserMessage: string | null = null;
   let routerOk = false;
   // Measured broker-clock offset of the served MT5 bridge series (audit H7),
-  // for the newest-bar future-stamp bound only; null = none measured.
+  // for the newest bar's trailing gap and future-stamp bound only (bar times
+  // are never rewritten); null = none measured.
   let routedBrokerClockOffsetMs: number | null = null;
 
   // Initial page (no explicit source): consult the router to learn the primary
@@ -431,8 +432,17 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
     // Newest window with a fresh provider answer: derive live/stale from the
     // shared freshness precedence over the observed trailing-interval gap.
     const newestMs = page.newest ? new Date(page.newest).getTime() : null;
+    // The newest bar on the UTC clock: bar time minus the served bridge's
+    // measured broker-clock offset (raw when none), for the future-stamp
+    // lead. The trailing gap ages the EARLIER of the raw and corrected times
+    // (same rule as the chart feed): a stalled broker-time series cannot read
+    // "live" from a negative raw gap, and a negative "offset" read from a
+    // stale first-sight tick cannot make it look current either.
+    const newestUtcMs = newestMs == null ? null : barOpenUtcMs(newestMs, routedBrokerClockOffsetMs);
+    const newestAgeMs = newestMs == null || newestUtcMs == null ? null : Math.min(newestMs, newestUtcMs);
+    const nowMs = Date.now();
     const trailingIntervals =
-      newestMs != null ? (Date.now() - newestMs) / timeframeMs(timeframe) : null;
+      newestAgeMs != null ? (nowMs - newestAgeMs) / timeframeMs(timeframe) : null;
     const verdict = buildFeedStatus({
       routerOk: true,
       hasSource: true,
@@ -440,7 +450,7 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
       trailingIntervals,
       // Absolute clock-skew bound on the newest bar (never "one interval");
       // a broker-stamped bar is compared at bar time minus its measured offset.
-      newestOpenLeadMs: newestBarLeadMs(newestMs == null ? null : barOpenUtcMs(newestMs, routedBrokerClockOffsetMs), Date.now()),
+      newestOpenLeadMs: newestBarLeadMs(newestUtcMs, nowMs),
       syntheticAwaitingTick: false,
       routerUserMessage,
     });

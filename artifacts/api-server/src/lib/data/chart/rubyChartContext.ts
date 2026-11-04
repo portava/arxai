@@ -337,6 +337,14 @@ export function gatedReadReason(
     if (verdict === "FAIL") pending.push(`${label} failed`);
     else if (verdict === "WARN") pending.push(`${label} is not confirmed`);
   }
+  // The basis keeps the full handshake rollup, so chart rendering can be the
+  // only open check: name it instead of a bare "not every check has passed".
+  if (handshake.RenderHealth === "FAIL") {
+    pending.push("chart rendering failed its check");
+  } else if (handshake.RenderHealth === "WARN") {
+    const render = state.chartTruthScore?.subMetrics?.find((m) => m.key === "render_accuracy");
+    pending.push(render?.evidenceStatus === "measured" ? "chart rendering is not confirmed" : "chart rendering is not measured");
+  }
   if (pending.length === 0) return "Not every chart check has passed, so I won't draw a tradeable setup.";
   return `Not every chart check has passed: ${pending.join("; ")}. I won't draw a tradeable setup until they do.`;
 }

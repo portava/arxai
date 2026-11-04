@@ -3,6 +3,7 @@ import {
   MT5_CANDLE_TTL_MS,
   MT5_FEED_FRESH_MS,
   MAX_FUTURE_CLOCK_SKEW_MS,
+  QUOTE_FRESH_TTL_MS,
   barOpenUtcMs,
   measuredBrokerClockOffsetMs,
   plausibleBrokerClockOffsetMs,
@@ -76,6 +77,13 @@ import {
 //   at bar time minus that offset, so a correctly broker-stamped bar is not
 //   "future". With no measured offset the raw bar time is compared (fail
 //   closed). Bar times are never rewritten here.
+//   A mark set while the writer had NO measured offset (e.g. the EA's first
+//   candle-history push lands before its first tick) records the largest raw
+//   lead it saw. Once that bridge's offset is measured, the mark is re-checked
+//   on the UTC clock: it is dropped when every bar it saw sits within
+//   MAX_FUTURE_CLOCK_SKEW_MS of its receipt there, and otherwise becomes a
+//   UTC-confirmed mark, sticky like any other. With no offset ever measured
+//   (unattributed writer, a bridge that never ticks) it stays (fail closed).
 
 const DEFAULT_TIMEFRAME = "M5";
 
@@ -153,8 +161,42 @@ interface CandleSeries {
   userId: number | null;
 }
 
-/** Per-writer future-stamp marks: bridgeKey → { first observed, last write }. */
-const futureStampMarks = new Map<string, { firstAt: number; lastWriteAt: number }>();
+/** One writer's future-stamp mark (see FUTURE-STAMP OBSERVATION). */
+interface FutureStampMark {
+  firstAt: number;
+  lastWriteAt: number;
+  /**
+   * True once the mark is confirmed on the UTC clock: a bar with a MEASURED
+   * broker-clock offset opened beyond the skew allowance, or the writer's
+   * offset, once measured, still leaves a bar seen without one beyond it. A
+   * confirmed mark is sticky while the writer keeps pushing (Truth rule).
+   */
+  utcConfirmed: boolean;
+  /**
+   * Largest raw lead (bar open minus receipt, ms) among the bars this writer
+   * pushed with NO measured offset while the mark stood. -Infinity when none.
+   */
+  unmeasuredLeadMs: number;
+}
+
+/** Per-writer future-stamp marks: bridgeKey → mark. */
+const futureStampMarks = new Map<string, FutureStampMark>();
+
+/** The attributed bridge's broker-clock offset measured from its own ticks
+ *  (plausible values only); null for an unattributed writer or no tick yet. */
+function writerBrokerClockOffsetMs(bridgeConnectionId: number | null | undefined): number | null {
+  if (bridgeConnectionId == null) return null;
+  return plausibleBrokerClockOffsetMs(getMt5BridgeClockOffset({ bridgeConnectionId })?.offsetMs);
+}
+
+/** A mark set with no measured offset that the writer's now-measured offset
+ *  fully explains: every bar it saw opens within the skew allowance of its
+ *  receipt on the UTC clock. A UTC-confirmed mark is never explained away. */
+function unmeasuredMarkExplained(mark: FutureStampMark, bridgeConnectionId: number | null | undefined): boolean {
+  if (mark.utcConfirmed) return false;
+  const offsetMs = writerBrokerClockOffsetMs(bridgeConnectionId);
+  return offsetMs != null && mark.unmeasuredLeadMs - offsetMs <= MAX_FUTURE_CLOCK_SKEW_MS;
+}
 
 /** Record a write by `bKey` at `now`; mark the writer when any incoming bar
  *  opens beyond receipt + MAX_FUTURE_CLOCK_SKEW_MS. A mark survives while the
@@ -166,7 +208,8 @@ const futureStampMarks = new Map<string, { firstAt: number; lastWriteAt: number 
  *  mt5BarBrokerClockOffsetMs) the bar is compared on the UTC clock (bar time
  *  minus offset), so a correctly broker-stamped bar from a bridge whose offset
  *  is known is not "future". With no measured offset the raw bar time is
- *  compared (fail closed). */
+ *  compared (fail closed); such a mark is re-checked on the UTC clock once the
+ *  bridge's offset is measured (see FUTURE-STAMP OBSERVATION). */
 function observeFutureStamp(
   bKey: string,
   incoming: Candle[],
@@ -176,18 +219,40 @@ function observeFutureStamp(
   const mark = futureStampMarks.get(bKey);
   if (mark && now - mark.lastWriteAt > CANDLE_TTL_MS) futureStampMarks.delete(bKey);
   const live = futureStampMarks.get(bKey);
-  if (live) {
+  if (live?.utcConfirmed) {
     live.lastWriteAt = now;
     return;
   }
+  const bridgeId = bridge?.bridgeConnectionId ?? null;
+  let utcFuture = false;
+  let unmeasuredLeadMs = Number.NEGATIVE_INFINITY;
   for (const c of incoming) {
     const t = Date.parse(c.time);
     if (!Number.isFinite(t)) continue;
-    const utcOpen = barOpenUtcMs(t, mt5BarBrokerClockOffsetMs(c, bridge?.bridgeConnectionId ?? null));
-    if (utcOpen - now > MAX_FUTURE_CLOCK_SKEW_MS) {
-      futureStampMarks.set(bKey, { firstAt: now, lastWriteAt: now });
+    const offsetMs = mt5BarBrokerClockOffsetMs(c, bridgeId);
+    if (offsetMs == null) unmeasuredLeadMs = Math.max(unmeasuredLeadMs, t - now);
+    else if (barOpenUtcMs(t, offsetMs) - now > MAX_FUTURE_CLOCK_SKEW_MS) utcFuture = true;
+  }
+  if (live) {
+    // A mark set with no measured offset: keep folding unmeasured bars into
+    // it; confirm it on the UTC clock, or drop it once the writer's measured
+    // offset explains every bar it saw. No offset yet → it stands.
+    live.lastWriteAt = now;
+    live.unmeasuredLeadMs = Math.max(live.unmeasuredLeadMs, unmeasuredLeadMs);
+    if (utcFuture) {
+      live.utcConfirmed = true;
       return;
     }
+    const offsetMs = writerBrokerClockOffsetMs(bridgeId);
+    if (offsetMs == null) return;
+    if (live.unmeasuredLeadMs - offsetMs > MAX_FUTURE_CLOCK_SKEW_MS) live.utcConfirmed = true;
+    else futureStampMarks.delete(bKey);
+    return;
+  }
+  if (utcFuture) {
+    futureStampMarks.set(bKey, { firstAt: now, lastWriteAt: now, utcConfirmed: true, unmeasuredLeadMs });
+  } else if (unmeasuredLeadMs > MAX_FUTURE_CLOCK_SKEW_MS) {
+    futureStampMarks.set(bKey, { firstAt: now, lastWriteAt: now, utcConfirmed: false, unmeasuredLeadMs });
   }
 }
 
@@ -206,8 +271,7 @@ export function mt5BarBrokerClockOffsetMs(
 ): number | null {
   const own = measuredBrokerClockOffsetMs(bar?.timeBasisEvidence);
   if (own != null) return own;
-  if (bridgeConnectionId == null) return null;
-  return plausibleBrokerClockOffsetMs(getMt5BridgeClockOffset({ bridgeConnectionId })?.offsetMs);
+  return writerBrokerClockOffsetMs(bridgeConnectionId);
 }
 
 /**
@@ -226,8 +290,12 @@ export function servedSeriesBrokerClockOffsetMs(
   return mt5BarBrokerClockOffsetMs(newestBar ?? null, provenance.bridgeConnectionId ?? null);
 }
 
+/** The serving writer's future-stamp mark stands. A mark set with no
+ *  measured offset that the bridge's since-measured offset fully explains no
+ *  longer stands (the next write drops it); a UTC-confirmed mark always does. */
 function writerFutureStamped(s: CandleSeries): boolean {
-  return futureStampMarks.has(s.bridgeConnectionId != null ? String(s.bridgeConnectionId) : UNATTRIBUTED_BRIDGE_KEY);
+  const mark = futureStampMarks.get(s.bridgeConnectionId != null ? String(s.bridgeConnectionId) : UNATTRIBUTED_BRIDGE_KEY);
+  return mark != null && !unmeasuredMarkExplained(mark, s.bridgeConnectionId);
 }
 
 // symbol|timeframe → (bridgeKey → series). Partitions are hard walls: no read
@@ -276,7 +344,8 @@ interface QuoteEntry {
   bridgeConnectionId: number | null;
   userId: number | null;
   /** True only when `quote.timestamp` is a producer observation of the tick:
-   *  a `recordMt5Tick` first-sight EA UTC stamp bounded by an earlier post, or
+   *  a `recordMt5Tick` first-sight EA UTC stamp tightly bounded by a recent
+   *  earlier post (see recordMt5Tick), or
    *  an `updateQuoteFromMT5` write whose caller states it. Receive-time stamps
    *  and an unbounded first sight are not observed tick times. */
   tickTimeObserved: boolean;
@@ -496,9 +565,12 @@ export interface Mt5TickInput {
  *
  * `tickTimeObserved` (Truth quote binding / quote observation evidence) is
  * true only for a tick that carried its broker time AND whose first sight is
- * bounded by an earlier post in this partition: the first tick a partition
- * ever holds (e.g. a weekend quote re-posted after a server restart) may be
- * arbitrarily old, so its first-sight stamp is not an observed tick time.
+ * tightly bounded by an earlier post in this partition: that post came at
+ * most QUOTE_FRESH_TTL_MS earlier on the EA clock and the partition entry is
+ * still inside CANDLE_TTL_MS. The first tick a partition ever holds (e.g. a
+ * weekend quote re-posted after a server restart), or the first new tick
+ * after an EA outage, may be arbitrarily old, so its first-sight stamp is not
+ * an observed tick time.
  *
  * Nothing here estimates the broker's UTC offset or falls back to the server
  * clock; the broker clock and its offset at first sight are kept as diagnostics.
@@ -528,6 +600,19 @@ export function recordMt5Tick(
     };
   } else {
     const priorPostEaMs = existing?.tick ? existing.tick.lastPostedEaMs : null;
+    // The prior post bounds the tick's real time only when it is recent: the
+    // partition entry is still within the store TTL (server clock) and the
+    // prior post came at most QUOTE_FRESH_TTL_MS before this one (EA clock).
+    // After an EA outage the first different tick (e.g. Friday's close
+    // re-posted on the weekend) may be days old, so it is not observed.
+    const boundGapMs = priorPostEaMs != null ? tick.eaUtcMs - priorPostEaMs : null;
+    const tightlyBounded =
+      existing != null &&
+      now - existing.updatedAt <= CANDLE_TTL_MS &&
+      boundGapMs != null &&
+      Number.isFinite(boundGapMs) &&
+      boundGapMs >= 0 &&
+      boundGapMs <= QUOTE_FRESH_TTL_MS;
     entry = {
       quote: {
         symbol,
@@ -542,7 +627,7 @@ export function recordMt5Tick(
       writeSeq: ++writeCounter,
       bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
       userId: bridge?.bridgeConnectionId != null ? bridge.userId ?? null : null,
-      tickTimeObserved: tick.brokerTimeMs != null && priorPostEaMs != null,
+      tickTimeObserved: tick.brokerTimeMs != null && tightlyBounded,
       tick: {
         key: tickKey,
         firstSeenEaMs: tick.eaUtcMs,

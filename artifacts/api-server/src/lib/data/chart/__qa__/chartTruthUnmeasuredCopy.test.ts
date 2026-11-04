@@ -12,7 +12,7 @@ import { computeBrokerPriceAlignment, mirrorTrustSegment, noBrokerAlignment } fr
 import { bindBrokerQuote } from "../brokerQuoteBinding.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
-import { buildTrustLine } from "../rubyChartContext.js";
+import { buildTrustLine, gatedReadReason } from "../rubyChartContext.js";
 import { buildRubyDraftRead } from "../../../assistant/rubyDraftRead.js";
 
 const epoch = 1_700_000_000_000;
@@ -187,6 +187,30 @@ test("trust lines say Verified only in the Verified band, Live feed only for a c
     const draft = buildRubyDraftRead(state, "analyze").trustLine;
     assert.doesNotMatch(draft, /Live feed|Verified/, draft); assert.match(draft, new RegExp(expected), draft);
   }
+});
+
+// Review (truth port, S02): Ruby's basis keeps the full handshake rollup, so
+// with every candle check passing the only open check is chart rendering,
+// which the server never measures. The refusal named nothing ("Not every
+// chart check has passed") while the trust line said the candle checks pass.
+test("a gated Ruby read with only chart rendering open names it, never a bare 'not every check'", () => {
+  const truth = fixture(), tight = quoteAlignment(1.09999, 1.10001);
+  const score = computeChartTruthScore(truth, feed, tight);
+  const gate = computeChartGateOutput(score, read, tight, truth, false);
+  assert.equal(gate.confidentReadAllowed, true);
+  assert.equal(gate.autonomousChartActionAllowed, true);
+  assert.equal(gate.tradeConfirmationAllowed, true);
+  const handshake = buildChartHandshake(gate, score);
+  assert.equal(handshake.sourceOverall, "PASS"); assert.equal(handshake.RenderHealth, "WARN");
+  const state = { stale: false, aiUsable: true, truthState: feed, chartTruthScore: score } as unknown as ChartIntelligenceState;
+  const why = gatedReadReason({ basis: "PARTIAL", blockReason: null, gateOutput: gate, state });
+  assert.equal(why, "Not every chart check has passed: chart rendering is not measured. I won't draw a tradeable setup until they do.");
+  // A measured renderer that failed is named as a failure.
+  const failedRender = { ...score, subMetrics: score.subMetrics.map(m => m.key === "render_accuracy"
+    ? { ...m, rawScore: 20, evidenceStatus: "measured" as const } : m) };
+  const failedWhy = gatedReadReason({ basis: "PARTIAL", blockReason: null, gateOutput: gate,
+    state: { ...state, chartTruthScore: failedRender } as unknown as ChartIntelligenceState });
+  assert.match(failedWhy ?? "", /chart rendering failed its check/);
 });
 
 test("a measured deduction scoring 90-99 is named, never 'No measured check found a problem'", () => {

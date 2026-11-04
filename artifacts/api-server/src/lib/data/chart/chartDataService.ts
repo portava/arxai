@@ -38,6 +38,7 @@ import {
   resolveDerivSymbol,
 } from "../providers/derivProvider.js";
 import { trailingIntervalGap } from "./candleNormalization.js";
+import { trailingIntervalsFromOpen } from "@workspace/domain/market";
 import { runCandleTruth, type TimeframeTruthResult } from "./candleTruthEngine.js";
 import { getSymbolProfile } from "./symbolProfile.js";
 import { getSessionProfile, type WeeklyPresenceProfile } from "./sessionProfile.js";
@@ -339,10 +340,6 @@ async function buildChartFeed(
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
-  // Trailing-gap + newest provider candle precede any appended display tip.
-  // A provider forming bar can have a scheduled future closeTime; that is not
-  // the closed-bar observation carried separately in marketEvidence.
-  const trailing = trailingIntervalGap(candles, timeframe, now);
   const lastCandle = candles[candles.length - 1] ?? null;
   const lastCandleTime = lastCandle ? lastCandle.closeTime : null;
   // Future-stamp bound uses the newest provider bar's OPEN time, not its
@@ -363,9 +360,28 @@ async function buildChartFeed(
     ? result.provenance.bridgeConnectionId ?? null
     : null;
   const newestOpenOffsetMs = lastCandle ? mt5BarBrokerClockOffsetMs(lastCandle, servedMt5BridgeId) : null;
-  const newestOpenLeadMs = lastCandle
-    ? newestBarLeadMs(barOpenUtcMs(Date.parse(lastCandle.openTime), newestOpenOffsetMs), now)
+  // The newest provider bar's open on the UTC clock (raw when no offset is
+  // measured) for the future-stamp lead.
+  const newestOpenRawMs = lastCandle ? Date.parse(lastCandle.openTime) : null;
+  const newestOpenUtcMs = newestOpenRawMs != null ? barOpenUtcMs(newestOpenRawMs, newestOpenOffsetMs) : null;
+  // The trailing gap and the weekend-closure test age the bar by the EARLIER
+  // of its raw and offset-corrected opens. With a measured +2h offset a
+  // stalled broker-time series is aged by its real UTC open, so its negative
+  // raw gap can no longer read "clean" once the lead check stops failing it
+  // closed. A measured offset only ever makes the bar older here: a negative
+  // "offset" can also come from a stale tick seen first (an old broker time
+  // minus the EA's current clock), and that would make a stalled series look
+  // current, so the raw stamp stands when it is the earlier one.
+  const newestOpenAgeMs = newestOpenRawMs != null && newestOpenUtcMs != null
+    ? Math.min(newestOpenRawMs, newestOpenUtcMs)
     : null;
+  // Trailing gap of the newest provider candle, before any appended display
+  // tip. A provider forming bar can have a scheduled future closeTime; that is
+  // not the closed-bar observation carried separately in marketEvidence.
+  const trailing = newestOpenOffsetMs != null && newestOpenAgeMs != null
+    ? trailingIntervalsFromOpen(newestOpenAgeMs, timeframeMs(timeframe), now)
+    : trailingIntervalGap(candles, timeframe, now);
+  const newestOpenLeadMs = newestOpenUtcMs != null ? newestBarLeadMs(newestOpenUtcMs, now) : null;
   const futureStampObserved = result.ok && (result.provenanceNotes ?? []).includes(FUTURE_STAMPED_SERIES_NOTE);
   const timestampsUnconfirmed = feedTimestampsUnconfirmed({ trailingIntervals: trailing, newestOpenLeadMs, futureStampObserved });
   // "Last tick": the Deriv WS tick for a Deriv-served series, else the MT5
@@ -488,7 +504,9 @@ async function buildChartFeed(
   const closure = lastCandle && !tradingObserved
     ? scheduledWeekendClosure(session, now)
     : null;
-  const marketClosedAtMs = closure && lastCandle && Date.parse(lastCandle.openTime) < closure.closedAtMs
+  // Compared on the same clock as the trailing gap (a GMT+2 broker's last
+  // Friday H1 bar opens at 23:00 broker = 21:00 UTC, before a 22:00 close).
+  const marketClosedAtMs = closure && newestOpenAgeMs != null && newestOpenAgeMs < closure.closedAtMs
     ? closure.closedAtMs
     : null;
   const reachable = source != null && candles.length > 0;

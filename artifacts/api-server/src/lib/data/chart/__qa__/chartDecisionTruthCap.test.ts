@@ -52,6 +52,18 @@ function boundAlignment() {
 function boundScore(truth: TimeframeTruthResult = truthFixture()) {
   return computeChartTruthScore(truth, feed, boundAlignment());
 }
+/**
+ * The same score with the chart-rendering check MEASURED and passing. The
+ * server never measures rendering (client telemetry), so computeChartTruthScore
+ * leaves it unmeasured and Ruby's VERIFIED basis (the full handshake rollup,
+ * RenderHealth included) is out of reach; the verified path is pinned with
+ * renderer evidence supplied here.
+ */
+function withMeasuredRender<T extends ReturnType<typeof boundScore>>(score: T): T {
+  return { ...score, subMetrics: score.subMetrics.map((m) => m.key === "render_accuracy"
+    ? { ...m, rawScore: 100, evidenceStatus: "measured" as const, detail: "Renderer telemetry fixture." }
+    : m) };
+}
 
 function gate(truthScore: number, over: Partial<ChartGateOutput> = {}): ChartGateOutput {
   const allowed = truthScore >= 75;
@@ -102,9 +114,9 @@ function aGradeState(g: ChartGateOutput, feedOver: Partial<ChartFeedStatus> = {}
     trendlineOverlay: { visible: false },
     speedState: {},
     lastUpdated: new Date(epoch).toISOString(),
-    // Every candle-data check measured (bound broker quote); the headline
-    // score follows the gate under test.
-    chartTruthScore: { ...boundScore(), score: g.chartTruthScore },
+    // Every handshake check measured (bound broker quote, renderer evidence);
+    // the headline score follows the gate under test.
+    chartTruthScore: { ...withMeasuredRender(boundScore()), score: g.chartTruthScore },
     chartReadScore: { score: 90, label: "Readable", subMetrics: [], primaryConcern: null, note: "" },
     gateOutput: g,
     brokerAlignment: noBrokerAlignment(1.1, "LAST"),
@@ -213,8 +225,19 @@ test("route enrichment re-derives the summary from the per-user gate (both direc
   assert.ok(computeChartTruthScore(truth, feed, computeBrokerPriceAlignment(verifiedInputs)).score >= 75);
   const enriched = enrichStateWithBrokerAlignment(built, truth, feed, verifiedInputs);
   assert.equal(enriched.gateOutput.confidentReadAllowed, true);
-  assert.equal(enriched.decisionState.actionability, "ready");
-  assert.match(enriched.marketSentences.bestNextAction.text, /act with a defined stop/);
+  // Re-derived under the per-user gate: every candle-data reason is gone. The
+  // server never measures chart rendering, and Ruby's VERIFIED basis keeps the
+  // full handshake rollup, so the only reason left is rendering and the
+  // summary stays at watch, exactly where Ruby's read stands.
+  const { buildChartHandshake } = await import("../chartHandshake.js");
+  const enrichedHandshake = buildChartHandshake(enriched.gateOutput, enriched.chartTruthScore);
+  assert.equal(enrichedHandshake.sourceOverall, "PASS");
+  assert.notEqual(enrichedHandshake.overall, "PASS", "Ruby's basis is not VERIFIED");
+  assert.deepEqual(chartReadVerification(enriched.gateOutput, feed, enriched.chartTruthScore).reasons,
+    ["chart rendering is not measured"]);
+  assert.equal(enriched.decisionState.actionability, "watch");
+  assert.match(enriched.decisionState.note, /chart rendering is not measured/);
+  assert.doesNotMatch(enriched.marketSentences.bestNextAction.text, /act with a defined stop/);
 
   // An enrichment that leaves the gate closed caps a 'ready' summary.
   const weakTruth = truthFixture({ pricePrecision: null });
@@ -273,13 +296,41 @@ test("candles that are not real OHLC are not a verified read", async () => {
 test("a verified read is exactly one Ruby's handshake also passes", async () => {
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const truth = truthFixture();
-  const s = boundScore(truth);
+  const s = withMeasuredRender(boundScore(truth));
   const g = computeChartGateOutput(s, read as never, boundAlignment(), truth, feed);
   const v = chartReadVerification(g, feed, s);
   assert.deepEqual(v, { verified: true, reasons: [] });
-  assert.equal(buildChartHandshake(g, s).sourceOverall, "PASS");
+  // Ruby's VERIFIED basis and draft read require the FULL rollup.
+  assert.equal(buildChartHandshake(g, s).overall, "PASS");
   // A feed the candle engines do not call clean is not verified either.
   assert.equal(chartReadVerification(g, { ...feed, aiUsable: false, quality: "delayed" }, s).verified, false);
+});
+
+// Review (truth port, S02): the board's cap read the candle-data rollup
+// (sourceOverall) while Ruby's basis keeps the full rollup, RenderHealth
+// included. The server never measures rendering, so the board said "Ready"
+// while Ruby, on the same read, refused a setup.
+test("every candle check passing with chart rendering unmeasured is not verified, matching Ruby's basis", async () => {
+  const { buildChartHandshake } = await import("../chartHandshake.js");
+  const truth = truthFixture();
+  const s = boundScore(truth);
+  assert.equal(s.subMetrics.find((m) => m.key === "render_accuracy")?.evidenceStatus, "unavailable");
+  const g = computeChartGateOutput(s, read as never, boundAlignment(), truth, feed);
+  const h = buildChartHandshake(g, s);
+  assert.equal(h.sourceOverall, "PASS", "fixture: every candle-data check passes");
+  assert.notEqual(h.overall, "PASS", "Ruby's basis is not VERIFIED");
+  const v = chartReadVerification(g, feed, s);
+  assert.deepEqual(v, { verified: false, reasons: ["chart rendering is not measured"] });
+  const state = aGradeState(g);
+  state.chartTruthScore = s;
+  assert.equal(capDecisionStateByChartTruth(state.decisionState, v).actionability, "watch");
+  const text = sentencesFor(state).bestNextAction.text;
+  assert.doesNotMatch(text, /act with a defined stop|cleanest it gets/);
+  assert.match(text, /chart rendering is not measured/);
+  // A measured renderer below the pass mark is named with its score.
+  const weak = { ...s, subMetrics: s.subMetrics.map((m) => m.key === "render_accuracy"
+    ? { ...m, rawScore: 60, evidenceStatus: "measured" as const } : m) };
+  assert.deepEqual(chartReadVerification(g, feed, weak).reasons, ["chart rendering scored 60/100 (needs 75)"]);
 });
 
 // Truth: tradeConfirmationAllowed is false for a merge-seam failure OR a failed

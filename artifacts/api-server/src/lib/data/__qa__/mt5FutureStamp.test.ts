@@ -10,6 +10,8 @@ import {
   updateCandlesFromMT5,
   mergeCandleFromMT5,
   readMt5Candles,
+  readMt5Quote,
+  recordMt5Tick,
   __resetMt5ProviderStore,
   CANDLE_TTL_MS,
 } from "../providers/mt5Provider.js";
@@ -98,4 +100,99 @@ test("marks are per writer and clear only after the writer was silent past the T
   mock.timers.setTime(T0 + CANDLE_TTL_MS + MIN);
   updateCandlesFromMT5("EURUSD", [bar(Date.UTC(2026, 9, 27, 8))], "H1", { bridgeConnectionId: 44 });
   assert.equal(readMt5Candles("EURUSD", "H1", 10, { bridgeConnectionId: 44 }).futureStamped, false);
+});
+
+// Review (truth port, S02): the default EA pushes candle history BEFORE its
+// first tick. Broker-stamped (GMT+2) bars then arrive while the bridge has no
+// measured offset, so they read future and mark the writer. The mark used to
+// stay for as long as the EA kept pushing, even after the first tick measured
+// the offset, so the whole bridge read "timestamps could not be confirmed".
+function tick(bridge: { bridgeConnectionId: number; userId: number }, offsetMs: number, eaUtcMs = Date.now()) {
+  recordMt5Tick("EURUSD", { bid: 1.1, ask: 1.1001, brokerTimeMs: eaUtcMs + offsetMs, eaUtcMs }, bridge);
+}
+
+test("bars before the first tick, then a tick: the mark set without a measured offset clears", () => {
+  __resetMt5ProviderStore();
+  mock.timers.enable({ apis: ["Date"], now: T0 });
+  const bridge = { bridgeConnectionId: 46, userId: 4 };
+  // Correctly broker-stamped GMT+2 history (newest real bar 08:00 → 10:00).
+  const window = stampedH1Window(Date.UTC(2026, 9, 27, 8));
+  updateCandlesFromMT5("EURUSD", window, "H1", bridge);
+  mergeCandleFromMT5("EURUSD", bar(Date.UTC(2026, 9, 27, 8, 25) + OFFSET), "M5", bridge);
+  assert.equal(readMt5Candles("EURUSD", "H1", 100).futureStamped, true, "no offset yet: fail closed");
+
+  // First tick 2 s later measures +2h: the earlier bars sit within the skew
+  // allowance on the UTC clock, so the mark no longer stands, on read…
+  mock.timers.setTime(T0 + 2_000);
+  tick(bridge, OFFSET);
+  assert.equal(readMt5Candles("EURUSD", "H1", 100).futureStamped, false);
+  assert.equal(readMt5Candles("EURUSD", "M5", 100).futureStamped, false);
+  // …and the next push drops it; later pushes stay clean.
+  mock.timers.setTime(T0 + 30_000);
+  updateCandlesFromMT5("EURUSD", window, "H1", bridge);
+  mock.timers.setTime(T0 + 5 * MIN);
+  mergeCandleFromMT5("EURUSD", bar(Date.UTC(2026, 9, 27, 8, 30) + OFFSET), "M5", bridge);
+  assert.equal(readMt5Candles("EURUSD", "H1", 100).futureStamped, false);
+  assert.equal(readMt5Candles("EURUSD", "M5", 100).futureStamped, false);
+});
+
+test("bars and no tick ever: the mark stays while the writer keeps pushing", () => {
+  __resetMt5ProviderStore();
+  mock.timers.enable({ apis: ["Date"], now: T0 });
+  const bridge = { bridgeConnectionId: 47, userId: 4 };
+  const window = stampedH1Window(Date.UTC(2026, 9, 27, 8));
+  updateCandlesFromMT5("EURUSD", window, "H1", bridge);
+  for (let t = T0 + 4 * MIN; t <= T0 + 60 * MIN; t += 4 * MIN) {
+    mock.timers.setTime(t);
+    updateCandlesFromMT5("EURUSD", window, "H1", bridge);
+  }
+  assert.equal(readMt5Candles("EURUSD", "H1", 100).futureStamped, true);
+  // Another bridge's measured offset is never borrowed.
+  tick({ bridgeConnectionId: 48, userId: 5 }, OFFSET);
+  assert.equal(readMt5Candles("EURUSD", "H1", 100, { bridgeConnectionId: 47 }).futureStamped, true);
+});
+
+test("bars stamped beyond the offset the first tick measures stay marked, and the mark turns sticky", () => {
+  __resetMt5ProviderStore();
+  mock.timers.enable({ apis: ["Date"], now: T0 });
+  const bridge = { bridgeConnectionId: 49, userId: 4 };
+  // Bars carry +5h while the terminal's ticks say +2h: 3h ahead on the UTC clock.
+  const misStamped = Array.from({ length: 10 }, (_, i) => bar(Date.UTC(2026, 9, 27, 8) - (9 - i) * HOUR + 5 * HOUR));
+  updateCandlesFromMT5("EURUSD", misStamped, "H1", bridge);
+  mock.timers.setTime(T0 + 2_000);
+  tick(bridge, OFFSET);
+  assert.equal(readMt5Candles("EURUSD", "H1", 100).futureStamped, true, "still future on the UTC clock");
+  // Later correct pushes do not clear a UTC-confirmed mark (Truth's sticky rule).
+  mock.timers.setTime(T0 + 60_000);
+  updateCandlesFromMT5("EURUSD", stampedH1Window(Date.UTC(2026, 9, 27, 8)), "H1", bridge);
+  mock.timers.setTime(T0 + 120_000);
+  updateCandlesFromMT5("EURUSD", stampedH1Window(Date.UTC(2026, 9, 27, 8)), "H1", bridge);
+  assert.equal(readMt5Candles("EURUSD", "H1", 100).futureStamped, true);
+});
+
+// Review (truth port, S02): a prior post of any age used to count as the bound
+// that makes a first-sight tick "observed". After an EA outage, Friday's
+// closing tick re-posted on the weekend was stamped "now" and read fresh.
+test("a first new tick after an EA outage is not an observed tick time; a tick bounded by the last sweep is", () => {
+  __resetMt5ProviderStore();
+  const bridge = { bridgeConnectionId: 50, userId: 4 };
+  const thu = T0 - 3 * 24 * HOUR;
+  mock.timers.enable({ apis: ["Date"], now: thu });
+  recordMt5Tick("EURUSD", { bid: 1.1, ask: 1.1001, brokerTimeMs: thu + OFFSET, eaUtcMs: thu }, bridge);
+  // Three days later the EA is back and posts Friday's close (40 h old).
+  mock.timers.setTime(T0);
+  const friClose = T0 - 40 * HOUR;
+  recordMt5Tick("EURUSD", { bid: 1.2, ask: 1.2001, brokerTimeMs: friClose + OFFSET, eaUtcMs: T0 }, bridge);
+  assert.equal(readMt5Quote("EURUSD", { bridgeConnectionId: 50 })?.tickTimeObserved, false);
+  // A re-post keeps the flag; the next DIFFERENT tick, one 2 s sweep later, is observed.
+  mock.timers.setTime(T0 + 2_000);
+  recordMt5Tick("EURUSD", { bid: 1.2, ask: 1.2001, brokerTimeMs: friClose + OFFSET, eaUtcMs: T0 + 2_000 }, bridge);
+  assert.equal(readMt5Quote("EURUSD", { bridgeConnectionId: 50 })?.tickTimeObserved, false);
+  mock.timers.setTime(T0 + 4_000);
+  recordMt5Tick("EURUSD", { bid: 1.2002, ask: 1.2003, brokerTimeMs: T0 + 3_500 + OFFSET, eaUtcMs: T0 + 4_000 }, bridge);
+  assert.equal(readMt5Quote("EURUSD", { bridgeConnectionId: 50 })?.tickTimeObserved, true);
+  // A prior post more than QUOTE_FRESH_TTL_MS earlier on the EA clock does not bound it.
+  mock.timers.setTime(T0 + 30_000);
+  recordMt5Tick("EURUSD", { bid: 1.2004, ask: 1.2005, brokerTimeMs: T0 + 29_000 + OFFSET, eaUtcMs: T0 + 30_000 }, bridge);
+  assert.equal(readMt5Quote("EURUSD", { bridgeConnectionId: 50 })?.tickTimeObserved, false);
 });

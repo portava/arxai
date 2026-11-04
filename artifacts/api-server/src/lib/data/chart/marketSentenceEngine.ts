@@ -375,8 +375,8 @@ function sentenceRisk(s: SentenceInput): ChartMarketSentence {
 
 // The chart-truth gate's verdict on this read, in plain words. An unverified
 // read (Chart Truth < 75, stale feed, failed mirror, an unmeasured or failing
-// candle-data check, feed not live) may still be described, but no sentence
-// may invite acting on it.
+// handshake check — chart rendering included — feed not live) may still be
+// described, but no sentence may invite acting on it.
 function unverifiedWhy(s: SentenceInput): string | null {
   const v = chartReadVerification(s.gateOutput, s.truthState, s.chartTruthScore);
   return v.verified ? null : v.reasons.join("; ");
