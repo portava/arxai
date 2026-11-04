@@ -103,16 +103,21 @@ describe("G-CUT — the market-data SERVICE survives (paper execution needs it)"
     );
   });
 
-  it("paper execution still imports getMarketData from it", () => {
+  it("paper execution still reads DD quality from it, and prices fills on the router quote (audit H4)", () => {
+    const service = read("artifacts/api-server/src/lib/paperExecution/paperExecutionService.ts");
+    assert.ok(
+      /getMarketData.*from "\.\.\/marketData\/marketDataService\.js"/s.test(service),
+      "the service must still reach the DD market-data service for its quality blockers",
+    );
+    // The execution price itself is the market data router's quote (the same
+    // one the Risk Governor sizes on), for the fill, the SL/TP monitor and closes.
     for (const rel of [
       "artifacts/api-server/src/lib/paperExecution/paperExecutionService.ts",
       "artifacts/api-server/src/lib/paperExecution/paperExecutionMonitor.ts",
     ]) {
-      assert.ok(
-        /getMarketData.*from "\.\.\/marketData\/marketDataService\.js"/s.test(read(rel)),
-        `${rel} must still reach the service`,
-      );
+      assert.ok(/currentQuote.*from "\.\.\/tradeEngine\/marketQuote\.js"/s.test(read(rel)), `${rel} must price on the router quote`);
     }
+    assert.ok(!/getMarketData/.test(read("artifacts/api-server/src/lib/paperExecution/paperExecutionMonitor.ts")), "the monitor no longer reads marketDataService prices");
   });
 
   it("marketDataHealthCheck is still exported", async () => {

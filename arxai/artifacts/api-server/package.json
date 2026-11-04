@@ -46,6 +46,7 @@
     "test:mt5-order-controls-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/live/__qa__/pendingOrderRules.test.ts src/lib/live/__qa__/orderSweep20261104.test.ts src/lib/assistant/__qa__/rubyFakeoutPolicy.test.ts",
     "test:chart-signals-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/chart/__qa__/chartSignalsFixes.test.ts",
     "test:ai-chat-server-20261104": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/assistant/__qa__/aiChatServerFixes.test.ts src/lib/performanceCC/__qa__/closedTradeLedgerShared.test.ts src/routes/__qa__/assistantCommandTranscript.test.ts",
+    "test:replit-slice5-20261104": "node --import tsx --test --test-force-exit src/lib/perf/__qa__/heapWatch.test.ts src/lib/systemHealth/__qa__/buildDdLayerRemoved.test.ts",
     "test:bridge-scoped-candle-serving": "node --import tsx --test --test-force-exit src/lib/data/__qa__/bridgeScopedCandleServing.test.ts",
     "test:broker-confirmed-gate": "node --import tsx --test --test-force-exit src/lib/data/__qa__/brokerConfirmedGate.test.ts",
     "test:decision-grade-wait": "node --import tsx --test --test-force-exit src/lib/data/__qa__/decisionGradeWait.test.ts",

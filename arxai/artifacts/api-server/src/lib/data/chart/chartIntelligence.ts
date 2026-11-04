@@ -14,6 +14,7 @@
 //  - Adds NO new data source; reads ONLY the truth layer.
 //  - Pure Fast-Brain work — never invokes the Slow Brain (background-only).
 
+import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import {
   getChartCandles,
   type ChartFeedStatus,
@@ -207,6 +208,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
+registerHeapWatchGauge("chartIntelligence.cache", () => cache.size);
 /** Entry cap; expired entries are swept on every write (boundedCacheSet). */
 const CACHE_MAX_ENTRIES = 500;
 
