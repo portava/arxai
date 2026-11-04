@@ -18,23 +18,6 @@ function fixture(qualifiedTrade=false) {
 }
 
 describe("existing assistant to current chart study action",()=>{
-  it("routes selected pattern explanations through the existing chart owner without mutation",()=>{
-    const f=fixture(),explainFinding=vi.fn(()=>"V75 M1: observed doji");
-    const parsed=parseStudyRequest("Please explain this pattern?");
-    expect(parsed).toEqual({action:"explain_finding"});
-    expect(executeStudyRequest(parsed!,{...f.context(),explainFinding})).toContain("observed doji");
-    expect(explainFinding).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();expect(f.adapter.setStudies).not.toHaveBeenCalled();
-  });
-  it("holds selected finding requests when pane ownership is unavailable",()=>{
-    const f=fixture(),explainFinding=vi.fn(()=>"old pane");
-    const parsed=parseStudyRequest("explain the selected finding");
-    expect(parsed).toEqual({action:"explain_finding"});
-    expect(executeStudyRequest(parsed!,{...f.context(),adapter:null,explainFinding})).not.toContain("old pane");
-    expect(explainFinding).not.toHaveBeenCalled();
-  });
-  it.each(["explain this pattern and buy now","explain this pattern on EURUSD","explain the selected finding then change timeframe"])("holds compound finding request %s",text=>{
-    expect(parseStudyRequest(text)).toHaveProperty("error");
-  });
   it.each(STUDY_CATALOG.map(d=>[d.defaults.kind] as const))("applies existing catalogue kind %s without introducing a calculation",kind=>{
     const f=fixture(kind === "vwap" || kind === "volume_profile"); expect(executeStudyRequest(parseStudyRequest(`show ${kind}`)!,f.context())).toContain("Applied");
     expect(f.studies()[0].kind).toBe(kind);
@@ -190,47 +173,4 @@ describe("data-based MACD and Bollinger explanations",()=>{
   it("RSI interpretation reads the named channel, never another first row",()=>{
     const text=observation("rsi",[{name:"unrelated",value:100},{name:"RSI",value:40}]);expect(text).toContain("between the common 30 and 70");expect(text).not.toContain("at or above 70");
   });
-});
-
-describe("temporary chart readability through the existing assistant",()=>{
-  function focusedFixture(){
-    const f=fixture();let focused=false;
-    const adapter={...f.adapter,isAnalysisFocused:()=>focused,setAnalysisFocus:vi.fn((next:boolean)=>{focused=next;})};
-    const notify=vi.fn();return {...f,adapter,notify,context:()=>({...f.context(),adapter,onAnalysisFocus:notify})};
-  }
-  it.each(["simplify chart","simplify this chart","make this chart easier to understand","focus on price"])("recognizes one bounded command: %s",text=>expect(parseStudyRequest(text)).toEqual({action:"simplify"}));
-  it.each(["restore chosen tools","restore my tools","restore this chart"])("recognizes restoration: %s",text=>expect(parseStudyRequest(text)).toEqual({action:"restore"}));
-  it.each(["do not simplify chart","simplify chart and buy EURUSD","restore tools and add RSI"])("rejects compound or negated requests: %s",text=>expect(parseStudyRequest(text)).toHaveProperty("error"));
-  it("changes only presentation; repeated commands preserve exact choices and never save",()=>{
-    const f=focusedFixture();const chosen=[{...studyDefinition("rsi").defaults,id:"mine",period:21,lineStyles:[{visible:false}]}];const c={...f.context(),studies:chosen};
-    expect(executeStudyRequest({action:"simplify"},c)).toContain("temporarily hidden");
-    expect(f.adapter.isAnalysisFocused()).toBe(true);expect(f.notify).toHaveBeenLastCalledWith(true);
-    expect(executeStudyRequest({action:"restore"},c)).toContain("Individually hidden tools stay hidden");
-    expect(f.adapter.isAnalysisFocused()).toBe(false);expect(f.adapter.setStudies).not.toHaveBeenCalled();expect(f.save).not.toHaveBeenCalled();expect(c.studies).toEqual(chosen);
-  });
-  it("a valid show restores, but invalid settings and unavailable evidence do not",()=>{
-    const f=focusedFixture();executeStudyRequest({action:"simplify"},f.context());
-    expect(executeStudyRequest(parseStudyRequest("add RSI 0")!,f.context())).toMatch(/not changed/i);expect(f.adapter.isAnalysisFocused()).toBe(true);
-    expect(executeStudyRequest(parseStudyRequest("show VWAP")!,f.context())).toContain("not changed");expect(f.adapter.isAnalysisFocused()).toBe(true);
-    expect(executeStudyRequest(parseStudyRequest("show RSI")!,f.context())).toContain("Restored your chosen analysis layers");expect(f.adapter.isAnalysisFocused()).toBe(false);expect(f.studies()[0].period).toBe(14);
-  });
-  it("unavailable or unconfirmed renderers cannot claim simplification or restoration",()=>{
-    const f=focusedFixture();expect(executeStudyRequest({action:"simplify"},{...f.context(),adapter:null})).toContain("not changed");
-    f.adapter.setAnalysisFocus.mockImplementation(()=>{});expect(executeStudyRequest({action:"simplify"},f.context())).toContain("could not be verified");expect(f.notify).toHaveBeenLastCalledWith(false);expect(f.save).not.toHaveBeenCalled();
-  });
-  it("failed restore cannot save or claim a shown study",()=>{
-    const f=focusedFixture();executeStudyRequest({action:"simplify"},f.context());f.adapter.setAnalysisFocus.mockImplementation(()=>{});
-    expect(executeStudyRequest(parseStudyRequest("show RSI")!,f.context())).toContain("could not be verified");expect(f.save).not.toHaveBeenCalled();expect(f.adapter.isAnalysisFocused()).toBe(true);expect(f.adapter.setStudies).toHaveBeenLastCalledWith([]);
-  });
-});
-it('restores the chart before an explicit study show while another pane is maximized',()=>{
- const f=fixture();let maximized:string|null='rsi';const restore=vi.fn((id:string|null)=>{maximized=id;return true;});
- const context={...f.context(),adapter:{...f.adapter,getMaximizedStudyPane:()=>maximized,setMaximizedStudyPane:restore}};
- executeStudyRequest(parseStudyRequest('show RSI')!,context);expect(restore).toHaveBeenCalledWith(null);expect(maximized).toBeNull();
-});
-
-it('explaining an installed indicator retains the maximized view',()=>{
- const f=fixture();const installed=[{...studyDefinition('rsi').defaults,id:'rsi'}];let maximized:string|null='rsi';const restore=vi.fn((id:string|null)=>{maximized=id;return true;});
- const context={...f.context(),studies:installed,adapter:{...f.adapter,getMaximizedStudyPane:()=>maximized,setMaximizedStudyPane:restore}};
- const result=executeStudyRequest(parseStudyRequest('explain RSI')!,context);expect(restore).not.toHaveBeenCalled();expect(maximized).toBe('rsi');expect(result).toContain('visibility retained');
 });

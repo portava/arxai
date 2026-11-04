@@ -1,5 +1,4 @@
-import { rubyAssessmentEvidenceKey } from "@/lib/rubyAssessmentEvidence";
-import { useLayoutEffect, useRef } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, RefreshCw, MessageCircle, Crosshair, ShieldAlert } from "lucide-react";
@@ -12,7 +11,6 @@ import {
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
-import { rubyChartReadContext, rubyChartReadKey, rubyChartDraftKey } from "@/lib/rubyChartReadContext";
 import { useAssistantName } from "@/lib/assistant-name";
 import {
   actionabilityDisplayUi,
@@ -93,27 +91,21 @@ export function RubyChartRead({
    */
   canonicalReadId?: string;
 }) {
+  // The server read is lifted to a page-level store keyed by symbol+timeframe
+  // (Task #600) so the header strip's Ruby cell shares the SAME read and the two
+  // can never disagree. Switching symbol/timeframe reads a different key (an
+  // empty key = honest pre-read state). Loading/error stay local to this panel.
   const { name } = useAssistantName();
   const store = useRubyReadStore();
-  const owner = useRef(Symbol("RubyChartRead plan consumer")).current;
-  const marketKey = rubyChartReadKey(symbol, timeframe);
-  const draftKey = rubyChartDraftKey(draft);
-  const { truth, feedStatus, assessmentEvidence = null } = useScannerTruth(symbol, timeframe, { observeAssessmentDependencies: true });
-  const evidenceKey = rubyAssessmentEvidenceKey(assessmentEvidence);
-  const { registerPlan, unregisterPlan } = store;
-  // Layout registration updates the shared header restriction before paint.
-  // Object recreation with identical values cannot invalidate another panel.
-  useLayoutEffect(() => {
-    registerPlan(owner, symbol, timeframe, draft, assessmentEvidence);
-  }, [registerPlan, owner, marketKey, draftKey, evidenceKey]);
-  useLayoutEffect(() => () => unregisterPlan(owner), [unregisterPlan, owner]);
-  const read = store.getPlan(symbol, timeframe, draft, assessmentEvidence);
-  const { loading, error: err } = store.planRequestState(symbol, timeframe, draft);
+  const read = store.get(symbol, timeframe);
+  const setRead = (next: ChartRead | null) => store.set(symbol, timeframe, next);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   // Resolve the SHARED scanner truth for this exact symbol/timeframe so the
   // panel can warn the user BEFORE Ruby reads a stale or invalid feed — and so
   // its verdict can never diverge from the header strip / chart / read-gate.
-
+  const { truth, feedStatus } = useScannerTruth(symbol, timeframe);
 
   // ONE derived verdict (Task #506). The badge, banner, and body all read from
   // this single resolution — the shared scanner truth folded together with the
@@ -127,7 +119,7 @@ export function RubyChartRead({
   });
   const feedNotConfirmed = panel.feedNotConfirmed;
   // Task #602 — a directional STRUCTURAL read is available, but the exact live
-  // setup (entry/stop/target) is withheld by the stated restriction. This is a
+  // setup (entry/stop/target) is withheld until the feed confirms. This is a
   // distinct, more-informative state than a bare "feed not confirmed" block.
   const structuralOnly = panel.verdict === "structural_only";
   const reportedAiUsable = panel.reportedAiUsable;
@@ -146,26 +138,29 @@ export function RubyChartRead({
   );
 
   const ask = async () => {
-    const requestedDraft = draft === null ? null : { ...draft };
-    await store.requestPlan(symbol, timeframe, requestedDraft, async signal => {
+    setLoading(true);
+    setErr(null);
+    try {
       const body = {
-        // Send the canonical interval too: 1M means month in the chart picker,
-        // whereas the legacy endpoint's alias parser treats raw 1M as minute.
-        ...rubyChartReadContext(symbol, timeframe),
+        symbol,
+        timeframe,
         ...(reportedAiUsable != null ? { aiUsable: reportedAiUsable } : {}),
-        ...(requestedDraft ? { draft: requestedDraft } : {}),
+        ...(draft ? { draft } : {}),
       };
       const r = await fetch(`${BASE}/api/me/assistant/read-chart`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        signal,
         body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = (await r.json()) as { chartRead: ChartRead };
-      return j.chartRead;
-    }, assessmentEvidence);
+      setRead(j.chartRead);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "network error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -182,7 +177,7 @@ export function RubyChartRead({
           size="sm"
           variant="outline"
           className="ml-auto h-8 gap-1.5 px-3 text-xs"
-          disabled={loading || draftKey === null}
+          disabled={loading}
           onClick={() => void ask()}
           data-testid="ruby-chart-read-ask"
         >
@@ -202,16 +197,16 @@ export function RubyChartRead({
         >
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Chart read restricted — review the limitation for {symbol} {timeframe}.
+            Feed not confirmed — {name} may have limited visibility on {symbol} {timeframe}.
             {panel.reason ? ` ${panel.reason}` : ""}
           </span>
         </div>
       )}
 
-      {/* Structural-read notice (Task #602) — contextual structure is available,
-          but the exact entry/stop/target are withheld by the stated restriction.
+      {/* Structural-read notice (Task #602) — a directional read IS available,
+          but the exact entry/stop/target are withheld until the feed confirms.
           Distinct from the hard "feed not confirmed" block above so the user
-          can distinguish reported structural context from an actionable setup. */}
+          knows the structure below is real and only the live setup is pending. */}
       {structuralOnly && (
         <div
           className="mt-3 flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary"
@@ -219,16 +214,10 @@ export function RubyChartRead({
         >
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Structural context available — exact entry, stop, and target are withheld.
+            Structural read available — exact entry, stop, and target are withheld until {symbol} {timeframe} confirms.
             {panel.reason ? ` ${panel.reason}` : ""}
           </span>
         </div>
-      )}
-
-      {structuralOnly && panel.feedLimitation && (
-        <p className="mt-2 text-xs text-warning" data-testid="ruby-chart-read-feed-limitation">
-          Data limitation: {panel.feedLimitation}
-        </p>
       )}
 
       {err && <div className="mt-2 text-sm text-danger" data-testid="ruby-chart-read-err">{name} couldn't read this chart ({err}).</div>}
@@ -237,11 +226,12 @@ export function RubyChartRead({
         <p className="mt-3 text-sm text-txt-secondary">Tap “Read this chart” and {name} will break down bias, conditions, levels, and risk for {symbol} {timeframe}.</p>
       )}
 
-      {/* Gated read — the server restricted the assessment, so there is no
+      {/* Gated read — the server could not verify the feed, so there is no
           directional structure to show. Surface the honest reason instead. */}
       {read && read.gated && (
         <div className="mt-3 space-y-2" data-testid="ruby-chart-read-gated">
-          <p className="text-sm text-txt-secondary">{panel.reason ?? "The chart read is restricted; directional details are withheld."}</p>
+          {read.headline && <p className="text-sm text-txt-secondary">{read.headline}</p>}
+          {read.blockedReason && <p className="text-xs text-txt-muted">{read.blockedReason}</p>}
           {read.disclaimer && <p className="text-[10px] italic text-txt-muted">{read.disclaimer}</p>}
         </div>
       )}
@@ -249,11 +239,11 @@ export function RubyChartRead({
       {read && !read.gated && (
         <div className="mt-3 space-y-3" data-testid="ruby-chart-read-body">
           {/* Bias / Confidence / HTF row */}
-          {!feedNotConfirmed && <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
+          <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
             <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="ruby-chart-read-bias" />
             <Metric label="Confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
             <Metric label="HTF Bias" value={read.htfBias ?? "—"} className={biasTone(read.htfBias ?? "")} />
-          </div>}
+          </div>
 
           {/* Ruby's full reasoning — ALWAYS visible (no accordion). Honesty flags
               from the ONE panel verdict flow into the builder, so a structural-only
@@ -267,7 +257,6 @@ export function RubyChartRead({
               structuralOnly,
               feedNotConfirmed,
               reason: panel.reason,
-              feedLimitation: panel.feedLimitation,
             }, name)}
             testid="ruby-chart-read-reasoning"
           />

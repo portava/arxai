@@ -104,7 +104,7 @@ export function runApprove(
       approvedStopLoss: sig.stopLoss as number,
       approvedTakeProfit: sig.takeProfit,
     },
-    reasons: [`Approved at ${sized.recommendedLot} lots, risk budget ${sized.riskAmount}`, ...sized.notes],
+    reasons: [`Approved at ${sized.recommendedLot} lots, risking ${sized.riskAmount}`, ...sized.notes],
     events,
     durationMs: now().getTime() - start,
   };

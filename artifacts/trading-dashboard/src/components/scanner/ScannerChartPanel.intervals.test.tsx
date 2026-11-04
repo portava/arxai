@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   timeframe: "8h", candles: null as any, intelligence: null as any, annotations: [] as any[],
   intelligenceHook: vi.fn(), layersHook: vi.fn(), applyStructure: vi.fn(),
-  surface: null as any,
+  surface: { chart: {}, series: { createPriceLine: vi.fn(), removePriceLine: vi.fn() }, container: null as HTMLElement | null },
 }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", vi.fn()], bareSymbol: (value: string) => value }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => [h.timeframe, vi.fn()] }));
@@ -49,13 +49,6 @@ vi.mock("@/components/charts/ARXNativeChart", () => ({
 }));
 
 import { ScannerChartPanel } from "./ScannerChartPanel";
-function makeSurface() {
-  return { container: document.createElement("div"),
-    createPriceLine: vi.fn((options: unknown) => ({ options, dispose: vi.fn() })),
-    createMarkers: vi.fn(() => ({ dispose: vi.fn() })),
-    priceToCoordinate: vi.fn(() => 100), coordinateToPrice: vi.fn(() => 1.25), dispose: vi.fn(),
-  };
-}
 function fixture(timeframe: string, identity = "source-A") {
   const source = "mt5_broker", symbol = "EURUSD";
   const feedStatus = { source, quality: "clean", isLive: true, stale: false, aiUsable: true };
@@ -68,26 +61,25 @@ function fixture(timeframe: string, identity = "source-A") {
 }
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); h.timeframe = "8h"; h.annotations = [];
-  h.surface = makeSurface();
+  h.surface = { chart: {}, series: { createPriceLine: vi.fn(options => ({ ...options })), removePriceLine: vi.fn() }, container: document.createElement("div") };
   fixture("H8");
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ live: [], demo: [], drafts: [] }) })));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it("requests exact H8 intelligence but delegates structural rendering exclusively to the Native chart", async () => {
+it("requests and renders exact H8 intelligence while the seven-interval smart-layer service remains disabled", async () => {
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[0]).toMatchObject({ symbol: "EURUSD", timeframe: "H8" });
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
-  expect(h.applyStructure).not.toHaveBeenCalled();
-  expect(screen.getByTestId("native-chart").getAttribute("data-external")).toBe("true");
+  expect(h.applyStructure.mock.calls.at(-1)?.[2]).toEqual([expect.objectContaining({ id: "trend" })]);
   expect(screen.getByTestId("scanner-overlay-interval-unavailable").textContent).toContain("Smart layers, saved notes and receipts");
 });
 
 it("retains the source-change evidence hold before H8 structure can return", async () => {
   const view = render(<ScannerChartPanel />);
-  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
   const old = h.intelligence;
   fixture("H8", "source-B"); h.intelligence = old; h.applyStructure.mockClear();
   view.rerender(<ScannerChartPanel />);
@@ -96,13 +88,13 @@ it("retains the source-change evidence hold before H8 structure can return", asy
   expect(screen.getByTestId("scanner-overlay-source-pending")).toBeTruthy();
   h.intelligence = { ...old, marketEvidence: h.candles.marketEvidence };
   view.rerender(<ScannerChartPanel />);
-  expect(h.applyStructure).not.toHaveBeenCalled();
+  await waitFor(() => expect(h.applyStructure).toHaveBeenCalled());
 });
 
 it.each([["1w", "W1"], ["1mo", "MN1"]])("withholds cached calendar intelligence on %s", async (display, api) => {
   h.timeframe = display; fixture(api);
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[0].timeframe).toBe(api);
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
   expect(h.layersHook.mock.calls.at(-1)?.[1].query.enabled).toBe(false);
@@ -113,7 +105,7 @@ it.each([["1w", "W1"], ["1mo", "MN1"]])("withholds cached calendar intelligence 
 it.each([{ symbol: "GBPUSD" }, { timeframe: "H4" }])("withholds a foreign intelligence state %j despite the requested query key", async foreign => {
   h.intelligence.state = { ...h.intelligence.state, ...foreign };
   render(<ScannerChartPanel />);
-  await waitFor(() => expect(screen.getByTestId("native-chart")).toBeTruthy());
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.applyStructure).not.toHaveBeenCalled();
 });
@@ -124,40 +116,38 @@ async function renderAnnotatedChart() {
   const view = render(<ScannerChartPanel />);
   // Settle the existing position/pending fetch before measuring unrelated renders.
   await act(async () => { await Promise.resolve(); });
-  expect(h.surface.createPriceLine).toHaveBeenCalled();
+  expect(h.surface.series.createPriceLine).toHaveBeenCalled();
   return view;
 }
 
 it("keeps existing annotation price lines through unrelated parent renders with the same annotation array", async () => {
   const view = await renderAnnotatedChart();
-  const series = h.surface;
-  const previous = series.createPriceLine.mock.results.at(-1)!.value;
-  series.createPriceLine.mockClear(); previous.dispose.mockClear();
+  const series = h.surface.series;
+  series.createPriceLine.mockClear(); series.removePriceLine.mockClear();
   for (let i = 0; i < 5; i++) view.rerender(<ScannerChartPanel />);
-  expect(previous.dispose).not.toHaveBeenCalled();
+  expect(series.removePriceLine).not.toHaveBeenCalled();
   expect(series.createPriceLine).not.toHaveBeenCalled();
 });
 
 it("redraws an actual annotation edit using the new price", async () => {
   const view = await renderAnnotatedChart();
-  const series = h.surface, previous = series.createPriceLine.mock.results.at(-1)!.value;
-  series.createPriceLine.mockClear(); previous.dispose.mockClear();
+  const series = h.surface.series, previous = series.createPriceLine.mock.results.at(-1)!.value;
+  series.createPriceLine.mockClear(); series.removePriceLine.mockClear();
   h.annotations = h.annotations.map(annotation => ({ ...annotation, price: 1.75 }));
   view.rerender(<ScannerChartPanel />);
-  expect(previous.dispose).toHaveBeenCalledTimes(1);
+  expect(series.removePriceLine).toHaveBeenCalledWith(previous);
   expect(series.createPriceLine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ price: 1.75, title: "S Owned note" }));
 });
 
 it("revokes old-series annotations on a source context swap and installs them on the replacement surface", async () => {
   const view = await renderAnnotatedChart();
-  const previousSeries = h.surface, previous = previousSeries.createPriceLine.mock.results.at(-1)!.value;
-  previous.dispose.mockClear();
-  h.surface = makeSurface();
+  const previousSeries = h.surface.series, previous = previousSeries.createPriceLine.mock.results.at(-1)!.value;
+  previousSeries.removePriceLine.mockClear();
+  h.surface = { chart: {}, series: { createPriceLine: vi.fn(options => ({ ...options })), removePriceLine: vi.fn() }, container: document.createElement("div") };
   fixture("M15", "source-B");
   view.rerender(<ScannerChartPanel />);
-  expect(previous.dispose).toHaveBeenCalledTimes(1);
-  expect(previousSeries.dispose).toHaveBeenCalledTimes(1);
-  expect(h.surface.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 1.25, title: "S Owned note" }));
+  expect(previousSeries.removePriceLine).toHaveBeenCalledWith(previous);
+  expect(h.surface.series.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 1.25, title: "S Owned note" }));
 });
 
 it("offers comparison charts on Scanner without replacing its primary source or overlay surface",()=>{

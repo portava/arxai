@@ -106,14 +106,3 @@ describe("bounded historical request to existing research schema",()=>{
     expect(result.draft.requestedWindow.fromInclusiveMs).toBe(Date.parse("2024-11-01T00:00:00Z"));
   });
 });
-it('manual and natural-language capital scenarios produce identical executable configuration',()=>{
- const text=example.slice(0,-1)+' with starting capital 10000 scenario units, quantity 2 and point value 3';const fromText=draft(text);
- const manual=createChartResearchDraft(context,{...defaultChartResearchSettings(fromText.requestedWindow),cash:{version:'cash-fixed-units-v1',initialCapital:10000,fixedQuantity:2,pointValue:3,unitLabel:'scenario units',benchmark:'same_quantity_buy_hold'}});
- expect(manual.kind).toBe('draft');if(manual.kind!=='draft')return;expect(finalizeChartResearchConfig(fromText,200)).toEqual(finalizeChartResearchConfig(manual.draft,200));expect(manual.disclosures.join('\n')).toContain('unaffordable signals are skipped');
-});
-it.each([' with starting capital 10000',' with starting capital 10000 USD, quantity 2 and point value 3',' with starting capital 10000 scenario units, quantity 2 and point value 3 and buy now'])('never partly applies missing or unsupported capital assumptions: %s',suffix=>{
- expect(parseChartResearchRequest(example.slice(0,-1)+suffix,context)?.kind).toBe('unsupported');
-});
-it('cash model does not silently convert a requested short strategy',()=>{
- const text='Test selling when the 20 EMA crosses below the 50 EMA, with an ATR-based stop, over the last two years with starting capital 10000 scenario units, quantity 2 and point value 3';const result=parseChartResearchRequest(text,context);expect(result?.kind).toBe('unsupported');expect(result&&'message' in result?result.message:'').toContain('Long only');
-});

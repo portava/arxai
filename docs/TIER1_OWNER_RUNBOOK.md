@@ -32,11 +32,8 @@ Contents:
 ### 1.1 Where they are and how many
 
 - Directory: `lib/db/migrations/`. Plain SQL files named
-  `YYYY-MM-DD_<name>.sql`. There are eleven: seven added in PR #29 (`9efb744`),
-  one added by PR #64, one added by PR #68, and two added on 2026-10-26
-  (research experiments, result-settlement outbox). The readiness check's
-  `migrationChecks()` covers the first nine; files 10 and 11 are listed below
-  but have no schema-indicator check yet.
+  `YYYY-MM-DD_<name>.sql`. There are nine: seven added in PR #29 (`9efb744`),
+  one added by PR #64, and one added by PR #68.
 - The handoff's "seven production migrations" are referenced in
   `docs/TIER1_POSITION_LEDGER.md` (remaining work 4),
   `docs/TIER1_POSITION_GUARDIAN_RULES.md` (what remains 4),
@@ -73,8 +70,6 @@ use it unless the owner has a reason to differ.
 | 7 | `2026-10-24_one_limit_store.sql` | additive column, **data upsert** into `user_risk_settings` | no |
 | 8 | `2026-10-25_paper_order_request_key.sql` | additive nullable column, new unique index | no |
 | 9 | `2026-10-25_trade_action_request_key.sql` | nullable retry key/hash, new unique index | no |
-| 10 | `2026-10-26_research_experiments_v1.sql` | new research-experiment tables (advisory only) | see file header |
-| 11 | `2026-10-26_result_settlement_outbox.sql` | new result-settlement outbox table (worker default OFF) | see file header |
 
 Every file is written to be idempotent (`IF NOT EXISTS`, `duplicate_object`
 handlers, `LEAST`/`COALESCE` upserts), per its own header.

@@ -47,13 +47,6 @@ describe("ready reader cache after fresh validation", () => {
     const next = { ...value, [key]: key === "sourceIdentity" ? "b".repeat(64) : key === "dataState" ? "stale" : "different" } as SmartChartAnalysisInput;
     expect(read(next)).not.toBe(first); expect(read(next)).toEqual(oracle(next));
   });
-  it("invalidates a failed read without changing stored geometry and withdraws the error on recovery", () => {
-    const read=createSmartChartReadCache(),value=input(),first=read(value);
-    const failure=read({...value,feedReadFailed:true});expect(failure).not.toBe(first);
-    expect(failure.result.findings[0]!.caveat).toContain("The latest candle read failed");
-    expect(failure.result.findings.map(x=>x.anchors)).toEqual(first.result.findings.map(x=>x.anchors));
-    const recovered=read(value);expect(recovered.result.findings[0]!.caveat).not.toContain("The latest candle read failed");
-  });
   it("withdraws corrupt source evidence, wrong intervals and changed finality", () => {
     const read = createSmartChartReadCache(), value = input(); read(value);
     for (const next of [{ ...value, sourceIdentity: null }, { ...value, timeframe: "M1" },

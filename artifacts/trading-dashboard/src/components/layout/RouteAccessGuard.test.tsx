@@ -3,6 +3,7 @@ import {
 } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { RouteAccessGuard } from "./RouteAccessGuard";
+import { ARXShellFrame } from "./ARXShellFrame";
 
 /**
  * Trader containment coverage (verification for "Verify regular traders also
@@ -100,6 +101,34 @@ describe("RouteAccessGuard — normal trader containment", () => {
     renderAsTrader("/market-scanner");
     expect(screen.getByTestId(PAGE_TESTID)).toBeTruthy();
     expect(h.setLocation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the route guard in force inside the universal page shell", () => {
+    h.location = "/admin/permissions";
+    h.setLocation = vi.fn();
+    h.viewMode = {
+      realIsAdmin: false,
+      effectiveIsAdmin: false,
+      canToggle: false,
+      setViewMode: vi.fn(),
+    };
+    h.currentUser = { isLoading: false };
+    h.productRole = { isInvestor: false };
+    h.traderTier = { isLoading: false, isApprovedTrader: true };
+    render(<ARXShellFrame
+      variant="page"
+      title="Permissions"
+      dockItems={[]}
+      allToolsOpen={false}
+      onAllToolsOpenChange={vi.fn()}
+      mobileToolsOpen={false}
+      onMobileToolsOpenChange={vi.fn()}
+    >
+      <RouteAccessGuard><div data-testid={PAGE_TESTID}>PROTECTED ADMIN CONTENT</div></RouteAccessGuard>
+    </ARXShellFrame>);
+
+    expect(screen.getByTestId("viewmode-nonadmin-blocked")).toBeTruthy();
+    expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
   });
 });
 

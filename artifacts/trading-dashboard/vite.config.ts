@@ -1,6 +1,7 @@
-import { defineConfig } from "vite";
+import { defineConfig, type PreviewServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { existsSync } from "node:fs";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
@@ -26,11 +27,46 @@ if (!basePath) {
   );
 }
 
+const missingBuiltAsset404 = {
+  name: "missing-built-asset-404",
+  configurePreviewServer(server: PreviewServer) {
+    const publicDir = path.resolve(import.meta.dirname, "dist/public");
+    const assetDir = path.resolve(publicDir, "assets");
+
+    server.middlewares.use((req, res, next) => {
+      if ((req.method !== "GET" && req.method !== "HEAD") || !req.url) {
+        return next();
+      }
+
+      let pathname: string;
+      try {
+        pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+      } catch {
+        return next();
+      }
+
+      if (!pathname.startsWith("/assets/") || !/\.(js|css)$/.test(pathname)) {
+        return next();
+      }
+
+      const assetPath = path.resolve(publicDir, `.${pathname}`);
+      if (!assetPath.startsWith(`${assetDir}${path.sep}`) || existsSync(assetPath)) {
+        return next();
+      }
+
+      res.statusCode = 404;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end(req.method === "HEAD" ? "" : "Not Found");
+    });
+  },
+};
+
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
+    missingBuiltAsset404,
     runtimeErrorOverlay(),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined

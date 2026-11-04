@@ -130,7 +130,7 @@ export default function BrandKit() {
             <li>Use <strong>ARX</strong> as the short name.</li>
             <li>Keep <strong>eXecute</strong> with capital X when explaining the acronym.</li>
             <li>Use blue only for highlights, active states, the logo X, links, scanner accents, and command-center glow.</li>
-            <li>Do not imply certain or promised profits.</li>
+            <li>Do not imply guaranteed profits.</li>
             <li>Do not say broker execution is live unless MT5 is connected.</li>
             <li>Do not place the logo on busy or low-contrast backgrounds — use Primary Dark or Deep Navy.</li>
           </ul>

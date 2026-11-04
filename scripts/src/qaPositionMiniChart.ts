@@ -75,7 +75,7 @@ for (const f of filesToScan) {
   probe(`[5] no secret strings in ${f.split("/").pop()}`, hits.length === 0, hits.join(","));
 }
 
-// ── 6. Mini chart uses shared read-only overlays, with no invented entry time.
+// ── 6. Mini chart wires price lines + entry marker.
 const MC = "artifacts/trading-dashboard/src/components/positions/PositionMiniChart.tsx";
 const mcSrc = exists(MC) ? read(MC) : "";
 probe("[6] mini chart exists", exists(MC));
@@ -83,10 +83,7 @@ probe("[6a] mini chart draws entry price line", /createPriceLine/.test(mcSrc) &&
 probe("[6b] mini chart draws stop loss price line", /createPriceLine/.test(mcSrc) && /["']SL["']/.test(mcSrc));
 probe("[6c] mini chart draws take profit price line", /createPriceLine/.test(mcSrc) && /["']TP["']/.test(mcSrc));
 probe("[6d] mini chart draws current price line", /createPriceLine/.test(mcSrc) && /["']Current["']/.test(mcSrc));
-probe("[6e] mini chart does not invent an entry-time marker", !/\b(?:createMarkers|createSeriesMarkers|setMarkers)\s*\(/.test(mcSrc));
-probe("[6g] mini chart uses the shared renderer and overlay surface", /createChartEngineAdapter\(/.test(mcSrc) && /getScannerOverlaySurface/.test(mcSrc) && !/from\s+["']lightweight-charts["']/.test(mcSrc));
-probe("[6h] mini chart is noninteractive and leaves source clock unqualified", /ref=\{containerRef\}\s+inert/.test(mcSrc) && /setSourceClockQualified\?\.\(false\)/.test(mcSrc));
-probe("[6i] mini chart keeps current-price permission under the shared display gate", /isLivePriceDisplay\(displayStatus\)/.test(mcSrc) && /livePriceAffordance:\s*isLive/.test(mcSrc) && /if\s*\(isLive\)\s*addLine\(currentPrice/.test(mcSrc));
+probe("[6e] mini chart places a BUY/SELL marker", /setMarkers/.test(mcSrc) && /arrowUp/.test(mcSrc) && /arrowDown/.test(mcSrc));
 probe("[6f] mini chart falls back cleanly when no candles", /position-mini-chart-empty/.test(mcSrc));
 
 // ── 7. PositionSideCard + PositionPickerPanel testids.

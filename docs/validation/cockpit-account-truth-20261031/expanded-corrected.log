@@ -1,9 +1,0 @@
-
- RUN  v4.1.7 /Users/areyouok/arx-cockpit-funds-20261031/artifacts/trading-dashboard
-
-
- Test Files  2 passed (2)
-      Tests  52 passed (52)
-   Start at  14:24:20
-   Duration  631ms (transform 173ms, setup 0ms, import 386ms, tests 106ms, environment 533ms)
-

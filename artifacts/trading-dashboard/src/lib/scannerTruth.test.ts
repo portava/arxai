@@ -70,7 +70,6 @@ function inputs(over: Partial<ScannerTruthInputs> = {}): ScannerTruthInputs {
     lastTime: new Date(NOW - 10_000).toISOString(),
     lastClose: 1.15059,
     quote: null,
-    sourceClockQualified: true, // Explicit qualified clock in this pure-contract fixture.
     headerOk: null,
     mode: mode(),
     nowMs: NOW,

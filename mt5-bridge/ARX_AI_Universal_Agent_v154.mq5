@@ -60,14 +60,12 @@
 
 #include <Trade\Trade.mqh>
 #include "ArxManagementTarget.mqh"
-#include "ArxTradeResult.mqh"
 
 //─── Connection inputs ─────────────────────────────────────────────
 input string  BridgeBaseUrl              = "";       // e.g. https://your.replit.app
 input string  BridgeToken                = "";       // X-MT5-Bridge-Token (shared secret)
 input int     PollIntervalSeconds        = 5;
 input int     HeartbeatIntervalSeconds   = 15;
-input int     NativeAccountIntervalSeconds = 1;    // read-only account report attempt cadence (minimum 1s)
 input int     SnapshotIntervalSeconds    = 10;       // account + positions + pending push
 
 //─── Safety ARM inputs (locked off by default) ─────────────────────
@@ -116,8 +114,7 @@ input int     LiveTickThrottleMs           = 1000;   // min ms between TICK push
 
 //─── Globals ───────────────────────────────────────────────────────
 CTrade        trade;
-ulong         heartbeatLastAttemptMs = 0;
-bool          heartbeatAttempted = false;
+datetime      lastHeartbeatAt   = 0;
 datetime      lastPollAt        = 0;
 datetime      lastSnapshotAt    = 0;
 datetime      lastCandlePushAt  = 0;
@@ -144,14 +141,13 @@ string        BRIDGE_VERSION    = "2";   // command-protocol version
 #define V2_MAX_LIVE_SYMBOLS 60
 #define V2_MAX_LIVE_TFS     21
 #define V2_STREAM_CAPACITY  (V2_MAX_LIVE_SYMBOLS * (V2_MAX_LIVE_TFS + 1)) // 1320 candle+tick keys
-#define V2_SEQUENCE_CAPACITY (V2_STREAM_CAPACITY + 1) // reserved native account stream; market caps unchanged
 string        v2InstanceId      = "";
 long          v2IdemCounter     = 0;
 datetime      lastLiveStreamAt  = 0;
 bool          v2SymbolClampWarned = false; // one-shot log when config exceeds V2_MAX_LIVE_SYMBOLS
 
-string        v2SeqKeys[V2_SEQUENCE_CAPACITY];   // "<messageType>#<streamKey>"
-long          v2SeqNext[V2_SEQUENCE_CAPACITY];   // next sequence to emit
+string        v2SeqKeys[V2_STREAM_CAPACITY];   // "<messageType>#<streamKey>"
+long          v2SeqNext[V2_STREAM_CAPACITY];   // next sequence to emit
 int           v2SeqCount        = 0;
 
 string        v2BarKeys[V2_STREAM_CAPACITY];   // "<symbol>|<tf>"
@@ -161,24 +157,6 @@ int           v2BarCount        = 0;
 string        v2TickKeys[V2_STREAM_CAPACITY];  // "<symbol>"
 ulong         v2TickLastAt[V2_STREAM_CAPACITY]; // last TICK push (GetTickCount64 ms)
 int           v2TickCount       = 0;
-
-// Read-only native account transport: one bounded pending report, no queue.
-string nativeAccountInstance = "";
-string nativeAccountEnvelope = "";
-string nativeAccountIdempotency = "";
-string nativeAccountPendingBinding = "";
-string nativeAccountPendingFingerprint = "";
-string nativeAccountAcknowledgedFingerprint = "";
-ulong nativeAccountLastAcknowledgedMs = 0;
-bool nativeAccountHasAcknowledgement = false;
-ulong nativeAccountLastAttemptMs = 0;
-ulong nativeAccountQueuedAtMs = 0;
-bool nativeAccountAttempted = false;
-bool nativeAccountDirty = true;
-int nativeAccountAttempts = 0;
-long nativeAccountDirtyGeneration = 0;
-long nativeAccountCapturedGeneration = 0;
-long nativeAccountReportCounter = 0;
 
 //─── Idempotency ring buffer (recent commandIds) ───────────────────
 #define IDEMPOTENCY_CAPACITY 256
@@ -229,22 +207,9 @@ void OnTimer()
    datetime now = TimeCurrent();
    if(StringLen(BridgeBaseUrl) == 0 || StringLen(BridgeToken) == 0) return;
 
-   // Account telemetry must continue without quotes. TimeCurrent is the last
-   // quote's broker clock, not an elapsed timer. Preserve the configured rate
-   // and bound failed attempts; this timestamp is not evidence of delivery.
-   ulong accountNowMs = GetTickCount64();
-   if(!heartbeatAttempted || accountNowMs - heartbeatLastAttemptMs >= (ulong)MathMax(1, HeartbeatIntervalSeconds) * 1000)
-   {
-      heartbeatLastAttemptMs = accountNowMs;
-      heartbeatAttempted = true;
-      SendHeartbeat();
-   }
+   if(now - lastHeartbeatAt >= HeartbeatIntervalSeconds) { SendHeartbeat(); lastHeartbeatAt = now; }
    if(now - lastSnapshotAt  >= SnapshotIntervalSeconds)  { PushSnapshots();  lastSnapshotAt  = now; }
    if(now - lastPollAt      >= PollIntervalSeconds)      { PollAndExecute(); lastPollAt      = now; }
-   // Report account changes before bulk chart uploads can block this timer.
-   // Keep command polling first; reuse the bounded pump without extra sends.
-   // Earlier synchronous work and the next timer may still delay delivery.
-   PumpNativeAccountReport();
    if(StreamCandleHistory && now - lastCandlePushAt >= CandlePushIntervalSeconds)
       { PushCandleHistory(); lastCandlePushAt = now; }
    if(StreamLiveBrokerData && now - lastLiveStreamAt >= LiveStreamIntervalSeconds)
@@ -510,20 +475,16 @@ void HandleCommand(const string slice)
 
    // ── Idempotency: never execute the same command twice ──
    if(WasCmdSeen(cmdId)) {
-      if(ReplayTradeEvidence(cmdId)) return;
-      PostResultStruct(cmdId,"LIVE_UNKNOWN","DUPLICATE_EVIDENCE_UNAVAILABLE",0,
-         "Command already attempted; execution evidence is unavailable.","RAM history is not durable settlement evidence.",
-         action,"","",0,0,0,0,0,0,0,0,0);
+      PostResultStruct(cmdId, "REJECTED", "DUPLICATE_COMMAND", 0,
+         "Command already processed.", "Duplicate commandId ignored (idempotency).",
+         action, "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0);
       return;
    }
 
    // ── Expiry: reject stale commands (retry/reconnect safety) ──
    long createdAtEpoch = JsonLong(slice, "createdAtEpoch");
    if(createdAtEpoch > 0) {
-      // createdAtEpoch is UTC; TimeCurrent() is broker time, so compare in GMT.
-      long nowEpoch = (long)TimeGMT();
-      if(nowEpoch <= 0) nowEpoch = (long)TimeCurrent();
-      long ageSec = nowEpoch - createdAtEpoch;
+      long ageSec = (long)TimeCurrent() - createdAtEpoch;
       if(ageSec > CommandExpirySeconds) {
          RememberCmd(cmdId);
          PostResultStruct(cmdId, "EXPIRED", "COMMAND_EXPIRED", 0,
@@ -861,8 +822,20 @@ void HandleOpenMarket(long cmdId, const string slice)
              ? trade.Buy(lot, p.resolvedSymbol, price, sl, tp, cmt)
              : trade.Sell(lot, p.resolvedSymbol, price, sl, tp, cmt);
 
-   PostTradeEvidence(cmdId,"ENTRY",ok,0,lot);
-
+   if(ok && trade.ResultRetcode() == TRADE_RETCODE_DONE) {
+      lastSuccessAction = "OPEN_MARKET";
+      PostResultStruct(cmdId, "FILLED", "", (long)trade.ResultOrder(),
+         "Order filled.", StringFormat("retcode=%d deal=%I64u", trade.ResultRetcode(), trade.ResultDeal()),
+         "OPEN_MARKET", symbol, p.resolvedSymbol, lot, p.minVol, p.maxVol, p.stepVol,
+         p.bid, p.ask, p.tradeMode, p.fillingMode, p.stopsLevel);
+   } else {
+      lastErrorSeen = StringFormat("OPEN_MARKET %s retcode=%d", p.resolvedSymbol, trade.ResultRetcode());
+      PostResultStruct(cmdId, "REJECTED", "BROKER_REJECTED", 0,
+         "The broker rejected this order.",
+         StringFormat("retcode=%d comment=%s lastErr=%d", trade.ResultRetcode(), trade.ResultComment(), GetLastError()),
+         "OPEN_MARKET", symbol, p.resolvedSymbol, lot, p.minVol, p.maxVol, p.stepVol,
+         p.bid, p.ask, p.tradeMode, p.fillingMode, p.stopsLevel);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -923,10 +896,17 @@ void HandleClosePosition(long cmdId, const string slice)
       PostResultStruct(cmdId,"REJECTED",managementReason,0,"Automatic position target no longer matches this terminal.","",
          "CLOSE_POSITION","","",0,0,0,0,0,0,0,0,0); return;
    }
-   double requested=PositionGetDouble(POSITION_VOLUME);
    bool ok = trade.PositionClose(ticket);
-   PostTradeEvidence(cmdId,"CLOSE",ok,ticket,requested);
-
+   if(ok && trade.ResultRetcode() == TRADE_RETCODE_DONE) {
+      lastSuccessAction = "CLOSE_POSITION";
+      PostResultStruct(cmdId, "CLOSED", "", (long)trade.ResultOrder(),
+         "Position closed.", StringFormat("retcode=%d", trade.ResultRetcode()),
+         "CLOSE_POSITION", "", "", 0,0,0,0,0,0,0,0,0);
+   } else {
+      PostResultStruct(cmdId, "REJECTED", "BROKER_REJECTED", 0,
+         "The broker rejected the close.", StringFormat("retcode=%d comment=%s", trade.ResultRetcode(), trade.ResultComment()),
+         "CLOSE_POSITION", "", "", 0,0,0,0,0,0,0,0,0);
+   }
 }
 
 void HandlePartialClose(long cmdId, const string slice)
@@ -1091,8 +1071,13 @@ void HandleModifyProtection(long cmdId, const string slice)
          "MODIFY_POSITION","","",0,0,0,0,0,0,0,0,0); return;
    }
    bool ok = trade.PositionModify(ticket, sl, tp);
-   PostTradeEvidence(cmdId,"MODIFY",ok,ticket,0);
-
+   if(ok && trade.ResultRetcode()==TRADE_RETCODE_DONE) {
+      lastSuccessAction="MODIFY_POSITION";
+      PostResultStruct(cmdId,"MODIFIED","",(long)ticket,"Stop loss / take profit updated.","",
+         "MODIFY_POSITION","","",0,0,0,0,0,0,0,0,0);
+   } else {
+      PostResultStruct(cmdId,"REJECTED","INVALID_STOPS",0,"Couldn't update SL/TP.",StringFormat("retcode=%d %s",trade.ResultRetcode(),trade.ResultComment()),"MODIFY_POSITION","","",0,0,0,0,0,0,0,0,0);
+   }
 }
 
 void HandleModifyPending(long cmdId, const string slice)
@@ -1405,33 +1390,6 @@ void PostPreflightReject(long cmdId, const string action, const string reqSym,
 //|  RESULT POSTERS                                                   |
 //+------------------------------------------------------------------+
 // Full structured result with all diagnostic fields.
-// Complete synchronous reports can be replayed only while retained in RAM.
-long g_tradeEvidenceIds[64];
-string g_tradeEvidenceBodies[64];
-int g_tradeEvidenceCount=0,g_tradeEvidenceNext=0;
-bool ReplayTradeEvidence(const long commandId)
-{
-   for(int i=0;i<g_tradeEvidenceCount;i++) if(g_tradeEvidenceIds[i]==commandId) {
-      PostJson("/api/mt5/command-result",g_tradeEvidenceBodies[i]); return true;
-   }
-   return false;
-}
-void PostTradeEvidence(const long commandId,const string kind,const bool ok,
-                       const ulong positionTicket,const double requested)
-{
-   int code=(int)trade.ResultRetcode();
-   ulong deal=trade.ResultDeal(),order=trade.ResultOrder();
-   double actualVolume=trade.ResultVolume(),price=trade.ResultPrice();
-   string outcome=ArxTradeResultOutcome(kind,ok,code,deal,order,requested,actualVolume,price);
-   ulong ticket=kind=="ENTRY"?order:positionTicket;
-   string body=StringFormat("{\"commandId\":%I64d,\"status\":\"%s\",\"mt5Ticket\":\"%I64u\",\"mt5PositionTicket\":\"%I64u\",%s,\"mt5Comment\":%s,\"eaVersion\":\"%s\"}",
-      commandId,outcome,ticket,positionTicket,ArxTradeResultFields(kind,ok,code,deal,order,requested,actualVolume,price),JsonEscape(trade.ResultComment()),EA_VERSION);
-   int slot=g_tradeEvidenceNext;
-   g_tradeEvidenceIds[slot]=commandId;g_tradeEvidenceBodies[slot]=body;
-   g_tradeEvidenceNext=(slot+1)%64;if(g_tradeEvidenceCount<64)g_tradeEvidenceCount++;
-   PostJson("/api/mt5/command-result",body);
-}
-
 void PostResultStruct(long cmdId, const string status, const string reasonCode, long mt5Ticket,
                       const string userMessage, const string adminMessage,
                       const string stage, const string requestedSymbol, const string resolvedSymbol,
@@ -1858,7 +1816,7 @@ long V2NextSequence(const string messageType, const string streamKey)
    for(int i = 0; i < v2SeqCount; i++) {
       if(v2SeqKeys[i] == key) { long v = v2SeqNext[i]; v2SeqNext[i] = v + 1; return v; }
    }
-   if(v2SeqCount < V2_SEQUENCE_CAPACITY) {
+   if(v2SeqCount < V2_STREAM_CAPACITY) {
       v2SeqKeys[v2SeqCount] = key; v2SeqNext[v2SeqCount] = 1; v2SeqCount++; return 0;
    }
    // Registry full (cannot happen with the clamp below, kept as a hard guard):
@@ -2029,359 +1987,3 @@ void PushLiveBrokerStream()
    }
 }
 //+------------------------------------------------------------------+
-
-//+------------------------------------------------------------------+
-// Native account reports are observations, not execution instructions or an
-// atomic broker snapshot. UTC is declared by the terminal, not verified here.
-string NativeAccountSha256(const string text)
-{
-   uchar bytes[];
-   ResetLastError();
-   int count = StringToCharArray(text, bytes, 0, WHOLE_ARRAY, CP_UTF8);
-   if(count <= 0 || GetLastError() != 0) return "";
-   if(bytes[count - 1] != 0) return "";
-   if(ArrayResize(bytes, count - 1) != count - 1) return ""; // UTF-8 bytes, never the NUL.
-   uchar key[]; ArrayResize(key, 0);
-   uchar digest[];
-   ResetLastError();
-   if(CryptEncode(CRYPT_HASH_SHA256, bytes, key, digest) != 32 || GetLastError() != 0 || ArraySize(digest) != 32) return "";
-   string hex = "";
-   for(int i = 0; i < 32; i++) hex += StringFormat("%02x", digest[i]);
-   return hex;
-}
-
-bool NativeAccountIdentity(string &binding)
-{
-   ResetLastError();
-   long login = AccountInfoInteger(ACCOUNT_LOGIN);
-   if(GetLastError() != 0 || login <= 0) return false;
-   ResetLastError();
-   string server = AccountInfoString(ACCOUNT_SERVER);
-   if(GetLastError() != 0 || StringLen(server) == 0) return false;
-   binding = NativeAccountSha256("ARX_ACCOUNT_V1\n" + (string)login + "\n" + server);
-   return StringLen(binding) == 64;
-}
-
-bool NativeAccountMoney(const ENUM_ACCOUNT_INFO_DOUBLE property, const int digits, string &value)
-{
-   ResetLastError();
-   double amount = AccountInfoDouble(property);
-   if(GetLastError() != 0 || !MathIsValidNumber(amount)) return false;
-   if(property == ACCOUNT_MARGIN && amount < 0) return false;
-   value = DoubleToString(amount, digits);
-   if(StringLen(value) == 0 || StringLen(value) > 48) return false;
-   bool nonzero = false;
-   int dot = -1;
-   for(int i = 0; i < StringLen(value); i++) {
-      ushort c = StringGetCharacter(value, i);
-      if(c == '-' && i == 0) continue;
-      if(c == '.' && dot < 0) { dot = i; continue; }
-      if(c < '0' || c > '9') return false;
-      if(c != '0') nonzero = true;
-   }
-   if(digits == 0 ? dot >= 0 : (dot < 1 || StringLen(value) - dot - 1 != digits)) return false;
-   if(!nonzero && StringGetCharacter(value, 0) == '-') value = StringSubstr(value, 1);
-   return true;
-}
-
-bool CaptureNativeAccountReport(string &payload, string &binding, string &fingerprint)
-{
-   payload = ""; binding = ""; fingerprint = "";
-   ulong started = GetTickCount64();
-   ResetLastError();
-   bool connected = (bool)TerminalInfoInteger(TERMINAL_CONNECTED);
-   if(GetLastError() != 0 || !connected) return false;
-   if(!NativeAccountIdentity(binding)) return false;
-   long observedSeconds = (long)TimeGMT(); // NEVER broker-clock fallback.
-   if(observedSeconds <= 0 || observedSeconds > 9007199254740) return false;
-   ResetLastError();
-   long digits = AccountInfoInteger(ACCOUNT_CURRENCY_DIGITS);
-   if(GetLastError() != 0 || digits < 0 || digits > 16) return false;
-   ResetLastError();
-   string currency = AccountInfoString(ACCOUNT_CURRENCY);
-   if(GetLastError() != 0 || StringLen(currency) < 1 || StringLen(currency) > 8) return false;
-   bool currencyVisible = false;
-   for(int c = 0; c < StringLen(currency); c++) {
-      ushort ch = StringGetCharacter(currency, c);
-      if(ch < 32 || ch == 127) return false;
-      // Match a nonblank currency without changing the broker's exact text.
-      bool whitespace = ch == 32 || ch == 160 || ch == 5760 || (ch >= 8192 && ch <= 8202)
-         || ch == 8232 || ch == 8233 || ch == 8239 || ch == 8287 || ch == 12288 || ch == 65279;
-      if(!whitespace) currencyVisible = true;
-   }
-   if(!currencyVisible) return false;
-   string balance, equity, profit, credit, margin, freeMargin;
-   if(!NativeAccountMoney(ACCOUNT_BALANCE, (int)digits, balance)
-      || !NativeAccountMoney(ACCOUNT_EQUITY, (int)digits, equity)
-      || !NativeAccountMoney(ACCOUNT_PROFIT, (int)digits, profit)
-      || !NativeAccountMoney(ACCOUNT_CREDIT, (int)digits, credit)
-      || !NativeAccountMoney(ACCOUNT_MARGIN, (int)digits, margin)
-      || !NativeAccountMoney(ACCOUNT_MARGIN_FREE, (int)digits, freeMargin)) return false;
-   // Reject a simple unit/precision change during capture; this still is not
-   // an atomic account read and cannot prove an ABA change did not happen.
-   ResetLastError();
-   long digitsAfter = AccountInfoInteger(ACCOUNT_CURRENCY_DIGITS);
-   if(GetLastError() != 0 || digitsAfter != digits) return false;
-   ResetLastError();
-   string currencyAfter = AccountInfoString(ACCOUNT_CURRENCY);
-   if(GetLastError() != 0 || currencyAfter != currency) return false;
-   string after;
-   if(!NativeAccountIdentity(after) || after != binding) return false;
-   ResetLastError();
-   connected = (bool)TerminalInfoInteger(TERMINAL_CONNECTED);
-   if(GetLastError() != 0 || !connected) return false;
-   ulong duration = GetTickCount64() - started;
-   if(duration > 5000) return false;
-   if(nativeAccountInstance == "") {
-      nativeAccountInstance = NativeAccountSha256("ARX_NATIVE_INSTANCE\n" + (string)TimeGMT() + "\n" + (string)GetTickCount64() + "\n" + (string)GetMicrosecondCount() + "\n" + (string)ChartID());
-      if(StringLen(nativeAccountInstance) != 64) return false;
-   }
-   fingerprint = NativeAccountSha256(binding + "\n" + currency + "\n" + (string)digits + "\n" + balance + "\n" + equity + "\n" + profit + "\n" + credit + "\n" + margin + "\n" + freeMargin);
-   if(StringLen(fingerprint) != 64) return false;
-   payload = "{\"reportVersion\":1,\"source\":\"NATIVE_ACCOUNT_INFO\",\"accountBinding\":" + JsonEscape(binding)
-      + ",\"producerInstanceId\":" + JsonEscape(nativeAccountInstance)
-      + ",\"observedAtEpochMs\":" + (string)(observedSeconds * 1000)
-      + ",\"clockBasis\":\"TERMINAL_UTC_UNVERIFIED\",\"captureDurationMs\":" + (string)duration
-      + ",\"terminalConnected\":true,\"currency\":" + JsonEscape(currency)
-      + ",\"currencyDigits\":" + (string)digits
-      + ",\"balance\":" + JsonEscape(balance) + ",\"equity\":" + JsonEscape(equity)
-      + ",\"profit\":" + JsonEscape(profit) + ",\"credit\":" + JsonEscape(credit)
-      + ",\"margin\":" + JsonEscape(margin) + ",\"freeMargin\":" + JsonEscape(freeMargin) + "}";
-   return true;
-}
-
-// Mark changes from ALL account transactions, including another trader/EA.
-// The terminal callback performs no network, orders or account mutation.
-void OnTradeTransaction(const MqlTradeTransaction &trans,
-                        const MqlTradeRequest &request,
-                        const MqlTradeResult &result)
-{
-   nativeAccountDirty = true;
-   nativeAccountDirtyGeneration++;
-}
-
-void ClearNativeAccountPending()
-{
-   nativeAccountEnvelope = "";
-   nativeAccountIdempotency = "";
-   nativeAccountPendingBinding = "";
-   nativeAccountPendingFingerprint = "";
-   nativeAccountAttempts = 0;
-}
-
-bool QueueNativeAccountReport()
-{
-   string payload, binding, fingerprint;
-   if(!CaptureNativeAccountReport(payload, binding, fingerprint)) return false;
-   // Capture each second, but unchanged ACKed values need only a 15s
-   // keepalive. A transaction or unacknowledged capture is never suppressed.
-   if(!nativeAccountDirty && nativeAccountHasAcknowledgement
-      && fingerprint == nativeAccountAcknowledgedFingerprint
-      && GetTickCount64() - nativeAccountLastAcknowledgedMs < 15000) return false;
-   long sequence = V2NextSequence("ACCOUNT_SNAPSHOT", "ACCOUNT_NATIVE_V1");
-   // Native receipt gap_size is int4; refuse before a new envelope can overflow it.
-   if(sequence < 0 || sequence > 2147483647) return false;
-   nativeAccountReportCounter++;
-   nativeAccountIdempotency = "account-" + nativeAccountInstance + "-" + (string)nativeAccountReportCounter;
-   long createdSeconds = (long)TimeGMT();
-   if(createdSeconds <= 0 || createdSeconds > 9007199254740) return false;
-   nativeAccountEnvelope = "{\"protocolVersion\":2,\"messageType\":\"ACCOUNT_SNAPSHOT\",\"streamKey\":\"ACCOUNT_NATIVE_V1\",\"sequence\":" + (string)sequence
-      + ",\"idempotencyKey\":" + JsonEscape(nativeAccountIdempotency)
-      + ",\"eaCreatedAtEpochMs\":" + (string)(createdSeconds * 1000)
-      + ",\"eaVersion\":" + JsonEscape(EA_VERSION) + ",\"payload\":" + payload + "}";
-   nativeAccountPendingBinding = binding;
-   nativeAccountPendingFingerprint = fingerprint;
-   nativeAccountQueuedAtMs = GetTickCount64();
-   nativeAccountCapturedGeneration = nativeAccountDirtyGeneration;
-   nativeAccountAttempts = 0;
-   return true;
-}
-
-// Strict receipt parser/transport is defined below. A generic HTTP 200 must
-// never retire this observation; retries preserve the entire original body.
-bool SendNativeAccountPending();
-
-void PumpNativeAccountReport()
-{
-   if(StringLen(BridgeBaseUrl) == 0 || StringLen(BridgeToken) == 0) return;
-   ulong now = GetTickCount64();
-   ulong cadence = (ulong)MathMax(1, NativeAccountIntervalSeconds) * 1000;
-   if(nativeAccountAttempted && now - nativeAccountLastAttemptMs < cadence) return;
-   nativeAccountAttempted = true;
-   nativeAccountLastAttemptMs = now;
-   if(nativeAccountEnvelope != "") {
-      string currentBinding;
-      if(!NativeAccountIdentity(currentBinding) || currentBinding != nativeAccountPendingBinding) {
-         ClearNativeAccountPending(); nativeAccountDirty = true;
-      } else if(nativeAccountAttempts >= 3 || now - nativeAccountQueuedAtMs >= 5000) {
-         // Bounded coalescing: disclose the lost acknowledgement, then replace
-         // the stale pending observation. Never fabricate delivery or freshness.
-         Print("ARX native account report acknowledgement unavailable; replacing pending observation.");
-         ClearNativeAccountPending(); nativeAccountDirty = true;
-      }
-   }
-   if(nativeAccountEnvelope == "" && !QueueNativeAccountReport()) return;
-   nativeAccountAttempts++;
-   if(SendNativeAccountPending()) {
-      nativeAccountAcknowledgedFingerprint = nativeAccountPendingFingerprint;
-      nativeAccountLastAcknowledgedMs = GetTickCount64();
-      nativeAccountHasAcknowledgement = true;
-      if(nativeAccountCapturedGeneration == nativeAccountDirtyGeneration) nativeAccountDirty = false;
-      ClearNativeAccountPending();
-   }
-}
-
-void NativeJsonSpace(const string text, int &pos)
-{
-   while(pos < StringLen(text)) {
-      ushort c = StringGetCharacter(text, pos);
-      if(c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
-      pos++;
-   }
-}
-
-bool NativeJsonString(const string text, int &pos)
-{
-   if(pos >= StringLen(text) || StringGetCharacter(text, pos++) != '"') return false;
-   while(pos < StringLen(text)) {
-      ushort c = StringGetCharacter(text, pos++);
-      if(c == '"') return true;
-      if(c < 32) return false;
-      if(c != '\\') continue;
-      if(pos >= StringLen(text)) return false;
-      c = StringGetCharacter(text, pos++);
-      if(c == '"' || c == '\\' || c == '/' || c == 'b' || c == 'f' || c == 'n' || c == 'r' || c == 't') continue;
-      if(c != 'u') return false;
-      for(int i = 0; i < 4; i++) {
-         if(pos >= StringLen(text)) return false;
-         c = StringGetCharacter(text, pos++);
-         if(!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
-      }
-   }
-   return false;
-}
-
-// Bounded structural parsing for a receipt, independent of loose legacy JsonStr.
-// Duplicate or escaped object keys are refused rather than ambiguously decoded.
-bool NativeJsonValue(const string text, int &pos, const int depth)
-{
-   if(depth > 8) return false;
-   NativeJsonSpace(text, pos);
-   if(pos >= StringLen(text)) return false;
-   ushort c = StringGetCharacter(text, pos);
-   if(c == '"') return NativeJsonString(text, pos);
-   if(c == '{' || c == '[') {
-      bool object = c == '{';
-      ushort close = object ? '}' : ']';
-      pos++; NativeJsonSpace(text, pos);
-      if(pos < StringLen(text) && StringGetCharacter(text, pos) == close) { pos++; return true; }
-      string keys = "\n";
-      while(pos < StringLen(text)) {
-         if(object) {
-            int start = pos;
-            if(!NativeJsonString(text, pos)) return false;
-            string key = StringSubstr(text, start, pos - start);
-            if(StringFind(key, "\\") >= 0 || StringFind(keys, "\n" + key + "\n") >= 0) return false;
-            keys += key + "\n";
-            NativeJsonSpace(text, pos);
-            if(pos >= StringLen(text) || StringGetCharacter(text, pos++) != ':') return false;
-         }
-         if(!NativeJsonValue(text, pos, depth + 1)) return false;
-         NativeJsonSpace(text, pos);
-         if(pos >= StringLen(text)) return false;
-         c = StringGetCharacter(text, pos++);
-         if(c == close) return true;
-         if(c != ',') return false;
-         NativeJsonSpace(text, pos);
-      }
-      return false;
-   }
-   if(StringSubstr(text, pos, 4) == "true" || StringSubstr(text, pos, 4) == "null") { pos += 4; return true; }
-   if(StringSubstr(text, pos, 5) == "false") { pos += 5; return true; }
-   if(c == '-') { pos++; if(pos >= StringLen(text)) return false; c = StringGetCharacter(text, pos); }
-   if(c == '0') pos++;
-   else {
-      if(c < '1' || c > '9') return false;
-      do { pos++; c = pos < StringLen(text) ? StringGetCharacter(text, pos) : 0; } while(c >= '0' && c <= '9');
-   }
-   if(pos < StringLen(text) && StringGetCharacter(text, pos) == '.') {
-      pos++; int start = pos;
-      while(pos < StringLen(text) && StringGetCharacter(text, pos) >= '0' && StringGetCharacter(text, pos) <= '9') pos++;
-      if(pos == start) return false;
-   }
-   if(pos < StringLen(text) && (StringGetCharacter(text, pos) == 'e' || StringGetCharacter(text, pos) == 'E')) {
-      pos++;
-      if(pos < StringLen(text) && (StringGetCharacter(text, pos) == '+' || StringGetCharacter(text, pos) == '-')) pos++;
-      int start = pos;
-      while(pos < StringLen(text) && StringGetCharacter(text, pos) >= '0' && StringGetCharacter(text, pos) <= '9') pos++;
-      if(pos == start) return false;
-   }
-   return true;
-}
-
-bool NativeJsonField(const string object, const string key, string &value)
-{
-   int pos = 0; NativeJsonSpace(object, pos);
-   if(pos >= StringLen(object) || StringGetCharacter(object, pos++) != '{') return false;
-   while(pos < StringLen(object)) {
-      NativeJsonSpace(object, pos);
-      int start = pos;
-      if(!NativeJsonString(object, pos)) return false;
-      string name = StringSubstr(object, start, pos - start);
-      NativeJsonSpace(object, pos);
-      if(pos >= StringLen(object) || StringGetCharacter(object, pos++) != ':') return false;
-      NativeJsonSpace(object, pos); start = pos;
-      if(!NativeJsonValue(object, pos, 1)) return false;
-      if(name == JsonEscape(key)) { value = StringSubstr(object, start, pos - start); return true; }
-      NativeJsonSpace(object, pos);
-      if(pos >= StringLen(object) || StringGetCharacter(object, pos++) != ',') return false;
-   }
-   return false;
-}
-
-bool NativeAccountAcknowledged(const string response)
-{
-   if(StringLen(response) < 2 || StringLen(response) > 8192) return false;
-   int end = 0;
-   if(!NativeJsonValue(response, end, 0)) return false;
-   NativeJsonSpace(response, end);
-   if(end != StringLen(response)) return false;
-   string value, results;
-   if(!NativeJsonField(response, "ok", value) || value != "true") return false;
-   if(!NativeJsonField(response, "received", value) || value != "1") return false;
-   if(!NativeJsonField(response, "results", results)) return false;
-   int pos = 0; NativeJsonSpace(results, pos);
-   if(StringGetCharacter(results, pos++) != '[') return false;
-   NativeJsonSpace(results, pos); int start = pos;
-   if(!NativeJsonValue(results, pos, 1)) return false;
-   string result = StringSubstr(results, start, pos - start);
-   NativeJsonSpace(results, pos);
-   if(pos >= StringLen(results) || StringGetCharacter(results, pos++) != ']') return false;
-   NativeJsonSpace(results, pos); if(pos != StringLen(results)) return false;
-   if(!NativeJsonField(result, "idempotencyKey", value) || value != JsonEscape(nativeAccountIdempotency)) return false;
-   if(!NativeJsonField(result, "messageType", value) || value != "\"ACCOUNT_SNAPSHOT\"") return false;
-   if(!NativeJsonField(result, "streamKey", value) || value != "\"ACCOUNT_NATIVE_V1\"") return false;
-   string expectedSequence;
-   if(!NativeJsonField(nativeAccountEnvelope, "sequence", expectedSequence)) return false;
-   if(!NativeJsonField(result, "sequence", value) || value != expectedSequence) return false;
-   string accepted, outcome, count;
-   if(!NativeJsonField(result, "accepted", accepted) || !NativeJsonField(result, "outcome", outcome) || !NativeJsonField(response, "accepted", count)) return false;
-   if(accepted == "true" && outcome == "\"ACCEPTED\"" && count == "1") return true;
-   return accepted == "false" && outcome == "\"DUPLICATE\"" && count == "0"
-      && NativeJsonField(result, "exactReplay", value) && value == "true";
-}
-
-bool SendNativeAccountPending()
-{
-   char post[]; char result[]; string responseHeaders;
-   int count = StringToCharArray(nativeAccountEnvelope, post, 0, WHOLE_ARRAY, CP_UTF8);
-   if(count <= 0) return false;
-   ArrayResize(post, count - 1);
-   string headers = "X-MT5-Bridge-Token: " + BridgeToken
-      + "\r\nContent-Type: application/json\r\nAccept: application/json\r\n";
-   ResetLastError();
-   int code = WebRequest("POST", BridgeBaseUrl + "/api/bridge/v2/ingest", headers, 1000, post, result, responseHeaders);
-   if(code != 200) return false;
-   string response = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
-   return NativeAccountAcknowledged(response);
-}

@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Mt5Position } from "./mt5Position";
-import type { Mt5StateScope } from "./mt5StateScope";
 
 export interface Mt5State {
   connected: boolean;
@@ -29,14 +28,7 @@ export interface Mt5State {
   /** @nullable */
   currency?: string | null;
   liveAllowed?: boolean;
-  liveAllowedNote?: string;
   positions?: Mt5Position[];
-  positionsMeasured?: boolean;
-  positionsNote?: string;
-  /** Which account this state describes. Only operators receive the install-wide platform row; everyone else sees their own connection, their shared-master bridge status, or none. */
-  scope?: Mt5StateScope;
-  scopeNote?: string;
-  heartbeatFreshness?: string;
   /** @nullable */
   lastHeartbeatAt?: string | null;
   /** @nullable */

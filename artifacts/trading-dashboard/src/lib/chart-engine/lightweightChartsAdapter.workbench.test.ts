@@ -8,9 +8,9 @@ const m=vi.hoisted(()=>{
     setData:vi.fn((next:any[])=>data.splice(0,data.length,...next.map(point=>({...point})))),
     update:vi.fn((point:any)=>{const last=data.at(-1);if(last&&point.time<last.time)throw new Error('Historical update');if(last?.time===point.time)data[data.length-1]={...point};else data.push({...point});}),
     pop:vi.fn((count:number)=>{for(let i=data.length-1;i>=0&&count>0;i--)if(data[i].value!=null||data[i].close!=null){data.splice(i,1);count--;}}),applyOptions:vi.fn(change=>Object.assign(state,change)),createPriceLine:vi.fn(options=>{const state={...options};return{options:()=>({...state}),applyOptions:vi.fn(change=>Object.assign(state,change))};}),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),clearCrosshairPosition:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
-  return{chart,handles,scale,markers:vi.fn((_series:any,_markers:any)=>({detach:vi.fn()}))};
+  return{chart,handles,scale};
 });
-vi.mock("lightweight-charts",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",AreaSeries:"area",BaselineSeries:"baseline",HistogramSeries:"histogram",createSeriesMarkers:(series:any,markers:any)=>m.markers(series,markers),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
+vi.mock("lightweight-charts",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",AreaSeries:"area",BaselineSeries:"baseline",HistogramSeries:"histogram",createSeriesMarkers:()=>({detach:vi.fn()}),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 import { STUDY_DEFAULTS, STUDY_CATALOG, StudyCalculator } from "./chartStudies";
 import { heikinAshi, hollowPoint } from "./heikinAshi";
@@ -330,15 +330,15 @@ describe("area, baseline, Heikin Ashi and hollow display styles",()=>{
     adapter.setChartStyle("heikinAshi");const price=priceHandle();
     adapter.setFeedState({livePriceAffordance:true,source:"fixture"});
     expect(price.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
-    expect(price.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({price:varied.at(-1)!.close,title:""}));
+    expect(price.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({price:varied.at(-1)!.close,title:"Last"}));
     const line=price.createPriceLine.mock.results.at(-1)!.value;
     const tip={...varied.at(-1)!,close:varied.at(-1)!.close+0.001,high:varied.at(-1)!.high+0.001};
     adapter.updateActiveCandle(tip);
     expect(line.applyOptions).toHaveBeenLastCalledWith({price:tip.close});
     expect(heikinAshi([...varied.slice(0,-1),tip]).at(-1)!.close).not.toBe(tip.close);
-    // Every style retains only the canonical explicit Last label.
+    // Every other style keeps the series label when the feed is live.
     adapter.setChartStyle("hollow");
-    expect(priceHandle().options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
+    expect(priceHandle().applyOptions).toHaveBeenCalledWith({priceLineVisible:true,lastValueVisible:true});
   });
 
   it("colours a hollow live tip from the previous canonical close in O(1)",()=>{
@@ -367,19 +367,18 @@ it("changes only overlay autoscaling and does not reset a subsequent manual scal
 
 it.each(['candles','bars','line','area','baseline','heikinAshi','hollow'] as ChartStyle[])("keeps live/stale settings correct without redundant writes after switching to %s",style=>{
  adapter.setFeedState({livePriceAffordance:true,source:'fixture'});adapter.setChartStyle(style);
- const series=(adapter as any).series;
- expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
- const last=series.createPriceLine.mock.results.at(-1)!.value;expect(last.options()).toMatchObject({price:bars.at(-1)!.close,axisLabelVisible:true,title:""});
- expect(series.createPriceLine).toHaveBeenCalledTimes(1);
+ const surface=adapter.getScannerOverlaySurface()!,series=surface.series as any;
+ expect(series.options()).toMatchObject({priceLineVisible:style!=='heikinAshi',lastValueVisible:style!=='heikinAshi'});
+ const last=series.createPriceLine.mock.results.at(-1)!.value;expect(last.options().price).toBe(bars.at(-1)!.close);
  series.applyOptions.mockClear();last.applyOptions.mockClear();adapter.setFeedState({livePriceAffordance:true,source:'fixture'});adapter.setFeedState({livePriceAffordance:true,source:'fixture'});
  expect(series.applyOptions).not.toHaveBeenCalled();expect(last.applyOptions).not.toHaveBeenCalled();
  adapter.setFeedState({livePriceAffordance:false,source:'fixture'});expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.removePriceLine).toHaveBeenCalledWith(last);
- adapter.setFeedState({livePriceAffordance:true,source:'fixture'});expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.createPriceLine.mock.results.at(-1)!.value.options()).toMatchObject({price:bars.at(-1)!.close,title:"",axisLabelVisible:true});
+ adapter.setFeedState({livePriceAffordance:true,source:'fixture'});expect(series.options()).toMatchObject({priceLineVisible:style!=='heikinAshi',lastValueVisible:style!=='heikinAshi'});expect(series.createPriceLine.mock.results.at(-1)!.value.options().price).toBe(bars.at(-1)!.close);
 });
 
 it("reads the new series after remount and withdraws its live labels on context reset",()=>{
  adapter.setFeedState({livePriceAffordance:true,source:'old'});adapter.destroy();adapter.init({container,height:500});adapter.setFeedState({livePriceAffordance:true,source:'new'});adapter.setCandles(bars);
- const series=(adapter as any).series;expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.createPriceLine.mock.results.at(-1)!.value.options()).toMatchObject({price:bars.at(-1)!.close,title:"",axisLabelVisible:true});
+ const series=adapter.getScannerOverlaySurface()!.series as any;expect(series.options()).toMatchObject({priceLineVisible:true,lastValueVisible:true});expect(series.createPriceLine.mock.results.at(-1)!.value.options().price).toBe(bars.at(-1)!.close);
  adapter.resetDataContext();expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});expect(series.data).toEqual([]);
  adapter.setCandles(bars);expect(series.options()).toMatchObject({priceLineVisible:false,lastValueVisible:false});
 });
@@ -455,134 +454,4 @@ describe("compact study labels follow actual chart width",()=>{
   let callback:(()=>void)|undefined;vi.stubGlobal("ResizeObserver",class{constructor(cb:()=>void){callback=cb;}observe(){}disconnect(){}});const el=document.createElement("div");let width=390;Object.defineProperty(el,"clientWidth",{get:()=>width});const local=new LightweightChartsAdapter();
   try{local.init({container:el,height:400});local.setCandles(bars);const start=m.handles.length;local.setStudies([{kind:"macd",period:5,slow:17,signal:4,color:"#2dd4bf"}]);const studies=m.handles.slice(start);expect(studies.map(s=>s.options().title)).toEqual(["","",""]);width=800;callback?.();expect(studies.map(s=>s.options().title)).toEqual(["MACD 5 MACD","MACD 5 Signal",""]);}finally{local.destroy();}
  });
-});
-
-
-describe("temporary simplified chart view",()=>{
-  it("hides analysis only and restores exact chosen settings, data and risk overlays",()=>{
-    const studies=STUDY_DEFAULTS.map((s,i)=>({...s,lineStyles:[{visible:i!==0}]}));
-    const drawings=[{id:"mine",kind:"horizontal" as const,start:{time:100,price:1.2},color:"#ffffff",hidden:true}];
-    adapter.setStudies(studies);adapter.setDrawings(drawings);
-    adapter.setSmartAnnotation({id:"shape",anchors:[{time:100,price:1.2,label:"shape"}],color:"#ffffff",dashed:true});
-    adapter.setOverlays([{id:"entry",type:"line",symbol:"EURUSD",price:1.2,label:"Entry",source:"position"}],bars.at(-1)!.time);
-    const a=adapter as any,price=m.handles[0],before=adapter.getStudyValues(bars[50]!.time),raw=structuredClone(a.candles),lines=[...a.overlayLines];
-    const values=price.setData.mock.calls.length;adapter.setAnalysisFocus(true);
-    expect(adapter.isAnalysisFocused()).toBe(true);expect(a.analysis.studies).toEqual([]);expect(a.analysis.drawings).toEqual([]);expect(a.structureSeries).toEqual([]);
-    expect(a.overlayLines).toEqual(lines);expect(a.candles).toEqual(raw);expect(price.setData.mock.calls.length).toBe(values);
-    adapter.setAnalysisFocus(false);expect(adapter.getStudyValues(bars[50]!.time)).toEqual(before);expect(a.analysis.drawings).toEqual(drawings);expect(a.overlayLines).toEqual(lines);
-  });
-  it("keeps incoming settings and annotations hidden, disables hit targets, and restores latest evidence",()=>{
-    const a=adapter as any,configure=vi.spyOn(a.drawingEditor,"configure"),placement=vi.spyOn(a.drawingEditor,"setPlacement");
-    adapter.setAnalysisFocus(true);
-    adapter.setStudies(STUDY_DEFAULTS);adapter.setDrawings([{id:"new",kind:"horizontal",start:{time:100,price:1.3},color:"#ffffff"}]);
-    const interaction={selectedId:"new",snap:true,onSelect:vi.fn(),onCommit:vi.fn()};adapter.setDrawingInteraction(interaction);adapter.setDrawingHandler(vi.fn());adapter.setNavigationMode("inspect");
-    adapter.setSmartAnnotation(null);adapter.setStructureLines([{id:"server",start:{time:100,price:1.2},end:{time:160,price:1.3},color:"#ffffff",width:1}],[]);
-    expect(configure).toHaveBeenLastCalledWith(null);expect(placement).toHaveBeenLastCalledWith(null);expect(a.analysis.studies).toEqual([]);expect(a.analysis.drawings).toEqual([]);expect(a.structureSeries).toEqual([]);
-    adapter.setChartStyle("line");adapter.setCandles(bars.slice(0,80));expect(a.analysis.studies).toEqual([]);expect(a.analysis.drawings).toEqual([]);
-    adapter.setAnalysisFocus(false);expect(a.analysis.studies.length).toBe(STUDY_DEFAULTS.length);expect(a.analysis.drawings[0].id).toBe("new");expect(configure).toHaveBeenLastCalledWith(expect.objectContaining({...interaction,onCommit:expect.any(Function)}));
-  });
-  it("cannot resurrect source-owned geometry after a context reset",()=>{
-    const a=adapter as any;adapter.setDrawings([{id:"old",kind:"horizontal",start:{time:100,price:1.3},color:"#ffffff"}]);adapter.setAnalysisFocus(true);adapter.resetDataContext();adapter.setCandles(bars);adapter.setAnalysisFocus(false);expect(a.analysis.drawings).toEqual([]);expect(a.smartAnnotation).toBeNull();expect(a.structureLinesRaw).toEqual([]);
-  });
-});
-
-it("focus cancels an in-progress drag and placement without committing",()=>{
- const a=adapter as any,editor=a.drawingEditor,original=[{id:"drag",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}],commit=vi.fn(),place=vi.fn();
- adapter.setDrawings(original);adapter.setDrawingInteraction({selectedId:"drag",snap:false,onSelect:vi.fn(),onCommit:commit});
- editor.gesture={pointerId:1,original,preview:[{...original[0],start:{time:100,price:1.5}}],changed:true};
- adapter.setAnalysisFocus(true);expect(editor.gesture).toBeNull();expect(commit).not.toHaveBeenCalled();expect(a.analysis.drawings).toEqual([]);
- adapter.setAnalysisFocus(false);expect(a.analysis.drawings).toEqual(original);adapter.setDrawingHandler(place);editor.tap={id:2,point:{x:5,y:5}};adapter.setAnalysisFocus(true);expect(editor.tap).toBeNull();expect(place).not.toHaveBeenCalled();
-});
-it("a committed drag followed by focus in the same turn retains the edited geometry",()=>{
- const a=adapter as any,original=[{id:"drag",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}],edited=[{...original[0],start:{time:100,price:1.5}}],commit=vi.fn();
- adapter.setDrawings(original);adapter.setDrawingInteraction({selectedId:"drag",snap:false,onSelect:vi.fn(),onCommit:commit});a.drawingEditor.config.onCommit(edited);
- adapter.setAnalysisFocus(true);adapter.setAnalysisFocus(false);expect(a.analysis.drawings).toEqual(edited);expect(commit).toHaveBeenCalledExactlyOnceWith(edited);
-});
-it("a renderer failure rolls back focus and never claims a completed change",()=>{
- const a=adapter as any;adapter.setStudies(STUDY_DEFAULTS);const before=adapter.getStudyValues(bars[50].time);vi.spyOn(a.analysis,"setDrawings").mockImplementationOnce(()=>{throw Error("renderer failed");});
- expect(()=>adapter.setAnalysisFocus(true)).toThrow("renderer failed");expect(adapter.isAnalysisFocused()).toBe(false);expect(adapter.getStudyValues(bars[50].time)).toEqual(before);
-});
-
-it("requires recreation after a renderer failure rather than trusting partially rebuilt handles",()=>{
- const a=adapter as any;adapter.setStudies(STUDY_DEFAULTS);adapter.setAnalysisFocus(true);
- const study=vi.spyOn(a.analysis,"setStudies");const drawings=vi.spyOn(a.analysis,"setDrawings");drawings.mockImplementationOnce(()=>{study.mockImplementationOnce(()=>{throw Error("rollback failed");});throw Error("drawings failed");});
- expect(()=>adapter.setAnalysisFocus(false)).toThrow("drawings failed");expect(adapter.isAnalysisFocused()).toBe(true);expect(a.analysis.studies.length).toBe(STUDY_DEFAULTS.length);
- expect(()=>adapter.setAnalysisFocus(true)).toThrow("reload the chart");expect(adapter.isAnalysisFocusVerified()).toBe(false);
-});
-
-it("selected findings withdraw structural Break text and restore its actual bar only after selection clears",()=>{
- const marker={time:bars[0]!.time,position:"aboveBar" as const,color:"#ff0000",label:"Break"};
- adapter.setStructureLines([], [marker]);
- expect(m.markers).toHaveBeenLastCalledWith(m.handles[0],[expect.objectContaining({time:marker.time,text:"Break"})]);
- const previous=m.markers.mock.results.at(-1)!.value;
- adapter.setSmartAnnotation({id:"selected",anchors:[{time:bars[0]!.time,price:bars[0]!.close,label:"Observed event"}],connectAnchors:false,color:"#38bdf8",dashed:false});
- expect(previous.detach).toHaveBeenCalledOnce();m.markers.mockClear();
- adapter.setStructureLines([], [marker]);adapter.setCandles(bars);expect(m.markers).not.toHaveBeenCalled();
- adapter.setSmartAnnotation(null);
- expect(m.markers).toHaveBeenCalledExactlyOnceWith(m.handles[0],[expect.objectContaining({time:marker.time,text:"Break"})]);
-});
-
-
-describe("Scanner renderer-neutral overlay lease", () => {
-  const line = {price:1.25,color:"#123456",lineWidth:2 as const,lineStyle:"dashed" as const,axisLabelVisible:true,title:"LIVE SL"};
-  it("exposes only owned overlay/coordinate capabilities and preserves options", () => {
-    const surface=adapter.getScannerOverlaySurface()!;
-    expect(surface).not.toHaveProperty("chart");expect(surface).not.toHaveProperty("series");
-    expect(surface.container).toBe(container);
-    const price=m.handles[0];price.priceToCoordinate=vi.fn((value:number)=>value*100);
-    expect(surface.priceToCoordinate(1.25)).toBe(125);expect(surface.coordinateToPrice(90)).toBe(1.2);
-    const handle=surface.createPriceLine(line)!;
-    expect(price.createPriceLine).toHaveBeenLastCalledWith({...line,lineStyle:2});
-    handle.dispose();handle.dispose();expect(price.removePriceLine).toHaveBeenCalledTimes(1);
-  });
-  it("repeated acquisition preserves the active lease and its owned overlays", () => {
-    const surface=adapter.getScannerOverlaySurface()!,price=m.handles[0];
-    surface.createPriceLine({...line,lineWidth:1,lineStyle:"solid",axisLabelVisible:false,title:"Cost"});
-    expect(adapter.getScannerOverlaySurface()).toBe(surface);
-    expect(price.removePriceLine).not.toHaveBeenCalled();
-    expect(price.createPriceLine).toHaveBeenLastCalledWith(expect.objectContaining({lineStyle:0,lineWidth:1,axisLabelVisible:false,title:"Cost"}));
-  });
-  it("preserves marker timestamps, shapes, text and independent resource ownership", () => {
-    const surface=adapter.getScannerOverlaySurface()!;
-    const markers=[{time:100,position:"aboveBar" as const,color:"#f00",shape:"arrowDown" as const,text:"USD HIGH"},{time:160,position:"aboveBar" as const,color:"#888",shape:"circle" as const,text:"EUR LOW"}];
-    const first=surface.createMarkers(markers)!,firstPlugin=m.markers.mock.results.at(-1)!.value;
-    const second=surface.createMarkers(markers)!,secondPlugin=m.markers.mock.results.at(-1)!.value;
-    expect(m.markers).toHaveBeenLastCalledWith(m.handles[0],markers);
-    first.dispose();first.dispose();expect(firstPlugin.detach).toHaveBeenCalledTimes(1);expect(secondPlugin.detach).not.toHaveBeenCalled();
-    surface.dispose();expect(secondPlugin.detach).toHaveBeenCalledTimes(1);second.dispose();
-    expect(secondPlugin.detach).toHaveBeenCalledTimes(1);
-  });
-  it("explicit context release invalidates retained methods without touching a new lease", () => {
-    const old=adapter.getScannerOverlaySurface()!,price=m.handles[0];old.createPriceLine(line);old.dispose();
-    const next=adapter.getScannerOverlaySurface()!;expect(next).not.toBe(old);next.createPriceLine(line);
-    const removals=price.removePriceLine.mock.calls.length;
-    old.dispose();expect(price.removePriceLine).toHaveBeenCalledTimes(removals);
-    expect(old.coordinateToPrice(10)).toBeNull();expect(old.priceToCoordinate(1)).toBeNull();expect(old.createPriceLine(line)).toBeNull();expect(old.createMarkers([])).toBeNull();
-    expect(next.coordinateToPrice(10)).toBe(1.2);
-  });
-  it.each(["line","area","baseline","bars","hollow","heikinAshi","candles"] as const)("keeps actual-price overlays and transforms across %s replacement", style => {
-    adapter.setChartStyle(style === "candles" ? "line" : "candles");
-    const old=adapter.getScannerOverlaySurface()!,original=(adapter as any).series;const owned=old.createPriceLine(line)!;
-    adapter.setChartStyle(style);
-    expect(old.coordinateToPrice(10)).toBeNull();expect(old.createPriceLine(line)).toBeNull();
-    expect(original.removePriceLine).toHaveBeenCalledTimes(1);
-    const current=(adapter as any).series;const next=adapter.getScannerOverlaySurface()!;next.createPriceLine(line);
-    expect(current.createPriceLine).toHaveBeenLastCalledWith(expect.objectContaining({price:1.25,title:"LIVE SL"}));
-    const removals=current.removePriceLine.mock.calls.length;owned.dispose();expect(current.removePriceLine).toHaveBeenCalledTimes(removals);
-  });
-  it.each(["resetDataContext","destroy"] as const)("revokes all owned handles on %s", operation => {
-    const surface=adapter.getScannerOverlaySurface()!,price=m.handles[0];surface.createPriceLine(line);
-    surface.createMarkers([{time:100,position:"aboveBar",color:"#f00",shape:"circle",text:"Event"}]);
-    const plugin=m.markers.mock.results.at(-1)!.value;
-    adapter[operation]();expect(price.removePriceLine).toHaveBeenCalledTimes(1);expect(plugin.detach).toHaveBeenCalledTimes(1);
-    expect(surface.coordinateToPrice(10)).toBeNull();expect(surface.createPriceLine(line)).toBeNull();surface.dispose();
-    expect(plugin.detach).toHaveBeenCalledTimes(1);
-  });
-  it("returns unavailable for invalid transforms and refuses invalid overlay geometry", () => {
-    const surface=adapter.getScannerOverlaySurface()!,price=m.handles[0];price.priceToCoordinate=()=>NaN;price.coordinateToPrice=()=>Infinity;
-    expect(surface.priceToCoordinate(1)).toBeNull();expect(surface.coordinateToPrice(1)).toBeNull();
-    expect(surface.createPriceLine({...line,price:NaN})).toBeNull();
-    expect(surface.createMarkers([{time:101,position:"aboveBar",color:"#f00",shape:"circle",text:"Missing bar"}])).toBeNull();
-    expect(surface.createMarkers([{time:160,position:"aboveBar",color:"#f00",shape:"circle",text:"B"},{time:100,position:"aboveBar",color:"#f00",shape:"circle",text:"A"}])).toBeNull();
-  });
 });

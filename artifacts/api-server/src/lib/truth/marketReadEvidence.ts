@@ -1,7 +1,7 @@
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
-import { prepareScannerCandles, scannerSourceIdentity, scannerVenueIdentity, scannerQuoteFor } from "../scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerSourceIdentity, scannerQuoteFor } from "../scannerInputIntegrity.js";
 import { normalizeChartTimeframe, timeframeMs } from "../data/chart/timeframes.js";
 
 /** Calculation freshness is bounded separately from the age of an observed bar.
@@ -22,7 +22,6 @@ export function prepareMarketRead(
   const evidence: TruthReadEvidence = {
     symbol: canonical, timeframe: tf, source: result.primaryProvider,
     sourceIdentity: scannerSourceIdentity(result),
-    venueIdentity: scannerVenueIdentity(result),
     lastClosedCandleAt: new Date(closeMs).toISOString(),
   };
   return { ...prepared, evidence };

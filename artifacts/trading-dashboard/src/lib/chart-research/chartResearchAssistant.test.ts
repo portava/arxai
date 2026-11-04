@@ -22,7 +22,3 @@ describe("selected historical trade follow-ups",()=>{
     expect(requestChartResearch("What is the weather?")).toBeNull();
   });
 });
-it('compares only the supplied frozen cash result and refuses missing or compound benchmark requests',()=>{
- const evidence={status:'no_selection' as const,reason:'Select a trade',benchmark:{text:'Frozen scenario: strategy101 vs same-quantity benchmark102; no new run.'}};
- expect(answerChartResearchFollowup('Compare this with buy-and-hold',evidence)).toBe(evidence.benchmark.text);expect(answerChartResearchFollowup('Compare this with buy-and-hold',null)).toContain('No source-bound');expect(answerChartResearchFollowup('Compare this with buy-and-hold and buy now',evidence)).toContain('not applied');
-});

@@ -1,7 +1,3 @@
-import { matchesChartDependencyOwner } from "@/lib/chartCandleOwner";
-import { assessmentHigherTimeframe, higherTimeframeObservationKey } from "@workspace/domain/truth";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
-import type { RubyAssessmentEvidence } from "@/lib/rubyAssessmentEvidence";
 // useScannerTruth — the single consumed scanner-truth source (Task #391).
 //
 // Composes the ONE honest market query (GET /api/chart/candles, shared cache)
@@ -40,7 +36,6 @@ export interface UseScannerTruthResult {
   feedStatus: ChartFeedStatus | null;
   /** Observed source identity from the same chart query, never reconstructed. */
   sourceIdentity: string | null;
-  assessmentEvidence: RubyAssessmentEvidence | null;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -57,7 +52,7 @@ function candleTimeIso(time: number | undefined): string | null {
 export function useScannerTruth(
   symbolDisplay: string,
   timeframe: string,
-  opts?: { limit?: number; refetchInterval?: number; observeAssessmentDependencies?: boolean },
+  opts?: { limit?: number; refetchInterval?: number },
 ): UseScannerTruthResult {
   const symbol = (symbolDisplay || "").trim().toUpperCase();
   const chartTimeframe = normalizeChartTimeframe(timeframe);
@@ -72,19 +67,6 @@ export function useScannerTruth(
     staleTime: 5_000,
   });
 
-  // Only assessment panels observe the separate HTF dependency. Shared query
-  // keys deduplicate matching panels; ordinary scanner cards add no request.
-  const htf = assessmentHigherTimeframe(apiTf);
-  const observeHtf = opts?.observeAssessmentDependencies === true && htf !== null;
-  const higherQ = useQuery<ChartCandlesResult>({
-    queryKey: chartCandlesQueryKey(symbol, htf ?? apiTf, 120, "analysis"),
-    queryFn: ({ signal }) => fetchChartCandles(symbol, htf!, 120, signal, "analysis"),
-    enabled: symbol.length > 0 && observeHtf,
-    refetchInterval: opts?.refetchInterval ?? 15_000,
-    staleTime: 5_000,
-  });
-  const higherObserved = !htf || (observeHtf && !higherQ.isError && matchesChartDependencyOwner(higherQ.data?.originalResponse, symbol, htf));
-
   // Header feed-ok snapshot — resolved INSIDE the one truth source so the header
   // strip, chart, read-gate and cards all share an identical header-ok cap. No
   // surface re-applies applyHeaderCap on its own afterwards (Task #391).
@@ -92,7 +74,6 @@ export function useScannerTruth(
   const headerOk: boolean | null = headerSnapQ.isError ? false : headerSnapQ.data?.ok ?? false;
 
   const mode = useTradingMode();
-  const identity = useCurrentUser();
   const { name: assistantName } = useAssistantName();
 
   const candles = candlesQ.data?.candles ?? [];
@@ -127,7 +108,6 @@ export function useScannerTruth(
         symbolInternal: symbol,
         timeframe: chartTimeframe,
         feedStatus,
-        sourceClockQualified: candlesQ.data.sourceClockQualified === true,
         candleCount: candles.length,
         requestedCount: limit,
         firstTime: candleTimeIso(first?.time),
@@ -151,10 +131,6 @@ export function useScannerTruth(
     truth,
     feedStatus,
     sourceIdentity: candlesQ.data?.marketEvidence?.sourceIdentity ?? null,
-    // This is an observation for matching only, never response evidence.
-    assessmentEvidence: higherObserved && !candlesQ.isError && !identity.isError && identity.user && candlesQ.data?.marketEvidence?.lastClosedCandleAt && candlesQ.data.marketEvidence.closedWindowIdentity
-      ? { ...candlesQ.data.marketEvidence, closedWindowIdentity: candlesQ.data.marketEvidence.closedWindowIdentity, lastClosedCandleAt: candlesQ.data.marketEvidence.lastClosedCandleAt, userId: identity.user.id, higherTimeframeObservation: higherTimeframeObservationKey(htf, higherQ.data?.originalResponse) }
-      : null,
     isLoading: candlesQ.isLoading || mode.isLoading,
     isError: candlesQ.isError,
     refetch: () => void candlesQ.refetch(),

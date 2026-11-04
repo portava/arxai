@@ -26,10 +26,8 @@ export function templateName(value: unknown): string | null {
 const nameKey = (name: string) => name.toLowerCase();
 /** Unlike tolerant preference recovery, imports must not silently drop studies. */
 export function parseTemplateSettings(value: unknown): TemplateSettings | null {
-  if (!record(value) || !keysOnly(value, ["style", "scale", "inverted", "studies", "showStudyStatusValues", "showStudyScaleLabels"]) ||
+  if (!record(value) || !keysOnly(value, ["style", "scale", "inverted", "studies"]) ||
       !(CHART_STYLES as readonly unknown[]).includes(value.style) || !["linear", "log", "percent", "indexed"].includes(value.scale as string) ||
-      (value.showStudyStatusValues !== undefined && typeof value.showStudyStatusValues !== "boolean") ||
-      (value.showStudyScaleLabels !== undefined && typeof value.showStudyScaleLabels !== "boolean") ||
       (value.inverted !== undefined && typeof value.inverted !== "boolean") || !Array.isArray(value.studies) || value.studies.length > MAX_STUDIES) return null;
   const valid = validatePreferences(value);
   if (valid.studies.length !== value.studies.length || canonical(valid.studies) !== canonical(value.studies)) return null;

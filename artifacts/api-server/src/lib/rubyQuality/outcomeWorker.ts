@@ -14,6 +14,7 @@
 //     resolved outcomes + self-reviews; without it signals would accumulate
 //     unresolved.
 
+import { startIntervalWorker } from "../perf/intervalWorker.js";
 import { and, desc, eq } from "drizzle-orm";
 import { db, rubySignalOutcomesTable } from "@workspace/db";
 import { logger } from "../logger.js";
@@ -35,6 +36,7 @@ type WorkerStatus = {
 };
 
 let started = false;
+let worker: ReturnType<typeof startIntervalWorker> | undefined;
 let cyclesRun = 0;
 let lastCycleAt: Date | null = null;
 let lastCycleMs: number | null = null;
@@ -168,7 +170,12 @@ export function startRubyOutcomeWorker(): void {
   if (started) return;
   started = true;
   // First cycle runs after one interval (do not block server start).
-  const t = setInterval(() => { void runCycle(); }, INTERVAL_MS);
-  t.unref?.();
+  if (worker) worker.start();
+  else worker = startIntervalWorker(runCycle, INTERVAL_MS, (err) => logger.error({ err }, "[rubyOutcome] unexpected worker failure"));
   logger.info({ intervalMs: INTERVAL_MS }, "[rubyOutcome] outcome-resolution worker started");
+}
+
+export function stopRubyOutcomeWorker(): void {
+  worker?.stop();
+  started = false;
 }

@@ -12,7 +12,7 @@ import { useViewMode } from "@/hooks/useViewMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
 
-export function FloatingActionPanel() {
+export function FloatingActionPanel({ rootWorkspace = false }: { rootWorkspace?: boolean }) {
   const dockTarget = useChartActionDockTarget("quickActions");
   const [open, setOpen] = useState(false);
   const { effectiveIsAdmin: isAdmin } = useViewMode();
@@ -40,7 +40,7 @@ export function FloatingActionPanel() {
       {open && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 animate-in fade-in duration-150" onClick={() => setOpen(false)} />
       )}
-      <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex flex-col items-end gap-2">
+      <div className={cn("fixed right-4 md:right-6 z-50 flex flex-col items-end gap-2", rootWorkspace ? "bottom-[calc(120px+env(safe-area-inset-bottom))] md:bottom-6" : "bottom-20 md:bottom-6")}>
         {open && (
           <div className="flex flex-col items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200 max-h-[75vh] overflow-y-auto pr-1">
             {/* App Shell 2.0 — spec Quick Action Center. Each shortcut routes

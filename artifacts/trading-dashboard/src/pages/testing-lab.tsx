@@ -11,6 +11,8 @@ import { ForwardTestingTab } from "@/components/testing-lab/ForwardTestingTab";
 import { ComparisonTab } from "@/components/testing-lab/ComparisonTab";
 import { ResultsHistoryTab } from "@/components/testing-lab/ResultsHistoryTab";
 import { TESTING_STRATEGIES } from "@/lib/testingStrategies";
+import { FlaskConical, Radio, GitCompareArrows, History } from "lucide-react";
+import { RouteLayoutPanel } from "@/components/layout/RouteLayoutPanel";
 
 const TABS = ["backtesting", "forward", "comparison", "history"] as const;
 type TabKey = (typeof TABS)[number];
@@ -56,16 +58,24 @@ export default function TestingLab() {
           <TabsTrigger value="history">Strategy Results</TabsTrigger>
         </TabsList>
         <TabsContent value="backtesting">
-          <BacktestingTab strategyId={strategyId} onStrategyChange={setStrategyId} />
+          <RouteLayoutPanel routeKey="/testing-lab/backtesting" id="lab-backtesting" title="Historical testing" icon={FlaskConical} keepMounted>
+            <BacktestingTab strategyId={strategyId} onStrategyChange={setStrategyId} />
+          </RouteLayoutPanel>
         </TabsContent>
         <TabsContent value="forward">
-          <ForwardTestingTab strategyId={strategyId} />
+          <RouteLayoutPanel routeKey="/testing-lab/forward" id="lab-forward" title="Forward testing workspace" icon={Radio} keepMounted>
+            <ForwardTestingTab strategyId={strategyId} />
+          </RouteLayoutPanel>
         </TabsContent>
         <TabsContent value="comparison">
-          <ComparisonTab strategyId={strategyId} />
+          <RouteLayoutPanel routeKey="/testing-lab/comparison" id="lab-comparison" title="Strategy comparison" icon={GitCompareArrows} keepMounted>
+            <ComparisonTab strategyId={strategyId} />
+          </RouteLayoutPanel>
         </TabsContent>
         <TabsContent value="history">
-          <ResultsHistoryTab strategyId={strategyId} />
+          <RouteLayoutPanel routeKey="/testing-lab/history" id="lab-history" title="Results history" icon={History} keepMounted>
+            <ResultsHistoryTab strategyId={strategyId} />
+          </RouteLayoutPanel>
         </TabsContent>
       </Tabs>
     </div>

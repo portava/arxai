@@ -7,6 +7,7 @@
 import {
   useGetAdminFundBookPools,
   useGetAdminFundBookReconciliationOverview,
+  useGetAdminFundBookBrokerMirror,
   useGetAdminFundBookPlAllocation,
   useListAdminCapitalRequests,
   useGetAdminCapitalSettings,
@@ -23,11 +24,14 @@ import {
 } from "lucide-react";
 import {
   StatCard,
+  PnlValue,
+  FreshnessBadge,
   ErrorState,
   fmtMoney,
   fmtPct,
   fmtInt,
   fmtTimeAgo,
+  worstFreshness,
 } from "./format";
 
 // A failed query must never read as a real zero. Render a muted "Unavailable"
@@ -44,14 +48,10 @@ const PENDING_STATUSES = new Set([
   "REVIEWING",
 ]);
 
-import {useAdminBrokerMirror} from '@/hooks/useAdminBrokerMirror';
-import {NativeAccountReport} from '@/components/sharedAccount/NativeAccountReport';
-import {BrokerRefreshControl} from './BrokerRefreshControl';
-
 export function OverviewSection() {
   const poolsQ = useGetAdminFundBookPools();
   const reconQ = useGetAdminFundBookReconciliationOverview();
-  const mirrorQ = useAdminBrokerMirror();
+  const mirrorQ = useGetAdminFundBookBrokerMirror();
   const plQ = useGetAdminFundBookPlAllocation();
   const requestsQ = useListAdminCapitalRequests();
   const settingsQ = useGetAdminCapitalSettings();
@@ -84,10 +84,14 @@ export function OverviewSection() {
   const requests = requestsQ.data?.requests ?? [];
   const settings = settingsQ.data?.settings;
 
+  const totalBrokerEquity = bridges.reduce((s, b) => s + (b.accountEquity ?? 0), 0);
+  const totalBrokerBalance = bridges.reduce((s, b) => s + (b.accountBalance ?? 0), 0);
   const totalPoolValue = pools.reduce((s, p) => s + (p.totalPoolValue ?? 0), 0);
   const totalFeesAccrued = pools.reduce((s, p) => s + (p.feesAccrued ?? 0), 0);
+  const totalFloating = bridges.reduce((s, b) => s + (b.floatingPlTotal ?? 0), 0);
   const openPositionCount =
     bridges.reduce((s, b) => s + (b.openPositionCount ?? 0), 0) || positions.length;
+  const bridgeFreshness = worstFreshness(bridges.map((b) => b.freshness));
 
   const pendingDeposits = requests.filter(
     (r) => r.movementType === "DEPOSIT" && PENDING_STATUSES.has(r.status.toUpperCase()),
@@ -103,11 +107,19 @@ export function OverviewSection() {
     <div className="space-y-4" data-testid="overview-section">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Broker equity total"
+          label="Broker equity (mirrored)"
           testid="kpi-broker-equity"
-          hint={mirrorQ.isError ? "Broker report unavailable" : "See each account report below. No combined currency or observation is verified."}
+          hint={
+            mirrorQ.isError ? (
+              "Broker mirror unavailable"
+            ) : (
+              <span className="flex items-center gap-1">
+                Balance {fmtMoney(totalBrokerBalance)} <FreshnessBadge freshness={bridgeFreshness} />
+              </span>
+            )
+          }
         >
-          <Unavailable />
+          {mirrorQ.isError ? <Unavailable /> : fmtMoney(totalBrokerEquity)}
         </StatCard>
 
         <StatCard
@@ -119,7 +131,7 @@ export function OverviewSection() {
         </StatCard>
 
         <StatCard
-          label="Account P/L total"
+          label="Open exposure (floating)"
           testid="kpi-open-exposure"
           hint={
             mirrorQ.isError
@@ -127,7 +139,7 @@ export function OverviewSection() {
               : `${fmtInt(openPositionCount)} open ${openPositionCount === 1 ? "position" : "positions"}`
           }
         >
-          <Unavailable />
+          {mirrorQ.isError ? <Unavailable /> : <PnlValue value={totalFloating} />}
         </StatCard>
 
         <StatCard
@@ -144,15 +156,6 @@ export function OverviewSection() {
           {poolsQ.isError ? <Unavailable /> : fmtMoney(totalFeesAccrued)}
         </StatCard>
       </div>
-
-      <BrokerRefreshControl query={mirrorQ} />
-      {!mirrorQ.isError && <div className="grid gap-3 lg:grid-cols-2" data-testid="overview-native-accounts">
-        {bridges.map(bridge=><Card key={bridge.bridgeConnectionId}>
-          <CardHeader><CardTitle className="text-base">{bridge.connectionName || `Bridge #${bridge.bridgeConnectionId}`}</CardTitle></CardHeader>
-          <CardContent><NativeAccountReport report={bridge.nativeAccountReport ?? null} /></CardContent>
-        </Card>)}
-        {bridges.length===0&&<p className="text-sm text-muted-foreground">No account reports are available. Combined account amounts are unavailable, not zero.</p>}
-      </div>}
 
       <div className="grid gap-3 lg:grid-cols-3">
         <Card>
@@ -234,10 +237,9 @@ export function OverviewSection() {
             ) : (
               <>
                 <Row
-                  label="Allocated position P/L total"
-                  value={<Unavailable />}
+                  label="Assigned floating P/L"
+                  value={<PnlValue value={pl?.assignedTotal ?? 0} />}
                 />
-                <p className="text-xs text-muted-foreground">A combined P/L currency and complete account coverage have not been verified.</p>
                 <Row label="Assigned positions" value={fmtInt(pl?.assignedCount ?? 0)} />
                 <Row
                   label="Unassigned positions"

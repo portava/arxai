@@ -1,5 +1,3 @@
-import { matchesChartCandleOwner } from "./chartCandleOwner";
-import { chartUtcClockQualified } from "./chart-engine/chartClockEvidence";
 // Shared GET /api/chart/candles query — the ONE honest market source for the
 // scanner (Task #391). Both ScannerChartPanel and useScannerTruth use this same
 // query key so React Query dedupes to a single network call and every surface
@@ -79,7 +77,6 @@ export function normalizeChartTimeframe(tf: string | null | undefined): string {
 }
 
 export interface ChartCandlesResult {
-  sourceClockQualified: boolean;
   /** Exact transport response, before the legacy display adapter drops fields.
    * This is unverified input: consumers must validate original source identity,
    * close bounds and finality. Never reconstruct that evidence from Candle[]. */
@@ -92,12 +89,11 @@ export interface ChartCandlesResult {
     source: string;
     sourceIdentity: string;
     lastClosedCandleAt: string | null;
-    closedWindowIdentity?: string;
   } | null;
 }
 
-export function chartCandlesQueryKey(symbol: string, apiTf: string, limit: number, view: "display" | "analysis" = "display") {
-  return view === "analysis" ? ["chart-candles", symbol, apiTf, limit, "analysis"] as const : ["chart-candles", symbol, apiTf, limit] as const;
+export function chartCandlesQueryKey(symbol: string, apiTf: string, limit: number) {
+  return ["chart-candles", symbol, apiTf, limit] as const;
 }
 
 export async function fetchChartCandles(
@@ -105,29 +101,25 @@ export async function fetchChartCandles(
   apiTf: string,
   limit: number,
   signal?: AbortSignal,
-  view: "display" | "analysis" = "display",
 ): Promise<ChartCandlesResult> {
   const res = await fetch(
-    `${BASE}/api/chart/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&limit=${limit}${view === "analysis" ? "&view=analysis" : ""}`,
+    `${BASE}/api/chart/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&limit=${limit}`,
     { credentials: "include", signal },
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data: unknown = await res.json();
   const obj = data as Record<string, unknown> | null;
   const arr = Array.isArray(data) ? data : (obj?.candles as unknown[] | undefined) ?? [];
-  const ownerMatches = matchesChartCandleOwner(data, symbol, apiTf);
-  const candles = ownerMatches ? adaptChartCandles(arr as Array<Record<string, unknown>>) : [];
+  const candles = adaptChartCandles(arr as Array<Record<string, unknown>>);
   const feedStatus = (obj?.feedStatus as ChartFeedStatus | undefined) ?? null;
   const evidence = obj?.marketEvidence as Partial<NonNullable<ChartCandlesResult["marketEvidence"]>> | null | undefined;
-  const marketEvidence = ownerMatches && evidence && evidence.symbol === symbol && evidence.timeframe === apiTf && typeof evidence.source === "string"
+  const marketEvidence = evidence && evidence.symbol === symbol && evidence.timeframe === apiTf && typeof evidence.source === "string"
     && evidence.source === feedStatus?.source && typeof evidence.sourceIdentity === "string"
     && evidence.sourceIdentity.length > 0
     ? { symbol, timeframe: apiTf, source: evidence.source, sourceIdentity: evidence.sourceIdentity,
-        lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null,
-        ...(typeof evidence.closedWindowIdentity === "string" && /^[a-f0-9]{64}$/.test(evidence.closedWindowIdentity)
-          ? {closedWindowIdentity:evidence.closedWindowIdentity} : {}) }
+        lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null }
     : null;
-  return { candles, feedStatus, sourceClockQualified: ownerMatches && chartUtcClockQualified(arr as {timeBasisEvidence?:unknown}[]), originalResponse: data, ...(marketEvidence ? { marketEvidence } : {}) };
+  return { candles, feedStatus, originalResponse: data, ...(marketEvidence ? { marketEvidence } : {}) };
 }
 
 // ── Deep history (Task #438) ────────────────────────────────────────────────

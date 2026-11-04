@@ -17,7 +17,15 @@
 // hermetic; the real ChartTradeEntry logic runs unmocked.
 
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup, renderHook, act } from "@testing-library/react";
+import { render as renderWithoutProvider, screen, fireEvent, cleanup, renderHook, act } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+function render(ui: Parameters<typeof renderWithoutProvider>[0]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderWithoutProvider(
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+  );
+}
 
 // Capture the props the (stubbed) shared ticket is rendered with.
 let lastSharedProps: Record<string, unknown> | null = null;

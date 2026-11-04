@@ -34,8 +34,6 @@ import {
   recomputeMasterPool,
   resolveActiveMasterConnectionId,
 } from "../lib/live/masterBridgePool.js";
-import { loadNativeAccountReport } from "../lib/brokerHub/nativeAccountReportReader.js";
-import { projectPinnedMasterAccount } from "../lib/live/masterAccountDisplay.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
@@ -51,40 +49,41 @@ function isAdminOrOwner(req: Request): boolean {
 }
 
 /**
- * Stored MT5 master account view for the card — owner/admin only. Sourced from the
- * pinned mt5_connection account evidence. The pool supplies identity and
- * allocation only, never monetary observation freshness. Never returns tokens, IPs, or the raw account
+ * Real MT5 master snapshot for the card — owner/admin only. Sourced from the
+ * EA heartbeat (arx_master_bridge_pool via getUserAllocationView) +
+ * mt5_connection projection. Never returns tokens, IPs, or the raw account
  * number (masked only). Honest staleness — never fabricated. Returns null when
  * no master bridge is pinned.
  */
-async function buildMasterMt5Snapshot(userId: number, view: Awaited<ReturnType<typeof getUserAllocationView>>) {
+async function buildMasterMt5Snapshot(userId: number) {
+  const view = await getUserAllocationView(userId);
   const pool = view.pool;
   if (!pool) return null;
 
   // Masked broker/account label from the master connection (no credentials).
-  const masterConnId = pool.masterConnectionId;
-  const loadedConnection = Number.isSafeInteger(masterConnId) && masterConnId! > 0 ? await getConnection(masterConnId!) : null;
-  const connection = loadedConnection?.id === masterConnId ? loadedConnection : null;
+  const masterConnId = await resolveActiveMasterConnectionId();
   let brokerName: string | null = null;
   let serverName: string | null = null;
   let accountTypeLabel: string | null = null;
   let accountNumberMasked: string | null = null;
   let masterOwnerUserId: number | null = null;
-  if (connection) {
-    const c = connection;
-    masterOwnerUserId = c.userId ?? null;
-    brokerName = c.brokerName ?? null;
-    serverName = c.serverName ?? null;
-    accountTypeLabel = c.accountType ?? null;
-    const raw = String(c.accountNumber ?? "");
-    accountNumberMasked = raw ? `••••${raw.slice(-4)}` : null;
+  if (masterConnId != null) {
+    const c = await getConnection(masterConnId);
+    if (c) {
+      masterOwnerUserId = c.userId ?? null;
+      brokerName = c.brokerName ?? null;
+      serverName = c.serverName ?? null;
+      accountTypeLabel = c.accountType ?? null;
+      const raw = String(c.accountNumber ?? "");
+      accountNumberMasked = raw ? `••••${raw.slice(-4)}` : null;
+    }
   }
 
   // Real open positions on the MASTER account — scoped to BOTH the master
   // owner AND the active master connection, so a multi-connection owner never
   // overcounts positions from a non-master account. Confirmed broker tickets
-  // only (not closed). Unknown identity remains null, not a fabricated flat account.
-  let openPositions: number | null = null;
+  // only (not closed). Falls back to 0 when the master is unknown.
+  let openPositions = 0;
   if (masterOwnerUserId != null && masterConnId != null) {
     openPositions = await countOpenPositions({
       userId: masterOwnerUserId,
@@ -94,15 +93,11 @@ async function buildMasterMt5Snapshot(userId: number, view: Awaited<ReturnType<t
     });
   }
 
-  const accountEvidence = projectPinnedMasterAccount({
-    masterConnectionId: masterConnId,
-    connection,
-    nowMs: Date.now(),
-  });
-
-  // Preserve native decimal text in the owner-only DTO; do not route through
-  // legacy float4 columns or use this telemetry as allocation/execution input.
-  const nativeAccountReport = await loadNativeAccountReport(connection);
+  // Real broker floating P/L = equity − balance, straight from the EA
+  // heartbeat snapshot. Authoritative MT5 account truth, never ARX-aggregated.
+  const mt5Balance = round2(Number(pool.mt5Balance ?? 0));
+  const mt5Equity = round2(Number(pool.mt5Equity ?? 0));
+  const mt5OpenPnl = round2(mt5Equity - mt5Balance);
 
   // 7-day realized P&L from the applied attribution ledger (honest, real fills).
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -121,10 +116,20 @@ async function buildMasterMt5Snapshot(userId: number, view: Awaited<ReturnType<t
     .where(eq(unattributedMasterTradesTable.status, "pending_review"));
   const unattributedCount = Number(unattrRows[0]?.count ?? 0);
 
+  const snapshotStatus = pool.snapshotStatus as "FRESH" | "STALE" | "MISSING";
+  const syncStatus: "LIVE" | "STALE" | "UNAVAILABLE" =
+    snapshotStatus === "FRESH" ? "LIVE"
+      : snapshotStatus === "STALE" ? "STALE"
+        : "UNAVAILABLE";
+
   return {
-    ...accountEvidence,
-    nativeAccountReport,
+    mt5Balance,
+    mt5Equity,
+    mt5UsedMargin: round2(Number(pool.mt5UsedMargin ?? 0)),
+    mt5FreeMargin: round2(Number(pool.mt5FreeMargin ?? 0)),
+    mt5OpenPnl,
     openPositions,
+    accountCurrency: pool.accountCurrency ?? null,
     brokerName,
     serverName,
     accountTypeLabel,
@@ -133,8 +138,14 @@ async function buildMasterMt5Snapshot(userId: number, view: Awaited<ReturnType<t
     arxAvailable: round2(view.availableAllocation),
     arxReserved: round2(view.reservedRisk),
     realizedPnl7d,
+    snapshotStatus,
+    snapshotAgeMs: pool.snapshotAgeMs ?? null,
+    lastMt5SnapshotAt: pool.lastMt5SnapshotAt
+      ? new Date(pool.lastMt5SnapshotAt).toISOString()
+      : null,
     isOverAllocated: Boolean(pool.isOverAllocated),
     unattributedCount,
+    syncStatus,
   };
 }
 
@@ -210,9 +221,8 @@ router.get("/me/shared-account/summary", requireUser, async (req, res) => {
     // masterAccess is the capability flag (true even when masterMt5 is null
     // because the bridge is unpinned/offline) so the UI can still offer a real
     // resync to authorized users.
-    const allocView = await getUserAllocationView(userId);
     const masterAccess = isAdminOrOwner(req);
-    const masterMt5 = masterAccess ? await buildMasterMt5Snapshot(userId, allocView) : null;
+    const masterMt5 = masterAccess ? await buildMasterMt5Snapshot(userId) : null;
 
     // Canonical per-user allocation — the SAME source the live gate, preflight,
     // and /me/master-live/access use (getUserAllocationView). Exposed to EVERY
@@ -221,6 +231,7 @@ router.get("/me/shared-account/summary", requireUser, async (req, res) => {
     // from the headroom the gate actually enforces (assigned − reserved + open
     // floating loss). hasAllocation lets the UI distinguish "none assigned" from
     // "fully consumed". isOverAllocated mirrors the pool reconciliation state.
+    const allocView = await getUserAllocationView(userId);
     const allocationView = {
       assignedAllocation: allocView.assignedAllocation,
       availableAllocation: allocView.availableAllocation,
@@ -263,8 +274,7 @@ router.post("/me/shared-account/refresh", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   try {
     const recompute = await recomputeMasterPool();
-    const view = await getUserAllocationView(userId);
-    const masterMt5 = await buildMasterMt5Snapshot(userId, view);
+    const masterMt5 = await buildMasterMt5Snapshot(userId);
     // Explicit failure when the recompute could not produce a current pool —
     // surface the honest reason rather than silently returning a stale snapshot.
     if (!recompute.ok) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import type {
   MarketHeatResponse,
   MarketHeatVerdict,
@@ -171,6 +171,14 @@ function findCountryNode(displayNamePrefix: string): SVGGElement {
 }
 
 describe("GlobalMarketHeatCard world-map view", () => {
+  it("shows a compact data-backed heat summary and preserves detailed map access", () => {
+    render(<GlobalMarketHeatCard compactWorkspace/>);
+    const compact = within(screen.getByTestId("market-heat-compact"));
+    expect(screen.getByTestId("market-heat-compact").querySelector(".arx-heat-global")?.textContent).toContain("Global Markets");
+    expect(screen.getByTestId("market-heat-compact").querySelector(".arx-heat-summary-line")?.textContent).toMatch(/News/);
+    expect(compact.getByText("Drivers, providers & full heat map")).toBeTruthy();
+  });
+
   it("renders the geographic map by default with country nodes", () => {
     render(<GlobalMarketHeatCard />);
     expect(screen.getByRole("img", { name: "World market-heat map" })).toBeTruthy();

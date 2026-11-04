@@ -15,7 +15,8 @@
 // confidence / trade-health / risk gate, or touch live execution. Fail closed:
 // any error or insufficient window returns `null` (no trendline impact at all).
 import type { Candle } from "../types.js";
-import { currentClosedPatternWindow } from "./closedPatternWindow.js";
+import { normalizeCandles } from "./candleNormalization.js";
+import { isChartTimeframe, type ChartTimeframe } from "./timeframes.js";
 import { detectTrendlines } from "./engines/trendlineEngine.js";
 import {
   resolveTrendlineTruth,
@@ -29,12 +30,10 @@ export interface TrendlineTruthServiceInput {
   symbol: string;
   displaySymbol?: string;
   timeframe: string;
-  /** Routed or captured candles; normalized + closed-bar filtered here. */
+  /** Raw routed candles (bar-open based); normalized + closed-bar filtered here. */
   rawCandles: Candle[];
-  /** Captured provider name; its timestamp convention applies only to raw provider inputs. */
+  /** Source tag for normalization (provider name) — affects price-basis only. */
   source?: string | null;
-  /** Set open for already-normalized captured candles; does not qualify UTC authority. */
-  timestampConvention?: "open" | "close";
   // ── Caller's ALREADY-DECIDED display facts (the trendline NEVER recomputes them).
   /** True only when the feed is genuinely live-confirmed (LIVE + FULL read). */
   feedConfirmed: boolean;
@@ -67,8 +66,17 @@ export function buildTrendlineTruthVerdict(
   input: TrendlineTruthServiceInput,
 ): TrendlineTruthVerdict | null {
   try {
-    const candles = currentClosedPatternWindow(input);
-    if (!candles) return null;
+    if (!isChartTimeframe(input.timeframe)) return null;
+    const tf = input.timeframe as ChartTimeframe;
+    if (!Array.isArray(input.rawCandles) || input.rawCandles.length === 0) {
+      return null;
+    }
+    const { candles } = normalizeCandles(input.rawCandles, {
+      symbol: input.symbol,
+      displaySymbol: input.displaySymbol ?? input.symbol,
+      timeframe: tf,
+      source: input.source ?? null,
+    });
     const detection = detectTrendlines(candles);
     if (detection.insufficient) return null;
     if (

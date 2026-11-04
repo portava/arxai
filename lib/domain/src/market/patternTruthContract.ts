@@ -106,59 +106,6 @@ export interface DetectedPattern {
   quality: PatternQuality;
   levels: PatternLevels;
   keyPoints: DetectedPatternKeyPoint[];
-  /** Optional causal breakout evidence. Indexes address the filtered closed
-   * window; formation, volatility and trigger are frozen before the crossing. */
-  breakoutLifecycle?: {
-    version: "causal-breakout-v1";
-    formationIndexes: number[];
-    levelKnownAtIndex: number;
-    breakIndex: number;
-    retestIndex: number | null;
-    confirmedIndex: number | null;
-    failedIndex: number | null;
-    frozenAtr: number;
-    referenceLevel: number;
-    breakBuffer: number;
-    retestTolerance: number;
-  };
-  /** Causal double-reversal evidence, indexed into the filtered closed window.
-   * Formation geometry/ATR freeze when the second 2/2 pivot is knowable and
-   * minimum history is satisfied. These are observed-bar indexes, not clocks. */
-  doubleReversalLifecycle?: {
-    version: "causal-double-reversal-v1";
-    formationIndexes: [number, number, number];
-    formationKnownAtIndex: number;
-    confirmedIndex: number | null;
-    failedIndex: number | null;
-    frozenAtr: number;
-    referenceLevel: number;
-    invalidationLevel: number;
-    priorTrend: { fromIndex: number; toIndex: number; closeChange: number; alignedSteps: number };
-  };
-  /** Causal fixed-window flag channel. All indexes address filtered closed
-   * bars. Before a break, levels project the frozen channel to levelAtIndex;
-   * after a break (or pre-break failure) those reference levels stay frozen.
-   * Post-break invalidation uses the opposite boundary at the break, not an
-   * indefinitely receding channel. Target/failure are closed-price outcomes. */
-  flagLifecycle?: {
-    version: "causal-flag-v1";
-    poleStartIndex: number;
-    poleEndIndex: number;
-    flagStartIndex: number;
-    formationKnownAtIndex: number;
-    channelSlope: number;
-    upperAtStart: number;
-    lowerAtStart: number;
-    frozenAtr: number;
-    confirmedIndex: number | null;
-    failedIndex: number | null;
-    targetReachedIndex: number | null;
-    levelAtIndex: number;
-    /** Null when the measured projection has no finite positive price. */
-    targetLevel: number | null;
-    confirmationLevel: number;
-    invalidationLevel: number;
-  };
   /** Measurable conditions that were satisfied (for explanation + audit). */
   rationale: string[];
   /** Known ways this pattern fails (surfaced as honest warnings). */

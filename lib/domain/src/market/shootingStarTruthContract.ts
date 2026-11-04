@@ -43,8 +43,6 @@ export interface ShootingStarInput {
 
 export interface ShootingStarRead {
   detected: boolean;
-  /** Exact selected candle index in the supplied chronological window; null when absent. */
-  starIndex: number | null;
   status: ShootingStarStatus;
   /** Always "sell" or "neutral" — a shooting star is never bullish. */
   direction: "sell" | "neutral";
@@ -79,7 +77,6 @@ function emptyRead(
 ): ShootingStarRead {
   return {
     detected: false,
-    starIndex: null,
     status: "none",
     direction: "neutral",
     body: null,
@@ -203,9 +200,8 @@ export function resolveShootingStarTruth(
       }
     }
 
-    // Wick geometry and an advance do not establish a separately measured
-    // resistance level. Callers with level evidence retain their own gates.
-    const locationQuality: PatternLocationQuality = "unknown";
+    // Location: a rejection after an uptrend reads as resistance rejection.
+    const locationQuality: PatternLocationQuality = "at_resistance";
 
     // Confidence from the wick/body proportion, capped, with state + feed caps.
     let confidence = 50;
@@ -244,7 +240,6 @@ export function resolveShootingStarTruth(
 
     return {
       detected: true,
-      starIndex: idx,
       status,
       direction: status === "failed" ? "neutral" : "sell",
       body: geo.body,

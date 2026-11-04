@@ -40,15 +40,6 @@ export interface AaciChartHandshake {
    */
   overall: ChartHandshakeVerdict;
 
-  /**
-   * Rollup of the nine checks about the candle data itself, i.e. every field
-   * except RenderHealth. Server-side reads (Ruby) consume candles, not pixels,
-   * so client renderer telemetry they never use cannot gate them. This never
-   * turns an unmeasured RenderHealth into a PASS: `overall` still carries it,
-   * and a measured renderer FAIL still fails this rollup.
-   */
-  sourceOverall: ChartHandshakeVerdict;
-
   /** Compact Chart Truth Score (0–100) for AACI market-truth weighting. */
   chartTruthScore: number;
   /** Compact Chart Read Score (0–100). */
@@ -128,7 +119,7 @@ export function buildChartHandshake(
 
   const SelfTradeChartAllowed = boolToVerdict(gate.selfTradeChartAllowed);
 
-  const source: ChartHandshakeVerdict[] = [
+  const all: ChartHandshakeVerdict[] = [
     ChartSource,
     OHLCIntegrity,
     TimeframeAccuracy,
@@ -136,10 +127,10 @@ export function buildChartHandshake(
     FeedFreshness,
     HistoricalLiveMerge,
     BrokerPriceAlignment,
+    RenderHealth,
     RubyReadAllowed,
     SelfTradeChartAllowed,
   ];
-  const all: ChartHandshakeVerdict[] = [...source, RenderHealth];
 
   return {
     ChartSource,
@@ -153,7 +144,6 @@ export function buildChartHandshake(
     RubyReadAllowed,
     SelfTradeChartAllowed,
     overall: rollup(all),
-    sourceOverall: rollup(RenderHealth === "FAIL" ? ["FAIL"] : source),
     chartTruthScore: gate.chartTruthScore,
     chartReadScore: gate.chartReadScore,
     primaryBlockReason: gate.primaryBlockReason ?? (all.includes("WARN")

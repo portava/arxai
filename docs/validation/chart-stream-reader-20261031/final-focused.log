@@ -1,9 +1,0 @@
-
- RUN  v4.1.7 /Users/areyouok/arx-chart-stream-reader-20261031/artifacts/trading-dashboard
-
-
- Test Files  3 passed (3)
-      Tests  86 passed (86)
-   Start at  14:41:52
-   Duration  962ms (transform 594ms, setup 0ms, import 832ms, tests 512ms, environment 827ms)
-

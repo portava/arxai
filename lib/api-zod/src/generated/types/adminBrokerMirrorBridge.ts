@@ -6,11 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminBrokerMirrorBridgeFreshness } from "./adminBrokerMirrorBridgeFreshness";
-import type { NativeAccountReport } from "./nativeAccountReport";
 
 export interface AdminBrokerMirrorBridge {
-  /** Exact native whole-account report; legacy scalar fields are not current account evidence. */
-  nativeAccountReport?: NativeAccountReport | null;
   bridgeConnectionId: number;
   /** @nullable */
   userId?: number | null;

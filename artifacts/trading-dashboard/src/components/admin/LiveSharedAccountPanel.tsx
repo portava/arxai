@@ -1,4 +1,3 @@
-import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummary";
 // Phase 22V — Switch-based Live Shared cockpit (no typed phrases anywhere).
 //   - Friendly labels in the main view (raw backend names are hidden behind
 //     a collapsible "Technical details (advanced)" disclosure).
@@ -9,8 +8,6 @@ import { sharedAccountSummaryReadOptions } from "@/hooks/readSharedAccountSummar
 //   - Every switch goes through an AlertDialog confirm before POSTing
 //     `{ confirm: true }` to the server. No typed phrases.
 import { useState } from "react";
-import { useGetMeSharedAccountSummary, getGetMeSharedAccountSummaryQueryKey } from "@workspace/api-client-react";
-import { NativeAccountReport } from "@/components/sharedAccount/NativeAccountReport";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -883,9 +880,9 @@ function OwnerUnrestrictedLiveBanner() {
 }
 
 // ── Shared Bridge Pool card (Task #1 admin reconciliation surface) ────────
-// Native account amounts reuse the same owner-authorized report/cache as the
-// cockpit. The separate stored allocation projection is not monetary freshness
-// evidence and may have been read at a different time. Provides a "Recompute &
+// Shows the live MT5 master snapshot that backs every shared-live
+// allocation: balance, equity, total allocated, available headroom,
+// over-allocated flag, last EA heartbeat. Provides a "Recompute &
 // Reconcile" button that calls POST /api/admin/allocations/recompute
 // (audit-logged on the server). Read-only otherwise — no per-user
 // allocation mutations live here.
@@ -901,18 +898,12 @@ type PoolSnapshot = {
   masterCap?: number; available?: number;
   lastMt5SnapshotAt: string | null; recomputedAt: string | null;
 };
-export function SharedBridgePoolCard() {
+function SharedBridgePoolCard() {
   const qc = useQueryClient();
-  const summaryQ = useGetMeSharedAccountSummary({ query: { ...sharedAccountSummaryReadOptions,
-    queryKey: getGetMeSharedAccountSummaryQueryKey(),
-    refetchInterval: 3000,
-    refetchIntervalInBackground: false,
-  } });
   const q = useQuery<{ ok: boolean; pool: PoolSnapshot | null; reason?: string }>({
     queryKey: ["adminMasterPool"],
     queryFn: async () => {
       const r = await fetch("/api/admin/allocations/master-pool", { credentials: "include" });
-      if (!r.ok) throw new Error("Stored allocation summary unavailable.");
       return r.json();
     },
     refetchInterval: 5000,
@@ -928,8 +919,9 @@ export function SharedBridgePoolCard() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["adminMasterPool"] }),
   });
   const [confirmRecompute, setConfirmRecompute] = useState(false);
-  const pool = !q.isError && q.data?.ok === true ? q.data.pool : null;
-  const storedAmount = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? String(value) : "—";
+  const pool = q.data?.pool ?? null;
+  const cap = pool ? Math.min(pool.mt5Balance, pool.mt5Equity) : 0;
+  const available = pool ? Math.max(0, cap - pool.totalAllocated) : 0;
   return (
     <Card data-testid="shared-bridge-pool-card">
       <CardHeader>
@@ -938,50 +930,59 @@ export function SharedBridgePoolCard() {
           {pool && (
             <Badge variant={pool.bridgeAvailability === "HEALTHY" ? "default"
               : pool.bridgeAvailability === "RECONCILING" ? "secondary" : "destructive"}>
-              Stored allocation gate: {pool.bridgeAvailability}
+              {pool.bridgeAvailability}
             </Badge>
           )}
           {pool?.isOverAllocated && <Badge variant="destructive">OVER-ALLOCATED</Badge>}
         </CardTitle>
         <CardDescription>
-          Broker-reported money and ARX allocation records are shown separately.
-          Refreshing allocation records does not obtain a new MT5 observation.
+          MT5 master balance is the source of truth. Cap = min(balance, equity).
+          Strict Real-Balance Mode; prop-firm over-allocation is disabled.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {summaryQ.data?.masterAccess === true && <section aria-label="Pinned MT5 account report">
-          <h3 className="mb-2 text-sm font-medium">Pinned MT5 account report</h3>
-          <NativeAccountReport report={summaryQ.data.masterMt5?.nativeAccountReport ?? null} failed={Boolean(summaryQ.isError)} />
-        </section>}
-        {summaryQ.data?.masterAccess !== true && <p className="text-xs text-muted-foreground">Authorized MT5 account report unavailable.</p>}
-        <h3 className="text-sm font-medium">Stored ARX allocation records</h3>
-        <p className="text-xs text-muted-foreground">These records are separate from the broker report above. Their currency, monetary freshness and agreement with that report are unverified; they are not available broker funds.</p>
         {!pool ? (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>No master pool snapshot</AlertTitle>
             <AlertDescription className="text-xs">
-              {q.isError ? "The latest allocation refresh failed." : q.data?.reason ?? "Waiting for an allocation record."}
+              {q.data?.reason ?? "Waiting for an EA heartbeat from the pinned master."}
             </AlertDescription>
           </Alert>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div><div className="text-xs text-muted-foreground">Balance</div>
+              <div className="text-xl font-mono">${pool.mt5Balance.toFixed(2)}</div></div>
+            <div><div className="text-xs text-muted-foreground">Equity</div>
+              <div className="text-xl font-mono">${pool.mt5Equity.toFixed(2)}</div></div>
             <div><div className="text-xs text-muted-foreground">Total allocated</div>
-              <div className="text-xl font-mono" data-testid="pool-total-allocated">{storedAmount(pool.totalAllocated)}</div></div>
-            <div><div className="text-xs text-muted-foreground">Recorded allocation headroom</div>
-              <div className="font-mono">{storedAmount(pool.available)}</div></div>
+              <div className="text-xl font-mono">${pool.totalAllocated.toFixed(2)}</div></div>
+            <div><div className="text-xs text-muted-foreground">Available</div>
+              <div className={`text-xl font-mono ${pool.isOverAllocated ? "text-red-500" : "text-emerald-500"}`}>
+                ${available.toFixed(2)}
+              </div></div>
+            <div><div className="text-xs text-muted-foreground">Free margin</div>
+              <div className="font-mono">${(pool.mt5FreeMargin ?? 0).toFixed(2)}</div></div>
+            <div><div className="text-xs text-muted-foreground">Used margin</div>
+              <div className="font-mono">${(pool.mt5UsedMargin ?? 0).toFixed(2)}</div></div>
             <div><div className="text-xs text-muted-foreground">Total reserved risk</div>
-              <div className="font-mono" data-testid="pool-reserved-risk">{storedAmount(pool.totalReservedRisk)}</div></div>
+              <div className="font-mono">${(pool.totalReservedRisk ?? 0).toFixed(2)}</div></div>
             <div><div className="text-xs text-muted-foreground">Allocation deficit</div>
               <div className={`font-mono ${(pool.allocationDeficit ?? 0) > 0 ? "text-red-500" : ""}`}>
-                {storedAmount(pool.allocationDeficit)}
+                ${(pool.allocationDeficit ?? 0).toFixed(2)}
               </div></div>
-            <div><div className="text-xs text-muted-foreground">Stored user P/L total (scope unverified)</div>
-              <div className="font-mono">
-                {storedAmount(pool.totalUserUnrealizedPnl)}
+            <div><div className="text-xs text-muted-foreground">Floating P/L (users)</div>
+              <div className={`font-mono ${pool.totalUserUnrealizedPnl < 0 ? "text-red-500" : "text-emerald-500"}`}>
+                ${pool.totalUserUnrealizedPnl.toFixed(2)}
               </div></div>
-            <div className="col-span-2"><div className="text-xs text-muted-foreground">Allocation record recomputed</div>
-              <div className="font-mono text-xs">{pool.recomputedAt ?? "—"}</div></div>
+            <div><div className="text-xs text-muted-foreground">Snapshot</div>
+              <Badge variant={pool.snapshotStatus === "FRESH" ? "default"
+                : pool.snapshotStatus === "STALE" ? "secondary" : "destructive"} className="text-xs">
+                {pool.snapshotStatus ?? "–"}
+                {pool.snapshotAgeMs != null && ` · ${Math.round(pool.snapshotAgeMs/1000)}s`}
+              </Badge></div>
+            <div className="col-span-2"><div className="text-xs text-muted-foreground">Last MT5 snapshot</div>
+              <div className="font-mono text-xs">{pool.lastMt5SnapshotAt ?? "–"}</div></div>
           </div>
         )}
         {pool?.isOverAllocated && (
@@ -989,8 +990,8 @@ export function SharedBridgePoolCard() {
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Master is over-allocated</AlertTitle>
             <AlertDescription className="text-xs">
-              The stored allocation check reports allocated {storedAmount(pool.totalAllocated)} exceeding
-              its recorded cap {storedAmount(pool.masterCap)}.
+              Allocated ${pool.totalAllocated.toFixed(2)} exceeds master cap
+              ${(pool.masterCap ?? Math.min(pool.mt5Balance, pool.mt5Equity)).toFixed(2)}.
               New shared-live entries are refused until allocations are
               proportionally reduced or shared-live is paused.
             </AlertDescription>

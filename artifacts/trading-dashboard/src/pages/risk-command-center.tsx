@@ -7,12 +7,12 @@ import { Shield, Pause, Play, Gauge, SlidersHorizontal, ClipboardList, ScrollTex
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
+import { fetchRiskBudget, type RiskBudgetSnapshot } from "@/lib/risk-budget";
 
 type Settings = { maxRiskPerTradeAmount: number | null; maxDailyLossAmount: number | null; maxPositionSize: number | null; minRewardRiskRatio: number; maxTradesPerDay: number; maxOpenTrades: number };
 type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null; discipline: { maxTradesPerDay: number | null; maxOpenTrades: number | null } };
 type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
 type Money = number | null;
-type Budget = { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
 type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
 
 const usd = (v: Money) => (v == null ? "none set" : `$${v}`);
@@ -46,19 +46,24 @@ async function api(path: string, init?: RequestInit) {
  */
 export default function RiskCommandCenter() {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [budget, setBudget] = useState<Budget | null>(null);
+  const [budget, setBudget] = useState<RiskBudgetSnapshot | null>(null);
   const [cards, setCards] = useState<Cards | null>(null);
   const [pauseReason, setPauseReason] = useState("Manual pause");
 
   async function load() {
-    const [p, b, c] = await Promise.all([
-      api("/api/risk-profile"),
-      api("/api/risk/budget"),
-      api("/api/risk/dashboard-cards"),
-    ]);
-    setProfile(p); setBudget(b); setCards(c);
+    try {
+      const [p, b, c] = await Promise.all([
+        api("/api/risk-profile"),
+        fetchRiskBudget(),
+        api("/api/risk/dashboard-cards"),
+      ]);
+      setProfile(p); setBudget(b); setCards(c);
+    } catch {
+      // Keep the last known page state; the workspace and risk page both use
+      // the same account-scoped budget contract and never relabel it as fresh.
+    }
   }
-  useEffect(() => { void load(); const id = setInterval(load, 4000); return () => clearInterval(id); }, []);
+  useEffect(() => { void load(); const id = setInterval(() => { void load(); }, 4000); return () => clearInterval(id); }, []);
 
   async function applyPreset(preset: string) { await api(`/api/risk-profile/preset/${preset}`, { method: "POST" }); load(); }
   async function pause() { await api("/api/risk/pause", { method: "POST", body: JSON.stringify({ reason: pauseReason }) }); load(); }

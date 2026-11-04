@@ -2,8 +2,8 @@
 //
 // THE single structural-read pipeline. Both the Scanner "Ruby Chart Read" panel
 // (POST /me/assistant/read-chart) AND Ruby CHAT (the `readChartStructure` tool)
-// call this one function. Equal captured inputs and caller restrictions use the
-// same rules; separate calls may observe different data or account context.
+// call this one function, so the two surfaces can never disagree: same symbol +
+// same timeframe ⇒ byte-identical `chartRead` payload and `readLayer`.
 //
 // Before this extraction the chat path collapsed to a weak market-context answer
 // ("no primary timeframe / key levels not available"), while the panel produced
@@ -34,6 +34,7 @@ import {
   buildGatedTrustLine,
   buildStructuralReadTrustLine,
 } from "../data/chart/rubyChartContext.js";
+import { getChartFeedStatus } from "../data/chart/chartDataService.js";
 import { deriveRubyReadLayers, resolveFeedUnconfirmed, type RubyReadLayer } from "./rubyReadLayers.js";
 import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
@@ -49,7 +50,6 @@ import { applyTrendlineLearning } from "./trendlineLearningRuntime.js";
 import { buildMarketIntelligenceSnapshot } from "../data/chart/marketIntelligenceService.js";
 import { buildGoldStrategyRead } from "./goldStrategyRead.js";
 import { buildFvgStrategyRead, withholdFvgLevels } from "./fvgStrategyRead.js";
-import { captureFvgChartInputs } from "../data/chart/fvgChartContext.js";
 import type { Candle } from "../data/types.js";
 
 /**
@@ -64,7 +64,6 @@ async function buildRubyPatternNote(args: {
   symbol: string;
   timeframe: ChartTimeframe;
   candles: Candle[];
-  source: string | null;
   feedConfirmed: boolean;
   feedStale: boolean;
   sufficiencyAllowsSetup: boolean;
@@ -87,8 +86,6 @@ async function buildRubyPatternNote(args: {
     symbol: args.symbol,
     timeframe: args.timeframe,
     rawCandles: args.candles,
-    source: args.source,
-    timestampConvention: "open",
     feedConfirmed: args.feedConfirmed,
     feedStale: args.feedStale,
     sufficiencyAllowsSetup: args.sufficiencyAllowsSetup,
@@ -146,7 +143,6 @@ async function buildRubyTrendlineNote(args: {
   symbol: string;
   timeframe: ChartTimeframe;
   candles: Candle[];
-  source: string | null;
   feedConfirmed: boolean;
   feedStale: boolean;
   sufficiencyAllowsSetup: boolean;
@@ -169,8 +165,6 @@ async function buildRubyTrendlineNote(args: {
     symbol: args.symbol,
     timeframe: args.timeframe,
     rawCandles: args.candles,
-    source: args.source,
-    timestampConvention: "open",
     feedConfirmed: args.feedConfirmed,
     feedStale: args.feedStale,
     sufficiencyAllowsSetup: args.sufficiencyAllowsSetup,
@@ -227,9 +221,8 @@ export interface RubyStructuralReadParams {
   /** Client-observed: the chart feed was NOT confirmed at read-time. Advisory
    *  only — the server still runs its own authoritative gate. */
   clientFeedUnconfirmed?: boolean;
-  /** Authenticated user id, threaded for the per-user pattern learning loop
-   *  (Task #617 Gap C) and the user's own broker quote comparison. Null/absent
-   *  ⇒ no observation recorded, no nudge, broker mirror unmeasured. */
+  /** Authenticated user id, threaded ONLY for the per-user pattern learning loop
+   *  (Task #617 Gap C). Null/absent ⇒ no observation recorded, no nudge. */
   userId?: number | null;
   /** Per-user assistant display name for user-facing copy (default Eleanor). */
   assistantName?: string;
@@ -358,26 +351,35 @@ export async function buildRubyStructuralRead(
   // intelligence state, runs the truth + freshness + mirror gate checks, and
   // classifies into a basis. A throw is a fail-safe → treated as INSUFFICIENT.
   //
-  // Use the feed verdict captured with the primary analysis candles. A separate
-  // display-tip probe can observe another source/window and cannot upgrade this
-  // assessment. The client's negative observation still restricts the result.
+  // SERVER-AUTHORITATIVE FEED VERDICT: in parallel we resolve the SAME
+  // ChartFeedStatus the Scanner chart header badge renders (getChartFeedStatus
+  // with the live forming tip, exactly like GET /api/chart/candles) and derive
+  // feed-confirmation from its `aiUsable` (true ONLY when quality === "clean").
+  // The Scanner PANEL passes its observed feed verdict via `clientFeedUnconfirmed`,
+  // but Ruby CHAT never does (the LLM has no feed observation) — so without this
+  // the chat read would reach a FULL "Verified · Live feed · AACI verified"
+  // footer while the panel/header honestly show "Historical only · Feed not
+  // confirmed · Limited read". Computing the verdict here makes the two surfaces
+  // agree regardless of what the caller passed. DISPLAY-ONLY — never execution.
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
+  let feedStatus: Awaited<ReturnType<typeof getChartFeedStatus>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, tf, 200, { userId: params.userId });
+    [rubyCtx, feedStatus] = await Promise.all([
+      buildRubyChartContext(symbol, tf, 200),
+      // The SAME getChartFeedStatus(symbol, tf, true) the chart header badge
+      // renders. Independently fail-safe: a thrown probe resolves to null and
+      // resolveFeedUnconfirmed treats null as UNCONFIRMED (fail-closed).
+      getChartFeedStatus(symbol, tf, true).catch(() => null),
+    ]);
   } catch {
-    // Fail-safe: no context means no captured feed verdict or structural read.
+    // fail-safe — rubyCtx stays null (INSUFFICIENT branch below); feedStatus
+    // stays null ⇒ resolveFeedUnconfirmed treats the feed as unconfirmed.
   }
 
-  // Freeze provenance before any child analysis awaits. It comes from this
-  // capture, never a newer lookup or the client's requested identity. The user
-  // is the authenticated server input whose account-dependent checks ran.
-  const assessmentEvidence = rubyCtx?.marketEvidence && Number.isSafeInteger(params.userId) && (params.userId ?? 0) > 0
-    ? { ...rubyCtx.marketEvidence, userId: params.userId!, higherTimeframeObservation: rubyCtx.htfObservationKey }
-    : null;
-
-  // Either the captured server verdict or the client's observation can withhold
-  // the live setup. A newer display-tip observation cannot upgrade this capture.
-  const feedUnconfirmed = resolveFeedUnconfirmed(clientFeedUnconfirmed, rubyCtx?.feedStatus ?? null);
+  // Downgrade-only OR of the client's observation and the server-authoritative
+  // ChartFeedStatus verdict (the SAME signal the Scanner header badge renders),
+  // so Ruby CHAT and the Scanner panel can never disagree on the feed verdict.
+  const feedUnconfirmed = resolveFeedUnconfirmed(clientFeedUnconfirmed, feedStatus);
 
   // Derive the three DISPLAY-ONLY read layers from the shared chart-context
   // signals. `readLayer` is the PRIMARY wire signal; the booleans are for
@@ -459,7 +461,7 @@ export async function buildRubyStructuralRead(
   // Enough closed history to read structure. Use candles already owned by
   // RubyChartContext — no separate provider fetch; rubyCtx is the sole source.
   const candles = rubyCtx.candles;
-  let htfBias: StructureBias | null = null;
+  let htfBias: StructureBias = "No clear edge";
   if (rubyCtx.htfCandles.length >= 10) htfBias = quickTrend(rubyCtx.htfCandles);
 
   // ── MARKET INTELLIGENCE (Task #652) — ADDITIVE, DISPLAY-ONLY child input ─────
@@ -484,16 +486,52 @@ export async function buildRubyStructuralRead(
   const goldBlock = goldRead ? { goldStrategyRead: goldRead } : {};
 
   // ── HTF TREND FVG PULLBACK (Task #675) — ADDITIVE, DISPLAY-ONLY child input ──
-  // Independently capture normalized H4/H1/M5 observations. Their source must
-  // match this primary assessment; no atomic cross-timeframe capture is claimed.
-  // The child can only describe/restrict, never upgrade the primary read.
-  const fvgInputs = await captureFvgChartInputs(symbol, rubyCtx.marketEvidence);
-  const fvgRead = buildFvgStrategyRead({ symbol, ...fvgInputs });
+  // Fetches H4 + H1 + M5 candles (fail-open) and runs the pure FVG engine.
+  // The block carries advisory explanation + chart overlay descriptors only; it can
+  // DESCRIBE/WARN/HIGHLIGHT but never grants a trade affordance, never produces
+  // READY_NOW, and never weakens any feed/sufficiency/Trade-Health/live gate.
+  // Absent (null) when the symbol has no multi-TF candle data.
+  let fvgH4Candles: Candle[] = [];
+  let fvgH1Candles: Candle[] = [];
+  let fvgM5Candles: Candle[] = [];
+  let fvgIsSimulator = false;
+  const fvgStaleTimeframes: string[] = [];
+  try {
+    const { routeCandles: rcFvg } = await import("../data/marketDataRouter.js");
+    const [h4r, h1r, m5r] = await Promise.allSettled([
+      rcFvg(symbol, "H4", 220),
+      rcFvg(symbol, "H1", 220),
+      rcFvg(symbol, "M5", 100),
+    ]);
+    const isMockProvider = (p: string | null) =>
+      p != null && (p === "assistant_real:mock" || p.endsWith(":mock") || p === "mock");
+    const hasStaleAttempt = (v: { attempts: { reason: string | null }[] }) =>
+      v.attempts.some((a) => a.reason?.includes("STALE"));
+    // Detect simulator: mock provider returns ok=true with candles but is never live.
+    if (h4r.status === "fulfilled" && h4r.value.ok && isMockProvider(h4r.value.primaryProvider)) fvgIsSimulator = true;
+    if (h1r.status === "fulfilled" && h1r.value.ok && isMockProvider(h1r.value.primaryProvider)) fvgIsSimulator = true;
+    if (m5r.status === "fulfilled" && m5r.value.ok && isMockProvider(m5r.value.primaryProvider)) fvgIsSimulator = true;
+    // Detect stale: any provider attempt reported a STALE reason — flag the TF.
+    if (h4r.status === "fulfilled" && hasStaleAttempt(h4r.value)) fvgStaleTimeframes.push("H4");
+    if (h1r.status === "fulfilled" && hasStaleAttempt(h1r.value)) fvgStaleTimeframes.push("H1");
+    if (m5r.status === "fulfilled" && hasStaleAttempt(m5r.value)) fvgStaleTimeframes.push("M5");
+    fvgH4Candles = h4r.status === "fulfilled" && h4r.value.ok ? h4r.value.candles : [];
+    fvgH1Candles = h1r.status === "fulfilled" && h1r.value.ok ? h1r.value.candles : [];
+    fvgM5Candles = m5r.status === "fulfilled" && m5r.value.ok ? m5r.value.candles : [];
+  } catch { /* fail-open: fvg block absent */ }
+  const fvgRead = buildFvgStrategyRead({
+    symbol,
+    m5Candles: fvgM5Candles,
+    h1Candles: fvgH1Candles,
+    h4Candles: fvgH4Candles,
+    isSimulator: fvgIsSimulator,
+    staleTimeframes: fvgStaleTimeframes,
+  });
   const fvgBlock = fvgRead ? { fvgStrategyRead: fvgRead } : {};
   // Feed-unconfirmed (STRUCTURAL_ONLY) variant: the FVG engine's staleness check
   // is INDEPENDENT of the primary read's feed verdict, so strip its numeric
   // levels before they can ship on a structural read (downgrade-only display
-  // filter — withdraws entry signals too, never touches an execution gate).
+  // filter — never alters direction, never touches a gate).
   const fvgBlockWithheld = fvgRead
     ? { fvgStrategyRead: withholdFvgLevels(fvgRead) }
     : {};
@@ -507,7 +545,6 @@ export async function buildRubyStructuralRead(
       symbol,
       timeframe: tf,
       candles,
-      source: rubyCtx.feedStatus?.source ?? null,
       feedConfirmed: true,
       feedStale: false,
       sufficiencyAllowsSetup: true,
@@ -517,7 +554,6 @@ export async function buildRubyStructuralRead(
       symbol,
       timeframe: tf,
       candles,
-      source: rubyCtx.feedStatus?.source ?? null,
       feedConfirmed: true,
       feedStale: false,
       sufficiencyAllowsSetup: true,
@@ -554,7 +590,7 @@ export async function buildRubyStructuralRead(
       disclaimer: DISCLAIMER,
     });
     return {
-      chartRead: { ...chartReadPayload, assessmentEvidence },
+      chartRead: chartReadPayload,
       readLayer: "FULL",
       normalizedTimeframe: tf,
       shouldRecordReadDecision: true,
@@ -588,7 +624,6 @@ export async function buildRubyStructuralRead(
     symbol,
     timeframe: tf,
     candles,
-    source: rubyCtx.feedStatus?.source ?? null,
     feedConfirmed: false,
     feedStale: rubyCtx.basis !== "VERIFIED",
     sufficiencyAllowsSetup: false,
@@ -598,7 +633,6 @@ export async function buildRubyStructuralRead(
     symbol,
     timeframe: tf,
     candles,
-    source: rubyCtx.feedStatus?.source ?? null,
     feedConfirmed: false,
     feedStale: rubyCtx.basis !== "VERIFIED",
     sufficiencyAllowsSetup: false,
@@ -643,7 +677,7 @@ export async function buildRubyStructuralRead(
   });
   return {
     // The exact setup is withheld, so neutralise any confident trade language.
-    chartRead: { ...neutralizeFeedCopyDeep(structuralPayload), assessmentEvidence },
+    chartRead: neutralizeFeedCopyDeep(structuralPayload),
     readLayer: "STRUCTURAL_ONLY",
     normalizedTimeframe: tf,
     shouldRecordReadDecision: true,

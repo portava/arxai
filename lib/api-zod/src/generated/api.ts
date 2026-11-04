@@ -4834,7 +4834,6 @@ export const GetMt5StateResponse = zod.object({
   marginLevel: zod.number().nullish(),
   currency: zod.string().nullish(),
   liveAllowed: zod.boolean().optional(),
-  liveAllowedNote: zod.string().optional(),
   positions: zod
     .array(
       zod.object({
@@ -4849,16 +4848,6 @@ export const GetMt5StateResponse = zod.object({
       }),
     )
     .optional(),
-  positionsMeasured: zod.boolean().optional(),
-  positionsNote: zod.string().optional(),
-  scope: zod
-    .enum(["platform", "own_connection", "shared_master_bridge", "none"])
-    .optional()
-    .describe(
-      "Which account this state describes. Only operators receive the install-wide platform row; everyone else sees their own connection, their shared-master bridge status, or none.",
-    ),
-  scopeNote: zod.string().optional(),
-  heartbeatFreshness: zod.string().optional(),
   lastHeartbeatAt: zod.string().nullish(),
   lastSyncAt: zod.string().nullish(),
 });
@@ -4866,21 +4855,9 @@ export const GetMt5StateResponse = zod.object({
 /**
  * @summary Combined MT5 bridge status (connection, mode, queue, account)
  */
-export const getMt5StatusResponseNativeAccountReportOneObservationAgeMsMin = 0;
-
-export const getMt5StatusResponseNativeAccountReportOneCurrencyDigitsMin = 0;
-export const getMt5StatusResponseNativeAccountReportOneCurrencyDigitsMax = 16;
-
 export const GetMt5StatusResponse = zod.object({
   connected: zod.boolean(),
-  mode: zod.enum([
-    "MOCK",
-    "DEMO",
-    "LIVE_LOCKED",
-    "LIVE",
-    "NOT_CONNECTED",
-    "STALE",
-  ]),
+  mode: zod.enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE"]),
   lastHeartbeatAt: zod.string().nullable(),
   secondsSinceHeartbeat: zod.number().nullable(),
   pendingCommands: zod.number(),
@@ -4903,7 +4880,7 @@ export const GetMt5StatusResponse = zod.object({
     .describe(
       "Server-side flag (env ARX_ALLOW_DEMO_EXECUTION). When true, the demo-execution layer accepts DEMO_MARKET_ORDER queues; live execution remains impossible.",
     ),
-  accountType: zod.enum(["DEMO", "REAL", "UNKNOWN", "NONE"]),
+  accountType: zod.enum(["DEMO", "REAL", "UNKNOWN"]),
   maxDemoLot: zod.number(),
   openPositions: zod.array(
     zod.object({
@@ -4917,58 +4894,17 @@ export const GetMt5StatusResponse = zod.object({
       profit: zod.number().nullish(),
     }),
   ),
-  nativeAccountReport: zod
-    .union([
-      zod
-        .object({
-          status: zod.enum(["reported", "unavailable"]),
-          reason: zod.string(),
-          currentVerified: zod.literal(false),
-          observedAt: zod.string().nullable(),
-          observationAgeMs: zod
-            .number()
-            .min(getMt5StatusResponseNativeAccountReportOneObservationAgeMsMin)
-            .nullish(),
-          receivedAt: zod.string().nullable(),
-          currency: zod.string().nullable(),
-          currencyDigits: zod
-            .number()
-            .min(getMt5StatusResponseNativeAccountReportOneCurrencyDigitsMin)
-            .max(getMt5StatusResponseNativeAccountReportOneCurrencyDigitsMax)
-            .nullable(),
-          amounts: zod
-            .object({
-              balance: zod.string(),
-              equity: zod.string(),
-              profit: zod.string(),
-              credit: zod.string(),
-              margin: zod.string(),
-              freeMargin: zod.string(),
-            })
-            .nullable(),
-        })
-        .describe(
-          "Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.",
-        ),
-      zod.null(),
-    ])
-    .optional()
-    .describe(
-      "Native reported observations for the authenticated user's selected personal MT5 connection only. Never shared-master funds or proof of current broker state.",
-    ),
-  accountSnapshot: zod
-    .object({
-      account: zod.string().nullable(),
-      broker: zod.string().nullish(),
-      server: zod.string().nullish(),
-      balance: zod.number().nullable(),
-      equity: zod.number().nullable(),
-      margin: zod.number().nullish(),
-      freeMargin: zod.number().nullish(),
-      marginLevel: zod.number().nullish(),
-      currency: zod.string().nullable(),
-    })
-    .nullable(),
+  accountSnapshot: zod.object({
+    account: zod.string().nullable(),
+    broker: zod.string().nullish(),
+    server: zod.string().nullish(),
+    balance: zod.number().nullable(),
+    equity: zod.number().nullable(),
+    margin: zod.number().nullish(),
+    freeMargin: zod.number().nullish(),
+    marginLevel: zod.number().nullish(),
+    currency: zod.string().nullable(),
+  }),
 });
 
 /**
@@ -5279,8 +5215,6 @@ export const getChartCandlesQueryTimeframeDefault = `M5`;
 export const getChartCandlesQueryLimitDefault = 300;
 export const getChartCandlesQueryLimitMax = 5000;
 
-export const getChartCandlesQueryViewDefault = `display`;
-
 export const GetChartCandlesQueryParams = zod.object({
   symbol: zod.coerce.string().min(1).max(getChartCandlesQuerySymbolMax),
   timeframe: zod
@@ -5313,12 +5247,6 @@ export const GetChartCandlesQueryParams = zod.object({
     .min(1)
     .max(getChartCandlesQueryLimitMax)
     .default(getChartCandlesQueryLimitDefault),
-  view: zod
-    .enum(["display", "analysis"])
-    .default(getChartCandlesQueryViewDefault)
-    .describe(
-      "Display includes forming tips; analysis matches closed-bar assessment inputs.",
-    ),
 });
 
 export const getChartCandlesResponseCandlesItemVolumeEvidenceQuantityMin = 0;
@@ -5565,6 +5493,7 @@ export const GetChartCandlesResponse = zod.object({
     source: zod.string().nullable().describe("Winning provider id"),
     isLive: zod.boolean(),
     lastTickTime: zod.string().nullable(),
+    "notLiveReason": zod.string().nullish().describe('stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable'),
     lastCandleTime: zod.string().nullable(),
     latencyMs: zod.number().nullable(),
     missingCandleCount: zod.number(),
@@ -5968,6 +5897,7 @@ export const GetChartFeedStatusResponse = zod.object({
   source: zod.string().nullable().describe("Winning provider id"),
   isLive: zod.boolean(),
   lastTickTime: zod.string().nullable(),
+  "notLiveReason": zod.string().nullish().describe('stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable'),
   lastCandleTime: zod.string().nullable(),
   latencyMs: zod.number().nullable(),
   missingCandleCount: zod.number(),
@@ -6335,6 +6265,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
         source: zod.string().nullable().describe("Winning provider id"),
         isLive: zod.boolean(),
         lastTickTime: zod.string().nullable(),
+        "notLiveReason": zod.string().nullish().describe('stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable'),
         lastCandleTime: zod.string().nullable(),
         latencyMs: zod.number().nullable(),
         missingCandleCount: zod.number(),
@@ -15529,11 +15460,6 @@ export const GetMultiTimeframeHistoryResponse = zod.object({
 /**
  * @summary Current user's virtual account aggregates across all shared masters
  */
-export const getMeSharedAccountSummaryResponseMasterMt5OneNativeAccountReportOneObservationAgeMsMin = 0;
-
-export const getMeSharedAccountSummaryResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMin = 0;
-export const getMeSharedAccountSummaryResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMax = 16;
-
 export const GetMeSharedAccountSummaryResponse = zod.object({
   ok: zod.boolean(),
   userId: zod.number(),
@@ -15596,64 +15522,12 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
     .union([
       zod
         .object({
-          nativeAccountReport: zod
-            .union([
-              zod
-                .object({
-                  status: zod.enum(["reported", "unavailable"]),
-                  reason: zod.string(),
-                  currentVerified: zod.literal(false),
-                  observedAt: zod.string().nullable(),
-                  observationAgeMs: zod
-                    .number()
-                    .min(
-                      getMeSharedAccountSummaryResponseMasterMt5OneNativeAccountReportOneObservationAgeMsMin,
-                    )
-                    .nullish(),
-                  receivedAt: zod.string().nullable(),
-                  currency: zod.string().nullable(),
-                  currencyDigits: zod
-                    .number()
-                    .min(
-                      getMeSharedAccountSummaryResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMin,
-                    )
-                    .max(
-                      getMeSharedAccountSummaryResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMax,
-                    )
-                    .nullable(),
-                  amounts: zod
-                    .object({
-                      balance: zod.string(),
-                      equity: zod.string(),
-                      profit: zod.string(),
-                      credit: zod.string(),
-                      margin: zod.string(),
-                      freeMargin: zod.string(),
-                    })
-                    .nullable(),
-                })
-                .describe(
-                  "Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.",
-                ),
-              zod.null(),
-            ])
-            .optional(),
-          mt5Balance: zod.number().nullable(),
-          mt5Equity: zod.number().nullable(),
-          mt5UsedMargin: zod.number().nullable(),
-          mt5FreeMargin: zod.number().nullable(),
-          mt5OpenPnl: zod.number().nullable(),
-          openPositions: zod.number().nullable(),
-          accountObservationScope: zod
-            .enum(["LATEST_ACCOUNT_UPDATE"])
-            .describe(
-              "Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when.",
-            ),
-          amountsCoherent: zod
-            .boolean()
-            .describe(
-              "False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise.",
-            ),
+          mt5Balance: zod.number(),
+          mt5Equity: zod.number(),
+          mt5UsedMargin: zod.number(),
+          mt5FreeMargin: zod.number(),
+          mt5OpenPnl: zod.number(),
+          openPositions: zod.number(),
           accountCurrency: zod.string().nullish(),
           brokerName: zod.string().nullish(),
           serverName: zod.string().nullish(),
@@ -15670,12 +15544,10 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
           unattributedCount: zod.number(),
           syncStatus: zod
             .enum(["LIVE", "STALE", "UNAVAILABLE"])
-            .describe(
-              "Freshness of the last account update only; does not establish freshness or coherence of every amount.",
-            ),
+            .describe("Derived health for the card sync badge."),
         })
         .describe(
-          "Owner\/admin-only pinned MT5 account view. nativeAccountReport preserves direct reported decimal text with unverified clock and continuity. Legacy scalar fields are compatibility data and must not substitute for a missing native report. ARX allocation fields remain separate. Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
+          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
         ),
       zod.null(),
     ])
@@ -15694,75 +15566,18 @@ export const GetMeSharedAccountSummaryResponse = zod.object({
  * @summary Owner/admin only — recompute the MT5 master snapshot from the freshest EA heartbeat data and return it. Never fabricates; honest staleness.
 
  */
-export const refreshMeSharedAccountSnapshotResponseMasterMt5OneNativeAccountReportOneObservationAgeMsMin = 0;
-
-export const refreshMeSharedAccountSnapshotResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMin = 0;
-export const refreshMeSharedAccountSnapshotResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMax = 16;
-
 export const RefreshMeSharedAccountSnapshotResponse = zod.object({
   ok: zod.boolean(),
   masterMt5: zod
     .union([
       zod
         .object({
-          nativeAccountReport: zod
-            .union([
-              zod
-                .object({
-                  status: zod.enum(["reported", "unavailable"]),
-                  reason: zod.string(),
-                  currentVerified: zod.literal(false),
-                  observedAt: zod.string().nullable(),
-                  observationAgeMs: zod
-                    .number()
-                    .min(
-                      refreshMeSharedAccountSnapshotResponseMasterMt5OneNativeAccountReportOneObservationAgeMsMin,
-                    )
-                    .nullish(),
-                  receivedAt: zod.string().nullable(),
-                  currency: zod.string().nullable(),
-                  currencyDigits: zod
-                    .number()
-                    .min(
-                      refreshMeSharedAccountSnapshotResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMin,
-                    )
-                    .max(
-                      refreshMeSharedAccountSnapshotResponseMasterMt5OneNativeAccountReportOneCurrencyDigitsMax,
-                    )
-                    .nullable(),
-                  amounts: zod
-                    .object({
-                      balance: zod.string(),
-                      equity: zod.string(),
-                      profit: zod.string(),
-                      credit: zod.string(),
-                      margin: zod.string(),
-                      freeMargin: zod.string(),
-                    })
-                    .nullable(),
-                })
-                .describe(
-                  "Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.",
-                ),
-              zod.null(),
-            ])
-            .optional(),
-          mt5Balance: zod.number().nullable(),
-          mt5Equity: zod.number().nullable(),
-          mt5UsedMargin: zod.number().nullable(),
-          mt5FreeMargin: zod.number().nullable(),
-          mt5OpenPnl: zod.number().nullable(),
-          openPositions: zod.number().nullable(),
-          accountObservationScope: zod
-            .enum(["LATEST_ACCOUNT_UPDATE"])
-            .describe(
-              "Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when.",
-            ),
-          amountsCoherent: zod
-            .boolean()
-            .describe(
-              "False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise.",
-            ),
+          mt5Balance: zod.number(),
+          mt5Equity: zod.number(),
+          mt5UsedMargin: zod.number(),
+          mt5FreeMargin: zod.number(),
+          mt5OpenPnl: zod.number(),
+          openPositions: zod.number(),
           accountCurrency: zod.string().nullish(),
           brokerName: zod.string().nullish(),
           serverName: zod.string().nullish(),
@@ -15779,12 +15594,10 @@ export const RefreshMeSharedAccountSnapshotResponse = zod.object({
           unattributedCount: zod.number(),
           syncStatus: zod
             .enum(["LIVE", "STALE", "UNAVAILABLE"])
-            .describe(
-              "Freshness of the last account update only; does not establish freshness or coherence of every amount.",
-            ),
+            .describe("Derived health for the card sync badge."),
         })
         .describe(
-          "Owner\/admin-only pinned MT5 account view. nativeAccountReport preserves direct reported decimal text with unverified clock and continuity. Legacy scalar fields are compatibility data and must not substitute for a missing native report. ARX allocation fields remain separate. Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
+          "Real MT5 master-account snapshot, owner\/admin only. Sourced from the EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes tokens, IPs, or the unmasked account number. Null for normal users.\n",
         ),
       zod.null(),
     ])
@@ -20399,60 +20212,10 @@ export const GetAdminFundBookPoolsResponse = zod.object({
 /**
  * @summary Read-only broker bridge mirror + freshness (ADMIN/OWNER)
  */
-export const getAdminFundBookBrokerMirrorResponseBridgesItemNativeAccountReportOneObservationAgeMsMin = 0;
-
-export const getAdminFundBookBrokerMirrorResponseBridgesItemNativeAccountReportOneCurrencyDigitsMin = 0;
-export const getAdminFundBookBrokerMirrorResponseBridgesItemNativeAccountReportOneCurrencyDigitsMax = 16;
-
 export const GetAdminFundBookBrokerMirrorResponse = zod.object({
   ok: zod.boolean(),
   bridges: zod.array(
     zod.object({
-      nativeAccountReport: zod
-        .union([
-          zod
-            .object({
-              status: zod.enum(["reported", "unavailable"]),
-              reason: zod.string(),
-              currentVerified: zod.literal(false),
-              observedAt: zod.string().nullable(),
-              observationAgeMs: zod
-                .number()
-                .min(
-                  getAdminFundBookBrokerMirrorResponseBridgesItemNativeAccountReportOneObservationAgeMsMin,
-                )
-                .nullish(),
-              receivedAt: zod.string().nullable(),
-              currency: zod.string().nullable(),
-              currencyDigits: zod
-                .number()
-                .min(
-                  getAdminFundBookBrokerMirrorResponseBridgesItemNativeAccountReportOneCurrencyDigitsMin,
-                )
-                .max(
-                  getAdminFundBookBrokerMirrorResponseBridgesItemNativeAccountReportOneCurrencyDigitsMax,
-                )
-                .nullable(),
-              amounts: zod
-                .object({
-                  balance: zod.string(),
-                  equity: zod.string(),
-                  profit: zod.string(),
-                  credit: zod.string(),
-                  margin: zod.string(),
-                  freeMargin: zod.string(),
-                })
-                .nullable(),
-            })
-            .describe(
-              "Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.",
-            ),
-          zod.null(),
-        ])
-        .optional()
-        .describe(
-          "Exact native whole-account report; legacy scalar fields are not current account evidence.",
-        ),
       bridgeConnectionId: zod.number(),
       userId: zod.number().nullish(),
       connectionName: zod.string().nullish(),

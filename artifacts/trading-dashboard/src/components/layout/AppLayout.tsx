@@ -1,37 +1,48 @@
-import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "wouter";
 import {
   Activity, Bot, Shield,
   AlertOctagon, Brain, BookOpen, Settings, FlaskConical, Sparkles,
-  ChevronLeft, ChevronRight, ChevronDown, Target, FileText, Bell, Heart, Lock, Database, ShieldAlert,
+  ChevronLeft, ChevronRight, ChevronDown, Target, FileText, Bell, Heart, Lock, Database, ShieldAlert, LogOut,
   ListChecks, Briefcase, GitMerge, HelpCircle, User, Users, Crosshair,
   ScrollText, Trophy, Eye, Swords, Gauge, TrendingUp, NotebookPen, BarChart3,
   Plug, LineChart, Award, ShieldCheck, Search, X, Zap, Wallet, LayoutGrid, Banknote,
-  Thermometer, GraduationCap, Flag,
+  Thermometer, GraduationCap, Flag, ScanLine,
   Calendar as CalendarIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Topbar, MobileMenuTrigger } from "./Topbar";
-import { MobileBottomNav } from "./MobileBottomNav";
-import { Footer } from "./Footer";
 import { ARXLogoMark, ARXBrandLockup } from "@/components/brand/ARXLogo";
 import { FloatingActionPanel } from "@/components/trading/FloatingActionPanel";
-import { SafetyHeader } from "@/components/ss/SafetyHeader";
-import { LiveModeBadge } from "@/components/live/LiveModeBadge";
-import NotificationCenter from "@/components/NotificationCenter";
-import { CommandPalette } from "./CommandPalette";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useCurrentUser, useLogout } from "@/hooks/useCurrentUser";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useProductRole } from "@/hooks/useProductRole";
 import { useTraderTier } from "@/hooks/useTraderTier";
 import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { RouteAccessGuard } from "./RouteAccessGuard";
-import { AssistantDockProvider } from "@/components/help/AssistantDock";
+import { AssistantDockProvider, useChartActionDockTarget } from "@/components/help/AssistantDock";
+import { SymbolPicker } from "./SymbolPicker";
+import { ViewModeSwitch } from "./Topbar";
+import { ARXShellFrame, type CockpitShellItem, type PageShellItem } from "./ARXShellFrame";
+import { EnvironmentPill } from "@/components/dashboard/cockpit/EnvironmentPill";
+import { NotificationBell } from "@/components/alerts/NotificationBell";
+import { LiveModeBadge } from "@/components/live/LiveModeBadge";
+import { SafetyHeader } from "@/components/ss/SafetyHeader";
+import NotificationCenter from "@/components/NotificationCenter";
+import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
+import { cockpitPanelForRoute } from "./cockpitPanelMap";
+import {
+  persistShellPreferences,
+  readShellPreferences,
+  type ShellPreferences,
+} from "./shellLayoutModel";
+import { RouteLayoutPanel } from "./RouteLayoutPanel";
+import "@/components/dashboard/command-workspace.css";
 
 // Lazy-load the Ruby assistant panel (voice / realtime-WebRTC / TTS stack) so
 // its large module graph stays OUT of every page's first-paint critical path.
@@ -43,9 +54,16 @@ const ArxAssistantLivePanel = lazy(() =>
     default: m.ArxAssistantLivePanel,
   })),
 );
+const LazyCommandPalette = lazy(() =>
+  import("./CommandPalette").then((m) => ({ default: m.CommandPalette })),
+);
 
-interface NavItem { href: string; label: string; icon: LucideIcon; className?: string; adminOnly?: boolean; approvedOnly?: boolean; aliases?: string[]; description?: string; }
-interface NavGroup { label: string; items: NavItem[]; defaultOpen?: boolean; adminOnly?: boolean; approvedOnly?: boolean; }
+export interface NavItem { href: string; label: string; icon: LucideIcon; className?: string; adminOnly?: boolean; approvedOnly?: boolean; aliases?: string[]; description?: string; }
+export interface NavGroup { label: string; items: NavItem[]; defaultOpen?: boolean; adminOnly?: boolean; approvedOnly?: boolean; }
+
+export function shouldShowEmergencyStop(isInvestor: boolean) {
+  return !isInvestor;
+}
 
 // Curated aliases / descriptions for the menu search so users can find
 // pages by intent ("demo", "ruby", "scanner") not just exact labels.
@@ -290,6 +308,40 @@ const INVESTOR_NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+/** The role-filtered navigation groups are the source for both the shell dock
+ * and All tools. Do not add independent role rules in a shell surface. */
+export function getDashboardNavigationGroups(
+  name: string,
+  role: { isAdmin: boolean; isApprovedTrader: boolean; isInvestor: boolean },
+) {
+  const groups = role.isInvestor ? INVESTOR_NAV_GROUPS : buildNavGroups(name);
+  return groups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      (!group.adminOnly && !item.adminOnly || role.isAdmin) &&
+      (!group.approvedOnly && !item.approvedOnly || role.isAdmin || role.isApprovedTrader),
+    ),
+  })).filter((group) => group.items.length > 0);
+}
+
+/** Shared role-filtered route metadata for search and launchers. */
+export function getDashboardToolCatalog(
+  name: string,
+  role: { isAdmin: boolean; isApprovedTrader: boolean; isInvestor: boolean },
+) {
+  const groups = getDashboardNavigationGroups(name, role);
+  const aliasMap = buildSearchAliases(name);
+  return groups.flatMap(group => group.items
+    .map(item => ({
+      href: item.href,
+      label: item.label,
+      icon: item.icon,
+      group: group.label || "Quick access",
+      aliases: [...(item.aliases ?? []), ...(aliasMap[item.href]?.aliases ?? [])],
+      description: item.description ?? aliasMap[item.href]?.description,
+    })));
+}
 
 const GROUP_KEY = (label: string) => `arx.nav.group.${label || "_root"}`;
 function isGroupOpen(label: string, defaultOpen: boolean): boolean {
@@ -564,32 +616,333 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
   );
 }
 
-const COLLAPSE_KEY = "highroll.sidebarCollapsed";
+export const showSharedNavigation = (_location: string) => true;
 
+const SHELL_DEFAULTS: ShellPreferences = {
+  dockMode: "expanded",
+  contentWidth: "fit",
+  density: "comfortable",
+};
+
+const COCKPIT_PANELS: CockpitShellItem[] = [
+  { id: "discovery", label: "Scanner", shortLabel: "Scanner", icon: Search, onSelect: () => focusCockpitPanel("discovery") },
+  { id: "chart", label: "Chart", shortLabel: "Chart", icon: Activity, onSelect: () => focusCockpitPanel("chart") },
+  { id: "heat", label: "Market heat", shortLabel: "Heat", icon: Thermometer, onSelect: () => focusCockpitPanel("heat") },
+  { id: "intelligence", label: "Intelligence", shortLabel: "Intel", icon: ScanLine, onSelect: () => focusCockpitPanel("intelligence") },
+  { id: "clock", label: "Desk clock", shortLabel: "Clock", icon: CalendarIcon, onSelect: () => focusCockpitPanel("clock") },
+  { id: "ruby", label: "AI read", shortLabel: "AI", icon: Brain, onSelect: () => focusCockpitPanel("ruby") },
+  { id: "risk", label: "Risk", shortLabel: "Risk", icon: Shield, onSelect: () => focusCockpitPanel("risk") },
+  { id: "order", label: "Order entry", shortLabel: "Order", icon: Crosshair, onSelect: () => focusCockpitPanel("order") },
+  { id: "positions", label: "Open positions", shortLabel: "Positions", icon: Briefcase, onSelect: () => focusCockpitPanel("positions") },
+];
+
+function focusCockpitPanel(id: string) {
+  window.dispatchEvent(new CustomEvent("arx:focus-workspace-panel", { detail: { id } }));
+}
+
+const MOBILE_ROUTE_PRIORITY = [
+  "/", "/market-scanner", "/trade-command-room", "/ai-command-center", "/my-trades",
+  "/risk-command-center", "/alerts", "/status-command-center", "/school",
+  "/investor", "/my-account", "/settings", "/help",
+];
+
+const ROUTE_LAYOUT_PANELS: Record<string, { id: string; title: string; icon: LucideIcon }> = {
+  "/market-scanner": { id: "scanner-main", title: "Market Scanner", icon: Search },
+  "/my-trades": { id: "open-trades-main", title: "Open Trades", icon: Briefcase },
+  "/risk-command-center": { id: "risk-main", title: "Risk", icon: Shield },
+  "/alerts": { id: "alerts-main", title: "Alerts", icon: Bell },
+};
+
+function shellToolId(href: string) {
+  return `page-${href.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home"}`;
+}
+
+function LayoutChoiceGroup<T extends string>({
+  label,
+  value,
+  choices,
+  onChange,
+  testId,
+}: {
+  label: string;
+  value: T;
+  choices: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+  testId: string;
+}) {
+  return <fieldset className="arx-shell-layout-choice">
+    <legend>{label}</legend>
+    <div role="group" aria-label={label}>
+      {choices.map((choice) => <button
+        key={choice.value}
+        type="button"
+        aria-pressed={value === choice.value}
+        data-testid={`${testId}-${choice.value}`}
+        onClick={() => onChange(choice.value)}
+      >{choice.label}</button>)}
+    </div>
+  </fieldset>;
+}
+
+function CommandPaletteLauncher({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+  const dockTarget = useChartActionDockTarget("search");
+  const trigger = (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Open command palette"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      data-testid="cmdk-trigger"
+      className={`${dockTarget ? "h-11 w-11 justify-center" : "fixed bottom-20 left-3 md:bottom-6 md:left-6 z-40 gap-2 px-3 py-1.5"} inline-flex items-center rounded-full border bg-background/85 text-xs text-muted-foreground shadow-lg backdrop-blur hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary`}
+    >
+      <Search size={14} />
+      {!dockTarget && <><span className="hidden md:inline">Search</span> <kbd className="ml-1 hidden md:inline rounded border px-1 text-[10px]">Ctrl K</kbd></>}
+    </button>
+  );
+  return dockTarget ? createPortal(trigger, dockTarget) : trigger;
+}
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
-  const hideGlobalHeader = location === "/" || location === "/trade-command-room";
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(COLLAPSE_KEY) === "1";
-  });
+  const [location, setLocation] = useLocation();
+  const isRootWorkspace = location === "/";
+  const { user, isLoading: userLoading } = useCurrentUser();
+  const logout = useLogout();
+  const { isInvestor } = useProductRole();
+  const viewMode = useViewMode();
+  const { isApprovedTrader, isLoading: tierLoading } = useTraderTier();
+  const { name } = useAssistantName();
+  const [rawSymbol] = useChartSymbol();
+  const activeSymbol = bareSymbol(rawSymbol || "").toUpperCase();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [allToolsOpen, setAllToolsOpen] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [toolQuery, setToolQuery] = useState("");
+  const [shellPreferences, setShellPreferences] = useState<ShellPreferences>(SHELL_DEFAULTS);
+  const userId = user?.id ?? null;
+  const role = useMemo(() => ({
+    isAdmin: viewMode.effectiveIsAdmin,
+    isApprovedTrader,
+    isInvestor,
+  }), [viewMode.effectiveIsAdmin, isApprovedTrader, isInvestor]);
+  const navigationGroups = useMemo(
+    () => getDashboardNavigationGroups(name, role),
+    [name, role],
+  );
+  const toolCatalog = useMemo(() => getDashboardToolCatalog(name, role), [name, role]);
+  const roleReady = !userLoading && !tierLoading;
+  const warmScanner = useScannerNavigationWarmup(roleReady && !isInvestor && (role.isAdmin || role.isApprovedTrader));
+  const safeToolCatalog = roleReady ? toolCatalog : [];
+  const primaryGroups = (roleReady ? navigationGroups : []).filter((group) =>
+    isInvestor ? true : group.label === "Essentials" || group.label === "Primary",
+  );
+  const pageDockItems: PageShellItem[] = primaryGroups.flatMap((group) => group.items).map((item) => ({
+    id: shellToolId(item.href),
+    label: item.label,
+    shortLabel: item.label === "Market Scanner" ? "Scanner"
+      : item.label === "Trade" ? "Trade"
+        : item.label === `${name} (AI)` ? "AI"
+          : item.label === "Open Trades" ? "Trades"
+            : item.label,
+    icon: item.icon,
+    href: item.href,
+    onNavigate: () => warmScanner(item.href),
+  }));
+  const mobilePageItems: PageShellItem[] = MOBILE_ROUTE_PRIORITY
+    .map((href) => safeToolCatalog.find((item) => item.href === href))
+    .filter((item): item is (typeof safeToolCatalog)[number] => !!item)
+    .slice(0, isInvestor ? 4 : 5)
+    .map((item) => ({
+      id: shellToolId(item.href),
+      label: item.label,
+      shortLabel: item.label === "Market Scanner" ? "Scanner"
+        : item.label === "Trade" ? "Trade"
+          : item.label === `${name} (AI)` ? "AI"
+            : item.label === "Open Trades" ? "Trades"
+              : item.label,
+      icon: item.icon,
+      href: item.href,
+      onNavigate: () => warmScanner(item.href),
+    }));
+  const filteredTools = useMemo(() => {
+    const tokens = toolQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return safeToolCatalog;
+    return safeToolCatalog.filter((item) => {
+      const text = [item.label, item.group, item.href, item.description ?? "", ...(item.aliases ?? [])].join(" ").toLowerCase();
+      return tokens.every((token) => text.includes(token));
+    });
+  }, [safeToolCatalog, toolQuery]);
+
+  useEffect(() => {
+    if (userId == null) return;
+    setShellPreferences(readShellPreferences(window.localStorage, userId));
+  }, [userId]);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
     localStorage.setItem("theme", "dark");
   }, []);
 
-  const toggleCollapsed = () => {
-    setCollapsed((c) => {
-      const next = !c;
-      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      } else if (event.key === "Escape" && commandPaletteOpen) {
+        event.preventDefault();
+        setCommandPaletteOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [commandPaletteOpen]);
+
+  const updateShellPreferences = useCallback((patch: Partial<ShellPreferences>) => {
+    setShellPreferences((current) => {
+      const next = { ...current, ...patch };
+      if (userId != null) persistShellPreferences(window.localStorage, userId, next);
       return next;
     });
+  }, [userId]);
+
+  const handleToolSelect = useCallback((href: string) => {
+    setAllToolsOpen(false);
+    setMobileToolsOpen(false);
+    const panel = cockpitPanelForRoute(href);
+    if (isRootWorkspace && panel) {
+      focusCockpitPanel(panel);
+      return;
+    }
+    setLocation(href);
+  }, [isRootWorkspace, setLocation]);
+
+  const matchingGroups = [...new Set(filteredTools.map((item) => item.group))];
+  const allToolsContent = <div className="arx-shell-tools">
+    <label className="arx-shell-tools-search">
+      <Search size={15} aria-hidden="true" />
+      <Input
+        value={toolQuery}
+        onChange={(event) => setToolQuery(event.target.value)}
+        placeholder="Search tools, tasks, or routes"
+        aria-label="Search all tools"
+        data-testid="input-shell-tool-search"
+      />
+    </label>
+    {filteredTools.length === 0
+      ? <p className="arx-shell-tools-empty">No tools match “{toolQuery}”. Try another name or task.</p>
+      : matchingGroups.map((group) => <section key={group} className="arx-shell-tools-group">
+        <h2>{group}</h2>
+        <div>
+          {filteredTools.filter((item) => item.group === group).map((item) => {
+            const Icon = item.icon;
+            const panel = cockpitPanelForRoute(item.href);
+            const className = "arx-shell-tool-result";
+            return isRootWorkspace && panel
+              ? <button key={item.href} type="button" className={className} onClick={() => handleToolSelect(item.href)} data-testid={`shell-tool-${shellToolId(item.href)}`}>
+                  <Icon size={16} aria-hidden="true" /><span>{item.label}</span><small>Focus panel</small>
+                </button>
+              : <Link key={item.href} href={item.href} className={className} onClick={() => { warmScanner(item.href); setAllToolsOpen(false); setMobileToolsOpen(false); }} data-testid={`shell-tool-${shellToolId(item.href)}`}>
+                  <Icon size={16} aria-hidden="true" /><span>{item.label}</span><small>{item.description ?? item.href}</small>
+                </Link>;
+          })}
+        </div>
+      </section>)}
+  </div>;
+
+  const layoutMenuContent = <div className="arx-shell-layout-controls">
+    <div data-route-layout-slot />
+    <LayoutChoiceGroup
+      label="Dock"
+      value={shellPreferences.dockMode}
+      choices={[{ value: "expanded", label: "Expanded" }, { value: "compact", label: "Compact" }]}
+      onChange={(dockMode) => updateShellPreferences({ dockMode })}
+      testId="layout-dock"
+    />
+    <LayoutChoiceGroup
+      label="Content width"
+      value={shellPreferences.contentWidth}
+      choices={[{ value: "fit", label: "Fit" }, { value: "wide", label: "Wide" }]}
+      onChange={(contentWidth) => updateShellPreferences({ contentWidth })}
+      testId="layout-width"
+    />
+    <LayoutChoiceGroup
+      label="Density"
+      value={shellPreferences.density}
+      choices={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]}
+      onChange={(density) => updateShellPreferences({ density })}
+      testId="layout-density"
+    />
+  </div>;
+
+  const shellHeaderActions = <div className="arx-shell-actions-main">
+    {!isRootWorkspace && !isInvestor && <>
+      <div className="arx-shell-symbol-picker"><SymbolPicker /></div>
+      <ViewModeSwitch />
+    </>}
+    <EnvironmentPill compact />
+    {roleReady && shouldShowEmergencyStop(isInvestor) && <Link href="/emergency" className="arx-shell-emergency-link" data-testid="shell-emergency-stop">
+      <AlertOctagon size={14} aria-hidden="true" /><span>Emergency Stop</span>
+    </Link>}
+    <NotificationBell />
+    {user && <button
+      type="button"
+      onClick={() => logout.mutate()}
+      disabled={logout.isPending}
+      className="arx-shell-signout"
+      data-testid="button-logout"
+      aria-label="Sign out"
+      title={user.name || "Sign out"}
+    ><LogOut size={15} aria-hidden="true" /><span className="sr-only">Sign out</span></button>}
+    {isRootWorkspace && <div className="arx-shell-cockpit-slot" data-cockpit-header-slot />}
+  </div>;
+
+  const title = isRootWorkspace
+    ? <>Market desk <span className="arx-shell-symbol">{activeSymbol}</span></>
+    : (toolCatalog.find((item) => item.href === location)?.label
+      ?? toolCatalog.find((item) => location.startsWith(`${item.href}/`))?.label
+      ?? "ARX workspace");
+  const eyebrow = isRootWorkspace
+    ? <>ARX · MARKET DESK · <time>{new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time></>
+    : `ARX · ${isInvestor ? "INVESTOR" : "TRADING"} WORKSPACE`;
+  const safetyNotice = !isRootWorkspace
+    ? <div className="arx-shell-status-strip">
+        <div className="arx-shell-status-components"><LiveModeBadge /><NotificationCenter /></div>
+        <SafetyHeader />
+      </div>
+    : undefined;
+  const routePanel = ROUTE_LAYOUT_PANELS[location];
+  const guardedRoute = <RouteAccessGuard>
+    {routePanel
+      ? <RouteLayoutPanel routeKey={location} {...routePanel}>{children}</RouteLayoutPanel>
+      : children}
+  </RouteAccessGuard>;
+  const shellContent = <div className={isRootWorkspace
+    ? "arx-root-main-content min-w-0 w-full p-2 sm:p-3 md:p-3"
+    : "arx-page-content min-w-0 mx-auto w-full max-w-[1600px] p-3 sm:p-4 md:p-6"}>
+    {guardedRoute}
+  </div>;
+  const sharedFrame = {
+    title,
+    eyebrow,
+    dockMode: shellPreferences.dockMode,
+    contentWidth: shellPreferences.contentWidth,
+    density: shellPreferences.density,
+    contentClassName: isRootWorkspace ? "arx-root-main" : "arx-page-main",
+    routeContent: !isRootWorkspace,
+    headerActions: shellHeaderActions,
+    allToolsContent,
+    allToolsOpen,
+    onAllToolsOpenChange: setAllToolsOpen,
+    layoutMenuContent,
+    safetyNotice,
+    children: shellContent,
+    mobileToolsOpen,
+    onMobileToolsOpenChange: setMobileToolsOpen,
   };
 
   return (
-    <AssistantDockProvider><div className="min-h-screen flex bg-background text-foreground font-sans overflow-x-clip">
+    <AssistantDockProvider><div className="min-h-screen w-full bg-background text-foreground font-sans">
       {/* SS — skip-to-content link for keyboard/screen-reader users */}
       <a
         href="#main-content"
@@ -597,56 +950,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         Skip to main content
       </a>
-      {/* Desktop sidebar (collapsible) */}
-      <aside className={cn("hidden md:block shrink-0 sticky top-0 h-screen relative transition-all duration-200", collapsed ? "w-16" : "w-60")}>
-        <SidebarContent collapsed={collapsed} />
-        <button
-          onClick={toggleCollapsed}
-          className="absolute -right-3 top-20 z-20 w-6 h-6 rounded-full bg-card border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          data-testid="button-sidebar-collapse"
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
-      </aside>
-
-      {/* Main column */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {!hideGlobalHeader && (
-        <div className="sticky top-0 z-40 shrink-0" data-testid="app-header-stack">
-        <Topbar
-          onMobileMenu={
-            <MobileMenuTrigger>
-              {(close) => <SidebarContent onNavigate={close} />}
-            </MobileMenuTrigger>
-          }
-        />
-        {/* T025 — single compact status row: one LIVE chip (left) + alerts
-            bell (right). The full-width billboard banner (mode label + user
-            message + "Real money risk") was removed; live mode and any
-            blocked/kill-switch state now surface only through the compact
-            LiveModeBadge chip, whose tooltip carries the longer detail. */}
-        <div className="flex items-center justify-between gap-2 px-4 py-1 border-b border-zinc-900 bg-zinc-950/60">
-          <LiveModeBadge />
-          <NotificationCenter />
-        </div>
-        {/* Legacy SS safety header — kept for operator-facing context until
-            Phase 3 ships and the broker placement layer replaces it. */}
-        <SafetyHeader />
-        </div>
-        )}
-        <main id="main-content" className="flex-1 min-w-0 overflow-y-auto overflow-x-clip pb-24 md:pb-0 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))] md:pb-[unset]" tabIndex={-1}>
-          <div className="min-w-0 p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full">
-            <RouteAccessGuard>{children}</RouteAccessGuard>
-          </div>
-          <Footer />
-        </main>
-      </div>
-
-      {/* Mobile bottom nav + universal floating action panel */}
-      <MobileBottomNav />
-      <FloatingActionPanel />
-      <CommandPalette />
+      {isRootWorkspace && roleReady && !isInvestor
+        ? <ARXShellFrame
+            {...sharedFrame}
+            variant="cockpit"
+            dockItems={COCKPIT_PANELS}
+            mobileTrayItems={COCKPIT_PANELS.filter((item) => ["discovery", "chart", "heat", "clock", "order"].includes(item.id))}
+          />
+        : <ARXShellFrame
+            {...sharedFrame}
+            variant="page"
+            dockItems={pageDockItems}
+            mobileTrayItems={mobilePageItems}
+          />}
+      <FloatingActionPanel rootWorkspace={isRootWorkspace} />
+      <CommandPaletteLauncher open={commandPaletteOpen} onOpen={() => setCommandPaletteOpen(true)} />
+      {commandPaletteOpen && (
+        <Suspense fallback={null}>
+          <LazyCommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} manageKeyboard={false} />
+        </Suspense>
+      )}
       <Suspense fallback={null}>
         <ArxAssistantLivePanel />
       </Suspense>

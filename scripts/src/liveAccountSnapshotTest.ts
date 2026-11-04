@@ -3,7 +3,7 @@
 // Proves: buy uses bid, sell uses ask, broker P/L preferred over computed,
 // stale quote → stale/estimated/unavailable (never live), closed + reconciled
 // + broker-absent rows excluded, one shared contract for Dashboard/Open Trades,
-// equity−balance remains arithmetic only without native profit evidence, stale/estimated
+// equity−balance reconciliation invariant fires on mismatch, stale/estimated
 // P/L never counts as live profit, and isolation is the caller's responsibility.
 // No DB, no IO. Run:
 //   pnpm --filter @workspace/scripts run test:live-account-snapshot
@@ -119,7 +119,7 @@ function input(over: Partial<BuildSnapshotInput> = {}): BuildSnapshotInput {
   const unknownPos = row({ id: 2, symbol: "XAUUSD", floatingPl: null, lastSyncedAtMs: NOW - 10 * 60_000 }); // no quote → unavailable
   const snap = buildLiveAccountSnapshot(input({ rows: [freshBroker, unknownPos] }));
   check("overall freshness = worst", snap.freshness === "unavailable", snap.freshness);
-  check("incomplete total warned", snap.warnings.some((w) => /incomplete/i.test(w)) && snap.openPL === null && snap.reconciliation?.snapshotSummedPL === 10, JSON.stringify([snap.openPL, snap.warnings]));
+  check("incomplete total warned", snap.warnings.some((w) => /incomplete/i.test(w)) && snap.openPL === 10, JSON.stringify([snap.openPL, snap.warnings]));
 }
 
 // 10. No internal tokens leak into warnings (user-safe copy).
@@ -129,17 +129,17 @@ function input(over: Partial<BuildSnapshotInput> = {}): BuildSnapshotInput {
   check("warnings user-safe", !leak, snap.warnings.join(" | "));
 }
 
-// 11. Numerically equal arithmetic still does not prove a native profit report.
+// 11. Equity−balance reconciliation: consistent figures → exceedsThreshold=false.
 {
-  // Equal numbers alone do not prove matching report scope.
+  // openPL = 32.94 (from the one fresh position), equity−balance = 32.94 → match.
   const snap = buildLiveAccountSnapshot(input({
     rows: [row({ id: 1, floatingPl: 32.94, lastSyncedAtMs: NOW - 1_000 })],
     account: { balance: 125.13, equity: 158.07 },
   }));
-  // Explicitly unverified; no made-up zero discrepancy.
+  // equity − balance = 32.94; difference from openPL ≤ tolerance → no flag.
   check(
-    "equal arithmetic remains unverified",
-    snap.reconciliation?.status === "unverified" && snap.reconciliation.discrepancy === null,
+    "equity-balance consistent → no discrepancy flag",
+    snap.reconciliation?.exceedsThreshold === false,
     JSON.stringify([snap.reconciliation?.snapshotSummedPL, snap.reconciliation?.equityMinusBalancePL, snap.reconciliation?.discrepancy]),
   );
   check(
@@ -148,7 +148,7 @@ function input(over: Partial<BuildSnapshotInput> = {}): BuildSnapshotInput {
   );
 }
 
-// 12. Stale rows stay stale, but arithmetic difference cannot prove profit mismatch.
+// 12. Equity−balance reconciliation: impossible figures → exceedsThreshold=true.
 // This is the root-cause scenario: stale rows sum to +$1944.02 but equity−balance = $32.94.
 {
   // Simulate the real bug: 34 stale rows each with stale floatingPl that sums to
@@ -174,13 +174,13 @@ function input(over: Partial<BuildSnapshotInput> = {}): BuildSnapshotInput {
   const summedPL = snap.reconciliation?.snapshotSummedPL ?? 0;
   const expectedEqBal = 158.07 - 125.13; // ~32.94
   check(
-    "unmatched account cannot prove a P/L discrepancy",
-    snap.reconciliation?.exceedsThreshold === false && snap.reconciliation.discrepancy === null,
+    "impossible P/L detected: exceedsThreshold=true",
+    snap.reconciliation?.exceedsThreshold === true,
     JSON.stringify({ summedPL, expectedEqBal, discrepancy: snap.reconciliation?.discrepancy }),
   );
   check(
-    "comparison remains explicitly unverified",
-    snap.reconciliation?.status === "unverified",
+    "impossible P/L: warning added to snapshot",
+    snap.warnings.some((w) => /under verification/i.test(w)),
     snap.warnings.join(" | "),
   );
   // Old blanket stale sum must not be rendered as live profit.
@@ -255,15 +255,15 @@ function input(over: Partial<BuildSnapshotInput> = {}): BuildSnapshotInput {
   );
 }
 
-// 15. Legacy USD tolerance cannot establish native account agreement.
+// 15. PL_RECONCILIATION_TOLERANCE_USD: within tolerance → no flag.
 {
   const snap = buildLiveAccountSnapshot(input({
     rows: [row({ id: 1, floatingPl: 32.50, lastSyncedAtMs: NOW - 1_000 })],
     account: { balance: 100, equity: 132.99 }, // equity−balance=32.99; diff=0.49 < 1.0
   }));
   check(
-    `legacy tolerance (${PL_RECONCILIATION_TOLERANCE_USD}) cannot prove agreement`,
-    snap.reconciliation?.status === "unverified" && snap.reconciliation.discrepancy === null,
+    `within tolerance (${PL_RECONCILIATION_TOLERANCE_USD}) → no flag`,
+    snap.reconciliation?.exceedsThreshold === false,
     JSON.stringify({ discrepancy: snap.reconciliation?.discrepancy, tolerance: PL_RECONCILIATION_TOLERANCE_USD }),
   );
 }

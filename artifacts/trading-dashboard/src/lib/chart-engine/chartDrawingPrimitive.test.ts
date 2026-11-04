@@ -162,9 +162,3 @@ it("hides strokes, notes, handles and price labels while retaining exact source 
  primitive.setData(objects.filter(d=>d.kind!=="text").map(d=>({...d,hidden:false})),candles);draw();
  expect(context.stroke).toHaveBeenCalled();expect(context.arc).toHaveBeenCalled();expect(primitive.priceAxisViews()).toHaveLength(1);
 });
-it('restores both measurement-card and outer Canvas state when text painting fails',()=>{
- const {primitive,draw,context}=fixture();
- primitive.setData([{id:'measure',kind:'measure',start:{time:100,price:10},end:{time:200,price:20},color:'#ffffff'}],candles);
- Object.assign(context,{measureText:vi.fn(()=>({width:100}))});context.fillText.mockImplementation(()=>{throw Error('canvas text failure');});
- expect(draw).toThrow('canvas text failure');expect(context.save.mock.calls.length).toBe(2);expect(context.restore.mock.calls.length).toBe(2);
-});

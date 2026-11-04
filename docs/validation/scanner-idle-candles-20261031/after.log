@@ -1,9 +1,0 @@
-
- RUN  v4.1.7 /Users/areyouok/arx-scanner-idle-candles-20261031/artifacts/trading-dashboard
-
-
- Test Files  2 passed (2)
-      Tests  36 passed (36)
-   Start at  14:50:14
-   Duration  737ms (transform 219ms, setup 0ms, import 388ms, tests 45ms, environment 699ms)
-

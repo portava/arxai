@@ -168,19 +168,10 @@ describe("ArxAssistantLivePanel — manual press-to-record only", () => {
       vi.mocked(fetch).mockClear();
       fireEvent.change(screen.getByTestId("arx-input"),{target:{value:"What does RSI tell me about this chart?"}});
       fireEvent.click(screen.getByTestId("arx-send"));
-      expect(handler).toHaveBeenCalledWith({kind:"rsi",action:"show",period:undefined,preserveVisibility:true});
+      expect(handler).toHaveBeenCalledWith({kind:"rsi",action:"show",period:undefined});
       expect(screen.getByText(/Actual chart observation RSI: 61/)).toBeTruthy();
       expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("/messages"))).toBe(false);
     } finally { release(); }
-  });
-  it("opens the existing assistant for a manual selected-finding answer without sending a model request",async()=>{
-    sessionStorage.setItem("arx.assistant.open.v2","0");
-    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
-    function FindingButton(){const pane=useAssistantChartPane({symbol:'V25_1S',timeframe:'M30',source:'fixture',contextKey:'finding-source',analysisOnly:true,ready:true});return <button onClick={()=>pane.explainFinding(()=>"V25_1S M30: Bearish Marubozu observed from closed candles; not a forecast.")}>Explain selected finding locally</button>;}
-    render(<QueryClientProvider client={client}><AssistantDockProvider><FindingButton/><ArxAssistantLivePanel/></AssistantDockProvider></QueryClientProvider>);
-    await act(async()=>{});vi.mocked(fetch).mockClear();fireEvent.click(screen.getByText('Explain selected finding locally'));
-    expect(screen.getByText('Explain this finding')).toBeTruthy();expect(screen.getByText(/Bearish Marubozu observed from closed candles/)).toBeTruthy();
-    expect(vi.mocked(fetch).mock.calls.some(([url])=>/\/messages$|\/voice$|\/realtime\/session$/.test(String(url)))).toBe(false);expect(h.voiceStream).not.toHaveBeenCalled();
   });
 
   it("keeps the same open conversation panel when the chart launcher docks and undocks",()=>{

@@ -14,6 +14,7 @@ import { lotForRisk } from "@workspace/domain/risk";
 import type { PositionSizingResult } from "../paperExecution/types.js";
 
 const NO_MAX = Number.MAX_SAFE_INTEGER;
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ── Instrument-class model ──────────────────────────────────────────────────
 
@@ -55,9 +56,12 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizeRes
   const { accountBalance, riskPercent, entry, stopLoss, symbol, maxLotSize = 10 } = input;
   const riskAmount = accountBalance * (riskPercent / 100);
   const stopDistance = Math.abs(entry - stopLoss);
-  if (![accountBalance, riskPercent, entry, stopLoss, maxLotSize, riskAmount, stopDistance].every(n => Number.isFinite(n) && n > 0)) {
-    return { riskAmount: 0, stopDistance: 0, suggestedLot: 0, maxLotAllowed: Number.isFinite(maxLotSize) ? maxLotSize : 0, finalLot: 0,
-      warning: "Sizing inputs or stop distance are zero or invalid — no position size available." };
+
+  if (stopDistance === 0) {
+    return {
+      riskAmount: round2(riskAmount), stopDistance: 0, suggestedLot: 0, maxLotAllowed: maxLotSize, finalLot: 0,
+      warning: "Stop loss distance is zero — cannot calculate lot size.",
+    };
   }
 
   let warning: string | null = null;
@@ -69,19 +73,15 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizeRes
     riskAmount, stopDistance, valuePerUnitPerLot: valuePerUnitPerLot(symbol) * (isV75_1s ? 2 : 1),
     minLot: 0.01, maxLot: NO_MAX, lotStep: 0.01, rounding: "nearest",
   });
-  const bounded = lotForRisk({
-    riskAmount, stopDistance, valuePerUnitPerLot: valuePerUnitPerLot(symbol) * (isV75_1s ? 2 : 1),
-    minLot: 0.01, maxLot: maxLotSize, lotStep: 0.01,
-  });
-  const finalLot = bounded.lot;
-  const suggestedLot = sized.invalid ? finalLot : sized.lot;
-  if (bounded.invalid) warning = (warning ? warning + " " : "") + `No size: ${bounded.invalid}.`;
-  else if (sized.invalid) warning = (warning ? warning + " " : "") + "Only the bounded lot is available; the uncapped size exceeds numeric precision.";
-  else if (finalLot < suggestedLot) warning = (warning ? warning + " " : "") + `Lot capped at max allowed (${maxLotSize}).`;
+  const suggestedLot = sized.invalid ? 0.01 : sized.lot;
+  if (sized.invalid || sized.clampedToMin) warning = (warning ? warning + " " : "") + "Lot clamped to minimum 0.01.";
+
+  const finalLot = round2(Math.min(suggestedLot, maxLotSize));
+  if (finalLot < suggestedLot) warning = (warning ? warning + " " : "") + `Lot capped at max allowed (${maxLotSize}).`;
 
   return {
-    riskAmount, // budget, not actual loss or broker-confirmed risk
-    stopDistance,
+    riskAmount: round2(riskAmount),
+    stopDistance: Math.round(stopDistance * 10000) / 10000,
     suggestedLot,
     maxLotAllowed: maxLotSize,
     finalLot,
@@ -110,31 +110,29 @@ export function calculatePaperPositionSize(args: {
   riskPercentOverride?: number;
   maxLotSizeOverride?: number;
 }): PositionSizingResult {
-  const equity = args.accountEquity;
+  const equity = Math.max(0, args.accountEquity || 0);
   const riskPct = args.riskPercentOverride ?? PAPER_DEFAULTS.riskPercent;
   const maxLot = args.maxLotSizeOverride ?? PAPER_DEFAULTS.maxLotSize;
   const riskAmount = equity * riskPct;
   const stopDistance = Math.abs(args.entryPrice - args.stopLoss);
-  if (![equity, riskPct, maxLot, args.entryPrice, args.stopLoss, riskAmount, stopDistance].every(n => Number.isFinite(n) && n > 0)) {
-    return { account_equity: Number.isFinite(equity) ? equity : 0, risk_percent: Number.isFinite(riskPct) ? riskPct : 0,
-      risk_amount: 0, stop_distance: 0, calculated_position_size: 0, capped_position_size: 0,
-      reason: "sizing inputs or stop distance are zero or invalid — cannot size" };
-  }
 
   const sized = lotForRisk({
     riskAmount, stopDistance, valuePerUnitPerLot: PAPER_DEFAULTS.pointValuePerLot,
     minLot: PAPER_DEFAULTS.minLotSize, maxLot, lotStep: 0.01, rounding: "nearest",
   });
-  let reason = sized.invalid ?? "ok";
-  if (!sized.invalid && sized.clampedToMax) reason = `capped at maxLotSize=${maxLot}`;
+  let reason = "ok";
+  if (!Number.isFinite(stopDistance) || stopDistance <= 0) reason = "stop distance is zero or invalid — cannot size";
+  else if (riskAmount <= 0) reason = "risk amount is zero — equity is zero or risk percent is zero";
+  else if (sized.clampedToMax) reason = `capped at maxLotSize=${maxLot}`;
+  else if (sized.rawLot < PAPER_DEFAULTS.minLotSize) reason = `floored at minLotSize=${PAPER_DEFAULTS.minLotSize}`;
 
   return {
     account_equity: equity,
     risk_percent: riskPct,
-    risk_amount: riskAmount,
-    stop_distance: stopDistance,
+    risk_amount: Number(riskAmount.toFixed(2)),
+    stop_distance: Number(stopDistance.toFixed(5)),
     calculated_position_size: Number(sized.rawLot.toFixed(4)) || 0,
-    capped_position_size: sized.lot,
+    capped_position_size: sized.invalid ? PAPER_DEFAULTS.minLotSize : sized.lot,
     reason,
   };
 }

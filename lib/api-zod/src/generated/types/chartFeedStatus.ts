@@ -9,6 +9,7 @@ import type { ChartFeedStatusAssetClass } from "./chartFeedStatusAssetClass";
 import type { ChartFeedStatusQuality } from "./chartFeedStatusQuality";
 
 export interface ChartFeedStatus {
+  notLiveReason?: string | null;
   symbol: string;
   displaySymbol: string;
   assetClass: ChartFeedStatusAssetClass;

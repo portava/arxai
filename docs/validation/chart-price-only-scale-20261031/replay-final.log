@@ -1,9 +1,0 @@
-
- RUN  v4.1.7 /Users/areyouok/arx-chart-price-only-scale-20261031/artifacts/trading-dashboard
-
-
- Test Files  1 passed (1)
-      Tests  16 passed (16)
-   Start at  15:07:39
-   Duration  1.47s (transform 306ms, setup 0ms, import 496ms, tests 480ms, environment 415ms)
-

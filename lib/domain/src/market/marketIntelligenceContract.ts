@@ -187,7 +187,6 @@ function toFactorAlignment(
           : "neutral";
 
   const timingAlign: FactorAlignment =
-    input.timing.timingStatus === "unverified" ? "missing" :
     input.timing.timingStatus === "good"
       ? "aligned"
       : input.timing.timingStatus === "news_blocked" ||

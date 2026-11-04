@@ -2161,13 +2161,6 @@ paths:
             minimum: 1
             maximum: 5000
             default: 300
-        - name: view
-          in: query
-          description: Display includes forming tips; analysis matches closed-bar assessment inputs.
-          schema:
-            type: string
-            enum: [display, analysis]
-            default: display
       responses:
         "200":
           description: Normalized chart candles
@@ -13740,6 +13733,9 @@ components:
          outOfOrderCount, invalidOhlcCount, trailingIntervals, stale, quality,
          warning, aiUsable, message]
       properties:
+        notLiveReason:
+          type: ["string", "null"]
+          description: stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable
         symbol: { type: string }
         displaySymbol: { type: string }
         assetClass: { type: string, enum: [synthetic, forex, metals, indices, crypto, stocks, unknown] }
@@ -15835,11 +15831,6 @@ components:
         [bridgeConnectionId, status, accountType, accountBalance, accountEquity,
          margin, freeMargin, freshness, openPositionCount, floatingPlTotal]
       properties:
-        nativeAccountReport:
-          description: Exact native whole-account report; legacy scalar fields are not current account evidence.
-          oneOf:
-            - $ref: "#/components/schemas/NativeAccountReport"
-            - type: "null"
         bridgeConnectionId: { type: integer }
         userId: { type: ["integer", "null"] }
         connectionName: { type: ["string", "null"] }
@@ -18895,19 +18886,10 @@ components:
         marginLevel: { type: ["number", "null"] }
         currency: { type: ["string", "null"] }
         liveAllowed: { type: boolean }
-        liveAllowedNote: { type: string }
         positions:
           type: array
           items:
             $ref: "#/components/schemas/Mt5Position"
-        positionsMeasured: { type: boolean }
-        positionsNote: { type: string }
-        scope:
-          type: string
-          enum: [platform, own_connection, shared_master_bridge, none]
-          description: Which account this state describes. Only operators receive the install-wide platform row; everyone else sees their own connection, their shared-master bridge status, or none.
-        scopeNote: { type: string }
-        heartbeatFreshness: { type: string }
         lastHeartbeatAt: { type: ["string", "null"] }
         lastSyncAt: { type: ["string", "null"] }
 
@@ -18916,7 +18898,7 @@ components:
       required: [connected, mode, lastHeartbeatAt, pendingCommands, completedCommands, failedCommands, openPositions, accountSnapshot, liveLocked, secondsSinceHeartbeat, executionMode, placementLayer, liveExecutionEnabled, liveBrokerExecutionAvailable, readOnlyGuardActive, paperTradingEnabled, brokerPlacementImplemented, demoExecutionEnabled, accountType, maxDemoLot]
       properties:
         connected: { type: boolean }
-        mode: { type: string, enum: [MOCK, DEMO, LIVE_LOCKED, LIVE, NOT_CONNECTED, STALE] }
+        mode: { type: string, enum: [MOCK, DEMO, LIVE_LOCKED, LIVE] }
         lastHeartbeatAt: { type: ["string", "null"] }
         secondsSinceHeartbeat: { type: ["integer", "null"] }
         pendingCommands: { type: integer }
@@ -18931,19 +18913,14 @@ components:
         paperTradingEnabled: { type: boolean }
         brokerPlacementImplemented: { type: boolean }
         demoExecutionEnabled: { type: boolean, description: "Server-side flag (env ARX_ALLOW_DEMO_EXECUTION). When true, the demo-execution layer accepts DEMO_MARKET_ORDER queues; live execution remains impossible." }
-        accountType: { type: string, enum: [DEMO, REAL, UNKNOWN, NONE] }
+        accountType: { type: string, enum: [DEMO, REAL, UNKNOWN] }
         maxDemoLot: { type: number }
         openPositions:
           type: array
           items:
             $ref: "#/components/schemas/Mt5Position"
-        nativeAccountReport:
-          description: Native reported observations for the authenticated user's selected personal MT5 connection only. Never shared-master funds or proof of current broker state.
-          oneOf:
-            - $ref: "#/components/schemas/NativeAccountReport"
-            - type: "null"
         accountSnapshot:
-          type: ["object", "null"]
+          type: object
           required: [account, balance, equity, currency]
           properties:
             account: { type: ["string", "null"] }
@@ -21357,62 +21334,23 @@ components:
         openAttributions: { type: integer }
         realizedPnl7d: { type: number }
 
-    NativeAccountReport:
-      type: object
-      description: Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.
-      required: [status, reason, currentVerified, observedAt, receivedAt, currency, currencyDigits, amounts]
-      properties:
-        status: { type: string, enum: [reported, unavailable] }
-        reason: { type: string }
-        currentVerified: { type: boolean, enum: [false] }
-        observedAt: { type: string, nullable: true }
-        observationAgeMs: { type: number, minimum: 0, nullable: true }
-        receivedAt: { type: string, nullable: true }
-        currency: { type: string, nullable: true }
-        currencyDigits: { type: integer, minimum: 0, maximum: 16, nullable: true }
-        amounts:
-          type: object
-          nullable: true
-          required: [balance, equity, profit, credit, margin, freeMargin]
-          properties:
-            balance: { type: string }
-            equity: { type: string }
-            profit: { type: string }
-            credit: { type: string }
-            margin: { type: string }
-            freeMargin: { type: string }
-
     MasterMt5Snapshot:
       type: object
       description: >
-        Owner/admin-only pinned MT5 account view. nativeAccountReport preserves
-        direct reported decimal text with unverified clock and continuity.
-        Legacy scalar fields are compatibility data and must not substitute for
-        a missing native report. ARX allocation fields remain separate.
-        Never includes tokens, IPs, or the unmasked account number. Null for normal users.
+        Real MT5 master-account snapshot, owner/admin only. Sourced from the
+        EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes
+        tokens, IPs, or the unmasked account number. Null for normal users.
       required:
         [mt5Balance, mt5Equity, mt5UsedMargin, mt5FreeMargin, mt5OpenPnl,
          openPositions, arxAllocated, arxAvailable, arxReserved, realizedPnl7d,
-         snapshotStatus, isOverAllocated, unattributedCount, syncStatus,
-         accountObservationScope, amountsCoherent]
+         snapshotStatus, isOverAllocated, unattributedCount, syncStatus]
       properties:
-        nativeAccountReport:
-          oneOf:
-            - $ref: "#/components/schemas/NativeAccountReport"
-            - type: "null"
-        mt5Balance: { type: number, nullable: true }
-        mt5Equity: { type: number, nullable: true }
-        mt5UsedMargin: { type: number, nullable: true }
-        mt5FreeMargin: { type: number, nullable: true }
-        mt5OpenPnl: { type: number, nullable: true }
-        openPositions: { type: integer, nullable: true }
-        accountObservationScope:
-          type: string
-          enum: [LATEST_ACCOUNT_UPDATE]
-          description: Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when.
-        amountsCoherent:
-          type: boolean
-          description: False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise.
+        mt5Balance: { type: number }
+        mt5Equity: { type: number }
+        mt5UsedMargin: { type: number }
+        mt5FreeMargin: { type: number }
+        mt5OpenPnl: { type: number }
+        openPositions: { type: integer }
         accountCurrency: { type: string, nullable: true }
         brokerName: { type: string, nullable: true }
         serverName: { type: string, nullable: true }
@@ -21430,7 +21368,7 @@ components:
         syncStatus:
           type: string
           enum: [LIVE, STALE, UNAVAILABLE]
-          description: Freshness of the last account update only; does not establish freshness or coherence of every amount.
+          description: Derived health for the card sync badge.
 
     MeSharedAccountAllocationView:
       type: object

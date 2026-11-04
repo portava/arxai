@@ -1,5 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
-import {useUnifiedPositions} from "./useUnifiedPositions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +23,9 @@ import type { ChartOverlay } from "@/lib/chart-overlays";
 //
 // SAFETY: when the fetch fails we render NOTHING (no fake positions, no fake
 // lines). The chart and any separate position UI keep working independently.
+
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+const u = (p: string) => `${BASE}${p}`;
 
 export type ChartPosition = {
   scope: "demo" | "live";
@@ -60,9 +62,9 @@ export function buildPositionOverlays(
   const overlays: ChartOverlay[] = [];
   positions.forEach((p, i) => {
     const key = p.brokerTicket ?? `${p.accountMode}-${i}`;
-    const tag = p.accountMode === "LIVE" ? "Reported LIVE account" : "Reported DEMO account";
-    const side = p.side;
-    const arrow = side === "BUY" ? "▲" : side === "SELL" ? "▼" : "";
+    const tag = p.accountMode === "LIVE" ? "LIVE" : "DEMO";
+    const side = p.side ?? "BUY";
+    const arrow = side === "BUY" ? "▲" : "▼";
 
     if (p.entryPrice != null && Number.isFinite(p.entryPrice) && p.entryPrice > 0) {
       overlays.push({
@@ -70,7 +72,7 @@ export function buildPositionOverlays(
         type: "line",
         symbol,
         price: p.entryPrice,
-        label: `${tag} ${side ?? "Side unknown"} ${arrow} Entry`,
+        label: `${tag} ${side} ${arrow} Entry`,
         severity: "info",
         source: "position",
         color: side === "BUY" ? "#3b82f6" : "#a855f7",
@@ -113,16 +115,16 @@ export function buildPositionOverlays(
         type: "line",
         symbol,
         price: p.currentPrice,
-        label: `${tag} last price`,
+        label: `${tag} Mark`,
         severity: "neutral",
         source: "position",
         style: "dashed",
         lineWidth: 1,
         // The renderer reads `pnl` here to draw a floating P/L bubble.
-        metadata: { brokerTicket: p.brokerTicket, side, mode: tag, pnl: p.floatingPnl, observationTimeVerified:false, currencyVerified:false, reported:true },
+        metadata: { brokerTicket: p.brokerTicket, side, mode: tag, pnl: p.floatingPnl },
       });
     }
-    if (side && p.entryPrice != null && Number.isFinite(p.entryPrice) && p.entryPrice > 0) {
+    if (p.entryPrice != null && Number.isFinite(p.entryPrice) && p.entryPrice > 0) {
       overlays.push({
         id: `pos-${key}-marker`,
         type: "marker",
@@ -168,8 +170,8 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
     () => bareSymbol(symbol || "").toUpperCase(),
     [symbol],
   );
-  const {data,reload,resolveCurrentPosition,userId}=useUnifiedPositions();
-  const positions=useMemo(()=>[...(data?.live??[]),...(data?.demo??[])],[data]);
+  const [positions, setPositions] = useState<ChartPosition[]>([]);
+  const [reloadAt, setReloadAt] = useState(0);
   const [busyTicket, setBusyTicket] = useState<string | null>(null);
 
   const mode = useTradingMode();
@@ -192,6 +194,40 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
       ? "Trading is not available for this account mode."
       : "Manual trading is currently blocked for your account.";
 
+  // Poll the per-user positions endpoint; pause while the tab is hidden.
+  useEffect(() => {
+    if (!normalized) {
+      setPositions([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(u("/api/me/positions/all"), { credentials: "include" })
+          .then((r) => (r.ok ? r.json() : null));
+        if (cancelled) return;
+        const live = Array.isArray(res?.live) ? (res.live as ChartPosition[]) : [];
+        const demo = Array.isArray(res?.demo) ? (res.demo as ChartPosition[]) : [];
+        setPositions([...live, ...demo]);
+      } catch {
+        // Honest empty on failure — never fabricate positions.
+        if (!cancelled) setPositions([]);
+      }
+    };
+    void load();
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (id == null) id = setInterval(load, 10_000); };
+    const stop = () => { if (id != null) { clearInterval(id); id = null; } };
+    const onVis = () => { if (document.hidden) stop(); else { void load(); start(); } };
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [normalized, reloadAt]);
+
   const symbolPositions = useMemo(
     () => positions.filter((p) => normSym(p.symbol) === normSym(normalized)),
     [positions, normalized],
@@ -202,21 +238,21 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
     [symbolPositions, normalized],
   );
 
+  const reload = useCallback(() => setReloadAt(Date.now()), []);
 
   // Gated full-close. Mirrors ScannerChartPanel: every action goes through the
   // Global Instant Trade Router, which re-runs the full server-side gate set.
   // We acknowledge dispatch honestly ("sent to bridge") — never claim the broker
   // has executed from a mere accept — and surface the server's refusal verbatim.
   const closePosition = useCallback(async (p: ChartPosition) => {
-    const current=resolveCurrentPosition(p);
-    if (!current?.brokerTicket || !tradeMode || current.scope!==tradeMode) return;
-    setBusyTicket(current.brokerTicket);
+    if (!p.brokerTicket || !tradeMode) return;
+    setBusyTicket(p.brokerTicket);
     try {
       const res = await executeInstantTrade({
         source: "chart",
         action: "CLOSE",
         accountMode: tradeMode,
-        positionId: current.brokerTicket,
+        positionId: p.brokerTicket,
         oneClick: true,
       });
       if (!res.ok) {
@@ -228,7 +264,7 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
         title: "Close sent to bridge",
         description: "Waiting for the broker to confirm. Check Open Positions or Trade Logs for the final result.",
       });
-      reload();
+      setReloadAt(Date.now());
     } catch (e) {
       toast({
         variant: "destructive",
@@ -238,7 +274,7 @@ export function useLivePositionOverlays(symbol: string): UseLivePositionOverlays
     } finally {
       setBusyTicket(null);
     }
-  }, [tradeMode, canTrade, toast, resolveCurrentPosition, reload, userId]);
+  }, [tradeMode, toast]);
 
   return {
     overlays,

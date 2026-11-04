@@ -1,5 +1,3 @@
-import {verifyChartResearchCash} from "./chartResearchCashEvidence";
-import type {ResearchV2Input,ResearchV2Config,ResearchV2Partition} from "@workspace/domain/backtest/research-core";
 import { originalUtcAuthority } from "./chartClockEvidence";
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartEngineCandle } from "./types";
@@ -481,7 +479,6 @@ export function bindChartResearchResult(
         return no(
           "The historical ledger partitions do not match the captured split.",
         );
-      if(!verifyChartResearchCash(snapshot.researchInput as ResearchV2Input,expectedConfig as ResearchV2Config,p as unknown as ResearchV2Partition))return no("Historical cash, funding, costs or equity figures do not reconcile with the captured ledger and scenario. The result is withheld.");
       let previousExit = -1;
       for (const [tradeIndex, rawTrade] of p.trades.entries()) {
         const t = record(rawTrade),

@@ -34,86 +34,6 @@ const uptrend = [1, 1.01, 1.02, 1.03, 1.04].map(close => ({ open: close - 0.001,
 const star = { open: 1.04, high: 1.06, low: 1.0395, close: 1.041 };
 const find = (data: SmartChartAnalysisInput, prefix: string) => analyzeSmartChart(data).allFindings.find(f => f.id.startsWith(prefix));
 
-describe("pattern continuity", () => {
-  const gapAfter = (source: SmartChartAnalysisBar[], index: number) => source.map((bar, i) => i > index ? { ...bar, time: bar.time + 300, closeTime: bar.closeTime + 300 } : bar);
-  it("cannot confirm a shooting star with a candle after an unobserved interval", () => {
-    const source = bars([...uptrend, star, { open: 1.041, high: 1.042, low: 1.03, close: 1.035 }]);
-    const finding = find(input(gapAfter(source, 5)), "shooting_star:");
-    expect(finding?.status).toBe("developing");
-    expect(finding?.confirmedAt).toBeUndefined();
-    expect(finding?.caveat).toMatch(/gap|uninterrupted/i);
-  });
-  it.each([false, true])("does not join engulfing bodies across an absent bar (bearish=%s)", bearish => {
-    const fall = [1.04, 1.03, 1.02, 1.01, 1].map(close => ({ open: close + 0.001, high: close + 0.002, low: close - 0.001, close }));
-    const source = bars([...fall, { open: 0.999, high: 1.004, low: 0.998, close: 1.003 }]);
-    expect(find(input(gapAfter(bearish ? inverted(source) : source, 4)), bearish ? "bearish_engulfing:" : "bullish_engulfing:")).toBeUndefined();
-  });
-  it("does not fit and confirm a trendline across an unobserved interval", () => {
-    const source = flat(30); Object.assign(source[29]!, { open:100, high:101.2, low:99.9, close:101 });
-    expect(find(input(gapAfter(source, 28)), "trendline_break:")).toBeUndefined();
-  });
-  it("does not silently remove an unfinished interior candle", () => {
-    const source = hs(); Object.assign(source[20]!, {isComplete:false,isFinal:false,isForming:true});
-    expect(analyzeSmartChart(input(source)).status).toBe("unavailable");
-  });
-  it("rejects overlapping time intervals rather than treating them as a gap", () => {
-    const source = flat(5); source[4]!.time -= 150; source[4]!.closeTime -= 150;
-    expect(analyzeSmartChart(input(source)).status).toBe("unavailable");
-  });
-  it.each([false, true])("does not assemble a head and shoulders across a gap (inverse=%s)", inverse => {
-    expect(find(input(gapAfter(inverse ? inverted(hs()) : hs(), 20)), inverse ? "inverse_head_and_shoulders:" : "head_and_shoulders:")).toBeUndefined();
-  });
-  it("retains genuine patterns wholly after a gap and keeps full observed coverage", () => {
-    const source = bars([...rows([0.9,0.91]), ...uptrend, star, {open:1.041,high:1.042,low:1.03,close:1.035}]);
-    const result = analyzeSmartChart(input(gapAfter(source, 1)));
-    const finding = result.allFindings.find(f => f.id.startsWith("shooting_star:"));
-    expect(finding?.status).toBe("confirmed");
-    expect(finding?.confirmedAt).toBe(source.at(-1)!.closeTime + 300);
-    expect(result.closedBarsUsed).toBe(source.length);
-    expect(result.continuityNote).toContain("current status is unknown");
-  });
-  it("keeps pre-gap confirmation historical, without using later candles to invalidate it", () => {
-    const source = bars([...uptrend,star,{open:1.041,high:1.042,low:1.03,close:1.035},{open:1.035,high:1.08,low:1.03,close:1.07}]);
-    const finding = find(input(gapAfter(source,6)),"shooting_star:");
-    expect(finding?.status).toBe("confirmed"); expect(finding?.confirmedAt).toBe(source[6]!.closeTime);
-    expect(finding?.segmentEndedBeforeGap).toBe(true);
-    expect(finding?.caveat).toContain("later candles do not establish its current status");
-  });
-});
-
-describe("bounded head-and-shoulders discovery scope", () => {
-  it("matches full-catalogue H&S evidence at every prefix without returning other families", () => {
-    let seed = 307;
-    const dense = bars(Array.from({ length: 600 }, () => {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      const close = 100 + seed / 4294967296 * 10;
-      return { open: close - .1, close, high: close + .5, low: close - .5 };
-    }));
-    let matched = 0, excluded = 0;
-    for (const candles of [hs(), inverted(hs()), dense]) {
-      for (let end = 0; end <= candles.length; end++) {
-        const prefix = candles.slice(0, end);
-        const all = detectChartPatterns(prefix);
-        const selected = detectChartPatterns(prefix, "head-and-shoulders");
-        const expected = all.patterns.filter(p => p.id === "head_and_shoulders" || p.id === "inverse_head_and_shoulders");
-        expect(selected).toEqual({ ...all, patterns: expected });
-        matched += expected.length;
-        excluded += all.patterns.length - expected.length;
-      }
-    }
-    expect(matched).toBeGreaterThan(0);
-    expect(excluded).toBeGreaterThan(0);
-  });
-  it("retains forming-tail filtering and short-window metadata in the narrow scope", () => {
-    const closed = hs();
-    const forming = { ...closed.at(-1)!, close: 150, high: 151, isComplete: false, isForming: true };
-    expect(detectChartPatterns([...closed, forming], "head-and-shoulders"))
-      .toEqual(detectChartPatterns(closed, "head-and-shoulders"));
-    expect(detectChartPatterns(closed.slice(0, 19), "head-and-shoulders"))
-      .toEqual({ patterns: [], candlesConsidered: 19, insufficient: true });
-  });
-});
-
 describe("source and observation boundaries", () => {
   it.each(["symbol", "timeframe", "source", "sourceIdentity"] as const)("refuses a batch from another %s", key => {
     const changed = { ...CONTEXT, [key]: key === "timeframe" ? "M15" : key === "sourceIdentity" ? "b".repeat(64) : "different" };
@@ -249,21 +169,6 @@ describe("existing geometry, causal confirmation and plain English", () => {
     expect(f.status).toBe("observed"); expect(f.confirmedAt).toBeUndefined();
     expect(f.explanation).toContain("next close did not confirm");
   });
-  it.each([0, 61])("keeps shooting-star identity with repeated extrema and %i earlier bars", offset => {
-    const earlier = rows(Array.from({length:offset}, () => 0.98));
-    const b = bars([...earlier, ...uptrend, star,
-      { open: 1.04, high: 1.06, low: 1.0395, close: 1.055 },
-      { open: 1.055, high: 1.056, low: 1.03, close: 1.035 }]);
-    for (const end of [offset + 7, offset + 8]) {
-      const findings = analyzeSmartChart(input(b.slice(0, end))).allFindings.filter(f => f.id.startsWith("shooting_star:"));
-      expect(findings).toHaveLength(1);
-      expect(findings[0]!.id).toBe(`shooting_star:${b[offset + 5]!.time}`);
-      expect(findings[0]!.anchors).toEqual([{time:b[offset + 5]!.time,price:star.high,role:"shooting_star"}]);
-      expect(findings[0]!.status).toBe("observed");
-      expect(findings[0]!.confirmedAt).toBeUndefined();
-      expect(findings[0]!.explanation).toContain("next close did not confirm");
-    }
-  });
   it("timestamps a later shooting-star invalidation at the observed endpoint", () => {
     const b = bars([...uptrend, star,
       { open: 1.041, high: 1.042, low: 1.03, close: 1.035 },
@@ -322,65 +227,4 @@ describe("existing geometry, causal confirmation and plain English", () => {
     expect(staleWindow.caveat).toContain("Historical chart window");
     expect(staleWindow.caveat).toContain("feed is stale");
   });
-});
-
-it("carries breakout/retest event geometry without claiming a connecting price path",()=>{
- const source=bars([...flat(16),...[
- [100,100.2,99.8,100.1],[100.1,100.4,100,100.3],[100.3,101,100.2,100.6],
- [100.4,100.5,100,100.2],[100.2,100.4,99.9,100.1],[100.1,100.6,100,100.4],
- [100.4,101,100.3,100.6],[100.6,100.7,100.1,100.3],[100.3,100.6,100,100.2],
- [100.2,102.2,100.1,102],[102,102.1,100.9,101.3],[101.3,101.7,101,101.5],
- [101.5,103,101.5,102.8]
- ].map(([open,high,low,close])=>({open:open!,high:high!,low:low!,close:close!}))]);
- const finding=find(input(source),"breakout_retest_up");
- expect(finding).toMatchObject({connectAnchors:false});
- expect(finding?.confirmedAt).toBe(source[26]!.closeTime);
- const forming=find(input(source.slice(0,26)),"breakout_retest_up");expect(forming?.status).toBe("developing");expect(forming?.id).toBe(finding?.id);
- expect(find(input(source,{replayCutoff:source[25]!.closeTime}),"breakout_retest_up")?.confirmedAt).toBeUndefined();
- expect(find(input(source,{replayCutoff:source[26]!.closeTime}),"breakout_retest_up")?.confirmedAt).toBe(source[26]!.closeTime);
- expect(finding?.anchors.find(a=>a.role==="retest")).toEqual({time:source[26]!.time,price:101,role:"retest"});
- const withoutTouch=bars([...source.slice(0,26),{open:102,high:103,low:102,close:102.8},{open:102.8,high:104,low:102.8,close:103.8}]);
- expect(find(input(withoutTouch),"breakout_retest_up")?.anchors.map(a=>a.role)).toEqual(["broken_level"]);
-});
-
-// The same swing geometry may only qualify after later volatility changes.
-// Confirmation cannot be assigned to a prefix that did not contain the finding.
-it.each([false,true])("does not backdate H&S first qualification when later ATR expands (inverse=%s)",inverse=>{
- const source=hs();
- for(let i=25;i<=30;i++){const close=i<=28?99+(107-99)*(i-24)/4:107+(102-107)*(i-28)/2;source[i]={...source[i]!,open:close-.05,high:close+.2,low:close-.2,close};}
- const appended={...source.at(-1)!,time:START+33*300,closeTime:START+34*300,open:97,high:110,low:50,close:96};
- const all=inverse?inverted([...source,appended]):[...source,appended];const id=inverse?"inverse_head_and_shoulders":"head_and_shoulders";
- for(let end=30;end<=33;end++)expect(find(input(all.slice(0,end)),id)).toBeUndefined();
- const finding=find(input(all),id);expect(finding).toBeDefined();expect(finding?.status).toBe("confirmed");expect(finding?.confirmedAt).toBe(all[33]!.closeTime);
- const next={...all.at(-1)!,time:START+34*300,closeTime:START+35*300,open:inverse?124:96,high:inverse?125:96.5,low:inverse?123.5:95,close:inverse?124.5:95.5};
- expect(find(input([...all,next]),id)?.confirmedAt).toBe(all[33]!.closeTime);
- const cutoff=all[32]!.closeTime;expect(find(input(all,{replayCutoff:cutoff}),id)).toBeUndefined();
-});
-
-
-function doubleTopBars():SmartChartAnalysisBar[]{
- const points=[[0,90],[8,96],[12,105],[20,99],[28,105],[30,102],[31,98],[32,97]];
- return bars(rows(Array.from({length:33},(_,i)=>{const right=points.findIndex(p=>p[0]!>=i);if(right===0)return points[0]![1]!;const a=points[right-1]!,b=points[right]!;return a[1]!+(b[1]!-a[1]!)*(i-a[0]!)/(b[0]!-a[0]!);})));}
-
-it.each([false,true])("keeps double reversal first confirmation and chronological geometry (inverse=%s)",inverse=>{
- const source=inverse?inverted(doubleTopBars()):doubleTopBars(),id=inverse?"double_bottom":"double_top";
- const developing=find(input(source.slice(0,31)),id),confirmed=find(input(source),id);
- expect(developing?.status).toBe("developing");expect(confirmed?.status).toBe("confirmed");
- expect(confirmed?.id).toBe(developing?.id);expect(confirmed?.confirmedAt).toBe(source[31]!.closeTime);
- expect(confirmed?.anchors.map(a=>a.time)).toEqual([source[12]!.time,source[20]!.time,source[28]!.time]);
- expect(find(input(source,{replayCutoff:source[30]!.closeTime}),id)?.confirmedAt).toBeUndefined();
- expect(find(input(source,{replayCutoff:source[31]!.closeTime}),id)?.confirmedAt).toBe(source[31]!.closeTime);
- const extended=bars([...doubleTopBars(),...rows([96,95])]);const more=inverse?inverted(extended):extended;
- expect(find(input(more),id)?.confirmedAt).toBe(source[31]!.closeTime);
-});
-it.each([false,true])("retains historical double reversal confirmation after invalidation (inverse=%s)",inverse=>{
- const base=doubleTopBars(),source=bars([...base,...rows([108,98])]),all=inverse?inverted(source):source,id=inverse?"double_bottom":"double_top";
- const f=find(input(all),id);expect(f?.status).toBe("invalidated");expect(f?.confirmedAt).toBe(all[31]!.closeTime);
-});
-
-it.each([false,true])("uses actual double-reversal pivot prices instead of rounded catalogue points (inverse=%s)",inverse=>{
- const raw=doubleTopBars().map(b=>({...b,open:b.open*1.000123,high:b.high*1.000123,low:b.low*1.000123,close:b.close*1.000123}));
- const b=inverse?inverted(raw):raw,f=find(input(b),inverse?"double_bottom":"double_top");expect(f).toBeDefined();
- expect(f?.anchors.map(a=>a.price)).toEqual([inverse?b[12]!.low:b[12]!.high,inverse?b[20]!.high:b[20]!.low,inverse?b[28]!.low:b[28]!.high]);
- expect(f?.levels[0]?.price).toBe(inverse?b[20]!.high:b[20]!.low);
 });

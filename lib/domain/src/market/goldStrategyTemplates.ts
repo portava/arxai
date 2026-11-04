@@ -147,16 +147,6 @@ export function evaluateGoldStrategy(input: GoldStrategyEvalInput): GoldStrategy
   const warnings: string[] = [...tactic.warnings, ...risk.warnings, ...timing.warnings];
 
   const contextOnly = !input.feedConfirmed || input.feedStale || !input.sufficiencyAllowsSetup;
-  // Every return, including blocked/context-only results, respects all supplied
-  // ceilings after any supporting adjustment. Missing numeric evidence is not
-  // permission to recover a positive score.
-  const caps = [macro.confidenceCap, risk.confidenceCap, timing.base.scannerTruthImpact.confidenceCeiling];
-  const confidenceEvidenceValid = [...caps, tactic.confidence].every(value => Number.isFinite(value) && value >= 0 && value <= 100);
-  const ceiling = confidenceEvidenceValid ? Math.min(100, ...caps) : 0;
-  if (!confidenceEvidenceValid) warnings.push("Gold confidence evidence is invalid; the score is withheld.");
-  const finalConfidence = (value: number): number => Number.isFinite(value)
-    ? Math.min(ceiling, clamp(value)) : 0;
-
 
   // ── Hard blocks ────────────────────────────────────────────────────────────
   if (timing.timingStatus === "news_blocked") blocking.push("News window — timing blocks entry.");
@@ -179,7 +169,7 @@ export function evaluateGoldStrategy(input: GoldStrategyEvalInput): GoldStrategy
       templateId: template.id,
       decision: "blocked",
       conditional: false,
-      confidence: finalConfidence(Math.min(20, tactic.confidence)),
+      confidence: clamp(Math.min(20, tactic.confidence)),
       readyNow: false,
       supportingFactors: supporting,
       blockingFactors: [...new Set(blocking)],
@@ -216,7 +206,7 @@ export function evaluateGoldStrategy(input: GoldStrategyEvalInput): GoldStrategy
       templateId: template.id,
       decision: "watch",
       conditional: true,
-      confidence: finalConfidence(confidence),
+      confidence: clamp(confidence),
       readyNow: false,
       supportingFactors: [...new Set(supporting)],
       blockingFactors: [],
@@ -230,7 +220,7 @@ export function evaluateGoldStrategy(input: GoldStrategyEvalInput): GoldStrategy
     templateId: template.id,
     decision,
     conditional: true,
-    confidence: finalConfidence(confidence),
+    confidence: clamp(confidence),
     readyNow: false,
     supportingFactors: [...new Set(supporting)],
     blockingFactors: [],

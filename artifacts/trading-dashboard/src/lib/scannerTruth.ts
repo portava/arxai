@@ -306,8 +306,6 @@ export interface ScannerTruthInputs {
   quote?: { bid: number | null; ask: number | null; mid: number | null; source: string | null; timestamp: string | null } | null;
   /** Header ok flag (selected-market) — caps the display state. */
   headerOk: boolean | null;
-  /** UTC authority for the very candles used by the chart. Missing is unqualified. */
-  sourceClockQualified: boolean;
   mode: ScannerTruthMode;
   nowMs?: number;
   /**
@@ -387,9 +385,6 @@ export function resolveScannerTruth(
   } else if (!fs?.source || fs.symbol?.trim().toUpperCase() !== input.symbolInternal.trim().toUpperCase() || candleAgeMs == null || lastClose == null) {
     candleStatus = "historical_only";
     candleReason = "The latest candle's market, source, time or price is unconfirmed — historical context only.";
-  } else if (input.sourceClockQualified !== true) {
-    candleStatus = "historical_only";
-    candleReason = "Source clock: UTC mapping unverified. Candles are visible, but their age and live freshness cannot be confirmed.";
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";

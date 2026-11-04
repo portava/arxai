@@ -50,7 +50,7 @@ export function SafetyHeader() {
 
   return (
     <div
-      className="relative w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
       role="region"
       aria-label="Trading safety status"
     >

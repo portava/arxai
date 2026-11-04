@@ -8,7 +8,8 @@
 //   DB read (open arx_live_positions rows + account equity) and supplies any
 //   fresh broker quotes. The adapter normalizes P/L, derives honest freshness,
 //   excludes non-open / reconciled / broker-absent rows, and emits a
-//   unverified comparison marker: native same-account profit evidence is absent.
+//   reconciliation marker when the summed P/L cannot be reconciled with the
+//   authoritative equity − balance figure.
 //
 //   It performs NO I/O, mutates nothing, places no trades, and touches no
 //   bridge/execution path.
@@ -23,10 +24,9 @@
 //     last EA positions-snapshot value — so "live" here means "broker snapshot
 //     is recent", NOT tick-by-tick. The adapter cannot and does not fabricate
 //     sub-snapshot movement.
-//   • Equity minus balance is arithmetic, not native account profit. Neither
-//     equal numbers nor a supplied-row subtotal proves whole-account agreement.
-//   • Quote-based P/L remains an estimate; its account-currency conversion is
-//     not proven by this adapter. Per-position broker values remain distinct.
+//   • When summed open P/L materially disagrees with equity − balance, the
+//     snapshot carries a reconciliation discrepancy marker. The UI must surface
+//     "P/L under verification" — never show the stale figure as normal profit.
 
 import { ACCOUNT_SNAPSHOT_LIVE_MS, ACCOUNT_SNAPSHOT_FRESH_MS, ACCOUNT_SNAPSHOT_DELAYED_MS } from "../brokerHub/freshness.js";
 import { isSnapshotReliable, classifyRow } from "./positionFreshness.js";
@@ -40,8 +40,11 @@ export const DEFAULT_LIVE_MS = ACCOUNT_SNAPSHOT_LIVE_MS;       // ≤5s → live
 export const DEFAULT_FRESH_MS = ACCOUNT_SNAPSHOT_FRESH_MS;     // ≤30s → fresh
 export const DEFAULT_DELAYED_MS = ACCOUNT_SNAPSHOT_DELAYED_MS; // ≤2m → delayed; beyond → stale
 
-// Retained for compatibility with legacy callers. No comparison uses this USD
-// threshold: a matched native same-account profit report is not available here.
+// Tolerance for equity − balance vs summed open P/L reconciliation. Within
+// this band the figures are consistent (broker rounding, spread, unsettled
+// charges). Beyond it the dashboard shows "P/L under verification" rather than
+// the stale summed value as live green profit. Single shared constant — the
+// invariant math and the UI gate use the SAME value so they can never disagree.
 export const PL_RECONCILIATION_TOLERANCE_USD = 1.0;
 
 export interface LivePositionRow {
@@ -92,24 +95,28 @@ export interface LivePositionPL {
   freshness: Freshness;
 }
 
-/** Display diagnostics only. Supplied position rows and account scalars do not
- * prove a matched whole-account profit report, even when their numbers agree. */
+/**
+ * Reconciliation marker emitted when the snapshot's summed position P/L is
+ * compared to the authoritative equity − balance from the EA heartbeat. A
+ * non-zero exceedsThreshold means the displayed open P/L is unreliable and
+ * the UI must surface "P/L under verification" rather than normal live profit.
+ */
 export interface SnapshotReconciliation {
-  status?: "unverified";
-  reason?: "NO_MATCHED_ACCOUNT_PROFIT_REPORT";
-  positionPnlScope?: "supplied_rows";
-  /** All nonempty supplied rows have finite P/L; not a whole-account claim. */
-  positionPnlComplete?: boolean;
-  /** Known-row subtotal only. Null when absent or nonfinite. */
+  /** Summed open P/L across positions with a known P/L value. */
   snapshotSummedPL: number | null;
-  /** Legacy name: arithmetic equity minus balance, NOT native broker profit. */
+  /** equity − balance from the EA heartbeat (authoritative floating P/L). */
   equityMinusBalancePL: number | null;
-  /** Unavailable until a matched native account-profit report exists. */
+  /** |snapshotSummedPL − equityMinusBalancePL|; null when either is unavailable. */
   discrepancy: number | null;
-  /** False is not evidence of agreement; consult status. */
+  /** True when discrepancy > PL_RECONCILIATION_TOLERANCE_USD. */
   exceedsThreshold: boolean;
+  /** Rows excluded by closedAt or non-null reconcileState filter. */
   excludedCount: number;
+  /** Rows additionally excluded as broker-confirmed-absent (display-only;
+   *  rows are NOT mutated — reconcileState stays null until the reconciler
+   *  explicitly stamps them, per the broker-absence guardrail). */
   brokerAbsentExcludedCount: number;
+  /** Positions whose P/L is estimated or unavailable (not fresh broker P/L). */
   stalePLCount: number;
 }
 
@@ -199,11 +206,9 @@ export function normalizePositionPL(
 ): LivePositionPL {
   const direction = normSide(r.side);
   const snapshotAge = r.lastSyncedAtMs == null ? Number.POSITIVE_INFINITY : now - r.lastSyncedAtMs;
-  const snapshotTimeKnown = Number.isFinite(now) && typeof r.lastSyncedAtMs === "number"
-    && Number.isFinite(r.lastSyncedAtMs) && r.lastSyncedAtMs > 0 && snapshotAge >= 0;
-  const snapshotFresh = snapshotTimeKnown && snapshotAge <= bands.delayedMs;
+  const snapshotFresh = snapshotAge <= bands.delayedMs;
 
-  const brokerPL = typeof r.floatingPl === "number" && Number.isFinite(r.floatingPl) ? r.floatingPl : null;
+  const brokerPL = typeof r.floatingPl === "number" ? r.floatingPl : null;
 
   // Compute-from-quote path: only with a fresh quote on the correct side.
   let computedPL: number | null = null;
@@ -211,15 +216,14 @@ export function normalizePositionPL(
   let quoteFresh = false;
   if (quote) {
     const quoteAge = now - quote.tsMs;
-    quoteFresh = Number.isFinite(quote.tsMs) && quote.tsMs > 0 && Number.isFinite(quoteAge) && quoteAge >= 0 && quoteAge <= bands.delayedMs;
+    quoteFresh = quoteAge >= 0 && quoteAge <= bands.delayedMs;
     const side = direction;
     const px = side === "buy" ? quote.bid : quote.ask; // buy marks to bid, sell to ask
-    if (quoteFresh && typeof px === "number" && Number.isFinite(px) && Number.isFinite(r.entryPrice) && Number.isFinite(r.volume)) {
+    if (quoteFresh && typeof px === "number") {
       markPrice = px;
       const cs = quote.contractSize ?? 1;
       const dir = side === "buy" ? 1 : -1;
-      const estimate = (px - r.entryPrice) * dir * r.volume * cs;
-      computedPL = Number.isFinite(cs) && cs > 0 && Number.isFinite(estimate) ? estimate : null;
+      computedPL = (px - r.entryPrice) * dir * r.volume * cs;
     }
   }
 
@@ -243,7 +247,7 @@ export function normalizePositionPL(
     plIsEstimate = true;
     lastUpdateAtMs = quote!.tsMs;
     freshness = freshnessFromAge(now - quote!.tsMs, bands.liveMs, bands.freshMs, bands.delayedMs);
-  } else if (brokerPL != null && snapshotTimeKnown) {
+  } else if (brokerPL != null) {
     // We have a broker P/L but the snapshot is stale and no fresh quote — show
     // the last known value, clearly marked stale (never "live").
     unrealizedPL = brokerPL;
@@ -287,9 +291,10 @@ export function normalizePositionPL(
  * Build the shared account snapshot. Pure: excludes closed/reconciled rows,
  * further excludes broker-confirmed-absent rows from the display count (without
  * mutating them), normalizes each open position's P/L, sums open P/L (only over
- * positions whose P/L is known, withholds incomplete totals), and derives an overall freshness = the WORST
+ * positions whose P/L is known), and derives an overall freshness = the WORST
  * freshness across contributing positions (so one stale leg can't masquerade as
- * a live total). Whole-account profit reconciliation remains unverified.
+ * a live total). Emits a reconciliation marker when summed P/L materially
+ * disagrees with equity − balance.
  */
 export function buildLiveAccountSnapshot(input: BuildSnapshotInput): LiveAccountSnapshot {
   const bands = {
@@ -338,19 +343,18 @@ export function buildLiveAccountSnapshot(input: BuildSnapshotInput): LiveAccount
     normalizePositionPL(r, input.quotes?.[r.symbol], input.now, bands),
   );
 
-  // Preserve real per-position values, but never promote a known subtotal to
-  // the total when another row is unknown. Even a complete row sum is scoped
-  // only to these supplied rows, not the entire broker account.
-  let knownSubtotal: number | null = null;
+  // Open P/L: sum only positions with a known P/L. If ANY open position has an
+  // unknown P/L, the total is an under-count → flag it rather than imply exact.
+  let openPL: number | null = null;
   let anyUnknown = false;
   for (const p of positions) {
-    if (p.unrealizedPL == null || !Number.isFinite(p.unrealizedPL)) { anyUnknown = true; continue; }
-    knownSubtotal = (knownSubtotal ?? 0) + p.unrealizedPL;
+    if (p.unrealizedPL == null) { anyUnknown = true; continue; }
+    openPL = (openPL ?? 0) + p.unrealizedPL;
   }
-  if (knownSubtotal != null && !Number.isFinite(knownSubtotal)) { knownSubtotal = null; anyUnknown = true; }
-  const positionPnlComplete = positions.length > 0 && !anyUnknown && knownSubtotal != null;
-  const openPL = positionPnlComplete ? knownSubtotal : null;
-  if (anyUnknown) warnings.push("Position P/L is incomplete — one or more supplied positions has no usable value. The known subtotal is not the total.");
+  if (positions.length > 0 && openPL == null) openPL = null; // all unknown
+  if (anyUnknown && positions.length > 0) {
+    warnings.push("Some open positions are awaiting a fresh broker update — open P/L may be incomplete.");
+  }
 
   // Overall freshness = worst across contributing positions (rank order).
   const rank: Record<Freshness, number> = { live: 0, fresh: 1, delayed: 2, stale: 3, unavailable: 4 };
@@ -359,40 +363,53 @@ export function buildLiveAccountSnapshot(input: BuildSnapshotInput): LiveAccount
     if (rank[p.freshness] > rank[overall]) overall = p.freshness;
   }
 
-  // Equity includes components other than open-position profit (such as
-  // credit). These scalar fields may also describe a different connection or
-  // observation from the user-scoped rows. Keep their arithmetic diagnostic
-  // distinct from native ACCOUNT_PROFIT; no equality can establish agreement.
+  // Reconciliation invariant: compare summed position P/L to equity − balance.
+  // The EA heartbeat's equity − balance is the authoritative floating P/L for
+  // the broker account. If the summed per-row floatingPl materially disagrees,
+  // the rows are stale/unreconciled and the displayed number must not be shown
+  // as normal live profit. The discrepancy marker flows to the UI via the SSE
+  // stream; the UI gates "P/L under verification" on exceedsThreshold.
   const acct = input.account ?? {};
-  const difference = typeof acct.balance === "number" && Number.isFinite(acct.balance)
-    && typeof acct.equity === "number" && Number.isFinite(acct.equity)
-    ? acct.equity - acct.balance : null;
-  const equityMinusBalancePL = difference != null && Number.isFinite(difference) ? difference : null;
+  const acctBalance = acct.balance ?? null;
+  const acctEquity = acct.equity ?? null;
+  const equityMinusBalancePL =
+    acctBalance != null && acctEquity != null
+      ? Math.round((acctEquity - acctBalance) * 100) / 100
+      : null;
+  const discrepancy =
+    openPL != null && equityMinusBalancePL != null
+      ? Math.round(Math.abs(openPL - equityMinusBalancePL) * 100) / 100
+      : null;
+  const exceedsThreshold =
+    discrepancy != null && discrepancy > PL_RECONCILIATION_TOLERANCE_USD;
+
+  if (exceedsThreshold) {
+    // User-safe copy — no raw P/L amounts, no internal field names.
+    warnings.push(
+      "Open P/L is under verification — position totals are being reconciled with broker data.",
+    );
+  }
 
   const stalePLCount = positions.filter(
     (p) => p.plIsEstimate || p.plSource === "unavailable",
   ).length;
 
   const reconciliation: SnapshotReconciliation = {
-    status: "unverified",
-    reason: "NO_MATCHED_ACCOUNT_PROFIT_REPORT",
-    positionPnlScope: "supplied_rows",
-    positionPnlComplete,
-    snapshotSummedPL: knownSubtotal,
+    snapshotSummedPL: openPL,
     equityMinusBalancePL,
-    discrepancy: null,
-    exceedsThreshold: false,
+    discrepancy,
+    exceedsThreshold,
     excludedCount,
     brokerAbsentExcludedCount,
     stalePLCount,
   };
 
   const newestSnapshotMs = openRows.reduce<number | null>((acc, r) => {
-    if (r.lastSyncedAtMs == null || !Number.isFinite(r.lastSyncedAtMs) || r.lastSyncedAtMs <= 0 || r.lastSyncedAtMs > input.now) return acc;
+    if (r.lastSyncedAtMs == null) return acc;
     return acc == null || r.lastSyncedAtMs > acc ? r.lastSyncedAtMs : acc;
   }, null);
   const newestQuoteMs = input.quotes
-    ? Object.values(input.quotes).reduce<number | null>((acc, q) => !Number.isFinite(q.tsMs) || q.tsMs <= 0 || q.tsMs > input.now ? acc : (acc == null || q.tsMs > acc ? q.tsMs : acc), null)
+    ? Object.values(input.quotes).reduce<number | null>((acc, q) => (acc == null || q.tsMs > acc ? q.tsMs : acc), null)
     : null;
 
   return {

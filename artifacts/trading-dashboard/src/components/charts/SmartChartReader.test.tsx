@@ -7,11 +7,6 @@ import { captureChartReplay } from "@/lib/chart-engine/chartReplay";
 import { DEFAULT_PREFERENCES } from "@/lib/chart-engine/chartWorkspace";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { analyzeSmartChart, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
-it("preserves independent flag-channel segments without adding a horizontal trigger line",()=>{
- const segments=[{from:{time:1,price:100},to:{time:2,price:110}},{from:{time:3,price:109},to:{time:4,price:108}},{from:{time:3,price:107},to:{time:4,price:106}}];
- const finding={id:"flag",title:"Bull Flag",status:"developing",connectAnchors:false,segments,anchors:[{time:1,price:100,role:"flagpole_start"},{time:2,price:110,role:"flagpole_end"}],levels:[{price:108,label:"Projected trigger"}]} as SmartChartFinding;
- expect(findingAnnotation(finding)).toMatchObject({connectAnchors:false,segments});expect(findingAnnotation(finding)).not.toHaveProperty("level");
-});
 vi.mock("@/lib/chart-engine/smartChartAnalysis",async importOriginal=>{
   const actual=await importOriginal<typeof import("@/lib/chart-engine/smartChartAnalysis")>();
   return {...actual,analyzeSmartChart:vi.fn(actual.analyzeSmartChart)};
@@ -24,7 +19,7 @@ vi.mock("@/lib/chart-engine/chartDescriptiveAnalysis",async importOriginal=>{
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
 function fixture(timeframe="M5",start=START,step=300_000){
   const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe,source:"deriv_public",sourceMode:"live",timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"offline:utc-clock-fixture-v1",reason:null},openTime:new Date(start+i*step).toISOString(),closeTime:new Date(start+(i+1)*step).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
-  const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public",isLive:true,stale:false,quality:"clean",aiUsable:true,warning:null,message:"Fixture",lastCandleTime:candles.at(-1)!.closeTime},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
+  const data={symbol:"V75",timeframe,source:"deriv_public",quality:"clean",candles,feedStatus:{source:"deriv_public"},marketEvidence:{symbol:"V75",timeframe,source:"deriv_public",sourceIdentity:"a".repeat(64),lastClosedCandleAt:candles.at(-1)!.closeTime}} as unknown as ChartCandlesResponse;
   let visible:ChartEngineCandle[]=candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close}));
   const all=visible;let listener:(()=>void)|undefined;
   const setSmartAnnotation=vi.fn(),unsubscribe=vi.fn(()=>{listener=undefined;});
@@ -35,87 +30,6 @@ function fixture(timeframe="M5",start=START,step=300_000){
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("embedded chart reader follows applied candles",()=>{
-  it.each([false,true])("preserves gap context in annotation, narrative and assistant (observed doji=%s)",observed=>{
-    const f=fixture(),onFindingExplanation=vi.fn();
-    const rows=[...[1,1.01,1.02,1.03,1.04].map(close=>({open:close-.001,high:close+.001,low:close-.002,close})),
-      observed?{open:1.04,high:1.06,low:1.02,close:1.04}:{open:1.04,high:1.06,low:1.0395,close:1.041},
-      {open:1.041,high:1.042,low:1.03,close:1.035}];
-    const candles=f.data.candles!.slice(0,7).map((bar,i)=>({...bar,...rows[i]!,
-      ...(i===6?{openTime:new Date(Date.parse(bar.openTime)+300000).toISOString(),closeTime:new Date(Date.parse(bar.closeTime!)+300000).toISOString()}:{}),
-    }));
-    const data={...f.data,candles,marketEvidence:{...f.data.marketEvidence,lastClosedCandleAt:candles.at(-1)!.closeTime},
-      feedStatus:{...f.data.feedStatus,lastCandleTime:candles.at(-1)!.closeTime}} as ChartCandlesResponse;
-    f.show(candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));
-    render(<SmartChartReader {...f.props} data={data} onFindingExplanation={onFindingExplanation}/>);
-    fireEvent.click(screen.getByRole("button",{name:observed?/^Doji · observed/:/^Shooting Star · developing/,hidden:true}));
-    expect(screen.getByTestId("chart-reader-continuity").closest("details")).toBeNull();
-    expect(screen.getByTestId("chart-reader-explanation").textContent).toMatch(/^Before a time gap:/);
-    expect(f.setSmartAnnotation.mock.lastCall![0].dashed).toBe(true);
-    const reply=onFindingExplanation.mock.lastCall![0]();
-    expect(reply).toContain(observed?"Observed shape":"Still developing");expect(reply).toContain("later candles do not establish its current status");
-    expect(reply).not.toContain("confirming the rejection");
-  });
-  it("keeps rendered star explanation, annotation and assistant bound to the same actual candle",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();
-    const rows=[...[1,1.01,1.02,1.03,1.04].map(close=>({open:close-.001,high:close+.001,low:close-.002,close})),
-      {open:1.04,high:1.06,low:1.0395,close:1.041},
-      {open:1.04,high:1.06,low:1.0395,close:1.055},
-      {open:1.055,high:1.056,low:1.03,close:1.035}];
-    const candles=f.data.candles!.slice(0,8).map((bar,i)=>({...bar,...rows[i]!}));
-    const data={...f.data,candles,marketEvidence:{...f.data.marketEvidence,lastClosedCandleAt:candles.at(-1)!.closeTime},
-      feedStatus:{...f.data.feedStatus,lastCandleTime:candles.at(-1)!.closeTime}} as ChartCandlesResponse;
-    f.show(candles.map(c=>({time:Date.parse(c.openTime)/1000,open:c.open,high:c.high,low:c.low,close:c.close})));
-    render(<SmartChartReader {...f.props} data={data} onFindingExplanation={onFindingExplanation}/>);
-    const buttons=screen.getAllByRole("button",{name:/^Shooting Star · observed/,hidden:true});
-    expect(buttons).toHaveLength(1);fireEvent.click(buttons[0]!);
-    const annotation=f.setSmartAnnotation.mock.lastCall![0];
-    expect(annotation.id).toBe(`shooting_star:${Date.parse(candles[5]!.openTime)/1000}`);
-    expect(annotation.anchors).toEqual([{time:Date.parse(candles[5]!.openTime)/1000,price:1.06,label:"shooting star"}]);
-    expect(annotation.dashed).toBe(true);
-    const explanation=onFindingExplanation.mock.lastCall![0]();
-    expect(explanation).toContain("next close did not confirm");
-    expect(explanation).not.toContain("confirming the rejection");
-    expect(screen.getByTestId("smart-chart-reader").textContent).toContain("next close did not confirm");
-  });
-
-  it("publishes the displayed finding's source, observed geometry and caveats for the local assistant",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
-    const getter=onFindingExplanation.mock.lastCall?.[0];expect(typeof getter).toBe("function");
-    const reply=getter();expect(reply).toContain("V75");expect(reply).toContain("M5");expect(reply).toContain("deriv public");expect(reply).toContain("Observed shape");expect(reply).toContain("Anchors");expect(reply).toContain("not a forecast");
-    expect(reply).toContain("UTC");
-  });
-  it("rejects retained finding readers after a source switch or unmount",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();const view=render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
-    const old=onFindingExplanation.mock.lastCall?.[0];expect(typeof old).toBe("function");
-    view.rerender(<SmartChartReader {...f.props} data={{...f.data,marketEvidence:{...f.data.marketEvidence,sourceIdentity:"b".repeat(64)}} as ChartCandlesResponse} onFindingExplanation={onFindingExplanation}/>);
-    expect(old()).toMatch(/changed|no longer|unavailable/i);view.unmount();expect(onFindingExplanation.mock.lastCall?.[0]).toBeNull();expect(old()).toMatch(/changed|no longer|unavailable/i);
-  });
-  it("states when the selected finding's geometry is hidden",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} presentationHidden onFindingExplanation={onFindingExplanation}/>);
-    const getter=onFindingExplanation.mock.lastCall?.[0];expect(typeof getter).toBe("function");expect(getter()).toMatch(/annotation.*hidden/i);
-  });
-  it("does not substitute another finding after an explicitly selected observation leaves the viewport",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
-    const more=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true});fireEvent.click(more.at(-1)!);
-    const old=onFindingExplanation.mock.lastCall![0];f.show(f.all.slice(0,8));
-    expect(old()).toMatch(/changed|no longer/);expect(onFindingExplanation.mock.lastCall![0]()).toMatch(/No current selected finding/);
-    expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("no other pattern was substituted");
-    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
-  });
-  it("rechecks actual applied OHLC at the instant of the question",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();render(<SmartChartReader {...f.props} onFindingExplanation={onFindingExplanation}/>);
-    const getter=onFindingExplanation.mock.lastCall![0];f.all[0].close+=.01;
-    expect(getter()).toContain("displayed candles changed");
-  });
-  it("shows a fallback notice when the existing assistant cannot receive the manual explanation",()=>{
-    const f=fixture(),onExplainFinding=vi.fn(()=>false);render(<SmartChartReader {...f.props} onExplainFinding={onExplainFinding}/>);
-    fireEvent.click(screen.getByRole("button",{name:"Explain this finding"}));expect(onExplainFinding).toHaveBeenCalledOnce();expect(screen.getByRole("status").textContent).toContain("assistant is unavailable");expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("nearly equal");
-  });
-  it("preserves unverified-clock and stale-feed caveats in the assistant explanation",()=>{
-    const f=fixture(),onFindingExplanation=vi.fn();const data={...f.data,candles:f.data.candles!.map(bar=>({...bar,timeBasisEvidence:undefined})),feedStatus:{...f.data.feedStatus,stale:true,quality:'stale'}} as ChartCandlesResponse;
-    render(<SmartChartReader {...f.props} data={data} liveConfirmed={false} onFindingExplanation={onFindingExplanation}/>);
-    const reply=onFindingExplanation.mock.lastCall![0]();expect(reply).toContain('feed is stale');expect(reply).toMatch(/clock.*unverified|not.*UTC|UTC.*not/i);expect(reply).not.toContain('Live feed confirmed');
-  });
   it("automatically explains closed patterns, exposes every detail and shows one annotation",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
@@ -148,39 +62,13 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByText("Analysis, evidence and chart statistics").parentElement?.hasAttribute("open")).toBe(false);
   });
   it("historical viewport explains only its own closed prefix and keeps the stale warning",()=>{
-    const f=fixture();render(<SmartChartReader {...f.props} data={{...f.data,feedStatus:{...f.data.feedStatus,stale:true,quality:"stale"} as any}} liveConfirmed={false} readFailed/>);
+    const f=fixture();render(<SmartChartReader {...f.props} liveConfirmed={false} readFailed/>);
     f.show(f.all.slice(0,10));
     expect(screen.getByText(/Historical window · Stored candles/)).toBeTruthy();
     expect(screen.getByText(/10 closed candles analyzed/)).toBeTruthy();
-    expect(screen.getByTestId("chart-reader-feed-evidence").textContent).toContain("The feed is stale; this describes stored candles");
+    expect(screen.getByText(/The feed is stale; this describes stored candles/)).toBeTruthy();
     const latest=f.setSmartAnnotation.mock.lastCall?.[0];
     expect(latest.anchors.every((anchor:any)=>anchor.time<=f.all[9]!.time)).toBe(true);
-  });
-  it.each([
-    ["unconfirmed", false, false, {}, "The feed is not live-confirmed"],
-    ["read failure", true, true, {}, "The latest candle read failed"],
-    ["unavailable", false, false, {quality:"unavailable"}, "The current feed is unavailable"],
-    ["delayed", false, false, {quality:"delayed"}, "The feed reports delayed data"],
-  ] as const)("does not invent stale evidence for %s",(_,liveConfirmed,readFailed,feed,message)=>{
-    const f=fixture();render(<SmartChartReader {...f.props} liveConfirmed={liveConfirmed} readFailed={readFailed} data={{...f.data,feedStatus:{...f.data.feedStatus,...feed} as any}}/>);
-    const text=screen.getByTestId("smart-chart-reader").textContent!;
-    expect(text).toContain(message);expect(text).not.toContain("The feed is stale");
-    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-analysis-status")).toBe("ready");
-    expect(screen.getByText(/30 closed candles analyzed/)).toBeTruthy();
-    expect(f.setSmartAnnotation.mock.lastCall?.[0]).not.toBeNull();
-  });
-  it("preserves proven stale evidence and independent read failure, then recovers without changing geometry",()=>{
-    const f=fixture();const stale={...f.data,feedStatus:{...f.data.feedStatus,stale:true,quality:"stale"} as any};
-    const view=render(<SmartChartReader {...f.props} data={stale} liveConfirmed={false}/>);
-    const first=f.setSmartAnnotation.mock.lastCall?.[0];
-    view.rerender(<SmartChartReader {...f.props} data={stale} liveConfirmed={false} readFailed/>);
-    expect(screen.getByTestId("smart-chart-reader").textContent).toContain("The feed is stale");
-    expect(screen.getByTestId("smart-chart-reader").textContent).toContain("The latest candle read failed");
-    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toEqual(first);
-    view.rerender(<SmartChartReader {...f.props}/>);
-    expect(screen.getByTestId("smart-chart-reader").textContent).not.toContain("The feed is stale");
-    expect(screen.getByTestId("smart-chart-reader").textContent).not.toContain("The latest candle read failed");
-    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toEqual(first);
   });
   it("withholds readings when the applied OHLC disagrees, then recovers after application",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
@@ -330,7 +218,7 @@ describe("Replay analysis duplicate notifications",()=>{
     expect(screen.getByTestId('chart-reader-context').textContent).toContain('9 closed candles');
     f.show(f.all.slice(0,9));expect(analyzeSmartChart).toHaveBeenCalledTimes(3);expect(describeSmartChartWindow).toHaveBeenCalledTimes(3);
   });
-  it("invalidates changed OHLC, source/epoch and axis state while frozen replay ignores unrelated live read failure",()=>{
+  it("invalidates changed OHLC, source/epoch, read failure, and axis state while retaining independent annotation controls",()=>{
     const f=fixture(),snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
     const replay={snapshot,installedCount:30};const v=render(<SmartChartReader {...f.props} replay={replay}/>);
     f.show(f.all.map((bar,i)=>i===10?{...bar,close:100.5}:bar));
@@ -341,8 +229,7 @@ describe("Replay analysis duplicate notifications",()=>{
     v.rerender(<SmartChartReader {...f.props} replay={replay} readFailed/>);
     v.rerender(<SmartChartReader {...f.props} replay={replay} epoch={2}/>);
     v.rerender(<SmartChartReader {...f.props} replay={replay} view={{style:'line',scale:'log',inverted:true}}/>);
-    expect(analyzeSmartChart).toHaveBeenCalledTimes(calls+2);
-    expect(screen.queryByTestId("chart-reader-feed-evidence")).toBeNull();
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(calls+3);
     fireEvent.click(screen.getByRole('button',{name:'Show automatic chart annotations'}));
     expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
     const selected=within(screen.getByLabelText('Relevant chart patterns')).getAllByRole('button');
@@ -379,8 +266,7 @@ describe("Replay analysis duplicate notifications",()=>{
     const f=fixture(),view=render(<SmartChartReader {...f.props}/>);
     f.show(f.all);expect(analyzeSmartChart).toHaveBeenCalledTimes(1);
     view.rerender(<SmartChartReader {...f.props} readFailed/>);
-    expect(screen.getByTestId("chart-reader-feed-evidence").textContent).toContain("The latest candle read failed");
-    expect(screen.getByTestId("chart-reader-feed-evidence").textContent).not.toContain("The feed is stale");
+    expect(screen.getByText(/The feed is stale; this describes stored candles/)).toBeTruthy();
     expect(analyzeSmartChart).toHaveBeenCalledTimes(2);
     view.rerender(<SmartChartReader {...f.props} epoch={2}/>);
     expect(analyzeSmartChart).toHaveBeenCalledTimes(3);
@@ -400,16 +286,4 @@ it("keeps source-coordinate reading times and omits false UTC machine timestamps
  expect(reader.textContent).toContain("source clock (UTC unverified)");
  expect(reader.textContent).not.toContain("GMT+9");
  for(const time of reader.querySelectorAll("time"))expect(time.hasAttribute("datetime")).toBe(false);
-});
-
-it("labels temporarily suppressed annotations without changing saved annotation choice or recalculating",()=>{
- const f=fixture();const view=render(<SmartChartReader {...f.props}/>);const count=vi.mocked(analyzeSmartChart).mock.calls.length;
- view.rerender(<SmartChartReader {...f.props} presentationHidden/>);expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).textContent).toContain("hidden (saved on)");expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).getAttribute("aria-description")).toContain("temporarily hidden");expect(vi.mocked(analyzeSmartChart).mock.calls.length).toBe(count);
- fireEvent.click(screen.getByRole("button",{name:"Show automatic chart annotations"}));view.rerender(<SmartChartReader {...f.props}/>);expect(screen.getByRole("button",{name:"Show automatic chart annotations"}).textContent).toContain("Annotations off");
-});
-
-it("preserves explicit disconnected event semantics without inferring them from names",()=>{
- const finding={id:"arbitrary",title:"Any name",status:"confirmed",connectAnchors:false,anchors:[{time:1,price:100,role:"broken_level"},{time:2,price:99.9,role:"retest"}],levels:[{price:100,label:"Reference"}]} as SmartChartFinding;
- expect(findingAnnotation(finding)).toMatchObject({connectAnchors:false,level:{price:100,label:"Reference"}});
- expect(findingAnnotation({...finding,connectAnchors:undefined})).not.toMatchObject({connectAnchors:false});
 });

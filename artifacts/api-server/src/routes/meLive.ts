@@ -16,16 +16,14 @@
 //
 // Mount path: /api/me/live/*
 
-import { createSharedAccountChangeStream, resolveSharedAccountChangeScope, resolvePersonalAccountChangeScope, resolveAccountStreamAuthorization } from "../lib/live/sharedAccountChangeStream.js";
-import { findUserBySessionToken, USER_SESSION_COOKIE } from "../lib/auth/userSessions.js";
-import { getUserAllocationView, resolveActiveMasterConnectionId } from "../lib/live/masterBridgePool.js";
 import { createAccountSnapshotScheduler } from "../lib/live/accountSnapshotScheduler.js";
+import { createSseWriter } from "../lib/perf/sseWriter.js";
 import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { classifyOrderType, validatePendingOrder, validateProtection } from "../lib/live/pendingOrderRules.js";
 import { routeQuote } from "../lib/data/marketDataRouter.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
-import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, getUserActiveConnection, listUserConnections } from "../lib/brokerHub/connections.js";
+import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import { accountFiguresOf, connectionAccountSnapshot } from "../lib/brokerHub/accountSnapshot.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq } from "drizzle-orm";
@@ -1001,7 +999,6 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
       userId, accountMode: scope.currentAccountMode,
       allocatedBalance: partsOff.allocatedBalance,
       realizedPnL: partsOff.realizedPnL,
-      realizedPnLPendingCount: partsOff.realizedPnLPendingCount,
       reservedRisk: partsOff.reservedRisk,
       liveSnapshot: null, now,
     });
@@ -1051,7 +1048,6 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     userId, accountMode: "LIVE_SHARED",
     allocatedBalance: partsOn.allocatedBalance,
     realizedPnL: partsOn.realizedPnL,
-    realizedPnLPendingCount: partsOn.realizedPnLPendingCount,
     reservedRisk: partsOn.reservedRisk,
     liveSnapshot: snapshot, now,
   });
@@ -1114,34 +1110,25 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   (res as unknown as { flushHeaders?: () => void }).flushHeaders?.();
 
-  let aborted = false;
-  let stopStream: (() => void) | undefined;
-  req.once("close", () => { aborted = true; stopStream?.(); });
-  const send = (event: unknown) => {
-    if (aborted) return;
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
-
-  const rawSessionToken = req.cookies?.[USER_SESSION_COOKIE];
-  const readVerifiedSession = async () => {
-    try {
-      const session = typeof rawSessionToken === "string" && rawSessionToken.length > 0
-        ? await findUserBySessionToken(rawSessionToken, { readOnly: true }) : null;
-      if (aborted) return null;
-      if (session?.id === userId) return session;
-    } catch { /* Unverifiable sessions fail closed for this stream. */ }
-    if (!aborted) {
-      aborted = true;
-      stopStream?.();
-      res.end();
-    }
-    return null;
-  };
-  const readAuthorization = () => resolveAccountStreamAuthorization(userId, callerIsAdmin, readVerifiedSession);
+  let stopRefresh = () => {};
+  let unsubscribe = () => {};
+  let tick: ReturnType<typeof setInterval> | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const writer = createSseWriter(res, () => {
+    stopRefresh();
+    unsubscribe();
+    clearInterval(tick);
+    clearInterval(heartbeat);
+  });
+  req.once("close", writer.close);
+  const send = writer.send;
 
   const { buildLiveAccountSnapshot } = await import("../lib/live/liveAccountSnapshot.js");
+  const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
+  if (writer.closed) return;
 
   // Build one snapshot using the SAME mode-scope gate as /me/live/positions so
   // the stream can never disagree with the positions list. Returns the safe
@@ -1155,19 +1142,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
 
   const buildOnce = async () => {
     try {
-      const authorization = await readAuthorization();
-      if (!authorization) return;
-      const sendAccount = async (event: unknown) => {
-        const current = await readAuthorization();
-        if (!current) return;
-        if (current.isOperator !== authorization.isOperator) {
-          // Drop work built under an obsolete role; rebuild through its gates.
-          scheduler.request();
-          return;
-        }
-        send(event);
-      };
-      const scope = await getUserModeScope(userId, { isAdmin: authorization.isOperator });
+      const scope = await getUserModeScope(userId, { isAdmin: callerIsAdmin });
       const { includeLive, notLiveReason } = resolveLivePositionVisibility(scope.currentAccountMode);
       if (!includeLive) {
         const partsOff = await fetchInvestorBalanceParts(userId);
@@ -1175,11 +1150,10 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
           userId, accountMode: scope.currentAccountMode,
           allocatedBalance: partsOff.allocatedBalance,
           realizedPnL: partsOff.realizedPnL,
-          realizedPnLPendingCount: partsOff.realizedPnLPendingCount,
           reservedRisk: partsOff.reservedRisk,
           liveSnapshot: null, now: Date.now(),
         });
-        await sendAccount({
+        send({
           type: "account_snapshot",
           snapshot: {
             userId: String(userId), accountMode: "UNKNOWN", source: "computed",
@@ -1236,11 +1210,10 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         userId, accountMode: "LIVE_SHARED",
         allocatedBalance: partsOn.allocatedBalance,
         realizedPnL: partsOn.realizedPnL,
-        realizedPnLPendingCount: partsOn.realizedPnLPendingCount,
         reservedRisk: partsOn.reservedRisk,
         liveSnapshot: snapshot, now: Date.now(),
       });
-      await sendAccount({ type: "account_snapshot", snapshot, live: toLiveBlock(invOn), ts: Date.now() });
+      send({ type: "account_snapshot", snapshot, live: toLiveBlock(invOn), ts: Date.now() });
     } catch {
       // error_safe: never leak internals; tell the client to fall back.
       send({ type: "error_safe", message: "Account stream temporarily unavailable.", ts: Date.now() });
@@ -1249,46 +1222,14 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
 
   // Subscribe before the initial read so an update arriving during that read
   // earns a trailing refresh. Initial, change and fallback reads share one
-  // scheduler; the interval must never bypass it and race a newer snapshot.
-  const { liveAccountEventBus } = await import("../lib/live/liveAccountEventBus.js");
-  if (aborted) return;
-  const sharedChanges = createSharedAccountChangeStream({
-    bus: liveAccountEventBus,
-    readScope: () => resolveSharedAccountChangeScope(userId, callerIsAdmin, {
-      readSession: readVerifiedSession,
-      readView: getUserAllocationView,
-      readPin: resolveActiveMasterConnectionId,
-    }),
-    sendHint: () => send({ type: "shared_account_changed" }),
-  });
-  const personalChanges = createSharedAccountChangeStream({
-    bus: liveAccountEventBus,
-    readScope: () => resolvePersonalAccountChangeScope(userId, {
-      readSession: readVerifiedSession,
-      readConnection: getUserActiveConnection,
-    }),
-    sendHint: () => send({ type: "personal_account_changed" }),
-  });
+  // tested scheduler; the interval must never bypass it or race newer evidence.
   const scheduler = createAccountSnapshotScheduler(buildOnce);
-  const onLiveChange = () => {
-    scheduler.request();
-    // Heartbeats can change the selected personal connection. Reuse the own-user
-    // notification to rebind promptly instead of waiting for the fallback tick.
-    personalChanges.request();
-  };
-  liveAccountEventBus.on(userId, onLiveChange);
-  const tick = setInterval(() => { onLiveChange(); sharedChanges.request(); }, 3_000);
-  const heartbeat = setInterval(() => { if (!aborted) send({ type: "heartbeat", ts: Date.now() }); }, 15_000);
-  stopStream = () => {
-    sharedChanges.stop();
-    personalChanges.stop();
-    scheduler.stop();
-    clearInterval(tick);
-    clearInterval(heartbeat);
-    liveAccountEventBus.off(userId, onLiveChange);
-  };
-  sharedChanges.request();
-  personalChanges.request();
+  stopRefresh = scheduler.stop;
+  liveAccountEventBus.on(userId, scheduler.request);
+  unsubscribe = () => liveAccountEventBus.off(userId, scheduler.request);
+  tick = setInterval(scheduler.request, 3_000);
+  heartbeat = setInterval(() => send({ type: "heartbeat", ts: Date.now() }), 15_000);
+  if (writer.closed) { scheduler.stop(); unsubscribe(); clearInterval(tick); clearInterval(heartbeat); return; }
   scheduler.request();
 
 });

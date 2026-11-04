@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { LiveAccountSnapshotProvider, useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
-import { useLiveBridgeRefreshState } from "@/hooks/useLiveBridgeRefresh";
-import { LiveBridgeAutoRefreshControl } from "@/components/live/LiveBridgeAutoRefreshControl";
 import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
 import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { restoreChartInterval } from "@/lib/chart-engine/chartIntervals";
@@ -46,11 +43,6 @@ import { bareSymbol, useChartSymbol } from "@/lib/use-chart-symbol";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function LiveChartPage() {
-  return <LiveAccountSnapshotProvider><LiveChartContent /></LiveAccountSnapshotProvider>;
-}
-
-function LiveChartContent() {
-  const accountRefresh=useLiveBridgeRefreshState(useLiveAccountSnapshotCtx());
   const mode = useTradingMode();
   // Effective product role for gating the trade-entry surface. Investors are
   // view-only and must never see a trade ticket; while identity resolves we keep
@@ -149,7 +141,6 @@ function LiveChartContent() {
           Your chart workspace — price action, studies, drawings and multiple timeframes with visible feed quality.
         </p>
       </div>
-      <LiveBridgeAutoRefreshControl {...accountRefresh} />
       <SmartChartSymbolSelect symbol={chartSymbol} onSymbolChange={setChartSymbol} />
       <div className="flex items-start gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
         <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
@@ -159,7 +150,7 @@ function LiveChartContent() {
             : <>Read-only chart. The trade ticket on this page still requires your confirmation, and in {mode.cleanModeLabel} no real broker order is placed.</>}
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0 space-y-4">
             {/* MT5-style one-click bar. Off → a single "Turn on" button (disclaimer
                 first). On → SELL bid | lot | BUY ask + × close, first click trades.
@@ -196,7 +187,7 @@ function LiveChartContent() {
             />
             <ChartModes state={chartIntelligence} />
           </div>
-        <div className="min-w-0 space-y-4">
+        <div className="space-y-4">
           {/* Trade entry is the single gated order surface. Hidden from view-only
               (investor) roles and while identity resolves; placement itself still
               routes through the server-side instant-trade router + 16-gate. */}

@@ -880,7 +880,15 @@ export function ArxAssistantLivePanel() {
     if (chartReply !== null) {
       // Existing chat surface, deterministic local display action. It needs no
       // remote conversation and makes no model request or trading call.
-      acceptLocalChartReply(text,chartReply);
+      abortRef.current?.abort();
+      tts.stop();
+      setErrorBanner(null);
+      setInput("");
+      setStatus("idle");
+      const turn=++localChartTurnSequence.current;
+      setMessages(current => [...current.map(message => message.pending ? { ...message, pending: false, content: message.content || "Previous reply stopped." } : message),
+        { id: `local-chart-u-${turn}`, role: "user", content: text },
+        { id: `local-chart-a-${turn}`, role: "assistant", content: chartReply }]);
       return;
     }
     if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}
@@ -1201,7 +1209,7 @@ export function ArxAssistantLivePanel() {
     // the action doesn't leak as "still running" in the ring buffer.
     // markActionEnd is idempotent (returns null on the second call).
     markActionEnd(rubyPid);
-  }, [conversation,acceptLocalChartReply]);
+  }, [conversation]);
 
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void sendText(input); };
 

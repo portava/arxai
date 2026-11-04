@@ -68,7 +68,7 @@ it("preview explanation with no preview stays read-only and rendererless ownersh
 it("explaining a changed frozen preview never describes the old anchors as current",()=>{
  render(<ChartWorkbenchTools {...props}/>);ask("show Fibonacci");
  read={status:"ready",reason:null,proposal:{...ready().proposal!,comparisonKey:"revised",origin:{...origin,end:{time:1300,price:30}}}};
- const reply=ask("explain Fibonacci preview");expect(reply).toContain("previous Fibonacci preview was cleared");expect(reply).not.toContain("23.6%:");expect(draw.mock.calls.at(-1)![0]).toEqual([]);
+ const reply=ask("explain Fibonacci preview");expect(reply).toContain("previous Fibonacci preview is withdrawn");expect(reply).not.toContain("23.6%:");expect(draw.mock.calls.at(-1)![0]).toEqual([]);
 });
 
 it("explains a user's flat edited range without inventing a rise or fall",()=>{

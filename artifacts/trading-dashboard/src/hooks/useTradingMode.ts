@@ -62,10 +62,6 @@ export interface UnifiedAccountModeEnvelope {
 export interface UseTradingModeResult {
   isLoading: boolean;
   isError: boolean;
-  /** Query evidence for descriptive UI only; never new execution permissions. */
-  isStale?: boolean;
-  isFetching?: boolean;
-  dataUpdatedAt?: number;
   envelope: UnifiedAccountModeEnvelope | null;
 
   // Mode booleans
@@ -100,7 +96,7 @@ export interface UseTradingModeResult {
 }
 
 async function fetchAccountMode(): Promise<UnifiedAccountModeEnvelope | null> {
-  const res = await fetch("/api/me/account-mode", { credentials: "include", cache: "no-store" });
+  const res = await fetch("/api/me/account-mode", { credentials: "include" });
   if (!res.ok) return null;
   const json = (await res.json()) as UnifiedAccountModeEnvelope | { ok: false };
   if (!("ok" in json) || json.ok !== true) return null;
@@ -144,7 +140,7 @@ export function useTradingMode(): UseTradingModeResult {
   const isDemo = env?.currentAccountMode === "DEMO";
   const isPaper = env?.currentAccountMode === "PAPER";
   const isLiveArmed = env?.liveExecutionArmed === true;
-  const isFrozen = env?.userFrozenStatus?.isFrozen === true;
+  const isFrozen = env?.userFrozenStatus.isFrozen === true;
 
   const isAdmin = env?.isAdmin === true;
   const isAdminPreviewingUserMode = env?.isAdminPreviewingUserMode === true;
@@ -153,9 +149,9 @@ export function useTradingMode(): UseTradingModeResult {
   const canManualTrade = env?.userCanManualTrade === true;
   const canAutoTrade = env?.userCanAutoTrade === true;
 
-  const isSharedMasterAssigned = env?.userSharedMasterAssignment?.attached === true;
-  const hasAllocation = env?.userAllocation?.hasAllocation === true;
-  const hasRiskCaps = env?.userRiskCaps?.maxLotSize != null;
+  const isSharedMasterAssigned = env?.userSharedMasterAssignment.attached === true;
+  const hasAllocation = env?.userAllocation.hasAllocation === true;
+  const hasRiskCaps = env?.userRiskCaps.maxLotSize != null;
 
   const cleanModeLabel = env?.cleanModeLabel ?? "Loading…";
   const cleanUserMessage = env?.cleanUserMessage ?? "";
@@ -166,9 +162,6 @@ export function useTradingMode(): UseTradingModeResult {
   return {
     isLoading: q.isLoading,
     isError: q.isError,
-    isStale: q.isStale,
-    isFetching: q.isFetching,
-    dataUpdatedAt: q.dataUpdatedAt,
     envelope: env,
     isLiveShared,
     isDemo,

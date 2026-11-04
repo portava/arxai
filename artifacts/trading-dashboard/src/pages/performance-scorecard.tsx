@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
+import { RouteLayoutPanel } from "@/components/layout/RouteLayoutPanel";
 
 type Scorecard = {
   environments: Record<string, { trades?: number; wins?: number; losses?: number; winRate?: number; pnl?: number; note?: string; status?: string }>;
@@ -124,6 +125,7 @@ export default function PerformanceScorecard() {
           </div>
 
           {/* Performance summary cards */}
+          <RouteLayoutPanel routeKey="/performance-scorecard/summary" id="performance-summary" title="Performance summary" icon={BarChart3}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
             <MetricCard label="Net P/L" value={money(s.headline.totalPnl)} tone={pnlTone(s.headline.totalPnl)} />
             <MetricCard label="Win Rate" value={`${s.headline.winRate}%`} tone="text-foreground" />
@@ -131,8 +133,10 @@ export default function PerformanceScorecard() {
             <MetricCard label="Losses" value={String(totals.losses)} tone="text-danger" icon={<XCircle className="h-4 w-4 text-danger" />} />
             <MetricCard label="Total Trades" value={String(s.headline.totalTrades)} tone="text-foreground" />
           </div>
+          </RouteLayoutPanel>
 
           {/* Ruby read + best/worst */}
+          <RouteLayoutPanel routeKey="/performance-scorecard/review" id="performance-review" title="Performance review" icon={Sparkles}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-ruby/25 bg-card p-4">
               <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name}’s Performance Read</h3></div>
@@ -165,6 +169,7 @@ export default function PerformanceScorecard() {
               </div>
             </div>
           </div>
+          </RouteLayoutPanel>
 
           {/* Environment separation (preserved — never mixed) */}
           <div className="rounded-2xl border border-border bg-card p-4">
@@ -237,6 +242,7 @@ export default function PerformanceScorecard() {
 
           {/* Heat Intelligence — shown only when real data exists */}
           {heatReport && !heatReport.honestEmpty && (
+            <RouteLayoutPanel routeKey="/performance-scorecard/heat" id="performance-heat" title="Heat learning" icon={Thermometer}>
             <div className="rounded-2xl border border-orange-400/20 bg-card p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -295,6 +301,7 @@ export default function PerformanceScorecard() {
                 </div>
               )}
             </div>
+            </RouteLayoutPanel>
           )}
 
           <p className="text-xs text-txt-muted">

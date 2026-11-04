@@ -12,7 +12,7 @@ export function PropPassFailBanner({ status, reason }: { status: string; reason?
         <span className="rounded bg-amber-700 px-2 py-0.5 text-[10px] font-bold text-white">SIMULATED — PRACTICE ONLY</span>
       </div>
       {reason && <p className="mt-1 text-xs">{reason}</p>}
-      <p className="mt-2 text-[11px] opacity-80">Practice/training only. Does not promise funded-account approval or certain profits.</p>
+      <p className="mt-2 text-[11px] opacity-80">Practice/training only. Does not promise funded-account approval or guaranteed profits.</p>
     </div>
   );
 }

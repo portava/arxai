@@ -1,7 +1,7 @@
 import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { proposeChartFibonacci } from "@/lib/chart-engine/chartAutoFibonacci";
 import { captureReplayAnalysisPrefix } from "@/lib/chart-engine/chartReplayAnalysis";
-import { ChartEngineCredit } from "@/components/charts/ChartLibraryCredit";
+import { ChartLibraryCredit } from "@/components/charts/ChartLibraryCredit";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChartWorkbenchTools } from "@/components/charts/ChartWorkbenchTools";
@@ -43,7 +43,6 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     if(!container.current)return;
     const engine=createChartEngineAdapter();adapter.current=engine;
     engine.init({container:container.current,height:600,visibleDesktop:150,visibleMobile:80});
-    engine.setSourceClockQualified?.(false);
     engine.setSymbol?.(snapshot.symbol);engine.setTimeframe?.(snapshot.timeframe);
     engine.setFeedState({livePriceAffordance:false,source:snapshot.source});
     engine.setOverlays([],null);engine.setStructureLines?.([],[]);
@@ -139,7 +138,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
           if(event.key==="End")adapter.current?.goToLatest?.(false);
         }} data-installed-count={installed}
         data-source={snapshot.source} data-source-identity={snapshot.sourceIdentity} data-last-open={snapshot.bars[Math.max(0,installed-1)]?.time}/>
-      <ChartEngineCredit engineId={adapter.current?.capabilities?.id} />
+      <ChartLibraryCredit />
       <SmartChartReader adapter={adapter.current} epoch={epoch} symbol={snapshot.symbol} timeframe={snapshot.timeframe}
         data={undefined} older={NO_OLDER} historyEvidence={null} liveConfirmed={false} readFailed={false} view={preferences} replay={replayRead}/>
     </div>

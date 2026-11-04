@@ -104,11 +104,3 @@ if(import.meta.hot) import.meta.hot.dispose(()=>{root.unmount();removeQaWitnesse
   return {fixture:"synthetic offline, visible canvas",bars:barCount,studies:12,fibonacciDrawings:40,frames:180,ticks:1800,setupToTwoFramesMs,ingestionCpuP95Ms:percentile(costs,.95),ingestionPlusStudyCpuP95Ms:percentile(totalCosts,.95),ingestionPlusStudyCpuMaxMs:Math.max(...totalCosts),frameIntervalP50Ms:percentile(frames,.5),frameIntervalP95Ms:percentile(frames,.95),frameIntervalMaxMs:Math.max(...frames),longTasksOver50Ms:longTasks};
  } finally { observer.disconnect();adapter.destroy();el.remove(); }
 };
-
-// Stress matrix removes the acceptance workbench and observer wrappers first,
-// so background React/chart work is not silently mixed into renderer timings.
-let stressOnly=false;
-(window as any).runChartStressMatrixCase=async (options:Parameters<typeof import("./stress-matrix.ts").runStressMatrixCase>[0])=>{
- if(!stressOnly){root.unmount();removeQaWitnesses();stressOnly=true;await new Promise(requestAnimationFrame);}
- const {runStressMatrixCase}=await import("./stress-matrix.ts");return runStressMatrixCase(options);
-};

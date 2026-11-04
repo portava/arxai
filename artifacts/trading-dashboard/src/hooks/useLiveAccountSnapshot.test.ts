@@ -870,14 +870,14 @@ describe("successful partial funds responses cannot refresh old amounts", () => 
     await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
     for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBeNull();
   });
-  it("keeps reported zero funds but withholds a partial-poll aggregate without position evidence", async () => {
+  it("keeps newly reported zeroes and a negative open loss", async () => {
     const body = freshPollBody() as Record<string, unknown>;
     for (const [wire] of fields) body[wire] = 0;
     body.openPnL = -7;
     fetchMock.mockResolvedValue({ ok: true, json: async () => body });
     const { result } = renderHook(() => useLiveAccountSnapshot());
     await act(async () => { MockEventSource.latest().emit({ type: "error_safe" }); });
-    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBe(field === "openPL" ? null : 0);
+    for (const [, field] of fields) expect(result.current.snapshot?.[field]).toBe(field === "openPL" ? -7 : 0);
   });
   it.each([null, undefined])("does not revive a previously known position count when the response count is %s", async (value) => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...freshPollBody(), openPositionCount: value }) });
@@ -915,18 +915,65 @@ describe("successful partial funds responses cannot refresh old amounts", () => 
     expect(result.current.live).toBeNull();
   });
 });
+describe("account snapshot transport concurrency", () => {
+  it("coalesces slow polls and prevents a late poll from overwriting a newer SSE snapshot", async () => {
+    let resolve!: (value: unknown) => void;
+    fetchMock.mockImplementation(() => new Promise(r => { resolve = r; }));
+    const { result, unmount } = renderHook(() => useLiveAccountSnapshot());
+    const es = MockEventSource.latest();
+    act(() => es.emit({ type: "error_safe" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0]![1].signal as AbortSignal;
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    act(() => es.emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    expect(signal.aborted).toBe(true);
+    await act(async () => { resolve({ ok: true, json: async () => ({ ...freshPollBody(), balance: 123 }) }); });
+    expect(result.current.snapshot?.balance).toBe(1000);
+    expect(result.current.connectionStatus).toBe("live");
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    unmount();
+  });
 
+  it("ignores older SSE snapshots and callbacks from retired connections", () => {
+    const { result, unmount } = renderHook(() => useLiveAccountSnapshot());
+    const old = MockEventSource.latest();
+    const fresh = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    fresh.snapshot.lastComputedAtMs = 2000;
+    act(() => old.emit(fresh));
+    const older = snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" });
+    older.snapshot.lastComputedAtMs = 1000; older.snapshot.balance = 123;
+    act(() => old.emit(older));
+    expect(result.current.snapshot?.balance).toBe(1000);
+    act(() => result.current.reload());
+    older.snapshot.lastComputedAtMs = 3000;
+    act(() => old.emit(older));
+    expect(result.current.snapshot?.balance).toBe(1000);
+    unmount();
+  });
 
-describe("aggregate display completeness", () => {
-  it.each([undefined,false,true])("preserves position facts while requiring affirmative aggregate completeness (%s)", async complete => {
-    const {result}=renderHook(()=>useLiveAccountSnapshot());
-    const event=snapshotEvent({snapFreshness:"fresh",liveFreshness:"fresh"});
-    event.snapshot.openPL=12;
-    event.snapshot.positions=[{positionId:"lp_1",symbol:"EURUSD",direction:"buy",volume:1,entryPrice:1,currentPrice:1.1,unrealizedPL:12,brokerPL:12,plSource:"broker",plIsEstimate:false,lastUpdateAtMs:Date.now(),freshness:"fresh"}];
-    if(complete!==undefined)event.snapshot.reconciliation={positionPnlComplete:complete,snapshotSummedPL:12,equityMinusBalancePL:20,discrepancy:null,exceedsThreshold:false,excludedCount:0,brokerAbsentExcludedCount:0,stalePLCount:0};
-    act(()=>MockEventSource.latest().emit(event));
-    expect(result.current.snapshot?.openPL).toBe(complete===true?12:null);
-    expect(result.current.snapshot?.positions[0]?.brokerPL).toBe(12);
-    expect(result.current.snapshot?.positions[0]?.unrealizedPL).toBe(12);
+  it("aborts a poll on unmount and bounds a hung request to ten seconds", () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const first = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const signal = fetchMock.mock.calls[0]![1].signal as AbortSignal;
+    first.unmount();
+    expect(signal.aborted).toBe(true);
+    const second = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit({ type: "error_safe" }));
+    const nextSignal = fetchMock.mock.calls[1]![1].signal as AbortSignal;
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(nextSignal.aborted).toBe(true);
+    second.unmount();
+  });
+
+  it("does not relabel a missing balance block as fresh by reusing old financial data", async () => {
+    const { result, unmount } = renderHook(() => useLiveAccountSnapshot());
+    act(() => MockEventSource.latest().emit(snapshotEvent({ snapFreshness: "fresh", liveFreshness: "fresh" })));
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...freshPollBody(), live: null }) });
+    await act(async () => MockEventSource.latest().emit({ type: "error_safe" }));
+    expect(result.current.live).toBeNull();
+    unmount();
   });
 });

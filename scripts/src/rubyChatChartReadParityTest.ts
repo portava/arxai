@@ -60,6 +60,7 @@ import {
   type CiTestResultLike,
 } from "./ci/inProcessAppHarness.js";
 import { installNoExternalNetworkGuard } from "./ci/networkGuard.js";
+import { _resetMarketProviderForTests } from "../../artifacts/api-server/src/lib/assistant/marketProvider.js";
 
 const TEST_EMAIL = "qa+ruby-chat-chart-read-parity@arx.test";
 // Forex symbol with a REAL pushed window → the only server-verifiable read.
@@ -231,6 +232,13 @@ export async function run(): Promise<CiTestResultLike> {
   // deterministic in-memory MT5 push above. An explicit external probe below
   // verifies the installed global-fetch guard even with no provider keys.
   const netGuard = installNoExternalNetworkGuard();
+  // Exercise an enrichment attempt even in credential-free CI. Install the
+  // dummy key only under the guard; never read or replace an existing secret.
+  const addedDummyKey = !("TWELVEDATA_API_KEY" in process.env);
+  if (addedDummyKey) {
+    process.env.TWELVEDATA_API_KEY = "offline-parity-test-placeholder";
+    _resetMarketProviderForTests();
+  }
 
   const postRead = async (body: unknown) => {
     const res = await fetch(`${baseUrl}/api/me/assistant/read-chart`, {
@@ -319,6 +327,10 @@ export async function run(): Promise<CiTestResultLike> {
     // Always restore the real fetch — `run()` may be invoked by an aggregator
     // that executes sibling tests in the same process after this one.
     netGuard.restore();
+    if (addedDummyKey) {
+      delete process.env.TWELVEDATA_API_KEY;
+      _resetMarketProviderForTests();
+    }
   }
 
   // Providers with no credentials may skip enrichment entirely. Assert the

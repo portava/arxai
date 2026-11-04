@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { Sparkles, Loader2, ChevronDown, RefreshCw, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
@@ -104,9 +105,11 @@ const FRESHNESS_TONE: Record<string, string> = {
 export function RubyMarketReadCard({
   symbol,
   timeframe,
+  compactWorkspace = false,
 }: {
   symbol: string;
   timeframe?: string;
+  compactWorkspace?: boolean;
 }) {
   const { name } = useAssistantName();
   const [scannerTimeframe] = useScannerTimeframe();
@@ -211,6 +214,57 @@ export function RubyMarketReadCard({
         : null,
     [explanation, signal, downgraded, level, reason, news?.riskLabel, name],
   );
+
+  if (compactWorkspace) {
+    const freshness = signal ? freshnessLabel(signal) : null;
+    return <div className="arx-ruby-compact" data-testid="ruby-market-read" data-compact-read="true">
+      <div className="arx-ruby-compact-meta">
+        <span className="arx-ruby-market">{symbol} · {chartTimeframe}</span>
+        {signal && <span className="arx-ruby-freshness" data-testid="ruby-market-read-freshness">
+          {freshness?.text ?? "Freshness unavailable"} · {ageLabel(dataUpdatedIso, nowTs)}
+        </span>}
+      </div>
+      <ScannerReadGate symbol={symbol} timeframe={chartTimeframe} compact/>
+      {isLoading ? <p className="arx-ruby-status" role="status">{name} is reading {symbol}…</p> : isError ? (
+        <p className="arx-ruby-status is-warning" role="status" data-testid="ruby-market-read-err">{name} read unavailable; refresh to retry.</p>
+      ) : !explanation || !chosen || !signal ? (
+        <p className="arx-ruby-status" role="status">No read available for {symbol} yet.</p>
+      ) : level == null ? (
+        <p className="arx-ruby-status" role="status" data-testid="ruby-market-read-confirming">{reason ?? "Confirming market data before showing a read."}</p>
+      ) : <>
+        <p className="arx-ruby-headline" data-testid="ruby-market-read-headline" title={explanation.headline}>{explanation.headline}</p>
+        {signal.late?.isLate && <p className="arx-ruby-warning" data-testid="ruby-market-read-late"><AlertTriangle size={12}/>{signal.late.reason ?? "Move may be late; chasing carries extra risk."}</p>}
+        <div className="arx-ruby-decision-grid">
+          <div><small>Decision</small><b data-testid="ruby-market-read-best-action">{downgraded ? "WAIT · not actionable on this feed" : explanation.bestAction}</b></div>
+          <div><small>Bias</small><b data-testid="ruby-market-read-bias">{downgraded ? "Unconfirmed" : humanize(BIAS_LABEL, signal.bias)}</b></div>
+        </div>
+        <p className="arx-ruby-reason" data-testid="ruby-market-read-what" title={chosen.whatIsHappening}>{chosen.whatIsHappening}</p>
+        <p className="arx-ruby-next"><span>Next condition</span>{downgraded ? reason ?? "Wait for confirmed source evidence." : chosen.whatConfirms}</p>
+        {downgraded && <p className="arx-ruby-warning" role="status" data-testid="ruby-market-read-best-action-downgraded">{reason ?? "This read is not actionable on the current feed."}</p>}
+        <details className="arx-ruby-details">
+          <summary>Why, evidence &amp; full rationale</summary>
+          <div className="arx-ruby-rationale-scroll mt-2 space-y-2 text-xs text-slate-300"
+            role="region" aria-label="AI read rationale" tabIndex={0}>
+            {reasoning && <RubyReasoningBlock data={reasoning} testid="ruby-market-read-reasoning"/>}
+            <p><b>What is happening:</b> {chosen.whatIsHappening}</p>
+            <p><b>Why this market:</b> {chosen.whyThisMarket}</p>
+            <p><b>Why now:</b> {chosen.whyNow}</p>
+            {!downgraded && <><p><b>Why this direction:</b> {chosen.whyThisDirection}</p><p><b>What confirms it:</b> {chosen.whatConfirms}</p><p><b>What invalidates it:</b> {chosen.whatInvalidates}</p><p><b>Risk:</b> {chosen.risk}</p></>}
+            {signal.evidence && <div><b>Evidence:</b><ul className="mt-1 list-inside list-disc">{signal.evidence.for.map((item, index) => <li key={`for-${index}`}>For · {item.label}</li>)}{signal.evidence.against.map((item, index) => <li key={`against-${index}`}>Against · {item.label}</li>)}</ul>{signal.evidence.conflicts.length > 0 && <p className="mt-1 text-amber-300">Conflicts: {signal.evidence.conflicts.join("; ")}</p>}</div>}
+            {explanation.missingContext.length > 0 && <p className="text-amber-300">Missing context: {explanation.missingContext.join("; ")}</p>}
+            <p>News and event risk: {news?.riskLabel ?? "Unavailable"}</p>
+            <p className="text-slate-500">{explanation.disclaimer}</p>
+          </div>
+        </details>
+      </>}
+      <div className="arx-ruby-actions">
+        <button type="button" onClick={() => void refetch()} disabled={isFetching} aria-label={`Refresh ${name} read`} data-testid="ruby-market-read-refresh">
+          {isFetching ? <Loader2 size={13} className="animate-spin"/> : <RefreshCw size={13}/>}
+        </button>
+        <Link href="/ai-command-center">Full {name} workspace</Link>
+      </div>
+    </div>;
+  }
 
   return (
     <div
@@ -449,12 +503,12 @@ export function RubyMarketReadCard({
                 </Collapsible>
               )}
 
-              {/* No-trade reasons are evidence, not calibrated probabilities.
-                  The internal confidence field is a fixed rule weight. */}
+              {/* No-trade intelligence */}
               {explanation.noTrade.isNoTrade && (
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-no-trade">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">Why sitting out is the trade</span>
+                    <span className="ml-auto text-xs text-txt-muted">{Math.round(explanation.noTrade.confidence)}% sure</span>
                   </div>
                   {explanation.noTrade.reason && (
                     <p className="mt-1 text-sm leading-snug text-txt-secondary">{explanation.noTrade.reason}</p>

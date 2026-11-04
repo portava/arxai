@@ -557,7 +557,7 @@ function WorldHeatMap({
   );
 }
 
-export function GlobalMarketHeatCard() {
+export function GlobalMarketHeatCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const { data, isLoading, isFetching, refetch, isError } = useGetMarketHeat(
     { timeframe: "M15" },
     {
@@ -598,6 +598,57 @@ export function GlobalMarketHeatCard() {
     () => macroCells.find((v) => v.id === selectedKey) ?? null,
     [macroCells, selectedKey],
   );
+
+  if (compactWorkspace) {
+    const globalTone = data ? tone(data.global.intensity) : INTENSITY_TONE.unavailable!;
+    const heatUnavailable = !data || isError || data.global.intensity === "unavailable";
+    return <div className="arx-heat-compact" data-testid="market-heat-compact" aria-label="Market heat summary">
+      {isLoading ? <p role="status">Market heat is loading…</p> : isError || !data ? (
+        <p role="status" className="text-warning">Market heat unavailable; no calm reading is inferred.</p>
+      ) : <>
+        <div className="arx-heat-global">
+          <span className="truncate">{data.global.displayName}</span>
+          <strong className={heatUnavailable ? "text-slate-400" : globalTone.text}>{globalTone.label}</strong>
+          <span className="text-slate-400">{heatUnavailable ? SOURCE_STATUS_LABEL[data.global.sourceStatus]?.text ?? "Unavailable" : DIRECTION_LABEL[data.global.direction] ?? data.global.direction}</span>
+          <button type="button" onClick={() => void refetch()} disabled={isFetching} aria-label="Refresh market heat" title="Refresh market heat"><RefreshCw size={13} className={isFetching ? "animate-spin" : ""}/></button>
+        </div>
+        <div className="arx-heat-summary-line">
+          <span className={data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.text : "text-slate-400"}>News {data.newsRisk.connected ? NEWS_RISK_TONE[data.newsRisk.level]?.label ?? "Unavailable" : "unavailable"}</span>
+          <span>{data.newsRisk.connected ? `${data.newsRisk.highImpactCount} high impact` : "provider not connected"}</span>
+          <span>{data.upcomingEvents.length > 0 ? `${data.upcomingEvents.length} upcoming event${data.upcomingEvents.length === 1 ? "" : "s"}` : data.providerStatus.calendar.connected ? "No high-impact events returned" : "calendar unavailable"}</span>
+        </div>
+        {topHot.length > 0 ? <div className="arx-heat-hot-row" aria-label="Highest reported heat">
+          {topHot.slice(0, 2).map(item => <button type="button" key={item.id} onClick={() => setSelectedKey(item.id)} title={`${item.displayName}: ${item.intensity}, ${item.direction}`}>
+            {item.displayName}<span>{tone(item.intensity).label}</span>
+          </button>)}
+        </div> : <p className="arx-heat-honesty">Macro heat unavailable; missing provider data is not an all-clear.</p>}
+        <details className="arx-heat-details">
+          <summary>Drivers, providers &amp; full heat map</summary>
+          <div className="mt-2 space-y-3">
+            <ProviderRow status={data.providerStatus}/>
+            {!anyProviderConnected && <p className="text-xs text-warning">No live news, calendar, or price feed is connected. Heat remains unavailable.</p>}
+            <VerdictRow verdict={data.global} onPickSymbol={onPickSymbol}/>
+            <NewsRiskSection risk={data.newsRisk}/>
+            <UpcomingEventsSection events={data.upcomingEvents} calendarConnected={data.providerStatus.calendar.connected}/>
+            {macroCells.length > 0 && <>
+              <div className="flex items-center justify-between gap-2 text-[11px] text-txt-muted">
+                <span>Country &amp; currency heat</span>
+                <div className="flex gap-1">
+                  <button type="button" aria-pressed={macroView === "map"} onClick={() => setMacroView("map")}>Map</button>
+                  <button type="button" aria-pressed={macroView === "grid"} onClick={() => setMacroView("grid")}>Grid</button>
+                </div>
+              </div>
+              {macroView === "map"
+                ? <WorldHeatMap countries={data.countries} selectedKey={selectedKey} onSelect={setSelectedKey}/>
+                : <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{macroCells.map(item => <button type="button" key={item.id} onClick={() => setSelectedKey(selectedKey === item.id ? null : item.id)} className={`rounded border px-2 py-1 text-left text-xs ${tileTone(item.intensity)}`}>{item.displayName} · {tone(item.intensity).label}</button>)}</div>}
+              {selected && <VerdictDetail verdict={selected} onPickSymbol={onPickSymbol}/>}
+            </>}
+            {data.synthetics.length > 0 && <div className="space-y-1"><h4 className="text-[11px] text-txt-muted">Synthetic indices · separate from country heat</h4>{data.synthetics.map(item => <VerdictRow key={item.id} verdict={item} onPickSymbol={onPickSymbol}/>)}</div>}
+          </div>
+        </details>
+      </>}
+    </div>;
+  }
 
   return (
     <div className="rounded-xl border border-border bg-surface-1 p-4">

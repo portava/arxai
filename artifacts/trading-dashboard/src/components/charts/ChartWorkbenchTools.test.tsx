@@ -173,19 +173,6 @@ describe("manual text note controls",()=>{
   });
 });
 describe("drawing workspace controls",()=>{
-  it("keeps style selection and its evidence note outside collapsed advanced tools",()=>{
-    function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools utcClockQualified adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
-    render(<View/>);
-    const advanced=screen.getByTestId("chart-advanced-tools"),select=screen.getByLabelText("Chart style");
-    expect(advanced.contains(select)).toBe(false);
-    expect(screen.getByRole("button",{name:"Chart tools",exact:true}).getAttribute("aria-expanded")).toBe("false");
-    fireEvent.change(select,{target:{value:"heikinAshi"}});
-    expect((select as HTMLSelectElement).value).toBe("heikinAshi");
-    const note=screen.getByTestId("chart-style-note");
-    expect(advanced.contains(note)).toBe(false);
-    expect(note.textContent).toContain("Analysis uses original candles");
-  });
-
   it("keeps an in-progress drawing visible and cancellable when tools close",()=>{
     mount();
     const toggle=screen.getByRole("button",{name:"Chart tools",exact:true});
@@ -441,32 +428,6 @@ it("offers a reversible price-only scale control without altering other preferen
 });
 
 
-it("places and edits a classic pitchfork with three distinct candles, undo, locking, hiding and reload",()=>{
- const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"pitchfork"}});
- const key=drawingStorageKey("EURUSD","M15");const saved=()=>JSON.parse(localStorage.getItem(key)!);
- act(()=>click?.({time:100,price:10}));act(()=>click?.({time:200,price:30}));
- expect(localStorage.getItem(key)).toBeNull();
- act(()=>click?.({time:50,price:20}));expect(localStorage.getItem(key)).toBeNull();
- expect(screen.getByText(/Choose both tine anchors after/)).toBeTruthy();
- act(()=>click?.({time:200,price:20}));expect(localStorage.getItem(key)).toBeNull();
- act(()=>click?.({time:300,price:20}));
- expect(saved()[0]).toMatchObject({kind:"pitchfork",start:{time:100,price:10},end:{time:200,price:30},offset:{time:300,price:20},extendRight:true});
- fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));
- expect(screen.getByText(/Classic pitchfork:/)).toBeTruthy();
- expect(screen.queryByLabelText("Drawing 1 middle line")).toBeNull();
- fireEvent.click(screen.getByLabelText("Drawing 1 extend left"));expect(saved()[0].extendLeft).toBe(true);
- fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));expect(saved()[0].extendLeft).toBeUndefined();
- fireEvent.click(screen.getByRole("button",{name:"Redo",exact:true}));expect(saved()[0].extendLeft).toBe(true);
- fireEvent.blur(screen.getByLabelText("Drawing 1 offset price"),{target:{value:"25"}});expect(saved()[0].offset.price).toBe(25);
- fireEvent.click(screen.getByLabelText("Lock drawing 1"));expect(screen.getByLabelText("Drawing 1 extend right").hasAttribute("disabled")).toBe(true);
- fireEvent.click(screen.getByLabelText("Hide drawing 1"));expect(saved()[0].hidden).toBe(true);
- view.unmount();mount();expect(drawings.mock.calls.at(-1)![0][0]).toMatchObject({kind:"pitchfork",hidden:true});
- fireEvent.click(screen.getByRole("button",{name:"Objects (1)",exact:true}));fireEvent.click(screen.getByLabelText("Show drawing 1"));
- expect(drawings.mock.calls.at(-1)![0][0]).toMatchObject({kind:"pitchfork",offset:{time:300,price:25},locked:true});
- fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"pitchfork"}});act(()=>click?.({time:400,price:10}));act(()=>click?.({time:500,price:20}));
- fireEvent.keyDown(window,{key:"Escape"});expect(saved()).toHaveLength(1);
-});
-
 it("places a channel in three steps, cancels partial placement and preserves its third anchor through undo and reload",()=>{
  const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"channel"}});
  act(()=>click?.({time:100,price:10}));act(()=>click?.({time:200,price:20}));
@@ -638,7 +599,7 @@ it('revokes anchor wording before parent engine layout commit and recovers only 
  view.rerender(<Parent revision={withdrawn} qualified={false}/>);
  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
  expect(screen.getByLabelText('Active studies').textContent).toContain('source clock (UTC unverified)');
- expect(Array.from(screen.getByLabelText('Study settings').querySelectorAll('legend')).find(node=>node.textContent?.startsWith('1. VWAP'))?.textContent).toContain('source clock (UTC unverified)');
+ expect(screen.getByLabelText('Study settings').querySelector('legend')?.textContent).toContain('source clock (UTC unverified)');
  view.rerender(<Parent revision={recovered} qualified/>);
  expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
  expect(screen.getByLabelText('Active studies').textContent).toContain('22:13:20 UTC');
@@ -683,51 +644,4 @@ describe('anchor display marker only runs for an actual consumer',()=>{
   expect(precommit.at(-1)).toContain('source clock (UTC unverified)');
   expect(screen.getByLabelText('Study settings').textContent).toContain('source clock (UTC unverified)');
  });
-});
-
-it("keeps the drawing owner across controlled selection and renews it at context boundaries",()=>{
- const setDrawingInteraction=vi.fn();const engine={...adapter,setDrawingInteraction} as unknown as ChartEngineAdapter;
- const props={adapter:engine,epoch:1,symbol:"EURUSD",timeframe:"M15",preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:"Offline fixture"};
- localStorage.setItem(drawingStorageKey("EURUSD","M15"),JSON.stringify([{id:"pick",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}]));
- const view=render(<ChartWorkbenchTools {...props}/>);
- const initial=setDrawingInteraction.mock.calls.at(-1)![0];expect(initial.owner).toBeTruthy();
- act(()=>initial.onSelect("pick"));
- const selected=setDrawingInteraction.mock.calls.at(-1)![0];expect(selected.selectedId).toBe("pick");expect(selected.owner).toBe(initial.owner);
- view.rerender(<ChartWorkbenchTools {...props} feedLabel="Refreshed fixture"/>);expect(setDrawingInteraction.mock.calls.at(-1)![0].owner).toBe(initial.owner);
- view.rerender(<ChartWorkbenchTools {...props} epoch={2}/>);const next=setDrawingInteraction.mock.calls.at(-1)![0].owner;expect(next).not.toBe(initial.owner);
- view.rerender(<ChartWorkbenchTools {...props} epoch={2} drawingKey="new-source"/>);expect(setDrawingInteraction.mock.calls.at(-1)![0].owner).not.toBe(next);
-});
-
-it('labels indicator-only exports without claiming a visible price style or drawing preview',()=>{
- const labels=exportLabels({symbol:'EURUSD',timeframe:'M15',capture:'Offline',feedLabel:'Synthetic',style:'candles',studies:[],fibonacciPreview:true,maximizedPane:'rsi'});
- expect(labels.join(' ')).toContain('Hidden price style');expect(labels.join(' ')).toContain('Maximized indicator pane');expect(labels.join(' ')).not.toContain('UNACCEPTED automatic Fibonacci preview');
-});
-it('retires an unfinished price drawing when an indicator pane is maximized',()=>{
- const props={adapter,epoch:1,symbol:'EURUSD',timeframe:'M15',preferences:DEFAULT_PREFERENCES,onPreferences:vi.fn(),hasCandles:true,feedLabel:'Offline'};
- const view=render(<ChartWorkbenchTools {...props}/>);
- fireEvent.change(screen.getByLabelText('Drawing tool'),{target:{value:'trend'}});act(()=>click?.({time:100,price:1.2}));
- view.rerender(<ChartWorkbenchTools {...props} maximizedPane="rsi"/>);
- expect(click).toBeNull();expect((screen.getByLabelText('Drawing tool') as HTMLSelectElement).value).toBe('');
- view.rerender(<ChartWorkbenchTools {...props} maximizedPane={null}/>);expect(click).toBeNull();
-});
-it('refreshes the visible study caption on completed paint and does not rerender for unchanged viewport notifications',()=>{
- let verified=false;const listeners=new Set<()=>void>(),retained:Array<()=>void>=[],commits=vi.fn();
- const engine={...adapter,isAnalysisFocusVerified:()=>verified,subscribeViewport:(fn:()=>void)=>{listeners.add(fn);retained.push(fn);return()=>listeners.delete(fn);}} as ChartEngineAdapter;
- const props={adapter:engine,epoch:1,symbol:'EURUSD',timeframe:'M15',preferences:{...DEFAULT_PREFERENCES,studies:[STUDY_DEFAULTS[0]!]},onPreferences:vi.fn(),hasCandles:true,feedLabel:'Offline'};
- const view=render(<Profiler id="proof-caption" onRender={commits}><ChartWorkbenchTools {...props}/></Profiler>);
- expect(screen.getByLabelText('Saved studies (visibility unverified)')).toBeTruthy();
- act(()=>{verified=true;listeners.forEach(fn=>fn());});expect(screen.getByLabelText('Active studies')).toBeTruthy();expect(screen.queryByText('Visibility unverified ·')).toBeNull();
- commits.mockClear();act(()=>{for(let i=0;i<100;i++)listeners.forEach(fn=>fn());});expect(commits).not.toHaveBeenCalled();
- act(()=>{verified=false;listeners.forEach(fn=>fn());});expect(screen.getByLabelText('Saved studies (visibility unverified)')).toBeTruthy();
- view.unmount();expect(listeners.size).toBe(0);act(()=>{verified=true;retained.forEach(fn=>fn());});expect(screen.queryByLabelText('Active studies')).toBeNull();
-});
-it('routes direct pane edits separately from general settings that restore the layout',()=>{
- const target=document.createElement('div');document.body.append(target);
- const normal=vi.fn(),paneSave=vi.fn(),preferences={...DEFAULT_PREFERENCES,studies:[{id:'rsi',kind:'rsi' as const,period:14,color:'#ffffff',paneScale:{mode:'line' as const,value:50,percent:50}}]};
- const engine={...adapter,getStudyPaneControls:()=>[{id:'rsi',paneIndex:1,label:'RSI',collapsed:false,maximized:true,left:0,top:0,width:700,height:400,scaleAnchor:{value:50,percent:50,y:200}}],beginStudyPaneScale:()=>1,previewStudyPaneScale:()=>true,endStudyPaneScale:()=>({id:'rsi',contextKey:'current',studiesKey:JSON.stringify(preferences.studies),scale:{mode:'line',value:50,percent:51}}),isStudyPaneScaleContextCurrent:()=>true} as unknown as ChartEngineAdapter;
- const view=render(<ChartWorkbenchTools adapter={engine} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={normal} onPanePreferences={paneSave} chartTarget={{current:target}} hasCandles feedLabel="Offline"/>);
- fireEvent.keyDown(screen.getByRole('slider',{name:'Move scale anchor for pane 1: RSI'}),{key:'ArrowUp'});
- expect(paneSave).toHaveBeenCalledTimes(1);expect(normal).not.toHaveBeenCalled();
- fireEvent.change(screen.getByLabelText('Chart style'),{target:{value:'line'}});expect(normal).toHaveBeenCalledTimes(1);
- view.unmount();target.remove();
 });

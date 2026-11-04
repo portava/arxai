@@ -56,8 +56,9 @@ async function ensureTemplate(name: string, createdBy: number): Promise<number> 
   if (existing[0]) return existing[0].id;
   const ins = await db.insert(riskTemplatesTable).values({
     name,
-    description: "auto-created by adminUnrestrictedRiskTest", createdBy,
-  } as typeof riskTemplatesTable.$inferInsert).returning({ id: riskTemplatesTable.id });
+    description: "auto-created by adminUnrestrictedRiskTest",
+    createdBy,
+  }).returning({ id: riskTemplatesTable.id });
   return ins[0].id;
 }
 
@@ -66,6 +67,11 @@ async function ensureUser(role: "OWNER" | "ADMIN" | "USER", emailSuffix: string)
   const existing = await db.select({ id: usersTable.id }).from(usersTable)
     .where(eq(usersTable.email, email)).limit(1);
   if (existing[0]) {
+    // ID 4 has an explicit legacy OWNER allowance, independently of role.
+    // Do not relabel or reuse that identity as a restricted control.
+    if (role !== "OWNER" && existing[0].id === 4) {
+      return ensureUser(role, `${emailSuffix}-nonlegacy`);
+    }
     await db.update(usersTable).set({ role }).where(eq(usersTable.id, existing[0].id));
     return existing[0].id;
   }
@@ -75,6 +81,11 @@ async function ensureUser(role: "OWNER" | "ADMIN" | "USER", emailSuffix: string)
     role,
     isSystemUser: true,
   } as typeof usersTable.$inferInsert).returning({ id: usersTable.id });
+  if (role !== "OWNER" && ins[0].id === 4) {
+    // Only remove the row this function just created, never a pre-existing ID 4.
+    await db.delete(usersTable).where(eq(usersTable.id, ins[0].id));
+    return ensureUser(role, `${emailSuffix}-nonlegacy`);
+  }
   return ins[0].id;
 }
 
@@ -134,6 +145,9 @@ async function main(): Promise<void> {
   const ownerId = await ensureUser("OWNER", "owner");
   const adminId = await ensureUser("ADMIN", "admin");
   const userId  = await ensureUser("USER",  "user");
+  record("00-restricted-fixtures-are-not-legacy-owner",
+    adminId !== 4 && userId !== 4,
+    `restricted controls avoid legacy OWNER identity`);
   const sharedTplId = await ensureTemplate(RISK_PROFILE_NAMES.APPROVED_SHARED_BRIDGE_DEFAULT, ownerId);
   const unrestrictedTplId = await ensureTemplate(RISK_PROFILE_NAMES.OWNER_UNRESTRICTED_LIVE, ownerId);
 

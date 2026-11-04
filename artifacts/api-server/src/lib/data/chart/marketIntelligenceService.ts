@@ -20,8 +20,8 @@
 // session facts are not actually available offline, this producer degrades them
 // honestly — proxy order flow is labelled proxy by the contract, spread/volume
 // read "unknown", and no news/spread/liquidity BLOCK is ever fabricated. Session
-// is withheld without a qualified session calendar; an ISO timestamp alone is
-// insufficient. Synthetic instruments retain their continuous classification.
+// is derived deterministically from the latest CLOSED bar's own timestamp (not a
+// wall-clock read), and synthetic 24/7 instruments report `synthetic_continuous`.
 import {
   resolvePivotTruth,
   computeClassicPivots,
@@ -113,6 +113,18 @@ function setupDirToEntry(d: "bullish" | "bearish" | "none" | "unknown"): EntryDi
   return d === "bullish" ? "buy" : d === "bearish" ? "sell" : "none";
 }
 
+/** Deterministic session from a CLOSED bar's UTC hour (NOT a wall-clock read). */
+function sessionFromBarTime(iso: string | null, synthetic: boolean): TradingSession {
+  if (synthetic) return "synthetic_continuous";
+  if (!iso) return "synthetic_continuous";
+  const h = new Date(iso).getUTCHours();
+  if (!Number.isFinite(h)) return "synthetic_continuous";
+  if (h >= 13 && h < 16) return "overlap";
+  if (h >= 8 && h < 13) return "london";
+  if (h >= 16 && h < 21) return "new_york";
+  return "asia";
+}
+
 function volatilityState(atr: number | null, avgRange: number | null): TimingVolatilityState {
   if (atr == null || avgRange == null || avgRange <= 0) return "normal";
   const ratio = atr / avgRange;
@@ -137,25 +149,21 @@ function regimeToPhase(regime: string): MarketPhase {
   }
 }
 
-/** Daily/weekly/monthly pivots require that actual captured interval. An H1
- * comparison is not a daily period. Context candles are already closed-only. */
-export function capturedHigherTimeframePivot(ctx: Pick<RubyChartContext, "htfCandles" | "htfTimeframe" | "htfFeedStatus">): {
-  prior: PivotPriorPeriod | null; pivotSourceTimeframe: PivotSourceTimeframe;
-} {
-  const pivotSourceTimeframe: PivotSourceTimeframe | null = ctx.htfTimeframe === "D1" ? "daily"
-    : ctx.htfTimeframe === "W1" ? "weekly" : ctx.htfTimeframe === "MN1" ? "monthly" : null;
-  const unavailable = { prior: null, pivotSourceTimeframe: pivotSourceTimeframe ?? "session" } as const;
-  if (!pivotSourceTimeframe || ctx.htfFeedStatus?.aiUsable !== true || ctx.htfFeedStatus.stale) return unavailable;
-  const prior = ctx.htfCandles.at(-1);
+/** The prior CLOSED higher-timeframe period for classic pivots, or null. */
+function htfPriorPeriod(htf: Candle[]): PivotPriorPeriod | null {
+  // Classic pivots use the PRIOR period; the last HTF bar may be the current
+  // (forming) period, so take the one before it. Null when there isn't enough.
+  if (htf.length < 2) return null;
+  const prior = htf[htf.length - 2];
   if (
     !prior ||
     !Number.isFinite(prior.high) ||
     !Number.isFinite(prior.low) ||
     !Number.isFinite(prior.close)
   ) {
-    return unavailable;
+    return null;
   }
-  return { prior: { high: prior.high, low: prior.low, close: prior.close }, pivotSourceTimeframe };
+  return { high: prior.high, low: prior.low, close: prior.close };
 }
 
 /**
@@ -225,11 +233,7 @@ export function buildMarketIntelligenceSnapshot(
       if (dists.length) distanceToSrAtr = Math.min(...dists) / atr;
     }
 
-    // The captured context has no qualified venue/session calendar. A clock
-    // coordinate (even genuine UTC) alone does not establish current market
-    // hours or liquidity. Continuous synthetic classification is separate.
-    const timingSession: TradingSession = state.assetClass === "synthetic"
-      ? "synthetic_continuous" : "unknown";
+    const syntheticAsset = String(state.assetClass).toLowerCase().includes("synth");
 
     // ── Pattern & Trendline (reuse the existing pure producers) ───────────────
     const patternContext = {
@@ -237,8 +241,6 @@ export function buildMarketIntelligenceSnapshot(
       displaySymbol: state.displaySymbol,
       timeframe: tf,
       rawCandles: ctx.candles,
-      source: ctx.feedStatus?.source ?? null,
-      timestampConvention: "open" as const,
       feedConfirmed,
       feedStale,
       sufficiencyAllowsSetup,
@@ -259,15 +261,16 @@ export function buildMarketIntelligenceSnapshot(
       displaySymbol: state.displaySymbol,
       timeframe: tf,
       rawCandles: ctx.candles,
-      source: ctx.feedStatus?.source ?? null,
-      timestampConvention: "open" as const,
       feedConfirmed,
       feedStale,
       sufficiencyAllowsSetup,
     });
 
     // ── Pivot Truth ───────────────────────────────────────────────────────────
-    const { prior, pivotSourceTimeframe } = capturedHigherTimeframePivot(ctx);
+    const prior = htfPriorPeriod(ctx.htfCandles);
+    const pivotSourceTimeframe: PivotSourceTimeframe = ctx.htfCandles.length
+      ? "daily"
+      : "session";
     const pivot = resolvePivotTruth(
       {
         pivotSourceTimeframe,
@@ -315,7 +318,7 @@ export function buildMarketIntelligenceSnapshot(
     // ── Timing Truth (no fabricated news/spread/liquidity BLOCK) ──────────────
     const timing = resolveTimingTruth(
       {
-        session: timingSession,
+        session: sessionFromBarTime(state.latestClosedCandle?.closeTime ?? null, syntheticAsset),
         candleState: (ctx.hasFormingCandle ? "forming" : "closed_confirmed") as CandleState,
         volatilityState: volatilityState(atr, avgRange),
         marketPhase: regimeToPhase(trend.regime),

@@ -280,13 +280,13 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
             <Activity className={cn("h-4 w-4 shrink-0", tone.label)} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-xs uppercase tracking-wide text-txt-muted">Current feed</span>
+                <span className="text-xs uppercase tracking-wide text-txt-muted">Trade Health</span>
                 <span className={cn("text-sm font-semibold", tone.label)} data-testid="scanner-header-readiness-label">
                   {r.displayLabel}
                 </span>
               </div>
               {r.userFacingTrustLine && (
-                <p className="mt-0.5 text-[11px] leading-snug text-txt-secondary" data-testid="scanner-header-readiness-trust">
+                <p className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-txt-secondary" data-testid="scanner-header-readiness-trust">
                   {r.userFacingTrustLine}
                 </p>
               )}
@@ -298,7 +298,7 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
       {/* ONE truth strip — Data / Ruby / Trading / Action (single source). All
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
-      <div id={statusDetailsId} className={cn("grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr))]")} data-testid="scanner-header-strip">
+      <div id={statusDetailsId} className={cn("grid gap-1 md:grid-cols-4 md:gap-2", statusDetailsOpen ? "grid-cols-2" : "grid-cols-2 min-[360px]:grid-cols-4")} data-testid="scanner-header-strip">
         <TruthPill showDetail={statusDetailsOpen} label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
         <TruthPill showDetail={statusDetailsOpen} label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
         <TruthPill showDetail={statusDetailsOpen} label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
@@ -370,11 +370,11 @@ function TruthPill({ label, verdict, tone, detail, testId, prominent, showDetail
       )}
       data-testid={testId}
     >
-      <div className={cn("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5")}>
+      <div className={cn("flex min-w-0 md:flex-row md:items-center md:justify-between md:gap-2", showDetail ? "items-center justify-between gap-2" : "flex-col items-start gap-0.5")}>
         <span className={cn("max-w-full break-words uppercase tracking-wide text-txt-muted md:text-xs", showDetail ? "text-xs" : "text-[10px]")}>{label}</span>
-        <span className={cn("min-w-0 max-w-full break-words font-semibold md:text-sm", showDetail ? "text-sm" : "text-xs leading-4 md:leading-5", tone)}>{verdict}</span>
+        <span className={cn("max-w-full break-words font-semibold md:text-sm", showDetail ? "text-sm" : "text-xs leading-4 md:leading-5", tone)}>{verdict}</span>
       </div>
-      {detail && <p className={cn("mt-0.5 break-words text-[11px] leading-snug text-txt-secondary", !showDetail && "hidden md:block")}>{detail}</p>}
+      {detail && <p className={cn("mt-0.5 line-clamp-2 text-[11px] leading-snug text-txt-secondary", !showDetail && "hidden md:block")}>{detail}</p>}
     </div>
   );
 }

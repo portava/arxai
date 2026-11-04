@@ -1,4 +1,3 @@
-import {parseChartInterval,type ChartInterval} from "./chartIntervals";
 import { calculateVolumeProfile, type VolumeProfileRange, type VolumeProfileResult } from "./chartVolumeProfile";
 import {formatSourceChartTime} from "./chartClockEvidence";
 import { advanceStudyAverage, chartTrueRange, type SeededAverageState } from "@workspace/domain/chart-indicator-math";
@@ -13,12 +12,8 @@ export type StudyKind =
 export type AppliedPrice = "close" | "open" | "high" | "low" | "hl2" | "hlc3" | "hlcc4" | "ohlc4";
 export type AverageMethod = "sma" | "ema" | "smma" | "wma";
 export interface StudyLineStyle { color?: string; width?: 1 | 2 | 3; style?: "solid" | "dashed" | "dotted"; visible?: boolean }
-export interface StudyReferenceLevel extends StudyLineStyle { value:number; label?:string }
-export type StudyPaneScale = {mode:"auto"} | {mode:"fixed";min?:number;max?:number} | {mode:"line";value:number;percent:number};
 export interface VwapAnchor { kind:"observed_bar"; time:number; seriesIdentity:string }
 export interface ChartStudy {
-  /** Exact local study instance/channel, never a replacement OHLC series. */
-  studySource?: { studyId: string; channel: number };
   /** Frozen exact observed-bar anchor; source changes must not borrow it. */
   vwapAnchor?: VwapAnchor;
   profileRange?: VolumeProfileRange;
@@ -37,22 +32,6 @@ export interface ChartStudy {
   method?: AverageMethod;
   smoothing?: number;
   lineStyles?: StudyLineStyle[];
-  /** Display-only guides. Undefined restores catalogue defaults; [] removes them. */
-  referenceLevels?: StudyReferenceLevel[];
-  /** Auxiliary pane display only. Never clamps calculated observations. */
-  paneScale?: StudyPaneScale;
-  /** Relative display height of this oscillator pane; never a calculation input. */
-  paneWeight?: number;
-  /** Collapse the entire owned pane, including linked overlays; math is retained. */
-  paneCollapsed?: boolean;
-  /** Display only; omitted means all intervals, [] means hidden on every interval. */
-  visibleIntervals?: ChartInterval[];
-  /** Readout display only. Omitted means shown; calculations stay available. */
-  showInDataWindow?: boolean;
-  /** Opt-in compact values at the selected candle; independent of plots and Data Window. */
-  showInStatusLine?: boolean;
-  /** Latest loaded scalar observation on its scale; opt-in presentation only. */
-  showOnScale?: boolean;
 }
 export interface StudyPoint { time: number; values: (number | null)[]; reason?:string }
 export interface StudyDefinition {
@@ -97,46 +76,6 @@ export const STUDY_DEFAULTS = (["sma", "ema", "bollinger", "rsi", "macd"] as con
 export const MAX_STUDIES = 12;
 export const studyDefinition = (kind: StudyKind) => STUDY_CATALOG.find(item => item.defaults.kind === kind)!;
 export const studyId = (study: ChartStudy) => study.id ?? study.kind;
-/** Only scalar-input formulas can consume another study. OHLC/volume formulas cannot. */
-export function acceptsStudySource(kind:StudyKind):boolean { return studyDefinition(kind).appliedPrice && kind !== "vwap"; }
-export function studySourceIssue(config:ChartStudy,configs:readonly ChartStudy[]):string|null {
-  const byId=new Map(configs.map(s=>[studyId(s),s]));
-  const seen=new Set<string>();
-  let current=config;
-  while(current.studySource){
-    if(seen.has(studyId(current)))return "Linked study is unavailable: circular source dependency.";
-    seen.add(studyId(current));
-    const ref=current.studySource,parent=byId.get(ref.studyId);
-    if(!acceptsStudySource(current.kind)||!parent||parent.kind==='volume_profile'||!Number.isInteger(ref.channel)||ref.channel<0||ref.channel>=studyDefinition(parent.kind).channels.length)
-      return "Linked study is unavailable: its source study or channel is missing or unsupported.";
-    current=parent;
-  }
-  return null;
-}
-/** Resolve display ownership, never calculation inputs. Broken/circular overlay links have no owner. */
-export function studyPaneOwner(study:Readonly<ChartStudy>,studies:readonly Readonly<ChartStudy>[]):Readonly<ChartStudy>|null {
-  if(!studyDefinition(study.kind).pane&&studySourceIssue(study,studies))return null;
-  const seen=new Set<string>();let current:Readonly<ChartStudy>|undefined=study;
-  while(current){
-    if(studyDefinition(current.kind).pane)return current;
-    const id=studyId(current);if(seen.has(id))return null;seen.add(id);
-    if(!current.studySource)return null;
-    const ref:NonNullable<ChartStudy["studySource"]>=current.studySource;
-    if(!acceptsStudySource(current.kind))return null;
-    const parent:Readonly<ChartStudy>|undefined=studies.find(s=>studyId(s)===ref.studyId);
-    if(!parent||parent.kind==='volume_profile'||!Number.isInteger(ref.channel)||ref.channel<0||ref.channel>=studyDefinition(parent.kind).channels.length)return null;
-    current=parent;
-  }
-  return null;
-}
-export function studyVisibleAtInterval(study:Readonly<ChartStudy>,timeframe:string):boolean {
-  if(study.visibleIntervals===undefined)return true;
-  const interval=parseChartInterval(timeframe);
-  return interval!==null&&(study.visibleIntervals as readonly string[]).includes(interval);
-}
-export function studyIntervalSuffix(study:Readonly<ChartStudy>,timeframe:string):string {
-  return studyVisibleAtInterval(study,timeframe)?'':` · hidden on ${parseChartInterval(timeframe)??'unrecognized interval'}`;
-}
 export function studyChannelColor(config: ChartStudy, channel: number): string {
   return config.lineStyles?.[channel]?.color ?? (config.kind === "dmi" ? (channel === 0 ? "#4ade80" : channel === 1 ? "#fb7185" : config.color) : channel === 1 && (config.kind === "macd" || config.kind === "stochastic") ? "#fbbf24" : config.color);
 }
@@ -145,7 +84,7 @@ export function studyChannelColor(config: ChartStudy, channel: number): string {
 export function formatStudyNumber(value:number,channel:string):string {
   return ["Ticks","Ticks (hidden)","Trade units","Trade units (hidden)","Frozen-range total trade units","Frozen-range total trade units (hidden)"].includes(channel) ? String(value) : String(Number(value.toPrecision(8)));
 }
-export function studyLabel(study: ChartStudy, studies?:readonly ChartStudy[]): string {
+export function studyLabel(study: ChartStudy): string {
   if(study.kind === "volume_profile")return "Estimated volume profile · provider trade units";
   if(study.kind === "trade_volume")return "Trade volume · provider-reported trade units";
   if(study.kind === "vwap")return `VWAP · ${study.source ?? "hlc3"} · observed-bar anchor ${study.vwapAnchor ? formatSourceChartTime(study.vwapAnchor.time,false,"UTC",{seconds:true}) : "not selected"}`;
@@ -155,8 +94,7 @@ export function studyLabel(study: ChartStudy, studies?:readonly ChartStudy[]): s
   if (study.kind === "dmi") parameters.push(study.signal ?? 14);
   if (study.kind === "stochastic") parameters.push(study.smoothing ?? 3, study.signal ?? 3);
   if (study.kind === "bollinger" || study.kind === "envelopes") parameters.push(study.multiplier ?? 2);
-  const parent=studies?.find(s=>studyId(s)===study.studySource?.studyId);
-  const source = study.studySource ? ` · ${parent ? `${parent.kind.toUpperCase()} ${studies!.indexOf(parent)+1} / ${studyDefinition(parent.kind).channels[study.studySource.channel]??'unavailable output'}` : `linked study output ${study.studySource.channel + 1}`}` : studyDefinition(study.kind).appliedPrice ? ` · ${study.source ?? (study.kind === "cci" ? "hlc3" : "close")}` : "";
+  const source = studyDefinition(study.kind).appliedPrice ? ` · ${study.source ?? (study.kind === "cci" ? "hlc3" : "close")}` : "";
   const method = study.kind === "macd" ? ` · ${(study.signalMethod ?? "ema").toUpperCase()} signal`
     : study.kind === "atr" || study.kind === "envelopes" ? ` · ${(study.method ?? (study.kind === "atr" ? "smma" : "sma")).toUpperCase()}` : "";
   return `${study.kind.toUpperCase()} (${parameters.join(", ")})${source}${method}`;
@@ -172,7 +110,7 @@ export function appliedPrice(bar: ChartEngineCandle, source: AppliedPrice = "clo
 }
 
 type AverageState = SeededAverageState;
-interface State { price: number | null; run: number; averages: Record<string, AverageState>; vwap?:{numerator:number;denominator:number;reason?:string} }
+interface State { price: number; averages: Record<string, AverageState>; vwap?:{numerator:number;denominator:number;reason?:string} }
 
 /** One checkpoint per bar. A revised forming bar replaces its checkpoint;
  * appends never compound a previous revision, and replay never reads the future.
@@ -193,7 +131,7 @@ export class StudyCalculator {
   get config(): ChartStudy { return this.currentConfig; }
   /** Preserve checkpoints only when every calculation input is unchanged. */
   updatePresentation(next: ChartStudy): boolean {
-    const inputs = ({color: _color, id: _id, lineStyles: _styles, referenceLevels: _levels, paneScale: _scale, paneWeight: _weight, paneCollapsed: _collapsed, visibleIntervals: _intervals, showInDataWindow: _dataWindow, showInStatusLine: _statusLine, showOnScale: _scaleLabel, ...rest}: ChartStudy) => JSON.stringify(rest);
+    const inputs = ({color: _color, id: _id, lineStyles: _styles, ...rest}: ChartStudy) => JSON.stringify(rest);
     if (inputs(next) !== inputs(this.currentConfig)) return false;
     this.currentConfig = next;
     return true;
@@ -201,7 +139,7 @@ export class StudyCalculator {
 
   /** Rendering reads points directly and can omit the duplicate changed list.
    * Default callers still receive every changed point in its original order. */
-  calculate(bars: ChartEngineCandle[], from = 0, collectChanges = true, input?: {points:readonly {time:number;values:readonly (number|null)[]}[];channel:number;reason?:string}): StudyPoint[] {
+  calculate(bars: ChartEngineCandle[], from = 0, collectChanges = true): StudyPoint[] {
     const c = this.config;
     if(c.kind === "volume_profile") {
       this.profile=calculateVolumeProfile(bars,c.profileRange,c.profileRows??32,c.profileValueAreaPercent??70);
@@ -246,14 +184,12 @@ export class StudyCalculator {
     };
     for (i = from; i < bars.length; i++) {
       const bar = bars[i]!;
-      const supplied=input?.points[i];
-      const candidate=c.studySource ? (acceptsStudySource(c.kind) && !input?.reason && supplied?.time===bar.time ? supplied.values[input!.channel] : null) : appliedPrice(bar, c.source ?? (c.kind === "cci" || c.kind === "vwap" ? "hlc3" : "close"));
-      const price=typeof candidate==='number'&&Number.isFinite(candidate)?candidate:null;
-      prices[i] = price ?? NaN;
+      const price = appliedPrice(bar, c.source ?? (c.kind === "cci" || c.kind === "vwap" ? "hlc3" : "close"));
+      prices[i] = price;
+      state = { price, averages: {} };
       previous = this.states[i - 1];
-      state = { price, run:price==null?0:(previous?.run??0)+1, averages: {} };
       let values: (number | null)[];
-      let reason:string|undefined=c.studySource && price==null ? input?.reason ?? "Source study has no observed value at this bar; warm-up is held." : undefined;
+      let reason:string|undefined;
       switch (c.kind) {
         case "sma": case "ema": case "smma": case "wma":
           values = [average("basis", price, p, c.kind)];
@@ -268,7 +204,7 @@ export class StudyCalculator {
         case "bollinger": case "stddev": case "cci": {
           const mean = average("basis", price, p, "sma");
           values = c.kind === "bollinger" ? [null, null, null] : [null];
-          if (mean != null && price != null) {
+          if (mean != null) {
             // Preserve centered formulas and summation order without an
             // allocated window per bar. CCI needs absolute deviation only;
             // calculating variance/sqrt as well cannot affect its result.
@@ -290,7 +226,7 @@ export class StudyCalculator {
           break;
         }
         case "rsi": {
-          const delta = price != null && previous?.price != null ? price - previous.price : null;
+          const delta = previous ? price - previous.price : null;
           const gain = average("gain", delta == null ? null : Math.max(0, delta), p, "smma");
           const loss = average("loss", delta == null ? null : Math.max(0, -delta), p, "smma");
           values = [gain == null || loss == null ? null : gain === 0 && loss === 0 ? 50 : loss === 0 ? 100 : 100 - 100 / (1 + gain / loss)];
@@ -352,7 +288,7 @@ export class StudyCalculator {
         }
         case "momentum": case "roc": {
           const before = this.states[i - p]?.price;
-          const ratio = price == null || state.run <= p || before == null || before === 0 ? null : price / before;
+          const ratio = before == null || before === 0 ? null : price / before;
           values = [ratio == null ? null : c.kind === "momentum" ? 100 * ratio : 100 * (ratio - 1)];
           break;
         }
@@ -367,7 +303,7 @@ export class StudyCalculator {
           const next=starts ? {numerator:0,denominator:0,reason:undefined as string|undefined} : {...prior!};
           if(!next.reason && (!volume || volume.seriesIdentity !== anchor.seriesIdentity))next.reason="Trade-volume evidence is missing, zero, unqualified or belongs to another source series; cumulative VWAP is held from this bar.";
           if(!next.reason && volume) {
-            next.numerator+=price!*volume.quantity;next.denominator+=volume.quantity;
+            next.numerator+=price*volume.quantity;next.denominator+=volume.quantity;
             if(!Number.isFinite(next.numerator)||!Number.isSafeInteger(next.denominator)||next.denominator<=0)next.reason="Cumulative volume or weighted price exceeds the supported numerical range.";
           }
           state.vwap=next;reason=next.reason;

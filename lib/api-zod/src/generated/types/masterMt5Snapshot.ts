@@ -5,27 +5,20 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
-import type { MasterMt5SnapshotAccountObservationScope } from "./masterMt5SnapshotAccountObservationScope";
 import type { MasterMt5SnapshotSnapshotStatus } from "./masterMt5SnapshotSnapshotStatus";
 import type { MasterMt5SnapshotSyncStatus } from "./masterMt5SnapshotSyncStatus";
-import type { NativeAccountReport } from "./nativeAccountReport";
 
 /**
- * Owner/admin-only pinned MT5 account view. nativeAccountReport preserves direct reported decimal text with unverified clock and continuity. Legacy scalar fields are compatibility data and must not substitute for a missing native report. ARX allocation fields remain separate. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
+ * Real MT5 master-account snapshot, owner/admin only. Sourced from the EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes tokens, IPs, or the unmasked account number. Null for normal users.
 
  */
 export interface MasterMt5Snapshot {
-  nativeAccountReport?: NativeAccountReport | null;
-  mt5Balance: number | null;
-  mt5Equity: number | null;
-  mt5UsedMargin: number | null;
-  mt5FreeMargin: number | null;
-  mt5OpenPnl: number | null;
-  openPositions: number | null;
-  /** Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when. */
-  accountObservationScope: MasterMt5SnapshotAccountObservationScope;
-  /** False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise. */
-  amountsCoherent: boolean;
+  mt5Balance: number;
+  mt5Equity: number;
+  mt5UsedMargin: number;
+  mt5FreeMargin: number;
+  mt5OpenPnl: number;
+  openPositions: number;
   accountCurrency?: string | null;
   brokerName?: string | null;
   serverName?: string | null;
@@ -40,6 +33,6 @@ export interface MasterMt5Snapshot {
   lastMt5SnapshotAt?: Date | null;
   isOverAllocated: boolean;
   unattributedCount: number;
-  /** Freshness of the last account update only; does not establish freshness or coherence of every amount. */
+  /** Derived health for the card sync badge. */
   syncStatus: MasterMt5SnapshotSyncStatus;
 }

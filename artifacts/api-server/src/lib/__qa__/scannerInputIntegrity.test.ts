@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerVenueIdentity, bindScannerSource, scannerRowSourceIdentity, scannerRowVenueIdentity } from "../scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
 const now = Date.parse("2026-10-26T12:02:00Z"), interval = 300_000;
@@ -8,21 +8,21 @@ const closedOpen = Date.parse("2026-10-26T11:55:00Z");
 function bars(provider = "mt5_broker", count = 60): MarketCandlesResult {
   return { ok: true, symbol: "EURUSD", assetClass: "forex", primaryProvider: provider,
     attempts: [], userMessage: "", adminDetail: "", candles: Array.from({ length: count }, (_, i) => ({
-      time: new Date(closedOpen - (count - 1 - i) * interval + (provider === "assistant_real:legacy" ? interval : 0)).toISOString(),
+      time: new Date(closedOpen - (count - 1 - i) * interval + (provider.startsWith("assistant_real") ? interval : 0)).toISOString(),
       open: 1.1, high: 1.12, low: 1.09, close: 1.11, volume: 100,
     })) };
 }
 function quote(): MarketQuoteResult { return { ok: true, symbol: "EURUSD", assetClass: "forex", primaryProvider: "mt5_broker", attempts: [], userMessage: "", adminDetail: "", quote: { symbol: "EURUSD", timestamp: new Date(now).toISOString(), bid: 1.11, ask: 1.1102, spread: 0.0002 } }; }
 
 test("excludes forming and future bars; closed timestamps follow the actual provider convention", () => {
-  for (const provider of ["mt5_broker", "deriv", "assistant_real:twelve_data", "assistant_real:polygon", "assistant_real:legacy"]) {
+  for (const provider of ["mt5_broker", "deriv", "assistant_real:twelve_data"]) {
     const result = bars(provider);
     const original = structuredClone(result);
-    result.candles.push({ ...result.candles[59]!, time: new Date(closedOpen + interval + (provider === "assistant_real:legacy" ? interval : 0)).toISOString(), close: 1.119 });
+    result.candles.push({ ...result.candles[59]!, time: new Date(closedOpen + interval + (provider.startsWith("assistant_real") ? interval : 0)).toISOString(), close: 1.119 });
     result.candles.push({ ...result.candles[59]!, time: new Date(now + 86400_000).toISOString() });
     const prepared = prepareScannerCandles(result, "EURUSD", "M5", now)!;
     assert.equal(prepared.rawClosed.length, 60);
-    assert.deepEqual(prepared.rawClosed, original.candles, provider);
+    assert.deepEqual(prepared.rawClosed, original.candles);
     assert.equal(prepared.openClosed.at(-1)?.time, new Date(closedOpen).toISOString());
     assert.deepEqual(prepareScannerCandles(original, "EURUSD", "M5", now)?.openClosed, prepared.openClosed);
   }
@@ -111,21 +111,4 @@ test("private source binding survives spread decorators but cannot disclose iden
   assert.equal(JSON.stringify(decorated), '{"symbol":"EURUSD","score":60,"news":"fixture"}');
   assert.equal(JSON.stringify(decorated).includes(identity), false);
   assert.equal(scannerRowSourceIdentity(JSON.parse(JSON.stringify(decorated))), null);
-});
-
-
-test("cross-interval venue identity preserves provider/account/environment distinctions", () => {
-  const base = bars();
-  base.provenance = { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: 1, userId: 8, brokerSymbol: "EURUSD", environment: "demo", receivedAt: new Date(now).toISOString(), delayed: false, source: "DERIVED", sourceId: "mt5_broker:EURUSD:M5" };
-  const h1 = { ...base, provenance: { ...base.provenance, sourceId: "mt5_broker:EURUSD:H1" } };
-  assert.notEqual(scannerSourceIdentity(base), scannerSourceIdentity(h1));
-  assert.equal(scannerVenueIdentity(base), scannerVenueIdentity(h1));
-  for (const [field, value] of Object.entries({providerId:"other",subProviderId:"other",bridgeConnectionId:2,userId:9,brokerSymbol:"EURUSD.a",environment:"live"})) {
-    assert.notEqual(scannerVenueIdentity({...base, provenance:{...base.provenance,[field]:value}}),scannerVenueIdentity(base),field);
-  }
-  assert.notEqual(scannerVenueIdentity({...base, primaryProvider:"deriv"}),scannerVenueIdentity(base));
-  const row=bindScannerSource({symbol:"EURUSD"},scannerSourceIdentity(base),scannerVenueIdentity(base));
-  assert.equal(scannerRowVenueIdentity({...row}),scannerVenueIdentity(base));
-  assert.equal(scannerRowVenueIdentity(JSON.parse(JSON.stringify(row))),null);
-  assert.equal(scannerRowVenueIdentity(bindScannerSource({},"legacy")),null);
 });

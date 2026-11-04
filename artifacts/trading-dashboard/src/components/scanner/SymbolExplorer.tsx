@@ -70,6 +70,8 @@ function saveJson(key: string, val: unknown): void {
 export interface SymbolExplorerProps {
   /** Additional stock rows apply only to independent, analysis-only chart owners. */
   scope?: ChartSymbolScope;
+  /** Dense, selectable row presentation used by the command workspace. */
+  compactWorkspace?: boolean;
   activeSymbol: string;
   onSelect: (canonicalSymbol: string, entry: ResolvedSymbol) => void;
   /** When false, synthetic symbols stay selectable but are flagged. */
@@ -91,7 +93,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
   const recentKey=analysis?"arx.symbolExplorer.chart-analysis.recent.v1":RECENT_KEY;
   const favKey=analysis?"arx.symbolExplorer.chart-analysis.favs.v1":FAV_KEY;
   const activeKey=analysis?"arx.symbolExplorer.chart-analysis.activeCat.v1":ACTIVE_KEY;
-  const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedConnected = false, derivFeedConnecting = false } = props;
+  const { activeSymbol, onSelect, derivFeedConfigured = true, derivFeedConnected = false, derivFeedConnecting = false, compactWorkspace = false } = props;
   const showDiagnostics = props.showDiagnostics ?? import.meta.env.DEV;
 
   const [query, setQuery] = useState("");
@@ -119,7 +121,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
     // the selected-market pill stays the dominant surface. The horizontal
     // category chip row stays visible; the user can tap any chip to
     // reopen the grid.
-    setActiveCat(null);
+    if (!compactWorkspace) setActiveCat(null);
     onSelect(canonical, entry);
   }
 
@@ -166,6 +168,12 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
     return out;
   }, [favRecentSymbols, groups]);
 
+  useEffect(() => {
+    if (!compactWorkspace || activeCat !== null) return;
+    const matchingCategory = categories.find(category => category.symbols.includes(activeSymbol));
+    setActiveCat(matchingCategory?.id ?? categories[0]?.id ?? null);
+  }, [compactWorkspace, activeCat, activeSymbol, categories]);
+
   // If the currently active category disappears (e.g. favorites empties),
   // collapse back to no selection. We never auto-open a category — the
   // user must tap a chip explicitly.
@@ -197,8 +205,8 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
     <div className="space-y-2" data-testid="symbol-explorer" data-symbol-scope={scope}>
       {analysis && <p className="text-xs text-amber-300">Comparison analysis only · choose a result or enter its exact symbol. Data availability is checked by this chart; trading and Scanner selection stay unchanged.</p>}
       {/* Search row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[180px]">
+      <div className={compactWorkspace ? "flex min-w-0 items-center gap-1.5" : "flex flex-wrap items-center gap-2"}>
+        <div className={`relative min-w-0 flex-1 ${compactWorkspace ? "" : "min-w-[180px]"}`}>
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-txt-muted" />
           <Input
             ref={inputRef}
@@ -209,14 +217,14 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
               if (e.key === "Escape") setQuery("");
             }}
             placeholder={analysis ? "Search comparison charts — AAPL, Apple, EURUSD…" : "Search any market — EURUSD, gold, V75, btc, nas…"}
-            className="pl-7"
+            className={compactWorkspace ? "h-8 pl-7 text-xs" : "pl-7"}
             data-testid="input-symbol-search"
             autoComplete="off"
             spellCheck={false}
           />
         </div>
-        <Button onClick={submitTyped} disabled={!query.trim()} data-testid="btn-symbol-load">
-          Load
+          <Button onClick={submitTyped} disabled={!query.trim()} data-testid="btn-symbol-load" className={compactWorkspace ? "h-8 px-2 text-xs" : ""}>
+            {compactWorkspace ? "Go" : "Load"}
         </Button>
       </div>
 
@@ -253,7 +261,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
 
       {/* Horizontal category chips — swipeable on mobile, wraps on desktop. */}
       <div
-        className="flex md:flex-wrap items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1 py-1"
+        className={`flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1 ${compactWorkspace ? "flex-nowrap py-0.5" : "md:flex-wrap py-1"}`}
         role="tablist"
         aria-label="Market categories"
         data-testid="category-chip-row"
@@ -269,7 +277,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
               onClick={() => setActiveCat((prev) => (prev === c.id ? null : c.id))}
               data-testid={`category-chip-${c.id}`}
               className={
-                "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-2 min-h-[36px] text-xs font-medium transition-colors touch-manipulation " +
+                `shrink-0 inline-flex items-center gap-1.5 rounded-full border ${compactWorkspace ? "px-2 py-1 min-h-[28px] text-[10px]" : "px-3 py-2 min-h-[36px] text-xs"} font-medium transition-colors touch-manipulation ` +
                 (isActive
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-background/40 text-foreground border-border hover:bg-card")
@@ -291,7 +299,33 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
       </div>
 
       {/* Active category symbols */}
-      {active && (
+        {active && compactWorkspace ? (
+          <div className="arx-scanner-market-rows" role="tabpanel" aria-label={`${active.label} markets`} data-testid={`category-panel-${active.id}`}>
+            {showDerivNote && <div className="mb-1 text-[10px] text-warning/90" data-testid="deriv-feed-note">{derivFeedConnecting ? "Connecting synthetic feed…" : derivFeedConnected ? "Synthetic feed connected." : "Synthetic prices unavailable until the feed is set up."}</div>}
+            {active.symbols.slice(0, 4).map(sym => {
+              const item = exactChartSymbol(sym, scope, { derivFeedConfigured });
+              if (!item) return null;
+              const selected = activeSymbol === sym;
+              const favorite = favs.includes(sym);
+              return <div className={`arx-scanner-market-row${selected ? " is-selected" : ""}`} key={sym}>
+                <button type="button" onClick={() => commitSelect(sym, item)} aria-current={selected ? "true" : undefined} data-testid={`chip-symbol-${sym}`}>
+                  <b>{sym}</b><span>{item.displayName}</span>
+                </button>
+                <button type="button" className="arx-scanner-favorite" aria-label={favorite ? `Remove ${sym} from favorites` : `Add ${sym} to favorites`} onClick={() => toggleFav(sym)} data-testid={`fav-toggle-${sym}`}><Star size={12} fill={favorite ? "currentColor" : "none"}/></button>
+              </div>;
+            })}
+            {active.symbols.length > 4 && <details className="arx-scanner-more">
+              <summary>Browse all {active.symbols.length} {active.label.toLowerCase()} markets</summary>
+              <div className="mt-1">
+                {active.symbols.slice(4).map(sym => {
+                  const item = exactChartSymbol(sym, scope, { derivFeedConfigured });
+                  if (!item) return null;
+                  return <div className="arx-scanner-market-row" key={sym}><button type="button" onClick={() => commitSelect(sym, item)} data-testid={`chip-symbol-${sym}`}><b>{sym}</b><span>{item.displayName}</span></button><button type="button" className="arx-scanner-favorite" aria-label={favs.includes(sym) ? `Remove ${sym} from favorites` : `Add ${sym} to favorites`} onClick={() => toggleFav(sym)}><Star size={12} fill={favs.includes(sym) ? "currentColor" : "none"}/></button></div>;
+                })}
+              </div>
+            </details>}
+          </div>
+        ) : active ? (
         <div
           className="rounded-md border border-card bg-background/40 px-2 py-2"
           role="tabpanel"
@@ -318,7 +352,7 @@ function ScopedSymbolExplorer(props: SymbolExplorerProps) {
             onToggleFav={toggleFav}
           />
         </div>
-      )}
+      ) : null}
 
       {/* Diagnostics (dev / admin only) */}
       {showDiagnostics && query.trim() && (

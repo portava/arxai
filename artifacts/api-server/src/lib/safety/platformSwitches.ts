@@ -47,7 +47,7 @@
 // audited admin handlers (routes/adminTrading.ts and the reviewed writers
 // listed in the guard) and the safety-core state machine (lib/safetyCore.ts).
 
-import { asc, sql } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db, globalTradingSettingsTable, safetyCoreTable } from "@workspace/db";
 import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
 import { logger } from "../logger.js";
@@ -511,28 +511,4 @@ export interface SafetyCorePosture {
 export async function readSafetyCorePosture(): Promise<SafetyCorePosture> {
   const sc = await readSafetyCoreSwitch();
   return { readable: sc.readable, present: sc.present, operationalMode: sc.operationalMode, globalState: sc.globalState };
-}
-
-/** The final paper-entry check can hold the same rows until its booking commits.
- * Missing/ambiguous state never grants permission. This reads, never seeds.
- * (Ported from PR #102.) With a transaction the singleton is share-locked so a
- * concurrent mode change cannot slip between the read and the booking.
- */
-export async function readPaperEntryPosture(tx?: Parameters<Parameters<typeof db.transaction>[0]>[0]): Promise<SafetyCorePosture & { engaged: boolean }> {
-  if (tx) await tx.execute(sql`LOCK TABLE ${safetyCoreTable} IN SHARE MODE`);
-  const query = (tx ?? db).select({
-    operationalMode: safetyCoreTable.operationalMode,
-    globalState: safetyCoreTable.globalState,
-    engaged: safetyCoreTable.killSwitchEngaged,
-  }).from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(2);
-  let rows: Array<{ operationalMode: string | null; globalState: string | null; engaged: boolean | null }>;
-  try {
-    rows = await (tx ? query.for("share") : query);
-  } catch (err) {
-    logger.warn({ err: String(err) }, "safety_core unreadable for paper entry; failing closed");
-    return { readable: false, present: false, operationalMode: null, globalState: null, engaged: true };
-  }
-  if (rows.length !== 1) return { readable: false, present: rows.length > 0, operationalMode: null, globalState: null, engaged: true };
-  const row = rows[0]!;
-  return { readable: true, present: true, operationalMode: row.operationalMode ?? null, globalState: row.globalState ?? null, engaged: row.engaged === true };
 }

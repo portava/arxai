@@ -11,20 +11,6 @@
 //     gate; all promotion + live gates still apply.
 //   - Per-user / per-mission isolation: mutation loads the row FOR UPDATE scoped by
 //     (id, userId); the acceptance is journalled + audited in the same transaction.
-//   - Drawdown line: read from ONE closed-mission-draft FORWARD aggregate (the
-//     newest qualifying record) via the pure selector. Generated-price BACKTEST,
-//     unknown-source/legacy, invalid-metrics and zero-trade rows never contribute,
-//     and no maximum is pooled across sources or contexts. When nothing qualifies
-//     the line says "unavailable" with the reason instead of printing 0.0%. This
-//     usually LOWERS the displayed figure versus the old pooled max (which mixed in
-//     generated-price runs), so the disclosure wording is load-bearing: it names
-//     the source, sample size, nominal starting-amount equity basis and the
-//     unverified execution mode / net costs. Building the certificate is read-only:
-//     it never changes mission level, live-auto opt-in or certificate state.
-//   - Inherited cap: the selector sees at most the newest 200 projected results
-//     (listMissionTestResults' limit, missionTestingLabService.ts). A mission whose
-//     only closed-draft aggregate is older than its newest 200 results shows
-//     "unavailable"; the cap is intentionally not widened here.
 import { and, eq } from "drizzle-orm";
 import {
   db,
@@ -34,13 +20,11 @@ import {
 } from "@workspace/db";
 import {
   buildCertificateContent,
-  selectCertificateObservedDrawdown,
   validateCertificateAcceptance,
   MISSION_CERTIFICATE_PHRASE,
   FIRST_LIVE_AUTO_LEVEL,
   isMissionAutomationLevel,
   type CertificateContent,
-  type CertificateObservedDrawdown,
   type MissionAutomationLevel,
 } from "@workspace/domain/profit-mission";
 import { listMissionTestResults } from "./missionTestingLabService.js";
@@ -60,14 +44,18 @@ async function loadOwnedMission(userId: number, missionId: number): Promise<Miss
   return rows[0] ?? null;
 }
 
-/** Closed-draft drawdown record for the certificate (null when none qualifies). */
-async function observedClosedDraftDrawdown(
-  userId: number,
-  missionId: number,
-): Promise<CertificateObservedDrawdown | null> {
-  // Owner-scoped (userId, missionId) and capped at the newest 200 projected rows.
+async function worstObservedDrawdownPct(userId: number, missionId: number): Promise<number | null> {
   const results = await listMissionTestResults(userId, missionId, { limit: 200 });
-  return selectCertificateObservedDrawdown(results);
+  if (results.length === 0) return null;
+  let worst = 0;
+  let any = false;
+  for (const r of results) {
+    if (Number.isFinite(r.metrics.maxDrawdownPct)) {
+      worst = Math.max(worst, r.metrics.maxDrawdownPct);
+      any = true;
+    }
+  }
+  return any ? worst : null;
 }
 
 /** Build the certificate content for a mission (honest, banned-vocab clean). */
@@ -89,7 +77,7 @@ export async function buildMissionCertificate(args: {
     targetAmount: mission.targetAmount,
     riskProfile: mission.riskProfile,
     targetAutomationLevel,
-    observedDrawdown: await observedClosedDraftDrawdown(args.userId, args.missionId),
+    observedMaxDrawdownPct: await worstObservedDrawdownPct(args.userId, args.missionId),
   });
   return { ok: true, content };
 }

@@ -1,7 +1,7 @@
 import type {ChartPivotLevel} from "./chartSupportResistance";
 import { validProfileRange,validProfileRows,validProfileValueArea } from "./chartVolumeProfile";
-import { CHART_INTERVALS, isChartInterval, chartIntervalSeconds } from "./chartIntervals";
-import { MAX_STUDIES, STUDY_CATALOG, acceptsStudySource, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
+import { chartIntervalSeconds } from "./chartIntervals";
+import { MAX_STUDIES, STUDY_CATALOG, studyId, type ChartStudy, type StudyLineStyle } from "./chartStudies";
 import { isChartTimeZone, type ChartTimeZone } from "./chartTimeZone";
 import { normalizeNoteText } from "./chartTextNote";
 export type ChartScaleMode = "linear" | "log" | "percent" | "indexed";
@@ -26,10 +26,9 @@ export function describeChartStyle(style: ChartStyle): { name: string; note: str
   const known: ChartStyle = (CHART_STYLES as readonly string[]).includes(style) ? style : "candles";
   return { name: CHART_STYLE_NAMES[known], note: STYLE_NOTES[known] };
 }
-export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text" | "channel" | "pitchfork" | "measure";
-export const DRAWING_NAMES: Record<DrawingKind, string> = { pitchfork: "Andrews’ Pitchfork", measure: "Price and time ruler", channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
+export type DrawingKind = "horizontal" | "vertical" | "trend" | "ray" | "extended" | "rectangle" | "fibonacci" | "text" | "channel" | "measure";
+export const DRAWING_NAMES: Record<DrawingKind, string> = { measure: "Price and time ruler", channel: "Parallel channel", horizontal: "Horizontal level", vertical: "Vertical line", trend: "Trend line", ray: "Ray", extended: "Extended line", rectangle: "Rectangle", fibonacci: "Fibonacci retracement", text: "Text note (yours)" };
 export function singleAnchorDrawing(kind: DrawingKind): boolean { return kind === "horizontal" || kind === "vertical" || kind === "text"; }
-export function threeAnchorDrawing(kind: DrawingKind): boolean { return kind === "channel" || kind === "pitchfork"; }
 export interface ChartAnchor { time: number; price: number }
 export interface FibonacciOrigin { method:"confirmed-swings-v1"; span:2; symbol:string; timeframe:string; source:string; sourceIdentity:string; start:ChartAnchor; end:ChartAnchor; confirmedAt:number; windowFrom:number; windowTo:number; closedBars:number }
 export interface PivotLevelOrigin {method:"latest-confirmed-pivots-v1";span:2;symbol:string;timeframe:string;source:string;sourceIdentity:string;windowFrom:number;windowTo:number;closedBars:number;referenceClose:ChartAnchor;level:ChartPivotLevel}
@@ -40,7 +39,7 @@ export interface ChartDrawing { pivotLevelOrigin?:PivotLevelOrigin; fibonacciOri
  * never saved in or applied by a template. Daily timeframes (D1/W1/MN1) always
  * display UTC. Stored anchors, links and data requests stay Unix UTC seconds.
  */
-export interface ChartPreferences { showStudyStatusValues?: boolean; showStudyScaleLabels?: boolean; style: ChartStyle; scale: ChartScaleMode; inverted?: boolean; priceOnlyScale?: boolean; studies: ChartStudy[]; timeZone?: ChartTimeZone }
+export interface ChartPreferences { style: ChartStyle; scale: ChartScaleMode; inverted?: boolean; priceOnlyScale?: boolean; studies: ChartStudy[]; timeZone?: ChartTimeZone }
 export const DEFAULT_PREFERENCES: ChartPreferences = { style: "candles", scale: "linear", studies: [] };
 export const MAX_DRAWINGS = 40;
 const color = (v: unknown): v is string => typeof v === "string" && /^#[a-f\d]{6}$/i.test(v);
@@ -62,42 +61,12 @@ export function validatePreferences(value: unknown): ChartPreferences {
     const id = studyId(s);
     if (seen.has(id)) continue;
     if (s.source != null && !sources.includes(s.source)) continue;
-    if(s.studySource != null && (!acceptsStudySource(s.kind) || typeof s.studySource !== 'object' || Array.isArray(s.studySource) || typeof s.studySource.studyId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(s.studySource.studyId) || !Number.isInteger(s.studySource.channel) || s.studySource.channel<0 || s.studySource.channel>16))continue;
     if (s.signalMethod != null && !["sma", "ema"].includes(s.signalMethod)) continue;
     if (s.method != null && !["sma", "ema", "smma", "wma"].includes(s.method)) continue;
     if (["bollinger", "envelopes"].includes(s.kind) && (!Number.isFinite(s.multiplier) || s.multiplier <= 0 || s.multiplier > 100)) continue;
     if (s.kind === "macd" && (!period(s.slow) || s.slow <= s.period || !period(s.signal))) continue;
     if (s.kind === "dmi" && !period(s.signal)) continue;
     if (s.kind === "stochastic" && (!period(s.smoothing) || !period(s.signal))) continue;
-    if(s.showOnScale!==undefined&&typeof s.showOnScale!=="boolean")continue;
-    if(s.showInStatusLine!==undefined&&typeof s.showInStatusLine!=="boolean")continue;
-    if(s.showInDataWindow!==undefined&&typeof s.showInDataWindow!=="boolean")continue;
-    if(s.visibleIntervals!==undefined && (!Array.isArray(s.visibleIntervals) || s.visibleIntervals.length>CHART_INTERVALS.length || Array.from(s.visibleIntervals).some(v=>!isChartInterval(v)) || new Set(s.visibleIntervals).size!==s.visibleIntervals.length))continue;
-    const pane=STUDY_CATALOG.find(item=>item.defaults.kind===s.kind)!.pane;
-    if ((s.paneScale !== undefined || s.referenceLevels !== undefined || s.paneWeight !== undefined || s.paneCollapsed !== undefined) && !pane) continue;
-    if(s.paneCollapsed!==undefined && typeof s.paneCollapsed!=="boolean")continue;
-    if(s.paneWeight!==undefined && (typeof s.paneWeight!=="number" || !Number.isFinite(s.paneWeight) || s.paneWeight<.25 || s.paneWeight>8))continue;
-    if (s.paneScale !== undefined) {
-      const scale=s.paneScale;
-      if (!scale || typeof scale!=="object" || Array.isArray(scale) || !["auto","fixed","line"].includes(scale.mode)) continue;
-      if(scale.mode==="line" && (!Number.isFinite(scale.value)||!Number.isFinite(scale.percent)||scale.percent<0||scale.percent>100))continue;
-      if (scale.mode==="fixed") {
-        if (scale.min===undefined && scale.max===undefined) continue;
-        if (scale.min!==undefined && (!Number.isFinite(scale.min) || scale.min>=Number.MAX_VALUE)) continue;
-        if (scale.max!==undefined && (!Number.isFinite(scale.max) || scale.max<=-Number.MAX_VALUE)) continue;
-        if (scale.min!==undefined && scale.max!==undefined) {
-          const magnitude=Math.max(Math.abs(scale.min),Math.abs(scale.max))||1;
-          if (!(scale.max/magnitude-scale.min/magnitude>0)) continue;
-        }
-      }
-    }
-    if (s.referenceLevels !== undefined && (!Array.isArray(s.referenceLevels) || s.referenceLevels.length>12 || Array.from(s.referenceLevels).some((level:any)=>
-      !level || typeof level!=="object" || Array.isArray(level) || !Number.isFinite(level.value)
-      || (level.label!==undefined && (typeof level.label!=="string" || level.label.length>80))
-      || (level.color!==undefined && !color(level.color))
-      || (level.width!==undefined && ![1,2,3].includes(level.width))
-      || (level.style!==undefined && !["solid","dashed","dotted"].includes(level.style))
-      || (level.visible!==undefined && typeof level.visible!=="boolean")))) continue;
     let lineStyles: StudyLineStyle[] | undefined;
     if (s.lineStyles != null) {
       const channels = STUDY_CATALOG.find(item=>item.defaults.kind === s.kind)!.channels.length;
@@ -117,17 +86,8 @@ export function validatePreferences(value: unknown): ChartPreferences {
     seen.add(id);
     studies.push({
       ...(lineStyles?.length ? {lineStyles} : {}),
-      ...(s.paneCollapsed!==undefined?{paneCollapsed:s.paneCollapsed}:{}),
-      ...(s.paneWeight!==undefined?{paneWeight:s.paneWeight}:{}),
-      ...(s.showOnScale!==undefined?{showOnScale:s.showOnScale}:{}),
-      ...(s.showInStatusLine!==undefined?{showInStatusLine:s.showInStatusLine}:{}),
-      ...(s.showInDataWindow!==undefined?{showInDataWindow:s.showInDataWindow}:{}),
-      ...(s.visibleIntervals!==undefined?{visibleIntervals:[...s.visibleIntervals]}:{}),
-      ...(s.paneScale!==undefined ? {paneScale:s.paneScale.mode==="auto"?{mode:"auto" as const}:s.paneScale.mode==="line"?{mode:"line" as const,value:s.paneScale.value,percent:s.paneScale.percent}:{mode:"fixed" as const,...(s.paneScale.min!==undefined?{min:s.paneScale.min}:{}),...(s.paneScale.max!==undefined?{max:s.paneScale.max}:{})}} : {}),
-      ...(s.referenceLevels!==undefined ? {referenceLevels:s.referenceLevels.map((level:any)=>({value:level.value,...(level.label!==undefined?{label:level.label}:{}),...(level.color!==undefined?{color:level.color}:{}),...(level.width!==undefined?{width:level.width}:{}),...(level.style!==undefined?{style:level.style}:{}),...(level.visible!==undefined?{visible:level.visible}:{})}))} : {}),
       ...(s.id ? { id: s.id } : {}), kind: s.kind, period: s.period, color: s.color,
       ...(s.source ? { source: s.source } : {}),
-      ...(s.studySource ? {studySource:{studyId:s.studySource.studyId,channel:s.studySource.channel}} : {}),
       ...(s.kind === "volume_profile" ? {profileRows:s.profileRows??32,profileValueAreaPercent:s.profileValueAreaPercent??70,...(s.profileRange?{profileRange:{...s.profileRange}}:{})} : {}),
       ...(s.kind === "vwap" && s.vwapAnchor ? {vwapAnchor:{kind:"observed_bar" as const,time:s.vwapAnchor.time,seriesIdentity:s.vwapAnchor.seriesIdentity}} : {}),
       ...(["bollinger", "envelopes"].includes(s.kind) ? { multiplier: s.multiplier } : {}),
@@ -137,7 +97,7 @@ export function validatePreferences(value: unknown): ChartPreferences {
       ...(["atr", "envelopes"].includes(s.kind) && s.method ? { method: s.method } : {}),
     });
   }
-  return { ...(typeof v.showStudyStatusValues==="boolean"?{showStudyStatusValues:v.showStudyStatusValues}:{}), ...(typeof v.showStudyScaleLabels==="boolean"?{showStudyScaleLabels:v.showStudyScaleLabels}:{}), style: (CHART_STYLES as readonly unknown[]).includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), ...(v.priceOnlyScale === true ? {priceOnlyScale:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
+  return { style: (CHART_STYLES as readonly unknown[]).includes(v.style) ? v.style : "candles", scale: ["linear", "log", "percent", "indexed"].includes(v.scale) ? v.scale : "linear", ...(v.inverted === true ? {inverted:true} : {}), ...(v.priceOnlyScale === true ? {priceOnlyScale:true} : {}), studies, ...(isChartTimeZone(v.timeZone) && v.timeZone !== "UTC" ? {timeZone:v.timeZone} : {}) };
 }
 function validateFibonacciOrigin(value: unknown): FibonacciOrigin | null {
   const p=value as Partial<FibonacciOrigin>|null;
@@ -163,9 +123,8 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
   return (Array.isArray(value) ? value.slice(0, MAX_DRAWINGS) : []).flatMap((d: any) => {
     if (!d || typeof d.id !== "string" || d.id.length > 80 || seen.has(d.id) || !Object.hasOwn(DRAWING_NAMES, d.kind) || !anchor(d.start) || !color(d.color)) return [];
     if (!singleAnchorDrawing(d.kind) && (!anchor(d.end) || (d.kind !== "measure" && d.end.time === d.start.time))) return [];
-    if (threeAnchorDrawing(d.kind) && !anchor(d.offset)) return [];
-    if (threeAnchorDrawing(d.kind) && [d.extendLeft,d.extendRight,...(d.kind === "channel" ? [d.middleLine] : [])].some(v=>v != null && typeof v !== "boolean")) return [];
-    if (d.kind === "pitchfork" && (d.end.time <= d.start.time || d.offset.time <= d.start.time || d.offset.time === d.end.time)) return [];
+    if (d.kind === "channel" && !anchor(d.offset)) return [];
+    if (d.kind === "channel" && [d.extendLeft,d.extendRight,d.middleLine].some(v=>v != null && typeof v !== "boolean")) return [];
     const text = d.kind === "text" ? normalizeNoteText(d.text) : null;
     if (d.kind === "text" && text == null) return [];
     if (d.width != null && ![1, 2, 3].includes(d.width)) return [];
@@ -174,7 +133,7 @@ export function validateDrawings(value: unknown): ChartDrawing[] {
     const fibonacciOrigin=d.kind==="fibonacci"?validateFibonacciOrigin(d.fibonacciOrigin):null;
     const pivotLevelOrigin=d.kind==="horizontal"?validatePivotLevelOrigin(d.pivotLevelOrigin):null;
     seen.add(d.id);
-    return [{ ...(pivotLevelOrigin?{pivotLevelOrigin}:{}),...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(threeAnchorDrawing(d.kind) ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.kind === "channel" && d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
+    return [{ ...(pivotLevelOrigin?{pivotLevelOrigin}:{}),...(fibonacciOrigin?{fibonacciOrigin}:{}),id:d.id, kind:d.kind, start:{time:d.start.time,price:d.start.price}, ...(!singleAnchorDrawing(d.kind) ? {end:{time:d.end.time,price:d.end.price}} : {}), ...(d.kind === "channel" ? {offset:{time:d.offset.time,price:d.offset.price},...(d.extendLeft === true ? {extendLeft:true} : {}),...(d.extendRight === true ? {extendRight:true} : {}),...(d.middleLine === true ? {middleLine:true} : {})} : {}), color:d.color, ...(d.hidden === true ? {hidden:true} : {}), ...(d.locked != null ? {locked:d.locked} : {}), ...(d.width != null ? {width:d.width} : {}), ...(d.dashed != null ? {dashed:d.dashed} : {}), ...(text != null ? {text} : {}) }];
   });
 }
 /** Local device preferences only. No account, positions or credentials are stored. Kept auto drawings retain their original source hash

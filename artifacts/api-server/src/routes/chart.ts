@@ -28,7 +28,6 @@ router.get("/chart/candles", async (req, res) => {
   try {
     q = GetChartCandlesQueryParams.parse({
       symbol: req.query["symbol"],
-      view: req.query["view"] ?? "display",
       timeframe: req.query["timeframe"] ?? "M5",
       limit: req.query["limit"] != null ? Number(req.query["limit"]) : 300,
     });
@@ -44,7 +43,7 @@ router.get("/chart/candles", async (req, res) => {
   // Task #496 — display route opts INTO the synthesized real-time forming tip.
   // Analysis / Ruby / chart-intelligence callers keep the default (false) and
   // stay strictly closed-bars-only.
-  const out = await getChartCandles(q.symbol, q.timeframe, q.limit, q.view !== "analysis");
+  const out = await getChartCandles(q.symbol, q.timeframe, q.limit, true, { storedHistoryFallback: true });
   res.json(out);
 });
 
@@ -67,7 +66,7 @@ router.get("/chart/feed-status", async (req, res) => {
   // Task #496 — display feed-status reflects the live forming tip so the badge
   // reads LIVE while ticks flow (and frozen-stale when silent). Analysis / health
   // callers keep the default (false).
-  const out = await getChartFeedStatus(q.symbol, q.timeframe, true);
+  const out = await getChartFeedStatus(q.symbol, q.timeframe, true, { storedHistoryFallback: true });
   res.json(out);
 });
 

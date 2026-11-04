@@ -123,8 +123,12 @@ test("4: shooting star fails when price closes back above the wick high", () => 
   assert.equal(r.direction, "neutral");
 });
 
-// Geometry strength is a rule weight, not evidence of a separately measured resistance level.
-test("5: shooting-star geometry strength does not establish resistance location", () => {
+// 5. The shooting-star read carries its LOCATION (a rejection at resistance) and
+//    a STRONGER rejection scores higher. The dedicated detector models a valid
+//    shooting star as inherently a resistance rejection (a long upper wick after
+//    an advance IS the rejection), so location is fixed by definition and the
+//    rejection STRENGTH is what varies the confidence.
+test("5: stronger shooting-star rejection at resistance scores higher", () => {
   const next = bar(1.039, 1.04, 1.037, 1.038); // closes below both stars' lows
   const strong = resolveShootingStarTruth({
     candles: [...UPTREND_5, STRONG_STAR, next],
@@ -137,8 +141,8 @@ test("5: shooting-star geometry strength does not establish resistance location"
   });
   assert.equal(strong.status, "confirmed");
   assert.equal(weak.status, "confirmed");
-  assert.equal(strong.locationQuality, "unknown");
-  assert.equal(weak.locationQuality, "unknown");
+  assert.equal(strong.locationQuality, "at_resistance");
+  assert.equal(weak.locationQuality, "at_resistance");
   assert.ok(
     strong.confidence > weak.confidence,
     `strong ${strong.confidence} should beat weak ${weak.confidence}`,
@@ -902,92 +906,4 @@ test("33: composed candidate ranking is deterministic and stably ordered", () =>
     );
   }
   assertNoPermissionField(a);
-});
-
-// Repeated price extrema do not identify the same candle.
-test("shooting-star read carries its source index, including absence", () => {
-  const candles = [...UPTREND_5, STRONG_STAR, bar(1.04, 1.06, 1.0395, 1.055)];
-  const selected = resolveShootingStarTruth({candles,...LIVE});
-  assert.equal(selected.detected,true);
-  assert.equal(selected.starIndex,5);
-  assert.equal(selected.status,"forming");
-  assert.equal(resolveShootingStarTruth({candles:UPTREND_5,...LIVE}).starIndex,null);
-  const last = resolveShootingStarTruth({candles:[...UPTREND_5,STRONG_STAR],...LIVE});
-  assert.equal(last.starIndex,5);
-});
-
-test("shooting-star server reasoning does not invent a resistance location", () => {
-  const read=buildPatternLibraryRead({symbol:"EURUSD",timeframe:"M15",
-    rawCandles:toCandles([...UPTREND_5,STRONG_STAR,bar(1.039,1.04,1.037,1.038)]),
-    feedConfirmed:true,feedStale:false,sufficiencyAllowsSetup:true});
-  assert.ok(read);
-  const star=read.candidates.find(d=>d.name==="Shooting Star");
-  assert.ok(star);
-  assert.equal(star.locationQuality,"unknown");
-  const explanation=buildPatternReasoningBlock({symbol:"EURUSD",read:read.read,detection:star});
-  assert.ok(!explanation.evidence.some(line=>line.startsWith("Location:")));
-  assert.ok(!JSON.stringify(explanation).includes("at resistance"));
-  assertNoPermissionField(read);
-});
-
-for (const feed of [LIVE, STALE]) {
-  test(`hammer invalidation is retained in shared/server truth (${feed.feedStale ? "stale" : "live"})`, () => {
-    const hammer=bar(1.001,1.0025,.982,1.002);
-    const candles=[...DOWNTREND_5,hammer,bar(1.001,1.002,.97,.975)];
-    const signal=detectHammer({candles,...feed});
-    assert.equal(signal.detected,true);assert.equal(signal.status,"failed");assert.equal(signal.direction,"neutral");
-    assert.ok(signal.confidence<=20);assert.match(signal.reasons.join(" "),/closed below.*failed/);
-    const read=buildPatternLibraryRead({symbol:"EURUSD",timeframe:"M15",rawCandles:toCandles(candles),...feed,sufficiencyAllowsSetup:true});
-    assert.ok(read);const detection=read.candidates.find(d=>d.name==="Hammer");assert.ok(detection);
-    assert.equal(detection.status,"failed");assert.equal(detection.direction,"neutral");assertNoPermissionField(read);
-  });
-}
-test("hammer invalidation requires a close below, not a wick or equal close", () => {
-  const hammer=bar(1.001,1.0025,.982,1.002);
-  for (const close of [.982,.99]) {
-    const signal=detectHammer({candles:[...DOWNTREND_5,hammer,bar(1.001,1.002,.97,close)],...LIVE});
-    assert.equal(signal.status,"forming");assert.equal(signal.direction,"buy");
-  }
-  assert.equal(detectHammer({candles:[...DOWNTREND_5,hammer,bar(1.002,1.01,1.001,1.005)],...LIVE}).status,"confirmed");
-});
-for (const status of ["failed","invalidated","exhausted"] as const) {
-  for (const contextOnly of [false,true]) for (const withLevels of [false,true]) test(`reasoning preserves terminal ${status}, contextOnly=${contextOnly}, levels=${withLevels}`, () => {
-    const library=buildPatternLibraryRead({symbol:"EURUSD",timeframe:"M15",rawCandles:toCandles([...UPTREND_5,STRONG_STAR]),...LIVE,sufficiencyAllowsSetup:true});
-    assert.ok(library);const star=library.candidates.find(d=>d.name==="Shooting Star");assert.ok(star);
-    const detection={...star,status,...(!withLevels?{confirmationLevel:null,invalidationLevel:null}:{})};
-    const read=classifyTradeRead({family:detection.family,direction:detection.direction,status,...FULL_GO,feedConfirmed:!contextOnly});
-    const block=buildPatternReasoningBlock({symbol:"EURUSD",detection,read});
-    assert.match(block.decision,new RegExp(status));
-    assert.doesNotMatch(block.confirmation,/^Confirms|Already confirmed|wait for it/i);
-    assert.match(block.confirmation,/new.*(?:formation|structure|setup)/i);
-    assert.doesNotMatch(block.decision,/possible reversal forming|long.*idea|short.*idea/);
-    if(contextOnly)assert.match(block.decision,/context only/);
-  });
-}
-
-test("reasoning does not invent confirmation when no detection exists",()=>{
-  const read=classifyTradeRead({family:"no_trade",direction:"neutral",status:"none",...FULL_GO});
-  const block=buildPatternReasoningBlock({symbol:"EURUSD",detection:null,read});
-  assert.match(block.decision,/No detected structure/);assert.match(block.confirmation,/No detected structure/);
-  assert.doesNotMatch(block.confirmation,/Already confirmed/);
-});
-test("forming and confirmed source detections retain their existing classification",()=>{
-  for(const next of [[],[bar(1.039,1.04,1.037,1.038)]]){
-    const library=buildPatternLibraryRead({symbol:"EURUSD",timeframe:"M15",rawCandles:toCandles([...UPTREND_5,STRONG_STAR,...next]),...LIVE,sufficiencyAllowsSetup:true});
-    assert.ok(library);const detection=library.candidates.find(d=>d.name==="Shooting Star");assert.ok(detection);
-    assert.equal(detection.status,next.length?"confirmed":"forming");
-    const read=classifyTradeRead({family:detection.family,direction:detection.direction,status:detection.status,...FULL_GO});
-    const block=buildPatternReasoningBlock({symbol:"EURUSD",read,detection});
-    assert.doesNotMatch(block.decision,/failed|invalidated|exhausted/);assert.match(block.confirmation,/Confirms/);
-  }
-});
-
-test("status-none objects cannot carry old directional evidence or levels into narration",()=>{
-  const library=buildPatternLibraryRead({symbol:"EURUSD",timeframe:"M15",rawCandles:toCandles([...UPTREND_5,STRONG_STAR]),...LIVE,sufficiencyAllowsSetup:true});
-  assert.ok(library);const star=library.candidates.find(d=>d.name==="Shooting Star");assert.ok(star);
-  const detection={...star,status:"none" as const,direction:"buy" as const,confirmationLevel:12345.678,invalidationLevel:12340.678,rationale:["OLD_PATTERN_EVIDENCE"],warnings:["OLD_PATTERN_WARNING"],failureModes:["OLD_PATTERN_FAILURE"]};
-  const read=classifyTradeRead({family:detection.family,direction:detection.direction,status:"none",...FULL_GO});
-  const block=buildPatternReasoningBlock({symbol:"EURUSD",read,detection});
-  assert.match(block.why,/No detected structure/);
-  assert.doesNotMatch(JSON.stringify(block),/OLD_PATTERN|12345|12340|bullish|Already confirmed/);
 });

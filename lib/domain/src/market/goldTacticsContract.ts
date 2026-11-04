@@ -105,14 +105,6 @@ export function resolveGoldShootingStar(input: GoldShootingStarInput): GoldCandl
     };
   }
 
-  // An invalidated source formation cannot become a new conditional entry.
-  if (base.status === "failed") {
-    return {tactic:"wick_rejection",pattern:"Shooting Star",decision:"no_trade",conditional:false,
-      strength:"weak",confidence:0,atKeyLevel:input.atKeyResistance && !input.midRange,
-      confirmation:"This shooting-star formation failed. A new independently validated formation is required.",
-      invalidation:`The next close crossed above the wick high${base.invalidationLevel != null ? ` at ${base.invalidationLevel}` : ""}.`,reasons,warnings};
-  }
-
   // Mid-range or no key level ⇒ weak; gold does not short a mid-range wick.
   if (input.midRange || !input.atKeyResistance) {
     reasons.push("Shooting star is not at a key resistance/level — gold reads this as weak.");
@@ -193,13 +185,6 @@ export function resolveGoldHammer(input: GoldHammerInput): GoldCandleVerdict {
       reasons,
       warnings,
     };
-  }
-
-  if (base.status === "failed") {
-    return {tactic:"wick_rejection",pattern:"Hammer",decision:"no_trade",conditional:false,
-      strength:"weak",confidence:0,atKeyLevel:input.atKeySupport && !input.midRange,
-      confirmation:"This hammer formation failed. A new independently validated formation is required.",
-      invalidation:`The next close crossed below the wick low${base.invalidationLevel != null ? ` at ${base.invalidationLevel}` : ""}.`,reasons,warnings};
   }
 
   if (input.midRange || !input.atKeySupport) {

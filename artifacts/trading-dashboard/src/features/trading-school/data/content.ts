@@ -155,7 +155,7 @@ export function buildSteps(assistantName: string = DEFAULT_ASSISTANT_NAME): Less
       { id: "s2q9", kind: "chart", prompt: "Two markets on a chart: one drifts slowly, one swings wildly. The wild one has…", options: ["Higher volatility", "Lower liquidity always", "No broker", "Higher taxes"], answerIndex: 0, rubyWhy: "Bigger, faster swings mean higher volatility — important when planning your stop distance." },
       { id: "s2q10", kind: "chart", prompt: "An index chart rising over months suggests…", options: ["Its companies generally did well", "The broker changed", "Random noise only", "Sellers dominated"], answerIndex: 0, rubyWhy: "A rising index reflects its underlying companies generally gaining value over that period." },
       { id: "s2q11", kind: "risk", prompt: "Leverage is dangerous mainly because it…", options: ["Removes the chart", "Magnifies losses too", "Closes the market", "Hides the spread"], answerIndex: 1, rubyWhy: "Leverage cuts both ways. The same force that magnifies a gain magnifies a loss." },
-      { id: "s2q12", kind: "psychology", prompt: "Trading 6 unfamiliar markets at once as a beginner usually leads to…", options: ["Mastery", "Overwhelm and mistakes", "Certain profit", "Lower risk"], answerIndex: 1, rubyWhy: "Spreading yourself thin early causes confusion. Focus beats scatter when you're learning." },
+      { id: "s2q12", kind: "psychology", prompt: "Trading 6 unfamiliar markets at once as a beginner usually leads to…", options: ["Mastery", "Overwhelm and mistakes", "Guaranteed profit", "Lower risk"], answerIndex: 1, rubyWhy: "Spreading yourself thin early causes confusion. Focus beats scatter when you're learning." },
     ],
   },
   {
@@ -333,7 +333,7 @@ export function buildSteps(assistantName: string = DEFAULT_ASSISTANT_NAME): Less
     subtitle: "Position sizing, risk-per-trade, and risk-to-reward",
     blurb: "The most important step. How to lose small and survive to trade again.",
     lesson: [
-      "Your balance is your money; equity is your balance including open trades. Margin is the collateral a leveraged trade needs; free margin is what's left. Drawdown is how far your account has dropped from its peak.",
+      "Your balance is your money; equity is your balance including open trades. Margin is the deposit a leveraged trade needs; free margin is what's left. Drawdown is how far your account has dropped from its peak.",
       "Risk per trade is how much you're willing to lose on one idea — often a small percent like 1–2% of your account. Position size (lot size) is chosen so that if your stop-loss is hit, you only lose that planned amount. Risk-to-reward compares what you risk to what you aim to gain.",
       "A daily loss limit stops you trading after a bad run, protecting you from yourself. Good risk management is what lets you survive losing streaks — and every trader has them.",
     ],
@@ -533,8 +533,8 @@ export const GLOSSARY: GlossaryEntry[] = [
   { term: "Point", simple: "A small unit of price movement (often a fraction of a pip).", example: "Brokers may quote prices to an extra decimal point.", relatedStep: 3 },
   { term: "Tick", simple: "A single change in price, however small.", example: "Each time price updates, that's a tick.", relatedStep: 1 },
   { term: "Lot", simple: "A unit of trade size.", example: "0.01 lots is a small position.", relatedStep: 7 },
-  { term: "Leverage", simple: "Controlling a bigger position with less money — magnifies wins and losses.", example: "Small stake, larger market exposure.", relatedStep: 2 },
-  { term: "Margin", simple: "The collateral a leveraged trade requires.", example: "Opening a trade locks some margin until you close.", relatedStep: 7 },
+  { term: "Leverage", simple: "Controlling a bigger position with less money — magnifies wins and losses.", example: "Small deposit, larger market exposure.", relatedStep: 2 },
+  { term: "Margin", simple: "The deposit a leveraged trade requires.", example: "Opening a trade locks some margin until you close.", relatedStep: 7 },
   { term: "Equity", simple: "Your balance including open trades.", example: "Balance $100 + open profit $5 = $105 equity.", relatedStep: 7 },
   { term: "Balance", simple: "Your account money, not counting open trades.", example: "After closing all trades, equity equals balance.", relatedStep: 7 },
   { term: "Drawdown", simple: "How far your account dropped from its peak.", example: "From $120 down to $100 is a $20 drawdown.", relatedStep: 7 },

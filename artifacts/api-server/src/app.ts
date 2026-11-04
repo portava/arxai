@@ -13,9 +13,14 @@ import { perfTimer } from "./middlewares/perfTimer";
 import { CANDLE_INGEST_BODY_LIMIT_BYTES } from "./lib/data/brokerCandleStore";
 import { recordIngestRejection, isIngestRoute } from "./lib/data/ingestRejectionCounter";
 import { mountProductionDashboard } from "./lib/startup/dashboard.js";
+import { isPreviewSafeStart } from "./lib/startup/previewSafety.js";
 import path from "node:path";
+import { pool } from "@workspace/db";
 
 const app: Express = express();
+// An idle connection error is recoverable: pg removes the failed connection.
+// Observe it without allowing EventEmitter's unhandled error to kill the API.
+pool.on("error", (err) => logger.error({ err }, "Idle database connection failed"));
 
 // Collapse accidental duplicate slashes in the request path. A bridge client
 // (e.g. the MT5 EA) configured with a trailing-slash base URL emits requests
@@ -33,6 +38,9 @@ app.use((req, _res, next) => {
   }
   next();
 });
+
+// Include session lookup and body parsing in API latency (including rejects).
+app.use("/api", perfTimer);
 
 // SESSION_SECRET signs every arx_user_session cookie. In production a missing
 // value must be fatal (like PORT in index.ts) — falling back to a literal that
@@ -180,7 +188,6 @@ app.use("/api/mt5", (req, _res, next) => {
 // the timer's res.on("finish") sees every API response (including 4xx/5xx
 // from downstream handlers). Records into the perfRecorder ring buffer
 // readable only by ADMIN/OWNER via /api/admin/performance/recent-actions.
-app.use("/api", perfTimer);
 app.use("/api", router);
 
 if (process.env.ARX_SERVE_DASHBOARD === "true") {
@@ -188,12 +195,12 @@ if (process.env.ARX_SERVE_DASHBOARD === "true") {
 }
 
 // UX4 — start the background trade-monitor worker (paper-only, read-mostly).
-startMonitor();
+if (!isPreviewSafeStart()) startMonitor();
 
 // Task #199 — start the Ruby Quality outcome-resolution worker (observation
 // only: resolves recorded signal outcomes from real evidence + appends
 // self-reviews; never touches any execution path).
-startRubyOutcomeWorker();
+if (!isPreviewSafeStart()) startRubyOutcomeWorker();
 
 // 2026-11-04 — Ruby watch sweeper: evaluates armed watches / position monitors
 // (conditional entry/close, reversal alerts, 3-alert executive close) inside each

@@ -24,15 +24,16 @@
 // best-effort recompute of real data, never a source of truth.
 
 export interface ShortTtlCacheOptions {
-  /** How long a resolved value stays servable, in milliseconds. */
+  /** Maximum reuse age from computation start, in milliseconds. */
   ttlMs: number;
-  /** Hard cap on distinct keys held at once (oldest evicted first). */
+  /** Hard cap on keys. Evicts settled entries; rejects new work if all are pending. */
   maxEntries?: number;
 }
 
 interface Entry<T> {
   promise: Promise<T>;
   expiresAt: number;
+  pending: boolean;
 }
 
 export interface ShortTtlCache<T> {
@@ -48,47 +49,42 @@ export interface ShortTtlCache<T> {
 }
 
 export function createShortTtlCache<T>(opts: ShortTtlCacheOptions): ShortTtlCache<T> {
-  const ttlMs = Math.max(0, opts.ttlMs);
-  const maxEntries = opts.maxEntries && opts.maxEntries > 0 ? opts.maxEntries : 500;
+  if (!Number.isFinite(opts.ttlMs) || opts.ttlMs < 0) throw new RangeError("Invalid cache TTL");
+  const ttlMs = opts.ttlMs;
+  const maxEntries = opts.maxEntries ?? 500;
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) throw new RangeError("Invalid cache capacity");
   const map = new Map<string, Entry<T>>();
 
-  function evictIfNeeded(): void {
-    if (map.size <= maxEntries) return;
+  function makeRoom(): void {
+    if (map.size < maxEntries) return;
     const now = Date.now();
-    // First pass: drop anything already expired.
+    // Never evict a running job: that would allow duplicate upstream work.
     for (const [k, e] of map) {
-      if (e.expiresAt <= now) map.delete(k);
-      if (map.size <= maxEntries) return;
+      if (!e.pending && e.expiresAt <= now) map.delete(k);
+      if (map.size < maxEntries) return;
     }
-    // Still over budget: drop oldest-inserted keys (Map preserves insert order).
-    while (map.size > maxEntries) {
-      const oldest = map.keys().next().value;
-      if (oldest === undefined) break;
-      map.delete(oldest);
+    for (const [k, e] of map) {
+      if (!e.pending) { map.delete(k); return; }
     }
+    throw new Error("Advisory cache capacity reached");
   }
 
   return {
     async get(key: string, compute: () => Promise<T>): Promise<T> {
       const now = Date.now();
       const hit = map.get(key);
-      if (hit && hit.expiresAt > now) {
-        try {
-          return await hit.promise;
-        } catch {
-          // A previously-cached compute rejected — fall through and recompute.
-        }
-      }
+      if (hit && (hit.pending || hit.expiresAt > now)) return hit.promise;
+      map.delete(key);
+      makeRoom();
 
-      const promise = compute();
-      const entry: Entry<T> = { promise, expiresAt: now + ttlMs };
+      const promise = Promise.resolve().then(compute);
+      const entry: Entry<T> = { promise, expiresAt: now + ttlMs, pending: true };
       map.set(key, entry);
-      // Never cache a failure: evict on rejection (only if still the same entry).
-      promise.catch(() => {
+      promise.then(() => { entry.pending = false; }, () => {
+        entry.pending = false;
         const cur = map.get(key);
         if (cur === entry) map.delete(key);
       });
-      evictIfNeeded();
       return promise;
     },
     invalidate(key: string): void {

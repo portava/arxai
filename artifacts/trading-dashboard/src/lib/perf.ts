@@ -43,7 +43,8 @@ export type PerfViewport = "mobile" | "desktop";
 const MOBILE_MAX_WIDTH_PX = 768;
 function detectViewport(): PerfViewport | null {
   if (typeof window === "undefined") return null;
-  const w = window.innerWidth || document.documentElement?.clientWidth || 0;
+  const activeDocument = typeof document === "undefined" ? null : document;
+  const w = window.innerWidth || activeDocument?.documentElement?.clientWidth || 0;
   if (w <= 0) return null;
   return w < MOBILE_MAX_WIDTH_PX ? "mobile" : "desktop";
 }
@@ -324,16 +325,53 @@ export function observeOrvalRequest(obs: {
   }
 }
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  // A module can outlive its browser document in isolated test/browser
+  // contexts. Keep real-page timing unchanged, but retire this observer when
+  // its owning document is gone instead of letting a stale interval touch a
+  // replacement (or removed) global document.
+  const ownerWindow = window;
+  const ownerDocument = document;
+  let intervalId: number | null = null;
+  let disposed = false;
+  const ownsLiveDocument = () =>
+    !disposed &&
+    typeof document !== "undefined" &&
+    document === ownerDocument &&
+    ownerDocument.defaultView === ownerWindow;
+  function disposeObserver() {
+    if (disposed) return;
+    disposed = true;
+    if (intervalId !== null) ownerWindow.clearInterval(intervalId);
+    ownerWindow.removeEventListener("visibilitychange", onVisibilityChange);
+    ownerWindow.removeEventListener("pagehide", onPageHide);
+  }
+  function onVisibilityChange() {
+    if (!ownsLiveDocument()) {
+      disposeObserver();
+      return;
+    }
+    if (ownerDocument.hidden) void flushNow();
+  }
+  function onPageHide() {
+    if (!ownsLiveDocument()) {
+      disposeObserver();
+      return;
+    }
+    void flushNow();
+  }
+
   // Periodic flush.
-  window.setInterval(() => {
-    if (!document.hidden) void flushNow();
+  intervalId = ownerWindow.setInterval(() => {
+    if (!ownsLiveDocument()) {
+      disposeObserver();
+      return;
+    }
+    if (!ownerDocument.hidden) void flushNow();
   }, FLUSH_INTERVAL_MS);
   // Flush on tab hide / unload so we don't lose tail data when the user
   // navigates away. `sendBeacon` would be nicer but fetch+keepalive works
   // identically here.
-  window.addEventListener("visibilitychange", () => {
-    if (document.hidden) void flushNow();
-  });
-  window.addEventListener("pagehide", () => { void flushNow(); });
+  ownerWindow.addEventListener("visibilitychange", onVisibilityChange);
+  ownerWindow.addEventListener("pagehide", onPageHide);
 }

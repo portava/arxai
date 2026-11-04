@@ -34,7 +34,7 @@ import { getUserAccountConnection } from "../brokerHub/connections.js";
 import { accountFiguresOf, connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { db } from "@workspace/db";
 import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import {
   buildLiveAccountSnapshot,
   type LiveAccountSnapshot,
@@ -80,11 +80,6 @@ export type InvestorBalanceSource =
   | "unknown";
 
 export interface InvestorLiveBalanceSnapshot {
-  valueScope?: "arx_allocation";
-  positionPnlComplete?: boolean;
-  positionPnlEstimated?: boolean;
-  /** Supplied rows lack matched account/currency evidence. Never inferred from arithmetic. */
-  monetaryScopeVerified?: boolean;
   userId: number;
   source: InvestorBalanceSource;
   /** Admin-allocated principal (user_slot_allocation.allocatedFunds). */
@@ -127,10 +122,6 @@ export interface InvestorLiveBalanceSnapshot {
  * genuinely-fresh detailed balance block — never a divergent subset.
  */
 export interface InvestorLiveBalanceWire {
-  valueScope: "arx_allocation";
-  positionPnlComplete: boolean;
-  positionPnlEstimated: boolean;
-  monetaryScopeVerified: false;
   source: InvestorBalanceSource;
   allocatedBalance: number;
   realizedPnL: number;
@@ -151,10 +142,6 @@ export function toInvestorLiveBalanceWire(
 ): InvestorLiveBalanceWire {
   return {
     source: inv.source,
-    valueScope: "arx_allocation",
-    positionPnlComplete: inv.positionPnlComplete === true,
-    positionPnlEstimated: inv.positionPnlEstimated === true,
-    monetaryScopeVerified: false,
     allocatedBalance: inv.allocatedBalance,
     realizedPnL: inv.realizedPnL,
     floatingPnL: inv.floatingPnL,
@@ -169,7 +156,6 @@ export function toInvestorLiveBalanceWire(
 }
 
 export interface ComposeInvestorBalanceInput {
-  realizedPnLPendingCount?: number;
   userId: number;
   accountMode: AccountMode;
   /** Admin-allocated principal. */
@@ -251,15 +237,7 @@ export function composeInvestorBalance(
     floatingPnL = openTradeCount === 0 ? 0 : liveSnapshot.openPL;
   }
 
-  // Preserve the prior numeric read-model arithmetic when a partial total is
-  // withheld. This subtotal is an unverified diagnostic, not a monetary claim;
-  // display consumers must use completeness AND scope metadata. Risk/headroom
-  // below continues to use the existing per-position loss formula.
-  const subtotal = liveSnapshot?.reconciliation?.status === "unverified"
-    && liveSnapshot.reconciliation.positionPnlScope === "supplied_rows"
-    ? liveSnapshot.reconciliation.snapshotSummedPL : null;
-  const arithmeticFloating = floatingPnL ?? (typeof subtotal === "number" && Number.isFinite(subtotal) ? subtotal : 0);
-  const liveEquity = round2(allocatedBalance + realizedPnL + arithmeticFloating);
+  const liveEquity = round2(allocatedBalance + realizedPnL + (floatingPnL ?? 0));
   const freeMargin = round2(Math.max(0, liveEquity - marginUsed));
 
   // Available-to-trade — preserve the EXACT conservative formula already used by
@@ -282,12 +260,12 @@ export function composeInvestorBalance(
   if (liveSnapshot == null) {
     freshness = { status: "unavailable", lastUpdatedAt: null, ageMs: null };
   } else {
-    const validStamp = (value: number | null | undefined): value is number =>
-      typeof value === "number" && Number.isFinite(value) && value > 0 && Number.isFinite(now) && value <= now;
-    const lastMs = validStamp(liveSnapshot.accountSyncedAtMs) ? liveSnapshot.accountSyncedAtMs
-      : validStamp(liveSnapshot.lastBrokerSnapshotAtMs) ? liveSnapshot.lastBrokerSnapshotAtMs : null;
+    const lastMs =
+      liveSnapshot.accountSyncedAtMs ??
+      liveSnapshot.lastBrokerSnapshotAtMs ??
+      null;
     freshness = {
-      status: lastMs == null ? "unavailable" : mapFreshnessStatus(liveSnapshot.freshness),
+      status: mapFreshnessStatus(liveSnapshot.freshness),
       lastUpdatedAt: lastMs != null ? new Date(lastMs).toISOString() : null,
       ageMs: lastMs != null ? Math.max(0, now - lastMs) : null,
     };
@@ -296,11 +274,6 @@ export function composeInvestorBalance(
   return {
     userId,
     source: modeToSource(accountMode),
-    valueScope: "arx_allocation",
-    positionPnlComplete: liveSnapshot?.reconciliation?.positionPnlComplete === true,
-    positionPnlEstimated: positions.some(position => position.plIsEstimate || position.plSource !== "broker"),
-    monetaryScopeVerified: false,
-    realizedPnLPendingCount: input.realizedPnLPendingCount ?? 0,
     allocatedBalance: round2(allocatedBalance),
     realizedPnL: round2(realizedPnL),
     floatingPnL: floatingPnL == null ? null : round2(floatingPnL),
@@ -379,7 +352,7 @@ export async function fetchInvestorBalanceParts(
   // booking a mis-scaled figure). Count them so the caller can label the
   // equity as incomplete instead of presenting a partial total as final.
   const pendingRows = await db
-    .select({ id: sharedTradeAttributionTable.id })
+    .select({ total: count() })
     .from(sharedTradeAttributionTable)
     .where(and(
       eq(sharedTradeAttributionTable.userId, userId),
@@ -391,7 +364,7 @@ export async function fetchInvestorBalanceParts(
     allocatedBalance,
     reservedRisk,
     realizedPnL,
-    realizedPnLPendingCount: pendingRows.length,
+    realizedPnLPendingCount: pendingRows[0]?.total ?? 0,
   };
 }
 
@@ -449,7 +422,6 @@ export async function buildInvestorLiveBalanceSnapshot(
     allocatedBalance,
     realizedPnL,
     reservedRisk,
-    realizedPnLPendingCount,
     liveSnapshot,
     now,
   });

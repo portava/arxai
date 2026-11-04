@@ -286,8 +286,6 @@ router.post("/auth/forgot-password", async (req, res) => {
             );
           }
         });
-      // Reset links are credentials even in development. Deliver only through
-      // the mailer; never expose the link in the HTTP response or server log.
       void recordBetaGateAudit("password_reset_requested", { userId: user.id });
     } else {
       // Timing-equalization (anti-enumeration): a non-existent email must not be

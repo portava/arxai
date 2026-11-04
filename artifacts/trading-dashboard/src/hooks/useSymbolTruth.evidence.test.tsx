@@ -28,10 +28,8 @@ function snapshot(): MarketTruthResponse {
 }
 function candlePayload(timeframe = "M1") {
   return {
-    symbol:"EURUSD",timeframe,
-    sourceClockQualified: true, // Normalized cache shape for seeded-query cases.
     marketEvidence: { symbol: "EURUSD", timeframe, source: "mt5_broker", sourceIdentity: "a".repeat(64), lastClosedCandleAt: CLOSE },
-    candles: Array.from({ length: 200 }, (_, index) => ({ symbol:"EURUSD",timeframe,source:"mt5_broker",timeBasisEvidence:{kind:"original_utc",basis:"UTC",authority:"fixture-original-utc",reason:null}, openTime: new Date(Date.parse(CLOSE) - (200 - index) * 60_000).toISOString(), closeTime: new Date(Date.parse(CLOSE) - (199 - index) * 60_000).toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
+    candles: Array.from({ length: 200 }, (_, index) => ({ openTime: new Date(Date.parse(CLOSE) - (200 - index) * 60_000).toISOString(), closeTime: new Date(Date.parse(CLOSE) - (199 - index) * 60_000).toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 })),
     feedStatus: { symbol: "EURUSD", source: "mt5_broker", quality: "clean", isLive: true, aiUsable: true, stale: false, lastCandleTime: CLOSE },
   };
 }

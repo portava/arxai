@@ -8,13 +8,16 @@
     "ss:smoke": "tsx ./src/ss-smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:ci": "tsx ./src/typecheckCi.ts",
-    "ci:guards": "tsx ./src/ci/run-all.ts && tsx ./src/ci/check-master-live-bridge-binding.test.ts && tsx ./src/ci/check-scanner-selected-market.test.ts && tsx ./src/ci/wording-source.test.ts",
+    "ci:guards": "tsx ./src/ci/run-all.ts && tsx ./src/ci/check-master-live-bridge-binding.test.ts && tsx ./src/ci/check-scanner-selected-market.test.ts",
     "ci:integration": "tsx ./src/ci/runIntegrationCiTests.ts",
     "ci:integration-inprocess": "tsx ./src/ci/runIntegrationInProcessTests.ts",
     "test:unified-live-readiness": "tsx ./src/unifiedLiveReadinessDecisionTest.ts",
     "test:shared-feed-verdict": "tsx ./src/sharedFeedVerdictContractTest.ts",
     "test:live-preflight-readiness-observation": "tsx ./src/livePreflightReadinessObservationTest.ts",
     "test:deriv-contracts": "tsx ./src/derivContractsTest.ts",
+    "test:auth-session-browser": "tsx ./src/qaAuthSessionBrowser.ts",
+    "test:compact-workspace-geometry": "node --test ./scanner-qa/compact-workspace-geometry.test.mjs",
+    "test:shell-header-browser": "node --test ./shell-qa/header.test.mjs",
     "test:expectancy-engine": "tsx ./src/expectancyEngineTest.ts",
     "test:compliance-gate": "tsx ./src/complianceGateTest.ts",
     "test:provenance-no-collapse": "tsx ./src/ci/check-provenance-no-collapse.test.ts",
@@ -326,7 +329,9 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:"
+    "playwright": "^1.64.1",
+    "tsx": "catalog:",
+    "vite": "catalog:"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",

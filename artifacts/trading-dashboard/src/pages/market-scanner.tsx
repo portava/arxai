@@ -1,6 +1,3 @@
-import { LiveAccountSnapshotProvider, useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
-import { useLiveBridgeRefreshState } from "@/hooks/useLiveBridgeRefresh";
-import { LiveBridgeAutoRefreshControl } from "@/components/live/LiveBridgeAutoRefreshControl";
 import { memo, useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
@@ -237,15 +234,7 @@ const ScannerFocusPanels = memo(function ScannerFocusPanels({ symbol, onBuild }:
   </div>;
 });
 
-// Only the small refresh leaf consumes transport snapshots. Market scanning
-// and initial chart rendering do not wait for or rerender on each account tick.
-function ScannerAccountRefresh() {
-  return <LiveBridgeAutoRefreshControl {...useLiveBridgeRefreshState(useLiveAccountSnapshotCtx())} />;
-}
 export default function MarketScanner() {
-  return <LiveAccountSnapshotProvider><MarketScannerContent /></LiveAccountSnapshotProvider>;
-}
-function MarketScannerContent() {
   const [universe, setUniverse] = useState<UniverseId>("all");
   const [universes, setUniverses] = useState<UniverseInfo[]>([]);
   const [status, setStatus] = useState<{
@@ -970,7 +959,6 @@ function MarketScannerContent() {
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
       <ScannerHeaderSummary running={Boolean(status?.running)} />
-      <ScannerAccountRefresh />
 
       {err && (
         <CompactAlert

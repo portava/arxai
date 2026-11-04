@@ -73,8 +73,7 @@ string        gInstanceId  = "";     // unique per EA load (for idempotency keys
 long          gIdemCounter = 0;       // monotonic, per-connection idempotency source
 
 datetime      lastHeartbeatAt   = 0;
-ulong         accountSnapshotLastAttemptMs = 0;
-bool          accountSnapshotAttempted = false;
+datetime      lastAccountAt     = 0;
 datetime      lastBookAt        = 0;
 datetime      lastConfigPollAt  = 0;
 datetime      lastCommandPollAt = 0;
@@ -143,15 +142,7 @@ void OnTimer()
    datetime now = TimeCurrent();
 
    if(now - lastHeartbeatAt   >= HeartbeatIntervalSeconds)       { SendHeartbeat();        lastHeartbeatAt   = now; }
-   // Report account telemetry even when broker quote time stops or changes.
-   // Stamp an attempt, not a receipt: a failed request must not busy-loop.
-   ulong accountNowMs = GetTickCount64();
-   if(!accountSnapshotAttempted || accountNowMs - accountSnapshotLastAttemptMs >= (ulong)MathMax(1, AccountSnapshotIntervalSeconds) * 1000)
-   {
-      accountSnapshotLastAttemptMs = accountNowMs;
-      accountSnapshotAttempted = true;
-      PushAccountSnapshot();
-   }
+   if(now - lastAccountAt     >= AccountSnapshotIntervalSeconds) { PushAccountSnapshot();  lastAccountAt     = now; }
    if(now - lastBookAt        >= BookSnapshotIntervalSeconds)    { PushPositionsSnapshot(); PushOrdersSnapshot(); lastBookAt = now; }
    if(now - lastConfigPollAt  >= ConfigPollIntervalSeconds)      { PollRemoteConfig();     lastConfigPollAt  = now; }
    if(now - lastCommandPollAt >= CommandPollIntervalSeconds)     { PollCommands();         lastCommandPollAt = now; }

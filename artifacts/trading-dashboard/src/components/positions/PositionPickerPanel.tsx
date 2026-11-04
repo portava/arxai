@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
-import { useUnifiedPositions } from "@/hooks/useUnifiedPositions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { PositionSideCard, formatPositionPnl, type UnifiedPosition } from "./PositionSideCard";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { PositionSideCard, type UnifiedPosition } from "./PositionSideCard";
 import { resolveSafetyError } from "./safetyMessages";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const u = (p: string) => `${BASE}${p}`;
 
+const POLL_MS = 5000;
 
+type Resp = { ok: boolean; live: UnifiedPosition[]; demo: UnifiedPosition[]; liveCount: number; demoCount: number; notLiveReason?: string | null };
 
 // Lightweight in-card confirm dialogs. We do NOT use the existing
 // ClosePositionConfirmModal / StopLossTakeProfitEditor here because those are
@@ -22,31 +24,44 @@ const u = (p: string) => `${BASE}${p}`;
 
 type ConfirmState =
   | { kind: "none" }
-  | { kind: "close"; ownerId:number; pos: UnifiedPosition }
-  | { kind: "modify"; ownerId:number; pos: UnifiedPosition; sl: string; tp: string };
+  | { kind: "close"; pos: UnifiedPosition }
+  | { kind: "modify"; pos: UnifiedPosition; sl: string; tp: string };
 
 export function PositionPickerPanel() {
-  const [selected, setSelected] = useState<{ownerId:number;key:string} | null>(null);
+  const [data, setData] = useState<Resp | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: "none" });
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
-  const {user,userId,identityError,data,err,query:positions,resolveCurrentPosition}=useUnifiedPositions();
+  const { user } = useCurrentUser();
   const isAdmin = user?.role === "ADMIN" || user?.role === "OWNER";
   const describe = (payload: unknown, status?: number) => {
     const r = resolveSafetyError(payload, status);
     return isAdmin && r.raw ? `${r.friendly} [code: ${r.raw}]` : r.friendly;
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      try {
+        const r = await fetch(u("/api/me/positions/all"), { credentials: "include" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = (await r.json()) as Resp;
+        if (!cancelled) { setData(j); setErr(null); }
+      } catch (e) {
+        if (!cancelled) setErr((e as Error).message);
+      } finally {
+        if (!cancelled) timer = setTimeout(load, POLL_MS);
+      }
+    };
+    void load();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, []);
+
   const all: UnifiedPosition[] = [...(data?.live ?? []), ...(data?.demo ?? [])];
-  const selectedPos = selected?.ownerId===userId ? all.find((p) => `${p.scope}:${p.brokerTicket}` === selected.key) ?? null : null;
-  const confirmPos=confirm.kind!=="none"&&confirm.ownerId===userId?all.find(p=>p.scope===confirm.pos.scope&&p.brokerTicket===confirm.pos.brokerTicket):null;
-  const activeConfirm:ConfirmState=confirm.kind!=="none"&&confirmPos?{...confirm,pos:confirmPos}:{kind:"none"};
-  useEffect(()=>{setSelected(null);setConfirm({kind:"none"});},[userId]);
-  useEffect(()=>{if(confirm.kind!=="none"&&!confirmPos)setConfirm({kind:"none"});},[confirm,confirmPos]);
-  const resolveSubmission=(pos:UnifiedPosition,ownerId:number)=>{
-    if(ownerId!==userId)return null;
-    return resolveCurrentPosition(pos);
-  };
+  const selectedPos = all.find((p) => `${p.scope}:${p.brokerTicket}` === selected) ?? null;
   // Canonical cross-surface rule: live rows are withheld because the account
   // is not in live mode. Surface the same user-safe copy every ARX surface
   // shows rather than silently disagreeing with the dedicated live card. The
@@ -54,9 +69,8 @@ export function PositionPickerPanel() {
   const notLiveMode = data?.notLiveReason === "ACCOUNT_NOT_IN_LIVE_MODE";
   const hasLive = (data?.live?.length ?? 0) > 0;
 
-  const submitClose = async (requested: UnifiedPosition, ownerId:number) => {
-    const pos=resolveSubmission(requested,ownerId);
-    if (!pos?.brokerTicket) return;
+  const submitClose = async (pos: UnifiedPosition) => {
+    if (!pos.brokerTicket) return;
     setBusy(true);
     try {
       const r = await fetch(u(`/api/me/live/positions/${encodeURIComponent(pos.brokerTicket)}/close`), {
@@ -76,9 +90,8 @@ export function PositionPickerPanel() {
     }
   };
 
-  const submitModify = async (requested: UnifiedPosition, ownerId:number, sl: string, tp: string) => {
-    const pos=resolveSubmission(requested,ownerId);
-    if (!pos?.brokerTicket) return;
+  const submitModify = async (pos: UnifiedPosition, sl: string, tp: string) => {
+    if (!pos.brokerTicket) return;
     setBusy(true);
     try {
       const body: Record<string, number | null> = {};
@@ -106,13 +119,11 @@ export function PositionPickerPanel() {
       <Card className="border-zinc-800 bg-zinc-950/50">
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-sm">
-            Reported open positions
-            <Badge variant="outline" className="text-[10px]">{data ? data.liveCount + data.demoCount : "—"}</Badge>
+            My open positions
+            <Badge variant="outline" className="text-[10px]">{(data?.liveCount ?? 0) + (data?.demoCount ?? 0)}</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <p className="text-xs text-zinc-400">Position values are last reported; observation time and currency are unavailable.</p>
-          {identityError && <p className="text-xs text-amber-200">Account identity could not be verified. Position values are hidden.</p>}
           {err && <div className="rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">Couldn't load positions: {err}</div>}
           {!err && notLiveMode && !hasLive && (
             <div data-testid="positions-not-live" className="rounded border border-zinc-700 bg-zinc-900/40 p-2 text-xs text-zinc-400">
@@ -120,19 +131,19 @@ export function PositionPickerPanel() {
               <div className="mt-0.5 text-[11px] text-zinc-500">Live positions will appear here when live mode is active.</div>
             </div>
           )}
-          {!err && !positions.isPending && all.length === 0 && !notLiveMode && (
+          {!err && all.length === 0 && !notLiveMode && (
             <div data-testid="text-no-open-positions" className="text-xs text-zinc-500">
-              No open positions in the last received report.
+              You have no open demo or live positions right now.
             </div>
           )}
           {all.map((p) => {
             const key = `${p.scope}:${p.brokerTicket}`;
-            const isSel = selected?.ownerId===userId && key === selected.key;
+            const isSel = key === selected;
             return (
               <button
                 key={key}
                 type="button"
-                onClick={() => setSelected(isSel || userId===null ? null : {ownerId:userId,key})}
+                onClick={() => setSelected(isSel ? null : key)}
                 data-testid={`btn-select-position-${p.scope}-${p.brokerTicket}`}
                 className={`w-full rounded-md border p-2 text-left text-xs transition ${
                   isSel ? "border-blue-500/60 bg-blue-500/5" : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900"
@@ -146,8 +157,8 @@ export function PositionPickerPanel() {
                       {p.accountMode}
                     </Badge>
                   </div>
-                  <span className={`font-mono ${typeof p.floatingPnl !== "number" || !Number.isFinite(p.floatingPnl) ? "text-zinc-400" : p.floatingPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                    {formatPositionPnl(p.floatingPnl)}
+                  <span className={`font-mono ${(p.floatingPnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                    {p.floatingPnl == null ? "—" : (p.floatingPnl >= 0 ? "+" : "") + p.floatingPnl.toFixed(2)}
                   </span>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-500">
@@ -165,12 +176,12 @@ export function PositionPickerPanel() {
         <PositionSideCard
           position={selectedPos}
           onClose={() => setSelected(null)}
-          onCloseTrade={(pos) => setConfirm({ kind: "close", ownerId:userId!, pos })}
-          onModifySLTP={(pos) => setConfirm({ kind: "modify", ownerId:userId!, pos, sl: pos.stopLoss?.toString() ?? "", tp: pos.takeProfit?.toString() ?? "" })}
+          onCloseTrade={(pos) => setConfirm({ kind: "close", pos })}
+          onModifySLTP={(pos) => setConfirm({ kind: "modify", pos, sl: pos.stopLoss?.toString() ?? "", tp: pos.takeProfit?.toString() ?? "" })}
         />
       )}
 
-      {activeConfirm.kind === "close" && (
+      {confirm.kind === "close" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" data-testid="modal-confirm-close">
           <div className="w-full max-w-md space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             <div className="text-base font-semibold text-zinc-100">Close live position?</div>
@@ -178,11 +189,11 @@ export function PositionPickerPanel() {
               The server will run the full Phase B 16-gate evaluator before any close command leaves ARX. If any gate fails the close is refused and nothing is sent to your broker.
             </div>
             <div className="text-xs text-zinc-400">
-              Ticket <span className="font-mono text-zinc-200">{activeConfirm.pos.brokerTicket}</span> · {activeConfirm.pos.symbol} {activeConfirm.pos.side} · lot {activeConfirm.pos.lotSize}
+              Ticket <span className="font-mono text-zinc-200">{confirm.pos.brokerTicket}</span> · {confirm.pos.symbol} {confirm.pos.side} · lot {confirm.pos.lotSize}
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button size="sm" variant="ghost" onClick={() => setConfirm({ kind: "none" })} disabled={busy} data-testid="btn-cancel-close">Cancel</Button>
-              <Button size="sm" variant="destructive" onClick={() => submitClose(activeConfirm.pos,activeConfirm.ownerId)} disabled={busy} data-testid="btn-confirm-close">
+              <Button size="sm" variant="destructive" onClick={() => submitClose(confirm.pos)} disabled={busy} data-testid="btn-confirm-close">
                 {busy ? "Submitting…" : "Submit close"}
               </Button>
             </div>
@@ -190,7 +201,7 @@ export function PositionPickerPanel() {
         </div>
       )}
 
-      {activeConfirm.kind === "modify" && (
+      {confirm.kind === "modify" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" data-testid="modal-confirm-modify">
           <div className="w-full max-w-md space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
             <div className="text-base font-semibold text-zinc-100">Edit SL / TP</div>
@@ -199,17 +210,17 @@ export function PositionPickerPanel() {
             </div>
             <label className="block text-xs text-zinc-400">
               New stop loss
-              <input data-testid="input-modify-sl" value={activeConfirm.sl} onChange={(e) => setConfirm({ ...activeConfirm, sl: e.target.value })}
+              <input data-testid="input-modify-sl" value={confirm.sl} onChange={(e) => setConfirm({ ...confirm, sl: e.target.value })}
                 className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-mono text-zinc-100" />
             </label>
             <label className="block text-xs text-zinc-400">
               New take profit
-              <input data-testid="input-modify-tp" value={activeConfirm.tp} onChange={(e) => setConfirm({ ...activeConfirm, tp: e.target.value })}
+              <input data-testid="input-modify-tp" value={confirm.tp} onChange={(e) => setConfirm({ ...confirm, tp: e.target.value })}
                 className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-mono text-zinc-100" />
             </label>
             <div className="flex justify-end gap-2 pt-1">
               <Button size="sm" variant="ghost" onClick={() => setConfirm({ kind: "none" })} disabled={busy} data-testid="btn-cancel-modify">Cancel</Button>
-              <Button size="sm" onClick={() => submitModify(activeConfirm.pos,activeConfirm.ownerId, activeConfirm.sl, activeConfirm.tp)} disabled={busy} data-testid="btn-confirm-modify">
+              <Button size="sm" onClick={() => submitModify(confirm.pos, confirm.sl, confirm.tp)} disabled={busy} data-testid="btn-confirm-modify">
                 {busy ? "Submitting…" : "Submit edit"}
               </Button>
             </div>

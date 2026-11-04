@@ -6,9 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * @nullable
- */
 export type Mt5StatusAccountSnapshot = {
   /** @nullable */
   account: string | null;
@@ -28,4 +25,4 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
-} | null;
+};

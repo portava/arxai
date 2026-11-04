@@ -13,5 +13,4 @@ export const Mt5StatusAccountType = {
   DEMO: "DEMO",
   REAL: "REAL",
   UNKNOWN: "UNKNOWN",
-  NONE: "NONE",
 } as const;

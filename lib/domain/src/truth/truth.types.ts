@@ -25,13 +25,7 @@ export interface TruthReadEvidence {
   timeframe: string;
   source: string;
   sourceIdentity: string;
-  /** Provider/bridge provenance digest without the interval-specific sourceId.
-   * Allows cross-interval source comparison; not proof of freshness or ownership. */
-  venueIdentity?: string;
   lastClosedCandleAt: string;
-  /** Versioned digest of the actual closed primary analysis inputs. Optional on
-   * older/component observations; absence cannot establish window equality. */
-  closedWindowIdentity?: string;
   /** User whose account-dependent inputs were evaluated; absent for market-only reads. */
   userId?: number;
 }

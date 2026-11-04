@@ -18,8 +18,6 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
-import { aiEntryPolicyReason, paperEntryPolicyReason } from "../safety/entryPolicy.js";
-import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import { classifyHeartbeatAgeMs, MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS, heartbeatAllowsRiskReducingClose } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
@@ -588,17 +586,6 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     ctx = await buildRiskContext(intent, opts);
     limits = ctx.limits;
     decision = evaluatePreTradeRisk(intent, ctx);
-    // Owner policy holds (ported from PR #102). Caller-supplied facts cannot
-    // bypass them. Protection keeps its own governor rules; these gates apply
-    // only to new entries: AI-originated entries are held until the owner
-    // approves a confidence policy, and a PAPER entry needs an executable
-    // Safety Core posture (mode, state, kill switch) read at decision time.
-    const policyReason = aiEntryPolicyReason(intent) ?? (intent.venue === "PAPER" && intent.action === "OPEN"
-      ? paperEntryPolicyReason(await readPaperEntryPosture()) : null);
-    if (policyReason) decision = {
-      ...decision, decision: "BLOCK", blockedBy: [...new Set(["trading_halt" as const, ...decision.blockedBy])],
-      primaryReason: policyReason,
-    };
   } catch (e) {
     decision = contextFailure(intent, now, (e as Error).message.slice(0, 160));
   }

@@ -3,7 +3,7 @@
 // of the token so a DB leak does not yield usable session credentials.
 
 import { randomBytes, createHash } from "node:crypto";
-import { eq, lt } from "drizzle-orm";
+import { and, eq, lt, lte } from "drizzle-orm";
 import { db, authUserSessionsTable, usersTable, type User } from "@workspace/db";
 
 export const USER_SESSION_COOKIE = "arx_user_session";
@@ -30,13 +30,16 @@ export async function createUserSession(opts: {
     userId: opts.userId,
     tokenHash,
     expiresAt,
+    // Use the same application clock as expiry and subsequent telemetry
+    // writes; timestamp-without-time-zone defaults depend on the DB timezone.
+    lastSeenAt: new Date(),
     ipAddress: opts.ipAddress ?? null,
     userAgent: opts.userAgent ?? null,
   });
   return { rawToken, expiresAt };
 }
 
-export async function findUserBySessionToken(rawToken: string, options: { readOnly?: boolean } = {}): Promise<User | null> {
+export async function findUserBySessionToken(rawToken: string): Promise<User | null> {
   if (!rawToken) return null;
   const tokenHash = hashToken(rawToken);
   const rows = await db
@@ -48,20 +51,25 @@ export async function findUserBySessionToken(rawToken: string, options: { readOn
   const row = rows[0];
   if (!row) return null;
   if (row.session.expiresAt.getTime() <= Date.now()) {
-    // Stream revalidation must not turn every advisory hint into a write.
-    // Normal request callers retain the existing lazy cleanup.
-    if (!options.readOnly) await db
+    // Lazily clean expired session.
+    await db
       .delete(authUserSessionsTable)
       .where(eq(authUserSessionsTable.tokenHash, tokenHash))
       .catch(() => {});
     return null;
   }
-  // Touch lastSeenAt without blocking the request.
-  if (!options.readOnly) void db
-    .update(authUserSessionsTable)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(authUserSessionsTable.tokenHash, tokenHash))
-    .catch(() => {});
+  // Presence telemetry needs minute precision, not one WAL write per widget
+  // poll. Authorization and expiry still come from a fresh DB read EVERY time.
+  // The predicate also suppresses duplicate writes across concurrent workers.
+  const seenAt = new Date();
+  const cutoff = new Date(seenAt.getTime() - 60_000);
+  if (row.session.lastSeenAt <= cutoff) {
+    void db
+      .update(authUserSessionsTable)
+      .set({ lastSeenAt: seenAt })
+      .where(and(eq(authUserSessionsTable.tokenHash, tokenHash), lte(authUserSessionsTable.lastSeenAt, cutoff)))
+      .catch(() => {});
+  }
   return row.user;
 }
 

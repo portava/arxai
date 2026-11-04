@@ -164,9 +164,6 @@ function refreshPoll() {
   document.dispatchEvent(new Event("visibilitychange"));
 }
 beforeEach(() => {
-  // New real page provider needs an offline browser transport in this route-only fixture.
-  class OfflineEventSource { static OPEN = 1; readyState = 0; addEventListener() {} close() { this.readyState = 2; } }
-  vi.stubGlobal("EventSource", OfflineEventSource);
   chartRenders = 0; focusRenders = 0;
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-26T16:00:00Z"));

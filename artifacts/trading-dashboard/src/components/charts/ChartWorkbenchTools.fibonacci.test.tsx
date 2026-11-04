@@ -39,7 +39,7 @@ it("withdraws a frozen preview when its source or window changes instead of movi
   read={status:"unavailable",proposal:null,reason:"Source evidence changed"};act(()=>viewport());
   expect(setDrawings.mock.calls.at(-1)![0]).toEqual([]);expect(saved()).toEqual([]);
   expect(screen.queryByRole("button",{name:"Keep and edit Fibonacci"})).toBeNull();
-  expect(screen.getByText(/Preview cleared/)).toBeTruthy();
+  expect(screen.getByText(/Preview withdrawn/)).toBeTruthy();
 });
 it("rechecks at Keep and preserves kept original provenance when edited or source is revoked",()=>{
   const view=render(<ChartWorkbenchTools {...props}/>);fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"auto_fibonacci"}});

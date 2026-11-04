@@ -6,6 +6,7 @@
 // live on the Master Bridge page, deep-linked below.
 
 import {
+  useGetAdminFundBookBrokerMirror,
   useGetAdminFundBookPlAllocation,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,18 +26,16 @@ import { Server, ExternalLink } from "lucide-react";
 import {
   StatusBadge,
   FreshnessBadge,
+  PnlValue,
   EmptyState,
   ErrorState,
+  fmtMoney,
   fmtInt,
   fmtTimeAgo,
 } from "./format";
 
-import {useAdminBrokerMirror} from '@/hooks/useAdminBrokerMirror';
-import {NativeAccountReport} from '@/components/sharedAccount/NativeAccountReport';
-import {BrokerRefreshControl} from './BrokerRefreshControl';
-
 export function BrokerMirrorsSection() {
-  const mirrorQ = useAdminBrokerMirror();
+  const mirrorQ = useGetAdminFundBookBrokerMirror();
   const plQ = useGetAdminFundBookPlAllocation();
 
   if (mirrorQ.isLoading) {
@@ -61,7 +60,6 @@ export function BrokerMirrorsSection() {
 
   return (
     <div className="space-y-4" data-testid="mirrors-section">
-      <BrokerRefreshControl query={mirrorQ} />
       <div className="flex justify-end">
         <Link href="/admin/master-bridge">
           <a>
@@ -82,6 +80,7 @@ export function BrokerMirrorsSection() {
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {bridges.map((b) => {
+            const ccy = b.accountCurrency || "USD";
             return (
               <Card key={b.bridgeConnectionId} data-testid={`bridge-card-${b.bridgeConnectionId}`}>
                 <CardHeader className="pb-2">
@@ -96,11 +95,15 @@ export function BrokerMirrorsSection() {
                     </div>
                   </div>
                   <div className="pt-1">
-                    <span className="text-xs text-muted-foreground">Bridge telemetry (not account-money freshness): </span><FreshnessBadge freshness={b.freshness} asOf={b.freshnessAsOf} />
+                    <FreshnessBadge freshness={b.freshness} asOf={b.freshnessAsOf} />
                   </div>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                  <div className="col-span-2"><NativeAccountReport report={b.nativeAccountReport ?? null} /></div>
+                  <Field label="Balance" value={fmtMoney(b.accountBalance, ccy)} />
+                  <Field label="Equity" value={fmtMoney(b.accountEquity, ccy)} />
+                  <Field label="Margin" value={fmtMoney(b.margin, ccy)} />
+                  <Field label="Free margin" value={fmtMoney(b.freeMargin, ccy)} />
+                  <Field label="Floating P/L" value={<PnlValue value={b.floatingPlTotal} currency={ccy} />} />
                   <Field label="Open positions" value={fmtInt(b.openPositionCount)} />
                   <Field label="Heartbeat" value={fmtTimeAgo(b.lastHeartbeatAt)} />
                   <Field label="Positions synced" value={fmtTimeAgo(b.lastPositionsSnapshotAt)} />
@@ -130,7 +133,7 @@ export function BrokerMirrorsSection() {
                     <TableHead>Symbol</TableHead>
                     <TableHead>Side</TableHead>
                     <TableHead className="text-right">Volume</TableHead>
-                    <TableHead className="text-right">Recorded P/L (currency unverified)</TableHead>
+                    <TableHead className="text-right">Floating P/L</TableHead>
                     <TableHead>Pool</TableHead>
                     <TableHead>Allocation</TableHead>
                     <TableHead>Ticket</TableHead>
@@ -147,7 +150,7 @@ export function BrokerMirrorsSection() {
                         <TableCell>{p.side ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{p.volume ?? "—"}</TableCell>
                         <TableCell className="text-right">
-                          {typeof p.floatingPl === "number" && Number.isFinite(p.floatingPl) ? String(p.floatingPl) : "—"}
+                          <PnlValue value={p.floatingPl} />
                         </TableCell>
                         <TableCell>{pool ?? "—"}</TableCell>
                         <TableCell>

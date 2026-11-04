@@ -182,13 +182,13 @@ export interface MissionProbabilityScore {
   };
 
   confidence: ConfidenceLabel;
-  /** Caller-reported sample count; not evidence of validated outcomes or calibration. */
+  /** Number of historical samples behind the estimate (0 in Phase 1). */
   sampleSize: number;
   sampleSizeWarnings: string[];
 
   /**
-   * True while verified historical outcomes and calibration are absent. A count
-   * alone cannot promote planning math into a backtested probability.
+   * True when there is NO historical sample (sampleSize === 0): every value is a
+   * forward mathematical planning projection, not a backtested probability.
    */
   planningProjectionOnly: boolean;
   /** Honest planning-projection note when projection-only; empty string otherwise. */

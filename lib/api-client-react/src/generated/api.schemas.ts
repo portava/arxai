@@ -3499,6 +3499,7 @@ export const ChartFeedStatusQuality = {
 } as const;
 
 export interface ChartFeedStatus {
+  notLiveReason?: string | null;
   symbol: string;
   displaySymbol: string;
   assetClass: ChartFeedStatusAssetClass;
@@ -6978,46 +6979,7 @@ export const AdminBrokerMirrorBridgeFreshness = {
   MISSING: "MISSING",
 } as const;
 
-export type NativeAccountReportStatus =
-  (typeof NativeAccountReportStatus)[keyof typeof NativeAccountReportStatus];
-
-export const NativeAccountReportStatus = {
-  reported: "reported",
-  unavailable: "unavailable",
-} as const;
-
-export type NativeAccountReportAmounts = {
-  balance: string;
-  equity: string;
-  profit: string;
-  credit: string;
-  margin: string;
-  freeMargin: string;
-} | null;
-
-/**
- * Read-only MT5 native reported decimal strings for one bound account. Clock accuracy and producer continuity remain unverified; never execution authority.
- */
-export interface NativeAccountReport {
-  status: NativeAccountReportStatus;
-  reason: string;
-  currentVerified: boolean;
-  observedAt: string | null;
-  /** @minimum 0 */
-  observationAgeMs?: number | null;
-  receivedAt: string | null;
-  currency: string | null;
-  /**
-   * @minimum 0
-   * @maximum 16
-   */
-  currencyDigits: number | null;
-  amounts: NativeAccountReportAmounts;
-}
-
 export interface AdminBrokerMirrorBridge {
-  /** Exact native whole-account report; legacy scalar fields are not current account evidence. */
-  nativeAccountReport?: NativeAccountReport | null;
   bridgeConnectionId: number;
   /** @nullable */
   userId?: number | null;
@@ -9777,18 +9739,6 @@ export interface Mt5PositionsSync {
   timestamp: string;
 }
 
-/**
- * Which account this state describes. Only operators receive the install-wide platform row; everyone else sees their own connection, their shared-master bridge status, or none.
- */
-export type Mt5StateScope = (typeof Mt5StateScope)[keyof typeof Mt5StateScope];
-
-export const Mt5StateScope = {
-  platform: "platform",
-  own_connection: "own_connection",
-  shared_master_bridge: "shared_master_bridge",
-  none: "none",
-} as const;
-
 export interface Mt5State {
   connected: boolean;
   /** @nullable */
@@ -9810,14 +9760,7 @@ export interface Mt5State {
   /** @nullable */
   currency?: string | null;
   liveAllowed?: boolean;
-  liveAllowedNote?: string;
   positions?: Mt5Position[];
-  positionsMeasured?: boolean;
-  positionsNote?: string;
-  /** Which account this state describes. Only operators receive the install-wide platform row; everyone else sees their own connection, their shared-master bridge status, or none. */
-  scope?: Mt5StateScope;
-  scopeNote?: string;
-  heartbeatFreshness?: string;
   /** @nullable */
   lastHeartbeatAt?: string | null;
   /** @nullable */
@@ -9831,8 +9774,6 @@ export const Mt5StatusMode = {
   DEMO: "DEMO",
   LIVE_LOCKED: "LIVE_LOCKED",
   LIVE: "LIVE",
-  NOT_CONNECTED: "NOT_CONNECTED",
-  STALE: "STALE",
 } as const;
 
 export type Mt5StatusExecutionMode =
@@ -9857,12 +9798,8 @@ export const Mt5StatusAccountType = {
   DEMO: "DEMO",
   REAL: "REAL",
   UNKNOWN: "UNKNOWN",
-  NONE: "NONE",
 } as const;
 
-/**
- * @nullable
- */
 export type Mt5StatusAccountSnapshot = {
   /** @nullable */
   account: string | null;
@@ -9882,7 +9819,7 @@ export type Mt5StatusAccountSnapshot = {
   marginLevel?: number | null;
   /** @nullable */
   currency: string | null;
-} | null;
+};
 
 export interface Mt5Status {
   connected: boolean;
@@ -9908,9 +9845,6 @@ export interface Mt5Status {
   accountType: Mt5StatusAccountType;
   maxDemoLot: number;
   openPositions: Mt5Position[];
-  /** Native reported observations for the authenticated user's selected personal MT5 connection only. Never shared-master funds or proof of current broker state. */
-  nativeAccountReport?: NativeAccountReport | null;
-  /** @nullable */
   accountSnapshot: Mt5StatusAccountSnapshot;
 }
 
@@ -12967,16 +12901,6 @@ export interface MeSharedAccountSummaryRow {
   realizedPnl7d: number;
 }
 
-/**
- * Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when.
- */
-export type MasterMt5SnapshotAccountObservationScope =
-  (typeof MasterMt5SnapshotAccountObservationScope)[keyof typeof MasterMt5SnapshotAccountObservationScope];
-
-export const MasterMt5SnapshotAccountObservationScope = {
-  LATEST_ACCOUNT_UPDATE: "LATEST_ACCOUNT_UPDATE",
-} as const;
-
 export type MasterMt5SnapshotSnapshotStatus =
   (typeof MasterMt5SnapshotSnapshotStatus)[keyof typeof MasterMt5SnapshotSnapshotStatus];
 
@@ -12987,7 +12911,7 @@ export const MasterMt5SnapshotSnapshotStatus = {
 } as const;
 
 /**
- * Freshness of the last account update only; does not establish freshness or coherence of every amount.
+ * Derived health for the card sync badge.
  */
 export type MasterMt5SnapshotSyncStatus =
   (typeof MasterMt5SnapshotSyncStatus)[keyof typeof MasterMt5SnapshotSyncStatus];
@@ -12999,21 +12923,16 @@ export const MasterMt5SnapshotSyncStatus = {
 } as const;
 
 /**
- * Owner/admin-only pinned MT5 account view. nativeAccountReport preserves direct reported decimal text with unverified clock and continuity. Legacy scalar fields are compatibility data and must not substitute for a missing native report. ARX allocation fields remain separate. Never includes tokens, IPs, or the unmasked account number. Null for normal users.
+ * Real MT5 master-account snapshot, owner/admin only. Sourced from the EA heartbeat (arx_master_bridge_pool + mt5_connection). Never includes tokens, IPs, or the unmasked account number. Null for normal users.
 
  */
 export interface MasterMt5Snapshot {
-  nativeAccountReport?: NativeAccountReport | null;
-  mt5Balance: number | null;
-  mt5Equity: number | null;
-  mt5UsedMargin: number | null;
-  mt5FreeMargin: number | null;
-  mt5OpenPnl: number | null;
-  openPositions: number | null;
-  /** Timestamp proves some account data arrived; it does not establish that each stored amount was ever observed or when. */
-  accountObservationScope: MasterMt5SnapshotAccountObservationScope;
-  /** False while individual observations and a coherent pair are unverified. Stored amounts may include never-observed database defaults after a partial update; a recent heartbeat or account update cannot prove otherwise. */
-  amountsCoherent: boolean;
+  mt5Balance: number;
+  mt5Equity: number;
+  mt5UsedMargin: number;
+  mt5FreeMargin: number;
+  mt5OpenPnl: number;
+  openPositions: number;
   accountCurrency?: string | null;
   brokerName?: string | null;
   serverName?: string | null;
@@ -13028,7 +12947,7 @@ export interface MasterMt5Snapshot {
   lastMt5SnapshotAt?: string | null;
   isOverAllocated: boolean;
   unattributedCount: number;
-  /** Freshness of the last account update only; does not establish freshness or coherence of every amount. */
+  /** Derived health for the card sync badge. */
   syncStatus: MasterMt5SnapshotSyncStatus;
 }
 
@@ -16128,10 +16047,6 @@ export type GetChartCandlesParams = {
    * @maximum 5000
    */
   limit?: number;
-  /**
-   * Display includes forming tips; analysis matches closed-bar assessment inputs.
-   */
-  view?: GetChartCandlesView;
 };
 
 export type GetChartCandlesTimeframe =
@@ -16159,14 +16074,6 @@ export const GetChartCandlesTimeframe = {
   D1: "D1",
   W1: "W1",
   MN1: "MN1",
-} as const;
-
-export type GetChartCandlesView =
-  (typeof GetChartCandlesView)[keyof typeof GetChartCandlesView];
-
-export const GetChartCandlesView = {
-  display: "display",
-  analysis: "analysis",
 } as const;
 
 export type GetChartFeedStatusParams = {

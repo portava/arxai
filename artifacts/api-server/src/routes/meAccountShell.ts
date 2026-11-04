@@ -30,7 +30,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
-import { buildInvestorLiveBalanceSnapshot, toInvestorLiveBalanceWire } from "../lib/live/investorLiveBalance.js";
+import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
 import { loadStoredLimitRows } from "../lib/riskGovernor/limitSettings.js";
 import { effectiveLimitViews, type EffectiveLimitView } from "../lib/riskGovernor/limitLayers.js";
 
@@ -266,7 +266,7 @@ export async function computeAccountShell(
       : shellBalance;
     const allocatedEquity = hasAlloc
       ? allocatedBalance
-      : shellEquity;
+      : (shellEquity || shellBalance);
     const availableCapacity = hasAlloc
       ? Math.max(0, round2(totalAlloc - allocatedMargin))
       : null;
@@ -456,8 +456,7 @@ export async function computeAccountShell(
           ? round2(totalAlloc)
           : (vAccounts.length > 0 ? allocatedBalance : null),
         currentBalance: allocatedBalance,
-        // Zero equity is a valid ledger value, not a missing observation.
-        equity: allocatedEquity,
+        equity: allocatedEquity || allocatedBalance,
         marginUsed: allocatedMargin,
         totalAllocation: hasAlloc ? round2(totalAlloc) : null,
         manualAllocation: hasAlloc ? round2(manualAlloc) : null,
@@ -504,7 +503,18 @@ export async function computeAccountShell(
         sharedMasterAccountAssigned: sharedMasterAssigned,
       },
       live: inv
-        ? toInvestorLiveBalanceWire(inv)
+        ? {
+            source: inv.source,
+            allocatedBalance: inv.allocatedBalance,
+            realizedPnL: inv.realizedPnL,
+            floatingPnL: inv.floatingPnL,
+            liveEquity: inv.liveEquity,
+            marginUsed: inv.marginUsed,
+            freeMargin: inv.freeMargin,
+            availableBalance: inv.availableBalance,
+            openTradeCount: inv.openTradeCount,
+            freshness: inv.freshness,
+          }
         : {
             // Cycle-break path (skipInvestorSnapshot): the caller
             // (getUserModeScope) discards `live`; surface honest unavailable

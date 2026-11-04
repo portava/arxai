@@ -402,7 +402,6 @@ void SendHeartbeat()
       "\"lastCommandAt\":\"%s\",\"lastSuccessAction\":\"%s\",\"lastError\":%s,"
       "\"openPositions\":%d,\"pendingOrders\":%d,"
       "\"timestamp\":\"%s\","
-      "\"eaTimeGmt\":%I64d,\"brokerTime\":\"%s\","
       "\"eaInputs\":%s,"
       "\"capabilities\":%s,\"snapshot\":%s}",
       (string)AccountInfoInteger(ACCOUNT_LOGIN),
@@ -415,7 +414,6 @@ void SendHeartbeat()
       lastSuccessAction, JsonEscape(lastErrorSeen),
       PositionsTotal(), OrdersTotal(),
       TimeToString(TimeGMT(), TIME_DATE|TIME_SECONDS),
-      (long)TimeGMT() * 1000, TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
       BuildEaInputsJson(),
       BuildCapabilitiesJson(), BuildAccountSnapshotJson());
    PostJson("/api/mt5/heartbeat", body);
@@ -472,17 +470,9 @@ void HandleCommand(const string slice)
    }
 
    // ── Expiry: reject stale commands (retry/reconnect safety) ──
-   // createdAtEpoch is the ARX server's UTC epoch (seconds). Compare it with the
-   // EA's UTC clock (TimeGMT), never with TimeCurrent(): the trade server's
-   // clock is broker-local (e.g. UTC+2/+3), which would make every fresh command
-   // read as hours old and reject it as EXPIRED on a non-UTC broker. TimeGMT()
-   // can return 0 before the terminal has synced; fall back to TimeCurrent()
-   // only then (same rule as V2NowEpochMs).
    long createdAtEpoch = JsonLong(slice, "createdAtEpoch");
    if(createdAtEpoch > 0) {
-      long nowUtcSec = (long)TimeGMT();
-      if(nowUtcSec <= 0) nowUtcSec = (long)TimeCurrent();
-      long ageSec = nowUtcSec - createdAtEpoch;
+      long ageSec = (long)TimeCurrent() - createdAtEpoch;
       if(ageSec > CommandExpirySeconds) {
          RememberCmd(cmdId);
          PostResultStruct(cmdId, "EXPIRED", "COMMAND_EXPIRED", 0,

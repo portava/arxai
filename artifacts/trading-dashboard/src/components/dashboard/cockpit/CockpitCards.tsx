@@ -1,9 +1,7 @@
-import { sharedAccountSummaryReadOptions, mt5StatusReadOptions } from "@/hooks/readSharedAccountSummary";
-import { NativeAccountReport } from "@/components/sharedAccount/NativeAccountReport";
 // ARX 5.0 Cockpit cards.
 //
 // UI/UX refactor ONLY. Every card below is bound to the SAME existing
-// read-only account/report hooks — no
+// read-only hooks the legacy dashboard already used — no new fetching, no
 // fabricated numbers, no new trade/AI engine. Wiring sources:
 //
 //   Account snapshot ...... useGetMeSharedAccountSummary + useTradingMode
@@ -21,8 +19,6 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import {
   useGetMeSharedAccountSummary,
-  useGetMt5Status,
-  getGetMt5StatusQueryKey,
   getGetMeSharedAccountSummaryQueryKey,
   useGetMeSharedAccountPositions,
   getGetMeSharedAccountPositionsQueryKey,
@@ -35,6 +31,7 @@ import {
   useGetEconomicCalendar,
 } from "@workspace/api-client-react";
 import { useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
+import type { SnapshotReconciliation } from "@/hooks/useLiveAccountSnapshot";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
 import {
   Wallet,
@@ -63,6 +60,8 @@ import { ARXLogoMark } from "@/components/brand/ARXLogo";
 
 const finite = (n: unknown): number | null => typeof n === "number" && Number.isFinite(n) ? n : null;
 const knownCount = (n: unknown): number | null => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : null;
+const money = (n: number | null | undefined) =>
+  finite(n) == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pnlClass = (n: number | null | undefined) =>
   n == null ? "text-foreground" : n > 0 ? "text-success" : n < 0 ? "text-danger" : "text-foreground";
@@ -91,38 +90,26 @@ export function AccountSnapshotCard() {
   // three surfaces always show the same open P/L and position count.
   const liveCtx = useLiveAccountSnapshotCtx();
   const summaryQ = useGetMeSharedAccountSummary({
-    query: { ...sharedAccountSummaryReadOptions, queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
+    query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
   });
 
   const summary = summaryQ.data;
-  const isOwnerAdmin = summary?.masterAccess === true && mode.isAdmin === true
-    && !mode.isAdminPreviewingUserMode && !mode.isLoading && !mode.isError;
-  // A retained privileged response is not ordinary-user allocation evidence.
-  // Withdraw its whole presentation as soon as current capability changes.
-  const displaySummary = summary?.masterAccess === true && !isOwnerAdmin ? undefined : summary;
-  const accounts = Array.isArray(displaySummary?.accounts) ? displaySummary.accounts : [];
-  const master = isOwnerAdmin ? displaySummary?.masterMt5 ?? null : null;
-  // Reuse the personal status authority and canonical query. The existing page
-  // stream invalidates this key; do not open a second account stream here.
-  const personalScope = summary?.masterAccess === false && !mode.isAdmin && !mode.isAdminPreviewingUserMode
-    && !mode.isLoading && !mode.isError
-    && (mode.isLiveShared || mode.envelope?.accountShellStatus.accountMode === "PERSONAL_MT5");
-  const personalQ = useGetMt5Status({ query: { ...mt5StatusReadOptions, queryKey: getGetMt5StatusQueryKey(),
-    enabled: personalScope, refetchInterval: 5000 } });
-  const personalIdentity = personalScope && !personalQ.isError ? personalQ.data?.accountSnapshot : null;
-  const personalBroker = typeof personalIdentity?.broker === "string" && personalIdentity.broker.trim() ? personalIdentity.broker : null;
-  const personalLogin = typeof personalIdentity?.account === "string" && personalIdentity.account.trim() ? personalIdentity.account : null;
-  const recordedAmount = (value: unknown) => finite(value) == null ? "—" : `${value} (currency unverified)`;
+  const accounts = Array.isArray(summary?.accounts) ? summary.accounts : [];
+  const master = summary?.masterMt5 ?? null;
+  const isOwnerAdmin = Boolean(summary?.masterAccess);
   // Canonical per-user allocation — the SAME source the live gate/preflight use.
   // Display surfaces must read availableAllocation from here, never the static
   // virtual_balance, which drifts from the headroom the gate actually enforces.
-  const allocationView = displaySummary?.allocationView ?? null;
+  const allocationView = summary?.allocationView ?? null;
   const canonicalAvailable = allocationView?.availableAllocation ?? null;
   const hasAllocation = allocationView?.hasAllocation ?? false;
 
-  const recordedOpenCount = useMemo(() => {
-    if (!accounts.length || accounts.some(account => knownCount(account.openAttributions) == null)) return null;
-    return knownCount(accounts.reduce((total, account) => total + Number(account.openAttributions), 0));
+  const alloc = useMemo(() => {
+    const sum = (field: "virtualBalance" | "virtualEquity" | "virtualPnl" | "openAttributions") => {
+      if (!accounts.length || accounts.some(a => finite(a[field]) == null)) return null;
+      return finite(accounts.reduce((total, a) => total + Number(a[field]), 0));
+    };
+    return { balance: sum("virtualBalance"), equity: sum("virtualEquity"), pnl: sum("virtualPnl"), open: knownCount(sum("openAttributions")) };
   }, [accounts]);
 
   // When in live-shared mode (non-admin): prefer the SSE stream's open P/L and
@@ -133,31 +120,71 @@ export function AccountSnapshotCard() {
     ? liveCtx.snapshot
     : null;
 
-  // Owner/admin retain the master allocation; everyone
+  // Owner/admin with a live master snapshot read the real numbers; everyone
   // else reads the canonical per-user AVAILABLE allocation (allocationView) —
   // the SAME headroom the live gate enforces — never the static virtual_balance,
   // which double-counts reserved risk + open floating loss and so drifts above
   // what the gate will actually allow (the bug this fixes). Never fabricated.
-  const allocation = isOwnerAdmin
-    ? finite(master?.arxAllocated)
+  const allocation = isOwnerAdmin && master
+    ? finite(master.arxAllocated)
     : finite(canonicalAvailable);
-  // Legacy per-connection scalars can differ from the selected native report.
-  // They never substitute for personal broker balance/equity or allocations.
-  const partialPositionPnl = liveSnap != null && liveSnap.reconciliation?.positionPnlComplete !== true;
-  const openPnl = liveSnap ? (partialPositionPnl ? null : finite(liveSnap.openPL)) : null;
-  const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin ? master?.openPositions : recordedOpenCount);
-  const lastKnown = !isOwnerAdmin && (liveSnap ? !["live", "fresh"].includes(liveCtx.freshness) : Boolean(summary && summaryQ.isError));
+  // Prefer the user's OWN EA-synced balance/equity from the live snapshot when
+  // present. liveSnap is scoped to the caller's own connection (null for pure
+  // shared users → safe fallback to ARX allocation; never the master's figures),
+  // and the backend already nulls it unless the EA actually delivered figures, so
+  // this shows real broker balance/equity once synced without any cross-user leak.
+  // The first tile relabels to "Balance" when a real broker balance is shown, or
+  // "Available" for the canonical per-user headroom, so the label never claims an
+  // allocation/headroom figure is a broker balance, or vice-versa.
+  const liveBalance = finite(liveSnap?.balance);
+  const balanceLabel = liveBalance != null
+    ? "Balance"
+    : isOwnerAdmin && master ? "Allocation" : "Available";
+  const balanceValue = liveBalance ?? allocation;
+  const equity = liveSnap ? finite(liveSnap.equity) : finite(isOwnerAdmin && master ? master.mt5Equity : alloc.equity);
+  const openPnl = liveSnap ? finite(liveSnap.openPL) : finite(isOwnerAdmin && master ? master.mt5OpenPnl : alloc.pnl);
+  const openCount = liveSnap ? (liveSnap.positionCountKnown === false ? null : knownCount(liveSnap.openPositionsCount)) : knownCount(isOwnerAdmin && master ? master.openPositions : alloc.open);
+  const lastKnown = liveSnap ? !["live", "fresh"].includes(liveCtx.freshness) : Boolean(summary && summaryQ.isError);
 
-  // Master scalar fields can come from different account updates. The stored
-  // marker cannot prove a coherent balance/equity pair, so do not manufacture
-  // open P/L or a reconciliation-success claim from their difference.
-  const reconciliation = liveSnap?.reconciliation ?? null;
+  // Reconciliation — unified contract for ALL paths.
+  //
+  // Non-admin: reconciliation comes from the live snapshot adapter which has
+  //   run broker-absent exclusion and equity−balance comparison.
+  //
+  // Owner/admin: compute reconciliation from the actual master EA figures.
+  // master.mt5OpenPnl is what the EA reports as open P/L; independently derive
+  // equity−balance from the raw equity/balance fields and compare them. In
+  // normal operation the difference is ~0 (the EA computes both from the same
+  // account state), but if they diverge by more than 1 USD something is wrong
+  // even on the master path and exceedsThreshold will surface it.
+  const masterReconciliation: SnapshotReconciliation | null = (() => {
+    if (!isOwnerAdmin || master == null) return null;
+    const snapshotPL = master.mt5OpenPnl != null ? Number(master.mt5OpenPnl) : null;
+    const eqMinusBal =
+      master.mt5Equity != null && master.mt5Balance != null
+        ? Number(master.mt5Equity) - Number(master.mt5Balance)
+        : null;
+    const disc =
+      snapshotPL != null && eqMinusBal != null
+        ? Math.abs(snapshotPL - eqMinusBal)
+        : null;
+    return {
+      snapshotSummedPL: snapshotPL,
+      equityMinusBalancePL: eqMinusBal,
+      discrepancy: disc,
+      exceedsThreshold: disc != null && disc > 1.0,
+      excludedCount: 0,
+      brokerAbsentExcludedCount: 0,
+      stalePLCount: 0,
+    };
+  })();
+  const reconciliation = liveSnap?.reconciliation ?? masterReconciliation;
   const plUnderReview = Boolean(reconciliation?.exceedsThreshold);
 
   // Flag estimated P/L — when the live snapshot is present but positions are
   // stale/estimated (not fresh broker-confirmed). Only relevant on the live-
-  // snapshot path; the master path cannot prove a coherent P/L pair.
-  const plIsEstimate = liveSnap != null && (liveCtx.isEstimate || liveSnap.positions.some(position => position.plIsEstimate || position.plSource !== "broker"));
+  // snapshot path; the master path (admin) is always the best available figure.
+  const plIsEstimate = liveSnap != null && liveCtx.isEstimate;
 
   // Admin diagnostic disclosure — full numeric reconciliation breakdown.
   // Gated on shouldShowAdminDiagnostics (ADMIN/OWNER session, not previewing-
@@ -167,9 +194,22 @@ export function AccountSnapshotCard() {
     mode.isAdminPreviewingUserMode !== true &&
     reconciliation != null;
 
+  // Task #335 — flag equity as stale when the EA's last balance/equity sync is
+  // more than 60s old. Sourced from the same SSE snapshot feeding open P/L, so
+  // the note never disagrees with the figures shown. Null marker (never synced)
+  // is NOT treated as stale here — the FreshnessBadge already shows that state.
+  const accountSyncedAtMs = liveSnap?.accountSyncedAtMs ?? null;
+  const equityAgeMs = accountSyncedAtMs != null ? Date.now() - accountSyncedAtMs : null;
+  const equityStale = equityAgeMs != null && equityAgeMs > 60_000;
+  const equityAgeLabel = equityAgeMs == null
+    ? null
+    : equityAgeMs < 60_000
+      ? `${Math.floor(equityAgeMs / 1000)}s`
+      : `${Math.floor(equityAgeMs / 60_000)}m`;
+
   // Broker line — prefer the master snapshot, else the first allocation row.
-  const broker = isOwnerAdmin ? master?.brokerName ?? "—" : accounts[0]?.masterBrokerName ?? "—";
-  const masked = isOwnerAdmin ? master?.accountNumberMasked ?? null : accounts[0]?.masterAccountNumberMasked ?? null;
+  const broker = master?.brokerName ?? accounts[0]?.masterBrokerName ?? "—";
+  const masked = master?.accountNumberMasked ?? accounts[0]?.masterAccountNumberMasked ?? null;
   const liveLabel = mode.isLiveShared ? "LIVE" : mode.isDemo ? "DEMO" : "SIM";
   const reportedStatus = !summaryQ.isError ? (accounts[0]?.status ?? master?.syncStatus ?? "").toString().toLowerCase() : "";
   const isActive = ["active", "live"].includes(reportedStatus);
@@ -196,54 +236,49 @@ export function AccountSnapshotCard() {
         </div>
       </div>
 
-      {isOwnerAdmin ? <>
-        <NativeAccountReport report={master?.nativeAccountReport ?? null} failed={Boolean(summaryQ.isError)} />
-        <p className="mt-3 text-xs text-txt-muted">ARX allocation: {recordedAmount(allocation)} · Recorded trades: {openCount == null ? "—" : String(openCount)}</p>
-      </> : <>
-      {personalScope && <section aria-label="Your selected MT5 account" className="mb-4">
-        <h4 className="mb-2 text-sm font-medium">Your selected MT5 account</h4>
-        {(personalBroker || personalLogin) && <p className="mb-2 text-xs text-txt-secondary">
-          {personalBroker ?? "Broker name unavailable"}{personalLogin ? ` · ••••${personalLogin.slice(-4)}` : ""}
-        </p>}
-        <NativeAccountReport report={personalQ.data?.nativeAccountReport ?? null} failed={Boolean(personalQ.isError)} />
-      </section>}
-      <h4 className="mb-2 text-sm font-medium">Recorded ARX allocation</h4>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Available" value={recordedAmount(allocation)} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label={balanceLabel} value={money(balanceValue)} />
+        <StatTile label="Equity" value={money(equity)} />
         {/* Open P/L:
             - reconciliation flag fires → "Under review" (warning color)
             - live snapshot figures are estimated/stale → tilde prefix + muted
             - fresh broker value → normal green/red P/L color
             Numeric detail is admin-only (showAdminDiscrepancy block below). */}
         <StatTile
-          label="Position P/L"
+          label="Open P/L"
           value={
             plUnderReview ? "Under review"
-            : liveSnap && openPnl != null ? `${plIsEstimate ? "~" : ""}${openPnl} (currency unverified)`
-            : "—"
+            : plIsEstimate && openPnl != null ? `~${formatPnl(openPnl)}`
+            : openPnl == null ? "—" : formatPnl(openPnl)
           }
           valueClass={
             plUnderReview ? "text-warning"
-            : plIsEstimate || liveSnap != null ? "text-txt-muted"
+            : plIsEstimate ? "text-txt-muted"
             : pnlClass(openPnl)
           }
           data-testid="cockpit-open-pnl"
         />
-        <StatTile label={isOwnerAdmin ? "Recorded trades" : "Open Trades"} value={openCount == null ? "—" : String(openCount)} />
+        <StatTile label="Open Trades" value={openCount == null ? "—" : String(openCount)} />
       </div>
 
-      </>}
-
-      {!isOwnerAdmin && <p className="mt-2 text-xs text-txt-muted">Allocation records and supplied-position P/L are separate from your whole-account MT5 report. Their monetary scope and currency are unverified.</p>}
-      {lastKnown && <p className="mt-2 text-xs text-warning">Last-known allocation and position figures — current values have not been confirmed.</p>}
-      {!isOwnerAdmin && allocation == null && openPnl == null && <p className="mt-2 text-xs text-txt-muted">Allocation figures unavailable.</p>}
+      {lastKnown && <p className="mt-2 text-xs text-warning">Last-known account figures — current values have not been confirmed.</p>}
+      {balanceValue == null && equity == null && openPnl == null && <p className="mt-2 text-xs text-txt-muted">Account figures unavailable.</p>}
+      {equityStale && (
+        <p
+          className="mt-2 flex items-center gap-1 text-[11px] font-medium text-warning"
+          data-testid="account-equity-stale-note"
+        >
+          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+          Equity may be out of date — last broker sync {equityAgeLabel} ago.
+        </p>
+      )}
 
       {/* Honest allocation-state note for normal shared users (not on the
           owner/admin master path, and only once the per-user view has loaded).
           Distinguishes "no allocation assigned yet" from "headroom fully used"
           so the displayed Available figure never silently reads $0 without
           context — and matches exactly what the live gate would block on. */}
-      {!isOwnerAdmin && allocationView != null && (
+      {!isOwnerAdmin && liveBalance == null && allocationView != null && (
         !hasAllocation ? (
           <p
             className="mt-2 flex items-center gap-1 text-[11px] font-medium text-warning"
@@ -258,7 +293,7 @@ export function AccountSnapshotCard() {
             data-testid="account-allocation-exhausted-note"
           >
             <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
-            Available allocation is 0 — assigned funds are fully used by reserved risk and open floating loss. Close positions or contact your operator to add allocation.
+            Available allocation is $0 — assigned funds are fully used by reserved risk and open floating loss. Close positions or contact your operator to add allocation.
           </p>
         ) : null
       )}
@@ -276,45 +311,42 @@ export function AccountSnapshotCard() {
         </p>
       )}
 
-      {liveSnap && <p className="mt-2 text-xs text-txt-muted" data-testid="account-position-pnl-scope">
-        {partialPositionPnl ? "Position P/L is incomplete; the known subtotal is not the total. " : "Position P/L covers the supplied position rows only. "}
-        A whole-account broker profit comparison is not verified.
-        {plIsEstimate && " This includes estimates; quote-based account-currency conversion is unverified."}
-      </p>}
-      {/* A separate personal report does not establish that these supplied
-          positions share its account, currency and observation. */}
+      {/* Admin-only reconciliation diagnostics — full numeric breakdown.
+          For regular users: user-safe plain text above is the entire disclosure.
+          For admins: shows actual numbers including master-consistent state. */}
       {showAdminDiscrepancy && reconciliation && (
         <div
           className="mt-1.5 rounded-lg border border-warning/20 bg-warning/[0.04] p-2 text-[10px] text-txt-muted"
           data-testid="account-pl-discrepancy-admin"
         >
           <span className="font-semibold text-warning">P/L reconciliation (admin):</span>{" "}
-          Not verified — supplied positions are not matched to a native account-profit report. Balance/equity arithmetic is not broker profit.
-          {" · "}Excluded rows: {reconciliation.excludedCount ?? "—"}
-          {" · "}Broker-absent rows: {reconciliation.brokerAbsentExcludedCount ?? "—"}
-          {" · "}Stale or estimated rows: {reconciliation.stalePLCount ?? "—"}
+          {reconciliation.exceedsThreshold
+            ? <>Snapshot sum: {reconciliation.snapshotSummedPL != null ? `$${reconciliation.snapshotSummedPL.toFixed(2)}` : "—"}
+              {" · "}Equity−Balance: {reconciliation.equityMinusBalancePL != null ? `$${reconciliation.equityMinusBalancePL.toFixed(2)}` : "—"}
+              {" · "}Δ: {reconciliation.discrepancy != null ? `$${reconciliation.discrepancy.toFixed(2)}` : "—"}
+              {" · "}Excl: {reconciliation.excludedCount} · Absent: {reconciliation.brokerAbsentExcludedCount}
+              {" · "}Stale: {reconciliation.stalePLCount}</>
+            : <>Source: equity−balance (consistent) · Open P/L: {reconciliation.snapshotSummedPL != null ? `$${reconciliation.snapshotSummedPL.toFixed(2)}` : "—"} · Δ: $0.00</>}
         </div>
       )}
 
       <div className="relative z-10 mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
         <div className="flex min-w-0 items-center gap-2 text-xs text-txt-secondary">
-          <span className="text-txt-muted">{isOwnerAdmin ? "Pinned master:" : "Allocation connection:"}</span>
           <span className="truncate font-medium text-foreground/90">{broker}</span>
           {masked && <span className="text-txt-muted">· {masked}</span>}
           <span className="text-txt-muted">·</span>
           <span className={cn("font-semibold", mode.isLiveShared ? "text-success" : "text-primary")}>{liveLabel}</span>
         </div>
         <div className="flex items-center gap-2">
-          {mode.isLiveShared && !isOwnerAdmin && <span className="text-[10px] text-txt-muted">Recorded-position freshness</span>}
-          {mode.isLiveShared && !isOwnerAdmin && (
+          {mode.isLiveShared && (
             <FreshnessBadge
-              freshness={liveSnap ? liveCtx.freshness : "unavailable"}
-              lastUpdatedMs={liveSnap ? liveCtx.lastUpdatedMs : null}
-              isEstimate={liveSnap ? liveCtx.isEstimate : false}
+              freshness={liveCtx.freshness}
+              lastUpdatedMs={liveCtx.lastUpdatedMs}
+              isEstimate={liveCtx.isEstimate}
               compact
             />
           )}
-          {!isOwnerAdmin && <Pill tone={isActive ? "success" : "muted"}>{!statusKnown ? "Allocation status unknown" : isActive ? "Allocation active" : "Allocation inactive"}</Pill>}
+          <Pill tone={isActive ? "success" : "muted"}>{!statusKnown ? "Status unknown" : isActive ? "Active" : "Inactive"}</Pill>
         </div>
       </div>
     </CockpitCard>
@@ -327,7 +359,7 @@ export function AccountSnapshotCard() {
    permission status surfaced through useTradingMode. Trade Now → trade room,
    Ask Ruby → AI command center. No engine logic here.
    ──────────────────────────────────────────────────────────────────────── */
-export function TradingPermissionSummaryCard() {
+export function TradingPermissionSummaryCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const { name } = useAssistantName();
   const mode = useTradingMode();
   const { active } = useActiveSymbol();
@@ -352,6 +384,22 @@ export function TradingPermissionSummaryCard() {
 
   const sessionActive = !mode.isLoading && !frozen;
   const bridge = blocked ? "Disconnected" : "Connected";
+
+  if (compactWorkspace) {
+    return <div className={`arx-permission-compact is-${status.tone}`} data-testid="cockpit-trading-permission">
+      <div className="arx-permission-compact-status">
+        <span>{mode.isLoading ? "Checking permission…" : status.label}</span>
+        <span>{mode.isError ? "Account mode unavailable" : mode.cleanModeLabel}</span>
+      </div>
+      <p title={headline ?? ""}>{headline}</p>
+      <div className="arx-permission-compact-meta">
+        <span>Bridge {mode.isError ? "unknown" : bridge}</span>
+        <span>Session {mode.isLoading ? "checking" : sessionActive ? "active" : "inactive"}</span>
+        <span>Market {active}</span>
+      </div>
+      <Link href="/risk-command-center" className="arx-permission-details-link">Risk and permission details</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -529,7 +577,7 @@ export function RubyMarketViewCard() {
 /* ────────────────────────────────────────────────────────────────────────
    4 · CRITICAL MARKET EVENTS  (high-impact only, grouped)
    ──────────────────────────────────────────────────────────────────────── */
-export function CriticalEventsCard() {
+export function CriticalEventsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const eventsQ = useGetEconomicCalendar({ impact: "high", days: 3 });
   const eventsAvailable = !eventsQ.isError && Array.isArray(eventsQ.data)
     && eventsQ.data.every(e => e && typeof e.title === "string" && e.title.trim()
@@ -544,6 +592,14 @@ export function CriticalEventsCard() {
     if (d < 1440) return `${Math.round(d / 60)}h`;
     return `${Math.round(d / 1440)}d`;
   };
+
+  if (compactWorkspace) {
+    return <div className="arx-intel-compact is-events" data-testid="cockpit-critical-events">
+      <b>Events</b>
+      {eventsQ.isLoading ? <span>Checking calendar…</span> : !eventsAvailable ? <span className="is-warning">Calendar unavailable · risk not checked</span> : events.length === 0 ? <span>No high-impact events returned</span> : <span title={events[0]!.title}>{events[0]!.currency ? `${events[0]!.currency} · ` : ""}{events[0]!.title} · {minsUntil(events[0]!.eventTime)}</span>}
+      <Link href="/economic-calendar" data-testid="events-view-all">Calendar</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -589,7 +645,7 @@ export function CriticalEventsCard() {
 /* ────────────────────────────────────────────────────────────────────────
    5 · OPEN POSITIONS  (MT5-confirmed only)
    ──────────────────────────────────────────────────────────────────────── */
-export function OpenPositionsCard() {
+export function OpenPositionsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   // Consume the shared SSE snapshot for freshness badge AND count truth.
   // For non-master (regular live-shared) users the snapshot count is the
   // authoritative source — it has been through the broker-absent exclusion
@@ -647,6 +703,32 @@ export function OpenPositionsCard() {
     MANUAL: { text: "Manual", tone: "warning" },
     PENDING: { text: "Pending", tone: "info" },
   };
+
+  if (compactWorkspace) {
+    return <div className="arx-positions-compact" data-testid="cockpit-open-positions">
+      <div className="arx-positions-compact-status">
+        <b>{count == null ? "Open count unavailable" : `${count} open`}</b>
+        <span>{!positionDataAvailable ? "Position data unavailable" : incomplete ? "Position details incomplete" : lastKnownPositions ? "Last known · current exposure unconfirmed" : "Snapshot status current"}</span>
+        {liveCtx.snapshot && <FreshnessBadge freshness={liveCtx.freshness} lastUpdatedMs={liveCtx.lastUpdatedMs} isEstimate={liveCtx.isEstimate} compact/>}
+      </div>
+      {!positionDataAvailable ? <p role="status">Open exposure has not been checked.</p> : incomplete ? <p role="status" className="text-warning">Wait for a complete position snapshot.</p> : rows.length === 0 ? (
+        <p className="arx-positions-empty">{lastKnownPositions ? "Last reported snapshot contained no positions." : "No open positions in the latest snapshot."}</p>
+      ) : <>
+        <ul className="arx-positions-blotter">
+          {rows.slice(0, 3).map(row => <li key={row.id} data-testid={`position-${row.id}`}>
+            <span className={row.side === "BUY" ? "text-success" : "text-danger"}>{row.side}</span>
+            <b>{row.symbol}</b><span>{row.lotSize} lot</span>
+            {row.source && <span>{SOURCE_BADGE[row.source]?.text ?? row.source}</span>}
+            <strong className={pnlClass(row.pnl)}>{row.stale || lastKnownPositions || incomplete || finite(row.pnl) == null ? "—" : formatPnl(row.pnl)}</strong>
+          </li>)}
+        </ul>
+        {rows.length > 3 && <details className="arx-positions-more"><summary>Show {rows.length - 3} more positions</summary><ul className="arx-positions-blotter mt-1">
+          {rows.slice(3, 6).map(row => <li key={row.id} data-testid={`position-${row.id}`}><span className={row.side === "BUY" ? "text-success" : "text-danger"}>{row.side}</span><b>{row.symbol}</b><span>{row.lotSize} lot</span>{row.source && <span>{SOURCE_BADGE[row.source]?.text ?? row.source}</span>}<strong className={pnlClass(row.pnl)}>{row.stale || lastKnownPositions || incomplete || finite(row.pnl) == null ? "—" : formatPnl(row.pnl)}</strong></li>)}
+        </ul></details>}
+      </>}
+      <Link href="/positions" className="arx-positions-manage" data-testid="positions-manage">Manage positions</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -779,7 +861,7 @@ function MiniStat({ label, value, valueClass }: { label: string; value: string; 
 /* ────────────────────────────────────────────────────────────────────────
    7 · ALERTS SUMMARY  (grouped — no 20× repeats)
    ──────────────────────────────────────────────────────────────────────── */
-export function AlertsSummaryCard() {
+export function AlertsSummaryCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const alertsQ = useGetCriticalAlerts();
 
   const raw = Array.isArray(alertsQ.data)
@@ -808,6 +890,14 @@ export function AlertsSummaryCard() {
     }
     return [...map.values()].sort((a, b) => (b.last ?? -Infinity) - (a.last ?? -Infinity)).slice(0, 4);
   }, [safeAlerts]);
+
+  if (compactWorkspace) {
+    return <div className="arx-intel-compact is-alerts" data-testid="cockpit-alerts-summary">
+      <b>Alerts</b>
+      {alertsQ.isLoading ? <span>Checking alerts…</span> : !alertsAvailable ? <span className="is-warning">Unavailable · not checked</span> : grouped.length === 0 ? <span>No critical alerts returned</span> : <span title={grouped[0]!.title}>{safeAlerts.length} · {grouped[0]!.title}</span>}
+      <Link href="/alerts" data-testid="alerts-view-all">Review</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard

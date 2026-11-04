@@ -11,6 +11,7 @@
 
 import type { AIProvider } from "./providers/types.js";
 import { getAIProvider as getFixAgentProvider, type AIProviderKey } from "./providers/factory.js";
+import { runWithDeadline, openStreamWithDeadline } from "./requestDeadline.js";
 
 export const CHAT_PROVIDER = "openai" as const;
 
@@ -49,13 +50,13 @@ export function withTimeout<T>(p: Promise<T>, ms: number, purpose: string): Prom
 /** One non-streaming chat completion; returns the reply text ("" when the model returned none). */
 export async function completeChat(input: ChatCompletionInput): Promise<string> {
   const openai = await client();
-  const res = await withTimeout(openai.chat.completions.create({
+  const res = await runWithDeadline((signal) => openai.chat.completions.create({
     model: input.model,
     messages: input.messages,
     ...(input.tokenParam === "max_tokens" ? { max_tokens: input.maxTokens } : { max_completion_tokens: input.maxTokens }),
     ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
     ...(input.json ? { response_format: { type: "json_object" as const } } : {}),
-  }), input.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS, input.purpose);
+  }, { signal }), input.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS, input.purpose);
   return res.choices?.[0]?.message?.content ?? "";
 }
 
@@ -76,7 +77,7 @@ export async function streamToolChat(input: {
   timeoutMs?: number;
 }): Promise<AsyncIterable<ToolChatStreamChunk>> {
   const openai = await client();
-  const stream = await withTimeout(openai.chat.completions.create({
+  const stream = await openStreamWithDeadline((signal) => openai.chat.completions.create({
     model: input.model,
     max_completion_tokens: input.maxTokens,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,7 +87,7 @@ export async function streamToolChat(input: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tool_choice: input.toolChoice as any,
     stream: true,
-  }), input.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS, "assistant_chat");
+  }, { signal }), input.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS, "assistant_chat");
   return stream as unknown as AsyncIterable<ToolChatStreamChunk>;
 }
 

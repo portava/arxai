@@ -23,12 +23,7 @@ export function captureSmartChartBars(data: ChartCandlesResponse | undefined,
       || !["live","demo"].includes(c.sourceMode)
       || c.qualityFlags?.some(flag=>["OHLC_INVALID","TIMESTAMP_INVALID","MOCK_DATA","DUPLICATE_BUCKET"].includes(flag))) return unavailable("Candle identity or quality does not support automatic analysis.");
     if (!c.isComplete || !c.isFinal || c.isForming) {
-      if (index === data.candles.length-1 && c.isComplete === false && c.isFinal === false && c.isForming === true) {
-        const previous=current.at(-1),open=Date.parse(c.openTime)/1000;
-        if (!Number.isFinite(open) || previous && Math.abs(open-previous.closeTime)>=0.001)
-          return unavailable("The unfinished candle is not adjacent to the closed history; current pattern status is unverified.");
-        continue;
-      }
+      if (index === data.candles.length-1 && c.isComplete === false && c.isFinal === false && c.isForming === true) continue;
       return unavailable("A candle has conflicting closed-bar evidence.");
     }
     current.push({time:Date.parse(c.openTime)/1000,closeTime:Date.parse(c.closeTime)/1000,

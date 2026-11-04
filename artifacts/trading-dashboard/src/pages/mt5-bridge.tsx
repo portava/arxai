@@ -1,10 +1,9 @@
-import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
-import { mt5StatusReadOptions } from "@/hooks/readSharedAccountSummary";
-import { NativeAccountReport } from "@/components/sharedAccount/NativeAccountReport";
 import { useMemo } from "react";
 import {
   useGetMt5Status,
+  useGetMeSharedAccountSummary,
   getGetMt5StatusQueryKey,
+  getGetMeSharedAccountSummaryQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -28,8 +27,9 @@ function openRubyLiveChat() {
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
 
-function recordedAllocation(value: unknown): string {
-  return typeof value === "number" && Number.isFinite(value) ? String(value) : "—";
+function fmtMoney(v?: number | null, ccy?: string | null) {
+  if (v === null || v === undefined) return "—";
+  return `${ccy === "USD" || !ccy ? "$" : ""}${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${ccy && ccy !== "USD" ? ` ${ccy}` : ""}`;
 }
 function fmtAge(seconds?: number | null) {
   if (seconds === null || seconds === undefined) return "—";
@@ -113,34 +113,33 @@ function SectionCard({ title, icon: Icon, action, children, className }: { title
 }
 
 export default function MT5BridgePage() {
-  // This page has no dashboard provider. Reuse its existing account stream so
-  // personal hints reach the canonical status query; header readers add none.
-  useLiveAccountSnapshot();
   const qc = useQueryClient();
   const mode = useTradingMode();
   const { name } = useAssistantName();
 
-  const status = useGetMt5Status({ query: { queryKey: getGetMt5StatusQueryKey(), ...mt5StatusReadOptions, refetchInterval: 5000 } });
+  const status = useGetMt5Status({ query: { queryKey: getGetMt5StatusQueryKey(), refetchInterval: 5000 } });
+  const acctSummary = useGetMeSharedAccountSummary({ query: { queryKey: getGetMeSharedAccountSummaryQueryKey() } } as any);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: getGetMt5StatusQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetMeSharedAccountSummaryQueryKey() });
     if (typeof (mode as any).resync === "function") (mode as any).resync();
   };
 
-  const s = status.data;
-  const snapshot = status.isError ? null : s?.accountSnapshot;
+  const s = status.data as any;
+  const acct = (acctSummary?.data ?? null) as { balance?: number; equity?: number; pnl?: number } | null;
+  const snapshot = s?.accountSnapshot;
 
-  const connected = !status.isError && s?.connected === true;
+  const connected = !!s?.connected;
   const checking = status.isLoading || (mode as any).isLoading;
   const frozen = !!(mode as any).isFrozen;
 
   const bridgeState: { label: string; tone: Tone } = useMemo(() => {
     if (checking) return { label: "Checking", tone: "warning" };
-    if (status.isError) return { label: "Refresh failed", tone: "warning" };
     if (frozen) return { label: "Risk Lock Active", tone: "danger" };
     if (connected) return { label: "Connected", tone: "success" };
     return { label: "Unavailable", tone: "warning" };
-  }, [checking, frozen, connected, status.isError]);
+  }, [checking, frozen, connected]);
 
   const approvalTone: Tone = frozen ? "danger" : ((mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared) ? "success" : "warning";
   const approvalLabel = frozen ? "Frozen" : ((mode as any).approvalStatus === "APPROVED" || (mode as any).isLiveShared) ? "Approved" : ((mode as any).approvalStatus ? "Pending" : "Checking");
@@ -148,7 +147,9 @@ export default function MT5BridgePage() {
   const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
   const bridgeHealthy = connected && !frozen;
   const allocation = (mode as any).userAllocation ?? (mode as any).assignedStartingBalance ?? null;
-  const lastSync = status.isError ? "Refresh failed" : fmtAge(s?.secondsSinceHeartbeat ?? null);
+  const openPnl = acct?.pnl ?? null;
+  const openTrades = Array.isArray(s?.openPositions) ? s.openPositions.length : null;
+  const lastSync = fmtAge(s?.secondsSinceHeartbeat ?? null);
 
   const riskTone: Tone = frozen ? "danger" : "success";
   const riskLabel = frozen ? "High" : "Low";
@@ -176,6 +177,8 @@ export default function MT5BridgePage() {
   if (s?.secondsSinceHeartbeat != null) {
     activity.push({ time: lastSync, event: connected ? "Market data heartbeat" : "Last heartbeat received", tone: connected ? "success" : "warning", chip: connected ? "Connected" : "Stale" });
   }
+  if (snapshot?.account) activity.push({ time: lastSync, event: "Account snapshot synced", tone: "success", chip: "Success" });
+  if (openTrades != null) activity.push({ time: lastSync, event: "Position sync completed", tone: "success", chip: "Success" });
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-mt5-bridge">
@@ -200,7 +203,7 @@ export default function MT5BridgePage() {
         <span className="flex items-center gap-2 font-medium"><UserCheck className={cn("h-4 w-4", TONE_TEXT[approvalTone])} /> {approvalLabel}</span>
         <span className="flex items-center gap-2 font-medium"><Activity className={cn("h-4 w-4", TONE_TEXT[bridgeHealthy ? "success" : "warning"])} /> {bridgeHealthy ? "Bridge Healthy" : "Bridge Checking"}</span>
         {allocation != null && (
-          <span className="flex items-center gap-2 font-medium"><Landmark className="h-4 w-4 text-primary" /> Recorded allocation <span className="text-primary">{recordedAllocation(allocation)}</span></span>
+          <span className="flex items-center gap-2 font-medium"><Landmark className="h-4 w-4 text-primary" /> Allocation <span className="text-primary">{fmtMoney(allocation)}</span></span>
         )}
       </div>
 
@@ -230,12 +233,11 @@ export default function MT5BridgePage() {
           </div>
 
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <MetricTile label="Recorded allocation" value={recordedAllocation(allocation)} />
-            <MetricTile label="Account P/L" value="See report below" />
-            <MetricTile label="Positions" value="Not reported here" />
+            <MetricTile label="Allocation" value={fmtMoney(allocation)} />
+            <MetricTile label="Open P/L" value={openPnl == null ? "—" : fmtMoney(openPnl)} tone={openPnl == null ? "muted" : openPnl >= 0 ? "success" : "danger"} />
+            <MetricTile label="Open Trades" value={openTrades == null ? "—" : String(openTrades)} />
           </div>
 
-          <p className="mt-2 text-xs text-txt-muted">Allocation is an ARX ledger record; its currency and agreement with broker funds are unverified.</p>
           <div className="mt-3 flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2">
             <span className="flex items-center gap-2 text-sm text-txt-secondary">
               <RefreshCw className="h-4 w-4 text-txt-muted" /> Last Sync <span className="text-foreground">{lastSync}</span>
@@ -298,7 +300,7 @@ export default function MT5BridgePage() {
           <div className="divide-y divide-border/60">
             <Row label="Approval" value={approvalLabel} tone={approvalTone} />
             <Row label="Live Access" value={(mode as any).liveExecutionArmed ? "Enabled" : (mode as any).isLiveShared ? "Enabled" : "Not enabled"} tone={(mode as any).isLiveShared ? "success" : "muted"} />
-            <Row label="Recorded allocation" value={recordedAllocation(allocation)} />
+            <Row label="Allocation" value={fmtMoney(allocation)} />
             <Row label="Allowed Markets" value={Array.isArray((mode as any).allowedSymbols) && (mode as any).allowedSymbols.length ? `${(mode as any).allowedSymbols.length} approved` : "All approved symbols"} />
             <Row label="Max Lot Size" value={(mode as any).maxLotSize != null ? String((mode as any).maxLotSize) : "Not available"} />
             <Row label="Max Open Trades" value={(mode as any).maxOpenTrades != null ? String((mode as any).maxOpenTrades) : "Not available"} />
@@ -317,8 +319,8 @@ export default function MT5BridgePage() {
             <Row label="Market Data" value={connected ? "Connected" : "Unavailable"} tone={connected ? "success" : "warning"} />
             <Row label="Order Routing" value={bridgeHealthy ? "Available" : "Paused"} tone={bridgeHealthy ? "success" : "warning"} />
             <Row label="Result Reporting" value={connected ? "Active" : "Paused"} tone={connected ? "success" : "warning"} />
-            <Row label="Position Refresh" value="Not reported here" tone="muted" />
-            <Row label="Account Refresh" value={status.isError ? "Refresh failed" : "Report below; current state unverified"} tone="warning" />
+            <Row label="Position Refresh" value={connected ? "Active" : "Paused"} tone={connected ? "success" : "warning"} />
+            <Row label="Account Refresh" value={connected ? "Active" : "Paused"} tone={connected ? "success" : "warning"} />
             <Row label="Last Sync" value={lastSync} />
           </div>
           <button onClick={refresh} className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20">
@@ -343,14 +345,22 @@ export default function MT5BridgePage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="My MT5 account report" icon={Landmark}
+        <SectionCard title="Account Snapshot" icon={Landmark}
           action={<Link href="/analytics" className="text-xs text-primary hover:underline">View Account Analytics</Link>}>
-          <p className="mb-3 text-xs text-txt-muted">The personal MT5 connection selected for your signed-in account. Shared-master funds and ARX allocation records are separate.</p>
-          <div className="mb-3 divide-y divide-border/60">
-            <Row label="Broker" value={snapshot?.broker ?? "—"} />
-            <Row label="Account" value={maskAccount(snapshot?.account)} />
-          </div>
-          <NativeAccountReport report={s?.nativeAccountReport ?? null} failed={status.isError} />
+          {snapshot?.account || acct ? (
+            <div className="divide-y divide-border/60">
+              <Row label="Broker" value={snapshot?.broker ?? "—"} />
+              <Row label="Account" value={maskAccount(snapshot?.account)} />
+              <Row label="Balance" value={fmtMoney(acct?.balance ?? snapshot?.balance, snapshot?.currency)} />
+              <Row label="Equity" value={fmtMoney(acct?.equity ?? snapshot?.equity, snapshot?.currency)} />
+              <Row label="Free Margin" value={fmtMoney(snapshot?.freeMargin, snapshot?.currency)} />
+              <Row label="Margin Level" value={snapshot?.marginLevel != null ? `${Number(snapshot.marginLevel).toFixed(2)}%` : "—"} />
+              <Row label="Open Positions" value={openTrades == null ? "—" : String(openTrades)} />
+              <Row label="Allocation" value={fmtMoney(allocation)} />
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-txt-muted">Account snapshot will appear once bridge data is available.</p>
+          )}
         </SectionCard>
 
         <SectionCard title="Recent Bridge Activity" icon={Activity}

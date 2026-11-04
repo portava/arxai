@@ -5,7 +5,7 @@ import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartEngineAdapter, ChartEngineCandle } from "@/lib/chart-engine";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 import type { ChartHistoryPage } from "@/lib/chartCandlesQuery";
-import { smartChartFeedCaveat, type SmartChartAnalysisInput, type SmartChartAnalysisResult, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
+import { type SmartChartAnalysisResult, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
 import { createSmartChartReadCache } from "@/lib/chart-engine/smartChartReadCache";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { captureReplayAnalysisPrefix, type ChartReplayReadWindow } from "@/lib/chart-engine/chartReplayAnalysis";
@@ -16,9 +16,8 @@ import { describeChartStyle, type ChartPreferences } from "@/lib/chart-engine/ch
 import { effectiveDisplayZone, zoneShortLabel } from "@/lib/chart-engine/chartTimeZone";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
 import { Button } from "@/components/ui/button";
-import { resolveDisplayStatus } from "@/lib/chart-display-status";
 
-interface Props {findingDeliveryNotice?:string|null;onFindingExplanation?:(read:(()=>string)|null)=>void;onExplainFinding?:()=>boolean;presentationUnverified?:boolean;presentationHidden?:boolean;adapter:ChartEngineAdapter|null;epoch:number|string;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
+interface Props {adapter:ChartEngineAdapter|null;epoch:number|string;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
   older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted"|"timeZone">;replay?:ChartReplayReadWindow}
 const EMPTY:readonly Candle[]=[];
 const metricNumber=(metric:ObservedMetric<number>|undefined,suffix="")=>metric?.status==="available"?`${chartNumber(metric.value)}${suffix}`:"Unavailable";
@@ -27,13 +26,13 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
   if(!finding?.anchors.length)return null;
   const anchors=finding.anchors.slice(0,8).sort((a,b)=>a.time-b.time);
   const neckline=anchors.filter(anchor=>anchor.role.startsWith("neckline_"));
-  return {id:finding.id,connectAnchors:finding.connectAnchors,anchors:anchors.map(anchor=>({time:anchor.time,price:anchor.price,label:anchor.role.replaceAll("_"," ")})),
-    ...(finding.segments?{segments:finding.segments}:neckline.length===2?{guide:{from:neckline[0]!,to:neckline[1]!}}:finding.levels[0]?{level:finding.levels[0]}:{}),color:finding.status==="invalidated"?"#a1a1aa":finding.status==="developing"?"#fbbf24":"#38bdf8",dashed:finding.status!=="confirmed"};
+  return {id:finding.id,anchors:anchors.map(anchor=>({time:anchor.time,price:anchor.price,label:anchor.role.replaceAll("_"," ")})),
+    ...(neckline.length===2?{guide:{from:neckline[0]!,to:neckline[1]!}}:finding.levels[0]?{level:finding.levels[0]}:{}),color:finding.status==="invalidated"?"#a1a1aa":finding.status==="developing"?"#fbbf24":"#38bdf8",dashed:finding.status!=="confirmed"};
 }
 
 /** Explanations live inside the chart frame. A single selected shape owns the
  * automatic annotation layer; detailed readings stay collapsed by default. */
-export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay,presentationHidden=false,presentationUnverified=false,findingDeliveryNotice,onFindingExplanation,onExplainFinding}:Props) {
+export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
   // Display-only: the zone relabels times and is deliberately not in readKey,
   // so a zone change never re-runs the analysis.
   const utcClockQualified=!replay && older.length===0 && chartUtcClockQualified(data?.candles??[]);
@@ -42,22 +41,14 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
   const ownershipKey=JSON.stringify([symbol,timeframe,replay?.snapshot.id,replay?.snapshot.sourceIdentity??data?.marketEvidence?.sourceIdentity,replay?.snapshot.source??data?.feedStatus?.source]);
   const contextKey=JSON.stringify([ownershipKey,replay?.installedCount]);
   const bound=useMemo<ReturnType<typeof captureSmartChartBars> & {asOfMs?:number|null;replayCutoff?:number|null}>(()=>replay?captureReplayAnalysisPrefix(replay,{symbol,timeframe}):captureSmartChartBars(data,{symbol,timeframe},older,historyEvidence,Date.now()),[data,symbol,timeframe,older,historyEvidence,replay?.snapshot,replay?.installedCount]);
-  const displayStatus=resolveDisplayStatus(data?.feedStatus??null,bound.bars.length>0);
-  // Reuse the chart's display authority. Losing live permission or a request
-  // does not establish elapsed staleness. Replay is independently frozen.
-  const feedState:SmartChartAnalysisInput["dataState"]=replay?"historical":displayStatus==="STALE"?"stale"
-    :displayStatus==="UNAVAILABLE"?"unavailable":displayStatus==="FALLBACK_COMPOSITE"?"delayed"
-    :!liveConfirmed||readFailed||displayStatus!=="LIVE"?"unconfirmed":"current";
-  const feedReadFailed=!replay&&readFailed;
-  const feedCaveat=smartChartFeedCaveat({dataState:feedState,feedReadFailed});
   const byTime=useMemo(()=>new Map(bound.bars.map(bar=>[bar.time,bar])),[bound]);
   // Replay has an immutable observation cutoff. A layout refresh and its queued
   // viewport notification often describe the exact same applied prefix. Live
   // reads intentionally retain every refresh, including wall-clock changes.
   const previousReplayRead=useRef<{key:object;actual:ChartEngineCandle[]}|null>(null);
-  const readKey=useMemo(()=>({}),[adapter,epoch,bound,contextKey,feedState,feedReadFailed,view?.style,view?.scale,view?.inverted]);
+  const readKey=useMemo(()=>({}),[adapter,epoch,bound,contextKey,liveConfirmed,readFailed,view?.style,view?.scale,view?.inverted]);
   const readValidated=useMemo(()=>createSmartChartReadCache(),[readKey]);
-  const [reading,setReading]=useState<{key:string;revision:object;visible:ChartEngineCandle[];result:SmartChartAnalysisResult;description:ChartDescriptiveAnalysis;historical:boolean}|null>(null);
+  const [reading,setReading]=useState<{key:string;result:SmartChartAnalysisResult;description:ChartDescriptiveAnalysis;historical:boolean}|null>(null);
   const [selected,setSelected]=useState<string|null>(null);
   const [annotations,setAnnotations]=useState(true);
   const refresh=useCallback(()=>{
@@ -72,20 +63,19 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
     const analysisInput={...bound.context,bars:actual.length&&!mismatch&&bound.status==="ready"?bound.bars:[],
       visibleRange:range,asOfMs:replay?bound.asOfMs??NaN:Date.now(),
       replayCutoff:replay?bound.replayCutoff??undefined:undefined,
-      dataState:feedState==="current"&&historical?"historical" as const:feedState,feedReadFailed};
+      dataState:replay?"historical" as const:!liveConfirmed||readFailed?"stale" as const:historical?"historical" as const:"current" as const};
     const {result,description}=readValidated(analysisInput);
     if(bound.status!=="ready"||mismatch||!actual.length){result.status="unavailable";result.findings=[];result.allFindings=[];result.reason=bound.reason??(mismatch?"The displayed candles are updating; analysis will follow the applied chart.":"Waiting for the chart's visible candles.");}
-    setReading(previous=>previous?.key===contextKey&&previous.revision===readKey&&previous.result===result&&previous.description===description&&previous.historical===historical
-      ?previous:{key:contextKey,revision:readKey,visible:actual.map(bar=>({...bar})),result,description,historical});
-  },[adapter,bound,byTime,contextKey,feedState,feedReadFailed,replay,readKey,readValidated]);
+    setReading(previous=>previous?.key===contextKey&&previous.result===result&&previous.description===description&&previous.historical===historical
+      ?previous:{key:contextKey,result,description,historical});
+  },[adapter,bound,byTime,contextKey,liveConfirmed,readFailed,replay,readKey,readValidated]);
   useLayoutEffect(()=>{
-    refresh();
+    setSelected(null);refresh();
     return adapter?.subscribeViewport?.(refresh);
   },[adapter,epoch,refresh]);
-  useLayoutEffect(()=>{setSelected(null);},[ownershipKey]);
-  const current=reading?.key===contextKey&&reading.revision===readKey?reading:null;
+  const current=reading?.key===contextKey?reading:null;
   const result=current?.result;
-  const chosen=selected===null?result?.findings[0]??null:result?.allFindings.find(finding=>finding.id===selected)??null;
+  const chosen=result?.allFindings.find(finding=>finding.id===selected)??result?.findings[0]??null;
   const moreFindings=result?.allFindings.filter(finding=>!result.findings.some(summary=>summary.id===finding.id))??[];
   const description=result?.status==="ready"&&current?.description.status==="ready"?current.description:null;
   const stats=description?.basics;
@@ -97,38 +87,20 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
   // toggling null between two readings would rebuild hidden server overlays.
   useLayoutEffect(()=>()=>adapter?.setSmartAnnotation?.(null),[adapter,epoch,ownershipKey]);
   const chosenNarrative=chosen?smartChartNarrative(chosen):null;
-  const explanationToken=useMemo(()=>({}),[current,chosen,annotations,presentationHidden,presentationUnverified,readKey,zone,utcClockQualified]);
-  const latestExplanation=useRef<object|null>(null);latestExplanation.current=explanationToken;
-  const readFinding=useCallback(()=>{
-    if(latestExplanation.current!==explanationToken)return "The selected chart finding changed or is no longer available. Select its current finding again.";
-    if(presentationUnverified)return "Chart presentation is unverified. Reload the chart before asking about a displayed finding.";
-    if(!current||result?.status!=="ready"||!chosen)return "No current selected finding is available. Choose a finding in ‘What the chart is doing’; no other pattern was substituted.";
-    if(!adapter||!sameVisibleCandles(current.visible,adapter.getVisibleCandles?.()??[]))return "The displayed candles changed. Wait for the chart analysis to update, then select the finding again.";
-    const narrative=smartChartNarrative(chosen);
-    const anchors=chosen.anchors.map(anchor=>`${anchor.role.replaceAll("_"," ")} at ${chartTime(anchor.time)}, price ${chartNumber(anchor.price)}`).join("; ");
-    const levels=chosen.levels.map(level=>`${level.label}: ${chartNumber(level.price)}`).join("; ");
-    return `${symbol} ${timeframe} · ${bound.context.source?.replaceAll("_"," ")??"Unknown source"}. ${chosen.title}: ${statusText[chosen.status]}. Observed through ${chartTime(chosen.asOf)}.${chosen.confirmedAt!=null?` Confirmation observed at ${chartTime(chosen.confirmedAt)}.`:""}\n${narrative.summary}\nAnchors: ${anchors||"No geometric anchors supplied"}.${levels?` Levels: ${levels}.`:""}${chosen.invalidation?` Invalidation: ${chosen.invalidation}`:""}\n${chosen.caveat} ${feedCaveat}${!utcClockQualified?` ${SOURCE_CLOCK_NOTE}`:""} ${!annotations||presentationHidden?"Automatic annotation is hidden; this explains the selected reading, not a currently drawn shape.":"This is the chart reader’s selected automatic annotation; other drawings can come from another analysis."} Calculated closed-candle observation, not a forecast or a probability of profit. It does not establish agreement with the separate server assessment or authorize a trade.`;
-  },[explanationToken,presentationUnverified,current,result,chosen,adapter,symbol,timeframe,bound,zone,utcClockQualified,feedCaveat,annotations,presentationHidden]);
-  useLayoutEffect(()=>{latestExplanation.current=explanationToken;onFindingExplanation?.(readFinding);return()=>{if(latestExplanation.current===explanationToken)latestExplanation.current=null;onFindingExplanation?.(null);};},[onFindingExplanation,readFinding,explanationToken]);
-  const [deliveryNotice,setDeliveryNotice]=useState<string|null>(null);
-  const narrative=selected!==null&&!chosen?"The previously selected finding is no longer in this chart window. Choose a current finding; no other pattern was substituted.":chosenNarrative?.summary??(stats?`Price ${chartChangeSummary(stats.change,stats.changePercent)} across ${stats.count} closed candles. The observed range is ${chartNumber(stats.low)} to ${chartNumber(stats.high)}. No clear pattern was found by the available detectors.`:result?.reason??"Waiting for a source-identified chart window.");
+  const narrative=chosenNarrative?.summary??(stats?`Price ${chartChangeSummary(stats.change,stats.changePercent)} across ${stats.count} closed candles. The observed range is ${chartNumber(stats.low)} to ${chartNumber(stats.high)}. No clear pattern was found by the available detectors.`:result?.reason??"Waiting for a source-identified chart window.");
   return <section className="border-b border-zinc-800 bg-sky-950/10 px-3 py-2.5 text-xs" aria-label="Automatic chart analysis" data-testid="smart-chart-reader"
     data-analysis-status={result?.status??"unavailable"} data-analysis-asof={result?.status==="ready"?result.asOf??undefined:undefined}
     data-analysis-source-identity={result?.status==="ready"?bound.context.sourceIdentity??undefined:undefined}
     data-replay-installed-count={result?.status==="ready"?replay?.installedCount:undefined}>
     <div className="flex flex-wrap items-center gap-2">
       <Sparkles className="h-3.5 w-3.5 text-sky-300"/><span className="font-semibold text-zinc-100">What the chart is doing</span>
-      {onExplainFinding&&<Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={!chosen||result?.status!=="ready"||presentationUnverified} onClick={()=>setDeliveryNotice(onExplainFinding()?null:"The assistant is unavailable. The selected finding’s explanation remains below.")}>Explain this finding</Button>}
-      <span className="text-[10px] text-zinc-400">{replay?"Historical replay · closed candles only":<>{current?.historical?"Historical window · ":""}{feedCaveat?"Stored candles · feed not live-confirmed":"Closed candles only"}</>}</span>
+      <span className="text-[10px] text-zinc-400">{replay?"Historical replay · closed candles only":<>{current?.historical?"Historical window · ":""}{!liveConfirmed||readFailed?"Stored candles · feed not live-confirmed":"Closed candles only"}</>}</span>
       {view?.inverted&&<span className="text-[10px] text-amber-300">Inverted scale · higher prices appear lower</span>}
-      <Button size="sm" variant="ghost" className="ml-auto h-7 gap-1.5 text-[11px]" aria-pressed={annotations} aria-label="Show automatic chart annotations" aria-description={presentationUnverified?"Annotation visibility is unverified after a rendering failure. Reload the chart.":presentationHidden?"Automatic annotations are temporarily hidden by the current chart view. This button changes your saved annotation choice; restore tools to reveal it.":undefined} onClick={()=>setAnnotations(value=>!value)}>{annotations?<Eye className="h-3 w-3"/>:<EyeOff className="h-3 w-3"/>}{annotations?(presentationUnverified?"Annotation visibility unverified":presentationHidden?"Annotations hidden (saved on)":"Annotations on"):"Annotations off"}</Button>
+      <Button size="sm" variant="ghost" className="ml-auto h-7 gap-1.5 text-[11px]" aria-pressed={annotations} aria-label="Show automatic chart annotations" onClick={()=>setAnnotations(value=>!value)}>{annotations?<Eye className="h-3 w-3"/>:<EyeOff className="h-3 w-3"/>}{annotations?"Annotations on":"Annotations off"}</Button>
     </div>
-    {(findingDeliveryNotice||deliveryNotice)&&<p role="status">{findingDeliveryNotice||deliveryNotice}</p>}
     {result?.findings.length? <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Relevant chart patterns">{result.findings.map(finding=><button type="button" key={finding.id} className={`rounded border px-2 py-1 text-[11px] ${chosen?.id===finding.id?"border-sky-500/50 bg-sky-500/10 text-sky-200":"border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`} aria-pressed={chosen?.id===finding.id} onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}</button>)}</div>:null}
     <p className="mt-2 max-w-[110ch] leading-relaxed text-zinc-200" data-testid="chart-reader-explanation">{narrative}</p>
-    {result?.status==="ready"&&result.continuityNote&&<p className="mt-1 text-xs text-amber-300" data-testid="chart-reader-continuity">{result.continuityNote}</p>}
     {description&&<p className="mt-1 text-[11px] leading-relaxed text-sky-200/80" data-testid="chart-reader-context">{description.summary}</p>}
-    {feedCaveat&&<p className="text-[10px] text-amber-200/80" data-testid="chart-reader-feed-evidence">{feedCaveat.trim()}</p>}
     <details className="mt-2 text-zinc-400">
       <summary className="w-fit cursor-pointer text-[11px] text-sky-300">Analysis, evidence and chart statistics</summary>
       <div className="mt-3 space-y-3">

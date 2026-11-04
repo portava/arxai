@@ -8,11 +8,7 @@ const require = createRequire(path.join(dashboard, "package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(require.resolve("@vitejs/plugin-react"));
 const { default: tailwind } = await import(require.resolve("@tailwindcss/vite"));
-// Own dependency cache: both offline fixtures resolve Vite's default cacheDir to
-// scripts/node_modules/.vite, and their differing configs re-optimize over each
-// other when spawned together, serving 504 "Outdated Optimize Dep" to the loser.
-const cacheDir = path.join(repo, "scripts/node_modules/.vite-scanner-qa");
-const server = await createServer({ root, cacheDir, configFile: false, plugins: [react(), tailwind()],
+const server = await createServer({ root, configFile: false, plugins: [react(), tailwind()],
  resolve: { alias: [
  {find:"@tanstack/react-query", replacement:require.resolve("@tanstack/react-query")},
  {find:"react", replacement:path.dirname(require.resolve("react/package.json"))},

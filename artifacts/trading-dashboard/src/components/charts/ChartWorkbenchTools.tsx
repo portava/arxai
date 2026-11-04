@@ -1,4 +1,3 @@
-import { ChartPaneControls } from "./ChartPaneControls";
 import {registerChartLevelAssistant,explainLevelProposal,explainKeptLevel} from "@/lib/chart-engine/chartLevelAssistant";
 import {levelProposalDrawings,type ChartSupportResistanceRead,type ChartSupportResistanceProposal} from "@/lib/chart-engine/chartSupportResistance";
 import {studyDisplayLabel} from "@/lib/chart-engine/chartStudyDisplay";
@@ -6,13 +5,13 @@ import { registerChartFibonacciAssistant } from "@/lib/chart-engine/chartFibonac
 import { explainFibonacciProposal, explainSelectedFibonacci } from "@/lib/chart-engine/chartFibonacciExplanation";
 import { formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
 import { fibonacciProposalDrawing, type ChartFibonacciRead, type ChartFibonacciProposal } from "@/lib/chart-engine/chartAutoFibonacci";
-import { useCallback, useSyncExternalStore, useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useId, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
-import { studyId, studyLabel, studyVisibleAtInterval, type ChartStudy } from "@/lib/chart-engine/chartStudies";
+import { studyId, studyLabel, type ChartStudy } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
 import { ChartTemplatesPanel } from "./ChartTemplatesPanel";
 import { CHART_TIME_ZONES, captureLabel, convertWallClock, effectiveDisplayZone, parseWallClockInZone, resolveTimeZone, zoneShortLabel, type ChartTimeZone } from "@/lib/chart-engine/chartTimeZone";
-import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, threeAnchorDrawing, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, validateDrawings, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
+import { CHART_STYLES, CHART_STYLE_NAMES, DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, validateDrawings, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type ChartStyle, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
 import { MAX_NOTE_LENGTH, MAX_NOTE_PARAGRAPHS, normalizeNoteText } from "@/lib/chart-engine/chartTextNote";
@@ -22,20 +21,16 @@ import { measurementLabels } from "@/lib/chart-engine/chartRangeMeasurement";
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
 /** PNG header lines: instrument, interval, capture time, feed verdict, display
  * style and studies. Heikin Ashi is marked as averaged, not traded, prices. */
-export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies,studyDisplayLabels,fibonacciPreview,analysisFocused,maximizedPane}: {symbol:string;timeframe:string;capture:string;feedLabel:string;style:ChartStyle;studies:readonly ChartStudy[];studyDisplayLabels?:readonly string[];fibonacciPreview?:boolean;analysisFocused?:boolean;maximizedPane?:string|null}): string[] {
+export function exportLabels({symbol,timeframe,capture,feedLabel,style,studies,studyDisplayLabels,fibonacciPreview}: {symbol:string;timeframe:string;capture:string;feedLabel:string;style:ChartStyle;studies:readonly ChartStudy[];studyDisplayLabels?:readonly string[];fibonacciPreview?:boolean}): string[] {
   return [`ARX · ${symbol} ${timeframe}`, capture, feedLabel,
-    `${maximizedPane?"Hidden price style":"Style"} ${CHART_STYLE_NAMES[style] ?? CHART_STYLE_NAMES.candles}${style === "heikinAshi" ? " (averaged bodies, not traded prices)" : ""}`,
-    (maximizedPane ? "Maximized indicator pane: price candles, drawings, trade overlays, automatic annotations and other panes hidden; settings retained" : analysisFocused ? "Simplified view: studies, drawings and automatic annotations temporarily hidden; settings retained" : (studyDisplayLabels??studies.map(study=>studyDisplayLabel(study,null,false,studies,timeframe))).join(" · ")), fibonacciPreview && !analysisFocused && !maximizedPane ? "UNACCEPTED automatic Fibonacci preview · historical geometry, not a trade signal" : ""].filter(Boolean);
+    `Style ${CHART_STYLE_NAMES[style] ?? CHART_STYLE_NAMES.candles}${style === "heikinAshi" ? " (averaged bodies, not traded prices)" : ""}`,
+    (studyDisplayLabels??studies.map(studyLabel)).join(" · "), fibonacciPreview ? "UNACCEPTED automatic Fibonacci preview · historical geometry, not a trade signal" : ""].filter(Boolean);
 }
 const names = DRAWING_NAMES;
 interface Props {
-  analysisFocused?: boolean;
-  maximizedPane?: string|null;
-  onRestoreAnalysis?: () => boolean;
   adapter: ChartEngineAdapter | null; epoch: number | string; symbol: string; timeframe: string;
   /** Parent candle commit identity; labels stay unqualified until that layout commit completes. */
   studyEvidenceRevision?: unknown;
-  onPanePreferences?:Dispatch<SetStateAction<ChartPreferences>>;
   preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>>;
   hasCandles: boolean; feedLabel: string;
   /** Optional private analysis namespace; live charts keep their existing key. */
@@ -57,7 +52,7 @@ interface Props {
   assistantActive?:boolean;
   assistantIsCurrent?:()=>boolean;
 }
-export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,onRestoreAnalysis,adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,onPanePreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,getSupportResistanceProposal,assistantActive=false,assistantIsCurrent}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,getSupportResistanceProposal,assistantActive=false,assistantIsCurrent}: Props) {
   const displayRevision=studyEvidenceRevision??epoch;
   const needsStudyEvidence=preferences.studies.some(study=>study.kind==='vwap'||study.kind==='volume_profile');
   const [committedStudyEvidence,setCommittedStudyEvidence]=useState<{adapter:ChartEngineAdapter|null;revision:unknown}|null>(null);
@@ -77,9 +72,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   },[adapter,displayRevision,needsStudyEvidence]);
   const studyDisplayAdapter=needsStudyEvidence&&studyEvidenceActive.current&&committedStudyEvidence?.adapter===adapter&&committedStudyEvidence.revision===displayRevision?adapter:null;
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
-  // Stable only for this mounted chart/data namespace. Controlled selection
-  // rerenders must not interrupt a drag; a new adapter/context revokes it.
-  const drawingOwner = useMemo(() => ({}), [adapter,epoch,key]);
   const instanceId = useId();
   const styleNoteId = `${instanceId}-style-note`;
   const styleNote = preferences.style === "heikinAshi"
@@ -105,27 +97,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const [hidden,setHidden] = useState(false);
   const [objectSearch,setObjectSearch] = useState("");
   const [message,setMessage] = useState("");
-  const isFocused=()=>adapter?.isAnalysisFocused?.()??analysisFocused;
-  const isPresentationHidden=()=>isFocused()||adapter?.getMaximizedStudyPane?.()!=null;
-  const presentationVerified=()=>adapter?.isAnalysisFocusVerified?.()!==false;
-  // A render can occur while native paint is pending. Subscribe to the boolean
-  // proof so its completion repairs visible captions even without a prop change.
-  // Stable true/false snapshots do not rerender tools on every pan or cursor tick.
-  const subscribePaintProof=useCallback((notify:()=>void)=>{
-    if(!adapter?.isAnalysisFocusVerified)return ()=>{};
-    let active=true;
-    const unsubscribe=adapter.subscribeViewport?.(()=>{if(active)notify();});
-    return ()=>{active=false;unsubscribe?.();};
-  },[adapter,epoch]);
-  const readPaintProof=useCallback(()=>adapter?.isAnalysisFocusVerified?.()!==false,[adapter,epoch]);
-  const paintVerified=useSyncExternalStore(subscribePaintProof,readPaintProof,readPaintProof);
-  const restoreForAction=()=>{
-    if(!presentationVerified()){setMessage("Chart visibility is unverified. Reload the chart before changing tools.");return false;}
-    if(!isPresentationHidden())return true;
-    if(onRestoreAnalysis?.()&&!isPresentationHidden())return true;
-    setMessage("Analysis layers are still hidden. Restore tools before displaying this drawing.");return false;
-  };
-  useEffect(()=>{if(analysisFocused||maximizedPane){setTool(null);setAnchor(null);setChannelEnd(null);}},[analysisFocused,maximizedPane]);
   const [goToDate,setGoToDate] = useState("");
   const [storageFailed,setStorageFailed] = useState(false);
   const [fibonacciPreview,setFibonacciPreviewState]=useState<ChartFibonacciProposal|null>(null);
@@ -137,7 +108,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const currentPreviewRead=fibonacciPreview?getFibonacciProposal?.():null;
   const visiblePreview=fibonacciPreview&&currentPreviewRead?.status==="ready"&&currentPreviewRead.proposal.comparisonKey===fibonacciPreview.comparisonKey?fibonacciPreview:null;
   const previewDrawing=useMemo(()=>visiblePreview?fibonacciProposalDrawing(visiblePreview,previewId,true):null,[visiblePreview,previewId]);
-  const withdrawPreview=(reason:string)=>{setFibonacciPreview(null);setMessage(`Preview cleared: ${reason} Request a new preview to use the updated window.`);};
+  const withdrawPreview=(reason:string)=>{setFibonacciPreview(null);setMessage(`Preview withdrawn: ${reason} Request a new preview to use the updated window.`);};
   useLayoutEffect(()=>{
     if(!fibonacciPreview)return;
     const check=()=>{
@@ -153,7 +124,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const levelRead=levelPreview?getSupportResistanceProposal?.():null;
   const visibleLevels=levelPreview&&levelRead?.status==="ready"&&levelRead.proposal.comparisonKey===levelPreview.comparisonKey?levelPreview:null;
   const levelDrawings=useMemo(()=>visibleLevels?levelProposalDrawings(visibleLevels,levelPrefix,true):[],[visibleLevels,levelPrefix]);
-  const withdrawLevels=(reason:string)=>{setLevelPreview(null);setMessage(`Support/resistance preview cleared: ${reason}`);};
+  const withdrawLevels=(reason:string)=>{setLevelPreview(null);setMessage(`Support/resistance preview withdrawn: ${reason}`);};
   useLayoutEffect(()=>{
     if(!levelPreview)return;
     const check=()=>{const next=getSupportResistanceProposal?.();if(next?.status!=="ready"||next.proposal.comparisonKey!==levelPreview.comparisonKey)withdrawLevels(next?.reason??"The source or visible window changed.");};
@@ -272,13 +243,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     setHistory(h=>({past:[...h.past.slice(-19),h.present],present:valid,future:[]}));
     return persist(valid);
   };
-  // Source/storage changes can fill slots after a preview was prepared.
-  // Remove previews before the renderer's owned-object cap could truncate them.
-  useLayoutEffect(()=>{
-    if(drawings.length+(previewDrawing?1:0)+levelDrawings.length>MAX_DRAWINGS){setFibonacciPreview(null);setLevelPreview(null);setMessage("Automatic previews removed because the drawing limit was reached. Your saved drawings are retained.");}
-  },[drawings,previewDrawing,levelDrawings]);
-  const previewsFit=drawings.length+(previewDrawing?1:0)+levelDrawings.length<=MAX_DRAWINGS;
-  const renderedDrawings=useMemo(()=>hidden?[]:[...drawings,...(previewsFit&&previewDrawing?[previewDrawing]:[]),...(previewsFit?levelDrawings:[])],[hidden,drawings,previewDrawing,levelDrawings,previewsFit]);
+  const renderedDrawings=useMemo(()=>hidden?[]:[...drawings,...(previewDrawing?[previewDrawing]:[]),...levelDrawings],[hidden,drawings,previewDrawing,levelDrawings]);
   const installedDrawings=useRef<{adapter:ChartEngineAdapter|null;epoch:number|string;rows:ChartDrawing[];preview:boolean}|null>(null);
   // A Strict Mode effect replay can reset the parent engine without changing
   // epoch. Invalidate the installation record on adapter cleanup as well.
@@ -302,7 +267,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     installedDrawings.current={adapter,epoch,rows:renderedDrawings,preview:!!previewDrawing||levelDrawings.length>0};
   },[adapter,epoch,renderedDrawings,previewDrawing,levelDrawings]);
   useEffect(()=>{
-    adapter?.setDrawingInteraction?.(hidden ? null : {owner:drawingOwner,selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:id=>setSelectedId(id===previewId||id?.startsWith(levelPrefix)?null:id),onCommit:next=>{const owned=next.filter(d=>d.id!==previewId&&!d.id.startsWith(levelPrefix));change(owned);setMessage(owned.length < drawings.length ? "Drawing deleted. Undo restores it." : "Drawing updated. Undo restores the previous edit.");},
+    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId:drawings.some(d=>d.id===selectedId && !d.hidden) ? selectedId : null,snap,onSelect:id=>setSelectedId(id===previewId||id?.startsWith(levelPrefix)?null:id),onCommit:next=>{const owned=next.filter(d=>d.id!==previewId&&!d.id.startsWith(levelPrefix));change(owned);setMessage(owned.length < drawings.length ? "Drawing deleted. Undo restores it." : "Drawing updated. Undo restores the previous edit.");},
       ...(history.past.length ? {onUndo:()=>undo()} : {}),
       ...(history.future.length ? {onRedo:()=>undo(true)} : {})});
   });
@@ -313,11 +278,9 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
       if (!singleAnchorDrawing(tool) && !anchor) {setAnchor(point);return;}
       if (tool !== "measure" && anchor && !channelEnd && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
-      if (tool === "pitchfork" && anchor && point.time <= anchor.time) {setMessage("Choose both tine anchors after the first candle.");return;}
-      if (tool === "pitchfork" && channelEnd && point.time === channelEnd.time) {setMessage("Choose a different candle for the third anchor.");return;}
-      if (threeAnchorDrawing(tool) && !channelEnd) {setChannelEnd(point);return;}
+      if (tool === "channel" && !channelEnd) {setChannelEnd(point);return;}
       const id = crypto.randomUUID();
-      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:channelEnd ?? point} : {}),...(threeAnchorDrawing(tool) ? {offset:point} : {}),...(tool === "pitchfork" ? {extendRight:true} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
+      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:channelEnd ?? point} : {}),...(tool === "channel" ? {offset:point} : {}),color:"#fbbf24",...(tool === "text" ? {text:normalizeNoteText(noteText)!} : {})}]);
       if (tool === "text") setPanel("objects");
       setSelectedId(id);setObjectSearch("");setTool(null);setAnchor(null);setChannelEnd(null);setHidden(false);setMessage(tool === "text" ? "Your note added. Drag its card or anchor to move it; edit the text in Objects. This is your annotation, not an automated reading." : "Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
     } : null);
@@ -351,9 +314,8 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const requestFibonacci=():ChartFibonacciRead=>{
     const next=getFibonacciProposal?.()??{status:"unavailable" as const,proposal:null,reason:"Automatic Fibonacci is unavailable for this source."};setTool(null);setAnchor(null);setChannelEnd(null);
     if(next.status!=="ready"){setFibonacciPreview(null);setMessage(next.reason);return next;}
-    if(historyRef.current.present.length+1+(levelPreviewRef.current?2:0)>MAX_DRAWINGS){const reason=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`;setMessage(reason);return {status:"unavailable",proposal:null,reason};}
-    if(!restoreForAction())return {status:"unavailable",proposal:null,reason:"Restore tools before displaying this preview."};
-    setHidden(false);setFibonacciPreview(next.proposal);setMessage("Preview only. Its anchors stay fixed; changes to the source or window clear it. Keep and edit to create your own drawing.");
+    if(historyRef.current.present.length>=MAX_DRAWINGS){const reason=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object before previewing.`;setMessage(reason);return {status:"unavailable",proposal:null,reason};}
+    setHidden(false);setFibonacciPreview(next.proposal);setMessage("Preview only. Its anchors stay fixed; changes to the source or window withdraw it. Keep and edit to create your own drawing.");
     return next;
   };
   const keepFibonacci=():string=>{
@@ -361,10 +323,8 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     if(!pending)return "No current Fibonacci preview to keep. Request a preview first; no drawing was saved or order sent.";
     if(current?.status!=="ready"||current.proposal.comparisonKey!==pending.comparisonKey){
       const reason=current?.reason??"The source, closed candles or visible window changed.";
-      withdrawPreview(reason);return `Preview cleared: ${reason} Request a fresh preview before keeping it. No drawing was saved or order sent.`;
+      withdrawPreview(reason);return `Preview withdrawn: ${reason} Request a fresh preview before keeping it. No drawing was saved or order sent.`;
     }
-    const installed=installedDrawings.current;
-    if(hidden||isPresentationHidden()||!presentationVerified()||installed?.adapter!==adapter||installed.epoch!==epoch||!installed.rows.some(d=>d.id===previewId))return "Fibonacci preview is hidden or its visibility is unverified. Restore tools and show drawings before keeping it. No drawing was saved.";
     const owned=historyRef.current.present;
     if(owned.length>=MAX_DRAWINGS){const text=`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first. No drawing was saved or order sent.`;setMessage(text);return text;}
     const id=`fib-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
@@ -377,7 +337,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   const editOwnedDrawing=(id:string,action:"hide"|"show"|"remove"):string=>{
     const owned=historyRef.current.present,item=owned.find(d=>d.id===id);
     if(!item)return "Selected drawing no longer exists. No drawing was changed or order sent.";
-    if(action==="show"&&!restoreForAction())return "Drawing remains hidden by simplified view. Restore tools first; no drawing was changed.";
     if(action!=="remove"&&!!item.hidden===(action==="hide"))return `Selected drawing is already ${action==="hide"?"hidden":"shown"}.${hidden?" The global drawing visibility remains off.":""} No drawing was changed or order sent.`;
     const saved=change(action==="remove"?owned.filter(d=>d.id!==id):owned.map(d=>d.id===id?{...d,hidden:action==="hide"}:d));
     if(action==="remove"&&selectedRef.current===id)setSelectedId(null);
@@ -387,7 +346,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   useLayoutEffect(()=>{
     if(!assistantActive||ephemeralDrawings)return;
     return registerChartFibonacciAssistant(request=>{
-      if(!presentationVerified())return "Chart visibility is unverified. Reload the chart before changing or explaining drawings.";
       if(assistantIsCurrent&&!assistantIsCurrent())return "The selected chart source changed. Select the current chart again before changing Fibonacci. No drawing was changed or order sent.";
       if(!hasCandles||!adapter?.setDrawings||!getFibonacciProposal)return "Fibonacci not changed: the selected chart renderer and source candles are not ready. No drawing was saved or order sent.";
       if(request.action==="keep")return keepFibonacci();
@@ -401,34 +359,33 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       const fresh=getFibonacciProposal();
       if(fresh.status!=="ready"){
         if(fibonacciPreview)withdrawPreview(fresh.reason);
-        return `No new Fibonacci added: ${fresh.reason} ${fibonacciPreview?"The previous preview was cleared. ":""}No current source-backed explanation can be established; your kept drawings remain yours. No drawing was saved or order sent.`;
+        return `No new Fibonacci added: ${fresh.reason} ${fibonacciPreview?"The previous preview was withdrawn. ":""}No current source-backed explanation can be established; your kept drawings remain yours. No drawing was saved or order sent.`;
       }
       if(fibonacciPreview&&fresh.proposal.comparisonKey!==fibonacciPreview.comparisonKey){
         withdrawPreview("The source or chart window changed since this preview.");
-        return "The previous Fibonacci preview was cleared because its source or window changed. Request a new preview; old anchors are not presented as a current reading. Your kept drawings were not changed.";
+        return "The previous Fibonacci preview is withdrawn because its source or window changed. Request a new preview; old anchors are not presented as a current reading. Your kept drawings were not changed.";
       }
       if(request.action!=="selected"&&fibonacciPreview){
         const installed=installedDrawings.current;
-        const state=hidden||isPresentationHidden()?"hidden":!presentationVerified()?"prepared":installed?.adapter===adapter&&installed.epoch===epoch&&installed.rows.some(d=>d.id===previewId)?"shown":"prepared";
+        const state=hidden?"hidden":installed?.adapter===adapter&&installed.epoch===epoch&&installed.rows.some(d=>d.id===previewId)?"shown":"prepared";
         return explainFibonacciProposal(fibonacciPreview,state);
       }
       const selected=drawings.find(d=>d.id===selectedId&&d.kind==="fibonacci");
       if(request.action==="selected"||request.action==="explain"&&selected){
-        return selected?explainSelectedFibonacci({...selected,hidden:hidden||isPresentationHidden()||selected.hidden},symbol,timeframe):"Select one of your kept Fibonacci drawings in Objects first. No preview was created, saved or traded.";
+        return selected?explainSelectedFibonacci({...selected,hidden:hidden||selected.hidden},symbol,timeframe):"Select one of your kept Fibonacci drawings in Objects first. No preview was created, saved or traded.";
       }
       if(request.action==="explain_preview")return "There is no current Fibonacci preview. Ask to preview automatic Fibonacci first; your kept drawings were not changed.";
       return prepare();
     });
-  },[assistantActive,assistantIsCurrent,ephemeralDrawings,hasCandles,adapter,epoch,getFibonacciProposal,fibonacciPreview,hidden,drawings,selectedId,previewId,symbol,timeframe,analysisFocused,onRestoreAnalysis]);
+  },[assistantActive,assistantIsCurrent,ephemeralDrawings,hasCandles,adapter,epoch,getFibonacciProposal,fibonacciPreview,hidden,drawings,selectedId,previewId,symbol,timeframe]);
   const requestLevels=():string=>{
     if(!hasCandles||!adapter?.setDrawings||!getSupportResistanceProposal)return "Support/resistance not changed: selected renderer and source candles are not ready.";
     if(hidden)return "Saved drawing visibility is off. Show drawings first to display new candidates; your hidden drawing choices were preserved.";
     const next=getSupportResistanceProposal();
     if(next.status!=="ready"){withdrawLevels(next.reason);return `Support/resistance unavailable: ${next.reason}`;}
-    if(historyRef.current.present.length+2+(previewRef.current?1:0)>MAX_DRAWINGS)return "Two drawing slots are needed for support/resistance (including other previews). Remove an object first; no drawings were changed.";
-    if(!restoreForAction())return "Restore tools before displaying these candidates. No drawing was saved.";
+    if(historyRef.current.present.length+2>MAX_DRAWINGS)return "Two drawing slots are needed for support/resistance. Remove an object first; no drawings were changed.";
     setTool(null);setAnchor(null);setChannelEnd(null);setLevelPreview(next.proposal);
-    setMessage("Historical level candidates only. Keep levels and edit makes adjustable annotations; source/window changes clear this preview.");
+    setMessage("Historical level candidates only. Keep levels and edit makes adjustable annotations; source/window changes withdraw this preview.");
     return explainLevelProposal(next.proposal,"prepared");
   };
   const keepLevels=():string=>{
@@ -436,7 +393,7 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
     if(!pending)return "No support/resistance preview to keep. No drawing was saved.";
     if(current?.status!=="ready"||current.proposal.comparisonKey!==pending.comparisonKey){withdrawLevels(current?.reason??"The source or window changed.");return "Preview no longer matches the selected chart. Request fresh levels; no drawing was saved.";}
     const installed=installedDrawings.current;
-    if(hidden||isPresentationHidden()||!presentationVerified()||installed?.adapter!==adapter||installed.epoch!==epoch||!levelProposalDrawings(pending,levelPrefix,true).every(row=>installed.rows.some(d=>d.id===row.id)))return "The level preview is not visibly installed. Restore the renderer and show drawings before keeping it.";
+    if(hidden||installed?.adapter!==adapter||installed.epoch!==epoch||!levelProposalDrawings(pending,levelPrefix,true).every(row=>installed.rows.some(d=>d.id===row.id)))return "The level preview is not visibly installed. Restore the renderer and show drawings before keeping it.";
     const owned=historyRef.current.present,proposed=levelProposalDrawings(pending,`sr-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,false);
     const matches=proposed.map(row=>owned.find(d=>d.pivotLevelOrigin&&JSON.stringify(d.pivotLevelOrigin)===JSON.stringify(row.pivotLevelOrigin)));
     if(matches.every(Boolean)){setLevelPreview(null);setSelectedId(matches[0]!.id);setPanel("objects");setToolsOpen(true);setObjectSearch("");return "These original levels are already kept. Your edited anchors were preserved; use their existing controls.";}
@@ -448,7 +405,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
   useLayoutEffect(()=>{
     if(!assistantActive||ephemeralDrawings)return;
     return registerChartLevelAssistant(request=>{
-      if(!presentationVerified())return "Chart visibility is unverified. Reload the chart before changing or explaining drawings.";
       if(assistantIsCurrent&&!assistantIsCurrent())return "Selected chart source changed. Select the current chart again; no level was changed.";
       if('error'in request)return request.error;
       if(request.action==='keep')return keepLevels();
@@ -457,27 +413,26 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
         const selected=historyRef.current.present.find(d=>d.id===selectedRef.current&&d.pivotLevelOrigin);
         if(!selected)return "Select one kept support/resistance annotation in Objects. No other drawing was substituted.";
         if(request.side&&selected.pivotLevelOrigin!.level.side!==request.side)return `The selected annotation was a ${selected.pivotLevelOrigin!.level.side} candidate. Select the requested ${request.side} object first; no other drawing was substituted.`;
-        if(request.action==='selected')return explainKeptLevel({...selected,hidden:hidden||isPresentationHidden()||selected.hidden},symbol,timeframe);
+        if(request.action==='selected')return explainKeptLevel({...selected,hidden:hidden||selected.hidden},symbol,timeframe);
         return editOwnedDrawing(selected.id,request.action==='hide_selected'?'hide':request.action==='show_selected'?'show':'remove');
       }
       if(request.action==='explain'&&levelPreviewRef.current){
         const next=getSupportResistanceProposal?.(),pending=levelPreviewRef.current;
-        if(next?.status!=="ready"||next.proposal.comparisonKey!==pending.comparisonKey){withdrawLevels(next?.reason??"The source or window changed.");return "Previous level preview cleared. Request fresh levels for the current chart.";}
+        if(next?.status!=="ready"||next.proposal.comparisonKey!==pending.comparisonKey){withdrawLevels(next?.reason??"The source or window changed.");return "Previous level preview withdrawn. Request fresh levels for the current chart.";}
         const installed=installedDrawings.current;
-        const shown=presentationVerified()&&installed?.adapter===adapter&&installed.epoch===epoch&&levelDrawings.every(row=>installed.rows.some(d=>d.id===row.id))&&levelDrawings.length===2;
-        return explainLevelProposal(pending,hidden||isPresentationHidden()?'hidden':shown?'shown':'prepared');
+        const shown=installed?.adapter===adapter&&installed.epoch===epoch&&levelDrawings.every(row=>installed.rows.some(d=>d.id===row.id))&&levelDrawings.length===2;
+        return explainLevelProposal(pending,hidden?'hidden':shown?'shown':'prepared');
       }
       return requestLevels();
     });
-  },[assistantActive,assistantIsCurrent,ephemeralDrawings,hasCandles,adapter,epoch,getSupportResistanceProposal,hidden,levelPreview,levelDrawings,symbol,timeframe,drawings,selectedId,analysisFocused,onRestoreAnalysis]);
+  },[assistantActive,assistantIsCurrent,ephemeralDrawings,hasCandles,adapter,epoch,getSupportResistanceProposal,hidden,levelPreview,levelDrawings,symbol,timeframe,drawings,selectedId]);
   const exportImage = () => {
-    if(!presentationVerified()){setMessage("Chart visibility is unverified. Reload the chart before exporting.");return;}
     try {
       if(levelPreview){const read=getSupportResistanceProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==levelPreview.comparisonKey){withdrawLevels(read?.reason??"Source or window changed before export.");return;}}
       if(fibonacciPreview){const read=getFibonacciProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(read?.reason??"Source or window changed before export.");return;}}
       // Freeze display proof with this image, before asynchronous image decoding.
-      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true,preferences.studies,timeframe)),fibonacciPreview:!!fibonacciPreview&&!hidden,analysisFocused:isFocused(),maximizedPane:adapter?.getMaximizedStudyPane?.()??null});
-      if(visibleLevels&&!hidden&&!isPresentationHidden())labels.push("UNACCEPTED support/resistance pivot candidates; historical geometry, not a trade signal");
+      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true)),fibonacciPreview:!!fibonacciPreview&&!hidden});
+      if(visibleLevels&&!hidden)labels.push("UNACCEPTED support/resistance pivot candidates; historical geometry, not a trade signal");
       const url = adapter?.exportImage?.(); if(!url) return;
       // Include instrument, timeframe, capture time (display zone with its
       // abbreviation, plus the UTC ISO time when not UTC) and feed verdict. A
@@ -506,7 +461,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);setChannelEnd(null);
     }
   }}>
-    <ChartPaneControls key={`${epoch}:${symbol}:${timeframe}`} adapter={adapter} chartTarget={chartTarget} enabled={hasCandles && !analysisFocused} onPreferences={onPanePreferences??onPreferences} />
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Zoom and pan">
         <Button ref={panRef} size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setChannelEnd(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>
@@ -515,9 +469,6 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom in chart" title="Zoom in (+ on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(0.75)}><ZoomIn className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom out chart" title="Zoom out (− on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(4/3)}><ZoomOut className="h-3.5 w-3.5"/></Button>
       </div>
-      <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
-        {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
-      </select></label>
       <Button ref={toggleRef} size="sm" variant="outline" className={compact ? "h-8 text-xs" : "hidden"} aria-label="Chart tools" aria-controls={toolsId} aria-expanded={toolsOpen} onClick={()=>{toggleRef.current?.focus();setToolsOpen(value=>!value);}}>Tools {toolsOpen ? "−" : "+"}</Button>
       <div ref={advancedRef} id={toolsId} data-testid="chart-advanced-tools" className={compact && !toolsOpen ? "hidden" : "contents"}>
       <label className="flex items-center gap-2 text-zinc-400">Scale<select aria-label="Price scale" className={field} value={preferences.scale} onChange={event=>onPreferences(p=>({...p,scale:event.target.value as typeof p.scale}))}>
@@ -525,12 +476,15 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
       </select></label>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={()=>onPreferences(p=>({...p,inverted:!p.inverted}))}>Invert scale</Button>
       <Button size="sm" variant={preferences.priceOnlyScale ? "secondary" : "ghost"} className="h-8 text-xs" aria-pressed={preferences.priceOnlyScale === true} title="Automatically fit the price scale to prices only. Indicator values stay unchanged but may fall outside the visible area. Turning off fits prices and overlay indicators." onClick={()=>onPreferences(p=>({...p,priceOnlyScale:!p.priceOnlyScale}))}>Scale price only</Button>
+      <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
+        {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
+      </select></label>
       <label className="flex items-center gap-2" title={utcClockQualified ? "Display conversion uses qualified original UTC coordinates. Broker server timezone is not guessed." : SOURCE_CLOCK_NOTE}>Time zone <select className={field} aria-label="Display time zone" disabled={!utcClockQualified} value={selectedZone} onChange={e=>{if(!utcClockQualified)return;const value=e.target.value as ChartTimeZone;onPreferences(p=>{const next={...p};if(value==="UTC")delete next.timeZone;else next.timeZone=value;return next;});}}>
         {CHART_TIME_ZONES.map(option=><option key={option} value={option}>{!utcClockQualified && option==="UTC" ? "Source clock (UTC unverified)" : option==="local" ? `Browser local (${resolveTimeZone("local")})` : option}</option>)}
       </select></label>
       {utcClockQualified && zone !== selectedZone && resolveTimeZone(selectedZone) !== "UTC" && <span className="text-[11px] text-zinc-500" data-testid="chart-daily-zone-note">Daily bars keep UTC day labels.</span>}
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
-      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{if(e.target.value==="auto_levels"){requestLevels();return;}if(e.target.value==="auto_fibonacci"){requestFibonacci();return;}if(e.target.value&&!restoreForAction())return;if(e.target.value){setFibonacciPreview(null);setLevelPreview(null);}setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setChannelEnd(null);setNoteText("");setHidden(false);setMessage("");}}>
+      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{if(e.target.value==="auto_levels"){requestLevels();return;}if(e.target.value==="auto_fibonacci"){requestFibonacci();return;}setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setChannelEnd(null);setNoteText("");setHidden(false);setMessage("");}}>
         <option value="">Select / crosshair / pan</option>{getSupportResistanceProposal&&<option value="auto_levels">Automatic support / resistance</option>}{getFibonacciProposal&&<option value="auto_fibonacci">Automatic Fibonacci preview</option>}{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
       </select>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
@@ -553,10 +507,10 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
         <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">{`Go to ${zoneText}`}</Button>
       </form>
     </div>
-    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label={!paintVerified?"Saved studies (visibility unverified)":analysisFocused||maximizedPane?"Saved studies (temporarily hidden)":preferences.studies.some(study=>!studyVisibleAtInterval(study,timeframe))?"Saved studies (interval visibility)":"Active studies"}>{!paintVerified?<span>Visibility unverified · </span>:(analysisFocused||maximizedPane)&&<span>Some or all plots temporarily hidden · </span>}{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter,false,preferences.studies,timeframe)}</span>)}</div>}
-    {panel === "studies" && <div className="basis-full"><ChartStudySettings timeframe={timeframe} preferences={preferences} onPreferences={onPreferences} adapter={adapter} anchorDisplayAdapter={studyDisplayAdapter} /></div>}
+    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyDisplayLabel(study,studyDisplayAdapter)}</span>)}</div>}
+    {panel === "studies" && <div className="basis-full"><ChartStudySettings preferences={preferences} onPreferences={onPreferences} adapter={adapter} anchorDisplayAdapter={studyDisplayAdapter} /></div>}
     {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
-      <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>{if(isPresentationHidden()){restoreForAction();return;}setHidden(h=>!h);}}>{analysisFocused||maximizedPane ? "Restore tools" : hidden ? "Show drawings" : "Hide drawings"}</Button></div>
+      <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Objects outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
       {drawings.length > 0 && <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2">Find drawing<input type="search" aria-label="Find drawing" placeholder="Type or note text" maxLength={160} className={`${field} w-48`} value={objectSearch} onChange={event=>setObjectSearch(event.target.value)}/></label>
@@ -580,28 +534,28 @@ export function ChartWorkbenchTools({analysisFocused=false,maximizedPane=null,on
         {d.pivotLevelOrigin&&<p className="basis-full text-[11px] text-zinc-400">Archived {d.pivotLevelOrigin.level.side} candidate · {d.pivotLevelOrigin.symbol} {d.pivotLevelOrigin.timeframe} · original price {d.pivotLevelOrigin.level.price} at {formatSourceChartTime(d.pivotLevelOrigin.level.pivotTime,false,"UTC",{seconds:true})}, knowable after {formatSourceChartTime(d.pivotLevelOrigin.level.confirmedAt,false,"UTC",{seconds:true})}. Source {d.pivotLevelOrigin.source}, identity {d.pivotLevelOrigin.sourceIdentity.slice(0,12)}. Method: latest strict two-neighbor pivot on this side of captured closed price {d.pivotLevelOrigin.referenceClose.price}. Current editable price above is your annotation; archived evidence is not current advice.</p>}
         {d.fibonacciOrigin&&<p className="basis-full text-[11px] text-zinc-400">Original automatic proposal · {d.fibonacciOrigin.symbol} {d.fibonacciOrigin.timeframe} · source {d.fibonacciOrigin.source}, identity {d.fibonacciOrigin.sourceIdentity.slice(0,12)} · two-bar confirmed pivots · original anchors {d.fibonacciOrigin.start.price} at {formatSourceChartTime(d.fibonacciOrigin.start.time,false,"UTC",{seconds:true})} → {d.fibonacciOrigin.end.price} at {formatSourceChartTime(d.fibonacciOrigin.end.time,false,"UTC",{seconds:true})}, confirmed {formatSourceChartTime(d.fibonacciOrigin.confirmedAt,false,"UTC",{seconds:true})}. Current editable anchors above are yours; this origin is not revalidated as live advice.</p>}
         {d.kind === "text" && <NoteTextEditor label={`Drawing ${index+1} note text`} value={d.text!} locked={d.locked === true} onSave={text=>change(drawings.map(item=>item.id===d.id ? {...item,text} : item))} />}
-        {threeAnchorDrawing(d.kind) && <div className="flex basis-full flex-wrap gap-x-4 gap-y-2">
-          {([['extendLeft','Extend left','extend left'],['extendRight','Extend right','extend right'],['middleLine','Middle line','middle line']] as const).filter(([property])=>d.kind === "channel" || property !== "middleLine").map(([property,label,accessible])=><label key={property} className="flex min-h-8 items-center gap-2"><input type="checkbox" aria-label={`Drawing ${index+1} ${accessible}`} checked={d[property] === true} disabled={d.locked === true} onChange={event=>{if(!d.locked)change(drawings.map(item=>item.id===d.id?{...item,[property]:event.target.checked}:item));}} />{label}</label>)}
-          <span className="basis-full text-zinc-400">{d.kind === "pitchfork" ? "Classic pitchfork: the median runs from the first anchor through the displayed midpoint of the two later anchors; parallel tines pass through those anchors. Geometry follows the displayed scale, including logarithmic scale. Your drawing is not a forecast." : "Extensions follow your drawn slope; they are not a forecast. The midpoint is halfway between the displayed rails."}</span>
+        {d.kind === "channel" && <div className="flex basis-full flex-wrap gap-x-4 gap-y-2">
+          {([['extendLeft','Extend left','extend left'],['extendRight','Extend right','extend right'],['middleLine','Middle line','middle line']] as const).map(([property,label,accessible])=><label key={property} className="flex min-h-8 items-center gap-2"><input type="checkbox" aria-label={`Drawing ${index+1} ${accessible}`} checked={d[property] === true} disabled={d.locked === true} onChange={event=>{if(!d.locked)change(drawings.map(item=>item.id===d.id?{...item,[property]:event.target.checked}:item));}} />{label}</label>)}
+          <span className="basis-full text-zinc-400">Extensions follow your drawn slope; they are not a forecast. The midpoint is halfway between the displayed rails.</span>
         </div>}
       </div>)}
     </div>}
       </div>
     </div>
     {visibleLevels&&<div className="mt-2 space-y-2 rounded border border-sky-800/60 p-2" role="region" aria-label="Support and resistance preview">
-      <p className="font-medium">Unaccepted support/resistance candidates · {!paintVerified?"visibility unverified":hidden||analysisFocused||maximizedPane?"hidden":"display requested"}</p>
+      <p className="font-medium">Unaccepted support/resistance candidates · {hidden?"hidden":"display requested"}</p>
       {visibleLevels.levels.map(level=><p key={level.side}>{level.side}: {level.price} · pivot {chartTime(level.pivotTime,zone,{seconds:true})} · confirmed {chartTime(level.confirmedAt,zone,{seconds:true})} · {level.laterCloseCrossings} later observed closes beyond the level.</p>)}
       <p>{visibleLevels.note}</p><Button size="sm" variant="outline" className="mr-2 h-8 text-xs" onClick={keepLevels}>Keep levels and edit</Button><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{setLevelPreview(null);setMessage("Level preview dismissed; saved drawings unchanged.");}}>Dismiss level preview</Button>
     </div>}
     {visiblePreview&&<div className="mt-2 space-y-1 rounded border border-amber-800/60 p-2" role="region" aria-label="Automatic Fibonacci preview">
-      <p className="font-medium text-amber-200">Unaccepted Fibonacci preview · {!paintVerified?"visibility unverified":hidden||analysisFocused||maximizedPane?"hidden":"display requested"}</p>
+      <p className="font-medium text-amber-200">Unaccepted Fibonacci preview · {hidden?"hidden":"shown"}</p>
       <p>0% at {visiblePreview.origin.start.price} ({chartTime(visiblePreview.origin.start.time,zone,{seconds:true})}) → 100% at {visiblePreview.origin.end.price} ({chartTime(visiblePreview.origin.end.time,zone,{seconds:true})}). Percentages interpolate from the first anchor to the second; they are not reversal probabilities.</p>
       <p>Confirmed {chartTime(visiblePreview.origin.confirmedAt,zone,{seconds:true})}. {visiblePreview.note}</p>
       <Button size="sm" variant="outline" className="mr-2 h-8 text-xs" onClick={keepFibonacci}>Keep and edit Fibonacci</Button><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{setFibonacciPreview(null);setMessage("Preview dismissed. Your drawings were not changed.");}}>Dismiss preview</Button>
     </div>}
     {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}
     {tool === "text" && <label className="mt-2 flex max-w-sm flex-col gap-1 text-zinc-300">Your note<textarea aria-label="New user note" className="w-full min-w-0 rounded border border-zinc-700 bg-zinc-900 p-2 text-xs" rows={2} maxLength={MAX_NOTE_LENGTH} value={noteText} onChange={event=>setNoteText(event.target.value)} placeholder="Write your observation, then tap a candle" /><span className="text-[11px] text-zinc-400">Plain text, up to {MAX_NOTE_LENGTH} characters and {MAX_NOTE_PARAGRAPHS} lines. Your annotations are separate from automated analysis.</span></label>}
-    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {tool === "text" && normalizeNoteText(noteText) == null ? "enter a valid note above before choosing its candle" : channelEnd ? tool === "pitchfork" ? "choose the third anchor after the first candle, on a different candle from the second" : "choose a third candle and price to set the channel width" : anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);setChannelEnd(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
+    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {tool === "text" && normalizeNoteText(noteText) == null ? "enter a valid note above before choosing its candle" : channelEnd ? "choose a third candle and price to set the channel width" : anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);setChannelEnd(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
     {panOnly && <p className="mt-2 text-zinc-400" role="status">Pan mode · drag through history without moving drawings. Use + / − to zoom and arrow keys to pan while the chart is focused.</p>}
     {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
     {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}

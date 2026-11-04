@@ -19,11 +19,6 @@ const capture=(data=response(),older:any[]=[],evidence:any=null)=>captureSmartCh
 const oldBar=(time=START-300_000)=>({time,open:99,high:101,low:98,close:100});
 
 describe("automatic analysis captures observed source candles",()=>{
-  it.each([300_000,-150_000])("a separated/overlapping unfinished tip cannot make old patterns current (offset=%i)",offset=>{
-    const data=response(),open=START+30*300_000+offset;
-    data.candles.push({...data.candles.at(-1)!,openTime:new Date(open).toISOString(),closeTime:new Date(open+300_000).toISOString(),isComplete:false,isFinal:false,isForming:true});
-    const result=capture(data);expect(result.status).toBe("unavailable");expect(result.bars).toEqual([]);expect(result.reason).toContain("not adjacent");
-  });
   it("retains raw closed OHLC, seconds and finality without modifying its response",()=>{
     const data=response(),before=structuredClone(data),result=capture(data);
     expect(result.status).toBe("ready");expect(result.bars).toHaveLength(30);

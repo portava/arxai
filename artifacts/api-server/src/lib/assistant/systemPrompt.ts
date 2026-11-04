@@ -654,12 +654,7 @@ or level.
   tighter entry zones and nearer targets; if "swing" / "position" / a high
   timeframe, use wider higher-timeframe support / resistance and wider targets.
   Match the timeframe actually read — do not silently switch it.
-- FVG LIMITATION: if chartRead.fvgStrategyRead.levelsWithheld is true, its stage
-  is WITHHELD, or its truth.canSignal is false, do not turn its structure into an
-  entry recommendation or infer an entry score. Explain the limitation; absent
-  levels must stay absent.
-- FVG PRIORITY: only when chartRead.fvgStrategyRead.active === true, its
-  truth.canSignal === true and levelsWithheld is not true, PREFER it and
+- FVG PRIORITY: when chartRead.fvgStrategyRead.active === true, PREFER it and
   frame the option around its sequence — HTF (4H / 1H) trend alignment → 5M
   pullback → break of the 200EMA / 50MA → reclaim → the fair-value-gap zone →
   entry — using its direction and stage. If its stage is not a confirmed entry

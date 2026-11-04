@@ -137,12 +137,11 @@ function feedUsable(state: ChartIntelligenceState): boolean {
   ) {
     return false;
   }
-  // Final gate: every AACI check on the candle data must PASS. The handshake is
-  // derived from the same Phase 3 gate output (same logic snapshotService
-  // uses). Client renderer telemetry is excluded because this read uses
-  // candles, not the rendered chart; a measured renderer FAIL still blocks.
+  // Final gate: AACI chart handshake must PASS. The handshake is derived from
+  // the same Phase 3 gate output (same logic snapshotService uses), so this
+  // adds the explicit requirement without a separate network call.
   const handshake = buildChartHandshake(state.gateOutput, state.chartTruthScore);
-  return handshake.sourceOverall === "PASS";
+  return handshake.overall === "PASS";
 }
 
 function buildTrustLine(state: ChartIntelligenceState, hasForming: boolean): string {

@@ -7,7 +7,7 @@
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
-import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerVenueIdentity, scannerRowVenueIdentity, bindScannerSource } from "./scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource } from "./scannerInputIntegrity.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
@@ -998,27 +998,51 @@ export async function decorateOpportunitiesWithFvgRead(
   opps: ScannerOpportunity[],
 ): Promise<ScannerOpportunity[]> {
   if (opps.length === 0) return opps;
-  const { getChartCandles } = await import("./data/chart/chartDataService.js");
-  const { captureFvgChartInputs } = await import("./data/chart/fvgChartContext.js");
+  const { routeCandles } = await import("./data/marketDataRouter.js");
   const { analyzeFvgTrendPullback } = await import("./fvg/fvgTrendPullback.js");
-  // Preserve per-row source scope even when the same symbol appears on several
-  // intervals. Unknown provenance cannot inherit a different row's FVG result.
-  const keyOf = (o: ScannerOpportunity) => JSON.stringify([o.symbol, o.feedProvider, scannerRowVenueIdentity(o)]);
-  const groups = new Map(opps.map(o => [keyOf(o), o]));
+
+  const uniqueSymbols = Array.from(new Set(opps.map((o) => o.symbol)));
   const ctxBySymbol = new Map<string, FvgScannerContext>();
 
-  await mapWithConcurrency([...groups.keys()], ENRICHMENT_CONCURRENCY, async (key) => {
-    const row = groups.get(key)!;
-    const sym = row.symbol;
+  await mapWithConcurrency(uniqueSymbols, ENRICHMENT_CONCURRENCY, async (sym) => {
     try {
-      const inputs = await captureFvgChartInputs(sym, {
-        symbol: resolveArxMarket(sym)?.canonicalSymbol ?? "",
-        source: row.feedProvider ?? "",
-        venueIdentity: scannerRowVenueIdentity(row) ?? undefined,
-      }, (...args) => runWithScannerBudget(() => getChartCandles(...args)));
-      const result = analyzeFvgTrendPullback({ symbol: sym, ...inputs });
+      // Fetch H4, H1, and M5 candles in parallel via the shared scanner budget.
+      let h4r!: Awaited<ReturnType<typeof routeCandles>>;
+      let h1r!: Awaited<ReturnType<typeof routeCandles>>;
+      let m5r!: Awaited<ReturnType<typeof routeCandles>>;
+      await Promise.all([
+        runWithScannerBudget(async () => { h4r = await routeCandles(sym, "H4", 220); }),
+        runWithScannerBudget(async () => { h1r = await routeCandles(sym, "H1", 220); }),
+        runWithScannerBudget(async () => { m5r = await routeCandles(sym, "M5", 100); }),
+      ]);
 
-      ctxBySymbol.set(key, {
+      // Detect simulator-sourced data: mock provider returns ok=true with candles
+      // but is never a live feed. We block canSignal when data is from mock.
+      const isMockProvider = (p: string | null) =>
+        p != null && (p === "assistant_real:mock" || p.endsWith(":mock") || p === "mock");
+      const isSimulator = [h4r, h1r, m5r].some((r) => r.ok && isMockProvider(r.primaryProvider));
+
+      // Stale: any provider attempt reported a STALE reason — flag the TF.
+      const hasStaleAttempt = (r: typeof h4r) =>
+        r.attempts.some((a) => a.reason?.includes("STALE"));
+      const staleTimeframes: string[] = [];
+      if (hasStaleAttempt(h4r)) staleTimeframes.push("H4");
+      if (hasStaleAttempt(h1r)) staleTimeframes.push("H1");
+      if (hasStaleAttempt(m5r)) staleTimeframes.push("M5");
+
+      const adapt = (cs: typeof h4r.candles) =>
+        cs.map((c) => ({ open: c.open, high: c.high, low: c.low, close: c.close }));
+
+      const result = analyzeFvgTrendPullback({
+        symbol: sym,
+        h4Candles: adapt(h4r.ok ? h4r.candles : []),
+        h1Candles: adapt(h1r.ok ? h1r.candles : []),
+        m5Candles: adapt(m5r.ok ? m5r.candles : []),
+        isSimulator,
+        staleTimeframes,
+      });
+
+      ctxBySymbol.set(sym, {
         strategy: "HTF_TREND_FVG_PULLBACK",
         direction: result.direction,
         stage: result.stage,
@@ -1050,7 +1074,7 @@ export async function decorateOpportunitiesWithFvgRead(
   });
 
   return opps.map((o) => {
-    const ctx = ctxBySymbol.get(keyOf(o));
+    const ctx = ctxBySymbol.get(o.symbol);
     return ctx ? { ...o, fvgRead: ctx } : o;
   });
 }
@@ -1228,7 +1252,6 @@ async function analyzeViaRouter(
   quoteSpreadPrice: number | null;
   quoteUsable: boolean;
   sourceIdentity: string;
-  venueIdentity: string;
 } | null> {
   try {
     // Bounded fan-out: route the candle + quote lookups through the SHARED
@@ -1273,7 +1296,6 @@ async function analyzeViaRouter(
       quoteSpreadPrice: usableQuote?.spread ?? null,
       quoteUsable: usableQuote !== null,
       sourceIdentity: scannerSourceIdentity(cr),
-      venueIdentity: scannerVenueIdentity(cr),
     };
   } catch { return null; }
 }
@@ -1556,7 +1578,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       patternImpact,
       trendlineImpact,
     };
-    if (routed) bindScannerSource(op, routed.sourceIdentity, routed.venueIdentity);
+    if (routed) bindScannerSource(op, routed.sourceIdentity);
     // Agent Ecosystem advisory (Phase 0). Bounded, advisory-only re-weighting by
     // the responsible agents' trust + lifecycle health. Fail-open: any error
     // leaves the base opportunity score untouched — advisory must never break or

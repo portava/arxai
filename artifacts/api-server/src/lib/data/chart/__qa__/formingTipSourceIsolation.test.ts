@@ -70,8 +70,8 @@ function openStream(source?: unknown) {
   const req = Object.assign(new EventEmitter(), { query: { symbol: "R_75", timeframe: "M5", source } });
   const frames: any[] = [];
   let status = 200;
-  const res = { setHeader() {}, flushHeaders() {}, status(value: number) { status = value; return this; },
-    json(value: unknown) { frames.push(value); }, write(value: string) { frames.push(JSON.parse(value.slice(6))); } };
+  const res = Object.assign(new EventEmitter(), { setHeader() {}, flushHeaders() {}, status(value: number) { status = value; return this; },
+    json(value: unknown) { frames.push(value); }, write(value: string) { frames.push(JSON.parse(value.slice(6))); return true; } });
   handleChartTickStream(req as any, res as any);
   return { req, frames, status };
 }

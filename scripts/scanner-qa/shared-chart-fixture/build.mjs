@@ -11,9 +11,7 @@ import http from 'node:http';
 import path from 'node:path';
 import {dashboardStyleSourcePlugin,assertDashboardUtilityCss} from './stylesheet.mjs';
 import {isOfflineChartPagePath} from './routes.mjs';
-import {candleTimelinePlugin} from './candleTimelinePlugin.mjs';
 import {createNavigationJournal} from './navigation-journal.mjs';
-import {readProductDefaultEngine} from './engineProvenance.mjs';
 
 process.env.NODE_ENV = 'production';
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -24,13 +22,9 @@ const sha = data => createHash('sha256').update(data).digest('hex');
 const git = args => execFileSync('git', args, {cwd:repo, encoding:'utf8'}).trim();
 const state = () => ({head:git(['rev-parse','HEAD']), status:git(['status','--porcelain','--untracked-files=all']), diffSha256:sha(git(['diff','HEAD','--']))});
 const args = process.argv.slice(2);
-if (args.length > 1 || (args[0] && args[0]!=='--react-profile' && args[0]!=='--volume-profile' && args[0]!=='--flag-lifecycle' && args[0]!=='--native-engine' && !/^--feed=(baseline|label-baseline|candidate)$/.test(args[0]) && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Use --react-profile, --volume-profile, --flag-lifecycle, --native-engine, --feed=baseline|label-baseline|candidate, or --serve=<build-id>');
-const profile=args[0]==='--react-profile';
-const nativeOverrideRequested=args[0]==='--native-engine';
-const volumeProfileProbe=args[0]==='--volume-profile';
-const flagLifecycleProbe=args[0]==='--flag-lifecycle';
-const feedMode=args[0]?.startsWith('--feed=')?args[0].slice(7):null;
-const serve = args[0]?.startsWith('--serve=')?args[0].slice(8):undefined;
+if (args.length > 1 || (args[0] && args[0] !== '--volume-profile' && !/^--serve=[a-f0-9]{16}$/.test(args[0]))) throw Error('Only --volume-profile or --serve=<build-id> is supported');
+const volumeProfileProbe = args[0] === '--volume-profile';
+const serve = args[0]?.startsWith('--serve=') ? args[0].slice(8) : undefined;
 const id = serve ?? randomBytes(8).toString('hex');
 const parent = path.join(repo, 'scripts/node_modules/.scanner-shared-chart-qa');
 const out = path.join(parent, id);
@@ -52,37 +46,12 @@ if (!serve) {
   const {build} = await import(require.resolve('vite'));
   const {default:react} = await import(require.resolve('@vitejs/plugin-react'));
   const {default:tailwind} = await import(require.resolve('@tailwindcss/vite'));
-  const adapterPath='artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter.ts';
-  const isBaseline=feedMode==='baseline'||feedMode==='label-baseline';
-  const baselineCommit=feedMode==='label-baseline'?'b3bee175f368a31f003aa9f7f13b7ebbc68e180a':'da62c7a5595f63be526362c3327a27366da6dc68';
-  const adapterCurrent=await readFile(path.join(repo,adapterPath),'utf8');
-  const adapterBaseline=isBaseline?execFileSync('git',['show',`${baselineCommit}:${adapterPath}`],{cwd:repo,encoding:'utf8'}):null;
-  const feedReconciliation=feedMode?{mode:feedMode,adapterPath,adapterSourceSha256:sha(adapterBaseline??adapterCurrent),workingAdapterSha256:sha(adapterCurrent),baselineCommit:isBaseline?git(['rev-parse',baselineCommit]):null,comparisonScope:'Only adapter source is pinned; all other modules use the recorded working tree. Not a historical full-app build.',qaOnlySourceOverride:isBaseline}:null;
-  const nativeIndexPath=path.join(dashboard,'src/lib/chart-engine/index.ts');
-  const nativeIndexSource=await readFile(nativeIndexPath,'utf8');
-  const productDefaultEngineId=readProductDefaultEngine(nativeIndexSource);
-  const nativeEngine=nativeOverrideRequested||(!feedMode&&!volumeProfileProbe&&!flagLifecycleProbe&&productDefaultEngineId==='arx-native');
-  if(nativeOverrideRequested&&productDefaultEngineId==='arx-native')throw Error('Product default is already native. Build without --native-engine for default acceptance.');
-  let nativeOverrideApplied=false;
-  const nativeEnginePlugin={name:'qa-explicit-native-engine',enforce:'pre',async load(file){
-    if(!nativeOverrideRequested || file!==nativeIndexPath)return null;
-    const source=await readFile(file,'utf8');
-    const declaration='export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "lightweight-charts";';
-    if(source.split(declaration).length!==2)throw Error('Native QA engine override must match exactly one default declaration');
-    nativeOverrideApplied=true;
-    return source.replace(declaration,'export const DEFAULT_CHART_ENGINE_ID: ChartEngineId = "arx-native";');
-  }};
-  let baselineApplied=false;
-  const baselinePlugin={name:'qa-exact-baseline-adapter',enforce:'pre',load(file){if(adapterBaseline&&file===path.join(repo,adapterPath)){baselineApplied=true;return adapterBaseline;}return null;}};
-  await build({root,configFile:false,base:'/',define:{__ARX_NATIVE_ENGINE__:JSON.stringify(nativeEngine),__ARX_FEED_LABEL_POLICY__:JSON.stringify(isBaseline?'legacy_dual':'canonical_only'),__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_SCANNER_QA_REACT_PROFILE__:JSON.stringify(profile),__ARX_FEED_RECONCILIATION__:JSON.stringify(Boolean(feedMode)),__ARX_VOLUME_PROFILE_PROBE__:JSON.stringify(volumeProfileProbe),__ARX_FLAG_LIFECYCLE_PROBE__:JSON.stringify(flagLifecycleProbe)},esbuild:{keepNames:profile},plugins:[...(nativeOverrideRequested?[nativeEnginePlugin]:[]),...(adapterBaseline?[baselinePlugin]:[]),...(profile?[candleTimelinePlugin(repo)]:[]),dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
-    ...(profile?[{find:'react-dom/client',replacement:require.resolve('react-dom/profiling')}]:[]),
+  await build({root,configFile:false,base:'/',define:{__ARX_SCANNER_QA_BUILD_ID__:JSON.stringify(id),__ARX_VOLUME_PROFILE_PROBE__:JSON.stringify(volumeProfileProbe)},plugins:[dashboardStyleSourcePlugin(dashboard),react(),tailwind()],resolve:{alias:[
     {find:'react',replacement:path.dirname(require.resolve('react/package.json'))},
     {find:'react-dom',replacement:path.dirname(require.resolve('react-dom/package.json'))},
     {find:'@',replacement:path.join(dashboard,'src')},
     {find:'@assets',replacement:path.join(repo,'attached_assets')},
   ],dedupe:['react','react-dom']},build:{outDir:out,emptyOutDir:false,minify:'esbuild',sourcemap:false}});
-  if(nativeOverrideRequested&&!nativeOverrideApplied)throw Error('Native QA default engine override was not applied');
-  if(adapterBaseline&&!baselineApplied)throw Error('Pinned baseline adapter override was not applied');
   const after = state();
   const entries = await filesUnder(out);
   const hashes = Object.fromEntries(await Promise.all(entries.map(async file => [path.relative(out,file),sha(await readFile(file))])));
@@ -90,17 +59,17 @@ if (!serve) {
   const dashboardUtilityCss=assertDashboardUtilityCss(await Promise.all(entries.filter(f=>f.endsWith('.css')).map(f=>readFile(f,'utf8'))));
   const dev = ['react-stack-bottom-frame','data must be asc ordered by time','series item data value must be'];
   if (dev.some(marker=>sources.some(s=>s.includes(marker)))) throw Error('Development runtime found');
-  if (!(nativeEngine?['Minified React error #','arxNativeViewport']:(feedMode||volumeProfileProbe||flagLifecycleProbe)?['tv-lightweight-charts']:['Minified React error #','tv-lightweight-charts']).every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
-  const metadata = {schemaVersion:1,buildId:id,nativeEngine,productDefaultEngineId,productDefaultSourceSha256:sha(nativeIndexSource),qaOnlyDefaultEngineOverride:nativeOverrideApplied,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:!profile,diagnosticOnly:profile,reactProfiling:profile,candleTimeline:profile,
-    candleTimelineEngine:profile?(nativeEngine?'arx-native':'lightweight-charts'):null,nativePaintTimeline:profile&&nativeEngine,
-    entry:(feedMode||volumeProfileProbe||flagLifecycleProbe)?'Isolated actual chart adapter; no React app, navigation or API':'Actual dashboard src/main.tsx; observer installed before mount',isolatedPositionMiniRoute:nativeEngine?'/position-mini-qa':null,fixtureOnlyObserver:nativeEngine?'scripts/scanner-qa/shared-chart-fixture/nativeWitness.ts':flagLifecycleProbe?null:'scripts/chart-qa/witness.ts',feedReconciliation,volumeProfileProbe,flagLifecycleProbe,dashboardUtilityCss,hashes,
+  const expectedRuntime = volumeProfileProbe ? ['tv-lightweight-charts'] : ['Minified React error #','tv-lightweight-charts'];
+  if (!expectedRuntime.every(marker=>sources.some(s=>s.includes(marker)))) throw Error('Expected production runtime not found');
+  const metadata = {schemaVersion:1,buildId:id,volumeProfileProbe,builtAt:new Date().toISOString(),source:before,sourceUnchanged:JSON.stringify(before)===JSON.stringify(after),minified:true,productionRuntimeChecked:true,
+    entry:volumeProfileProbe?'Isolated actual chart adapter; no React app, navigation or API':'Actual dashboard src/main.tsx; observer installed before mount',fixtureOnlyObserver:'scripts/chart-qa/witness.ts',dashboardUtilityCss,hashes,
     limitations:['Isolated Vite configuration; this is not the deployable dashboard bundle.','Offline synthetic data and unavailable reader truth; no production or broker validation.','No hardware paint or competitor performance measurement.']};
   await writeFile(path.join(out,metadataFile),JSON.stringify(metadata,null,2)+'\n');
   console.log(JSON.stringify({buildId:id,out,source:before,sourceUnchanged:metadata.sourceUnchanged,serve:`node scripts/scanner-qa/shared-chart-fixture/build.mjs --serve=${id}`},null,2));
 } else {
   const info = JSON.parse(await readFile(path.join(out,metadataFile),'utf8'));
   if(info.buildId!==id || info.schemaVersion!==1) throw Error('Wrong build metadata');
-  const port=info.flagLifecycleProbe?4210:info.volumeProfileProbe?4209:info.feedReconciliation?(info.feedReconciliation.mode==='candidate'?4208:4207):info.reactProfiling?4299:4199;
+  const port = info.volumeProfileProbe ? 4209 : 4199;
   for (const [relative,expected] of Object.entries(info.hashes)) {
     if (path.isAbsolute(relative) || relative.split('/').includes('..')) throw Error('Invalid manifest path');
     if(sha(await readFile(path.join(out,relative)))!==expected) throw Error('Asset changed: '+relative);
@@ -109,15 +78,16 @@ if (!serve) {
   const journalDirectory=path.join(parent,id+'-navigation-receipts');
   const journal=createNavigationJournal({directory:journalDirectory,buildId:id,sourceHead:info.source.head});
   const server=http.createServer(async(req,res)=>{
-    if(info.flagLifecycleProbe)res.setHeader('Content-Security-Policy',"default-src 'self'; connect-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:");
     if(await journal(req,res))return;
-    const pathname=new URL(req.url,'http://127.0.0.1:4199').pathname;
+    const pathname=new URL(req.url,`http://127.0.0.1:${port}`).pathname;
     if(req.method!=='GET' || pathname.startsWith('/api/')) {res.writeHead(503,{'content-type':'application/json'});res.end('{"error":"OFFLINE_API_NOT_INTERCEPTED"}');return;}
-    const relative=pathname===`/${metadataFile}`?metadataFile:(isOfflineChartPagePath(pathname)?'index.html':pathname.slice(1));
+    // Existing Open Trades SPA route, used only by the offline panel journey.
+    // API paths remain explicitly rejected above; other unknown paths stay 404.
+    const relative=pathname===`/${metadataFile}`?metadataFile:((isOfflineChartPagePath(pathname)||pathname==='/my-trades')?'index.html':pathname.slice(1));
     if(relative!==metadataFile && !(relative in info.hashes)){res.writeHead(404);res.end();return;}
     try {const data=await readFile(path.join(out,relative));res.writeHead(200,{'content-type':relative===metadataFile?'application/json':types[path.extname(relative)]??'application/octet-stream','cache-control':'no-store'});res.end(data);}
     catch {res.writeHead(500);res.end();}
   });
-  server.listen(port,'127.0.0.1',()=>console.log('Actual Scanner offline QA on http://127.0.0.1:'+port+'; build '+id+'; diagnosticOnly '+Boolean(info.diagnosticOnly)+'; navigation receipts '+journalDirectory));
+  server.listen(port,'127.0.0.1',()=>console.log('Offline chart QA on http://127.0.0.1:'+port+'; build '+id+'; navigation receipts '+journalDirectory));
   for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>server.close(()=>process.exit(0)));
 }

@@ -38,7 +38,6 @@ import {
 } from "../lib/fundbook/navEngine.js";
 import { round2 } from "../lib/fundbook/navMath.js";
 import { getBrokerMirror, getPoolFloatingPl } from "../lib/fundbook/brokerMirror.js";
-import { appendAdminNativeAccountReports } from "../lib/fundbook/adminNativeBrokerMirror.js";
 import { runDrawdownEngine } from "../lib/fundbook/drawdownEngine.js";
 import {
   generateWeeklyReport,
@@ -423,10 +422,11 @@ router.get("/admin/fundbook/broker-mirror", requireUser, async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
 
+  await ensurePools();
   const { bridges, positions } = await getBrokerMirror();
   res.json({
     ok: true,
-    bridges: await appendAdminNativeAccountReports(bridges),
+    bridges,
     openPositions: positions.map((p) => ({
       bridgeConnectionId: p.bridgeConnectionId,
       userId: p.userId,

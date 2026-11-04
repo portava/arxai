@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { isApprovedArxMarket } from "@workspace/domain/market";
 import { Flame, ShieldAlert, TrendingUp, TrendingDown } from "lucide-react";
+import { Link } from "wouter";
 import { CockpitCard, ActionButton } from "./primitives";
 
 // Focus-Lock (Task #570): only scan markets that are in the approved ARX Focus
@@ -67,7 +68,7 @@ const HEAT_STATE_SHORT: Record<string, string> = {
   COOL:            "Quiet",
 };
 
-export function BestMarketsCard() {
+export function BestMarketsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const q = useGetTimingBrainMulti(
     { symbols: SCAN_SYMBOLS.join(",") },
     {
@@ -87,6 +88,16 @@ export function BestMarketsCard() {
     return PERMISSION_PASS.has(String(row["entryPermission"] ?? ""))
       && GRADE_GOOD.has(String(row["timingGrade"] ?? ""));
   }).slice(0, 3) as Array<Record<string, unknown>>;
+
+  if (compactWorkspace) {
+    const first = best[0];
+    return <div className="arx-intel-compact is-best" data-testid="cockpit-best-markets">
+      <b>Timing</b>
+      {q.isLoading ? <span>Checking verified reads…</span> : !first ? <span>{results.length === 0 ? "Unavailable · opportunities not assessed" : "No A/B candidate in returned reads"}</span> : <span title={String(first["bestAction"] ?? "")}>{String(first["symbol"])} · {String(first["timingGrade"])} · {HEAT_STATE_SHORT[String(first["heatState"] ?? "")] ?? String(first["heatState"] ?? "")}</span>}
+      {results.length > 0 && results.length < SCAN_SYMBOLS.length && <span className="is-warning">Partial coverage</span>}
+      <Link href="/market-scanner" data-testid="best-markets-scanner">Scanner</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard
@@ -149,7 +160,7 @@ export function BestMarketsCard() {
   );
 }
 
-export function AvoidMarketsCard() {
+export function AvoidMarketsCard({ compactWorkspace = false }: { compactWorkspace?: boolean }) {
   const q = useGetTimingBrainMulti(
     { symbols: SCAN_SYMBOLS.join(",") },
     {
@@ -170,6 +181,16 @@ export function AvoidMarketsCard() {
       || GRADE_BAD.has(String(row["timingGrade"] ?? ""))
       || Number(row["dangerScore"] ?? 0) >= 65;
   }).slice(0, 3) as Array<Record<string, unknown>>;
+
+  if (compactWorkspace) {
+    const first = avoid[0];
+    return <div className="arx-intel-compact is-caution" data-testid="cockpit-avoid-markets">
+      <b>Caution</b>
+      {q.isLoading ? <span>Checking verified reads…</span> : !first ? <span>{results.length === 0 ? "Unavailable · cautions not assessed" : "No listed caution · not an all-clear"}</span> : <span title={String(first["entryPermission"] ?? "")}>{String(first["symbol"])} · {String(first["timingGrade"])} · danger {String(first["dangerScore"])}</span>}
+      {results.length > 0 && results.length < SCAN_SYMBOLS.length && <span className="is-warning">Partial coverage</span>}
+      <Link href="/market-heat-map" data-testid="avoid-markets-heat">Details</Link>
+    </div>;
+  }
 
   return (
     <CockpitCard

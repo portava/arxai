@@ -29,20 +29,6 @@ import { diagnose, fixFirst, explainAppStatus } from "@/assistant/appDoctor";
 import { buildSafeReportContext } from "@/assistant/runtimeContext";
 import type { DoctorDiagnosis } from "@/assistant/runtimeContextTypes";
 
-/** Plain-text rendering of one safe-context field for the report preview
- *  (strings as-is, lists comma-joined, nested objects as compact text). The
- *  preview is for the person filing the report, not a raw payload dump. */
-function describeReportValue(value: unknown): string {
-  if (value == null) return "none";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return value.length === 0 ? "none" : value.map(describeReportValue).join(", ");
-  if (typeof value === "object") {
-    return Object.entries(value as Record<string, unknown>).map(([k, v]) => `${k}: ${describeReportValue(v)}`).join("; ");
-  }
-  return String(value);
-}
-
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 const CATEGORIES = ["BUG", "FEATURE", "UI", "TRADING", "CHART", "AI", "RISK", "JOURNAL", "MOBILE", "MT5", "OTHER"] as const;
 const SEVERITIES = ["low", "medium", "high", "critical"] as const;
@@ -1060,14 +1046,9 @@ function ReportView({
           Excludes tokens, secrets, broker credentials, account passwords, and raw request bodies.
         </p>
         {showCtx && (
-          <dl className="mt-2 max-h-40 overflow-auto rounded bg-black/40 p-2 text-[10px] text-emerald-100/90" data-testid="report-safe-context-json">
-            {Object.entries(safeCtx as Record<string, unknown>).map(([key, value]) => (
-              <div key={key} className="flex gap-2">
-                <dt className="shrink-0 text-emerald-200/70">{key}</dt>
-                <dd className="break-all">{describeReportValue(value)}</dd>
-              </div>
-            ))}
-          </dl>
+          <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/40 p-2 text-[10px] text-emerald-100/90" data-testid="report-safe-context-json">
+            {JSON.stringify(safeCtx, null, 2)}
+          </pre>
         )}
       </div>
       <input

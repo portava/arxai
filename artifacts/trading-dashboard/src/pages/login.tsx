@@ -17,6 +17,7 @@ import { useForgotPassword } from "@workspace/api-client-react";
 import { normalizeProductRole, productRoleHomePath } from "@/lib/productRole";
 import LoginShowcase from "@/components/login/LoginShowcase";
 import { useAssistantName } from "@/lib/assistant-name";
+import { beginInviteRegistration } from "@/lib/inviteCodeHandoff";
 import {
   AlertCircle,
   ArrowRight,
@@ -193,11 +194,9 @@ export default function LoginPage() {
   }
 
   function openInviteFromCode() {
-    const trimmed = inviteCode.trim();
-    if (!trimmed) return;
-    // Hand the code off to the existing registration flow, which validates
-    // `inviteCode` server-side via POST /api/auth/register.
-    navigate(`/register?invite=${encodeURIComponent(trimmed)}`);
+    // The registration form consumes this one-time value and posts it using
+    // the server's legacy `inviteCode` field. Keep it out of the URL/history.
+    beginInviteRegistration(inviteCode, navigate);
   }
 
   return (

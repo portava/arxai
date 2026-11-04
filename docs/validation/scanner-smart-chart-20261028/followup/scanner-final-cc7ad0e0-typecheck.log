@@ -1,4 +1,0 @@
-
-> @workspace/trading-dashboard@0.0.0 typecheck /Users/areyouok/arx-chart-round3-acceptance-20261028/artifacts/trading-dashboard
-> tsc -p tsconfig.json --noEmit
-

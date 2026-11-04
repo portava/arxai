@@ -171,14 +171,11 @@ function setVisibility(hidden: boolean) {
 }
 
 beforeEach(() => {
-  // New real page provider needs an offline browser transport in this route-only fixture.
-  class OfflineEventSource { static OPEN = 1; readyState = 0; addEventListener() {} close() { this.readyState = 2; } }
-  vi.stubGlobal("EventSource", OfflineEventSource);
   outageArmed = true;
   safeJsonMock.mockClear();
   setVisibility(false);
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => cleanup());
 
 describe("Market Scanner — degraded banner on the Focus tab", () => {
   it("shows the honest 'Scanner error' banner on the default Focus tab during an outage", async () => {

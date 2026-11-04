@@ -57,7 +57,7 @@ export const BRIDGE_V2_STREAM_STALE_MS = 120_000;
  * adapter account snapshot, /mt5 bridge diagnostics broker snapshot, shared
  * master pool snapshot budget.
  */
-export { MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from "@workspace/domain/broker-health";
+export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;
 
 /**
  * Live account snapshot display bands (lib/live/liveAccountSnapshot.ts

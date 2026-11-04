@@ -56,10 +56,20 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
         symbol:adapter.symbol,intervalSeconds:adapter.intervalSeconds,style:adapter.style,
         feed:{source:adapter.feedState.source,livePriceAffordance:adapter.feedState.livePriceAffordance},
         range:range ? {from:range.from,to:range.to} : null,
-        visibleTimeRange:adapter.chart.timeScale().getVisibleRange(),
-        linkedView:{requestedRange:adapter.linkedRange ? {...adapter.linkedRange} : null,
-          requestedCursor:adapter.linkedCursor ?? null,hoveredCandle:bar(adapter.hoveredCandle)},
         bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
+      };
+    },
+    layoutGeometry(index = 0) {
+      const found = adapterFor(index); if (!found) return null;
+      const {container,adapter} = found;
+      const bounds = container.getBoundingClientRect();
+      const plotWidth = adapter.chart.timeScale().width();
+      const plotHeight = adapter.chart.panes()[0]?.getHeight() ?? 0;
+      return {
+        container:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
+        plot:{x:bounds.x,y:bounds.y,width:plotWidth,height:plotHeight},
+        priceScale:{x:bounds.x+plotWidth,y:bounds.y,width:bounds.width-plotWidth,height:plotHeight},
+        timeAxis:{x:bounds.x,y:bounds.y+plotHeight,width:plotWidth,height:bounds.height-plotHeight},
       };
     },
     anchorCoordinates(time: number, price: number, index = 0) {
@@ -84,33 +94,13 @@ export function installChartQaWitnesses(Adapter: { prototype: any }): () => void
       const low = Math.min(...visible.map((c: any) => c.low)), high = Math.max(...visible.map((c: any) => c.high));
       return {low,high,lowY:adapter.series.priceToCoordinate(low),highY:adapter.series.priceToCoordinate(high),paneHeight:adapter.chart.panes()[0].getHeight()};
     },
-    priceAnnotationState(index = 0) {
-      const found = adapterFor(index); if (!found) return null;
-      const {adapter} = found, options = adapter.series.options();
-      const lastLine = adapter.lastPriceLine?.options();
-      // priceLines() returns fresh wrappers; options() identifies the underlying line.
-      const attachedLines = adapter.series.priceLines();
-      return {
-        canonicalLastLineAttached: !!adapter.lastPriceLine && attachedLines.some((line: any)=>line.options()===lastLine),
-        attachedPriceLines: attachedLines.map((line: any) => {const o=line.options();return {price:o.price,title:o.title,axisLabelVisible:o.axisLabelVisible,canonical:o===lastLine};}),
-        nativeLastValueVisible: options.lastValueVisible,
-        nativePriceLineVisible: options.priceLineVisible,
-        canonicalLastLine: lastLine ? {price:lastLine.price,title:lastLine.title,axisLabelVisible:lastLine.axisLabelVisible} : null,
-        selectedAnnotation: adapter.smartAnnotation == null ? null : JSON.parse(JSON.stringify(adapter.smartAnnotation)),
-        secondaryStructureSeries: adapter.structureSeries.length,
-        secondaryStructureMarkersPresent: adapter.structureMarkersApi != null,
-      };
-    },
     configuration(index = 0) {
       const found = adapterFor(index); if (!found) return null;
       const scale = found.adapter.series.priceScale().options();
       return {
-        analysisFocus: {enabled:found.adapter.isAnalysisFocused?.()??false,verified:found.adapter.isAnalysisFocusVerified?.()??true},
         scale: { mode: scale.mode, inverted: scale.invertScale },
         studies: (found.adapter.analysis?.studies ?? []).map((study: any) => ({
-          config: JSON.parse(JSON.stringify(study.calculator.config)),
-          calculatorId: id(study.calculator),
-          lineIds: study.lines.map(id),
+          config: { ...study.calculator.config },
           options: study.lines.map((line: any) => {
             const options = line.options();
             return {visible:options.visible,color:options.color,lineWidth:options.lineWidth,lineStyle:options.lineStyle,title:options.title};

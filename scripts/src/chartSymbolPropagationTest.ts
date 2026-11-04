@@ -37,7 +37,7 @@ must(
 );
 must(
   "live-ai-assist dropdown writes through setChartSymbol",
-  /onSymbolChange=\{setChartSymbol\}/.test(liveAi),
+  /setChartSymbol\s*\(/.test(liveAi),
 );
 
 const chartEntry = F("artifacts/trading-dashboard/src/components/charts/ChartTradeEntry.tsx");
@@ -62,16 +62,14 @@ must(
   /Opens trade ticket\. Final confirmation required\./.test(chartEntry),
 );
 
-const nativeChartView = F("artifacts/trading-dashboard/src/components/charts/SmartChartView.tsx");
+const tvChart = F("artifacts/trading-dashboard/src/components/charts/TradingViewLiveChart.tsx");
 must(
-  "SmartChartView reads and changes the shared chart-symbol bus",
-  /\[sharedSymbol, setSharedSymbol\] = useChartSymbol\(\)/.test(nativeChartView)
-    && /onSymbolChange \?\? setSharedSymbol/.test(nativeChartView),
+  "TradingViewLiveChart broadcasts symbol changes via setChartSymbol",
+  /broadcastChartSymbol|setChartSymbol/.test(tvChart),
 );
 must(
-  "SmartChartView renders native candles without an external widget or substitute market",
-  /<ARXNativeChart/.test(nativeChartView) && /No substitute market is shown/.test(nativeChartView)
-    && !/TradingView\.widget|s3\.tradingview/.test(nativeChartView),
+  "TradingViewLiveChart disables in-widget symbol search (forces React-controlled changes)",
+  /allow_symbol_change:\s*false/.test(tvChart),
 );
 
 const sharedTicket = F("artifacts/trading-dashboard/src/components/live/LiveSharedTradeTicket.tsx");
@@ -114,10 +112,8 @@ must(
   /from\s+"@\/lib\/use-chart-symbol"/.test(symbolPicker) && /setChartSymbol\s*\(/.test(symbolPicker),
 );
 must(
-  "SymbolPicker preserves the approved row's exact broker symbol, else its canonical symbol",
-  /useResolvedSymbols\s*\(\)/.test(symbolPicker)
-    && /const target = view\.brokerSymbol \?\? view\.symbol/.test(symbolPicker)
-    && /setChartSymbol\(target\)/.test(symbolPicker),
+  "SymbolPicker canonicalises the picked symbol via resolveSymbol before writing the bus",
+  /from\s+"@\/lib\/symbolRegistry"/.test(symbolPicker) && /resolveSymbol\s*\(/.test(symbolPicker),
 );
 must(
   "SymbolPicker label reflects the chart bus (useChartSymbol) so it never drifts from the explorer",

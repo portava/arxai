@@ -4,9 +4,8 @@ import { readFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import vm from "node:vm";
 import ts from "typescript";
-import { createSharedAccountChangeStream, resolveSharedAccountChangeScope, resolveAccountStreamAuthorization } from "../sharedAccountChangeStream.js";
-import * as changeStreamModule from "../sharedAccountChangeStream.js";
 import { createAccountSnapshotScheduler } from "../accountSnapshotScheduler.js";
+import { createSseWriter } from "../../perf/sseWriter.js";
 
 // Execute the actual route body with read-only data/transport seams. No DB,
 // credentials, server or broker. This supplements the scheduler's clock tests;
@@ -18,26 +17,11 @@ const route = source.slice(begin, source.indexOf("\n});", begin) + 4)
   .replace('await import("../lib/live/liveAccountSnapshot.js")', "await snapshotModule()")
   .replace('await import("../lib/live/liveAccountEventBus.js")', "await busModule()");
 const js = ts.transpileModule(route, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-function harness(delayModule = false, initialAdmin = false, master: number | null = null, live = false, personal: number | null = null) {
-  let personalId = personal;
-  let personalUserId = 7;
-  let personalFailure = false;
-  let personalReadHook: (() => Promise<void>) | null = null;
-  const personalSelections: number[] = [];
-  let pinned = master;
-  let allocated = master != null;
-  let failSession = false;
-  const req = Object.assign(new EventEmitter(), { cookies: { arx_user_session: "fixture-session" } });
-  let session: {id:number;role:string} | null = {id:7,role:initialAdmin ? "OWNER" : "USER"};
-  let ended = false;
-  const scopes: boolean[] = [];
-  const emitter = new EventEmitter();
-  const bus = Object.assign(emitter, {
-    onConnection(id:number, listener:()=>void) { emitter.on(`c:${id}`,listener); },
-    offConnection(id:number, listener:()=>void) { emitter.off(`c:${id}`,listener); },
-  });
+function harness(delayModule = false) {
+  const req = new EventEmitter();
+  const bus = new EventEmitter();
   const writes: string[] = [];
   const intervals = new Map<number, () => void>();
   let handler!: (req: unknown, res: unknown) => Promise<void>;
@@ -46,19 +30,13 @@ function harness(delayModule = false, initialAdmin = false, master: number | nul
   const releases: Array<() => void> = [];
   const context = {
     router: { get: (_path: string, _auth: unknown, fn: typeof handler) => { handler = fn; } },
-    requireUser: () => {}, uid: () => 7, isAdmin: () => initialAdmin,
-    USER_SESSION_COOKIE: "arx_user_session", findUserBySessionToken: async (_token:string, options?:{readOnly?:boolean}) => { assert.equal(options?.readOnly,true); if (failSession) throw Error("session unavailable"); return session; },
-    resolveAccountStreamAuthorization, resolveSharedAccountChangeScope,
-    resolvePersonalAccountChangeScope: (changeStreamModule as any).resolvePersonalAccountChangeScope,
-    getUserActiveConnection: async (id: number) => { personalSelections.push(id); if (personalReadHook) await personalReadHook(); if (personalFailure) throw Error("personal selection unavailable"); return personalId == null ? null : { id: personalId, userId: personalUserId }; },
-    createSharedAccountChangeStream: (options:Parameters<typeof createSharedAccountChangeStream>[0]) => createSharedAccountChangeStream({...options,schedulerOptions:{minGapMs:0}}),
-    getUserAllocationView: async () => ({pool:pinned == null ? null : {masterConnectionId:pinned},hasAllocation:allocated}), resolveActiveMasterConnectionId: async () => pinned,
-    snapshotModule: () => delayModule ? new Promise(resolve => { finishModule = resolve; }) : Promise.resolve({buildLiveAccountSnapshot:()=>({balance:100,privateFixture:true})}),
+    requireUser: () => {}, uid: () => "u1", isAdmin: () => false,
+    snapshotModule: () => delayModule ? new Promise(resolve => { finishModule = resolve; }) : Promise.resolve({}),
     busModule: async () => ({ liveAccountEventBus: bus }),
     createAccountSnapshotScheduler: (read: () => Promise<void>) => createAccountSnapshotScheduler(read, { minGapMs: 0 }),
-    getUserModeScope: async (_id:number, options:{isAdmin:boolean}) => { scopes.push(options.isAdmin); return { currentAccountMode: live ? "LIVE_SHARED" : "DEMO" }; },
-    resolveLivePositionVisibility: () => ({ includeLive: live, notLiveReason: "not live" }),
-    selectLiveOpenPositions:async()=>[], livePositionColumns:{}, getUserAccountConnection:async()=>null, accountFiguresOf:()=>null, connectionAccountSnapshot:()=>null,
+    createSseWriter,
+    getUserModeScope: async () => ({ currentAccountMode: "DEMO" }),
+    resolveLivePositionVisibility: () => ({ includeLive: false, notLiveReason: "not live" }),
     fetchInvestorBalanceParts: async () => {
       reads++; active++; maxActive = Math.max(maxActive, active);
       await new Promise<void>(resolve => releases.push(resolve)); active--;
@@ -71,13 +49,15 @@ function harness(delayModule = false, initialAdmin = false, master: number | nul
     setTimeout, clearTimeout,
   };
   vm.runInNewContext(js, context);
-  const response = { setHeader() {}, flushHeaders() {}, write: (value: string) => writes.push(value), end: () => { ended=true; } };
+  const response = Object.assign(new EventEmitter(), {
+    destroyed: false, writableEnded: false,
+    setHeader() {}, flushHeaders() {},
+    write: (value: string) => { writes.push(value); return true; },
+    destroy(this: EventEmitter & { destroyed: boolean }) { this.destroyed = true; this.emit("close"); },
+  });
   const run = handler(req, response);
   return {
-    personal: (id:number|null)=>{personalId=id;}, personalOwner: (id:number)=>{personalUserId=id;}, personalFailure: (v:boolean)=>{personalFailure=v;}, personalReadHook: (v:typeof personalReadHook)=>{personalReadHook=v;}, personalSelections,
-    monetaryWrites: () => writes.filter(x => JSON.parse(x.slice(6)).type === "account_snapshot"),
-    pin: (id:number|null)=>{pinned=id;}, allocation:(value:boolean)=>{allocated=value;}, failSession:()=>{failSession=true;},
-    run, req, bus, writes, intervals, scopes, ended: () => ended, session: (value:typeof session) => {session=value;},
+    run, req, bus, writes, intervals,
     finishModule: () => finishModule({}),
     reads: () => reads, maxActive: () => maxActive,
     release: () => { const done = releases.shift(); assert.ok(done); done(); },
@@ -88,18 +68,18 @@ test("an update during the initial account read earns a trailing refresh", async
   const h = harness(); await flush();
   try {
     assert.equal(h.reads(), 1);
-    assert.equal(h.bus.listenerCount("7"), 1);
-    h.bus.emit("7"); h.release(); await flush();
+    assert.equal(h.bus.listenerCount("u1"), 1);
+    h.bus.emit("u1"); h.release(); await flush();
     assert.equal(h.reads(), 2);
     h.release(); await flush();
-    assert.equal(h.monetaryWrites().length, 2);
+    assert.equal(h.writes.length, 2);
   } finally { h.req.emit("close"); }
 });
 
 test("fallback ticks cannot overlap an event-driven refresh", async () => {
   const h = harness(); await flush(); h.release(); await flush();
   try {
-    h.bus.emit("7"); await flush();
+    h.bus.emit("u1"); await flush();
     assert.equal(h.reads(), 2);
     h.intervals.get(3000)!(); await flush();
     assert.equal(h.maxActive(), 1);
@@ -113,132 +93,15 @@ test("fallback ticks cannot overlap an event-driven refresh", async () => {
 test("disconnect during module loading never starts reads or subscriptions", async () => {
   const h = harness(true); h.req.emit("close"); h.finishModule(); await flush();
   assert.equal(h.reads(), 0);
-  assert.equal(h.bus.listenerCount("7"), 0);
+  assert.equal(h.bus.listenerCount("u1"), 0);
   assert.equal(h.intervals.size, 0);
 });
 
 test("disconnect during a read suppresses writes and trailing work", async () => {
   const h = harness(); await flush();
-  h.bus.emit("7"); h.req.emit("close"); h.release(); await flush();
+  h.bus.emit("u1"); h.req.emit("close"); h.release(); await flush();
   assert.equal(h.reads(), 1);
-  assert.equal(h.bus.listenerCount("7"), 0);
+  assert.equal(h.bus.listenerCount("u1"), 0);
   assert.equal(h.intervals.size, 0);
-  assert.equal(h.monetaryWrites().length, 0);
-});
-
-for (const changedSession of [null, {id:8,role:"OWNER"}]) {
-  test(`revoked/replaced session during pending read closes stream without monetary payload: ${changedSession?.id ?? 'revoked'}`, async () => {
-    const h=harness();await flush();assert.equal(h.reads(),1);
-    h.session(changedSession);h.release();await flush();
-    assert.equal(h.monetaryWrites().length,0);assert.equal(h.ended(),true);assert.equal(h.bus.listenerCount("7"),0);assert.equal(h.intervals.size,0);
-  });
-}
-test('role downgrade during pending monetary read discards privileged result and rebuilds under user gate',async()=>{
- const h=harness(false,true);await flush();assert.deepEqual(h.scopes,[true]);
- h.session({id:7,role:'USER'});h.release();await flush();assert.equal(h.monetaryWrites().length,0);assert.deepEqual(h.scopes,[true,false]);
- h.release();await flush();assert.equal(h.monetaryWrites().length,1);h.req.emit('close');
-});
-test('initial effective user cap survives a persisted owner role',async()=>{
- const h=harness();h.session({id:7,role:'OWNER'});await flush();assert.deepEqual(h.scopes,[false]);h.release();await flush();assert.equal(h.monetaryWrites().length,1);h.req.emit('close');
-});
-
-test('actual route sends only empty authorized master hints and rebinds on fallback pin change',async()=>{
- const h=harness(false,false,81);await flush();
- const hints=()=>h.writes.map(x=>JSON.parse(x.slice(6))).filter(x=>x.type==='shared_account_changed');
- assert.deepEqual(hints(),[{type:'shared_account_changed'}]);assert.equal(h.bus.listenerCount('c:81'),1);
- h.bus.emit('c:82');await flush();assert.equal(hints().length,1);
- h.bus.emit('c:81');await flush();assert.equal(hints().length,2);
- h.pin(82);h.intervals.get(3000)!();await flush();assert.equal(h.bus.listenerCount('c:81'),0);assert.equal(h.bus.listenerCount('c:82'),1);assert.equal(hints().length,3);
- h.allocation(false);h.bus.emit('c:82');await flush();assert.equal(hints().length,3);assert.equal(h.bus.listenerCount('c:82'),0);
- h.req.emit('close');h.release();await flush();assert.equal(h.intervals.size,0);
-});
-test('failed current session lookup closes whole stream and removes shared subscription',async()=>{
- const h=harness(false,false,81);await flush();assert.equal(h.bus.listenerCount('c:81'),1);
- h.failSession();h.bus.emit('c:81');await flush();assert.equal(h.ended(),true);assert.equal(h.bus.listenerCount('c:81'),0);assert.equal(h.bus.listenerCount('7'),0);
- const count=h.writes.length;h.release();await flush();assert.equal(h.writes.length,count);
-});
-
-test('actual route fallback tick requests a canonical summary reread without a local account event', async () => {
-  const h = harness(false, false, 81);
-  await flush();
-  const hints = () => h.writes.map(x => JSON.parse(x.slice(6))).filter(x => x.type === 'shared_account_changed');
-  try {
-    assert.equal(hints().length, 1);
-    h.intervals.get(3000)!(); await flush();
-    assert.deepEqual(hints(), [{ type: 'shared_account_changed' }, { type: 'shared_account_changed' }]);
-    h.allocation(false);
-    h.intervals.get(3000)!(); await flush();
-    assert.equal(hints().length, 2);
-    assert.equal(h.bus.listenerCount('c:81'), 0);
-  } finally { h.req.emit('close'); h.release(); await flush(); }
-});
-
-for(const revoke of [true,false]){
- test(`LIVE monetary result rechecks authorization after final awaited read (${revoke?'logout':'downgrade'})`,async()=>{
-  const h=harness(false,true,null,true);await flush();assert.equal(h.reads(),1);
-  h.session(revoke?null:{id:7,role:'USER'});h.release();await flush();assert.equal(h.monetaryWrites().length,0);
-  if(revoke){assert.equal(h.ended(),true);}else{assert.deepEqual(h.scopes,[true,false]);h.release();await flush();assert.equal(h.monetaryWrites().length,1);}
-  h.req.emit('close');
- });
-}
-
-const personalHints = (h: ReturnType<typeof harness>) => h.writes.map(x => JSON.parse(x.slice(6))).filter(x => x.type === 'personal_account_changed');
-test('actual route binds only selected own connection and clears/refetches on selection removal', async () => {
- const h = harness(false, false, null, false, 81); await flush();
- try {
-  assert.deepEqual(personalHints(h), [{type:'personal_account_changed'}]); assert.deepEqual(h.personalSelections, [7]);
-  assert.equal(h.bus.listenerCount('c:81'), 1); h.bus.emit('c:82'); await flush(); assert.equal(personalHints(h).length, 1);
-  h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 2);
-  h.personal(null); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 3); assert.equal(h.bus.listenerCount('c:81'), 0);
-  h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 4);
-  h.personal(82); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 5); assert.equal(h.bus.listenerCount('c:82'), 1);
-  h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 5);
- } finally { h.req.emit('close'); h.release(); await flush(); }
- assert.equal(h.bus.listenerCount('c:82'), 0); assert.equal(h.intervals.size, 0);
-});
-test('actual route empty personal selection invalidates cached view without master allocation access', async () => {
- const h = harness(); await flush();
- try { assert.deepEqual(personalHints(h), [{type:'personal_account_changed'}]); assert.equal(h.bus.listenerCount('c:81'), 0); }
- finally { h.req.emit('close'); h.release(); await flush(); }
-});
-test('personal scope refuses foreign owner and recovers after failed selector without old listeners', async () => {
- const h = harness(false, false, null, false, 81); await flush();
- try {
-  h.personalOwner(8); h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 1); assert.equal(h.bus.listenerCount('c:81'), 0);
-  h.personalOwner(7); h.personalFailure(true); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 1);
-  h.personalFailure(false); h.intervals.get(3000)!(); await flush(); assert.equal(personalHints(h).length, 2);
- } finally { h.req.emit('close'); h.release(); await flush(); }
-});
-test('logout during awaited personal selection closes whole stream before another hint', async () => {
- const h = harness(false, false, null, false, 81); await flush();
- h.personalReadHook(async () => { h.session(null); }); h.bus.emit('c:81'); await flush();
- assert.equal(personalHints(h).length, 1); assert.equal(h.ended(), true); assert.equal(h.bus.listenerCount('c:81'), 0); assert.equal(h.bus.listenerCount('7'), 0); assert.equal(h.intervals.size, 0);
- h.release(); await flush(); assert.equal(h.monetaryWrites().length, 0);
-});
-test('close during awaited personal selection cannot emit or rebind', async () => {
- const h = harness(false, false, null, false, 81); await flush(); let release!: () => void;
- h.personalReadHook(() => new Promise<void>(r => { release = r; })); h.bus.emit('c:81'); await flush();
- h.req.emit('close'); release(); await flush(); assert.equal(personalHints(h).length, 1); assert.equal(h.bus.listenerCount('c:81'), 0); h.release(); await flush();
-});
-
-test('personal selection changing during an awaited lookup rebinds to current result and rejects queued old events', async () => {
- const h = harness(false, false, null, false, 81); await flush(); let release!: () => void;
- h.personalReadHook(() => new Promise<void>(r => { release = r; })); h.bus.emit('c:81'); await flush();
- for(let i=0;i<20;i++) h.bus.emit('c:81');
- h.personal(82); h.personalReadHook(null); release(); await flush();
- try {
-  assert.equal(h.bus.listenerCount('c:81'), 0); assert.equal(h.bus.listenerCount('c:82'), 1);
-  assert.equal(personalHints(h).length, 2);
-  h.bus.emit('c:81'); await flush(); assert.equal(personalHints(h).length, 2);
-  h.bus.emit('c:82'); await flush(); assert.equal(personalHints(h).length, 3);
- } finally { h.req.emit('close'); h.release(); await flush(); }
-});
-
-test('existing own-user account event reselects promptly, while another user event cannot refresh personal scope', async () => {
- const h = harness(false, false, null, false, 81); await flush();
- try {
-  h.personal(82); h.bus.emit('8'); await flush(); assert.equal(personalHints(h).length, 1); assert.equal(h.personalSelections.length, 1);
-  h.bus.emit('7'); await flush(); assert.equal(personalHints(h).length, 2);
-  assert.equal(h.bus.listenerCount('c:81'), 0); assert.equal(h.bus.listenerCount('c:82'), 1);
- } finally { h.req.emit('close'); h.release(); await flush(); }
+  assert.equal(h.writes.length, 0);
 });

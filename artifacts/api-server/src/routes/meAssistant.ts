@@ -721,13 +721,13 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   // null context (→ INSUFFICIENT basis → the producer refuses a drawing).
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200, { userId: req.authUser?.id });
+    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200);
   } catch {
     // fail-safe — handled as a gated (non-VERIFIED) read below.
   }
 
   const candles = rubyCtx?.candles ?? [];
-  let htfBias: StructureBias | null = null;
+  let htfBias: StructureBias = "No clear edge";
   if ((rubyCtx?.htfCandles.length ?? 0) >= 10) htfBias = quickTrend(rubyCtx!.htfCandles);
   const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null });
   if (clientFeedUnconfirmed) {
@@ -934,7 +934,7 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
   // gate-blocked (basis !== "VERIFIED") below.
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit, { userId: req.authUser?.id });
+    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit);
   } catch {
     // fail-safe — treat as gate-blocked below
   }

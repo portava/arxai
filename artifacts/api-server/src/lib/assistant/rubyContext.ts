@@ -334,9 +334,20 @@ export async function buildRubyContext(
   // visibility gate (getUserModeScope → resolveLivePositionVisibility), so a
   // PAPER/DEMO/UNKNOWN user never receives a LIVE_SHARED-labelled figure.
   try {
-    const { buildInvestorLiveBalanceSnapshot, toInvestorLiveBalanceWire } = await import("../live/investorLiveBalance.js");
+    const { buildInvestorLiveBalanceSnapshot } = await import("../live/investorLiveBalance.js");
     const inv = await buildInvestorLiveBalanceSnapshot(userId);
-    account.live = toInvestorLiveBalanceWire(inv);
+    account.live = {
+      source: inv.source,
+      allocatedBalance: inv.allocatedBalance,
+      realizedPnL: inv.realizedPnL,
+      floatingPnL: inv.floatingPnL,
+      liveEquity: inv.liveEquity,
+      marginUsed: inv.marginUsed,
+      freeMargin: inv.freeMargin,
+      availableBalance: inv.availableBalance,
+      openTradeCount: inv.openTradeCount,
+      freshness: inv.freshness,
+    };
     // openPL mirrors the underlying snapshot's openPL exactly (null when no
     // positions or all-unknown), preserving the prior briefing behaviour and
     // matching the Dashboard.
@@ -545,7 +556,7 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
         fresh === "live" || fresh === "fresh" ? "" :
         fresh === "delayed" ? " (slightly delayed)" :
         fresh === "stale" ? " (last known — may be stale)" : "";
-      lines.push(`Supplied-position P/L subtotal: ${ctx.account.openPL}${freshnessNote}; account and currency scope are unverified, so this is not a whole-account broker profit report.`);
+      lines.push(`Open floating P/L: ${fmtMoney(ctx.account.openPL, null)}${freshnessNote}.`);
     }
   } else {
     lines.push("No positions are currently open.");

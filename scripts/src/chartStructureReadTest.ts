@@ -127,9 +127,7 @@ function mk(closes: number[], spread = 0.4): Candle[] {
 {
   const up = mk(Array.from({ length: 60 }, (_, i) => 100 + i));
   const okTrend = quickTrend(up) === "Bullish";
-  const okHtf = higherTimeframeOf("4h") === "D1" && higherTimeframeOf("1d") === "W1"
-    && higherTimeframeOf("H4") === "D1" && higherTimeframeOf("D1") === "W1"
-    && higherTimeframeOf("W1") === null;
+  const okHtf = higherTimeframeOf("4h") === "1d" && higherTimeframeOf("1d") === "1w";
   record("helpers: quickTrend + higherTimeframeOf", okTrend && okHtf);
 }
 

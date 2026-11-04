@@ -54,24 +54,16 @@ function Tile({ label, value, tone, sub }: { label: string; value: string; tone?
 }
 
 export function CanonicalBalancePanel({ live, className, title, updatesPaused = false }: CanonicalBalancePanelProps) {
-  const reportedStatus = live?.freshness.status ?? "unavailable";
+  const status = live?.freshness.status ?? "unavailable";
   const lastUpdatedMs = live?.freshness.lastUpdatedAt ? Date.parse(live.freshness.lastUpdatedAt) : null;
-  const incomplete = live != null && (live.positionPnlComplete !== true || typeof live.floatingPnL !== "number" || !Number.isFinite(live.floatingPnL));
-  const estimated = live?.positionPnlEstimated === true;
-  const scopeUnverified = live?.monetaryScopeVerified !== true;
-  const realizedComplete = Number.isSafeInteger(live?.realizedPnLPendingCount) && live!.realizedPnLPendingCount === 0;
-  const derivedUnavailable = incomplete || estimated || scopeUnverified || !realizedComplete;
-  const status = derivedUnavailable ? "unavailable" : reportedStatus;
-  const floating = signedMoney(incomplete ? null : live?.floatingPnL ?? null);
-  if (!incomplete && live?.floatingPnL != null) floating.text = `${estimated ? "~" : ""}${live.floatingPnL} (currency unverified)`;
-  if (estimated || scopeUnverified) floating.tone = "text-txt-muted";
-  const realized = signedMoney(realizedComplete ? live?.realizedPnL ?? null : null);
+  const floating = signedMoney(live?.floatingPnL ?? null);
+  const realized = signedMoney(live?.realizedPnL ?? null);
   const floatingUnavailable = live != null && live.floatingPnL == null;
 
   return (
     <div className={cn("rounded-xl border border-border bg-surface/40 p-3", className)}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-txt">{title && title !== "Live balance" ? title : "ARX allocation"}</span>
+        <span className="text-xs font-semibold text-txt">{title ?? "Account balance"}</span>
         <FreshnessBadge
           freshness={toBadgeFreshness(status)}
           lastUpdatedMs={Number.isFinite(lastUpdatedMs) ? lastUpdatedMs : null}
@@ -80,23 +72,19 @@ export function CanonicalBalancePanel({ live, className, title, updatesPaused = 
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile label="Allocated" value={money(live?.allocatedBalance ?? null)} />
-        <Tile label={updatesPaused || status !== "fresh" ? "Last-known allocation equity" : "Allocation equity"} value={money(derivedUnavailable ? null : live?.liveEquity ?? null)} />
-        <Tile label="Allocation available" value={money(incomplete || scopeUnverified ? null : live?.availableBalance ?? null)} />
+        <Tile label={updatesPaused || status !== "fresh" ? "Last-known equity" : "Live equity"} value={money(live?.liveEquity ?? null)} />
+        <Tile label="Available" value={money(live?.availableBalance ?? null)} />
         <Tile
-          label="Position P/L"
+          label="Floating P/L"
           value={floating.text}
           tone={floating.tone}
           sub={floatingUnavailable ? "unavailable" : undefined}
         />
         <Tile label="Realized P/L" value={realized.text} tone={realized.tone} />
-        <Tile label="Reserved risk" value={money(live?.marginUsed ?? null)} />
-        <Tile label="Allocation less reserved risk" value={money(derivedUnavailable ? null : live?.freeMargin ?? null)} />
+        <Tile label="Margin used" value={money(live?.marginUsed ?? null)} />
+        <Tile label="Free margin" value={money(live?.freeMargin ?? null)} />
         <Tile label="Open trades" value={live?.openTradeCount != null && Number.isInteger(live.openTradeCount) && live.openTradeCount >= 0 ? String(live.openTradeCount) : "—"} />
       </div>
-      <p className="mt-2 text-[11px] text-txt-muted">ARX allocation accounting, not broker account balance, equity or margin.</p>
-      {scopeUnverified && <p className="mt-2 text-[11px] text-warning">Position totals have no verified shared account and currency scope. They cannot establish allocation equity or available funds.</p>}
-      {estimated && <p className="mt-2 text-[11px] text-txt-muted">Quote-derived position P/L is an estimate; account-currency conversion is unverified.</p>}
-      {derivedUnavailable && <p className="mt-2 text-[11px] text-warning">Position or realized P/L evidence is incomplete, estimated, or has unverified monetary scope. Derived allocation figures are unavailable.</p>}
       {updatesPaused && (
         <p className="mt-2 text-[11px] text-txt-muted" data-testid="canonical-balance-paused-note">
           Automatic updates are paused. These are the last received figures; Refresh checks them once.

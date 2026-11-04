@@ -486,8 +486,6 @@ export interface ChartReadReasoningInput {
   feedNotConfirmed?: boolean;
   /** Panel-resolved downgrade reason (same dimension that drove the downgrade). */
   reason?: string | null;
-  /** Independent shared-data limitation; does not erase valid structural context. */
-  feedLimitation?: string | null;
 }
 
 function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
@@ -497,36 +495,14 @@ function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
   return null;
 }
 
-/** These notes are child evidence from the read-chart response, not a second
- * detector or a description of every drawing currently visible on the chart. */
-function chartReadNote(value: unknown, kind: "pattern" | "trendline"): string {
-  const missing = `No qualified ${kind} evidence was supplied for this assessment; chart annotations may come from another analysis.`;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return missing;
-  const note = value as Record<string, unknown>;
-  const text = note[`${kind}Note`], status = note[`${kind}Status`];
-  const conditional = note[`${kind}Conditional`], contextOnly = note[`${kind}ContextOnly`];
-  if (typeof text !== "string" || !text.trim() || typeof status !== "string" || !status.trim()
-    || typeof conditional !== "boolean" || typeof contextOnly !== "boolean") return missing;
-  const statuses: Record<string, string> = {
-    none: "No detection reported", forming: "Still forming", confirmed: "Confirmed by this analysis",
-    failed: "Failed formation", exhausted: "Extended; may be late",
-    ...(kind === "pattern" ? { invalidated: "Invalidated" } : { broken: "Line broken", retesting: "Retest in progress", reclaimed: "Line reclaimed" }),
-  };
-  const key = status.trim().toLowerCase();
-  const readableStatus = Object.hasOwn(statuses, key) ? statuses[key] : undefined;
-  if (!readableStatus) return missing;
-  return `${text.trim()} (${readableStatus}${conditional ? "; conditional" : ""}${contextOnly ? "; context only" : ""}).`;
-}
-
 export function buildReasoningFromChartRead(
   input: ChartReadReasoningInput,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
 ): RubyReasoningBlockData {
   const { read, symbol, timeframe } = input;
-  const reason = clean(input.reason) || clean(read.blockedReason);
-  const gated = read.gated === true || read.dataQuality === "insufficient" || read.readLayer === "INSUFFICIENT";
-  const structuralOnly = !!input.structuralOnly || read.readLayer === "STRUCTURAL_ONLY"
-    || read.liveSetupWithheld === true || read.canShowLiveTradeSetup === false;
+  const reason = clean(input.reason);
+  const gated = read.gated === true;
+  const structuralOnly = !!input.structuralOnly;
   const feedNotConfirmed = !!input.feedNotConfirmed;
   const withheld = gated || feedNotConfirmed || structuralOnly;
   const dir = biasDir(read.bias);
@@ -535,7 +511,7 @@ export function buildReasoningFromChartRead(
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
   if (gated || feedNotConfirmed) {
-    decision = gated ? "WAIT — chart read restricted" : "WAIT — live feed not confirmed";
+    decision = "WAIT — live feed not confirmed";
   } else if (structuralOnly) {
     decision = dir ? `Conditional ${dir} — structural read only` : "WAIT — structure only";
   } else if (!dir) {
@@ -547,55 +523,50 @@ export function buildReasoningFromChartRead(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = gated || feedNotConfirmed ? "Directional structure is withheld for this restricted read." : orElse(
+  const structure = orElse(
     clean(read.htfBias)
       ? `Higher-timeframe bias ${read.htfBias}${clean(read.bias) ? `; ${read.bias} on ${timeframe}` : ""}.`
       : read.bias,
     NOT_ENOUGH,
   );
-  // ChartRead has no dedicated momentum evidence. Confidence cannot stand in
-  // for an RSI, rate-of-change, or other momentum measurement.
-  const momentum = "Momentum is not assessed here. Read confidence does not measure price momentum.";
-  const pattern = gated || feedNotConfirmed
-    ? "Pattern evidence is withheld for this restricted read; visible chart annotations are separate."
-    : chartReadNote(read.patternRead, "pattern");
-  const trendline = gated || feedNotConfirmed
-    ? "Trendline evidence is withheld for this restricted read; visible chart drawings are separate."
-    : chartReadNote(read.trendlineRead, "trendline");
+  const momentum = clean(read.confidence)
+    ? `Read confidence ${read.confidence}.`
+    : NOT_ENOUGH;
+  const pattern = withheld
+    ? "Pattern read withheld until the live feed confirms."
+    : "No specific chart pattern named.";
+  const trendline = withheld
+    ? "Trendline read withheld until the live feed confirms."
+    : "No specific trendline named.";
 
   let supportResistance: string;
   if (gated || feedNotConfirmed) {
-    supportResistance = "Support/resistance levels are withheld for this restricted read.";
+    supportResistance = "Support/resistance levels are withheld until the live feed confirms.";
   } else if (structuralOnly) {
-    supportResistance = `Reported support ${orElse(read.supportZone, "not supplied")} · Resistance ${orElse(read.resistanceZone, "not supplied")}. Exact entry/stop/target withheld; resolve the stated setup restrictions first.`;
+    supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")}. Exact entry/stop/target withheld until the feed confirms.`;
   } else {
     supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")}. Mind room into these levels.`;
   }
 
   let feedData: string;
   if (gated) {
-    feedData = `Chart read restricted.${reason ? ` ${reason}` : " No qualified directional read is available."}`;
+    feedData = orElse(read.blockedReason, "Feed not confirmed — no directional structure available.");
+  } else if (structuralOnly) {
+    feedData = `Structural read only — exact setup withheld until ${symbol} ${timeframe} confirms.${reason ? ` ${reason}` : ""}`;
   } else if (feedNotConfirmed) {
     feedData = `Feed not confirmed for ${symbol} ${timeframe}.${reason ? ` ${reason}` : ""}`;
-  } else if (structuralOnly) {
-    feedData = `Structural read only for ${symbol} ${timeframe} — exact setup withheld.${reason ? ` ${reason}` : " The response does not identify the restriction's cause."}`;
   } else {
-    feedData = `Chart assessment for ${symbol} ${timeframe}. Live freshness is not established here; check the chart's feed status.`;
-  }
-  if (clean(input.feedLimitation) && !feedData.includes(clean(input.feedLimitation))) {
-    feedData += ` Data limitation: ${clean(input.feedLimitation)}`;
+    feedData = `Live read on ${symbol} ${timeframe}.`;
   }
 
   const cautionLine = read.cautions?.length ? read.cautions.join("; ") : "";
   const riskBase = orElse(read.riskNote, "Manage risk to your plan.");
-  const evidenceRisk = gated || feedNotConfirmed
-    ? `${orElse(reason, "The chart read is restricted; prior risk commentary is withheld.")} ${NEWS_UNAVAILABLE_NOTE}`
-    : `${cautionLine ? `${riskBase} — ${cautionLine}` : riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
+  const evidenceRisk = `${cautionLine ? `${riskBase} — ${cautionLine}` : riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   let confirmation: string;
   if (withheld) {
-    confirmation = "Resolve the stated read/setup restrictions, then re-check the conditions before acting.";
+    confirmation = "Confirm the live feed first, then re-check the conditions before acting.";
   } else if (dir === "BUY") {
     confirmation = orElse(read.buyCondition, NOT_ENOUGH);
   } else if (dir === "SELL") {
@@ -605,25 +576,23 @@ export function buildReasoningFromChartRead(
   }
 
   const invalidation = withheld
-    ? "Do not treat this as an actionable setup while the stated restrictions remain."
+    ? "Treat the idea as invalid while the feed is unconfirmed or structure breaks against it."
     : orElse(read.invalidation, NOT_ENOUGH);
 
-  const traderTest = gated || feedNotConfirmed
-    ? "Check the stated read restriction and chart feed status; do not reuse withheld levels from this response."
-    : clean(read.supportZone) || clean(read.resistanceZone)
+  const traderTest =
+    clean(read.supportZone) || clean(read.resistanceZone)
       ? `Mark support ${orElse(read.supportZone, "—")} and resistance ${orElse(read.resistanceZone, "—")} on ${symbol}; watch which one price tests first.`
       : "Check the chart's feed-status badge, then mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   const riskNote = gated
-    ? orElse(reason, "The read is restricted — treat as no-trade until it clears.")
+    ? orElse(read.blockedReason, "Feed unconfirmed — treat as no-trade until it clears.")
     : structuralOnly || feedNotConfirmed
-      ? "This read does not provide a confirmed actionable setup; resolve its stated restrictions first."
+      ? "Structure only — wait for the feed to confirm before acting on a live setup."
       : orElse(read.riskNote, "Don't force it — wait for your confirmation trigger before committing.");
 
   return {
     decision,
-    why: gated || feedNotConfirmed ? orElse(reason, `${assistantName} is withholding a directional read while the stated restrictions remain.`)
-      : orElse(read.why, orElse(read.headline, withheld ? `${assistantName} is withholding an exact setup while the stated restrictions remain.` : NOT_ENOUGH)),
+    why: orElse(read.why, orElse(read.headline, withheld ? `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.` : NOT_ENOUGH)),
     evidence: { structure, momentum, pattern, trendline, supportResistance, feedData, risk: evidenceRisk },
     confirmation,
     invalidation,

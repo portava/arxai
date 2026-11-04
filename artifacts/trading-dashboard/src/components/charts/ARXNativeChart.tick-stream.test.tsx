@@ -600,7 +600,7 @@ describe("ARXNativeChart closed-market badge wiring", () => {
     // Switch to a different symbol: the effect re-runs, resets the badge, and
     // opens a fresh stream that has emitted no feed_status yet → badge gone.
     act(() => {
-      currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",feedStatus:{...currentCandleResponse!.feedStatus,symbol:"GBPUSD"},candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+      currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
       view.rerender(
         <ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} />,
       );
@@ -620,7 +620,7 @@ describe("Smart Chart view controls", () => {
     const tree=(symbol:string)=><ChartLinkContext.Provider value={link}><ARXNativeChart symbol={symbol} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/></ChartLinkContext.Provider>;
     const view=render(tree(SYMBOL));expect(adapterSpies.setLinkedTimeRange).toHaveBeenLastCalledWith(range);
     const clearIndex=adapterSpies.setCandles.mock.calls.length;
-    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",feedStatus:{...currentCandleResponse!.feedStatus,symbol:"GBPUSD"},candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
     view.rerender(tree("GBPUSD"));expect(adapterSpies.setLinkedTimeRange).toHaveBeenCalledTimes(2);
     const clear=adapterSpies.setCandles.mock.calls.findIndex((args,index)=>index>=clearIndex&&args[0].length===0);
     expect(adapterSpies.setLinkedTimeRange.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(adapterSpies.setCandles.mock.invocationCallOrder[clear]!);
@@ -630,7 +630,7 @@ describe("Smart Chart view controls", () => {
     const rows=[{id:"same",symbol:SYMBOL},{id:"different-symbol",symbol:"GBPUSD"},{id:"different-tf",symbol:SYMBOL,timeframe:"H1"}].map(o=>({...o,type:"line",source:"position",price:1.1,label:o.id})) as ChartOverlay[];
     const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={rows}/>);
     expect(adapterSpies.setOverlays.mock.lastCall?.[0].map((o:ChartOverlay)=>o.id)).toEqual(["same"]);
-    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",feedStatus:{...currentCandleResponse!.feedStatus,symbol:"GBPUSD"},candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
     view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} overlays={rows}/>);
     expect(adapterSpies.setOverlays.mock.lastCall?.[0].map((o:ChartOverlay)=>o.id)).toEqual(["different-symbol"]);
   });
@@ -751,7 +751,7 @@ describe("source-bound chart ticks", () => {
       return <ARXNativeChart symbol={symbol} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS}/>;
     }
     const view=render(<Probe symbol={SYMBOL}/>);old=openedStreams[0]!;
-    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",feedStatus:{...currentCandleResponse!.feedStatus,symbol:"GBPUSD"},candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    currentCandleResponse={...currentCandleResponse!,symbol:"GBPUSD",candles:currentCandleResponse!.candles.map(c=>({...c,symbol:"GBPUSD"}))};
     view.rerender(<Probe symbol="GBPUSD"/>);
     expect(wasClosed).toBe(false);expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();expect(old.closed).toBe(true);
     expect(adapterSpies.init).toHaveBeenCalledOnce();
@@ -847,20 +847,15 @@ describe("Scanner shared Smart Chart ownership", () => {
   });
   it("revokes overlay handles before replacing the price series, then publishes the selected style", () => {
     const operations: string[]=[];
-    const makeSurface=(style:string)=>({container:document.createElement("div"),
-      priceToCoordinate:()=>style==="line"?2:1,coordinateToPrice:()=>1,
-      createPriceLine:vi.fn(),createMarkers:vi.fn(),dispose:vi.fn(()=>operations.push(`dispose:${style}`))});
-    let surface=makeSurface("candles");
+    const surface={chart:{},series:{name:"candles"},container:document.createElement("div")};
     adapterSpies.getScannerOverlaySurface.mockImplementation(()=>surface);
-    adapterSpies.setChartStyle.mockImplementation((style: string)=>{operations.push(`style:${style}`);surface=makeSurface(style);});
-    const bind=vi.fn((value:any)=>{operations.push(value ? `bind:${value.style}:${value.priceToCoordinate(1)}` : "revoke");});
+    adapterSpies.setChartStyle.mockImplementation((style: string)=>{operations.push(`style:${style}`);surface.series={name:style};});
+    const bind=vi.fn((value:any)=>{operations.push(value ? `bind:${value.style}:${value.series.name}` : "revoke");});
     const view=render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
     operations.length=0;
     fireEvent.change(view.getByLabelText("Chart style"),{target:{value:"line"}});
-    expect(operations.indexOf("dispose:candles")).toBeGreaterThanOrEqual(0);
-    expect(operations.indexOf("dispose:candles")).toBeLessThan(operations.indexOf("revoke"));
     expect(operations.indexOf("revoke")).toBeLessThan(operations.indexOf("style:line"));
-    expect(operations.indexOf("bind:line:2")).toBeGreaterThan(operations.indexOf("style:line"));
+    expect(operations.indexOf("bind:line:line")).toBeGreaterThan(operations.indexOf("style:line"));
     operations.length=0;currentCandleResponse=undefined;
     view.rerender(<ARXNativeChart symbol="GBPUSD" timeframe={TF} showFeedStatus={false} onScannerSurfaceChange={bind} />);
     expect(bind.mock.calls.at(-1)?.[0]).toBeNull();
@@ -994,7 +989,7 @@ describe("pending initial candle engine", () => {
     const view=render(tree(undefined,true));view.rerender(tree(undefined,true,false,"GBPUSD"));
     expect(adapterSpies.init).not.toHaveBeenCalled();
     const response=makeResponse(liveFeedStatus());
-    const changed={...response,symbol:"GBPUSD",feedStatus:{...response.feedStatus,symbol:"GBPUSD"},candles:response.candles.map(c=>({...c,symbol:"GBPUSD"}))};
+    const changed={...response,symbol:"GBPUSD",candles:response.candles.map(c=>({...c,symbol:"GBPUSD"}))};
     view.rerender(tree(changed,false,false,"GBPUSD"));
     expect(adapterSpies.init).toHaveBeenCalledTimes(1);expect(adapterSpies.setSymbol).toHaveBeenLastCalledWith("GBPUSD");
     expect(adapterSpies.setCandles.mock.calls.some(([bars])=>bars.length>0)).toBe(true);

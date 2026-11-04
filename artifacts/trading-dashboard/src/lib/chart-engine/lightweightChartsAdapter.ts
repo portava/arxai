@@ -1,4 +1,3 @@
-import type { ScannerOverlaySurface, ScannerOverlayHandle } from "./scannerChartSurface";
 import {vwapAnchorEvidence} from "./chartVwapAnchor";
 import type {VwapAnchor} from "./chartStudies";
 import { chartIntervalSeconds } from "./chartIntervals";
@@ -41,13 +40,12 @@ import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchange
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { ChartAnalysisRenderer, type PriceSeries } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
-import { validatePreferences, validateDrawings, closeOnlyStyle, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
+import { closeOnlyStyle, type ChartAnchor, type ChartDrawing, type ChartStyle, type ChartScaleMode } from "./chartWorkspace";
 import { heikinAshiBar, heikinAshiSuffix, hollowPoint } from "./heikinAshi";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 import { panChartWindow, zoomChartWindow } from "./chartNavigation";
 import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
-import { formatSourceChartTime } from "./chartClockEvidence";
 import { crosshairTimeLabel, tickMarkLabel, type ChartTickMarkType, type ChartTimeZone } from "./chartTimeZone";
 
 // The helper's tick types mirror lightweight-charts' TickMarkType numbers.
@@ -97,7 +95,6 @@ const CAPABILITIES: ChartEngineCapabilities = {
 export class LightweightChartsAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
 
-  private scannerSurface: ScannerOverlaySurface | null = null;
   private chart: IChartApi | null = null;
   private series: PriceSeries | null = null;
   private style: ChartStyle = "candles";
@@ -113,10 +110,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // first loaded close), or null when none has been applied.
   private baselineValue: number | null = null;
   private analysis: ChartAnalysisRenderer | null = null;
-  private analysisFocused = false;
-  private analysisFocusValid = true;
-  private studiesRaw: ChartStudy[] = [];
-  private drawingsRaw: ChartDrawing[] = [];
   private drawingEditor: ChartDrawingEditor | null = null;
   private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
   private drawingInteraction: DrawingInteraction | null = null;
@@ -171,21 +164,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private displayZone: ChartTimeZone = "UTC";
   // lightweight-charts' own default localization.locale.
   private locale = typeof navigator !== "undefined" ? navigator.language : "";
-  private sourceClockQualified = false;
-  private readonly timeLabel = (time: Time): string => typeof time === "number"
-    ? this.sourceClockQualified ? crosshairTimeLabel(time, this.displayZone, this.locale)
-      : formatSourceChartTime(time, false, this.displayZone)
-    : String(time);
-  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => {
-    if (typeof time !== "number") return this.sourceClockQualified ? null : `${String(time)} source`;
-    if (this.sourceClockQualified) return tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale);
-    if (!Number.isFinite(time)) return "source";
-    // Retain the source clock's components, never convert an unqualified
-    // timestamp to the requested zone. The crosshair explains the limitation.
-    const text = formatSourceChartTime(time, false, this.displayZone, { seconds: true });
-    const part = [text.slice(0, 4), text.slice(5, 7), text.slice(8, 10), text.slice(11, 16), text.slice(11, 19)][type as number];
-    return part ? `${part} source` : "source";
-  };
+  private readonly timeLabel = (time: Time): string => typeof time === "number" ? crosshairTimeLabel(time, this.displayZone, this.locale) : String(time);
+  private readonly tickLabel: TickMarkFormatter = (time, type, locale) => typeof time === "number" ? tickMarkLabel(time, type as number as ChartTickMarkType, this.displayZone, locale) : null;
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -241,7 +221,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: this.tickLabel,
-        tickMarkMaxCharacterLength: this.sourceClockQualified ? 8 : 14,
         borderColor: "rgba(63, 63, 70, 0.5)",
         // rightOffset keeps the latest candle slightly inside the canvas edge so
         // the forming bar never clips against the price axis.
@@ -340,7 +319,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       anchor: anchorAt,
       price: y => this.series?.coordinateToPrice(y) ?? null,
       size: () => ({width:chart.timeScale().width(),height:chart.panes()[0]?.getHeight() ?? 0}),
-      render: drawings => this.analysis?.setDrawings(this.analysisFocused ? [] : drawings, this.candles),
+      render: drawings => this.analysis?.setDrawings(drawings, this.candles),
       select: id => this.analysis?.selectDrawing(id),
       freeze: active => {
         if (active && !frozenOptions) {
@@ -382,13 +361,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   destroy(): void {
-    this.sourceClockQualified = false;
-    this.scannerSurface?.dispose();
     if (this.viewportFrame != null) cancelAnimationFrame(this.viewportFrame);
     this.viewportFrame = null;
     this.viewportListeners.clear();
     this.navigationMode = "inspect";
-    this.analysisFocused = false; this.analysisFocusValid = true; this.studiesRaw = []; this.drawingsRaw = [];
     this.smartAnnotation = null;
     this.smartAnnotationKey = "null";
     this.smartAnnotationPrimitive = null;
@@ -461,8 +437,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   resetDataContext(): void {
-    this.setSourceClockQualified(false);
-    this.scannerSurface?.dispose();
     this.setFeedState({livePriceAffordance:false,source:null});
     this.setDrawingHandler(null);
     this.setDrawingInteraction(null);
@@ -508,7 +482,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const bulk = updates != null && updates.length > 32;
     this.candles = sanitized;
     this.syncDisplay(unchanged);
-    this.smartAnnotationPrimitive?.setData(this.analysisFocused ? null : this.smartAnnotation, this.candles);
+    this.smartAnnotationPrimitive?.setData(this.smartAnnotation, this.candles);
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
     if (this.overlaysRaw.some(o => o.source === "research" && o.type === "marker")
       && (previous.length !== sanitized.length || previous.some((bar, i) => bar.time !== sanitized[i]?.time))) {
@@ -674,7 +648,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!chart || !series) return;
     // A focused smart explanation owns the visual structure budget. Keep raw
     // server geometry available, but do not draw competing pattern stories.
-    if (this.analysisFocused || this.smartAnnotation) { this.clearStructureOverlays(); return; }
+    if (this.smartAnnotation) { this.clearStructureOverlays(); return; }
 
     const lines = this.structureLinesRaw;
     const rawMarkers = this.structureMarkersRaw;
@@ -770,7 +744,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   setNavigationMode(mode: "inspect" | "pan"): void {
     if (mode === this.navigationMode) return;
     this.navigationMode = mode;
-    this.drawingEditor?.configure(this.analysisFocused || mode === "pan" ? null : this.drawingInteraction);
+    this.drawingEditor?.configure(mode === "pan" ? null : this.drawingInteraction);
     this.applyDrawingPlacement();
     if (this.container) this.container.dataset.chartNavigation = mode;
   }
@@ -783,7 +757,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       this.smartAnnotationPrimitive=new SmartChartAnnotationPrimitive();
       this.series.attachPrimitive(this.smartAnnotationPrimitive);
     }
-    this.smartAnnotationPrimitive?.setData(this.analysisFocused ? null : annotation,this.candles);
+    this.smartAnnotationPrimitive?.setData(annotation,this.candles);
     this.applyStructureFromRaw(true);
   }
   fitHistory(): void {
@@ -804,12 +778,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   /** Relabel axis ticks and the crosshair time. Re-applying the same formatter
    * references clears the library's tick-label cache; data, drawings, links and
    * goToTime are untouched and stay UTC seconds. */
-  setSourceClockQualified(qualified: boolean): void {
-    const next = qualified === true;
-    if (next === this.sourceClockQualified) return;
-    this.sourceClockQualified = next;
-    this.chart?.applyOptions({ timeScale: { tickMarkFormatter: this.tickLabel, tickMarkMaxCharacterLength: next ? 8 : 14 }, localization: { timeFormatter: this.timeLabel } });
-  }
   setDisplayTimeZone(zone: ChartTimeZone): void {
     if (zone === this.displayZone) return;
     this.displayZone = zone;
@@ -944,7 +912,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   setChartStyle(style: ChartStyle): void {
     const chart = this.chart, previous = this.series;
     if (!chart || !previous || this.style === style) return;
-    this.scannerSurface?.dispose();
     const range = chart.timeScale().getVisibleLogicalRange();
     this.markersApi?.detach(); this.markersApi = null;
     this.clearStructureOverlays();
@@ -971,7 +938,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.smartAnnotationPrimitive) {
       previous.detachPrimitive(this.smartAnnotationPrimitive);
       next.attachPrimitive(this.smartAnnotationPrimitive);
-      this.smartAnnotationPrimitive.setData(this.analysisFocused ? null : this.smartAnnotation,this.candles);
+      this.smartAnnotationPrimitive.setData(this.smartAnnotation,this.candles);
     }
     chart.removeSeries(previous);
     this.lastPriceLine = null; this.overlayLines = []; this.precision = -1;
@@ -984,125 +951,27 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // Heikin Ashi suffix appears or disappears with the style.
     this.queueLegendUpdate();
   }
-  isAnalysisFocused(): boolean { return this.analysisFocused; }
-  isAnalysisFocusVerified(): boolean { return this.analysisFocusValid; }
-  setAnalysisFocus(enabled: boolean): void {
-    if (!this.analysisFocusValid) throw new Error("Chart presentation unverified; reload the chart");
-    if (enabled === this.analysisFocused) return;
-    if (!this.chart || !this.analysis) throw new Error("Chart renderer unavailable");
-    const previous = this.analysisFocused;
-    this.analysisFocused = enabled;
-    this.analysisFocusValid = false;
-    try { this.applyAnalysisFocus(); this.analysisFocusValid = true; }
-    catch (error) {
-      this.analysisFocused = previous;
-      try { this.applyAnalysisFocus(); } catch { /* Best effort only; partially allocated renderer handles require recreation. */ }
-      throw error;
-    }
-  }
-  private applyAnalysisFocus(): void {
-    this.analysis?.setStudies(this.analysisFocused ? [] : this.studiesRaw, this.candles);
-    this.analysis?.setDrawings(this.analysisFocused ? [] : this.drawingsRaw, this.candles);
-    this.drawingEditor?.configure(this.analysisFocused || this.navigationMode === "pan" ? null : this.drawingInteraction);
-    this.applyDrawingPlacement();
-    this.smartAnnotationPrimitive?.setData(this.analysisFocused ? null : this.smartAnnotation, this.candles);
-    this.applyStructureFromRaw(true);
-    this.queueLegendUpdate();
-  }
-  setStudies(studies: ChartStudy[]): void {
-    this.studiesRaw = validatePreferences({studies}).studies;
-    this.analysis?.setStudies(this.analysisFocused ? [] : this.studiesRaw, this.candles);
-  }
-  private cloneRenderedDrawings(drawings: ChartDrawing[]): ChartDrawing[] {
-    // Storage limits owned objects; render rows also include unsaved previews.
-    // Validate/clone every row without truncating a second preview at that limit.
-    const seen = new Set<string>();
-    return drawings.flatMap(row=>validateDrawings([row])).filter(row=>{
-      if(seen.has(row.id))return false;seen.add(row.id);return true;
-    });
-  }
-  setDrawings(drawings: ChartDrawing[]): void {
-    this.drawingsRaw = this.cloneRenderedDrawings(drawings);
-    this.drawingEditor?.setDrawings(this.drawingsRaw);
-    this.analysis?.setDrawings(this.analysisFocused ? [] : this.drawingsRaw, this.candles);
-  }
+  setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
+  setDrawings(drawings: ChartDrawing[]): void { this.drawingEditor?.setDrawings(drawings); this.analysis?.setDrawings(drawings, this.candles); }
   setDrawingInteraction(config: DrawingInteraction | null): void {
-    this.drawingInteraction = config ? {...config,onCommit:next=>{
-      // Commit cache before the owner schedules React; focus/restore in the
-      // same event must not resurrect the geometry from the preceding frame.
-      this.drawingsRaw = this.cloneRenderedDrawings(next);
-      config.onCommit(next);
-    }} : null;
-    this.drawingEditor?.configure(this.analysisFocused || this.navigationMode === "pan" ? null : this.drawingInteraction);
+    this.drawingInteraction = config;
+    this.drawingEditor?.configure(this.navigationMode === "pan" ? null : config);
   }
   setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
     this.drawingHandler = handler;
     this.applyDrawingPlacement();
   }
   private applyDrawingPlacement(): void {
-    const handler = this.analysisFocused || this.navigationMode === "pan" ? null : this.drawingHandler;
+    const handler = this.navigationMode === "pan" ? null : this.drawingHandler;
     this.drawingEditor?.setPlacement(handler);
     this.chart?.applyOptions({handleScroll:!handler});
     if (this.container) this.container.style.cursor = this.navigationMode === "pan" ? "grab" : handler ? "crosshair" : "";
   }
   exportImage(): string | null { this.analysis?.flushPending(); return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
 
-  getScannerOverlaySurface(): ScannerOverlaySurface | null {
-    if (this.scannerSurface) return this.scannerSurface;
-    const chart = this.chart, series = this.series, container = this.container;
-    if (!chart || !series || !container) return null;
-    let disposed = false;
-    const handles = new Set<ScannerOverlayHandle>();
-    const available = () => !disposed && this.chart === chart && this.series === series && this.container === container;
-    const own = (release: () => void): ScannerOverlayHandle => {
-      let released = false;
-      const handle = { dispose: () => {
-        if (released) return;
-        released = true;
-        handles.delete(handle);
-        // Engine teardown may have already released this captured series.
-        try { release(); } catch { /* never remove from a replacement series */ }
-      } };
-      handles.add(handle);
-      return handle;
-    };
-    const surface: ScannerOverlaySurface = {
-      container,
-      priceToCoordinate: price => {
-        if (!available() || !Number.isFinite(price) || price <= 0) return null;
-        try { const y = series.priceToCoordinate(price); return y != null && Number.isFinite(y) ? y : null; } catch { return null; }
-      },
-      coordinateToPrice: coordinate => {
-        if (!available() || !Number.isFinite(coordinate)) return null;
-        try { const price = series.coordinateToPrice(coordinate); return price != null && Number.isFinite(price) && price > 0 ? price : null; } catch { return null; }
-      },
-      createPriceLine: options => {
-        if (!available() || !Number.isFinite(options.price) || options.price <= 0
-          || ![1, 2].includes(options.lineWidth) || !["solid", "dashed"].includes(options.lineStyle)) return null;
-        const line = series.createPriceLine({ ...options, lineStyle: options.lineStyle === "dashed" ? LineStyle.Dashed : LineStyle.Solid });
-        return own(() => series.removePriceLine(line));
-      },
-      createMarkers: markers => {
-        if (!available() || !markers.length) return null;
-        const times = new Set(this.candles.map(candle => candle.time));
-        let previous = -Infinity;
-        for (const marker of markers) {
-          if (!Number.isFinite(marker.time) || !times.has(marker.time) || marker.time < previous
-            || !["aboveBar", "belowBar"].includes(marker.position) || !["arrowDown", "circle"].includes(marker.shape)) return null;
-          previous = marker.time;
-        }
-        const layer = createSeriesMarkers(series, markers.map(marker => ({ ...marker, time: marker.time as UTCTimestamp })));
-        return own(() => layer.detach());
-      },
-      dispose: () => {
-        if (disposed) return;
-        disposed = true;
-        for (const handle of [...handles]) handle.dispose();
-        if (this.scannerSurface === surface) this.scannerSurface = null;
-      },
-    };
-    this.scannerSurface = surface;
-    return surface;
+  getScannerOverlaySurface() {
+    return this.chart && this.series && this.container
+      ? { chart: this.chart, series: this.series, container: this.container } : null;
   }
 
   priceToCoordinate(price: number): number | null {
@@ -1190,11 +1059,12 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!series) return;
     const live = this.feedState.livePriceAffordance;
 
-    // One canonical price affordance across every style: the explicit Last
-    // line below uses the actual candle close. The native series label/line
-    // would duplicate it (or show an averaged Heikin Ashi close), so both stay
-    // hidden. The explicit line still requires a genuinely live feed.
-    const seriesLabel = false;
+    // Suppress the candlestick last-value / price-line label unless the feed is
+    // genuinely LIVE — a frozen, delayed or composite feed must never imply a
+    // live last price (shared honesty rule). A Heikin Ashi series' own label
+    // would show the averaged close, so it stays hidden; the dashed "Last"
+    // line below always carries the canonical last close.
+    const seriesLabel = live && this.displayMode !== "heikinAshi";
     // applyOptions invalidates the renderer even when values are identical.
     // Read its actual state so poll reconciliation can skip redundant work
     // without caching away a live/stale transition or a new series instance.
@@ -1212,8 +1082,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     } else {
       this.lastPriceLine = series.createPriceLine({
         price: last.close, color: "#60a5fa", lineWidth: 1,
-        // Empty title avoids a second library label inside the plot.
-        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "",
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Last",
       });
     }
   }

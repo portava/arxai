@@ -1,8 +1,7 @@
-import type { StudyPaneResizeCommit } from './chartPaneResize';
 import type { ProfileCandleEvidence, VolumeProfileInspection } from "./chartVolumeProfile";
 import type { VwapAnchor } from "./chartStudies";
 import type { CandleVolumeEvidence } from "./chartVolume";
-import type { ScannerOverlaySurface } from "./scannerChartSurface";
+import type { ScannerChartSurface } from "./scannerChartSurface";
 import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { SmartChartAnnotation } from "./smartChartAnnotation";
 import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
@@ -29,7 +28,7 @@ import type { ChartTimeZone } from "./chartTimeZone";
 //    contract. An adapter never fabricates bars.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ChartEngineId = "arx-native" | "lightweight-charts" | "tradingview-advanced";
+export type ChartEngineId = "lightweight-charts" | "tradingview-advanced";
 
 /** A single OHLC bar, normalized to Unix SECONDS (engine-agnostic). */
 export interface ChartEngineCandle {
@@ -134,7 +133,7 @@ export interface ChartStructureMarker {
  */
 export interface ChartEngineAdapter {
   /** Scanner migration bridge: display overlays/coordinates only. */
-  getScannerOverlaySurface?(): ScannerOverlaySurface | null;
+  getScannerOverlaySurface?(): Pick<ScannerChartSurface, "chart" | "series" | "container"> | null;
 
   readonly capabilities: ChartEngineCapabilities;
 
@@ -191,34 +190,14 @@ export interface ChartEngineAdapter {
   /** Display-only, already resolved for timeframe by the caller; candle times,
    * anchors and link events stay UTC seconds. */
   setDisplayTimeZone?(zone: ChartTimeZone): void;
-  /** Original source-clock qualification supplied by the shell's evidence
-   * policy. Defaults/reset to false; a display zone never grants authority. */
-  setSourceClockQualified?(qualified: boolean): void;
   goToTime?(time: number): boolean;
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getVolumeProfiles?(): VolumeProfileInspection[];
   getVwapAnchorEvidence?(anchor:VwapAnchor): {utcQualified:boolean;reason:string|null};
-  /** Current painted pane owners and CSS geometry. Null means pending paint; empty means unavailable/reset. */
-  prepareStudyPaneAction?():boolean;
-  getStudyPaneControls?(): ChartStudyPaneControl[] | null;
-  getMaximizedStudyPane?():string|null;
-  setMaximizedStudyPane?(id:string|null):boolean;
-  beginStudyPaneScale?(id:string):number|null;
-  previewStudyPaneScale?(token:number,delta:number):boolean;
-  endStudyPaneScale?(token:number,commit:boolean):StudyPaneScaleCommit|null;
-  isStudyPaneScaleContextCurrent?(key:string):boolean;
-  beginStudyPaneResize?(id:string):number|null;
-  previewStudyPaneResize?(token:number,delta:number):boolean;
-  endStudyPaneResize?(token:number,commit:boolean):StudyPaneResizeCommit|null;
-  isStudyPaneResizeContextCurrent?(key:string):boolean;
-  getStudyValues?(time: number): { statusLineVisible?:boolean; dataWindowVisible?:boolean; label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
+  getStudyValues?(time: number): { label: string; displayLabel?:string; color: string; reason?:string; values: { name: string; value: number | null }[] }[];
   /** Transformed display bar (Heikin Ashi only) at this time; null in other
    * styles. Legend text only. Never used for studies, drawings or orders. */
   getDisplayCandle?(time: number): ChartEngineCandle | null;
-  inspectCandle?(action:"pin"|"previous"|"next"|"first"|"last"|"clear"):boolean;
-  isCandleInspectionPinned?():boolean;
-  /** Exact origin of the candle supplied to the readout; no selection is inferred from a fallback. */
-  getCandleReadoutOrigin?(time:number):"pinned"|"pointer"|"linked"|"latest"|"unavailable";
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
   /** Linked workspace inspection only. Never changes instrument/order context. */
   setViewLinkHandler?(handler: ((event: ChartViewEvent) => void) | null): void;
@@ -226,13 +205,7 @@ export interface ChartEngineAdapter {
   setLinkedTimeRange?(range: ChartTimeRange | null): void;
   setViewLinkStatusHandler?(handler: ((message: string) => void) | null): void;
   setChartStyle?(style: ChartStyle): void;
-  /** Temporary presentation only. Preserves chosen settings and execution overlays. */
-  setAnalysisFocus?(enabled: boolean): void;
-  isAnalysisFocused?(): boolean;
-  isAnalysisFocusVerified?(): boolean;
   setStudies?(studies: ChartStudy[]): void;
-  /** View-only override; keeps each study’s saved preference intact. */
-  setStudyScaleLabelsVisible?(visible: boolean): void;
   setDrawings?(drawings: ChartDrawing[]): void;
   setDrawingInteraction?(config: DrawingInteraction | null): void;
   setDrawingHandler?(handler: ((anchor: ChartAnchor) => void) | null): void;
@@ -252,12 +225,4 @@ export interface ChartEngineAdapter {
    * guard against concurrent loads. View-only — fetching history places no trade.
    */
   setReachStartHandler?(handler: (() => void) | null, thresholdBars?: number): void;
-}
-
-/** View-only controls for actual separately scaled study panes. */
-export interface StudyPaneScaleCommit {contextKey:string;studiesKey:string;id:string;scale:{mode:'line';value:number;percent:number}}
-export interface ChartStudyPaneControl {
-  scaleAnchor?:{value:number;percent:number;y:number};
-  id:string; paneIndex:number; label:string; collapsed:boolean; maximized?:boolean; resizable?:boolean; sizePercent?:number;
-  left:number; top:number; width:number; height:number;
 }

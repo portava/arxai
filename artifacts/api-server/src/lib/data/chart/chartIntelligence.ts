@@ -20,7 +20,6 @@ import {
 } from "./chartDataService.js";
 import type { TimeframeTruthResult } from "./candleTruthEngine.js";
 import type { NormalizedChartCandle } from "./candleNormalization.js";
-import type { TruthReadEvidence } from "@workspace/domain/truth";
 import {
   buildChartTrendlineOverlay,
   type ChartTrendlineOverlay,
@@ -197,18 +196,13 @@ const MOMENTUM_MULT = 1.5;
 // inputs only (the state carries no per-user data); the endpoint itself stays
 // per-user gated. Short TTL keeps the live feel without re-probing providers.
 const CACHE_TTL_MS = 3000;
-export interface ChartIntelligenceContext {
+interface CacheEntry {
   state: ChartIntelligenceState;
   /** Raw truth result — stored so route-level enrichment can recompute truth/gate
    * with per-user broker alignment without re-fetching candles. */
   truthResult: TimeframeTruthResult | null;
   /** Feed status at build time — needed for truth-score recompute. */
   feedStatus: ChartFeedStatus;
-  /** Exact normalized primary observation used to compute this state. */
-  candles: NormalizedChartCandle[];
-  marketEvidence: TruthReadEvidence | null;
-}
-interface CacheEntry extends ChartIntelligenceContext {
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
@@ -226,10 +220,10 @@ export function getCachedIntelligenceContext(
   symbol: string,
   timeframe: ChartTimeframe,
   limit: number,
-): ChartIntelligenceContext | null {
+): { state: ChartIntelligenceState; truthResult: TimeframeTruthResult | null; feedStatus: ChartFeedStatus } | null {
   const entry = cache.get(`${symbol}|${timeframe}|${limit}`);
   if (!entry || entry.expiresAt <= Date.now()) return null;
-  return entry;
+  return { state: entry.state, truthResult: entry.truthResult, feedStatus: entry.feedStatus };
 }
 
 /**
@@ -447,32 +441,21 @@ export async function buildChartIntelligenceState(
   timeframe: ChartTimeframe,
   limit: number,
 ): Promise<ChartIntelligenceState> {
-  return (await buildChartIntelligenceContext(symbol, timeframe, limit)).state;
-}
-
-/** Return the state with its actual captured inputs. A later cache lookup is
- * not equivalent: another request may have replaced the entry meanwhile. */
-export async function buildChartIntelligenceContext(
-  symbol: string,
-  timeframe: ChartTimeframe,
-  limit: number,
-): Promise<ChartIntelligenceContext> {
   const cacheKey = `${symbol}|${timeframe}|${limit}`;
   const now = Date.now();
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
-    return cached;
+    return cached.state;
   }
 
   const buildStart = now;
-  // Own the observation before asynchronous downstream computation can yield.
-  const truth = structuredClone(await getChartCandles(symbol, timeframe, limit));
+  const truth = await getChartCandles(symbol, timeframe, limit);
 
   const candles = truth.candles;
   const lastCandle = candles[candles.length - 1] ?? null;
   const currentCandle =
     lastCandle != null && lastCandle.isComplete === false ? lastCandle : null;
-  const closed = candles.filter((c) => c.isComplete === true && !c.isForming);
+  const closed = candles.filter((c) => c.isComplete);
   const latestClosedCandle = closed[closed.length - 1] ?? null;
 
   const candleStats = computeStats(closed);
@@ -653,14 +636,11 @@ export async function buildChartIntelligenceContext(
     marketSentences,
   };
 
-  const captured: CacheEntry = {
+  cache.set(cacheKey, {
     state,
     truthResult: truth.truthResult,
     feedStatus: truth.feedStatus,
-    candles,
-    marketEvidence: truth.marketEvidence ?? null,
     expiresAt: Date.now() + CACHE_TTL_MS,
-  };
-  cache.set(cacheKey, captured);
-  return captured;
+  });
+  return state;
 }

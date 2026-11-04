@@ -7,10 +7,10 @@
 // the remaining (non-admin) set is a safe subset of the normal-user route
 // allowlist (see routeAccess.ts), so a regular trader never sees admin pages,
 // tester tools, or raw `/admin/*` internal paths in the palette, and no entry
-// redirects home. INVESTOR (view-only) accounts get no palette at all. Backend
+// redirects home. Investors receive only their existing portal/account routes. Backend
 // route guards remain authoritative either way.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Search } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -21,7 +21,7 @@ import { useTraderTier } from "@/hooks/useTraderTier";
 import { useScannerNavigationWarmup } from "@/hooks/useScannerNavigationWarmup";
 import { DEFAULT_ASSISTANT_NAME, useAssistantName } from "@/lib/assistant-name";
 
-export interface CommandPaletteItem { label: string; hint?: string; href: string; admin?: boolean; approvedOnly?: boolean; }
+export interface CommandPaletteItem { label: string; hint?: string; href: string; admin?: boolean; approvedOnly?: boolean; investorOnly?: boolean; }
 
 /**
  * Source-of-truth command registry. Exported so the regression guard
@@ -38,6 +38,7 @@ function buildCommandPaletteItems(name: string): CommandPaletteItem[] {
   { label: "Account",                    href: "/my-account" },
   { label: "Settings",                   href: "/settings" },
   { label: "Help",                       href: "/help" },
+  { label: "Investor Portal",            href: "/investor", investorOnly: true },
   { label: "Trade Command Room",         href: "/trade-command-room", approvedOnly: true },
   { label: "Live Chart",                 href: "/live-chart", approvedOnly: true },
   { label: "Testing Control Center",     href: "/testing-control-center", admin: true },
@@ -114,8 +115,8 @@ export const COMMAND_PALETTE_ITEMS: CommandPaletteItem[] = buildCommandPaletteIt
 /**
  * Pure resolver of which command items a given session may see — the single
  * source of truth for palette role-visibility. INVESTOR (view-only) accounts
- * see NONE; admin/owner sees everything. Human traders are two-tier (Task
- * #768): an APPROVED (live / shared-bridge) trader sees every non-admin item,
+ * see only their portal/account routes; admin/owner sees everything. Human traders are two-tier:
+ * an APPROVED (live / shared-bridge) trader sees every non-admin item,
  * while a PENDING / unapproved trader (or one whose approval is still loading)
  * sees only the non-admin, non-`approvedOnly` subset (dashboard, ARX status,
  * school, account, settings, help, notifications, emergency). The regression
@@ -125,15 +126,27 @@ export function visibleCommandPaletteItems(
   opts: { isAdmin: boolean; isInvestor: boolean; isApprovedTrader?: boolean },
   items: CommandPaletteItem[] = COMMAND_PALETTE_ITEMS,
 ): CommandPaletteItem[] {
-  if (opts.isInvestor) return [];
+  if (opts.isInvestor) {
+    const investorRoutes = new Set(["/investor", "/my-account", "/settings", "/help"]);
+    return items.filter((item) => item.investorOnly || investorRoutes.has(item.href));
+  }
   return items.filter((i) => {
+    if (i.investorOnly) return false;
     if (i.admin) return opts.isAdmin;
     if (i.approvedOnly) return opts.isAdmin || Boolean(opts.isApprovedTrader);
     return true;
   });
 }
 
-export function CommandPalette() {
+export function CommandPalette({
+  open: controlledOpen,
+  onOpenChange,
+  manageKeyboard = true,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  manageKeyboard?: boolean;
+} = {}) {
   const dockTarget = useChartActionDockTarget("search");
   const [, setLocation] = useLocation();
   const { effectiveIsAdmin: isAdmin } = useViewMode();
@@ -141,22 +154,29 @@ export function CommandPalette() {
   const { isApprovedTrader } = useTraderTier();
   const warmScanner = useScannerNavigationWarmup(!isInvestor && (isAdmin || isApprovedTrader), false);
   const { name } = useAssistantName();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = useCallback((next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  }, [isControlled, onOpenChange]);
   const [q, setQ] = useState("");
   const [hi, setHi] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    if (!manageKeyboard) return;
     function onKey(e: KeyboardEvent) {
       if (e.defaultPrevented) return;
       const meta = e.ctrlKey || e.metaKey;
-      if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); }
+      if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen(!open); }
       else if (e.key === "Escape" && open) { e.preventDefault(); setOpen(false); }
     }
     // The active palette owns Escape before the underlying fullscreen chart.
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
+  }, [open, manageKeyboard, setOpen]);
 
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 30); else { setQ(""); setHi(0); } }, [open]);
 
@@ -170,9 +190,6 @@ export function CommandPalette() {
   }, [q, visibleItems]);
 
   function go(item: CommandPaletteItem) { warmScanner(item.href); setOpen(false); setLocation(item.href); }
-
-  // INVESTOR (view-only) accounts never get the command palette.
-  if (isInvestor) return null;
 
   if (!open) {
     const trigger = (

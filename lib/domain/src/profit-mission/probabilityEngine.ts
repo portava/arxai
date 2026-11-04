@@ -4,16 +4,20 @@
 // projections, a confidence label, and sample-size warnings. Every number is a
 // labelled estimate — never a promise. PURE and DETERMINISTIC.
 //
-// No historical outcomes or calibration are accepted by this engine. A claimed
-// sample count cannot upgrade confidence or remove the planning-only warning.
+// Phase 1 has no historical/backtest sample wired, so confidence is honest
+// (low) and a sample-size warning is always surfaced when sampleSize is small.
 
 import type {
+  ConfidenceLabel,
   FeasibilityVerdict,
   MissionMath,
   MissionProbabilityScore,
   RiskProfile,
   ScenarioProjection,
 } from "./types.js";
+
+/** Below this sample count the estimate carries a sample-size warning. */
+const MIN_RELIABLE_SAMPLE = 30;
 
 /**
  * Exact honest note shown when there is NO historical sample. Every projected
@@ -38,11 +42,17 @@ const DRAWDOWN_FRACTION: Record<RiskProfile, number> = {
   extreme: 0.55,
 };
 
+function confidenceFor(sampleSize: number): ConfidenceLabel {
+  if (sampleSize >= 100) return "high";
+  if (sampleSize >= MIN_RELIABLE_SAMPLE) return "medium";
+  return "low";
+}
+
 export interface ProbabilityInput {
   math: MissionMath;
   feasibility: FeasibilityVerdict;
   riskProfile: RiskProfile;
-  /** Caller-reported count only; no verified sample or calibration is supplied. */
+  /** Historical samples behind the estimate; 0 in Phase 1. */
   sampleSize?: number;
 }
 
@@ -54,9 +64,7 @@ function projection(startingAmount: number, endingValue: number): ScenarioProjec
 
 export function evaluateProbability(input: ProbabilityInput): MissionProbabilityScore {
   const { math, feasibility, riskProfile } = input;
-  const reportedCount = input.sampleSize ?? 0;
-  const sampleSize = Number.isSafeInteger(reportedCount) && reportedCount >= 0
-    ? reportedCount : 0;
+  const sampleSize = Math.max(0, Math.floor(input.sampleSize ?? 0));
 
   // Target-hit estimate: damped feasibility (honest — below feasibility), with
   // a small penalty for an aggressive/extreme chosen profile.
@@ -86,16 +94,15 @@ export function evaluateProbability(input: ProbabilityInput): MissionProbability
   const bestEnding = math.targetAmount;
   const worstEnding = math.startingAmount * (1 - DRAWDOWN_FRACTION[riskProfile]);
 
-  // Keep the existing low label for API compatibility; it is not a calibrated
-  // confidence rating. This arithmetic does not consume historical outcomes.
-  const confidence = "low";
-  const sampleSizeWarnings = [sampleSize === 0
-    ? "No historical sample yet — these are mathematical planning projections from your inputs, not backtested results or a track record."
-    : `Reported sample count (${sampleSize}) is unverified; no historical outcomes or calibration were supplied. This remains a planning projection with low confidence.`];
-  const planningProjectionNote = sampleSize === 0
-    ? PLANNING_PROJECTION_NOTE
-    : "No verified historical outcomes or calibration are available to this model. " +
-      "These values are mathematical planning projections based on your inputs, not backtested probabilities.";
+  const confidence = confidenceFor(sampleSize);
+  const sampleSizeWarnings: string[] = [];
+  if (sampleSize < MIN_RELIABLE_SAMPLE) {
+    sampleSizeWarnings.push(
+      sampleSize === 0
+        ? "No historical sample yet — these are mathematical planning projections from your inputs, not backtested results or a track record."
+        : `Limited historical sample (${sampleSize}); this projection has low confidence.`,
+    );
+  }
 
   return {
     targetHitProbability,
@@ -109,8 +116,8 @@ export function evaluateProbability(input: ProbabilityInput): MissionProbability
     confidence,
     sampleSize,
     sampleSizeWarnings,
-    planningProjectionOnly: true,
-    planningProjectionNote,
+    planningProjectionOnly: sampleSize === 0,
+    planningProjectionNote: sampleSize === 0 ? PLANNING_PROJECTION_NOTE : "",
     isEstimate: true,
     disclaimer:
       "All values are projections based on the inputs and pace, not a promise of profit. " +
