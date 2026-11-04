@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ChevronDown, ChevronUp, Pin, PinOff, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, Pin, PinOff, Search, PanelLeftClose, PanelRightClose } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSidePanelArea } from "./SidePanelArea";
 
 export type LayoutPanelProps = {
   id: string;
@@ -35,10 +36,12 @@ export function LayoutPanel({
   keepMounted = false,
 }: LayoutPanelProps) {
   const isCollapsed = collapsed && !pinned;
+  const sideArea = useSidePanelArea();
+  const SendToRail = sideArea?.side === "right" ? PanelRightClose : PanelLeftClose;
   return (
     <section
       id={`workspace-${id}`}
-      hidden={hidden}
+      hidden={hidden || (!pinned && sideArea?.railed.includes(id))}
       className={cn("arx-panel min-w-0", className)}
       aria-label={title}
       tabIndex={-1}
@@ -52,6 +55,14 @@ export function LayoutPanel({
           {pinned && <span className="arx-pin-label">PINNED</span>}
         </div>
         <div className="flex items-center gap-1">
+          {sideArea && <button type="button"
+            className="arx-icon-btn arx-panel-send-to-rail"
+            disabled={pinned}
+            aria-label={`Move ${title} to ${sideArea.side} rail`}
+            title={pinned ? "Pinned panels stay shown" : `Move to ${sideArea.side} rail`}
+            onClick={() => sideArea.sendToRail(id)}>
+            <SendToRail size={14} aria-hidden="true"/>
+          </button>}
           <button
             type="button"
             aria-pressed={pinned}

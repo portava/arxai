@@ -24,7 +24,7 @@ export function dashboardPanelForTool(href: string): WorkspacePanelId | null {
   return cockpitPanelForRoute(href);
 }
 
-export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: string[]; preset: WorkspacePreset }>(current: T, preset: WorkspacePreset): T {
+export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: string[]; railed?: string[]; preset: WorkspacePreset }>(current: T, preset: WorkspacePreset): T {
   const visible: Record<WorkspacePreset, string[]> = {
     Analyze: ["discovery", "chart", "heat", "intelligence", "clock", "ruby", "risk"],
     Trade: ["discovery", "chart", "heat", "clock", "risk", "order", "positions"],
@@ -33,10 +33,12 @@ export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: st
   return {
     ...current, preset,
     collapsed: WORKSPACE_PANEL_IDS.filter(id => !visible[preset].includes(id) && !current.pinned.includes(id)),
+    railed: (preset === "Analyze" ? ["ruby", "risk", "order"] : preset === "Review" ? ["discovery", "heat", "clock"] : [])
+      .filter(id => !current.pinned.includes(id)),
   };
 }
 
-export function toggleWorkspacePanel<T extends { collapsed: string[]; pinned: string[] }>(
+export function toggleWorkspacePanel<T extends { collapsed: string[]; pinned: string[]; railed?: string[] }>(
   current: T, id: string, action: "collapse" | "pin",
 ): T {
   const field = action === "collapse" ? "collapsed" : "pinned";
@@ -46,7 +48,8 @@ export function toggleWorkspacePanel<T extends { collapsed: string[]; pinned: st
     return { ...current, pinned: values.filter(value => value !== id) };
   }
   if (action === "pin") {
-    return { ...current, pinned: [...values, id], collapsed: current.collapsed.filter(value => value !== id) };
+    return { ...current, pinned: [...values, id], collapsed: current.collapsed.filter(value => value !== id),
+      ...(current.railed ? { railed: current.railed.filter(value => value !== id) } : {}) };
   }
   return { ...current, [field]: values.includes(id) ? values.filter(value => value !== id) : [...values, id] };
 }

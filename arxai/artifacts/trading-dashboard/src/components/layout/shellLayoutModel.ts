@@ -11,6 +11,7 @@ export type ShellPreferences = {
 export type RoutePanelLayout = {
   collapsed: string[];
   pinned: string[];
+  railed?: string[];
   preset?: "Analyze" | "Trade" | "Review";
 };
 
@@ -116,6 +117,7 @@ function sanitizePanelLayout(
   return {
     collapsed: valid(value.collapsed).filter((id) => !pinned.includes(id)),
     pinned,
+    ...(Array.isArray(value.railed) ? { railed: valid(value.railed).filter(id => !pinned.includes(id)) } : {}),
     ...(preset ? { preset } : {}),
   };
 }

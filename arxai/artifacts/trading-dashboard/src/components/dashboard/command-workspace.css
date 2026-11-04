@@ -581,8 +581,8 @@
   }
   /* Prefer the last expanded panel. If every panel is collapsed, the last
      card still fills its column without reopening content or changing state. */
-  .arx-workspace-grid > .arx-col > .arx-panel[data-collapsed="false"]:not(:has(~ .arx-panel[data-collapsed="false"])),
-  .arx-workspace-grid > .arx-col:not(:has(> .arx-panel[data-collapsed="false"])) > .arx-panel:last-child {
+  .arx-workspace-grid > .arx-col > .arx-panel[data-collapsed="false"]:not([hidden]):not(:has(~ .arx-panel[data-collapsed="false"]:not([hidden]))),
+  .arx-workspace-grid > .arx-col:not(:has(> .arx-panel[data-collapsed="false"]:not([hidden]))) > .arx-panel:not([hidden]):not(:has(~ .arx-panel:not([hidden]))) {
     flex: 1 0 auto;
   }
   /* The price plot, not intelligence, receives the centre column's spare room. */

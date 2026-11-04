@@ -851,6 +851,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   </div>;
 
   const layoutMenuContent = <div className="arx-shell-layout-controls">
+    <div data-route-layout-slot />
     <LayoutChoiceGroup
       label="Dock"
       value={shellPreferences.dockMode}
