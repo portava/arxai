@@ -1,3 +1,4 @@
+import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import type { Candle, DataProvider, MarketQuote } from "../types.js";
 import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS, MAX_FUTURE_CLOCK_SKEW_MS } from "../freshness.js";
 
@@ -191,6 +192,9 @@ let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
 const contentionWarnAt = new Map<string, { at: number; setKey: string }>();
+registerHeapWatchGauge("mt5Provider.candleSeries", () => { let n = 0; for (const m of candleStore.values()) n += m.size; return n; });
+registerHeapWatchGauge("mt5Provider.candleBars", () => { let n = 0; for (const m of candleStore.values()) for (const s of m.values()) n += s.candles.length; return n; });
+registerHeapWatchGauge("mt5Provider.quotes", () => { let n = 0; for (const m of quoteStore.values()) n += m.size; return n; });
 
 type ContentionWarnSink = (payload: Record<string, unknown>) => void;
 let contentionWarnSink: ContentionWarnSink | null = null;

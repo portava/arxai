@@ -35,6 +35,7 @@
     "test:market-brain-honest-refusal": "node --import tsx --test --test-force-exit src/brain/__qa__/marketBrainHonestRefusal.test.ts",
     "test:paper-intelligence-real-bars": "node --import tsx --test --test-force-exit src/lib/__qa__/paperIntelligenceRealBars.test.ts",
     "test:synthetic-candle-fence": "node --import tsx --test --test-force-exit src/lib/__qa__/syntheticCandleFence.test.ts",
+    "test:replit-slice5-20261104": "node --import tsx --test --test-force-exit src/lib/perf/__qa__/heapWatch.test.ts src/lib/systemHealth/__qa__/buildDdLayerRemoved.test.ts",
     "test:bridge-scoped-candle-serving": "node --import tsx --test --test-force-exit src/lib/data/__qa__/bridgeScopedCandleServing.test.ts",
     "test:broker-confirmed-gate": "node --import tsx --test --test-force-exit src/lib/data/__qa__/brokerConfirmedGate.test.ts",
     "test:decision-grade-wait": "node --import tsx --test --test-force-exit src/lib/data/__qa__/decisionGradeWait.test.ts",

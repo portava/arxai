@@ -15,6 +15,7 @@
 //  - Pure Fast-Brain work — never invokes the Slow Brain (background-only).
 
 import { recordStateTruthResult } from "./stateTruthResult.js";
+import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import {
   getChartCandles,
   type ChartFeedStatus,
@@ -214,6 +215,7 @@ interface CacheEntry {
 }
 const cache = new Map<string, CacheEntry>();
 
+registerHeapWatchGauge("chartIntelligence.cache", () => cache.size);
 
 /**
  * Return the cached intelligence context (state + truth result + feed status)

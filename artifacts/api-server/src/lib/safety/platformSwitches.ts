@@ -99,12 +99,19 @@ export interface PlatformSwitches {
   };
 }
 
-/** What the schema defaults to: a fresh install is available, stop released, live execution not armed (owner decision 2026-10-24). */
+/**
+ * What the schema defaults to and the seed writes: a fresh install FAILS
+ * CLOSED (owner decision 2026-11-04, replacing the 2026-10-24 trading-on
+ * default). Platform mode OFF, demo and live venues disabled, the paper
+ * simulator available, emergency stop released, live execution not armed. An
+ * operator switches venues on in Admin; an existing install's row is not
+ * changed by this default.
+ */
 export const DEFAULT_SWITCH_ROW: Pick<GlobalTradingSettingsRow, SwitchField> = {
-  platformMode: "LIVE",
+  platformMode: "OFF",
   simulatedEnabled: true,
-  demoEnabled: true,
-  liveEnabled: true,
+  demoEnabled: false,
+  liveEnabled: false,
   emergencyKillSwitch: false,
   killSwitchEngagedAt: null,
   killSwitchReason: null,
@@ -202,9 +209,17 @@ export async function loadGlobalTradingSettingsRow(): Promise<GlobalTradingSetti
     const rows = await db.select().from(globalTradingSettingsTable)
       .orderBy(asc(globalTradingSettingsTable.id)).limit(1);
     if (rows[0]) return rows[0];
-    // Seed the singleton from the schema defaults if missing: trading
-    // available, emergency stop released (owner decision 2026-10-24).
-    const inserted = await db.insert(globalTradingSettingsTable).values({}).returning();
+    // Seed the singleton if missing. Written explicitly (not left to the
+    // column defaults) so an older database whose column defaults still say
+    // trading-on also starts fail closed: platform OFF, demo and live
+    // disabled, stop released (owner decision 2026-11-04).
+    const inserted = await db.insert(globalTradingSettingsTable).values({
+      platformMode: DEFAULT_SWITCH_ROW.platformMode,
+      simulatedEnabled: DEFAULT_SWITCH_ROW.simulatedEnabled,
+      demoEnabled: DEFAULT_SWITCH_ROW.demoEnabled,
+      liveEnabled: DEFAULT_SWITCH_ROW.liveEnabled,
+      emergencyKillSwitch: DEFAULT_SWITCH_ROW.emergencyKillSwitch,
+    }).returning();
     return inserted[0]!;
   } catch (err) {
     logger.warn({ err: String(err) }, "global_trading_settings read failed; using fail-closed default");
