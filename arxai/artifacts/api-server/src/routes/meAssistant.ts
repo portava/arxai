@@ -39,7 +39,9 @@ import {
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
 import type { InstantTradeIntent } from "../lib/live/instantTrade.js";
-import { MAX_ACTIVE_RUBY_WATCHES, currentPriceOf, recordAndExecuteRuby } from "../lib/assistant/rubyExecution.js";
+import { MAX_ACTIVE_RUBY_WATCHES, ownBridgePriceOf, recordAndExecuteRuby, rubyWatchPermissionBlock } from "../lib/assistant/rubyExecution.js";
+import { currentFeedScopeBridge } from "../lib/data/feedScope.js";
+import { cancelScope, isCloseAlertAnswer, pickWatchesToCancel } from "../lib/assistant/rubyAlertAnswers.js";
 import { evaluateRubyWatchesForUser, acknowledgeRubyWatch, listRubyWatches, setRubyWatchFakeoutAuthority } from "../lib/assistant/rubyWatchEvaluator.js";
 import { isSweeperEnabled, getRubySweeperStatus } from "../lib/assistant/rubyWatchSweeper.js";
 import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/rubyMonitorPolicy.js";
@@ -1650,6 +1652,9 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // that evaluates watches is enabled in this process.
 const WATCH_ARMING_ENABLED = isSweeperEnabled();
 export const CHAT_EXECUTION_WIRED_IN_UI = true;
+/** Default lifetime of a price watch (WATCH_AND_ENTER / WATCH_AND_CLOSE) with no stated expiry. */
+export const DEFAULT_WATCH_TTL_MINUTES = 24 * 60;
+
 export const WATCH_UNAVAILABLE_MESSAGE =
   "Conditional orders and position monitoring are switched off on this server (the watch sweeper is disabled), so I won't pretend to watch. Place the pending order yourself from the Trade Action Center, or ask me to prepare the ticket.";
 export const WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON = "WATCH_EVALUATION_UNAVAILABLE";
@@ -1718,6 +1723,35 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     }
     if (awaiting.length > 1) {
       res.json({ ok: false, classification: "MONITOR_ALERT_ACK_AMBIGUOUS", message: `Several positions are waiting for your answer (${awaiting.map((w) => w.symbol).join(", ")}) — tell me which one to keep, e.g. "keep EURUSD".` });
+      return;
+    }
+  }
+  // "close it" / "close that" / "yes close" answers the alert too. Without this
+  // it parsed as UNKNOWN, or as CLOSE_ONE of the default symbol, which may not
+  // be the position the alert was about. Only consulted when a monitor is
+  // awaiting an answer; otherwise the text parses as before.
+  const closeAnswer = isCloseAlertAnswer(text);
+  if (closeAnswer) {
+    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
+    if (awaiting.length === 1) {
+      const ipC = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
+      const uaC = (req.headers["user-agent"] as string | undefined) ?? null;
+      const target = awaiting[0]!;
+      const r = await acknowledgeRubyWatch(userId, target.id, "close", { ip: ipC, ua: uaC, trigger: "ack" });
+      const fired = r.ok && r.decision === "close" ? r.result.fired[0] : undefined;
+      const skipped = r.ok && r.decision === "close" ? r.result.skipped[0] : undefined;
+      res.json({
+        ok: r.ok && !!fired && !fired.blocked, classification: "MONITOR_ALERT_ACK_CLOSE", watchId: target.id,
+        message: !r.ok ? `I couldn't record that: ${r.error}.`
+          : fired ? (fired.blocked ? `I tried to close ${target.symbol ?? "it"} but it did not go through: ${fired.blocked}.` : `Closing ${target.symbol ?? "the trade"} now — I sent the close to the broker and will confirm when it fills.`)
+          : skipped?.reason === "POSITION_GONE" ? `Your ${target.symbol ?? ""} position is already closed.`
+          : skipped ? `I couldn't close it: ${skipped.reason}.`
+          : "Nothing to do.",
+      });
+      return;
+    }
+    if (awaiting.length > 1) {
+      res.json({ ok: false, classification: "MONITOR_ALERT_ACK_AMBIGUOUS", message: `Several positions are waiting for your answer (${awaiting.map((w) => w.symbol).join(", ")}) — tell me which one to close, e.g. "close EURUSD".` });
       return;
     }
   }
@@ -1837,12 +1871,26 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // same handler with explicit "pending order" copy.
   if (parsed.kind === "CANCEL" || parsed.kind === "CANCEL_PENDING_ORDER") {
     const isPending = parsed.kind === "CANCEL_PENDING_ORDER";
-    const cancelledWatches = await db.update(rubyWatchInstructionsTable)
+    // Scope (sweep 2026-11-04): "never mind" used to stand down EVERY watch,
+    // monitors included, so a casual "cancel that" silently removed the
+    // protection on open trades. Now: "all"/"everything" → every watch;
+    // "stop monitoring …" → the most recent monitor; a pending-order cancel →
+    // the pending entries (of that symbol when named); otherwise the most
+    // recent non-monitor watch.
+    const scope = cancelScope(text, parsed.kind);
+    const activeRows = await db.select().from(rubyWatchInstructionsTable).where(and(
+      eq(rubyWatchInstructionsTable.userId, userId),
+      eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+    ));
+    const targets = pickWatchesToCancel(activeRows, scope, parsed.kind === "CANCEL_PENDING_ORDER" ? parsed.symbol : null);
+    const cancelledWatches = targets.length === 0 ? [] : await db.update(rubyWatchInstructionsTable)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(
         eq(rubyWatchInstructionsTable.userId, userId),
         eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+        inArray(rubyWatchInstructionsTable.id, targets.map((w) => w.id)),
       )).returning({ id: rubyWatchInstructionsTable.id });
+    const monitorsLeft = activeRows.filter((w) => w.kind === "MONITOR_TRADE" && !cancelledWatches.some((c) => c.id === w.id));
     const cancelledCmds = await db.update(rubyCommandsTable)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(
@@ -1852,17 +1900,20 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     const n = cancelledWatches.length + cancelledCmds.length;
     await db.insert(oneClickAuditTable).values({
       userId, action: "RUBY_PENDING_ACTION_CANCELLED", ip, userAgent: ua,
-      metadata: JSON.stringify({ text, kind: parsed.kind, watches: cancelledWatches.length, commands: cancelledCmds.length, source, channel: "ELEANOR_CHAT" }),
+      metadata: JSON.stringify({ text, kind: parsed.kind, watches: cancelledWatches.length, watchIds: cancelledWatches.map((c) => c.id), commands: cancelledCmds.length, scope, source, channel: "ELEANOR_CHAT" }),
     });
+    const monitorNote = monitorsLeft.length > 0
+      ? ` Still monitoring ${monitorsLeft.map((w) => w.symbol ?? "a position").join(", ")} — say "stop monitoring" or "cancel all" to stop that too.`
+      : "";
     res.json({
       ok: true, classification: parsed.kind, cancelled: n,
-      message: n === 0
+      message: (n === 0
         ? (isPending
           ? "No pending orders to cancel — you have no conditional entries armed right now."
-          : "Nothing to cancel — I had no active watches or pending commands.")
+          : "Nothing to cancel — I had no matching watches or pending commands.")
         : (isPending
           ? `Cancelled ${n} pending order${n === 1 ? "" : "s"}.`
-          : `Stood down ${n} pending item${n === 1 ? "" : "s"}.`),
+          : `Stood down ${n} pending item${n === 1 ? "" : "s"}.`)) + monitorNote,
     });
     return;
   }
@@ -1939,30 +1990,46 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // is an executing watch too. This is an UP-FRONT guard — the evaluator still
     // re-runs every gate (incl. authority + per-action perms) through
     // executeInstant at fire time. It never relaxes a backend gate.
-    const armAuthority = (settings?.rubyExecutionAuthority ?? "OFF").trim().toUpperCase();
-    const armPermOk =
-      parsed.kind === "WATCH_AND_ENTER" ? settings?.allowRubyWatchEnter === true
-      : parsed.kind === "WATCH_AND_CLOSE" ? settings?.allowRubyWatchClose === true
-      : settings?.allowRubyMonitor === true;
-    const armNeedsExecAuthority = parsed.kind === "WATCH_AND_ENTER"
-      || parsed.kind === "WATCH_AND_CLOSE" || parsed.kind === "MONITOR_TRADE";
-    const armBlockReason = !armPermOk
-      ? (parsed.kind === "WATCH_AND_ENTER" ? "RUBY_WATCH_ENTER_NOT_ENABLED"
-        : parsed.kind === "WATCH_AND_CLOSE" ? "RUBY_WATCH_CLOSE_NOT_ENABLED"
-        : "RUBY_MONITOR_NOT_ENABLED")
-      : (armNeedsExecAuthority && armAuthority !== "AI_ASSISTED") ? "RUBY_TRADING_NOT_ENABLED"
-      : null;
+    // Watches run on the LIVE account only: the evaluator reads live positions
+    // and instant trading refuses demo, so a demo watch could only ever fire
+    // and fail. Refuse honestly at arm time (sweep 2026-11-04).
+    if (accountMode !== "live") {
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_WATCH_ARM_BLOCKED", ip, userAgent: ua,
+        metadata: JSON.stringify({ text, kind: parsed.kind, reason: "LIVE_ACCOUNT_ONLY", accountMode, source }),
+      });
+      res.json({
+        ok: false, classification: "WATCH_LIVE_ONLY",
+        message: `Watches run on your live account only in this build; switch to live to arm one.`,
+      });
+      return;
+    }
+    // The same permission rule the evaluator applies at fire time, including
+    // the pipeline's open/close command permissions (rubyWatchPermissionBlock).
+    const armBlockReason = rubyWatchPermissionBlock(parsed.kind, settings);
     if (armBlockReason) {
       await db.insert(oneClickAuditTable).values({
         userId, action: "RUBY_WATCH_ARM_BLOCKED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, kind: parsed.kind, reason: armBlockReason, source }),
       });
       res.status(403).json({
-        ok: false, classification: "RUBY_NOT_AUTHORIZED",
-        message: armNeedsExecAuthority && armAuthority !== "AI_ASSISTED" && armPermOk
+        ok: false, classification: "RUBY_NOT_AUTHORIZED", reason: armBlockReason,
+        message: armBlockReason === "RUBY_EXECUTION_NOT_AUTHORIZED"
           ? `Turn on ${assistantName} AI-Assisted execution before I can arm that.`
+          : armBlockReason === "RUBY_OPEN_COMMANDS_NOT_ENABLED"
+          ? `That watch would open a trade, but ${assistantName} isn't allowed to open trades in your settings — turn on open commands first.`
+          : armBlockReason === "RUBY_CLOSE_COMMANDS_NOT_ENABLED"
+          ? `That watch may close your trade, but ${assistantName} isn't allowed to close trades in your settings — turn on close commands first.`
           : `That ${assistantName} action isn't enabled in your settings.`,
       });
+      return;
+    }
+    if (parsed.kind === "WATCH_AND_ENTER" && !(typeof parsed.volume === "number" && parsed.volume > 0)) {
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
+        metadata: JSON.stringify({ text, reason: "MISSING_VOLUME", symbol: parsed.symbol, kind: parsed.kind, source }),
+      });
+      res.json({ ok: false, classification: "MISSING_VOLUME", message: `How much ${parsed.symbol} should I ${parsed.side.toLowerCase()} when it triggers? Tell me a lot size like 0.01.` });
       return;
     }
 
@@ -1989,7 +2056,9 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       const { price, direction } = parsed.trigger;
       let op: ">=" | "<=" | null = direction === "ABOVE" ? ">=" : direction === "BELOW" ? "<=" : null;
       if (op == null && symbol) {
-        const px = await currentPriceOf(symbol);
+        // Direction from the trader's OWN bridge tick only — the same feed the
+        // evaluator will fire on (never a platform-wide or third-party price).
+        const px = await ownBridgePriceOf(symbol, await currentFeedScopeBridge());
         if (px != null) op = price >= px ? ">=" : "<=";
       }
       triggerCondition = op != null ? { op, price } : null;
@@ -2006,7 +2075,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which open position should I watch?" });
         return;
       }
-      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol })).map((p) => p.row);
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "CONFIRMED_OPEN", symbol })).map((p) => p.row);
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${symbol} position to watch.` });
         return;
@@ -2022,8 +2091,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // expiresInMinutes. The watch evaluator sweeps past-expiry rows to EXPIRED
     // before it can fire, so a conditional entry/close that never triggers
     // doesn't linger live forever.
-    const expiresInMinutes = (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE")
+    // A price watch without a stated expiry lasts DEFAULT_WATCH_TTL_MINUTES
+    // (sweep 2026-11-04) so a forgotten conditional entry never fires days
+    // later. A monitor ends when its position is no longer open.
+    const statedExpiry = (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE")
       ? parsed.expiresInMinutes : undefined;
+    const expiresInMinutes = parsed.kind === "MONITOR_TRADE" ? undefined
+      : typeof statedExpiry === "number" && statedExpiry > 0 ? statedExpiry : DEFAULT_WATCH_TTL_MINUTES;
     const expiresAt = typeof expiresInMinutes === "number" && expiresInMinutes > 0
       ? new Date(Date.now() + expiresInMinutes * 60_000) : null;
     // Pending-entry wording — "limit"/"stop" phrasing describes a conditional
@@ -2034,6 +2108,32 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // to shift SL/TP on a fakeout (bounded; see rubyFakeoutPolicy.ts). Stored in
     // risk_params; also toggled later via POST /me/assistant/watches/:id/fakeout-authority.
     const fakeoutAuthority = parsed.kind === "MONITOR_TRADE" && parsed.fakeoutAuthority === true;
+    const expirySuffix = expiresAt
+      ? ` (expires in ${expiresInMinutes! >= 60 && expiresInMinutes! % 60 === 0 ? `${expiresInMinutes! / 60} h` : `${expiresInMinutes} min`} if it doesn't trigger)`
+      : "";
+    const armDescription = parsed.kind === "MONITOR_TRADE"
+      ? `monitor your ${symbol} position: alert you on reversal evidence up to 3 times and close it if you don't answer${fakeoutAuthority ? ", and shift the stop loss / take profit on a fakeout" : ""}`
+      : `${parsed.kind === "WATCH_AND_ENTER" ? `${parsed.side.toLowerCase()} ${symbol} ${parsed.volume}` : `close ${symbol}`} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${expirySuffix}`;
+
+    // Extra-confirmation gate, same rule as an immediate command (see below):
+    // arming a watch is a decision to trade later, so it is confirmed before
+    // the row exists, not after it fires.
+    if (settings?.rubyRequireExtraConfirmation !== false && body.confirm !== true) {
+      await db.insert(oneClickAuditTable).values({
+        userId, action: "RUBY_TRADE_COMMAND_CONFIRM_REQUIRED", ip, userAgent: ua,
+        metadata: JSON.stringify({ text, kind: parsed.kind, action: "ARM_WATCH", symbol, triggerCondition, source }),
+      });
+      res.json({
+        ok: false, classification: parsed.kind, confirmationRequired: true,
+        pendingAction: {
+          kind: parsed.kind, action: "ARM_WATCH", symbol,
+          volume: parsed.kind === "WATCH_AND_ENTER" && typeof parsed.volume === "number" ? parsed.volume : null,
+        },
+        message: `Confirm and I'll ${armDescription}. Resend with confirmation to proceed.`,
+      });
+      return;
+    }
+
     const [w] = await db.insert(rubyWatchInstructionsTable).values({
       userId, kind: parsed.kind, accountMode, source,
       symbol: symbol ?? null,
@@ -2050,9 +2150,6 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       userId, action: "RUBY_WATCH_ARMED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, kind: parsed.kind, symbol, triggerCondition, positionTicket, expiresAt, pendingKind: pendingKind ?? null, fakeoutAuthority, source, channel: "ELEANOR_CHAT" }),
     });
-    const expirySuffix = expiresAt
-      ? ` (expires in ${expiresInMinutes} min if it doesn't trigger)`
-      : "";
     res.json({
       ok: true, classification: parsed.kind, watchId: w!.id,
       message: parsed.kind === "MONITOR_TRADE"
