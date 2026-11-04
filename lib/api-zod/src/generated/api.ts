@@ -874,6 +874,12 @@ export const GetProfitMissionPulseResponse = zod
         totalOpenRisk: zod.number(),
         riskByAssetClass: zod.record(zod.string(), zod.number()),
         countByAssetClass: zod.record(zod.string(), zod.number()),
+        riskUnknownCount: zod
+          .number()
+          .optional()
+          .describe(
+            "Open positions whose money at risk to the stop is not known. totalOpenRisk and riskByAssetClass sum only current floating losses, so when this is > 0 they are a lower bound, not the open risk.\n",
+          ),
       })
       .describe(
         "Phase 7 aggregate of OPEN live exposure for a single user (per-user isolation). Display-only.\n",
@@ -3912,9 +3918,21 @@ export const GetBotStatusResponse = zod.object({
   symbol: zod.string(),
   strategy: zod.string(),
   riskMode: zod.enum(["Conservative", "Balanced", "Aggressive"]),
-  isRunning: zod.boolean(),
-  isPaused: zod.boolean(),
+  isRunning: zod
+    .boolean()
+    .describe("Stored bot setting. No order path reads it."),
+  isPaused: zod
+    .boolean()
+    .describe(
+      "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
+    ),
   lastScanAt: zod.string().nullish(),
+  emergencyStopScope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "Who POST \/bot\/emergency-stop halts for this caller. PLATFORM (owner\/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -3934,9 +3952,21 @@ export const UpdateBotStatusResponse = zod.object({
   symbol: zod.string(),
   strategy: zod.string(),
   riskMode: zod.enum(["Conservative", "Balanced", "Aggressive"]),
-  isRunning: zod.boolean(),
-  isPaused: zod.boolean(),
+  isRunning: zod
+    .boolean()
+    .describe("Stored bot setting. No order path reads it."),
+  isPaused: zod
+    .boolean()
+    .describe(
+      "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
+    ),
   lastScanAt: zod.string().nullish(),
+  emergencyStopScope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "Who POST \/bot\/emergency-stop halts for this caller. PLATFORM (owner\/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -3989,7 +4019,17 @@ export const UpdateBotSettingsResponse = zod.object({
 export const EmergencyStopResponse = zod.object({
   success: zod.boolean(),
   message: zod.string(),
-  closedTrades: zod.number(),
+  closedTrades: zod
+    .number()
+    .describe(
+      "Open rows in the legacy simulated trades table that were cancelled. Paper-book and broker positions are not closed and are not counted.",
+    ),
+  scope: zod
+    .enum(["PLATFORM", "YOUR_ACCOUNT"])
+    .optional()
+    .describe(
+      "PLATFORM means the platform-wide safety-core kill switch was engaged (every trader halted). YOUR_ACCOUNT means only the caller's own kill switch.",
+    ),
 });
 
 /**
@@ -4239,7 +4279,7 @@ export const ApplyRiskModeResponse = zod.object({
 });
 
 /**
- * @summary Lock or unlock live trading mode
+ * @summary Save the trader's live-mode lock preference — listed as a blocker by the permission status and checklists; no order path reads it, and unlocking does not enable live trading
  */
 export const SetLiveLockBody = zod.object({
   locked: zod.boolean(),
@@ -4251,7 +4291,7 @@ export const SetLiveLockResponse = zod.object({
 });
 
 /**
- * @summary Get current risk audit — evaluates live trading conditions against risk rules
+ * @summary Get the legacy risk audit — risk rules against the legacy trades log and a placeholder balance (see balanceSource / tradeSource); not the Risk Governor's pre-trade check
  */
 export const GetRiskAuditQueryParams = zod.object({
   symbol: zod.coerce.string().optional(),
@@ -4272,6 +4312,109 @@ export const GetRiskAuditResponse = zod.object({
   openTradesCount: zod.number(),
   losingStreak: zod.number(),
   cooldownActive: zod.boolean(),
+  closedTradesMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when daily \/ weekly loss, the losing streak and the cooldown were measured from closed rows. False or missing means they were not measured and must not be shown as 0 \/ clear.",
+    ),
+  measuredFrom: zod
+    .enum(["LEGACY_TRADES_TABLE"])
+    .optional()
+    .describe(
+      "Where the counts come from. LEGACY_TRADES_TABLE is the legacy simulated trades table, which takes no new rows since \/execute-trade was retired.",
+    ),
+  balanceSource: zod
+    .enum(["PLACEHOLDER_1000"])
+    .optional()
+    .describe(
+      "The balance the loss percentages are taken against. PLACEHOLDER_1000 is a fixed $1,000, not an account balance.",
+    ),
+  scope: zod
+    .enum(["USER", "ALL_USERS"])
+    .optional()
+    .describe(
+      "USER means only the signed-in trader's rows were counted. ALL_USERS means every user's rows were counted.",
+    ),
+  accountBalanceUsed: zod
+    .number()
+    .optional()
+    .describe(
+      "The balance (USD) the loss percentages and projectedLoss were computed against.",
+    ),
+  tradeSource: zod
+    .string()
+    .optional()
+    .describe(
+      "The trade book the counts were read from. LEGACY_TRADES_TABLE = the retired legacy trades log, which takes no new trades; it is not the book the Risk Governor enforces.",
+    ),
+  tradeScope: zod
+    .string()
+    .optional()
+    .describe(
+      "Whose rows the trade read counted. USER = only the signed-in trader's rows (same as scope USER). ALL_ACCOUNTS = the trade read is not limited to the signed-in trader.",
+    ),
+  notMeasured: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Fields of this result that are not measurements (their value is a default, not something observed); show them as not measured. Empty when closedTradesMeasured is true.",
+    ),
+  partlyMeasured: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Fields that are only part of what they name: dailyLossUsed \/ weeklyLossUsed when closed rows in that window have UNKNOWN P\/L and were left out of the sum (unknownPnlRowsToday \/ unknownPnlRowsThisWeek). Show them as not fully measured, never as the whole loss or a clean pass.",
+    ),
+  unknownPnlRowsToday: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows today whose P\/L is UNKNOWN; left out of dailyLossUsed. 0 when closed rows were not counted.",
+    ),
+  unknownPnlRowsThisWeek: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows since the start of the week whose P\/L is UNKNOWN; left out of weeklyLossUsed. 0 when closed rows were not counted.",
+    ),
+  evaluatedAt: zod.coerce
+    .date()
+    .optional()
+    .describe("When the server computed this audit."),
+  tradingHalt: zod
+    .union([
+      zod.object({
+        engaged: zod.boolean(),
+        sources: zod
+          .array(zod.string())
+          .describe(
+            "Engaged switches, platform-wide ones first (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch).",
+          ),
+        reason: zod
+          .string()
+          .nullable()
+          .describe(
+            "Plain-English reason for the first engaged switch. Null when none is engaged.",
+          ),
+        venues: zod
+          .array(zod.enum(["PAPER", "DEMO", "LIVE"]))
+          .describe(
+            "Venues on which new trades are halted. Empty when none is engaged.",
+          ),
+        unreadableSources: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Additive. The entries of sources that could not be read and are counted as engaged (fail closed); every other entry was read as engaged. Absent when the server did not say, in which case reason (which names the first source) is the only per-source detail.",
+          ),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "The trader's kill switches (platform emergency stop, safety-core switch, the trader's own kill switch), from the reader the pre-trade Risk Governor uses (an unreadable switch counts as engaged). Not included, so \"none engaged\" does not mean nothing halts new trades - the broker's operator controls and a frozen shared-account allocation, which the governor also applies to DEMO \/ LIVE orders. An engaged switch also adds the first reasonsBlocked entry and makes passed false. Null or missing means the switches were not read and nothing may be said about them.",
+    ),
 });
 
 /**
@@ -4292,6 +4435,36 @@ export const GetPositionSizeResponse = zod.object({
   maxLotAllowed: zod.number(),
   finalLot: zod.number(),
   warning: zod.string().nullish(),
+  valueModel: zod
+    .enum([
+      "forex_usd_quote",
+      "forex_other_quote",
+      "synthetic_per_point",
+      "per_point",
+      "unknown_contract",
+    ])
+    .optional()
+    .describe(
+      "Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. per_point = an index, stock or ETF CFD known to the ARX market list. unknown_contract = anything else (metals, energy, crypto, an unknown name), sized with a model that does not fit it (XAUUSD, BTCUSD, GOLD, USOIL…); the lot is not usable.",
+    ),
+  estimate: zod
+    .boolean()
+    .optional()
+    .describe("true unless the model is the standard USD-quoted forex lot."),
+  valuePerUnitPerLot: zod
+    .number()
+    .optional()
+    .describe("The assumed money per 1.0 price move per 1.0 lot."),
+  basis: zod
+    .string()
+    .optional()
+    .describe("Plain-English statement of the sizing assumption, for display."),
+  refusedReason: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set when the Risk Governor refuses every order on this symbol (or on this side, read from the stop: below the entry is a BUY) whatever the lot: not on the operator's instrument allow-list, a direction the operator restricted, or the symbol switched off in the trader's risk limits. maxLotAllowed and finalLot are then 0 and no lot may be shown. Null when none of these applies. Missing = an older server that did not check.",
+    ),
 });
 
 /**
@@ -4850,14 +5023,90 @@ export const GetMt5StateResponse = zod.object({
     .optional(),
   lastHeartbeatAt: zod.string().nullish(),
   lastSyncAt: zod.string().nullish(),
+  scope: zod
+    .enum(["platform", "own_connection", "shared_master_bridge", "none"])
+    .optional()
+    .describe(
+      "Whose state this is. platform is the install-wide EA feed (operators only) and is not any one user's account.",
+    ),
+  scopeNote: zod
+    .string()
+    .optional()
+    .describe("Plain statement of whose state this is."),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "False when positions were not read for this caller. An empty list is then not a count of open trades.",
+    ),
+  positionsNote: zod.string().optional(),
+  liveAllowedNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Present when liveAllowed is the platform-wide lock rather than a value reported by the caller's terminal.",
+    ),
 });
 
 /**
  * @summary Combined MT5 bridge status (connection, mode, queue, account)
  */
 export const GetMt5StatusResponse = zod.object({
-  connected: zod.boolean(),
-  mode: zod.enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE"]),
+  connected: zod
+    .boolean()
+    .describe(
+      "The user's OWN MT5 connection heartbeated recently. False for a user routed through the shared master bridge; see route and sharedMasterBridge.",
+    ),
+  mode: zod
+    .enum(["MOCK", "DEMO", "LIVE_LOCKED", "LIVE", "NOT_CONNECTED", "STALE"])
+    .describe(
+      "The user's own connection. NOT_CONNECTED when the user has no connection of their own or it never heartbeated; STALE when its heartbeat is too old.",
+    ),
+  route: zod
+    .enum(["OWN_CONNECTION", "SHARED_MASTER", "NONE"])
+    .optional()
+    .describe(
+      "How this user reaches MT5. NONE with routeReadFailed true means the routing could not be read, not a confirmed absence of a bridge.",
+    ),
+  routeReadFailed: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the user's routing could not be read; route NONE is then not a confirmed absence of a bridge. Absent when the routing was read.",
+    ),
+  sharedMasterBridge: zod
+    .union([
+      zod.object({
+        availability: zod
+          .enum(["HEALTHY", "RECONCILING", "UNAVAILABLE", "STALE", "UNKNOWN"])
+          .describe(
+            "HEALTHY only when the allocation view says so AND the master snapshot is fresh now. UNKNOWN when the allocation view could not be read.",
+          ),
+        connected: zod
+          .boolean()
+          .describe("True only when availability is HEALTHY."),
+        message: zod.string(),
+        lastSnapshotAt: zod
+          .string()
+          .nullable()
+          .describe(
+            "When the master bridge last reported a snapshot (ISO); null when never or unread.",
+          ),
+        snapshotAgeSeconds: zod.number().nullable(),
+        source: zod.enum(["shared_master_bridge_pool"]),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "For a user routed through the shared master bridge (route SHARED_MASTER), that bridge as read now; null otherwise.",
+    ),
+  userSafeMessage: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain-English summary of the user's bridge state; null when there is nothing to add.",
+    ),
   lastHeartbeatAt: zod.string().nullable(),
   secondsSinceHeartbeat: zod.number().nullable(),
   pendingCommands: zod.number(),
@@ -4894,6 +5143,16 @@ export const GetMt5StatusResponse = zod.object({
       profit: zod.number().nullish(),
     }),
   ),
+  openPositionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "False when openPositions was not read from the broker. An empty list is then not a count of open trades.",
+    ),
+  openPositionsNote: zod
+    .string()
+    .optional()
+    .describe("Plain statement of whether and where open positions were read."),
   accountSnapshot: zod.object({
     account: zod.string().nullable(),
     broker: zod.string().nullish(),
@@ -4904,6 +5163,12 @@ export const GetMt5StatusResponse = zod.object({
     freeMargin: zod.number().nullish(),
     marginLevel: zod.number().nullish(),
     currency: zod.string().nullable(),
+    syncedAt: zod
+      .string()
+      .nullish()
+      .describe(
+        "When the EA last pushed these account figures (ISO). Null when never synced.",
+      ),
   }),
 });
 
@@ -5196,7 +5461,49 @@ export const GetMarketQuoteResponse = zod.object({
   ask: zod.number().nullish(),
   last: zod.number().nullish(),
   spread: zod.number().nullish(),
-  timestamp: zod.string(),
+  timestamp: zod
+    .string()
+    .describe(
+      "For a served quote, the quote's own time (see timeBasis). When no quote was available (available=false) this is only the time the check ran — it is not an observation time.",
+    ),
+  available: zod
+    .boolean()
+    .optional()
+    .describe("True only when a price (last, bid or ask) was served."),
+  source: zod
+    .string()
+    .nullish()
+    .describe("Router provider that served the quote; null when none did."),
+  observedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the price was observed (ISO); null when unknown or unavailable.",
+    ),
+  timeBasis: zod
+    .enum(["producer_tick", "provider_as_of", "server_receive", "none"])
+    .optional()
+    .describe(
+      "What observedAt means. server_receive is the time ARX received the quote (the market tick may be older) and can never read fresh.",
+    ),
+  ageMs: zod.number().nullish(),
+  freshness: zod
+    .enum(["fresh", "delayed", "stale", "unknown", "unavailable"])
+    .optional(),
+  stale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when stale, unknown or unavailable — the price must not be shown as current.",
+    ),
+  staleAfterMs: zod.number().optional(),
+  checkedAt: zod.string().optional().describe("When this lookup ran (ISO)."),
+  observationNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Plain English — what was observed, from which source, as of when, or that it could not be.",
+    ),
 });
 
 /**
@@ -5493,7 +5800,6 @@ export const GetChartCandlesResponse = zod.object({
     source: zod.string().nullable().describe("Winning provider id"),
     isLive: zod.boolean(),
     lastTickTime: zod.string().nullable(),
-    "notLiveReason": zod.string().nullish().describe('stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable'),
     lastCandleTime: zod.string().nullable(),
     latencyMs: zod.number().nullable(),
     missingCandleCount: zod.number(),
@@ -5523,6 +5829,16 @@ export const GetChartCandlesResponse = zod.object({
       .nullish()
       .describe("Deriv synthetic warm-up lifecycle state when applicable"),
     message: zod.string(),
+    notLiveReason: zod
+      .union([
+        zod.literal("market_closed"),
+        zod.literal("stored_history"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+      ),
   }),
   truthResult: zod
     .union([
@@ -5897,7 +6213,6 @@ export const GetChartFeedStatusResponse = zod.object({
   source: zod.string().nullable().describe("Winning provider id"),
   isLive: zod.boolean(),
   lastTickTime: zod.string().nullable(),
-  "notLiveReason": zod.string().nullish().describe('stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable'),
   lastCandleTime: zod.string().nullable(),
   latencyMs: zod.number().nullable(),
   missingCandleCount: zod.number(),
@@ -5927,6 +6242,16 @@ export const GetChartFeedStatusResponse = zod.object({
     .nullish()
     .describe("Deriv synthetic warm-up lifecycle state when applicable"),
   message: zod.string(),
+  notLiveReason: zod
+    .union([
+      zod.literal("market_closed"),
+      zod.literal("stored_history"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+    ),
 });
 
 /**
@@ -6265,7 +6590,6 @@ export const GetMeChartIntelligenceResponse = zod.object({
         source: zod.string().nullable().describe("Winning provider id"),
         isLive: zod.boolean(),
         lastTickTime: zod.string().nullable(),
-        "notLiveReason": zod.string().nullish().describe('stored_history when display-only stored bars replace an exhausted feed; never live or AI-usable'),
         lastCandleTime: zod.string().nullable(),
         latencyMs: zod.number().nullable(),
         missingCandleCount: zod.number(),
@@ -6295,6 +6619,16 @@ export const GetMeChartIntelligenceResponse = zod.object({
           .nullish()
           .describe("Deriv synthetic warm-up lifecycle state when applicable"),
         message: zod.string(),
+        notLiveReason: zod
+          .union([
+            zod.literal("market_closed"),
+            zod.literal("stored_history"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "Why the series is not live although its bars may be clean: the market is in its scheduled weekend close (market_closed), or the bars are the stored MT5 mirror with no bridge pushing them (stored_history). null when neither applies. Absent from older servers.\n",
+          ),
       }),
       currentCandle: zod.union([
         zod
@@ -7675,6 +8009,58 @@ export const GetMeChartIntelligenceResponse = zod.object({
               "Admin-only diagnostic with bid\/ask\/deviation; null when broker unavailable",
             ),
           brokerDataAvailable: zod.boolean(),
+          quoteBinding: zod
+            .union([
+              zod.object({
+                status: zod
+                  .enum(["BOUND", "MISMATCH", "STALE", "UNVERIFIED"])
+                  .describe(
+                    "BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown.",
+                  ),
+                reasons: zod
+                  .array(
+                    zod.enum([
+                      "QUOTE_ABSENT",
+                      "REQUESTER_UNKNOWN",
+                      "SERIES_UNATTRIBUTED",
+                      "QUOTE_UNATTRIBUTED",
+                      "PROVIDER_MISMATCH",
+                      "BRIDGE_MISMATCH",
+                      "OWNER_MISMATCH",
+                      "ACCOUNT_NOT_REQUESTER",
+                      "ENVIRONMENT_MISMATCH",
+                      "BROKER_SYMBOL_MISMATCH",
+                      "QUOTE_TIME_UNKNOWN",
+                      "QUOTE_TIME_FUTURE",
+                      "QUOTE_STALE",
+                    ]),
+                  )
+                  .describe(
+                    "Every failed condition, in evaluation order. Empty only when BOUND.",
+                  ),
+                quoteSource: zod
+                  .union([
+                    zod.literal("mt5_live_quote"),
+                    zod.literal("mt5_symbol_snapshot"),
+                    zod.literal(null),
+                  ])
+                  .nullable(),
+                quoteObservedAt: zod.coerce
+                  .date()
+                  .nullable()
+                  .describe("Producer-observed tick time; null when unknown"),
+                quoteAgeMs: zod
+                  .number()
+                  .nullable()
+                  .describe("Age of the observed tick time; null when unknown"),
+                freshnessBudgetMs: zod.number(),
+              }),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Additive. Whether the compared broker quote is bound to the chart\nseries: same observed provider, bridge and owner (the requesting\nuser), no observed environment\/broker-symbol contradiction, and an\nobserved tick time within the quote freshness budget. Only BOUND\ncomparisons earn Symbol Mirror Accuracy points or claim alignment.\nnull or absent means no binding was evaluated (unmeasured).\n",
+            ),
         })
         .describe(
           "Phase 3 broker price alignment. Uses noBrokerAlignment placeholder in the cached intelligence path; Phase 4 route-level enrichment supplies live per-user broker data.\n",
@@ -7781,7 +8167,19 @@ export const GetMeMarketTruthResponse = zod.object({
     ),
     riskLabel: zod.string(),
     highImpactWindowActive: zod.boolean(),
+    riskUnchecked: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Scheduled event risk could not be checked (the calendar read failed, or a configured calendar is not connected). Distinct from \"no calendar configured\". Absent on older servers; treat absent as false.',
+      ),
     disclaimer: zod.string().nullable(),
+    synthetic: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Present (true) only for a synthetic market: scheduled economic events do not apply and the economic calendar is not consulted. riskLabel is then the shared synthetic sentence, riskUnchecked is false and no events or disclaimer are carried. Absent means not synthetic (or an older server).",
+      ),
   }),
   components: zod.object({
     scanner: zod.object({
@@ -7789,24 +8187,48 @@ export const GetMeMarketTruthResponse = zod.object({
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     flame: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     timing: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
     scalp: zod.object({
       present: zod.boolean(),
       alignment: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "UNKNOWN"]),
       label: zod.string(),
       asOf: zod.string().nullable(),
+      belowEvidenceFloor: zod
+        .boolean()
+        .optional()
+        .describe(
+          "The component's own minimum-evidence rule failed, so its direction is a lean, not an edge. Set only by components that have such a rule; absent on older servers and on components without one.",
+        ),
     }),
   }),
   levels: zod.object({
@@ -7821,6 +8243,12 @@ export const GetMeMarketTruthResponse = zod.object({
   verdict: zod.object({
     stage: zod.enum(["ALIGNED", "DEVELOPING", "CONFLICT", "UNKNOWN"]),
     bias: zod.enum(["BULLISH", "BEARISH", "NEUTRAL", "CONFLICT", "UNKNOWN"]),
+    biasQualifier: zod
+      .union([zod.literal("LEAN"), zod.literal(null)])
+      .nullish()
+      .describe(
+        "LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers.",
+      ),
     headline: zod.string(),
     evidenceFor: zod.array(zod.string()),
     evidenceAgainst: zod.array(zod.string()),
@@ -7840,6 +8268,382 @@ export const GetMeMarketTruthResponse = zod.object({
       })
       .nullable(),
   }),
+  evidence: zod
+    .object({
+      price: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "SYNTHETIC_NO_EVENT_MAPPING",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "CALENDAR_UNCHECKED",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      lastCandle: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "SYNTHETIC_NO_EVENT_MAPPING",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "CALENDAR_UNCHECKED",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      lastTick: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "SYNTHETIC_NO_EVENT_MAPPING",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "CALENDAR_UNCHECKED",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      news: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "SYNTHETIC_NO_EVENT_MAPPING",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "CALENDAR_UNCHECKED",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      components: zod.object({
+        scanner: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "SYNTHETIC_NO_EVENT_MAPPING",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "CALENDAR_UNCHECKED",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+        flame: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "SYNTHETIC_NO_EVENT_MAPPING",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "CALENDAR_UNCHECKED",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+        timing: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "SYNTHETIC_NO_EVENT_MAPPING",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "CALENDAR_UNCHECKED",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+        scalp: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "SYNTHETIC_NO_EVENT_MAPPING",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "CALENDAR_UNCHECKED",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+      }),
+      levels: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "SYNTHETIC_NO_EVENT_MAPPING",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "CALENDAR_UNCHECKED",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      verdict: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "SYNTHETIC_NO_EVENT_MAPPING",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "CALENDAR_UNCHECKED",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+    })
+    .optional(),
 });
 
 /**
@@ -7971,6 +8775,16 @@ export const GetMeChartSmartLayersResponse = zod.object({
     hasSufficientData: zod.boolean(),
     levelCount: zod.number(),
     newsMapped: zod.boolean(),
+    sourceDataLive: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "Whether the candles the overlays were drawn from are live (true), not live — delayed, awaiting feed or stale (false), or unknown (null). The rebuild age alone does not make overlays fresh.",
+      ),
+    sourceDataNote: zod
+      .string()
+      .nullish()
+      .describe("Plain-English reason the source candles are not live."),
   }),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),
@@ -8133,6 +8947,18 @@ export const GetMeTradeHealthResponse = zod.object({
     }),
   ),
   summary: zod.string(),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      'False when the open positions for this account mode could not be read. An empty assessments list is then not a measured \"no open positions\".',
+    ),
+  positionsNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain statement of why positions were not read; null when they were.",
+    ),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),
   readOnlyMode: zod.boolean(),
@@ -8357,9 +9183,25 @@ export const PostMeAssistantDraftReadResponse = zod.object({
       dataQuality: zod
         .enum(["ok", "insufficient"])
         .describe(
-          "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale\/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution.",
+          "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale\/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution.",
         ),
-      bias: zod.enum(["bullish", "bearish", "neutral", "unknown"]),
+      feedConfirmed: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers.",
+        ),
+      bias: zod
+        .enum(["bullish", "bearish", "neutral", "unknown"])
+        .describe(
+          "'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral').",
+        ),
+      asOf: zod
+        .string()
+        .optional()
+        .describe(
+          "When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers.",
+        ),
       headline: zod.string(),
       points: zod.array(zod.string()),
       cautions: zod.array(zod.string()),
@@ -9093,15 +9935,20 @@ export const GetAdminHandshakeMonitorResponse = zod.object({
     zod.object({
       type: zod.string(),
       label: zod.string(),
-      overallStatus: zod.enum([
-        "READY",
-        "READY_WITH_WARNINGS",
-        "WAITING_FOR_DATA",
-        "STALE",
-        "DEGRADED",
-        "BLOCKED",
-        "ERROR",
-      ]),
+      overallStatus: zod
+        .enum([
+          "READY",
+          "READY_WITH_WARNINGS",
+          "WAITING_FOR_DATA",
+          "STALE",
+          "DEGRADED",
+          "BLOCKED",
+          "ERROR",
+          "NOT_CHECKED",
+        ])
+        .describe(
+          "ERROR means the evaluation itself failed. NOT_CHECKED means nothing was evaluated (no wired layers, or no context such as an investor-scoped handshake in the admin view) — nothing errored.",
+        ),
       aggregateStatus: zod.enum(["PASS", "WARN", "BLOCK", "UNKNOWN"]),
       safeToProceed: zod.boolean(),
       implemented: zod.boolean(),
@@ -9172,7 +10019,14 @@ export const GetAdminHandshakeMonitorResponse = zod.object({
     warnings: zod.number(),
     waiting: zod.number(),
     blocked: zod.number(),
-    errors: zod.number(),
+    errors: zod
+      .number()
+      .describe("Verdicts whose evaluation failed (ERROR) only."),
+    notChecked: zod
+      .number()
+      .describe(
+        "Verdicts with nothing evaluated (NOT_CHECKED) — not wired or no context; not errors.",
+      ),
   }),
 });
 
@@ -9565,6 +10419,12 @@ export const PostMarketNewsIntelligenceResponse = zod.object({
   bias: zod.enum(["bullish", "bearish", "mixed", "unclear"]),
   timing: zod.enum(["now", "upcoming", "recent", "quiet"]),
   warningSummary: zod.string(),
+  scheduledEventRisk: zod
+    .enum(["checked", "not_checked", "not_applicable"])
+    .optional()
+    .describe(
+      'Whether scheduled (economic-calendar) event risk was actually\nchecked. \"checked\": a live calendar answered. \"not_checked\": no\ncalendar is connected or its read failed, so riskLevel \"none\" and\ntiming \"quiet\" were not observed and upcoming events are unknown.\n\"not_applicable\": a synthetic instrument scheduled events do not move.\n',
+    ),
   recommendation: zod.enum(["watch", "wait", "avoid", "proceed_with_caution"]),
   upcomingEvent: zod.union([
     zod.object({
@@ -9614,14 +10474,71 @@ export const GetTradeSnapshotParams = zod.object({
 
 export const GetTradeSnapshotResponse = zod.object({
   tradeId: zod.number(),
-  currentPrice: zod.number(),
-  rMultiple: zod.number(),
-  floatingPnl: zod.number(),
-  health: zod.object({
-    score: zod.number(),
-    state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
-    factors: zod.record(zod.string(), zod.number()),
-  }),
+  currentPrice: zod
+    .number()
+    .nullable()
+    .describe(
+      "Last price from the market-data feed; null when no quote was available (never the entry price).",
+    ),
+  quoteAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Timestamp of the quote currentPrice came from; null when there is no quote.",
+    ),
+  priceUnavailableReason: zod
+    .string()
+    .nullish()
+    .describe(
+      "Why currentPrice, rMultiple, floatingPnl and health are null; null when priced.",
+    ),
+  quoteFreshness: zod
+    .enum(["fresh", "delayed", "stale", "unknown", "unavailable"])
+    .optional()
+    .describe(
+      "The quote's own freshness verdict. Only fresh (a producer tick inside the fresh window) confirms currentPrice is current. A priced snapshot can also be delayed (stamped with the time ARX received it, or a tick older than the fresh window): a last price, not confirmed current. stale, unknown and unavailable come with currentPrice null.",
+    ),
+  quoteTimeBasis: zod
+    .enum(["producer_tick", "provider_as_of", "server_receive", "none"])
+    .optional()
+    .describe(
+      "What the quote's time means (producer tick time, provider time, the time ARX received it, or none).",
+    ),
+  quoteNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "One plain-English sentence on the quote - source, age, time basis and whether it is current; null when there was no quote.",
+    ),
+  rMultiple: zod.number().nullable(),
+  floatingPnl: zod
+    .number()
+    .nullable()
+    .describe(
+      "Floating P&L in USD, contract-size aware (move x lots x contract size x quote->USD). Null when there is no price or the contract size \/ FX rate cannot be established.",
+    ),
+  pnlUnavailableReason: zod
+    .string()
+    .nullish()
+    .describe("Why floatingPnl is null; null when it was sized."),
+  pnlDataQualityFlag: zod
+    .union([
+      zod.literal("MISSING_CONTRACT_SIZE"),
+      zod.literal("MISSING_FX_CONVERSION"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Which input was missing when a priced trade's P&L could not be sized.",
+    ),
+  health: zod.union([
+    zod.object({
+      score: zod.number(),
+      state: zod.enum(["healthy", "watching", "at_risk", "invalidated"]),
+      factors: zod.record(zod.string(), zod.number()),
+    }),
+    zod.null(),
+  ]),
   primarySuggestion: zod.string(),
   invalidated: zod.boolean(),
   suggestions: zod.object({
@@ -9840,6 +10757,57 @@ export const GetEconomicCalendarResponse = zod.array(
 );
 
 /**
+ * @summary Upcoming economic events with the calendar read state in one read
+ */
+export const getEconomicCalendarEnvelopeQueryDaysDefault = 7;
+
+export const GetEconomicCalendarEnvelopeQueryParams = zod.object({
+  currency: zod.coerce.string().optional(),
+  impact: zod.coerce.string().optional(),
+  days: zod.coerce
+    .number()
+    .default(getEconomicCalendarEnvelopeQueryDaysDefault),
+});
+
+export const GetEconomicCalendarEnvelopeResponse = zod.object({
+  read: zod
+    .boolean()
+    .describe(
+      "True only when a connected provider was read; an empty list then means none listed.",
+    ),
+  status: zod.enum(["ok", "empty", "missing", "error"]),
+  provider: zod.string(),
+  configured: zod.boolean(),
+  eventsAsOf: zod
+    .string()
+    .nullable()
+    .describe("When the served events were fetched from the provider."),
+  checkedAt: zod.string(),
+  note: zod
+    .string()
+    .nullable()
+    .describe(
+      "Plain-English reason the calendar was not read; null when it was.",
+    ),
+  windowDays: zod.number(),
+  events: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      country: zod.string(),
+      currency: zod.string(),
+      impact: zod.enum(["low", "medium", "high"]),
+      actual: zod.string().nullish(),
+      forecast: zod.string().nullish(),
+      previous: zod.string().nullish(),
+      eventTime: zod.string(),
+      affectedMarkets: zod.array(zod.string()),
+      source: zod.string(),
+    }),
+  ),
+});
+
+/**
  * @summary Live upcoming events from the configured real economic-calendar
 provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no
@@ -9910,6 +10878,12 @@ export const GetLiveCalendarEventsResponse = zod.object({
         title: zod.string(),
         currency: zod.string(),
         impact: zod.enum(["low", "medium", "high"]),
+        impactTier: zod
+          .enum(["low", "medium", "high", "critical"])
+          .optional()
+          .describe(
+            "The provider's own impact tier, unfolded. `impact` folds `critical`\ninto `high` for back-compat; display surfaces read this field so a\ncentral-bank decision shows as critical. Returned by the live\ncalendar endpoint (`GET \/economic-calendar\/events`).\n",
+          ),
         eventTimeIso: zod.coerce.date(),
         affectedMarkets: zod.array(zod.string()),
         country: zod.string().optional(),
@@ -9952,11 +10926,22 @@ export const GetLiveCalendarEventsResponse = zod.object({
  * @summary List synced economic events (Build N)
  */
 export const listEconomicEventsQueryDaysDefault = 7;
+export const listEconomicEventsQueryPastHoursDefault = 0;
+export const listEconomicEventsQueryPastHoursMin = 0;
+export const listEconomicEventsQueryPastHoursMax = 48;
 
 export const ListEconomicEventsQueryParams = zod.object({
   currency: zod.coerce.string().optional(),
   impact: zod.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   days: zod.coerce.number().default(listEconomicEventsQueryDaysDefault),
+  pastHours: zod.coerce
+    .number()
+    .min(listEconomicEventsQueryPastHoursMin)
+    .max(listEconomicEventsQueryPastHoursMax)
+    .default(listEconomicEventsQueryPastHoursDefault)
+    .describe(
+      "Hours before now to include (0-48, default 0). The window is\neventTime in [now - pastHours, now + days\*24h] — rolling hours, not\ncalendar days. Lets a caller list events already released today.\n",
+    ),
 });
 
 export const ListEconomicEventsResponse = zod.object({
@@ -10036,6 +11021,32 @@ export const GetUpcomingEconomicEventsResponse = zod.object({
       createdAt: zod.string(),
     }),
   ),
+  calendarCoverage: zod
+    .object({
+      source: zod.enum(["ECONOMIC_EVENTS_TABLE"]),
+      providerConfigured: zod
+        .boolean()
+        .describe(
+          "A calendar provider is configured. It does not mean the table was synced.",
+        ),
+      storedEventCount: zod
+        .number()
+        .describe("Rows in the stored calendar. 0 means never synced."),
+      coveredThrough: zod
+        .string()
+        .nullable()
+        .describe("Latest stored event time (ISO); null when empty."),
+      windowEnd: zod.string(),
+      windowCovered: zod.boolean(),
+      note: zod
+        .string()
+        .nullable()
+        .describe("Plain statement when the window is not covered."),
+    })
+    .optional()
+    .describe(
+      'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
 });
 
 /**
@@ -10046,6 +11057,44 @@ export const GenerateNewsRiskReportBody = zod.object({
 });
 
 export const GenerateNewsRiskReportResponse = zod.object({
+  calendarCoverage: zod
+    .object({
+      source: zod.enum(["ECONOMIC_EVENTS_TABLE"]),
+      providerConfigured: zod
+        .boolean()
+        .describe(
+          "A calendar provider is configured. It does not mean the table was synced.",
+        ),
+      storedEventCount: zod
+        .number()
+        .describe("Rows in the stored calendar. 0 means never synced."),
+      coveredThrough: zod
+        .string()
+        .nullable()
+        .describe("Latest stored event time (ISO); null when empty."),
+      windowEnd: zod.string(),
+      windowCovered: zod.boolean(),
+      note: zod
+        .string()
+        .nullable()
+        .describe("Plain statement when the window is not covered."),
+    })
+    .optional()
+    .describe(
+      'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
+  reportAge: zod
+    .object({
+      generatedAt: zod.string().nullable(),
+      ageMinutes: zod.number().nullable(),
+      current: zod.boolean(),
+      maxCurrentAgeMinutes: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.\n",
+    ),
   id: zod.number(),
   userId: zod.number().nullish(),
   symbol: zod.string(),
@@ -10093,6 +11142,44 @@ export const GetLatestNewsRiskReportQueryParams = zod.object({
 });
 
 export const GetLatestNewsRiskReportResponse = zod.object({
+  calendarCoverage: zod
+    .object({
+      source: zod.enum(["ECONOMIC_EVENTS_TABLE"]),
+      providerConfigured: zod
+        .boolean()
+        .describe(
+          "A calendar provider is configured. It does not mean the table was synced.",
+        ),
+      storedEventCount: zod
+        .number()
+        .describe("Rows in the stored calendar. 0 means never synced."),
+      coveredThrough: zod
+        .string()
+        .nullable()
+        .describe("Latest stored event time (ISO); null when empty."),
+      windowEnd: zod.string(),
+      windowCovered: zod.boolean(),
+      note: zod
+        .string()
+        .nullable()
+        .describe("Plain statement when the window is not covered."),
+    })
+    .optional()
+    .describe(
+      'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
+  reportAge: zod
+    .object({
+      generatedAt: zod.string().nullable(),
+      ageMinutes: zod.number().nullable(),
+      current: zod.boolean(),
+      maxCurrentAgeMinutes: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.\n",
+    ),
   id: zod.number(),
   userId: zod.number().nullish(),
   symbol: zod.string(),
@@ -10364,6 +11451,49 @@ export const GetBacktestRunsResponse = zod.object({
           "invalid_bars",
         ])
         .optional(),
+      metricsMeasurement: zod
+        .object({
+          measured: zod
+            .boolean()
+            .describe(
+              "True only for a COMPLETED run with at least one completed simulated trade.",
+            ),
+          unmeasuredFields: zod
+            .array(zod.string())
+            .describe(
+              "Metric fields whose stored values are placeholders ([] when measured).",
+            ),
+          note: zod
+            .string()
+            .nullable()
+            .describe(
+              "Plain-English reason the metrics were not measured; null when they were.",
+            ),
+        })
+        .optional()
+        .describe(
+          "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+        ),
+      dataReliability: zod
+        .object({
+          status: zod.enum([
+            "sufficient",
+            "partial",
+            "insufficient",
+            "blocked",
+          ]),
+          availableClosedCandles: zod.number(),
+          minimumRequiredCandles: zod.number(),
+          reliable: zod.boolean(),
+          basis: zod
+            .enum(["generated_prices", "broker_history", "unknown"])
+            .optional(),
+          note: zod.string().nullish(),
+        })
+        .optional()
+        .describe(
+          "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+        ),
       aiSummary: zod.string().nullish(),
       equityCurve: zod.array(zod.number()).optional(),
       createdAt: zod.string(),
@@ -10456,6 +11586,44 @@ export const CreateBacktestRunResponse = zod.object({
       "invalid_bars",
     ])
     .optional(),
+  metricsMeasurement: zod
+    .object({
+      measured: zod
+        .boolean()
+        .describe(
+          "True only for a COMPLETED run with at least one completed simulated trade.",
+        ),
+      unmeasuredFields: zod
+        .array(zod.string())
+        .describe(
+          "Metric fields whose stored values are placeholders ([] when measured).",
+        ),
+      note: zod
+        .string()
+        .nullable()
+        .describe(
+          "Plain-English reason the metrics were not measured; null when they were.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+    ),
+  dataReliability: zod
+    .object({
+      status: zod.enum(["sufficient", "partial", "insufficient", "blocked"]),
+      availableClosedCandles: zod.number(),
+      minimumRequiredCandles: zod.number(),
+      reliable: zod.boolean(),
+      basis: zod
+        .enum(["generated_prices", "broker_history", "unknown"])
+        .optional(),
+      note: zod.string().nullish(),
+    })
+    .optional()
+    .describe(
+      "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+    ),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -10517,6 +11685,44 @@ export const GetBacktestRunResponse = zod.object({
       "invalid_bars",
     ])
     .optional(),
+  metricsMeasurement: zod
+    .object({
+      measured: zod
+        .boolean()
+        .describe(
+          "True only for a COMPLETED run with at least one completed simulated trade.",
+        ),
+      unmeasuredFields: zod
+        .array(zod.string())
+        .describe(
+          "Metric fields whose stored values are placeholders ([] when measured).",
+        ),
+      note: zod
+        .string()
+        .nullable()
+        .describe(
+          "Plain-English reason the metrics were not measured; null when they were.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+    ),
+  dataReliability: zod
+    .object({
+      status: zod.enum(["sufficient", "partial", "insufficient", "blocked"]),
+      availableClosedCandles: zod.number(),
+      minimumRequiredCandles: zod.number(),
+      reliable: zod.boolean(),
+      basis: zod
+        .enum(["generated_prices", "broker_history", "unknown"])
+        .optional(),
+      note: zod.string().nullish(),
+    })
+    .optional()
+    .describe(
+      "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+    ),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -10622,6 +11828,21 @@ export const GetBacktestChartSeriesResponse = zod.object({
   strategyId: zod.string().optional(),
   symbol: zod.string().optional(),
   timeframe: zod.string().optional(),
+  dataReliability: zod
+    .object({
+      status: zod.enum(["sufficient", "partial", "insufficient", "blocked"]),
+      availableClosedCandles: zod.number(),
+      minimumRequiredCandles: zod.number(),
+      reliable: zod.boolean(),
+      basis: zod
+        .enum(["generated_prices", "broker_history", "unknown"])
+        .optional(),
+      note: zod.string().nullish(),
+    })
+    .optional()
+    .describe(
+      "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+    ),
 });
 
 export const GenerateBacktestAiReviewParams = zod.object({
@@ -10631,6 +11852,29 @@ export const GenerateBacktestAiReviewParams = zod.object({
 export const GenerateBacktestAiReviewResponse = zod.object({
   id: zod.number(),
   aiSummary: zod.string(),
+  metricsMeasurement: zod
+    .object({
+      measured: zod
+        .boolean()
+        .describe(
+          "True only for a COMPLETED run with at least one completed simulated trade.",
+        ),
+      unmeasuredFields: zod
+        .array(zod.string())
+        .describe(
+          "Metric fields whose stored values are placeholders ([] when measured).",
+        ),
+      note: zod
+        .string()
+        .nullable()
+        .describe(
+          "Plain-English reason the metrics were not measured; null when they were.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+    ),
 });
 
 /**
@@ -10685,6 +11929,28 @@ export const GetPaperAccountsResponse = zod.object({
       isActive: zod.number(),
       createdAt: zod.string(),
       updatedAt: zod.string(),
+      pnlSizing: zod
+        .object({
+          unsizedClosedOrders: zod.number(),
+          unsizedClosedWins: zod
+            .number()
+            .optional()
+            .describe(
+              "Of unsizedClosedOrders, the closes that won. Their gain is not added to the balance (counted as 0). Absent from older servers.",
+            ),
+          unsizedOpenPositions: zod.number(),
+          unsizedOpenGains: zod
+            .number()
+            .optional()
+            .describe(
+              "Of unsizedOpenPositions, the positions in profit. Their gain is not added to equity (counted as 0). Absent from older servers.",
+            ),
+          note: zod.string().nullable(),
+        })
+        .optional()
+        .describe(
+          "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes and open positions the balance and equity count without a sized P&L.",
+        ),
     }),
   ),
   simulated: zod.boolean().optional(),
@@ -10707,6 +11973,28 @@ export const CreatePaperAccountResponse = zod.object({
   isActive: zod.number(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  pnlSizing: zod
+    .object({
+      unsizedClosedOrders: zod.number(),
+      unsizedClosedWins: zod
+        .number()
+        .optional()
+        .describe(
+          "Of unsizedClosedOrders, the closes that won. Their gain is not added to the balance (counted as 0). Absent from older servers.",
+        ),
+      unsizedOpenPositions: zod.number(),
+      unsizedOpenGains: zod
+        .number()
+        .optional()
+        .describe(
+          "Of unsizedOpenPositions, the positions in profit. Their gain is not added to equity (counted as 0). Absent from older servers.",
+        ),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes and open positions the balance and equity count without a sized P&L.",
+    ),
 });
 
 export const GetActivePaperAccountResponse = zod.object({
@@ -10721,6 +12009,28 @@ export const GetActivePaperAccountResponse = zod.object({
     isActive: zod.number(),
     createdAt: zod.string(),
     updatedAt: zod.string(),
+    pnlSizing: zod
+      .object({
+        unsizedClosedOrders: zod.number(),
+        unsizedClosedWins: zod
+          .number()
+          .optional()
+          .describe(
+            "Of unsizedClosedOrders, the closes that won. Their gain is not added to the balance (counted as 0). Absent from older servers.",
+          ),
+        unsizedOpenPositions: zod.number(),
+        unsizedOpenGains: zod
+          .number()
+          .optional()
+          .describe(
+            "Of unsizedOpenPositions, the positions in profit. Their gain is not added to equity (counted as 0). Absent from older servers.",
+          ),
+        note: zod.string().nullable(),
+      })
+      .optional()
+      .describe(
+        "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes and open positions the balance and equity count without a sized P&L.",
+      ),
   }),
   simulated: zod.boolean().optional(),
   disclaimer: zod.string().optional(),
@@ -11983,6 +13293,12 @@ export const GetEdgeReportsResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12024,6 +13340,12 @@ export const GenerateEdgeReportResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12064,6 +13386,12 @@ export const GetEdgeReportByIdResponse = zod.object({
       ]),
       aiSummary: zod.string(),
       createdAt: zod.string(),
+      behaviourBasis: zod
+        .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+        .optional()
+        .describe(
+          "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+        ),
     })
     .optional(),
   warnings: zod
@@ -12079,6 +13407,12 @@ export const GetEdgeReportByIdResponse = zod.object({
       }),
     )
     .optional(),
+  behaviourBasis: zod
+    .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+    .optional()
+    .describe(
+      "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+    ),
 });
 
 export const GetStrongestEdgesResponse = zod.object({
@@ -12111,6 +13445,12 @@ export const GetStrongestEdgesResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12146,6 +13486,12 @@ export const GetWeakestEdgesResponse = zod.object({
         ]),
         aiSummary: zod.string(),
         createdAt: zod.string(),
+        behaviourBasis: zod
+          .enum(["SLICE_DEBRIEFS", "NOT_MEASURED", "ACCOUNT_WIDE_LEGACY"])
+          .optional()
+          .describe(
+            "What the report's discipline\/emotional scores describe. SLICE_DEBRIEFS = averaged over post-trade debriefs linked to this slice's trades; NOT_MEASURED = no linked debrief, the stored 0s are placeholders; ACCOUNT_WIDE_LEGACY = an older report averaged over all of the user's debriefs. executionScoreAvg is not measured by debriefs.",
+          ),
       }),
     )
     .optional(),
@@ -12200,6 +13546,40 @@ export const GetTraderSkillProfileResponse = zod.object({
       zod.null(),
     ])
     .optional(),
+  unmeasuredPillars: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .nullish()
+    .describe(
+      "Pillars of this profile with no evidence (no debriefs, edge reports ...) when the profile was calculated, and a stored 0: not measured. Judged on the rows that existed at the profile's createdAt, not on today's. They still count as 0 in totalScore. null when the evidence could not be read.",
+    ),
+  unmeasuredPillarsWithNewEvidence: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .nullish()
+    .describe(
+      "The unmeasuredPillars that have evidence now (added after the profile was calculated). A recalculation would score them; until then their stored 0 is still not a measurement. null when the evidence could not be read.",
+    ),
 });
 
 export const CalculateTraderSkillProfileResponse = zod.object({
@@ -12229,6 +13609,23 @@ export const CalculateTraderSkillProfileResponse = zod.object({
     })
     .optional(),
   signals: zod.record(zod.string(), zod.number()).optional(),
+  unmeasuredPillars: zod
+    .array(
+      zod.enum([
+        "discipline",
+        "execution",
+        "risk",
+        "emotional",
+        "consistency",
+        "planning",
+        "review",
+        "practice",
+      ]),
+    )
+    .optional()
+    .describe(
+      "Pillars with no evidence in this computation (each counted as 0 in totalScore).",
+    ),
 });
 
 export const GetSkillLevelHistoryResponse = zod.object({
@@ -12685,8 +14082,32 @@ export const ToggleWatchlistItemFavoriteResponse = zod.object({
 export const GetPortfolioExposureResponse = zod.object({
   totalOpen: zod.number(),
   totalClosed: zod.number(),
-  floatingPnl: zod.number(),
-  realizedPnl: zod.number(),
+  floatingPnl: zod
+    .number()
+    .nullable()
+    .describe(
+      "null when any open row has no marked-to-market P&L (never a guessed 0).",
+    ),
+  floatingPnlUnavailableReason: zod.string().nullish(),
+  realizedPnl: zod
+    .number()
+    .describe("Excludes closed rows whose pnlStatus is UNKNOWN."),
+  realizedPnlExcludedUnknown: zod
+    .number()
+    .optional()
+    .describe(
+      "Closed rows left out of realized\/daily\/weekly figures because pnlStatus is UNKNOWN.",
+    ),
+  source: zod
+    .enum(["LEGACY_TRADES_TABLE"])
+    .optional()
+    .describe("Where the figures come from."),
+  sourceNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Plain-English scope of the figures (e.g. broker positions not included).",
+    ),
   exposureByMarket: zod.record(zod.string(), zod.number()),
   exposureByStrategy: zod.record(zod.string(), zod.number()),
   exposureByCurrency: zod.array(
@@ -12695,8 +14116,26 @@ export const GetPortfolioExposureResponse = zod.object({
       netLots: zod.number(),
     }),
   ),
-  dailyDrawdown: zod.number(),
-  weeklyDrawdown: zod.number(),
+  currencyExposureUnmappedRows: zod
+    .number()
+    .optional()
+    .describe(
+      'Open rows whose symbol could not be split into currencies (not one of the mapped pairs, e.g. EURGBP, XAUUSD, a broker-suffixed name or a synthetic). Their exposure is not in exposureByCurrency, so an empty list with unmapped rows is not \"no currency exposure\".',
+    ),
+  currencyExposureUnmappedSymbols: zod
+    .array(zod.string())
+    .optional()
+    .describe("The distinct symbols counted in currencyExposureUnmappedRows."),
+  dailyDrawdown: zod
+    .number()
+    .describe(
+      "Net loss of rows closed in the last 24h (min(0, net)); not a peak-to-trough drawdown.",
+    ),
+  weeklyDrawdown: zod
+    .number()
+    .describe(
+      "Net loss of rows closed in the last 7 days (min(0, net)); not a peak-to-trough drawdown.",
+    ),
 });
 
 /**
@@ -12998,6 +14437,28 @@ export const GetSystemStatusResponse = zod.object({
   allowedModes: zod.array(
     zod.enum(["OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING"]),
   ),
+  activeHalts: zod
+    .array(zod.string())
+    .nullish()
+    .describe(
+      "Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET \/system\/status only.",
+    ),
+  activeHaltReasons: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "One plain-English sentence per entry of activeHalts, in the same order.",
+    ),
+  activeHaltsCheckedAt: zod
+    .string()
+    .optional()
+    .describe("When activeHalts was read (ISO 8601)."),
+  modeBlockers: zod
+    .record(zod.string(), zod.array(zod.string()))
+    .optional()
+    .describe(
+      "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+    ),
 });
 
 /**
@@ -13070,6 +14531,28 @@ export const EngageKillSwitchResponse = zod.object({
         "LIVE_TRADING",
       ]),
     ),
+    activeHalts: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET \/system\/status only.",
+      ),
+    activeHaltReasons: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "One plain-English sentence per entry of activeHalts, in the same order.",
+      ),
+    activeHaltsCheckedAt: zod
+      .string()
+      .optional()
+      .describe("When activeHalts was read (ISO 8601)."),
+    modeBlockers: zod
+      .record(zod.string(), zod.array(zod.string()))
+      .optional()
+      .describe(
+        "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+      ),
   }),
 });
 
@@ -13112,6 +14595,28 @@ export const ResetKillSwitchResponse = zod.object({
         "LIVE_TRADING",
       ]),
     ),
+    activeHalts: zod
+      .array(zod.string())
+      .nullish()
+      .describe(
+        "Every stop that halts the viewer's demo and live broker orders right now, read by the pre-trade Risk Governor's own reader (platform_emergency_stop, safety_core_kill_switch, trader_kill_switch). killSwitchEngaged is the safety-core switch only. An empty list means none is engaged; null means the stops could not be checked. GET \/system\/status only.",
+      ),
+    activeHaltReasons: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "One plain-English sentence per entry of activeHalts, in the same order.",
+      ),
+    activeHaltsCheckedAt: zod
+      .string()
+      .optional()
+      .describe("When activeHalts was read (ISO 8601)."),
+    modeBlockers: zod
+      .record(zod.string(), zod.array(zod.string()))
+      .optional()
+      .describe(
+        "For each mode, why it is not offered now (empty when it is). Display only; a change is still decided by POST \/system\/mode, whose refusal carries its own blockers.",
+      ),
   }),
 });
 
@@ -14541,6 +16046,24 @@ export const ListWeeklyReviewsResponse = zod.object({
       aiSummary: zod.string().nullish(),
       nextWeekFocus: zod.string().nullish(),
       createdAtIso: zod.string(),
+      performanceSource: zod
+        .enum(["LEGACY_TRADES_RECORD"])
+        .optional()
+        .describe(
+          "The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).",
+        ),
+      performanceMeasured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.",
+        ),
+      performanceSourceNote: zod
+        .string()
+        .optional()
+        .describe(
+          "Plain statement of what the performance figures are and are not built from.",
+        ),
     }),
   ),
 });
@@ -14579,6 +16102,24 @@ export const GetLatestWeeklyReviewResponse = zod.object({
         aiSummary: zod.string().nullish(),
         nextWeekFocus: zod.string().nullish(),
         createdAtIso: zod.string(),
+        performanceSource: zod
+          .enum(["LEGACY_TRADES_RECORD"])
+          .optional()
+          .describe(
+            "The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).",
+          ),
+        performanceMeasured: zod
+          .boolean()
+          .optional()
+          .describe(
+            "False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.",
+          ),
+        performanceSourceNote: zod
+          .string()
+          .optional()
+          .describe(
+            "Plain statement of what the performance figures are and are not built from.",
+          ),
       }),
       zod.null(),
     ])
@@ -14637,6 +16178,24 @@ export const GenerateWeeklyReviewResponse = zod.object({
         aiSummary: zod.string().nullish(),
         nextWeekFocus: zod.string().nullish(),
         createdAtIso: zod.string(),
+        performanceSource: zod
+          .enum(["LEGACY_TRADES_RECORD"])
+          .optional()
+          .describe(
+            "The only trade source the performance figures are computed from (the legacy simulated-trade record, closed to new rows).",
+          ),
+        performanceMeasured: zod
+          .boolean()
+          .optional()
+          .describe(
+            "False when the source had no closed trades for the week. The zeros are then not a measurement of the trader's week.",
+          ),
+        performanceSourceNote: zod
+          .string()
+          .optional()
+          .describe(
+            "Plain statement of what the performance figures are and are not built from.",
+          ),
       }),
       zod.null(),
     ])
@@ -14776,13 +16335,49 @@ export const ListTradePlansResponse = zod.object({
             warnCount: zod.number(),
             isReady: zod.boolean(),
             rewardToRisk: zod.number().nullish(),
+            checkedAtIso: zod
+              .string()
+              .nullish()
+              .describe(
+                "When validate computed this checklist. Absent on plans validated before it was recorded.",
+              ),
           }),
           zod.null(),
         ])
         .optional(),
+      checklistStale: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+        ),
       executionConfirmationId: zod.number().nullish(),
       createdAtIso: zod.string(),
       updatedAtIso: zod.string(),
+      chartTruthStatus: zod
+        .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+        .optional()
+        .describe(
+          "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+        ),
+      chartTruthScore: zod
+        .number()
+        .nullish()
+        .describe(
+          "Validate response only. Chart Truth score of the cached chart read used at validation.",
+        ),
+      chartQualityNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+        ),
+      effectiveConfidenceLevel: zod
+        .number()
+        .nullish()
+        .describe(
+          "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+        ),
     }),
   ),
 });
@@ -14844,13 +16439,49 @@ export const CreateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const GetTradePlanParams = zod.object({
@@ -14893,13 +16524,49 @@ export const GetTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const UpdateTradePlanParams = zod.object({
@@ -14963,13 +16630,49 @@ export const UpdateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const ValidateTradePlanParams = zod.object({
@@ -15012,13 +16715,49 @@ export const ValidateTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const CancelTradePlanParams = zod.object({
@@ -15061,13 +16800,49 @@ export const CancelTradePlanResponse = zod.object({
         warnCount: zod.number(),
         isReady: zod.boolean(),
         rewardToRisk: zod.number().nullish(),
+        checkedAtIso: zod
+          .string()
+          .nullish()
+          .describe(
+            "When validate computed this checklist. Absent on plans validated before it was recorded.",
+          ),
       }),
       zod.null(),
     ])
     .optional(),
+  checklistStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+    ),
   executionConfirmationId: zod.number().nullish(),
   createdAtIso: zod.string(),
   updatedAtIso: zod.string(),
+  chartTruthStatus: zod
+    .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+    .optional()
+    .describe(
+      "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+    ),
+  chartTruthScore: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only. Chart Truth score of the cached chart read used at validation.",
+    ),
+  chartQualityNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+    ),
+  effectiveConfidenceLevel: zod
+    .number()
+    .nullish()
+    .describe(
+      "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+    ),
 });
 
 export const ConvertTradePlanParams = zod.object({
@@ -15111,13 +16886,49 @@ export const ConvertTradePlanResponse = zod.object({
           warnCount: zod.number(),
           isReady: zod.boolean(),
           rewardToRisk: zod.number().nullish(),
+          checkedAtIso: zod
+            .string()
+            .nullish()
+            .describe(
+              "When validate computed this checklist. Absent on plans validated before it was recorded.",
+            ),
         }),
         zod.null(),
       ])
       .optional(),
+    checklistStale: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when the plan was saved after its checklist and AI review were computed (a DRAFT carrying a checklist). They describe earlier values and must not be shown as the current plan's result.",
+      ),
     executionConfirmationId: zod.number().nullish(),
     createdAtIso: zod.string(),
     updatedAtIso: zod.string(),
+    chartTruthStatus: zod
+      .enum(["PASSED", "LIMITED", "NOT_CHECKED"])
+      .optional()
+      .describe(
+        "Validate response only. Whether Chart Truth was checked for the plan's symbol at validation: PASSED, LIMITED (chartQualityNote says why) or NOT_CHECKED (no symbol, no recent chart read, or the read failed).",
+      ),
+    chartTruthScore: zod
+      .number()
+      .nullish()
+      .describe(
+        "Validate response only. Chart Truth score of the cached chart read used at validation.",
+      ),
+    chartQualityNote: zod
+      .string()
+      .nullish()
+      .describe(
+        "Validate response only. Present when Chart Truth limited the plan's chart basis.",
+      ),
+    effectiveConfidenceLevel: zod
+      .number()
+      .nullish()
+      .describe(
+        "Validate response only, with chartQualityNote. The plan's confidence capped at the Chart Truth score; the stored confidenceLevel is unchanged.",
+      ),
   }),
   executionConfirmationId: zod.number().nullish(),
 });
@@ -15298,38 +17109,98 @@ export const GenerateMultiTimeframeReportResponse = zod.object({
   middleTimeframe: zod.string(),
   higherTimeframe: zod.string(),
   lowerTrend: zod.object({
-    trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+    trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
     strength: zod.number(),
     slope: zod.number(),
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   middleTrend: zod.object({
-    trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+    trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
     strength: zod.number(),
     slope: zod.number(),
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   higherTrend: zod.object({
-    trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+    trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
     strength: zod.number(),
     slope: zod.number(),
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   alignmentScore: zod.number(),
-  alignmentLabel: zod.enum([
-    "STRONG_BULLISH_ALIGNMENT",
-    "STRONG_BEARISH_ALIGNMENT",
-    "MIXED_ALIGNMENT",
-    "LOWER_TIMEFRAME_CONFLICT",
-    "HIGHER_TIMEFRAME_WARNING",
-    "NO_CLEAR_BIAS",
-  ]),
+  alignmentLabel: zod
+    .enum([
+      "STRONG_BULLISH_ALIGNMENT",
+      "STRONG_BEARISH_ALIGNMENT",
+      "MIXED_ALIGNMENT",
+      "LOWER_TIMEFRAME_CONFLICT",
+      "HIGHER_TIMEFRAME_WARNING",
+      "NO_CLEAR_BIAS",
+      "INSUFFICIENT_DATA",
+      "DATA_NOT_CURRENT",
+    ])
+    .describe(
+      "DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).",
+    ),
   conflictWarning: zod.string().nullish(),
   bestBias: zod.enum(["BUY", "SELL", "NEUTRAL"]),
   aiSummary: zod.string(),
@@ -15352,38 +17223,98 @@ export const GetLatestMultiTimeframeReportResponse = zod.object({
   middleTimeframe: zod.string(),
   higherTimeframe: zod.string(),
   lowerTrend: zod.object({
-    trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+    trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
     strength: zod.number(),
     slope: zod.number(),
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   middleTrend: zod.object({
-    trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+    trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
     strength: zod.number(),
     slope: zod.number(),
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   higherTrend: zod.object({
-    trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+    trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
     strength: zod.number(),
     slope: zod.number(),
     fastSma: zod.number(),
     slowSma: zod.number(),
     candlesUsed: zod.number(),
+    newestBarTime: zod
+      .string()
+      .nullish()
+      .describe(
+        "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+      ),
+    freshness: zod
+      .enum(["CURRENT", "STALE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+      ),
+    source: zod
+      .string()
+      .nullish()
+      .describe(
+        "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+      ),
   }),
   alignmentScore: zod.number(),
-  alignmentLabel: zod.enum([
-    "STRONG_BULLISH_ALIGNMENT",
-    "STRONG_BEARISH_ALIGNMENT",
-    "MIXED_ALIGNMENT",
-    "LOWER_TIMEFRAME_CONFLICT",
-    "HIGHER_TIMEFRAME_WARNING",
-    "NO_CLEAR_BIAS",
-  ]),
+  alignmentLabel: zod
+    .enum([
+      "STRONG_BULLISH_ALIGNMENT",
+      "STRONG_BEARISH_ALIGNMENT",
+      "MIXED_ALIGNMENT",
+      "LOWER_TIMEFRAME_CONFLICT",
+      "HIGHER_TIMEFRAME_WARNING",
+      "NO_CLEAR_BIAS",
+      "INSUFFICIENT_DATA",
+      "DATA_NOT_CURRENT",
+    ])
+    .describe(
+      "DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).",
+    ),
   conflictWarning: zod.string().nullish(),
   bestBias: zod.enum(["BUY", "SELL", "NEUTRAL"]),
   aiSummary: zod.string(),
@@ -15416,38 +17347,98 @@ export const GetMultiTimeframeHistoryResponse = zod.object({
       middleTimeframe: zod.string(),
       higherTimeframe: zod.string(),
       lowerTrend: zod.object({
-        trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+        trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
         strength: zod.number(),
         slope: zod.number(),
         fastSma: zod.number(),
         slowSma: zod.number(),
         candlesUsed: zod.number(),
+        newestBarTime: zod
+          .string()
+          .nullish()
+          .describe(
+            "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+          ),
+        freshness: zod
+          .enum(["CURRENT", "STALE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+          ),
+        source: zod
+          .string()
+          .nullish()
+          .describe(
+            "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+          ),
       }),
       middleTrend: zod.object({
-        trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+        trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
         strength: zod.number(),
         slope: zod.number(),
         fastSma: zod.number(),
         slowSma: zod.number(),
         candlesUsed: zod.number(),
+        newestBarTime: zod
+          .string()
+          .nullish()
+          .describe(
+            "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+          ),
+        freshness: zod
+          .enum(["CURRENT", "STALE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+          ),
+        source: zod
+          .string()
+          .nullish()
+          .describe(
+            "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+          ),
       }),
       higherTrend: zod.object({
-        trend: zod.enum(["UP", "DOWN", "SIDEWAYS"]),
+        trend: zod.enum(["UP", "DOWN", "SIDEWAYS", "INSUFFICIENT_DATA"]),
         strength: zod.number(),
         slope: zod.number(),
         fastSma: zod.number(),
         slowSma: zod.number(),
         candlesUsed: zod.number(),
+        newestBarTime: zod
+          .string()
+          .nullish()
+          .describe(
+            "Open time (ISO) of the newest bar this timeframe was read from; null when the bars carried no timestamp. Absent on reports stored before it was recorded.",
+          ),
+        freshness: zod
+          .enum(["CURRENT", "STALE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "CURRENT when the newest bar opened within the last two bars of this timeframe; STALE when older; UNKNOWN when its time is missing or unusable. Absent on older reports.",
+          ),
+        source: zod
+          .string()
+          .nullish()
+          .describe(
+            "Provider that served this timeframe's bars, or null when not reported. Absent on older reports.",
+          ),
       }),
       alignmentScore: zod.number(),
-      alignmentLabel: zod.enum([
-        "STRONG_BULLISH_ALIGNMENT",
-        "STRONG_BEARISH_ALIGNMENT",
-        "MIXED_ALIGNMENT",
-        "LOWER_TIMEFRAME_CONFLICT",
-        "HIGHER_TIMEFRAME_WARNING",
-        "NO_CLEAR_BIAS",
-      ]),
+      alignmentLabel: zod
+        .enum([
+          "STRONG_BULLISH_ALIGNMENT",
+          "STRONG_BEARISH_ALIGNMENT",
+          "MIXED_ALIGNMENT",
+          "LOWER_TIMEFRAME_CONFLICT",
+          "HIGHER_TIMEFRAME_WARNING",
+          "NO_CLEAR_BIAS",
+          "INSUFFICIENT_DATA",
+          "DATA_NOT_CURRENT",
+        ])
+        .describe(
+          "DATA_NOT_CURRENT means at least one timeframe's newest bar is stale or untimestamped, so no current alignment or bias is reported (see conflictWarning).",
+        ),
       conflictWarning: zod.string().nullish(),
       bestBias: zod.enum(["BUY", "SELL", "NEUTRAL"]),
       aiSummary: zod.string(),
@@ -15955,6 +17946,13 @@ export const CreateMePendingOrderDraftResponse = zod.object({
  */
 export const GetMePendingOrderDraftsResponse = zod.object({
   ok: zod.boolean().optional(),
+  bridgeCheckedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "When the bridge was read for currentPendingStatus; null when it could not be read.",
+    ),
+  bridgeCheckError: zod.string().nullish(),
   drafts: zod
     .array(
       zod.object({
@@ -15973,6 +17971,19 @@ export const GetMePendingOrderDraftsResponse = zod.object({
         status: zod.string().optional(),
         reason: zod.string().nullish(),
         createdAt: zod.coerce.date().optional(),
+        updatedAt: zod.coerce
+          .date()
+          .nullish()
+          .describe(
+            "When the draft row was last written (saved, or its pendingStatus and reason rewritten by submit). pendingStatus and reason are as of this time.",
+          ),
+        currentPendingStatus: zod
+          .string()
+          .nullish()
+          .describe(
+            "What POST \/me\/pending-order-draft\/{id}\/submit would answer for the user's bridge at bridgeCheckedAt (same resolver). pendingStatus is the stored answer from when the draft was saved or last submitted. Null when the bridge could not be read, or the draft is not in a refusal state (placed, queued, cancelled).",
+          ),
+        currentPendingReason: zod.string().nullish(),
       }),
     )
     .optional(),
@@ -16074,6 +18085,18 @@ export const CreateMeScalpFocusResponse = zod.object({
     "INSUFFICIENT_MARGIN",
     "AWAITING_DATA",
   ]),
+  rejectReason: zod
+    .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+    .nullish()
+    .describe(
+      "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+    ),
+  timeframe: zod
+    .string()
+    .nullish()
+    .describe(
+      'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+    ),
   qualityScore: zod.number(),
   confidenceLabel: zod.enum([
     "Weak",
@@ -16116,9 +18139,39 @@ export const CreateMeScalpFocusResponse = zod.object({
   estimatedRiskAmount: zod.number().nullable(),
   rewardToRisk: zod.number().nullable(),
   estimatedMargin: zod.number().nullable(),
+  moneyCurrency: zod
+    .string()
+    .nullish()
+    .describe(
+      "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+    ),
   spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+  spreadNotRead: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+    ),
   newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+  newsRiskUnchecked: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+    ),
+  newsRiskNotConfigured: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+    ),
+  newsRiskNotChecked: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+    ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
   expiresAt: zod.string(),
@@ -16252,6 +18305,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16294,9 +18359,39 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16421,6 +18516,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16463,9 +18570,39 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16590,6 +18727,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16632,9 +18781,39 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16759,6 +18938,18 @@ export const CreateMeScalpRankResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16801,9 +18992,39 @@ export const CreateMeScalpRankResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16949,6 +19170,18 @@ export const CreateMeScalpBuildResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -16991,9 +19224,39 @@ export const CreateMeScalpBuildResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17118,6 +19381,18 @@ export const CreateMeScalpBuildResponse = zod.object({
         "INSUFFICIENT_MARGIN",
         "AWAITING_DATA",
       ]),
+      rejectReason: zod
+        .enum(["NO_SCANNER_READ", "NOT_LIVE", "INSUFFICIENT_DATA", "NO_SPECS"])
+        .nullish()
+        .describe(
+          "Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed\/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.",
+        ),
+      timeframe: zod
+        .string()
+        .nullish()
+        .describe(
+          'The engine timeframe this result was evaluated on (e.g. \"M5\").',
+        ),
       qualityScore: zod.number(),
       confidenceLabel: zod.enum([
         "Weak",
@@ -17160,9 +19435,39 @@ export const CreateMeScalpBuildResponse = zod.object({
       estimatedRiskAmount: zod.number().nullable(),
       rewardToRisk: zod.number().nullable(),
       estimatedMargin: zod.number().nullable(),
+      moneyCurrency: zod
+        .string()
+        .nullish()
+        .describe(
+          "Currency of estimatedProfitMainTP, estimatedRiskAmount, estimatedMargin and targetProfitAmount: the trading account's currency as the broker reported it. Null when not known; the UI must then not name a currency.",
+        ),
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      spreadNotRead: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the engine turned the scalp down before it read the spread (no live price or data, market closed, not tradeable, no clear direction, stop inside noise, missing broker specs). spreadRisk and slippageRisk are then placeholders, not observations, and must not be shown. Absent when they were read, and from older servers. Display only; no decision reads it.",
+        ),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotConfigured: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when no economic calendar is configured, so scheduled news was not checked at all. The read is technicals-only by design (no scalp is withheld for it), but newsRisk is then not an observation and must not be shown as LOW.",
+        ),
+      newsRiskNotChecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true and is the one to show). Display only (no decision reads it): a LOW newsRisk is then a default, not an observation, and is shown as not checked.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17277,8 +19582,18 @@ export const GetMeScalpBasketsResponse = zod.object({
       averageEntry: zod.number(),
       currentPrice: zod.number().nullable(),
       combinedFloatingPl: zod.number().nullable(),
-      breakEvenPrice: zod.number(),
+      breakEvenPrice: zod
+        .number()
+        .describe(
+          "Volume-weighted average entry. Spread, commission and swap are not included, so this is the break-even before costs, not a true break-even level.",
+        ),
       hasUnprotectedLeg: zod.boolean(),
+      digits: zod
+        .number()
+        .nullish()
+        .describe(
+          "The symbol's price digits from the broker spec, for formatting averageEntry and breakEvenPrice; null when the spec does not say.",
+        ),
       legs: zod.array(
         zod.object({
           ticket: zod.string().nullable(),
@@ -17423,6 +19738,18 @@ export const GetMeScalpBasketsResponse = zod.object({
     .describe(
       "Plain statement of why positions were not read; null when they were.",
     ),
+  positionsAsOf: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the MT5 bridge last reported the positions shown (the oldest leg's reading, ISO time). Null when no position is shown or no reading time is recorded.",
+    ),
+  positionsStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when positions are shown but their bridge reading is older than 90 seconds or has no recorded time. The open P\/L, stops and exit \/ add-on advice then describe that reading, not the account now.",
+    ),
 });
 
 /**
@@ -17456,8 +19783,18 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
       averageEntry: zod.number(),
       currentPrice: zod.number().nullable(),
       combinedFloatingPl: zod.number().nullable(),
-      breakEvenPrice: zod.number(),
+      breakEvenPrice: zod
+        .number()
+        .describe(
+          "Volume-weighted average entry. Spread, commission and swap are not included, so this is the break-even before costs, not a true break-even level.",
+        ),
       hasUnprotectedLeg: zod.boolean(),
+      digits: zod
+        .number()
+        .nullish()
+        .describe(
+          "The symbol's price digits from the broker spec, for formatting averageEntry and breakEvenPrice; null when the spec does not say.",
+        ),
       legs: zod.array(
         zod.object({
           ticket: zod.string().nullable(),
@@ -17685,6 +20022,18 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
     .describe(
       "Plain statement of why positions were not read; null when they were.",
     ),
+  positionsAsOf: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the MT5 bridge last reported the positions read for this check (the oldest leg's reading, ISO time). Same rule as the baskets response. Null when no position was read or no reading time is recorded.",
+    ),
+  positionsStale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when positions were read but their bridge reading is older than 90 seconds or has no recorded time. The basket and add-on advice then describe that reading, not the account now. Same rule as the baskets response.",
+    ),
 });
 
 /**
@@ -17905,6 +20254,22 @@ export const GetMeMarketEdgeResponse = zod.object({
           survivability: zod.number(),
           overall: zod.number(),
           edge: zod.number(),
+          unmeasured: zod
+            .array(
+              zod.enum([
+                "direction",
+                "entry",
+                "execution",
+                "risk",
+                "newsSafety",
+                "timing",
+                "survivability",
+              ]),
+            )
+            .optional()
+            .describe(
+              "Dimensions whose score is a fixed default because no input was observed (e.g. execution with no bridge telemetry, news safety with no news provider answer, timing with no live scalp read). They still fold into overall\/edge, so any grade built on them is partial. Optional for older servers (absent = not reported).",
+            ),
         })
         .describe(
           "Independent 0–100 quality dimensions, always separate. Direction is never folded in, so it can never inflate a score.",
@@ -17917,6 +20282,12 @@ export const GetMeMarketEdgeResponse = zod.object({
         "STRONG",
         "VERY_STRONG",
       ]),
+      confidenceBandBasis: zod
+        .enum(["FULL", "PARTIAL"])
+        .optional()
+        .describe(
+          "FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.",
+        ),
       edgeScore: zod.number(),
       earlyTrend: zod
         .object({
@@ -18017,6 +20388,32 @@ export const GetMeMarketEdgeResponse = zod.object({
       expiresAt: zod.string(),
       firstSeenAt: zod.string(),
       lateReason: zod.string().nullable(),
+      scannerBinding: zod
+        .object({
+          bound: zod.boolean(),
+          reasonCode: zod
+            .union([
+              zod.literal("no_scanner_read"),
+              zod.literal("quote_last_only"),
+              zod.literal("no_bound_quote"),
+              zod.literal("different_candles"),
+              zod.literal("scanner_not_live"),
+              zod.literal("setup_withheld"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          reason: zod.string().nullable(),
+        })
+        .optional()
+        .describe(
+          "Optional. Whether the scanner's read (and its entry\/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers.",
+        ),
+      structureWindow: zod
+        .number()
+        .nullish()
+        .describe(
+          "Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind.",
+        ),
     })
     .describe(
       "ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation\/UX. Direction (BUY\/SELL\/NEUTRAL) is always kept separate from edge\/quality. When data is insufficient the read collapses to an honest WATCHING\/UNKNOWN\/NONE state with hasSufficientData=false — never a fabricated number.",
@@ -18082,12 +20479,43 @@ export const GetMeMarketEdgeResponse = zod.object({
       bestAction: zod.string(),
       noTrade: zod.object({
         isNoTrade: zod.boolean(),
-        confidence: zod.number(),
+        confidence: zod
+          .number()
+          .describe(
+            '0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as \"% sure\". Kept for back-compat.',
+          ),
+        basis: zod
+          .enum(["RULE_TIER", "EDGE_DERIVED"])
+          .optional()
+          .describe(
+            "What the confidence number is (optional for older servers).",
+          ),
+        ruleKey: zod
+          .union([
+            zod.literal("NO_LIVE_DATA"),
+            zod.literal("INVALID_OR_EXPIRED"),
+            zod.literal("NO_DIRECTION"),
+            zod.literal("LATE"),
+            zod.literal("BELOW_MIN_EVIDENCE"),
+            zod.literal("EARLY"),
+            zod.literal("NOT_AT_ENTRY"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "The no-trade rule that fired; null when the read is actionable.",
+          ),
         reason: zod.string().nullable(),
       }),
       hasSufficientData: zod.boolean(),
       actionable: zod.boolean(),
       missingContext: zod.array(zod.string()),
+      levelsWithheldReason: zod
+        .string()
+        .nullish()
+        .describe(
+          "Optional. Why no entry\/watch\/stop\/invalidation level is published on this read (plain English), or null when any level is present. Composed only from facts on the signal; absent from older servers.",
+        ),
       disclaimer: zod.string(),
     })
     .nullish(),
@@ -18138,9 +20566,32 @@ export const GetMeOpportunityMapResponse = zod.object({
         entryQuality: zod.number(),
         executionQuality: zod.number(),
         newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+        newsRiskNotChecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+          ),
+        newsRiskUnchecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+          ),
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
         reason: zod.string().nullable(),
+        finalReadLabel: zod
+          .enum([
+            "TRADE_WATCH",
+            "WAIT_FOR_CONFIRMATION",
+            "AVOID_FOR_NOW",
+            "NO_TRADE",
+          ])
+          .nullish()
+          .describe(
+            "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+          ),
         category: zod.enum([
           "READY_NOW",
           "FORMING_SOON",
@@ -18166,9 +20617,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18193,9 +20667,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18220,9 +20717,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18247,9 +20767,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18274,9 +20817,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18301,9 +20867,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18330,9 +20919,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18357,9 +20969,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18384,9 +21019,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18411,9 +21069,32 @@ export const GetMeOpportunityMapResponse = zod.object({
           entryQuality: zod.number(),
           executionQuality: zod.number(),
           newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+          newsRiskNotChecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+            ),
+          newsRiskUnchecked: zod
+            .boolean()
+            .optional()
+            .describe(
+              "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+            ),
           hasLiveData: zod.boolean(),
           isLate: zod.boolean(),
           reason: zod.string().nullable(),
+          finalReadLabel: zod
+            .enum([
+              "TRADE_WATCH",
+              "WAIT_FOR_CONFIRMATION",
+              "AVOID_FOR_NOW",
+              "NO_TRADE",
+            ])
+            .nullish()
+            .describe(
+              "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+            ),
           category: zod.enum([
             "READY_NOW",
             "FORMING_SOON",
@@ -18446,9 +21127,32 @@ export const GetMeOpportunityMapResponse = zod.object({
         entryQuality: zod.number(),
         executionQuality: zod.number(),
         newsRisk: zod.enum(["none", "low", "medium", "high", "critical"]),
+        newsRiskNotChecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it.",
+          ),
+        newsRiskUnchecked: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it.",
+          ),
         hasLiveData: zod.boolean(),
         isLate: zod.boolean(),
         reason: zod.string().nullable(),
+        finalReadLabel: zod
+          .enum([
+            "TRADE_WATCH",
+            "WAIT_FOR_CONFIRMATION",
+            "AVOID_FOR_NOW",
+            "NO_TRADE",
+          ])
+          .nullish()
+          .describe(
+            "The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown.",
+          ),
         category: zod.enum([
           "READY_NOW",
           "FORMING_SOON",
@@ -20232,6 +22936,18 @@ export const GetAdminFundBookBrokerMirrorResponse = zod.object({
       freshnessAsOf: zod.string().nullish(),
       openPositionCount: zod.number(),
       floatingPlTotal: zod.number(),
+      accountBalanceReported: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the EA never reported a balance for this bridge; accountBalance is then 0 and is not a measured value.",
+        ),
+      accountEquityReported: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the EA never reported equity for this bridge; accountEquity is then 0 and is not a measured value.",
+        ),
     }),
   ),
   openPositions: zod.array(
@@ -23049,15 +25765,26 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     totals: zod.object({
       tracked: zod.number(),
       resolved: zod.number(),
-      pending: zod.number(),
+      pending: zod
+        .number()
+        .describe("PENDING rows only — still awaiting real evidence."),
+      unresolved: zod
+        .number()
+        .describe(
+          "UNRESOLVED rows — no longer awaiting evidence and never graded.",
+        ),
       graded: zod.number(),
     }),
-    rates: zod.object({
-      winRate: zod.number(),
-      tpRate: zod.number(),
-      slRate: zod.number(),
-      lateRate: zod.number(),
-    }),
+    rates: zod
+      .object({
+        winRate: zod.number().nullable(),
+        tpRate: zod.number().nullable(),
+        slRate: zod.number().nullable(),
+        lateRate: zod.number().nullable(),
+      })
+      .describe(
+        "Each rate is null when its denominator is empty (nothing to rate), never 0.",
+      ),
     timing: zod.record(zod.string(), zod.number()),
     averages: zod.object({
       slippage: zod.number().nullish(),
@@ -23065,15 +25792,19 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
       mfe: zod.number().nullish(),
       mae: zod.number().nullish(),
     }),
-    bestSymbols: zod.array(
-      zod.object({
-        key: zod.string(),
-        graded: zod.number(),
-        wins: zod.number(),
-        winRate: zod.number(),
-        avgPnlR: zod.number().nullish(),
-      }),
-    ),
+    bestSymbols: zod
+      .array(
+        zod.object({
+          key: zod.string(),
+          graded: zod.number(),
+          wins: zod.number(),
+          winRate: zod.number(),
+          avgPnlR: zod.number().nullish(),
+        }),
+      )
+      .describe(
+        "Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols.",
+      ),
     worstSymbols: zod.array(
       zod.object({
         key: zod.string(),
@@ -23103,26 +25834,45 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
     ),
     newsFailures: zod.number(),
     executionFailures: zod.number(),
-    explanationAccuracy: zod.number(),
+    explanationAccuracy: zod
+      .number()
+      .nullable()
+      .describe(
+        "Win rate among graded rows where the explanation was used; null when there are none.",
+      ),
     ignoredWarnings: zod.number(),
     avoidedBadTrades: zod.number(),
     missedOpportunities: zod.number(),
-    confidenceVsOutcome: zod.array(
-      zod.object({
-        bucket: zod.string(),
-        total: zod.number(),
-        wins: zod.number(),
-        losses: zod.number(),
-        winRate: zod.number(),
-      }),
-    ),
+    confidenceVsOutcome: zod
+      .array(
+        zod.object({
+          bucket: zod.string(),
+          total: zod.number(),
+          wins: zod.number(),
+          losses: zod.number(),
+          winRate: zod
+            .number()
+            .nullable()
+            .describe(
+              "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+            ),
+        }),
+      )
+      .describe(
+        "Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once.",
+      ),
     edgeVsOutcome: zod.array(
       zod.object({
         bucket: zod.string(),
         total: zod.number(),
         wins: zod.number(),
         losses: zod.number(),
-        winRate: zod.number(),
+        winRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "wins \/ (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).",
+          ),
       }),
     ),
   }),
@@ -25475,6 +28225,7 @@ export const GetMarketHeatResponse = zod.object({
       sourceStatus: zod.enum([
         "confirmed",
         "price_only",
+        "partial",
         "delayed",
         "stale",
         "provider_missing",
@@ -25538,6 +28289,12 @@ export const GetMarketHeatResponse = zod.object({
         })
         .describe("One data source's liveness for a heat verdict."),
       priceUpdatedAt: zod.string().nullish(),
+      priceTimeBasis: zod
+        .enum(["tick", "bar_open"])
+        .nullish()
+        .describe(
+          'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+        ),
       newsUpdatedAt: zod.string().nullish(),
       calendarUpdatedAt: zod.string().nullish(),
       confidence: zod.enum(["high", "medium", "low", "none"]),
@@ -25575,6 +28332,7 @@ export const GetMarketHeatResponse = zod.object({
         sourceStatus: zod.enum([
           "confirmed",
           "price_only",
+          "partial",
           "delayed",
           "stale",
           "provider_missing",
@@ -25638,6 +28396,12 @@ export const GetMarketHeatResponse = zod.object({
           })
           .describe("One data source's liveness for a heat verdict."),
         priceUpdatedAt: zod.string().nullish(),
+        priceTimeBasis: zod
+          .enum(["tick", "bar_open"])
+          .nullish()
+          .describe(
+            'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+          ),
         newsUpdatedAt: zod.string().nullish(),
         calendarUpdatedAt: zod.string().nullish(),
         confidence: zod.enum(["high", "medium", "low", "none"]),
@@ -25676,6 +28440,7 @@ export const GetMarketHeatResponse = zod.object({
         sourceStatus: zod.enum([
           "confirmed",
           "price_only",
+          "partial",
           "delayed",
           "stale",
           "provider_missing",
@@ -25739,6 +28504,12 @@ export const GetMarketHeatResponse = zod.object({
           })
           .describe("One data source's liveness for a heat verdict."),
         priceUpdatedAt: zod.string().nullish(),
+        priceTimeBasis: zod
+          .enum(["tick", "bar_open"])
+          .nullish()
+          .describe(
+            'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+          ),
         newsUpdatedAt: zod.string().nullish(),
         calendarUpdatedAt: zod.string().nullish(),
         confidence: zod.enum(["high", "medium", "low", "none"]),
@@ -25777,6 +28548,7 @@ export const GetMarketHeatResponse = zod.object({
         sourceStatus: zod.enum([
           "confirmed",
           "price_only",
+          "partial",
           "delayed",
           "stale",
           "provider_missing",
@@ -25840,6 +28612,12 @@ export const GetMarketHeatResponse = zod.object({
           })
           .describe("One data source's liveness for a heat verdict."),
         priceUpdatedAt: zod.string().nullish(),
+        priceTimeBasis: zod
+          .enum(["tick", "bar_open"])
+          .nullish()
+          .describe(
+            'What priceUpdatedAt measures. \"tick\" = the symbol\'s own last venue tick (when the price was observed); \"bar_open\" = the OPEN time of the newest bar, which is not the observation time. Absent or null must be read as \"bar_open\".\n',
+          ),
         newsUpdatedAt: zod.string().nullish(),
         calendarUpdatedAt: zod.string().nullish(),
         confidence: zod.enum(["high", "medium", "low", "none"]),

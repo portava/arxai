@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { BotStatusEmergencyStopScope } from "./botStatusEmergencyStopScope";
 import type { BotStatusMode } from "./botStatusMode";
 import type { BotStatusRiskMode } from "./botStatusRiskMode";
 
@@ -13,8 +14,12 @@ export interface BotStatus {
   symbol: string;
   strategy: string;
   riskMode: BotStatusRiskMode;
+  /** Stored bot setting. No order path reads it. */
   isRunning: boolean;
+  /** Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST /risk/pause) does. */
   isPaused: boolean;
   /** @nullable */
   lastScanAt?: string | null;
+  /** Who POST /bot/emergency-stop halts for this caller. PLATFORM (owner/operator) engages the platform-wide safety-core kill switch, which halts every trader. YOUR_ACCOUNT engages only the caller's own kill switch. */
+  emergencyStopScope?: BotStatusEmergencyStopScope;
 }

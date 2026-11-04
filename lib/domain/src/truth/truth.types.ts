@@ -73,7 +73,19 @@ export interface TruthComponentInput {
   label: string;
   /** ISO timestamp of the confirmed bar behind this read, distinct from build time. */
   asOf: string | null;
+  /**
+   * True when this component's own minimum-evidence rule failed, so its
+   * direction is a structural lean, not an edge. Components without such a
+   * rule leave it unset (they never qualify the verdict as a lean).
+   */
+  belowEvidenceFloor?: boolean;
 }
+
+/**
+ * LEAN: every present component voting for the verdict's bias is below its own
+ * minimum-evidence rule — the direction is a lean with no qualifying edge.
+ */
+export type TruthBiasQualifier = "LEAN";
 
 /** Actionable price geometry, BEFORE the stale-level guard runs. */
 export interface TruthLevelInput {
@@ -90,6 +102,13 @@ export interface ComposeVerdictInput {
   price: number | null;
   /** True only when a connected calendar reports a high-impact window now. */
   highImpactWindowActive: boolean;
+  /**
+   * True when scheduled event risk applies to this market but could not be
+   * checked (a configured calendar failed, or the news read itself failed).
+   * Unknown event risk is not an all-clear: a directional entry degrades to
+   * watch-only. Omitted/false keeps the existing behaviour.
+   */
+  eventRiskUnchecked?: boolean;
   components: TruthComponentInput[];
   levels: TruthLevelInput;
   /** Average true range in price units, when known — tightens the stale guard. */
@@ -130,6 +149,8 @@ export interface ComposedLevels {
 export interface ComposedVerdict {
   stage: TruthStage;
   bias: TruthBias;
+  /** LEAN when the directional bias rests only on below-floor voters, else null. */
+  biasQualifier: TruthBiasQualifier | null;
   /** Clean-English headline summarizing the read. */
   headline: string;
   /** Clean-English sentences — ONLY for present components aligned with the read. */

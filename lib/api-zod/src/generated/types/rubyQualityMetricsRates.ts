@@ -6,9 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Each rate is null when its denominator is empty (nothing to rate), never 0.
+ */
 export type RubyQualityMetricsRates = {
-  winRate: number;
-  tpRate: number;
-  slRate: number;
-  lateRate: number;
+  /** @nullable */
+  winRate: number | null;
+  /** @nullable */
+  tpRate: number | null;
+  /** @nullable */
+  slRate: number | null;
+  /** @nullable */
+  lateRate: number | null;
 };

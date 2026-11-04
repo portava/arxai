@@ -7,12 +7,15 @@
  */
 import type { TruthVerdictBestAction } from "./truthVerdictBestAction";
 import type { TruthVerdictBias } from "./truthVerdictBias";
+import type { TruthVerdictBiasQualifier } from "./truthVerdictBiasQualifier";
 import type { TruthVerdictInvalidation } from "./truthVerdictInvalidation";
 import type { TruthVerdictStage } from "./truthVerdictStage";
 
 export interface TruthVerdict {
   stage: TruthVerdictStage;
   bias: TruthVerdictBias;
+  /** LEAN when every component voting for the bias is below its own minimum-evidence rule (a structural lean with no qualifying edge). Label-only; the vote is unchanged. Absent on older servers. */
+  biasQualifier?: TruthVerdictBiasQualifier;
   headline: string;
   evidenceFor: string[];
   evidenceAgainst: string[];

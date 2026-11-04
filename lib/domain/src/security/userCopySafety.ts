@@ -72,18 +72,60 @@ export function scrubUserCopy(text: string | null | undefined): string {
 }
 
 /**
+ * Options for {@link scrubUserCopyDeep}.
+ *
+ * `preserveKeys` is an explicit allowlist of machine-field KEY NAMES (e.g.
+ * `readLayer`, `tradeHealthFreshness`, `reasonCode`) whose value is a wire enum,
+ * not narrative copy. A string under one of these keys is kept verbatim ONLY when
+ * the whole value is a single SCREAMING_SNAKE / upper-case token (the enum shape).
+ * Anything else under a preserved key — a sentence, a route path, a secret shape
+ * — is still scrubbed exactly like narrative copy. Keys NOT on the allowlist are
+ * always scrubbed, so a narrative string that is purely "LIVE_BLOCKED" (e.g. a
+ * `blockedReason`) is still removed. The allowlist is by key name, never by
+ * "looks like an enum".
+ */
+export interface ScrubUserCopyDeepOptions {
+  preserveKeys?: ReadonlySet<string> | readonly string[];
+}
+
+/** A whole-value machine enum token: `STRUCTURAL_ONLY`, `HISTORICAL_ONLY`, `FULL`. */
+const MACHINE_ENUM_VALUE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
+
+/**
  * Recursively scrub every string within a JSON-like value (objects, arrays,
  * strings). Numbers, booleans, null/undefined are returned unchanged. Pure and
  * deterministic — returns a new value, never mutates the input. Use on
  * regular-user-facing narrative payloads before serialization.
+ *
+ * Machine fields that carry an enum on the wire (a display read layer, a
+ * freshness band, a reason code) MUST be listed in `opts.preserveKeys`, otherwise
+ * a multi-segment enum like `STRUCTURAL_ONLY` is blanked to "" and the client
+ * can no longer tell a withheld read from a full one.
+ *
+ * Prefer keeping machine fields OUT of the scrubbed object entirely (scrub the
+ * prose, then attach enum/flag fields the client compares exactly);
+ * `preserveKeys` is the safety net for enums nested inside narrative blocks.
  */
-export function scrubUserCopyDeep<T>(value: T): T {
+export function scrubUserCopyDeep<T>(value: T, opts?: ScrubUserCopyDeepOptions): T {
+  const preserve =
+    opts?.preserveKeys == null
+      ? null
+      : opts.preserveKeys instanceof Set
+        ? (opts.preserveKeys as ReadonlySet<string>)
+        : new Set(opts.preserveKeys as readonly string[]);
+  return scrubDeepInner(value, preserve);
+}
+
+function scrubDeepInner<T>(value: T, preserve: ReadonlySet<string> | null): T {
   if (typeof value === "string") return scrubUserCopy(value) as unknown as T;
-  if (Array.isArray(value)) return value.map((v) => scrubUserCopyDeep(v)) as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => scrubDeepInner(v, preserve)) as unknown as T;
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = scrubUserCopyDeep(v);
+      out[k] =
+        preserve != null && preserve.has(k) && typeof v === "string" && MACHINE_ENUM_VALUE.test(v)
+          ? v
+          : scrubDeepInner(v, preserve);
     }
     return out as T;
   }

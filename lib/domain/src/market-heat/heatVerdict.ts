@@ -21,6 +21,8 @@
 // `advisoryOnly` is a const `true` and there is NO field here that any
 // execution gate reads. It can never grant or bypass a live-trade gate.
 
+import { SYNTHETIC_EVENT_RISK_LABEL } from "../truth/syntheticEventRisk.js";
+
 export type MarketHeatScope =
   | "global"
   | "country"
@@ -45,7 +47,14 @@ export type MarketHeatIntensity =
 /** Overall verdict on how trustworthy/complete the heat read is. */
 export type MarketHeatSourceStatus =
   | "confirmed"
+  /** Price connected and NO news/calendar source contributed. */
   | "price_only"
+  /**
+   * Some, not all, sources contributed beyond price-only: price plus one macro
+   * source, or macro source(s) with no price at all (e.g. a headlines-only
+   * global reading with the calendar not connected). Never a plain "calm".
+   */
+  | "partial"
   | "delayed"
   | "stale"
   | "provider_missing"
@@ -90,6 +99,12 @@ export interface MarketHeatVerdict {
   newsSource: MarketHeatSource;
   calendarSource: MarketHeatSource;
   priceUpdatedAt: string | null;
+  /**
+   * What priceUpdatedAt measures: "tick" = the symbol's last venue tick (when
+   * the price was observed); "bar_open" = the newest bar's OPEN time (not the
+   * observation time). Absent/null → readers must treat it as "bar_open".
+   */
+  priceTimeBasis?: "tick" | "bar_open" | null;
   newsUpdatedAt: string | null;
   calendarUpdatedAt: string | null;
   confidence: MarketHeatConfidence;
@@ -110,6 +125,8 @@ export interface PriceSignal {
   volatility: number;
   freshness: "LIVE" | "DELAYED" | "STALE" | "UNAVAILABLE";
   updatedAt: string | null;
+  /** See MarketHeatVerdict.priceTimeBasis. */
+  priceTimeBasis?: "tick" | "bar_open" | null;
   source: string;
   candleCount: number;
 }
@@ -197,7 +214,8 @@ function newsSourceOf(n: NewsSignal): MarketHeatSource {
     status,
     configured: n.configured,
     connected: n.connected,
-    updatedAt: n.updatedAt,
+    // A time is only a "checked at" claim for a source that was consulted.
+    updatedAt: n.connected ? n.updatedAt : null,
     recordCount: n.itemCount,
     note: n.connected ? null : "News provider not connected.",
   };
@@ -215,7 +233,7 @@ function calendarSourceOf(c: CalendarSignal): MarketHeatSource {
     status,
     configured: c.configured,
     connected: c.connected,
-    updatedAt: c.updatedAt,
+    updatedAt: c.connected ? c.updatedAt : null,
     recordCount: c.eventCount,
     note: c.connected ? null : "Economic-calendar provider not connected.",
   };
@@ -268,8 +286,12 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
     newsSource,
     calendarSource,
     priceUpdatedAt: price.updatedAt,
-    newsUpdatedAt: news.updatedAt,
-    calendarUpdatedAt: calendar.updatedAt,
+    priceTimeBasis: price.updatedAt ? price.priceTimeBasis ?? "bar_open" : null,
+    // Only a source that contributed to THIS verdict carries a time: a source
+    // disconnected for this scope (synthetic markets, view filters, a provider
+    // that is down) never claims it was checked "2m ago".
+    newsUpdatedAt: newsActive ? news.updatedAt : null,
+    calendarUpdatedAt: calActive ? calendar.updatedAt : null,
     affectedSymbols: input.affectedSymbols,
     advisoryOnly: true as const,
   };
@@ -300,6 +322,9 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
     const delayed = price.freshness !== "LIVE";
     return {
       ...base,
+      // News/calendar are not used for a synthetic market: no times are claimed.
+      newsUpdatedAt: null,
+      calendarUpdatedAt: null,
       heatScore,
       direction: directionOf(price.momentum, true),
       intensity: intensityOf(magnitude),
@@ -309,8 +334,7 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
           : "delayed"
         : "price_only",
       confidence: delayed ? "low" : "medium",
-      reason:
-        "Synthetic market — driven by price action only (immune to real-world news/economic events).",
+      reason: `${SYNTHETIC_EVENT_RISK_LABEL} Heat here is from price action only; headlines are not used.`,
       warnings: [],
     };
   }
@@ -398,13 +422,17 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
   } else if (priceActive && newsActive && calActive) {
     sourceStatus = "confirmed";
     confidence = magnitude >= 0.4 ? "high" : "medium";
-  } else if (priceActive) {
-    // Price present, but news and/or calendar missing ⇒ price-only.
+  } else if (priceActive && !newsActive && !calActive) {
+    // Price present, no macro source contributed ⇒ price-only.
     sourceStatus = "price_only";
     confidence = "medium";
+  } else if (priceActive) {
+    // Price plus ONE macro source: partial, never presented as confirmed.
+    sourceStatus = "partial";
+    confidence = "medium";
   } else {
-    // Macro signal only (no price) ⇒ never high-confidence.
-    sourceStatus = "price_only";
+    // Macro signal only (no price) ⇒ partial, never high-confidence.
+    sourceStatus = "partial";
     confidence = "low";
   }
 
@@ -412,10 +440,12 @@ export function computeHeatVerdict(input: HeatVerdictInput): MarketHeatVerdict {
   if (sourceStatus === "confirmed") {
     reasonParts.push("Confirmed heat from live price, news, and calendar.");
   } else if (sourceStatus === "price_only") {
+    reasonParts.push("Price-only heat — news/economic-calendar provider is not connected.");
+  } else if (sourceStatus === "partial") {
+    const used = [priceActive ? "price" : null, newsActive ? "headlines" : null, calActive ? "the economic calendar" : null]
+      .filter((x): x is string => x != null);
     reasonParts.push(
-      priceActive
-        ? "Price-only heat — news/economic-calendar provider is not connected."
-        : "Macro-only heat — price feed not available.",
+      `Partial heat — from ${used.join(" and ")} only${priceActive ? "" : " (no price feed)"}.`,
     );
   } else if (sourceStatus === "stale") {
     reasonParts.push("Data is stale — confidence capped to low.");

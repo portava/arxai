@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { PositionSizeResultValueModel } from "./positionSizeResultValueModel";
 
 export interface PositionSizeResult {
   riskAmount: number;
@@ -14,4 +15,17 @@ export interface PositionSizeResult {
   finalLot: number;
   /** @nullable */
   warning?: string | null;
+  /** Which instrument-class value model sized the lot (money per 1.0 price move per 1.0 lot). A heuristic, not the broker's contract spec. per_point = an index, stock or ETF CFD known to the ARX market list. unknown_contract = anything else (metals, energy, crypto, an unknown name), sized with a model that does not fit it (XAUUSD, BTCUSD, GOLD, USOIL…); the lot is not usable. */
+  valueModel?: PositionSizeResultValueModel;
+  /** true unless the model is the standard USD-quoted forex lot. */
+  estimate?: boolean;
+  /** The assumed money per 1.0 price move per 1.0 lot. */
+  valuePerUnitPerLot?: number;
+  /** Plain-English statement of the sizing assumption, for display. */
+  basis?: string;
+  /**
+   * Set when the Risk Governor refuses every order on this symbol (or on this side, read from the stop: below the entry is a BUY) whatever the lot: not on the operator's instrument allow-list, a direction the operator restricted, or the symbol switched off in the trader's risk limits. maxLotAllowed and finalLot are then 0 and no lot may be shown. Null when none of these applies. Missing = an older server that did not check.
+   * @nullable
+   */
+  refusedReason?: string | null;
 }

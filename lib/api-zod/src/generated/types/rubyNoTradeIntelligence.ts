@@ -5,9 +5,16 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { RubyNoTradeIntelligenceBasis } from "./rubyNoTradeIntelligenceBasis";
+import type { RubyNoTradeIntelligenceRuleKey } from "./rubyNoTradeIntelligenceRuleKey";
 
 export interface RubyNoTradeIntelligence {
   isNoTrade: boolean;
+  /** 0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as "% sure". Kept for back-compat. */
   confidence: number;
+  /** What the confidence number is (optional for older servers). */
+  basis?: RubyNoTradeIntelligenceBasis;
+  /** The no-trade rule that fired; null when the read is actionable. */
+  ruleKey?: RubyNoTradeIntelligenceRuleKey;
   reason: string | null;
 }
