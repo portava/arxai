@@ -41,6 +41,10 @@ import { OneClickArmedBadge } from "@/components/mt5/OneClickArmedBadge";
 import { ChartCommandMenu, type ChartCommandAnchor, type RubyChartIntent } from "@/components/scanner/ChartCommandMenu";
 import { useLocation } from "wouter";
 import { executeInstantTrade, type InstantTradeResponse } from "@/lib/instantTradeRouter";
+import { closePositionByScope, openMarketByScope } from "@/lib/positionActions";
+import { modifyPosition, type TradeActionResult } from "@/lib/tradeActions";
+import { partialCloseVolume } from "@/lib/oneClickMode";
+import { useSymbolLotSpec } from "@/hooks/useSymbolLotSpec";
 import { computeRiskReward, pipDistance, validateModifyLevels } from "@/lib/chart-drag-modify";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
@@ -275,6 +279,40 @@ type ChartPending = {
   takeProfit: number | null;
   pendingStatus: string | null;
   status: string;
+  expiration?: string | null;
+  /** What a submit would answer for the bridge now (server, at bridgeCheckedAt). */
+  currentPendingStatus?: string | null;
+  currentPendingReason?: string | null;
+  /** When the server read the bridge for this list (list-level, copied per draft). */
+  bridgeCheckedAt?: string | null;
+  /** Set once MT5 placed the order: cancelling then goes through the bridge. */
+  mt5OrderTicket?: string | null;
+};
+
+// Why a draft was not sent, by the bridge answer the server stored when the
+// draft was saved or last submitted (resolvePendingSubmitStatus vocabulary).
+// None of these reaches the broker.
+const DRAFT_NOT_SENT_REASON: Record<string, string> = {
+  BRIDGE_DISCONNECTED: "your MT5 bridge had not sent a recent heartbeat, so pending-order support could not be checked",
+  BRIDGE_UNSUPPORTED: "your connected EA did not report support for this pending-order type",
+  EA_UPGRADE_REQUIRED: "the trading bridge could not place pending orders",
+  READ_ONLY: "ARX's pending-order path is read-only and does not deliver pending orders to the broker",
+  LIVE_LOCKED: "live execution was locked, so pending-order submission was disabled",
+  BLOCKED_BY_PAPER_LOCK: "ARX is paper-only and its queue gate does not deliver pending orders to the broker",
+  TRADING_DISABLED: "trading was disabled for this account",
+  BLOCKED_BY_RISK: "the risk governor blocked the submission",
+};
+
+// The server's current bridge answer for a refusal draft, in plain English.
+const DRAFT_NOW_LABEL: Record<string, string> = {
+  BRIDGE_DISCONNECTED: "bridge not connected",
+  BRIDGE_UNSUPPORTED: "EA does not report pending-order support",
+  EA_UPGRADE_REQUIRED: "EA does not report pending-order support",
+  READ_ONLY: "pending-order path is read-only",
+  LIVE_LOCKED: "live execution locked",
+  BLOCKED_BY_PAPER_LOCK: "paper-only, not delivered to the broker",
+  TRADING_DISABLED: "trading disabled",
+  BLOCKED_BY_RISK: "blocked by the risk governor",
 };
 
 // Normalised symbol compare — strips exchange prefixes/suffixes so "EURUSD",
@@ -641,6 +679,9 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
 
   const [lot, setLot] = useState<string>("0.01");
   const [busy, setBusy] = useState<string | null>(null);
+  // Broker lot rules for this symbol (volume step / min) — partial closes are
+  // rounded to the step, never a hard 0.01.
+  const lotSpec = useSymbolLotSpec(symbol);
 
   // ── Chart Brain v2 Task 6 — per-user chart annotations (marked S/R levels,
   //    watch zones, user price alerts). These are read-only decision-support
@@ -959,7 +1000,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
   // (its primaryReason on refusal) and never invent a success. On acceptance,
   // ARX has only dispatched the command to the bridge; for live commands we
   // then poll MT5 for the genuine execution/rejection outcome.
-  const relay = (label: string, res: InstantTradeResponse) => {
+  const relay = (label: string, res: InstantTradeResponse, scope: "live" | "demo" | null = tradeMode) => {
     if (!res.ok) {
       // Humanise the gate code so the chart banner reads in plain English
       // (e.g. LIVE_ONE_CLICK_DISABLED → "ARX Single Confirm (live) is off …")
@@ -968,7 +1009,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
       toast({ variant: "destructive", title: `${label} blocked`, description: h.description });
       return;
     }
-    if (tradeMode === "live" && res.commandId) {
+    if (scope === "live" && res.commandId) {
       const handle = toast({
         title: `${label} sent to bridge`,
         description: "Waiting for MT5 to confirm execution…",
@@ -984,8 +1025,28 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     });
   };
 
+  // Scope-aware result surface for the shared trade actions. A live accept is
+  // tracked to the MT5 outcome (relay); a demo result is already its terminal
+  // status from the governed demo queue.
+  const relayAction = (label: string, scope: "live" | "demo", r: TradeActionResult) => {
+    if (scope === "live") {
+      relay(label, { ok: r.ok, commandId: r.commandId ?? undefined, error: r.ok ? undefined : r.status, primaryReason: r.reason }, "live");
+      return;
+    }
+    if (r.ok) {
+      toast({ title: `${label} done on demo`, description: `Demo terminal answered ${r.status}.` });
+      return;
+    }
+    const h = humanizeReason(r.reason || r.status);
+    toast({ variant: "destructive", title: `${label} not done on demo`, description: h.description || r.reason || r.status });
+  };
+  const rowScope = (p: ChartPosition): "live" | "demo" => (p.scope === "demo" || p.accountMode === "DEMO" ? "demo" : "live");
+
   // Place the dragged draft as a real market order (entry tracks the live
-  // price for a market order; SL/TP come from the dragged lines).
+  // price for a market order; SL/TP come from the dragged lines). Routed by the
+  // account: live → the instant-trade router (the only chart execution path;
+  // it refuses LIVE_ONE_CLICK_DISABLED unless one-click is on), demo → the
+  // governed demo queue (the router refuses accountMode "demo").
   const placeDraft = async () => {
     if (!draft || !tradeMode) return;
     const volume = Number(lot);
@@ -995,18 +1056,13 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     }
     setBusy("place");
     try {
-      const res = await executeInstantTrade({
-        source: "chart",
-        action: draft.side,
-        accountMode: tradeMode,
-        symbol,
-        volume,
-        stopLoss: draft.sl,
-        takeProfit: draft.tp,
-        oneClick: true,
+      const r = await openMarketByScope({
+        scope: tradeMode, symbol, side: draft.side, volume,
+        stopLoss: draft.sl, takeProfit: draft.tp,
+        source: "chart", sourcePage: "SCANNER_CHART_DRAFT",
       });
-      relay(`${draft.side} ${symbol}`, res);
-      if (res.ok) {
+      relayAction(`${draft.side} ${symbol}`, tradeMode, r);
+      if (r.ok) {
         setDraft(null);
         setReloadAt(Date.now());
       }
@@ -1017,22 +1073,27 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     }
   };
 
+  // Close on the row's own account (live → instant router, demo → demo queue).
+  // A partial close sends `closeVolume`, floored to the symbol's volume step.
   const closePosition = async (p: ChartPosition, fraction: number) => {
     if (!p.brokerTicket || !tradeMode) return;
+    const partial = fraction < 1;
+    const closeVolume = partial ? partialCloseVolume(p.lotSize, fraction, lotSpec) : null;
+    if (partial && closeVolume == null) {
+      toast({ variant: "destructive", title: "Partial close not possible", description: "This position is too small to close part of it at the broker's lot step. Use Close for the whole position." });
+      return;
+    }
     const key = `close:${p.brokerTicket}:${fraction}`;
     setBusy(key);
+    const scope = rowScope(p);
     try {
-      const partial = fraction < 1 && p.lotSize != null && p.lotSize > 0;
-      const res = await executeInstantTrade({
-        source: "chart",
-        action: "CLOSE",
-        accountMode: tradeMode,
-        positionId: p.brokerTicket,
-        ...(partial ? { volume: Math.max(0.01, Number((p.lotSize! * fraction).toFixed(2))) } : {}),
-        oneClick: true,
+      const r = await closePositionByScope({
+        scope, ticket: p.brokerTicket, symbol: p.symbol ?? symbol, side: p.side,
+        positionVolume: p.lotSize, closeVolume, source: "chart",
+        sourcePage: partial ? "SCANNER_CHART_PARTIAL_CLOSE" : "SCANNER_CHART_CLOSE",
       });
-      relay(partial ? "Partial close" : "Close", res);
-      if (res.ok) setReloadAt(Date.now());
+      relayAction(partial ? `Partial close ${closeVolume}` : "Close", scope, r);
+      if (r.ok) setReloadAt(Date.now());
     } catch (e) {
       toast({ variant: "destructive", title: "Close failed", description: e instanceof Error ? e.message : "Network error" });
     } finally {
@@ -1044,17 +1105,18 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     if (!p.brokerTicket || !tradeMode || p.entryPrice == null) return;
     const key = `be:${p.brokerTicket}`;
     setBusy(key);
+    const scope = rowScope(p);
     try {
-      const res = await executeInstantTrade({
-        source: "chart",
-        action: "MODIFY_SL_TP",
-        accountMode: tradeMode,
-        positionId: p.brokerTicket,
+      // Demo applies exactly the levels it is sent, so the current TP rides
+      // along (0 = none); live keeps the current TP when it is null.
+      const r = await modifyPosition({
+        scope, ticket: p.brokerTicket, symbol: p.symbol ?? symbol, side: p.side,
         newStopLoss: p.entryPrice,
-        newTakeProfit: p.takeProfit ?? null,
+        newTakeProfit: scope === "demo" ? (p.takeProfit ?? 0) : (p.takeProfit ?? null),
+        source: "chart", sourcePage: "SCANNER_CHART_BREAK_EVEN",
       });
-      relay("Break-even", res);
-      if (res.ok) setReloadAt(Date.now());
+      relayAction("Break-even", scope, r);
+      if (r.ok) setReloadAt(Date.now());
     } catch (e) {
       toast({ variant: "destructive", title: "Modify failed", description: e instanceof Error ? e.message : "Network error" });
     } finally {
@@ -1070,31 +1132,25 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
     if (!p.brokerTicket || !tradeMode || !p.side || p.lotSize == null) return;
     const key = `rev:${p.brokerTicket}`;
     setBusy(key);
+    const scope = rowScope(p);
     try {
-      const closeRes = await executeInstantTrade({
-        source: "chart",
-        action: "CLOSE",
-        accountMode: tradeMode,
-        positionId: p.brokerTicket,
-        oneClick: true,
+      const closeRes = await closePositionByScope({
+        scope, ticket: p.brokerTicket, symbol: p.symbol ?? symbol, side: p.side,
+        positionVolume: p.lotSize, source: "chart", sourcePage: "SCANNER_CHART_REVERSE_CLOSE",
       });
       if (!closeRes.ok) {
-        relay("Reverse (close leg)", closeRes);
+        relayAction("Reverse (close leg)", scope, closeRes);
         return;
       }
       const opposite = p.side === "BUY" ? "SELL" : "BUY";
-      const openRes = await executeInstantTrade({
-        source: "chart",
-        action: opposite,
-        accountMode: tradeMode,
-        symbol: p.symbol ?? symbol,
-        volume: p.lotSize,
-        oneClick: true,
+      const openRes = await openMarketByScope({
+        scope, symbol: p.symbol ?? symbol, side: opposite, volume: p.lotSize,
+        source: "chart", sourcePage: "SCANNER_CHART_REVERSE_OPEN",
       });
       if (openRes.ok) {
-        toast({ title: "Reverse complete", description: `Closed ${p.side}, opened ${opposite} (two gated steps).` });
+        toast({ title: "Reverse sent", description: `Closed ${p.side}, ${scope === "live" ? "sent" : "opened"} ${opposite} (two gated steps).` });
       } else {
-        toast({ variant: "destructive", title: "Reverse partial", description: `Closed ${p.side}, but the ${opposite} leg was blocked: ${humanizeReason(openRes.primaryReason || openRes.error).description}` });
+        toast({ variant: "destructive", title: "Reverse partial", description: `Closed ${p.side}, but the ${opposite} leg was blocked: ${humanizeReason(openRes.reason || openRes.status).description}` });
       }
       setReloadAt(Date.now());
     } catch (e) {
@@ -1108,14 +1164,34 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
   // canonical cancel path used across the app; the instant router has no
   // cancel-pending action). Still per-user gated server-side and only shown
   // when the account is in a real (live/demo) trade mode via `canTrade`.
-  const cancelPending = async (id: number) => {
+  // A draft that MT5 already placed (mt5OrderTicket set) is a working order at
+  // the broker: it is cancelled through the bridge (cancel-via-bridge), and the
+  // final CANCELLED only lands when MT5 confirms. A draft that never reached
+  // the broker is soft-cancelled with DELETE (which refuses placed orders).
+  const cancelPending = async (o: ChartPending) => {
     if (!canTrade) return;
+    const id = o.id;
     const key = `cancel:${id}`;
     setBusy(key);
     try {
-      const r = await fetch(u(`/api/me/pending-order-draft/${id}`), { method: "DELETE", credentials: "include" });
+      const viaBridge = !!o.mt5OrderTicket;
+      const r = viaBridge
+        ? await fetch(u(`/api/me/pending-order-draft/${id}/cancel-via-bridge`), {
+            method: "POST", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirmedByUser: true }),
+          })
+        : await fetch(u(`/api/me/pending-order-draft/${id}`), { method: "DELETE", credentials: "include" });
       if (r.ok) {
-        toast({ title: "Pending order cancelled" });
+        if (viaBridge) {
+          let queued = false;
+          try { queued = ((await r.json()) as { executable?: boolean }).executable === true; } catch { /* keep false */ }
+          toast(queued
+            ? { title: "Cancel sent to MT5", description: "The order is cancelled once the terminal confirms it." }
+            : { variant: "destructive", title: "Cancel not sent", description: "The bridge did not accept the cancel, so the order is still working at the broker." });
+        } else {
+          toast({ title: "Pending order cancelled" });
+        }
         setReloadAt(Date.now());
       } else {
         let reason = `HTTP ${r.status}`;
@@ -2513,7 +2589,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
                         <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `close:${p.brokerTicket}:1`} onClick={() => void closePosition(p, 1)} data-testid={`scanner-chart-close-${p.brokerTicket}`}>
                           Close
                         </Button>
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `close:${p.brokerTicket}:0.5`} onClick={() => void closePosition(p, 0.5)} data-testid={`scanner-chart-close-half-${p.brokerTicket}`}>
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `close:${p.brokerTicket}:0.5` || partialCloseVolume(p.lotSize, 0.5, lotSpec) == null} title={partialCloseVolume(p.lotSize, 0.5, lotSpec) == null ? "Too small to close half at the broker's lot step" : `Close ${partialCloseVolume(p.lotSize, 0.5, lotSpec)} lots`} onClick={() => void closePosition(p, 0.5)} data-testid={`scanner-chart-close-half-${p.brokerTicket}`}>
                           50%
                         </Button>
                         <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `be:${p.brokerTicket}` || p.entryPrice == null} onClick={() => void breakEven(p)} data-testid={`scanner-chart-be-${p.brokerTicket}`}>
@@ -2549,7 +2625,7 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
                     <span className="font-mono text-zinc-400">{o.lotSize} @ {(o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice) != null ? fmt((o.entryPrice ?? o.stopTriggerPrice ?? o.stopLimitPrice)!) : "—"}</span>
                     {canTrade && (
                       <div className="ml-auto">
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `cancel:${o.id}`} onClick={() => void cancelPending(o.id)} data-testid={`scanner-chart-cancel-${o.id}`}>
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={busy === `cancel:${o.id}`} onClick={() => void cancelPending(o)} data-testid={`scanner-chart-cancel-${o.id}`}>
                           <X className="mr-0.5 h-3 w-3" /> Cancel
                         </Button>
                       </div>

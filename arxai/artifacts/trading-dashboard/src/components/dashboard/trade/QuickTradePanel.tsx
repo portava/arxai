@@ -1,18 +1,25 @@
 // QuickTradePanel — the centerpiece of the redesigned Trade Command Room.
 //
-// UI ONLY. No execution logic lives here. Buy/Sell route into the existing
-// /live-manual ticket flow (symbol already synced via useChartSymbol upstream),
-// honouring "use existing order placement flow — do not create a new execution
-// path." Symbol/timeframe/lot/SL/TP are controlled inputs driven by props from
-// the page, which owns the existing state + quote feed.
+// UI ONLY. No execution logic lives here. Buy/Sell follow the app-wide
+// one-click mode (useOneClickMode), like the chart's trade entry:
+//   one-click ON  → a market order on the first click through the hook
+//                   (live: instant router; demo: governed demo queue), with the
+//                   panel's lot and SL/TP;
+//   one-click OFF → the MT5 order window opens pre-filled with that side, lot
+//                   and SL/TP, and its button is the confirmation.
+// No new execution path. Symbol/timeframe/lot/SL/TP are controlled inputs
+// driven by props from the page, which owns the existing state + quote feed.
 
-import type { ReactNode } from "react";
-import { useLocation } from "wouter";
+import { useState, type ReactNode } from "react";
 import { Zap, TrendingUp, TrendingDown, ShieldCheck, Bot, ShieldQuestion } from "lucide-react";
 import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
-import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
+import { OrderTicketButton, OrderTicketOverlay, type OrderTicketPrefill } from "@/components/trade/OrderTicketOverlay";
+import { useOneClickMode } from "@/hooks/useOneClickMode";
+import { useSymbolLotSpec } from "@/hooks/useSymbolLotSpec";
+import { useToast } from "@/hooks/use-toast";
+import { humanizeReason } from "@/lib/humanize";
 import type { OrderTypeId } from "@/lib/orderTicketRules";
 
 /** Map the panel's MT5 order-type label to the ticket's id ("Market" → the side is picked on the ticket). */
@@ -31,7 +38,17 @@ const ORDER_TYPES = [
   "Market", "Buy Limit", "Sell Limit", "Buy Stop", "Sell Stop", "Buy Stop Limit", "Sell Stop Limit",
 ];
 const TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
-const LOT_PRESETS = ["0.01", "0.02", "0.05", "0.10", "0.20", "MAX"];
+const LOT_PRESETS = ["0.01", "0.02", "0.05", "0.10", "0.20"];
+
+/**
+ * The MAX preset's lot: the lowest of the one-click cap and the broker's
+ * maximum for this symbol. null (no MAX preset) when neither is known — a
+ * literal "MAX" lot is not a number and used to reach the ticket as NaN.
+ */
+export function quickTradeMaxLot(maxLotPerClick: number | null | undefined, volumeMax: number | null | undefined): string | null {
+  const caps = [maxLotPerClick, volumeMax].filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
+  return caps.length ? String(Math.min(...caps)) : null;
+}
 
 export function QuickTradePanel({
   symbol, setSymbol,
@@ -62,20 +79,46 @@ export function QuickTradePanel({
   canTrade: boolean;
   blockedLabel: string;
 }) {
-  const [, navigate] = useLocation();
+  const oc = useOneClickMode();
+  const spec = useSymbolLotSpec(symbol);
+  const { toast } = useToast();
+  const [ticketPrefill, setTicketPrefill] = useState<OrderTicketPrefill | null>(null);
+  const maxLot = quickTradeMaxLot(oc.mode.maxLotPerClick, spec.volumeMax);
+  const presets = maxLot ? [...LOT_PRESETS, "MAX"] : LOT_PRESETS;
 
   const sell = quote ? quote.bid : null;
   const buy = quote ? quote.ask : null;
   const spread = quote ? quote.spread : null;
 
-  // Buy/Sell → existing manual ticket. Symbol is already synced globally
-  // (useChartSymbol) by the page, so the ticket opens prefilled. No new path.
-  const goTicket = () => navigate("/live-manual");
+  const lotNum = Number(lot) > 0 ? Number(lot) : null;
+  const sl = slTpOn && Number(stopLoss) > 0 ? Number(stopLoss) : null;
+  const tp = slTpOn && Number(takeProfit) > 0 ? Number(takeProfit) : null;
+  const busy = oc.busyKey === `BUY-${symbol}` || oc.busyKey === `SELL-${symbol}`;
+
+  // Buy/Sell honour one-click mode (see header). OFF → the order window, pre-set
+  // to this side's market order with the panel's lot and SL/TP.
+  const onSide = async (side: "BUY" | "SELL") => {
+    if (!oc.mode.on) {
+      setTicketPrefill({ orderType: side === "BUY" ? "MARKET_BUY" : "MARKET_SELL", lot: lotNum, stopLoss: sl, takeProfit: tp });
+      return;
+    }
+    if (lotNum == null) {
+      toast({ title: "Lot size needed", description: "Type a lot size above 0 first.", variant: "destructive" });
+      return;
+    }
+    const r = await oc.execute({ side, symbol, volume: lotNum, stopLoss: sl, takeProfit: tp, source: "trade_panel" });
+    if (r.ok) {
+      toast({ title: `${side} ${symbol} ${lotNum}`, description: oc.mode.scope === "live" ? "Sent to your broker through the live router." : "Filled on demo." });
+    } else {
+      const h = humanizeReason(r.reason ?? r.status);
+      toast({ title: `${side} blocked`, description: h.description || r.reason || r.status, variant: "destructive" });
+    }
+  };
 
   return (
     <CockpitCard
       title="Quick Trade"
-      subtitle="Execute a trade in seconds."
+      subtitle="Pick a market, then Buy or Sell (one-click) or place the order from the order window."
       icon={<Zap className="h-[18px] w-[18px]" />}
       accent="blue"
       data-testid="quick-trade-tab"
@@ -161,13 +204,14 @@ export function QuickTradePanel({
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
-        {LOT_PRESETS.map((p) => (
+        {presets.map((p) => (
           <button
             key={p}
-            onClick={() => setLot(p)}
+            onClick={() => setLot(p === "MAX" ? maxLot! : p)}
+            title={p === "MAX" ? `Largest lot allowed here: ${maxLot}` : undefined}
             className={cn(
               "h-9 rounded-lg border text-sm font-medium transition-colors",
-              lot === p ? "border-primary bg-primary/15 text-primary" : "border-border text-txt-secondary hover:bg-secondary/50",
+              lot === (p === "MAX" ? maxLot : p) ? "border-primary bg-primary/15 text-primary" : "border-border text-txt-secondary hover:bg-secondary/50",
             )}
             data-testid={`trade-lot-preset-${p}`}
           >
@@ -200,17 +244,13 @@ export function QuickTradePanel({
       {/* Actions */}
       {canTrade ? (
         <>
-        <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-2">
-          <button onClick={goTicket} data-testid="trade-action-sell"
-            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-danger font-semibold text-white hover:bg-danger/90">
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button onClick={() => void onSide("SELL")} disabled={busy} data-testid="trade-action-sell"
+            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-danger font-semibold text-white hover:bg-danger/90 disabled:opacity-50">
             <TrendingDown className="h-4 w-4" /> SELL {sell ?? ""}
           </button>
-          <button onClick={goTicket} data-testid="trade-action-cancel"
-            className="flex h-12 items-center justify-center rounded-xl border border-border px-5 font-medium text-txt-secondary hover:bg-secondary/50">
-            Cancel
-          </button>
-          <button onClick={goTicket} data-testid="trade-action-buy"
-            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-success font-semibold text-white hover:bg-success/90">
+          <button onClick={() => void onSide("BUY")} disabled={busy} data-testid="trade-action-buy"
+            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-success font-semibold text-white hover:bg-success/90 disabled:opacity-50">
             <TrendingUp className="h-4 w-4" /> BUY {buy ?? ""}
           </button>
         </div>
@@ -230,11 +270,15 @@ export function QuickTradePanel({
             }}
           />
         </div>
-        {/* The manual ticket only picks up the shared chart symbol; nothing else on
-            this panel reaches it, and no order is sent from the SELL/BUY buttons. */}
         <p className="mt-2 text-xs text-txt-muted" data-testid="trade-ticket-handoff-note">
-          SELL and BUY open the manual ticket with {symbol} selected; no order is sent from those buttons. The side, lot size, order type, stop loss and take profit set here are not carried over to the manual ticket, so set them again there before you submit. The order window above does carry them.
+          {oc.mode.on
+            ? `One-click is on: SELL and BUY send a market order for ${symbol} on the first click, with the lot size and stop loss / take profit set here.`
+            : `SELL and BUY open the order window for ${symbol} with the side, lot size, stop loss and take profit set here; its button sends the order.`}
         </p>
+        {ticketPrefill && (
+          <OrderTicketOverlay open={!!ticketPrefill} onOpenChange={(o) => { if (!o) setTicketPrefill(null); }}
+            symbol={symbol} source="trade_panel" prefill={ticketPrefill} />
+        )}
         </>
       ) : (
         <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-3 text-center text-sm font-medium text-warning" data-testid="trade-action-blocked">

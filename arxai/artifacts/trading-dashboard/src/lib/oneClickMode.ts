@@ -128,22 +128,74 @@ export function deriveOneClickMode(input: {
   return { on, scope, canEnable, blockReason, defaultVolume, maxLotPerClick, loading };
 }
 
-/** Clamp a typed lot to a sane positive step; returns null when unusable. */
-export function normalizeLot(raw: string | number, max: number | null): number | null {
+/**
+ * The broker's lot rules for a symbol (EA-enumerated SYMBOL_VOLUME_MIN /
+ * _STEP / _MAX). Any field may be unknown; unknown falls back to 0.01 steps.
+ */
+export type LotSpec = { volumeMin?: number | null; volumeStep?: number | null; volumeMax?: number | null };
+
+const pos = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+const decimalsOf = (step: number) => Math.min(8, Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)));
+const roundTo = (v: number, step: number) => Number((Math.round(v / step) * step).toFixed(decimalsOf(step)));
+
+/** Lowest of the per-click cap and the broker's max. */
+function upperBound(max: number | null, spec?: LotSpec | null): number | null {
+  const caps = [max, spec?.volumeMax].filter(pos);
+  return caps.length ? Math.min(...caps) : null;
+}
+
+/**
+ * Round a typed lot to the symbol's volume step (0.01 when unknown), raise it
+ * to the broker's minimum, and clamp it to the per-click cap / broker max.
+ * Returns null when the input is not a positive number.
+ */
+export function normalizeLot(raw: string | number, max: number | null, spec?: LotSpec | null): number | null {
   const n = num(raw);
   if (n == null || n <= 0) return null;
-  const rounded = Math.round(n * 100) / 100;
+  const step = pos(spec?.volumeStep) ? spec!.volumeStep! : 0.01;
+  let rounded = roundTo(n, step);
+  if (pos(spec?.volumeMin) && rounded < spec!.volumeMin!) rounded = spec!.volumeMin!;
   if (rounded <= 0) return null;
-  if (max != null && rounded > max) return max;
+  const hi = upperBound(max, spec);
+  if (hi != null && rounded > hi) return hi;
   return rounded;
 }
 
-export function stepLot(current: number, dir: 1 | -1, max: number | null): number {
-  const step = current < 0.1 ? 0.01 : current < 1 ? 0.1 : 1;
-  const next = Math.round((current + dir * step) * 100) / 100;
-  if (next < 0.01) return 0.01;
-  if (max != null && next > max) return max;
+export function stepLot(current: number, dir: 1 | -1, max: number | null, spec?: LotSpec | null): number {
+  const brokerStep = pos(spec?.volumeStep) ? spec!.volumeStep! : null;
+  const base = current < 0.1 ? 0.01 : current < 1 ? 0.1 : 1;
+  const step = brokerStep != null ? Math.max(brokerStep, base) : base;
+  const unit = brokerStep ?? 0.01;
+  const min = pos(spec?.volumeMin) ? spec!.volumeMin! : unit;
+  const next = roundTo(current + dir * step, unit);
+  if (next < min) return min;
+  const hi = upperBound(max, spec);
+  if (hi != null && next > hi) return hi;
   return next;
+}
+
+/** The lot a one-click button fires: the default, never above the per-click cap. */
+export function oneClickVolume(defaultVolume: number, maxLotPerClick: number | null): number {
+  return pos(maxLotPerClick) && defaultVolume > maxLotPerClick ? maxLotPerClick : defaultVolume;
+}
+
+/**
+ * Lots to close for a fractional (e.g. 50%) close: floored to the symbol's
+ * volume step so the broker never gets an off-step volume. Returns null when
+ * the fraction would close less than the minimum or leave less than the
+ * minimum open (a partial close the broker would refuse) — the caller then
+ * offers only a full close.
+ */
+export function partialCloseVolume(positionLots: number | null | undefined, fraction: number, spec?: LotSpec | null): number | null {
+  if (!pos(positionLots ?? null) || !(fraction > 0 && fraction < 1)) return null;
+  const step = pos(spec?.volumeStep) ? spec!.volumeStep! : 0.01;
+  const min = pos(spec?.volumeMin) ? spec!.volumeMin! : step;
+  const raw = positionLots! * fraction;
+  const floored = Number((Math.floor(raw / step + 1e-9) * step).toFixed(decimalsOf(step)));
+  if (floored < min - 1e-9) return null;
+  const remaining = positionLots! - floored;
+  if (remaining < min - 1e-9) return null;
+  return floored;
 }
 
 // ─── Demo command chain ──────────────────────────────────────────────────────

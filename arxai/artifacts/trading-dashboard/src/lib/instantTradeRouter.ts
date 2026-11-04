@@ -30,6 +30,8 @@ export type InstantTradeIntent = {
   positionId?: string;
   newStopLoss?: number | null;
   newTakeProfit?: number | null;
+  /** CLOSE only: lots to close (partial close). Absent = full close. */
+  closeVolume?: number | null;
   oneClick?: boolean;
   aiCommand?: boolean;
   rawUserCommand?: string | null;

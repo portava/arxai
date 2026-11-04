@@ -79,10 +79,28 @@ export interface TicketValidation {
 
 const fin = (n: number | null | undefined): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
 
-export function validateTicket(d: TicketDraft, q: TicketQuote): TicketValidation {
+/** Broker symbol rules, when the EA has enumerated them (all optional). */
+export interface TicketSymbolSpec {
+  volumeMin?: number | null;
+  volumeStep?: number | null;
+  volumeMax?: number | null;
+  point?: number | null;
+  /** SYMBOL_TRADE_STOPS_LEVEL in points: minimum SL/TP distance from the reference. */
+  stopsLevel?: number | null;
+}
+
+export function validateTicket(d: TicketDraft, q: TicketQuote, spec?: TicketSymbolSpec | null): TicketValidation {
   const errors: string[] = [];
   const info = orderTypeInfo(d.orderType);
   if (!fin(d.lot)) errors.push("Enter a lot size above 0.");
+  else {
+    if (fin(spec?.volumeMin) && d.lot < spec!.volumeMin! - 1e-9) errors.push(`The smallest lot for this symbol is ${spec!.volumeMin}.`);
+    if (fin(spec?.volumeMax) && d.lot > spec!.volumeMax! + 1e-9) errors.push(`The largest lot for this symbol is ${spec!.volumeMax}.`);
+    if (fin(spec?.volumeStep)) {
+      const k = d.lot / spec!.volumeStep!;
+      if (Math.abs(k - Math.round(k)) > 1e-6) errors.push(`Lot must be a multiple of ${spec!.volumeStep}.`);
+    }
+  }
 
   let reference: number | null = null;
   if (info.kind === "MARKET") {
@@ -114,6 +132,10 @@ export function validateTicket(d: TicketDraft, q: TicketQuote): TicketValidation
       if (!Number.isFinite(t)) errors.push("Pick an expiry date and time.");
       else if (t <= Date.now()) errors.push("Expiry must be in the future.");
     }
+    if (d.expiration === "TODAY") {
+      const iso = expirationIso(d);
+      if (iso && Date.parse(iso) <= Date.now()) errors.push("Today's trading day has ended. Pick a time or use GTC.");
+    }
   }
 
   if (fin(reference)) {
@@ -125,6 +147,13 @@ export function validateTicket(d: TicketDraft, q: TicketQuote): TicketValidation
     }
   }
 
+  // Broker stops level: SL/TP at least stopsLevel points from the reference.
+  if (fin(reference) && fin(spec?.stopsLevel) && fin(spec?.point)) {
+    const minDist = spec!.stopsLevel! * spec!.point!;
+    if (fin(d.stopLoss) && Math.abs(reference - d.stopLoss) < minDist - 1e-12) errors.push(`Stop Loss must be at least ${spec!.stopsLevel} points from the price (broker stops level).`);
+    if (fin(d.takeProfit) && Math.abs(d.takeProfit - reference) < minDist - 1e-12) errors.push(`Take Profit must be at least ${spec!.stopsLevel} points from the price (broker stops level).`);
+  }
+
   let riskReward: number | null = null;
   if (fin(reference) && fin(d.stopLoss) && fin(d.takeProfit)) {
     const risk = Math.abs(reference - d.stopLoss), reward = Math.abs(d.takeProfit - reference);
@@ -134,12 +163,18 @@ export function validateTicket(d: TicketDraft, q: TicketQuote): TicketValidation
 }
 
 /** Resolve the expiration choice to the ISO string the server takes (null = GTC). */
-export function expirationIso(d: Pick<TicketDraft, "expiration" | "expiresAt">, now: Date = new Date()): string | null {
+//
+// "Today" = 23:59 of the current day. MT5's "Today" is the BROKER's day; when
+// the caller knows the broker clock's UTC offset (minutes) the end of day is
+// computed on that clock, otherwise on UTC. No dashboard surface has a broker
+// offset yet, so today this is 23:59 UTC.
+export function expirationIso(d: Pick<TicketDraft, "expiration" | "expiresAt">, now: Date = new Date(), brokerUtcOffsetMinutes: number | null = null): string | null {
   if (d.expiration === "GTC") return null;
   if (d.expiration === "TODAY") {
-    const end = new Date(now);
-    end.setUTCHours(23, 59, 0, 0);
-    return end.toISOString();
+    const off = typeof brokerUtcOffsetMinutes === "number" && Number.isFinite(brokerUtcOffsetMinutes) ? brokerUtcOffsetMinutes : 0;
+    const broker = new Date(now.getTime() + off * 60_000);
+    broker.setUTCHours(23, 59, 0, 0);
+    return new Date(broker.getTime() - off * 60_000).toISOString();
   }
   return d.expiresAt && Number.isFinite(Date.parse(d.expiresAt)) ? new Date(d.expiresAt).toISOString() : null;
 }
@@ -159,4 +194,50 @@ export function parseNum(raw: string): number | null {
   if (t === "") return null;
   const n = Number(t);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Resolve what an SL/TP edit actually sends, per scope.
+ *
+ *  - An EMPTY field means "leave it as it is" on both scopes:
+ *      live → null; the server keeps the position's current level
+ *             (`newStopLoss ?? row.stopLoss`) and the EA reads 0 as "leave".
+ *      demo → the position's CURRENT level; the demo EA applies exactly what it
+ *             is sent, so a missing level would REMOVE the stop.
+ *  - "Remove" sends 0 (no stop / no target). Only the demo terminal can express
+ *    removal: the live EA (v154 HandleModifyProtection) reads 0 as "leave as
+ *    is", so removal is not offered on live (`removalSupported`).
+ *  - The side check runs only against a known current price; with no current
+ *    price the broker enforces it (the entry price is not the reference).
+ */
+export function resolveModifyLevels(a: {
+  scope: "live" | "demo";
+  side: OrderSide;
+  currentPrice: number | null;
+  current: { stopLoss: number | null; takeProfit: number | null };
+  slText: string;
+  tpText: string;
+  removeSl?: boolean;
+  removeTp?: boolean;
+}): { newStopLoss: number | null; newTakeProfit: number | null; error: string | null; unchanged: boolean } {
+  const removalSupported = a.scope === "demo";
+  const removeSl = removalSupported && a.removeSl === true;
+  const removeTp = removalSupported && a.removeTp === true;
+  const typedSl = removeSl ? null : parseNum(a.slText);
+  const typedTp = removeTp ? null : parseNum(a.tpText);
+  if (!removeSl && a.slText.trim() !== "" && typedSl == null) return { newStopLoss: null, newTakeProfit: null, error: "Stop Loss must be a price above 0.", unchanged: false };
+  if (!removeTp && a.tpText.trim() !== "" && typedTp == null) return { newStopLoss: null, newTakeProfit: null, error: "Take Profit must be a price above 0.", unchanged: false };
+  const curSl = fin(a.current.stopLoss) ? a.current.stopLoss : null;
+  const curTp = fin(a.current.takeProfit) ? a.current.takeProfit : null;
+  const effSl = removeSl ? null : typedSl ?? curSl;
+  const effTp = removeTp ? null : typedTp ?? curTp;
+  const unchanged = effSl === curSl && effTp === curTp;
+  if (unchanged) return { newStopLoss: null, newTakeProfit: null, error: "Change the Stop Loss or Take Profit first.", unchanged: true };
+  const ref = fin(a.currentPrice) ? a.currentPrice : null;
+  if (ref != null) {
+    const v = validateModify({ side: a.side, reference: ref, newStopLoss: typedSl, newTakeProfit: typedTp });
+    if (!v.ok && (typedSl != null || typedTp != null)) return { newStopLoss: null, newTakeProfit: null, error: v.error, unchanged: false };
+  }
+  if (a.scope === "live") return { newStopLoss: typedSl, newTakeProfit: typedTp, error: null, unchanged: false };
+  return { newStopLoss: removeSl ? 0 : effSl ?? 0, newTakeProfit: removeTp ? 0 : effTp ?? 0, error: null, unchanged: false };
 }
