@@ -13,7 +13,7 @@ import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistan
 // - Market provider connectivity surfaced in-panel
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { useAssistantDockTarget, useAssistantChartSelection } from "./AssistantDock";
+import { useAssistantDockTarget, useAssistantChartSelection, useLocalChartAssistantReceiver } from "./AssistantDock";
 import { useGetTimingBrain, getGetTimingBrainQueryKey } from "@workspace/api-client-react";
 import { Mic, MicOff, Send, X, Sparkles, Loader2, ChevronDown, ChevronUp, ShieldCheck, Wrench, AlertCircle, Wifi, WifiOff, Radio, Square, VolumeX, Volume2, MoreHorizontal, Plus, Trash2, Eraser, Download, Brain, BrainCircuit, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,9 @@ import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { markActionStart, markActionEnd, markUiFeedback, markRenderComplete, markApiStart, markApiEnd } from "@/lib/perf";
 import { useAssistantName, DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
+import { sendRubyTradeCommand, type RubyCommandResponse } from "@/lib/instantTradeRouter";
+import { looksLikeRubyCommand, rubyCommandHandled } from "@/lib/rubyCommandIntent";
+import { RubyWatchesStrip } from "./RubyWatchesStrip";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 const STORAGE_OPEN_KEY = "arx.assistant.open.v2";
@@ -99,6 +102,17 @@ interface ChatMessage {
   intent?: string;
   pending?: boolean;
   voicePending?: boolean;
+  /** Ruby execution (2026-11-04): this bubble is the reply of the gated command
+   *  route. When confirmationRequired is set the bubble shows Confirm / Cancel;
+   *  Confirm resends the SAME text with confirm:true (the only thing the extra
+   *  confirmation step controls — every backend gate still runs). */
+  rubyCommand?: {
+    text: string;
+    accountMode: "live" | "demo";
+    classification?: string;
+    confirmationRequired?: boolean;
+    resolved?: "confirmed" | "cancelled";
+  };
   /** Optional structured Ruby reasoning. When present, the bubble renders the
    *  ONE standardized, ALWAYS-VISIBLE reasoning block — the same labeled format
    *  used on the Scalp / Scanner surfaces. Never fabricated from prose: it is
@@ -811,6 +825,55 @@ export function ArxAssistantLivePanel() {
   useEffect(() => () => { if (recordTimeoutRef.current) clearTimeout(recordTimeoutRef.current); }, []);
 
   // ── streaming text send ─────────────────────────────────────────────
+  const acceptLocalChartReply=useCallback((text:string,chartReply:string)=>{
+    abortRef.current?.abort();tts.stop();setErrorBanner(null);setInput("");setStatus("idle");setOpen(true);
+    const turn=++localChartTurnSequence.current;
+    setMessages(current=>[...current.map(message=>message.pending?{...message,pending:false,content:message.content||"Previous reply stopped."}:message),
+      {id:`local-chart-u-${turn}`,role:"user",content:text},{id:`local-chart-a-${turn}`,role:"assistant",content:chartReply}]);
+    return true;
+  },[tts.stop]);
+  useLocalChartAssistantReceiver(acceptLocalChartReply);
+  // Ruby execution (2026-11-04): a DIRECT trade/watch command typed in the chat
+  // box goes to Ruby's gated command route first. The server parses it, checks
+  // the user's AI-Assisted authority + per-action permissions, asks for
+  // confirmation and runs every backend gate. VAGUE/UNKNOWN falls through to
+  // the analytical chat. Returns true when the message was handled here.
+  const [watchesRefresh, setWatchesRefresh] = useState(0);
+  const runRubyCommand = useCallback(async (text: string, confirm = false): Promise<boolean> => {
+    const accountMode: "live" | "demo" = tradingMode.isLiveArmed ? "live" : "demo";
+    let resp: RubyCommandResponse;
+    try {
+      resp = await sendRubyTradeCommand({ text, accountMode, source: "ruby_text", confirm });
+    } catch {
+      return false;
+    }
+    if (!rubyCommandHandled(resp)) return false;
+    const reply = resp.message
+      ?? (resp.ok ? "Done." : resp.error === "rate_limited"
+        ? `Too many commands — try again in ${resp.retryAfterSeconds ?? 60} s.`
+        : `I couldn't do that${resp.error ? `: ${resp.error}` : ""}.`);
+    setMessages((cur) => [
+      ...cur,
+      ...(confirm ? [] : [{ id: `u-${Date.now()}`, role: "user" as const, content: text }]),
+      {
+        id: `a-${Date.now() + 1}`, role: "assistant" as const, content: reply, intent: "ruby_command",
+        rubyCommand: { text, accountMode, classification: resp.classification, confirmationRequired: resp.confirmationRequired === true },
+      },
+    ]);
+    setInput("");
+    setWatchesRefresh((n) => n + 1);
+    return true;
+  }, [tradingMode.isLiveArmed]);
+
+  const resolveRubyConfirmation = useCallback(async (m: ChatMessage, decision: "confirmed" | "cancelled") => {
+    setMessages((cur) => cur.map((x) => x.id === m.id && x.rubyCommand ? { ...x, rubyCommand: { ...x.rubyCommand, resolved: decision } } : x));
+    if (decision === "confirmed" && m.rubyCommand) {
+      await runRubyCommand(m.rubyCommand.text, true);
+    } else {
+      setMessages((cur) => [...cur, { id: `a-${Date.now()}`, role: "assistant", content: "Cancelled — nothing was sent.", intent: "ruby_command" }]);
+    }
+  }, [runRubyCommand]);
+
   const sendText = useCallback(async (text: string) => {
     if (!text.trim()) return;
     const chartReply = requestChartLevels(text) ?? requestChartFibonacci(text) ?? requestChartResearch(text) ?? requestChartStudy(text);
@@ -830,6 +893,14 @@ export function ArxAssistantLivePanel() {
     }
     if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}
     if (!conversation || conversationChangePending.current) { setErrorBanner("Chat session not ready yet. One moment…"); return; }
+    if (looksLikeRubyCommand(text)) {
+      tts.stop();
+      setErrorBanner(null);
+      setStatus("thinking");
+      const handled = await runRubyCommand(text);
+      setStatus("idle");
+      if (handled) return;
+    }
     // PART 8 — Ruby first-text timing. Three distinct moments matter:
     //   send (T0) → "thinking" indicator visible (T1, sub-100ms)
     //              → first visible token (markRenderComplete — the
@@ -1452,6 +1523,7 @@ export function ArxAssistantLivePanel() {
           })()}
 
           {/* Messages */}
+          <RubyWatchesStrip refreshKey={watchesRefresh} onMessage={(t) => setMessages((cur) => [...cur, { id: `a-${Date.now()}`, role: "assistant", content: t, intent: "ruby_command" }])} />
           <div id="arx-assistant-messages" ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-3",shortChartViewport&&"min-h-16 flex-none")}>
             <p className="mb-2 text-xs text-cyan-300" data-testid="assistant-selected-chart">{chartSelection.selected?`Local chart tools: ${chartSelection.selected.symbol} · ${chartSelection.selected.timeframe} · ${chartSelection.selected.source}${chartSelection.selected.analysisOnly?" · analysis only":" · primary"}`:"No chart selected. Choose Use chart with assistant on a ready chart; no other pane will be substituted."}{remoteChartBlocked?" General chat and voice are held here; primary trading controls are unchanged.":""}</p>
             {messages.length===0&&chartCompact&&<p className="text-sm text-txt-secondary">Ask about the current chart, for example “show RSI”. Expand for conversation history and voice settings.</p>}
@@ -1492,7 +1564,7 @@ export function ArxAssistantLivePanel() {
                 )}
               </div>
             )}
-            {messages.map((m,index) => (<div key={m.id} hidden={chartCompact&&index!==messages.length-1} data-chart-chat-hidden={chartCompact&&index!==messages.length-1?"true":undefined}><MessageBubble m={m} /></div>))}
+            {messages.map((m,index) => (<div key={m.id} hidden={chartCompact&&index!==messages.length-1} data-chart-chat-hidden={chartCompact&&index!==messages.length-1?"true":undefined}><MessageBubble onRubyDecision={resolveRubyConfirmation} m={m} /></div>))}
             {errorBanner && (
               <div className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/15 px-3 py-2 text-xs text-danger">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5" />
@@ -1909,7 +1981,7 @@ function ChatChartReadFeedBadge({
   );
 }
 
-function MessageBubble({ m }: { m: ChatMessage }) {
+function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?: (m: ChatMessage, decision: "confirmed" | "cancelled") => void }) {
   const { name } = useAssistantName();
   const isUser = m.role === "user";
   const [expanded, setExpanded] = useState(false);
@@ -1998,6 +2070,22 @@ function MessageBubble({ m }: { m: ChatMessage }) {
                 </span>
               )
               : null}
+        {!isUser && m.rubyCommand?.confirmationRequired && (
+          <div className="mt-2 flex items-center gap-2" data-testid="ruby-command-confirm">
+            {m.rubyCommand.resolved ? (
+              <span className="text-xs text-txt-muted">{m.rubyCommand.resolved === "confirmed" ? "Confirmed" : "Cancelled"}</span>
+            ) : (
+              <>
+                <Button size="sm" className="h-7 px-3 text-xs" onClick={() => onRubyDecision?.(m, "confirmed")} data-testid="ruby-command-confirm-yes">
+                  Confirm
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={() => onRubyDecision?.(m, "cancelled")} data-testid="ruby-command-confirm-no">
+                  Cancel
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         {!isUser && m.reasoning && (
           <div className="mt-2" data-testid="ruby-chat-reasoning-wrap">
             {/* Task #777 — the SAME compact feed-confidence badge the chart popover

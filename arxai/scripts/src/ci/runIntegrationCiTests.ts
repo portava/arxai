@@ -277,6 +277,9 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // Owner decision 15: My Trades DEMO opens use the governed DEMO pipeline; LIVE stays refused.
   { pkg: "@workspace/api-server", script: "test:my-trades-demo-open" },
   { pkg: "@workspace/api-server", script: "test:oms-governance" },
+  // Audit round 3 (2026-11-04): per-user replay/onboarding ownership and
+  // per-user mt5_state rows. Real rows and transactions; no offline equivalent.
+  { pkg: "@workspace/api-server", script: "test:audit-gaps-r3-db-20261104" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-journal" },

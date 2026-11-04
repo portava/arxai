@@ -1,5 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderBare, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+function render(ui: Parameters<typeof renderBare>[0]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return renderBare(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+}
 
 const state = vi.hoisted(() => ({investor:false, roleLoading:false}));
 vi.mock("@/components/charts/ARXNativeChart", () => ({ARXNativeChart:(p:any)=><output data-testid="native-chart">{p.symbol}:{p.timeframe ?? "default"}</output>}));
@@ -12,7 +18,7 @@ vi.mock("@/hooks/useFeatureUnlock", () => ({useAllUnlocks:()=>({mt5:false,simula
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({useMasterLiveAccess:()=>({loaded:true,canTrade:false})}));
 vi.mock("@/lib/assistant-name", () => ({useAssistantName:()=>({name:"Ruby"})}));
 vi.mock("@/components/live/LiveSharedTradeTicket", () => ({LiveSharedTradeTicket:()=>null}));
-vi.mock("@/hooks/useLivePositionOverlays", () => ({useLivePositionOverlays:()=>({overlays:[]})}));
+vi.mock("@/hooks/useLivePositionOverlays", () => ({useLivePositionOverlays:()=>({overlays:[],positions:[]})}));
 vi.mock("@/hooks/useAiChartOverlays", () => ({useAiChartOverlays:()=>({overlays:[]})}));
 vi.mock("@/hooks/useChartSetupPreview", () => ({useChartSetupPreview:()=>({overlays:[],confirm:()=>{}})}));
 vi.mock("@/components/charts/ChartPositionOverlayPanel", () => ({ChartPositionOverlayPanel:()=>null}));

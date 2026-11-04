@@ -14,6 +14,7 @@ import { ChartAiOverlayPanel } from "@/components/charts/ChartAiOverlayPanel";
 import { ChartSetupPreviewPanel } from "@/components/charts/ChartSetupPreviewPanel";
 import { ChartModes } from "@/components/charts/ChartModes";
 import { ChartTradeEntry, type ChartTradePrefill } from "@/components/charts/ChartTradeEntry";
+import { OneClickTradePanel } from "@/components/oneclick/OneClickTradePanel";
 import { PositionPickerPanel } from "@/components/positions/PositionPickerPanel";
 import { useLivePositionOverlays } from "@/hooks/useLivePositionOverlays";
 import { useAiChartOverlays } from "@/hooks/useAiChartOverlays";
@@ -23,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useProductRole } from "@/hooks/useProductRole";
-import { useChartSymbol } from "@/lib/use-chart-symbol";
+import { bareSymbol, useChartSymbol } from "@/lib/use-chart-symbol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Smart Chart Shell (Task #373).
@@ -151,6 +152,16 @@ export default function LiveChartPage() {
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0 space-y-4">
+            {/* MT5-style one-click bar. Off → a single "Turn on" button (disclaimer
+                first). On → SELL bid | lot | BUY ask + × close, first click trades.
+                Same gated router / demo queue underneath; nothing bypasses a gate. */}
+            {canSeeTradeEntry && (
+              <OneClickTradePanel
+                symbol={bareSymbol(chartSymbol)}
+                positions={overlayData.positions}
+                onPositionsChanged={overlayData.reload}
+              />
+            )}
             <SmartChartLayout symbol={chartSymbol} primaryTimeframe={timeframe}>
               <ARXNativeChart
                 symbol={chartSymbol}

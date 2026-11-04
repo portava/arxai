@@ -4,19 +4,30 @@
 // MT5, NEVER modify canPlaceTrades. liveTradingStatus is hardcoded
 // "DISABLED" and mode is hardcoded "REPLAY_ONLY" in every response envelope.
 
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { db, replayRunsTable, replayLogsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 import { buildSyntheticScenario, persistScenario, listScenarios, getScenario, validateCandles, type MarketCondition } from "../lib/replaySim/scenarios.js";
-import { runReplay, generateReplayReport, getRun, getRunTrades, getRunReport, requestStop, listActiveRuns } from "../lib/replaySim/engine.js";
+import { runReplay, generateReplayReport, getRun, getRunTrades, getRunReport, requestStop, listActiveRuns, activeRunOwner } from "../lib/replaySim/engine.js";
 import { randomUUID } from "node:crypto";
 
 const router = Router();
 const TAG = "Build JJ — Replay Simulator + Strategy Lab. REPLAY_ONLY simulation. Never places trades, never calls MT5, never enables canPlaceTrades, never recommends live trading.";
 
+// Replay runs, their trades, reports and logs are per user: every route
+// requires a session and serves only the caller's own runs ("runScope": "OWN").
+// Scenarios (synthetic or imported candle sets) are a platform-shared library.
+router.use("/replay", requireUser);
+function ownerId(req: Request): number {
+  return req.authUser!.id;
+}
+
 function envelope(body: Record<string, unknown>) {
   return {
     system: "replaySimulator",
+    runScope: "OWN" as const,
+    scenarioScope: "platform_shared" as const,
     liveTradingStatus: "DISABLED" as const,
     mode: "REPLAY_ONLY" as const,
     disclaimer: TAG,
@@ -24,11 +35,11 @@ function envelope(body: Record<string, unknown>) {
   };
 }
 
-router.post("/replay/demo", async (_req, res) => {
+router.post("/replay/demo", async (req, res) => {
   try {
     const scenario = buildSyntheticScenario({ marketCondition: "TRENDING_UP", candleCount: 80, seed: 1234, title: "Demo TRENDING_UP V75" });
     await persistScenario(scenario);
-    const run = await runReplay(scenario, { minConfidence: 55, useSniperFilter: true });
+    const run = await runReplay(scenario, { minConfidence: 55, useSniperFilter: true }, undefined, ownerId(req));
     const report = await generateReplayReport(run, scenario);
     res.json(envelope({ demo: true, scenario_id: scenario.scenarioId, replay_run_id: run.replayRunId, report }));
   } catch (err) {
@@ -104,13 +115,13 @@ router.post("/replay/run", async (req, res) => {
     if (body.async === true) {
       const replayRunId = `rrun_${randomUUID()}`;
       // Fire-and-forget; runReplay persists results when finished.
-      void runReplay(scenario, body.settings ?? {}, replayRunId)
+      void runReplay(scenario, body.settings ?? {}, replayRunId, ownerId(req))
         .then(run => generateReplayReport(run, scenario))
         .catch(() => { /* persisted via run record + logs */ });
       res.json(envelope({ async: true, replay_run_id: replayRunId, scenario_id: scenario.scenarioId, status: "STARTED" }));
       return;
     }
-    const run = await runReplay(scenario, body.settings ?? {});
+    const run = await runReplay(scenario, body.settings ?? {}, undefined, ownerId(req));
     const report = await generateReplayReport(run, scenario);
     res.json(envelope({
       replay_run_id: run.replayRunId,
@@ -139,7 +150,7 @@ router.post("/replay/run", async (req, res) => {
 router.get("/replay/runs", async (req, res) => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 200);
-    const rows = await db.select().from(replayRunsTable).orderBy(desc(replayRunsTable.createdAt)).limit(limit);
+    const rows = await db.select().from(replayRunsTable).where(eq(replayRunsTable.userId, ownerId(req))).orderBy(desc(replayRunsTable.createdAt)).limit(limit);
     res.json(envelope({ runs: rows, count: rows.length }));
   } catch (err) {
     res.status(500).json(envelope({ error: "list runs failed", detail: String(err).slice(0, 200) }));
@@ -148,7 +159,7 @@ router.get("/replay/runs", async (req, res) => {
 
 router.get("/replay/runs/:id", async (req, res) => {
   try {
-    const r = await getRun(req.params.id);
+    const r = await getRun(req.params.id, ownerId(req));
     if (!r) { res.status(404).json(envelope({ error: "run not found" })); return; }
     res.json(envelope({ run: r }));
   } catch (err) {
@@ -158,7 +169,7 @@ router.get("/replay/runs/:id", async (req, res) => {
 
 router.get("/replay/runs/:id/trades", async (req, res) => {
   try {
-    const trades = await getRunTrades(req.params.id);
+    const trades = await getRunTrades(req.params.id, ownerId(req));
     res.json(envelope({ replay_run_id: req.params.id, trades, count: trades.length }));
   } catch (err) {
     res.status(500).json(envelope({ error: "get trades failed", detail: String(err).slice(0, 200) }));
@@ -167,7 +178,7 @@ router.get("/replay/runs/:id/trades", async (req, res) => {
 
 router.get("/replay/runs/:id/report", async (req, res) => {
   try {
-    const r = await getRunReport(req.params.id);
+    const r = await getRunReport(req.params.id, ownerId(req));
     if (!r) { res.status(404).json(envelope({ error: "report not found" })); return; }
     res.json(envelope({ report: r }));
   } catch (err) {
@@ -177,24 +188,30 @@ router.get("/replay/runs/:id/report", async (req, res) => {
 
 router.post("/replay/stop/:id", async (req, res) => {
   try {
-    requestStop(req.params.id);
-    const active = listActiveRuns().some(r => r.replayRunId === req.params.id);
-    res.json(envelope({ stop_requested: req.params.id, was_active: active, active_runs: listActiveRuns() }));
+    // Only the run's owner can stop it; an unknown or foreign run is a no-op.
+    const owner = activeRunOwner(req.params.id);
+    const active = owner !== undefined && owner === ownerId(req);
+    if (active) requestStop(req.params.id);
+    res.json(envelope({ stop_requested: active ? req.params.id : null, was_active: active, active_runs: listActiveRuns(ownerId(req)) }));
   } catch (err) {
     res.status(500).json(envelope({ error: "stop failed", detail: String(err).slice(0, 200) }));
   }
 });
 
-router.get("/replay/active", async (_req, res) => {
-  res.json(envelope({ active_runs: listActiveRuns() }));
+router.get("/replay/active", async (req, res) => {
+  res.json(envelope({ active_runs: listActiveRuns(ownerId(req)) }));
 });
 
 router.get("/replay/logs", async (req, res) => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10) || 50, 500);
     const runId = req.query.run_id ? String(req.query.run_id) : null;
-    const q = db.select().from(replayLogsTable).orderBy(desc(replayLogsTable.createdAt)).limit(limit);
-    const rows = runId ? await db.select().from(replayLogsTable).where(eq(replayLogsTable.replayRunId, runId)).orderBy(desc(replayLogsTable.createdAt)).limit(limit) : await q;
+    // Logs belong to runs; only the caller's own runs' logs are listed.
+    const ownRuns = db.select({ id: replayRunsTable.replayRunId }).from(replayRunsTable).where(eq(replayRunsTable.userId, ownerId(req)));
+    const scope = runId
+      ? and(eq(replayLogsTable.replayRunId, runId), inArray(replayLogsTable.replayRunId, ownRuns))
+      : inArray(replayLogsTable.replayRunId, ownRuns);
+    const rows = await db.select().from(replayLogsTable).where(scope).orderBy(desc(replayLogsTable.createdAt)).limit(limit);
     res.json(envelope({ logs: rows, count: rows.length }));
   } catch (err) {
     res.status(500).json(envelope({ error: "list logs failed", detail: String(err).slice(0, 200) }));

@@ -14624,6 +14624,13 @@ export interface MeScalpBasketsResp {
   baskets: ScalpBasket[];
   accountMode: MeScalpBasketsRespAccountMode;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
 }
 
 export type MeScalpAddOnCheckBodyDirection =
@@ -14661,6 +14668,13 @@ export interface MeScalpAddOnCheckResp {
   addOn: ScalpAddOnVerdict;
   flame: ScalpFlameRead;
   generatedAt: string;
+  /** False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured "none". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
 }
 
 export interface ScalpJournalEntry {

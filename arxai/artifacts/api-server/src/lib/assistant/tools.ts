@@ -65,6 +65,7 @@ import {
   buildPaperSafetyStatus,
   liveExecutionAvailabilityNote,
   type SafetyEnvelope,
+  ASSISTANT_ORDER_EXECUTION_NOTE,
 } from "./derivedEnvelope.js";
 import { getAssistantDisplayName } from "./assistantName.js";
 
@@ -1699,11 +1700,10 @@ export const TOOL_DEFINITIONS = [
   { name: "getAssistantCapabilityStatus", description: "Phase 22H. Reports what the assistant can actually do RIGHT NOW for this user: app help, market awareness, bridge awareness, risk checks, journal analysis, notifications, voice input, speech output, live realtime mode, plus order-execution lock. Each capability includes available + reason + setup hints. Use for 'what can the assistant do', 'what can you do', 'are you live', 'can you talk', 'what's broken'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getMarketScannerOpportunities", description: "Phase 22O + TW. Returns ranked scanner candidates from REAL provider candles when a market data provider with candle support is connected (currently: TwelveData / Finnhub). Each candidate has symbol, timeframe, bias, setupType, confidenceScore, riskScore, riskRewardRatio, reasonForTrade, statusBadge, opportunityLabel, entry, stopLoss, takeProfit (= TP2 main, backward-compat), AND a Phase TW takeProfitTargets[] array with up to TP1/TP2/TP3 — each {label, price, reason, rr, distancePoints, distancePips, suggestedAction (partial|full|runner), confidence (low|medium|high)}. bestTargetLabel names the primary target (usually TP2). If targetsUnavailableReason is non-null, takeProfitTargets is [] and you MUST report that targets are unavailable — never invent them. Call this WHENEVER the user asks 'check the scanner', 'what should I trade', 'best market right now', 'any opportunities', 'scan the market', 'what's hot', 'where should I take profit', 'where to TP'. ALWAYS read liveDataConnected: if false, opportunities is EMPTY and you MUST tell the user that live market data with candle support is not connected. Never fabricate scanner candidates or TP levels of your own.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
   { name: "getTradingMode", description: "Phase 23. Returns the user's current trading mode envelope: platform mode (OFF/SIMULATED/DEMO/LIVE), per-user permissions, emergency kill switch state, MT5 account type, banner label, and the top blocker reason. Use for 'is trading on', 'am I in demo or live', 'can I trade', 'why is my trade blocked', 'is my MT5 account demo or live', 'what is the current platform mode'. NEVER guess — always call this first.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "requestDemoOrder", description: "Phase 23. Submits a DEMO trade order through the guarded placement chain. Routes ONLY to verified MT5 demo accounts. Cannot bypass any backend gate — every order goes through runOrderGuards() and then the broker placement queue. Returns the audit log id, queued command id, and rejection reason if any gate failed. Use ONLY when the user has explicitly said 'place this demo trade' / 'send the demo order' etc. Never use to silently trade.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, stopLoss: { type: "number" }, takeProfit: { type: "number" } }, required: ["symbol", "side", "lotSize"], additionalProperties: false } },
+  { name: "getMyRubyWatches", description: "Assistant execution (2026-11-04). READ-ONLY. Returns the signed-in user's active assistant watches: conditional entries (WATCH_AND_ENTER), conditional closes (WATCH_AND_CLOSE) and position monitors (MONITOR_TRADE) with their trigger, expiry and — for monitors — the reversal-alert state (alertsSinceAck of maxAlerts, lastAlertAt, awaitingAnswer). Also returns whether the server's watch sweeper is running. Use for 'what are you watching', 'did you alert me', 'is my monitor still on'. NEVER arms, cancels or fires anything — the user does that with a direct command in chat ('monitor my EURUSD', 'buy EURUSD 0.01 when it reaches 1.09', 'cancel my watches', 'keep it', 'close it').", parameters: { type: "object", properties: { includeFinished: { type: "boolean", default: false } }, additionalProperties: false } },
   { name: "getMyLiveOpenTrades", description: "Phase UX1. Returns the signed-in user's open trades, routing-aware. USER_OWNED_MT5 reads from live_positions; SHARED_MASTER_MT5 reads from shared_trade_attribution. Per-user P&L on shared master is an allocation estimate (pnlIsEstimate:true). Never returns master credentials or other users' rows. Use whenever the user asks 'what are my open trades', 'how is my position doing', 'show my live trades'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "prepareCloseTicket", description: "Phase UX1. Validates that a trade id belongs to the signed-in user and is closable, and returns a preview of the close action. Does NOT close the trade — the user must click Confirm Close in the UI. Use when the user asks 'close my EURUSD trade' or 'help me close trade X'.", parameters: { type: "object", properties: { tradeId: { type: "string" } }, required: ["tradeId"], additionalProperties: false } },
   { name: "prepareOpenTicket", description: "Phase UX1. Previews how a hypothetical order would route (mode, broker, block reason). Does NOT place the order — the user must click Submit Order in the Quick Trade modal. Use when the user asks 'walk me through opening a EURUSD buy' or 'what would happen if I went short XAUUSD'.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, mode: { type: "string", enum: ["SIMULATED", "DEMO", "LIVE"] } }, required: ["symbol", "side", "lotSize", "mode"], additionalProperties: false } },
-  { name: "requestLiveOrder", description: "Phase 23. Submits a LIVE (real-money) trade order through the guarded placement chain. ALWAYS requires confirmedByUser=true — pass true ONLY when the user has just typed an explicit confirmation phrase like 'confirm live trade' or 'yes, place the live order'. Otherwise pass false; the order will be rejected with LIVE_CONFIRMATION_REQUIRED. Routes only to verified MT5 live accounts. Cannot bypass any backend gate.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["BUY", "SELL"] }, lotSize: { type: "number", minimum: 0.01, maximum: 100 }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, confirmedByUser: { type: "boolean", default: false } }, required: ["symbol", "side", "lotSize", "confirmedByUser"], additionalProperties: false } },
   { name: "getTradeIntelligence", description: "Phase UX2. Returns a fresh live-trade intelligence snapshot for one of the signed-in user's open trades (tradeKey is 'lp_<id>' or 'att_<id>' from getMyLiveOpenTrades). Scores: continuation, pullback, reversal, fakeout, profit protection, close urgency, hold confidence, trend strength, volatility risk. Includes derived pnlPips and profitGivebackPercent, plus a label and recommendedAction (HOLD | WATCH_CLOSELY | MOVE_STOP_TO_BREAKEVEN | TRAIL_STOP | PARTIAL_CLOSE | CLOSE_CONSIDERATION | CLOSE_NOW_PROMPT | NO_ACTION_DATA_INSUFFICIENT). dataQuality lists missing inputs — when missing.length>0, you MUST tell the user which signals are unavailable instead of pretending you can judge confidently. Never guarantees profit. Never closes a trade.", parameters: { type: "object", properties: { tradeKey: { type: "string" } }, required: ["tradeKey"], additionalProperties: false } },
   { name: "getSymbolMarketContext", description: "Phase UX6. Returns the LIVE multi-timeframe market context for a symbol (M1..D1): trend per TF, ATR, swing high/low, S/R, range, plus a classifier label (Strong continuation | Weak continuation | Healthy pullback | Deep retracement | Reversal risk rising | Possible fakeout | Liquidity sweep possible | Breakout holding | Failed breakout | Choppy / no clear edge | Data insufficient) with 11 scores and an evidence-cited explanation. context.source and context.freshness now come from the SAME shared chart-truth resolver the chart uses, so they match the chart exactly; context.sharedQuality / context.sharedAiUsable / context.sharedCause carry that shared verdict (sharedCause names the actual reason when data is not usable). ALWAYS read context.dataQuality.quality (and context.sharedQuality) — if data is insufficient/unavailable you MUST tell the user live candle data is unavailable, name the cause, and not invent a read. ALSO read context.feedConfirmed — when it is false you MUST open your answer with the context.feedCaveat line (feed not confirmed / low-confidence) before any read; never present an unconfirmed-feed read as a confident call. This caveat is advisory only and never blocks anything. Never fabricates candles. Use for a BROAD multi-timeframe live-quote/context overview — e.g. 'what is the market doing on X', 'is there a trend on GBPUSD H1', 'give me the broad picture on EURUSD'. For a SINGLE-SYMBOL structural/direction read ('read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>') use readChartStructure instead — never this tool.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "readChartStructure", description: "Phase Chart-Read (Task #602). THE primary tool for a STRUCTURAL chart read — use this FIRST whenever the user says 'read <symbol>', 'analyze <symbol>', 'what do you see on <symbol>', 'redo on V75', 'structure on GBPUSD', or asks for the direction/bias on a specific market (and optional timeframe). Returns the SAME directional read the Scanner 'Chart Read' panel shows, so chat and the panel never disagree: chartRead carries bias, confidence, summary, support/resistance levels, conditions, invalidation, risk notes — plus readLayer. ALWAYS branch on readLayer: 'FULL' = the exact entry/stopLoss/takeProfit/reward:risk in chartRead are valid and you MAY state them; 'STRUCTURAL_ONLY' = give the directional structure (bias, S/R, conditions, invalidation) but you MUST say the exact entry/stop/target are WITHHELD until the live feed confirms (cite chartRead.blockedReason) and NEVER invent levels; 'INSUFFICIENT' = there isn't enough verified candle data, so say exactly that (use chartRead.headline / chartRead.blockedReason) and do NOT invent a read. ALWAYS surface chartRead.trustLine and end with chartRead.disclaimer. symbol is OPTIONAL — when omitted it reads the symbol currently on the user's chart (page context). timeframe is OPTIONAL — omit to use the user's on-screen chart timeframe, otherwise it defaults to H1. Read-only; never places a trade; never fabricates candles. Prefer this over getSymbolMarketContext for a single-symbol structure/direction read (getSymbolMarketContext is for a broad multi-timeframe live quote/context overview).", parameters: { type: "object", properties: { symbol: { type: "string" }, timeframe: { type: "string" } }, additionalProperties: false } },
@@ -2393,34 +2393,26 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
       // Derived at the boundary; reuse it (no second getEnvelope round-trip).
       return { envelope: env };
     }
-    case "requestDemoOrder": {
-      const { placeOrder } = await import("../adminTrading/placeOrder.js");
-      const r = await placeOrder({
-        userId, mode: "DEMO",
-        symbol: String(args.symbol ?? ""),
-        side: (String(args.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY"),
-        lotSize: Number(args.lotSize ?? 0),
-        stopLoss: typeof args.stopLoss === "number" ? args.stopLoss : null,
-        takeProfit: typeof args.takeProfit === "number" ? args.takeProfit : null,
-        requestedBy: "ai-assistant",
-        confirmedByUser: true,
-      });
-      return { result: r,};
+    case "getMyRubyWatches": {
+      const { listRubyWatches } = await import("./rubyWatchEvaluator.js");
+      const { getRubySweeperStatus } = await import("./rubyWatchSweeper.js");
+      const watches = await listRubyWatches(userId, { includeFinished: args.includeFinished === true, limit: 25 });
+      const sweeper = getRubySweeperStatus();
+      return {
+        watches, count: watches.length,
+        sweeper: { enabled: sweeper.enabled, running: sweeper.running, intervalMs: sweeper.intervalMs, lastCycleAt: sweeper.lastCycleAt },
+        safetyNote: sweeper.running
+          ? "Watches are evaluated by the server sweeper on this interval. Report alertsSinceAck honestly; a monitor with awaitingAnswer=true is waiting for the user's 'keep it' / 'close it'."
+          : "The watch sweeper is NOT running on this server: say so — nothing is being evaluated right now.",
+      };
     }
-    case "requestLiveOrder": {
-      const { placeOrder } = await import("../adminTrading/placeOrder.js");
-      const r = await placeOrder({
-        userId, mode: "LIVE",
-        symbol: String(args.symbol ?? ""),
-        side: (String(args.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY"),
-        lotSize: Number(args.lotSize ?? 0),
-        stopLoss: typeof args.stopLoss === "number" ? args.stopLoss : null,
-        takeProfit: typeof args.takeProfit === "number" ? args.takeProfit : null,
-        requestedBy: "ai-assistant",
-        confirmedByUser: args.confirmedByUser === true,
-      });
-      return { result: r,};
-    }
+    // requestDemoOrder / requestLiveOrder were removed (AI chat audit 2026-11-04,
+    // finding A2): placeOrder() blocks every requestedBy:"ai-assistant" call at
+    // the AI action boundary, so the tools could never place an order while the
+    // prompt told the model they could. The assistant prepares drafts
+    // (createTradeActionDraft / prepareOpenTicket / prepareCloseTicket) that the
+    // user confirms in the Trade Action Center. An unknown-tool call has no side
+    // effects and no security event.
     case "getMyLiveOpenTrades": return getMyLiveOpenTrades(userId);
     case "getTradeIntelligence": return getTradeIntelligenceTool(userId, String(args.tradeKey ?? ""));
     case "getTradeExitAlerts": return getTradeExitAlertsTool(userId, Number(args.limit ?? 25));
@@ -2966,7 +2958,11 @@ export async function getAssistantCapabilityStatus(userId: number) {
     voiceInput:     { available: true, mode: voice?.currentMode ?? "degraded_gpt_audio", reason: voice?.notes ?? "Voice input via gpt-audio multipart upload. Mic is popup-scoped only." },
     speechOutput:   { available: true, reason: "Browser SpeechSynthesis (TTS) on the client. Falls back to silent if unsupported." },
     realtimeMode:   { available: Boolean(voice?.realtimeConfigured), reason: voice?.realtimeConfigured ? "True WebRTC Realtime can be minted." : "True WebRTC Realtime requires a direct OPENAI_API_KEY (the Replit AI proxy does not support it). gpt-audio degraded mode is used instead." },
-    orderExecution: { available: !env.liveLocked && env.allowOrderExecution, reason: liveExecutionAvailabilityNote(env, await getAssistantDisplayName(userId)) },
+    // Chat-driven order placement is not available in this build (audit A2):
+    // the assistant drafts, the user confirms and executes in the Trade Action
+    // Center. liveEnvelope keeps reporting the account's live posture.
+    orderExecution: { available: false, reason: ASSISTANT_ORDER_EXECUTION_NOTE },
+    liveEnvelope: { liveAvailable: !env.liveLocked && env.allowOrderExecution, note: liveExecutionAvailabilityNote(env, await getAssistantDisplayName(userId)) },
   };
 
   const unavailableCapabilities = Object.entries(capabilities)

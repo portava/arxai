@@ -21,6 +21,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, userRiskEventsTable, usersTable } from "@workspace/db";
 import * as oms from "../oms.js";
 import { marketSimulator } from "../marketSimulator.js";
+import { executablePaperFixture } from "../safety/__qa__/paperModeFixture.js";
 
 const EMAIL = "qa+oms-governance@arx.test";
 let userId = 0;
@@ -59,8 +60,11 @@ async function openGoverned(): Promise<oms.Position> {
   return filled.value.position!;
 }
 
+// A paper entry needs one readable Safety Core state (PAPER_TRADING, NORMAL).
+let restorePaperMode: (() => Promise<void>) | null = null;
 before(async () => {
   await deleteFixtures();
+  restorePaperMode = await executablePaperFixture();
   const [u] = await db.insert(usersTable).values({ email: EMAIL, name: "QA OMS", role: "USER", isSystemUser: true })
     .returning({ id: usersTable.id });
   userId = u!.id;
@@ -68,7 +72,7 @@ before(async () => {
 beforeEach(async () => {
   await db.delete(userRiskEventsTable).where(eq(userRiskEventsTable.userId, userId));
 });
-after(deleteFixtures);
+after(async () => { await deleteFixtures(); await restorePaperMode?.(); });
 
 test("only governed entry points are exported; raw book mutators are private", () => {
   for (const raw of ["createOrder", "patchOrder", "cancelOrder", "submitToSimulator", "closePosition",

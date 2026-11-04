@@ -39,6 +39,25 @@ function snapshot(symbol: string): MarketDataSnapshot {
     dataQuality: { status: "GOOD", latencyMs: 5, candlesAvailable: 100, warnings: [] },
   };
 }
+// The venue and the Risk Governor now price through the market data router
+// (one execution price source, audit H4); the same switchable feed stands in.
+const realRouter = await import("../../data/marketDataRouter.js");
+mock.module("../../data/marketDataRouter.js", {
+  namedExports: {
+    ...realRouter,
+    routeQuote: async (symbol: string) => {
+      const s = snapshot(symbol);
+      if (feed === "fallback") {
+        return { ok: false, symbol, assetClass: "forex", quote: null, primaryProvider: null, attempts: [], userMessage: "no live feed", adminDetail: "qa fallback" };
+      }
+      return {
+        ok: true, symbol, assetClass: "forex",
+        quote: { symbol, bid: s.bid, ask: s.ask, spread: s.spread, timestamp: s.timestamp },
+        primaryProvider: "qa-stub", attempts: [], userMessage: "Live feed active", adminDetail: "qa",
+      };
+    },
+  },
+});
 mock.module("../../marketData/marketDataService.js", {
   namedExports: {
     ...realMd,
@@ -226,7 +245,7 @@ test("Trade Action Center: a confirmed SIMULATED open books one governed PAPER o
   assert.match(p.label, /Simulated/);
   assert.equal(p.replayed, false);
   assert.equal(p.fillPrice, QUOTE.ask, "a BUY fills at the quote's ask");
-  assert.equal(p.priceSource, "REAL:qa-stub");
+  assert.equal(p.priceSource, "market_data_router:qa-stub", "one execution price source: the market data router");
   assert.ok(p.quoteAt);
 
   const row = await actionRow(id);
@@ -244,7 +263,7 @@ test("Trade Action Center: a confirmed SIMULATED open books one governed PAPER o
   assert.equal(order.strategyId, MARKET_PRICED_SIMULATED_OPEN);
   assert.equal(order.status, "OPEN");
   const [ev] = await db.select().from(paperTradeEventsTable).where(eq(paperTradeEventsTable.paperOrderId, order.id));
-  assert.match(ev!.message, /price REAL:qa-stub at /, "the fill's price provenance is recorded");
+  assert.match(ev!.message, /price market_data_router:qa-stub at /, "the fill's price provenance is recorded");
 
   const governed = (await riskRows(u.a)).map((e) => (e.details as { intent: Record<string, unknown> }).intent)
     .filter((i) => i["venue"] === "PAPER" && i["action"] === "OPEN" && i["intentRef"] === `trade_action:${id}`);
@@ -297,10 +316,13 @@ test("Trade Action Center: without a valid current price nothing is booked", asy
     const before = (await orders(u.a)).length;
     const id = await draft(u.a);
     const r = await confirmAction({ userId: u.a, actionId: id, confirmedMode: "SIMULATED" });
-    assert.equal(r.ok ? null : r.error, "venue_rejected", mode);
+    // The Risk Governor reads the same router price as the venue, so with no
+    // usable price it blocks first (stale_market_data); the venue would refuse
+    // the same price next. Either way nothing is booked.
+    assert.ok(["guard_rejected", "venue_rejected"].includes(r.ok ? "" : r.error), `${mode}: ${r.ok ? "booked" : r.error}`);
     const row = await actionRow(id);
     assert.equal(row.status, "rejected", mode);
-    assert.match(row.rejectionReason ?? "", /No valid current price/, mode);
+    assert.match(row.rejectionReason ?? "", /stale_market_data|No market quote|Stale quote|is \d+s old|No valid current price/, mode);
     assert.equal((await orders(u.a)).length, before, `${mode}: nothing booked`);
   }
   feed = "fresh";
@@ -367,7 +389,7 @@ test("My Trades: a SIMULATED open needs a key, books one PAPER order through the
   assert.equal(json.venue, "PAPER");
   assert.equal(json.replayed, false);
   assert.equal(json.simulated.fillPrice, QUOTE.ask);
-  assert.equal(json.simulated.priceSource, "REAL:qa-stub");
+  assert.equal(json.simulated.priceSource, "market_data_router:qa-stub");
   const after1 = await orders(u.a);
   assert.equal(after1.length, before + 1);
   const order = after1.find((o) => o.id === json.simulated.paperOrderId)!;
@@ -404,10 +426,11 @@ test("My Trades: without a valid current price the SIMULATED open is refused and
   });
   const json = await res.json() as { ok: boolean; error: string; result: { auditLogId: number } };
   assert.equal(json.ok, false);
-  assert.equal(json.error, "NO_VALID_PRICE_SOURCE");
+  // Governor first (same router price, no usable quote → stale_market_data), venue next.
+  assert.ok(json.error === "NO_VALID_PRICE_SOURCE" || /^RISK_GOVERNOR_BLOCK:.*stale_market_data/.test(json.error), json.error);
   assert.equal((await orders(u.a)).length, before);
   const [audit] = await db.select().from(tradeCommandAuditLogTable).where(eq(tradeCommandAuditLogTable.id, json.result.auditLogId));
-  assert.equal(audit!.status, "FAILED");
+  assert.ok(["FAILED", "REJECTED"].includes(audit!.status), `audited as a refusal, got ${audit!.status}`);
   feed = "fresh";
   void and; void desc;
 });

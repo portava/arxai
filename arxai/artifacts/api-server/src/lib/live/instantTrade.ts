@@ -41,6 +41,8 @@ import { recordManualAaciAdvisory } from "../aaci/manualAdvisory.js";
 import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, resolveManagementTarget,
   type ManagementReference, type ManagementTarget } from "../selfTrade/managementTarget.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
+import { routeQuote } from "../data/marketDataRouter.js";
+import { classifyOrderType, validatePendingOrder, validateProtection, expirationEpochSeconds } from "./pendingOrderRules.js";
 
 export const INSTANT_TRADE_SOURCES = [
   "trade_panel", "scanner", "chart", "chart_drag", "watchlist", "position_card",
@@ -62,6 +64,15 @@ export type InstantTradeIntent = {
   orderType?: string;
   stopLoss?: number | null;
   takeProfit?: number | null;
+  // MT5 pending orders (BUY_LIMIT / SELL_LIMIT / BUY_STOP / SELL_STOP /
+  // *_STOP_LIMIT): the price the order triggers at, the stop-limit leg's limit
+  // price, and an optional ISO expiration (absent = good-till-cancelled). Market
+  // orders ignore them. The router checks MT5's side rules against the bound
+  // bid/ask before drafting and carries them on the draft payload so the EA
+  // mirror receives `orderType`, `entry`, `stopLimitPrice`, `expirationEpoch`.
+  price?: number | null;
+  stopLimitPrice?: number | null;
+  expiration?: string | null;
   positionId?: string;
   newStopLoss?: number | null;
   newTakeProfit?: number | null;
@@ -446,10 +457,45 @@ async function executeOpen(args: {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_VOLUME" } });
     return { ok: false, httpStatus: 400, error: "MISSING_VOLUME" };
   }
-  const orderType = intent.orderType ?? (intent.action === "BUY" ? "MARKET_BUY" : "MARKET_SELL");
-  const isMarket = /MARKET/i.test(orderType);
+  const classified = classifyOrderType(intent.orderType, intent.action as "BUY" | "SELL");
+  const orderType = classified.canonical;
+  const isMarket = !classified.pending;
   const commandType: "PLACE_LIVE_MARKET_ORDER" | "PLACE_LIVE_PENDING_ORDER" =
     isMarket ? "PLACE_LIVE_MARKET_ORDER" : "PLACE_LIVE_PENDING_ORDER";
+
+  // MT5 order-type rules (pendingOrderRules.ts). A pending order needs its
+  // trigger price on the right side of the bound bid/ask, and SL/TP on the
+  // right side of the entry. Bid/ask come from the feed-scoped router; when the
+  // quote is unavailable the side check is skipped and the broker decides.
+  let bidAsk: { bid: number | null; ask: number | null } = { bid: null, ask: null };
+  if (!isMarket || intent.stopLoss != null || intent.takeProfit != null) {
+    try {
+      const q = await routeQuote(typedSymbol);
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+      bidAsk = { bid: num(q.quote?.bid) ?? num(q.quote?.last), ask: num(q.quote?.ask) ?? num(q.quote?.last) };
+    } catch { /* unknown quote: broker enforces */ }
+  }
+  const pendingCheck = validatePendingOrder({
+    orderType, action: intent.action as "BUY" | "SELL", price: intent.price, stopLimitPrice: intent.stopLimitPrice,
+    bid: bidAsk.bid, ask: bidAsk.ask,
+  });
+  if (!pendingCheck.ok) {
+    await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: pendingCheck.code, detail: pendingCheck.detail } });
+    return { ok: false, httpStatus: 400, error: pendingCheck.code, primaryReason: pendingCheck.code, detail: { detail: pendingCheck.detail } };
+  }
+  const protectionRef = !isMarket
+    ? (classified.kind === "STOP_LIMIT" ? (intent.stopLimitPrice ?? intent.price ?? null) : (intent.price ?? null))
+    : (intent.action === "BUY" ? bidAsk.bid : bidAsk.ask);
+  const protectionCheck = validateProtection({ side: intent.action as "BUY" | "SELL", reference: protectionRef, stopLoss: intent.stopLoss, takeProfit: intent.takeProfit });
+  if (!protectionCheck.ok) {
+    await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: protectionCheck.code, detail: protectionCheck.detail } });
+    return { ok: false, httpStatus: 400, error: protectionCheck.code, primaryReason: protectionCheck.code, detail: { detail: protectionCheck.detail } };
+  }
+  const pendingPayload: Record<string, unknown> = isMarket ? {} : {
+    price: intent.price,
+    ...(intent.stopLimitPrice != null ? { stopLimitPrice: intent.stopLimitPrice } : {}),
+    ...(expirationEpochSeconds(intent.expiration) != null ? { expirationEpoch: expirationEpochSeconds(intent.expiration), expiration: intent.expiration } : {}),
+  };
 
   if (!checkSymbolCooldown(symbol, userId)) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "SYMBOL_COOLDOWN" } });
@@ -468,7 +514,7 @@ async function executeOpen(args: {
       rubyExplanationSummary: intent.rawUserCommand ?? null,
       // Server-created provenance survives canonical → broker symbol mapping.
       // createLiveDraft integrity-signs this payload with the exact broker symbol.
-      payload: intent.source === "self_trade" ? { selfTradeSymbolBinding: { requestedSymbol: typedSymbol, brokerSymbol: symbol } } : {},
+      payload: { ...pendingPayload, ...(intent.source === "self_trade" ? { selfTradeSymbolBinding: { requestedSymbol: typedSymbol, brokerSymbol: symbol } } : {}) },
       allowNoStopLossThisDraft: noSlOverride,
       selfTradeAgentId: intent.selfTradeAgentId ?? null,
       selfTradeDecisionId: intent.selfTradeDecisionId ?? null,

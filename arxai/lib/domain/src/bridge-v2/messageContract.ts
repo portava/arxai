@@ -16,6 +16,7 @@
 // fill without a broker ticket + retcode.
 
 import { z } from "zod/v4";
+import { nativeAccountReportPayloadSchema, NATIVE_ACCOUNT_STREAM, NATIVE_ACCOUNT_MAX_SEQUENCE } from "./nativeAccountReport.js";
 
 // Bump when the wire shape changes incompatibly. The server records this per
 // event so a mixed-version fleet is observable.
@@ -79,7 +80,8 @@ export const heartbeatPayloadSchema = z.object({
   capabilities: z.record(z.string(), z.boolean()).optional(),
 });
 
-export const accountSnapshotPayloadSchema = z.object({
+export const legacyAccountSnapshotPayloadSchema = z.object({
+  reportVersion: z.never().optional(),
   balance: z.number(),
   equity: z.number(),
   margin: z.number().nonnegative(),
@@ -88,7 +90,10 @@ export const accountSnapshotPayloadSchema = z.object({
   currency: z.string().min(1).max(8),
   // Broker server time at snapshot (ms epoch). Distinct from eaCreatedAtEpochMs.
   brokerTimeEpochMs: z.number().int().positive().nullable().optional(),
+}).superRefine((value,context)=>{
+  if(Object.prototype.hasOwnProperty.call(value,"reportVersion")) context.addIssue({code:"custom",path:["reportVersion"],message:"A declared report version cannot use legacy fallback"});
 });
+export const accountSnapshotPayloadSchema = z.union([nativeAccountReportPayloadSchema,legacyAccountSnapshotPayloadSchema]);
 
 export const positionRowSchema = z.object({
   brokerTicket: z.string().min(1).max(64),
@@ -263,6 +268,14 @@ export function validateBridgeV2Message(raw: unknown): BridgeV2ValidationResult 
   const payload = schema.safeParse(env.data.payload);
   if (!payload.success) {
     return { ok: false, error: "PAYLOAD_INVALID", detail: payload.error.message };
+  }
+  if(env.data.messageType === "ACCOUNT_SNAPSHOT" && typeof payload.data === "object" && payload.data !== null
+    && "reportVersion" in payload.data && env.data.streamKey !== NATIVE_ACCOUNT_STREAM){
+    return {ok:false,error:"PAYLOAD_INVALID",detail:"Native account report requires ACCOUNT_NATIVE_V1 stream"};
+  }
+  if(env.data.messageType === "ACCOUNT_SNAPSHOT" && typeof payload.data === "object" && payload.data !== null
+    && "reportVersion" in payload.data && (!Number.isSafeInteger(env.data.sequence) || env.data.sequence > NATIVE_ACCOUNT_MAX_SEQUENCE)){
+    return {ok:false,error:"PAYLOAD_INVALID",detail:"Native account sequence exceeds receipt gap representation"};
   }
   const { payload: _omit, ...envelope } = env.data;
   return { ok: true, envelope, payload: payload.data };

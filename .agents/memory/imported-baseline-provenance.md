@@ -9,6 +9,18 @@ Keep upstream source history separate from the Replit workspace checkpoint histo
 
 **How to apply:** Treat the upstream remote as provenance/read-only until an explicit source synchronization workflow is designed. Compare the prefixed application against upstream rather than assuming workspace HEAD is an upstream application commit.
 
+Joining the histories does not make their repository roots equivalent. Keep the
+application-root mapping explicit in later merges, and check dependencies that
+are unchanged on the incoming feature branch but absent from the workspace.
+
+**Why:** A feature-range merge can apply cleanly while retaining an older local
+dependency interface; adopting a source owner can also require its matching
+contracts and helpers. Git ancestry alone does not establish source compatibility.
+
+**How to apply:** Preserve a recovery reference, reconcile mapped trees, restore
+required dependencies from the same reviewed source, and use compilation and
+scoped regressions to confirm the combination rather than inventing adapters.
+
 For an authorized exact-source development sync, use the last actually imported source snapshot as the reconciliation base and map both source trees beneath the nested application root. Do not infer the base from workspace Git ancestry or silently combine other branches.
 
 **Why:** The combined upstream integration can diverge from the previously imported source branch while the workspace also contains independent authentication, test-isolation and environment fixes. Replacing the source tree or using the workspace's unrelated ancestry would discard those fixes.

@@ -4819,7 +4819,8 @@ export const Mt5SyncPositionsResponse = zod.object({
 });
 
 /**
- * @summary Latest known MT5 connection state
+ * Requires sign-in (401 otherwise). Operators (ADMIN/OWNER) receive the install-wide EA feed (scope platform). Everyone else receives only their own bridge connection, or the shared-master bridge they route through, with no positions claimed (scope own_connection, shared_master_bridge or none).
+ * @summary MT5 connection state, scoped to the caller
  */
 export const GetMt5StateResponse = zod.object({
   connected: zod.boolean(),
@@ -17407,6 +17408,18 @@ export const GetMeScalpBasketsResponse = zod.object({
   ),
   accountMode: zod.enum(["LIVE_SHARED", "DEMO", "PAPER", "NONE"]),
   generatedAt: zod.string(),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      'False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured \"none\".',
+    ),
+  positionsNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain statement of why positions were not read; null when they were.",
+    ),
 });
 
 /**
@@ -17657,6 +17670,18 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
       'Running-momentum \"flame\" read off the live candle window. Honest NONE\/UNKNOWN when blind (no candles) — never fabricated.',
     ),
   generatedAt: zod.string(),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      'False when the open positions for this account mode could not be read. An empty basket list (or hasOpenBasket false) is then not a measured \"none\".',
+    ),
+  positionsNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain statement of why positions were not read; null when they were.",
+    ),
 });
 
 /**

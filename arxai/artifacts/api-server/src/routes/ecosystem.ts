@@ -71,8 +71,9 @@ type Mode =
   | "STRATEGY_SPECIES_PIPELINE"   | "ECOSYSTEM_SURVIVAL_PIPELINE";
 
 function nowIso(): string { return new Date().toISOString(); }
+// Agent-ecosystem reads are platform output (no per-user state); said in every payload.
 function envelope(mode: Mode) {
-  return { canPlaceTrades: false as const, mode, generatedAtIso: nowIso() };
+  return { canPlaceTrades: false as const, mode, scope: "platform_shared" as const, generatedAtIso: nowIso() };
 }
 
 function parseOr400<T extends z.ZodTypeAny>(

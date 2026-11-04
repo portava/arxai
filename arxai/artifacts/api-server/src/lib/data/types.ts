@@ -93,6 +93,9 @@ export interface MarketQuote {
   spread?: number;
   last?: number;
   timestamp: string;
+  /** Original broker-clock fields; diagnostic, never a UTC age input. */
+  brokerClockMs?: number | null;
+  brokerClockOffsetMs?: number | null;
 }
 
 export interface DataProvider {

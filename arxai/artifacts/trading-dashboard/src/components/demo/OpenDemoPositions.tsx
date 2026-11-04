@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { Activity, RefreshCw, X, Loader2, ShieldCheck } from "lucide-react";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -61,6 +62,9 @@ export function OpenDemoPositions() {
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeResult, setCloseResult] = useState<{ status: string; reason: string | null; ticket: string | null } | null>(null);
   const { toast } = useToast();
+  // One-click mode ON → × closes on the first click (no confirmation dialog),
+  // matching MT5. The demo command chain and its per-user dispatch gate are unchanged.
+  const oneClickOn = useOneClickMode().mode.on;
 
   async function load() {
     setLoading(true);
@@ -249,7 +253,7 @@ export function OpenDemoPositions() {
                             variant="outline"
                             className="h-6 px-2 text-[10px]"
                             disabled={!p.brokerTicket}
-                            onClick={() => setCloseTarget(p)}
+                            onClick={() => (oneClickOn ? void performClose(p) : setCloseTarget(p))}
                           >
                             <X className="h-3 w-3 mr-0.5" />Close
                           </Button>

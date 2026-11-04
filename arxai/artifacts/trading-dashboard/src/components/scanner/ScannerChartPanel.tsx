@@ -104,6 +104,7 @@ import type {
   GetMeChartSmartLayersTimeframe,
 } from "@workspace/api-client-react";
 import { buildOverlayHandshake, isWithinQuietHoursUtc, newsToastDecision } from "@workspace/domain/smart-chart";
+import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
 
 // Server overlays/annotations have a seven-interval contract. A different
 // interval is explicitly unavailable, never mapped to a nearby read.
@@ -2225,6 +2226,8 @@ export function ScannerChartPanel({ compactWorkspace = false }: { compactWorkspa
                       <Button size="sm" className="h-8 bg-danger px-3 text-xs font-semibold text-white hover:bg-danger/90" onClick={() => startDraft("SELL")} data-testid="scanner-chart-draft-sell">
                         Plan Sell
                       </Button>
+                      {/* MT5 order window: market + Limit / Stop / Stop Limit with SL/TP and expiry. */}
+                      <OrderTicketButton symbol={symbol} source="scanner" prefill={{ lot: Number(lot) > 0 ? Number(lot) : null }} onPlaced={() => setReloadAt(Date.now())} />
                       <OneClickArmedBadge className="ml-auto" />
                     </>
                   ) : (

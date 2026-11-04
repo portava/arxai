@@ -8,6 +8,7 @@ import { attachAuthUser } from "./lib/auth/middleware";
 import { applyEffectiveViewMode } from "./lib/auth/effectiveViewMode";
 import { startMonitor } from "./lib/intelligence/monitorWorker";
 import { startRubyOutcomeWorker } from "./lib/rubyQuality/outcomeWorker";
+import { startRubyWatchSweeper } from "./lib/assistant/rubyWatchSweeper";
 import { perfTimer } from "./middlewares/perfTimer";
 import { CANDLE_INGEST_BODY_LIMIT_BYTES } from "./lib/data/brokerCandleStore";
 import { recordIngestRejection, isIngestRoute } from "./lib/data/ingestRejectionCounter";
@@ -200,6 +201,13 @@ if (!isPreviewSafeStart()) startMonitor();
 // only: resolves recorded signal outcomes from real evidence + appends
 // self-reviews; never touches any execution path).
 if (!isPreviewSafeStart()) startRubyOutcomeWorker();
+
+// 2026-11-04 — Ruby watch sweeper: evaluates armed watches / position monitors
+// (conditional entry/close, reversal alerts, 3-alert executive close) inside each
+// owner's feed scope. Per-user AI_ASSISTED authority + permissions are re-read at
+// fire time; every dispatch runs the full instant-trade gate chain. Kill switch:
+// ARX_RUBY_WATCH_SWEEPER_ENABLED=false.
+startRubyWatchSweeper();
 
 // ── Phase 22D — JSON-only error handler ───────────────────────────────
 // Guarantees the frontend never receives an HTML stack trace. Catches

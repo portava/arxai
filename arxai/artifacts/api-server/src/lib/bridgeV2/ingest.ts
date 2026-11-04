@@ -29,13 +29,18 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { bridgeV2 } from "@workspace/domain";
 import {
   mergeCandleFromMT5,
-  updateQuoteFromMT5,
+  recordMt5Tick,
+  getMt5BridgeClockOffset,
   type Mt5BridgeIdentity,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
-import type { Candle, MarketQuote } from "../data/types.js";
+import type { Candle } from "../data/types.js";
 import { mt5PriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
+import { brokerServerCandleTimeBasis } from "../data/candleTimeBasisEvidence.js";
 import { isUniqueViolation } from "../pgError.js";
+import { randomUUID } from "node:crypto";
+import { isExactNativeAccountReplay } from "../brokerHub/nativeAccountReport.js";
+import { emitConnectionAccountChanged } from "../live/liveAccountEventBus.js";
 
 const {
   validateBridgeV2Message,
@@ -53,6 +58,12 @@ export interface BridgeV2IngestInput {
 
 export interface BridgeV2IngestResult {
   accepted: boolean;
+  /** Native-account acknowledgement correlation; never an execution result. */
+  idempotencyKey?: string;
+  streamKey?: string;
+  sequence?: number;
+  exactReplay?: boolean;
+  duplicateReason?: "IDEMPOTENCY_CONFLICT" | "SEQUENCE";
   // Stable outcome code so the EA can decide whether to retry or drop.
   outcome:
     | "ACCEPTED"
@@ -82,7 +93,8 @@ export async function ingestBridgeV2Message(
     // into the EA). We still need an idempotency key to avoid unique collisions,
     // so derive a synthetic one for the rejected-trace row when absent.
     const synthetic = `reject:${userId}:${serverReceivedAtEpochMs}:${Math.random().toString(36).slice(2, 10)}`;
-    await safeInsertRejected(userId, bridgeConnectionId, raw, validation.error, validation.detail, synthetic, serverReceivedAtEpochMs);
+    const recorded = await safeInsertRejected(userId, bridgeConnectionId, raw, validation.error, validation.detail, synthetic, serverReceivedAtEpochMs);
+    if (recorded && raw && typeof raw === "object" && "messageType" in raw && raw.messageType === "ACCOUNT_SNAPSHOT") emitConnectionAccountChanged(bridgeConnectionId);
     return {
       accepted: false,
       outcome: validation.error,
@@ -91,8 +103,18 @@ export async function ingestBridgeV2Message(
   }
 
   const { envelope, payload } = validation;
-  const transportLatencyMs = Math.max(0, serverReceivedAtEpochMs - envelope.eaCreatedAtEpochMs);
-  const freshnessVerdict = classifyFreshness(transportLatencyMs);
+  const native = envelope.messageType === "ACCOUNT_SNAPSHOT" && payload != null && typeof payload === "object" && "reportVersion" in payload;
+  if (native && (!Number.isSafeInteger(envelope.sequence) || envelope.sequence > bridgeV2.NATIVE_ACCOUNT_MAX_SEQUENCE || !Number.isSafeInteger(envelope.eaCreatedAtEpochMs) || envelope.eaCreatedAtEpochMs > serverReceivedAtEpochMs || envelope.eaCreatedAtEpochMs < (payload as unknown as {observedAtEpochMs:number}).observedAtEpochMs)) {
+    const recorded = await safeInsertRejected(userId, bridgeConnectionId, raw, "PAYLOAD_INVALID", "Native sequence or capture/creation time is invalid", `reject:${userId}:${randomUUID()}`, serverReceivedAtEpochMs);
+    if(recorded) emitConnectionAccountChanged(bridgeConnectionId);
+    return {accepted:false,outcome:"PAYLOAD_INVALID",detail:"Native sequence or capture/creation time is invalid"};
+  }
+  const measuredLatencyMs = Math.max(0, serverReceivedAtEpochMs - envelope.eaCreatedAtEpochMs);
+  // The trace's latency column is int4; preserve very old native captures as
+  // historical evidence without overflowing it or claiming current values.
+  const transportLatencyMs = native && measuredLatencyMs > 2147483647 ? null : measuredLatencyMs;
+  const freshnessVerdict = native ? null : classifyFreshness(measuredLatencyMs);
+  let accountAttemptRecorded = false;
   const lifecycleState = mapLifecycleForMessage(envelope.messageType, payload);
 
   try {
@@ -165,7 +187,25 @@ export async function ingestBridgeV2Message(
       };
 
       try {
-        await tx.insert(bridgeV2EventsTable).values(row);
+        if(native){
+          const inserted = await tx.insert(bridgeV2EventsTable).values(row).onConflictDoNothing({target:[bridgeV2EventsTable.userId,bridgeV2EventsTable.idempotencyKey]}).returning({id:bridgeV2EventsTable.id});
+          if(inserted.length===0){
+            const [stored] = await tx.select().from(bridgeV2EventsTable).where(and(eq(bridgeV2EventsTable.userId,userId),eq(bridgeV2EventsTable.idempotencyKey,envelope.idempotencyKey))).limit(1);
+            if(isExactNativeAccountReplay(stored, {...row,payload} as Parameters<typeof isExactNativeAccountReplay>[1])){
+              // Exact replay: original receipt/capture age remains unchanged.
+              return {accepted:false,outcome:"DUPLICATE" as const,messageType:envelope.messageType,sequenceVerdict:"DUPLICATE",exactReplay:true,transportLatencyMs,freshnessVerdict,lifecycleState};
+            }
+            // A key collision is a new rejected attempt in THIS authenticated
+            // scope, never an acknowledgement of another report/connection.
+            await tx.insert(bridgeV2EventsTable).values({...row,idempotencyKey:`reject:${userId}:${randomUUID()}`,accepted:false,duplicateDropped:true,sequenceVerdict:"DUPLICATE",rejectReason:"NATIVE_IDEMPOTENCY_CONFLICT",payload:null});
+            accountAttemptRecorded=true;
+            return {accepted:false,outcome:"DUPLICATE" as const,messageType:envelope.messageType,sequenceVerdict:"DUPLICATE",exactReplay:false,duplicateReason:"IDEMPOTENCY_CONFLICT" as const,transportLatencyMs,freshnessVerdict,lifecycleState};
+          }
+          accountAttemptRecorded=true;
+        }else{
+          await tx.insert(bridgeV2EventsTable).values(row);
+          if(envelope.messageType==="ACCOUNT_SNAPSHOT") accountAttemptRecorded=true;
+        }
       } catch (e) {
         if (isUniqueViolation(e)) {
           // Replayed idempotency key → exactly-once drop. Do NOT advance state.
@@ -217,8 +257,11 @@ export async function ingestBridgeV2Message(
         transportLatencyMs,
         freshnessVerdict,
         lifecycleState,
+        ...(native && !seq.accept ? {exactReplay:false,duplicateReason:"SEQUENCE" as const} : {}),
       };
     });
+
+    if (accountAttemptRecorded) emitConnectionAccountChanged(bridgeConnectionId);
 
     // ── Post-commit: feed accepted, fresh market data into the live store ────
     // ONLY after the trace row + per-stream state committed, and ONLY for an
@@ -229,10 +272,16 @@ export async function ingestBridgeV2Message(
     // touches arx_live_* / positions / balances / the 16-gate pipeline. A feed
     // failure is swallowed so it can never corrupt the honest ingest response.
     if (result.accepted) {
-      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict, { userId, bridgeConnectionId });
+      feedMarketDataStore({
+        messageType: envelope.messageType,
+        payload,
+        freshnessVerdict,
+        eaCreatedAtEpochMs: envelope.eaCreatedAtEpochMs,
+        bridge: bridgeConnectionId == null ? null : { bridgeConnectionId, userId },
+      });
     }
 
-    return result;
+    return native ? {...result,idempotencyKey:envelope.idempotencyKey,streamKey:envelope.streamKey,sequence:envelope.sequence} : result;
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
   }
@@ -244,12 +293,24 @@ export async function ingestBridgeV2Message(
 // masquerade as a fresh broker feed (stamping updatedAt=now would do exactly
 // that). Best-effort: any error is contained — market-data caching must never
 // throw into the EA ingest path.
-function feedMarketDataStore(
-  messageType: string,
-  payload: unknown,
-  freshnessVerdict: string | null,
-  authenticated: { userId: number; bridgeConnectionId: number | null },
-): void {
+export interface MarketDataFeedInput {
+  messageType: string;
+  payload: unknown;
+  freshnessVerdict: string | null;
+  /** Envelope `eaCreatedAtEpochMs`: the EA's own UTC clock when it built the
+   *  message (schema-validated positive integer; re-checked here, fail closed). */
+  eaCreatedAtEpochMs: unknown;
+  /** The authenticated bridge connection the message came from; null when the
+   *  route could not attribute one (the write then lands in the unattributed
+   *  partition, which no bridge-scoped read serves). Required so every caller
+   *  states the attribution explicitly. */
+  bridge: Mt5BridgeIdentity | null;
+}
+
+// Exported for the offline fresh-facts tests only; the ingest API is
+// `ingestBridgeV2Message`, which calls this after its transaction commits.
+export function feedMarketDataStore(input: MarketDataFeedInput): void {
+  const { messageType, payload, freshnessVerdict, bridge } = input;
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
   if (messageType !== "TICK" && messageType !== "CANDLE") return;
@@ -258,16 +319,22 @@ function feedMarketDataStore(
     if (messageType === "CANDLE") {
       // Both v2 and batch routes obtain this exact mt5_connection.id from
       // bridgeAuthPerUserOnly. Never use payload ids or an unattributed fallback.
-      const bridgeConnectionId = authenticated.bridgeConnectionId;
+      const bridgeConnectionId = bridge?.bridgeConnectionId;
+      const bridgeUserId = bridge?.userId;
       if (typeof bridgeConnectionId !== "number" || !Number.isSafeInteger(bridgeConnectionId) || bridgeConnectionId <= 0
-        || !Number.isSafeInteger(authenticated.userId) || authenticated.userId <= 0) return;
-      const bridge: Mt5BridgeIdentity = { bridgeConnectionId, userId: authenticated.userId };
+        || typeof bridgeUserId !== "number" || !Number.isSafeInteger(bridgeUserId) || bridgeUserId <= 0) return;
+      const candleBridge: Mt5BridgeIdentity = { bridgeConnectionId, userId: bridgeUserId };
       const symbol = typeof p.symbol === "string" ? p.symbol : null;
       const timeframe = typeof p.timeframe === "string" ? p.timeframe : null;
       const openTimeEpochMs = typeof p.openTimeEpochMs === "number" ? p.openTimeEpochMs : null;
       if (!symbol || !timeframe || openTimeEpochMs == null) return;
+      // `openTimeEpochMs` is bar time on the broker's trade-server clock, not
+      // UTC (audit H7). The bar keeps those coordinates (the forming bar and
+      // the stored history bucket on the same clock) and carries the bridge's
+      // measured UTC offset so a reader can show it in UTC and age it honestly.
       const candle: Candle = {
         time: new Date(openTimeEpochMs).toISOString(),
+        timeBasisEvidence: brokerServerCandleTimeBasis(getMt5BridgeClockOffset(candleBridge)),
         open: Number(p.open),
         high: Number(p.high),
         low: Number(p.low),
@@ -275,27 +342,51 @@ function feedMarketDataStore(
         volume: typeof p.volume === "number" ? p.volume : 0,
         priceBasisEvidence: mt5PriceBasisEvidence(p.priceBasis),
       };
-      mergeCandleFromMT5(symbol, candle, timeframe, bridge);
+      mergeCandleFromMT5(symbol, candle, timeframe, candleBridge);
       return;
     }
     // TICK → latest quote (the quote store correctly keeps a single latest).
     const symbol = typeof p.symbol === "string" ? p.symbol : null;
     const bid = typeof p.bid === "number" ? p.bid : null;
     const ask = typeof p.ask === "number" ? p.ask : null;
-    const brokerTimeEpochMs = typeof p.brokerTimeEpochMs === "number" ? p.brokerTimeEpochMs : null;
+    const brokerTimeEpochMs =
+      typeof p.brokerTimeEpochMs === "number" && Number.isFinite(p.brokerTimeEpochMs)
+        ? p.brokerTimeEpochMs
+        : null;
     if (!symbol || bid == null || ask == null) return;
-    const quote: MarketQuote = {
-      symbol,
-      bid,
-      ask,
-      spread: ask - bid,
-      timestamp: new Date(brokerTimeEpochMs ?? Date.now()).toISOString(),
-    };
-    updateQuoteFromMT5(symbol, quote);
+    // Time base. The EA's `brokerTimeEpochMs` is MQL5 `MqlTick.time_msc`: the
+    // trade server's wall clock encoded as epoch ms, which is UTC only on a
+    // GMT+0 server (a GMT+3 server reads three hours ahead). The envelope's
+    // `eaCreatedAtEpochMs` is the EA's UTC clock taken in the same call as the
+    // tick read (Universal Agent v1.52/v1.54 `PushLiveTickV2` → `PostV2Ingest`
+    // → `V2NowEpochMs`: `TimeGMT()*1000`, falling back to `TimeCurrent()`, the
+    // trade-server clock, only if `TimeGMT()` returns 0 — a state the server
+    // cannot detect, and one in which a non-GMT+0 server's quotes read as
+    // future-dated or stale and are refused). It is already the basis of the
+    // transport-STALE drop above.
+    //
+    // But the EA posts its LAST tick on every sweep whether or not it changed,
+    // so the EA clock of a post is the tick's observation time only for the
+    // post in which that tick first appeared: on a closed market the broker's
+    // final quote is re-posted for days with an ever-newer EA clock. The store
+    // (`recordMt5Tick`) stamps a tick at its first sight in this bridge's
+    // partition and keeps that stamp across identical re-posts; the broker
+    // clock and its offset at first sight are kept as diagnostics. Never fall
+    // back to the server receive time: a missing EA clock stores nothing.
+    const eaCreatedAtEpochMs =
+      typeof input.eaCreatedAtEpochMs === "number" &&
+      Number.isFinite(input.eaCreatedAtEpochMs) &&
+      input.eaCreatedAtEpochMs > 0
+        ? input.eaCreatedAtEpochMs
+        : null;
+    if (eaCreatedAtEpochMs == null) return;
+    recordMt5Tick(symbol, { bid, ask, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
-    // analysis/execution input.
+    // analysis/execution input. Deliberately keeps the broker clock: the EA's
+    // CANDLE `openTimeEpochMs` is bar time on the same trade-server clock, so
+    // the forming bar buckets consistently with the stored closed bars.
     foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now(), "mt5_broker");
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
@@ -310,7 +401,7 @@ async function safeInsertRejected(
   detail: string,
   idempotencyKey: string,
   serverReceivedAtEpochMs: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const mt = (raw && typeof raw === "object" && "messageType" in raw)
       ? String((raw as { messageType?: unknown }).messageType ?? "UNKNOWN").slice(0, 48)
@@ -331,7 +422,9 @@ async function safeInsertRejected(
       serverReceivedAtEpochMs,
       payload: null,
     });
+    return true;
   } catch {
     // Never let trace-logging failure propagate into the EA response path.
+    return false;
   }
 }
