@@ -55,3 +55,78 @@ Development workflow logs also contain earlier `Object is disposed` chart errors
 - Signed-in visual/interaction acceptance and the six requested screenshots remain blocked. Review a clean authenticated preview before publication, including chart disposal behavior and all target desktop/phone widths.
 - Existing provider, first-navigation and chart-performance limitations are not resolved or reclassified by this shell change.
 
+## Isolated long-content browser regression (2026-11-04)
+
+Added a standalone fixture in `arxai/scripts/shell-qa/`. Run from the workspace
+root with:
+
+```sh
+cd arxai
+pnpm --filter @workspace/scripts test:shell-header-browser
+```
+
+The fixture renders the real shared frame, dashboard/shell styles, Radix sheets,
+notification bell and safety/environment components. Hook data, header account
+options, multiple notices and action callbacks are controlled. It does **not**
+mount an authenticated AppLayout, identity/account providers or trading services.
+AppLayout, authorization rules, trading gates and account-provider placement
+remain unchanged.
+
+Coverage: page and Cockpit variants, expanded and compact docks at **390, 900,
+1100 and 1366px**, each 900px high at **100% zoom**. All 16 combinations check
+long translated-length titles/account labels, three notices including an
+unbroken reference, nested/document overflow, ancestor clipping, real Tab focus,
+unobscured control centers, layout choices, tools/mobile sheets and inert safety
+actions. Notification counts additionally cover 0, 1, 9 and 999 with the actual
+badge and accessible label.
+
+Only exact local static GETs are allowed. External/API/mutating traffic and
+WebSockets are blocked before navigation, service workers are disabled, and an
+independent negative test verifies the restrictions. The ephemeral static server
+has no backend proxy. No credentials, auth bypass, database changes, broker
+actions, emails or live commands are involved.
+
+The checks exposed and now protect against three presentation issues:
+
+- A wrapping phone header could place Sign out behind the wider Layout summary.
+  Layout and actions now have separate full-width grid rows on phones.
+- A wrapped layout summary could position its menu outside the frame; the menu
+  is now anchored to the bounded header and stacked above the sticky safety
+  component so its controls remain reachable.
+- Mobile sheet navigation lost the shell-scoped focus color across its portal.
+  Shell color variables now apply to sheet roots as well.
+
+Final validation:
+
+| Check | Result |
+| --- | --- |
+| Browser matrix + isolation + count subtests | **18 passed** (Node reports 19 including the parent), exit 0 |
+| Existing shell/frame/preferences/navigation unit checks | **31 passed**, 4 files, exit 0 |
+| Frontend TypeScript, incremental output disabled | Passed, exit 0 |
+| Whitespace validation | Passed |
+| Frontend managed workflow | Restarted successfully; Vite ready |
+| Shared-preview smoke check | Passed after starting the existing safe-preview API workflow |
+
+Final browser receipts: `generated-artifacts/shell-header/run-jpXrjg/`.
+The ignored directory retains screenshots, keyboard-focus screenshots, DOM,
+geometry/focus/network/error JSON and incremental per-case results, including
+failure evidence in earlier unique run directories. The final command log is
+`generated-artifacts/shell-header-final.log`. Earlier attempts include fixture
+resolution/visibility/focus-baseline/animation measurement errors and an
+interrupted timeout run; they are not additional accepted coverage. The fixture
+build still prints a sheet sourcemap-location diagnostic and large-chunk warning;
+neither was suppressed or counted as a failed assertion.
+
+**The blocked authenticated screenshots and interactions above remain blocked.**
+Synthetic fixtures extend regression protection; they do not establish actual
+signed-in Cockpit/Scanner/Risk geometry, provider behavior or execution safety.
+The separate normal preview capture still showed sign-in, not workspace
+acceptance; its API request initially returned 502 with the API workflow not
+started. The first completion attempt passed code review but failed
+`bash scripts/check-arx-preview.sh` on `/api/healthz` for that reason. Starting
+the existing managed API workflow via its unchanged safe-preview launcher
+restored the check: `/`, `/login`, `/src/main.tsx` and `/api/healthz` all passed.
+Startup confirmed background jobs paused, the live master switch disabled and
+no schema migration performed. The fixture itself still neither starts nor
+depends on that API. No unrelated runtime issues were resolved or reclassified.
+

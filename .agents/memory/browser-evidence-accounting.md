@@ -3,6 +3,20 @@ name: Browser evidence accounting
 description: Browser coverage accounting, observer/locator preflight and durable failure evidence.
 ---
 
+Layout probes must distinguish settled rendering from transitional or native
+hidden content, and measure the real fixed-position containing block.
+
+**Why:** Native closed details can retain child rectangles, entering sheets can
+be visible while still off-screen, and normal-flow body bounds do not clip
+viewport-fixed portals. Treating these as layout failures produced false
+positives before real overlapping controls were isolated.
+
+**How to apply:** Use native visibility checks, await finite animations, retain
+strict viewport/clipping checks, and verify control centers by hit testing.
+For focus-ring comparisons, capture an actually unfocused baseline; modal
+autofocus may otherwise make a correctly visible ring appear unchanged. Include
+portaled controls: ancestor-scoped CSS variables do not cross portal boundaries.
+
 Inspect an imported probe's internal viewport matrix before wrapping it. Run
 each defined probe once unless repetition is deliberate, and distinguish
 viewport-qualified coverage from repeated executions of the same whole probe.
