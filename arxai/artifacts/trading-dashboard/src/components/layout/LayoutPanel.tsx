@@ -15,6 +15,8 @@ export type LayoutPanelProps = {
   className?: string;
   bodyClassName?: string;
   hidden?: boolean;
+  /** Preserve stateful forms and running views while their panel is collapsed. */
+  keepMounted?: boolean;
 };
 
 /** Shared accessible pin/collapse surface for Cockpit and specialist routes. */
@@ -30,6 +32,7 @@ export function LayoutPanel({
   className,
   bodyClassName,
   hidden = false,
+  keepMounted = false,
 }: LayoutPanelProps) {
   const isCollapsed = collapsed && !pinned;
   return (
@@ -73,7 +76,7 @@ export function LayoutPanel({
           </button>
         </div>
       </div>
-      {!isCollapsed && <div className={cn("arx-panel-body", bodyClassName)}>{children}</div>}
+      {(keepMounted || !isCollapsed) && <div hidden={isCollapsed} className={cn("arx-panel-body", bodyClassName)}>{children}</div>}
     </section>
   );
 }

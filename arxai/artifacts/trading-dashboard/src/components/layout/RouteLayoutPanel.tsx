@@ -10,6 +10,7 @@ export function RouteLayoutPanel({
   icon,
   children,
   className,
+  keepMounted,
 }: {
   routeKey: string;
   id: string;
@@ -17,6 +18,7 @@ export function RouteLayoutPanel({
   icon: LucideIcon;
   children: ReactNode;
   className?: string;
+  keepMounted?: boolean;
 }) {
   const { layout, setLayout } = useRoutePanelLayout(routeKey, [id]);
   const collapsed = layout.collapsed.includes(id);
@@ -29,6 +31,7 @@ export function RouteLayoutPanel({
     collapsed={collapsed}
     pinned={pinned}
     className={className}
+    keepMounted={keepMounted}
     onCollapse={() => {
       if (pinned) return;
       setLayout({
