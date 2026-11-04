@@ -10,6 +10,19 @@ import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { fetchRiskBudget, type RiskBudgetSnapshot } from "@/lib/risk-budget";
 
+// Prop-firm status wording: an unmeasured status is said to be unmeasured, a
+// reached target with unchecked rules is not a confirmed pass.
+type PropFirmCardLike = { status: string; profitTargetProgress?: number | null; measured?: boolean; equityMeasured?: boolean };
+const propFirmStatusText = (pf: PropFirmCardLike) => {
+  if (pf.status === "FAILED" || pf.status === "OFF") return pf.status;
+  if (pf.equityMeasured === false) return "NOT MEASURED (no paper equity measured)";
+  if (pf.status === "NOT_MEASURED" || pf.measured === false) return "NOT MEASURED";
+  return pf.status === "TARGET_REACHED" ? "TARGET REACHED (not a confirmed pass)" : pf.status;
+};
+const propFirmProgressText = (pf: PropFirmCardLike) =>
+  (pf.equityMeasured === false ? "Not measured (no paper equity measured)"
+    : pf.profitTargetProgress == null || pf.measured === false ? "Not measured" : `${pf.profitTargetProgress}%`);
+
 type Settings = { maxRiskPerTradeAmount: number | null; maxDailyLossAmount: number | null; maxPositionSize: number | null; minRewardRiskRatio: number; maxTradesPerDay: number; maxOpenTrades: number };
 type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null; discipline: { maxTradesPerDay: number | null; maxOpenTrades: number | null } };
 type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };

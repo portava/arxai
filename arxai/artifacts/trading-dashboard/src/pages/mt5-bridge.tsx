@@ -132,6 +132,15 @@ export default function MT5BridgePage() {
   const snapshot = s?.accountSnapshot;
 
   const connected = !!s?.connected;
+  // A shared-master user with no connection of their own is routed through the
+  // master bridge, which the server may report separately.
+  const route: string | undefined = s?.route;
+  const shared = (s?.sharedMasterBridge ?? null) as { connected?: boolean } | null;
+  const onShared = route === "SHARED_MASTER";
+  // A failing status poll keeps React Query's last data on screen; nothing
+  // below treats that stale data as current.
+  const statusUnreadable = status.isError === true || !s;
+  const bridgeUp = !statusUnreadable && (connected || (onShared && shared?.connected === true));
   const checking = status.isLoading || (mode as any).isLoading;
   // "Notify me when restored": a watch held by this open tab. When the bridge
   // status read flips from not-connected to connected while armed, show a

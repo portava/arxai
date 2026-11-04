@@ -189,30 +189,10 @@ function CompactStatusRow(p: CompactStatusRowProps) {
 
   const drawer = (
     <div className="space-y-3 text-xs">
-      {/* A session NAME bucketed by UTC hours — not the page's display time zone. */}
-      <DetailRow label="Trading session (by UTC hours)" value={p.sessionLabel} />
-      {p.unlocks.mt5 ? (
-        <>
-          <DetailRow label="MT5 mode" value={p.modeLabel} />
-          <DetailRow label="MT5 connected" value={bridge.connectedText} />
-        </>
-      ) : (
-        // The status query is disabled until MT5 is turned on for this header,
-        // so nothing is being checked. Only the admin-only welcome checklist on
-        // the dashboard turns it on; the "Connect MT5" buttons traders see open
-        // My MT5 and do not change this header.
-        <>
-          <DetailRow label="MT5 status" value="not checked here" />
-          <p className="text-[10px] text-muted-foreground" data-testid="topbar-mt5-not-checked">
-            MT5 status is turned off in this header for your account in this browser, so nothing is read here.{" "}
-            <Link className="text-primary underline" href="/my-mt5">Open My MT5</Link> for your bridge status.
-            {p.viewerIsAdmin
-              ? ' To show it here, press "Connect MT5" in the welcome checklist (Dashboard → System Health · Admin → Setup & readiness).'
-              : null}
-          </p>
-        </>
-      )}
+      <DetailRow label="Market session" value="Unverified" />
       <ClockSessionEstimate />
+      <DetailRow label="MT5 mode" value={p.modeLabel} />
+      <DetailRow label="MT5 connected" value={p.mt5?.connected ? "yes" : "no"} />
       {(p.mt5?.accountSnapshot?.account ?? p.mt5?.account) != null && (
         <DetailRow label="Account" value={String(p.mt5?.accountSnapshot?.account ?? p.mt5?.account)} />
       )}
@@ -228,20 +208,14 @@ function CompactStatusRow(p: CompactStatusRowProps) {
       )}
       <div className="pt-2 border-t space-y-1">
         <Link className="block text-primary underline" href="/mt5-setup">MT5 setup &amp; bridge token →</Link>
-        {p.viewerIsAdmin && (
-          <>
-            <Link className="block text-primary underline" href="/admin/operator-command-center">Operator dashboard →</Link>
-            <Link className="block text-primary underline" href="/admin/diagnostics">Admin diagnostics →</Link>
-          </>
-        )}
+        <Link className="block text-primary underline" href="/admin/operator-command-center">Operator dashboard →</Link>
+        <Link className="block text-primary underline" href="/admin/diagnostics">Admin diagnostics →</Link>
         <Link className="block text-primary underline" href="/risk-command-center">Kill switch / risk controls →</Link>
       </div>
-      {p.viewerIsAdmin && (
-        <p className="text-[10px] text-muted-foreground pt-2 border-t">
-          Live broker dispatch stays OFF unless an operator flips
-          ARX_LIVE_BROKER_EXECUTION_ENABLED AND all 16 Phase B gates pass.
-        </p>
-      )}
+      <p className="text-[10px] text-muted-foreground pt-2 border-t">
+        Live broker dispatch stays OFF unless an operator flips
+        ARX_LIVE_BROKER_EXECUTION_ENABLED AND all 16 Phase B gates pass.
+      </p>
     </div>
   );
 
