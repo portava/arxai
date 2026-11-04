@@ -9,6 +9,7 @@ import {
 import { CHART_ENGINE_DESCRIPTORS, DEFAULT_CHART_ENGINE_ID } from "@/lib/chart-engine";
 import type { ChartIntelligenceResponse } from "@workspace/api-client-react";
 import { ChartPositionOverlayPanel } from "@/components/charts/ChartPositionOverlayPanel";
+import { LivePendingOrders } from "@/components/live/LivePendingOrders";
 import { ChartAiOverlayPanel } from "@/components/charts/ChartAiOverlayPanel";
 import { ChartSetupPreviewPanel } from "@/components/charts/ChartSetupPreviewPanel";
 import { ChartModes } from "@/components/charts/ChartModes";
@@ -220,6 +221,7 @@ export default function LiveChartPage() {
               Rendering engine: {activeEngine.label}
             </p>
             <ChartPositionOverlayPanel symbol={chartSymbol} data={overlayData} />
+            <LivePendingOrders symbol={chartSymbol} enabled={mode.isLiveShared} compact />
             <ChartAiOverlayPanel data={aiOverlays} />
             <ChartSetupPreviewPanel
               data={setupPreview}
