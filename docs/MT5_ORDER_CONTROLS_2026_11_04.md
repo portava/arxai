@@ -123,8 +123,8 @@ orders on demo would need a v1.32 EA handler), no migration.
 * **SL/TP editor**: empty = unchanged on both scopes (demo sends the current
   level); "Remove SL/TP" on demo only (the live EA reads 0 as "leave").
 * **Live pending orders**: `GET /me/live/pending-orders` and a list on the chart
-  and Live Trading page. Cancel/modify from ARX is not built: it needs a
-  `CANCEL_LIVE_PENDING_ORDER` live command type through the dispatch pipeline.
+  and Live Trading page. Cancel / modify from ARX landed afterwards — see
+  "Update — live pending-order cancel / modify" below.
 
 Not done here (boundaries): no broker/terminal test, no migration. Demo pending
 orders landed afterwards — see below.
@@ -185,3 +185,76 @@ given; `CLOSE_POSITION` closes `lot` when it is smaller than the position
 
 Tests: `pnpm --filter @workspace/api-server run test:demo-pending-orders`,
 `test:mt5-demo-ea` (C++ harness), dashboard `test:mt5-order-controls`.
+
+## Update — live pending-order cancel / modify (branch `claude/sweep2-livepend`)
+
+**Command types** (text column, no migration; not in `ARX_LIVE_COMMAND_TYPES`, so
+`POST /me/live/commands` cannot draft them): `CANCEL_LIVE_PENDING_ORDER` → EA
+`CANCEL_PENDING`, `MODIFY_LIVE_PENDING_ORDER` → EA `MODIFY_PENDING` (v154
+`HandleCancelPending` / `HandleModifyPending`, both read `orderTicket`). Pure rules in
+`lib/live/livePendingControl.ts`.
+
+**Draft** — `createLiveOpsDraft({ commandType, targetCommandId, modify?, quote? })`
+(through the Trade Engine staged contract). Under a row lock on the order it
+requires: the caller's own `PLACE_LIVE_PENDING_ORDER`, status `LIVE_ACKNOWLEDGED`
+with a non-zero ticket, no live position under that ticket, not past its expiry, and
+no other cancel/modify of it in flight. Symbol, side, lots and ticket come from the
+order row, never from the request. Armed + per-user kill switch off, exactly like a
+user close.
+
+**Modify rules** — empty = keep. New price on MT5's side of Bid/Ask for the order type
+(`pendingOrderRules.validatePendingOrder`, only when the price changes; skipped
+without a fresh two-sided quote — the broker enforces it); SL/TP on the correct side
+of the price (stop-limit: of the limit price). Removal is not offered: v154's
+`OrderModify` takes `sl`/`tp` literally and 0 removes the level, so a modify always
+carries the effective SL and TP. `entry` is sent only when the price changes; expiry
+and the stop-limit leg are kept by the EA.
+
+**Gates** — cancel is risk-reducing: it passes every entry-only gate like
+`CLOSE_LIVE_POSITION` and the Risk Governor sees a CLOSE. Modify is not: refused by
+the safety-core stop, trading freeze (`tradingFrozen`), close-only and risk locks, and
+the Risk Governor sees a MODIFY at the new entry whose "current stop" keeps the old
+risk distance, so moving the entry away from the stop is judged as a widen against
+the per-trade limit. Both are ops for the 18-gate evaluator (no symbol-allowlist /
+lot-cap / SL requirement) and take no exposure reservation. The platform emergency
+stop refuses both; the admin emergency-close kill-switch bypass stays CLOSE-only (no
+caller stamps it for a cancel). The idempotency key gains the order ticket so two
+controls of equal size do not collide.
+
+**Result** — EA `CANCELLED` + ticket → the cancel row `LIVE_CANCELLED` (a
+result-path-only hop; the shared transition table is unchanged, so no generic
+cancel can move a SENT command or a working order to cancelled) and, in the same
+transaction, the original order row `LIVE_ACKNOWLEDGED → LIVE_CANCELLED` with its
+own applied receipt and an `EXPOSURE_RESERVATION` settlement job
+(`settleReservationForStatus` → RELEASE). If the order already left
+`LIVE_ACKNOWLEDGED` it is left alone and audited
+(`LIVE_PENDING_CANCEL_ORIGINAL_NOT_APPLIED`). EA `MODIFIED` + ticket → `LIVE_FILLED`
+(the "executed at broker" terminal `MODIFY_LIVE_SLTP` uses); the original row's
+integrity-hashed fields stay as placed and the pending list overlays the latest
+confirmed modify's levels (`payload.pendingModifyV1`). Rejections stay
+`LIVE_REJECTED` (order still working); a success word without a ticket is
+`LIVE_UNKNOWN`.
+
+**Routes** — `POST /api/me/live/pending-orders/:commandId/cancel` and `/modify`
+`{price?, sl?, tp?}`: investor refusal (`denyInvestorExecution` + the global role
+gate), master-live access, the sensitive-action handshake, per-user submit rate,
+then draft → confirm → dispatch with confirm + dispatch inside the per-user submit
+lock (as `/me/live/positions/:ticket/close`). One-click ON: the press is the
+confirmation. OFF: the body must carry `confirmedByUser: true` (412
+`CONFIRMATION_REQUIRED` otherwise) — the dashboard sends it only from its confirm
+dialog / the modify dialog's submit. Another user's order answers 404.
+
+**Dashboard** — `LivePendingOrders` shows Cancel (confirm dialog when one-click is
+off) and Modify (price / SL / TP, `orderTicketRules.validateTicket` against the live
+quote) for `controllable` rows; disabled while a request or a server-side control is
+in flight, a synchronous guard stops double submits, and success invalidates the
+pending list and the `["live"]` queries. The "cancel in MT5" note is gone.
+
+**EA prerequisites** — v154 ARMs `AllowPendingCancel` / `AllowPendingModify` default
+to false; with them off the EA answers `ACCOUNT_TRADE_DISABLED` and ARX shows a
+rejection.
+
+Tests: `test:mt5-order-controls-20261104` (+24, `livePendingControl.test.ts`),
+`test:result-evidence-postgres` (+4: original cancelled + reservation released,
+duplicate idempotent, already-filled order untouched, rejection keeps it working),
+dashboard `test:mt5-order-controls` (+8, `LivePendingOrders.test.tsx`).

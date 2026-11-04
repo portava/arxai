@@ -3,7 +3,9 @@
 //
 // There is no EA snapshot of working pending orders yet, so this list is built
 // from the command ledger (arx_live_commands): a PLACE_LIVE_PENDING_ORDER whose
-// last EA result reported a broker order ticket. It is read-only and per-user.
+// last EA result reported a broker order ticket. It is per-user. Rows ARX can
+// cancel / modify (LIVE_ACKNOWLEDGED) say so (`controllable`); a broker-
+// confirmed modify from ARX overlays its price / SL / TP (livePendingControl.ts).
 //
 // What "working" means here, and why each exclusion is honest:
 //   • status LIVE_FILLED / LIVE_ACKNOWLEDGED / LIVE_PARTIALLY_FILLED with a broker
