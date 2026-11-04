@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { Activity, RefreshCw, X, Loader2, ShieldCheck } from "lucide-react";
+import { DemoPendingOrders } from "@/components/demo/DemoPendingOrders";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
@@ -297,6 +298,9 @@ export function OpenDemoPositions() {
           )}
         </CardContent>
       </Card>
+
+      {/* Demo pending orders (EA v1.32) — not positions; listed apart with Cancel. */}
+      <DemoPendingOrders onChanged={() => void load()} />
 
       <Dialog
         open={!!closeTarget}
