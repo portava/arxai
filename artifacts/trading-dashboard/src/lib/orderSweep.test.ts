@@ -70,11 +70,11 @@ describe("validateTicket with a symbol spec", () => {
 });
 
 describe("expiration", () => {
-  it("Today ends 23:59 on the broker clock when its offset is known, else UTC", () => {
+  it("Today ends 23:59:59 on the broker clock when its offset is known, else UTC", () => {
     const now = new Date("2026-11-04T22:30:00Z");
     expect(expirationIso({ expiration: "TODAY", expiresAt: null }, now)).toBe("2026-11-04T23:59:00.000Z");
-    // Broker UTC+2: it is already 00:30 on the 5th there, so "today" ends 2026-11-05 23:59 broker = 21:59Z.
-    expect(expirationIso({ expiration: "TODAY", expiresAt: null }, now, 120)).toBe("2026-11-05T21:59:00.000Z");
+    // Broker UTC+2: it is already 00:30 on the 5th there, so "today" ends 2026-11-05 23:59:59 broker = 21:59Z.
+    expect(expirationIso({ expiration: "TODAY", expiresAt: null }, now, 120)).toBe("2026-11-05T21:59:59.000Z");
   });
   it("a Today expiry that has already passed is refused before the click", () => {
     vi.useFakeTimers();

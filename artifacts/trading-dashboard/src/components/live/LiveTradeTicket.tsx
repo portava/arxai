@@ -36,6 +36,7 @@ import { humanizeReason } from "@/lib/humanize";
 import { useAssistantName } from "@/lib/assistant-name";
 import { RejectionDisplay } from "@/components/live/RejectionDisplay";
 import { executeInstantTrade } from "@/lib/instantTradeRouter";
+import { BROKER_CLOCK_UNKNOWN_HINT, useBrokerClockOffset } from "@/hooks/useBrokerClockOffset";
 import { expirationIso, orderTypeInfo, parseNum, validateTicket, type ExpirationChoice } from "@/lib/orderTicketRules";
 import { EventImpactBadge } from "@/components/news/EventImpactBadge";
 
@@ -209,6 +210,8 @@ export function LiveTradeTicket({
   const [expiration, setExpiration] = useState<ExpirationChoice>("GTC");
   const [expiresAt, setExpiresAt] = useState("");
   const [lastResult, setLastResult] = useState<{ status: string; reason: string | null } | null>(null);
+  // "Today" ends at the end of the broker's day (own bridge's measured offset).
+  const brokerClock = useBrokerClockOffset();
 
   // Seed defaults from one-click settings when they load (only if user
   // didn't pass an explicit defaultSymbol/defaultSide override).
@@ -300,6 +303,7 @@ export function LiveTradeTicket({
     price: parseNum(priceText), stopLimitPrice: parseNum(stopLimitText),
     stopLoss: sl, takeProfit: tp,
     expiration, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+    brokerClockOffsetMs: brokerClock.offsetMs,
   };
   const pendingError = isMarket(orderType)
     ? null
@@ -670,6 +674,9 @@ export function LiveTradeTicket({
                     className="h-7 rounded border border-zinc-800 bg-transparent px-1 text-xs" data-testid="input-live-exp-at" />
                 )}
               </div>
+              {expiration === "TODAY" && brokerClock.offsetMs == null && !brokerClock.loading && (
+                <div className="col-span-2 text-[11px] text-muted-foreground" data-testid="live-exp-broker-clock-hint">{BROKER_CLOCK_UNKNOWN_HINT}</div>
+              )}
               <div className="col-span-2 text-[11px] text-muted-foreground" data-testid="live-pending-hint">{orderTypeInfo(orderType).hint}</div>
             </div>
           )}
