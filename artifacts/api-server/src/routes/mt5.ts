@@ -47,7 +47,7 @@ import { anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged, emitConnectionAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
-import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
+import { readPlatformMt5State, readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 import { readSharedMasterBridgeForUser } from "./mt5SharedBridgeStatus.js";
 import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
@@ -161,18 +161,34 @@ async function auditBridge(
  * legacy unowned row is attributed on first write (never re-attributed once
  * owned). The platform read (lowest id) is unchanged.
  */
-async function loadOrCreateState(ownerUserId: number | null = null) {
-  const existing = await readPlatformMt5State();
-  if (existing) {
-    if (existing.userId == null && ownerUserId != null) {
+/**
+ * The mt5_state row an EA write lands in.
+ *
+ * With a bridge user: that user's OWN row (one per user), created on first
+ * contact. The first user on an install adopts the legacy unowned row instead
+ * of leaving it orphaned, so an upgrade keeps its history. A second user's EA
+ * therefore never overwrites the first user's account, balances or positions.
+ *
+ * Without a user (legacy diagnostics readers): the platform row, see
+ * readPlatformMt5State (the most recently heartbeating EA).
+ */
+export async function loadOrCreateState(ownerUserId: number | null = null) {
+  if (ownerUserId != null) {
+    const own = await readLatestUserMt5State(ownerUserId);
+    if (own) return own;
+    const legacy = await readPlatformMt5State();
+    if (legacy && legacy.userId == null) {
       const [owned] = await db.update(mt5StateTable).set({ userId: ownerUserId })
-        .where(and(eq(mt5StateTable.id, existing.id), isNull(mt5StateTable.userId))).returning();
-      return owned ?? existing;
+        .where(and(eq(mt5StateTable.id, legacy.id), isNull(mt5StateTable.userId))).returning();
+      if (owned) return owned;
     }
-    return existing;
+    const inserted = await db.insert(mt5StateTable).values({ userId: ownerUserId }).returning();
+    return inserted[0]!;
   }
-  const inserted = await db.insert(mt5StateTable).values(ownerUserId != null ? { userId: ownerUserId } : {}).returning();
-  return inserted[0];
+  const existing = await readPlatformMt5State();
+  if (existing) return existing;
+  const inserted = await db.insert(mt5StateTable).values({}).returning();
+  return inserted[0]!;
 }
 
 // SAFETY GATE: Refuse any command-producing request unless safetyCore reports
@@ -1390,7 +1406,8 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
 router.post("/mt5/sync-account", bridgeAuthPerUserOnly, async (req, res) => {
   try {
     const body = Mt5SyncAccountBody.parse(req.body);
-    const state = await loadOrCreateState();
+    const syncConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
+    const state = await loadOrCreateState(syncConn?.userId ?? null);
     await db.update(mt5StateTable).set({
       account: body.account,
       balance: body.balance,
@@ -1457,7 +1474,8 @@ router.post("/mt5/sync-account", bridgeAuthPerUserOnly, async (req, res) => {
 router.post("/mt5/sync-positions", bridgeAuthPerUserOnly, async (req, res) => {
   try {
     const body = Mt5SyncPositionsBody.parse(req.body);
-    const state = await loadOrCreateState();
+    const syncConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
+    const state = await loadOrCreateState(syncConn?.userId ?? null);
     await db.update(mt5StateTable).set({
       positions: body.positions,
       lastSyncAt: new Date(),

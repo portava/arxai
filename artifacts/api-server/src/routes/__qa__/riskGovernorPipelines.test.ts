@@ -58,6 +58,7 @@ import { attachAuthUser } from "../../lib/auth/middleware.js";
 import { createUserSession } from "../../lib/auth/userSessions.js";
 import { generateDeterministicCandles } from "../../lib/backtestStrategyRegistry.js";
 import { enforcePreTradeRisk } from "../../lib/riskGovernor/enforce.js";
+import { recordMt5Tick } from "../../lib/data/providers/mt5Provider.js";
 import { NO_HALT } from "../../lib/safety/tradingHalt.js";
 import { createActionDraft } from "../../lib/tradeAction/create.js";
 import { confirmAction } from "../../lib/tradeAction/confirm.js";
@@ -154,7 +155,15 @@ async function seedBridge(userId: number, heartbeatAgoMs = 0): Promise<number> {
     userId, bridgeConnectionId: conn!.id, symbol: SYMBOL, contractSize: 100_000, profitCurrency: "USD",
     volumeStep: 0.01, minVolume: 0.01, maxVolume: 50, bid: 1.1, ask: 1.1001, lastTickTime: new Date(now),
   });
+  // The execution price is the router's MT5 store, pinned to this trader's
+  // bridge (one execution price source, audit H4): feed that bridge a tick.
+  seedTick(conn!.id, userId, 0);
   return conn!.id;
+}
+
+function seedTick(bridgeConnectionId: number, userId: number, ageMs: number): void {
+  const eaUtcMs = Date.now() - ageMs;
+  recordMt5Tick(SYMBOL, { bid: 1.1, ask: 1.1001, brokerTimeMs: eaUtcMs, eaUtcMs }, { bridgeConnectionId, userId });
 }
 
 function request(method: string, path: string, cookie: string, body?: unknown): Promise<Response> {
@@ -475,13 +484,15 @@ test("trade action: a SIMULATED action records no broker command", async () => {
     symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.095, takeProfit: 1.11,
   });
   // Owner decision 13: a confirmed SIMULATED open goes to the PAPER venue,
-  // never to a broker. With no real feed in this sandbox the venue refuses it
-  // (no valid price) — either way no broker command or mailbox row exists.
-  assert.equal(result.ok ? null : result.error, "venue_rejected", JSON.stringify(result));
+  // never to a broker. The sandbox bridge's tick is a real router quote, so the
+  // paper venue books it; with no quote it would refuse. Either way no broker
+  // command or mailbox row exists.
+  assert.ok(result.ok || result.error === "venue_rejected", JSON.stringify(result));
+  assert.equal(row.executionVenue, result.ok ? "PAPER" : row.executionVenue);
   assert.notEqual(row.executionVenue, "DEMO");
   assert.notEqual(row.executionVenue, "LIVE");
   assert.equal(row.tradeCommandId, null);
-  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0);
+  assert.equal(row.mt5Ticket, null);
 });
 
 // ── C. Demo, automated: riskGovernorAutomation.test.ts (needs a stubbed
@@ -531,9 +542,10 @@ test("D live sandbox: degraded bridge blocks new risk but not a close; a dead br
 });
 
 test("D live sandbox: a stale broker quote blocks the entry", async () => {
-  await seedBridge(u.a);
+  const bridgeId = await seedBridge(u.a);
   await db.update(arxSymbolSpecsTable).set({ lastTickTime: new Date(Date.now() - 5 * 60_000) })
     .where(eq(arxSymbolSpecsTable.userId, u.a));
+  seedTick(bridgeId, u.a, 5 * 60_000); // the bridge's newest tick is five minutes old
   const d = await enforcePreTradeRisk({
     userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
     symbol: SYMBOL, side: "BUY", lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
@@ -735,7 +747,10 @@ async function withSingleton<T>(table: "platform" | "safety_core", on: boolean, 
   const rows = await db.select().from(t).orderBy(t.id).limit(1);
   let id = rows[0]?.id;
   const prev = rows[0] ? (rows[0] as Record<string, unknown>)[col] as boolean : null;
-  if (id == null) id = (await db.insert(t).values({}).returning({ id: t.id }))[0]!.id;
+  // A missing platform row is seeded trading-on here (the fresh-install
+  // defaults are fail closed since 2026-11-04); these tests are about the stops.
+  const seed = table === "platform" ? { platformMode: "LIVE", demoEnabled: true, liveEnabled: true } : {};
+  if (id == null) id = (await db.insert(t).values(seed as never).returning({ id: t.id }))[0]!.id;
   await db.update(t).set({ [col]: on } as never).where(eq(t.id, id));
   try { return await fn(); } finally {
     if (prev == null) await db.delete(t).where(eq(t.id, id));

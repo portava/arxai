@@ -35,7 +35,7 @@ import {
   sharedTradeAttributionTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
-import { getConnection, listUserConnections } from "../brokerHub/connections.js";
+import { getConnection, getUserActiveConnection, listUserConnections } from "../brokerHub/connections.js";
 import { logRiskEvent } from "./riskEvents.js";
 import { loadEffectiveLimits } from "./limitSettings.js";
 import {
@@ -43,6 +43,8 @@ import {
   readPaperCloses, countPaperOpenedSinceStillOpen,
 } from "../tradeEngine/paperBookReader.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
+import { routeQuote } from "../data/marketDataRouter.js";
+import { readMt5Quote } from "../data/providers/mt5Provider.js";
 import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
@@ -457,22 +459,47 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   };
 }
 
-/** Broker quote for the user's bridge (EA symbol snapshot), else the market provider's quote. */
+/**
+ * The execution price the Risk Governor reasons about.
+ *
+ * ONE source (owner decision 2026-11-04, audit H4): the market data router,
+ * the same bridge-bound feed the chart, the decision engine and the paper
+ * venue read, so the price a rule sizes or refuses on is the price the venue
+ * fills on. The per-user `arx_symbol_specs` bid/ask snapshot (never
+ * time-stamped by the EA) and the assistant provider are no longer execution
+ * price sources. A mock or absent quote reads as no quote, which the
+ * rules treat as a block.
+ */
+export const EXECUTION_PRICE_SOURCE = "market_data_router" as const;
+
+/** The scanner's mock-provider test: a simulator is never an execution price. */
+export function isMockQuoteProvider(provider: string | null): boolean {
+  return provider != null && (provider === "mock" || provider.endsWith(":mock"));
+}
+
+function toRiskQuote(q: { bid?: number; ask?: number; last?: number; timestamp: string }, source: string): RiskQuote | null {
+  const bid = typeof q.bid === "number" && Number.isFinite(q.bid) ? q.bid : (typeof q.last === "number" ? q.last : null);
+  const ask = typeof q.ask === "number" && Number.isFinite(q.ask) ? q.ask : (typeof q.last === "number" ? q.last : null);
+  if (bid == null && ask == null) return null;
+  const at = new Date(q.timestamp);
+  return { bid, ask, at: Number.isFinite(at.getTime()) ? at : null, source };
+}
+
 export async function loadQuote(userId: number, symbol: string): Promise<RiskQuote | null> {
-  const [spec] = await db.select({ bid: arxSymbolSpecsTable.bid, ask: arxSymbolSpecsTable.ask, at: arxSymbolSpecsTable.lastTickTime })
-    .from(arxSymbolSpecsTable).where(and(eq(arxSymbolSpecsTable.userId, userId), eq(arxSymbolSpecsTable.symbol, symbol))).limit(1);
-  if (spec && (spec.bid != null || spec.ask != null) && spec.at) {
-    return { bid: spec.bid, ask: spec.ask, at: spec.at, source: "mt5_symbol_snapshot" };
-  }
   try {
-    const { getMarketProvider } = await import("../assistant/marketProvider.js");
-    const q = await getMarketProvider().getLiveQuote(symbol);
-    if (q.bid == null && q.ask == null && q.price == null) return null;
-    return {
-      bid: q.bid ?? q.price, ask: q.ask ?? q.price,
-      at: q.asOf ? new Date(q.asOf) : null,
-      source: `market_provider:${q.freshness}`,
-    };
+    // The trader's own bridge partition of the router's MT5 store first: a
+    // broker-venue order is priced on the terminal that will fill it. Same
+    // store the chart reads for that bridge; never another user's partition.
+    let conn: Awaited<ReturnType<typeof getUserActiveConnection>> = null;
+    try { conn = await getUserActiveConnection(userId); } catch { conn = null; }
+    if (conn) {
+      const own = readMt5Quote(symbol, { bridgeConnectionId: conn.id });
+      if (own.quote) return toRiskQuote(own.quote, `${EXECUTION_PRICE_SOURCE}:mt5_broker:bridge:${conn.id}`);
+    }
+    // Otherwise the router's serving quote (the chart's and the paper venue's price).
+    const r = await routeQuote(symbol);
+    if (!r.ok || !r.quote || isMockQuoteProvider(r.primaryProvider)) return null;
+    return toRiskQuote(r.quote, `${EXECUTION_PRICE_SOURCE}:${r.primaryProvider ?? "unknown"}`);
   } catch {
     return null;
   }

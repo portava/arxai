@@ -64,9 +64,14 @@ test("a scoped read admits legacy rows for an operator, never for a trader", asy
   assert.equal(stranger, null, "a user with no rows sees nothing, legacy rows included");
 });
 
-test("the platform read is the lowest-id row, also inside a transaction", async () => {
-  const [first] = await db.select({ id: mt5StateTable.id }).from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
-  assert.equal((await readPlatformMt5State())?.id, first!.id);
+test("the platform read is the most recently heartbeating row (lowest id among never-heartbeated), also inside a transaction", async () => {
+  const rows = await db.select({ id: mt5StateTable.id, hb: mt5StateTable.lastHeartbeatAt }).from(mt5StateTable).orderBy(asc(mt5StateTable.id));
+  const expected = [...rows].sort((x, y) => {
+    const hx = x.hb ? x.hb.getTime() : -Infinity;
+    const hy = y.hb ? y.hb.getTime() : -Infinity;
+    return hy !== hx ? hy - hx : x.id - y.id;
+  })[0]!;
+  assert.equal((await readPlatformMt5State())?.id, expected.id);
   const inTx = await db.transaction((tx) => readPlatformMt5State(tx));
-  assert.equal(inTx?.id, first!.id);
+  assert.equal(inTx?.id, expected.id);
 });

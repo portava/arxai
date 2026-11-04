@@ -30,11 +30,13 @@ import { bridgeV2 } from "@workspace/domain";
 import {
   mergeCandleFromMT5,
   recordMt5Tick,
+  getMt5BridgeClockOffset,
   type Mt5BridgeIdentity,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
 import type { Candle } from "../data/types.js";
 import { mt5PriceBasisEvidence } from "../data/candlePriceBasisEvidence.js";
+import { brokerServerCandleTimeBasis } from "../data/candleTimeBasisEvidence.js";
 import { isUniqueViolation } from "../pgError.js";
 import { randomUUID } from "node:crypto";
 import { isExactNativeAccountReplay } from "../brokerHub/nativeAccountReport.js";
@@ -326,8 +328,13 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       const timeframe = typeof p.timeframe === "string" ? p.timeframe : null;
       const openTimeEpochMs = typeof p.openTimeEpochMs === "number" ? p.openTimeEpochMs : null;
       if (!symbol || !timeframe || openTimeEpochMs == null) return;
+      // `openTimeEpochMs` is bar time on the broker's trade-server clock, not
+      // UTC (audit H7). The bar keeps those coordinates (the forming bar and
+      // the stored history bucket on the same clock) and carries the bridge's
+      // measured UTC offset so a reader can show it in UTC and age it honestly.
       const candle: Candle = {
         time: new Date(openTimeEpochMs).toISOString(),
+        timeBasisEvidence: brokerServerCandleTimeBasis(getMt5BridgeClockOffset(candleBridge)),
         open: Number(p.open),
         high: Number(p.high),
         low: Number(p.low),
