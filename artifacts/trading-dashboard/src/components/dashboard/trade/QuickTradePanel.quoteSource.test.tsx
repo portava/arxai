@@ -10,6 +10,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 
 vi.mock("wouter", () => ({ useLocation: () => ["/trade-command-room", vi.fn()] }));
 vi.mock("@/components/charts/ChartFeedConfidence", () => ({ ChartFeedConfidence: () => null }));
+vi.mock("@/hooks/useOneClickMode", () => ({ useOneClickMode: () => ({ mode: { on: false, scope: "live", defaultVolume: 0.01, maxLotPerClick: null, canEnable: true, blockReason: null, loading: false }, busyKey: null, execute: vi.fn(), closePosition: vi.fn() }) }));
+vi.mock("@/hooks/useSymbolLotSpec", () => ({ useSymbolLotSpec: () => ({ volumeMin: null, volumeStep: null, volumeMax: null, point: null, stopsLevel: null }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { QuickTradePanel, readQuickTradeQuote } = await import("./QuickTradePanel");
 const { quickTradeRiskApprox } = await import("./quickTradeRisk");

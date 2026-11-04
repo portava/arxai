@@ -32,6 +32,7 @@ vi.mock("@tanstack/react-query", () => ({
   useMutation: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
+vi.mock("@/hooks/useOneClickMode", () => ({ useOneClickMode: () => ({ mode: { on: true } }) }));
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));

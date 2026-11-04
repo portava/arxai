@@ -100,3 +100,28 @@ strip), both wired into root `ci`. All three packages typecheck; 87/87 guards.
 
 Not done here (boundaries): no broker/terminal test, no demo EA change (pending
 orders on demo would need a v1.32 EA handler), no migration.
+
+## Sweep fixes (same day, branch `claude/sweep-orders`)
+
+* **Partial close**: the instant router accepts `closeVolume`; the scanner's "50%"
+  sends it floored to the symbol's volume step (EA-enumerated `lotStep`/`minLot`),
+  and is disabled when half the position is below the broker minimum. The live
+  command's requested volume (mirror `lot`) carries it; mapping a partial
+  `CLOSE_LIVE_POSITION` to the EA's `PARTIAL_CLOSE` is bridge-side work.
+* **Rows route by their own account**: chart / scanner Close, 50%, Break-even,
+  Reverse and the chart overlay close send demo rows to the demo queue
+  (`lib/positionActions.ts`), live rows to the instant router.
+* **Order window rules**: last-only quotes are not Bid/Ask (market disabled,
+  pending allowed); lot step / min / max and the broker stops level are checked
+  when the EA has enumerated the symbol; a passed "Today" expiry is refused.
+* **Server**: `EXPIRATION_IN_PAST` / `EXPIRATION_INVALID` instead of a silent GTC
+  (instant router and `/me/live/commands`); `LOT_EXCEEDS_ONE_CLICK_CAP` for a
+  one-click order above `maxLotPerClick` (PUT refuses a cap ≤ 0); close-all
+  reports one result per position and keeps going after a throw; DELETE of a
+  pending draft that MT5 placed answers 409 (use cancel-via-bridge).
+* **LiveTradeTicket** pending types now have price / stop-limit / expiry inputs.
+* **SL/TP editor**: empty = unchanged on both scopes (demo sends the current
+  level); "Remove SL/TP" on demo only (the live EA reads 0 as "leave").
+* **Live pending orders**: `GET /me/live/pending-orders` and a list on the chart
+  and Live Trading page. Cancel/modify from ARX is not built: it needs a
+  `CANCEL_LIVE_PENDING_ORDER` live command type through the dispatch pipeline.

@@ -42,7 +42,7 @@ import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, resolveManagementTarge
   type ManagementReference, type ManagementTarget } from "../selfTrade/managementTarget.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 import { routeQuote } from "../data/marketDataRouter.js";
-import { classifyOrderType, validatePendingOrder, validateProtection, expirationEpochSeconds } from "./pendingOrderRules.js";
+import { classifyOrderType, validatePendingOrder, validateProtection, validateExpiration, twoSidedQuote, exceedsOneClickCap } from "./pendingOrderRules.js";
 
 export const INSTANT_TRADE_SOURCES = [
   "trade_panel", "scanner", "chart", "chart_drag", "watchlist", "position_card",
@@ -421,10 +421,18 @@ export async function executeInstant(args: {
 async function executeOpen(args: {
   userId: number;
   intent: InstantTradeIntent;
-  settings: { allowOrdersWithoutStopLoss: boolean; perUserSubmitsPerMinute: number };
+  settings: { allowOrdersWithoutStopLoss: boolean; perUserSubmitsPerMinute: number; maxLotPerClick?: number | null };
   ip?: string | null; ua?: string | null;
 }): Promise<InstantTradeResult> {
   const { userId, intent, settings, ip, ua } = args;
+  // The one-click per-click lot cap (user setting) is a server rule, not only a
+  // client clamp: a one-click order above it is refused.
+  const cap = settings.maxLotPerClick;
+  if (exceedsOneClickCap({ oneClick: intent.oneClick, volume: intent.volume, maxLotPerClick: cap })) {
+    await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "LOT_EXCEEDS_ONE_CLICK_CAP", maxLotPerClick: cap } });
+    return { ok: false, httpStatus: 400, error: "LOT_EXCEEDS_ONE_CLICK_CAP", primaryReason: "LOT_EXCEEDS_ONE_CLICK_CAP",
+      detail: { maxLotPerClick: cap, requested: intent.volume } };
+  }
   const typedSymbol = (intent.symbol ?? "").trim();
   if (!typedSymbol) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_SYMBOL" } });
@@ -471,8 +479,7 @@ async function executeOpen(args: {
   if (!isMarket || intent.stopLoss != null || intent.takeProfit != null) {
     try {
       const q = await routeQuote(typedSymbol);
-      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
-      bidAsk = { bid: num(q.quote?.bid) ?? num(q.quote?.last), ask: num(q.quote?.ask) ?? num(q.quote?.last) };
+      bidAsk = twoSidedQuote(q.quote);
     } catch { /* unknown quote: broker enforces */ }
   }
   const pendingCheck = validatePendingOrder({
@@ -491,10 +498,16 @@ async function executeOpen(args: {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: protectionCheck.code, detail: protectionCheck.detail } });
     return { ok: false, httpStatus: 400, error: protectionCheck.code, primaryReason: protectionCheck.code, detail: { detail: protectionCheck.detail } };
   }
+  // Expiration: a past or unreadable time is refused, never silently GTC.
+  const expiryCheck = isMarket ? { ok: true as const, epochSeconds: null } : validateExpiration(intent.expiration);
+  if (!expiryCheck.ok) {
+    await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: expiryCheck.code, detail: expiryCheck.detail } });
+    return { ok: false, httpStatus: 400, error: expiryCheck.code, primaryReason: expiryCheck.code, detail: { detail: expiryCheck.detail } };
+  }
   const pendingPayload: Record<string, unknown> = isMarket ? {} : {
     price: intent.price,
     ...(intent.stopLimitPrice != null ? { stopLimitPrice: intent.stopLimitPrice } : {}),
-    ...(expirationEpochSeconds(intent.expiration) != null ? { expirationEpoch: expirationEpochSeconds(intent.expiration), expiration: intent.expiration } : {}),
+    ...(expiryCheck.epochSeconds != null ? { expirationEpoch: expiryCheck.epochSeconds, expiration: intent.expiration } : {}),
   };
 
   if (!checkSymbolCooldown(symbol, userId)) {
@@ -646,19 +659,29 @@ async function executeCloseAll(args: {
   const positions = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
   let closed = 0;
   const failures: Array<{ positionId: string | null; reason: string }> = [];
+  // One result per position: a throw on one row (DB / bridge error) is caught
+  // and reported for that row, and the loop carries on so the remaining
+  // positions still get their close.
+  const results: Array<{ positionId: string | null; symbol: string; ok: boolean; commandId: string | null; reason: string | null }> = [];
   for (const p of positions) {
-    const r = await closeOnePosition({ userId, position: p });
+    let r: InstantTradeResult;
+    try {
+      r = await closeOnePosition({ userId, position: p });
+    } catch (error) {
+      r = { ok: false, httpStatus: 500, error: `CLOSE_THREW: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    results.push({ positionId: p.brokerTicket, symbol: p.symbol, ok: r.ok, commandId: r.commandId ?? null, reason: r.ok ? null : r.error });
     if (r.ok) closed += 1;
     else failures.push({ positionId: p.brokerTicket, reason: r.error });
   }
   const allOk = failures.length === 0;
   await writeAudit({
     userId, action: allOk ? "INSTANT_CLOSE_ALL_ACCEPTED" : "INSTANT_CLOSE_ALL_REJECTED", ip, ua,
-    metadata: { total: positions.length, closed, failures },
+    metadata: { total: positions.length, closed, failures, results },
   });
   return allOk
-    ? { ok: true, action: "CLOSE_ALL", detail: { total: positions.length, closed } }
-    : { ok: false, httpStatus: 207, error: "PARTIAL_CLOSE_ALL", detail: { total: positions.length, closed, failures } };
+    ? { ok: true, action: "CLOSE_ALL", detail: { total: positions.length, closed, results } }
+    : { ok: false, httpStatus: 207, error: "PARTIAL_CLOSE_ALL", detail: { total: positions.length, closed, failures, results } };
 }
 
 async function executeModify(args: {

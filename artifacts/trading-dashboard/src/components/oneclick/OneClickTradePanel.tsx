@@ -21,6 +21,7 @@ import { useOneClickMode } from "@/hooks/useOneClickMode";
 import { OneClickModeDisclaimer } from "@/components/oneclick/OneClickModeDisclaimer";
 import { humanizeReason } from "@/lib/humanize";
 import { normalizeLot, stepLot } from "@/lib/oneClickMode";
+import { useSymbolLotSpec } from "@/hooks/useSymbolLotSpec";
 import type { ChartPosition } from "@/hooks/useLivePositionOverlays";
 import { OrderTicketButton } from "@/components/trade/OrderTicketOverlay";
 import { ModifySlTpButton } from "@/components/trade/ModifySlTpDialog";
@@ -44,9 +45,10 @@ export type OneClickQuote = {
 export function quoteReady(q: OneClickQuote | null | undefined): { ok: boolean; why: string | null } {
   if (!q) return { ok: false, why: "No price yet." };
   if (q.available === false) return { ok: false, why: q.observationNote ?? "No price from the feed." };
-  const bid = typeof q.bid === "number" ? q.bid : typeof q.last === "number" ? q.last : null;
-  const ask = typeof q.ask === "number" ? q.ask : typeof q.last === "number" ? q.last : null;
-  if (bid == null || ask == null) return { ok: false, why: "No bid/ask from the feed." };
+  // A last-trade-only quote is not two-sided: Buy needs the Ask, Sell the Bid.
+  const bid = typeof q.bid === "number" ? q.bid : null;
+  const ask = typeof q.ask === "number" ? q.ask : null;
+  if (bid == null || ask == null) return { ok: false, why: typeof q.last === "number" ? "Only a last-trade price, no Bid/Ask from the feed." : "No bid/ask from the feed." };
   if (q.stale) return { ok: false, why: "Price is stale. Waiting for a fresh tick." };
   return { ok: true, why: null };
 }
@@ -89,7 +91,8 @@ export function OneClickTradePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode.defaultVolume]);
 
-  const lot = useMemo(() => normalizeLot(lotText, mode.maxLotPerClick), [lotText, mode.maxLotPerClick]);
+  const lotSpec = useSymbolLotSpec(symbol, mode.on);
+  const lot = useMemo(() => normalizeLot(lotText, mode.maxLotPerClick, lotSpec), [lotText, mode.maxLotPerClick, lotSpec]);
 
   const quoteQ = useQuery<OneClickQuote>({
     queryKey: ["one-click-quote", symbol],
@@ -104,8 +107,8 @@ export function OneClickTradePanel({
   });
   const quote = quoteQ.data ?? null;
   const ready = quoteReady(quote);
-  const bid = quote?.bid ?? quote?.last ?? null;
-  const ask = quote?.ask ?? quote?.last ?? null;
+  const bid = quote?.bid ?? null;
+  const ask = quote?.ask ?? null;
   const spread = typeof bid === "number" && typeof ask === "number" ? ask - bid : null;
 
   const scopePositions = useMemo(
@@ -205,7 +208,7 @@ export function OneClickTradePanel({
         </Button>
 
         <div className="flex w-[132px] items-center gap-1">
-          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, -1, mode.maxLotPerClick)))} disabled={executing} aria-label="Decrease lot" data-testid="one-click-lot-minus">
+          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, -1, mode.maxLotPerClick, lotSpec)))} disabled={executing} aria-label="Decrease lot" data-testid="one-click-lot-minus">
             <Minus className="h-3.5 w-3.5" />
           </Button>
           <Input
@@ -216,7 +219,7 @@ export function OneClickTradePanel({
             aria-label="Lot size"
             data-testid="one-click-lot"
           />
-          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, 1, mode.maxLotPerClick)))} disabled={executing} aria-label="Increase lot" data-testid="one-click-lot-plus">
+          <Button size="icon" variant="outline" className="h-12 w-8" onClick={() => setLotText(String(stepLot(lot ?? mode.defaultVolume, 1, mode.maxLotPerClick, lotSpec)))} disabled={executing} aria-label="Increase lot" data-testid="one-click-lot-plus">
             <Plus className="h-3.5 w-3.5" />
           </Button>
         </div>

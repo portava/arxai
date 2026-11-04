@@ -39,12 +39,13 @@ import { classifyHeartbeatAt, heartbeatAllowsExecution } from "../lib/brokerHub/
 import { getUserPrimaryConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
-import { normalizeProductRole, type ProductRole } from "../lib/auth/productRole.js";
+import { denyInvestorExecution, normalizeProductRole, type ProductRole } from "../lib/auth/productRole.js";
 import {
   db, userOneClickSettingsTable, oneClickAuditTable,
   userMasterLiveAccessTable, globalTradingSettingsTable, } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../lib/mt5/userMasterLiveAccessGate.js";
+import { exceedsOneClickCap } from "../lib/live/pendingOrderRules.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
 import { tryConsumeToken, checkSymbolCooldown, clampPerMinute } from "../lib/concurrency/rateLimit.js";
 import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
@@ -155,7 +156,7 @@ router.put("/me/one-click", requireUser, async (req, res) => {
     scope?: "demo" | "live";
     enable?: boolean;
     typedConfirmation?: string;
-    maxLotPerClick?: number;
+    maxLotPerClick?: number | null;
     perUserSubmitsPerMinute?: number;
     defaultSymbol?: string;
     defaultVolume?: number;
@@ -197,6 +198,13 @@ router.put("/me/one-click", requireUser, async (req, res) => {
   }
   if (!togglingScope && typeof body.enable === "boolean") {
     return res.status(400).json({ ok: false, error: "SCOPE_REQUIRED_FOR_ENABLE" });
+  }
+  // The per-click lot cap is enforced by the instant router; a zero, negative
+  // or non-numeric cap would either block every click or mean nothing, so it
+  // is refused here. `null` clears the cap.
+  if (body.maxLotPerClick !== undefined && body.maxLotPerClick !== null
+    && !(typeof body.maxLotPerClick === "number" && Number.isFinite(body.maxLotPerClick) && body.maxLotPerClick > 0)) {
+    return res.status(400).json({ ok: false, error: "INVALID_MAX_LOT_PER_CLICK", message: "The per-click lot cap must be a number above 0." });
   }
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
   const ua = (req.headers["user-agent"] as string | undefined) ?? null;
@@ -241,7 +249,7 @@ router.put("/me/one-click", requireUser, async (req, res) => {
       update.liveDisabledAt = new Date();
     }
   }
-  if (typeof body.maxLotPerClick === "number") update.maxLotPerClick = body.maxLotPerClick;
+  if (typeof body.maxLotPerClick === "number" || body.maxLotPerClick === null) update.maxLotPerClick = body.maxLotPerClick;
   if (typeof body.perUserSubmitsPerMinute === "number") {
     update.perUserSubmitsPerMinute = clampPerMinute(body.perUserSubmitsPerMinute);
   }
@@ -423,7 +431,14 @@ router.put("/me/one-click", requireUser, async (req, res) => {
  *
  * Toggle ON is NOT a bypass of any server gate.
  */
-router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: Response) => {
+// NOTE (2026-11-04 sweep): no dashboard surface calls this route any more —
+// every one-click surface uses the instant-trade router
+// (/api/trades/instant/execute), which also applies the MT5 pending-order
+// rules, the security handshake and source-aware Ruby gates. It is kept because
+// the DB-backed route suite (test:one-click-route) and the one-click CI guards
+// pin it; it now at least refuses investors and enforces the per-click lot cap
+// like the router does.
+router.post("/me/one-click/submit-live", denyInvestorExecution, requireUser, async (req: Request, res: Response) => {
   const userId = userOf(req);
   const settings = await getOrCreate(userId);
   // Honor EITHER the legacy toggle OR the Task #353 armed flag — same OR semantics
@@ -447,6 +462,9 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
   };
   if (!body.symbol || (body.side !== "BUY" && body.side !== "SELL") || typeof body.requestedVolume !== "number") {
     return res.status(400).json({ ok: false, error: "INVALID_TICKET" });
+  }
+  if (exceedsOneClickCap({ oneClick: true, volume: body.requestedVolume, maxLotPerClick: settings.maxLotPerClick })) {
+    return res.status(400).json({ ok: false, error: "LOT_EXCEEDS_ONE_CLICK_CAP", maxLotPerClick: settings.maxLotPerClick });
   }
   // Resolve commandType. Prefer explicit body.commandType; otherwise classify
   // from orderType. Frontend sends `MARKET_BUY`/`MARKET_SELL` for market and
