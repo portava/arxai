@@ -1,10 +1,10 @@
 // Truth: levelPersonality sets retest_pending only after a level broke AND
 // price came back to it (breaks > 0 && retests > 0): the retest was observed,
-// not awaited. Ruby's nearest-level line and the Exit panel already say
+// not awaited. Eleanor's nearest-level line and the Exit panel already say
 // "broken, and price has come back to retest it", but GET /me/chart/smart-layers
 // had its own vocabulary and labelled the scanner chart's structure line
 // "Support — retest pending", telling the trader to wait for something that
-// already happened. The route now uses the same level wording as Ruby.
+// already happened. The route now uses the same level wording as Eleanor.
 //
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
 //   src/routes/__qa__/smartLayersLevelPersonality.test.ts
@@ -19,7 +19,7 @@ mock.module("@workspace/db", { namedExports: { ...realDb, db: fake.db } });
 const realSignal = await import("../../lib/signalIntelligence/signalIntelligenceService.js");
 mock.module("../../lib/signalIntelligence/signalIntelligenceService.js", { namedExports: {
   ...realSignal,
-  buildRubyMarketEdgeForUser: async () => null,
+  buildEleanorMarketEdgeForUser: async () => null,
 } });
 const realChart = await import("../../lib/data/chart/chartIntelligence.js");
 mock.module("../../lib/data/chart/chartIntelligence.js", { namedExports: {
@@ -60,7 +60,7 @@ test("a broken-and-retested level is not labelled as a retest still pending", as
   assert.match(support.label, /come back to retest/);
 });
 
-test("the chart line uses the same level words as Ruby's nearest-level line", async () => {
+test("the chart line uses the same level words as Eleanor's nearest-level line", async () => {
   const layers = await structureLabels();
   assert.equal(layers.find((l) => l.price === 1.08)?.label, `Support — ${chartLevelPersonalityWords("retest_pending")}`);
   assert.equal(layers.find((l) => l.price === 1.09)?.label, `Resistance — ${chartLevelPersonalityWords("defended")}`);

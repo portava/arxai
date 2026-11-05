@@ -1,7 +1,7 @@
 // Phase 3 — Chart Gate Output.
 //
 // Evaluates the hard rules from the mission and exposes them as a single,
-// reusable gate result that Phase 4 consumers (Ruby, Scanner, Self-Trade,
+// reusable gate result that Phase 4 consumers (Eleanor, Scanner, Self-Trade,
 // AACI) read without re-implementing the threshold logic.
 //
 // Hard rules (from the mission):
@@ -35,7 +35,7 @@ export interface ChartGateOutput {
   // ── Hard gate decisions ────────────────────────────────────────────────────
   /**
    * True when Chart Truth ≥ 75 — required for any chart-based confident read
-   * (Ruby chart-read copy, Scanner chart-confirmation, etc.).
+   * (Eleanor chart-read copy, Scanner chart-confirmation, etc.).
    */
   confidentReadAllowed: boolean;
   /**

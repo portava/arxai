@@ -79,7 +79,7 @@ Tasks:
    - This lets us confirm the deployed page is using the corrected code and not an old duplicate.
 
 7. Fix mobile layout while touching this page:
-   - Ruby floating button must not cover checklist items or live controls.
+   - Eleanor floating button must not cover checklist items or live controls.
    - Bottom nav must not cover buttons/checklist rows.
    - The page must not require horizontal scrolling.
    - Confirmation fields should stack cleanly on iPhone Safari.

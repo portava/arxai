@@ -26,7 +26,7 @@ import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 // custom name is honoured here exactly like everywhere else. The name defaults
 // to the shared default (Eleanor) when no custom name is supplied.
 const buildLabels = (assistantName: string = DEFAULT_ASSISTANT_NAME): Record<string, string> => ({
-  // Ruby tools / assistant actions
+  // Eleanor tools / assistant actions
   getMyPerformanceSummary:      "Reviewing your performance",
   getMarketRead:                "Checking this market",
   getOpenPositions:             "Reviewing your open trades",

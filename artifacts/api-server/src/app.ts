@@ -8,9 +8,9 @@ import { attachAuthUser } from "./lib/auth/middleware";
 import { bindFeedScope } from "./lib/data/feedScopeMiddleware";
 import { applyEffectiveViewMode } from "./lib/auth/effectiveViewMode";
 import { startMonitor } from "./lib/intelligence/monitorWorker";
-import { startRubyOutcomeWorker } from "./lib/rubyQuality/outcomeWorker";
+import { startEleanorOutcomeWorker } from "./lib/eleanorQuality/outcomeWorker";
 import { startDemoCommandExpirySweep } from "./lib/mt5/demoCommandQueue";
-import { startRubyWatchSweeper } from "./lib/assistant/rubyWatchSweeper";
+import { startEleanorWatchSweeper } from "./lib/assistant/eleanorWatchSweeper";
 import { perfTimer } from "./middlewares/perfTimer";
 import { CANDLE_INGEST_BODY_LIMIT_BYTES } from "./lib/data/brokerCandleStore";
 import { recordIngestRejection, isIngestRoute } from "./lib/data/ingestRejectionCounter";
@@ -195,10 +195,10 @@ if (process.env.ARX_SERVE_DASHBOARD === "true") {
 // UX4 — start the background trade-monitor worker (paper-only, read-mostly).
 startMonitor();
 
-// Task #199 — start the Ruby Quality outcome-resolution worker (observation
+// Task #199 — start the Eleanor Quality outcome-resolution worker (observation
 // only: resolves recorded signal outcomes from real evidence + appends
 // self-reviews; never touches any execution path).
-startRubyOutcomeWorker();
+startEleanorOutcomeWorker();
 
 // Demo command expiry: SENT_TO_MT5_DEMO rows with no EA result after the
 // command TTL + grace go to FAILED (EXPIRED_DEMO_NO_EA_RESULT) so they stop
@@ -206,12 +206,12 @@ startRubyOutcomeWorker();
 // never sends broker work. Opt-out: ARX_DEMO_EXPIRY_SWEEP_ENABLED=false.
 startDemoCommandExpirySweep();
 
-// 2026-11-04 — Ruby watch sweeper: evaluates armed watches / position monitors
+// 2026-11-04 — Eleanor watch sweeper: evaluates armed watches / position monitors
 // (conditional entry/close, reversal alerts, 3-alert executive close) inside each
 // owner's feed scope. Per-user AI_ASSISTED authority + permissions are re-read at
 // fire time; every dispatch runs the full instant-trade gate chain. Kill switch:
-// ARX_RUBY_WATCH_SWEEPER_ENABLED=false.
-startRubyWatchSweeper();
+// ARX_ELEANOR_WATCH_SWEEPER_ENABLED=false.
+startEleanorWatchSweeper();
 
 // ── Phase 22D — JSON-only error handler ───────────────────────────────
 // Guarantees the frontend never receives an HTML stack trace. Catches

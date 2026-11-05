@@ -36,7 +36,7 @@ describe("scanner header + data health while the first candles response is pendi
     expect(v.textContent).not.toBe("Unavailable");
     expect(v.textContent).toMatch(/Checking/);
     expect(v.className).not.toContain("text-danger");
-    expect(pillVerdict("scanner-header-ruby").textContent).not.toBe("No read");
+    expect(pillVerdict("scanner-header-eleanor").textContent).not.toBe("No read");
   });
 
   it("a failed candles load still reads Unavailable (it was checked and failed)", () => {

@@ -3,7 +3,7 @@ Run a continuous in-place ARX AI full-system performance, wiring, repair, cleanu
 This is not a rebuild.
 Do not create a new product.
 Do not replace the existing ARX AI app.
-Do not duplicate Scanner, Ruby, trade execution, permissions, user accounts, account modes, or MT5 bridge systems.
+Do not duplicate Scanner, Eleanor, trade execution, permissions, user accounts, account modes, or MT5 bridge systems.
 Do not wipe working code.
 Do not redesign the app from scratch.
 This is a continuous repair, optimization, wiring, and verification pass on the existing app.
@@ -20,7 +20,7 @@ Continuously run through the entire existing ARX AI app piece by piece until eve
 7. Pending order placement
 8. Closing trades
 9. Modifying trades
-10. Ruby response and action execution
+10. Eleanor response and action execution
 
 The app must not break to achieve speed.
 If a speed fix breaks functionality, revert that fix and find a safer solution.
@@ -47,7 +47,7 @@ Do not mark complete after pages merely render.
 Do not mark complete if Scanner still lags.
 Do not mark complete if trade placement feels slow.
 Do not mark complete if buttons appear dead.
-Do not mark complete if Ruby blocks trading.
+Do not mark complete if Eleanor blocks trading.
 Do not mark complete if any visible user action is disconnected.
 Do not mark complete if a speed optimization creates broken features.
 
@@ -68,7 +68,7 @@ Visible response means one of the following:
 5. A pending state appears.
 6. A confirmation state appears.
 7. An error appears.
-8. Ruby thinking dots appear.
+8. Eleanor thinking dots appear.
 9. Chart selection changes.
 10. Trade action status changes to “Sending,” “Updating,” “Closing,” or “Confirming.”
 
@@ -84,7 +84,7 @@ Target timings:
 6. Scanner symbol selection visual response: under 300ms.
 7. Scanner search input response: under 300ms.
 8. Chart drag response: under 50ms.
-9. Ruby thinking indicator: under 100ms.
+9. Eleanor thinking indicator: under 100ms.
 10. Trade pending state after Confirm: under 100ms.
 11. Trade request sent to backend: immediately after Confirm.
 12. Backend target response: under 800ms where possible.
@@ -114,7 +114,7 @@ Before making changes:
 3. Detect the current database schema.
 4. Detect the current Scanner implementation.
 5. Detect the current chart implementation.
-6. Detect the current Ruby implementation.
+6. Detect the current Eleanor implementation.
 7. Detect the current MT5 bridge implementation.
 8. Detect existing DEMO/LIVE handling.
 9. Detect existing admin/user role handling.
@@ -129,7 +129,7 @@ Preserve:
 5. Existing Scanner page.
 6. Existing Broad Scan.
 7. Existing Focus Scan.
-8. Existing Ruby.
+8. Existing Eleanor.
 9. Existing MT5 bridge.
 10. Existing DEMO/LIVE flow.
 11. Existing admin dashboard.
@@ -142,7 +142,7 @@ Do not create:
 
 1. A second Scanner.
 2. A second trading system.
-3. A second Ruby system.
+3. A second Eleanor system.
 4. A second permission system.
 5. A second MT5 bridge.
 6. A second account-mode system.
@@ -160,7 +160,7 @@ Scanner must:
 
 1. Open quickly.
 2. Show usable content in under 1 second.
-3. Load the chart without waiting for Ruby.
+3. Load the chart without waiting for Eleanor.
 4. Load the chart without waiting for full scanner results.
 5. Let the user search symbols quickly.
 6. Let the user click/select markets quickly.
@@ -172,7 +172,7 @@ Scanner must:
 12. Keep Scanner tabs working.
 13. Keep Scanner filters working.
 14. Keep trade controls working.
-15. Keep Ruby explanations separate from chart/trading speed.
+15. Keep Eleanor explanations separate from chart/trading speed.
 16. Avoid duplicate network calls.
 17. Avoid full-page blocking loaders.
 18. Avoid re-rendering the whole Scanner when only one section changes.
@@ -187,7 +187,7 @@ Scanner optimization rules:
 4. Load current quote independently.
 5. Load user trade overlays independently.
 6. Load scanner results independently.
-7. Load Ruby analysis independently.
+7. Load Eleanor analysis independently.
 8. Use skeletons for slower sections.
 9. Use memoization for heavy scanner components.
 10. Debounce search input.
@@ -214,7 +214,7 @@ For every trade action:
 8. UI must display rejection cleanly if MT5 rejects.
 9. Trade ledger must update correctly.
 10. Scanner chart must update after trade confirmation.
-11. Ruby must not block the trade.
+11. Eleanor must not block the trade.
 12. Repeated warnings must not slow the flow.
 13. Do not add extra confirmation modals unless required by existing app rules.
 14. Do not make users click through unnecessary steps.
@@ -294,11 +294,11 @@ Run through every visible part of the existing app:
 28. Trade history.
 29. Open positions.
 30. MT5 bridge status.
-31. Ruby chat.
-32. Ruby market explanation.
-33. Ruby voice input.
-34. Ruby voice output.
-35. Ruby memory/chat history.
+31. Eleanor chat.
+32. Eleanor market explanation.
+33. Eleanor voice input.
+34. Eleanor voice output.
+35. Eleanor memory/chat history.
 36. Notifications/alerts if present.
 37. Mobile layout.
 38. Desktop layout.
@@ -360,15 +360,15 @@ Then:
 Do not remove core app functionality for speed.
 Do not remove Scanner controls.
 Do not remove trade controls.
-Do not remove Ruby.
+Do not remove Eleanor.
 Do not remove admin controls.
 Do not remove safety/risk controls.
 Do not remove permission checks.
 
-Ruby Continuous Repair and Speed:
-Ruby must be fast, useful, and connected to existing app actions.
+Eleanor Continuous Repair and Speed:
+Eleanor must be fast, useful, and connected to existing app actions.
 
-Ruby should:
+Eleanor should:
 
 1. Show thinking dots immediately.
 2. Never freeze the app.
@@ -387,7 +387,7 @@ Ruby should:
 15. Respond with voice when voice output is enabled.
 16. Save chats/memory unless user clears them.
 
-Ruby must not:
+Eleanor must not:
 
 1. Bypass permissions.
 2. Bypass live approval.
@@ -404,17 +404,17 @@ Ruby must not:
 13. Block Scanner.
 14. Block trade placement.
 
-Ruby action layer:
+Eleanor action layer:
 
-1. Audit existing Ruby action system.
+1. Audit existing Eleanor action system.
 2. Reuse existing actions where possible.
-3. Every Ruby action must map to a real app/backend action.
-4. Every Ruby action must declare required permission.
-5. Every Ruby action must declare confirmation requirements.
+3. Every Eleanor action must map to a real app/backend action.
+4. Every Eleanor action must declare required permission.
+5. Every Eleanor action must declare confirmation requirements.
 6. Trading actions must always go through backend validation.
 7. Admin actions must require admin role.
 8. Dangerous actions must require confirmation unless safely covered by existing approved one-click settings.
-9. Ruby must not call unvalidated backend functions directly.
+9. Eleanor must not call unvalidated backend functions directly.
 
 MT5 / Bridge Continuous Test:
 Continuously test the MT5 bridge and repair wiring without creating a second bridge.
@@ -475,7 +475,7 @@ Continuously verify:
 6. Admin broader trade visibility is role-gated.
 7. Trade ledger maps every MT5 order/ticket to the correct ARX user.
 8. Chart overlays only show that user’s trades.
-9. Ruby only discusses trades the user is allowed to see.
+9. Eleanor only discusses trades the user is allowed to see.
 
 Database Performance and Integrity:
 Audit and optimize database without breaking records.
@@ -491,8 +491,8 @@ Check:
 7. Duplicate account-mode fields.
 8. Paper Trading records still connected to active flows.
 9. Stale mock/simulated data appearing in user pages.
-10. Ruby chat storage.
-11. Ruby memory storage.
+10. Eleanor chat storage.
+11. Eleanor memory storage.
 12. Scanner data storage.
 13. Market data cache.
 14. Admin logs.
@@ -526,7 +526,7 @@ Use:
 10. Virtualized lists if scanner/result lists are heavy.
 11. Avoid full-page rerenders.
 12. Avoid repeated API calls on every render.
-13. Avoid blocking Scanner with Ruby.
+13. Avoid blocking Scanner with Eleanor.
 14. Avoid blocking chart with scanner results.
 15. Avoid large repeated status blocks.
 16. Avoid loading admin-only panels for normal users.
@@ -547,7 +547,7 @@ Use:
 8. Move noncritical logging after user response where safe.
 9. Avoid duplicate MT5 bridge calls.
 10. Avoid retrieving all master trades when only one user’s trades are needed.
-11. Avoid blocking trade placement with noncritical Ruby analysis.
+11. Avoid blocking trade placement with noncritical Eleanor analysis.
 12. Avoid blocking Scanner with slow news/history data.
 
 Critical Rule:
@@ -587,7 +587,7 @@ Dummy trade rules:
 8. Confirm MT5 ticket.
 9. Confirm ARX ledger entry.
 10. Confirm Scanner chart displays it for correct user only.
-11. Confirm Ruby can explain it.
+11. Confirm Eleanor can explain it.
 12. Immediately close the trade.
 13. Confirm MT5 close.
 14. Confirm ARX ledger marks closed.
@@ -616,7 +616,7 @@ At minimum, after each change verify:
 8. Focus Scan still works.
 9. Chart still loads.
 10. Trade buttons still respond.
-11. Ruby still responds.
+11. Eleanor still responds.
 12. No console errors.
 13. No new failed network calls.
 14. No user-facing internal errors.
@@ -677,9 +677,9 @@ Critical actions that must be included:
 17. Partial close.
 18. Reverse trade.
 19. Cancel pending.
-20. Ruby text prompt.
-21. Ruby voice input.
-22. Ruby speech response.
+20. Eleanor text prompt.
+21. Eleanor voice input.
+22. Eleanor speech response.
 23. Admin user allocation update.
 24. Freeze/unfreeze user.
 25. Kill switch toggle.
@@ -726,7 +726,7 @@ Do not claim completion until:
 1. Full app has been tested.
 2. Scanner has been tested repeatedly.
 3. Trade placement has been tested repeatedly.
-4. Ruby has been tested.
+4. Eleanor has been tested.
 5. MT5 bridge wiring has been tested.
 6. Every visible action either works, is permission-gated, or is removed/disabled for a clear reason.
 7. Every action shows visible feedback under 1 second or the remaining delay is documented as external.
@@ -747,7 +747,7 @@ Provide a detailed completion report with:
 7. Exact reason any action remains over 1 second.
 8. Scanner timing before and after.
 9. Trade placement timing before and after.
-10. Ruby timing before and after.
+10. Eleanor timing before and after.
 11. MT5 bridge timing.
 12. Database slow queries found.
 13. Indexes added.

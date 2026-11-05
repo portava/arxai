@@ -75,8 +75,8 @@ type Status = {
 
 // Since 8b2a8eba /evaluate checks the rules with each closed trade counted at
 // its booked P&L and again at the paper risk model (price move × lots × 100);
-// a breach on either fails, and the target must be reached on both. Ruby now
-// runs those same rules (rubyPropFirmTwoBasisTruth.test.ts), so the two
+// a breach on either fails, and the target must be reached on both. Eleanor now
+// runs those same rules (eleanorPropFirmTwoBasisTruth.test.ts), so the two
 // expectations below that predate the second basis follow /evaluate: the
 // EURUSD +$50 close is +0.05 at the model (target not reached, so
 // profitTargetReached was a claim /evaluate contradicts), and the unsized V75

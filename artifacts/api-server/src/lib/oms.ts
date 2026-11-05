@@ -538,7 +538,7 @@ export type OmsActionResult<T> =
   | { ok: false; error: "not_found" | "not_open" | "risk_blocked" | "would_widen"; governance?: OmsGovernance; message: string };
 
 const SOURCE_ORIGIN: Record<OrderSource, IntentOrigin> = {
-  MANUAL: "manual", AI_ASSIST: "ruby", AI_AUTO: "automation", SCANNER: "automation", BACKTEST: "system", REPLAY: "system",
+  MANUAL: "manual", AI_ASSIST: "eleanor", AI_AUTO: "automation", SCANNER: "automation", BACKTEST: "system", REPLAY: "system",
 };
 
 /** Simulated account balance the OMS book is sized on. */

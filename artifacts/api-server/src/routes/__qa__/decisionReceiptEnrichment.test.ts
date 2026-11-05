@@ -1,6 +1,6 @@
-// Regression: a decision receipt is an immutable record of the Ruby read the
+// Regression: a decision receipt is an immutable record of the Eleanor read the
 // user saw. The read paths (draft-read, read-chart, draw-setup) build their
-// state through buildRubyChartContext, which enriches it with the user's own
+// state through buildEleanorChartContext, which enriches it with the user's own
 // bound broker quote; POST /me/chart/decision-receipt and the fire-and-forget
 // recorder built a bare buildChartIntelligenceState instead. With the mirror
 // unmeasured the stored read was the gated "syncing" one, not the directional
@@ -32,11 +32,11 @@ mock.module("../../lib/data/chart/userBrokerAlignment.js", {
     },
   },
 });
-const draftMod = await import("../../lib/assistant/rubyDraftRead.js");
-mock.module("../../lib/assistant/rubyDraftRead.js", {
+const draftMod = await import("../../lib/assistant/eleanorDraftRead.js");
+mock.module("../../lib/assistant/eleanorDraftRead.js", {
   namedExports: {
     ...draftMod,
-    buildRubyDraftRead: (state: { tag: string; feedUsable: boolean }) => ({
+    buildEleanorDraftRead: (state: { tag: string; feedUsable: boolean }) => ({
       intent: "analyze",
       headline: state.feedUsable ? "Bullish structure on EURUSD M5." : "Chart data is syncing…",
       confidenceScore: state.feedUsable ? 71 : null,
@@ -58,7 +58,7 @@ mock.module("../../lib/chart/decisionReceipts.js", {
 });
 const nameMod = await import("../../lib/assistant/assistantName.js");
 mock.module("../../lib/assistant/assistantName.js", {
-  namedExports: { ...nameMod, getAssistantDisplayName: async () => "Ruby" },
+  namedExports: { ...nameMod, getAssistantDisplayName: async () => "Eleanor" },
 });
 const memoryMod = await import("../../lib/chart/chartDecisionMemory.js");
 mock.module("../../lib/chart/chartDecisionMemory.js", {
@@ -66,7 +66,7 @@ mock.module("../../lib/chart/chartDecisionMemory.js", {
 });
 
 const { meChartBrainRouter: chartBrainRouter } = await import("../meChartBrain.js");
-const { recordRubyReadDecision } = await import("../../lib/chart/recordRubyRead.js");
+const { recordEleanorReadDecision } = await import("../../lib/chart/recordEleanorRead.js");
 const { withRouter } = await import("./_fakeRouteDb.js");
 
 beforeEach(() => { enrichCalls.length = 0; receipts.length = 0; receiptWritten = null; });
@@ -90,7 +90,7 @@ test("POST /me/chart/decision-receipt records the read built from the user's enr
 
 test("the fire-and-forget recorder enriches too when no state is handed to it", async () => {
   const written = new Promise<void>((resolve) => { receiptWritten = resolve; });
-  recordRubyReadDecision({ userId: 9, source: "ruby_explain_signal", symbol: "EURUSD", timeframe: "M5" });
+  recordEleanorReadDecision({ userId: 9, source: "eleanor_explain_signal", symbol: "EURUSD", timeframe: "M5" });
   await written;
   assert.equal(receipts[0]!.state, ENRICHED);
   assert.equal(enrichCalls[0]!.userId, 9);

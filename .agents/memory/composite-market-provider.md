@@ -46,8 +46,8 @@ responded. Every `markSuccess()` call must pass
 `{ freshness, source }` reflecting the per-call quality (e.g. Polygon's
 `/prev` quote is `DELAYED`, TwelveData live quote is `REALTIME`).
 Without this, a DELAYED-only fallback gets labeled "FRESH" because the
-fetch succeeded — that is the bug Ruby surfaced by saying "feed is
+fetch succeeded — that is the bug Eleanor surfaced by saying "feed is
 live and fresh" then "data is delayed" in the same conversation. The
-system prompt's HONESTY RULE block requires Ruby to answer feed-status
+system prompt's HONESTY RULE block requires Eleanor to answer feed-status
 questions from `dataFreshness`, never from `connected` /
 `freshnessState` alone.

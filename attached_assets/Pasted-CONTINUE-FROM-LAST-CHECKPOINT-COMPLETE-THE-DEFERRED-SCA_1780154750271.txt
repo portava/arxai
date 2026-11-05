@@ -6,7 +6,7 @@ Now complete the remaining deferred work.
 
 This is not a rebuild.
 Do not create a new product.
-Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, auth, permissions, account modes, or admin systems.
+Do not duplicate Scanner, Eleanor, MT5 bridge, trade execution, auth, permissions, account modes, or admin systems.
 Do not disturb the live MT5 path.
 Do not reset live broker execution config.
 Do not place a live trade during this task.
@@ -18,7 +18,7 @@ Primary goals:
 2. Fix the remaining page-load speed problem.
 3. Finish the dormant/manual-review surface cleanup.
 4. Remove Paper Trading remnants from active product flow.
-5. Keep ARX AI focused on Analyze, Risk, Execute, Ruby, and Admin safety.
+5. Keep ARX AI focused on Analyze, Risk, Execute, Eleanor, and Admin safety.
 
 PART 1 — Do not stop at nav visibility only
 
@@ -66,7 +66,7 @@ Paper Trading should not exist as:
 4. auth mode
 5. permission mode
 6. scanner mode
-7. Ruby mode
+7. Eleanor mode
 8. allocation mode
 9. dashboard mode
 10. active database mode
@@ -84,7 +84,7 @@ Required work:
 5. If it is obsolete and safe, delete it.
 6. If not safe to delete yet, move/archive it outside active routing and mark it manual-review.
 7. Make sure no Paper Trading text appears to normal users.
-8. Make sure no Paper fallback is used for scanner, Ruby, trade history, allocations, performance, or trading logic.
+8. Make sure no Paper fallback is used for scanner, Eleanor, trade history, allocations, performance, or trading logic.
 9. Keep DEMO and LIVE only.
 
 Do not delete real DEMO trading.
@@ -117,7 +117,7 @@ Layer 2: Chart shell and quote
 * bid/ask/spread
 * live quote
 * timeframe selector
-* loads without waiting for scanner results or Ruby
+* loads without waiting for scanner results or Eleanor
 
 Layer 3: User trade overlays
 
@@ -137,10 +137,10 @@ Layer 4: Scanner results
 * loading independently
 * failure here must not break the chart
 
-Layer 5: Ruby explanation
+Layer 5: Eleanor explanation
 
 * plain-English market explanation
-* Ruby thinking indicator immediately
+* Eleanor thinking indicator immediately
 * must not block chart, search, trade controls, or results
 
 Layer 6: Noncritical extras
@@ -156,13 +156,13 @@ Rules:
 
 1. Scanner shell must render even if quote fails.
 2. Scanner shell must render even if candles fail.
-3. Scanner shell must render even if Ruby fails.
+3. Scanner shell must render even if Eleanor fails.
 4. Scanner shell must render even if Broad Scan fails.
 5. Scanner shell must render even if Focus Scan fails.
 6. Scanner shell must render even if MT5 bridge status is slow.
 7. Scanner shell must render even if notifications fail.
 8. One failed widget must show a local inline error, not crash the page.
-9. Keep section-level error boundaries around chart, tabs, trade modal, results, Ruby, overlays, and notifications.
+9. Keep section-level error boundaries around chart, tabs, trade modal, results, Eleanor, overlays, and notifications.
 10. Do not let the page-level “This page hit a snag” boundary appear during normal Scanner use.
 
 PART 4 — Fix the real 7-second page-load problem
@@ -174,7 +174,7 @@ Measure and fix:
 1. initial app load
 2. Cockpit load
 3. Scanner load
-4. Ruby page load
+4. Eleanor page load
 5. More page load
 6. Trade page load if still kept
 7. bottom nav tap response
@@ -187,14 +187,14 @@ Measure and fix:
 14. auth/session delay
 15. bridge status delay
 16. chart library load delay
-17. Ruby voice module load delay
+17. Eleanor voice module load delay
 18. scanner market data delay
 
 Fix safely:
 
 1. Lazy-load heavy route modules.
 2. Lazy-load chart library only when Scanner/chart is opened.
-3. Lazy-load Ruby voice/speech modules only when voice is opened.
+3. Lazy-load Eleanor voice/speech modules only when voice is opened.
 4. Lazy-load admin-only panels only for admin users.
 5. Do not load hidden tabs until selected.
 6. Do not load old/manual-review pages in the normal user bundle.
@@ -229,7 +229,7 @@ Targets:
 9. Broad Scan start feedback: under 100ms.
 10. Focus Scan start feedback: under 100ms.
 11. Trade button feedback: under 100ms.
-12. Ruby thinking dots: under 100ms.
+12. Eleanor thinking dots: under 100ms.
 
 If final data takes longer, show:
 
@@ -237,7 +237,7 @@ If final data takes longer, show:
 * Loading chart…
 * Loading your trades…
 * Scanning…
-* Ruby is thinking…
+* Eleanor is thinking…
 * Confirming with broker…
 
 Do not let the app feel frozen.
@@ -254,7 +254,7 @@ For every Buy/Sell or trade action:
 4. UI shows “Confirming with broker…” while MT5 responds
 5. UI does not say “Trade placed” until MT5 confirms
 6. if MT5 rejects, show clean error and rollback
-7. Ruby must not block trade placement
+7. Eleanor must not block trade placement
 8. Scanner results must not block trade placement
 9. news/history/backtest must not block manual trade placement
 10. noncritical logging must not block user feedback
@@ -275,7 +275,7 @@ For each one:
 5. verify build references
 6. verify admin/dev need
 7. verify whether normal users can reach it
-8. verify whether it affects Scanner, Ruby, MT5 bridge, auth, trade ledger, allocations, or safety gates
+8. verify whether it affects Scanner, Eleanor, MT5 bridge, auth, trade ledger, allocations, or safety gates
 
 Then:
 
@@ -294,7 +294,7 @@ Normal user app should move toward:
 
 1. Cockpit
 2. Scanner / Trading Terminal
-3. Ruby / AI
+3. Eleanor / AI
 4. More / Settings
 
 Admin-only can keep advanced areas, but normal users should not see:
@@ -328,8 +328,8 @@ After every meaningful cleanup or speed fix, test:
 10. Focus Scan works or shows clean local error.
 11. Chart shell renders.
 12. Trade controls respond.
-13. Ruby page loads.
-14. Ruby responds.
+13. Eleanor page loads.
+14. Eleanor responds.
 15. More page loads.
 16. Admin view works for admin.
 17. Normal users cannot access admin/dev pages.

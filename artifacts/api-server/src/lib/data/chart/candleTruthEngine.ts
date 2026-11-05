@@ -17,7 +17,7 @@
 //   - Fabricate candles or fill gaps with mock data
 //   - Touch any safety gate, MT5 dispatch, or order placement
 //   - Compute Chart Truth Score or Chart Read Score (Phase 3 scope)
-//   - Compute Ruby/AACI/scanner integration (Phase 4 scope)
+//   - Compute Eleanor/AACI/scanner integration (Phase 4 scope)
 //
 // ── 1D Wick Root Cause Finding (Step 8) ─────────────────────────────────────
 // The reported "1D abnormal downside wick near ~2000" for XAUUSD is:

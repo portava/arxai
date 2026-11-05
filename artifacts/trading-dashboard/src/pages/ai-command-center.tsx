@@ -35,7 +35,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { SelectedMarketPanel } from "@/components/scanner/SelectedMarketPanel";
-import { RubyAccountHealthStrip } from "@/components/ruby/RubyAccountHealthStrip";
+import { EleanorAccountHealthStrip } from "@/components/eleanor/EleanorAccountHealthStrip";
 import { useAssistantName } from "@/lib/assistant-name";
 import {
   DailyMentorBriefingCard,
@@ -49,30 +49,30 @@ import {
 import { MENTOR_LATEST_QUERY_KEY, mentorHistoryQueryKey, readMentorJson } from "@/lib/mentorApi";
 import { safeDate } from "@/lib/safeFormat";
 
-// Ruby Command Center — 4-tab, user-facing surface.
+// Eleanor Command Center — 4-tab, user-facing surface.
 //
 // Tabs:
-//   • Chat       — opens Ruby's floating live chat and shows the user's
+//   • Chat       — opens Eleanor's floating live chat and shows the user's
 //                  latest generated mentor briefing and recent mentor
 //                  sessions (not their chat history).
 //   • Market Read — plain-language read of the currently-selected market,
 //                  reusing the same SelectedMarketPanel as the scanner.
-//   • Commands   — user-safe trading command examples Ruby will accept,
+//   • Commands   — user-safe trading command examples Eleanor will accept,
 //                  with plain-language gate explanations. No internal
 //                  gate names, no /api routes, no JSON.
-//   • Memory     — Ruby's performance memory: how she's been doing, what
+//   • Memory     — Eleanor's performance memory: how she's been doing, what
 //                  she's learning, her best/worst symbols and setups,
 //                  insights and warnings. (Preserves every card from the
 //                  previous performance dashboard so no feature is lost.)
 //
 // Live trading safety: no execution affordances on this page. Everything
 // stays read-only / explanatory. The Commands tab only shows what a user
-// CAN say to Ruby — actual dispatch still goes through Ruby's existing
+// CAN say to Eleanor — actual dispatch still goes through Eleanor's existing
 // gated pipeline.
 
 const STORAGE_OPEN_KEY = "arx.assistant.open.v2";
 
-function openRubyLiveChat() {
+function openEleanorLiveChat() {
   try {
     sessionStorage.setItem(STORAGE_OPEN_KEY, "1");
     // ArxAssistantLivePanel watches `storage` events to react across tabs;
@@ -135,7 +135,7 @@ export default function AICommandCenterPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ruby/15 text-ruby ring-1 ring-ruby/25">
+          <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-eleanor/15 text-eleanor ring-1 ring-eleanor/25">
             <Brain className="h-5 w-5" />
           </span>
           <div>
@@ -150,18 +150,18 @@ export default function AICommandCenterPage() {
 
       {/* Read-only live account-health strip — balance / equity / open P/L at a
           glance, sourced from the shared snapshot hook. Display only. */}
-      <RubyAccountHealthStrip />
+      <EleanorAccountHealthStrip />
 
       {/* Tabs */}
       <Tabs defaultValue="chat" className="w-full">
-        {/* Ruby-focused tabs only. Cross-page jumps (Scanner / Alerts /
+        {/* Eleanor-focused tabs only. Cross-page jumps (Scanner / Alerts /
             Calendar / Advanced) belong in the side menu so this page stays
-            focused on Ruby. */}
+            focused on Eleanor. */}
         <TabsList
           className="flex w-full overflow-x-auto no-scrollbar justify-start gap-1 h-auto rounded-xl border border-border bg-card p-1"
           data-testid="ai-tab-strip"
         >
-          <TabsTrigger value="chat" className="shrink-0 rounded-lg text-txt-secondary data-[state=active]:bg-ruby/15 data-[state=active]:text-ruby data-[state=active]:shadow-none" data-testid="tab-chat">
+          <TabsTrigger value="chat" className="shrink-0 rounded-lg text-txt-secondary data-[state=active]:bg-eleanor/15 data-[state=active]:text-eleanor data-[state=active]:shadow-none" data-testid="tab-chat">
             <MessageCircle className="h-4 w-4 mr-1 sm:mr-2" />
             Chat
           </TabsTrigger>
@@ -191,7 +191,7 @@ export default function AICommandCenterPage() {
 
         {/* ───────── Commands ───────── */}
         <TabsContent value="commands" className="mt-4 space-y-4">
-          <CommandsTab onOpenChat={openRubyLiveChat} />
+          <CommandsTab onOpenChat={openEleanorLiveChat} />
         </TabsContent>
 
         {/* ───────── Memory ───────── */}
@@ -248,14 +248,14 @@ function ChatTab() {
 
   return (
     <>
-      {/* Open-Ruby CTA */}
-      <Card className="rounded-2xl border-ruby/25 bg-card">
+      {/* Open-Eleanor CTA */}
+      <Card className="rounded-2xl border-eleanor/25 bg-card">
         <CardContent className="p-5">
           {/* No status pill: nothing on this page checks whether the
               assistant or chat backend is up, so none is claimed. */}
           <div className="flex items-start justify-between gap-3">
             <h3 className="text-base font-semibold flex items-center gap-2">
-              <MessageCircle className="h-4 w-4 text-ruby" />
+              <MessageCircle className="h-4 w-4 text-eleanor" />
               Talk to {name}
             </h3>
           </div>
@@ -265,17 +265,17 @@ function ChatTab() {
           </p>
           <div className="mt-4 grid grid-cols-2 gap-2 sm:flex">
             <Button
-              onClick={openRubyLiveChat}
-              data-testid="button-open-ruby-chat"
-              className="bg-ruby hover:bg-ruby/90 text-white sm:flex-1"
+              onClick={openEleanorLiveChat}
+              data-testid="button-open-eleanor-chat"
+              className="bg-eleanor hover:bg-eleanor/90 text-white sm:flex-1"
             >
               <MessageCircle className="h-4 w-4 mr-2" />
               Open Chat
             </Button>
             <Button
               variant="outline"
-              onClick={openRubyLiveChat}
-              data-testid="button-open-ruby-chat-voice"
+              onClick={openEleanorLiveChat}
+              data-testid="button-open-eleanor-chat-voice"
               className="sm:flex-1"
             >
               <Mic className="h-4 w-4 mr-2" />
@@ -331,7 +331,7 @@ function ChatTab() {
           notes, not the user's chat history. */}
       <section>
         <h3 className="mb-2 flex items-center gap-2 text-base font-semibold" data-testid="chat-mentor-history-heading">
-          <MessageCircle className="h-4 w-4 text-ruby" />
+          <MessageCircle className="h-4 w-4 text-eleanor" />
           Recent mentor sessions
         </h3>
         <p className="mb-2 text-xs text-txt-secondary">

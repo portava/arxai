@@ -7,7 +7,7 @@ The chart-read quality layer counts "expected bars" on a sequence grid to decide
 feed completeness. A naive 24/7 calendar over-counts missing bars for
 session-based instruments (forex/stocks/indices/metals): weekend and off-hours
 closures look like data gaps → `missingCandleCount > 0` → `quality=partial` →
-`aiUsable=false`, wrongly downgrading Ruby on a COMPLETE feed. 24/7 synthetics
+`aiUsable=false`, wrongly downgrading Eleanor on a COMPLETE feed. 24/7 synthetics
 (Deriv) and crypto are genuinely continuous and must keep the naive count.
 
 **Rule:** a session instrument's missing-bar count is computed against a learned

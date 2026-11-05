@@ -1,7 +1,7 @@
 // ── TRENDLINE TRUTH — LEARNING-LOOP RUNTIME (Task #649) ──────────────────────
 //
 // The ONE runtime seam that wires the Trendline Truth learning loop into a live
-// request path (Ruby's structural chart read). For every detected dominant
+// request path (Eleanor's structural chart read). For every detected dominant
 // trendline it:
 //   1. RECORDS the detection as an OBSERVATION (fire-and-forget, idempotent on a
 //      stable outcomeId) so reliability statistics can accrue over time, and
@@ -187,7 +187,7 @@ export async function applyTrendlineLearning(args: {
   }
 
   const report = isSynthetic ? reliability.synthetic : reliability.forexIndices;
-  const adjustment = report.rubyConfidenceAdjustment; // already ±MAX-bounded, 0 below floor
+  const adjustment = report.eleanorConfidenceAdjustment; // already ±MAX-bounded, 0 below floor
 
   // No accrued edge yet → surface nothing extra (keeps the read payload stable).
   if (adjustment === 0) return null;

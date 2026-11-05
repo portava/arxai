@@ -1,4 +1,4 @@
-// Truth regression: the feed popover (live chart, Ruby Chart Read, chat bubble)
+// Truth regression: the feed popover (live chart, Eleanor Chart Read, chat bubble)
 //  - must not say "Last candle: just now" for a timestamp in the future (the
 //    forming bar's scheduled close), independent of whether ticks arrive;
 //  - must not print the raw Deriv readiness token (e.g. AUTH_FAILED).

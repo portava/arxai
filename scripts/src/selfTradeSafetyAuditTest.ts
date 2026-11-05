@@ -143,7 +143,7 @@ function basePerm(over: Partial<ExecutionPermissionInput> = {}): ExecutionPermis
 }
 
 // ── Decision pipeline builder ─────────────────────────────────────────────────
-// Builds a minimal but complete RubyMarketEdgeSignal with all required fields.
+// Builds a minimal but complete EleanorMarketEdgeSignal with all required fields.
 // The signal represents a clean BUY setup so pipeline checks before news pass,
 // letting us isolate the news-risk and data-confidence branches precisely.
 function baseSignal(over: Partial<CandidateSignal> = {}): CandidateSignal {

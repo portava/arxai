@@ -1,4 +1,4 @@
-// Lookup + Ruby-style resolution for the approved Top 250 universe.
+// Lookup + Eleanor-style resolution for the approved Top 250 universe.
 //
 // All resolution is GATED to the approved directory. A free-text input
 // resolves only into an approved market, surfaces a Top-250-scoped

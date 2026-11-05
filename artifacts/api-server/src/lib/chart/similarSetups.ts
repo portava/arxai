@@ -49,7 +49,7 @@ export interface SimilarSetupsResult {
   enoughHistory: boolean;
   comparableCount: number;
   matches: SimilarSetupMatch[];
-  /** Honest plain-English summary suitable for Ruby to restate. */
+  /** Honest plain-English summary suitable for Eleanor to restate. */
   summary: string;
   /** Aggregate of how matched setups resolved (only when enoughHistory). */
   resolved: {

@@ -31,7 +31,7 @@
 //
 //   Gating / safe-mode:
 //     [F14] Chart quality degrades to "invalid" when mockDataDetected=true
-//     [F15] Ruby-gating: aiUsable=false when quality ≠ "clean"
+//     [F15] Eleanor-gating: aiUsable=false when quality ≠ "clean"
 //     [F16] Precision violation — integer pips instead of decimal prices
 //     [F17] Forming bar detected at seam — mergeSeam.formingBarDetected=true
 //     [F18] Seam gap — gap between last complete and forming bar detected
@@ -534,7 +534,7 @@ test("[F34] isValidOhlc rejects non-finite values", () => {
 // ── Session-aware candle completeness (Task #483) ────────────────────────────
 //
 // A naive 24/7 expected-bar grid mistakes forex weekend/off-hours closures for
-// missing bars (quality=partial, aiUsable=false), wrongly downgrading Ruby on a
+// missing bars (quality=partial, aiUsable=false), wrongly downgrading Eleanor on a
 // COMPLETE feed. These tests lock the session-aware completeness contract:
 //   - weekend/market-closed slots are NOT counted as missing,
 //   - genuine mid-stream gaps (a run of ≥2 absent EXPECTED slots) still flag,
@@ -609,7 +609,7 @@ test("[F36] EURUSD-style weekend gap → NOT missing, feed stays clean/aiUsable"
     completenessReason: anomalies.qualityReason,
   });
   assert.equal(verdict.quality, "clean", "complete forex feed across a weekend must be clean");
-  assert.equal(verdict.aiUsable, true, "Ruby must be allowed on a complete weekend-spanning feed");
+  assert.equal(verdict.aiUsable, true, "Eleanor must be allowed on a complete weekend-spanning feed");
 });
 
 test("[F37] Genuine mid-stream gap (≥2 absent weekday slots) → flags missing, partial/not-aiUsable", () => {
@@ -634,7 +634,7 @@ test("[F37] Genuine mid-stream gap (≥2 absent weekday slots) → flags missing
     missingCandleCount: anomalies.missingCandleCount,
   });
   assert.equal(verdict.quality, "partial", "a genuine gap must downgrade quality");
-  assert.equal(verdict.aiUsable, false, "Ruby must NOT run on a genuinely incomplete feed");
+  assert.equal(verdict.aiUsable, false, "Eleanor must NOT run on a genuinely incomplete feed");
 });
 
 test("[F38] Isolated one-off closure (single absent weekday) tolerated → not missing, advisory reason set", () => {
@@ -802,7 +802,7 @@ test("[F43] M30 forex weekend gap (derived profile) → NOT missing, feed stays 
     completenessReason: anomalies.qualityReason,
   });
   assert.equal(verdict.quality, "clean", "complete M30 forex feed across a weekend must be clean");
-  assert.equal(verdict.aiUsable, true, "Ruby must run on a complete weekend-spanning M30 feed");
+  assert.equal(verdict.aiUsable, true, "Eleanor must run on a complete weekend-spanning M30 feed");
 });
 
 test("[F44] M30 genuine mid-stream gap (≥2 absent weekday slots) → flags missing, partial/not-aiUsable", () => {
@@ -833,7 +833,7 @@ test("[F44] M30 genuine mid-stream gap (≥2 absent weekday slots) → flags mis
     missingCandleCount: anomalies.missingCandleCount,
   });
   assert.equal(verdict.quality, "partial", "a genuine M30 gap must downgrade quality");
-  assert.equal(verdict.aiUsable, false, "Ruby must NOT run on a genuinely incomplete M30 feed");
+  assert.equal(verdict.aiUsable, false, "Eleanor must NOT run on a genuinely incomplete M30 feed");
 });
 
 // ── DST-transition resilience (Task #487) ────────────────────────────────────
@@ -921,7 +921,7 @@ test("[F45] DST boundary shift on M30: learned profile demotes the shifted slot 
     completenessReason: anomalies.qualityReason,
   });
   assert.equal(verdict.quality, "clean", "a DST-spanning M30 feed must stay clean under the learned profile");
-  assert.equal(verdict.aiUsable, true, "Ruby must run across a DST boundary on the learned profile");
+  assert.equal(verdict.aiUsable, true, "Eleanor must run across a DST boundary on the learned profile");
 
   // CONTRAST: a naive single-season (4 full-Friday weeks) profile bakes the
   // winter boundary as a trading slot. The IDENTICAL summer feed now shows the
@@ -1061,7 +1061,7 @@ test("[F47] DST boundary shift on H1 (stored timeframe): learned profile demotes
     completenessReason: anomalies.qualityReason,
   });
   assert.equal(verdict.quality, "clean", "a DST-spanning H1 feed must stay clean under the learned profile");
-  assert.equal(verdict.aiUsable, true, "Ruby must run across a DST boundary on the learned H1 profile");
+  assert.equal(verdict.aiUsable, true, "Eleanor must run across a DST boundary on the learned H1 profile");
 
   // CONTRAST: a naive single-season (4 full-boundary weeks) profile bakes the
   // winter boundary band as trading slots. The IDENTICAL summer feed now shows
@@ -1138,7 +1138,7 @@ test("[F48] DST boundary at the exact lookback midpoint on M30 (4/8 = 0.5 tie): 
     completenessReason: anomalies.qualityReason,
   });
   assert.equal(verdict.quality, "clean", "a DST-tie-spanning M30 feed must stay clean under the strict-majority rule");
-  assert.equal(verdict.aiUsable, true, "Ruby must run across an exact-midpoint DST boundary");
+  assert.equal(verdict.aiUsable, true, "Eleanor must run across an exact-midpoint DST boundary");
 
   // CONTRAST: a slot that traded in a TRUE strict majority (5/8 = 0.625) stays
   // expected, so the IDENTICAL summer feed (boundary absent) DOES flag a genuine

@@ -9,7 +9,7 @@ Do not use sandbox wording.
 Do not use Paper Trading.
 Do not use dry-run trade proof as the final verification.
 
-The purpose of this phase is to confirm the Ruby Scalp Signals system works against the real LIVE app flow.
+The purpose of this phase is to confirm the Eleanor Scalp Signals system works against the real LIVE app flow.
 
 Required change:
 All final verification for trade readiness, Watch Mode, Broad Scan scalp ranking, Build Scalp Trade, and post-trade review must be proven through the LIVE environment only.
@@ -26,7 +26,7 @@ Before placing any live test trade:
 * confirm SL and TP are valid for the broker
 * confirm margin is sufficient
 * confirm the scalp setup has not expired
-* confirm Ruby is not using stale scanner data
+* confirm Eleanor is not using stale scanner data
 
 Use the smallest approved live test size only.
 
@@ -48,7 +48,7 @@ For Watch Mode:
 For Build Scalp Trade:
 
 * the generated scalp must open the existing live trade modal
-* the modal must be prefilled with the real symbol, direction, lot size, TP, SL, risk, and Ruby explanation
+* the modal must be prefilled with the real symbol, direction, lot size, TP, SL, risk, and Eleanor explanation
 * the system must revalidate everything immediately before Confirm Live Trade
 * if the setup is invalid, stale, late, expired, or unsafe, block submission and explain why
 
@@ -57,13 +57,13 @@ For post-trade review:
 * use a real live trade result only
 * use actual order/position/retcode data returned from the EA/broker
 * do not fabricate a trade review
-* Ruby should explain the result in plain English using the real closed trade data available
+* Eleanor should explain the result in plain English using the real closed trade data available
 
 Final proof required:
 
 * Broad Scan live data flow verified
 * Focus Scan live scalp signal verified
-* Ruby Scalp Builder live output verified
+* Eleanor Scalp Builder live output verified
 * Build Scalp Trade live modal prefill verified
 * smallest-size live trade test result shown
 * EA claim/completion shown

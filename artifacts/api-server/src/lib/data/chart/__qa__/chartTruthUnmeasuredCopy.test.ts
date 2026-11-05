@@ -12,8 +12,8 @@ import { computeBrokerPriceAlignment, mirrorTrustSegment, noBrokerAlignment } fr
 import { bindBrokerQuote } from "../brokerQuoteBinding.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
-import { buildTrustLine } from "../rubyChartContext.js";
-import { buildRubyDraftRead } from "../../../assistant/rubyDraftRead.js";
+import { buildTrustLine } from "../eleanorChartContext.js";
+import { buildEleanorDraftRead } from "../../../assistant/eleanorDraftRead.js";
 
 const epoch = 1_700_000_000_000;
 function fixture(overrides: Partial<TimeframeTruthResult> = {}): TimeframeTruthResult {
@@ -175,7 +175,7 @@ test("trust lines say Verified only in the Verified band, Live feed only for a c
     assert.equal(g.autonomousChartActionAllowed, true);
     const line = buildTrustLine(g, tight, "M5", false, buildChartHandshake(g, s).overall, { feed: status });
     assert.doesNotMatch(line, /Live feed|Verified/, line); assert.match(line, new RegExp(expected), line);
-    // Ruby's draft-read footer is built from the same segments.
+    // Eleanor's draft-read footer is built from the same segments.
     const state = {
       symbol: "TESTFX_FIXTURE", displaySymbol: "Offline fixture", timeframe: "M5", assetClass: "forex",
       aiUsable: false, stale: false, truthState: status, currentCandle: null, candleStats: { barsAnalyzed: 199 },
@@ -184,7 +184,7 @@ test("trust lines say Verified only in the Verified band, Live feed only for a c
       agentConsensus: { populated: false, note: "", headline: "", stance: "neutral", conflict: false, protective: false, cautions: [] },
       gateOutput: g, chartTruthScore: s, brokerAlignment: tight,
     } as unknown as ChartIntelligenceState;
-    const draft = buildRubyDraftRead(state, "analyze").trustLine;
+    const draft = buildEleanorDraftRead(state, "analyze").trustLine;
     assert.doesNotMatch(draft, /Live feed|Verified/, draft); assert.match(draft, new RegExp(expected), draft);
   }
 });

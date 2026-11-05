@@ -1,6 +1,6 @@
 Finish the Deriv synthetic/volatility scanner feed wiring.
 
-Check what already exists first and reuse the current DerivFeedAdapter, scanner, symbol mapping, cache adapter, market data provider, and Ruby Market Intelligence logic.
+Check what already exists first and reuse the current DerivFeedAdapter, scanner, symbol mapping, cache adapter, market data provider, and Eleanor Market Intelligence logic.
 
 Do not rebuild the whole scanner.
 Do not fabricate candles.
@@ -94,11 +94,11 @@ Update Market Scanner Synthetic Indices mode:
 - If no candles available but ticks are available, use tick-derived analysis carefully and label it:
   “Tick-based analysis.”
 
-PART 5 — RUBY MARKET INTELLIGENCE
+PART 5 — ELEANOR MARKET INTELLIGENCE
 
-Ruby Market Intelligence should use Deriv data for synthetic symbols when available.
+Eleanor Market Intelligence should use Deriv data for synthetic symbols when available.
 
-For synthetic/volatility symbols, Ruby should explain:
+For synthetic/volatility symbols, Eleanor should explain:
 - current tick/candle movement
 - volatility warning
 - trend/bias if enough data exists
@@ -106,7 +106,7 @@ For synthetic/volatility symbols, Ruby should explain:
 - risk warning
 - no fake candle generation
 
-Ruby copy:
+Eleanor copy:
 “This synthetic market is using Deriv feed data. Volatility can move quickly; use wider stop-loss spacing and confirm risk.”
 
 PART 6 — ADMIN DIAGNOSTICS
@@ -135,7 +135,7 @@ Add/update tests:
 7. Boom 1000 maps correctly.
 8. Crash 1000 maps correctly.
 9. Tick/candle data normalizes into scanner format.
-10. Ruby Market Intelligence uses Deriv data for synthetic symbols.
+10. Eleanor Market Intelligence uses Deriv data for synthetic symbols.
 11. Admin diagnostics show Deriv status without secrets.
 12. Normal users see clean messages.
 13. No live trade auto-fires.
@@ -148,7 +148,7 @@ Acceptance proof:
 - If not configured, clean setup message appears.
 - No fabricated synthetic candles.
 - Admin diagnostics show Deriv feed status.
-- Ruby explains synthetic market using Deriv feed data.
+- Eleanor explains synthetic market using Deriv feed data.
 - No live trade fired.
 - No secrets leaked.
 

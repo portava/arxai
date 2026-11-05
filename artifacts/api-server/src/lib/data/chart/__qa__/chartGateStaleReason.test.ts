@@ -4,7 +4,7 @@
 // says "Market closed … Not a feed fault, and not live data." (and for a
 // session market outside that window, "The market may be closed or the feed
 // delayed"). That fixed sentence reached users as the trade-plan chart note
-// and Ruby's syncing read. The gate now states the feed's own lag wording;
+// and Eleanor's syncing read. The gate now states the feed's own lag wording;
 // the gate decision itself (autonomousChartActionAllowed) is unchanged.
 //
 // Pure, offline: no provider, DB or broker calls.

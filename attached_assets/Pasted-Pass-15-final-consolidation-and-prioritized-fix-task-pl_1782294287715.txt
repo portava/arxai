@@ -7,7 +7,7 @@ Important:
 This is consolidation only. Do not re-audit everything from scratch unless needed to resolve conflicts. Use the held ledger from prior passes and only re-read files if a finding conflicts, is ambiguous, or must be grouped accurately.
 
 Naming directive:
-The assistant is Eleanor. Do not call it Ruby in user-facing task titles or recommendations. Legacy code/file names containing ruby* should be treated as rename debt.
+The assistant is Eleanor. Do not call it Eleanor in user-facing task titles or recommendations. Legacy code/file names containing eleanor* should be treated as rename debt.
 
 Required consolidation inputs:
 Include, at minimum, the held findings from:
@@ -144,7 +144,7 @@ Strengthen refresh wording and provider-limit visibility.
 Keep router no-fabrication invariant.
 
 H. Naming / copy / UX honesty
-Complete Ruby → Eleanor rename for user-facing copy.
+Complete Eleanor → Eleanor rename for user-facing copy.
 Fix “16-gate/18-gate” drift.
 Add “No order was sent” to block messages.
 Rename/clarify Refresh wording.
@@ -163,7 +163,7 @@ Add CI guards covering:
 - stale data not shown as live
 - fallback/mock not production live
 - emergency banners on live surfaces
-- user-facing Ruby naming drift
+- user-facing Eleanor naming drift
 
 Required output format:
 
@@ -222,4 +222,4 @@ Important:
 - No workflow changes.
 - Do not lose any held ledger item.
 - If Pass 9 findings are not available in the local transcript, mark “Pass 9 findings must be merged from its report before task creation” instead of inventing them.
-- Do not call the assistant Ruby in final task titles unless quoting legacy code names. Use Eleanor.
+- Do not call the assistant Eleanor in final task titles unless quoting legacy code names. Use Eleanor.

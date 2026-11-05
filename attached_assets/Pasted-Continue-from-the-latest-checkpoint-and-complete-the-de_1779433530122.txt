@@ -76,9 +76,9 @@ Do not rely only on names like GlobalMarketSelector. Inspect the rendered header
 
 Trace the visible top dropdown that currently shows symbols like EURUSD/GBPJPY:
 - Find the actual component even if it has a different name.
-- Check whether it changes selected market globally, scanner focus, Ruby market read, chart symbol, or trade ticket symbol.
+- Check whether it changes selected market globally, scanner focus, Eleanor market read, chart symbol, or trade ticket symbol.
 - If it works, label it clearly as “Active Market” or “Market Focus” and ensure it updates the correct active market state.
-- If it partially works, connect it properly to scanner focus, Ruby market read, and trade ticket symbol without duplicating state.
+- If it partially works, connect it properly to scanner focus, Eleanor market read, and trade ticket symbol without duplicating state.
 - If it does not control anything meaningful, hide it from normal pages.
 - Make sure it does not conflict with the Scanner Symbols search/focus flow.
 - Do not leave an unexplained global symbol dropdown in the normal UI.
@@ -98,15 +98,15 @@ Search rendered normal-user UI and components for:
 - Broker Execution Enabled
 - Broker Execution Disabled
 - Tester Access
-- Ruby is read-only on this page
+- Eleanor is read-only on this page
 - raw guard/evaluator/function names
 - stack traces
 - route names
 - developer-only identifiers
 
 Fix leaks in:
-- Ruby chat
-- Ruby Command Center
+- Eleanor chat
+- Eleanor Command Center
 - dashboard/cockpit
 - scanner
 - selected market panel
@@ -121,7 +121,7 @@ Replace with plain language:
 - “Paper mode active · Live trading locked”
 - “Live trading is locked until your account is approved, the trading connection is verified, and all safety checks pass.”
 
-Ruby chat should not show debug/tool/provider/backend labels to normal users.
+Eleanor chat should not show debug/tool/provider/backend labels to normal users.
 
 FIX 5 — AdminRouteGuard hardening
 The report says AdminRouteGuard only blocks admins in user-view mode and real non-admins can type /admin/beta-readiness and land on the page shell while APIs return 401.
@@ -145,8 +145,8 @@ QA / verification:
 - Verify Request Access opens the new form and submits or fails gracefully.
 - Verify Create Account is gone/disabled for normal users.
 - Verify normal user topbar no longer shows broker execution diagnostic strips.
-- Verify normal user Ruby chat no longer exposes debug/tools/provider/backend details.
-- Verify Ruby Command Center does not show broker/read-only/debug badges to normal users.
+- Verify normal user Eleanor chat no longer exposes debug/tools/provider/backend details.
+- Verify Eleanor Command Center does not show broker/read-only/debug badges to normal users.
 - Verify the top market dropdown is either clearly functional and labeled or hidden.
 - Verify non-admin direct access to /admin/* is blocked on the frontend.
 - Verify admin users can still reach admin pages.

@@ -1,6 +1,6 @@
 Build ARX Bridge v2 Beta Kernel and verify it with a real live broker test.
 
-This is the launch-beta bridge foundation. It must replace snapshot-only behavior with broker-truth event flow, real-time account state, real-time position truth, phantom-position prevention, CopyRates candle sync, tick/quote freshness, UI truth, Ruby/Scanner/Risk/Governance integration, and admin trace.
+This is the launch-beta bridge foundation. It must replace snapshot-only behavior with broker-truth event flow, real-time account state, real-time position truth, phantom-position prevention, CopyRates candle sync, tick/quote freshness, UI truth, Eleanor/Scanner/Risk/Governance integration, and admin trace.
 
 This is not a fake test task. After the bridge is built and all preflight checks pass, run a real live micro-test through the connected live MT5/Deriv bridge. Do not use paper trading. Do not use demo. Do not use simulated fills. Do not use fake broker responses. Do not mark complete unless the test proves real broker communication.
 
@@ -26,7 +26,7 @@ Create the ARX Bridge v2 Beta Kernel:
 5. Real-time account, positions, pending orders, candle, and tick/quote updates.
 6. Backend event ingest, validation, idempotency, sequence tracking, admin trace, and lifecycle mapping.
 7. Phantom-position dry-run reconciliation.
-8. UI truth contract across Dashboard, Trade, Positions, Admin, Ruby, Scanner, Risk, Governance, Flame Scalp, and Run-On Candle Momentum.
+8. UI truth contract across Dashboard, Trade, Positions, Admin, Eleanor, Scanner, Risk, Governance, Flame Scalp, and Run-On Candle Momentum.
 9. Real live micro-test proving the bridge works end-to-end.
 
 PHASE 1 — CURRENT BRIDGE AUDIT
@@ -54,7 +54,7 @@ Inspect:
 - trade page
 - admin bridge status
 - owner live test cycle
-- Ruby account/trade context
+- Eleanor account/trade context
 - scanner data context
 - risk/account context
 - flame/run-on candle context
@@ -402,7 +402,7 @@ Requirements:
 - update provider contribution truth
 - invalidate frontend queries
 - broadcast SSE/WebSocket updates to UI
-- broadcast truth context to Ruby/Scanner/Risk/Governance/Flame
+- broadcast truth context to Eleanor/Scanner/Risk/Governance/Flame
 - never show fake success
 
 PHASE 5 — ORDER AND POSITION LIFECYCLE TRUTH
@@ -445,7 +445,7 @@ Rules:
 - manual/broker-side close must be recognized
 - partial close must not be treated as full close
 - app rows must map to MT5 tickets when available
-- Ruby and UI must use this lifecycle truth everywhere
+- Eleanor and UI must use this lifecycle truth everywhere
 
 PHASE 6 — PHANTOM POSITION RECONCILER
 
@@ -479,7 +479,7 @@ PHASE 7 — REAL-TIME ACCOUNT, BALANCE, EQUITY, MARGIN, P/L
 Wire real-time account and P/L truth.
 
 Rules:
-- Dashboard, Trade, Positions, Admin, Risk, Ruby, Scanner, and Investor reporting must consume the correct truth source.
+- Dashboard, Trade, Positions, Admin, Risk, Eleanor, Scanner, and Investor reporting must consume the correct truth source.
 - Live broker account values come from account.snapshot.
 - Open P/L comes from broker positions snapshot/tick data.
 - Trader allocation comes from app allocation ledger.
@@ -518,7 +518,7 @@ Feed:
 - Broad Scan
 - Flame Scalp
 - Run-On Candle Momentum
-- Ruby
+- Eleanor
 - Risk
 - Governance
 - Admin trace
@@ -552,8 +552,8 @@ PHASE 9 — AI ECOSYSTEM INTEGRATION
 
 Bridge v2 must feed all AI components.
 
-1. Ruby
-Ruby receives:
+1. Eleanor
+Eleanor receives:
 - live account mode
 - bridge status
 - account snapshot freshness
@@ -567,7 +567,7 @@ Ruby receives:
 - governance outcome
 - data limitations
 
-Ruby must:
+Eleanor must:
 - never mention paper/demo/simulation in live flow
 - never invent balances
 - never invent fills
@@ -614,7 +614,7 @@ Governance can challenge:
 
 Governance outcome affects:
 - Scanner ranking
-- Ruby wording
+- Eleanor wording
 - Risk warning
 - Flame/Run-On confidence
 - Admin trace
@@ -654,7 +654,7 @@ Rules:
 - balance must match account snapshot truth
 - candles must show truthful source/freshness
 - MT5 must not be shown as contributing until real candles arrive and are verified
-- Ruby follows the same truth contract
+- Eleanor follows the same truth contract
 - normal users do not see backend/internal terms
 - admin sees precise diagnostics
 
@@ -724,7 +724,7 @@ Add/verify:
 - duplicate detection
 - retry-safe idempotency
 - admin logging of invalid attempts
-- no secrets exposed in UI/Ruby/logs visible to normal users
+- no secrets exposed in UI/Eleanor/logs visible to normal users
 
 Handle:
 - terminal offline
@@ -797,7 +797,7 @@ Allowed:
 - candle validation
 - tick validation
 - UI truth helper updates
-- Ruby truth context
+- Eleanor truth context
 - Scanner provider freshness
 - Flame/Run-On provider freshness
 - Governance stale-data challenge
@@ -869,7 +869,7 @@ Test requirements:
   - open position appears in broker positions snapshot
   - account snapshot updates
   - P/L updates live
-  - Ruby/Trade/Admin reflect broker truth
+  - Eleanor/Trade/Admin reflect broker truth
   - close requested
   - close sent
   - close accepted
@@ -895,7 +895,7 @@ After the live test, verify:
 - balance/equity/margin updated after open/close
 - close-fill/P&L reflected correctly
 - Admin trace shows full bridge event path
-- Ruby explains only true state
+- Eleanor explains only true state
 - Scanner/Risk/Governance did not consume stale/fake account data
 - bridge latency metrics recorded
 - sequence/idempotency records created
@@ -920,7 +920,7 @@ Run:
 - tick validation tests
 - account snapshot freshness tests
 - UI truth tests
-- Ruby truth tests
+- Eleanor truth tests
 - Scanner provider freshness tests
 - Flame/Run-On provider freshness tests
 - Governance stale-data challenge tests
@@ -942,7 +942,7 @@ Report:
 8. Phantom reconciler dry-run status.
 9. Account/P&L stream status.
 10. Candle/tick feed status.
-11. Ruby integration status.
+11. Eleanor integration status.
 12. Scanner integration status.
 13. Flame Scalp / Run-On integration status.
 14. Risk integration status.
@@ -977,7 +977,7 @@ Do not mark complete until:
 - account/P&L stream is real
 - phantom-position prevention is active in dry-run
 - candle/tick path is ready and truthful
-- Ruby/Scanner/Risk/Governance/Flame/Run-On receive bridge truth
+- Eleanor/Scanner/Risk/Governance/Flame/Run-On receive bridge truth
 - UI truth contract is enforced
 - all pre-live gates pass before live trade
 - exactly one real live micro-test is attempted only after gates pass

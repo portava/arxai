@@ -7,10 +7,10 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { Progress } from "@/components/ui/progress";
-import { RubyAvatar } from "@/components/ruby/RubyAvatar";
+import { EleanorAvatar } from "@/components/eleanor/EleanorAvatar";
 import { buildSteps, BADGES, PRACTICE_LABS, buildSchoolDisclaimer } from "../data/content";
 import { useSchoolProgress, completionPct } from "../lib/progress";
-import { SchoolPageHeader, RubyTeacherCard, SchoolDisclaimer, askRuby } from "../components/SchoolUI";
+import { SchoolPageHeader, EleanorTeacherCard, SchoolDisclaimer, askEleanor } from "../components/SchoolUI";
 import {
   GraduationCap, BookOpen, Brain, FlaskConical, Trophy, Calculator,
   ScrollText, ArrowRight, Sparkles, ChevronRight, Award,
@@ -39,7 +39,7 @@ export default function TradingSchoolHome() {
     <div className="mx-auto w-full max-w-[1100px] space-y-4 p-4 md:p-6 pb-32 md:pb-6" data-testid="page-trading-school">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <SchoolPageHeader title="Trading School" subtitle={`Learn trading from the ground up with ${name} — clear, calm, and step by step.`} />
-        <button onClick={askRuby} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/20">
+        <button onClick={askEleanor} className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/20">
           <Sparkles className="h-4 w-4" /> Ask {name} to Explain
         </button>
       </div>
@@ -75,20 +75,20 @@ export default function TradingSchoolHome() {
         </div>
       </div>
 
-      {/* Ruby's daily lesson */}
-      <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ruby">
+      {/* Eleanor's daily lesson */}
+      <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
+        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-eleanor">
           <Sparkles className="h-4 w-4" /> {name}'s Daily Lesson
         </div>
         <Link href={`/school/lesson/${dailyLesson.id}`} className="flex items-center justify-between gap-3 group">
           <div className="flex items-center gap-3">
-            <RubyAvatar state="thinking" size="md" ariaHidden />
+            <EleanorAvatar state="thinking" size="md" ariaHidden />
             <div>
               <div className="text-sm font-semibold">Step {dailyLesson.number}: {dailyLesson.title}</div>
               <p className="text-xs text-txt-muted">{dailyLesson.subtitle}</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-ruby transition-transform group-hover:translate-x-1" />
+          <ArrowRight className="h-4 w-4 text-eleanor transition-transform group-hover:translate-x-1" />
         </Link>
       </div>
 
@@ -103,10 +103,10 @@ export default function TradingSchoolHome() {
         ))}
       </div>
 
-      {/* Ruby teaching modes preview (uses Step 5 support example) */}
-      <RubyTeacherCard
+      {/* Eleanor teaching modes preview (uses Step 5 support example) */}
+      <EleanorTeacherCard
         title={`${name} teaches at your level`}
-        ruby={{
+        eleanor={{
           simple: "Support is like a floor. Price fell there before and bounced. Traders watch it because buyers may defend that area again.",
           normal: "Support is a price zone where buying pressure previously appeared strong enough to stop or slow a drop.",
           pro: "Support is a historically reactive demand zone where order flow previously absorbed selling pressure, often used for entry planning, stop placement, or invalidation.",

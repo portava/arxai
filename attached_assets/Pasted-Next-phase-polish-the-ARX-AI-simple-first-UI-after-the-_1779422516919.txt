@@ -12,7 +12,7 @@ Focus areas:
 - collapse advanced details
 - simplify repeated badges/warnings
 - make mobile screens easier to understand
-- preserve all trading, scanner, Ruby, chart, risk, admin, and audit features
+- preserve all trading, scanner, Eleanor, chart, risk, admin, and audit features
 
 1. Inspect the updated UI first
 
@@ -21,14 +21,14 @@ Check these routes/pages:
 - Market Scanner
 - Trade
 - Positions
-- Ruby/AI
+- Eleanor/AI
 - Risk
 - Live Chart
 - Admin/Live Shared
 - More/Admin
 - Settings
 - bottom navigation
-- Ruby floating assistant
+- Eleanor floating assistant
 
 For each page, identify:
 - what appears above the fold on iPhone
@@ -37,7 +37,7 @@ For each page, identify:
 - what should become a tab
 - what should move into Advanced
 - what buttons are most important
-- whether Ruby bubble or bottom nav covers content
+- whether Eleanor bubble or bottom nav covers content
 
 2. Apply simple-first hierarchy
 
@@ -49,7 +49,7 @@ Top:
 - primary user action
 
 Middle:
-- Ruby explanation or main page summary
+- Eleanor explanation or main page summary
 - current positions/results/readiness
 
 Bottom:
@@ -67,7 +67,7 @@ Replace scattered badges with one compact row where possible:
 Example:
 Mode: Demo/Live/Ready/Blocked
 Market: EURUSD
-Ruby: Active
+Eleanor: Active
 Account: Approved/Not Approved
 
 Tapping or expanding this row should show the full details:
@@ -89,13 +89,13 @@ Scanner should open to the clean Focus view.
 
 Above the fold should show:
 - selected market
-- Ruby read
+- Eleanor read
 - bias
 - confidence
 - risk level
 - Buy/Sell/Wait status
 - View Chart
-- Ask Ruby
+- Ask Eleanor
 - optional one-click Buy/Sell buttons if enabled
 
 Move these out of the first view:
@@ -133,9 +133,9 @@ Move these into Advanced:
 
 Positions should have clear one-click Close buttons without being hidden.
 
-6. Improve Ruby layout
+6. Improve Eleanor layout
 
-Ruby should feel like the guide, not another settings page.
+Eleanor should feel like the guide, not another settings page.
 
 Chat tab:
 - simple message area
@@ -145,7 +145,7 @@ Chat tab:
 
 Market Read tab:
 - selected market
-- Ruby’s current read
+- Eleanor’s current read
 - confidence
 - entry/stop/target
 - reason breakdown
@@ -183,7 +183,7 @@ On iPhone Safari:
 - no horizontal overflow
 - no cramped chip walls above the fold
 - no giant repeated warnings
-- no overlapping Ruby bubble
+- no overlapping Eleanor bubble
 - no bottom nav covering buttons
 - primary buttons should be thumb-friendly
 - tabs should remain easy to tap
@@ -199,9 +199,9 @@ Do not remove:
 - scanner
 - symbols
 - synthetic indices
-- Ruby chat
-- Ruby market reads
-- Ruby commands
+- Eleanor chat
+- Eleanor market reads
+- Eleanor commands
 - voice mode
 - chart
 - risk controls
@@ -222,7 +222,7 @@ If a section has no data, show calm, useful copy:
 Examples:
 - “No open positions.”
 - “No scanner result yet. Run scan or select a market.”
-- “Ruby is ready. Ask about a market or trade.”
+- “Eleanor is ready. Ask about a market or trade.”
 - “Feed not configured. Symbol can still be selected, but live scanner data may be limited.”
 
 Avoid scary wording unless something is actually blocked.
@@ -237,11 +237,11 @@ Run:
 Add/update tests proving:
 - Scanner opens to Focus and does not show the full symbol universe above the fold.
 - Trade opens to Quick Trade and advanced order types still exist.
-- Ruby opens to Chat and market read is still available.
+- Eleanor opens to Chat and market read is still available.
 - Admin live shared data is grouped into collapsible sections.
 - Status drawer still exposes full readiness details.
 - No page has horizontal overflow on mobile.
-- Ruby bubble does not cover primary buttons.
+- Eleanor bubble does not cover primary buttons.
 - Bottom nav does not cover page content.
 - No features/routes were removed.
 - No duplicate legacy components are mounted.

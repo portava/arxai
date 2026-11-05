@@ -6,7 +6,7 @@ T019 completed the system-wide governance-controlled restriction shift:
 
 1. Owner/admin app-added restrictions are now controlled by Admin Risk/Governance.
 2. Owner Live Control Mode works and is recoverable.
-3. Stop Loss / Take Profit / lot caps / symbol limits / scanner/Ruby/backtest/news requirements are governance-controlled.
+3. Stop Loss / Take Profit / lot caps / symbol limits / scanner/Eleanor/backtest/news requirements are governance-controlled.
 4. No live-gate bypass was introduced.
 5. No fake ticket was fabricated.
 6. Normal/non-approved users keep protective defaults.
@@ -134,7 +134,7 @@ Rules:
 5. No SL required unless Governance requires SL.
 6. No TP required unless Governance requires TP.
 7. One Confirm only.
-8. Do not let Ruby choose the direction.
+8. Do not let Eleanor choose the direction.
 9. This is a wiring proof, not a strategy trade.
 10. Place only one trade.
 
@@ -155,7 +155,7 @@ Execution:
 13. Confirm ARX stores MT5 ID.
 14. Confirm Trade page shows Entry / Now / P&L.
 15. Confirm Scanner/chart shows the trade.
-16. Confirm Ruby can explain it without exposing internals.
+16. Confirm Eleanor can explain it without exposing internals.
 17. Close immediately through ARX.
 18. Confirm MT5 close succeeds.
 19. Confirm ARX marks closed.
@@ -209,7 +209,7 @@ Final report must include:
 21. ARX ledger verification
 22. Trade page Entry/Now/P&L verification
 23. Scanner/chart verification
-24. Ruby explanation verification
+24. Eleanor explanation verification
 25. after arx_live_commands count/max_id
 26. after ARX open positions
 27. after MT5 open positions

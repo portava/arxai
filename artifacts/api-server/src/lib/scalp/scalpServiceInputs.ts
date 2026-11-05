@@ -1,4 +1,4 @@
-// Ruby Scalp — shared live-input loaders.
+// Eleanor Scalp — shared live-input loaders.
 //
 // These gather the per-user, real-market inputs the flame read + engine need.
 // Extracted so BOTH the entry surface (scalpService) and the manage surface

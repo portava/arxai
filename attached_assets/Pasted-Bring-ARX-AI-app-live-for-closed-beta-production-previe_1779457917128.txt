@@ -37,7 +37,7 @@ Verify:
 9. Andraie Regular Mode hides admin controls.
 10. Admin Mode restores admin controls.
 11. Scanner opens.
-12. AI/Ruby opens.
+12. AI/Eleanor opens.
 13. Trade page opens.
 14. Open Trades page opens.
 15. Risk page opens.
@@ -61,7 +61,7 @@ User-facing status should be clean:
 - Trading Access Locked
 - Simulator Available
 - Scanner Available
-- Ruby Available
+- Eleanor Available
 
 Do not show normal UI wording:
 - “live money”
@@ -113,7 +113,7 @@ Admin should be able to see:
 - system health
 - MT5 bridge status
 - scanner feed status
-- Ruby status
+- Eleanor status
 - audit/reconciliation status
 - invite/user status
 - blocked trade attempts
@@ -133,7 +133,7 @@ Regular invited user:
 1. Login works.
 2. Dashboard loads.
 3. Scanner loads.
-4. AI/Ruby loads.
+4. AI/Eleanor loads.
 5. Risk loads.
 6. Open Trades loads.
 7. Trade ticket opens.

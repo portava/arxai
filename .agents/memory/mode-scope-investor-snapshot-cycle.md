@@ -10,7 +10,7 @@ is a closed mutual-recursion triangle. Because every hop is `async`/`await`, it
 does **not** overflow the stack or throw — `getUserModeScope`'s try/catch→PAPER
 fallback never fires; it just recurses forever doing DB queries and **hangs**
 (no error, no timeout). This silently breaks `/api/me/account`, the balance SSE
-stream, Ruby, and the risk engine — anything that resolves a mode or builds the
+stream, Eleanor, and the risk engine — anything that resolves a mode or builds the
 canonical balance.
 
 **Why:** `buildInvestorLiveBalanceSnapshot` needs the resolved account mode and

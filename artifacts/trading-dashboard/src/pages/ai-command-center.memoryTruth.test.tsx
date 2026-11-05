@@ -1,4 +1,4 @@
-// Truth: Ruby's Memory tab is built from the paper book. For a LIVE_SHARED
+// Truth: Eleanor's Memory tab is built from the paper book. For a LIVE_SHARED
 // account the server withholds it (commandCenter null + modeNote); the tab must
 // show that note, not demo win rate / P&L under a LIVE account strip. A failed
 // load is "could not be loaded", never "No memory snapshot yet". The figures
@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby", isLoading: false, isDefault: true }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor", isLoading: false, isDefault: true }) }));
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
-vi.mock("@/components/ruby/RubyAccountHealthStrip", () => ({ RubyAccountHealthStrip: () => null }));
+vi.mock("@/components/eleanor/EleanorAccountHealthStrip", () => ({ EleanorAccountHealthStrip: () => null }));
 vi.mock("recharts", () => {
   const Stub = ({ children }: { children?: unknown }) => <div>{children as never}</div>;
   return { LineChart: Stub, Line: () => null, XAxis: () => null, YAxis: () => null, ResponsiveContainer: Stub, Tooltip: () => null };
@@ -17,7 +17,7 @@ vi.mock("recharts", () => {
 
 const { MemoryTab } = await import("./ai-command-center");
 
-const LIVE_NOTE = "This is a live account. Ruby's memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.";
+const LIVE_NOTE = "This is a live account. Eleanor's memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.";
 
 function json(body: unknown, status = 200) {
   return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
@@ -38,7 +38,7 @@ const paperCc = {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-describe("Ruby Memory tab — truth", () => {
+describe("Eleanor Memory tab — truth", () => {
   it("LIVE_SHARED: shows the server's live note, not paper win rate or P&L", async () => {
     renderTab((url) => {
       if (url.startsWith("/api/performance/ai-command-center")) {

@@ -1,6 +1,6 @@
 // ── data/opportunityAdapters.ts ─────────────────────────────────────────────
 // Shared adapters that map a ScannerOpportunity (the SINGLE scoring path, from
-// scanSymbolTimeframe) onto the two legacy opportunity output shapes Ruby's
+// scanSymbolTimeframe) onto the two legacy opportunity output shapes Eleanor's
 // surfaces already consume:
 //   - the assistant getMarketScannerOpportunities tool output (T002a)
 //   - the per-user opportunityRadar LiveCandidate (T002b)
@@ -135,7 +135,7 @@ export function deriveTakeProfitTargets(
 // (`canShowTradeSetup === true`, which is true exactly when status ===
 // "sufficient"). A MISSING verdict or ANY non-sufficient verdict WITHHOLDS every
 // level and returns an honest withheld state carrying the SAME human-readable
-// reason the Ruby Chart Read panel shows. This is the single builder both
+// reason the Eleanor Chart Read panel shows. This is the single builder both
 // chat/tool surfaces (getMarketScannerOpportunities + scannerOpportunityToLive-
 // Candidate → opportunityRadar) route through, so no surface can leak levels
 // the chart panel would refuse — including via alternate field names. It is

@@ -22,11 +22,11 @@ vi.mock("@/hooks/useSymbolTruth", () => ({
     scannerTruth: {
       strip: {
         data: { verdict: "Live", detail: "Live, confirmed candles." },
-        ruby: { detail: "" },
+        eleanor: { detail: "" },
         trading: { verdict: "Blocked", detail: "Trading is restricted on your account." },
       },
       candles,
-      consolidated: { rubyReadStatus: "NO_READ", scannerActionability: "WAIT_FOR_CONFIRMATION", userMessage: "", internalReasonCode: "" },
+      consolidated: { eleanorReadStatus: "NO_READ", scannerActionability: "WAIT_FOR_CONFIRMATION", userMessage: "", internalReasonCode: "" },
       dataHealth: { sourceNote: "" },
       readiness: null,
     } as unknown as ScannerTruth,

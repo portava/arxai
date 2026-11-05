@@ -27,7 +27,7 @@ import {
   inferBarSeconds,
   resolveEventMarkerSec,
 } from "@/components/scanner/scannerChartFormat";
-import { RubyChartRead } from "@/components/scanner/RubyChartRead";
+import { EleanorChartRead } from "@/components/scanner/EleanorChartRead";
 import {
   applyStructureLines,
   clearStructureLines,
@@ -45,7 +45,7 @@ import {
   OVERLAY_DEGRADED_TITLE,
 } from "@/lib/scannerResilience";
 import { OneClickArmedBadge } from "@/components/mt5/OneClickArmedBadge";
-import { ChartCommandMenu, type ChartCommandAnchor, type RubyChartIntent } from "@/components/scanner/ChartCommandMenu";
+import { ChartCommandMenu, type ChartCommandAnchor, type EleanorChartIntent } from "@/components/scanner/ChartCommandMenu";
 import { useLocation } from "wouter";
 import { executeInstantTrade, type InstantTradeResponse } from "@/lib/instantTradeRouter";
 import { closePositionByScope, openMarketByScope } from "@/lib/positionActions";
@@ -63,7 +63,7 @@ import { useSymbolTruth } from "@/hooks/useSymbolTruth";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveLiveActionCapabilities } from "@/lib/liveActionCapabilities";
 import { useSelectedActionStore } from "./selectedActionStore";
-import { useRubyReadStore } from "./rubyReadStore";
+import { useEleanorReadStore } from "./eleanorReadStore";
 import {
   resolveSelectedSymbolActionabilityDisplay,
   actionabilityDisplayUi,
@@ -481,7 +481,7 @@ function CandleCloseCountdown({
   );
 }
 
-type RubyReadView = {
+type EleanorReadView = {
   title: string;
   headline?: string;
   points?: string[];
@@ -546,7 +546,7 @@ export function useScannerChartRead(
   const contextRef = useRef(context);
   const mounted = useRef(false);
   const request = useRef<AbortController | null>(null);
-  const [result, setResult] = useState<{ context: string; view: RubyReadView } | null>(null);
+  const [result, setResult] = useState<{ context: string; view: EleanorReadView } | null>(null);
   const [pendingContext, setPendingContext] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -571,7 +571,7 @@ export function useScannerChartRead(
     setPendingContext(null);
   }
 
-  async function ask(intent: RubyChartIntent) {
+  async function ask(intent: EleanorChartIntent) {
     // Retained callbacks from a previous chart cannot start obsolete work.
     if (!mounted.current || contextRef.current !== context) return;
     const controller = new AbortController();
@@ -724,7 +724,7 @@ export function ScannerChartPanel() {
   // the Eleanor panel so every scanner surface converges on ONE verdict per
   // symbol/timeframe/read cycle. DISPLAY-ONLY — no execution gate.
   const chartActionStore = useSelectedActionStore();
-  const rubyStore = useRubyReadStore();
+  const eleanorStore = useEleanorReadStore();
   const liftedChartAction = chartActionStore.get(symbol, timeframe);
   const canonicalChartAction: ScannerActionabilityDisplay = resolveSelectedSymbolActionabilityDisplay(
     liftedChartAction,
@@ -734,7 +734,7 @@ export function ScannerChartPanel() {
   // symbol+tf and the base verdict is READY_NOW, cap to WAIT_FOR_CONFIRMATION —
   // so the chart CTAs and the Eleanor panel never claim "ready" while Eleanor says
   // the feed is unconfirmed. Downgrade-only; no execution gate changes.
-  const eleanorChartGated = rubyStore.get(symbol, timeframe)?.gated === true;
+  const eleanorChartGated = eleanorStore.get(symbol, timeframe)?.gated === true;
   const canonicalChartActionFinal: ScannerActionabilityDisplay = (
     eleanorChartGated && canonicalChartAction === "READY_NOW"
   ) ? "WAIT_FOR_CONFIRMATION" : canonicalChartAction;
@@ -919,7 +919,7 @@ export function ScannerChartPanel() {
   });
 
   // ── Smart Chart Layers & Market Impact Radar (Task #197). Read-only,
-  //    advisory overlays: Ruby's structure / zone / target geometry, an
+  //    advisory overlays: Eleanor's structure / zone / target geometry, an
   //    economic-event radar, an honest news-behavior note, and an overlay
   //    handshake. This NEVER places, modifies, or gates a trade. News is real
   //    or honestly absent — the service never fabricates an event as real.
@@ -944,7 +944,7 @@ export function ScannerChartPanel() {
   const smartLayers: SmartChartLayer[] = smartData?.layers ?? [];
   // Task #515 — the chart's NEWS state (event markers, high-impact toasts, and
   // the Impact Radar strip) now comes from the ONE per-symbol Truth Snapshot, so
-  // the chart can never disagree with the scanner rows or the Ruby read on the
+  // the chart can never disagree with the scanner rows or the Eleanor read on the
   // same page. The smart-layers query above still drives the NON-news overlays
   // (structure, exec-cost, trade-health) and the overlay handshake below.
   const { news, newsState, verdict: symbolVerdict } = useSymbolTruth(symbol, timeframe);
@@ -1066,9 +1066,9 @@ export function ScannerChartPanel() {
   const longPressRef = useRef<number | null>(null);
   const [, setLocation] = useLocation();
 
-  // ── Chart Brain v2 Task 6 — read-only "Ruby read" result overlay. Filled by
-  //    the menu's Ask-Ruby / agent-disagreement actions (read-only endpoints).
-  const { read: rubyRead, busy: rubyBusy, ask: askRuby, clear: clearRubyRead } = useScannerChartRead(
+  // ── Chart Brain v2 Task 6 — read-only "Eleanor read" result overlay. Filled by
+  //    the menu's Ask-Eleanor / agent-disagreement actions (read-only endpoints).
+  const { read: eleanorRead, busy: eleanorBusy, ask: askEleanor, clear: clearEleanorRead } = useScannerChartRead(
     symbol, timeframe, name, (error) => toast({
       title: `${name} read failed`,
       description: error instanceof Error ? error.message : "network error",
@@ -1970,7 +1970,7 @@ export function ScannerChartPanel() {
     }
   }, [symbolPositions, symbolPending, annotations, chartEpoch, chartContext]);
 
-  // ── Smart Chart Layers (Task #197) — draw Ruby / structure / target geometry
+  // ── Smart Chart Layers (Task #197) — draw Eleanor / structure / target geometry
   //    AND the live execution-cost overlay (expected-fill band + break-even line)
   //    as price lines on the existing series WITHOUT recreating the chart, via a
   //    dedicated line ref. Each group respects the user's per-layer toggle. News
@@ -2592,9 +2592,9 @@ export function ScannerChartPanel() {
     setDraft((d) => (d ? { ...d, [kind === "SL" ? "sl" : "tp"]: price } : d));
   };
 
-  // Ask Ruby (read-only) about the chart at this candle/level. Routes ONLY
+  // Ask Eleanor (read-only) about the chart at this candle/level. Routes ONLY
   // through the read-only assistant draft-read endpoint — never trades.
-  const menuAskRuby = (intent: RubyChartIntent, _price: number) => askRuby(intent);
+  const menuAskEleanor = (intent: EleanorChartIntent, _price: number) => askEleanor(intent);
 
   // Save an immutable decision receipt for the current symbol/timeframe (Task 5
   // surface). Read-only memory write — never trades.
@@ -2821,60 +2821,60 @@ export function ScannerChartPanel() {
                   hasDraft={draft != null}
                   isReviewMode={isReviewMode}
                   fmt={fmt}
-                  busy={createAnnotation.isPending || rubyBusy || receiptBusy}
+                  busy={createAnnotation.isPending || eleanorBusy || receiptBusy}
                   onPlan={menuPlan}
                   onMarkLevel={(k, p) => menuMarkLevel(k, p)}
                   onWatchZone={menuWatchZone}
                   onPriceAlert={menuPriceAlert}
                   onSetDraftLevel={menuSetDraftLevel}
-                  onAskRuby={menuAskRuby}
+                  onAskEleanor={menuAskEleanor}
                   onShowReceipt={menuShowReceipt}
                   onReplay={menuReplay}
                   onClose={() => setMenu(null)}
                 />
               )}
-              {rubyRead && (
+              {eleanorRead && (
                 <div
                   className="absolute right-2 top-2 z-30 w-72 max-w-[calc(100%-1rem)] max-h-[320px] overflow-y-auto rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-xs shadow-xl backdrop-blur"
-                  data-testid="scanner-chart-ruby-read"
+                  data-testid="scanner-chart-eleanor-read"
                 >
                   <div className="mb-1 flex items-center justify-between">
-                    <span className="font-semibold text-fuchsia-200">{rubyRead.title}</span>
+                    <span className="font-semibold text-fuchsia-200">{eleanorRead.title}</span>
                     <button
                       type="button"
                       className="rounded p-0.5 text-zinc-500 hover:text-zinc-200"
-                      onClick={clearRubyRead}
+                      onClick={clearEleanorRead}
                       aria-label="Close"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  {rubyRead.consensus?.headline && (
-                    <div className="mb-1 text-indigo-200">{rubyRead.consensus.headline}</div>
+                  {eleanorRead.consensus?.headline && (
+                    <div className="mb-1 text-indigo-200">{eleanorRead.consensus.headline}</div>
                   )}
-                  {rubyRead.consensus?.note && (
-                    <div className="mb-1 text-zinc-400">{rubyRead.consensus.note}</div>
+                  {eleanorRead.consensus?.note && (
+                    <div className="mb-1 text-zinc-400">{eleanorRead.consensus.note}</div>
                   )}
-                  {rubyRead.headline && (
-                    <div className="mb-1 text-zinc-100">{rubyRead.headline}</div>
+                  {eleanorRead.headline && (
+                    <div className="mb-1 text-zinc-100">{eleanorRead.headline}</div>
                   )}
-                  {rubyRead.points && rubyRead.points.length > 0 && (
+                  {eleanorRead.points && eleanorRead.points.length > 0 && (
                     <ul className="mb-1 list-disc space-y-0.5 pl-4 text-zinc-300">
-                      {rubyRead.points.map((p, i) => (
+                      {eleanorRead.points.map((p, i) => (
                         <li key={i}>{p}</li>
                       ))}
                     </ul>
                   )}
-                  {rubyRead.cautions && rubyRead.cautions.length > 0 && (
+                  {eleanorRead.cautions && eleanorRead.cautions.length > 0 && (
                     <ul className="mb-1 list-disc space-y-0.5 pl-4 text-amber-300/90">
-                      {rubyRead.cautions.map((c, i) => (
+                      {eleanorRead.cautions.map((c, i) => (
                         <li key={i}>{c}</li>
                       ))}
                     </ul>
                   )}
-                  {rubyRead.bestNextAction && (
+                  {eleanorRead.bestNextAction && (
                     <div className="mt-1 border-t border-zinc-800 pt-1 text-emerald-200">
-                      {rubyRead.bestNextAction}
+                      {eleanorRead.bestNextAction}
                     </div>
                   )}
                   <div className="mt-1 text-[10px] text-zinc-600">
@@ -3246,8 +3246,8 @@ export function ScannerChartPanel() {
               )}
             </div>
 
-            {/* Phase 7 — Ruby's compact, read-only chart explanation. */}
-            <RubyChartRead
+            {/* Phase 7 — Eleanor's compact, read-only chart explanation. */}
+            <EleanorChartRead
               symbol={symbol}
               timeframe={timeframe}
               draft={draft}

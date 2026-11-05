@@ -116,7 +116,7 @@ Apply this owner live profile to every trade entry surface:
 * Trade Command Room
 * Manual Ticket
 * Live Shared page
-* Ruby trade suggestion/review
+* Eleanor trade suggestion/review
 * Any quick trade / one-click trade button
 * Any mobile or compact trade entry view
 

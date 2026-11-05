@@ -47,7 +47,7 @@ import { capConfidence, feedConfidence } from "@/lib/feed-confidence";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
-import { resolveFeedBadgeVerdict } from "@/lib/rubyReadPanelState";
+import { resolveFeedBadgeVerdict } from "@/lib/eleanorReadPanelState";
 import {
   type ChartOverlay,
   overlayMetaNumber,
@@ -247,7 +247,7 @@ export interface ARXNativeChartProps {
    * Level 5 — reports the chart's resolved symbol, current timeframe, and the
    * AI-usability verdict (true only on a clean feed whose shared scanner truth
    * is confirmed — the same verdict the header chip shows) whenever any of them
-   * change. Lets a parent source AI overlays (scanner/Ruby) against the exact
+   * change. Lets a parent source AI overlays (scanner/Eleanor) against the exact
    * instrument the chart is showing and suppress them on an unconfirmed feed —
    * WITHOUT duplicating the candle fetch. Pure read-out: never gates candles
    * or trade execution.
@@ -1035,7 +1035,7 @@ export function ARXNativeChart({
 
   // Cap the Level 3 feed badge by the SHARED scanner-truth verdict (Task #521)
   // so the chip can never claim Clean/AI when the resolved truth for this exact
-  // symbol/timeframe is downgraded or still unresolved — mirroring RubyChartRead.
+  // symbol/timeframe is downgraded or still unresolved — mirroring EleanorChartRead.
   // Normalize first: `timeframe` is contract-style ("M15") but useScannerTruth's
   // toApiTimeframe only understands chart ids, so a raw label would resolve the
   // wrong (M5) feed.
@@ -1057,7 +1057,7 @@ export function ARXNativeChart({
     : resolveFeedBadgeVerdict(badgeTruth?.analysis.level ?? null);
   // ONE AI-usability verdict for everything this panel shows or reports: the
   // chip, the "Not AI-confirmed" badge, the structure lines and the context the
-  // page uses to draw scanner/Ruby AI overlays. The raw feed flag can only be
+  // page uses to draw scanner/Eleanor AI overlays. The raw feed flag can only be
   // narrowed by the shared truth (downgraded or still resolving => not usable),
   // so the canvas can never draw AI-derived levels next to a "No AI" chip.
   const aiUsable = conf.aiUsable && badgeAiUsableResolved === true;

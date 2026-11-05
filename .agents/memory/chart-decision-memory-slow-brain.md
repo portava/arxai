@@ -29,7 +29,7 @@ not a handler bug.
 pattern; behaviorProtection returns `applicable:false` (no signals) for
 investors. Both fail open to honest-empty on error.
 
-**Every official Ruby/chart read auto-creates a receipt — via a detached
+**Every official Eleanor/chart read auto-creates a receipt — via a detached
 fail-open helper, never the request path.** Receipt + event recording is wired
 into the read endpoints (draft-read, read-chart, explain-signal) through a
 fire-and-forget helper that runs in a detached async IIFE with a top-level catch,

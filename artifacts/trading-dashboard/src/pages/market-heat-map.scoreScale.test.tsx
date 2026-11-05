@@ -12,7 +12,7 @@ import type { MarketTimingRead } from "@workspace/api-client-react";
 
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({}) }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => {}], bareSymbol: (s: string) => s }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => "Ruby" }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => "Eleanor" }));
 
 const { NowTab, SessionCard, TodayTab } = await import("./market-heat-map");
 

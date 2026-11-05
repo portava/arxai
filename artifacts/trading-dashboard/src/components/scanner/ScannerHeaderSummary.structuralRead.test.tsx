@@ -7,7 +7,7 @@
 //
 // This is a render proof of the header against the lifted store read, in both
 // the fixed wire shape (readLayer "STRUCTURAL_ONLY") and the pre-fix scrubbed
-// shape (readLayer ""), asserting the Ruby cell reads "Limited read" with the
+// shape (readLayer ""), asserting the Eleanor cell reads "Limited read" with the
 // server's withheld reason and the Trade Health chip is capped DOWN to the
 // server's own contract verdict. It also locks that the cap never upgrades.
 
@@ -15,7 +15,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { evaluateTradeHealthReadiness } from "@workspace/domain/market";
 import type { ScannerTruth } from "@/lib/scannerTruth";
-import type { ChartRead } from "@/lib/rubyReadPanelState";
+import type { ChartRead } from "@/lib/eleanorReadPanelState";
 
 const WITHHELD_REASON =
   "Live feed is delayed — read uses the last confirmed bars, not the current candle.";
@@ -69,12 +69,12 @@ function makeTruth(): ScannerTruth {
   return {
     strip: {
       data: { verdict: "Live", detail: "Live, confirmed candles." },
-      ruby: { detail: "Eleanor can give a full, live read." },
+      eleanor: { detail: "Eleanor can give a full, live read." },
       trading: { verdict: "Blocked", detail: "Trading is restricted on your account." },
     },
     candles: { lastClose: 33588.01, sourceTechnical: "test", count: 200, minRequired: 150, status: "CONFIRMED" },
     consolidated: {
-      rubyReadStatus: "FULL_READ",
+      eleanorReadStatus: "FULL_READ",
       scannerActionability: "WAIT_FOR_CONFIRMATION",
       userMessage: "This read is fresh enough for a live entry.",
       internalReasonCode: "FEED_OK",
@@ -98,8 +98,8 @@ vi.mock("@/hooks/useSymbolTruth", () => ({
 vi.mock("@/hooks/useTradingMode", () => ({
   useTradingMode: () => ({ shouldShowAdminDiagnostics: false }),
 }));
-vi.mock("@/components/scanner/rubyReadStore", () => ({
-  useRubyReadStore: () => ({
+vi.mock("@/components/scanner/eleanorReadStore", () => ({
+  useEleanorReadStore: () => ({
     get: (s: string, t: string) => {
       storeKeys.push(`${s}|${t}`);
       return storedRead;
@@ -125,7 +125,7 @@ describe("ScannerHeaderSummary — a STRUCTURAL_ONLY Eleanor read caps the heade
     it(`${label}: Eleanor cell reads "Limited read" with the server's withheld reason`, () => {
       storedRead = make();
       render(<ScannerHeaderSummary running={false} />);
-      const cell = screen.getByTestId("scanner-header-ruby");
+      const cell = screen.getByTestId("scanner-header-eleanor");
       expect(cell.textContent).toContain("Limited read");
       expect(cell.textContent).toContain(WITHHELD_REASON);
       expect(cell.textContent).not.toContain("Full read");

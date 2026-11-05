@@ -1,37 +1,37 @@
 /**
  * Trading School — shared presentational components.
- * No business logic; these render content passed to them. Ruby's teacher card
- * reuses the RubyAvatar character so Ruby is consistent with the rest of ARX.
+ * No business logic; these render content passed to them. Eleanor's teacher card
+ * reuses the EleanorAvatar character so Eleanor is consistent with the rest of ARX.
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
-import { RubyAvatar } from "@/components/ruby/RubyAvatar";
-import type { RubyExplanation, RubyMode } from "../data/content";
+import { EleanorAvatar } from "@/components/eleanor/EleanorAvatar";
+import type { EleanorExplanation, EleanorMode } from "../data/content";
 import { Sparkles, GraduationCap, Lock, CheckCircle2 } from "lucide-react";
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-export function askRuby() {
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+export function askEleanor() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* noop */ }
 }
 
-/** Ruby teacher card with the three explanation modes (Simple / Normal / Pro). */
-export function RubyTeacherCard({ ruby, title }: { ruby: RubyExplanation; title?: string }) {
+/** Eleanor teacher card with the three explanation modes (Simple / Normal / Pro). */
+export function EleanorTeacherCard({ eleanor, title }: { eleanor: EleanorExplanation; title?: string }) {
   const { name } = useAssistantName();
   const resolvedTitle = title ?? `${name} explains`;
-  const [mode, setMode] = useState<RubyMode>("simple");
-  const modes: { key: RubyMode; label: string }[] = [
+  const [mode, setMode] = useState<EleanorMode>("simple");
+  const modes: { key: EleanorMode; label: string }[] = [
     { key: "simple", label: "Explain like I'm 12" },
     { key: "normal", label: "Normal" },
     { key: "pro", label: "Pro" },
   ];
   return (
-    <div className="rounded-2xl border border-ruby/25 bg-card p-4">
+    <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
       <div className="mb-3 flex items-center gap-2.5">
-        <RubyAvatar state="thinking" size="md" ariaHidden />
+        <EleanorAvatar state="thinking" size="md" ariaHidden />
         <div>
           <div className="text-sm font-semibold text-foreground">{resolvedTitle}</div>
           <div className="text-[11px] text-txt-muted">Pick a level that suits you</div>
@@ -41,14 +41,14 @@ export function RubyTeacherCard({ ruby, title }: { ruby: RubyExplanation; title?
         {modes.map((m) => (
           <button key={m.key} onClick={() => setMode(m.key)}
             className={cn("rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
-              mode === m.key ? "border-ruby/50 bg-ruby/15 text-ruby" : "border-border bg-background/40 text-txt-secondary hover:border-ruby/30")}>
+              mode === m.key ? "border-eleanor/50 bg-eleanor/15 text-eleanor" : "border-border bg-background/40 text-txt-secondary hover:border-eleanor/30")}>
             {m.label}
           </button>
         ))}
       </div>
-      <p className="text-sm leading-relaxed text-txt-secondary">{ruby[mode]}</p>
-      <button onClick={askRuby}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-1.5 text-xs font-medium text-ruby hover:bg-ruby/20">
+      <p className="text-sm leading-relaxed text-txt-secondary">{eleanor[mode]}</p>
+      <button onClick={askEleanor}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-1.5 text-xs font-medium text-eleanor hover:bg-eleanor/20">
         <Sparkles className="h-3.5 w-3.5" /> Ask {name} to explain more
       </button>
     </div>
@@ -58,7 +58,7 @@ export function RubyTeacherCard({ ruby, title }: { ruby: RubyExplanation; title?
 export function SchoolPageHeader({ title, subtitle, icon: Icon = GraduationCap }: { title: string; subtitle?: string; icon?: any }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-ruby/10 text-ruby ring-1 ring-ruby/25">
+      <span className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-eleanor/10 text-eleanor ring-1 ring-eleanor/25">
         <Icon className="h-6 w-6" />
       </span>
       <div>
@@ -100,7 +100,7 @@ export function SchoolDisclaimer({ text, compact = false }: { text: string; comp
 export function ComingNextState({ title, blurb }: { title: string; blurb: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-background/40 p-6 text-center">
-      <RubyAvatar state="idle" size="lg" ariaHidden />
+      <EleanorAvatar state="idle" size="lg" ariaHidden />
       <div className="mt-3 text-sm font-semibold text-foreground">{title}</div>
       <p className="mx-auto mt-1 max-w-md text-xs text-txt-muted">{blurb}</p>
       <span className="mt-3 inline-flex rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">Coming next</span>

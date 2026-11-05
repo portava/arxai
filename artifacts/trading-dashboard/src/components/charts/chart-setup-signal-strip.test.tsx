@@ -43,7 +43,7 @@ function makePreview(overrides: Partial<SetupPreview> = {}): SetupPreview {
     governanceOutcome: null,
     explanation: ["A long idea."],
     invalidationNote: "Close below 1.09 invalidates this long.",
-    createdBy: "ruby",
+    createdBy: "eleanor",
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90_000).toISOString(),
     status: "preview",

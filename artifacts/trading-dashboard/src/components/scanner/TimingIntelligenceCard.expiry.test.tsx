@@ -25,7 +25,7 @@ vi.mock("@/hooks/useScannerReadGate", () => ({ useScannerReadGate: () => FULL_GA
 vi.mock("@/components/scanner/ScannerReadGate", () => ({ ScannerReadGate: () => null }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["15m", () => {}] }));
 vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ news: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 type TimingParams = Record<string, string> | undefined;
 const timingFn = vi.fn<(symbol: string, params: TimingParams) => Promise<Record<string, unknown>>>();

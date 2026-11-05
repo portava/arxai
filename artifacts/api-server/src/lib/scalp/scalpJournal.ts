@@ -1,4 +1,4 @@
-// Ruby Flame Scalp — journal + per-symbol personality (Phase 3, PURE core).
+// Eleanor Flame Scalp — journal + per-symbol personality (Phase 3, PURE core).
 //
 // Pure functions only — no DB, no I/O, no clock unless injected. They turn an
 // open scalp basket into a journal snapshot, derive an honest result + plain-
@@ -272,7 +272,7 @@ export interface ScalpReview {
   /** The single most useful takeaway for next time. */
   lesson: string;
   /**
-   * Did Ruby's exit pressure read line up with the outcome?
+   * Did Eleanor's exit pressure read line up with the outcome?
    *  true  — she flagged a real exit warning and it lost (good call to listen).
    *  false — she missed it (loss with no warning) OR cried wolf (win after a
    *          close-all warning).

@@ -98,7 +98,7 @@ const REQUIRED_TIDS = [
   "text-position-current", "text-position-sl", "text-position-tp",
   "text-position-pnl", "text-position-risk", "text-position-rr",
   "text-position-ordertype", "text-position-opentime", "text-position-status",
-  "btn-ask-ruby", "btn-refresh-analysis", "btn-view-full-chart",
+  "btn-ask-eleanor", "btn-refresh-analysis", "btn-view-full-chart",
   "btn-modify-sltp", "btn-close-position",
 ];
 for (const tid of REQUIRED_TIDS) {

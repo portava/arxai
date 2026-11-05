@@ -39,7 +39,7 @@ vi.mock("@/lib/use-chart-symbol", async () => {
   const { useState } = await import("react");
   return { useChartSymbol: () => useState("EURUSD") };
 });
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/dashboard/cockpit/CockpitHeader", () => ({ CockpitHeader: () => null }));
 vi.mock("@/components/layout/Topbar", () => ({ MobileMenuTrigger: () => null }));
 vi.mock("@/components/layout/AppLayout", () => ({ SidebarContent: () => null }));

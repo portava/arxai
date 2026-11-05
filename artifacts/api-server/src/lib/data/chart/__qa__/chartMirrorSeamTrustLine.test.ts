@@ -14,8 +14,8 @@ import { computeBrokerPriceAlignment, mirrorTrustSegment } from "../brokerPriceA
 import { bindBrokerQuote } from "../brokerQuoteBinding.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
-import { buildTrustLine } from "../rubyChartContext.js";
-import { buildRubyDraftRead } from "../../../assistant/rubyDraftRead.js";
+import { buildTrustLine } from "../eleanorChartContext.js";
+import { buildEleanorDraftRead } from "../../../assistant/eleanorDraftRead.js";
 import { recordStateTruthResult, truthResultOfState } from "../stateTruthResult.js";
 
 const epoch = 1_700_000_000_000;
@@ -81,12 +81,12 @@ test("an unchecked merge seam with a bound, aligned broker quote is never 'Mirro
   assert.doesNotMatch(line, /Mirror synced/, line);
   assert.match(line, /Mirror not confirmed \(broker price aligned; seam not checked\)/, line);
 
-  const draft = buildRubyDraftRead(draftState(truth, gate, score, tight), "analyze").trustLine;
+  const draft = buildEleanorDraftRead(draftState(truth, gate, score, tight), "analyze").trustLine;
   assert.doesNotMatch(draft, /Mirror synced/, draft);
   assert.match(draft, /Mirror not confirmed \(broker price aligned; seam not checked\)/, draft);
   // A draft state without the truth result cannot show the seam was observed.
   const noTruth = { ...draftState(truth, gate, score, tight), truthResult: null } as unknown as ChartIntelligenceState;
-  assert.doesNotMatch(buildRubyDraftRead(noTruth, "analyze").trustLine, /Mirror synced/);
+  assert.doesNotMatch(buildEleanorDraftRead(noTruth, "analyze").trustLine, /Mirror synced/);
 });
 
 test("a measured seam with a bound, aligned broker quote still reads 'Mirror synced'", () => {
@@ -96,7 +96,7 @@ test("a measured seam with a bound, aligned broker quote still reads 'Mirror syn
   assert.equal(gate.tradeConfirmationAllowed, true);
   assert.equal(mirrorTrustSegment(true, tight, gateMirrorBlockCause(gate, truth)), "Mirror synced");
   assert.match(buildTrustLine(gate, tight, "M5", false, "WARN", { feed, mergeSeamChecked: true }), /Mirror synced/);
-  assert.match(buildRubyDraftRead(draftState(truth, gate, score, tight), "analyze").trustLine, /Mirror synced/);
+  assert.match(buildEleanorDraftRead(draftState(truth, gate, score, tight), "analyze").trustLine, /Mirror synced/);
 });
 
 test("a built state carries its seam evidence beside it, not as a serialized field", () => {
@@ -111,11 +111,11 @@ test("a built state carries its seam evidence beside it, not as a serialized fie
   assert.equal(JSON.stringify(state).includes("truthResult"), false);
   // Before the builder records the truth result, the seam is unobserved.
   assert.equal(truthResultOfState(state), null);
-  assert.doesNotMatch(buildRubyDraftRead(state, "analyze").trustLine, /Mirror synced/);
+  assert.doesNotMatch(buildEleanorDraftRead(state, "analyze").trustLine, /Mirror synced/);
   // Once recorded (as buildChartIntelligenceState / enrichStateWithBrokerAlignment
   // do), a measured seam reads "Mirror synced" and stays out of the JSON.
   recordStateTruthResult(state, truth);
   assert.equal(truthResultOfState(state), truth);
-  assert.match(buildRubyDraftRead(state, "analyze").trustLine, /Mirror synced/);
+  assert.match(buildEleanorDraftRead(state, "analyze").trustLine, /Mirror synced/);
   assert.equal(JSON.stringify(state).includes("truthResult"), false);
 });

@@ -16,7 +16,7 @@
 export const OPERATOR_FUNDED_PILOT_COHORT = "ARX_PRIVATE_BETA_10" as const;
 export const OPERATOR_FUNDED_PILOT_MAX_USERS = 10 as const;
 
-export const OPERATOR_FUNDED_DISCLOSURE_VERSION = "OPERATOR_FUNDED_LIVE_PILOT_V1" as const;
+export const OPERATOR_FUNDED_DISCLOSURE_VERSION = "OPERATOR_FUNDED_LIVE_PILOT_V2" as const;
 
 export const OPERATOR_FUNDED_DISCLOSURE_TEXT = [
   "I acknowledge that I am participating in the ARX AI Operator-Funded Live Pilot.",
@@ -25,7 +25,7 @@ export const OPERATOR_FUNDED_DISCLOSURE_TEXT = [
   "I receive no ownership of, or claim over, the operator's master account.",
   "I am not entitled to any profit-share, payout, or withdrawal from this pilot.",
   "Operator may pause, revoke, or revoke my live access instantly and without notice.",
-  "Ruby analysis is informational only. Live orders always require my explicit confirmation.",
+  "Eleanor analysis is informational only. Live orders always require my explicit confirmation.",
   "Trading involves risk. Past performance is not guaranteed. Results are not guaranteed.",
   "If the system safety state is uncertain my actions may be placed in review.",
 ].join("\n");

@@ -96,7 +96,7 @@ Add operator controls:
 - Engage kill switch
 - Disable all live user access
 - Pause scanner live entries
-- Pause Ruby live assists
+- Pause Eleanor live assists
 - Pause manual live entries
 - Cancel queued commands before pickup
 - View command queue
@@ -153,15 +153,15 @@ Rollback must:
 - Engage kill switch
 - Disable global shared live trading
 - Pause scanner live entries
-- Pause Ruby live assists
+- Pause Eleanor live assists
 - Pause manual live entries
 - Cancel queued commands not picked up
 - Keep audit logs
 - Keep trade history
 - Keep demo/paper mode working
 
-Ruby knowledge:
-Update Ruby so she can answer:
+Eleanor knowledge:
+Update Eleanor so she can answer:
 - Are we ready to go live?
 - What is blocking live activation?
 - Is the bridge pinned?
@@ -193,9 +193,9 @@ Acceptance checks:
 - Smoke test action works.
 - Micro live test panel exists and is guarded.
 - Rollback exists and is guarded.
-- Ruby can explain activation readiness.
+- Eleanor can explain activation readiness.
 - Demo/paper still works.
-- Manual/scanner/Ruby live shared flows still work.
+- Manual/scanner/Eleanor live shared flows still work.
 - Kill switch still blocks execution.
 - Hard kill still blocks execution when false/missing.
 - User isolation still works.

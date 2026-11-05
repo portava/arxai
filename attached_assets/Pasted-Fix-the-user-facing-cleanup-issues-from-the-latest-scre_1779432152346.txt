@@ -1,7 +1,7 @@
 Fix the user-facing cleanup issues from the latest screenshots. Inspect the current codebase first, reuse existing components, and only change the areas listed below. Do not rebuild working systems from scratch.
 
 Main goal:
-Make the normal user experience cleaner and safer by removing developer/backend/status clutter, improving the Scanner tab structure, improving Ruby’s market responses, and making access requests invite-only/admin-reviewed.
+Make the normal user experience cleaner and safer by removing developer/backend/status clutter, improving the Scanner tab structure, improving Eleanor’s market responses, and making access requests invite-only/admin-reviewed.
 
 Important safety rules:
 - Do not place any live trades.
@@ -36,10 +36,10 @@ Details:
 - Symbols should stay for symbol search/category selection.
 - Keep all existing features; only reorganize the UI.
 
-Fix 2 — Ruby normal-user response sanitizer
-Ruby is still exposing backend/developer details to users. Add or improve a normal-user-safe Ruby response layer before chat text renders.
+Fix 2 — Eleanor normal-user response sanitizer
+Eleanor is still exposing backend/developer details to users. Add or improve a normal-user-safe Eleanor response layer before chat text renders.
 
-Hide/remove from normal user Ruby UI and messages:
+Hide/remove from normal user Eleanor UI and messages:
 - “debug · tools”
 - tool/function names like getAssistantLiveAwarenessStatus
 - backend provider labels like “Market: twelve_data”
@@ -55,21 +55,21 @@ Replace with plain-language wording:
 - “Market: twelve_data” → “Market data connected” or hide it from the main chat view
 - Explain live readiness like: “Live trading is locked until your account is approved, the trading connection is verified, and all safety checks pass.”
 
-Normal Ruby chat should feel like a clean assistant conversation, not a developer/debug panel.
+Normal Eleanor chat should feel like a clean assistant conversation, not a developer/debug panel.
 
-Fix 3 — Ruby chat open state cleanup
-When the Ruby/AI chat is open, hide always-visible backend/status chips from the normal chat view.
+Fix 3 — Eleanor chat open state cleanup
+When the Eleanor/AI chat is open, hide always-visible backend/status chips from the normal chat view.
 
-Hide from normal Ruby chat:
+Hide from normal Eleanor chat:
 - Paper-only / live execution status chip
 - Market data provider chip
 - Voice realtime/backend readiness chip
 - debug/tool strips
 - developer execution labels
 
-Ruby chat header should show only:
-- Ruby name/icon
-- simple state: Online / Ruby is thinking… / Ruby is speaking
+Eleanor chat header should show only:
+- Eleanor name/icon
+- simple state: Online / Eleanor is thinking… / Eleanor is speaking
 - close/menu controls
 
 Voice controls can stay, but move detailed voice/status info into a small Settings or Status collapsible area instead of always showing it inside the chat header.
@@ -118,7 +118,7 @@ Hide/remove from normal user UI:
 - simulator/test/lab chips
 - FX/symbol debug chips like “FX: EURUSD”
 - repeated broker execution badges
-- “Ruby is read-only on this page”
+- “Eleanor is read-only on this page”
 - any broker/execution diagnostic strip that conflicts with the clean user status
 
 Replace with one simple user-facing status where needed:
@@ -134,19 +134,19 @@ Make sure normal users do not see contradictory statuses like:
 
 Admin/operator users can still see technical execution details inside admin-only developer drawers.
 
-Fix 7 — Ruby market-select prompt
-When a user selects a market, Ruby’s prompt is too generic.
+Fix 7 — Eleanor market-select prompt
+When a user selects a market, Eleanor’s prompt is too generic.
 
 Replace text like:
-“Ruby has GBPJPY loaded. Live snapshot from the scanner is warming up… pick a side…”
+“Eleanor has GBPJPY loaded. Live snapshot from the scanner is warming up… pick a side…”
 
 With a better market-read flow:
-- “Ruby is analyzing GBP/JPY…”
+- “Eleanor is analyzing GBP/JPY…”
 - Then show a clean market insight card.
 
 Market insight card should include, when data is available:
 - current bias: bullish / bearish / neutral / waiting
-- why Ruby sees it that way
+- why Eleanor sees it that way
 - trend/structure
 - volatility/spread risk
 - key support/resistance or invalidation area
@@ -156,34 +156,34 @@ Market insight card should include, when data is available:
 - clear note if data is still loading
 
 Remove “pick a side” wording. Use safer wording:
-“GBP/JPY is loaded. Ruby is checking whether this market has a clean setup. I’ll show the bias, risk, and entry conditions before you decide.”
+“GBP/JPY is loaded. Eleanor is checking whether this market has a clean setup. I’ll show the bias, risk, and entry conditions before you decide.”
 
-Do not make Ruby sound like it is forcing a trade.
+Do not make Eleanor sound like it is forcing a trade.
 
-Fix 8 — Ruby Command Center cleanup
-On the Ruby Command Center page, remove the old cross-page tab row:
+Fix 8 — Eleanor Command Center cleanup
+On the Eleanor Command Center page, remove the old cross-page tab row:
 - Scanner
 - Alerts
 - Calendar
 - Advanced
 
-Do not remove those features globally. Only remove that row from Ruby Command Center.
+Do not remove those features globally. Only remove that row from Eleanor Command Center.
 
-Ruby Command Center should stay focused on Ruby:
+Eleanor Command Center should stay focused on Eleanor:
 - Chat
 - Market Read
 - Commands
 - Memory
 
-Keep the existing 4 Ruby-native tabs if present:
+Keep the existing 4 Eleanor-native tabs if present:
 - Chat
 - Market Read
 - Commands
 - Memory
 
-No Ruby Command Center tab should open another unrelated page. If advanced Ruby settings are needed, place them inside a small collapsible settings card, not a cross-page tab.
+No Eleanor Command Center tab should open another unrelated page. If advanced Eleanor settings are needed, place them inside a small collapsible settings card, not a cross-page tab.
 
-Also remove normal-user broker/read-only badges from the Ruby Command Center header area.
+Also remove normal-user broker/read-only badges from the Eleanor Command Center header area.
 
 Fix 9 — Global top market selector
 The top dropdown appears on every page but its purpose is unclear.
@@ -191,13 +191,13 @@ The top dropdown appears on every page but its purpose is unclear.
 Inspect its actual function and trace whether it changes:
 - selected market globally
 - scanner focus
-- Ruby market read
+- Eleanor market read
 - trade ticket symbol
 - chart/market panel
 
 Then:
 - If it works, label it clearly as “Active Market” or “Market Focus” and make sure changing it updates the correct active market everywhere.
-- If it partially works, connect it properly to scanner focus, Ruby market read, and trade ticket symbol without duplicating state.
+- If it partially works, connect it properly to scanner focus, Eleanor market read, and trade ticket symbol without duplicating state.
 - If it does not control anything meaningful, hide it from normal pages.
 - Make sure it does not conflict with the Scanner symbol search/focus flow.
 
@@ -205,8 +205,8 @@ Fix 10 — Normal-user UI leak sweep
 Search normal-user pages/components for internal leaks and remove/humanize them.
 
 Check at minimum:
-- Ruby chat
-- Ruby Command Center
+- Eleanor chat
+- Eleanor Command Center
 - dashboard/cockpit
 - scanner
 - selected market panel
@@ -240,8 +240,8 @@ QA and verification:
 - Verify Create Account is gone/disabled for normal users.
 - Verify Scanner tabs are now Focus / Broad Scan / Symbols.
 - Verify Broad Scan contains scan results/opportunities.
-- Verify Ruby chat no longer exposes debug/tools/provider/backend details.
-- Verify Ruby Command Center has no Scanner/Alerts/Calendar/Advanced row.
+- Verify Eleanor chat no longer exposes debug/tools/provider/backend details.
+- Verify Eleanor Command Center has no Scanner/Alerts/Calendar/Advanced row.
 - Verify top market selector is either clearly functional or hidden.
 - Verify mobile layout remains clean with no bottom nav gap.
 

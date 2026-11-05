@@ -12,7 +12,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRubyMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
+import { buildEleanorMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
 import {
   buildSymbolTruthSnapshot,
   capExpiredTruthSnapshot,
@@ -29,7 +29,7 @@ const inputs: SignalEngineInput = { symbol: "EURUSD", displayName: "EURUSD", tim
     setupType: "Trend", entry: 1.098, entryZone: { from: 1.0978, to: 1.0982 }, stopLoss: 1.097, takeProfit: 1.1, reasonForTrade: "", reasonToAvoid: "" },
   scalp: null, execution: null, newsRiskLevel: null, previous: null, now: NOW };
 function signal() {
-  return { ...buildRubyMarketEdge(inputs), marketEvidence: { ...fixture.evidence, userId: 1 } };
+  return { ...buildEleanorMarketEdge(inputs), marketEvidence: { ...fixture.evidence, userId: 1 } };
 }
 function snapshot(over: Partial<TruthSnapshotDeps> = {}) {
   return buildSymbolTruthSnapshot("EURUSD", "M15", 1, {

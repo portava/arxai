@@ -12,7 +12,7 @@ import {
   aiChartCommandsToOverlays,
 } from "@/lib/ai-chart-commands";
 
-// useChartSetupPreview — Task #374 AI/Ruby "draw a setup" client controller.
+// useChartSetupPreview — Task #374 AI/Eleanor "draw a setup" client controller.
 //
 // Asks the READ-ONLY server endpoint (`POST /api/me/assistant/draw-setup`) to
 // produce a SETUP PREVIEW for the symbol/timeframe on screen, then maps it —

@@ -16,8 +16,8 @@ vi.mock("@/hooks/useTradingMode", () => ({
 }));
 vi.mock("@/components/trading/HistoricalCheckPanel", () => ({ HistoricalCheckPanel: () => null }));
 vi.mock("@/components/trading/NewsRiskCheckPanel", () => ({ NewsRiskCheckPanel: () => null }));
-vi.mock("./RubySetupReason", () => ({ RubySetupReason: () => null }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("./EleanorSetupReason", () => ({ EleanorSetupReason: () => null }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: () => {} }) }));
 
 

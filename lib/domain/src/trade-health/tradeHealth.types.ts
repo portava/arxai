@@ -57,9 +57,9 @@ export interface OpenPositionInput {
 }
 
 /**
- * Narrow projection of the ORIGINAL Ruby signal that opened (or relates to) the
+ * Narrow projection of the ORIGINAL Eleanor signal that opened (or relates to) the
  * position's symbol — used for invalidation context and setup alternatives. Null
- * when the trade did not come from Ruby or no current read exists.
+ * when the trade did not come from Eleanor or no current read exists.
  */
 export interface OriginalSignalInput {
   symbol: string;

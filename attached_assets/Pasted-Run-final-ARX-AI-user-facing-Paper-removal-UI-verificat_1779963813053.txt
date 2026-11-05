@@ -14,8 +14,8 @@ Search and visually inspect:
 - Trade page
 - Scanner
 - Trade ticket
-- Ruby chat
-- Ruby setup explanations
+- Eleanor chat
+- Eleanor setup explanations
 - More page
 - User account status
 - Live bridge request card
@@ -64,19 +64,19 @@ If /paper-trading exists:
 - it should redirect to Demo/Trade
 - it should not show a Paper page
 
-RUBY CHECK:
-Ask Ruby:
+ELEANOR CHECK:
+Ask Eleanor:
 - “What modes does ARX support?”
 - “Can I use paper trading?”
 - “Why am I blocked from live?”
 
-Ruby should answer using only:
+Eleanor should answer using only:
 - Demo
 - Live
 - Live Shared Bridge
 - Request Live Access
 
-Ruby should not mention Paper as an active product feature.
+Eleanor should not mention Paper as an active product feature.
 
 ADMIN CHECK:
 Admin should not be able to assign Paper as a mode.
@@ -102,7 +102,7 @@ FINAL REPORT:
 Return:
 - Paper removed from reachable user UI: PASS/FAIL
 - Paper removed from admin active controls: PASS/FAIL
-- Ruby no longer mentions Paper as active mode: PASS/FAIL
+- Eleanor no longer mentions Paper as active mode: PASS/FAIL
 - /paper-trading route hidden/redirected: PASS/FAIL
 - Internal legacy terms are hidden only: PASS/FAIL
 - arx_live_commands before/after count

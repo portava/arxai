@@ -79,7 +79,7 @@ Testing required:
 7. Verify scanner trade modal can enter T015 readiness.
 8. Verify chart trade controls can enter T015 readiness.
 9. Verify main Trade page can enter T015 readiness.
-10. Verify Ruby trade suggestion flow can enter T015 readiness.
+10. Verify Eleanor trade suggestion flow can enter T015 readiness.
 11. Verify Confirm is the final action globally for manual LIVE trades.
 12. Verify SL/TP are optional globally for owner/admin manual LIVE trades.
 13. Verify all live order attempts are audit logged under T015.

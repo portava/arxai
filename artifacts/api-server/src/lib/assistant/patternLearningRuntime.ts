@@ -1,7 +1,7 @@
 // ── CHART PATTERN TRUTH — LEARNING-LOOP RUNTIME (Task #617, Gap C) ────────────
 //
 // The ONE runtime seam that wires the Pattern Truth learning loop into a live
-// request path (Ruby's structural chart read). For every detected dominant
+// request path (Eleanor's structural chart read). For every detected dominant
 // pattern it:
 //   1. RECORDS the detection as an OBSERVATION (fire-and-forget, idempotent on a
 //      stable outcomeId) so reliability statistics can accrue over time, and
@@ -194,7 +194,7 @@ export async function applyPatternLearning(args: {
   }
 
   const report = isSynthetic ? reliability.synthetic : reliability.forexIndices;
-  const adjustment = report.rubyConfidenceAdjustment; // already ±MAX-bounded, 0 below floor
+  const adjustment = report.eleanorConfidenceAdjustment; // already ±MAX-bounded, 0 below floor
 
   // No accrued edge yet → surface nothing extra (keeps the read payload stable).
   if (adjustment === 0) return null;

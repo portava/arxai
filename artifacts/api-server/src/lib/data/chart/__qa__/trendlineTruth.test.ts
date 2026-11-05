@@ -274,16 +274,16 @@ test("13: an unconfirmed (wick-only) break is break_unconfirmed + capped, never 
   assert.ok(v.confidence <= 50);
 });
 
-// ── 14. Ruby explanation narrates confirmation + invalidation levels ────────
-test("14: ruby explanation narrates the confirmation and invalidation levels", () => {
+// ── 14. Eleanor explanation narrates confirmation + invalidation levels ────────
+test("14: eleanor explanation narrates the confirmation and invalidation levels", () => {
   const v = resolveTrendlineTruth(
     [tl({ status: "forming", levels: { confirmation: 1.105, invalidation: 1.12, targets: [1.08] } })],
     ctx(),
     disp(),
   );
-  assert.match(v.rubyExplanation, /1\.105/);
-  assert.match(v.rubyExplanation, /1\.12/);
-  assert.match(v.rubyExplanation, /forming/i);
+  assert.match(v.eleanorExplanation, /1\.105/);
+  assert.match(v.eleanorExplanation, /1\.12/);
+  assert.match(v.eleanorExplanation, /forming/i);
 });
 
 // ── 16. A printed pattern change forces trend_changed + conditional ─────────
@@ -408,8 +408,8 @@ test("19: reliability aggregation separates synthetic from forex/indices", () =>
     "all-win forex must outscore all-loss synthetic",
   );
   // Adjustments stay bounded by the hard cap.
-  assert.ok(Math.abs(forexIndices.rubyConfidenceAdjustment) <= TRENDLINE_MAX_CONFIDENCE_ADJUSTMENT);
-  assert.ok(Math.abs(synthetic.rubyConfidenceAdjustment) <= TRENDLINE_MAX_CONFIDENCE_ADJUSTMENT);
+  assert.ok(Math.abs(forexIndices.eleanorConfidenceAdjustment) <= TRENDLINE_MAX_CONFIDENCE_ADJUSTMENT);
+  assert.ok(Math.abs(synthetic.eleanorConfidenceAdjustment) <= TRENDLINE_MAX_CONFIDENCE_ADJUSTMENT);
 });
 
 test("19b: reliability score withheld until TRENDLINE_MIN_RESOLVED_FOR_SCORE resolved samples", () => {
@@ -430,7 +430,7 @@ test("19b: reliability score withheld until TRENDLINE_MIN_RESOLVED_FOR_SCORE res
   );
   const { forexIndices } = aggregateTrendlineReliability(few);
   assert.equal(forexIndices.reliabilityScore, null);
-  assert.equal(forexIndices.rubyConfidenceAdjustment, 0);
+  assert.equal(forexIndices.eleanorConfidenceAdjustment, 0);
 });
 
 // ── 20. Stale feed forces context-only wording (no live-ready phrasing) ──────
@@ -443,8 +443,8 @@ test("20: stale feed forces context-only wording (no live-ready phrasing)", () =
   assert.equal(v.scannerTruthImpact.contextOnly, true);
   assert.equal(v.scannerTruthImpact.labelHint, "context_only");
   assert.ok(v.scannerTruthImpact.edgeAdjustment <= 0);
-  assert.match(v.rubyExplanation, /context only/i);
-  assert.doesNotMatch(v.rubyExplanation, /ready now|valid now/i);
+  assert.match(v.eleanorExplanation, /context only/i);
+  assert.doesNotMatch(v.eleanorExplanation, /ready now|valid now/i);
 });
 
 // ── Library cross-check ─────────────────────────────────────────────────────

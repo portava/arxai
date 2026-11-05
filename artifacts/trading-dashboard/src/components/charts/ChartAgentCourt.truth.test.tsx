@@ -1,11 +1,11 @@
 // Chart Pulse "Agent court" chip and the Agent consensus panel agree with the
-// state and with Ruby (truth upgrade, 2026-10-28).
+// state and with Eleanor (truth upgrade, 2026-10-28).
 //
 // The Pulse chip was hard-coded "Agent court: standby" while the consensus
 // panel directly below showed a populated stance and agent votes — even when
-// the chart-truth gate was closed, where the Ruby panel on the same tab says
+// the chart-truth gate was closed, where the Eleanor panel on the same tab says
 // "Chart data not verified — agent consensus withheld." Both now read the
-// state: no read → "no read"; populated but unverified → withheld (like Ruby);
+// state: no read → "no read"; populated but unverified → withheld (like Eleanor);
 // populated and verified → the advisory stance.
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -51,7 +51,7 @@ function state(opts: { populated: boolean; truth: number }): ChartState {
       chartTruthScore: opts.truth, confidentReadAllowed: ok, candlestickModeAllowed: true,
       autonomousChartActionAllowed: true, tradeConfirmationAllowed: true,
     },
-    // Every candle-data check Ruby's handshake reads, measured and passing.
+    // Every candle-data check Eleanor's handshake reads, measured and passing.
     chartTruthScore: {
       score: opts.truth,
       subMetrics: ["ohlc_integrity", "timeframe_accuracy", "feed_freshness", "historical_live_merge", "symbol_mirror_accuracy"]
@@ -70,7 +70,7 @@ describe("Agent court chip and consensus panel", () => {
     expect(screen.getByTestId("chart-consensus-panel").textContent).toContain("X: support");
   });
 
-  it("an unverified read withholds the consensus on both, matching Ruby", () => {
+  it("an unverified read withholds the consensus on both, matching Eleanor", () => {
     const s = state({ populated: true, truth: 70 });
     render(<><ChartPulse state={s} /><ChartAgentConsensusPanel state={s} /></>);
     expect(screen.getByTestId("pulse-agent-court").textContent).toMatch(/withheld/i);

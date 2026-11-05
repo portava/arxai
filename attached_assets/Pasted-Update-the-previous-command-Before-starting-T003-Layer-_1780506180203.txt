@@ -2,7 +2,7 @@ Update the previous command.
 
 Before starting T003 — Layer 3 Governance, first perform a full integration audit of the completed T002 Layer 2 Scoring & Lifecycle work across the entire ARX AI app.
 
-The goal is not to have isolated agent scoring modules sitting in the code. The entire system must interact with itself, or the whole premise of the app is pointless. The AI agent ecosystem must affect real workflows, real recommendations, real scanner ranking, Ruby reasoning, risk interpretation, admin visibility, and agent lifecycle decisions.
+The goal is not to have isolated agent scoring modules sitting in the code. The entire system must interact with itself, or the whole premise of the app is pointless. The AI agent ecosystem must affect real workflows, real recommendations, real scanner ranking, Eleanor reasoning, risk interpretation, admin visibility, and agent lifecycle decisions.
 
 PHASE 0 — T002 FULL INTEGRATION CHECK BEFORE T003
 
@@ -10,12 +10,12 @@ Do not begin T003 until you prove T002 is fully wired into the app.
 
 Audit and verify every T002 scoring/lifecycle feature is connected across:
 
-1. Ruby
+1. Eleanor
 
-* Confirm Ruby can access agent scores, agent trust level, agent lifecycle status, and agent confidence.
-* Confirm Ruby explanations can reflect when an agent influenced, downgraded, challenged, muted, or supported a recommendation.
-* Confirm Ruby does not expose backend function names, raw schema names, route names, or internal code language to normal users.
-* If Ruby is not using the scoring/lifecycle layer, wire it in.
+* Confirm Eleanor can access agent scores, agent trust level, agent lifecycle status, and agent confidence.
+* Confirm Eleanor explanations can reflect when an agent influenced, downgraded, challenged, muted, or supported a recommendation.
+* Confirm Eleanor does not expose backend function names, raw schema names, route names, or internal code language to normal users.
+* If Eleanor is not using the scoring/lifecycle layer, wire it in.
 
 2. Scanner
 
@@ -43,7 +43,7 @@ Audit and verify every T002 scoring/lifecycle feature is connected across:
 5. Market Explanation Window
 
 * Confirm selected market explanations use agent scoring/lifecycle data.
-* Ruby should be able to say in plain English why a market is strong, weak, risky, downgraded, or needs more confirmation.
+* Eleanor should be able to say in plain English why a market is strong, weak, risky, downgraded, or needs more confirmation.
 * The explanation must reflect real agent influence, not fake logs or decorative summaries.
 * If disconnected, wire it in.
 
@@ -88,7 +88,7 @@ PHASE 0 QA REQUIREMENTS
 
 Before starting T003, run proof tests that show:
 
-* Ruby uses agent lifecycle/scoring data in market explanations.
+* Eleanor uses agent lifecycle/scoring data in market explanations.
 * Scanner ranking changes when agent trust/confidence changes.
 * Risk AI can downgrade a weak opportunity.
 * Flame/scalp signals are affected by agent reliability.
@@ -109,7 +109,7 @@ Build the governance/court/factory layer as the next sequenced phase. This layer
 1. Governance Court
 
 * Create a governance decision layer where agents can submit opinions, challenges, confirmations, downgrades, escalations, and objections.
-* Allow multiple agents to review the same scanner signal, Ruby recommendation, scalp/flame setup, risk score, or market explanation.
+* Allow multiple agents to review the same scanner signal, Eleanor recommendation, scalp/flame setup, risk score, or market explanation.
 * If agents disagree, route the decision through a court-style resolution process.
 * The court should decide whether to approve, downgrade, reject, request more data, or escalate to admin/operator visibility.
 
@@ -141,7 +141,7 @@ Build the governance/court/factory layer as the next sequenced phase. This layer
     * final governance decision
     * reason for approval/rejection/downgrade
     * confidence score
-    * whether the decision affected Scanner ranking, Ruby response, risk warning, scalp/flame signal, or recommendation
+    * whether the decision affected Scanner ranking, Eleanor response, risk warning, scalp/flame signal, or recommendation
 
 5. Agent Factory Rules
 
@@ -173,7 +173,7 @@ Build the governance/court/factory layer as the next sequenced phase. This layer
 * agents can challenge each other
 * governance produces real outcomes
 * Scanner rankings can be downgraded or changed by governance
-* Ruby can explain governance influence in plain English
+* Eleanor can explain governance influence in plain English
 * admin can see the governance trace
 * failed/low-confidence agents lose influence
 * no backend function names or internal code terms are exposed to normal users

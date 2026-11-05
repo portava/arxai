@@ -19,7 +19,7 @@ vi.mock("./ExecutionPreviewPanel", () => ({ ExecutionPreviewPanel: () => null })
 vi.mock("@/components/live/LiveScalpAddOnPanel", () => ({ LiveScalpAddOnPanel: () => null }));
 vi.mock("@/components/mt5/OneClickArmedBadge", () => ({ OneClickArmedBadge: () => null }));
 vi.mock("@/lib/useMt5Symbols", () => ({ resolveBrokerSymbol: vi.fn() }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { LiveSharedTradeTicket } = await import("./LiveSharedTradeTicket");
 

@@ -3,13 +3,13 @@ Build ARX Native Chart using a strict leveled execution plan.
 This is not a rebuild.
 This is not a TradingView removal task.
 This is not permission to break live execution.
-This is not permission to rewrite Ruby, scanner, MT5 bridge, admin, investor view, auth, or existing trading pages.
+This is not permission to rewrite Eleanor, scanner, MT5 bridge, admin, investor view, auth, or existing trading pages.
 
 This is a phased add-on. Each level must be completed, tested, and proven before moving to the next level.
 
 TradingView must remain available as fallback/reference until ARX Native Chart is proven stable, accurate, fast, and fully wired.
 
-The final goal is to create ARX Native Chart as an AI execution surface that connects candles, Ruby, scanner, Risk AI, Scalp AI, Agent Court, live positions, trade planning, trade review, and Learning Camp.
+The final goal is to create ARX Native Chart as an AI execution surface that connects candles, Eleanor, scanner, Risk AI, Scalp AI, Agent Court, live positions, trade planning, trade review, and Learning Camp.
 
 But do not try to build everything at once.
 
@@ -18,7 +18,7 @@ GLOBAL NON-NEGOTIABLE RULES
 
 1. Preserve existing live trade execution path.
 2. Preserve existing MT5/live bridge wiring.
-3. Preserve existing Ruby behavior.
+3. Preserve existing Eleanor behavior.
 4. Preserve existing scanner behavior.
 5. Preserve existing admin/user/investor role separation.
 6. Preserve existing TradingView integration as fallback/reference.
@@ -95,14 +95,14 @@ C. Current trading system
 * Find any risk/admin/live permission checks.
 * Confirm nothing in chart work should bypass this.
 
-D. Current Ruby/scanner/agent system
+D. Current Eleanor/scanner/agent system
 
-* Find where Ruby analyzes market data.
+* Find where Eleanor analyzes market data.
 * Find where scanner generates signals.
 * Find where agent governance outputs exist.
 * Find Risk AI/scalp/entry/exit outputs if present.
 * Find prediction journal or governance trace outputs if present.
-* Find how Ruby explanations are shown.
+* Find how Eleanor explanations are shown.
 
 E. Current frontend structure
 
@@ -130,7 +130,7 @@ Deliver Level 0 report:
 2. Current chart data source.
 3. Current TradingView dependency.
 4. Current live execution path.
-5. Current scanner/Ruby integration points.
+5. Current scanner/Eleanor integration points.
 6. Existing WebSocket/polling status.
 7. Existing candle/history status.
 8. Risks before building.
@@ -284,7 +284,7 @@ WS /api/chart/stream?symbol=SYMBOL&timeframe=M15
 If WebSocket is not currently reliable, do not force it in Level 1. Use safe polling and document WebSocket as Level 1B/Level 2 upgrade.
 
 Important AI rule:
-If aiUsable=false, Ruby/agents must not treat native chart data as clean live confirmation.
+If aiUsable=false, Eleanor/agents must not treat native chart data as clean live confirmation.
 
 Acceptance for Level 1:
 
@@ -294,7 +294,7 @@ Acceptance for Level 1:
 * Missing/stale data is detected.
 * No fake candles are presented as live.
 * Symbol/timeframe validation works.
-* Existing scanner/live/Ruby flows still work.
+* Existing scanner/live/Eleanor flows still work.
 
 QA gate:
 Test with:
@@ -468,7 +468,7 @@ Rules:
 * If data quality is clean, badge can be small.
 * If data quality is poor, badge must be visible.
 * If native chart feed is stale, show TradingView fallback option.
-* If aiUsable=false, future Ruby/agent overlays must not present the chart as confirmed.
+* If aiUsable=false, future Eleanor/agent overlays must not present the chart as confirmed.
 
 Create frontend utility:
 
@@ -519,7 +519,7 @@ type:
 “partial_tp_line” |
 “risk_zone” |
 “no_trade_zone” |
-“ruby_note” |
+“eleanor_note” |
 “scanner_signal” |
 “scalp_marker” |
 “agent_conflict” |
@@ -583,7 +583,7 @@ QA gate:
 * Close flow remains accessible outside chart.
 
 ============================================================
-LEVEL 5 — RUBY / SCANNER / AGENT OVERLAY FOUNDATION
+LEVEL 5 — ELEANOR / SCANNER / AGENT OVERLAY FOUNDATION
 
 Objective:
 Connect ARX Native Chart to real intelligence outputs without fake markers.

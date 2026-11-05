@@ -318,10 +318,10 @@ export * from "./agentHouseholdReports";
 // PROVE governance involvement (and that AI never blocked the live path).
 export * from "./agentGovernanceTraces";
 
-// ── Task #79 — Ruby Flame Scalp Phase 2: failed-flame lockout ───────────────
+// ── Task #79 — Eleanor Flame Scalp Phase 2: failed-flame lockout ───────────────
 export * from "./scalpManage";
 
-// ── Task #80 — Ruby Flame Scalp Phase 3: journal + per-symbol personality ────
+// ── Task #80 — Eleanor Flame Scalp Phase 3: journal + per-symbol personality ────
 export * from "./scalpJournal";
 
 // ── ARX Fund Book Phase 1 — strategy pools, unit-based NAV accounting,
@@ -354,7 +354,7 @@ export * from "./chartMarketEvents";
 export * from "./chartDecisionMemory";
 export * from "./chartInteractive";
 
-// ── Signal Intelligence Core — Task #194: per-user market memory for the Ruby
+// ── Signal Intelligence Core — Task #194: per-user market memory for the Eleanor
 // Market Edge "what changed since last read" diff. One row per
 // (user_id, symbol, timeframe). Strictly per-user; never a live execution input.
 export * from "./signalMemory";
@@ -370,9 +370,9 @@ export * from "./handshake";
 // append-only post-trade self-reviews (user-simple + admin-detail), and
 // admin-tunable learning thresholds. OBSERVATION ONLY — read-only over trade
 // results; never gates, slows, or blocks any live/demo execution path.
-export * from "./rubySignalOutcomes";
-export * from "./rubySignalReviews";
-export * from "./rubyQualityThresholds";
+export * from "./eleanorSignalOutcomes";
+export * from "./eleanorSignalReviews";
+export * from "./eleanorQualityThresholds";
 
 // ── Task #211 — Self-Trade AI (autonomous trading-agent ecosystem) Foundation.
 // Operator-managed agent fleet (per-user future-ready): identity/state, settings/
@@ -381,7 +381,7 @@ export * from "./rubyQualityThresholds";
 // self-trade audit log. ADDITIVE — no autonomous execution in this phase.
 export * from "./selfTradeAgents";
 
-// ── Task #220 — Ruby Market Timing Brain heat snapshots (advisory, never execution gate)
+// ── Task #220 — Eleanor Market Timing Brain heat snapshots (advisory, never execution gate)
 export * from "./heatSnapshots";
 export * from "./heatSnapshotRetentionRuns";
 
@@ -397,11 +397,11 @@ export * from "./aaciDecisions";
 // sub-scores; never a gate, never auto-loosens a limit.
 export * from "./aaciLearning";
 
-// ── Task #319 — Ruby AI-Assisted execution ledger + watch/monitor lifecycle.
+// ── Task #319 — Eleanor AI-Assisted execution ledger + watch/monitor lifecycle.
 // Per-user command ledger with in-flight dedupe (no second execution path —
 // these rows wrap the existing instant-trade → 16-gate pipeline) and a
 // single-fire (CAS) watch/monitor instruction table. Evidence; never auto-deleted.
-export * from "./rubyExecution";
+export * from "./eleanorExecution";
 
 // ── Task #432 — Persisted candle cache for deep, scrollable history.
 // Durable OHLCV store keyed by (symbol, timeframe, source, barTime) with
@@ -421,7 +421,7 @@ export * from "./brokerCandleBackfillStatus";
 
 // ── Task #617 — Chart Pattern Truth learning loop. Append-only, per-user
 // observation of detected chart patterns and their evidence-resolved outcomes.
-// Feeds ONLY Ruby's bounded confidence adjustment (still display/decision-support
+// Feeds ONLY Eleanor's bounded confidence adjustment (still display/decision-support
 // only); never an execution path, never the 16-gate pipeline, never a fill.
 export * from "./patternOutcomes";
 export * from "./trendlineOutcomes";

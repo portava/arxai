@@ -38,6 +38,7 @@ const DEFAULTS: { openaiModel: string; voiceInstructions: string } = {
 
 let cache: VoiceAdminSettings | null = null;
 
+
 export async function getVoiceAdminSettings(): Promise<VoiceAdminSettings> {
   if (cache) return cache;
   const rows = await db.select().from(arxVoiceAdminSettingsTable).where(eq(arxVoiceAdminSettingsTable.id, 1)).limit(1);

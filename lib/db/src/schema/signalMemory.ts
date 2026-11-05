@@ -8,7 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-// Signal Intelligence Core (Task #194) — per-user market memory for the Ruby
+// Signal Intelligence Core (Task #194) — per-user market memory for the Eleanor
 // Market Edge "what changed since last read" diff.
 //
 // One row per (user_id, symbol, private context key). The text `timeframe` column

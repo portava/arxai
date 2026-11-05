@@ -33,7 +33,7 @@ Assertions:
 - Do not change the live execution gate stack.
 
 Hard boundary:
-Do not touch live execution, trade ticket internals, broker dispatch, Ruby, backend scan logic, or shared contract unless the test proves a real selected-panel display bug. This task is about SelectedMarketPanel presentation only.
+Do not touch live execution, trade ticket internals, broker dispatch, Eleanor, backend scan logic, or shared contract unless the test proves a real selected-panel display bug. This task is about SelectedMarketPanel presentation only.
 
 Validation:
 - Add or extend the closest SelectedMarketPanel test.

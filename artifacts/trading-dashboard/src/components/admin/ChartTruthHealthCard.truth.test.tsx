@@ -13,7 +13,7 @@ function row(over: Record<string, unknown>) {
     symbol: "EURUSD", displaySymbol: "EURUSD", assetClass: "forex", timeframe: "M5", candleCount: 10, source: "twelve_data",
     ohlcPass: true, aggregationPass: true, formingCandlePresent: false, mergePass: false,
     outlierSpikeCount: 0, outlierWickCount: 0, historicalPeriodShiftCount: 0, mirrorPass: true, priceAlignPass: false,
-    rubyAllowed: true, status: "PARTIAL", rawAssessment: "PARTIAL", quality: "clean", reasons: [],
+    eleanorAllowed: true, status: "PARTIAL", rawAssessment: "PARTIAL", quality: "clean", reasons: [],
     mockDataAdminReason: null, newestBarTime: null, latencyMs: 5, ...over,
   };
 }

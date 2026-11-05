@@ -28,7 +28,7 @@ by direct URL (route guards remain authoritative).
 account settings), but the Settings page historically rendered only trading
 config (bot DEMO/LIVE mode, auto-trade, risk parameters, MT5 bridge). A view-only
 investor therefore saw trade controls. Route containment (routeAccess.ts) keeps
-investors OUT of Trade/Scanner/Ruby/Risk (those routes aren't in the investor
+investors OUT of Trade/Scanner/Eleanor/Risk (those routes aren't in the investor
 allowlist), but any page that IS in the investor allowlist must role-gate its
 trade-config sections internally via `useProductRole().isInvestor`.
 

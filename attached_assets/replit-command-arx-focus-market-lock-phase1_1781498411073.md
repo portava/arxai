@@ -1,10 +1,10 @@
-# COMMAND — ARX FOCUS MARKET LOCK · PHASE 1 (registry + helpers + API gate + scanner/chart/Ruby/trade)
+# COMMAND — ARX FOCUS MARKET LOCK · PHASE 1 (registry + helpers + API gate + scanner/chart/Eleanor/trade)
 
-Read this entire command before changing anything. This locks ARX to a fixed approved market universe. Phase 1 covers the SOURCE OF TRUTH, the resolver helpers, the API/live backstop, and the four surfaces where unapproved symbols actually leak today: scanner, chart, Ruby, trade ticket. Phase 2 (backtest, dashboard, admin, watchlist polish) is a SEPARATE later task — do NOT build it here. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
+Read this entire command before changing anything. This locks ARX to a fixed approved market universe. Phase 1 covers the SOURCE OF TRUTH, the resolver helpers, the API/live backstop, and the four surfaces where unapproved symbols actually leak today: scanner, chart, Eleanor, trade ticket. Phase 2 (backtest, dashboard, admin, watchlist polish) is a SEPARATE later task — do NOT build it here. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
 
 ## CORE PRINCIPLE (read first — it determines the whole design)
 
-Unapproved markets must be **invisible**, not shown-then-blocked. The primary mechanism is UI/data hiding: an unapproved symbol never appears in any list, search, tab, dropdown, chart, scanner result, or Ruby answer.
+Unapproved markets must be **invisible**, not shown-then-blocked. The primary mechanism is UI/data hiding: an unapproved symbol never appears in any list, search, tab, dropdown, chart, scanner result, or Eleanor answer.
 
 The API/live gate is a **backstop, not the user-facing mechanism**: "not in a dropdown" is not a security boundary — a hand-crafted request can still POST an unapproved symbol. So endpoints and the live pipeline must also refuse unapproved symbols. This backstop is **purely additive** — one more reason a request can be refused. It does NOT replace, relax, or bypass any existing gate.
 
@@ -26,7 +26,7 @@ export type ArxMarketCategory = "synthetic" | "forex_major" | "forex_minor" | "m
 export type ArxFocusMarket = {
   id: string; displayName: string; canonicalSymbol: string; category: ArxMarketCategory;
   aliases: string[]; mt5Aliases: string[];
-  enabledForScanner: boolean; enabledForChart: boolean; enabledForRuby: boolean;
+  enabledForScanner: boolean; enabledForChart: boolean; enabledForEleanor: boolean;
   enabledForBacktest: boolean; enabledForLiveTrading: boolean;
   dataSourcePriority: string[]; defaultTimeframe: string; supportedTimeframes: string[];
   priorityTier: "tier_1" | "tier_2"; riskProfile: string; sessionProfile: string;
@@ -42,7 +42,7 @@ Tier 1 (priorityTier "tier_1"): Volatility 75, Volatility 75 (1s), Volatility 10
 ### CRITICAL ALIAS REQUIREMENTS (this is where "approved markets fail to open" bugs hide)
 - **Synthetic 1s variants are DISTINCT symbols.** "Volatility 75 (1s)" and "Volatility 75" map to DIFFERENT Deriv ids (the 1s variant is the `1HZ75V`-class id; the standard is `R_75`). Same for 25(1s)/50(1s). `canonicalSymbol`, `aliases`, and `mt5Aliases` must keep them separate so `resolveArxMarket("Volatility 75 (1s) Index")` and `resolveArxMarket("Volatility 75 Index")` never collide. (We have already fixed per-symbol Deriv resolution for these — the registry must not undo it.)
 - **Multi-alias indices must resolve to the REAL broker/provider symbol, not a guess.** DXY, SPX500 (S&P 500 / US500), GER30 (Germany 30 / DAX), US30 each need `aliases` + `mt5Aliases` populated with the actual symbol strings the connected broker/data provider uses. Verify each against the broker symbol spec / provider routing map (`getBrokerSymbolSpec` / `providerRoutingMap`) — if the real symbol can't be confirmed for one, flag it rather than ship an alias that won't resolve. (Acceptance test #16: every approved market opens a chart without alias failure.)
-- Every entry's `aliases`/`mt5Aliases` must cover the forms already used across the codebase (scanner symbols, chart params, Ruby labels) so nothing that currently resolves stops resolving.
+- Every entry's `aliases`/`mt5Aliases` must cover the forms already used across the codebase (scanner symbols, chart params, Eleanor labels) so nothing that currently resolves stops resolving.
 
 ## STEP 2 — RESOLVER HELPERS
 
@@ -64,7 +64,7 @@ In `marketScanner.ts`: replace the hand-maintained `DEFAULT_SYMBOLS` / `approved
 
 ## STEP 4 — API BACKSTOP (defense-in-depth, additive)
 
-Every market-facing endpoint validates the requested symbol through `resolveArxMarket` BEFORE doing any work (no candle/quote/scan/context fetch for an unapproved symbol). Apply to: candle routes, quote routes, scanner routes, chart routes, symbol-search routes, Ruby market-context routes, backtest routes, watchlist/saved-market routes — and the trade-execution route per Step 6.
+Every market-facing endpoint validates the requested symbol through `resolveArxMarket` BEFORE doing any work (no candle/quote/scan/context fetch for an unapproved symbol). Apply to: candle routes, quote routes, scanner routes, chart routes, symbol-search routes, Eleanor market-context routes, backtest routes, watchlist/saved-market routes — and the trade-execution route per Step 6.
 
 Approved response envelope (additive fields; don't break existing shape — extend it):
 ```ts
@@ -75,13 +75,13 @@ Unapproved → clean blocked response, NO market data, NO leak of provider info:
 { requestedSymbol, isApprovedMarket: false, blocked: true, reason: "Market is outside the active ARX approved market universe." }
 ```
 
-## STEP 5 — LEAK-STOPPER SURFACES: SCANNER + CHART + RUBY
+## STEP 5 — LEAK-STOPPER SURFACES: SCANNER + CHART + ELEANOR
 
 **Scanner:** universe, category tabs, default view, Broad Scan, and scanner search all derive from approved markets only. Category tabs render only categories present in the registry (no empty categories). If legacy logic pulls symbols from broker/provider, filter through `resolveArxMarket` before display. Results never contain an unapproved symbol.
 
 **Chart:** symbol selector and chart search show approved markets only. Chart route params validate against the registry. A direct URL with an unapproved symbol redirects to the default approved market (**Volatility 75 Index**) — never renders, never requests candles. Headers, menus, recent-symbols, and any watchlist surface on the chart are filtered through `resolveArxMarket`.
 
-**Ruby:** Ruby's symbol resolution (`assistant/tools.ts`, `markets/assistantMarketResolver.ts`, `assistant/rubyContext.ts`) resolves aliases ONLY from the registry. Ruby must not analyze, recommend, or mention non-approved markets, and must not offer "I can also check X" for unapproved X. If the user asks about an unapproved market, Ruby replies EXACTLY:
+**Eleanor:** Eleanor's symbol resolution (`assistant/tools.ts`, `markets/assistantMarketResolver.ts`, `assistant/eleanorContext.ts`) resolves aliases ONLY from the registry. Eleanor must not analyze, recommend, or mention non-approved markets, and must not offer "I can also check X" for unapproved X. If the user asks about an unapproved market, Eleanor replies EXACTLY:
 > "ARX is currently focused only on the approved market universe. That market is outside the active ARX focus list, so I won't analyze or display it here."
 No extra detail about the unsupported market. Wire this at the resolver boundary so it holds regardless of phrasing (don't rely on prompt text alone).
 
@@ -115,16 +115,16 @@ Add deterministic tests (repo conventions):
 
 Run for real, paste outputs: typecheck:libs, api-server typecheck (scoped per the OOM workaround), trading-dashboard typecheck, `pnpm run ci:guards`, all new + existing tests.
 
-Authenticated QA (temp session): on the scanner and chart, confirm only approved markets appear; hit `/chart/feed-status?symbol=<unapproved>` and a candle route with an unapproved symbol and confirm the blocked envelope with no data; load a chart URL with an unapproved symbol and confirm redirect to V75; ask Ruby about an unapproved market and confirm the exact locked response. Screenshot the scanner/chart showing only approved markets.
+Authenticated QA (temp session): on the scanner and chart, confirm only approved markets appear; hit `/chart/feed-status?symbol=<unapproved>` and a candle route with an unapproved symbol and confirm the blocked envelope with no data; load a chart URL with an unapproved symbol and confirm redirect to V75; ask Eleanor about an unapproved market and confirm the exact locked response. Screenshot the scanner/chart showing only approved markets.
 
 ## FINAL REPORT
 
-Registry location + the 36 entries; the superset-guard result (open/pending symbols all approved); every universe source refactored to derive from the registry (grep proof no parallel list remains); the API envelope changes; the scanner/chart/Ruby/trade changes; the new `SYMBOL_NOT_IN_ARX_FOCUS` gate at both chokepoints + proof position-management is exempt; the indices/1s-variant alias resolution confirmed against real broker symbols (or flagged); test names + results; QA screenshots; and explicit confirmation that the synthetic floor, 16-gate evaluator, SL policy, and owner/admin relaxations were NOT modified or weakened.
+Registry location + the 36 entries; the superset-guard result (open/pending symbols all approved); every universe source refactored to derive from the registry (grep proof no parallel list remains); the API envelope changes; the scanner/chart/Eleanor/trade changes; the new `SYMBOL_NOT_IN_ARX_FOCUS` gate at both chokepoints + proof position-management is exempt; the indices/1s-variant alias resolution confirmed against real broker symbols (or flagged); test names + results; QA screenshots; and explicit confirmation that the synthetic floor, 16-gate evaluator, SL policy, and owner/admin relaxations were NOT modified or weakened.
 
 ## COMPLETION STANDARD — all must be true
 
 - One registry in `@workspace/domain` is the sole source of truth; the scanner universe and all symbol lists derive from it; no parallel approved-list remains.
-- Scanner, chart, Ruby, and trade-ticket UIs expose ONLY the 36 approved markets; unapproved symbols are invisible (not shown-then-blocked).
+- Scanner, chart, Eleanor, and trade-ticket UIs expose ONLY the 36 approved markets; unapproved symbols are invisible (not shown-then-blocked).
 - The API and live pipeline refuse unapproved symbols as an ADDITIVE backstop; no data is fetched for them; the blocked response leaks no provider info.
 - The live-entry Focus block fires at preflight AND dispatch for NEW entries only, with `SYMBOL_NOT_IN_ARX_FOCUS`; close/modify/cancel is exempt; the synthetic floor + 16 gates + SL policy + owner/admin relaxations are untouched and still pass their tests.
 - Every currently-open/pending symbol is approved (superset guard passes); no live money is stranded.

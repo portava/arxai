@@ -5,7 +5,7 @@ description: How to make POST /api/me/assistant/draw-setup flip verdict in an e2
 
 # Flipping the draw-setup verdict from a live scanner signal (test recipe)
 
-To prove a live scanner signal CHANGES Ruby's drawn setup over real HTTP
+To prove a live scanner signal CHANGES Eleanor's drawn setup over real HTTP
 `POST /api/me/assistant/draw-setup`, inject ONLY the assistant market-provider
 seam (`_setMarketProviderForTests`) — do NOT seed a synthetic governance agent.
 
@@ -32,4 +32,4 @@ escalates at riskScore=100. No-seed is cleaner and more honest.
 - Verify rows added: assert no DELTA on arx_live_commands / mt5_commands
   (baseline-delta, never ==0 — they're persistent audit tables).
 
-Test: `scripts/src/rubyDrawSetupRouteTest.ts` (block 3).
+Test: `scripts/src/eleanorDrawSetupRouteTest.ts` (block 3).

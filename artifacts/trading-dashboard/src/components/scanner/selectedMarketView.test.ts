@@ -117,7 +117,7 @@ describe("resolveSelectedMarketView — a feed that is not live-confirmed never 
   });
 });
 
-// Truth fix — the panel's Ruby reasoning block says "Entry, stop, and target are
+// Truth fix — the panel's Eleanor reasoning block says "Entry, stop, and target are
 // withheld until a confirmed live feed" whenever the feed is not confirmed. The
 // Highlights box beside it must not print those same levels as numbers.
 describe("resolveSelectedMarketView — levels need a confirmed live feed", () => {

@@ -1,5 +1,5 @@
 // Truth regression: per-user queries keyed without a user id (account mode,
-// Ruby market edge, chart intelligence, trade health, …) must never show the
+// Eleanor market edge, chart intelligence, trade health, …) must never show the
 // previous user's data after the signed-in identity changes, whether by
 // signing in on this tab or by a /api/me refetch that returns another user
 // (sign-out and sign-in from another tab).

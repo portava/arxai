@@ -11,7 +11,7 @@ The app should feel cleaner and easier to navigate before the next UI polish pas
 IMPORTANT RULES
 
 * Do not delete active features.
-* Do not break existing routes, backend logic, permissions, admin gates, Ruby, Scanner, live trading controls, MT5 bridge, agent governance, scalp engine, or risk systems.
+* Do not break existing routes, backend logic, permissions, admin gates, Eleanor, Scanner, live trading controls, MT5 bridge, agent governance, scalp engine, or risk systems.
 * If a feature is active, preserve it and move it under the correct grouped section.
 * If a feature is dormant, duplicated, unused, or unclear, flag it in the cleanup report instead of deleting it unless it is obviously dead/test-only code.
 * Keep admin-only features hidden from normal users.
@@ -20,7 +20,7 @@ IMPORTANT RULES
 
 PHASE 1 — FULL APP NAVIGATION AUDIT
 
-Inspect every app page, route, sidebar item, bottom menu item, header button, floating menu, drawer item, admin page, user page, scanner page, Ruby panel, trade panel, settings page, and dashboard section.
+Inspect every app page, route, sidebar item, bottom menu item, header button, floating menu, drawer item, admin page, user page, scanner page, Eleanor panel, trade panel, settings page, and dashboard section.
 
 Create a map of all current visible navigation items and group them into logical categories.
 
@@ -51,7 +51,7 @@ Recommended structure:
 * active positions overview
 * market status overview
 * recent activity
-* Ruby quick insight
+* Eleanor quick insight
 * alerts summary
 
 2. Markets
@@ -79,17 +79,17 @@ Do not make each of these separate main menu items if they can live as tabs unde
 
 Trade execution controls should stay clear, but not scattered.
 
-4. Ruby
-    Use one main Ruby area instead of multiple scattered assistant panels:
+4. Eleanor
+    Use one main Eleanor area instead of multiple scattered assistant panels:
 
-* Ruby Chat
+* Eleanor Chat
 * Market Explanation
 * Trade Reasoning
 * Voice Mode
 * Saved Chats / Memory
-* Ruby Settings if needed
+* Eleanor Settings if needed
 
-Ruby can still appear contextually across the app, but the main Ruby destination should be clean and unified.
+Eleanor can still appear contextually across the app, but the main Eleanor destination should be clean and unified.
 
 5. Risk
     Merge risk-related tools here:
@@ -217,7 +217,7 @@ Normal trader user should only see user-safe sections:
 * Dashboard
 * Markets
 * Trade
-* Ruby
+* Eleanor
 * Risk
 * Settings
 
@@ -262,8 +262,8 @@ Test:
 * Broad Scan still works.
 * Flame Scalp still works.
 * Selected market explanation still works.
-* Ruby chat still works.
-* Ruby contextual explanations still work.
+* Eleanor chat still works.
+* Eleanor contextual explanations still work.
 * Trade ticket still works.
 * Active positions still display.
 * Pending orders still display.

@@ -255,12 +255,12 @@ test("close review: a stored review that states an estimated outcome as fact is 
       id: 8, status: "CLOSED", result: "WIN", plQuality: "ESTIMATED", realizedPl: null, lastFloatingPl: 3,
       exitReason: "This one worked. The move kept pushing in your favour after you got in.",
       lesson: "Entry timing was clean; banking it while the move was alive paid off.",
-      rubyWarnedCorrectly: null, openedAt: new Date(T1), closedAt: new Date(T2),
+      eleanorWarnedCorrectly: null, openedAt: new Date(T1), closedAt: new Date(T2),
     }),
     openEntry({
       id: 9, status: "CLOSED", result: "LOSS", plQuality: "KNOWN", realizedPl: -4, lastFloatingPl: -4,
       exitReason: "Price moved against the position and it closed at a loss.", lesson: "x",
-      rubyWarnedCorrectly: false, openedAt: new Date(T1), closedAt: new Date(T2),
+      eleanorWarnedCorrectly: false, openedAt: new Date(T1), closedAt: new Date(T2),
     }),
     openEntry({
       id: 10, status: "CLOSED", result: "UNKNOWN", plQuality: "UNKNOWN", realizedPl: null, lastFloatingPl: null,
@@ -277,7 +277,7 @@ test("close review: a stored review that states an estimated outcome as fact is 
   assert.equal(loss!.plQuality, "ESTIMATED");
   assert.match(loss!.exitReason ?? "", /looked like a loss/);
   assert.doesNotMatch(loss!.exitReason ?? "", /closed at a loss/);
-  assert.equal(loss!.rubyWarnedCorrectly, false, "warnedCorrectly is reported as stored");
+  assert.equal(loss!.eleanorWarnedCorrectly, false, "warnedCorrectly is reported as stored");
   assert.equal(unknown!.exitReason, "stored unknown text", "an UNKNOWN result keeps its stored text");
   const { entries } = await getScalpJournal(41);
   assert.match(entries[0]!.exitReason ?? "", /looked like a win/);
@@ -288,11 +288,11 @@ test("personality: a stored win share is reported as estimated", async () => {
     userId: 41, symbol: "EURUSD", displayName: "EUR/USD", isSynthetic: false,
     tradesClosed: 5, wins: 3, losses: 2, breakevens: 0, reversalCount: 1, fakeoutCount: 0,
     continuationCount: 3, avgScoreAtEntry: 70, qualityBias: -2, minQualityDelta: 1,
-    notes: "Ruby is a little more cautious here based on your history (60% wins so far).",
+    notes: "Eleanor is a little more cautious here based on your history (60% wins so far).",
     updatedAt: new Date(T2),
   }];
   const { symbols } = await getSymbolPersonalities(41);
-  assert.equal(symbols[0]!.notes, "Ruby is a little more cautious here based on your history (60% estimated wins so far).");
+  assert.equal(symbols[0]!.notes, "Eleanor is a little more cautious here based on your history (60% estimated wins so far).");
   assert.equal(symbols[0]!.winRatePct, 60);
   personalityRows = [];
 });

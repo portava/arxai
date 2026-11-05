@@ -2,7 +2,7 @@ Continue from the current ARX checkpoint.
 
 Before building anything, check what already exists first and reuse current code:
 - Market Scanner
-- Ruby AI explanation panels
+- Eleanor AI explanation panels
 - MT5 Setup
 - Master Bridge Demo/Live routing
 - admin dashboard
@@ -24,7 +24,7 @@ Build the missing pieces for the next ARX upgrade:
 
 PART 1 — SELECTED MARKET INTELLIGENCE WINDOW
 
-Add a persistent “Ruby Market Intelligence” window/panel for any selected market.
+Add a persistent “Eleanor Market Intelligence” window/panel for any selected market.
 
 When a user selects a symbol/pair from scanner, watchlist, trade page, chart, or search, show a small window that explains that market throughout the day.
 
@@ -48,7 +48,7 @@ It should explain the selected market using all available criteria:
 - surprise/random event alerts
 - user’s trade history on that symbol
 - open positions on that symbol
-- Ruby’s current bias: Buy / Sell / Neutral
+- Eleanor’s current bias: Buy / Sell / Neutral
 - confidence level
 - invalidation point
 - possible stop loss area
@@ -64,7 +64,7 @@ Format example:
 - Risk:
 - Upcoming event:
 - Confidence:
-- Ruby note:
+- Eleanor note:
 
 If the user clicks/selects the market, show “Highlights”:
 - strongest bullish reason
@@ -76,7 +76,7 @@ If the user clicks/selects the market, show “Highlights”:
 - latest scanner signal
 - related open trade if any
 
-Ruby must never promise profit. Use careful language:
+Eleanor must never promise profit. Use careful language:
 “This may favor buyers.”
 “This setup weakens if…”
 “Wait for confirmation if momentum fades.”
@@ -157,7 +157,7 @@ Economic Calendar page/card:
 - affected symbols
 - countdown
 - source/status
-- Ruby summary
+- Eleanor summary
 
 Impact Calendar / Market Impact Feed:
 - major upcoming events
@@ -174,7 +174,7 @@ Add event badges to Market Scanner and Trade Ticket:
 - “Spread/volatility warning”
 - “Surprise event detected”
 
-Ruby Market Intelligence should include event warnings when a selected market is affected.
+Eleanor Market Intelligence should include event warnings when a selected market is affected.
 
 PART 5 — LIVE TRADE CHART ENTRY WINDOW
 
@@ -191,7 +191,7 @@ Requirements:
 - volume
 - floating P/L
 - time entered
-- source: Trade page / Scanner / Ruby / Master Bridge
+- source: Trade page / Scanner / Eleanor / Master Bridge
 - status: Open / Closed / Rejected / Failed
 
 If chart component already exists, reuse it.
@@ -360,7 +360,7 @@ Add or update tests for:
 1. Selected market intelligence panel appears.
 2. Direct symbol search works in scanner.
 3. Scanner can switch between grouped and direct-symbol mode.
-4. Ruby Market Intelligence shows highlights.
+4. Eleanor Market Intelligence shows highlights.
 5. UI no longer shows raw technical codes to normal users.
 6. Economic calendar existing work is detected/reused.
 7. High-impact event warning appears on affected symbols.

@@ -24,7 +24,7 @@ vi.mock("@workspace/api-client-react", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 import { LiveScalpAddOnPanel } from "./LiveScalpAddOnPanel";
 

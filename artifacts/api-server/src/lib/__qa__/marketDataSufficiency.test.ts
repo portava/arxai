@@ -1,8 +1,8 @@
 // ONE DATA-SUFFICIENCY TRUTH (Phase 1) — engine + cross-surface consistency.
 //
-// Locks the SINGLE closed-bar/freshness verdict that the scanner, Ruby, and the
+// Locks the SINGLE closed-bar/freshness verdict that the scanner, Eleanor, and the
 // chart all consume so they can never contradict each other (the bug: scanner
-// shows a confident BUY while Ruby says "candles syncing / cannot verify" for
+// shows a confident BUY while Eleanor says "candles syncing / cannot verify" for
 // the same symbol+timeframe). The engine is pure, so identical inputs ALWAYS
 // produce an identical verdict — that equality IS the "one truth" guarantee.
 
@@ -89,16 +89,16 @@ test("verdict is DISPLAY-only: exposes canShowTradeSetup, no execution-permissio
   }
 });
 
-test("ONE TRUTH: scanner-side and Ruby-side derive the IDENTICAL verdict from identical inputs", () => {
+test("ONE TRUTH: scanner-side and Eleanor-side derive the IDENTICAL verdict from identical inputs", () => {
   // The contradiction scenario: a live feed but only 3 closed bars. Both the
-  // scanner row build and Ruby's chart context feed THIS engine, so they must
+  // scanner row build and Eleanor's chart context feed THIS engine, so they must
   // agree bit-for-bit — neither can show a confident setup the other gates.
   const input = {
     symbol: APPROVED, timeframe: "M5", freshnessVerdict: "LIVE" as const, availableClosedCandles: 3,
   };
   const scannerVerdict = evaluateMarketDataSufficiency(input);
-  const rubyVerdict = evaluateMarketDataSufficiency(input);
-  assert.deepEqual(scannerVerdict, rubyVerdict);
+  const eleanorVerdict = evaluateMarketDataSufficiency(input);
+  assert.deepEqual(scannerVerdict, eleanorVerdict);
   assert.equal(scannerVerdict.canShowTradeSetup, false);
   assert.equal(scannerVerdict.status, "insufficient");
 });

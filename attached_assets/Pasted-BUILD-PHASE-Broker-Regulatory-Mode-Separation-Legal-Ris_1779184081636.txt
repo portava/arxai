@@ -19,7 +19,7 @@ Inspect:
 - capital allocation wording
 - one-click trading
 - live safety gates
-- Ruby explanations
+- Eleanor explanations
 - user terms/consent screens if any
 - disclaimers/warnings
 - audit logs
@@ -95,7 +95,7 @@ Shared Master:
 General trading:
 - “Trading involves risk.”
 - “You can lose money.”
-- “Ruby’s analysis is informational and does not guarantee results.”
+- “Eleanor’s analysis is informational and does not guarantee results.”
 - “Market conditions can change quickly.”
 
 Avoid specific legal claims unless they are reviewed and configured by the operator.
@@ -136,17 +136,17 @@ Warnings should be short and not cluttered:
 - “Risk controls do not guarantee protection.”
 - “Confirm only if you understand the risk.”
 
-7. Ruby legal/risk boundaries
-Ruby should be able to explain:
+7. Eleanor legal/risk boundaries
+Eleanor should be able to explain:
 - what mode the user is in
 - whether the user is using demo, personal MT5, or shared master
 - why live/shared access is blocked
 - why legal/compliance review is required
 - why risk disclosures must be accepted
-- that Ruby’s market analysis is informational
+- that Eleanor’s market analysis is informational
 - that trading involves risk
 
-Ruby must not:
+Eleanor must not:
 - claim guaranteed profits
 - claim legal approval
 - claim licensed broker status
@@ -244,8 +244,8 @@ Add or update tests for:
 - admin can change compliance flags with reason
 - user cannot self-approve shared master access
 - risky wording is not present in main production UI
-- Ruby does not claim legal approval or guaranteed profits
-- Ruby explains mode/risk boundaries safely
+- Eleanor does not claim legal approval or guaranteed profits
+- Eleanor explains mode/risk boundaries safely
 - no secrets exposed
 - no live command created during tests unless all safety, disclosure, approval, and compliance flags pass
 
@@ -256,7 +256,7 @@ Return:
 - disclosure/acceptance model changes
 - compliance admin route/API names
 - user-facing warning locations
-- Ruby boundary behavior
+- Eleanor boundary behavior
 - hard blocks added
 - tests added/run
 - manual test steps

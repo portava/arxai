@@ -41,11 +41,11 @@ import {
 } from "@workspace/domain/self-trade";
 import type {
   NewsRiskLevel,
-  RubyMarketEdgeSignal,
+  EleanorMarketEdgeSignal,
 } from "@workspace/domain/signal-intelligence";
 import { logger } from "../logger.js";
 import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
-import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
+import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
 import { runAllHandshakes } from "../handshake/coordinator.js";
 import { routeQuote } from "../data/marketDataRouter.js";
@@ -159,8 +159,8 @@ async function buildCandidate(
   now: number,
 ): Promise<DecisionCandidate> {
   const [signal, htf, quote] = await Promise.all([
-    buildRubyMarketEdgeForUser(effectiveUserId, { symbol, timeframe: PRIMARY_TF }),
-    buildRubyMarketEdgeForUser(effectiveUserId, { symbol, timeframe: HTF }).catch(() => null),
+    buildEleanorMarketEdgeForUser(effectiveUserId, { symbol, timeframe: PRIMARY_TF }),
+    buildEleanorMarketEdgeForUser(effectiveUserId, { symbol, timeframe: HTF }).catch(() => null),
     routeQuote(symbol).catch(() => null),
   ]);
 

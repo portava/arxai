@@ -15,7 +15,7 @@
 
 import type { AgentRunMode, TrafficMode } from "../traffic/trafficController.engine";
 
-/** The structured internal output every agent emits (§21). Ruby translates it. */
+/** The structured internal output every agent emits (§21). Eleanor translates it. */
 export interface StructuredAgentOutput {
   agentName: string;
   agentId: string;
@@ -33,7 +33,7 @@ export interface StructuredAgentOutput {
   isUniqueContribution: boolean;
   duplicateOf: string | null;
   speedCostMs: number;
-  shouldSpeakToRuby: boolean;
+  shouldSpeakToEleanor: boolean;
   shouldStepBack: boolean;
   stepBackReason: string | null;
 }

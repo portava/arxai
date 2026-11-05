@@ -57,7 +57,7 @@ Inside Manage Access, admin should be able to control everything important from 
 - Set max daily loss
 - Set max open trades
 - Enable/disable scanner access
-- Enable/disable Ruby AI access
+- Enable/disable Eleanor AI access
 - Add admin note
 
 Do not force admin to jump across multiple tabs just to approve one user.
@@ -117,6 +117,6 @@ Verify before stopping:
 - Dangerous actions require confirmation.
 - Audit log records admin changes.
 - Regular users cannot access admin controls.
-- Login, scanner, Ruby, trading modal, bridge status, and bottom navigation still work.
+- Login, scanner, Eleanor, trading modal, bridge status, and bottom navigation still work.
 
 Fix anything that fails before stopping.

@@ -4,7 +4,7 @@ Owner request: Buy/Sell with a lot size on every chart and trade surface; Sell L
 Buy Limit, Buy Stop, Sell Stop and an execute button (or a small overlay to pick
 them); buttons must behave exactly like MT5's; once in a trade, set Stop Loss /
 Take Profit; let the AI shift SL/TP when the trader believes a fakeout is taking
-place. Built on the one-click mode PR (#110) and Ruby execution (#109).
+place. Built on the one-click mode PR (#110) and Eleanor execution (#109).
 
 ## MT5 semantics implemented (MetaTrader 5 terminal help, "Types of Orders")
 
@@ -72,12 +72,12 @@ otherwise), which is why the OFF path uses the standard command.
   carries `orderType`, `entry`, `stopLimitPrice`, `expirationEpoch`, the keys the
   v154 EA's `HandlePlacePending` reads.
 
-## Ruby fakeout authority (owner spec)
+## Eleanor fakeout authority (owner spec)
 
-Per monitored position (not account-wide): a toggle in the Ruby watches strip
+Per monitored position (not account-wide): a toggle in the Eleanor watches strip
 ("Shift SL/TP on fakeout") or "monitor my EURUSD and shift the stop on a fakeout"
 in chat. Stored in the monitor's `risk_params` (no migration). Policy
-(`lib/assistant/rubyFakeoutPolicy.ts`, pure):
+(`lib/assistant/eleanorFakeoutPolicy.ts`, pure):
 
 * Fakeout = the latest **completed** M15 bar spiked against the position
   (`fakeoutRiskScore ≥ 60`) and closed back on the trade's side, while reversal
@@ -89,8 +89,8 @@ in chat. Stored in the monitor's `risk_params` (no migration). Policy
   snapped back brings the target to just inside the spike.
 * At most 2 shifts per monitor, one per 15 minutes; never while price is at/through
   the stop (protective close runs first). Fire-time gate: AI-Assisted authority +
-  `allowRubyModifyCommands` permission. Every shift is audited
-  (`RUBY_FAKEOUT_SHIFT`), notified, and confirmed by the broker.
+  `allowEleanorModifyCommands` permission. Every shift is audited
+  (`ELEANOR_FAKEOUT_SHIFT`), notified, and confirmed by the broker.
 
 ## Tests
 

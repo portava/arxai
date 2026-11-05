@@ -1,4 +1,4 @@
-// Ruby Command Center → Memory tab: what the performance-memory cards claim.
+// Eleanor Command Center → Memory tab: what the performance-memory cards claim.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
@@ -17,8 +17,8 @@ vi.mock("recharts", () => ({
   Line: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null,
 }));
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
-vi.mock("@/components/ruby/RubyAccountHealthStrip", () => ({ RubyAccountHealthStrip: () => null }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/components/eleanor/EleanorAccountHealthStrip", () => ({ EleanorAccountHealthStrip: () => null }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/aiMentor", () => ({
   DailyMentorBriefingCard: () => null, MentorActionItems: () => null, MentorHistory: () => null,
   MentorWarningCard: () => null, isMentorWarningSession: () => false,

@@ -25,7 +25,7 @@ chain; an unverifiable feed must refuse (fail-closed), never pass.
 `mt5_broker` slot) — NOT `resolveSymbolFeedVerdictForSymbol`, whose freshness is
 Deriv-tick-gated (`hasRecentDerivTickFor`). The Deriv-gated resolver falsely
 marks MT5-broker EURUSD as `AWAITING`, which would block the owner's real live
-testing path. Derive freshness like rubyChartContext:
+testing path. Derive freshness like eleanorChartContext:
 `aiUsable && !stale ? LIVE : liveDelayed ? LIVE_DELAYED : AWAITING`.
 
 **Lazy-import perf + fail-closed:** `buildChartIntelligenceState` pulls a heavy

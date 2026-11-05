@@ -294,9 +294,9 @@ test("Trade Action Center and My Trades live sources pass the integrity check", 
   // Trade Action stamps constants and My Trades picks its close source with a
   // ternary, so the literal scan above cannot see either. A refused route
   // blocks every confirmed live Trade Action and every live My Trades close.
-  const { TRADE_ACTION_SOURCE, TRADE_ACTION_RUBY_SOURCE } = await import("../../tradeAction/route.js");
+  const { TRADE_ACTION_SOURCE, TRADE_ACTION_ELEANOR_SOURCE } = await import("../../tradeAction/route.js");
   const meTrades = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../routes/meTrades.ts"), "utf8");
   const closes = [...meTrades.matchAll(/sourcePage:\s*isShared\s*\?\s*"([A-Z_]+)"\s*:\s*"([A-Z_]+)"/g)].flatMap((m) => [m[1]!, m[2]!]);
   assert.ok(closes.length >= 2, "meTrades.ts names its live close sources");
-  for (const s of [TRADE_ACTION_SOURCE, TRADE_ACTION_RUBY_SOURCE, ...closes]) assert.equal(isRouteAllowed(s), true, s);
+  for (const s of [TRADE_ACTION_SOURCE, TRADE_ACTION_ELEANOR_SOURCE, ...closes]) assert.equal(isRouteAllowed(s), true, s);
 });

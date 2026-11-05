@@ -30,5 +30,5 @@ backend surface.
   `DELETE /api/me/pending-order-draft/:id` (the canonical cancel path; the
   instant router has no cancel-pending action). Still per-user gated; surface the
   JSON body's `primaryReason`/`error` on failure, not a raw HTTP status.
-- Ruby's chart read is read-only via `POST /api/me/assistant/explain-signal`
+- Eleanor's chart read is read-only via `POST /api/me/assistant/explain-signal`
   (returns `readOnlyMode:true`, paper_only); it can never place/modify a trade.

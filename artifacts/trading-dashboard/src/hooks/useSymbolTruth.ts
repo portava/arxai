@@ -1,6 +1,6 @@
 // useSymbolTruth — the ONE per-symbol Truth Snapshot consumer (Task #512).
 //
-// "One Truth, One Brain": every scanner / chart / Ruby surface on the same page
+// "One Truth, One Brain": every scanner / chart / Eleanor surface on the same page
 // must render the SAME freshness, news state, price, and component/composed
 // verdicts. This hook wraps the backend brain (GET /api/me/market/truth/:symbol,
 // which COMPOSES the existing resolvers server-side) and the already-single-

@@ -324,7 +324,7 @@ router.post("/trades/live-shared/validate", requireUser, async (req, res) => {
     requestedVolume: volume,
     stopLoss, takeProfit,
     sourcePage: "TRADES_LIVE_SHARED_VALIDATE",
-    rubyExplanationSummary: "validate dry-run",
+    eleanorExplanationSummary: "validate dry-run",
     payload: { validateDryRun: true },
   });
   if (!draft.ok) {
@@ -442,8 +442,8 @@ router.post("/trades/live-shared/execute", requireUser, async (req, res) => {
     requestedVolume: volume,
     stopLoss, takeProfit,
     sourcePage: "TRADES_LIVE_SHARED_EXECUTE",
-    rubyExplanationSummary: typeof b.rubyExplanationSummary === "string"
-      ? b.rubyExplanationSummary : null,
+    eleanorExplanationSummary: typeof b.eleanorExplanationSummary === "string"
+      ? b.eleanorExplanationSummary : null,
     payload: {
       tradesLiveShared: true,
       internalTradeId,
@@ -661,7 +661,7 @@ const USER_COMMAND_KEYS = [
   "commandType", "status",
   "symbol", "side", "orderType",
   "requestedVolume", "executedVolume", "stopLoss", "takeProfit",
-  "rubyExplanationSummary",
+  "eleanorExplanationSummary",
   "brokerTicket", "fillPrice", "mt5Retcode", "brokerMessage", "rejectionReason",
   "createdAt", "confirmedAt", "sentToMt5At", "pickedByEaAt", "filledAt", "rejectedAt", "closedAt",
 ] as const;

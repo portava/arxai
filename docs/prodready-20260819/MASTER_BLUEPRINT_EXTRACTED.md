@@ -128,7 +128,7 @@ The catalog contains the following functions, grouped by responsibility. Numberi
 
 ## ARX MEMORY and REVIEW - Evidence, learning, and validation
 
-46. Immutable Decision and Trade Ledger  |  47. Structured Trade Journal  |  48. Post-Trade Review  |  49. Ruby Trading Assistant  |  50. Private Conversation Memory  |  51. Anonymous Aggregate Learning  |  52. Research Lab  |  53. Replay and Determinism  |  54. Shadow and Demo Validation  |  55. Strategy Arena and Allocation Review  |  56. Model, Edge, and Configuration Registry
+46. Immutable Decision and Trade Ledger  |  47. Structured Trade Journal  |  48. Post-Trade Review  |  49. Eleanor Trading Assistant  |  50. Private Conversation Memory  |  51. Anonymous Aggregate Learning  |  52. Research Lab  |  53. Replay and Determinism  |  54. Shadow and Demo Validation  |  55. Strategy Arena and Allocation Review  |  56. Model, Edge, and Configuration Registry
 
 ## ARX COMMAND - Operator experience and controls
 
@@ -286,7 +286,7 @@ Uses the broker as the primary truth source so displayed and traded prices share
 
 Who uses it
 
-Charts, scanner, Ruby, strategies, research
+Charts, scanner, Eleanor, strategies, research
 
 Inputs
 
@@ -576,7 +576,7 @@ Produces structured facts rather than free-form stories; strategies may consume 
 
 Who uses it
 
-Ruby, scanner, strategy modules, review
+Eleanor, scanner, strategy modules, review
 
 Inputs
 
@@ -780,7 +780,7 @@ Ranked opportunity cards, reason codes, freshness, and optional trade-ticket lau
 
 Dependencies
 
-SENSE/SIGNAL services; account assignment; Ruby rationale; chart truth
+SENSE/SIGNAL services; account assignment; Eleanor rationale; chart truth
 
 Safety / failure behavior
 
@@ -1640,7 +1640,7 @@ Separates setup quality, risk quality, execution quality, and exit quality so pr
 
 Who uses it
 
-Self-traders, assigned users, Ruby, research
+Self-traders, assigned users, Eleanor, research
 
 Inputs
 
@@ -1694,7 +1694,7 @@ Place in ARX
 
 ARX REVIEW function
 
-### 49. Ruby Trading Assistant
+### 49. Eleanor Trading Assistant
 
 Lets users ask natural-language questions about ARX state, trades, refusals, and system health.
 
@@ -1720,7 +1720,7 @@ Permissions; ARX APIs; model-provider abstraction; memory controls
 
 Safety / failure behavior
 
-No direct order placement or risk-limit changes through free text. Ruby must say when evidence is unavailable.
+No direct order placement or risk-limit changes through free text. Eleanor must say when evidence is unavailable.
 
 Place in ARX
 
@@ -1728,7 +1728,7 @@ COMMAND/REVIEW interface
 
 ### 50. Private Conversation Memory
 
-Keeps useful per-user context across Ruby sessions while allowing the user to clear it.
+Keeps useful per-user context across Eleanor sessions while allowing the user to clear it.
 
 Primary use
 
@@ -1994,7 +1994,7 @@ Uses the connected broker's data by default and aligns signal, order, and fill t
 
 Who uses it
 
-Traders, scanner, Ruby, review
+Traders, scanner, Eleanor, review
 
 Inputs
 
@@ -2010,7 +2010,7 @@ Market data router; order ledger; symbol registry
 
 Safety / failure behavior
 
-If chart truth fails, Ruby, Scanner, Self-Trade, AACI, and Risk Governor must not act on the chart.
+If chart truth fails, Eleanor, Scanner, Self-Trade, AACI, and Risk Governor must not act on the chart.
 
 Place in ARX
 
@@ -2166,7 +2166,7 @@ Evidence-linked explanation and stable reason codes
 
 Dependencies
 
-Ledger; Ruby; decision/risk services
+Ledger; Eleanor; decision/risk services
 
 Safety / failure behavior
 
@@ -2630,7 +2630,7 @@ Operational resilience function
 
 ### 78. LLM Provider Abstraction
 
-Allows Ruby, review, and engineering analysis to use different model providers without coupling live trading to one vendor.
+Allows Eleanor, review, and engineering analysis to use different model providers without coupling live trading to one vendor.
 
 Primary use
 
@@ -2774,7 +2774,7 @@ Launch blocker
 
 Stale feeds, gaps, duplicate ticks, reconnects, and clock drift can make charts and models look valid while they are not.
 
-Persist quality events and lineage; gate Scanner, Ruby, Self-Trade, automation, and Risk on freshness and source integrity.
+Persist quality events and lineage; gate Scanner, Eleanor, Self-Trade, automation, and Risk on freshness and source integrity.
 
 Unknown order outcomes make naive retry dangerous
 
@@ -2796,7 +2796,7 @@ Manual and automated paths can drift into different safety rules
 
 Open gap
 
-A UI shortcut, scanner action, Ruby request, or automation endpoint can accidentally bypass the common risk path.
+A UI shortcut, scanner action, Eleanor request, or automation endpoint can accidentally bypass the common risk path.
 
 Require every path to produce the same trade intent, permission result, risk authorization, order state machine, and audit chain.
 
@@ -2876,7 +2876,7 @@ LLM explanations can sound certain without evidence
 
 Product and safety risk
 
-Ruby or a review model can generate a convincing story that is not the actual decision path.
+Eleanor or a review model can generate a convincing story that is not the actual decision path.
 
 Retrieve immutable facts, separate facts from model interpretation, expose missing evidence, and forbid direct execution/risk changes.
 
@@ -2900,7 +2900,7 @@ System scope has been drifting between product vision and engine specification
 
 Documentation / governance gap
 
-ARX, AXIOM, broker hub, scanner, Ruby, self-trading, and managed allocation have been described in separate documents and conversations.
+ARX, AXIOM, broker hub, scanner, Eleanor, self-trading, and managed allocation have been described in separate documents and conversations.
 
 Treat this encyclopedia plus the authoritative build spec and versioned decisions as the product map; record changes rather than silently redefining boundaries.
 
@@ -2914,7 +2914,7 @@ P2 - prove execution safely in demo: Run adapter contract tests, partial-fill/ca
 
 P3 - enable controlled product modes: Finish self-trading workspaces first; enable managed allocation only with exclusive/subaccount isolation and compliance gates.
 
-P4 - promote intelligence from evidence: Only then expand strategies, Strategy Arena allocation, Ruby analysis, and limited live operation.
+P4 - promote intelligence from evidence: Only then expand strategies, Strategy Arena allocation, Eleanor analysis, and limited live operation.
 
 # What ARX deliberately is not
 
@@ -3610,7 +3610,7 @@ Continue only the functions that remain safe during partial failure.
 
 System improvement
 
-Define allowed behavior for Ruby, data, broker, model, reconciliation, risk and database outages.
+Define allowed behavior for Eleanor, data, broker, model, reconciliation, risk and database outages.
 
 Evidence required
 
@@ -3772,7 +3772,7 @@ Create a complete assisted loop for users who want intelligence without full aut
 
 System improvement
 
-Scanner finds, Ruby explains, ticket prepares, user confirms, ARX executes, protects and reviews.
+Scanner finds, Eleanor explains, ticket prepares, user confirms, ARX executes, protects and reviews.
 
 Evidence required
 
@@ -3828,7 +3828,7 @@ Before live Self-Trading
 
 ### 43. Approval Inbox and Expiring Tickets
 
-Centralize scanner, Ruby and automation drafts awaiting owner action.
+Centralize scanner, Eleanor and automation drafts awaiting owner action.
 
 System improvement
 
@@ -4234,7 +4234,7 @@ Useful because concurrency defects may survive example-based tests. Start only a
 
 Adversarial machine-learning defense
 
-Research feature poisoning, malformed broker streams, prompt injection into Ruby, model artifact tampering and poisoned research datasets.
+Research feature poisoning, malformed broker streams, prompt injection into Eleanor, model artifact tampering and poisoned research datasets.
 
 Treat model and data supply chains as security boundaries; build signed artifacts and provenance verification.
 
@@ -4266,7 +4266,7 @@ Required if ARX expands beyond personal self-trading or supports certain regulat
 
 Communications supervision and retention
 
-Govern trading instructions, Ruby conversations, approvals and disclosures when regulation requires archival or review.
+Govern trading instructions, Eleanor conversations, approvals and disclosures when regulation requires archival or review.
 
 Policy depends on jurisdiction and product role; avoid retaining unnecessary private conversation by default.
 
@@ -4522,7 +4522,7 @@ Certified adapter, idempotent orders, partial fills, protection, UNKNOWN handlin
 
 Phase 6 — Self-Trading guided mode
 
-Scanner, broker-native chart, Ruby explanation, risk-first ticket, confirmation, position center, mission, journal and debrief.
+Scanner, broker-native chart, Eleanor explanation, risk-first ticket, confirmation, position center, mission, journal and debrief.
 
 Phase 7 — Shadow and controlled demo automation
 

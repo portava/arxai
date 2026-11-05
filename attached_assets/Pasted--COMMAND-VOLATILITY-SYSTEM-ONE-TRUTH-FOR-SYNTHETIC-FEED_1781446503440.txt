@@ -4,7 +4,7 @@ Read this entire command before changing anything. Two phases, in order: PHASE 1
 
 ## THE CONTRADICTION (verified on live screenshots, Jun 14, V75(1s) 30m)
 
-The Ruby Chart Read feed popup for "Volatility 75 (1s) Index" shows, in ONE panel:
+The Eleanor Chart Read feed popup for "Volatility 75 (1s) Index" shows, in ONE panel:
 - State: **Live**, Source: deriv, Latency: 268 ms, Last candle: **just now**, Last tick: **3–7s ago**, Missing candles: **0**, Readiness: **LIVE_FEED**
 - AND: AI-usable: **Not confirmed**
 
@@ -37,8 +37,8 @@ Do not skip this. The fix direction depends on it. If (A), fix the resolution/ca
 There must be a single per-symbol synthetic feed verdict (live-confirmed / awaiting-tick / stale / unavailable), derived from the SAME per-symbol signal, that EVERY volatility surface reads:
 - the feed-status popup ("State / Last tick / AI-usable / Readiness")
 - the chart "Live feed unavailable · Analysis only" / "LAST-KNOWN" banner
-- the DATA / RUBY header cards ("Historical only" / "Limited read")
-- Ruby Chart Read badge ("Unconfirmed / No AI")
+- the DATA / ELEANOR header cards ("Historical only" / "Limited read")
+- Eleanor Chart Read badge ("Unconfirmed / No AI")
 - the scanner verdict + Opportunity Map row for the symbol
 - the Scalp Builder card's validity
 - the Trade Health feed badge
@@ -60,7 +60,7 @@ Only after Phase 1: when the corrected per-symbol synthetic verdict is genuinely
 - The existing server-side execution gates run UNCHANGED on every synthetic order — the 16-gate evaluator, per-click lot caps, master-live access, kill switch, rate limit, exposure reservation. Lifting the feed-state block does NOT bypass, weaken, or skip any of them. Grep the live pipeline and confirm the synthetic path flows through the SAME `createLiveDraft → confirmLiveCommand → dispatchLiveCommand` gate chain as everything else — no synthetic-specific shortcut.
 - The block lifts ONLY when the feed is genuinely live-confirmed per Phase 1. An awaiting/stale synthetic STILL blocks entry, with the honest reason shown. (Fixing false-negatives, not creating false-positives — same as 1C.)
 - Human confirmation at the broker boundary stays. "Live entry available" means the Plan/Build → confirm flow becomes available; it does NOT mean an order fires on tap, and it does NOT arm one-click. Do not remove or auto-satisfy the confirmation step.
-- No AI/Ruby auto-execution. Ruby giving a live read on a now-confirmed synthetic is fine; Ruby placing the order is not — that stays behind its existing explicit per-user flags. Lifting the feed block must not enable AI-initiated execution.
+- No AI/Eleanor auto-execution. Eleanor giving a live read on a now-confirmed synthetic is fine; Eleanor placing the order is not — that stays behind its existing explicit per-user flags. Lifting the feed block must not enable AI-initiated execution.
 - STOP-LOSS POLICY APPLIES TO SYNTHETICS. Opening this path must NOT relax `requireStopLoss` / `allowOrdersWithoutStopLoss`. (Evidence this matters: the live screenshots show an open V75 position with NO stop-loss and "downside is uncapped." Making synthetics easier to enter makes the SL gate MORE important, not less.) Confirm the SL policy gate is enforced on the synthetic entry path; do not carve out an exception.
 - No global live-exec setting changes. Scope strictly to letting a confirmed-live synthetic feed be a valid entry feed.
 

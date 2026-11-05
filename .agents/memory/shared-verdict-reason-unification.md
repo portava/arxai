@@ -6,7 +6,7 @@ description: When one read-side verdict feeds multiple display surfaces, unify t
 # Shared read-verdict reason unification
 
 When a single shared read-side verdict (e.g. a data-sufficiency verdict consumed
-by scanner + Ruby + chart) is introduced to kill a cross-surface contradiction:
+by scanner + Eleanor + chart) is introduced to kill a cross-surface contradiction:
 
 - A downgrade-only cap must key on the verdict's display flag for **any** data
   source (`if (sufficiency && !sufficiency.canShowTradeSetup)`), NOT scoped to
@@ -18,7 +18,7 @@ by scanner + Ruby + chart) is introduced to kill a cross-surface contradiction:
 **Why:** the first cut scoped the sufficiency cap to `LIVE_FEED` only, so a
 `LIVE_DELAYED`/`AWAITING` row with too few closed bars stayed non-actionable
 (freshness floors already did that) but surfaced the *freshness* reason while
-Ruby/chart surfaced the *insufficiency* reason — the surfaces no longer
+Eleanor/chart surfaced the *insufficiency* reason — the surfaces no longer
 contradicted on the LABEL but still contradicted on the WHY. The whole point of
 a shared verdict is one reason for the same symbol/timeframe across surfaces.
 

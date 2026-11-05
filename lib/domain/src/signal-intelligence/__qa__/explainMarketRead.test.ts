@@ -1,4 +1,4 @@
-// Ruby Market Edge explanation copy — pure domain contract.
+// Eleanor Market Edge explanation copy — pure domain contract.
 // Run: pnpm --filter @workspace/api-server run test:truth-component-evidence
 // (this file is listed in that script, which root `ci` runs).
 //
@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   explainMarketRead,
   sessionContext,
   SYNTHETIC_SESSION_NOTE,
@@ -72,7 +72,7 @@ test("sessionContext: every FX note is hours-only (no unmeasured liquidity adjec
 });
 
 test("explainMarketRead: synthetic V75 at 16:02 UTC — no liquidity / FX session claim", () => {
-  const signal = buildRubyMarketEdge(engineInput());
+  const signal = buildEleanorMarketEdge(engineInput());
   assert.equal(signal.session.isHighLiquidity, false);
   const ex = explainMarketRead(signal);
   assert.doesNotMatch(ex.simple.whyNow, UNMEASURED);
@@ -82,14 +82,14 @@ test("explainMarketRead: synthetic V75 at 16:02 UTC — no liquidity / FX sessio
 });
 
 test("explainMarketRead: belt-and-braces — a stale synthetic signal flagged high-liquidity still gets no session claim in Simple", () => {
-  const signal = buildRubyMarketEdge(engineInput());
+  const signal = buildEleanorMarketEdge(engineInput());
   const stale = { ...signal, session: { ...signal.session, isHighLiquidity: true, note: "New York session — high liquidity." } };
   const ex = explainMarketRead(stale);
   assert.doesNotMatch(ex.simple.whyNow, /liquidity|session/i);
 });
 
 test("explainMarketRead: forex at the same epoch names the session hours, not 'overlap', never 'strong'", () => {
-  const signal = buildRubyMarketEdge(
+  const signal = buildEleanorMarketEdge(
     engineInput({ symbol: "EURUSD", displayName: "EUR/USD", assetClass: "forex", candles: risingCandles(40, 1.1, 0.001), currentPrice: 1.14 }),
   );
   const ex = explainMarketRead(signal);
@@ -105,7 +105,7 @@ test("explainMarketRead: forex at the same epoch names the session hours, not 'o
 function withEvidence(
   over: { for: number; net: number; meetsMinimum: boolean; stopLoss?: number | null; bias?: string },
 ) {
-  const signal = buildRubyMarketEdge(engineInput());
+  const signal = buildEleanorMarketEdge(engineInput());
   const item = { key: "structure_hh_hl", label: "Higher highs / higher lows", weight: 20 };
   return {
     ...signal,

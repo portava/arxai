@@ -1,13 +1,13 @@
 // Task #600 — Scanner-truth regression suite (pure-contract assertions).
 //
 // The Scanner page used to show mutually-contradictory states at once (header
-// "Live / Ruby: Full read" while the Ruby panel said "Feed not confirmed";
+// "Live / Eleanor: Full read" while the Eleanor panel said "Feed not confirmed";
 // "Ready now" cards whose own copy said "wait for confirmation"; etc.). The fix
 // makes every surface derive from ONE resolved truth. This suite locks the pure
 // derivation so the contradictions cannot return.
 //
 // It exercises the REAL contract functions (no mocks, no fake-pass):
-//   • resolveCappedRubyReadStatus  — header Ruby cell vs Ruby Chart Read panel
+//   • resolveCappedEleanorReadStatus  — header Eleanor cell vs Eleanor Chart Read panel
 //   • resolveScannerTruth          — header (consolidated) vs chart (displayStatus)
 //   • resolveScannerActionability  — one verdict drives badge + copy + buttons
 //
@@ -42,13 +42,13 @@ import {
   type ActionabilityDataInput,
   type ScannerActionability,
   type PublicCandleStatus,
-  type RubyReadStatus,
+  type EleanorReadStatus,
 } from "./scannerActionability";
 import { scalpStatusToSetup } from "../components/scanner/scalpLabels";
 import {
-  resolveCappedRubyReadStatus,
-  type RubyReadServerState,
-} from "./rubyReadPanelState";
+  resolveCappedEleanorReadStatus,
+  type EleanorReadServerState,
+} from "./eleanorReadPanelState";
 
 const NOW = Date.parse("2026-06-08T12:00:00.000Z");
 
@@ -121,15 +121,15 @@ const CLEAN_DATA: ActionabilityDataInput = {
   chartIntelligenceStatus: "FULL",
 };
 
-// ── (1) Header Ruby cell and Ruby Chart Read panel cannot disagree ───────────
-describe("(1) header Ruby cell and Ruby Chart Read panel cannot disagree", () => {
-  const RANK: Record<RubyReadStatus, number> = {
+// ── (1) Header Eleanor cell and Eleanor Chart Read panel cannot disagree ───────────
+describe("(1) header Eleanor cell and Eleanor Chart Read panel cannot disagree", () => {
+  const RANK: Record<EleanorReadStatus, number> = {
     NO_READ: 0,
     LIMITED_READ: 1,
     FULL_READ: 2,
   };
-  const bases: RubyReadStatus[] = ["NO_READ", "LIMITED_READ", "FULL_READ"];
-  const reads: Array<{ name: string; read: RubyReadServerState | null }> = [
+  const bases: EleanorReadStatus[] = ["NO_READ", "LIMITED_READ", "FULL_READ"];
+  const reads: Array<{ name: string; read: EleanorReadServerState | null }> = [
     { name: "no read yet", read: null },
     { name: "clean read", read: { dataQuality: "ok" } },
     { name: "gated read", read: { gated: true, blockedReason: "Feed not confirmed" } },
@@ -144,7 +144,7 @@ describe("(1) header Ruby cell and Ruby Chart Read panel cannot disagree", () =>
     for (const base of bases) {
       for (const { read } of reads) {
         for (const override of overrides) {
-          const capped = resolveCappedRubyReadStatus(base, read, override);
+          const capped = resolveCappedEleanorReadStatus(base, read, override);
           expect(
             RANK[capped.status],
             `${base}/${JSON.stringify(read)}/${override} upgraded`,
@@ -155,22 +155,22 @@ describe("(1) header Ruby cell and Ruby Chart Read panel cannot disagree", () =>
   });
 
   it("never claims FULL_READ once the feed isn't confirmed (gated/insufficient/override-false)", () => {
-    // This is the exact reported contradiction: header "Ruby: Full read" while
+    // This is the exact reported contradiction: header "Eleanor: Full read" while
     // the panel says "Feed not confirmed". With a FULL base, any not-confirmed
     // signal must cap to LIMITED_READ and surface a reason.
     for (const { read } of reads.filter((r) => r.read && r.name !== "clean read")) {
-      const capped = resolveCappedRubyReadStatus("FULL_READ", read, undefined);
+      const capped = resolveCappedEleanorReadStatus("FULL_READ", read, undefined);
       expect(capped.status).toBe("LIMITED_READ");
       expect(capped.reason).toBeTruthy();
     }
-    const overridden = resolveCappedRubyReadStatus("FULL_READ", null, false);
+    const overridden = resolveCappedEleanorReadStatus("FULL_READ", null, false);
     expect(overridden.status).toBe("LIMITED_READ");
     expect(overridden.reason).toBeTruthy();
   });
 
   it("keeps FULL_READ only when the read is clean AND the override doesn't block", () => {
-    expect(resolveCappedRubyReadStatus("FULL_READ", null, undefined).status).toBe("FULL_READ");
-    expect(resolveCappedRubyReadStatus("FULL_READ", { dataQuality: "ok" }, true).status).toBe(
+    expect(resolveCappedEleanorReadStatus("FULL_READ", null, undefined).status).toBe("FULL_READ");
+    expect(resolveCappedEleanorReadStatus("FULL_READ", { dataQuality: "ok" }, true).status).toBe(
       "FULL_READ",
     );
   });
@@ -178,7 +178,7 @@ describe("(1) header Ruby cell and Ruby Chart Read panel cannot disagree", () =>
   it("NO_READ stays NO_READ regardless of read/override (no upgrade path)", () => {
     for (const { read } of reads) {
       for (const override of overrides) {
-        expect(resolveCappedRubyReadStatus("NO_READ", read, override)).toEqual({
+        expect(resolveCappedEleanorReadStatus("NO_READ", read, override)).toEqual({
           status: "NO_READ",
           reason: null,
         });
@@ -189,10 +189,10 @@ describe("(1) header Ruby cell and Ruby Chart Read panel cannot disagree", () =>
   it("header and panel call with identical args ⇒ identical verdict (one truth)", () => {
     // Both surfaces call the SAME pure cap with the SAME lifted (base, read,
     // override). Determinism is what makes them unable to disagree.
-    const base: RubyReadStatus = "FULL_READ";
-    const read: RubyReadServerState = { gated: true, blockedReason: "Feed not confirmed" };
-    const headerCell = resolveCappedRubyReadStatus(base, read, undefined);
-    const panel = resolveCappedRubyReadStatus(base, read, undefined);
+    const base: EleanorReadStatus = "FULL_READ";
+    const read: EleanorReadServerState = { gated: true, blockedReason: "Feed not confirmed" };
+    const headerCell = resolveCappedEleanorReadStatus(base, read, undefined);
+    const panel = resolveCappedEleanorReadStatus(base, read, undefined);
     expect(headerCell).toEqual(panel);
   });
 });
@@ -262,12 +262,12 @@ describe("(2) header and chart candle status cannot disagree", () => {
     });
   }
 
-  it("an unconfirmed feed forbids a FULL Ruby read in the same truth (header dependency rule)", () => {
+  it("an unconfirmed feed forbids a FULL Eleanor read in the same truth (header dependency rule)", () => {
     const t = resolveScannerTruth(
       inputs({ feedStatus: feed({ quality: "stale", stale: true, isLive: false, aiUsable: false }) }),
     );
     expect(t.consolidated.candleStatus).not.toBe("CONFIRMED");
-    expect(t.consolidated.rubyReadStatus).not.toBe("FULL_READ");
+    expect(t.consolidated.eleanorReadStatus).not.toBe("FULL_READ");
   });
 });
 
@@ -326,7 +326,7 @@ describe("(3) a Ready-now verdict cannot carry wait-for-confirmation copy", () =
 });
 
 // ── (9) Changing symbol updates every surface together ───────────────────────
-describe("(9) changing symbol updates header/chart/Ruby/actionability together", () => {
+describe("(9) changing symbol updates header/chart/Eleanor/actionability together", () => {
   it("a single input switch moves selectedSymbol AND all derived surfaces", () => {
     const a = resolveScannerTruth(inputs());
     const b = resolveScannerTruth(
@@ -352,13 +352,13 @@ describe("(9) changing symbol updates header/chart/Ruby/actionability together",
     expect(b.consolidated.candleStatus).toBe("STALE");
     expect(b.displayStatus).toBe("STALE");
     expect(b.isLivePrice).toBe(false);
-    expect(b.consolidated.rubyReadStatus).not.toBe("FULL_READ");
+    expect(b.consolidated.eleanorReadStatus).not.toBe("FULL_READ");
     expect(b.consolidated.scannerActionability).toBe("FEED_LIMITED");
   });
 });
 
 // ── (10) Changing timeframe updates every surface together ───────────────────
-describe("(10) changing timeframe updates header/chart/Ruby/actionability together", () => {
+describe("(10) changing timeframe updates header/chart/Eleanor/actionability together", () => {
   it("the same candle count flips state when only the timeframe changes", () => {
     // 60 candles is below the 1m minimum (150) but above the 1d minimum (50),
     // so switching ONLY the timeframe must flip every surface in lockstep.
@@ -378,7 +378,7 @@ describe("(10) changing timeframe updates header/chart/Ruby/actionability togeth
     expect(d1.consolidated.candleStatus).toBe("CONFIRMED");
     expect(d1.displayStatus).toBe("LIVE");
     expect(d1.isLivePrice).toBe(true);
-    expect(d1.consolidated.rubyReadStatus).toBe("FULL_READ");
+    expect(d1.consolidated.eleanorReadStatus).toBe("FULL_READ");
   });
 });
 

@@ -11,7 +11,7 @@ Current confirmed state:
 - One-click safety gates remain enforced.
 - Master live access gate remains enforced.
 - Selected-market route requires session auth, which is correct.
-- Ruby market explanation is deterministic, which is acceptable.
+- Eleanor market explanation is deterministic, which is acceptable.
 - Current cache is in-process per server instance.
 
 Fix/complete these remaining risks:
@@ -21,7 +21,7 @@ Fix/complete these remaining risks:
    Test:
    - logged-in user opens scanner/trade page
    - selects a symbol
-   - Ruby Market Intelligence panel renders
+   - Eleanor Market Intelligence panel renders
    - highlights render
    - unauthenticated user gets AUTH_REQUIRED
    - no secret data appears
@@ -44,9 +44,9 @@ Fix/complete these remaining risks:
    - warning if distributed mode is not enabled
 
 4. Confirm selected-market intelligence does not spam AI/LLM calls.
-   Keep deterministic/template Ruby explanation from analyzeMarket output.
+   Keep deterministic/template Eleanor explanation from analyzeMarket output.
    Add note:
-   “Ruby Market Intelligence uses cached market analysis and updates on interval/event triggers.”
+   “Eleanor Market Intelligence uses cached market analysis and updates on interval/event triggers.”
 
 5. Run full QA again.
 

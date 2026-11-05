@@ -63,22 +63,22 @@ marked optional.
 - [ ] Kill switch engage immediately blocks new live commands
 - [ ] Close-only mode blocks new opens, allows safe exits
 
-## Ruby (chat)
+## Eleanor (chat)
 
-- [ ] Ruby answers app questions (`test:ruby-app-knowledge` 63/63)
-- [ ] Ruby explains current user's account state (no other-user data)
-- [ ] Ruby explains why a blocked trade was blocked (clean, no codes)
-- [ ] Ruby never claims guaranteed profits or legal approval
-- [ ] Ruby never returns secrets / tokens / hashes / account numbers
-- [ ] Ruby admin context only resolves for authenticated admins
-- [ ] Logout clears Ruby chat history client-side
+- [ ] Eleanor answers app questions (`test:eleanor-app-knowledge` 63/63)
+- [ ] Eleanor explains current user's account state (no other-user data)
+- [ ] Eleanor explains why a blocked trade was blocked (clean, no codes)
+- [ ] Eleanor never claims guaranteed profits or legal approval
+- [ ] Eleanor never returns secrets / tokens / hashes / account numbers
+- [ ] Eleanor admin context only resolves for authenticated admins
+- [ ] Logout clears Eleanor chat history client-side
 
-## Ruby Voice
+## Eleanor Voice
 
-- [ ] `test:ruby-voice-trading-guardrails` 29/29 PASS
+- [ ] `test:eleanor-voice-trading-guardrails` 29/29 PASS
 - [ ] iOS tap-to-start prompt visible on first activation
 - [ ] Mic-permission-denied shows clean fallback (no raw browser error)
-- [ ] Mic pauses while Ruby speaks; resumes after
+- [ ] Mic pauses while Eleanor speaks; resumes after
 - [ ] Voice trade commands prepare ticket → require explicit Confirm
 - [ ] Voice cannot bypass kill switch / close-only / disclosure / cooldown / one-click
 
@@ -87,7 +87,7 @@ marked optional.
 - [ ] Walk `docs/MOBILE_QA_CHECKLIST.md` on iPhone SE (375×667) + iPhone 13 (390×844)
 - [ ] Viewport has `viewport-fit=cover` (notch-safe)
 - [ ] Inputs do not zoom on focus (≥16px)
-- [ ] Ruby trigger doesn't cover Confirm/Cancel buttons
+- [ ] Eleanor trigger doesn't cover Confirm/Cancel buttons
 - [ ] Bottom nav respects safe-area-inset-bottom
 - [ ] Admin tables scroll horizontally on phone
 
@@ -103,7 +103,7 @@ marked optional.
 - [ ] NEEDS_REVIEW queue populated for any divergence
 - [ ] Admin can mark items reviewed
 - [ ] Uncertain ownership → NEEDS_REVIEW (never auto-assigned)
-- [ ] Ruby explains reconciliation state without exposing secrets
+- [ ] Eleanor explains reconciliation state without exposing secrets
 
 ## Legal / risk disclosure
 

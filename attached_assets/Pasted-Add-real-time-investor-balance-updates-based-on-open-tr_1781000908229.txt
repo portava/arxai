@@ -19,7 +19,7 @@ Implementation requirements:
 1. Find the current investor/user balance source
 - Locate where investor balances, allocated balance, available balance, account equity, dashboard balance, admin investor table, user wallet, and live account snapshot are calculated.
 - Do not create a second fake balance system.
-- Reuse the current ledger/account snapshot/trade visibility logic already used by Dashboard, Open Trades, Scanner, Ruby, and Admin.
+- Reuse the current ledger/account snapshot/trade visibility logic already used by Dashboard, Open Trades, Scanner, Eleanor, and Admin.
 
 2. Add mark-to-market investor balance calculation
 For each investor/user:
@@ -74,7 +74,7 @@ Update every place investor balance appears:
 - Live trading dashboard
 - Open trades page
 - Risk panel
-- Ruby account context
+- Eleanor account context
 - Any wallet/allocation screen
 
 Display clearly:
@@ -97,8 +97,8 @@ Allocated: $1,000.00
 Floating P/L: -$22.40
 Live Equity: $977.60
 
-6. Ruby integration
-Ruby must use live investor equity when answering anything about:
+6. Eleanor integration
+Eleanor must use live investor equity when answering anything about:
 - user balance
 - investor balance
 - account health
@@ -108,7 +108,7 @@ Ruby must use live investor equity when answering anything about:
 - current exposure
 - open trade status
 
-Ruby must not answer from stale allocated balance if open trades exist.
+Eleanor must not answer from stale allocated balance if open trades exist.
 
 7. Risk engine integration
 Risk checks must use liveEquity, not static balance.
@@ -181,7 +181,7 @@ Run tests proving:
 - Admin master bridge balance does not get incorrectly shown as every investor’s balance.
 - Each investor only sees their own assigned trades.
 - Unmapped trades are flagged and not assigned incorrectly.
-- Ruby uses live equity in account/risk answers.
+- Eleanor uses live equity in account/risk answers.
 - Risk engine blocks/allows based on live equity, not static allocation.
 - UI refreshes without manual page reload.
 - Stale MT5 data is clearly marked stale.
@@ -193,10 +193,10 @@ Preserve:
 - Existing admin approval toggles
 - Existing user mode/admin mode behavior
 - Existing dashboard/open trades snapshot logic
-- Existing scanner/Ruby trade flow
+- Existing scanner/Eleanor trade flow
 - Existing live P/L display
 
 Do not remove any current live trading functionality.
 
 Final acceptance:
-The feature passes only when investor balances visibly move in real time while open trades are moving, and all dashboards/admin views/Ruby/risk checks agree on the same live equity number.
+The feature passes only when investor balances visibly move in real time while open trades are moving, and all dashboards/admin views/Eleanor/risk checks agree on the same live equity number.

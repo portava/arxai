@@ -8,7 +8,7 @@ Claude must not bypass live trading safety gates, risk rules, bridge rules, or a
 Core name:
 Backend Fix Agent
 Internal AI provider: Claude
-Display label in admin/Ruby if needed: Claude Fix Agent
+Display label in admin/Eleanor if needed: Claude Fix Agent
 
 Primary responsibilities:
 1. Diagnose backend errors
@@ -18,7 +18,7 @@ Primary responsibilities:
 5. Suggest patches
 6. Generate repair plans
 7. Summarize failed jobs
-8. Help Ruby explain technical problems to the user
+8. Help Eleanor explain technical problems to the user
 9. Compare expected state vs actual state
 10. Create admin-reviewable fix tickets
 
@@ -33,7 +33,7 @@ Claude should be used for:
 - backend test failure explanations
 - schema mismatch explanations
 - OpenAPI/codegen mismatch explanations
-- Ruby backend safety explanation support
+- Eleanor backend safety explanation support
 
 Claude should NOT:
 - place trades
@@ -190,20 +190,20 @@ Add hard rules:
 - Claude cannot call trade execution endpoints.
 - Claude cannot approve mission starts.
 - Claude cannot override feed status.
-- Claude cannot override Ruby safety verdict.
+- Claude cannot override Eleanor safety verdict.
 - Claude cannot mark a trade as broker-confirmed.
 - Claude cannot mutate bridge command state.
 - Claude cannot change risk limits.
 - Claude cannot bypass kill switch.
 
-Ruby integration:
-Ruby can use Claude Fix Agent summaries only for backend issue explanations.
+Eleanor integration:
+Eleanor can use Claude Fix Agent summaries only for backend issue explanations.
 
 Example:
-Ruby may say:
+Eleanor may say:
 “Claude Fix Agent found that V75 1s rows are unsynced because broker confirmation was not received. They are visible for transparency but excluded from live totals.”
 
-Ruby must not present Claude’s diagnosis as broker truth unless backend confirms it.
+Eleanor must not present Claude’s diagnosis as broker truth unless backend confirms it.
 
 Admin UI:
 Add a simple Admin → AI Fix Agent screen.
@@ -216,7 +216,7 @@ Fields:
   - Scanner
   - Open Trades
   - Mission Planner
-  - Ruby
+  - Eleanor
   - Risk Engine
   - API
   - Database
@@ -277,4 +277,4 @@ Acceptance criteria:
 - Claude cannot touch live execution, bridge commands, broker truth, or risk gates.
 - Admin audit logs are created.
 - Secrets are redacted.
-- Ruby can summarize Claude diagnostics without treating them as trade truth.
+- Eleanor can summarize Claude diagnostics without treating them as trade truth.

@@ -95,7 +95,7 @@ tested.
   `useGetMeSharedAccountSummary`, `useTradingMode`; surfaces `CockpitCards.tsx`
   (`AccountSnapshotCard`, `masterReconciliation`), positions tables,
   `LiveModeBadge.tsx`.
-- AI: Ruby `rubyContext.ts` (`account.snapshotFreshness`, `bridge.availability`);
+- AI: Eleanor `eleanorContext.ts` (`account.snapshotFreshness`, `bridge.availability`);
   Flame `flameRead.ts::readExecutionQuality` (`bridgeConnected`,
   `heartbeatAgeSeconds`); governance `computeSurfaceGovernance`.
 - Admin: `adminEaHealth.ts`, `adminReconciliationCenter.ts`, `adminEaUpdates.ts`.
@@ -126,7 +126,7 @@ tested.
   latency, write admin trace — never fake success.
 - EA gains `OnTradeTransaction` event push (+`OnTrade` backup), per-message
   sequence + idempotency, local retry queue.
-- Additive truth threading (freshness/lifecycle/provider-source) into Ruby,
+- Additive truth threading (freshness/lifecycle/provider-source) into Eleanor,
   Flame, governance, admin health, `LiveModeBadge`.
 - Broker-impacting commands keep routing through the existing instant-trade
   router → live command pipeline → 16-gate. Reconciler stays dry-run.

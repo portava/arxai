@@ -2,17 +2,17 @@
 //
 // The ONE source of (a) the per-timeframe minimum closed-bar floor and (b) the
 // normalized display timeframe token that the Trade Health / Eligibility DISPLAY
-// contract and its callers (Scanner, Ruby) feed in so they agree for the SAME
+// contract and its callers (Scanner, Eleanor) feed in so they agree for the SAME
 // real-world facts.
 //
 // WHY this exists:
 //   - Floor: without a shared per-timeframe floor, the Scanner (which requires a
-//     per-timeframe minimum, e.g. 150 closed 1m bars) and Ruby (which fell back to
+//     per-timeframe minimum, e.g. 150 closed 1m bars) and Eleanor (which fell back to
 //     the bare MIN_SUFFICIENT_CLOSED_BARS of 5) would label the SAME symbol +
-//     timeframe differently in the thin-history window — Ruby "Live-confirmed"
+//     timeframe differently in the thin-history window — Eleanor "Live-confirmed"
 //     while the Scanner says "Building history". Feeding both the same floor makes
 //     the shared label/affordances agree.
-//   - Token: Ruby passes canonical MT5 timeframes ("M15", "H1") while the Scanner
+//   - Token: Eleanor passes canonical MT5 timeframes ("M15", "H1") while the Scanner
 //     passes UI aliases ("15m", "1h"). The contract embeds the timeframe in its
 //     trust line, so normalizing both to ONE display token keeps the trust line
 //     identical across surfaces.

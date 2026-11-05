@@ -285,7 +285,7 @@ Rules:
 2. Use owner/admin account only.
 3. Use EURUSD unless V75 is explicitly confirmed tradable and intended.
 4. Use lot 0.01 or the smallest broker-allowed lot.
-5. Do not let Ruby choose direction.
+5. Do not let Eleanor choose direction.
 6. This is a wiring test only.
 7. Do not open more than one trade.
 8. Close immediately after verification.
@@ -316,7 +316,7 @@ Execution:
 10. Confirm ARX stores the MT5 ID.
 11. Confirm ARX position card shows Entry, Now, and P/L.
 12. Confirm Scanner/chart shows trade.
-13. Confirm Ruby can explain it.
+13. Confirm Eleanor can explain it.
 14. Close through ARX.
 15. Confirm close reaches MT5.
 16. Confirm MT5 close success.
@@ -376,7 +376,7 @@ Final report must include:
 23. ARX ledger verification
 24. Trade page verification with Entry/Now/P&L
 25. Scanner/chart verification
-26. Ruby explanation verification
+26. Eleanor explanation verification
 27. arx_live_commands after count/max_id
 28. MT5 open positions after
 29. ARX open positions after

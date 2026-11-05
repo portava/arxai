@@ -22,7 +22,7 @@ name:
 deterministic test/data contract while still rendering the customized name live.
 
 **Internal-identifier rule:** when a `const` must become a function purely to
-inject the dynamic name, KEEP the identifier NAME (e.g. `RUBY_AUTHORITY_OPTIONS`
-stays `RUBY_AUTHORITY_OPTIONS`, just becomes `(name) => [...]`). Renaming the
+inject the dynamic name, KEEP the identifier NAME (e.g. `ELEANOR_AUTHORITY_OPTIONS`
+stays `ELEANOR_AUTHORITY_OPTIONS`, just becomes `(name) => [...]`). Renaming the
 identifier (even casing) violates a "personalization-only, internal identifiers
 untouched" constraint and is flagged in review.

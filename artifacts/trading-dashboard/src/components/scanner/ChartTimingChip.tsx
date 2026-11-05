@@ -146,7 +146,7 @@ export type TimingChipReadState =
 
 /**
  * The ONE set of timing-chip rules, shared by the chart-header chip and the
- * Ruby chat chip so the two can never disagree on the same screen: same
+ * Eleanor chat chip so the two can never disagree on the same screen: same
  * request (and so the same query / server cache entry), same echo, candle,
  * error, age and feed-gate checks.
  *

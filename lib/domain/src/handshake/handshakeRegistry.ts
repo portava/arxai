@@ -74,7 +74,7 @@ export const HANDSHAKE_DEFINITIONS: Record<HandshakeType, HandshakeDefinition> =
     implemented: true,
   },
 
-  // ── Signal Intelligence Core (Task #194) — Ruby Market Edge ──
+  // ── Signal Intelligence Core (Task #194) — Eleanor Market Edge ──
   SIGNAL_INTELLIGENCE: {
     type: "SIGNAL_INTELLIGENCE",
     label: "Signal Intelligence Readiness",
@@ -85,14 +85,14 @@ export const HANDSHAKE_DEFINITIONS: Record<HandshakeType, HandshakeDefinition> =
     implemented: true,
   },
 
-  // ── Scanner Explanation (Task #195) — Ruby Market Read explanation engine ──
+  // ── Scanner Explanation (Task #195) — Eleanor Market Read explanation engine ──
   SCANNER_EXPLANATION: {
     type: "SCANNER_EXPLANATION",
     label: "Scanner Explanation Readiness",
     layers: [
       { layer: "MARKET_DATA", required: true },
       { layer: "SCANNER", required: true },
-      { layer: "RUBY_EXPLANATION", required: false },
+      { layer: "ELEANOR_EXPLANATION", required: false },
     ],
     implemented: true,
   },
@@ -170,14 +170,14 @@ export const HANDSHAKE_DEFINITIONS: Record<HandshakeType, HandshakeDefinition> =
     implemented: true,
   },
 
-  // ── Ruby Execution (named surface) — Ruby's pre-execution readiness view ──
-  // Advisory readiness Ruby surfaces before an execution-critical action. The
+  // ── Eleanor Execution (named surface) — Eleanor's pre-execution readiness view ──
+  // Advisory readiness Eleanor surfaces before an execution-critical action. The
   // per-user RISK_PREVIEW layer is optional context. EXECUTION-CRITICAL: a
-  // BLOCKED verdict is advisory only; Ruby is read-only and CANNOT place a trade,
+  // BLOCKED verdict is advisory only; Eleanor is read-only and CANNOT place a trade,
   // and the 16-gate live pipeline remains the sole authority.
-  RUBY_EXECUTION: {
-    type: "RUBY_EXECUTION",
-    label: "Ruby Execution Readiness",
+  ELEANOR_EXECUTION: {
+    type: "ELEANOR_EXECUTION",
+    label: "Eleanor Execution Readiness",
     layers: [
       { layer: "MARKET_DATA", required: true },
       { layer: "BROKER_BRIDGE", required: true },

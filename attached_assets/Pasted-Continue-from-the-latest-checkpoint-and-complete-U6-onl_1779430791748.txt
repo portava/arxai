@@ -25,8 +25,8 @@ U6 scope:
    - /ai-command-center opens and all 4 tabs work: Chat, Market Read, Commands, Memory
    - scanner search works
    - symbol focus changes correctly
-   - Ruby explanation panel appears for selected market
-   - Ruby typing/thinking animation appears while responding
+   - Eleanor explanation panel appears for selected market
+   - Eleanor typing/thinking animation appears while responding
    - one-click/trade buttons do not bypass confirmations
    - blocked live/shared-master states show plain-language reasons
    - normal user UI does not expose internal function names, raw guard names, evaluator names, backend route names, stack traces, or developer-only identifiers

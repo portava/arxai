@@ -201,7 +201,7 @@ export interface BuildContextOptions {
   candleLimit?: number;
   /**
    * Advisory surfaces only: also resolve the shared chart-truth snapshot and
-   * overlay its source/quality/freshness so Ruby reports exactly what the chart
+   * overlay its source/quality/freshness so Eleanor reports exactly what the chart
    * shows. The decision orchestrator leaves this unset (default false) → no
    * extra fetch, identical context.
    */

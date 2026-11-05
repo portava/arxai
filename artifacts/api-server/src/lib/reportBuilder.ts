@@ -4,6 +4,7 @@
 //  - Defensive secret stripping: apiKeyHash, tokenLast4, raw bridge tokens, secrets.
 //  - Reports never trigger trade execution; pure read of user-owned tables.
 //  - PDF is not implemented; HTML is the safe fallback.
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import {
   db,
   paperTradesTable, paperSessionsTable, tradingSessionsTable,
@@ -142,7 +143,7 @@ function utcDay(d: Date | null | undefined): string | null {
 }
 /** The book the demo-trade reports read, named so it is not confused with the sandbox order ledger. */
 const PAPER_TRADES_SOURCE =
-  "Trades you log on My Demo Trades (paper_trades). The Calendar page and Ruby Memory read the demo sandbox order ledger, so their totals can differ.";
+  `Trades you log on My Demo Trades (paper_trades). The Calendar page and ${DEFAULT_ASSISTANT_NAME} Memory read the demo sandbox order ledger, so their totals can differ.`;
 /** Report types whose figures come from paper_trades. */
 const PAPER_TRADE_REPORTS: ReadonlySet<ReportType> = new Set<ReportType>([
   "account_summary", "trading_session_summary", "paper_trades", "performance_calendar",

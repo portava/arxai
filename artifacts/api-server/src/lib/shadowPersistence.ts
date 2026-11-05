@@ -40,7 +40,7 @@ export const SYNTHETIC_SIMULATOR_SOURCE = "SYNTHETIC_SIMULATOR" as const;
 
 export type ShadowPersistSource =
   | "scanner"
-  | "ruby_chat"
+  | "eleanor_chat"
   | typeof SYNTHETIC_SIMULATOR_SOURCE;
 
 type ShadowPredictionInsert = typeof shadowPredictionsTable.$inferInsert;
@@ -136,9 +136,9 @@ export async function updateShadowOutcome(d: ShadowDecision): Promise<void> {
   }
 }
 
-// ── Persist a Ruby chat prediction ────────────────────────────────────────────
-// Called when Ruby explicitly predicts direction in a conversation.
-export async function persistRubyChatPrediction(opts: {
+// ── Persist a Eleanor chat prediction ────────────────────────────────────────────
+// Called when Eleanor explicitly predicts direction in a conversation.
+export async function persistEleanorChatPrediction(opts: {
   userId:      number;
   symbol:      string;
   timeframe:   string;
@@ -154,11 +154,11 @@ export async function persistRubyChatPrediction(opts: {
     const db = await getDb();
     await db.insert(shadowPredictionsTable).values({
       shadowId,
-      source:      "ruby_chat",
+      source:      "eleanor_chat",
       userId:      opts.userId,
       symbol:      opts.symbol,
       timeframe:   opts.timeframe,
-      strategy:    "ruby_chat",
+      strategy:    "eleanor_chat",
       action:      opts.action,
       entryPrice:  opts.entryPrice ?? null,
       stopLoss:    opts.stopLoss   ?? null,
@@ -175,7 +175,7 @@ export async function persistRubyChatPrediction(opts: {
       rgApproved:  false,
     });
   } catch (e) {
-    log.warn({ err: e, symbol: opts.symbol }, "ruby_chat_prediction_persist_failed");
+    log.warn({ err: e, symbol: opts.symbol }, "eleanor_chat_prediction_persist_failed");
   }
   return shadowId;
 }

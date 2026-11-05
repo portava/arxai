@@ -1,7 +1,7 @@
-// ── FVG Trend Pullback — Ruby Display Block (Task #675) ───────────────────────
+// ── FVG Trend Pullback — Eleanor Display Block (Task #675) ───────────────────────
 //
 // Composes the pure FVG Trend Pullback engine into a DISPLAY-ONLY block for the
-// Ruby structural read. Additive: it can only DESCRIBE and WARN — never grants
+// Eleanor structural read. Additive: it can only DESCRIBE and WARN — never grants
 // READY_NOW, never touches execution, never weakens existing reads.
 //
 // Pattern mirrors goldStrategyRead.ts. The block is included in the chartRead

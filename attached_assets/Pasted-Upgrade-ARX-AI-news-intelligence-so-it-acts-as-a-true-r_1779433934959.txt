@@ -4,7 +4,7 @@ SCOPE LOCK:
 Only work on:
 1. News-risk scoring.
 2. Scanner ranking adjustment.
-3. Ruby trading decision context.
+3. Eleanor trading decision context.
 4. Trade ticket news-risk warning.
 5. Alerts/watch mode.
 
@@ -15,12 +15,12 @@ Do not:
 - Change kill switches.
 - Change admin approvals.
 - Rewrite scanner logic from scratch.
-- Rewrite Ruby brain architecture.
+- Rewrite Eleanor brain architecture.
 
 GOAL:
 ARX AI should not always try to find a trade. Sometimes the correct decision is WAIT, WATCH, or AVOID because news risk is too high.
 
-Add these decision states across scanner, Ruby, and trade ticket:
+Add these decision states across scanner, Eleanor, and trade ticket:
 
 Decision states:
 - TRADE WATCH
@@ -50,15 +50,15 @@ Scanner cards should show:
   - Avoid
   - No Trade
 
-Ruby behavior:
-Ruby must be allowed to say:
+Eleanor behavior:
+Eleanor must be allowed to say:
 - “I would not trade this right now.”
 - “The setup is technically clean, but the news risk is too high.”
 - “Wait until after the event volatility settles.”
 - “This is a watchlist candidate, not an entry yet.”
 - “News and technicals conflict, so confidence is low.”
 
-Ruby must not force a buy/sell answer when the safer answer is no trade.
+Eleanor must not force a buy/sell answer when the safer answer is no trade.
 
 Trade ticket behavior:
 Before final confirmation, show a News Risk Gate:
@@ -78,7 +78,7 @@ Do not use raw provider names, route names, function names, or debug labels.
 
 Acceptance checklist:
 1. Scanner can return WAIT / AVOID / NO TRADE, not only BUY/SELL.
-2. Ruby can recommend no trade when appropriate.
+2. Eleanor can recommend no trade when appropriate.
 3. Trade ticket shows a news-risk gate before confirmation.
 4. News risk downgrades scanner ranking when appropriate.
 5. News risk does not fake certainty.

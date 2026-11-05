@@ -9,7 +9,7 @@ measured by `scripts/arx-scorecard/rubric.json`, not a module or guard count.
 
 | Component | Its job | Canonical boundary | Must not do |
 |---|---|---|---|
-| **Risk Governor** | Decide whether an action is within deterministic risk policy: effective limits, sizing, exposure, daily loss/drawdown, reward-to-risk and discipline. Return reasons and audit evidence. | `artifacts/api-server/src/lib/riskGovernor/enforce.ts` loads facts and audits; `preTrade.ts` evaluates; `limitSettings.ts` and `positionSizer.ts` own their respective policies. | Dispatch trades, invent account facts, or let Ruby/user interfaces bypass a block. |
+| **Risk Governor** | Decide whether an action is within deterministic risk policy: effective limits, sizing, exposure, daily loss/drawdown, reward-to-risk and discipline. Return reasons and audit evidence. | `artifacts/api-server/src/lib/riskGovernor/enforce.ts` loads facts and audits; `preTrade.ts` evaluates; `limitSettings.ts` and `positionSizer.ts` own their respective policies. | Dispatch trades, invent account facts, or let Eleanor/user interfaces bypass a block. |
 | **Trade Engine** | Carry a confirmed intent through its mode's execution lifecycle, coordinating risk and safety and delegating venue mechanics. | `artifacts/api-server/src/lib/tradeEngine/pipeline.ts`; internal LIVE queue, DEMO queue/consumer and `paperVenue.ts`. | Silently convert LIVE to PAPER, let routes write command mailboxes, or call submission a fill. |
 | **Position Guardian** | Supervise positions and decide protective close, intelligence exit, mission exit, trade health, scalp and trade-management actions. | `artifacts/api-server/src/lib/positionGuardian/manage.ts` and `rules.ts`; position persistence through `lib/positions/ledger.ts`. | Let individual rule families independently execute; mark a position closed before broker evidence. |
 | **Broker Hub** | Supply broker/connection/account facts, identity, provenance, capabilities and freshness through a common read contract. | `artifacts/api-server/src/lib/brokerHub/readAdapters.ts`, `connections.ts`, `brokerHealthState.ts`, `mt5StateReader.ts` and `freshness.ts`. | Authorize or dispatch trades; equate stream health with execution readiness; substitute a platform balance for a user's account. |
@@ -28,7 +28,7 @@ current behavior. The completion report identifies superseding changes and evide
 
 ```mermaid
 flowchart TD
-  U[Confirmed intent: manual, chart, Ruby, bot or mission] --> E[Trade Engine]
+  U[Confirmed intent: manual, chart, Eleanor, bot or mission] --> E[Trade Engine]
   E --> G[Mode-specific draft and dispatch checks]
   S[Platform Safety: permission policy] --> G
   G --> R[Risk Governor: deterministic action decision]
@@ -63,7 +63,7 @@ orders without sending a broker command. Unsupported operations refuse explicitl
 - **Market data** supplies observed prices with source and time. Missing/stale
   quotes cannot be fabricated into executable prices. Training simulation remains
   explicitly identified as simulation.
-- **Ruby and intelligence** propose/explain. The LLM gateway owns model access;
+- **Eleanor and intelligence** propose/explain. The LLM gateway owns model access;
   deterministic safety, risk, confirmation and execution remain outside the model.
 - **Audit** records decisions, state transitions, requests and outcomes. Request,
   queued command, acknowledgement, partial fill and final fill are distinct facts.

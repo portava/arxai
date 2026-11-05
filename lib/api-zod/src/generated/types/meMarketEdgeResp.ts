@@ -5,10 +5,10 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
-import type { RubyMarketEdgeSignal } from "./rubyMarketEdgeSignal";
-import type { RubyMarketReadExplanation } from "./rubyMarketReadExplanation";
+import type { EleanorMarketEdgeSignal } from "./eleanorMarketEdgeSignal";
+import type { EleanorMarketReadExplanation } from "./eleanorMarketReadExplanation";
 
 export interface MeMarketEdgeResp {
-  signal: RubyMarketEdgeSignal;
-  explanation?: RubyMarketReadExplanation | null;
+  signal: EleanorMarketEdgeSignal;
+  explanation?: EleanorMarketReadExplanation | null;
 }

@@ -151,7 +151,7 @@ G. Render guard issue
 * handshake result blocks chart incorrectly
 * analysis-only state forced globally
 * stale state treated as no data
-* chart waits for Ruby signal/news/snapshot before rendering
+* chart waits for Eleanor signal/news/snapshot before rendering
 
 H. CSS/container issue
 
@@ -168,7 +168,7 @@ Inspect recent changes around:
 * SSE account snapshot hook
 * Dashboard/Open Trades shared truth work
 * ARX Handshake System if started
-* Ruby Market Edge chart overlay changes
+* Eleanor Market Edge chart overlay changes
 * scanner truth contract
 * feed availability truth badges
 * “analysis only” state
@@ -307,7 +307,7 @@ Check if it requires:
 * selected symbol tradability
 * heartbeat
 * account snapshot
-* Ruby signal
+* Eleanor signal
 
 If the gate is too strict and blocks valid non-fabricated candles, fix the gate.
 
@@ -352,7 +352,7 @@ After fix, scanner chart should show one of these truthful states:
 5. Provider error
 
 * Empty/error state with:
-    “Chart feed error. Ruby can still analyze available account/position data.”
+    “Chart feed error. Eleanor can still analyze available account/position data.”
 
 Do not show generic “No live candles” for every cause.
 Differentiate quote available vs candle unavailable vs symbol mapping issue vs backend error.

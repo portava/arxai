@@ -4,7 +4,7 @@
 **Build commit:** `c25103a` (master) + this pass
 **Reviewer:** automated QA gate (ci:guards + 22 proof suites + qa:arx-full-ecosystem orchestrator)
 **Scope:** complete ecosystem audit — auth, invite gate, per-user isolation,
-Ruby AI, scanner, watchlist, calendar/alerts, demo path, personal MT5,
+Eleanor AI, scanner, watchlist, calendar/alerts, demo path, personal MT5,
 operator-funded live pilot (Phase B 16-gate), admin/reconciliation/audit,
 saved-feature persistence, mobile, secret-leak probes.
 
@@ -29,7 +29,7 @@ saved-feature persistence, mobile, secret-leak probes.
 
 History:
 - Hard invite-gate hardening (atomic register + SHA-256 hashing + advisory-lock cap) — closed in prior pass, architect PASS.
-- Per-user account shell aggregator + page + Ruby tool — already shipped; the only remaining nit (dead duplicate route in `App.tsx`) closed in prior pass.
+- Per-user account shell aggregator + page + Eleanor tool — already shipped; the only remaining nit (dead duplicate route in `App.tsx`) closed in prior pass.
 - Master QA script `qa:arx-full-ecosystem` — alias added in prior pass.
 - Orchestrator per-suite timeout bumped 90s → 180s this pass (prevented false-FAIL on heavier suites running under cumulative DB load).
 
@@ -39,7 +39,7 @@ History:
 |---|---|---|
 | `acceptInviteTx` cap counting hard-codes `DEFAULT_COHORT` | Low | Defer — single cohort exists today; revisit if multi-cohort runtime ships. |
 | Alert types: explicit *price-level threshold* + *TP/SL proximity* not yet first-class triggers | Medium | Defer — framework supports it; wiring/UI is post-beta polish. All other alert types (volatility, bias-change, news-risk, daily-loss, bridge) ARE wired. |
-| Heavy charts (`BacktestResultsDashboard`, `TradingViewLiveChart`) not mobile-optimized | Low | Defer — core mobile flows (login, scanner, watchlist, Ruby, MT5 setup, my-account) work; deep analytics are desktop-class. |
+| Heavy charts (`BacktestResultsDashboard`, `TradingViewLiveChart`) not mobile-optimized | Low | Defer — core mobile flows (login, scanner, watchlist, Eleanor, MT5 setup, my-account) work; deep analytics are desktop-class. |
 | `ARX_BETA_INVITE_REQUIRED` intentionally unset in dev | N/A | Operator action — flip on for staging/prod before opening invite registration. |
 
 ## 3. Fixed items (this session)
@@ -69,13 +69,13 @@ History:
 - Account-shell 14/14 PASS (cross-user access denied)
 - Fresh-first-load 18/18 PASS (no stale state on logout/login)
 
-### Ruby AI (intelligence + memory + voice)
+### Eleanor AI (intelligence + memory + voice)
 - Text chat per-user-scoped: **PASS** (`meAssistant.ts:391` requireUser)
 - Voice (WebRTC + GPT-audio fallback): **PASS** (`meAssistant.ts:153,494`)
 - Memory store userId-scoped + secret-stripped: **PASS** (`memoryStore.ts`)
 - Memory clear endpoint: **PASS** (`DELETE /api/me/assistant/memory`)
-- App-knowledge: **63/63 PASS** (`test:ruby-app-knowledge`)
-- Voice guardrails (no bypass of confirmation/safety): **29/29 PASS** (`test:ruby-voice-trading-guardrails`)
+- App-knowledge: **63/63 PASS** (`test:eleanor-app-knowledge`)
+- Voice guardrails (no bypass of confirmation/safety): **29/29 PASS** (`test:eleanor-voice-trading-guardrails`)
 - Safety envelope on every response (paper_only/liveLocked/readOnlyMode/allowOrderExecution=false): **PASS**
 - Confirmation gate on any trade action: **PASS** (`tools.ts:1471 requestLiveOrder requires confirmedByUser:true`)
 - No raw audio storage: **PASS** (`multer.memoryStorage()`)
@@ -90,7 +90,7 @@ History:
 - Watchlist save/remove per user: **PASS** (`routes/watchlists.ts:105,118` userId-scoped + ownership check)
 - Alerts (volatility spike, scanner bias change, news-risk, bridge health, MT5 disconnect, losing-streak): **PASS**
 - Alert per-user privacy + 30-min dedupe: **PASS** (`routes/meAlerts.ts:13`, `alertManager.ts:138`)
-- Economic + impact calendar wired to scanner + Ruby: **PASS**
+- Economic + impact calendar wired to scanner + Eleanor: **PASS**
 - High-impact news → `blockTrading` flag: **PASS** (`selectedMarket.ts:267 scoreNewsRisk`)
 - Scanner-to-trade routes through confirmation + 16-gate Phase B: **PASS**
 
@@ -99,7 +99,7 @@ History:
 - saved-scanner-selections: **PASS** (`/market-scanner/selected-market`)
 - saved-notes / journal: **PASS** (`routes/meTradeJournal.ts`)
 - saved-alerts: **PASS** (`routes/meAlerts.ts`)
-- saved-Ruby memory: **PASS** (`memoryStore.ts`)
+- saved-Eleanor memory: **PASS** (`memoryStore.ts`)
 - saved-preferences / notifications: **PASS** (`routes/meNotifications.ts`)
 - saved-risk-profile: **PASS** (`routes/meRiskGovernor.ts`, `lib/risk/userRiskSettings.ts`)
 - saved-account mode: **PASS** (`user_master_live_access`, exposed via `/api/me/account-shell`)
@@ -181,7 +181,7 @@ multiple times in this session and prior session and lands **19/19 PASS** —
 the orchestrator cap was the cause, not a real product failure. Mitigation
 shipped this pass (`90s → 180s` per-suite cap).
 The remaining 5 suites the orchestrator was still about to run when the
-external bash sandbox cap of 110s was reached (`test:ruby-app-knowledge` and
+external bash sandbox cap of 110s was reached (`test:eleanor-app-knowledge` and
 later entries) are reported in 5b.
 
 ### 5b. Standalone-verified suites (this session, NOT in orchestrator SUITES)
@@ -189,8 +189,8 @@ later entries) are reported in 5b.
 | Suite | Result | When verified |
 |---|---|---|
 | `test:beta-invite-gate` | **23/23 PASS** | this session + prior 28-item gate |
-| `test:ruby-app-knowledge` | **63/63 PASS** | this session |
-| `test:ruby-voice-trading-guardrails` | **29/29 PASS** | this session |
+| `test:eleanor-app-knowledge` | **63/63 PASS** | this session |
+| `test:eleanor-voice-trading-guardrails` | **29/29 PASS** | this session |
 | `test:reconciliation-center` | **26/26 PASS** | this session |
 | `test:audit-log-center` | **19/19 PASS** | this session (twice) + prior 47-item gate |
 | `test:operator-funded-pilot` | **19/19 PASS** | this session |

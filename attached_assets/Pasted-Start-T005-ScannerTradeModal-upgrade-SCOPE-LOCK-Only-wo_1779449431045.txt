@@ -13,7 +13,7 @@ Do not change:
 - live/demo permissions
 - kill switches
 - admin approvals
-- Ruby brain architecture
+- Eleanor brain architecture
 - scanner scoring logic
 - historical/backtest scoring logic
 - news-risk scoring logic
@@ -54,7 +54,7 @@ Modal sections:
 - Risk / Reward
 - Historical Check
 - News Risk Check
-- Ruby Summary
+- Eleanor Summary
 - Final Confirmation
 
 Historical Check should show:
@@ -99,7 +99,7 @@ Mobile UI:
 - BUY/SELL/Cancel/Confirm buttons must remain tappable.
 - No horizontal overflow.
 - Bottom nav must not cover modal buttons.
-- Ruby floating bubble must not block modal actions.
+- Eleanor floating bubble must not block modal actions.
 
 Cleanup:
 - If an old demo-only ScannerTradeModal exists, upgrade it instead of creating a duplicate.
@@ -114,7 +114,7 @@ Acceptance checklist:
 4. Confirm still uses existing safety gates.
 5. Historical Check appears.
 6. News Risk Check appears.
-7. Ruby Summary appears.
+7. Eleanor Summary appears.
 8. High news risk can warn Wait/Avoid/No Trade.
 9. Mobile modal has no overflow or blocked buttons.
 10. No normal UI says “real money” or “live money.”

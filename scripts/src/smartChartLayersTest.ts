@@ -7,7 +7,7 @@
 //  4. eventAffectsSymbol matches currency-in-symbol + affected markets.
 //  5. deriveNewsBehavior: NO_PROVIDER when disconnected; NEWS_LIVE / PRE_NEWS /
 //     POST_NEWS / NORMAL for connected provider; only affecting events drive it.
-//  6. buildSignalLayers draws Ruby geometry ONLY for the matching symbol; a
+//  6. buildSignalLayers draws Eleanor geometry ONLY for the matching symbol; a
 //     mismatched signal symbol yields no signal zones (structure still drawn).
 //  7. buildTradeHealthSlots flags slots reserved + only for the symbol.
 //  7b. buildExecutionCostLayers draws a LIVE (non-reserved) fill band + break-even

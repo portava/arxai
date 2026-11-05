@@ -1,7 +1,7 @@
 Run a full ARX AI end-to-end system audit, repair, cleanup, and live-connectivity test.
 
 Goal:
-Test the entire ARX AI ecosystem piece by piece from frontend to backend to MT5 bridge and back again. Fix broken wiring, remove dormant UI, reduce repetitive information, confirm every feature works, confirm Scanner/chart trading works, confirm Ruby works across the app, and perform one controlled dummy LIVE trade test only if the approved owner/admin live-test conditions are met.
+Test the entire ARX AI ecosystem piece by piece from frontend to backend to MT5 bridge and back again. Fix broken wiring, remove dormant UI, reduce repetitive information, confirm every feature works, confirm Scanner/chart trading works, confirm Eleanor works across the app, and perform one controlled dummy LIVE trade test only if the approved owner/admin live-test conditions are met.
 
 Do not blindly rebuild the app.
 Do not delete working systems.
@@ -39,12 +39,12 @@ Inspect and test the full app in this order:
 23. Trade history
 24. User trade ledger
 25. Shared/master bridge user filtering
-26. Ruby chat
-27. Ruby voice input
-28. Ruby speech output
-29. Ruby memory/saved chats
-30. Ruby market explanations
-31. Ruby action execution
+26. Eleanor chat
+27. Eleanor voice input
+28. Eleanor speech output
+29. Eleanor memory/saved chats
+30. Eleanor market explanations
+31. Eleanor action execution
 32. News/current-events data if connected
 33. Historical data/backtest data if connected
 34. Economic calendar if connected
@@ -94,7 +94,7 @@ For each dormant UI item:
 10. If it is repetitive, consolidate it into one clean status area.
 
 Do not remove useful functionality just to reduce clutter.
-Do not remove Scanner, Ruby, trade controls, admin controls, bridge controls, or risk controls.
+Do not remove Scanner, Eleanor, trade controls, admin controls, bridge controls, or risk controls.
 Clean and simplify the UI without weakening the app.
 
 Repetitive Information Cleanup:
@@ -108,7 +108,7 @@ Rules:
 4. Do not show the same warning in multiple places on the same page.
 5. Keep critical warnings, but make them compact.
 6. Move long explanations into expandable “Details” or “Why?” sections.
-7. Ruby should explain in plain English, not dump raw diagnostic information.
+7. Eleanor should explain in plain English, not dump raw diagnostic information.
 
 Scanner / Chart Trading Test:
 Fully test the Scanner chart trading workstation.
@@ -116,7 +116,7 @@ Fully test the Scanner chart trading workstation.
 Verify:
 
 1. Chart appears at the top of Scanner.
-2. Chart loads before Ruby and scanner results finish.
+2. Chart loads before Eleanor and scanner results finish.
 3. Broad Scan still works.
 4. Focus Scan still works.
 5. Scanner search works.
@@ -225,10 +225,10 @@ Test:
     * updatedAt
     * closedAt if closed
 
-Ruby Full-App Agent Upgrade:
-Ruby should be able to do anything the user can do in the app, and more, but only through the same permission system.
+Eleanor Full-App Agent Upgrade:
+Eleanor should be able to do anything the user can do in the app, and more, but only through the same permission system.
 
-Ruby must be able to:
+Eleanor must be able to:
 
 1. Navigate app sections.
 2. Explain any page in plain English.
@@ -260,7 +260,7 @@ Ruby must be able to:
 28. Speak responses back when voice mode is enabled.
 29. Save chat history and memory unless user clears it.
 
-Ruby must not:
+Eleanor must not:
 
 1. Bypass backend permissions.
 2. Bypass account freeze.
@@ -278,10 +278,10 @@ Ruby must not:
 14. Use Paper Trading fallback.
 15. Pretend a trade executed when MT5 did not confirm it.
 
-Ruby “Even More” Capabilities:
-Ruby should also be able to do more than a normal user by acting as an app intelligence layer where permitted.
+Eleanor “Even More” Capabilities:
+Eleanor should also be able to do more than a normal user by acting as an app intelligence layer where permitted.
 
-Add or verify Ruby can:
+Add or verify Eleanor can:
 
 1. Run app health checks.
 2. Detect disconnected UI.
@@ -299,33 +299,33 @@ Add or verify Ruby can:
 14. Summarize QA results.
 15. Explain what changed after each system update.
 
-Ruby should have tool/action access through a controlled action registry:
+Eleanor should have tool/action access through a controlled action registry:
 
-1. Every Ruby action must map to a real app action.
-2. Every Ruby action must declare required permission.
-3. Every Ruby action must declare whether confirmation is required.
+1. Every Eleanor action must map to a real app action.
+2. Every Eleanor action must declare required permission.
+3. Every Eleanor action must declare whether confirmation is required.
 4. Trading actions must always go through backend validation.
 5. Admin actions must require admin role.
 6. Dangerous actions must have explicit confirmation unless already covered by approved one-click trading settings.
-7. Ruby should never call hidden/unvalidated backend functions directly.
+7. Eleanor should never call hidden/unvalidated backend functions directly.
 
 Voice Test:
-Test Ruby’s voice system fully.
+Test Eleanor’s voice system fully.
 
 Verify:
 
 1. Microphone permission request works.
-2. Ruby listens when chat voice mode is active.
-3. Ruby stops listening correctly.
-4. Ruby detects silence.
-5. Ruby asks user to repeat if unclear.
+2. Eleanor listens when chat voice mode is active.
+3. Eleanor stops listening correctly.
+4. Eleanor detects silence.
+5. Eleanor asks user to repeat if unclear.
 6. Speech-to-text result appears correctly.
-7. Ruby responds in text.
-8. Ruby responds in voice if enabled.
-9. Ruby does not keep listening when user leaves chat if that is the intended behavior.
-10. Ruby does not expose internal debug text through speech.
-11. Ruby works on mobile.
-12. Ruby works on desktop.
+7. Eleanor responds in text.
+8. Eleanor responds in voice if enabled.
+9. Eleanor does not keep listening when user leaves chat if that is the intended behavior.
+10. Eleanor does not expose internal debug text through speech.
+11. Eleanor works on mobile.
+12. Eleanor works on desktop.
 
 Performance Test:
 Speed is critical.
@@ -340,7 +340,7 @@ Measure and log:
 6. Search symbol response time.
 7. Broad Scan response time.
 8. Focus Scan response time.
-9. Ruby response time.
+9. Eleanor response time.
 10. Voice input recognition time.
 11. Buy/Sell button click to backend request time.
 12. Backend request to MT5 bridge time.
@@ -358,7 +358,7 @@ Target:
 3. Scanner/chart interactions should feel instant.
 4. Slow backend actions should show “Working…” or “Updating…” immediately.
 5. Do not block the full page when only one card/action is loading.
-6. Do not let Ruby block trading actions.
+6. Do not let Eleanor block trading actions.
 
 Dummy LIVE Trade Connectivity Test:
 Perform one controlled dummy LIVE trade test only if all of the following are true:
@@ -384,13 +384,13 @@ Dummy trade rules:
 4. This trade is for connectivity testing only, not strategy.
 5. Do not open multiple dummy trades.
 6. Do not scale in.
-7. Do not let Ruby choose direction based on strategy for this test.
+7. Do not let Eleanor choose direction based on strategy for this test.
 8. Use the configured neutral test direction if available.
 9. If no test direction is configured, require admin to pick BUY or SELL in the app.
 10. After the order fills, verify the MT5 ticket/order appears.
 11. Verify ARX ledger records it.
 12. Verify the trade appears on the Scanner chart only for the correct user.
-13. Verify Ruby can explain the trade in plain English.
+13. Verify Eleanor can explain the trade in plain English.
 14. Immediately close the dummy trade after verifying the full wiring.
 15. Verify close confirmation from MT5.
 16. Verify ARX ledger marks it closed.
@@ -439,8 +439,8 @@ Check:
 6. Trades.
 7. Pending orders.
 8. Ledger records.
-9. Ruby chats.
-10. Ruby memory.
+9. Eleanor chats.
+10. Eleanor memory.
 11. Scanner data.
 12. Market data cache.
 13. Logs.
@@ -515,7 +515,7 @@ After audit, fixes, cleanup, and testing, provide a completion report with:
 7. Repetitive UI consolidated
 8. Scanner status
 9. Chart trading status
-10. Ruby status
+10. Eleanor status
 11. Voice status
 12. MT5 bridge status
 13. DEMO trading test result
@@ -537,4 +537,4 @@ Important:
 Do not stop at checking if pages render.
 This must be a true end-to-end wiring test of the full ARX AI ecosystem.
 Every visible action should either work, be properly wired, or be removed/disabled with a clean explanation.
-Ruby should become the app’s intelligent command layer, but every Ruby action must go through the same backend permissions, account rules, and MT5 confirmation system as a normal user action.
+Eleanor should become the app’s intelligent command layer, but every Eleanor action must go through the same backend permissions, account rules, and MT5 confirmation system as a normal user action.

@@ -7,7 +7,7 @@ This is an audit-first task. Do not enable, expand, or loosen auto trading until
 
 Systems to inspect:
 1. Auto trading bot / AI auto mode
-2. Ruby trade decision engine
+2. Eleanor trade decision engine
 3. Scanner signal intake
 4. Scalp Builder / Flare system intake
 5. Trade Health / Eligibility contract
@@ -45,7 +45,7 @@ Audit requirements:
      - not AI-usable
      - not broker-live
      - synthetic/composite without broker confirmation
-   - Confirm bot uses the same feed verdict as Scanner/Ruby/chart.
+   - Confirm bot uses the same feed verdict as Scanner/Eleanor/chart.
    - Confirm feed confidence can only downgrade, never grant execution permission.
 
 3. Scanner/Scalp reconciliation:
@@ -159,7 +159,7 @@ Required evidence:
 
 Tests to add or verify:
 1. Bot skips when feed is historical-only.
-2. Bot skips when Ruby Chart Read confidence is low and Scalp Builder is only conditional.
+2. Bot skips when Eleanor Chart Read confidence is low and Scalp Builder is only conditional.
 3. Bot skips when economic/news provider is missing and event risk is unknown.
 4. Bot skips or reduces risk when existing exposure is stacked.
 5. Bot skips when bridge heartbeat is stale.

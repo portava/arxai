@@ -28,8 +28,8 @@ Held fix-ledger so far:
 2. Display-freshness unification.
 3. Refresh truth/wording.
 4. Eleanor rename debt:
-   - rubyContext.ts should become Eleanor-facing/centralized naming later.
-   - Scanner/chart Ruby surfaces also have rename debt: RubyChartRead, RubyMarketReadCard, scannerTruth ruby* fields.
+   - eleanorContext.ts should become Eleanor-facing/centralized naming later.
+   - Scanner/chart Eleanor surfaces also have rename debt: EleanorChartRead, EleanorMarketReadCard, scannerTruth eleanor* fields.
    - Naming debt only; behavior currently correct unless proven otherwise.
 5. P4-1: deep-history lazy load makes first load look truncated because initial chart loads 200 bars; consider eager deeper initial fetch or clearer “scroll for history” affordance later.
 
@@ -44,7 +44,7 @@ Find and map all paths that can initiate, close, modify, reverse, or manage real
 - Admin/master allocation trade paths.
 - Emergency close paths.
 - Live test cycle paths.
-- Ruby/Eleanor-assisted trade suggestion paths, if any can execute or prefill executable tickets.
+- Eleanor/Eleanor-assisted trade suggestion paths, if any can execute or prefill executable tickets.
 - Any route under /api/trades/*, /api/me/live/*, /api/me/one-click/*, /api/live/*, /api/admin/*, or similar.
 - Any direct MT5/bridge call path.
 

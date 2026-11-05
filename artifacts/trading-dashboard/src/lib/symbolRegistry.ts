@@ -2,7 +2,7 @@
  * Unified symbol registry + resolver.
  *
  * One canonical list used by: SymbolExplorer, SelectedMarketPanel
- * (Ruby Market Intelligence), scanner, chart, and the global instant
+ * (Eleanor Market Intelligence), scanner, chart, and the global instant
  * trade router. The registry is the source of truth for which markets
  * a user can search, click, focus, and trade across the app.
  *

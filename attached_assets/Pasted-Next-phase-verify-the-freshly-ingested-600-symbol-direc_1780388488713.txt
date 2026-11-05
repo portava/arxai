@@ -34,17 +34,17 @@ Required checks:
 - Market groups should be collapsible.
 - Selecting a symbol should collapse/close the picker cleanly so the user can return to the scanner.
 
-3. Ruby Symbol Awareness
-- When a user selects any symbol, Ruby should explain that symbol in plain English.
-- Ruby should not expose backend names, route names, API names, internal errors, JSON payloads, database table names, or code terms to regular users.
-- Ruby should explain:
+3. Eleanor Symbol Awareness
+- When a user selects any symbol, Eleanor should explain that symbol in plain English.
+- Eleanor should not expose backend names, route names, API names, internal errors, JSON payloads, database table names, or code terms to regular users.
+- Eleanor should explain:
   - what the symbol is
   - whether it looks tradeable
   - the current market context
   - basic technical read
   - risk considerations
   - what the user should watch before entry
-- Ruby should say “I’m thinking…” or show the animated typing dots while responding.
+- Eleanor should say “I’m thinking…” or show the animated typing dots while responding.
 
 4. Trade Modal Symbol Wiring
 - Confirm the trade modal receives the selected symbol correctly.
@@ -64,13 +64,13 @@ Required checks:
 6. Performance Requirements
 - Symbol search should feel instant.
 - Opening the symbol picker should not lag.
-- Selecting a symbol should update the scanner/Ruby/trade modal quickly.
+- Selecting a symbol should update the scanner/Eleanor/trade modal quickly.
 - Measure and log timing for:
   - loading symbol directory
   - opening scanner
   - searching symbol
   - selecting symbol
-  - Ruby explanation start
+  - Eleanor explanation start
   - trade modal open
   - trade modal validation
 
@@ -98,7 +98,7 @@ Deliver proof when done:
 - number of symbols available to frontend
 - sample symbols tested
 - scanner search result proof
-- selected-symbol-to-Ruby proof
+- selected-symbol-to-Eleanor proof
 - selected-symbol-to-trade-modal proof
 - timing results
 - any bugs found and fixed

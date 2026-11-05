@@ -40,8 +40,8 @@ import { run as runInvestorLiveBalanceDb } from "../investorLiveBalanceDbTest.js
 import { run as runInvestorPerformanceRoute } from "../investorPerformanceRouteHonestyTest.js";
 import { run as runLiveCycleCloseGuard } from "../liveTestCycleCloseGuardIntegrationTest.js";
 import { run as runRealizedDailyPnl } from "../realizedDailyPnlDbTest.js";
-import { run as runRubyDrawSetupRoute } from "../rubyDrawSetupRouteTest.js";
-import { run as runRubyQualityRouteDb } from "../rubyQualityRouteDbTest.js";
+import { run as runEleanorDrawSetupRoute } from "../eleanorDrawSetupRouteTest.js";
+import { run as runEleanorQualityRouteDb } from "../eleanorQualityRouteDbTest.js";
 import { run as runWatchlistUniverseGate } from "../watchlistUniverseGateRouteTest.js";
 
 interface AggregatedTest {
@@ -61,8 +61,8 @@ const TESTS: readonly AggregatedTest[] = [
   { key: "@workspace/scripts::test:investor-performance-route", run: runInvestorPerformanceRoute },
   { key: "@workspace/scripts::test:live-cycle-close-guard", run: runLiveCycleCloseGuard },
   { key: "@workspace/scripts::test:realized-daily-pnl", run: runRealizedDailyPnl },
-  { key: "@workspace/scripts::test:ruby-draw-setup-route", run: runRubyDrawSetupRoute },
-  { key: "@workspace/scripts::test:ruby-quality-route-db", run: runRubyQualityRouteDb },
+  { key: "@workspace/scripts::test:eleanor-draw-setup-route", run: runEleanorDrawSetupRoute },
+  { key: "@workspace/scripts::test:eleanor-quality-route-db", run: runEleanorQualityRouteDb },
   { key: "@workspace/scripts::test:watchlist-universe-gate", run: runWatchlistUniverseGate },
 ] as const;
 

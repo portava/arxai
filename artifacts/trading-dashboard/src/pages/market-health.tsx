@@ -13,7 +13,7 @@
 //   The SAME feed truth every other surface uses, via `useScannerTruth`, which
 //   composes the one honest market query (GET /api/chart/candles) and resolves
 //   it through the shared `resolveScannerTruth` contract. Scanner, chart,
-//   Ruby reads and this page therefore cannot disagree about whether a feed is
+//   Eleanor reads and this page therefore cannot disagree about whether a feed is
 //   live — there is one evaluator, not two.
 //
 //   The already-real "Market Data Provider" card (GET /api/me/market-data/status)

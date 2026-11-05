@@ -1,4 +1,4 @@
-// Truth regression: Ruby's admin launch-readiness verdict must not read a
+// Truth regression: Eleanor's admin launch-readiness verdict must not read a
 // reconciliation pass whose detectors could not run as "0 critical issues /
 // READY_FOR_MANUAL_LIVE_TEST". An unchecked critical check is a blocker, like a
 // found one. Nor may it report the env flag alone as the master switch: dispatch
@@ -179,7 +179,7 @@ test("settings that could not be read: the operator arm is reported unknown (nul
   }
 });
 
-test("Ruby is told that a null operator arm means it could not be read", async () => {
+test("Eleanor is told that a null operator arm means it could not be read", async () => {
   const { TOOL_DEFINITIONS } = await import("../tools.js");
   const d = String((TOOL_DEFINITIONS as unknown as Array<{ name: string; description: string }>)
     .find((t) => t.name === "summarizeLaunchReadinessForAdmin")?.description);

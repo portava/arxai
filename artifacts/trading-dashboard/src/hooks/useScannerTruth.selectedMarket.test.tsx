@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 const resolver = vi.hoisted(() => vi.fn((input) => input));
 vi.mock("@/lib/scannerTruth", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/scannerTruth")>(), resolveScannerTruth: resolver }));
 import { useScannerTruth } from "./useScannerTruth";

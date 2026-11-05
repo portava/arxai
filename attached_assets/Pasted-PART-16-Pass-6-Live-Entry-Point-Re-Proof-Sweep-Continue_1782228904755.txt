@@ -56,7 +56,7 @@ Files / entry points to directly inspect:
 
 5. routes/meAssistant.ts
    - /api/me/assistant/instant-trade-command
-   - Confirm assistant/Ruby command path routes through executeInstant/live pipeline.
+   - Confirm assistant/Eleanor command path routes through executeInstant/live pipeline.
    - Confirm assistant cannot bypass user confirmation, account activation, gates, or broker outcome truth.
 
 6. routes/liveTestCycle.ts
@@ -105,7 +105,7 @@ Required proof standard:
 Questions this pass must answer:
 1. Are there any live broker-send paths outside dispatchLiveCommand?
 2. Are there any live close/modify/emergency paths outside dispatchLiveCommand?
-3. Are assistant/Ruby live commands forced through the same gates?
+3. Are assistant/Eleanor live commands forced through the same gates?
 4. Are one-click/self-trade paths forced through the same gates?
 5. Are live test-cycle routes capable of touching real broker accounts?
 6. Does admin allocation routing ever become direct execution?

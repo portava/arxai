@@ -110,14 +110,14 @@ const KNOWN_REFRESH_TESTIDS = [
   "opportunity-map-refresh",
   "timing-intelligence-refresh",
   "scanner-chart-reload",
-  "ruby-market-read-refresh",
-  "ruby-scalp-focus-refresh",
-  "ruby-scalp-baskets-refresh",
-  "ruby-scalp-reviews-refresh",
+  "eleanor-market-read-refresh",
+  "eleanor-scalp-focus-refresh",
+  "eleanor-scalp-baskets-refresh",
+  "eleanor-scalp-reviews-refresh",
   "recent-scanner-trades-retry",
   "btn-refresh-symbol",
   "scalp-rank-scan",
-  "ruby-chart-read-ask",
+  "eleanor-chart-read-ask",
 ] as const;
 
 describe("scanner cards — every refresh/reload/retry button disables while busy", () => {

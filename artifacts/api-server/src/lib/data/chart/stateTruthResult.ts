@@ -1,8 +1,8 @@
 // The raw truth result each chart state was built from, kept beside the state
-// rather than on it so it is never serialized into an API response. Ruby's
+// rather than on it so it is never serialized into an API response. Eleanor's
 // trust line and gated-read copy use it to say whether the merge seam was
 // observed. A state with no recorded truth result reads as "seam not checked"
-// (fail-closed). Kept in its own module so pure readers (rubyDraftRead) can use
+// (fail-closed). Kept in its own module so pure readers (eleanorDraftRead) can use
 // it without importing the chart builder and its providers.
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
 import type { TimeframeTruthResult } from "./candleTruthEngine.js";

@@ -12,7 +12,7 @@ function response(headline: string): Response {
 }
 const fetchMock = vi.fn<typeof fetch>(), failed = vi.fn();
 function setup() {
-  return renderHook(({ symbol, timeframe }) => useScannerChartRead(symbol, timeframe, "Ruby", failed), {
+  return renderHook(({ symbol, timeframe }) => useScannerChartRead(symbol, timeframe, "Eleanor", failed), {
     initialProps: { symbol: "EURUSD", timeframe: "15m" },
   });
 }
@@ -51,7 +51,7 @@ describe("scanner chart assistant read context", () => {
     fetchMock.mockResolvedValue(response("old A"));
     const observed: Array<{ symbol: string; headline: string | undefined }> = [];
     const { result, rerender } = renderHook(({ symbol }) => {
-      const value = useScannerChartRead(symbol, "15m", "Ruby", failed);
+      const value = useScannerChartRead(symbol, "15m", "Eleanor", failed);
       observed.push({ symbol, headline: value.read?.headline });
       return value;
     }, { initialProps: { symbol: "EURUSD" } });
@@ -123,6 +123,6 @@ describe("scanner chart assistant read context", () => {
     rerender({ symbol: "EURUSD", timeframe: "8h" });
     await act(async () => { await result.current.ask("analyze"); });
     expect(JSON.parse(fetchMock.mock.calls[1]![1]!.body as string).timeframe).toBe("H4");
-    expect(result.current.read?.title).toBe("Ruby read — EURUSD (H4)");
+    expect(result.current.read?.title).toBe("Eleanor read — EURUSD (H4)");
   });
 });

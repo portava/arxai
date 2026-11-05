@@ -1,7 +1,7 @@
-// In-memory diagnostics buffer for Ruby TTS calls.
+// In-memory diagnostics buffer for Eleanor TTS calls.
 // Admin-only surface — never exposed to regular users. No secrets, no
 // API keys, no full request bodies. Records the last N TTS attempts so
-// the Admin Ruby Voice Settings page can show what is actually happening.
+// the Admin Eleanor Voice Settings page can show what is actually happening.
 
 export interface TTSDiagnosticEntry {
   ts:              string;                          // ISO timestamp

@@ -1,6 +1,6 @@
 // Phase 4 — Heat Learning Report + Heat Replay API.
 //
-// GET /me/heat/learning-report  — end-of-day heat learning report + Ruby Memory persist.
+// GET /me/heat/learning-report  — end-of-day heat learning report + Eleanor Memory persist.
 // GET /me/heat/replay           — recorded heat snapshots for a symbol/date window.
 //
 // ADVISORY ONLY — never an execution gate; never touches MT5 or live pipeline.
@@ -22,7 +22,7 @@ const router = Router();
 // Computes: best/worst window (timingGrade), cleanest/most-dangerous market
 // (heatState), best/worst session, best/worst timeframe, missed-move events,
 // false-heat events.
-// Persists a compact daily heat profile to Ruby Memory.
+// Persists a compact daily heat profile to Eleanor Memory.
 // Returns ONLY what exists in real data — never fabricated.
 
 router.get("/me/heat/learning-report", requireUser, async (req, res): Promise<void> => {
@@ -158,7 +158,7 @@ router.get("/me/heat/learning-report", requireUser, async (req, res): Promise<vo
       standDownWindows: standDownWindows.length,
     };
 
-    // ── Persist compact daily heat profile to Ruby Memory ─────────────────────
+    // ── Persist compact daily heat profile to Eleanor Memory ─────────────────────
     // Stored inside tradingStyle JSONB as heatProfile key. Fail-soft.
     try {
       const profile = {
@@ -182,7 +182,7 @@ router.get("/me/heat/learning-report", requireUser, async (req, res): Promise<vo
           set: { tradingStyle: newStyle, updatedAt: new Date() },
         });
     } catch (memErr) {
-      logger.warn({ err: String(memErr), userId }, "meHeat: Ruby Memory persist failed (non-fatal)");
+      logger.warn({ err: String(memErr), userId }, "meHeat: assistant memory persist failed (non-fatal)");
     }
 
     res.json(report);

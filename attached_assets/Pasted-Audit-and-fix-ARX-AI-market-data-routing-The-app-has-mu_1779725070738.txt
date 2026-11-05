@@ -32,7 +32,7 @@ Before changing code:
    - VIX
    - MT5 quotes
    - scanner data source
-   - Ruby market data source
+   - Eleanor market data source
    - chart data source
    - “no feed”
 2. Identify every API/provider currently attached in env/config.
@@ -114,17 +114,17 @@ Fix “no feed” behavior:
 4. Do not show raw provider errors to normal users.
 5. Admin diagnostics may show which provider failed and why.
 
-Scanner/Ruby/chart requirements:
+Scanner/Eleanor/chart requirements:
 The same Market Data Router must power:
 - scanner
 - live chart
-- Ruby market explanations
+- Eleanor market explanations
 - trade ticket price
 - watchlist
 - market search
 - volatility/synthetic market pages
 
-Ruby should not make trading decisions from TwelveData alone if the actual trade is placed through MT5/Deriv. Ruby should use the broker/MT5 feed for tradable symbols whenever available.
+Eleanor should not make trading decisions from TwelveData alone if the actual trade is placed through MT5/Deriv. Eleanor should use the broker/MT5 feed for tradable symbols whenever available.
 
 Admin diagnostics:
 Add an admin-only provider health panel showing:
@@ -150,7 +150,7 @@ Acceptance tests:
 7. Confirm volatility/synthetic symbols do not incorrectly rely only on TwelveData.
 8. Confirm app only says “no feed” after all valid providers fail.
 9. Confirm the scanner can see volatility markets if the connected broker/Deriv feed supports them.
-10. Confirm Ruby can explain volatility markets using the correct live feed.
+10. Confirm Eleanor can explain volatility markets using the correct live feed.
 11. Confirm chart and trade ticket prices match the tradable broker/MT5 price where applicable.
 12. Confirm admin diagnostics show provider routing.
 13. Confirm normal users see clean market status only.
@@ -158,5 +158,5 @@ Acceptance tests:
 15. Confirm no fake price/feed is created.
 
 After fixing:
-Run full QA on market search, scanner, live chart, Ruby explanations, volatility symbols, MT5 broker feed, Deriv feed if configured, TwelveData fallback, and mobile UI.
+Run full QA on market search, scanner, live chart, Eleanor explanations, volatility symbols, MT5 broker feed, Deriv feed if configured, TwelveData fallback, and mobile UI.
 Repair anything broken before stopping.

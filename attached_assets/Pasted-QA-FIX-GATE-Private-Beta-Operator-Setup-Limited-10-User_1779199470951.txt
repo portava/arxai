@@ -20,7 +20,7 @@ Verify:
 9. Beta users cannot create live commands by default.
 10. Live trading remains disabled unless every legal/admin/disclosure/allocation/risk/bridge/safety gate passes.
 11. One-click live defaults OFF.
-12. User 1 cannot see User 2 dashboard, trades, P/L, notifications, scanner state, or Ruby memory.
+12. User 1 cannot see User 2 dashboard, trades, P/L, notifications, scanner state, or Eleanor memory.
 13. All 10 users have isolated private workspaces.
 14. Multiple beta users can scan/trade demo on the same symbol without cross-user leaks.
 15. Logout/login switch clears cached user data.

@@ -1,8 +1,8 @@
 // Smart Chart Layers & News Radar — TYPES (Task #197).
 //
 // Pure, self-contained contract for the Smart Chart visual overlay model and the
-// Market Impact Radar. The Smart Chart (ScannerChartPanel) draws Ruby's reads as
-// visual layers that stay CONSISTENT with Ruby's text, surfaces a news radar
+// Market Impact Radar. The Smart Chart (ScannerChartPanel) draws Eleanor's reads as
+// visual layers that stay CONSISTENT with Eleanor's text, surfaces a news radar
 // mapping economic events to symbols/currencies, and reports an overlay
 // handshake describing how trustworthy the drawn overlays are.
 //
@@ -42,7 +42,7 @@ export type SmartChartSeverity =
 /** Honest provenance of a layer. */
 export type SmartChartLayerSource =
   | "signal"
-  | "ruby"
+  | "eleanor"
   | "structure"
   | "execution"
   | "news"

@@ -125,7 +125,7 @@ export interface EntryTruthVerdict {
   quality: EntryQuality;
   confidenceCapReason: string | null;
   scannerTruthImpact: EntryScannerImpact;
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -364,7 +364,7 @@ export function resolveEntryTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation: buildEntryExplanation({
+    eleanorExplanation: buildEntryExplanation({
       entryType: input.entryType,
       entryStatus,
       confirmationTrigger: input.confirmationTrigger,

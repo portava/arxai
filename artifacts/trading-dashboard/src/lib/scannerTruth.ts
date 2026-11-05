@@ -1,7 +1,7 @@
 // ── Scanner truth contract (single shared source) ───────────────────────────
 //
 // Task #391. ONE normalized object every scanner surface consumes so the header,
-// chart panel, timeframe buttons, Ruby Chart Read, Ruby Market Read, Timing
+// chart panel, timeframe buttons, Eleanor Chart Read, Eleanor Market Read, Timing
 // Intelligence, overlay validator, trade buttons, permission banners, tabs and
 // the mobile status strip can never disagree about feed state, freshness,
 // permissions, or whether a read is actionable.
@@ -32,7 +32,7 @@ import {
   type PublicQuoteStatus,
   type PublicCandleStatus,
   type ChartIntelligenceStatus,
-  type RubyReadStatus,
+  type EleanorReadStatus,
   type TradingStatus,
   type SkippedSymbol,
 } from "./scannerActionability";
@@ -70,7 +70,7 @@ function genReadId(input: ScannerTruthInputs): string {
 // trailing-interval rule (@workspace/domain/market candleFreshnessRule) so the
 // client and the server's freshness.ts / candleNormalization.ts always agree.
 // candleMaxAgeMs is no longer read by any freshness or read-expiry rule (chart
-// reads expire one interval after their newest closed candle — rubyReadPanelState).
+// reads expire one interval after their newest closed candle — eleanorReadPanelState).
 export interface TimeframeThresholds {
   quoteMaxAgeMs: number;
   candleMaxAgeMs: number;
@@ -165,7 +165,7 @@ export type TradingVerdict =
   | "Checking…"
   // The account-mode envelope failed to load — the trading state is unknown.
   | "Couldn't check";
-export type RubyVerdict = "Full read" | "Limited read" | "No read";
+export type EleanorVerdict = "Full read" | "Limited read" | "No read";
 
 export interface ScannerTruth {
   symbolDisplay: string;
@@ -256,7 +256,7 @@ export interface ScannerTruth {
     reason: string;
   };
 
-  ruby: {
+  eleanor: {
     chartReadAllowed: boolean;
     marketReadAllowed: boolean;
     readLevel: ReadLevel;
@@ -273,7 +273,7 @@ export interface ScannerTruth {
   strip: {
     data: { verdict: DataVerdict; detail: string };
     trading: { verdict: TradingVerdict; detail: string };
-    ruby: { verdict: RubyVerdict; detail: string };
+    eleanor: { verdict: EleanorVerdict; detail: string };
   };
 
   /** The shared chart display status (so chart + strip never disagree). */
@@ -317,7 +317,7 @@ export interface ScannerTruth {
   /**
    * Consolidated PUBLIC truth block (Task #600). Derived from the resolved
    * internal truth above (never raw inputs) so every scanner surface — header
-   * strip, chart badge, Ruby Chart Read, opportunity/scalp cards, trade ticket,
+   * strip, chart badge, Eleanor Chart Read, opportunity/scalp cards, trade ticket,
    * Broad Scan summary — agrees on ONE action verdict and ONE message. Existing
    * internal fields are unchanged; this is purely additive.
    */
@@ -325,8 +325,8 @@ export interface ScannerTruth {
 
   /**
    * The ONE shared trade-health / readiness DISPLAY verdict (Trade Health
-   * contract). Composed from the SAME marketDataSufficiency truth Ruby's chart
-   * read consumes, so the Scanner and Ruby can never show a different read /
+   * contract). Composed from the SAME marketDataSufficiency truth Eleanor's chart
+   * read consumes, so the Scanner and Eleanor can never show a different read /
    * eligibility label for the same symbol + timeframe. DISPLAY-ONLY: every caller
    * still ANDs `canTrade` + the live gate — `readiness` can only downgrade or
    * explain, never grant a trade affordance the execution stack forbids.
@@ -786,22 +786,22 @@ export function resolveScannerTruth(
   const analysisAllowed = analysisLevel !== "blocked";
   const actionable = analysisLevel === "full";
 
-  // ── Ruby read level (also requires aiUsable for a full read) ───────────────
+  // ── Eleanor read level (also requires aiUsable for a full read) ───────────────
   const aiUsable = fs?.aiUsable === true;
-  let rubyLevel: ReadLevel;
-  let rubyReason: string;
+  let eleanorLevel: ReadLevel;
+  let eleanorReason: string;
   if (analysisLevel === "blocked") {
-    rubyLevel = "blocked";
-    rubyReason = `${assistantName} has no data to read for this market right now.`;
+    eleanorLevel = "blocked";
+    eleanorReason = `${assistantName} has no data to read for this market right now.`;
   } else if (analysisLevel === "historical_only") {
-    rubyLevel = "historical_only";
-    rubyReason = `${assistantName} can only give a historical read — not valid for a live entry.`;
+    eleanorLevel = "historical_only";
+    eleanorReason = `${assistantName} can only give a historical read — not valid for a live entry.`;
   } else if (analysisLevel === "limited" || !aiUsable) {
-    rubyLevel = "limited";
-    rubyReason = `${assistantName} can read with caution — the feed isn't fully confirmed.`;
+    eleanorLevel = "limited";
+    eleanorReason = `${assistantName} can read with caution — the feed isn't fully confirmed.`;
   } else {
-    rubyLevel = "full";
-    rubyReason = `${assistantName} can give a full, live read.`;
+    eleanorLevel = "full";
+    eleanorReason = `${assistantName} can give a full, live read.`;
   }
 
   // ── Overlay validation (fails/downgrades on unstable truth) ────────────────
@@ -865,10 +865,10 @@ export function resolveScannerTruth(
         ? "Approval required"
         : "Read-only";
 
-  const rubyVerdict: RubyVerdict =
-    rubyLevel === "blocked"
+  const eleanorVerdict: EleanorVerdict =
+    eleanorLevel === "blocked"
       ? "No read"
-      : rubyLevel === "full"
+      : eleanorLevel === "full"
         ? "Full read"
         : "Limited read";
 
@@ -952,7 +952,7 @@ export function resolveScannerTruth(
 
   // ── Consolidated public truth (Task #600) ──────────────────────────────────
   // Translate the resolved INTERNAL truth into the task's public vocabulary.
-  // Derived from already-resolved state (candleStatus/analysisLevel/rubyLevel/…),
+  // Derived from already-resolved state (candleStatus/analysisLevel/eleanorLevel/…),
   // never raw inputs, so there is exactly one authority. Mappings per the
   // architect-confirmed contract design.
   const publicCandleStatus: PublicCandleStatus =
@@ -989,10 +989,10 @@ export function resolveScannerTruth(
         ? "UNAVAILABLE"
         : "LIMITED"; // limited | historical_only
 
-  const publicRubyReadStatus: RubyReadStatus =
-    rubyLevel === "full"
+  const publicEleanorReadStatus: EleanorReadStatus =
+    eleanorLevel === "full"
       ? "FULL_READ"
-      : rubyLevel === "blocked"
+      : eleanorLevel === "blocked"
         ? "NO_READ"
         : "LIMITED_READ";
 
@@ -1058,7 +1058,7 @@ export function resolveScannerTruth(
     quoteStatus: publicQuoteStatus,
     candleStatus: publicCandleStatus,
     chartIntelligenceStatus,
-    rubyReadStatus: publicRubyReadStatus,
+    eleanorReadStatus: publicEleanorReadStatus,
     tradingStatus,
     scannerActionability,
     feedSource: q?.source ?? fs?.source ?? null,
@@ -1075,14 +1075,14 @@ export function resolveScannerTruth(
 
   // ── Shared trade-health / readiness DISPLAY verdict (Trade Health contract) ──
   // Map the already-resolved scanner truth into the canonical contract inputs and
-  // compose the ONE verdict Ruby's chart read also composes. DISPLAY-ONLY — never
+  // compose the ONE verdict Eleanor's chart read also composes. DISPLAY-ONLY — never
   // an execution gate; the scanner's stricter per-timeframe minimum (thr.minCandles)
   // is preserved as the floor, so scanner readiness can only be MORE conservative
-  // than Ruby's shared floor (downgrade-only, per the HARD RULE).
+  // than Eleanor's shared floor (downgrade-only, per the HARD RULE).
   const readinessReadLayer: TradeReadLayer =
     analysisLevel === "blocked" || candleStatus === "insufficient" || closedCount < thr.minCandles
       ? "INSUFFICIENT"
-      : rubyLevel === "full" && analysisLevel === "full"
+      : eleanorLevel === "full" && analysisLevel === "full"
         ? "FULL"
         : "STRUCTURAL_ONLY";
   const readiness = evaluateTradeHealthReadiness({
@@ -1102,7 +1102,7 @@ export function resolveScannerTruth(
     // gated" instead of an unconditional "Live-confirmed … read" next to the
     // TRADING "Blocked" tile, and the trade-button ceilings close. Never while
     // the account mode is still loading (every flag is false then — that is not
-    // a refusal). DISPLAY-ONLY: execution gates are untouched. Ruby's server
+    // a refusal). DISPLAY-ONLY: execution gates are untouched. Eleanor's server
     // read composes the same contract without this per-user fold, so the two
     // agree on every read-quality field (status, dataFreshness, readLayer,
     // structureConfidence) and differ only by this gate label.
@@ -1154,11 +1154,11 @@ export function resolveScannerTruth(
     permissions,
     analysis: { allowed: analysisAllowed, level: analysisLevel, reason: analysisReason },
     execution: { allowed: executionAllowed, reason: executionReason },
-    ruby: {
-      chartReadAllowed: rubyLevel !== "blocked",
-      marketReadAllowed: rubyLevel !== "blocked",
-      readLevel: rubyLevel,
-      reason: rubyReason,
+    eleanor: {
+      chartReadAllowed: eleanorLevel !== "blocked",
+      marketReadAllowed: eleanorLevel !== "blocked",
+      readLevel: eleanorLevel,
+      reason: eleanorReason,
     },
     overlays: {
       allowed: overlayStatus !== "blocked",
@@ -1168,7 +1168,7 @@ export function resolveScannerTruth(
     strip: {
       data: { verdict: dataVerdict, detail: candleReason },
       trading: { verdict: tradingVerdict, detail: executionReason },
-      ruby: { verdict: rubyVerdict, detail: rubyReason },
+      eleanor: { verdict: eleanorVerdict, detail: eleanorReason },
     },
     displayStatus: resolvedDisplayStatus,
     isLivePrice: resolvedDisplayStatus === "LIVE",

@@ -1,9 +1,9 @@
-// Ruby Voice settings — backend = source of truth.
+// Eleanor Voice settings — backend = source of truth.
 //
 // On mount this hook:
 //   1. GETs /api/me/voice-settings (per-user row in `user_settings`).
 //   2. Mirrors the result into the existing localStorage keys used by the
-//      legacy hooks (useRubyTTS, useSpeakResponses, ArxAssistantLivePanel)
+//      legacy hooks (useEleanorTTS, useSpeakResponses, ArxAssistantLivePanel)
 //      so they keep working without a refactor.
 //   3. Performs a one-time migration: if the user has values in
 //      localStorage but the backend row was just created (i.e. all server
@@ -160,7 +160,7 @@ async function runMigrationIfNeeded(
   // with our own defaults).
   //
   // IMPORTANT: we intentionally DO NOT migrate `provider` / `voiceId`
-  // from LS_TTS_PREF. That LS key is auto-populated by `useRubyTTS`
+  // from LS_TTS_PREF. That LS key is auto-populated by `useEleanorTTS`
   // once `/api/me/assistant/tts/voices` resolves (it picks the server's
   // `defaultProvider` / `defaultVoice` when no LS pref exists) — those
   // are NOT user-chosen values and migrating them would silently

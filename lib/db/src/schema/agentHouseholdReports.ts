@@ -5,7 +5,7 @@
 //     advisory agent registry + lifecycle + learning-camp + creation-request +
 //     governance activity. It NEVER gates, slows, or blocks any live/demo path
 //     and contains no trade-execution authority.
-//   - Persisted so operators (and an optional Ruby summary) can review what the
+//   - Persisted so operators (and an optional Eleanor summary) can review what the
 //     ecosystem did and recommend admin actions. Generation is admin-audited.
 //
 // The full report body is stored as JSON text (`summary`) — the §17 sections:
@@ -13,7 +13,7 @@
 // creation requests, step-backs that saved speed, agents that slowed the system,
 // bad trades blocked, quality trades found, no-trade wins, scanner noise
 // filtered, department performance, bloat/speed warnings, what-the-system-
-// learned-today, and recommended admin actions. `rubySummary` is a plain-English
+// learned-today, and recommended admin actions. `eleanorSummary` is a plain-English
 // rephrase (no internal codes/table/route names) for the user-facing assistant.
 
 import {
@@ -31,7 +31,7 @@ export const agentHouseholdReportsTable = pgTable("agent_household_reports", {
   // Full structured report body (JSON object as text) — the §17 sections.
   summary:         text("summary").notNull().default("{}"),
   // Plain-English rephrase for the user-facing assistant (no internal codes).
-  rubySummary:     text("ruby_summary").notNull().default(""),
+  eleanorSummary:     text("eleanor_summary").notNull().default(""),
 
   // Quick-scan headline fields (also present inside `summary`) for list views.
   headline:        text("headline").notNull().default(""),

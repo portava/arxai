@@ -25,7 +25,7 @@ export interface UseSpeakResponsesApi {
   state: SpeakState;
   speak: (text: string) => void;
   stop: () => void;
-  // ── Streaming speech (read aloud while Ruby types) ────────────────────
+  // ── Streaming speech (read aloud while Eleanor types) ────────────────────
   // Begin a fresh streaming utterance for a new turn. Clears any queued
   // sentences and resets the consumed-text pointer.
   speakStreamReset: () => void;

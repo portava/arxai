@@ -13,7 +13,7 @@ Current result:
 RECONCILIATION_CENTER_NOT_READY
 8/20 PASS
 12/20 FAIL
-The current /broker-reconciliation page is only a thin legacy page wired to /api/broker-reconciliation/status and only shows local-vs-MT5 counts. It is not admin-only and does not provide the required detection/actions/Ruby/admin audit system.
+The current /broker-reconciliation page is only a thin legacy page wired to /api/broker-reconciliation/status and only shows local-vs-MT5 counts. It is not admin-only and does not provide the required detection/actions/Eleanor/admin audit system.
 
 Build the full minimal delta:
 
@@ -154,22 +154,22 @@ Required action codes:
 - RECONCILIATION_ATTRIBUTION_LINKED
 - RECONCILIATION_MANUAL_RESOLUTION
 - RECONCILIATION_ACTION_BLOCKED_REASON_REQUIRED
-- RECONCILIATION_RUBY_ADMIN_EXPLAINED
-- RECONCILIATION_RUBY_USER_EXPLAINED
+- RECONCILIATION_ELEANOR_ADMIN_EXPLAINED
+- RECONCILIATION_ELEANOR_USER_EXPLAINED
 
-PART 6 — RUBY EXPLANATION TOOLS
+PART 6 — ELEANOR EXPLANATION TOOLS
 
-Add admin Ruby tool:
+Add admin Eleanor tool:
 - explains reconciliation issue with admin-safe diagnostics
 - may include issue type, command id, bridge id, broker ticket, status, reason, and recommended action
 - must not reveal bridge token, API keys, broker password, raw secrets, or other sensitive fields
 
-Add per-user Ruby tool:
+Add per-user Eleanor tool:
 - explains only the user-visible issue
 - cannot expose other users’ data
 - cannot expose admin-only bridge details
 - cannot expose secrets
-- example: “Ruby: This trade is waiting for reconciliation because the broker position has not been linked to your ARX trade record yet.”
+- example: “Eleanor: This trade is waiting for reconciliation because the broker position has not been linked to your ARX trade record yet.”
 
 PART 7 — UI ACTIONS
 
@@ -179,8 +179,8 @@ On the Reconciliation Center page, add buttons:
 - Dismiss
 - Link attribution
 - Resolve manually
-- Ask Ruby for admin explanation
-- Generate user-safe Ruby explanation
+- Ask Eleanor for admin explanation
+- Generate user-safe Eleanor explanation
 
 Show a reason modal before dismiss/link/manual resolve/review.
 
@@ -211,8 +211,8 @@ Create/update QA script for 20 checks:
 13. Dismiss requires reason.
 14. Link/manual resolution requires reason.
 15. Every action writes admin audit log.
-16. Per-user Ruby explanation does not expose other-user/admin-only details.
-17. Admin Ruby explanation does not expose secrets/tokens.
+16. Per-user Eleanor explanation does not expose other-user/admin-only details.
+17. Admin Eleanor explanation does not expose secrets/tokens.
 18. No secrets leak.
 19. No live trade auto-fires.
 20. arx_live_commands remains unchanged.

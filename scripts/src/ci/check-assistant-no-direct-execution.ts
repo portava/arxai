@@ -1,10 +1,10 @@
 // CI guard — assistant-no-direct-execution (Task #750, hardened in #755,
 // provenance-aware in the follow-up).
 //
-// Eleanor ("Ruby") is a permission-bounded executor, NEVER a second execution
-// path. Every Ruby trade action (OPEN / CLOSE / MODIFY / watch-fire) MUST route
+// Eleanor ("Eleanor") is a permission-bounded executor, NEVER a second execution
+// path. Every Eleanor trade action (OPEN / CLOSE / MODIFY / watch-fire) MUST route
 // through the existing instant-trade router (`executeInstant` via the
-// `recordAndExecuteRuby` ledger boundary) → live command pipeline → 18-gate
+// `recordAndExecuteEleanor` ledger boundary) → live command pipeline → 18-gate
 // Phase B dispatch. The assistant route must therefore NEVER:
 //   - insert directly into any broker command table (mt5 demo/live command
 //     queues, arx live commands),
@@ -63,25 +63,25 @@ import { join, posix } from "node:path";
 import { ROOT, walk, read, rel, reportResult, type CheckResult } from "./_lib.js";
 
 const ASSISTANT_ROUTE = "artifacts/api-server/src/routes/meAssistant.ts";
-// 2026-11-04: the Ruby ledger/dispatch wrapper and the watch evaluator moved
+// 2026-11-04: the Eleanor ledger/dispatch wrapper and the watch evaluator moved
 // out of the route so the sweeper worker can run them. They are part of the
 // same execution surface and are scanned with the same forbidden needles; each
 // declares the sanctioned anchor it must carry.
 const ASSISTANT_EXECUTION_SURFACES: Array<{ file: string; required: Needle[] }> = [
   {
     file: ASSISTANT_ROUTE,
-    required: [{ rx: /\brecordAndExecuteRuby\b/, why: "every Ruby trade action in the route must flow through the append-only ledger boundary (recordAndExecuteRuby → submitInstantTrade → executeInstant)" }],
+    required: [{ rx: /\brecordAndExecuteEleanor\b/, why: "every Eleanor trade action in the route must flow through the append-only ledger boundary (recordAndExecuteEleanor → submitInstantTrade → executeInstant)" }],
   },
   {
-    file: "artifacts/api-server/src/lib/assistant/rubyExecution.ts",
+    file: "artifacts/api-server/src/lib/assistant/eleanorExecution.ts",
     required: [
-      { rx: /\bsubmitInstantTrade\b/, why: "the Ruby ledger wrapper must dispatch through the instant-trade router via the Trade Engine (submitInstantTrade → executeInstant)" },
-      { rx: /\bexport async function recordAndExecuteRuby\b/, why: "the append-only ledger boundary (recordAndExecuteRuby) must be defined here" },
+      { rx: /\bsubmitInstantTrade\b/, why: "the Eleanor ledger wrapper must dispatch through the instant-trade router via the Trade Engine (submitInstantTrade → executeInstant)" },
+      { rx: /\bexport async function recordAndExecuteEleanor\b/, why: "the append-only ledger boundary (recordAndExecuteEleanor) must be defined here" },
     ],
   },
   {
-    file: "artifacts/api-server/src/lib/assistant/rubyWatchEvaluator.ts",
-    required: [{ rx: /\brecordAndExecuteRuby\b/, why: "the watch evaluator must fire through the append-only ledger boundary (recordAndExecuteRuby)" }],
+    file: "artifacts/api-server/src/lib/assistant/eleanorWatchEvaluator.ts",
+    required: [{ rx: /\brecordAndExecuteEleanor\b/, why: "the watch evaluator must fire through the append-only ledger boundary (recordAndExecuteEleanor)" }],
   },
 ];
 
@@ -276,8 +276,8 @@ const BASE_FORBIDDEN: Needle[] = [
 
 // The sanctioned execution path must remain present. Each scanned route declares
 // WHICH sanctioned anchors it must contain — they differ per surface:
-//   • the assistant route flows through the append-only Ruby ledger boundary
-//     (`recordAndExecuteRuby`) before reaching `executeInstant`;
+//   • the assistant route flows through the append-only Eleanor ledger boundary
+//     (`recordAndExecuteEleanor`) before reaching `executeInstant`;
 //   • the chart/scanner instant-trade router calls `executeInstant` directly.
 // Both must dispatch through `executeInstant`; only the assistant carries the
 // extra ledger boundary.
@@ -286,7 +286,7 @@ const BASE_FORBIDDEN: Needle[] = [
 // executeInstant call is refused by check-trade-engine-single-pipeline.
 export const ASSISTANT_REQUIRED: Needle[] = [
   { rx: /\bsubmitInstantTrade\b/, why: "the assistant must dispatch through the instant-trade router via the Trade Engine (submitInstantTrade → executeInstant)" },
-  { rx: /\brecordAndExecuteRuby\b/, why: "every Ruby trade action must flow through the append-only ledger boundary" },
+  { rx: /\brecordAndExecuteEleanor\b/, why: "every Eleanor trade action must flow through the append-only ledger boundary" },
 ];
 
 // Back-compat alias for the original (assistant-only) name.
@@ -324,7 +324,7 @@ function aliasNeedle(a: ForbiddenAlias): Needle {
 // `extraAliases` carries cross-file re-export aliases discovered by the caller;
 // local `as` aliases are resolved from `src` itself. `required` declares the
 // sanctioned-path anchors the scanned route MUST contain (defaults to the
-// assistant's executeInstant + recordAndExecuteRuby).
+// assistant's executeInstant + recordAndExecuteEleanor).
 export function scanForViolations(
   src: string,
   extraAliases: ForbiddenAlias[] = [],
@@ -605,7 +605,7 @@ export function checkAssistantNoDirectExecution(): CheckResult {
   }
 
   return {
-    name: "assistant-no-direct-execution (Ruby routes ONLY through executeInstant, never a 2nd execution path)",
+    name: "assistant-no-direct-execution (Eleanor routes ONLY through executeInstant, never a 2nd execution path)",
     ok: violations.length === 0,
     violations,
     notes: [

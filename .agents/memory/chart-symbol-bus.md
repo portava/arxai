@@ -1,11 +1,11 @@
 ---
 name: Chart symbol shared bus
-description: Single source of truth for the currently-selected symbol across chart, ticket, scanner, AI assist, ruby, and market-data router.
+description: Single source of truth for the currently-selected symbol across chart, ticket, scanner, AI assist, eleanor, and market-data router.
 ---
 
 `artifacts/trading-dashboard/src/lib/use-chart-symbol.ts` is the canonical bus (localStorage `highroll.chartSymbol` + window CustomEvent). Every UI surface that selects a symbol must read via `useChartSymbol()` and write via `setChartSymbol(tvForm)` — never a local `useState` for symbol.
 
-**Why:** when even one consumer holds its own symbol state, scanner/chart/ticket/ruby/AI-assist drift apart, and stale per-symbol setup (SL/TP, AI card, validation) rides into the next user action — at worst, a /validate against the previous symbol.
+**Why:** when even one consumer holds its own symbol state, scanner/chart/ticket/eleanor/AI-assist drift apart, and stale per-symbol setup (SL/TP, AI card, validation) rides into the next user action — at worst, a /validate against the previous symbol.
 
 **How to apply:**
 - New "symbol-aware" UI: `const [s] = useChartSymbol(); const sym = bareSymbol(s);`. Dropdowns/pickers call `setChartSymbol(next.tv)`.

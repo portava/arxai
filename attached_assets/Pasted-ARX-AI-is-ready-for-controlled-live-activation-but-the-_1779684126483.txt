@@ -54,7 +54,7 @@ Tabs/sections should be:
 - Kill Switches
 - Audit
 
-No overlapping text. No hidden buttons. Bottom nav and Ruby bubble must not cover controls.
+No overlapping text. No hidden buttons. Bottom nav and Eleanor bubble must not cover controls.
 
 3. CONNECT / PIN MASTER BRIDGE FLOW
 The page says:
@@ -234,6 +234,6 @@ Before stopping, verify:
 - Regular users cannot see live operator controls.
 - Friendly labels replace backend/internal labels.
 - Audit log records all changes.
-- Login, scanner, Ruby voice/chat, trade modal, admin user controls, and bridge status still work.
+- Login, scanner, Eleanor voice/chat, trade modal, admin user controls, and bridge status still work.
 
 Run typecheck/build and fix all errors before stopping.

@@ -1,19 +1,19 @@
 // ARX 5.0 Cockpit primitives — the shared visual language for the redesigned
 // dashboard. Pure presentation; no data, no wiring. Built on the global theme
-// tokens (bg-card, border-border, text-primary/ruby/success/warning/danger).
+// tokens (bg-card, border-border, text-primary/eleanor/success/warning/danger).
 
 import * as React from "react";
 import { Link } from "wouter";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Accent = "blue" | "ruby" | "success" | "warning" | "danger" | "neutral";
+type Accent = "blue" | "eleanor" | "success" | "warning" | "danger" | "neutral";
 
 // Vibrant per-accent styling to match the mockup: colored icon chip, tinted
 // border, and a faint surface wash + glow keyed to each card's accent.
 const ACCENT_CHIP: Record<Accent, string> = {
   blue: "bg-primary/15 text-primary ring-primary/25",
-  ruby: "bg-ruby/15 text-ruby ring-ruby/25",
+  eleanor: "bg-eleanor/15 text-eleanor ring-eleanor/25",
   success: "bg-success/15 text-success ring-success/25",
   warning: "bg-warning/15 text-warning ring-warning/25",
   danger: "bg-danger/15 text-danger ring-danger/25",
@@ -22,7 +22,7 @@ const ACCENT_CHIP: Record<Accent, string> = {
 
 const ACCENT_BORDER: Record<Accent, string> = {
   blue: "border-primary/25",
-  ruby: "border-ruby/25",
+  eleanor: "border-eleanor/25",
   success: "border-success/25",
   warning: "border-warning/25",
   danger: "border-danger/25",
@@ -31,7 +31,7 @@ const ACCENT_BORDER: Record<Accent, string> = {
 
 const ACCENT_WASH: Record<Accent, string> = {
   blue: "from-primary/[0.06]",
-  ruby: "from-ruby/[0.06]",
+  eleanor: "from-eleanor/[0.06]",
   success: "from-success/[0.07]",
   warning: "from-warning/[0.05]",
   danger: "from-danger/[0.05]",
@@ -40,7 +40,7 @@ const ACCENT_WASH: Record<Accent, string> = {
 
 const ACCENT_GLOW: Record<Accent, string> = {
   blue: "from-primary/20",
-  ruby: "from-ruby/20",
+  eleanor: "from-eleanor/20",
   success: "from-success/20",
   warning: "from-warning/15",
   danger: "from-danger/15",

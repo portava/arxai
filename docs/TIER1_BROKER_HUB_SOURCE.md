@@ -163,12 +163,12 @@ Some thresholds use different numbers for what reads like the same idea:
 | Heartbeat "fresh" / "live" | `EA_HEARTBEAT_FRESH_*` (15 s) | dispatch and demo gates, EA update gate, safety core (beyond = DEGRADED), watchdog, readiness views, paper-intelligence stale gate, fund-book mirror |
 | | `LIVE_ACCOUNT_HEARTBEAT_LIVE_MS` (20 s) | live-account pages (`meLiveAccount`, `adminLiveAccount`, `adminAllocations`) |
 | | `BROKER_HEARTBEAT_FRESH_*` (30 s) | Risk Governor broker status, platform EA `connected` in `routes/mt5.ts`, trader dashboard heartbeat card |
-| Bridge "connected" / not stale | `EA_HEARTBEAT_STALE_*` (60 s) | watchdog OFFLINE, safety-core LOCKDOWN, connection card, read-only adapter heartbeat, broker provider, Ruby bridge status, execution-confirmation broker check, demo bridge debug |
-| | `ADVISORY_BRIDGE_CONNECTED_MS` (90 s) | pending-order draft, Ruby pending-submit probe, reconciliation STALE_HEARTBEAT |
+| Bridge "connected" / not stale | `EA_HEARTBEAT_STALE_*` (60 s) | watchdog OFFLINE, safety-core LOCKDOWN, connection card, read-only adapter heartbeat, broker provider, Eleanor bridge status, execution-confirmation broker check, demo bridge debug |
+| | `ADVISORY_BRIDGE_CONNECTED_MS` (90 s) | pending-order draft, Eleanor pending-submit probe, reconciliation STALE_HEARTBEAT |
 | Degraded becomes offline / disconnected | `EA_HEARTBEAT_STALE_*` (60 s) | watchdog, safety core |
 | | `BROKER_HEARTBEAT_DEGRADED_*` (120 s) | Risk Governor, trader dashboard |
 | | `BRIDGE_V2_HEARTBEAT_STALE_MS` (120 s) | Bridge v2 status (observability) |
-| | `EA_HEARTBEAT_DEAD_*` (5 min) | user readiness, Ruby heartbeat tool "unhealthy" |
+| | `EA_HEARTBEAT_DEAD_*` (5 min) | user readiness, Eleanor heartbeat tool "unhealthy" |
 | Account snapshot "fresh" | `MT5_ACCOUNT_SNAPSHOT_FRESH_MS` (60 s) | read-only adapter account snapshot, `/mt5` bridge diagnostics, shared-master pool |
 | | `ACCOUNT_SNAPSHOT_FRESH_MS` (30 s; live 5 s, delayed 2 min) | `liveAccountSnapshot` display bands (tunable per call) |
 | Cached broker verdict stale | `BROKER_HEALTH_VERDICT_STALE_MS` (120 s) | handshake monitor (advisory) |
@@ -243,8 +243,8 @@ and `routes/adminCockpit.ts` / `positionGuardian/reconcile.ts`:
 | Trader dashboard heartbeat card (`meDashboard`) | heartbeat bands | ≤ 30 s fresh, ≤ 120 s stale, else missing | fresh → "fresh", degraded → "stale", offline / unknown → "missing" |
 | Platform EA `/mt5/state` `connected`, heartbeat "was offline" (reconnect log) in `routes/mt5.ts` | connected | < 30 s | online (< 60 s). `/mt5/state` also gains an additive `heartbeatFreshness` field. |
 | Connection card state | heartbeat bands | ≤ 60 s CONNECTED, > 60 s DEGRADED | < 15 s CONNECTED (subject to the clock-drift check), 15–60 s DEGRADED, ≥ 60 s or invalid DISCONNECTED |
-| Read-only adapter health, broker provider `connected`, execution-confirmation `brokerConnected`, demo-bridge debug, Ruby `getReconciliationStatus` / pending-submit probe, scalp service `bridgeConnected`, admin cockpit `connected`, admin allocations `isStale`, pending-order draft `bridgeConnected` | connected / reachable | ≤ 60 s, or < 90 s for the advisory pending-submit surfaces, or `ageSec*1000 ≤ 60 000` for the cockpit | online (< 60 s) |
-| Ruby heartbeat tool `health` | heartbeat bands | ≤ 60 s healthy, ≤ 5 min stale, else unhealthy | fresh → healthy, degraded → stale, offline → unhealthy, invalid → unknown |
+| Read-only adapter health, broker provider `connected`, execution-confirmation `brokerConnected`, demo-bridge debug, Eleanor `getReconciliationStatus` / pending-submit probe, scalp service `bridgeConnected`, admin cockpit `connected`, admin allocations `isStale`, pending-order draft `bridgeConnected` | connected / reachable | ≤ 60 s, or < 90 s for the advisory pending-submit surfaces, or `ageSec*1000 ≤ 60 000` for the cockpit | online (< 60 s) |
+| Eleanor heartbeat tool `health` | heartbeat bands | ≤ 60 s healthy, ≤ 5 min stale, else unhealthy | fresh → healthy, degraded → stale, offline → unhealthy, invalid → unknown |
 | User readiness `mt5_heartbeat_recent` | heartbeat recent | < 5 min | online (< 60 s). Copy reads "in the last minute". |
 | Reconciliation `STALE_HEARTBEAT` | heartbeat stale | > 90 s or missing | not online (≥ 60 s, missing or future-dated) |
 | Provider-health MT5 heartbeat row | heartbeat bands | ≤ 15 s live, else stale; null offline | fresh → live, degraded → stale, offline / unknown → offline |
@@ -319,11 +319,11 @@ bound, and nothing compares against it.
 8. Connection card: 15–60 s is DEGRADED (was CONNECTED). ≥ 60 s is
    DISCONNECTED (was DEGRADED).
 9. "Connected" surfaces at 60 s: exactly 60 s is now offline where they
-   used ≤ 60 s. The advisory pending-submit / Ruby probes and the
+   used ≤ 60 s. The advisory pending-submit / Eleanor probes and the
    reconciliation `STALE_HEARTBEAT` detector move from 90 s to 60 s, and
    `/my-mt5` commands from 90 s to 60 s.
-10. User readiness "heartbeat recent" and Ruby's heartbeat tool: the 5 min
-    "dead" line is gone. Offline starts at 60 s, and Ruby's "healthy" now
+10. User readiness "heartbeat recent" and Eleanor's heartbeat tool: the 5 min
+    "dead" line is gone. Offline starts at 60 s, and Eleanor's "healthy" now
     means fresh (< 15 s; was ≤ 60 s).
 11. Provider health: an MT5 heartbeat ≥ 60 s reads `offline` (was `stale`).
 12. AACI: the bridge heartbeat source is stale at exactly 15 s.

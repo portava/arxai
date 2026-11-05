@@ -126,7 +126,7 @@ test("demo commands from automated producers reach the governor as automation", 
   assert.equal(demoIntentOrigin("POSITION_GUARDIAN"), "automation");
   assert.equal(demoIntentOrigin("AUTOPILOT"), "automation");
   assert.equal(demoIntentOrigin("self_trade_agent"), "automation");
-  assert.equal(demoIntentOrigin("RUBY_CHAT"), "ruby");
+  assert.equal(demoIntentOrigin("ELEANOR_CHAT"), "eleanor");
   assert.equal(demoIntentOrigin("DEMO_TRADE_TICKET"), "manual");
   assert.equal(demoIntentOrigin(undefined), "manual");
 });

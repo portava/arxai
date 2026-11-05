@@ -173,7 +173,7 @@ export interface PivotTruthVerdict {
   quality: PivotQuality;
   confidenceCapReason: string | null;
   scannerTruthImpact: PivotScannerImpact;
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -278,7 +278,7 @@ export function resolvePivotTruth(
         edgeAdjustment: 0,
         supportive: false,
       },
-      rubyExplanation: "Pivot levels are unavailable for this symbol/timeframe right now.",
+      eleanorExplanation: "Pivot levels are unavailable for this symbol/timeframe right now.",
       warnings,
     };
   }
@@ -471,7 +471,7 @@ export function resolvePivotTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation: buildPivotExplanation({
+    eleanorExplanation: buildPivotExplanation({
       timeframe: input.pivotSourceTimeframe,
       currentZone,
       pivotBias,

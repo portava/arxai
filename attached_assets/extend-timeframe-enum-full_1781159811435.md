@@ -27,7 +27,7 @@ D1, W1, MN1
 4. Ingest validation — all 21 accepted; everything else still rejected.
 5. Scanner candle endpoint + router read path — all 21 servable with the same source-priority/quality logic.
 6. Frontend Scanner timeframe selector — with 21 options, a flat chip row will not fit mobile. Replace or augment with a compact selector (dropdown, or primary chips [1m 5m 15m 30m 1h 4h 1D 1W 1M] + a "more" menu for the exotic ones). Primary chart set stays one tap. No horizontal page overflow on mobile.
-7. Ruby/market-read timeframe handling if it enumerates the pinned set anywhere.
+7. Eleanor/market-read timeframe handling if it enumerates the pinned set anywhere.
 
 ## Tests
 

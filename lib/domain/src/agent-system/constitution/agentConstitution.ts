@@ -5,13 +5,14 @@
 // getConstitution() (surfaced in the admin view in Layer 4). Later layers
 // reference specific laws by id; nothing here enforces behavior on its own.
 
+import { DEFAULT_ASSISTANT_NAME } from "../../assistant-name/index";
 export interface ConstitutionLaw {
   id: number;
   title: string;
   text: string;
 }
 
-export const AGENT_CONSTITUTION_VERSION = "1.0.0";
+export const AGENT_CONSTITUTION_VERSION = "1.0.1";
 
 export const AGENT_CONSTITUTION_LAWS: readonly ConstitutionLaw[] = [
   { id: 1, title: "Advisory only",
@@ -35,9 +36,9 @@ export const AGENT_CONSTITUTION_LAWS: readonly ConstitutionLaw[] = [
   { id: 10, title: "Admin is final",
     text: "Administrators retain final override over every agent: status, authority, creation rights, and shutdown. No agent can override an admin." },
   { id: 11, title: "Plain-English to users",
-    text: "User-facing communication (via Ruby) uses plain English and never exposes internal agent codes, table names, route names, or raw JSON." },
+    text: `User-facing communication (via ${DEFAULT_ASSISTANT_NAME}) uses plain English and never exposes internal agent codes, table names, route names, or raw JSON.` },
   { id: 12, title: "Reuse, don't rebuild",
-    text: "Agents extend the existing council, Ruby, scanner, and scalp engines. The ecosystem is an add-on; it does not replace working systems or add a parallel AI stack." },
+    text: `Agents extend the existing council, ${DEFAULT_ASSISTANT_NAME}, scanner, and scalp engines. The ecosystem is an add-on; it does not replace working systems or add a parallel AI stack.` },
   { id: 13, title: "Speed is a duty",
     text: "An agent must know its own speed cost and step back when it adds delay without changing the outcome. A correct step-back is rewarded." },
   { id: 14, title: "No duplication",

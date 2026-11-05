@@ -12,7 +12,7 @@ Do not weaken user isolation.
 Do not expose raw broker payloads or internal backend names to users.
 
 Goal:
-Dashboard, Cockpit/Open Trades, Ruby trade monitor, and account cards must consume the shared LiveAccountSnapshot truth and show honest freshness badges.
+Dashboard, Cockpit/Open Trades, Eleanor trade monitor, and account cards must consume the shared LiveAccountSnapshot truth and show honest freshness badges.
 
 ====================================================
 PART 1 — RUN VERIFICATION FIRST
@@ -148,10 +148,10 @@ For investors:
 - investor portal remains view-only
 
 ====================================================
-PART 5 — RUBY TRADE MONITOR WIRING
+PART 5 — ELEANOR TRADE MONITOR WIRING
 ====================================================
 
-Ruby’s trade monitoring should consume the shared snapshot contract.
+Eleanor’s trade monitoring should consume the shared snapshot contract.
 
 When user says:
 - “show my live trades”
@@ -160,9 +160,9 @@ When user says:
 - “what is my open P/L”
 - “what is happening with my position”
 
-Ruby must use the same snapshot truth as Dashboard/Open Trades.
+Eleanor must use the same snapshot truth as Dashboard/Open Trades.
 
-Ruby should not say:
+Eleanor should not say:
 - paper-only
 - sandbox
 - simulated
@@ -171,7 +171,7 @@ Ruby should not say:
 - route names
 - raw source names
 
-Ruby should say clean user-facing status:
+Eleanor should say clean user-facing status:
 
 If fresh:
 “I found your open position. The latest broker snapshot is fresh.”
@@ -302,7 +302,7 @@ Runtime UI checks:
 - owner/admin visibility correct
 - regular user isolation correct
 - investor view-only untouched
-- Ruby monitor uses shared snapshot
+- Eleanor monitor uses shared snapshot
 - no live execution path changed
 
 ====================================================
@@ -318,7 +318,7 @@ Report back with:
 5. Shared frontend hook proof
 6. Dashboard wiring proof
 7. Open Trades/Cockpit wiring proof
-8. Ruby monitor wiring proof
+8. Eleanor monitor wiring proof
 9. SSE connection proof
 10. SSE reconnect/fallback proof
 11. Freshness badge proof

@@ -52,7 +52,7 @@ export interface AssessStopLossResult {
   sl: number | null;
   /** True if the proposed SL was adjusted to a safer value. */
   adjusted: boolean;
-  /** Human-readable explanation for the UI / Ruby. */
+  /** Human-readable explanation for the UI / Eleanor. */
   reason: string;
   /** SL distance in price units. */
   stopDistance: number | null;

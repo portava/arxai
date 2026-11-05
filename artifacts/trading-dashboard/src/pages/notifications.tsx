@@ -103,7 +103,7 @@ export default function NotificationsPage() {
     <div className="p-4 space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-bold">Notification Center</h1>
-        <span className="px-2 py-1 rounded text-xs bg-ruby text-foreground">ALERTS ONLY</span>
+        <span className="px-2 py-1 rounded text-xs bg-eleanor text-foreground">ALERTS ONLY</span>
         {mode.envelope && (
           <span
             className="px-2 py-1 rounded text-xs bg-secondary text-foreground"

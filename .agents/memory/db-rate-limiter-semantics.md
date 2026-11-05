@@ -30,7 +30,7 @@ RateLimitedAction with `failOpen:true` breaks that guard.
 UPDATE` in a plain transaction with NO per-`(action,scope)` lock (no
 `pg_advisory_xact_lock` / `FOR UPDATE`). Two simultaneous FIRST hits for the same
 scope can both read no row and both be allowed. This is a property of the shared
-primitive (used by auth/admin/ruby), not of any one caller — still strictly better
+primitive (used by auth/admin/eleanor), not of any one caller — still strictly better
 than a per-process in-memory Map (which shares nothing across instances). Treat
 exactly-once-under-concurrency as a shared-limiter hardening item, not something to
 bolt onto one route.

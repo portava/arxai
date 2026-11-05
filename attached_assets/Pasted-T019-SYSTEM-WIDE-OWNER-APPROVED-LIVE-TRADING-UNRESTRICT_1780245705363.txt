@@ -11,7 +11,7 @@ This applies across the entire app:
 1. Scanner
 2. Trade page
 3. Chart trading
-4. Ruby actions
+4. Eleanor actions
 5. Admin trade tools
 6. One-click / Single Confirm
 7. Live shared master bridge
@@ -87,7 +87,7 @@ Search the entire codebase for restrictions including but not limited to:
 15. firstLiveTest
 16. testSymbol
 17. requireScannerSignal
-18. requireRubyExplanation
+18. requireEleanorExplanation
 19. requireBacktest
 20. requireNewsCheck
 21. requireRiskReward
@@ -153,7 +153,7 @@ It should return all configurable restrictions, including:
 9. requireSpreadLimit
 10. spreadLimitValue
 11. requireScannerSignal
-12. requireRubyExplanation
+12. requireEleanorExplanation
 13. requireBacktest
 14. requireNewsCheck
 15. requireRiskReward
@@ -178,7 +178,7 @@ Default owner/admin unrestricted live policy:
 1. requireStopLoss = false
 2. requireTakeProfit = false
 3. requireScannerSignal = false
-4. requireRubyExplanation = false
+4. requireEleanorExplanation = false
 5. requireBacktest = false
 6. requireNewsCheck = false
 7. requireRiskReward = false
@@ -220,7 +220,7 @@ Examples:
 8. Remove hardcoded allowedSymbols block unless Governance enables allowlist.
 9. Remove hardcoded spread limit unless Governance enables spread limit.
 10. Remove hardcoded require scanner signal.
-11. Remove hardcoded require Ruby explanation.
+11. Remove hardcoded require Eleanor explanation.
 12. Remove hardcoded require backtest/news/history.
 13. Remove forced Review → Final Confirm double step.
 14. Remove frontend disabled Confirm button caused by missing SL/TP unless Governance requires SL/TP.
@@ -258,7 +258,7 @@ When ON:
 9. Reverse allowed.
 10. Break-even allowed.
 11. Chart trading allowed.
-12. Ruby does not block execution.
+12. Eleanor does not block execution.
 13. Scanner signal does not block execution.
 14. News/backtest/history does not block execution.
 15. Single Confirm is ON.
@@ -283,7 +283,7 @@ Scanner:
 1. Confirm button enabled when symbol, direction, and lot are present.
 2. SL optional unless Governance requires it.
 3. TP optional unless Governance requires it.
-4. Ruby explanation optional unless Governance requires it.
+4. Eleanor explanation optional unless Governance requires it.
 5. Scanner signal optional unless Governance requires it.
 6. Show Governance chips only as information, not blockers, unless enabled.
 
@@ -301,11 +301,11 @@ Chart trading:
 3. Pending orders allowed unless Governance disables.
 4. Confirm means final action if Single Confirm is ON.
 
-Ruby:
+Eleanor:
 
-1. Ruby can assist but must not block trades unless Governance requires Ruby approval/explanation.
-2. Ruby cannot bypass backend truth.
-3. Ruby cannot fake execution.
+1. Eleanor can assist but must not block trades unless Governance requires Eleanor approval/explanation.
+2. Eleanor cannot bypass backend truth.
+3. Eleanor cannot fake execution.
 
 PART 6 — System-wide backend behavior
 
@@ -348,7 +348,7 @@ Create/repair UI sections:
 6. Spread rules
 7. Market-hours app check
 8. Confirmation rules
-9. Ruby/scanner/backtest requirements
+9. Eleanor/scanner/backtest requirements
 10. Allocation enforcement
 11. Kill switch
 12. Freeze controls
@@ -434,7 +434,7 @@ Run:
 11. backend block category tests
 12. Scanner trade modal tests
 13. chart trading tests
-14. Ruby non-blocking test
+14. Eleanor non-blocking test
 15. Trade page display test
 16. route containment tests
 17. live-readiness tests
@@ -452,7 +452,7 @@ Final report must include:
 7. confirmation TP optional when Governance OFF
 8. confirmation max lot controlled by Governance
 9. confirmation symbols controlled by Governance/broker truth
-10. confirmation Ruby/scanner/backtest do not block unless Governance ON
+10. confirmation Eleanor/scanner/backtest do not block unless Governance ON
 11. confirmation Single Confirm ON
 12. block response categories implemented
 13. selected live test symbol

@@ -2,7 +2,7 @@
 //
 // Graph Cohesion (G) measures whether ARX systems AGREE. The detector compares
 // cross-system state (selected symbol across pages, Scanner bias vs Smart Chart
-// bias, Ruby vs Scanner/Chart, Heat vs News, MT5 vs app open positions, etc.)
+// bias, Eleanor vs Scanner/Chart, Heat vs News, MT5 vs app open positions, etc.)
 // and flags disagreements as conflicts. Conflicts lower G and steer the
 // recommended action toward WAIT_FOR_CONFIRMATION / WATCH_ONLY / RECONCILE_SYSTEM.
 // Unknown inputs are NOT treated as conflicts (fail-open) — only genuine,
@@ -52,7 +52,7 @@ export function detectConflictsAndCohesion(
 
   const scannerBias = snapshot.scanner?.bias;
   const chartBias = chartToDirectional(snapshot.smartChart?.bias);
-  const rubyBias = snapshot.ruby?.bias;
+  const eleanorBias = snapshot.eleanor?.bias;
 
   // Scanner bias vs Smart Chart bias.
   if (directionalConflict(scannerBias, chartBias)) {
@@ -64,23 +64,23 @@ export function detectConflictsAndCohesion(
     });
   }
 
-  // Ruby explanation vs Scanner.
-  if (directionalConflict(rubyBias, scannerBias)) {
+  // Eleanor explanation vs Scanner.
+  if (directionalConflict(eleanorBias, scannerBias)) {
     conflicts.push({
-      code: "RUBY_SCANNER_DISAGREE",
+      code: "ELEANOR_SCANNER_DISAGREE",
       severity: "warning",
-      systems: ["Ruby", "Scanner"],
-      detail: `Ruby bias ${rubyBias} disagrees with scanner bias ${scannerBias}.`,
+      systems: ["Eleanor", "Scanner"],
+      detail: `Eleanor bias ${eleanorBias} disagrees with scanner bias ${scannerBias}.`,
     });
   }
 
-  // Ruby explanation vs Smart Chart.
-  if (directionalConflict(rubyBias, chartBias)) {
+  // Eleanor explanation vs Smart Chart.
+  if (directionalConflict(eleanorBias, chartBias)) {
     conflicts.push({
-      code: "RUBY_CHART_DISAGREE",
+      code: "ELEANOR_CHART_DISAGREE",
       severity: "warning",
-      systems: ["Ruby", "SmartChart"],
-      detail: `Ruby bias ${rubyBias} disagrees with chart bias ${snapshot.smartChart?.bias}.`,
+      systems: ["Eleanor", "SmartChart"],
+      detail: `Eleanor bias ${eleanorBias} disagrees with chart bias ${snapshot.smartChart?.bias}.`,
     });
   }
 
@@ -89,7 +89,7 @@ export function detectConflictsAndCohesion(
   const heatExhausted = moveStage === "EXHAUSTED" || moveStage === "MATURE";
   const anyCommittedEntry =
     (scannerBias === "buy" || scannerBias === "sell") ||
-    (rubyBias === "buy" || rubyBias === "sell");
+    (eleanorBias === "buy" || eleanorBias === "sell");
   if (heatExhausted && anyCommittedEntry) {
     conflicts.push({
       code: "EXHAUSTED_HEAT_VS_ENTRY",
@@ -128,8 +128,8 @@ export function detectConflictsAndCohesion(
     conflicts.push({
       code: "SYMBOL_CONTEXT_DRIFT",
       severity: "info",
-      systems: ["Scanner", "SmartChart", "Ruby"],
-      detail: "Selected symbol differs across scanner / chart / Ruby surfaces.",
+      systems: ["Scanner", "SmartChart", "Eleanor"],
+      detail: "Selected symbol differs across scanner / chart / Eleanor surfaces.",
     });
   }
 
@@ -157,7 +157,7 @@ function mismatchFromCounts(snapshot: AaciSharedTruthSnapshot): boolean {
 
 function symbolDrift(snapshot: AaciSharedTruthSnapshot): boolean {
   const ctx = snapshot.symbolContext;
-  const symbols = [ctx.scannerSymbol, ctx.chartSymbol, ctx.rubySymbol].filter(
+  const symbols = [ctx.scannerSymbol, ctx.chartSymbol, ctx.eleanorSymbol].filter(
     (s): s is string => typeof s === "string" && s.length > 0,
   );
   if (symbols.length < 2) return false;

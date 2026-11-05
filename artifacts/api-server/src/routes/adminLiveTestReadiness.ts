@@ -16,6 +16,7 @@
 //  audit row is written for the GET and `LIVE_TEST_PREFLIGHT_EVALUATED`
 //  is written for the POST so operators can prove the panel was opened
 //  without anyone dispatching a trade.
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { heartbeatAgeSecondsFrom } from "../lib/brokerHub/freshness.js";
@@ -475,7 +476,7 @@ router.get("/admin/live-test-readiness/t015-status", async (req, res) => {
       perTradeLimit: null,
       note: "Owner/admin manual live testing is ongoing. There is no global "
         + "\"one live trade\" limit on the manual path — place additional live "
-        + "trades from the scanner, chart, Trade page, or Ruby entry as needed.",
+        + `trades from the scanner, chart, Trade page, or ${DEFAULT_ASSISTANT_NAME} entry as needed.`,
     },
     readiness: {
       decision: result.decision,

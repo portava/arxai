@@ -97,7 +97,7 @@ export async function buildAaciSnapshot(
       selectedTimeframe: timeframe,
       scannerSymbol: symbol,
       chartSymbol: symbol,
-      rubySymbol: symbol,
+      eleanorSymbol: symbol,
     },
     account: {},
     bridge: { status: "unknown" },

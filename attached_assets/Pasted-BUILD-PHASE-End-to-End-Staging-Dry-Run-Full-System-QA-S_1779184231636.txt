@@ -3,7 +3,7 @@ BUILD PHASE — End-to-End Staging Dry Run + Full System QA Script
 Use the current codebase. Do not rebuild unrelated systems.
 
 Goal:
-Create and run a full end-to-end staging dry run that tests ARX AI from first user login through onboarding, Ruby, scanner, demo trading, personal MT5 setup, shared master request, admin approval, risk limits, safety gates, trade queue, kill switches, close-only mode, reconciliation, audit logs, exports, production locks, and no-live-command evidence.
+Create and run a full end-to-end staging dry run that tests ARX AI from first user login through onboarding, Eleanor, scanner, demo trading, personal MT5 setup, shared master request, admin approval, risk limits, safety gates, trade queue, kill switches, close-only mode, reconciliation, audit logs, exports, production locks, and no-live-command evidence.
 
 Important:
 This is a staging/dry-run QA phase.
@@ -23,7 +23,7 @@ Check what already exists for:
 - secret leak probes
 - bridge mock tests
 - admin route tests
-- Ruby tests
+- Eleanor tests
 - voice tests
 - queue/concurrency tests
 - audit export tests
@@ -59,13 +59,13 @@ A. Brand-new user
 - chooses demo mode
 - sees clean first-load state
 - no fake trades/P/L
-- Ruby explains setup
+- Eleanor explains setup
 - demo dashboard loads privately
 
 B. Demo trader
 - scanner opens clean
 - selects direct symbol
-- Ruby market explanation appears
+- Eleanor market explanation appears
 - opens demo trade ticket
 - enters lot, SL, TP
 - confirms demo trade
@@ -89,7 +89,7 @@ D. Shared master requester
 - cannot trade before approval
 - cannot trade before allocation/risk profile
 - cannot see shared master global balance
-- Ruby explains next step
+- Eleanor explains next step
 
 E. Admin/operator
 - logs into admin area
@@ -134,7 +134,7 @@ Every block should return clean user-facing language.
 Simulate:
 - two users submitting same symbol at same time
 - one user double-clicking submit
-- duplicate transcript from Ruby voice
+- duplicate transcript from Eleanor voice
 - duplicate EA callback
 - stale reservation
 - sent command with no callback
@@ -157,13 +157,13 @@ Verify:
 - User A cannot see User B trades
 - User A cannot see User B P/L
 - User A cannot see User B notifications
-- User A cannot ask Ruby about User B
+- User A cannot ask Eleanor about User B
 - User A cannot close/edit User B trade
 - User A cached state clears on logout
-- switching accounts does not leak Ruby memory, scanner symbol, chart markers, or notifications
+- switching accounts does not leak Eleanor memory, scanner symbol, chart markers, or notifications
 
-7. Ruby full brain dry run
-Test Ruby can explain:
+7. Eleanor full brain dry run
+Test Eleanor can explain:
 - app features
 - onboarding status
 - account mode
@@ -177,7 +177,7 @@ Test Ruby can explain:
 - audit/activity status within permission level
 - production readiness for admin only
 
-Ruby must not:
+Eleanor must not:
 - claim guaranteed profits
 - claim legal approval
 - expose admin-only data to normal users
@@ -185,14 +185,14 @@ Ruby must not:
 - expose secrets
 - claim a live trade fired unless confirmed
 
-8. Ruby voice dry run
+8. Eleanor voice dry run
 Test:
 - auto-listen opens after permission
 - silence detection submits once
 - empty/duplicate transcripts ignored
-- Ruby responds with text and speech
-- mic pauses while Ruby speaks
-- mic resumes after Ruby speaks
+- Eleanor responds with text and speech
+- mic pauses while Eleanor speaks
+- mic resumes after Eleanor speaks
 - voice trade command prepares ticket only
 - voice close requires confirmation
 - voice cannot bypass live safety
@@ -228,7 +228,7 @@ Test:
 - trade lifecycle audit events created
 - safety block audit events created
 - admin action audit events created
-- Ruby/voice audit events created
+- Eleanor/voice audit events created
 - reconciliation audit events created
 - audit center protected
 - user activity only shows current user events
@@ -259,7 +259,7 @@ The staging dry-run command should return:
 - users/personas tested
 - admin routes tested
 - trade safety gates tested
-- Ruby tests run
+- Eleanor tests run
 - voice tests run
 - queue/concurrency tests run
 - reconciliation tests run

@@ -1,4 +1,4 @@
-The claimed Task #602 merge is not working in the running app. Ruby Chat still does NOT use the same structural read-layer output as the Scanner Ruby Chart Read panel.
+The claimed Task #602 merge is not working in the running app. Eleanor Chat still does NOT use the same structural read-layer output as the Scanner Eleanor Chart Read panel.
 
 Do not treat this as complete based on tests alone. The authenticated running app proves the bug still exists.
 
@@ -10,11 +10,11 @@ Selected page context:
 - Timeframe: 1h
 - Feed: Deriv
 - Data: Historical only
-- Ruby: Limited read
+- Eleanor: Limited read
 - Action: Feed limited
 - Live setup: withheld
 
-Scanner Ruby Chart Read panel correctly produces a structural read:
+Scanner Eleanor Chart Read panel correctly produces a structural read:
 - Bias: Mixed
 - Confidence: Low
 - HTF Bias: No clear edge
@@ -26,7 +26,7 @@ Scanner Ruby Chart Read panel correctly produces a structural read:
 - Risk Note: available
 - Exact entry/SL/TP/R:R withheld
 
-Ruby Chat for the same V75 1h context still says:
+Eleanor Chat for the same V75 1h context still says:
 - “Data insufficient, no primary timeframe available”
 - “Trend — no live candle trend available; no HTF data”
 - “Key levels — not available”
@@ -38,12 +38,12 @@ Ruby Chat for the same V75 1h context still says:
 This is a hard failure.
 
 Expected behavior:
-Ruby Chat must return the same structural read the panel already has. It can say low-confidence and feed not confirmed, and it must withhold exact live setup levels, but it must NOT say key levels/scenarios are unavailable when the panel already has them.
+Eleanor Chat must return the same structural read the panel already has. It can say low-confidence and feed not confirmed, and it must withhold exact live setup levels, but it must NOT say key levels/scenarios are unavailable when the panel already has them.
 
 Investigate and fix the real running-app routing.
 
 Required diagnostic before coding:
-1. Add temporary server-side trace logging or test-visible diagnostics for one Ruby Chat request from Scanner:
+1. Add temporary server-side trace logging or test-visible diagnostics for one Eleanor Chat request from Scanner:
    - incoming pageContext.pathname
    - incoming pageContext.label
    - incoming pageContext.chartSymbol
@@ -59,7 +59,7 @@ Required diagnostic before coding:
    - final assistant payload source
 
 2. Reproduce the exact running-app case:
-   - Ask Ruby chat from Scanner: “read V75 1h” or “analyze V75”
+   - Ask Eleanor chat from Scanner: “read V75 1h” or “analyze V75”
    - Confirm whether the LLM chooses the new structural-read tool or the old market-context tool.
 
 Likely failure points to check:
@@ -73,7 +73,7 @@ Likely failure points to check:
 - The final response assembler may still prefer old marketContext text over structural-read output.
 
 Required fix:
-For chart-read style Ruby chat requests, especially from Scanner, route to the same structural read service that powers the Scanner Ruby Chart Read panel.
+For chart-read style Eleanor chat requests, especially from Scanner, route to the same structural read service that powers the Scanner Eleanor Chart Read panel.
 
 This must apply when the user asks:
 - “read V75”
@@ -91,7 +91,7 @@ If the request is chart/symbol/timeframe analysis and the page context is Scanne
 - Do not fall back to old live-snapshot-only market context unless the structural service truly returns no usable candles.
 
 Chat response rule:
-If panel structural read exists for same symbol/timeframe, Ruby Chat must surface:
+If panel structural read exists for same symbol/timeframe, Eleanor Chat must surface:
 - bias
 - confidence
 - summary
@@ -103,7 +103,7 @@ If panel structural read exists for same symbol/timeframe, Ruby Chat must surfac
 - feed caveat
 - exact setup withholding
 
-Ruby Chat must NOT say:
+Eleanor Chat must NOT say:
 - no primary timeframe available
 - key levels not available
 - bullish scenario unavailable
@@ -136,7 +136,7 @@ Tests required:
    - tool resolves V75 1h correctly
 
 3. Parity test:
-   - panel structural read and Ruby Chat read for same V75 1h share:
+   - panel structural read and Eleanor Chat read for same V75 1h share:
      - bias
      - confidence
      - summary
@@ -158,10 +158,10 @@ Steps:
 1. Open Market Scanner.
 2. Select Volatility 75 Index.
 3. Select 1h.
-4. Confirm Ruby Chart Read panel shows structural read with support/resistance.
-5. Ask Ruby chat: “read V75 1h.”
-6. Paste/log Ruby chat response.
-7. Confirm Ruby chat returns the same structural read and does not say:
+4. Confirm Eleanor Chart Read panel shows structural read with support/resistance.
+5. Ask Eleanor chat: “read V75 1h.”
+6. Paste/log Eleanor chat response.
+7. Confirm Eleanor chat returns the same structural read and does not say:
    - no primary timeframe
    - key levels unavailable
    - bullish/bearish scenario unavailable
@@ -172,7 +172,7 @@ Do not mark complete until the running-app chat response matches the panel’s s
 Validation required:
 - api-server typecheck
 - dashboard typecheck if frontend touched
-- Ruby chat structural-read routing tests
+- Eleanor chat structural-read routing tests
 - parity test
 - scanner/read-layer tests
 - ci guards

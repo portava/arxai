@@ -20,9 +20,9 @@ import {
   selectedMarketReadShown,
   NOT_LIVE_LEVELS_REASON,
 } from "@/components/scanner/selectedMarketView";
-import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
 import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
-import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
+import { buildReasoningFromOppMap } from "@/lib/eleanorReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventCountdownFromIso } from "@/lib/eventCountdown";
 import { calendarEventWhen, isDateOnlyCalendarSource } from "@/lib/calendarCoverage";
@@ -99,7 +99,7 @@ function useTickingNow(): number {
 
 export function SelectedMarketPanel() {
   // Bridge with the app-wide chart symbol bus. Selecting a symbol here
-  // immediately updates chart / trade ticket / Ruby context everywhere.
+  // immediately updates chart / trade ticket / Eleanor context everywhere.
   const [chartSym] = useChartSymbol();
   const { name } = useAssistantName();
   const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
@@ -162,7 +162,7 @@ export function SelectedMarketPanel() {
 
   /** Single point that switches global market focus. */
   function selectSymbol(canonical: string) {
-    // Broadcast to chart, trade ticket, Ruby context.
+    // Broadcast to chart, trade ticket, Eleanor context.
     setChartSymbol(canonical);
     // Scroll the explanation card into view on mobile.
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -218,13 +218,13 @@ export function SelectedMarketPanel() {
       ?? (calendarChecked ? null : "The economic calendar could not be checked, so scheduled events are not shown.")
     : null;
 
-  const rubyNote = useMemo(() => {
+  const eleanorNote = useMemo(() => {
     if (!ok) return null;
     if (readWithheldReason) return `No directional read right now. ${readWithheldReason}`;
     return `${ok.explanation.hedge} ${ok.explanation.why}`;
   }, [ok, readWithheldReason]);
 
-  // ONE always-visible Ruby Reasoning Block for the selected/detail view.
+  // ONE always-visible Eleanor Reasoning Block for the selected/detail view.
   // Honesty: levelsWithheld / a degraded dataState collapse this to
   // WAIT/conditional with the limit stated in Feed/Data — never a fabricated
   // entry/stop/target. Display only; grants no execution permission.
@@ -385,7 +385,7 @@ export function SelectedMarketPanel() {
                 {selectedMarketDataAsOfLabel(ok.dataAsOf, nowTs)}
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">
+            <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-eleanor-cache-note">
               {ok.dataAsOf
                 ? `Analysis built ${timeAgo(ok.generatedAt, nowTs) ?? "at an unconfirmed time"}${ok.cacheHit ? " · cached" : ""}. `
                 : ""}
@@ -433,7 +433,7 @@ export function SelectedMarketPanel() {
               <div className="rounded-xl border border-border bg-background/40 p-3">
                 <div className="text-xs font-semibold mb-2 text-foreground">{name}'s read</div>
                 {oppReasoning && (
-                  <RubyReasoningBlock data={oppReasoning} testid="opp-map-reasoning" dense />
+                  <EleanorReasoningBlock data={oppReasoning} testid="opp-map-reasoning" dense />
                 )}
                 <p className="text-[10px] italic text-muted-foreground mt-2">{ok.explanation.disclaimer}</p>
               </div>
@@ -516,7 +516,7 @@ export function SelectedMarketPanel() {
           defaultSymbol={ok.symbol}
           defaultSide={ticket?.side ?? "BUY"}
           sourcePage="SCANNER_SELECTED_MARKET"
-          rubyExplanationSummary={rubyNote}
+          eleanorExplanationSummary={eleanorNote}
           feedWarning={liveFeedWarning}
         />
       )}

@@ -55,8 +55,8 @@ export interface ActionGuardInput {
   requestedPrice?: number | null;
   stopLoss?: number | null;
   takeProfit?: number | null;
-  /** Who originated the draft: the trader, Ruby, or the decision engine. */
-  origin?: "manual" | "ruby" | "automation";
+  /** Who originated the draft: the trader, Eleanor, or the decision engine. */
+  origin?: "manual" | "eleanor" | "automation";
   tradeKey: string | null;
   confirmedByUser: boolean;
   expiresAt: Date | null;

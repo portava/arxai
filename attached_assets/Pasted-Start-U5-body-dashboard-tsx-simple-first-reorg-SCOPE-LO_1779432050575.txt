@@ -9,7 +9,7 @@ Do not change:
 - live/demo permissions
 - kill switches
 - admin approvals
-- Ruby intelligence
+- Eleanor intelligence
 - scanner calculations
 - auth/login
 - backend routes
@@ -27,7 +27,7 @@ Dashboard priority order:
 1. Account / trading status summary
 2. Open Trades / Current P&L snapshot
 3. Market Scanner shortcut / best current opportunities
-4. Ruby insight card
+4. Eleanor insight card
 5. Risk status summary
 6. Alerts / Watchlist / Calendar preview
 7. Recent activity / trade history preview
@@ -79,13 +79,13 @@ Market Scanner shortcut:
   “Open Scanner”
 - Market Scanner must feel important and easy to access
 
-Ruby card:
-- Show a compact Ruby insight card:
-  “Ruby is ready to analyze your market.”
+Eleanor card:
+- Show a compact Eleanor insight card:
+  “Eleanor is ready to analyze your market.”
 - If selected symbol exists, show:
-  “Ask Ruby about [symbol]”
+  “Ask Eleanor about [symbol]”
 - Add button:
-  “Ask Ruby”
+  “Ask Eleanor”
 - Do not expose raw prompts, backend names, or debug text
 
 Risk card:
@@ -145,7 +145,7 @@ Acceptance checklist:
 2. Important information appears first.
 3. Market Scanner is clearly visible from dashboard.
 4. Open Trades / P&L summary is visible.
-5. Ruby shortcut is visible.
+5. Eleanor shortcut is visible.
 6. Risk summary is visible.
 7. Mobile dashboard has no overlap or horizontal overflow.
 8. Bottom nav does not cover dashboard content.

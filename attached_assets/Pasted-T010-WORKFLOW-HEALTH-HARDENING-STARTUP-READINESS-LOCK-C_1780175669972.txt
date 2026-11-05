@@ -2,7 +2,7 @@ T010 — WORKFLOW HEALTH HARDENING + STARTUP READINESS LOCK
 
 Continue from T009.
 
-T009 confirmed the real 7-second slowdown was caused by dead/orphaned api-server and frontend workflows not listening, not by normal frontend render speed. After workflows were restarted, real interactive timing passed: Scanner tab ~714ms, Plan Buy modal ~619ms, backend calls fast, Ruby spinner instant, live MT5 path untouched, and no live trade was placed.
+T009 confirmed the real 7-second slowdown was caused by dead/orphaned api-server and frontend workflows not listening, not by normal frontend render speed. After workflows were restarted, real interactive timing passed: Scanner tab ~714ms, Plan Buy modal ~619ms, backend calls fast, Eleanor spinner instant, live MT5 path untouched, and no live trade was placed.
 
 Now prevent this from happening again.
 
@@ -99,7 +99,7 @@ Regression tests:
 7. Scanner still loads
 8. Scanner timing still under target
 9. Buy/Sell modal opens quickly
-10. Ruby spinner appears immediately
+10. Eleanor spinner appears immediately
 11. normal users still blocked from paper/admin/dev/dormant routes
 12. admin/owner access still works
 13. no live MT5 path changed
