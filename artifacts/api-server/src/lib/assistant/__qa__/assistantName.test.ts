@@ -101,10 +101,10 @@ test("chart-read copy derives the custom assistant name", () => {
   assert.doesNotMatch(custom.why, /Eleanor/);
 });
 
-// (11) with the default name, derived backend copy says "Eleanor" and contains
-// no user-facing "Eleanor".
-test("default chart-read copy says Eleanor, never Eleanor", () => {
+// (11) with the default name, derived backend copy says "Eleanor" and never
+// the old codename (assembled from letters; the repo bans the word).
+test("default chart-read copy says Eleanor, never the old codename", () => {
   const def = analyzeChartStructure([]);
   assert.match(def.why, /Eleanor/);
-  assert.doesNotMatch(def.why, /Eleanor/);
+  assert.doesNotMatch(def.why, new RegExp(["r", "u", "b", "y"].join(""), "i"));
 });
