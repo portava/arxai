@@ -148,7 +148,7 @@ Verify:
 - no simulator pipeline wording in live mode
 - no fake candles
 - historical data reports honestly
-- Ruby/scanner explanation uses same feed source
+- Eleanor/scanner explanation uses same feed source
 - recent scanner actions are mode-scoped
 
 Task 7 — Alerts/notifications verification:

@@ -160,7 +160,7 @@ Acceptance tests:
 12. Confirm live validation blocks if fresh account balance cannot be verified.
 13. Confirm no secrets, raw backend errors, or internal constants appear to normal users.
 14. Confirm mobile UI shows balance cleanly without crowding.
-15. Confirm Ruby, scanner, trade ticket, and live bridge status still work.
+15. Confirm Eleanor, scanner, trade ticket, and live bridge status still work.
 
 After fixing:
 Run full QA on MT5 account sync, balance display, live shared mode, admin cockpit, user live allocation, trade ticket, paper mode, demo mode, order open/close refresh, and mobile UI.

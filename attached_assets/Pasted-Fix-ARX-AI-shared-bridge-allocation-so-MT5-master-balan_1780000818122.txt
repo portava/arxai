@@ -218,6 +218,6 @@ Before stopping, verify:
 - arx_live_commands does not increase during tests.
 - No live trade is placed.
 - Demo, Live, and Live Shared remain the only modes.
-- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+- Login, Eleanor, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix errors before stopping.

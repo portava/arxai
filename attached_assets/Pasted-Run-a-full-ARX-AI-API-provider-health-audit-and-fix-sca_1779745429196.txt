@@ -11,7 +11,7 @@ Do NOT fake historical data.
 Do NOT generate placeholder candles and present them as real.
 Do NOT remove working providers.
 Do NOT hardcode one provider like TwelveData as the only source.
-Do NOT break live trading, MT5 bridge, Ruby, scanner, or chart features.
+Do NOT break live trading, MT5 bridge, Eleanor, scanner, or chart features.
 
 Before changing code:
 Search the entire codebase for all market data/API integrations:
@@ -56,7 +56,7 @@ Create an internal provider inventory that checks:
 3. Which providers are configured but unused.
 4. Which providers are used by scanner.
 5. Which providers are used by chart.
-6. Which providers are used by Ruby.
+6. Which providers are used by Eleanor.
 7. Which providers are used for historical candles.
 8. Which providers are used for live quotes.
 9. Which providers are used for news/economic events.
@@ -79,7 +79,7 @@ It should show, without exposing secrets:
 - Which app modules use this provider:
   - Scanner
   - Chart
-  - Ruby
+  - Eleanor
   - Trade ticket
   - Watchlist
   - Backtest
@@ -158,7 +158,7 @@ Scanner should show/use historical data for:
 - volatility
 - structure
 - backtest/previous movement checks
-- Ruby explanation window
+- Eleanor explanation window
 - confidence scoring
 - risk/reward suggestions
 - stop loss/take profit logic
@@ -202,13 +202,13 @@ Acceptance tests:
 11. Search V75 1s and confirm ticks_history/candle history works if Deriv supports it.
 12. Confirm “No historical data” only appears after all valid providers fail.
 13. Confirm chart and scanner use the same candle source for the same symbol/timeframe.
-14. Confirm Ruby market explanation uses the same historical data source as the scanner.
+14. Confirm Eleanor market explanation uses the same historical data source as the scanner.
 15. Confirm rate-limit failures trigger fallback instead of blank scanner.
 16. Confirm stale candle data is not used for scanner scoring.
 17. Confirm normal users do not see provider names, API errors, keys, tokens, backend constants, or raw JSON.
 18. Confirm admin diagnostics show enough info to know which API is broken.
 19. Confirm no fake candles/prices are generated.
-20. Confirm live trading gates, MT5 bridge, Ruby chat/voice, scanner UI, and mobile views still work.
+20. Confirm live trading gates, MT5 bridge, Eleanor chat/voice, scanner UI, and mobile views still work.
 
 After audit/fix:
 Run full QA across:
@@ -216,7 +216,7 @@ Run full QA across:
 - scanner historical data
 - live quotes
 - charts
-- Ruby market explanations
+- Eleanor market explanations
 - Deriv volatility symbols
 - MT5 broker feed
 - TwelveData fallback

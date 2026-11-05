@@ -1,7 +1,7 @@
 // Live-Position Truth contract (Phase 1) — advisory-tool refusal lock (DB-backed).
 //
 // The pure suite (positionTruthContract.test.ts) proves the resolver/adapter
-// verdict. THIS suite proves the verdict is actually ENFORCED at every Ruby
+// verdict. THIS suite proves the verdict is actually ENFORCED at every Eleanor
 // advisory tool that returns directional / hold-close / decision guidance: a row
 // the broker never verified must yield the withheld payload, never advice. It
 // guards specifically against the bypass class where a tool resolves a

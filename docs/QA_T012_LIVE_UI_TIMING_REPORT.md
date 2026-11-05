@@ -76,7 +76,7 @@ harness so it survives real browser usage.
 16. `chart_skeleton_visible`: **0.4 ms** → PASS.
 17. `market_selection_feedback`: **0.8 ms** — target `< 300 ms` → PASS.
 18. `lot_input_response`: **0 ms** (value `0.01`) — target `< 100 ms` → PASS.
-19. `ruby_thinking_indicator`: **0.3 ms** — target `< 100 ms` → PASS.
+19. `eleanor_thinking_indicator`: **0.3 ms** — target `< 100 ms` → PASS.
 20. `fcp_cockpit` / `fcp_scanner`: **2796 ms** first-contentful-paint (cold Vite dev
     + auth bootstrap). This is initial cold-load FCP, not an interaction; no ~7 s
     freeze observed at any point. All **interaction** targets pass.
@@ -84,7 +84,7 @@ harness so it survives real browser usage.
 
 ### D. Mobile browser timing (400×720) — qualitative
 22. All steps completed: login, scanner shell/search/chart, EURUSD select, Buy/Sell
-    modal open + close, lot input, Ruby, both nav transitions. No submit clicked,
+    modal open + close, lot input, Eleanor, both nav transitions. No submit clicked,
     **no ~7 s freeze**.
 23. **UX note:** at 400 px the modal Cancel button sits off-screen; a DOM-click
     fallback closed it. Worth a responsive fix in a later pass.

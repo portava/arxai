@@ -8,7 +8,7 @@ Do not rebuild the app.
 Do not remove existing live trading.
 Do not introduce paper trading.
 Do not introduce simulation as a product feature.
-Do not break Ruby, scanner, live/MT5 flow, auth, admin, investor view, or trader dashboard.
+Do not break Eleanor, scanner, live/MT5 flow, auth, admin, investor view, or trader dashboard.
 Do not let the Agent Ecosystem block or slow the 16-gate live dispatch path.
 Do not touch ARX_LIVE_BROKER_EXECUTION_ENABLED unless there is an existing bug directly related to it.
 Do not duplicate Task #91 UI if it already exists.
@@ -22,7 +22,7 @@ Complete the Agent Ecosystem after Task #91 by wiring the missing governance enf
 
 1. Merge/verify Task #91 admin governance UI.
 2. Enforce Traffic Controller participants in real app workflows, not just compute summaries.
-3. Auto-invoke Agent Court during real multi-agent disagreements in scanner/Ruby/trade analysis flows.
+3. Auto-invoke Agent Court during real multi-agent disagreements in scanner/Eleanor/trade analysis flows.
 4. Add a background lifecycle runner for promotions, outcomes, Learning Camp, and report generation instead of relying only on manual admin POSTs.
 5. Persist per-action governance traces instead of only using an in-memory ring buffer.
 6. QA all Agent Ecosystem admin pages after merge.
@@ -117,7 +117,7 @@ Test:
 * Normal USER request should fail for admin-only governance endpoints.
 * INVESTOR request should fail for admin-only governance endpoints.
 * ADMIN/OWNER request should succeed.
-* Ruby/scanner user-facing features should still work for normal trader users.
+* Eleanor/scanner user-facing features should still work for normal trader users.
 
 Report exactly what account/role issue was fixed without printing secrets.
 
@@ -143,7 +143,7 @@ Fields should include at minimum:
 * timeframe nullable
 * trade_id nullable
 * scanner_signal_id nullable
-* ruby_message_id nullable
+* eleanor_message_id nullable
 * active_mode
 * agents_requested json
 * agents_allowed_to_run json
@@ -152,7 +152,7 @@ Fields should include at minimum:
 * step_back_reasons json
 * agent_outputs json
 * final_governance_decision
-* ruby_summary_used boolean
+* eleanor_summary_used boolean
 * risk_veto_used boolean
 * disagreement_court_used boolean
 * prediction_locked boolean
@@ -184,8 +184,8 @@ Rules:
 
 Major app actions that should create traces:
 
-* Ruby market analysis
-* Ruby “is this a scalp?” / trade analysis
+* Eleanor market analysis
+* Eleanor “is this a scalp?” / trade analysis
 * Scanner refresh
 * Focus scanner search
 * Broad scanner search
@@ -230,8 +230,8 @@ It should return:
 
 Then update real callers to consume it:
 
-1. Ruby market analysis flow
-2. Ruby scalp/trade analysis flow
+1. Eleanor market analysis flow
+2. Eleanor scalp/trade analysis flow
 3. Scanner refresh flow
 4. Focus scanner flow
 5. Broad scanner flow
@@ -253,7 +253,7 @@ Live Execution Mode:
 
 * Allow Execution AI.
 * Allow only critical Risk AI if configured.
-* Ruby only for short status if necessary.
+* Eleanor only for short status if necessary.
 * Block or bypass Agent Factory, Learning Camp, Promotion Board, Household Report, Deep Review, nonessential specialists.
 * live_execution_blocked_by_ai must always be false.
 * Do not allow shadow/new agents to influence live.
@@ -271,7 +271,7 @@ Scanner Mode:
 * Do not call every specialist for every scan.
 * Use step-back for duplicate/slow/unneeded agents.
 
-Ruby Explanation Mode:
+Eleanor Explanation Mode:
 
 * More agents may contribute, but use summaries, not raw dumps.
 * Still respect speed and usefulness.
@@ -292,7 +292,7 @@ After wiring, add tests that prove:
 * Blocked agents are not called.
 * Step-back agents are logged.
 * Runtime is measured.
-* Scanner/Ruby output still works.
+* Scanner/Eleanor output still works.
 * Live execution path remains non-blocking.
 
 ============================================================
@@ -340,7 +340,7 @@ Agent Court output:
 * losing rationale
 * which agents were overridden
 * whether Risk veto was used
-* whether Ruby should mention the disagreement
+* whether Eleanor should mention the disagreement
 * whether prediction journal should lock the disagreement
 * whether a disagreement record should be stored
 
@@ -348,7 +348,7 @@ Wire Agent Court into:
 
 * Scanner ranking
 * Scalp opportunity scan
-* Ruby trade analysis
+* Eleanor trade analysis
 * Trade modal analysis
 * No-trade recommendation flow
 
@@ -365,7 +365,7 @@ Test scenario:
 * Agent Court auto-triggers.
 * Risk/Entry warnings dominate.
 * Final result becomes caution/watchlist/no-trade, not buy.
-* Ruby summary reflects downgrade.
+* Eleanor summary reflects downgrade.
 * Governance trace shows disagreement_court_used=true.
 * Disagreement is persisted.
 * Scanner ranking is affected.
@@ -575,15 +575,15 @@ Prove the governance layer is involved in real app actions.
 
 For each action below, create or verify persistent governance traces:
 
-Ruby market analysis:
+Eleanor market analysis:
 
 * Traffic Controller routes agents.
 * Market Structure AI contributes.
 * Risk AI contributes if risk is discussed.
-* Ruby summarizes.
+* Eleanor summarizes.
 * Trace persisted.
 
-Ruby scalp question:
+Eleanor scalp question:
 
 * Scalp Mode active.
 * Scalp AI, Risk AI, Entry AI, Exit AI active.
@@ -676,7 +676,7 @@ Expected:
 
 * Agent Court auto-triggers.
 * Final decision is caution/watchlist/no-trade.
-* Ruby explains downgrade.
+* Eleanor explains downgrade.
 * Scanner ranking lowers the setup.
 
 Test 2 — Traffic Controller enforcement:
@@ -734,7 +734,7 @@ Expected:
 * Authority reduced.
 * Return path is Shadow/Supervised, not full authority.
 
-If governance does not change routing, decision, score, status, trace, or Ruby/scanner behavior, it is not complete.
+If governance does not change routing, decision, score, status, trace, or Eleanor/scanner behavior, it is not complete.
 
 ============================================================
 PHASE 10 — LIVE EXECUTION SAFETY RECHECK
@@ -759,7 +759,7 @@ PHASE 11 — PERFORMANCE CHECK
 
 Measure and optimize:
 
-* Ruby response time before/after governance.
+* Eleanor response time before/after governance.
 * Scanner refresh time before/after governance.
 * Scalp scan time.
 * Admin governance page load time.
@@ -781,7 +781,7 @@ If slow:
 * Avoid duplicate agent calls.
 * Do not load all traces/reports at once.
 
-Do not mark complete if scanner/Ruby becomes meaningfully slower without mitigation.
+Do not mark complete if scanner/Eleanor becomes meaningfully slower without mitigation.
 Live execution must remain protected.
 
 ============================================================
@@ -798,7 +798,7 @@ Add or update tests for:
 7. Agent Court auto-invokes on real conflict.
 8. Agent Court changes final decision.
 9. Scanner uses governance ranking/downgrades.
-10. Ruby uses governance consensus.
+10. Eleanor uses governance consensus.
 11. Live execution bypasses nonessential governance.
 12. Background runner processes eligible reviews.
 13. Background runner avoids duplicate processing.
@@ -843,7 +843,7 @@ Report must include:
 15. Learning Camp lifecycle proof.
 16. Step-back/speed proof.
 17. Immune System detection proof.
-18. Ruby governance involvement proof.
+18. Eleanor governance involvement proof.
 19. Scanner governance involvement proof.
 20. Live execution safety proof.
 21. Performance measurements before/after where measurable.

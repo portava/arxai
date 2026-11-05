@@ -36,11 +36,11 @@ import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const u = (p: string) => `${BASE}${p}`;
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* silent */ }
 }
 
@@ -309,7 +309,7 @@ export default function MyTradesPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={openRubyLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/15">
+          <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/15">
             <MessageCircle className="h-4 w-4" /> Ask {name}
           </button>
           <button onClick={() => setOpenModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90">
@@ -359,7 +359,7 @@ export default function MyTradesPage() {
         </div>
       )}
 
-      {/* Top row: Summary + Ruby read + Protection */}
+      {/* Top row: Summary + Eleanor read + Protection */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Live Position Summary */}
         <div className="rounded-2xl border border-border bg-card p-4">
@@ -389,9 +389,9 @@ export default function MyTradesPage() {
           )}
         </div>
 
-        {/* Ruby's Live Trade Read */}
-        <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-          <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name}’s Live Trade Read</h3></div>
+        {/* Eleanor's Live Trade Read */}
+        <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
+          <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-eleanor" /><h3 className="text-sm font-semibold text-eleanor">{name}’s Live Trade Read</h3></div>
           {cards.length === 0 ? (
             <p className="mt-2 text-sm text-txt-muted">{name} will give live trade guidance once open positions are available.</p>
           ) : (
@@ -411,7 +411,7 @@ export default function MyTradesPage() {
             </>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-2.5 py-1.5 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
+            <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-2.5 py-1.5 text-xs text-eleanor"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
             <button onClick={() => navigate("/risk-settings")} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground hover:border-primary/40"><ShieldAlert className="h-3.5 w-3.5" /> Review Risk</button>
           </div>
         </div>
@@ -579,7 +579,7 @@ export default function MyTradesPage() {
         </div>
       </div>
 
-      {/* Lower grid: Exposure + Ruby Position Manager + Activity + Quick Actions */}
+      {/* Lower grid: Exposure + Eleanor Position Manager + Activity + Quick Actions */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
         {/* Open Exposure */}
         <div className="rounded-2xl border border-border bg-card p-4">
@@ -604,16 +604,16 @@ export default function MyTradesPage() {
           )}
         </div>
 
-        {/* Ruby Position Manager */}
-        <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-          <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name} Position Manager</h3></div>
+        {/* Eleanor Position Manager */}
+        <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
+          <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-eleanor" /><h3 className="text-sm font-semibold text-eleanor">{name} Position Manager</h3></div>
           {cards.length === 0 ? (
             <p className="mt-3 text-sm text-txt-muted">{name} position guidance will appear when live positions are available.</p>
           ) : (
             <div className="mt-3 space-y-2">
               {cards.slice(0, 4).map((c) => (
                 <Link key={c.id} href={`/my-trades/${encodeURIComponent(c.id)}`}>
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background/40 px-2.5 py-2 hover:border-ruby/40">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background/40 px-2.5 py-2 hover:border-eleanor/40">
                     <span className="flex items-center gap-1.5 text-sm"><span className="font-mono font-semibold">{c.symbol}</span><span className={cn("text-[10px]", c.side === "BUY" ? "text-success" : "text-danger")}>{c.side}</span></span>
                     <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px]", isProtected(c) ? "border-success/40 text-success" : "border-warning/40 text-warning")}>
                       {isProtected(c) ? "All calm" : "Protect this trade"}
@@ -624,7 +624,7 @@ export default function MyTradesPage() {
               ))}
             </div>
           )}
-          <button onClick={openRubyLiveChat} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby">
+          <button onClick={openEleanorLiveChat} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor">
             <MessageCircle className="h-4 w-4" /> Ask {name} About All Trades
           </button>
         </div>
@@ -696,7 +696,7 @@ function EmptyPositions({ onTrade, onScanner }: { onTrade: () => void; onScanner
       <div className="mt-3 flex justify-center gap-2">
         <button onClick={onTrade} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">Open Trade</button>
         <button onClick={onScanner} className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground hover:border-primary/40">Open Scanner</button>
-        <button onClick={openRubyLiveChat} className="rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-1.5 text-xs text-ruby">Ask {name}</button>
+        <button onClick={openEleanorLiveChat} className="rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-1.5 text-xs text-eleanor">Ask {name}</button>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@
 // The ARX Handshake System is a cross-layer readiness backbone. This endpoint
 // exposes its ADVISORY verdicts to operators. It is NOT a gate: nothing here
 // blocks, slows, or alters any execution path, the 16-gate live pipeline, the
-// scanner, Ruby, the chart, or the trade modal.
+// scanner, Eleanor, the chart, or the trade modal.
 //
 // SECURITY:
 //   - requireAdmin (ADMIN or OWNER). Anonymous → 401, regular user → 403.

@@ -70,8 +70,8 @@ const BUDGETS: Record<string, Budget> = {
   "live.draft.confirm": { ms: 250, note: "state transition" },
   "live.dispatch.gateEval": { ms: 1500, note: "16-gate eval + DB write" },
   "live.draft.cancel": { ms: 250, note: "state transition" },
-  "ruby.firstToken": { ms: 1500, note: "Ruby first text" },
-  "ruby.complete": { ms: 6000, note: "full SSE drain" },
+  "eleanor.firstToken": { ms: 1500, note: "Eleanor first text" },
+  "eleanor.complete": { ms: 6000, note: "full SSE drain" },
   "admin.allocations.list": { ms: 1000, note: "admin shell budget" },
   "admin.allocations.usersEligible": { ms: 1000, note: "admin shell budget" },
 };
@@ -152,15 +152,15 @@ async function loginAndCaptureCookie(): Promise<boolean> {
   return r.status === 200 && sessionCookie.length > 0;
 }
 
-async function rubySendAndMeasureSse(conversationId: string) {
+async function eleanorSendAndMeasureSse(conversationId: string) {
   const t0 = performance.now();
   const r = await req("POST", `/api/me/assistant/conversations/${conversationId}/messages`, {
     content: `[QA_TIMING_HARNESS ${TEST_RUN_ID}] What's the current market session? Reply briefly.`,
   });
   if (!r.ok || !r.body) {
     const ms = performance.now() - t0;
-    record("ruby.firstToken", ms, r.status, "NO BODY");
-    record("ruby.complete", ms, r.status, "NO BODY");
+    record("eleanor.firstToken", ms, r.status, "NO BODY");
+    record("eleanor.complete", ms, r.status, "NO BODY");
     return;
   }
   const reader = r.body.getReader();
@@ -186,8 +186,8 @@ async function rubySendAndMeasureSse(conversationId: string) {
     }
   }
   const totalMs = performance.now() - t0;
-  record("ruby.firstToken", firstTokenMs ?? totalMs, r.status, firstTokenMs === null ? "no content event seen" : "first non-empty content");
-  record("ruby.complete", totalMs, r.status, "SSE drained");
+  record("eleanor.firstToken", firstTokenMs ?? totalMs, r.status, firstTokenMs === null ? "no content event seen" : "first non-empty content");
+  record("eleanor.complete", totalMs, r.status, "SSE drained");
 }
 
 async function main() {
@@ -253,7 +253,7 @@ async function main() {
       stopLoss: 1.04500,
       takeProfit: 1.06500,
       sourcePage: "QA_TIMING_HARNESS",
-      rubyExplanationSummary: `harness draft testRunId=${TEST_RUN_ID}`,
+      eleanorExplanationSummary: `harness draft testRunId=${TEST_RUN_ID}`,
       payload: { qaTimingHarness: { testRunId: TEST_RUN_ID, action: "live.draft.create", page: "QA_HARNESS" } },
     });
     const body = await r.json() as { command?: { id?: string; commandId?: string }; reason?: string; detail?: string };
@@ -273,18 +273,18 @@ async function main() {
     await timedJson("live.draft.cancel", "POST", `/api/me/live/commands/${commandId}/cancel`, { reason: "qa_timing_harness_cleanup" });
   }
 
-  // ── Ruby SSE ────────────────────────────────────────────────────────
+  // ── Eleanor SSE ────────────────────────────────────────────────────────
   try {
     const convR = await req("POST", "/api/me/assistant/conversations", { title: `QA timing ${TEST_RUN_ID}` });
     const convBody = await convR.json() as { conversation?: { id?: number | string }; id?: number | string };
     const convId = String(convBody?.conversation?.id ?? convBody?.id ?? "");
     if (convId) {
-      await rubySendAndMeasureSse(convId);
+      await eleanorSendAndMeasureSse(convId);
     } else {
-      record("ruby.firstToken", 0, convR.status, "could not create conversation");
+      record("eleanor.firstToken", 0, convR.status, "could not create conversation");
     }
   } catch (e) {
-    record("ruby.firstToken", 0, "n/a", `ERR ${(e as Error).message.slice(0, 80)}`);
+    record("eleanor.firstToken", 0, "n/a", `ERR ${(e as Error).message.slice(0, 80)}`);
   }
 
   // ── final audit-table verification ──────────────────────────────────

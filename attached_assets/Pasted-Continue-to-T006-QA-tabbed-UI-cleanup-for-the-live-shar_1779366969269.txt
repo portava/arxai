@@ -5,7 +5,7 @@ Do not rebuild from scratch. Inspect the current Phase A, Phase B, and Phase C i
 Current state:
 - Phase A live shared-account admin/readiness structure is complete.
 - Phase B live shared-account validate/execute endpoints are complete.
-- Phase C user-facing manual trade, scanner, and Ruby wiring is complete.
+- Phase C user-facing manual trade, scanner, and Eleanor wiring is complete.
 - System is production-ready under default-deny.
 - Keep the EA-pull architecture intact.
 - Do not add MT5 login/password/server secrets to Replit.
@@ -22,7 +22,7 @@ Inspect:
 - Trading page
 - Live shared-account page
 - Scanner
-- Ruby assistant
+- Eleanor assistant
 - Open Positions
 - Pending Orders
 - SL / TP Manager
@@ -59,7 +59,7 @@ User Trading tabs should be:
 - SL / TP Manager
 - Risk / Reward
 - Trade History
-- Ruby Review
+- Eleanor Review
 
 Scanner tabs should be:
 - Best Setups
@@ -70,7 +70,7 @@ Scanner tabs should be:
 - News Impact
 - Scanner History
 
-Ruby tabs/sections should be:
+Eleanor tabs/sections should be:
 - Live Chat
 - Voice Mode
 - Trade Questions
@@ -96,7 +96,7 @@ Settings tabs should be:
 - API Keys
 - Notifications
 - Security
-- Ruby Memory
+- Eleanor Memory
 
 Tabs must:
 - Work on mobile
@@ -104,7 +104,7 @@ Tabs must:
 - Keep active state clear
 - Avoid duplicate content
 - Avoid full page reloads
-- Not be blocked by Ruby/floating buttons/bottom nav
+- Not be blocked by Eleanor/floating buttons/bottom nav
 
 3. Collapse bulky areas
 Move long text, advanced controls, and filters into:
@@ -115,13 +115,13 @@ Move long text, advanced controls, and filters into:
 - “Risk details”
 - “Bridge details”
 - “Advanced filters”
-- “Ruby explanation”
+- “Eleanor explanation”
 - “Audit details”
 
 Examples:
 - Scanner filters should not take up the full page.
 - Long risk explanations should collapse.
-- Ruby explanations should show a summary first.
+- Eleanor explanations should show a summary first.
 - Bridge/system diagnostics should be compact unless expanded.
 - Repeated live-blocked warnings should become status chips with expandable details.
 
@@ -132,7 +132,7 @@ Audit all:
 - Warning boxes
 - Status badges
 - Error messages
-- Ruby warnings
+- Eleanor warnings
 - Scanner warnings
 - Live shared-account blocked messages
 
@@ -174,7 +174,7 @@ Check:
 - Unused hooks
 - Duplicate API helpers
 - Old scanner trade cards
-- Old Ruby panels
+- Old Eleanor panels
 - Old bridge status panels
 - Old admin panels
 - Dev-only UI visible to users
@@ -216,7 +216,7 @@ Do not delete:
 - kill switches
 - bridge health checks
 - audit logs
-- Ruby memory/chat history
+- Eleanor memory/chat history
 - scanner logic
 - demo/paper trading
 - SL/TP validation
@@ -229,7 +229,7 @@ Improve:
 - Duplicate fetches
 - Tabs fetching all data at once
 - Scanner refresh efficiency
-- Ruby panel re-rendering
+- Eleanor panel re-rendering
 - Admin log pagination/filtering
 - Bridge status polling
 - Large DOM text blocks
@@ -273,7 +273,7 @@ Acceptance checks:
 - T006 keeps Phase A/B/C working.
 - Manual trade validate/execute flow still works.
 - Scanner validate/execute flow still works.
-- Ruby live shared status and validation flow still work.
+- Eleanor live shared status and validation flow still work.
 - Demo/paper still works.
 - Admin live shared panel still works.
 - Kill switches still work.

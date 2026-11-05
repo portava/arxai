@@ -336,7 +336,7 @@ export interface RiskSimResult {
   riskReward: number;      // reward / risk
   positionSize: number;    // lots (approx)
   tooHighRisk: boolean;    // > 5% flagged
-  rubyNote: string;
+  eleanorNote: string;
 }
 
 export function calcRiskSim(i: RiskSimInputs): RiskSimResult {
@@ -347,14 +347,14 @@ export function calcRiskSim(i: RiskSimInputs): RiskSimResult {
   const riskReward = dollarRisk > 0 ? dollarReward / dollarRisk : 0;
   const tooHighRisk = i.riskPct > 5;
 
-  let rubyNote: string;
+  let eleanorNote: string;
   if (tooHighRisk) {
-    rubyNote = `Risking ${i.riskPct}% on one trade is high. Many traders keep it near 1–2%. If this stop is hit, you'd lose $${dollarRisk.toFixed(2)} — make sure that's a loss you're truly comfortable with.`;
+    eleanorNote = `Risking ${i.riskPct}% on one trade is high. Many traders keep it near 1–2%. If this stop is hit, you'd lose $${dollarRisk.toFixed(2)} — make sure that's a loss you're truly comfortable with.`;
   } else if (riskReward < 1 && i.targetDistance > 0) {
-    rubyNote = `This plan risks $${dollarRisk.toFixed(2)} to make $${dollarReward.toFixed(2)} — less than 1:1. You'd need to be right more often than wrong just to break even. Consider a closer stop or a further target.`;
+    eleanorNote = `This plan risks $${dollarRisk.toFixed(2)} to make $${dollarReward.toFixed(2)} — less than 1:1. You'd need to be right more often than wrong just to break even. Consider a closer stop or a further target.`;
   } else {
-    rubyNote = `This plan risks $${dollarRisk.toFixed(2)} to attempt $${dollarReward.toFixed(2)} (about ${riskReward.toFixed(1)}:1). If the stop is hit, the idea is wrong and the trade ends there. I'm not predicting the outcome — only showing the math.`;
+    eleanorNote = `This plan risks $${dollarRisk.toFixed(2)} to attempt $${dollarReward.toFixed(2)} (about ${riskReward.toFixed(1)}:1). If the stop is hit, the idea is wrong and the trade ends there. I'm not predicting the outcome — only showing the math.`;
   }
 
-  return { dollarRisk, dollarReward, riskReward, positionSize, tooHighRisk, rubyNote };
+  return { dollarRisk, dollarReward, riskReward, positionSize, tooHighRisk, eleanorNote };
 }

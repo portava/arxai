@@ -173,7 +173,7 @@ export type AccountShellResponse = {
     sharedMasterAccountAssigned: boolean;
   };
   // Task #430 — canonical mark-to-market live balance. Single source of truth
-  // shared with Dashboard, Open Trades, Admin table, Ruby, risk engine, and the
+  // shared with Dashboard, Open Trades, Admin table, Eleanor, risk engine, and the
   // SSE stream. floatingPnL is null when unavailable (never faked to 0).
   live: {
     source: "live_shared" | "demo" | "paper" | "unknown";
@@ -199,7 +199,7 @@ function remainingDailyLoss(cap: number | null, closedPnlToday: number | null): 
   return Math.max(0, cap - Math.max(0, -closedPnlToday));
 }
 
-// Exported so Ruby (the assistant) can call it directly without an HTTP
+// Exported so Eleanor (the assistant) can call it directly without an HTTP
 // round-trip. Same per-user scoping; same shape; never returns other
 // users' data or master credentials.
 export async function computeAccountShell(
@@ -606,7 +606,7 @@ export async function computeAccountShell(
     })();
 
     // Task #430 — canonical mark-to-market snapshot. Single source of truth so
-    // /my-account, Dashboard, Open Trades, admin, Ruby and risk never drift.
+    // /my-account, Dashboard, Open Trades, admin, Eleanor and risk never drift.
     //
     // Cycle-break: buildInvestorLiveBalanceSnapshot → getUserModeScope →
     // computeAccountShell. getUserModeScope only reads tradingMode/tradingStatus/

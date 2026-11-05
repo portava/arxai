@@ -35,13 +35,13 @@ import { directionTone, fmtScalpMoney } from "@/components/scanner/scalpLabels";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // Scalp Journal & Lessons — a dedicated, filterable history page for the
-// per-user scalp record Ruby keeps. Backed entirely by the existing read-only
+// per-user scalp record Eleanor keeps. Backed entirely by the existing read-only
 // endpoints (/api/me/scalp/journal, /reviews, /personality). 100% read-only:
 // no trade buttons, no internal enum tokens visible, plain-English only. Raw
 // tokens stay in data-* attributes for tests/devtools (same pattern as the
 // scanner status badges).
 
-// ── Result / outcome helpers (shared shape with RubyScalpReviewPanel) ────────
+// ── Result / outcome helpers (shared shape with EleanorScalpReviewPanel) ────────
 
 // Only a KNOWN (broker-realised) P/L earns a plain "Win" / "Loss"; a result
 // graded from the last floating reading before the close says it is estimated.
@@ -204,15 +204,15 @@ function JournalRow({ entry }: { entry: ScalpJournalEntry }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
         <span>Opened {fmtDate(entry.openedAt)}</span>
         {entry.closedAt && <span>Closed {fmtDate(entry.closedAt)}</span>}
-        {entry.rubyWarnedCorrectly != null && (
+        {entry.eleanorWarnedCorrectly != null && (
           <span>
             {/* Derived from the result; unless that result is a KNOWN
                 (broker-realised) P/L it was graded from the last reading. */}
             {entry.plQuality === "KNOWN"
-              ? entry.rubyWarnedCorrectly
+              ? entry.eleanorWarnedCorrectly
                 ? `${name}'s warning matched what happened.`
                 : `This one didn't follow ${name}'s read.`
-              : entry.rubyWarnedCorrectly
+              : entry.eleanorWarnedCorrectly
                 ? `${name}'s warning matched the last reading before the close (estimated).`
                 : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>
@@ -264,15 +264,15 @@ function ReviewRow({ entry }: { entry: ScalpJournalEntry }) {
       )}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
-        {entry.rubyWarnedCorrectly != null && (
+        {entry.eleanorWarnedCorrectly != null && (
           <span>
             {/* Derived from the result; unless that result is a KNOWN
                 (broker-realised) P/L it was graded from the last reading. */}
             {entry.plQuality === "KNOWN"
-              ? entry.rubyWarnedCorrectly
+              ? entry.eleanorWarnedCorrectly
                 ? `${name}'s warning matched what happened.`
                 : `This one didn't follow ${name}'s read.`
-              : entry.rubyWarnedCorrectly
+              : entry.eleanorWarnedCorrectly
                 ? `${name}'s warning matched the last reading before the close (estimated).`
                 : `Going by the last reading before the close, this one didn't follow ${name}'s read (estimated).`}
           </span>

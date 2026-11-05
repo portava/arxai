@@ -45,7 +45,7 @@ async function vaultAnalytics(kind: string, payload: Record<string, unknown>) {
 // Paper-order statuses are OPEN | CLOSED_TP | CLOSED_SL | CLOSED_MANUAL |
 // CANCELLED (and the legacy "CLOSED" used by some seeders). A trade is closed
 // when it is neither open nor cancelled and has an exit price to measure it
-// by. A cancelled order was voided — it is not a trade (Ruby Memory does not
+// by. A cancelled order was voided — it is not a trade (Eleanor Memory does not
 // count it either); it used to count here whenever it carried an exit price.
 function isClosed(o: typeof paperOrdersTable.$inferSelect): boolean {
   return o.status !== "OPEN" && o.status !== "CANCELLED" && o.exitPrice != null;
@@ -82,9 +82,9 @@ function pnlCoverageOf(closed: Array<typeof paperOrdersTable.$inferSelect>): Pnl
   const unsized = closed.filter((o) => pnlOf(o) == null);
   const sizedTrades = closed.length - unsized.length;
   const unsizedSymbols = [...new Set(unsized.map((o) => o.symbol))].sort();
-  // Ruby Memory and the demo account sum the P&L the paper venue BOOKED on
+  // Eleanor Memory and the demo account sum the P&L the paper venue BOOKED on
   // each close. Closes are now booked in USD at contract size, but older rows
-  // may hold price move × lots × 100; an unsized close is left out of Ruby
+  // may hold price move × lots × 100; an unsized close is left out of Eleanor
   // Memory and counted in the demo balance at the paper risk model when it
   // lost (0 when it won), so the same trades can give a different figure.
   const basis = `P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. ${DEFAULT_ASSISTANT_NAME} Memory and your demo account show the P&L the paper venue booked on each close: closes booked before contract sizing may carry price move × lots × 100, and a close it could not size is left out of ${DEFAULT_ASSISTANT_NAME} Memory and counted in your demo balance at the paper risk model when it lost (0 when it won), so their Net P&L can differ from this one.`;

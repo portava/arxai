@@ -36,11 +36,11 @@ describe("eventRiskLine", () => {
 
 describe("every scanner surface prints the same event-risk sentence", () => {
   it("the market-read card prints eventRiskLine in its News block and passes the same line to its Risk row", () => {
-    const card = src("../components/scanner/RubyMarketReadCard.tsx");
+    const card = src("../components/scanner/EleanorMarketReadCard.tsx");
     expect(card).not.toContain("Event risk is loading");
     expect(card).toMatch(/const eventRisk = eventRiskLine\(news, newsState\)/);
     expect(card).toMatch(/newsRiskLabel: eventRisk,/);
-    expect(card).toMatch(/data-testid="ruby-market-read-news"[\s\S]{0,400}\{eventRisk\}/);
+    expect(card).toMatch(/data-testid="eleanor-market-read-news"[\s\S]{0,400}\{eventRisk\}/);
   });
   it("the chart's Economic-events layer is never silent when the truth read has no news", () => {
     const panel = src("../components/scanner/ScannerChartPanel.tsx");
@@ -49,6 +49,6 @@ describe("every scanner surface prints the same event-risk sentence", () => {
   });
   it("the chart read under the chart receives the same line from the same truth read", () => {
     const panel = src("../components/scanner/ScannerChartPanel.tsx");
-    expect(panel).toMatch(/<RubyChartRead[\s\S]{0,600}newsRiskLabel=\{eventRisk\}/);
+    expect(panel).toMatch(/<EleanorChartRead[\s\S]{0,600}newsRiskLabel=\{eventRisk\}/);
   });
 });

@@ -64,7 +64,7 @@ Tasks:
    - account id
    - mt5 account number
    - bridge readiness snapshot
-   - Ruby setup reason summary
+   - Eleanor setup reason summary
 
 9. Add a runtime test:
    - Find current active armed bridge.

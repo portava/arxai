@@ -1,13 +1,13 @@
-// Task #412 — Ruby typed-symbol resolution gated to the approved Top 250.
+// Task #412 — Eleanor typed-symbol resolution gated to the approved Top 250.
 //
-// Ruby may resolve real names, nicknames, abbreviations, and broker aliases —
+// Eleanor may resolve real names, nicknames, abbreviations, and broker aliases —
 // but ONLY into an approved Top 250 market. This wraps the pure
 // @workspace/markets resolver and adds the user-safe copy + a downstream
 // (backend-resolvable) symbol form for the existing read-only data machinery.
 //
 // SAFETY: This is a READ-ONLY resolution/visibility layer. It never touches
 // live execution routing, the trade-command parser, or any safety gate. When a
-// named market is outside the universe, or approved but has no data, Ruby says
+// named market is outside the universe, or approved but has no data, Eleanor says
 // so honestly — it never guesses and never fabricates a market.
 
 import {
@@ -16,7 +16,7 @@ import {
   type ArxMarket,
   type MarketResolveStatus,
 } from "@workspace/markets";
-import { resolveArxMarket, ARX_FOCUS_RUBY_LOCKED_REPLY } from "@workspace/domain/market";
+import { resolveArxMarket, ARX_FOCUS_ELEANOR_LOCKED_REPLY } from "@workspace/domain/market";
 
 export interface AssistantMarketCandidate {
   standardSymbol: string;
@@ -34,7 +34,7 @@ export interface AssistantMarketResolution {
   downstreamSymbol: string | null;
   /** Top-250-scoped clarifying options when the input is ambiguous. */
   candidates: AssistantMarketCandidate[];
-  /** Plain-English, user-safe message Ruby can speak. Null when resolved. */
+  /** Plain-English, user-safe message Eleanor can speak. Null when resolved. */
   userMessage: string | null;
 }
 
@@ -63,7 +63,7 @@ export function resolveAssistantMarket(input: string): AssistantMarketResolution
     return { status: "empty", market: null, downstreamSymbol: null, candidates: [], userMessage: null };
   }
 
-  // Task #558 — the ARX Focus registry is the SOLE authority for what Ruby may
+  // Task #558 — the ARX Focus registry is the SOLE authority for what Eleanor may
   // resolve, analyze, or mention. Wired at the resolver boundary so the lock
   // holds for EVERY phrasing (not prompt text). Anything that does not resolve
   // to an approved Focus market gets the EXACT locked reply and no market data —
@@ -75,7 +75,7 @@ export function resolveAssistantMarket(input: string): AssistantMarketResolution
       market: null,
       downstreamSymbol: null,
       candidates: [],
-      userMessage: ARX_FOCUS_RUBY_LOCKED_REPLY,
+      userMessage: ARX_FOCUS_ELEANOR_LOCKED_REPLY,
     };
   }
 

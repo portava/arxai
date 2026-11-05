@@ -9,7 +9,7 @@ Do not rebuild the app from scratch. First inspect what already exists for:
 - Invite users
 - Kill switches
 - Trade execution
-- Ruby trade assistant
+- Eleanor trade assistant
 - Scanner trade buttons
 - SL/TP manager
 - Risk/reward logic
@@ -100,7 +100,7 @@ Add controls:
 - Enable/disable global shared live trading
 - Enable/disable master bridge
 - Enable/disable manual live trades
-- Enable/disable Ruby-assisted live trades
+- Enable/disable Eleanor-assisted live trades
 - Enable/disable scanner trade entries
 - Emergency kill switch
 - Close all shared-account positions
@@ -122,7 +122,7 @@ Add or update user fields:
 - allowedSymbols
 - allowedOrderTypes
 - tradeMode
-- canUseRubyLiveAssist
+- canUseEleanorLiveAssist
 - canUseScannerTradeEntry
 - canUseOneClickTrade
 - approvalDate
@@ -142,7 +142,7 @@ For approved users, show:
 - Open positions
 - Pending orders
 - Trade history
-- Ruby trade review
+- Eleanor trade review
 
 For unapproved users, show:
 - Demo/paper mode
@@ -165,7 +165,7 @@ Every order must include:
 - riskPercent
 - rewardRatio
 - reason
-- source: manual / scanner / Ruby
+- source: manual / scanner / Eleanor
 - accountMode: shared
 - tradingMode: live
 - timestamp
@@ -221,7 +221,7 @@ Track:
 - Net P/L
 - User allocation impact
 - Trade source
-- Ruby/scanner reason
+- Eleanor/scanner reason
 - Risk snapshot at entry
 - Risk snapshot at close
 
@@ -240,7 +240,7 @@ Scanner card should show:
 - Spread warning
 - Volatility warning
 - News/current event warning
-- Ruby explanation summary
+- Eleanor explanation summary
 - Trade button
 
 Before placing scanner trade, show confirmation:
@@ -255,10 +255,10 @@ Before placing scanner trade, show confirmation:
 - Live shared-account warning
 - Confirm button
 
-9. Ruby live trading
-Update Ruby so she understands live shared-account mode.
+9. Eleanor live trading
+Update Eleanor so she understands live shared-account mode.
 
-Ruby should be able to answer:
+Eleanor should be able to answer:
 - Are we connected to live?
 - Is the shared account active?
 - Which users are approved?
@@ -272,7 +272,7 @@ Ruby should be able to answer:
 - Is the market too volatile?
 - Are there news/current events affecting this setup?
 
-Ruby can suggest live trades only if:
+Eleanor can suggest live trades only if:
 - User is approved
 - Shared live mode is enabled
 - Bridge is connected
@@ -313,7 +313,7 @@ User trading tabs:
 - SL / TP Manager
 - Risk / Reward
 - Trade History
-- Ruby Review
+- Eleanor Review
 
 Scanner tabs:
 - Best Setups
@@ -415,7 +415,7 @@ Acceptance checks:
 - SL/TP entry and editing work.
 - Pending orders work.
 - Scanner trade buttons work for approved users.
-- Ruby understands shared live-account mode.
+- Eleanor understands shared live-account mode.
 - Kill switch blocks all live execution.
 - Bridge disconnect blocks all live execution.
 - Risk checks block invalid orders.

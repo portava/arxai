@@ -12,7 +12,7 @@ Cohort: `ARX_PRIVATE_BETA_10` · Max users: **10** · Default mode: **DEMO_TESTE
 - [ ] Pilot 2 registers via `/auth/register` with the inviteCode → 201
 - [ ] Registration without a code → 403 `INVITE_REQUIRED` with friendly message
 - [ ] Bogus code → 403 `INVITE_NOT_FOUND` with friendly message
-- [ ] Both pilots complete: onboarding, demo trade ticket, Ruby chat, scanner scan, feedback submission, logout/login
+- [ ] Both pilots complete: onboarding, demo trade ticket, Eleanor chat, scanner scan, feedback submission, logout/login
 - [ ] 24h soak elapsed with **no** P0/P1 bugs
 - [ ] `pnpm --filter @workspace/scripts run test:beta-invite-gate` PASS
 - [ ] `arx_live_commands` count still **0**
@@ -64,16 +64,16 @@ Cohort: `ARX_PRIVATE_BETA_10` · Max users: **10** · Default mode: **DEMO_TESTE
 
 - [ ] Walk `docs/MOBILE_QA_CHECKLIST.md` on iPhone SE (375×667) + iPhone 13 (390×844)
 - [ ] Login works (no input auto-zoom)
-- [ ] Ruby trigger does not cover modal buttons
+- [ ] Eleanor trigger does not cover modal buttons
 - [ ] Bottom nav respects safe area
 - [ ] All beta-status badges render correctly on phone
 
-## Ruby tester checklist
+## Eleanor tester checklist
 
-- [ ] Ruby answers app questions correctly
-- [ ] Ruby explains current user's account state (never another user's)
-- [ ] Ruby explains why a blocked action was blocked
-- [ ] Ruby returns no secrets / tokens / hashes
+- [ ] Eleanor answers app questions correctly
+- [ ] Eleanor explains current user's account state (never another user's)
+- [ ] Eleanor explains why a blocked action was blocked
+- [ ] Eleanor returns no secrets / tokens / hashes
 - [ ] Voice prepares trade tickets but never auto-fires
 - [ ] Voice cannot bypass kill switch or one-click defaults
 

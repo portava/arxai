@@ -64,7 +64,7 @@ Priority A — open-position symbols:
 Always push quotes and candles for symbols with open positions.
 
 Priority B — active UI symbols:
-Symbols currently selected by users in chart/scanner/Ruby/watchlist.
+Symbols currently selected by users in chart/scanner/Eleanor/watchlist.
 
 Priority C — approved Top 250 core:
 Only approved ARX Top 250 symbols that are broker-supported and enabled.
@@ -189,7 +189,7 @@ Inputs:
 - open positions
 - active chart sessions
 - scanner universe
-- Ruby requested symbols
+- Eleanor requested symbols
 - watchlists
 - admin core market list
 - recent user activity
@@ -232,7 +232,7 @@ Once broker data exists:
 If MT5 broker data is missing:
 - use fallback provider if real data exists
 - label it fallback/delayed if needed
-- Ruby gives limited read if not clean
+- Eleanor gives limited read if not clean
 
 If no real data:
 - market is not selectable for regular users

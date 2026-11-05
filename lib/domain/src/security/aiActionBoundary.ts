@@ -7,7 +7,7 @@
 //   → post-action reconciliation.
 //
 // SAFETY:
-//   - Ruby (the read-only assistant) and the Scanner are READ-ONLY actors: they
+//   - Eleanor (the read-only assistant) and the Scanner are READ-ONLY actors: they
 //     can NEVER directly execute a sensitive action, regardless of path markers.
 //   - Other AI actors (Self-Trade / agents) are allowed ONLY when every required
 //     path step is satisfied. Missing any step ⇒ blocked.
@@ -16,7 +16,7 @@
 
 import { SENSITIVE_ACTIONS, type SensitiveAction } from "./handshake.js";
 
-export type AiActorKind = "ruby" | "scanner" | "self_trade" | "agent" | "unknown";
+export type AiActorKind = "eleanor" | "scanner" | "self_trade" | "agent" | "unknown";
 
 export interface AiActionBoundaryInput {
   /** Which AI surface initiated the action. */
@@ -45,7 +45,7 @@ export interface AiActionBoundaryVerdict {
   missing: string[];
 }
 
-const READ_ONLY_ACTORS: ReadonlySet<AiActorKind> = new Set<AiActorKind>(["ruby", "scanner"]);
+const READ_ONLY_ACTORS: ReadonlySet<AiActorKind> = new Set<AiActorKind>(["eleanor", "scanner"]);
 
 /**
  * Evaluate whether an AI-initiated sensitive action may proceed. Pure and
@@ -65,7 +65,7 @@ export function evaluateAiActionBoundary(input: AiActionBoundaryInput): AiAction
 
   const label = SENSITIVE_ACTIONS[input.action]?.label ?? input.action;
 
-  // Ruby / Scanner are strictly read-only — no path markers can grant execution.
+  // Eleanor / Scanner are strictly read-only — no path markers can grant execution.
   if (READ_ONLY_ACTORS.has(input.actorKind)) {
     return {
       allowed: false,

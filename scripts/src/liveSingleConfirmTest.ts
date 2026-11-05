@@ -72,9 +72,9 @@ check(
   "expected the inline SL/TP exit-protection warning (ls-exit-protection-warning)",
 );
 check(
-  "live-shared has non-blocking ruby-bias warning",
-  liveShared.includes('data-testid="ls-ruby-bias-warning"'),
-  "expected the inline Ruby bias-mismatch warning (ls-ruby-bias-warning)",
+  "live-shared has non-blocking eleanor-bias warning",
+  liveShared.includes('data-testid="ls-eleanor-bias-warning"'),
+  "expected the inline Eleanor bias-mismatch warning (ls-eleanor-bias-warning)",
 );
 // Forbidden two-step remnants in the user-facing live ticket. We ignore
 // comment lines (which document that these were removed) and only fail on

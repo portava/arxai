@@ -796,7 +796,7 @@ export interface PageContext {
 }
 
 // Authoritative, per-user, DERIVED safety-state block. This is the honest
-// counterweight to the static prompt above: it tells Ruby the user's REAL
+// counterweight to the static prompt above: it tells Eleanor the user's REAL
 // current live/demo state for THIS turn so she never repeats a hardcoded
 // "system-locked / paper-only" claim that has drifted from reality. Reporting
 // only — it grants nothing; live still requires the confirm phrase + every gate.

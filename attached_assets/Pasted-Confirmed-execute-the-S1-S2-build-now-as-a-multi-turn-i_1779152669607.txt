@@ -18,7 +18,7 @@ Scope:
 - arx_live_commands must remain unchanged / 0 unless it already had rows before this task
 - MASTER_BRIDGE_LIVE_LOCKED must continue blocking live commands
 - No EA code changes unless the order-comment acceptance check absolutely requires it
-- No secrets exposed in UI, logs, Ruby memory, or test output
+- No secrets exposed in UI, logs, Eleanor memory, or test output
 
 Implementation tasks:
 
@@ -78,7 +78,7 @@ Implementation tasks:
    - user does not need personal MT5 bridge
    - trade ticket shows execution route clearly
 
-9. Add Ruby master-bridge explanation copy:
+9. Add Eleanor master-bridge explanation copy:
    “This trade is routed through the ARX master demo bridge and tracked under your ARX account.”
 
 10. Build admin Master Bridge Dashboard page.
@@ -103,7 +103,7 @@ Implementation tasks:
 12. Write qaMasterBridge.ts acceptance suite and add 3 CI guards:
     - modern demo dispatch must call resolveRouting()
     - MASTER_BRIDGE_LIVE_LOCKED must block live commands
-    - secrets must not appear in UI/logs/Ruby memory
+    - secrets must not appear in UI/logs/Eleanor memory
 
 13. Re-run full QA.
 

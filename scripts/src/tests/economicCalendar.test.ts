@@ -201,7 +201,7 @@ assert.equal(
 // ── 16–18. computeProviderState — cross-surface state discrimination ─────────
 //
 // These lock the explicit provider-state discriminant contract that downstream
-// radar, newsIntelligenceService, and Ruby consumers rely on to render distinct
+// radar, newsIntelligenceService, and Eleanor consumers rely on to render distinct
 // UX copy for "not configured" vs "fetch error" vs "live connected". Without
 // this discriminant both non-connected states would collapse to `connected:false`
 // and consumers could not distinguish them (reviewer-identified gap).

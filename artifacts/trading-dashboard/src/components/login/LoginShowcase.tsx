@@ -78,8 +78,8 @@ function SlideMarket({ animate }: { animate: boolean }) {
   );
 }
 
-// ── Slide 2: Ruby Trades With Discipline ──────────────────────────────────────
-function SlideRuby({ animate }: { animate: boolean }) {
+// ── Slide 2: Eleanor Trades With Discipline ──────────────────────────────────────
+function SlideEleanor({ animate }: { animate: boolean }) {
   void animate;
   const { name } = useAssistantName();
   return (
@@ -183,7 +183,7 @@ function SlideExecution({ animate }: { animate: boolean }) {
   );
 }
 
-const SLIDES = [SlideMarket, SlideRuby, SlideExecution];
+const SLIDES = [SlideMarket, SlideEleanor, SlideExecution];
 const titles = (name: string) => ["Live Market Intelligence", `${name} Trades With Discipline`, "From Signal to Execution"];
 
 export default function LoginShowcase() {

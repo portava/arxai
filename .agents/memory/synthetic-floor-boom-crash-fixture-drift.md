@@ -10,7 +10,7 @@ updated in lockstep, the suite fails with "expected id missing from
 EXPECTED_DERIV_IDS — add it" while everything else passes.
 
 **Why it matters:** this failure is catalog-vs-fixture drift, NOT a code
-regression. Read-layer / chart-display / Ruby-read / frontend work never touches
+regression. Read-layer / chart-display / Eleanor-read / frontend work never touches
 the symbol catalog or this fixture, so don't chase it from a display-only task —
 confirm via `git status` that no synthetic-floor file is in your diff and move on.
 

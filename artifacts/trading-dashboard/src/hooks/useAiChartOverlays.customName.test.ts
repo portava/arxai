@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildRubyOverlays, type RubyReadSummary } from "./useAiChartOverlays";
+import { buildEleanorOverlays, type EleanorReadSummary } from "./useAiChartOverlays";
 import { DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
 
 /**
  * Custom assistant-name builder proof (Task #644).
  *
- * `buildRubyOverlays` is a pure copy builder that stamps the assistant's
+ * `buildEleanorOverlays` is a pure copy builder that stamps the assistant's
  * display name into chart-overlay labels. Task #640 parameterized it with an
  * `assistantName` argument (default = DEFAULT_ASSISTANT_NAME). This test locks
  * that a supplied custom name flows into the output labels, and that omitting
@@ -15,7 +15,7 @@ import { DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
  * Display-only: this exercises label text, not AI logic, safety, or execution.
  */
 
-const read: RubyReadSummary = {
+const read: EleanorReadSummary = {
   bias: "up",
   confidence: "high",
   supportZone: "1.1000 – 1.1010",
@@ -23,9 +23,9 @@ const read: RubyReadSummary = {
   dataQuality: "ok",
 };
 
-describe("buildRubyOverlays stamps the assistant display name into overlay labels", () => {
+describe("buildEleanorOverlays stamps the assistant display name into overlay labels", () => {
   it("uses a supplied custom name in support/resistance labels", () => {
-    const overlays = buildRubyOverlays(read, "EURUSD", "Nova");
+    const overlays = buildEleanorOverlays(read, "EURUSD", "Nova");
     const labels = overlays.map((o) => o.label);
 
     expect(labels).toContain("Nova support");
@@ -35,7 +35,7 @@ describe("buildRubyOverlays stamps the assistant display name into overlay label
   });
 
   it("falls back to the default name when none is supplied", () => {
-    const overlays = buildRubyOverlays(read, "EURUSD");
+    const overlays = buildEleanorOverlays(read, "EURUSD");
     const labels = overlays.map((o) => o.label);
 
     expect(labels).toContain(`${DEFAULT_ASSISTANT_NAME} support`);

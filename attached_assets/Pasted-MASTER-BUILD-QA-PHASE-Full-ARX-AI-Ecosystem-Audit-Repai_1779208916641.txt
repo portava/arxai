@@ -3,7 +3,7 @@ MASTER BUILD/QA PHASE — Full ARX AI Ecosystem Audit + Repair Pass
 Use the current codebase. Check everything first before changing anything.
 
 Goal:
-Perform a complete full-system audit of ARX AI as one connected ecosystem and as individual features. Verify every feature, safety gate, AI/Ruby intelligence layer, scanner, watchlist, calendar alerts, trading flow, admin controls, beta invite system, live pilot controls, mobile UI, and saved-user-state system. Fix anything broken, missing, disconnected, duplicated, unsafe, out of place, or not matching the intended product vision.
+Perform a complete full-system audit of ARX AI as one connected ecosystem and as individual features. Verify every feature, safety gate, AI/Eleanor intelligence layer, scanner, watchlist, calendar alerts, trading flow, admin controls, beta invite system, live pilot controls, mobile UI, and saved-user-state system. Fix anything broken, missing, disconnected, duplicated, unsafe, out of place, or not matching the intended product vision.
 
 Important:
 Do not rebuild unrelated working systems.
@@ -19,7 +19,7 @@ Preserve working features.
 Fix only confirmed broken, missing, incomplete, disconnected, or unsafe pieces.
 
 Product vision:
-ARX AI is an AI trading fortress for disciplined trading decisions. Ruby is the private AI assistant for each user. Each user should feel like they are using the app alone, even if backend live routing uses operator-controlled/shared infrastructure. Demo, personal MT5, and operator-funded live pilot must remain clearly separated.
+ARX AI is an AI trading fortress for disciplined trading decisions. Eleanor is the private AI assistant for each user. Each user should feel like they are using the app alone, even if backend live routing uses operator-controlled/shared infrastructure. Demo, personal MT5, and operator-funded live pilot must remain clearly separated.
 
 1. Full system inventory first
 Before fixing anything, inspect and inventory:
@@ -59,11 +59,11 @@ Before fixing anything, inspect and inventory:
 - disclosure/legal/risk warning flow
 - production lockdown
 - mobile/iPhone Safari
-- Ruby text chat
-- Ruby voice
-- Ruby memory/learning
-- Ruby app knowledge
-- Ruby trading intelligence
+- Eleanor text chat
+- Eleanor voice
+- Eleanor memory/learning
+- Eleanor app knowledge
+- Eleanor trading intelligence
 - scanner
 - direct symbol search
 - selected market explanation
@@ -91,10 +91,10 @@ Verify every major system is connected correctly:
 - account mode controls which features user sees
 - user dashboard only shows current user data
 - scanner connects to selected symbol context
-- Ruby uses selected symbol/trade/account context
+- Eleanor uses selected symbol/trade/account context
 - watchlist saves per user
 - saved alerts save per user
-- calendar alerts connect to scanner/Ruby/watchlist
+- calendar alerts connect to scanner/Eleanor/watchlist
 - trade ticket uses selected symbol and account mode
 - trade queue receives only confirmed trade actions
 - live pipeline checks every safety gate
@@ -104,7 +104,7 @@ Verify every major system is connected correctly:
 - ledger connects trades to user P/L
 - P/L calendar uses only user ledger/history
 - notifications are private
-- Ruby memory is private
+- Eleanor memory is private
 - audit logs record critical actions
 - reconciliation handles uncertain states
 - production readiness blocks unsafe launch
@@ -141,7 +141,7 @@ Verify/fix:
 - User A cannot see User B notifications
 - User A cannot see User B scanner state
 - User A cannot see User B watchlist
-- User A cannot see User B Ruby memory
+- User A cannot see User B Eleanor memory
 - User A cannot close/edit/cancel User B trade
 - logout/login switch clears stale state
 - cached data is keyed by authenticated userId
@@ -154,7 +154,7 @@ Verify/fix all save/persist features:
 - saved watchlist
 - saved scanner selections
 - saved market notes
-- saved Ruby chats/memory
+- saved Eleanor chats/memory
 - saved trade ideas
 - saved chart/trade notes
 - saved alerts
@@ -170,14 +170,14 @@ Rules:
 - saved items must persist after refresh/login
 - saved items must clear from UI on logout
 - User A cannot see User B saved items
-- Ruby can reference only current user’s saved items
+- Eleanor can reference only current user’s saved items
 - admin can view only when admin-authorized and safe
 - no secrets stored in saved items
 
-6. Ruby AI intelligence and learning capabilities
-Audit Ruby as an AI brain, not just a chat box.
+6. Eleanor AI intelligence and learning capabilities
+Audit Eleanor as an AI brain, not just a chat box.
 
-Verify/fix Ruby can:
+Verify/fix Eleanor can:
 
 App intelligence:
 - explain what ARX AI is
@@ -211,22 +211,22 @@ Trading intelligence:
 
 Learning/memory:
 - remember user conversations only under current user
-- save user-specific Ruby memory
+- save user-specific Eleanor memory
 - allow user to clear memory
 - no cross-user memory leak
 - no fake first-load memory
-- Ruby should improve responses from user’s history/preferences/watchlist/trading style
-- Ruby should not store raw audio
-- Ruby should not store secrets
-- Ruby should not use admin/global data for normal users
+- Eleanor should improve responses from user’s history/preferences/watchlist/trading style
+- Eleanor should not store raw audio
+- Eleanor should not store secrets
+- Eleanor should not use admin/global data for normal users
 
 Voice:
 - auto-listen state works
 - tap-to-start fallback for iOS
 - silence detection sends once
 - empty/duplicate transcripts ignored
-- Ruby speaks response if enabled
-- mic pauses while Ruby speaks
+- Eleanor speaks response if enabled
+- mic pauses while Eleanor speaks
 - voice cannot bypass confirmation
 - voice cannot bypass live safety gates
 - voice close/edit/open actions require confirmation
@@ -240,7 +240,7 @@ Verify/fix scanner:
 - unavailable symbol shows clean message
 - scanner opens clean with no fake recommendation
 - selected market detail loads
-- Ruby explanation appears after symbol selection
+- Eleanor explanation appears after symbol selection
 - scanner highlights show:
   - bias
   - confidence
@@ -265,7 +265,7 @@ Watchlist:
 - user can save/remove symbols
 - watchlist is private per user
 - watchlist persists
-- watchlist supports scanner/Ruby context
+- watchlist supports scanner/Eleanor context
 
 Watch calendar / alert calendar:
 - user can watch symbols/events
@@ -274,7 +274,7 @@ Watch calendar / alert calendar:
   - support/resistance zone
   - volatility spike
   - scanner bias change
-  - Ruby risk warning
+  - Eleanor risk warning
   - economic calendar event
   - impact calendar event
   - surprise/high-impact news event
@@ -295,7 +295,7 @@ Calendar:
 - impact calendar is connected where existing
 - surprise/random event detection is connected if available
 - events are labeled Low/Medium/High/Critical
-- Ruby can explain event relevance to selected symbol
+- Eleanor can explain event relevance to selected symbol
 - scanner can show upcoming event risk
 - user can save/watch events
 
@@ -436,7 +436,7 @@ Verify/fix:
 - blocked trade actions are audited
 - invite events are audited
 - admin actions are audited
-- Ruby/voice guardrail events are audited
+- Eleanor/voice guardrail events are audited
 - kill switches audited
 - reconciliation audited
 - evidence export masks secrets
@@ -456,7 +456,7 @@ Verify/fix:
 - no fake first-load data
 - empty states clean
 - mobile iPhone Safari works
-- Ruby widget does not block buttons
+- Eleanor widget does not block buttons
 - keyboard does not break forms
 - chart/trade ticket fits mobile
 - admin mobile screens usable enough
@@ -475,8 +475,8 @@ It should run or orchestrate the strongest existing checks for:
 - invite gate
 - 10-user beta
 - user privacy isolation
-- Ruby intelligence/context
-- Ruby voice
+- Eleanor intelligence/context
+- Eleanor voice
 - scanner/direct symbol
 - watchlist/saved features
 - watch calendar/alerts
@@ -534,7 +534,7 @@ Return:
 - files changed
 - tests added/run
 - master QA script name
-- Ruby intelligence status
+- Eleanor intelligence status
 - scanner/watch/calendar alert status
 - saved feature status
 - admin/user/invite status

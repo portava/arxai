@@ -90,9 +90,9 @@ export interface ChartTruthAuditRow {
   /** Additive: the served feed was confirmed live (false = closed market or
    *  stored data; null = not reported). */
   feedLive: boolean | null;
-  /** Feed aiUsable (quality clean). This is NOT Ruby's full read gate, which
+  /** Feed aiUsable (quality clean). This is NOT Eleanor's full read gate, which
    *  also needs Chart Truth ≥ 75 and a handshake PASS (not checked here). */
-  rubyAllowed: boolean;
+  eleanorAllowed: boolean;
 
   // ── Derived health verdict (small-probe aware) ──────────────────────────
   status: ChartTruthAuditStatus;
@@ -192,7 +192,7 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
       priceAlignPass: false,
       priceChecked: false,
       feedLive: null,
-      rubyAllowed: false,
+      eleanorAllowed: false,
       status: "UNAVAILABLE",
       rawAssessment: "UNAVAILABLE",
       quality: "unavailable",
@@ -287,7 +287,7 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
     priceAlignPass,
     priceChecked,
     feedLive,
-    rubyAllowed: resp.aiUsable,
+    eleanorAllowed: resp.aiUsable,
     status,
     rawAssessment: tr?.assessment ?? "UNAVAILABLE",
     quality: resp.quality,

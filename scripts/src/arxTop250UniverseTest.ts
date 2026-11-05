@@ -2,7 +2,7 @@
 //
 // Pure logic — no DB, no network. Verifies the canonical directory, the
 // provider-intersection choke point, availability gating (selectable only on
-// real data; simulator-only never selectable), the Ruby alias/nickname
+// real data; simulator-only never selectable), the Eleanor alias/nickname
 // resolver (gated to the approved Top 250), and user-safe copy.
 
 import {
@@ -111,7 +111,7 @@ check(
   check("delayed real data IS selectable", delayed.selectable === true, delayed.dataStatus);
 }
 
-// ── Case: Ruby alias/nickname resolution gated to Top 250 ───────────────────
+// ── Case: Eleanor alias/nickname resolution gated to Top 250 ───────────────────
 function rsym(input: string): string | null {
   const r = resolveUserMarketInput(input);
   return r.status === "resolved" ? r.market!.standardSymbol : null;
@@ -136,14 +136,14 @@ check("EUR/USD (separators) → EURUSD", rsym("EUR/USD") === "EURUSD", String(rs
 check("apple → AAPL", rsym("apple") === "AAPL", String(rsym("apple")));
 check("full synthetic name resolves (display)", rsym("Volatility 75 Index") === "Volatility 75 Index", String(rsym("Volatility 75 Index")));
 
-// ── Case: Ruby ambiguity (oil → clarify) ────────────────────────────────────
+// ── Case: Eleanor ambiguity (oil → clarify) ────────────────────────────────────
 {
   const r = resolveUserMarketInput("oil");
   const candidates = r.candidates.map((c) => c.standardSymbol);
   check("oil → ambiguous clarify", r.status === "ambiguous" && candidates.length >= 2, JSON.stringify(candidates));
 }
 
-// ── Case: Ruby rejects outside Top 250 ──────────────────────────────────────
+// ── Case: Eleanor rejects outside Top 250 ──────────────────────────────────────
 {
   const r = resolveUserMarketInput("dogwifhat moon coin");
   check("outside Top 250 → not_in_universe", r.status === "not_in_universe", r.status);

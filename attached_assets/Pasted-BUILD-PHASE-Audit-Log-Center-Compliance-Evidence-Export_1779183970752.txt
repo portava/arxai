@@ -3,10 +3,10 @@ BUILD PHASE — Audit Log Center + Compliance Evidence Export
 Use the current codebase. Do not rebuild unrelated systems.
 
 Goal:
-Create an admin-only Audit Log Center where the operator can review safety events, trade lifecycle events, admin actions, Ruby actions, voice actions, bridge events, queue events, kill switch actions, reconciliation actions, user approvals, and blocked trade decisions. Add safe evidence exports for internal review, troubleshooting, and compliance-support documentation.
+Create an admin-only Audit Log Center where the operator can review safety events, trade lifecycle events, admin actions, Eleanor actions, voice actions, bridge events, queue events, kill switch actions, reconciliation actions, user approvals, and blocked trade decisions. Add safe evidence exports for internal review, troubleshooting, and compliance-support documentation.
 
 Important:
-Check what already exists first. Reuse the current audit log model, admin dashboard, liveCommandPipeline, trade queue, bridge masking, reconciliation center, kill switches, user approval system, risk gate, Ruby logs, and auth/session system. Do not create a duplicate logging system.
+Check what already exists first. Reuse the current audit log model, admin dashboard, liveCommandPipeline, trade queue, bridge masking, reconciliation center, kill switches, user approval system, risk gate, Eleanor logs, and auth/session system. Do not create a duplicate logging system.
 
 This is an internal evidence/export system. Do not claim legal, broker-dealer, regulatory, tax, or financial compliance certification unless that framework is separately implemented and reviewed.
 
@@ -23,8 +23,8 @@ Inspect:
 - queue pause/resume logs
 - close-only logs
 - reconciliation logs
-- Ruby chat/help logs
-- Ruby voice logs
+- Eleanor chat/help logs
+- Eleanor voice logs
 - onboarding logs
 - auth/admin access logs
 - secret masking tests/probes
@@ -138,12 +138,12 @@ Bridge/Reconciliation:
 - ledger updated from verified evidence
 - unsafe retry blocked
 
-Ruby/Voice:
-- Ruby app-help request
-- Ruby trading-help request
-- Ruby user-state lookup
+Eleanor/Voice:
+- Eleanor app-help request
+- Eleanor trading-help request
+- Eleanor user-state lookup
 - blocked private/admin data request
-- Ruby memory cleared
+- Eleanor memory cleared
 - voice mode started/stopped
 - transcript submitted
 - voice trade intent detected
@@ -227,7 +227,7 @@ Normal users may see their own:
 - SL/TP requested
 - onboarding/account status changes
 - approval/allocation status changes
-- Ruby memory cleared
+- Eleanor memory cleared
 - voice command cancelled
 
 Normal users must not see:
@@ -286,20 +286,20 @@ Add or improve a dashboard/export section that proves:
 
 If this count/probe already exists, reuse it.
 
-11. Ruby awareness
-Ruby should understand audit and evidence status safely.
+11. Eleanor awareness
+Eleanor should understand audit and evidence status safely.
 
 For normal users:
-- Ruby can explain their own activity history.
-- Ruby can explain why their trade was blocked.
-- Ruby cannot show admin audit logs or other-user events.
+- Eleanor can explain their own activity history.
+- Eleanor can explain why their trade was blocked.
+- Eleanor cannot show admin audit logs or other-user events.
 
 For admins:
-- Ruby can summarize audit trends.
-- Ruby can explain kill switch history.
-- Ruby can summarize NEEDS_REVIEW events.
-- Ruby can help find evidence for a commandId/user/symbol/time range.
-- Ruby must not expose secrets.
+- Eleanor can summarize audit trends.
+- Eleanor can explain kill switch history.
+- Eleanor can summarize NEEDS_REVIEW events.
+- Eleanor can help find evidence for a commandId/user/symbol/time range.
+- Eleanor must not expose secrets.
 
 12. Security and masking
 Verify/fix:
@@ -347,7 +347,7 @@ Add or update tests for:
 - safety gate block creates audit event
 - kill switch change creates audit event
 - reconciliation resolution creates audit event
-- Ruby/voice blocked trade creates audit event
+- Eleanor/voice blocked trade creates audit event
 - duplicate callback ignored creates audit event
 - no-live-command evidence can be exported
 - requireAdmin output production-safe

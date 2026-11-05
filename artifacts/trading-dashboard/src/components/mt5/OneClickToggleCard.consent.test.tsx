@@ -26,7 +26,7 @@ import { OneClickToggleCard } from "./OneClickToggleCard";
 
 const mockToast = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 // ArmStatusSection consumes the generated useGetMeOneClickStatus hook. Returning
 // a null-data, not-loading state makes the section render nothing (and never

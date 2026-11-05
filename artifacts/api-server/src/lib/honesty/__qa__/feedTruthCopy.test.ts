@@ -1,4 +1,4 @@
-// Task #408 — Scanner / Ruby feed-truth honesty (api-server, pure).
+// Task #408 — Scanner / Eleanor feed-truth honesty (api-server, pure).
 //
 // Proves three honesty contracts over simulator/non-live data:
 //   1. computeFinalRead truth-cap: a SIMULATOR row is analysisOnly, carries the

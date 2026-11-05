@@ -20,7 +20,7 @@ ANALYSIS_ONLY → honest panel: "Live feed unavailable · Analysis only"; if can
 UNAVAILABLE → existing empty state ("No live candles… we don't fabricate").
 Badge copy uses feedStatus.warning/message only — never source/provider/internal field names, no stack traces, no paper/demo/mock/simulated wording in LIVE account mode.
 
-Step 5 — verify in the running app: EURUSD (composite/feed-unavailable) → header and chart agree, no live-looking 1.15 candles, no live marker; V75/Deriv → still renders LIVE; symbol switching, Ruby panel, and trade buttons still work; account snapshot / open trades / P/L / MT5 bridge status unaffected. Run pnpm run typecheck and pnpm run ci:guards.
-Do not pass if: header says unavailable but chart still looks live; stale/composite candles render without a stale/analysis-only badge; a live price marker appears on stale/delayed data; LIVE mode shows paper/demo wording; or any scanner/Ruby/MT5 wiring breaks.
+Step 5 — verify in the running app: EURUSD (composite/feed-unavailable) → header and chart agree, no live-looking 1.15 candles, no live marker; V75/Deriv → still renders LIVE; symbol switching, Eleanor panel, and trade buttons still work; account snapshot / open trades / P/L / MT5 bridge status unaffected. Run pnpm run typecheck and pnpm run ci:guards.
+Do not pass if: header says unavailable but chart still looks live; stale/composite candles render without a stale/analysis-only badge; a live price marker appears on stale/delayed data; LIVE mode shows paper/demo wording; or any scanner/Eleanor/MT5 wiring breaks.
 
 The thing to actually eyeball when it reports back is Step 5 on EURUSD — that's the direct proof your screenshots are fixed.Opus 4.8 High

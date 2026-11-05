@@ -132,8 +132,8 @@ Wire the same shared one-click execution handler into every Buy/Sell action acro
 * Selected Market Explanation window
 * AI Trading page
 * AI Trading Intelligence trade actions if present
-* Ruby trade action cards
-* Ruby command-based Buy/Sell actions if present
+* Eleanor trade action cards
+* Eleanor command-based Buy/Sell actions if present
 * Watchlist trade buttons if present
 * Floating trade buttons if present
 * Mobile Buy/Sell buttons if present
@@ -149,7 +149,7 @@ When one-click is armed:
 * Sell immediately sends Sell order.
 * No confirmation modal.
 * No “are you sure?”
-* No Ruby follow-up approval.
+* No Eleanor follow-up approval.
 * No scanner confirmation.
 * No risk interstitial that delays sending.
 * No review screen.
@@ -162,7 +162,7 @@ When armed, one-click bypasses user-facing advisory checks and confirmation fric
 
 * confirmation modals
 * risk warning interstitials
-* Ruby asking for final approval
+* Eleanor asking for final approval
 * scanner approval popups
 * review order screens
 * caution banners that prevent execution
@@ -327,33 +327,33 @@ Log every one-click event:
 Normal users should see plain order history.
 Admin/OWNER should see deeper audit details.
 
-PART 11 — RUBY BEHAVIOR
+PART 11 — ELEANOR BEHAVIOR
 
-Ruby must follow the same one-click permission truth.
+Eleanor must follow the same one-click permission truth.
 
 When one-click is not armed:
 
-* Ruby can say one-click must be armed first.
+* Eleanor can say one-click must be armed first.
 
 When shared bridge user lacks admin one-click permission:
 
-* Ruby should say:
+* Eleanor should say:
     “One-click needs admin approval for your shared bridge account.”
 
 When own bridge user is eligible:
 
-* Ruby can say:
+* Eleanor can say:
     “You can arm one-click from your trade settings once your bridge is ready.”
 
 When one-click is armed:
 
-* Ruby must not ask for confirmation before Buy/Sell execution.
-* Ruby must not add follow-up warnings.
-* Ruby must not mention paper/demo/simulation in live flow.
-* Ruby must state real result:
+* Eleanor must not ask for confirmation before Buy/Sell execution.
+* Eleanor must not add follow-up warnings.
+* Eleanor must not mention paper/demo/simulation in live flow.
+* Eleanor must state real result:
     queued, accepted, filled, rejected, blocked, or failed.
 
-Ruby must not expose backend function names, route names, env names, schema names, or internal code terms to normal users.
+Eleanor must not expose backend function names, route names, env names, schema names, or internal code terms to normal users.
 
 PART 12 — UI TRUTH CONTRACT UPDATE
 
@@ -404,13 +404,13 @@ B. All trading surfaces
 * Flame Scalp Buy/Sell uses one-click handler
 * Market Explanation Buy/Sell uses one-click handler
 * AI Trading Buy/Sell uses one-click handler
-* Ruby action Buy/Sell uses one-click handler if present
+* Eleanor action Buy/Sell uses one-click handler if present
 * mobile/floating Buy/Sell uses one-click handler if present
 
 C. Armed behavior
 
 * no confirmation modal after arming
-* no Ruby approval follow-up after arming
+* no Eleanor approval follow-up after arming
 * no scanner confirmation after arming
 * no risk interstitial blocking after arming
 * order sends immediately when button is pressed
@@ -441,7 +441,7 @@ Run:
 * bridge-type tests
 * all Buy/Sell surface wiring tests
 * role-gating tests
-* Ruby wording tests
+* Eleanor wording tests
 * UI Truth tests
 * CI guards
 * architect review if available
@@ -458,7 +458,7 @@ Report:
 6. What order defaults are required.
 7. How revocation/disarm works.
 8. What audit logging was added.
-9. How Ruby behavior changed.
+9. How Eleanor behavior changed.
 10. UI Truth Contract additions.
 11. Tests passed.
 12. Any remaining blockers.

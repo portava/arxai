@@ -56,7 +56,7 @@ and `execute_trade`):
 | `lib/api-client-react` `executeTrade` / `useExecuteTrade`, `lib/api-zod` `ExecuteTradeBody` (generated) | generated client bindings | no runtime caller in the dashboard, server or scripts. The OpenAPI operation is marked `deprecated` with a 410 response and the clients were regenerated (`ExecuteTradeResponse` is gone) |
 | `artifacts/trading-dashboard/src/pages/emergency.tsx` | user-facing copy only (no request) | copy now says the endpoint is retired and places nothing |
 | `artifacts/api-server/tests/phase1.test.mjs`, `phase2.test.mjs`, `phase2-validation.test.mjs` | legacy server-dependent suites (`pnpm --filter @workspace/api-server run test`, not in `ci`); unauthenticated, so already refused with 401 since Phase-2 `requireUser` | header note added; they did not mean a simulated order, they drove the Safety Core through this endpoint, so there is nothing to migrate to PAPER |
-| Ruby / assistant tools, scripts, mt5-bridge-export | none call it (only forbidden-pattern lists and comments name it) | unchanged |
+| Eleanor / assistant tools, scripts, mt5-bridge-export | none call it (only forbidden-pattern lists and comments name it) | unchanged |
 
 No runtime caller meant a simulated trade, so nothing was migrated to
 `submitTrade` mode PAPER by this decision; the paths that replace it are
@@ -196,7 +196,7 @@ refused, nothing booked; tenant isolation and per-user keys; refusals
 required, booking, audit `EXECUTED`, replay with no new audit row, another
 user's same key books separately; My Trades with no price →
 `NO_VALID_PRICE_SOURCE`, audit `FAILED`. `test:risk-governor-pipelines`
-updated: the SIMULATED Ruby and trade-action cases confirm with the label and
+updated: the SIMULATED Eleanor and trade-action cases confirm with the label and
 expect the PAPER venue's no-price refusal (this sandbox has no real feed).
 
 ### Decision 15: My Trades DEMO opens governed; LIVE opens stay refused
@@ -341,7 +341,7 @@ Like the staged contract, each one passes the caller's arguments through
 unchanged and returns the delegate's result unchanged (the TypeScript types
 are taken from the delegate). They add no gate and remove none.
 
-- **One-click LIVE.** `executeInstant` keeps all of its own gates (Ruby
+- **One-click LIVE.** `executeInstant` keeps all of its own gates (Eleanor
   authorization, one-click settings, master-live access, rate limit, symbol
   cooldown, the per-user lock, `prepareOnly`, its `one_click_audit` rows) and
   still reaches Phase B through the staged contract. The import cycle
@@ -461,7 +461,7 @@ New database cases:
    leg. Both are internal to the Trade Engine.
 2. **`submitInstantTrade` and the fill channel are siblings of
    `submitTrade`, not `submitTrade` intents.** `executeInstant` returns its
-   own `InstantTradeResult` (HTTP status, Ruby refusals, `detail`), and the
+   own `InstantTradeResult` (HTTP status, Eleanor refusals, `detail`), and the
    fills return the governor's `EnforceResult`. Folding them into
    `submitTrade`'s `TradeResult` would change the shapes their callers read,
    so they stay separate entries on the one module. The one-click gates still
@@ -515,7 +515,7 @@ still passes its CLOSE-only kill-switch bypass to `createLiveOpsDraft`
 untouched.
 
 **`executeInstant` is now a caller of the pipeline.** Its own gates still run
-first and are unchanged: Ruby authorization, one-click settings, the
+first and are unchanged: Eleanor authorization, one-click settings, the
 master-live access check, rate limit, symbol cooldown, the per-user submit
 lock, the `prepareOnly` stop and its `one_click_audit` rows. It no longer
 calls the live queue itself. Its callers (missions, self-trade, the

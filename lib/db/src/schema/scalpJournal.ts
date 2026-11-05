@@ -11,10 +11,10 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 
-// Task #80 — Ruby Flame Scalp Phase 3: journal + per-symbol personality.
+// Task #80 — Eleanor Flame Scalp Phase 3: journal + per-symbol personality.
 //
 // Two strictly per-user tables. Neither touches the trade/order/position truth
-// tables — they only RECORD what already happened so Ruby can review it and
+// tables — they only RECORD what already happened so Eleanor can review it and
 // learn per-symbol expectations over time.
 //
 //  - scalp_journal_entries: one row per scalp basket LIFECYCLE (a symbol+
@@ -71,7 +71,7 @@ export const scalpJournalEntriesTable = pgTable("scalp_journal_entries", {
   // Most-recently-observed flame stage (drives reversal vs fakeout at close).
   lastFlameStage: text("last_flame_stage"),
   flameContinued: boolean("flame_continued"),
-  rubyWarnedCorrectly: boolean("ruby_warned_correctly"),
+  eleanorWarnedCorrectly: boolean("eleanor_warned_correctly"),
   lastFloatingPl: doublePrecision("last_floating_pl"),
   lastCurrentPrice: doublePrecision("last_current_price"),
   exitPrice: doublePrecision("exit_price"),

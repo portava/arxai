@@ -44,7 +44,7 @@ export interface ChartDecisionReceiptView {
   /** @nullable */
   riskWarning?: string | null;
   /** @nullable */
-  rubyFinalRead?: string | null;
+  eleanorFinalRead?: string | null;
   /** @nullable */
   confidenceScore?: number | null;
   /** @nullable */

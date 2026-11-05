@@ -71,9 +71,9 @@ const ChartAgentConsensusPanel = lazy(() =>
     default: m.ChartAgentConsensusPanel,
   })),
 );
-const RubyDraftReadPanel = lazy(() =>
-  import("@/components/charts/RubyDraftReadPanel").then((m) => ({
-    default: m.RubyDraftReadPanel,
+const EleanorDraftReadPanel = lazy(() =>
+  import("@/components/charts/EleanorDraftReadPanel").then((m) => ({
+    default: m.EleanorDraftReadPanel,
   })),
 );
 
@@ -216,7 +216,7 @@ export function ChartModes({ state }: { state: ChartState | null }) {
                 <ChartSentencesPanel state={state} />
                 <ChartAgentConsensusPanel state={state} />
                 {state && (
-                  <RubyDraftReadPanel
+                  <EleanorDraftReadPanel
                     symbol={state.symbol}
                     timeframe={state.timeframe}
                   />

@@ -31,7 +31,7 @@ Run a full LIVE-only bridge readiness pass and confirm:
 3. LIVE balance/equity/margin data loads correctly.
 4. LIVE symbols are discoverable.
 5. LIVE scanner can select a symbol.
-6. Ruby can explain a selected live market in plain English and technical analysis without exposing backend/internal function names.
+6. Eleanor can explain a selected live market in plain English and technical analysis without exposing backend/internal function names.
 7. A live trade can be prepared from the scanner.
 8. A live trade can be queued.
 9. The queue reaches the EA/bridge correctly.
@@ -58,7 +58,7 @@ Then fix the blocker if it is incorrectly preventing Andraie.co@gmail.com from p
 
 Testing requirement:
 Perform a complete LIVE-only QA pass now.
-Check frontend, backend, API, database, environment variables, MT5 bridge, EA communication, scanner, Ruby, admin dashboard, user dashboard, trade queue, and order lifecycle.
+Check frontend, backend, API, database, environment variables, MT5 bridge, EA communication, scanner, Eleanor, admin dashboard, user dashboard, trade queue, and order lifecycle.
 
 At the end, report clearly:
 
@@ -69,7 +69,7 @@ At the end, report clearly:
 5. Whether the EA/bridge receives live orders
 6. Whether live order status returns correctly
 7. Whether admin audit logs record live actions
-8. Whether Ruby explains live market selections correctly
+8. Whether Eleanor explains live market selections correctly
 9. Whether any demo/paper/simulation fallback remains
 10. Whether the app is ready for the first controlled LIVE execution test
 

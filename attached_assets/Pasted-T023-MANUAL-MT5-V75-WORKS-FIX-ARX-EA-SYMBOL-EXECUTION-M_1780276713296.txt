@@ -163,7 +163,7 @@ After fixing mapping/guard/order settings:
 4. Use smallest broker-valid lot.
 5. No SL/TP unless Governance requires it.
 6. Single Confirm.
-7. Do not let Ruby choose direction.
+7. Do not let Eleanor choose direction.
 8. Press Confirm once.
 9. Confirm EA reaches OrderSend.
 10. Confirm MT5 returns success retcode.

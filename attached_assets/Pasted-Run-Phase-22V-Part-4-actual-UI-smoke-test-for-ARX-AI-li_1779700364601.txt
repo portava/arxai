@@ -86,7 +86,7 @@ Open Admin / Live Shared Account.
 Verify:
 - Mobile layout is clean.
 - No overlapping tabs.
-- Bottom nav and Ruby bubble do not block controls.
+- Bottom nav and Eleanor bubble do not block controls.
 - Main UI shows friendly labels only.
 - Advanced technical details are collapsed by default.
 - Readiness panel shows:

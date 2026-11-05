@@ -291,7 +291,7 @@ export default function AnalyticsCommandCenter() {
           ) : null}
 
           {/* What the money figures are and cover: USD at contract size,
-              recomputed from fill prices (not the booked demo P&L Ruby Memory
+              recomputed from fill prices (not the booked demo P&L Eleanor Memory
               shows), and which closed trades could not be sized. */}
           <p className={`text-[11px] ${pnlNotMeasured || coverageUnavailable ? "text-amber-300" : "text-slate-400"}`} data-testid="analytics-pnl-coverage">
             {coverage

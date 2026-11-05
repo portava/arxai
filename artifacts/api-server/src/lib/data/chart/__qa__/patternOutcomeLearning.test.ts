@@ -296,7 +296,7 @@ test("Gap C: applyPatternLearning records the detection AND nudges within the ce
 
     const { forexIndices } = await buildPatternReliability(WIRE_USER);
     assert.notEqual(forexIndices.reliabilityScore, null, "history yields a reliability score");
-    assert.ok(forexIndices.rubyConfidenceAdjustment > 0, "all-win history nudges confidence up");
+    assert.ok(forexIndices.eleanorConfidenceAdjustment > 0, "all-win history nudges confidence up");
 
     // A real confirmed verdict (the pure contract is the source of the ceiling).
     const verdict = resolvePatternTruth([wirePattern()], wireCtx(), wireDisp());

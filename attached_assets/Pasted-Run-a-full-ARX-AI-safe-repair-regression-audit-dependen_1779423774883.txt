@@ -4,7 +4,7 @@ Goal:
 Make sure the full app is functional after the last 15 commands. Repair what is broken, missing, stale, duplicated, or visually wrong — but every repair must be done safely so fixing one area does not break another area.
 
 Critical rule:
-Do not make a repair blindly. Before changing anything, understand what depends on it. If a fix breaks another feature, revert that fix and choose a different safer approach. The final app must pass full functional QA across trading, Ruby, scanner, chart, risk, admin, navigation, mobile layout, and backend gates.
+Do not make a repair blindly. Before changing anything, understand what depends on it. If a fix breaks another feature, revert that fix and choose a different safer approach. The final app must pass full functional QA across trading, Eleanor, scanner, chart, risk, admin, navigation, mobile layout, and backend gates.
 
 Important:
 Do not rebuild from scratch.
@@ -40,8 +40,8 @@ Review the last 15 commands/session changes and map the affected areas:
 - live readiness / shared live trading
 - one-click live trading
 - global instant trade router
-- Ruby text/voice trade commands
-- Ruby typing/thinking states
+- Eleanor text/voice trade commands
+- Eleanor typing/thinking states
 - no internal function names exposed
 - scanner / selected market / symbol focus
 - simple-first UI cleanup
@@ -52,7 +52,7 @@ Review the last 15 commands/session changes and map the affected areas:
 - cockpit/dashboard
 - admin/live shared pages
 - bottom navigation
-- Ruby floating assistant
+- Eleanor floating assistant
 - mobile Safari layout
 
 For each area, identify:
@@ -168,8 +168,8 @@ Verify the same shared instant router is used by:
 - Market cards trade actions
 - Watchlist trade actions if present
 - Alert/opportunity trade actions if present
-- Ruby text trade commands
-- Ruby voice trade commands
+- Eleanor text trade commands
+- Eleanor voice trade commands
 
 One-Click Mode should not open the old modal flow.
 
@@ -191,9 +191,9 @@ Every instant action must audit:
 
 If wiring one surface breaks another, revert and introduce a shared adapter so all surfaces call the router safely without breaking their local UI state.
 
-7. Ruby command QA and repair
+7. Eleanor command QA and repair
 
-Ruby must execute only clear direct trade commands when allowed:
+Eleanor must execute only clear direct trade commands when allowed:
 
 Allowed clear examples:
 - Buy EURUSD 0.01
@@ -206,36 +206,36 @@ Allowed clear examples:
 - Move stop loss to break even
 - Set take profit to 1.0920
 
-Ruby must not trade from vague prompts:
+Eleanor must not trade from vague prompts:
 - What should I trade?
 - Is EURUSD good?
 - Do you think I should buy?
 - Find me a setup.
 - Where is this going?
 
-Ruby command gates must remain:
-- aiInstantTradeCommandsEnabled required for Ruby open commands
-- allowRubyOpenCommands required for opens
-- allowRubyCloseCommands required for closes
-- allowRubyModifyCommands required for modifications
+Eleanor command gates must remain:
+- aiInstantTradeCommandsEnabled required for Eleanor open commands
+- allowEleanorOpenCommands required for opens
+- allowEleanorCloseCommands required for closes
+- allowEleanorModifyCommands required for modifications
 - vague/unknown parser result never executes
 
-Repair any unsafe or broken Ruby routing without enabling autonomous trading.
+Repair any unsafe or broken Eleanor routing without enabling autonomous trading.
 
-8. Ruby chat UX QA and repair
+8. Eleanor chat UX QA and repair
 
 Verify and repair:
 
-- sending any message immediately shows “Ruby is thinking…” with animated dots
-- streaming/rendering shows “Ruby is typing…” with animated dots
+- sending any message immediately shows “Eleanor is thinking…” with animated dots
+- streaming/rendering shows “Eleanor is typing…” with animated dots
 - quick suggestion clicks show the same indicator
 - voice mode shows:
-  Ruby is listening…
-  Ruby is understanding you…
-  Ruby is thinking…
-  Ruby is typing…
-  Ruby is speaking…
-- input placeholder says “Ask Ruby…”
+  Eleanor is listening…
+  Eleanor is understanding you…
+  Eleanor is thinking…
+  Eleanor is typing…
+  Eleanor is speaking…
+- input placeholder says “Ask Eleanor…”
 - performance summary does not show getMyPerformanceSummary
 - raw tool/function chips are hidden from normal users
 - typing indicator disappears after final response
@@ -266,8 +266,8 @@ Normal users must not see:
 - database field names
 
 Replace with friendly labels:
-- Ruby is reviewing your performance…
-- Ruby is checking this market…
+- Eleanor is reviewing your performance…
+- Eleanor is checking this market…
 - Sending trade…
 - Checking trade readiness…
 - Live trading is not armed yet.
@@ -284,7 +284,7 @@ Verify and repair without removing features.
 
 Scanner:
 - opens to clean Focus tab
-- Focus shows selected market, Ruby read, bias, confidence, risk, entry/stop/target, main actions
+- Focus shows selected market, Eleanor read, bias, confidence, risk, entry/stop/target, main actions
 - Results tab has scanner cards/opportunities
 - Symbols tab has search, favorites/recent, symbol groups
 - Advanced tab has scan universe, feed status, diagnostics, raw metrics
@@ -304,7 +304,7 @@ Trade:
   buy stop limit
   sell stop limit
 
-Ruby:
+Eleanor:
 - Chat, Market Read, Commands, Memory tabs exist
 - system/debug/API details hidden unless advanced/admin
 
@@ -328,7 +328,7 @@ If simplifying UI hides a required feature, adjust the tab/drawer structure inst
 Verify and repair:
 
 - selected market updates top symbol badge
-- symbol selection updates Ruby market context
+- symbol selection updates Eleanor market context
 - symbol selection updates scanner focus
 - symbol selection updates chart/trade default where supported
 - selecting a symbol never places a trade
@@ -352,7 +352,7 @@ On iPhone Safari/mobile:
 - no body/page background mismatch under nav
 - no horizontal overflow caused by nav
 - browser toolbar changes do not leave a gap
-- Ruby bubble visible or hidden does not affect nav layout
+- Eleanor bubble visible or hidden does not affect nav layout
 
 Implementation guidance:
 - check html, body, root, app shell, page wrappers, and nav container
@@ -372,7 +372,7 @@ Verify:
 - no horizontal overflow
 - bottom nav has no gap underneath
 - bottom nav does not cover buttons/cards
-- Ruby bubble does not cover BUY, SELL, CLOSE, scanner controls, checklist rows, or chat input
+- Eleanor bubble does not cover BUY, SELL, CLOSE, scanner controls, checklist rows, or chat input
 - primary buttons are thumb-friendly
 - long sections collapse cleanly
 - status badges wrap cleanly
@@ -389,8 +389,8 @@ Verify the full app still works after repairs:
 - Cockpit/Dashboard loads
 - Scanner loads and tabs work
 - Symbol selection works
-- Ruby chat works
-- Ruby voice states work
+- Eleanor chat works
+- Eleanor voice states work
 - Trade page loads
 - Quick Trade controls work
 - Advanced order types still accessible
@@ -414,7 +414,7 @@ Run:
 - pnpm --filter @workspace/scripts run test:live-phaseB
 
 Also run existing tests related to:
-- Ruby chat
+- Eleanor chat
 - instant trade router
 - scanner
 - mobile layout
@@ -429,10 +429,10 @@ Add/update tests for:
 - empty confirmation values fail #12
 - one-click BUY/SELL/CLOSE route through instant router
 - blank SL/TP allowed in One-Click Mode
-- Ruby clear trade commands route to instant router
-- Ruby vague questions do not trade
+- Eleanor clear trade commands route to instant router
+- Eleanor vague questions do not trade
 - normal users do not see internal function names
-- Ruby typing/thinking indicator appears during response states
+- Eleanor typing/thinking indicator appears during response states
 - Scanner opens to Focus
 - Trade opens to Quick Trade
 - bottom nav has no gap underneath on mobile
@@ -477,7 +477,7 @@ Include:
 - active commit/build id
 - active readiness route/component
 - active instant trade router route
-- active Ruby chat component
+- active Eleanor chat component
 - active scanner component
 - active app shell/bottom nav component
 - test results summary

@@ -16,7 +16,7 @@ The problem is analysis/chart truth:
 - Scanner still has simulator fallback for technicals.
 - Legacy /api/data/candles still exists as a bare endpoint.
 - Stale/freshness thresholds live in multiple places.
-- Ruby and scanner must stay honest when feed is delayed or not AI-usable.
+- Eleanor and scanner must stay honest when feed is delayed or not AI-usable.
 
 ==================================================
 PRIMARY GOAL
@@ -184,7 +184,7 @@ Inspect and update consumers:
 - ARXNativeChart
 - ScannerChartPanel
 - PositionMiniChart
-- Ruby chart read
+- Eleanor chart read
 - scanner chart usage
 - any hooks using /api/data/candles
 - any legacy chart utilities
@@ -229,7 +229,7 @@ It should define:
 - helper buildFeedStatus()
 
 Rules:
-- Chart Truth, Candle Truth, Ruby, Scanner, and UI should use the same definitions.
+- Chart Truth, Candle Truth, Eleanor, Scanner, and UI should use the same definitions.
 - If a provider uses a cache TTL, separate cache freshness from AI usability.
 - A cached response may be technically available but still not AI-usable.
 - On 1m charts, delayed/stale must be obvious.
@@ -249,7 +249,7 @@ Rules:
 - Simulator rows must not show trade-ready buttons.
 - Simulator rows must not produce “TRADEABLE” status.
 - Simulator rows must not trigger self-trade.
-- Simulator rows must not be used as Ruby-confirmed trade evidence.
+- Simulator rows must not be used as Eleanor-confirmed trade evidence.
 - Simulator rows can only be used for placeholder education/testing/admin diagnostics.
 
 Preferred:
@@ -273,10 +273,10 @@ Do not delete working code blindly.
 Mark legacy surfaces clearly and ensure they cannot influence live trade readiness.
 
 ==================================================
-PHASE 7 — RUBY AND SCANNER DATA HONESTY
+PHASE 7 — ELEANOR AND SCANNER DATA HONESTY
 ==================================================
 
-Ruby and Scanner must explain feed truth simply.
+Eleanor and Scanner must explain feed truth simply.
 
 For regular users:
 
@@ -292,7 +292,7 @@ If H1/H4 are missing:
 If simulator:
 “This is analysis-only simulated data, not live feed data.”
 
-Ruby must not say:
+Eleanor must not say:
 - verified setup
 - strong buy
 - strong sell
@@ -368,7 +368,7 @@ Add/update tests:
 9. No active UI uses /api/data/candles without feedStatus.
 10. Scanner simulator rows cannot be trade-ready.
 11. Simulator rows cannot trigger self-trade.
-12. Ruby refuses verified trade read when aiUsable=false.
+12. Eleanor refuses verified trade read when aiUsable=false.
 13. Freshness module classifies clean/delayed/stale consistently.
 14. Deriv synthetics still work through Deriv provider.
 15. Broker execution still ignores third-party feed prices.
@@ -382,7 +382,7 @@ Run:
 - market data router tests
 - chart feed tests
 - scanner tests
-- Ruby read tests
+- Eleanor read tests
 - live command safety tests
 - full pnpm run ci if feasible
 
@@ -403,7 +403,7 @@ Return:
 - /api/data/candles legacy status
 - freshness module status
 - simulator fallback cleanup
-- Ruby/Scanner honesty changes
+- Eleanor/Scanner honesty changes
 - provider health admin status
 - tests added/updated
 - typecheck/guard results

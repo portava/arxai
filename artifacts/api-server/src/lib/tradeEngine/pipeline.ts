@@ -34,7 +34,7 @@
 //
 //   submitInstantTrade(args) → lib/live/instantTrade.ts executeInstant
 //
-// executeInstant keeps all of its own gates (Ruby authorization, one-click
+// executeInstant keeps all of its own gates (Eleanor authorization, one-click
 // settings, rate limit, symbol cooldown, per-user lock, audit rows) and
 // reaches Phase B through the staged contract above. Arguments and result
 // pass through unchanged. Every producer (missions, self-trade agents, the

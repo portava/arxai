@@ -20,7 +20,7 @@ Do not introduce simulation mode.
 
 Do not block the existing live-trading mission.
 
-Do not break Ruby, scanner, MT5/live bridge, admin dashboard, authentication, existing users, investor view, trader view, or current live trade flow.
+Do not break Eleanor, scanner, MT5/live bridge, admin dashboard, authentication, existing users, investor view, trader view, or current live trade flow.
 
 ============================================================
 PRIMARY GOAL
@@ -28,7 +28,7 @@ PRIMARY GOAL
 Perform a complete QA and end-to-end repair pass across:
 
 1. Existing ARX AI app
-2. Ruby assistant
+2. Eleanor assistant
 3. Scanner
 4. Live trade flow
 5. MT5/live bridge paths
@@ -74,7 +74,7 @@ ABSOLUTE RULES
 17. If performance becomes slow, optimize before finishing.
 18. Existing live execution paths must not be slowed by deep AI reasoning.
 19. Agent ecosystem should be an add-on layer, not a replacement of current trading logic.
-20. Ruby stays the user-facing voice.
+20. Eleanor stays the user-facing voice.
 
 ============================================================
 STEP 1 — FULL PROJECT AUDIT
@@ -88,7 +88,7 @@ Inspect:
 * Database schema/models/migrations
 * Auth and role logic
 * Admin permissions
-* Ruby AI services
+* Eleanor AI services
 * Scanner services
 * Trade execution services
 * MT5/live bridge services
@@ -138,17 +138,17 @@ Authentication:
 * No investor can place trades.
 * No user has access to two conflicting profiles at the same time.
 
-Ruby:
+Eleanor:
 
-* Ruby chat opens.
-* Ruby responds.
-* Ruby uses plain English.
-* Ruby can explain market conditions.
-* Ruby does not overload users with raw agent data.
-* Ruby can summarize agent consensus.
-* Ruby does not expose unnecessary internal logs unless admin-facing.
-* Ruby voice features are not broken if they already exist.
-* Ruby does not stall because of agent ecosystem calls.
+* Eleanor chat opens.
+* Eleanor responds.
+* Eleanor uses plain English.
+* Eleanor can explain market conditions.
+* Eleanor does not overload users with raw agent data.
+* Eleanor can summarize agent consensus.
+* Eleanor does not expose unnecessary internal logs unless admin-facing.
+* Eleanor voice features are not broken if they already exist.
+* Eleanor does not stall because of agent ecosystem calls.
 
 Scanner:
 
@@ -157,7 +157,7 @@ Scanner:
 * Focus search works.
 * Broad search works.
 * Scalp opportunity detection still works.
-* Scanner can show Ruby explanations.
+* Scanner can show Eleanor explanations.
 * Scanner does not freeze.
 * Scanner does not display fake or stale data as live.
 * Scanner ranking works.
@@ -271,7 +271,7 @@ Fix missing schema fields or broken migrations.
 
 Seed the default core agents if not already present:
 
-* Ruby
+* Eleanor
 * Market Structure AI
 * Scalp AI
 * Risk AI
@@ -372,7 +372,7 @@ Test modes:
 * Live Execution Mode
 * Scalp Mode
 * Scanner Mode
-* Ruby Explanation Mode
+* Eleanor Explanation Mode
 * Learning Mode
 * Agent Creation Mode
 * Deep Review Mode
@@ -429,7 +429,7 @@ Test disagreement:
 * Entry AI cautions.
 * Market Structure AI warns.
 * Agent Court considers specialty, performance, risk veto, setup type, and speed.
-* Ruby final summary reflects the correct downgrade.
+* Eleanor final summary reflects the correct downgrade.
 * Disagreement is saved for later review.
 
 L. No-trade reward system
@@ -555,39 +555,39 @@ Admin sections required:
 Fix all missing UI, broken buttons, unconnected calls, or permission leaks.
 
 ============================================================
-STEP 6 — RUBY USER-FACING QA
+STEP 6 — ELEANOR USER-FACING QA
 
-Test Ruby with different scenarios.
+Test Eleanor with different scenarios.
 
-Ruby should not dump all internal agent logs to user.
+Eleanor should not dump all internal agent logs to user.
 
-Ruby should summarize clearly.
+Eleanor should summarize clearly.
 
 Test prompts:
 
 1. “Analyze V75 right now.”
     Expected:
-    Ruby gives a clear summary and may mention relevant agent consensus only if useful.
+    Eleanor gives a clear summary and may mention relevant agent consensus only if useful.
 2. “Is this a scalp?”
     Expected:
-    Ruby uses Scalp AI, Risk AI, Entry AI, Exit AI, Market Structure fast-check.
+    Eleanor uses Scalp AI, Risk AI, Entry AI, Exit AI, Market Structure fast-check.
 3. “Why is this not a good trade?”
     Expected:
-    Ruby explains risk, entry, support/resistance, and agent downgrade plainly.
+    Eleanor explains risk, entry, support/resistance, and agent downgrade plainly.
 4. “What are your agents saying?”
     Expected:
-    Ruby summarizes important agent consensus without overwhelming.
+    Eleanor summarizes important agent consensus without overwhelming.
 5. “Why did you reject this trade?”
     Expected:
-    Ruby explains no-trade reasoning and protection logic.
+    Eleanor explains no-trade reasoning and protection logic.
 6. “Which agents are weak right now?”
     Expected:
     Admin-only if sensitive. Normal user should receive only safe summary if allowed.
 7. “Is Scalp AI in Learning Camp?”
     Expected:
-    Ruby can answer if user/admin permissions allow.
+    Eleanor can answer if user/admin permissions allow.
 
-Fix Ruby if:
+Fix Eleanor if:
 
 * She gives too much raw internal data.
 * She ignores agent consensus.
@@ -616,7 +616,7 @@ Confirm:
     * Caution
     * No-trade
     * Rejected setup
-* Scanner can show Ruby explanation.
+* Scanner can show Eleanor explanation.
 * Scanner can show scalp opportunities.
 * Scanner can show multi-entry scalp possibilities only when quality supports it.
 * Scanner filters low-quality setups.
@@ -631,7 +631,7 @@ Fix scanner if:
 * All setups look like trade opportunities.
 * Risk downgrade is ignored.
 * Scalp logic is not connected.
-* Ruby explanation is disconnected.
+* Eleanor explanation is disconnected.
 * UI lags badly.
 
 ============================================================
@@ -670,7 +670,7 @@ Measure:
 
 * App initial load time.
 * Dashboard load time.
-* Ruby response time.
+* Eleanor response time.
 * Scanner load time.
 * Scanner refresh time.
 * Scalp signal processing time.
@@ -720,7 +720,7 @@ Errors should not crash the app.
 
 If an agent fails:
 
-* Ruby/scanner should degrade gracefully.
+* Eleanor/scanner should degrade gracefully.
 * Log the failure.
 * Do not break live trade UI.
 * Use fallback logic if needed.
@@ -757,7 +757,7 @@ Scenario 1: Clean trade idea
 * Traffic Controller selects agents.
 * Agents produce structured opinions.
 * Risk AI approves.
-* Ruby summarizes.
+* Eleanor summarizes.
 * Prediction locks.
 * Trade Review later scores.
 * Agent scores update.
@@ -767,7 +767,7 @@ Scenario 2: Weak setup rejected
 * Scanner finds weak setup.
 * Risk AI rejects.
 * Entry AI warns.
-* Ruby says watchlist/no-trade.
+* Eleanor says watchlist/no-trade.
 * Prediction locks.
 * Market later confirms weakness.
 * No-trade reward applies.
@@ -778,7 +778,7 @@ Scenario 3: Agent disagreement
 * Risk AI rejects.
 * Entry AI cautions.
 * Agent Court resolves.
-* Ruby downgrades.
+* Eleanor downgrades.
 * Disagreement record saved.
 * Later review updates agent records.
 
@@ -788,7 +788,7 @@ Scenario 4: Agent slows system
 * Traffic Controller detects delay.
 * Agent steps back to Silent Support or On-Demand Only.
 * Speed score updates.
-* Ruby/scanner remain fast.
+* Eleanor/scanner remain fast.
 
 Scenario 5: Agent goes to Learning Camp
 
@@ -862,7 +862,7 @@ Before marking complete:
 2. Run migrations.
 3. Confirm seed does not duplicate core agents.
 4. Open main dashboard.
-5. Open Ruby.
+5. Open Eleanor.
 6. Open scanner.
 7. Open admin dashboard.
 8. Open Agent Ecosystem Overview.

@@ -10,7 +10,7 @@ import { chartCandlesQueryKey } from "@/lib/chartCandlesQuery";
 import { selectedMarketQueryOptions } from "@/lib/selectedMarketQuery";
 
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 const NOW = Date.parse("2026-10-26T14:00:01Z");
 const CLOSE = "2026-10-26T14:00:00.000Z";
 let client: QueryClient;

@@ -281,11 +281,11 @@ function skippedNoUser(): LayerReadiness {
   return { status: "SKIPPED", detail: "no user context", ageMs: null };
 }
 
-// ── RUBY_EXPLANATION — assistant market provider connectivity + freshness ────
-// Read-only: Ruby's explanations lean on the assistant market provider. PASS
+// ── ELEANOR_EXPLANATION — assistant market provider connectivity + freshness ────
+// Read-only: Eleanor's explanations lean on the assistant market provider. PASS
 // only when a real provider is connected AND its last successful fetch is fresh;
 // stale/error degrades to WARN; nothing configured/connected is NOT_AVAILABLE.
-const rubyExplanationAdapter: LayerAdapter = async () => {
+const eleanorExplanationAdapter: LayerAdapter = async () => {
   try {
     const s = getMarketStatus();
     if (!s.configured) return notAvailable("no market data provider configured");
@@ -378,7 +378,7 @@ export const LAYER_ADAPTERS: Record<HandshakeLayerKey, LayerAdapter> = {
   INVESTOR_FUND_BOOK: investorFundBookAdapter,
   ADMIN_CONTROL: adminControlAdapter,
   KILL_SWITCH: killSwitchAdapter,
-  RUBY_EXPLANATION: rubyExplanationAdapter,
+  ELEANOR_EXPLANATION: eleanorExplanationAdapter,
   CHART_OVERLAY: chartOverlayAdapter,
   RISK_PREVIEW: riskPreviewAdapter,
   TRADE_MODAL_PREFILL: tradeModalPrefillAdapter,

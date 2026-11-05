@@ -3,7 +3,7 @@
 // WHAT: A lightweight background scheduler that, once per UTC day, automatically
 //   (1) generates (refreshes) the canonical Household Report for the current UTC
 //       day — the same idempotent per-day upsert an admin would trigger by hand,
-//   (2) delivers the plain-English Ruby summary to every admin/OWNER as an in-app
+//   (2) delivers the plain-English Eleanor summary to every admin/OWNER as an in-app
 //       alert (the bell-badge surface), so operators get the daily team summary
 //       without remembering to open the Agent Ecosystem page and click generate,
 //   (3) writes a single fail-soft audit row recording the automatic generation +
@@ -159,7 +159,7 @@ export async function runDailyReportDelivery(opts: {
         alertType: `${ALERT_TYPE_PREFIX}:${reportDate}`,
         severity: "info",
         title: "Daily trading-team report is ready",
-        message: report.rubySummary,
+        message: report.eleanorSummary,
         source: "system",
         actionLabel: "Open the team report",
         actionTarget: REPORT_PAGE_TARGET,

@@ -20,7 +20,7 @@
 //   - The master account number is included in evidence ONLY as a
 //     server-internal field used to populate the EA's
 //     `bridgeReadinessAtDraft` snapshot. It is masked when surfaced to
-//     end users in UI/Ruby copy (mt5-setup / scanner / assistant).
+//     end users in UI/Eleanor copy (mt5-setup / scanner / assistant).
 
 import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 import { getConnection } from "../brokerHub/connections.js";

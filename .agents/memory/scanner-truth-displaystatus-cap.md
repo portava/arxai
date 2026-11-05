@@ -24,7 +24,7 @@ add a new feed/quality state, extend the `resolvedDisplayStatus` mapping in
 `scannerTruth.ts` and add a `displayStatus`-cap assertion in
 `scannerTruth.test.ts`.
 
-Advisory cards (Ruby Market Read, Timing Intelligence, the ScannerReadGate
+Advisory cards (Eleanor Market Read, Timing Intelligence, the ScannerReadGate
 banner) must derive their "is this actionable?" decision from the shared
 `useScannerReadGate(symbol)` hook (`downgraded = truth != null && analysis.level
 !== "full"`), NOT a private feed-status fetch. When `downgraded`, a card must

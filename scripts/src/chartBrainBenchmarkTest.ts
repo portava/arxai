@@ -170,7 +170,7 @@ async function run() {
     "entry_quality",
     "exit_realism",
     "agent_agreement",
-    "ruby_explanation_quality",
+    "eleanor_explanation_quality",
     "no_trade_discipline",
     "review_learning",
     "similar_setup_usefulness",

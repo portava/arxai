@@ -6,7 +6,7 @@
 // Proves the persisted daily Household Report end-to-end (what pure-engine tests
 // cannot): a generate aggregates the REAL registry into the §17 sections, writes
 // a row, upserts (one per UTC day, never a duplicate), exposes a list + by-id
-// read, and produces a plain-English Ruby summary that leaks NO internal agent
+// read, and produces a plain-English Eleanor summary that leaks NO internal agent
 // codes / table / route / JSON-field names.
 //
 // SAFETY / SCOPE: OBSERVATION ONLY — nothing here trades or touches the 16-gate
@@ -22,7 +22,7 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   generateHouseholdReport, listHouseholdReports, getHouseholdReport,
-  buildHouseholdReportBody, buildRubySummary,
+  buildHouseholdReportBody, buildEleanorSummary,
 } from "../householdReport.js";
 
 const TEST_KEY = `TEST_HHR_${randomUUID().slice(0, 8)}`;
@@ -40,7 +40,7 @@ async function cleanup(agentId: number, reportDate: string) {
   }
 }
 
-test("generate aggregates real registry, upserts one row/day, exposes list+by-id, Ruby summary is clean", async () => {
+test("generate aggregates real registry, upserts one row/day, exposes list+by-id, Eleanor summary is clean", async () => {
   const [agent] = await db.insert(agentsTable).values({
     agentKey: TEST_KEY, name: "Test Household Agent", role: "TEST",
     department: "TEST", missionStatement: "test", currentStatus: "ACTIVE",
@@ -77,7 +77,7 @@ test("generate aggregates real registry, upserts one row/day, exposes list+by-id
     const r1 = await generateHouseholdReport({ generatedByUserId: 1 });
     assert.equal(r1.reportDate, reportDate, "stored row carries today's date");
     assert.ok(r1.reportId.length > 0, "report has a uuid");
-    assert.ok(r1.rubySummary.length > 0, "ruby summary generated");
+    assert.ok(r1.eleanorSummary.length > 0, "eleanor summary generated");
 
     // ── Idempotent upsert: a second generate updates the SAME row (one/day) ─────
     const r2 = await generateHouseholdReport({ generatedByUserId: 1 });
@@ -99,19 +99,19 @@ test("generate aggregates real registry, upserts one row/day, exposes list+by-id
     const searched = await listHouseholdReports({ search: reportDate, limit: 10 });
     assert.ok(searched.some((x) => x.reportId === r1.reportId), "date search finds the report");
 
-    // ── Ruby summary leaks NO internal codes / table / route / field names ──────
-    const ruby = buildRubySummary(body).toLowerCase();
+    // ── Eleanor summary leaks NO internal codes / table / route / field names ──────
+    const eleanor = buildEleanorSummary(body).toLowerCase();
     for (const forbidden of [
       "agentkey", "authorityweight", "currentstatus", "currentmode",
       "agent_household_reports", "/api/", "shadow mode", "learning_camp",
       "governancescore", "advisoryscore", "16-gate", "trustscore",
     ]) {
-      assert.ok(!ruby.includes(forbidden), `ruby summary must not leak internal token "${forbidden}"`);
+      assert.ok(!eleanor.includes(forbidden), `eleanor summary must not leak internal token "${forbidden}"`);
     }
-    assert.ok(ruby.includes("trading team") || ruby.includes("desk") || ruby.includes("specialist"),
-      "ruby summary speaks in plain team language");
-    assert.ok(ruby.includes("decision support") || ruby.includes("nothing here places"),
-      "ruby summary carries the advisory-only disclaimer");
+    assert.ok(eleanor.includes("trading team") || eleanor.includes("desk") || eleanor.includes("specialist"),
+      "eleanor summary speaks in plain team language");
+    assert.ok(eleanor.includes("decision support") || eleanor.includes("nothing here places"),
+      "eleanor summary carries the advisory-only disclaimer");
   } finally {
     await cleanup(agentId, reportDate);
   }

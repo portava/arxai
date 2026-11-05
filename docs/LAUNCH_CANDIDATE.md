@@ -13,7 +13,7 @@
   EA endpoint. Per-user bridge tokens only.
 - Server stores SHA-256 hashes of bridge tokens. Raw tokens are shown
   exactly once at creation and never re-served.
-- AI assistant (Ruby) cannot place trades, modify connections, or read
+- AI assistant (Eleanor) cannot place trades, modify connections, or read
   another user's data. Every response carries
   `{safetyMode:"paper_only", liveLocked:true, readOnlyMode:true, allowOrderExecution:false}`.
 

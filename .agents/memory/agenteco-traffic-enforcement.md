@@ -22,7 +22,7 @@ score stays protective (<= advisory) — the inviolable invariant holds. Live/de
 dispatch never calls the Court, so this is advisory/ranking-only.
 
 **How to apply:** All three read surfaces (scanner `marketScanner.ts`, scalp
-`scalpService.ts` attachScalpAdvisory, Ruby `meAssistant.ts` explain-signal) pass
+`scalpService.ts` attachScalpAdvisory, Eleanor `meAssistant.ts` explain-signal) pass
 `allowedAgentKeys: traffic.participants.map(p => p.agentKey)`. To test enforcement
 you need a real veto fixture: RISK agent (department RISK) + `context:{riskScore:90}`
 (>= REJECT_RISK 85) makes it take a `rejection` position; keep the supporter's

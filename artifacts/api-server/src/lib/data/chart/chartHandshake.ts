@@ -29,8 +29,8 @@ export interface AaciChartHandshake {
   BrokerPriceAlignment: ChartHandshakeVerdict;
   /** Actual renderer evidence; source-bar shape alone cannot prove this. */
   RenderHealth: ChartHandshakeVerdict;
-  /** Ruby read allowed — confidentReadAllowed from gate. */
-  RubyReadAllowed: ChartHandshakeVerdict;
+  /** Eleanor read allowed — confidentReadAllowed from gate. */
+  EleanorReadAllowed: ChartHandshakeVerdict;
   /** Self-trade chart allowed — selfTradeChartAllowed from gate. */
   SelfTradeChartAllowed: ChartHandshakeVerdict;
 
@@ -42,7 +42,7 @@ export interface AaciChartHandshake {
 
   /**
    * Rollup of the nine checks about the candle data itself, i.e. every field
-   * except RenderHealth. Server-side reads (Ruby) consume candles, not pixels,
+   * except RenderHealth. Server-side reads (Eleanor) consume candles, not pixels,
    * so client renderer telemetry they never use cannot gate them. This never
    * turns an unmeasured RenderHealth into a PASS: `overall` still carries it,
    * and a measured renderer FAIL still fails this rollup.
@@ -125,7 +125,7 @@ export function buildChartHandshake(
     ? scoreToVerdict(subMetricScore(truthScore, "render_accuracy"))
     : "WARN";
 
-  const RubyReadAllowed = boolToVerdict(gate.confidentReadAllowed);
+  const EleanorReadAllowed = boolToVerdict(gate.confidentReadAllowed);
 
   const SelfTradeChartAllowed = boolToVerdict(gate.selfTradeChartAllowed);
 
@@ -137,7 +137,7 @@ export function buildChartHandshake(
     FeedFreshness,
     HistoricalLiveMerge,
     BrokerPriceAlignment,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
   ];
   const all: ChartHandshakeVerdict[] = [...source, RenderHealth];
@@ -151,7 +151,7 @@ export function buildChartHandshake(
     HistoricalLiveMerge,
     BrokerPriceAlignment,
     RenderHealth,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
     overall: rollup(all),
     sourceOverall: rollup(RenderHealth === "FAIL" ? ["FAIL"] : source),

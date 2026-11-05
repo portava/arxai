@@ -100,7 +100,7 @@ export const allocationTransactionsTable = pgTable("allocation_transactions", {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ai_trade_decisions
-// Every trade idea Ruby generates — whether submitted, blocked, or watch-only.
+// Every trade idea Eleanor generates — whether submitted, blocked, or watch-only.
 // ─────────────────────────────────────────────────────────────────────────────
 export const aiTradeDecisionsTable = pgTable("ai_trade_decisions", {
   id:                    serial("id").primaryKey(),

@@ -41,7 +41,7 @@ Do the following:
    - Create a logged-in LIVE_SHARED Playwright test user/session.
    - Drive the actual browser UI flows needed for PARTs 9–14.
    - Measure real action timing from button press to UI response and backend confirmation.
-   - Cover scanner, Ruby chat response, Ruby voice response, open trade, close trade, admin allocation, account freeze/unfreeze, mode toggle, symbol selection, notification/alert dismiss, and dashboard load.
+   - Cover scanner, Eleanor chat response, Eleanor voice response, open trade, close trade, admin allocation, account freeze/unfreeze, mode toggle, symbol selection, notification/alert dismiss, and dashboard load.
    - Send any action over 1000ms to /api/admin/performance/client-action.
    - Print local dev-console [perf:slow] logs.
    - Generate a final timing matrix report with:
@@ -58,8 +58,8 @@ Do the following:
    - Simple button UI feedback should appear in under 150ms.
    - Tab/page switch should feel instant and complete under 500ms.
    - Scanner initial results should appear as fast as possible, ideally under 1–2 seconds with cached/preloaded data.
-   - Ruby typing/thinking indicator should appear immediately under 150ms.
-   - Ruby first response token should begin quickly after backend starts responding.
+   - Eleanor typing/thinking indicator should appear immediately under 150ms.
+   - Eleanor first response token should begin quickly after backend starts responding.
    - Trade open/close confirmation must show immediate pending state, then confirmed/rejected state after broker/backend response.
    - No action should leave the user wondering whether the click worked.
 

@@ -6,7 +6,7 @@ import path from "node:path";
  * Truth guard: the scanner and its signals are POLLED (useScannerTruth
  * refetches every 15 s) and every read carries its own Live / Delayed /
  * Stale / Historical verdict. Static navigation / knowledge copy — which the
- * command palette shows and Ruby repeats — must not assert "real-time"
+ * command palette shows and Eleanor repeats — must not assert "real-time"
  * unconditionally for those surfaces (or for the on-request AI co-pilot).
  *
  * "Realtime WebRTC" is the name of the voice transport, not a market-data

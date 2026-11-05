@@ -7,7 +7,7 @@
 //
 //   - POST /api/me/scalp/focus  (deep, per-symbol candle-backed read)
 //   - POST /api/me/scalp/rank   (Broad scan: best/safer/fastest + ranked list)
-//   - POST /api/me/scalp/build  (Ruby Scalp Builder)
+//   - POST /api/me/scalp/build  (Eleanor Scalp Builder)
 //
 // WHAT IT PROVES
 //   1. LIVE-DATA case (flame.blind === false): Focus on a symbol with a REAL

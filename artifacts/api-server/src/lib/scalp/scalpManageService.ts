@@ -1,4 +1,4 @@
-// Ruby Flame Scalp — manage-side service (Phase 2).
+// Eleanor Flame Scalp — manage-side service (Phase 2).
 //
 // Turns the user's ALREADY-OPEN positions into scalp baskets with live,
 // direction-aligned flame reads, exit-urgency and add-on guidance, and

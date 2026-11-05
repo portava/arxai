@@ -14,7 +14,7 @@ function toThreeLevel(impact: CalendarEvent["impact"]): ThreeLevel {
   return impact === "critical" ? "high" : impact;
 }
 
-/** Assistant (Ruby) economic-event shape — structurally identical to
+/** Assistant (Eleanor) economic-event shape — structurally identical to
  * marketProvider's `EconomicEvent`, declared locally to avoid an import cycle. */
 export interface AssistantEconomicEvent {
   whenIso: string;
@@ -37,7 +37,7 @@ export function toRawCalendarEvents(events: CalendarEvent[]): RawCalendarEvent[]
   }));
 }
 
-/** → assistant EconomicEvent (Ruby market context). */
+/** → assistant EconomicEvent (Eleanor market context). */
 export function toAssistantEconomicEvents(events: CalendarEvent[]): AssistantEconomicEvent[] {
   return events.map((e) => ({
     whenIso: e.eventTimeUtc,

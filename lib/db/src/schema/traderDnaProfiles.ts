@@ -1,6 +1,6 @@
 // Trader DNA Profile Cache
 //
-// Stores the computed DNA profile per user so Ruby can read it instantly
+// Stores the computed DNA profile per user so Eleanor can read it instantly
 // without recomputing from all trades on every API call.
 //
 // Updated by background job whenever new paper trades or imported trades arrive.
@@ -46,7 +46,7 @@ export const traderDnaProfilesTable = pgTable("trader_dna_profiles", {
   strengths:        jsonb("strengths").notNull().default([]),       // string[]
   disciplineScore:  real("discipline_score"),  // 0-100
 
-  // ── Full computed profile (raw domain output, for Ruby deep access) ────
+  // ── Full computed profile (raw domain output, for Eleanor deep access) ────
   fullProfile:      jsonb("full_profile").notNull().default({}),
 
   // ── Cache control ──────────────────────────────────────────────────────

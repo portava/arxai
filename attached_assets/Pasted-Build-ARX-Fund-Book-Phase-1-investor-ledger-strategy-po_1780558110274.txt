@@ -652,7 +652,7 @@ Admin UI should allow:
 - add note/reason
 - audit the assignment
 
-If trade was opened by Ruby/Scanner with a strategy context, auto-assign it to that pool if available.
+If trade was opened by Eleanor/Scanner with a strategy context, auto-assign it to that pool if available.
 
 If no strategy context exists, status = UNASSIGNED and discrepancy created.
 
@@ -1593,7 +1593,7 @@ Required regression tests:
 - Andraie.co@gmail.com remains trader/user only if already split
 - separate admin account still accesses admin controls
 - scanner still works
-- Ruby still works
+- Eleanor still works
 - live bridge status still works
 - open position visibility still works
 - retcode display still works

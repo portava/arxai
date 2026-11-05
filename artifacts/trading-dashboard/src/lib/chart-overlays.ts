@@ -6,7 +6,7 @@
 // never places, modifies, or closes a trade. Trade actions always route through
 // the existing gated instant-trade path (executeInstantTrade, source:"chart").
 //
-// This contract is intentionally generic so Level 5 (Ruby / scanner / agent
+// This contract is intentionally generic so Level 5 (Eleanor / scanner / agent
 // overlays) can reuse the same renderer without changing ARXNativeChart: a
 // signal zone, an AI target, or a risk band are all just ChartOverlay rows with
 // a different `source`/`severity`. Level 4 only emits `source:"position"` and
@@ -25,7 +25,7 @@ export type ChartOverlaySeverity =
 
 /**
  * Where the overlay originated. Level 4 uses position/pending only. Level 6
- * (Task #374) adds "preview" — an AI/Ruby SETUP DRAWING (entry/SL/TP, risk and
+ * (Task #374) adds "preview" — an AI/Eleanor SETUP DRAWING (entry/SL/TP, risk and
  * reward zones, invalidation). A "preview" overlay is a visual reasoning aid
  * ONLY: it carries no execution capability and never becomes an order.
  */
@@ -34,7 +34,7 @@ export type ChartOverlaySource =
   | "pending"
   | "plan"
   | "signal"
-  | "ruby"
+  | "eleanor"
   | "agent"
   | "preview";
 

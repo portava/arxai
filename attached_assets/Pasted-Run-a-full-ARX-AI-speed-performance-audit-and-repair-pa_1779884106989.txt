@@ -3,7 +3,7 @@ Run a full ARX AI speed/performance audit and repair pass. The app feels slow ac
 Do not ask me any questions during this command. Audit, fix, retest, and keep going until the app feels fast.
 
 Main goal:
-ARX AI must feel instant. Trading pages, scanner, live chart, Ruby, alerts, account pages, admin pages, modals, dropdowns, buttons, tabs, toggles, search, filters, trade validation, and symbol switching should not lag.
+ARX AI must feel instant. Trading pages, scanner, live chart, Eleanor, alerts, account pages, admin pages, modals, dropdowns, buttons, tabs, toggles, search, filters, trade validation, and symbol switching should not lag.
 
 Do not place trades during QA.
 Do not insert arx_live_commands during QA.
@@ -21,7 +21,7 @@ Then create checkpoints after each major group:
 - perf-api-query-cleanup
 - perf-frontend-render-cleanup
 - perf-scanner-chart-feed-cleanup
-- perf-ruby-voice-cleanup
+- perf-eleanor-voice-cleanup
 - perf-final-fast-launch-state
 
 Performance target:
@@ -31,7 +31,7 @@ Performance target:
 - Opening trade ticket should feel instant.
 - Changing symbols should not freeze the UI.
 - Scanner should not lock the app.
-- Ruby should answer text first, then voice asynchronously.
+- Eleanor should answer text first, then voice asynchronously.
 - TTS/audio must never delay chat response.
 - Live chart should not slow the whole page.
 - Alerts/notifications should not spam requests.
@@ -51,7 +51,7 @@ Instrument and measure:
 9. websocket subscriptions
 10. scanner scan duration
 11. chart load duration
-12. Ruby response latency
+12. Eleanor response latency
 13. TTS start/cancel latency
 14. trade ticket open time
 15. trade validation latency
@@ -79,7 +79,7 @@ Fix:
 - heavy components mounted when hidden
 - modals rendering all content while closed
 - charts rendering while offscreen
-- Ruby/TTS components rerendering whole app
+- Eleanor/TTS components rerendering whole app
 - scanner cards rerendering every tick unnecessarily
 
 Use:
@@ -149,7 +149,7 @@ Audit backend endpoints used by:
 - calendar
 - positions
 - trade history
-- Ruby
+- Eleanor
 
 Fix:
 - N+1 queries
@@ -192,7 +192,7 @@ Fix:
 - scanner validation
 - feed status updates
 - historical check
-- Ruby setup reason rendering
+- Eleanor setup reason rendering
 - recent scanner trades panel
 
 Rules:
@@ -216,7 +216,7 @@ Fix chart lag and mismatch.
 
 Requirements:
 - one selectedSymbol source of truth
-- chart, trade panel, ticket, scanner, AI Assist, Ruby all follow it
+- chart, trade panel, ticket, scanner, AI Assist, Eleanor all follow it
 - symbol change updates fast
 - old requests cancelled
 - old chart/ticket/card data cleared
@@ -249,9 +249,9 @@ Rules:
 - normal users still enforce caps
 - no live order placed during QA
 
-PART H — Ruby speed and voice
+PART H — Eleanor speed and voice
 
-Ruby must respond quickly.
+Eleanor must respond quickly.
 
 Fix:
 - text response should appear first
@@ -262,9 +262,9 @@ Fix:
 - no blocking UI while voice loads
 - no huge research dumps
 - no raw backend/tool JSON
-- Ruby market explanation should summarize useful bits first
+- Eleanor market explanation should summarize useful bits first
 - optional “want more detail?” after concise answer
-- Ruby should use same cached feed/router data as scanner/chart where possible
+- Eleanor should use same cached feed/router data as scanner/chart where possible
 - voice preview must not change active voice
 - selected voice must persist correctly
 - Bella default if none selected
@@ -373,7 +373,7 @@ Actions:
 - all refresh buttons
 - all scanner buttons
 - all chart buttons
-- all Ruby buttons
+- all Eleanor buttons
 - all alert actions
 - all allocation actions
 - all admin actions
@@ -444,8 +444,8 @@ Open real app and verify:
 8. chart symbol changes quickly
 9. chart Buy/Sell opens ticket quickly
 10. Live AI Assist symbol dropdown updates quickly
-11. Ruby text response is fast
-12. Ruby voice does not delay text
+11. Eleanor text response is fast
+12. Eleanor voice does not delay text
 13. alerts dismiss instantly
 14. admin allocations search/refresh is fast
 15. no console errors

@@ -1,12 +1,12 @@
 You are now running a deep, end-to-end, full-scale ARX AI system audit, repair, optimization, and grading pass.
 
-This is not a normal QA pass. This must be a complete ecosystem audit touching every frontend page, route, menu item, tab, button, form, modal, chart interaction, scanner function, Ruby AI function, admin function, user function, backend endpoint, service, hook, database model/table, realtime stream, MT5 bridge function, risk/governance function, and live trade function.
+This is not a normal QA pass. This must be a complete ecosystem audit touching every frontend page, route, menu item, tab, button, form, modal, chart interaction, scanner function, Eleanor AI function, admin function, user function, backend endpoint, service, hook, database model/table, realtime stream, MT5 bridge function, risk/governance function, and live trade function.
 
 The goal is to catch 99% of bugs, wasted features, dead buttons, unused pages, wrong data, fake passes, stale information, broken ecosystem connections, duplicate features, dormant code, misleading UI, and features that are not actually wired to truth.
 
 IMPORTANT PRODUCT CONTEXT:
 This is ARX AI: Analyze. Risk. eXecute.
-Ruby is the in-app AI assistant. All AI/user-facing analysis should appear from Ruby, not raw backend wording.
+Eleanor is the in-app AI assistant. All AI/user-facing analysis should appear from Eleanor, not raw backend wording.
 This app is being prepared for live trading operation.
 Live trade testing must be included as part of the audit using the existing approved live test pathway and approved user/operator account only. Do not add new “block live” behavior. Do not convert this into demo-only testing. Live trading paths must be honestly tested, but every live test must use the smallest safe micro lot available and must produce a full audit trail showing exact command, route, MT5 bridge status, EA result, UI update, and final position/account state.
 Do not expose internal function names, backend terms, raw route names, stack traces, or developer language to regular users.
@@ -107,7 +107,7 @@ For every service/hook:
 - per-user allocation/scope
 - bridge error handling
 
-9. Ruby AI Functions
+9. Eleanor AI Functions
 - market analysis
 - scanner explanation
 - chart explanation
@@ -116,15 +116,15 @@ For every service/hook:
 - risk explanation
 - chat memory
 - tool/data access
-- whether Ruby is grounded in current selected symbol and live/stale feed truth
-- whether Ruby exposes internal/backend wording to users
+- whether Eleanor is grounded in current selected symbol and live/stale feed truth
+- whether Eleanor exposes internal/backend wording to users
 
 10. Trading Functions
 - manual buy
 - manual sell
 - one-click scalp
 - multi-trade scalp
-- Ruby-commanded trade
+- Eleanor-commanded trade
 - scanner trade
 - chart trade
 - close trade
@@ -151,12 +151,12 @@ C. Open Trades Flow
 MT5 open positions → backend live positions endpoint/SSE → Open Trades UI → dashboard totals → close/modify actions
 
 D. Scanner Flow
-symbol source → feed availability → scanner result → selected symbol → chart → Ruby explanation → trade buttons → live order path
+symbol source → feed availability → scanner result → selected symbol → chart → Eleanor explanation → trade buttons → live order path
 
 E. Chart Flow
 selected symbol → candle endpoint → source/freshness check → quote alignment → render candles or honest unavailable state → draggable SL/TP/order tools
 
-F. Ruby Flow
+F. Eleanor Flow
 selected market/user request → data gathering → chart/history/news/risk context → plain-English explanation → entry/SL/TP/reward/risk → optional trade command
 
 G. Live Trade Flow
@@ -237,7 +237,7 @@ Source of truth:
 Pass condition:
 Chart must render only valid candles for the selected symbol. If feed is unavailable/stale/mismatched, show honest unavailable/stale state. Do not show composite or stale candles as live.
 
-5. Ruby Truth
+5. Eleanor Truth
 Source of truth:
 - selected symbol
 - current quote/candles
@@ -247,7 +247,7 @@ Source of truth:
 - trade state
 
 Pass condition:
-Ruby must analyze the correct market, use available current data, disclose stale/unavailable data, explain entry/SL/TP/risk/reward/confidence, and never expose backend function names or developer terms to normal users.
+Eleanor must analyze the correct market, use available current data, disclose stale/unavailable data, explain entry/SL/TP/risk/reward/confidence, and never expose backend function names or developer terms to normal users.
 
 6. Live Trade Truth
 Source of truth:
@@ -285,8 +285,8 @@ Suggested thresholds:
 - dashboard/open trades refresh after MT5 change: under 1–3 seconds
 - scanner symbol switch visible response: under 500ms
 - chart first render: under 1.5 seconds when feed available
-- Ruby typing indicator: under 150ms
-- Ruby first response activity: under 1 second when possible
+- Eleanor typing indicator: under 150ms
+- Eleanor first response activity: under 1 second when possible
 
 PHASE 4 — AUTOMATED AND MANUAL TEST MATRIX
 
@@ -370,7 +370,7 @@ E. Scanner Tests
 - Broad Scan tab
 - symbol search
 - collapsible/clickable market groups
-- selecting market updates chart and Ruby
+- selecting market updates chart and Eleanor
 - results appear under Broad Scan, not wrong tab
 - scanner does not use stale/missing feed as live
 - scanner explanation window works
@@ -389,29 +389,29 @@ F. Chart Tests
 - quote/candle mismatch detection
 - draggable order tools
 - entry/SL/TP preview drawing
-- Ruby can draw proposed entry/SL/TP before trade
+- Eleanor can draw proposed entry/SL/TP before trade
 - trade menu opens
 - chart does not disappear on symbol switch
 - chart does not render wrong market
 - chart does not fake live data
 - chart performance
 
-G. Ruby AI Tests
-- Ruby typing indicator appears immediately with animated dots
-- Ruby answers as Ruby
+G. Eleanor AI Tests
+- Eleanor typing indicator appears immediately with animated dots
+- Eleanor answers as Eleanor
 - no backend/internal names exposed
 - selected market explanation is correct
 - scanner explanation is correct
 - chart explanation is correct
-- Ruby gives plain-English and technical breakdown
-- Ruby states entry, stop loss, take profit, planned loss, planned gain, confidence, and invalidation before any trade recommendation
-- Ruby explains what happened after trade
-- Ruby admits stale/unavailable data
-- Ruby does not over-paste raw research
-- Ruby response speed
-- Ruby memory/chat persistence if implemented
-- Ruby can use chart tools to draw entry/SL/TP preview before trade
-- Ruby can access all intended trading tools without inventing unavailable ones
+- Eleanor gives plain-English and technical breakdown
+- Eleanor states entry, stop loss, take profit, planned loss, planned gain, confidence, and invalidation before any trade recommendation
+- Eleanor explains what happened after trade
+- Eleanor admits stale/unavailable data
+- Eleanor does not over-paste raw research
+- Eleanor response speed
+- Eleanor memory/chat persistence if implemented
+- Eleanor can use chart tools to draw entry/SL/TP preview before trade
+- Eleanor can access all intended trading tools without inventing unavailable ones
 
 H. Live Trading Tests
 Test every live trade path using the smallest safe live test size and approved user/operator account only.
@@ -422,7 +422,7 @@ Paths to test:
 - scanner Buy
 - scanner Sell
 - chart Buy/Sell
-- Ruby-commanded trade
+- Eleanor-commanded trade
 - one-click scalp
 - multi-trade scalp if implemented
 - close trade
@@ -494,13 +494,13 @@ K. Settings Tests
 - trading mode settings
 - governance settings
 - voice settings
-- Ruby settings
+- Eleanor settings
 - bridge settings
 - any toggles that do not persist
 - any settings that save but do not affect behavior
 
 L. Voice Tests
-- Ruby voice setting
+- Eleanor voice setting
 - default voice Bella if still intended
 - auto-play response if still implemented
 - no delayed voice minutes later
@@ -538,8 +538,8 @@ O. History/Journal Tests
 - rejected trades recorded or visibly reported
 - closed trades recorded
 - P/L recorded accurately
-- Ruby post-trade explanation stored if intended
-- trade source recorded: scanner/chart/Ruby/manual/scalp
+- Eleanor post-trade explanation stored if intended
+- trade source recorded: scanner/chart/Eleanor/manual/scalp
 
 P. Performance Tests
 Instrument every major action individually and record timings.
@@ -554,9 +554,9 @@ Measure:
 - scanner result calculation
 - symbol switch
 - chart render
-- Ruby typing indicator start
-- Ruby first response
-- Ruby full response
+- Eleanor typing indicator start
+- Eleanor first response
+- Eleanor full response
 - trade button click to backend
 - backend to command queue
 - command queue to MT5/EA result
@@ -639,7 +639,7 @@ Grade these:
 - MT5 Bridge
 - Scanner
 - Chart
-- Ruby AI
+- Eleanor AI
 - Risk/Governance
 - Admin Controls
 - User Permissions
@@ -682,7 +682,7 @@ Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
 - hooks
 - database models
 - MT5 functions
-- Ruby functions
+- Eleanor functions
 - trading functions
 
 3. Ecosystem Map
@@ -691,7 +691,7 @@ Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
 - open trades flow
 - scanner flow
 - chart flow
-- Ruby flow
+- Eleanor flow
 - live trade flow
 - admin/user flow
 - realtime flow
@@ -763,7 +763,7 @@ Do not finish until:
 - every major button has been tested
 - every backend endpoint has been classified
 - every live trade path has been tested or clearly marked blocked with reason
-- every scanner/chart/Ruby truth contract has been checked
+- every scanner/chart/Eleanor truth contract has been checked
 - every admin/user permission path has been checked
 - every dormant/dead/duplicate feature has been listed
 - every fake-pass risk has been identified

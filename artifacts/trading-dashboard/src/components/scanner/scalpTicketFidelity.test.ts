@@ -114,7 +114,7 @@ describe("D1 — the modal seeds from the signal instead of a hardcoded lot", ()
 
 describe("D1 — SignalContext carries the field", () => {
   it("declares suggestedLot", () => {
-    const ctx = read("components/scanner/RubySetupReason.tsx");
+    const ctx = read("components/scanner/EleanorSetupReason.tsx");
     const type = ctx.slice(ctx.indexOf("export type SignalContext"), ctx.indexOf("export type SetupReason"));
     expect(type).toMatch(/suggestedLot\?: number \| null;/);
   });

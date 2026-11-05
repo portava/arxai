@@ -6,7 +6,7 @@ Do not rewrite the feed system yet.
 This is discovery only.
 
 Goal:
-Find every API, provider, feed, bridge, env key, service, endpoint, hook, and UI surface currently involved in ARX market data, chart candles, quotes, scanner results, Ruby analysis, live execution, account totals, and open trades.
+Find every API, provider, feed, bridge, env key, service, endpoint, hook, and UI surface currently involved in ARX market data, chart candles, quotes, scanner results, Eleanor analysis, live execution, account totals, and open trades.
 
 Audit the following:
 
@@ -53,7 +53,7 @@ Create a table with:
 - Source label shown to UI
 - Freshness rules
 - Stale rules
-- Whether Ruby can use it
+- Whether Eleanor can use it
 - Whether it can place/affect trades
 - Whether it is broker truth or analysis-only
 
@@ -61,9 +61,9 @@ Surfaces to check:
 - Main market chart
 - Scanner chart
 - Scanner results
-- Ruby chart read
-- Ruby trade recommendation
-- Ruby live trade command
+- Eleanor chart read
+- Eleanor trade recommendation
+- Eleanor live trade command
 - Dashboard account totals
 - Open Trades panel
 - Admin live account totals
@@ -90,7 +90,7 @@ Data type:
 - Balance/equity/margin/free margin
 - Open P/L
 - Scanner technicals
-- Ruby market analysis
+- Eleanor market analysis
 - News
 - Economic calendar
 - Historical backtest candles/ticks
@@ -123,7 +123,7 @@ Answer:
 - Did the system correctly fall back?
 - Is Polygon actually stale or is the app’s freshness calculation wrong?
 - Is the displayed chart frozen intentionally?
-- Is Ruby correctly blocked from AI-confirmed analysis?
+- Is Eleanor correctly blocked from AI-confirmed analysis?
 
 6. Check whether TwelveData, Deriv, Polygon/Massive, MT5, or any other feed is actually active.
 
@@ -133,7 +133,7 @@ For each provider, report:
 - endpoint reachable in current environment: yes/no
 - used by chart: yes/no
 - used by scanner: yes/no
-- used by Ruby: yes/no
+- used by Eleanor: yes/no
 - used by trade execution: yes/no
 - safe to use as execution truth: yes/no
 - current health/freshness
@@ -144,7 +144,7 @@ Find whether ARX has multiple separate ways to fetch candles/quotes that do not 
 Look for:
 - chart uses one provider
 - scanner uses another
-- Ruby uses another
+- Eleanor uses another
 - dashboard uses MT5
 - Open Trades uses DB
 - allocation uses DB/MT5
@@ -157,7 +157,7 @@ Verify:
 - external provider prices cannot update balance/equity/open P/L
 - external provider candles cannot create live fills
 - external provider quotes cannot override MT5 execution price
-- Ruby trade commands use broker bridge only
+- Eleanor trade commands use broker bridge only
 - manual trades use broker bridge only
 - scanner trade buttons use broker bridge only
 
@@ -168,7 +168,7 @@ Verify:
 - APIs/providers missing env keys
 - Actual current feed path for EURUSD chart
 - Actual current feed path for scanner
-- Actual current feed path for Ruby
+- Actual current feed path for Eleanor
 - Actual current feed path for live execution
 - Actual current feed path for dashboard/open trades
 - Feed mismatches

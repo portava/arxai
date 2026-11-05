@@ -7,11 +7,11 @@ description: How FeedConfidenceBadge honesty is enforced on the Scanner chart pa
 
 On the Scanner chart panel (`ScannerChartPanel.tsx`) and the per-signal scalp
 cards (`ScalpSignalCard.tsx`), the `FeedConfidenceBadge` (the only badge that can
-read "Clean · AI") is reachable **only through `RubyChartRead`** — both files
-render `<RubyChartRead>` and do NOT render a raw `<FeedConfidenceBadge>`.
+read "Clean · AI") is reachable **only through `EleanorChartRead`** — both files
+render `<EleanorChartRead>` and do NOT render a raw `<FeedConfidenceBadge>`.
 
-`RubyChartRead` caps that badge with `aiUsableResolved={panel.badgeAiUsable}`,
-derived from the shared `useScannerTruth` verdict via `resolveRubyReadPanelState`
+`EleanorChartRead` caps that badge with `aiUsableResolved={panel.badgeAiUsable}`,
+derived from the shared `useScannerTruth` verdict via `resolveEleanorReadPanelState`
 (full ⇒ true, downgraded ⇒ false, unresolved ⇒ null).
 
 The Scanner chart **header** badge is the separate honest `ChartFeedStatusBadge`
@@ -21,7 +21,7 @@ The Scanner chart **header** badge is the separate honest `ChartFeedStatusBadge`
 scanner truth. The honesty holds structurally, not by props on the two files.
 
 **How to apply:** never drop a raw `<FeedConfidenceBadge>` into these two
-surfaces — route it through `RubyChartRead`, or pass `aiUsableResolved` derived
+surfaces — route it through `EleanorChartRead`, or pass `aiUsableResolved` derived
 from `useScannerTruth`. The guard `ScannerFeedBadgeCap.test.tsx` fails the build
 if a raw badge is reintroduced. The cap helper is `capConfidence` in
 `lib/feed-confidence.ts`; the badge exposes `data-ai-usable` for DOM assertions.

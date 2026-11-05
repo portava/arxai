@@ -108,7 +108,7 @@ For real MT5 positions, show:
 
 * ARX
 * Manual MT5
-* Ruby
+* Eleanor
 * Admin
 
 If any field is missing from MT5:

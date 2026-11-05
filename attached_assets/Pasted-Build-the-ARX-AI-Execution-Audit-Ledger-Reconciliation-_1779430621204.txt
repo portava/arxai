@@ -15,7 +15,7 @@ Do not:
 - Change admin approval rules.
 - Change existing live/demo permission gates.
 - Change scanner logic.
-- Change Ruby intelligence.
+- Change Eleanor intelligence.
 - Redesign unrelated pages.
 - Refactor working systems unless needed for this audit/ledger layer.
 
@@ -67,7 +67,7 @@ Each audit event should include:
 - status
 - reason
 - timestamp
-- source: user, Ruby, admin, system, MT5 bridge
+- source: user, Eleanor, admin, system, MT5 bridge
 - safe user-facing message
 - internal technical details stored server-side only
 

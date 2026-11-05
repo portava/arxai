@@ -54,7 +54,7 @@ Trace the full scanner path:
 - historical check
 - confidence scoring
 - bias/scanner card generation
-- Ruby summary
+- Eleanor summary
 - news risk check
 - trade setup modal
 - Buy/Sell buttons
@@ -168,8 +168,8 @@ Make recent scanner trades mode-aware:
 - PAPER: paper scanner trades
 - TEST rows hidden from normal users
 
-Task 9 — Ruby scanner explanation:
-Ruby’s scanner summary must use the same scanner data source:
+Task 9 — Eleanor scanner explanation:
+Eleanor’s scanner summary must use the same scanner data source:
 - live feed for LIVE_SHARED
 - demo feed for DEMO
 - paper/sim feed for PAPER
@@ -185,7 +185,7 @@ Add tests proving:
 4. Scanner trade modal does not show DEMO badge in LIVE_SHARED.
 5. Buy/Sell in LIVE_SHARED does not create demo/paper commands.
 6. Recent scanner trades are mode-scoped.
-7. Ruby scanner explanation uses same feed source as scanner.
+7. Eleanor scanner explanation uses same feed source as scanner.
 8. Historical check uses routed candles and reports missing data honestly.
 9. arx_live_commands count remains unchanged during tests.
 

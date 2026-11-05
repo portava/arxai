@@ -288,7 +288,7 @@ test("expiresAt is in the future and validForSeconds > 0 for live setups", () =>
   assert.ok(new Date(r.expiresAt).getTime() > NOW);
 });
 
-// ── Ruby Flame Scalp — flame-read tests ───────────────────────────────────
+// ── Eleanor Flame Scalp — flame-read tests ───────────────────────────────────
 //
 // The flame read needs a live candle window. With no candles (every test
 // above) the read is honest-BLIND and applies NO downgrade — that backward

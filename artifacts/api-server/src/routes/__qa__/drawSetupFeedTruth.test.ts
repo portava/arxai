@@ -21,17 +21,17 @@ mock.method(database.pool, "connect", () => { throw new Error("Unexpected databa
 type Ctx = Record<string, any>;
 let ctx: Ctx | null = null;
 
-const rubyCtxMod = await import("../../lib/data/chart/rubyChartContext.js");
-mock.module("../../lib/data/chart/rubyChartContext.js", {
-  namedExports: { ...rubyCtxMod, buildRubyChartContext: async () => { if (!ctx) throw new Error("no chart"); return ctx; } },
+const eleanorCtxMod = await import("../../lib/data/chart/eleanorChartContext.js");
+mock.module("../../lib/data/chart/eleanorChartContext.js", {
+  namedExports: { ...eleanorCtxMod, buildEleanorChartContext: async () => { if (!ctx) throw new Error("no chart"); return ctx; } },
 });
 const poolMod = await import("../../lib/live/masterBridgePool.js");
 mock.module("../../lib/live/masterBridgePool.js", {
   namedExports: { ...poolMod, getUserAllocationView: async () => { throw new Error("not read in this test"); } },
 });
-const recordMod = await import("../../lib/chart/recordRubyRead.js");
-mock.module("../../lib/chart/recordRubyRead.js", {
-  namedExports: { ...recordMod, recordRubyReadDecision: () => {} },
+const recordMod = await import("../../lib/chart/recordEleanorRead.js");
+mock.module("../../lib/chart/recordEleanorRead.js", {
+  namedExports: { ...recordMod, recordEleanorReadDecision: () => {} },
 });
 const signalsMod = await import("../../lib/assistant/setupSignals.js");
 mock.module("../../lib/assistant/setupSignals.js", {

@@ -17,7 +17,7 @@ Every profile and role must show accurate, current account balance information b
 - investor reports
 - trade panels
 - risk panels
-- Ruby explanations
+- Eleanor explanations
 - MT5/Deriv bridge status
 - live execution readiness panels
 
@@ -37,7 +37,7 @@ Include:
 - Positions
 - Pending orders
 - Risk
-- Ruby
+- Eleanor
 - Investor pages
 - Admin Hub
 - User management
@@ -155,21 +155,21 @@ Logged-out:
 - sees no balance data
 - cannot access balance endpoints by direct route
 
-PHASE 6 — RUBY AND AI DATA ACCURACY
+PHASE 6 — ELEANOR AND AI DATA ACCURACY
 
-Ruby must not quote stale or dummy balances.
+Eleanor must not quote stale or dummy balances.
 
-Audit Ruby, scanner, risk, and AI ecosystem prompts/context to ensure:
+Audit Eleanor, scanner, risk, and AI ecosystem prompts/context to ensure:
 
-- Ruby uses the current account/allocation snapshot when discussing balance.
-- Ruby identifies if balance data is stale or unavailable.
-- Ruby never invents a balance.
-- Ruby never reads old cached values as current.
+- Eleanor uses the current account/allocation snapshot when discussing balance.
+- Eleanor identifies if balance data is stale or unavailable.
+- Eleanor never invents a balance.
+- Eleanor never reads old cached values as current.
 - Risk calculations use fresh or clearly timestamped account values.
 - Scanner/risk sizing logic does not use dummy capital.
 - Agent/governance traces do not claim account values unless sourced.
 
-If data is unavailable, Ruby should say plainly:
+If data is unavailable, Eleanor should say plainly:
 “Current account balance is unavailable right now” or “This value needs a fresh broker/account update,” not fabricate.
 
 PHASE 7 — DATABASE / API / CLIENT AUDIT
@@ -233,7 +233,7 @@ Run tests proving:
 - admin sees correct master/account/allocation distinction
 - bridge stale heartbeat marks balance as stale
 - unavailable broker snapshot shows honest empty state
-- Ruby refuses to quote unavailable balances
+- Eleanor refuses to quote unavailable balances
 - risk logic does not use dummy capital
 - trade/position updates invalidate affected balances
 - logged-out users cannot access balance endpoints
@@ -258,7 +258,7 @@ Report:
 4. What automatic refresh/invalidation was added.
 5. What empty/stale states were added.
 6. What role leaks were fixed.
-7. How Ruby/risk/scanner were prevented from using dummy balances.
+7. How Eleanor/risk/scanner were prevented from using dummy balances.
 8. What tests passed.
 9. Any remaining blockers with exact file/page/function names.
 
@@ -271,7 +271,7 @@ Do not mark complete until:
 - all balance surfaces use the correct source of truth
 - balances refresh automatically without manual commands
 - role-based balance visibility is correct
-- Ruby/risk/scanner do not use fake capital
+- Eleanor/risk/scanner do not use fake capital
 - admin can distinguish broker balance, allocation ledger, investor ledger, and reconciliation state
 - unavailable data shows honest empty state
 - all validation/tests pass

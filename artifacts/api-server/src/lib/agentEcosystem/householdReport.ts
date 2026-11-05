@@ -15,7 +15,7 @@
 // SAFETY / SCOPE: OBSERVATION ONLY. Reads the advisory registry + traces and
 // persists a report row. NOTHING here trades, gates, slows, or blocks any
 // live/demo path or touches the 16-gate live pipeline. The plain-English
-// `rubySummary` deliberately uses NO internal agent codes / table / route names.
+// `eleanorSummary` deliberately uses NO internal agent codes / table / route names.
 
 import {
   db,
@@ -335,7 +335,7 @@ function buildHeadline(body: HouseholdReportBody): string {
 }
 
 /** Plain-English summary for the user-facing assistant — NO internal codes. */
-export function buildRubySummary(body: HouseholdReportBody): string {
+export function buildEleanorSummary(body: HouseholdReportBody): string {
   const parts: string[] = [];
   parts.push(
     `Here's how the trading team did today. There are ${body.totals.totalAgents} specialists on the desk, ` +
@@ -380,7 +380,7 @@ export async function generateHouseholdReport(opts: {
   const now = opts.now ?? new Date();
   const body = await buildHouseholdReportBody(now);
   const headline = buildHeadline(body);
-  const rubySummary = buildRubySummary(body);
+  const eleanorSummary = buildEleanorSummary(body);
 
   // Atomic upsert keyed on the per-UTC-day unique index (report_date). Two
   // concurrent generates for the same day collapse into one row instead of one
@@ -391,7 +391,7 @@ export async function generateHouseholdReport(opts: {
       reportId: randomUUID(),
       reportDate: body.reportDate,
       summary: JSON.stringify(body),
-      rubySummary,
+      eleanorSummary,
       headline,
       totalAgents: body.totals.totalAgents,
       generatedByUserId: opts.generatedByUserId ?? null,
@@ -402,7 +402,7 @@ export async function generateHouseholdReport(opts: {
       target: agentHouseholdReportsTable.reportDate,
       set: {
         summary: JSON.stringify(body),
-        rubySummary,
+        eleanorSummary,
         headline,
         totalAgents: body.totals.totalAgents,
         // Preserve a prior generator attribution if this refresh has none.
@@ -421,7 +421,7 @@ export interface HouseholdReportView {
   reportDate: string;
   headline: string;
   totalAgents: number;
-  rubySummary: string;
+  eleanorSummary: string;
   body: HouseholdReportBody | null;
   generatedByUserId: number | null;
   createdAt: string;
@@ -443,7 +443,7 @@ export function toReportView(row: AgentHouseholdReportRow): HouseholdReportView 
     reportDate: row.reportDate,
     headline: row.headline,
     totalAgents: row.totalAgents,
-    rubySummary: row.rubySummary,
+    eleanorSummary: row.eleanorSummary,
     body: parseBody(row.summary),
     generatedByUserId: row.generatedByUserId,
     createdAt: row.createdAt.toISOString(),
@@ -479,21 +479,21 @@ export async function getHouseholdReport(reportId: string): Promise<HouseholdRep
 
 /**
  * Latest persisted report's plain-English team summary, for the user-facing
- * read-only assistant (Ruby). Returns ONLY the `rubySummary` (produced by
- * `buildRubySummary`, which deliberately carries no internal agent codes,
+ * read-only assistant (Eleanor). Returns ONLY the `eleanorSummary` (produced by
+ * `buildEleanorSummary`, which deliberately carries no internal agent codes,
  * table/route names, or operator/admin numbers) plus its date. Never returns
  * the structured `body`, headline, or registry totals. Null when no report
  * has been generated yet — callers surface an honest empty state, never
  * fabricate a summary.
  */
-export async function getLatestRubyTeamSummary(): Promise<{ reportDate: string; rubySummary: string } | null> {
+export async function getLatestEleanorTeamSummary(): Promise<{ reportDate: string; eleanorSummary: string } | null> {
   const [row] = await db
     .select({
       reportDate: agentHouseholdReportsTable.reportDate,
-      rubySummary: agentHouseholdReportsTable.rubySummary,
+      eleanorSummary: agentHouseholdReportsTable.eleanorSummary,
     })
     .from(agentHouseholdReportsTable)
     .orderBy(desc(agentHouseholdReportsTable.reportDate))
     .limit(1);
-  return row ? { reportDate: row.reportDate, rubySummary: row.rubySummary } : null;
+  return row ? { reportDate: row.reportDate, eleanorSummary: row.eleanorSummary } : null;
 }

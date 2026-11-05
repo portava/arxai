@@ -2,7 +2,7 @@
 //
 // All functions here are pure & deterministic (no IO, DB, HTTP, Date.now, or
 // randomness — callers pass `nowMs`/ages in). They convert a real open position
-// + the original Ruby signal + the live broker price into a health state, TP
+// + the original Eleanor signal + the live broker price into a health state, TP
 // progress, SL distance, and break-even / partial / conflict / correlation /
 // overtrading GUIDANCE. Nothing here closes, modifies, or places a trade.
 //
@@ -342,7 +342,7 @@ function bandMid(b: { from: number; to: number } | null): number | null {
 }
 
 /**
- * Surface aggressive / better / safest entry alternatives from the original Ruby
+ * Surface aggressive / better / safest entry alternatives from the original Eleanor
  * signal's zones. Each is emitted ONLY when its zone is real — a missing zone
  * yields fewer alternatives, never a fabricated price. Returns [] when there is
  * no signal.
@@ -820,7 +820,7 @@ function summarize(
 
 /**
  * Compose the full trade-health report for a user's open positions. `signals` is
- * a per-symbol map of the original Ruby reads (best-effort; null entries are
+ * a per-symbol map of the original Eleanor reads (best-effort; null entries are
  * fine). `overtrading` carries real behavioral inputs (all-null → no behavior
  * warnings). Pure (caller passes nowMs + evaluatedAtIso + chartSymbol).
  */

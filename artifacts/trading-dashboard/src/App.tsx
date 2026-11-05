@@ -33,7 +33,7 @@ const AdminInvestorsPage = lazy(() => import("@/pages/admin/investors"));
 const AdminProviderHealth = lazy(() => import("@/pages/admin/provider-health"));
 const AdminHandshakeMonitor = lazy(() => import("@/pages/admin/handshake-monitor"));
 const AdminSystemCohesion = lazy(() => import("@/pages/admin/system-cohesion"));
-const AdminRubyVoiceSettings = lazy(() => import("@/pages/admin/ruby-voice-settings"));
+const AdminEleanorVoiceSettings = lazy(() => import("@/pages/admin/eleanor-voice-settings"));
 const AdminChartBrainBenchmark = lazy(() => import("@/pages/admin/chart-brain-benchmark"));
 
 // Trading School (learning) pages — code-split, reachable from the Performance nav group
@@ -168,7 +168,7 @@ const AdminEaUpdates = lazy(() => import("@/pages/admin/ea-updates"));
 const AdminBridgeDiagnostics = lazy(() => import("@/pages/admin/bridge-diagnostics"));
 const AdminAgentEcosystem = lazy(() => import("@/pages/admin/agent-ecosystem"));
 const AdminSelfTradeAi = lazy(() => import("@/pages/admin/self-trade-ai"));
-const AdminRubyQuality = lazy(() => import("@/pages/admin/ruby-quality"));
+const AdminEleanorQuality = lazy(() => import("@/pages/admin/eleanor-quality"));
 const AdminAiFixAgent = lazy(() => import("@/pages/admin/ai-fix-agent"));
 const AdminTimingBrainSnapshots = lazy(() => import("@/pages/admin/timing-brain-snapshots"));
 const AdminDataManagement = lazy(() => import("@/pages/admin-data-management"));
@@ -380,8 +380,7 @@ function Router() {
           <Route path="/admin/agent-ecosystem" component={AdminAgentEcosystem} />
           <Route path="/self-trade-ai" component={AdminSelfTradeAi} />
           <Route path="/admin/self-trade-ai" component={AdminSelfTradeAi} />
-          <Route path="/admin/eleanor-quality" component={AdminRubyQuality} />
-          <Route path="/admin/ruby-quality" component={AdminRubyQuality} />
+          <Route path="/admin/eleanor-quality" component={AdminEleanorQuality} />
           <Route path="/admin/ai-fix-agent" component={AdminAiFixAgent} />
           <Route path="/admin/timing-brain-snapshots" component={AdminTimingBrainSnapshots} />
           <Route path="/admin/operator-command-center" component={AdminOperatorCommandCenter} />
@@ -452,8 +451,7 @@ function Router() {
           <Route path="/admin/provider-health" component={AdminProviderHealth} />
           <Route path="/admin/handshake-monitor" component={AdminHandshakeMonitor} />
           <Route path="/admin/system-cohesion" component={AdminSystemCohesion} />
-          <Route path="/admin/eleanor-voice" component={AdminRubyVoiceSettings} />
-          <Route path="/admin/ruby-voice" component={AdminRubyVoiceSettings} />
+          <Route path="/admin/eleanor-voice" component={AdminEleanorVoiceSettings} />
           <Route path="/admin/chart-brain-benchmark" component={AdminChartBrainBenchmark} />
 
           <Route component={NotFound} />

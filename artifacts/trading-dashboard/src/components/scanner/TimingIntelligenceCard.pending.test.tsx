@@ -9,7 +9,7 @@ let gateState: Record<string, unknown> = {};
 vi.mock("@/hooks/useScannerReadGate", () => ({ useScannerReadGate: () => gateState }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["15m", () => {}] }));
 vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ news: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@workspace/api-client-react", () => ({
   useGetTimingBrain: () => ({
     data: { timeframe: "M15", timingGrade: "B", dataQuality: { label: "real", note: "" } },

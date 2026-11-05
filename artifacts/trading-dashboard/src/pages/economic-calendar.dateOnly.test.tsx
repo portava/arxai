@@ -1,7 +1,7 @@
 // Economic Calendar: FRED publishes release DATES only (the provider emits a
 // midnight-UTC sentinel and eventTimeLocal=null). A release dated today must
 // not be shown as "00:00 UTC · 9h ago", must not drop out of Next Event, and
-// Ruby's read must not say it is waiting for calendar data.
+// Eleanor's read must not say it is waiting for calendar data.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetTimingBrainMultiQueryKey: () => ["timing-multi"],
 }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => {}] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: EconomicCalendarPage } = await import("./economic-calendar");
 
@@ -69,11 +69,11 @@ describe("Economic Calendar: date-only (FRED) releases", () => {
     expect(next.textContent).toMatch(/time not published/i);
   });
 
-  it("Ruby's News Read talks about the pending release, not 'waiting for calendar data'", async () => {
+  it("Eleanor's News Read talks about the pending release, not 'waiting for calendar data'", async () => {
     renderPage();
     await screen.findByTestId(`event-time-${FRED_CPI.id}`);
     expect(screen.queryByText(/is waiting for calendar data/)).toBeNull();
-    const read = screen.getByTestId("ruby-news-read");
+    const read = screen.getByTestId("eleanor-news-read");
     expect(read.textContent).toContain("Consumer Price Index");
     expect(read.textContent).not.toMatch(/ago/);
   });

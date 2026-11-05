@@ -2,7 +2,7 @@
 //
 // Two invariants are pinned here:
 //
-//   1. SAFETY: opening the trade ticket from an AI/Ruby setup-preview
+//   1. SAFETY: opening the trade ticket from an AI/Eleanor setup-preview
 //      ("Use this setup") must NEVER auto-dispatch, even for one-click-armed
 //      shared-account users. ChartTradeEntry must pass `suppressAutoConfirm`
 //      to the shared ticket whenever the open was initiated by a prefill, and

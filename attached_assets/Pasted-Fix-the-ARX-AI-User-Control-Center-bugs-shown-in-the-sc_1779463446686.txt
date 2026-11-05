@@ -53,7 +53,7 @@ Inside “Manage Access,” organize controls into simple sections:
 - Account Access
 - Trading Access
 - Bridge Access
-- Ruby / AI Access
+- Eleanor / AI Access
 - Scanner Access
 - Risk Limits
 - Templates
@@ -190,6 +190,6 @@ After fixing, verify:
 - Admin does not need to jump through multiple complicated pages to approve or update one user.
 - Dangerous live/shared bridge actions remain protected by confirmation.
 - Regular users cannot access any admin controls.
-- No existing login, scanner, Ruby, trading modal, bridge status, or admin permissions are broken.
+- No existing login, scanner, Eleanor, trading modal, bridge status, or admin permissions are broken.
 
 Reuse existing code where possible. Do not rebuild unrelated pages.

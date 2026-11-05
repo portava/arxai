@@ -48,9 +48,9 @@ const DEMO_INTENT_ACTION: Record<string, IntentAction> = {
 // The page or agent that produced a demo command decides its governor origin.
 // Automated producers (autopilot, missions, self-trade, the Position Guardian)
 // may only tighten a stop, exactly as on the live path.
-export function demoIntentOrigin(sourcePage: unknown): "manual" | "ruby" | "automation" {
+export function demoIntentOrigin(sourcePage: unknown): "manual" | "eleanor" | "automation" {
   const s = typeof sourcePage === "string" ? sourcePage : "";
-  if (/ruby|assistant/i.test(s)) return "ruby";
+  if (/eleanor|assistant/i.test(s)) return "eleanor";
   if (/self_trade|mission|autopilot|automation|position_guardian/i.test(s)) return "automation";
   return "manual";
 }

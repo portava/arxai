@@ -2,7 +2,7 @@ Continue from the last successful checkpoint.
 
 Do not change or unlock live execution. Keep liveLocked=true, allowOrderExecution=false for live, commandExecutionAllowed=false for live, and brokerPlacementImplemented=false. This phase is DEMO ONLY.
 
-PHASE: ARX Demo Trading UX + Ruby Memory + Scanner Entry Cleanup
+PHASE: ARX Demo Trading UX + Eleanor Memory + Scanner Entry Cleanup
 
 First inspect the existing code before making changes. Reuse existing services, tables, routes, schemas, components, and naming where possible. Do not create duplicate systems if one already exists.
 
@@ -60,29 +60,29 @@ Fix and improve these areas:
 - The command source must be MARKET_SCANNER.
 - Show the final MT5 result after dispatch.
 
-6. Ruby explanation window on scanner
-- On each scanner result, include a small Ruby explanation panel/window.
-- Label all AI/system assistant responses as Ruby.
-- Ruby should explain why the market appears buy/sell/avoid based on available data only:
+6. Eleanor explanation window on scanner
+- On each scanner result, include a small Eleanor explanation panel/window.
+- Label all AI/system assistant responses as Eleanor.
+- Eleanor should explain why the market appears buy/sell/avoid based on available data only:
   - chart/history
   - market structure
   - indicators
   - available scanner signals
   - news/current events only if available in the app
-- If data is missing, Ruby must say what is missing instead of pretending.
+- If data is missing, Eleanor must say what is missing instead of pretending.
 - Keep wording short, useful, and trader-friendly.
 
-7. Saved Ruby chat memory
-- Rename/standardize the app AI assistant as Ruby everywhere:
+7. Saved Eleanor chat memory
+- Rename/standardize the app AI assistant as Eleanor everywhere:
   - system AI
   - AI chat
   - AI prompts
   - scanner explanation
   - trade analysis
 - Add persistent saved chats unless the user clears them.
-- Store Ruby messages in the app database/backlog tied to the logged-in user.
-- Ruby should be able to load prior user chat history for context.
-- Add a clear “Clear Ruby Memory” or “Clear Chat History” option.
+- Store Eleanor messages in the app database/backlog tied to the logged-in user.
+- Eleanor should be able to load prior user chat history for context.
+- Add a clear “Clear Eleanor Memory” or “Clear Chat History” option.
 - Do not store fake memory in frontend-only state.
 
 8. Menu search
@@ -123,7 +123,7 @@ Fix and improve these areas:
   - scanner trades table updates
   - open demo positions table updates
   - live execution remains disabled
-  - Ruby messages persist and can be cleared
+  - Eleanor messages persist and can be cleared
   - menu search filters menu items
   - MT5 Bridge UI shows active bridge cleanly
 - Run the tests.

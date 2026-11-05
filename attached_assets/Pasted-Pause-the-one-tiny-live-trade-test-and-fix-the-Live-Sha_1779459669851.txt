@@ -16,7 +16,7 @@ Do not:
 - Disable kill switches.
 - Bypass admin approvals.
 - Change MT5 execution logic.
-- Change scanner, Ruby, dashboard, auth, or open-trades logic unless a tiny read-only status contract fix is required.
+- Change scanner, Eleanor, dashboard, auth, or open-trades logic unless a tiny read-only status contract fix is required.
 
 CURRENT BUGS FROM SCREENSHOT:
 - Live Shared — Activation page shows: readiness error: INTERNAL_ERROR.

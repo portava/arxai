@@ -4,7 +4,7 @@
 // Readiness is graded from the candle engines, which only check aiUsable and
 // staleness. The chart-truth gate is a stricter, separate verdict (Chart Truth
 // ≥ 75, feed not stale, mirror not failed); for a user without a bound broker
-// quote it is usually closed. Ruby already answers "Chart data is syncing…"
+// quote it is usually closed. Eleanor already answers "Chart data is syncing…"
 // for that state, so the decision summary and the best-action sentence must
 // not invite action on the same read. Offline: no provider, DB or broker calls.
 
@@ -232,13 +232,13 @@ test("route enrichment re-derives the summary from the per-user gate (both direc
   assert.doesNotMatch(blocked.marketSentences.bestNextAction.text, /act with a defined stop/);
 });
 
-// Truth: the verification claimed "Same conditions Ruby's chart read requires"
-// but left out Ruby's handshake check (every candle-data check measured and
+// Truth: the verification claimed "Same conditions Eleanor's chart read requires"
+// but left out Eleanor's handshake check (every candle-data check measured and
 // passing, real OHLC). With no bound broker quote the broker comparison is
 // unmeasured, so a clean feed scores exactly 75: the gate opened, the board
-// said "A · Ready" / "act with a defined stop", and Ruby on the same tab
+// said "A · Ready" / "act with a defined stop", and Eleanor on the same tab
 // answered "syncing" because BrokerPriceAlignment was WARN.
-test("Chart Truth exactly 75 with no broker comparison is not verified, matching Ruby's handshake", async () => {
+test("Chart Truth exactly 75 with no broker comparison is not verified, matching Eleanor's handshake", async () => {
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const truth = truthFixture();
   const alignment = noBrokerAlignment(1.1, "LAST");
@@ -246,7 +246,7 @@ test("Chart Truth exactly 75 with no broker comparison is not verified, matching
   assert.equal(score.score, 75, "fixture: every measured check is perfect, the broker comparison is unmeasured");
   const g = computeChartGateOutput(score, read as never, alignment, truth, feed);
   assert.equal(g.confidentReadAllowed, true);
-  assert.notEqual(buildChartHandshake(g, score).sourceOverall, "PASS", "Ruby's read is syncing");
+  assert.notEqual(buildChartHandshake(g, score).sourceOverall, "PASS", "Eleanor's read is syncing");
 
   const v = chartReadVerification(g, feed, score);
   assert.equal(v.verified, false);
@@ -270,7 +270,7 @@ test("candles that are not real OHLC are not a verified read", async () => {
   assert.ok(v.reasons.includes("the provider does not deliver real OHLC candles"), v.reasons.join("; "));
 });
 
-test("a verified read is exactly one Ruby's handshake also passes", async () => {
+test("a verified read is exactly one Eleanor's handshake also passes", async () => {
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const truth = truthFixture();
   const s = boundScore(truth);

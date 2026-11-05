@@ -25,7 +25,7 @@ Primary goals:
 1. Create a safe LIVE-authorized browser QA path for timing the real app.
 2. Capture true frontend/browser timing for real user interactions.
 3. Fix the qa:seed-dom cleanup glob bug.
-4. Confirm Scanner, trade modal, Ruby, and bottom navigation are fast in the actual browser.
+4. Confirm Scanner, trade modal, Eleanor, and bottom navigation are fast in the actual browser.
 5. Keep all trading actions truthful and connected to the live environment.
 6. Do not accidentally place a live trade unless this task explicitly reaches the controlled live micro-trade test step.
 
@@ -89,7 +89,7 @@ Measure:
 6. chart skeleton render time
 7. search usable time
 8. modal open time
-9. Ruby thinking indicator time
+9. Eleanor thinking indicator time
 10. final response/render time where applicable
 
 Use one of these safe approaches:
@@ -130,9 +130,9 @@ Normal trading flow:
 12. Plan Buy modal opens.
 13. Plan Sell modal opens.
 14. Lot input responds.
-15. Ruby opens.
-16. Ruby thinking dots appear.
-17. Ruby response does not freeze the app.
+15. Eleanor opens.
+16. Eleanor thinking dots appear.
+17. Eleanor response does not freeze the app.
 18. More/Settings opens.
 19. Blocked Paper/admin/dev/dormant routes are denied for normal users.
 
@@ -164,7 +164,7 @@ If live execution is not explicitly required, test only:
 2. input timing
 3. pending-state UI readiness
 4. pre-confirm validation timing
-5. Ruby/trade-assist timing
+5. Eleanor/trade-assist timing
 
 PART 5 — Performance targets
 
@@ -180,7 +180,7 @@ Targets:
 8. Plan Buy modal open: under 1 second.
 9. Plan Sell modal open: under 1 second.
 10. Lot input response: under 100ms.
-11. Ruby thinking indicator: under 100ms.
+11. Eleanor thinking indicator: under 100ms.
 12. No page appears frozen.
 13. No page takes around 7 seconds.
 
@@ -258,8 +258,8 @@ Final report must include:
 12. market selection timing.
 13. Plan Buy modal open timing.
 14. Plan Sell modal open timing.
-15. Ruby thinking indicator timing.
-16. Ruby response timing if tested.
+15. Eleanor thinking indicator timing.
+16. Eleanor response timing if tested.
 17. any action still over target and why.
 18. fixes applied, if any.
 19. confirmation no accidental live trade placed.

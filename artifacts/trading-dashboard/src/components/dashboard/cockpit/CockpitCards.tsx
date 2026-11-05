@@ -5,14 +5,14 @@
 // fabricated numbers, no new trade/AI engine. Wiring sources:
 //
 //   Account snapshot ...... useGetMeSharedAccountSummary + useTradingMode
-//   Ruby market view ...... useGetBrainSymbols + useGetCoachExplanation + useActiveSymbol
+//   Eleanor market view ...... useGetBrainSymbols + useGetCoachExplanation + useActiveSymbol
 //   Critical events ....... useGetEconomicCalendarEnvelope({ impact: "high" }) (events + read state in one read)
 //   Open positions ........ useGetMeSharedAccountPositions  (MT5-confirmed only)
 //   Today performance ..... useGetPerformanceSummary
 //   Alerts summary ........ useGetCriticalAlerts            (grouped, de-duped)
 //
 // Navigation reuses the existing routes via <Link>. Trade Now / Prepare Trade
-// point at /trade-command-room; Ask Ruby / Explain at /ai-command-center;
+// point at /trade-command-room; Ask Eleanor / Explain at /ai-command-center;
 // Open Scanner at /market-scanner — all unchanged.
 
 import { useMemo } from "react";
@@ -87,7 +87,7 @@ const BIAS_TEXT: Record<"success" | "danger" | "info" | "muted", string> = {
    ──────────────────────────────────────────────────────────────────────── */
 export function AccountSnapshotCard() {
   const mode = useTradingMode();
-  // Shared SSE snapshot — same source as Open Trades and Ruby panel so all
+  // Shared SSE snapshot — same source as Open Trades and Eleanor panel so all
   // three surfaces always show the same open P/L and position count.
   const liveCtx = useLiveAccountSnapshotCtx();
   const summaryQ = useGetMeSharedAccountSummary({
@@ -115,7 +115,7 @@ export function AccountSnapshotCard() {
   // When in live-shared mode (non-admin): prefer the SSE stream's open P/L and
   // count — they come from the same buildLiveAccountSnapshot adapter as the
   // account-stream, giving identical numbers across Dashboard, Open Trades,
-  // and Ruby. Admin/owner stay on the master-snapshot path they need.
+  // and Eleanor. Admin/owner stay on the master-snapshot path they need.
   const liveSnap = mode.isLiveShared && !isOwnerAdmin && !liveCtx.isUnavailable
     ? liveCtx.snapshot
     : null;
@@ -386,7 +386,7 @@ export function AccountSnapshotCard() {
    2 · TRADING PERMISSION
    Clean "can I trade?" summary from the unified mode resolver + the existing
    permission status surfaced through useTradingMode. Trade Now → trade room,
-   Ask Ruby → AI command center. No engine logic here.
+   Ask Eleanor → AI command center. No engine logic here.
    ──────────────────────────────────────────────────────────────────────── */
 export function TradingPermissionSummaryCard() {
   const { name } = useAssistantName();
@@ -483,7 +483,7 @@ export function TradingPermissionSummaryCard() {
         <ActionButton href="/trade-command-room" primary icon={<Zap className="h-4 w-4" />} data-testid="permission-trade-now">
           Trade Now
         </ActionButton>
-        <ActionButton href="/ai-command-center" icon={<MessageCircle className="h-4 w-4" />} data-testid="permission-ask-ruby">
+        <ActionButton href="/ai-command-center" icon={<MessageCircle className="h-4 w-4" />} data-testid="permission-ask-eleanor">
           Ask {name}
         </ActionButton>
       </div>
@@ -508,13 +508,13 @@ function Row({ label, value, valueClass, title, "data-testid": testId }: { label
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   3 · RUBY'S MARKET VIEW
+   3 · ELEANOR'S MARKET VIEW
    Bias / confidence / risk / one-line reason for the active symbol, drawn
    from the existing brain-symbols + coach explanation feeds. Explain & Prepare
    Trade route to the existing AI / trade surfaces.
    ──────────────────────────────────────────────────────────────────────── */
 /** The shared data verdict, worded for the cockpit (exported for tests). */
-export function rubyWaitingReason(symbol: string, truth: ScannerTruth | null): string {
+export function eleanorWaitingReason(symbol: string, truth: ScannerTruth | null): string {
   if (!truth) return `Waiting for fresh ${symbol} chart data.`;
   const { verdict, detail } = truth.strip.data;
   if (verdict === "Live") return `Candle feed live for ${symbol} — waiting for a signal.`;
@@ -522,7 +522,7 @@ export function rubyWaitingReason(symbol: string, truth: ScannerTruth | null): s
   return `${symbol} chart data: ${verdict.toLowerCase()}${d ? ` — ${d}` : "."}`;
 }
 
-export function RubyMarketViewCard() {
+export function EleanorMarketViewCard() {
   const { name } = useAssistantName();
   const { active } = useActiveSymbol();
   // Live read for the active symbol — direction, confidence, plain reason.
@@ -566,22 +566,22 @@ export function RubyMarketViewCard() {
     <CockpitCard
       title={`${name}'s Market View`}
       icon={<Brain className="h-[18px] w-[18px]" />}
-      accent="ruby"
+      accent="eleanor"
       loading={signalsQ.isLoading || brainQ.isLoading}
-      data-testid="cockpit-ruby-view"
+      data-testid="cockpit-eleanor-view"
     >
       {!hasInsight ? (
         <div className="flex flex-col items-center justify-center py-6 text-center">
-          <Sparkles className="mb-2 h-6 w-6 text-ruby/60" />
+          <Sparkles className="mb-2 h-6 w-6 text-eleanor/60" />
           {/* Honest waiting reason — branch on what we actually know so the
-              user understands WHY there is no signal, not just that Ruby is
+              user understands WHY there is no signal, not just that Eleanor is
               "waiting". Old blanket text removed to prevent false certainty. */}
-          <p className="text-sm text-txt-secondary" data-testid="ruby-waiting-reason">
+          <p className="text-sm text-txt-secondary" data-testid="eleanor-waiting-reason">
             {signalsQ.isLoading || (feedTruth.isLoading && !feedTruth.truth)
               ? `Analyzing ${active}…`
               : signalsQ.isError
                 ? "Signal data temporarily unavailable."
-                : rubyWaitingReason(active, feedTruth.truth)}
+                : eleanorWaitingReason(active, feedTruth.truth)}
           </p>
         </div>
       ) : (
@@ -622,9 +622,9 @@ export function RubyMarketViewCard() {
       )}
 
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <ActionButton href="/ai-command-center" subtle icon={<MessageCircle className="h-4 w-4" />} data-testid="ruby-explain">Explain</ActionButton>
-        <ActionButton href="/market-scanner" subtle icon={<Search className="h-4 w-4" />} data-testid="ruby-open-scanner">Scanner</ActionButton>
-        <ActionButton href="/trade-command-room" subtle icon={<Crosshair className="h-4 w-4" />} data-testid="ruby-prepare-trade">Prepare</ActionButton>
+        <ActionButton href="/ai-command-center" subtle icon={<MessageCircle className="h-4 w-4" />} data-testid="eleanor-explain">Explain</ActionButton>
+        <ActionButton href="/market-scanner" subtle icon={<Search className="h-4 w-4" />} data-testid="eleanor-open-scanner">Scanner</ActionButton>
+        <ActionButton href="/trade-command-room" subtle icon={<Crosshair className="h-4 w-4" />} data-testid="eleanor-prepare-trade">Prepare</ActionButton>
       </div>
     </CockpitCard>
   );

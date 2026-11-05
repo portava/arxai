@@ -10,7 +10,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MentorSession, SessionType } from "./types";
 
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby", isLoading: false, isDefault: true }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor", isLoading: false, isDefault: true }) }));
 
 import { DailyMentorBriefingCard } from "./DailyMentorBriefingCard";
 import AiMentorPage from "@/pages/ai-mentor";

@@ -2,7 +2,7 @@
 //
 // SINGLE SOURCE OF TRUTH for the fixed, approved ARX market universe. ARX is
 // locked to exactly these 43 markets: a symbol that is not in this registry is
-// invisible across scanner / chart / Ruby / trade-ticket and is refused by the
+// invisible across scanner / chart / Eleanor / trade-ticket and is refused by the
 // additive API + live-pipeline backstop.
 //
 // This module is PURE: no IO, no DB, no HTTP. It is imported by BOTH the
@@ -42,7 +42,7 @@ export type ArxFocusMarket = {
   mt5Aliases: string[];
   enabledForScanner: boolean;
   enabledForChart: boolean;
-  enabledForRuby: boolean;
+  enabledForEleanor: boolean;
   enabledForBacktest: boolean;
   enabledForLiveTrading: boolean;
   /** Ordered data-source preference (descriptive — never an execution gate). */
@@ -77,7 +77,7 @@ function m(
     mt5Aliases: partial.mt5Aliases,
     enabledForScanner: partial.enabledForScanner ?? true,
     enabledForChart: partial.enabledForChart ?? true,
-    enabledForRuby: partial.enabledForRuby ?? true,
+    enabledForEleanor: partial.enabledForEleanor ?? true,
     enabledForBacktest: partial.enabledForBacktest ?? true,
     enabledForLiveTrading: partial.enabledForLiveTrading ?? true,
     dataSourcePriority:
@@ -609,8 +609,8 @@ export function findUnapprovedSymbols(symbols: readonly string[]): string[] {
   return out;
 }
 
-/** The exact, locked reply Ruby gives for any unapproved market. */
-export const ARX_FOCUS_RUBY_LOCKED_REPLY =
+/** The exact, locked reply Eleanor gives for any unapproved market. */
+export const ARX_FOCUS_ELEANOR_LOCKED_REPLY =
   "ARX is currently focused only on the approved market universe. That market " +
   "is outside the active ARX focus list, so I won't analyze or display it here.";
 

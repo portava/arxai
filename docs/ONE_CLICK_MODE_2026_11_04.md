@@ -4,7 +4,7 @@ Owner ask: *"i also want the option to have a true one click buy, one click clos
 system. just like mt5"* and *"when toggled. users are shown a disclaimer, once
 they accept the entire system changes to one click."*
 
-Branch `claude/one-click-mode-20261104`, stacked on `claude/ruby-execution-20261104`
+Branch `claude/one-click-mode-20261104`, stacked on `claude/eleanor-execution-20261104`
 (PR #109) → `claude/truth-audit-fixes-20261104` (PR #108) → `claude/truth-system-improvements`.
 
 ## What the user gets

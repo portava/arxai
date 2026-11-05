@@ -79,10 +79,10 @@ import type {
   AdminPoolTierStateResp,
   AdminReconcileDetailResp,
   AdminReconcileSummaryResp,
-  AdminRubyInvestorSummaryResp,
-  AdminRubyQualityMetricsResp,
-  AdminRubyThresholdsResp,
-  AdminRubyThresholdsUpdateReq,
+  AdminEleanorInvestorSummaryResp,
+  AdminEleanorQualityMetricsResp,
+  AdminEleanorThresholdsResp,
+  AdminEleanorThresholdsUpdateReq,
   AdminSecurityOverview,
   AdminSecurityTimeline,
   AdminSetAutonomyInput,
@@ -340,8 +340,8 @@ import type {
   GetAdminMissionDetail403,
   GetAdminMissionDetail404,
   GetAdminOneClickSharedBridgeUsers200,
-  GetAdminRubyMissedOpportunitiesParams,
-  GetAdminRubyQualityMetricsParams,
+  GetAdminEleanorMissedOpportunitiesParams,
+  GetAdminEleanorQualityMetricsParams,
   GetAdminSecurityTimelineParams,
   GetAdminSharedMasterAttributionsParams,
   GetAdminSharedMasterUnattributedParams,
@@ -411,8 +411,8 @@ import type {
   GetMissionReport200,
   GetMissionReport404,
   GetMultiTimeframeHistoryParams,
-  GetMyRubyOutcomesParams,
-  GetMyRubyReviewsParams,
+  GetMyEleanorOutcomesParams,
+  GetMyEleanorReviewsParams,
   GetPaperAccounts200,
   GetPaperHistory200,
   GetPaperHistoryParams,
@@ -597,8 +597,8 @@ import type {
   MultiTimeframeHistory,
   MultiTimeframeReport,
   MultiTimingBrainResp,
-  MyRubyOutcomesResp,
-  MyRubyReviewsResp,
+  MyEleanorOutcomesResp,
+  MyEleanorReviewsResp,
   NewsIntelligencePack,
   NewsRiskReport,
   OkResp,
@@ -668,9 +668,9 @@ import type {
   RiskSettings,
   RiskSettingsUpdate,
   RollbackAdminAaciLearningChange400,
-  RubyDraftReadRequest,
-  RubyDraftReadResponse,
-  RubyQualityErrorResp,
+  EleanorDraftReadRequest,
+  EleanorDraftReadResponse,
+  EleanorQualityErrorResp,
   RunAdminTimingBrainRetentionPrune400,
   RunAdminTimingBrainRetentionPrune403,
   RunAutonomousCycleInput,
@@ -8719,7 +8719,7 @@ export function useGetMeChartIntelligence<
 canonical resolvers — chart feed (data state, price, data timestamps),
 market-impact radar (news provider + events), the scanner signal, the
 scalp/flame reads, and the timing read — into ONE object so every
-scanner/chart/Ruby surface renders identical freshness, news state, price,
+scanner/chart/Eleanor surface renders identical freshness, news state, price,
 and component verdicts. Read-only: it never places, modifies, or closes a
 trade, never gates execution, and never fabricates data — a blind or
 failing source becomes an absent component (present:false), never a guess.
@@ -8844,10 +8844,10 @@ export function useGetMeMarketTruth<
 }
 
 /**
- * Per-user-safe Smart Chart overlay model. Returns Ruby's signal geometry
+ * Per-user-safe Smart Chart overlay model. Returns Eleanor's signal geometry
 (watch / entry / retest / late / invalidation / stop / take-profit) and
 structure levels as drawable visual layers that stay CONSISTENT with
-Ruby's text, plus a Market Impact Radar that maps events from a
+Eleanor's text, plus a Market Impact Radar that maps events from a
 connected, real economic-calendar provider onto the symbol (severity +
 countdown), an honest news behavior note, reserved execution-cost and
 trade-health overlay slots, and a data-side Smart Chart Overlay
@@ -9346,34 +9346,34 @@ export const useDeleteMeTradingSchoolProgress = <
 };
 
 /**
- * Deterministic, READ-ONLY Ruby read assembled from the already-built
+ * Deterministic, READ-ONLY Eleanor read assembled from the already-built
 Chart Intelligence State for a symbol/timeframe. No LLM and no provider
 re-probe — it restates the chart's own truth/understanding/decision
 layers in plain language for a small set of fixed intents
 (analyze, is-this-a-buy, is-this-a-scalp, why-not-now,
 what-changes-my-mind, what-invalidates, hold-or-close, agent-consensus).
-Ruby is strictly read-only: it never places, modifies, or closes a trade,
+Eleanor is strictly read-only: it never places, modifies, or closes a trade,
 never mutates a connection, and never reads another user's data. Every
 response carries the paper_only / liveLocked / readOnlyMode /
 allowOrderExecution=false envelope. Honest by construction — degrades to
 an "insufficient" read on a dirty/empty feed rather than inventing a
 setup.
 
- * @summary Ruby Draft Read — read-only prepared read over the Chart Intelligence State
+ * @summary Eleanor Draft Read — read-only prepared read over the Chart Intelligence State
  */
 export const getPostMeAssistantDraftReadUrl = () => {
   return `/api/me/assistant/draft-read`;
 };
 
 export const postMeAssistantDraftRead = async (
-  rubyDraftReadRequest: RubyDraftReadRequest,
+  eleanorDraftReadRequest: EleanorDraftReadRequest,
   options?: RequestInit,
-): Promise<RubyDraftReadResponse> => {
-  return customFetch<RubyDraftReadResponse>(getPostMeAssistantDraftReadUrl(), {
+): Promise<EleanorDraftReadResponse> => {
+  return customFetch<EleanorDraftReadResponse>(getPostMeAssistantDraftReadUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(rubyDraftReadRequest),
+    body: JSON.stringify(eleanorDraftReadRequest),
   });
 };
 
@@ -9384,14 +9384,14 @@ export const getPostMeAssistantDraftReadMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof postMeAssistantDraftRead>>,
     TError,
-    { data: BodyType<RubyDraftReadRequest> },
+    { data: BodyType<EleanorDraftReadRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof postMeAssistantDraftRead>>,
   TError,
-  { data: BodyType<RubyDraftReadRequest> },
+  { data: BodyType<EleanorDraftReadRequest> },
   TContext
 > => {
   const mutationKey = ["postMeAssistantDraftRead"];
@@ -9405,7 +9405,7 @@ export const getPostMeAssistantDraftReadMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof postMeAssistantDraftRead>>,
-    { data: BodyType<RubyDraftReadRequest> }
+    { data: BodyType<EleanorDraftReadRequest> }
   > = (props) => {
     const { data } = props ?? {};
 
@@ -9419,11 +9419,11 @@ export type PostMeAssistantDraftReadMutationResult = NonNullable<
   Awaited<ReturnType<typeof postMeAssistantDraftRead>>
 >;
 export type PostMeAssistantDraftReadMutationBody =
-  BodyType<RubyDraftReadRequest>;
+  BodyType<EleanorDraftReadRequest>;
 export type PostMeAssistantDraftReadMutationError = ErrorType<void>;
 
 /**
- * @summary Ruby Draft Read — read-only prepared read over the Chart Intelligence State
+ * @summary Eleanor Draft Read — read-only prepared read over the Chart Intelligence State
  */
 export const usePostMeAssistantDraftRead = <
   TError = ErrorType<void>,
@@ -9432,14 +9432,14 @@ export const usePostMeAssistantDraftRead = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof postMeAssistantDraftRead>>,
     TError,
-    { data: BodyType<RubyDraftReadRequest> },
+    { data: BodyType<EleanorDraftReadRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof postMeAssistantDraftRead>>,
   TError,
-  { data: BodyType<RubyDraftReadRequest> },
+  { data: BodyType<EleanorDraftReadRequest> },
   TContext
 > => {
   return useMutation(getPostMeAssistantDraftReadMutationOptions(options));
@@ -11821,7 +11821,7 @@ provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no
 provider is configured (`ECONOMIC_CALENDAR_PROVIDER` + `TRADING_ECONOMICS_KEY`)
 or the last fetch failed. This is the primary/unified endpoint for both
-the Economic Calendar page and the radar/Ruby seam — do not drift by
+the Economic Calendar page and the radar/Eleanor seam — do not drift by
 sourcing status and event list from separate endpoints.
 
  */
@@ -11907,7 +11907,7 @@ provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no
 provider is configured (`ECONOMIC_CALENDAR_PROVIDER` + `TRADING_ECONOMICS_KEY`)
 or the last fetch failed. This is the primary/unified endpoint for both
-the Economic Calendar page and the radar/Ruby seam — do not drift by
+the Economic Calendar page and the radar/Eleanor seam — do not drift by
 sourcing status and event list from separate endpoints.
 
  */
@@ -27073,7 +27073,7 @@ export const useSubmitMePendingOrderDraft = <
 };
 
 /**
- * @summary Read a Ruby Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
+ * @summary Read a Eleanor Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
  */
 export const getCreateMeScalpFocusUrl = () => {
   return `/api/me/scalp/focus`;
@@ -27136,7 +27136,7 @@ export type CreateMeScalpFocusMutationBody = BodyType<MeScalpFocusBody>;
 export type CreateMeScalpFocusMutationError = ErrorType<MeScalpErrorResp>;
 
 /**
- * @summary Read a Ruby Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
+ * @summary Read a Eleanor Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
  */
 export const useCreateMeScalpFocus = <
   TError = ErrorType<MeScalpErrorResp>,
@@ -27159,7 +27159,7 @@ export const useCreateMeScalpFocus = <
 };
 
 /**
- * @summary Rank Ruby Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
+ * @summary Rank Eleanor Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
  */
 export const getCreateMeScalpRankUrl = () => {
   return `/api/me/scalp/rank`;
@@ -27222,7 +27222,7 @@ export type CreateMeScalpRankMutationBody = BodyType<MeScalpRankBody>;
 export type CreateMeScalpRankMutationError = ErrorType<MeScalpErrorResp>;
 
 /**
- * @summary Rank Ruby Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
+ * @summary Rank Eleanor Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
  */
 export const useCreateMeScalpRank = <
   TError = ErrorType<MeScalpErrorResp>,
@@ -27245,7 +27245,7 @@ export const useCreateMeScalpRank = <
 };
 
 /**
- * @summary Find the best Ruby Scalp matching a target profit / risk amount (Ruby Scalp Builder).
+ * @summary Find the best Eleanor Scalp matching a target profit / risk amount (Eleanor Scalp Builder).
  */
 export const getCreateMeScalpBuildUrl = () => {
   return `/api/me/scalp/build`;
@@ -27308,7 +27308,7 @@ export type CreateMeScalpBuildMutationBody = BodyType<MeScalpBuildBody>;
 export type CreateMeScalpBuildMutationError = ErrorType<MeScalpErrorResp>;
 
 /**
- * @summary Find the best Ruby Scalp matching a target profit / risk amount (Ruby Scalp Builder).
+ * @summary Find the best Eleanor Scalp matching a target profit / risk amount (Eleanor Scalp Builder).
  */
 export const useCreateMeScalpBuild = <
   TError = ErrorType<MeScalpErrorResp>,
@@ -27493,7 +27493,7 @@ export const useCreateMeScalpAddOnCheck = <
 };
 
 /**
- * @summary The user's own scalp journal — every signal Ruby recorded with its full context and outcome (newest first). Read-only.
+ * @summary The user's own scalp journal — every signal Eleanor recorded with its full context and outcome (newest first). Read-only.
  */
 export const getGetMeScalpJournalUrl = (params?: GetMeScalpJournalParams) => {
   const normalizedParams = new URLSearchParams();
@@ -27563,7 +27563,7 @@ export type GetMeScalpJournalQueryResult = NonNullable<
 export type GetMeScalpJournalQueryError = ErrorType<MeScalpErrorResp>;
 
 /**
- * @summary The user's own scalp journal — every signal Ruby recorded with its full context and outcome (newest first). Read-only.
+ * @summary The user's own scalp journal — every signal Eleanor recorded with its full context and outcome (newest first). Read-only.
  */
 
 export function useGetMeScalpJournal<
@@ -27687,7 +27687,7 @@ export function useGetMeScalpReviews<
 }
 
 /**
- * @summary What Ruby has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
+ * @summary What Eleanor has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
  */
 export const getGetMeScalpPersonalityUrl = (
   params?: GetMeScalpPersonalityParams,
@@ -27763,7 +27763,7 @@ export type GetMeScalpPersonalityQueryResult = NonNullable<
 export type GetMeScalpPersonalityQueryError = ErrorType<MeScalpErrorResp>;
 
 /**
- * @summary What Ruby has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
+ * @summary What Eleanor has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
  */
 
 export function useGetMeScalpPersonality<
@@ -27790,7 +27790,7 @@ export function useGetMeScalpPersonality<
 }
 
 /**
- * @summary The normalized "Ruby Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
+ * @summary The normalized "Eleanor Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
  */
 export const getGetMeMarketEdgeUrl = (params: GetMeMarketEdgeParams) => {
   const normalizedParams = new URLSearchParams();
@@ -27857,7 +27857,7 @@ export type GetMeMarketEdgeQueryResult = NonNullable<
 export type GetMeMarketEdgeQueryError = ErrorType<MeScalpErrorResp>;
 
 /**
- * @summary The normalized "Ruby Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
+ * @summary The normalized "Eleanor Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
  */
 
 export function useGetMeMarketEdge<
@@ -37177,9 +37177,9 @@ export const useUpdateAdminInvestorStrategyConfig = <
 };
 
 /**
- * @summary My tracked Ruby signal outcomes (read-only, user-simple)
+ * @summary My tracked Eleanor signal outcomes (read-only, user-simple)
  */
-export const getGetMyRubyOutcomesUrl = (params?: GetMyRubyOutcomesParams) => {
+export const getGetMyEleanorOutcomesUrl = (params?: GetMyEleanorOutcomesParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -37191,37 +37191,37 @@ export const getGetMyRubyOutcomesUrl = (params?: GetMyRubyOutcomesParams) => {
   const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
-    ? `/api/me/ruby-quality/outcomes?${stringifiedParams}`
-    : `/api/me/ruby-quality/outcomes`;
+    ? `/api/me/eleanor-quality/outcomes?${stringifiedParams}`
+    : `/api/me/eleanor-quality/outcomes`;
 };
 
-export const getMyRubyOutcomes = async (
-  params?: GetMyRubyOutcomesParams,
+export const getMyEleanorOutcomes = async (
+  params?: GetMyEleanorOutcomesParams,
   options?: RequestInit,
-): Promise<MyRubyOutcomesResp> => {
-  return customFetch<MyRubyOutcomesResp>(getGetMyRubyOutcomesUrl(params), {
+): Promise<MyEleanorOutcomesResp> => {
+  return customFetch<MyEleanorOutcomesResp>(getGetMyEleanorOutcomesUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetMyRubyOutcomesQueryKey = (
-  params?: GetMyRubyOutcomesParams,
+export const getGetMyEleanorOutcomesQueryKey = (
+  params?: GetMyEleanorOutcomesParams,
 ) => {
   return [
-    `/api/me/ruby-quality/outcomes`,
+    `/api/me/eleanor-quality/outcomes`,
     ...(params ? [params] : []),
   ] as const;
 };
 
-export const getGetMyRubyOutcomesQueryOptions = <
-  TData = Awaited<ReturnType<typeof getMyRubyOutcomes>>,
+export const getGetMyEleanorOutcomesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyEleanorOutcomes>>,
   TError = ErrorType<unknown>,
 >(
-  params?: GetMyRubyOutcomesParams,
+  params?: GetMyEleanorOutcomesParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMyRubyOutcomes>>,
+      Awaited<ReturnType<typeof getMyEleanorOutcomes>>,
       TError,
       TData
     >;
@@ -37231,43 +37231,43 @@ export const getGetMyRubyOutcomesQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetMyRubyOutcomesQueryKey(params);
+    queryOptions?.queryKey ?? getGetMyEleanorOutcomesQueryKey(params);
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getMyRubyOutcomes>>
-  > = ({ signal }) => getMyRubyOutcomes(params, { signal, ...requestOptions });
+    Awaited<ReturnType<typeof getMyEleanorOutcomes>>
+  > = ({ signal }) => getMyEleanorOutcomes(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getMyRubyOutcomes>>,
+    Awaited<ReturnType<typeof getMyEleanorOutcomes>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetMyRubyOutcomesQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getMyRubyOutcomes>>
+export type GetMyEleanorOutcomesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyEleanorOutcomes>>
 >;
-export type GetMyRubyOutcomesQueryError = ErrorType<unknown>;
+export type GetMyEleanorOutcomesQueryError = ErrorType<unknown>;
 
 /**
- * @summary My tracked Ruby signal outcomes (read-only, user-simple)
+ * @summary My tracked Eleanor signal outcomes (read-only, user-simple)
  */
 
-export function useGetMyRubyOutcomes<
-  TData = Awaited<ReturnType<typeof getMyRubyOutcomes>>,
+export function useGetMyEleanorOutcomes<
+  TData = Awaited<ReturnType<typeof getMyEleanorOutcomes>>,
   TError = ErrorType<unknown>,
 >(
-  params?: GetMyRubyOutcomesParams,
+  params?: GetMyEleanorOutcomesParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMyRubyOutcomes>>,
+      Awaited<ReturnType<typeof getMyEleanorOutcomes>>,
       TError,
       TData
     >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetMyRubyOutcomesQueryOptions(params, options);
+  const queryOptions = getGetMyEleanorOutcomesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -37277,9 +37277,9 @@ export function useGetMyRubyOutcomes<
 }
 
 /**
- * @summary My Ruby signal self-reviews (read-only, plain-language only)
+ * @summary My Eleanor signal self-reviews (read-only, plain-language only)
  */
-export const getGetMyRubyReviewsUrl = (params?: GetMyRubyReviewsParams) => {
+export const getGetMyEleanorReviewsUrl = (params?: GetMyEleanorReviewsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -37291,34 +37291,34 @@ export const getGetMyRubyReviewsUrl = (params?: GetMyRubyReviewsParams) => {
   const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
-    ? `/api/me/ruby-quality/reviews?${stringifiedParams}`
-    : `/api/me/ruby-quality/reviews`;
+    ? `/api/me/eleanor-quality/reviews?${stringifiedParams}`
+    : `/api/me/eleanor-quality/reviews`;
 };
 
-export const getMyRubyReviews = async (
-  params?: GetMyRubyReviewsParams,
+export const getMyEleanorReviews = async (
+  params?: GetMyEleanorReviewsParams,
   options?: RequestInit,
-): Promise<MyRubyReviewsResp> => {
-  return customFetch<MyRubyReviewsResp>(getGetMyRubyReviewsUrl(params), {
+): Promise<MyEleanorReviewsResp> => {
+  return customFetch<MyEleanorReviewsResp>(getGetMyEleanorReviewsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetMyRubyReviewsQueryKey = (
-  params?: GetMyRubyReviewsParams,
+export const getGetMyEleanorReviewsQueryKey = (
+  params?: GetMyEleanorReviewsParams,
 ) => {
-  return [`/api/me/ruby-quality/reviews`, ...(params ? [params] : [])] as const;
+  return [`/api/me/eleanor-quality/reviews`, ...(params ? [params] : [])] as const;
 };
 
-export const getGetMyRubyReviewsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getMyRubyReviews>>,
+export const getGetMyEleanorReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyEleanorReviews>>,
   TError = ErrorType<unknown>,
 >(
-  params?: GetMyRubyReviewsParams,
+  params?: GetMyEleanorReviewsParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMyRubyReviews>>,
+      Awaited<ReturnType<typeof getMyEleanorReviews>>,
       TError,
       TData
     >;
@@ -37328,43 +37328,43 @@ export const getGetMyRubyReviewsQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetMyRubyReviewsQueryKey(params);
+    queryOptions?.queryKey ?? getGetMyEleanorReviewsQueryKey(params);
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getMyRubyReviews>>
-  > = ({ signal }) => getMyRubyReviews(params, { signal, ...requestOptions });
+    Awaited<ReturnType<typeof getMyEleanorReviews>>
+  > = ({ signal }) => getMyEleanorReviews(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getMyRubyReviews>>,
+    Awaited<ReturnType<typeof getMyEleanorReviews>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetMyRubyReviewsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getMyRubyReviews>>
+export type GetMyEleanorReviewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyEleanorReviews>>
 >;
-export type GetMyRubyReviewsQueryError = ErrorType<unknown>;
+export type GetMyEleanorReviewsQueryError = ErrorType<unknown>;
 
 /**
- * @summary My Ruby signal self-reviews (read-only, plain-language only)
+ * @summary My Eleanor signal self-reviews (read-only, plain-language only)
  */
 
-export function useGetMyRubyReviews<
-  TData = Awaited<ReturnType<typeof getMyRubyReviews>>,
+export function useGetMyEleanorReviews<
+  TData = Awaited<ReturnType<typeof getMyEleanorReviews>>,
   TError = ErrorType<unknown>,
 >(
-  params?: GetMyRubyReviewsParams,
+  params?: GetMyEleanorReviewsParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getMyRubyReviews>>,
+      Awaited<ReturnType<typeof getMyEleanorReviews>>,
       TError,
       TData
     >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetMyRubyReviewsQueryOptions(params, options);
+  const queryOptions = getGetMyEleanorReviewsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -37374,10 +37374,10 @@ export function useGetMyRubyReviews<
 }
 
 /**
- * @summary Ruby signal-quality metrics with filters (ADMIN/OWNER)
+ * @summary Eleanor signal-quality metrics with filters (ADMIN/OWNER)
  */
-export const getGetAdminRubyQualityMetricsUrl = (
-  params?: GetAdminRubyQualityMetricsParams,
+export const getGetAdminEleanorQualityMetricsUrl = (
+  params?: GetAdminEleanorQualityMetricsParams,
 ) => {
   const normalizedParams = new URLSearchParams();
 
@@ -37390,16 +37390,16 @@ export const getGetAdminRubyQualityMetricsUrl = (
   const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
-    ? `/api/admin/ruby-quality/metrics?${stringifiedParams}`
-    : `/api/admin/ruby-quality/metrics`;
+    ? `/api/admin/eleanor-quality/metrics?${stringifiedParams}`
+    : `/api/admin/eleanor-quality/metrics`;
 };
 
-export const getAdminRubyQualityMetrics = async (
-  params?: GetAdminRubyQualityMetricsParams,
+export const getAdminEleanorQualityMetrics = async (
+  params?: GetAdminEleanorQualityMetricsParams,
   options?: RequestInit,
-): Promise<AdminRubyQualityMetricsResp> => {
-  return customFetch<AdminRubyQualityMetricsResp>(
-    getGetAdminRubyQualityMetricsUrl(params),
+): Promise<AdminEleanorQualityMetricsResp> => {
+  return customFetch<AdminEleanorQualityMetricsResp>(
+    getGetAdminEleanorQualityMetricsUrl(params),
     {
       ...options,
       method: "GET",
@@ -37407,23 +37407,23 @@ export const getAdminRubyQualityMetrics = async (
   );
 };
 
-export const getGetAdminRubyQualityMetricsQueryKey = (
-  params?: GetAdminRubyQualityMetricsParams,
+export const getGetAdminEleanorQualityMetricsQueryKey = (
+  params?: GetAdminEleanorQualityMetricsParams,
 ) => {
   return [
-    `/api/admin/ruby-quality/metrics`,
+    `/api/admin/eleanor-quality/metrics`,
     ...(params ? [params] : []),
   ] as const;
 };
 
-export const getGetAdminRubyQualityMetricsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export const getGetAdminEleanorQualityMetricsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(
-  params?: GetAdminRubyQualityMetricsParams,
+  params?: GetAdminEleanorQualityMetricsParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>,
+      Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>,
       TError,
       TData
     >;
@@ -37433,45 +37433,45 @@ export const getGetAdminRubyQualityMetricsQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetAdminRubyQualityMetricsQueryKey(params);
+    queryOptions?.queryKey ?? getGetAdminEleanorQualityMetricsQueryKey(params);
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>
+    Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>
   > = ({ signal }) =>
-    getAdminRubyQualityMetrics(params, { signal, ...requestOptions });
+    getAdminEleanorQualityMetrics(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>,
+    Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetAdminRubyQualityMetricsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>
+export type GetAdminEleanorQualityMetricsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>
 >;
-export type GetAdminRubyQualityMetricsQueryError =
-  ErrorType<RubyQualityErrorResp>;
+export type GetAdminEleanorQualityMetricsQueryError =
+  ErrorType<EleanorQualityErrorResp>;
 
 /**
- * @summary Ruby signal-quality metrics with filters (ADMIN/OWNER)
+ * @summary Eleanor signal-quality metrics with filters (ADMIN/OWNER)
  */
 
-export function useGetAdminRubyQualityMetrics<
-  TData = Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export function useGetAdminEleanorQualityMetrics<
+  TData = Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(
-  params?: GetAdminRubyQualityMetricsParams,
+  params?: GetAdminEleanorQualityMetricsParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getAdminRubyQualityMetrics>>,
+      Awaited<ReturnType<typeof getAdminEleanorQualityMetrics>>,
       TError,
       TData
     >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetAdminRubyQualityMetricsQueryOptions(
+  const queryOptions = getGetAdminEleanorQualityMetricsQueryOptions(
     params,
     options,
   );
@@ -37486,8 +37486,8 @@ export function useGetAdminRubyQualityMetrics<
 /**
  * @summary Missed-opportunity replays (ADMIN/OWNER)
  */
-export const getGetAdminRubyMissedOpportunitiesUrl = (
-  params?: GetAdminRubyMissedOpportunitiesParams,
+export const getGetAdminEleanorMissedOpportunitiesUrl = (
+  params?: GetAdminEleanorMissedOpportunitiesParams,
 ) => {
   const normalizedParams = new URLSearchParams();
 
@@ -37500,16 +37500,16 @@ export const getGetAdminRubyMissedOpportunitiesUrl = (
   const stringifiedParams = normalizedParams.toString();
 
   return stringifiedParams.length > 0
-    ? `/api/admin/ruby-quality/missed-opportunities?${stringifiedParams}`
-    : `/api/admin/ruby-quality/missed-opportunities`;
+    ? `/api/admin/eleanor-quality/missed-opportunities?${stringifiedParams}`
+    : `/api/admin/eleanor-quality/missed-opportunities`;
 };
 
-export const getAdminRubyMissedOpportunities = async (
-  params?: GetAdminRubyMissedOpportunitiesParams,
+export const getAdminEleanorMissedOpportunities = async (
+  params?: GetAdminEleanorMissedOpportunitiesParams,
   options?: RequestInit,
 ): Promise<AdminMissedOpportunitiesResp> => {
   return customFetch<AdminMissedOpportunitiesResp>(
-    getGetAdminRubyMissedOpportunitiesUrl(params),
+    getGetAdminEleanorMissedOpportunitiesUrl(params),
     {
       ...options,
       method: "GET",
@@ -37517,23 +37517,23 @@ export const getAdminRubyMissedOpportunities = async (
   );
 };
 
-export const getGetAdminRubyMissedOpportunitiesQueryKey = (
-  params?: GetAdminRubyMissedOpportunitiesParams,
+export const getGetAdminEleanorMissedOpportunitiesQueryKey = (
+  params?: GetAdminEleanorMissedOpportunitiesParams,
 ) => {
   return [
-    `/api/admin/ruby-quality/missed-opportunities`,
+    `/api/admin/eleanor-quality/missed-opportunities`,
     ...(params ? [params] : []),
   ] as const;
 };
 
-export const getGetAdminRubyMissedOpportunitiesQueryOptions = <
-  TData = Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export const getGetAdminEleanorMissedOpportunitiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(
-  params?: GetAdminRubyMissedOpportunitiesParams,
+  params?: GetAdminEleanorMissedOpportunitiesParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>,
+      Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>,
       TError,
       TData
     >;
@@ -37544,45 +37544,45 @@ export const getGetAdminRubyMissedOpportunitiesQueryOptions = <
 
   const queryKey =
     queryOptions?.queryKey ??
-    getGetAdminRubyMissedOpportunitiesQueryKey(params);
+    getGetAdminEleanorMissedOpportunitiesQueryKey(params);
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>
+    Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>
   > = ({ signal }) =>
-    getAdminRubyMissedOpportunities(params, { signal, ...requestOptions });
+    getAdminEleanorMissedOpportunities(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>,
+    Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetAdminRubyMissedOpportunitiesQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>
+export type GetAdminEleanorMissedOpportunitiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>
 >;
-export type GetAdminRubyMissedOpportunitiesQueryError =
-  ErrorType<RubyQualityErrorResp>;
+export type GetAdminEleanorMissedOpportunitiesQueryError =
+  ErrorType<EleanorQualityErrorResp>;
 
 /**
  * @summary Missed-opportunity replays (ADMIN/OWNER)
  */
 
-export function useGetAdminRubyMissedOpportunities<
-  TData = Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export function useGetAdminEleanorMissedOpportunities<
+  TData = Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(
-  params?: GetAdminRubyMissedOpportunitiesParams,
+  params?: GetAdminEleanorMissedOpportunitiesParams,
   options?: {
     query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getAdminRubyMissedOpportunities>>,
+      Awaited<ReturnType<typeof getAdminEleanorMissedOpportunities>>,
       TError,
       TData
     >;
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetAdminRubyMissedOpportunitiesQueryOptions(
+  const queryOptions = getGetAdminEleanorMissedOpportunitiesQueryOptions(
     params,
     options,
   );
@@ -37595,31 +37595,31 @@ export function useGetAdminRubyMissedOpportunities<
 }
 
 /**
- * @summary Current Ruby quality tuning thresholds (ADMIN/OWNER)
+ * @summary Current Eleanor quality tuning thresholds (ADMIN/OWNER)
  */
-export const getGetAdminRubyThresholdsUrl = () => {
-  return `/api/admin/ruby-quality/thresholds`;
+export const getGetAdminEleanorThresholdsUrl = () => {
+  return `/api/admin/eleanor-quality/thresholds`;
 };
 
-export const getAdminRubyThresholds = async (
+export const getAdminEleanorThresholds = async (
   options?: RequestInit,
-): Promise<AdminRubyThresholdsResp> => {
-  return customFetch<AdminRubyThresholdsResp>(getGetAdminRubyThresholdsUrl(), {
+): Promise<AdminEleanorThresholdsResp> => {
+  return customFetch<AdminEleanorThresholdsResp>(getGetAdminEleanorThresholdsUrl(), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetAdminRubyThresholdsQueryKey = () => {
-  return [`/api/admin/ruby-quality/thresholds`] as const;
+export const getGetAdminEleanorThresholdsQueryKey = () => {
+  return [`/api/admin/eleanor-quality/thresholds`] as const;
 };
 
-export const getGetAdminRubyThresholdsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getAdminRubyThresholds>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export const getGetAdminEleanorThresholdsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminEleanorThresholds>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyThresholds>>,
+    Awaited<ReturnType<typeof getAdminEleanorThresholds>>,
     TError,
     TData
   >;
@@ -37628,40 +37628,40 @@ export const getGetAdminRubyThresholdsQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetAdminRubyThresholdsQueryKey();
+    queryOptions?.queryKey ?? getGetAdminEleanorThresholdsQueryKey();
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getAdminRubyThresholds>>
-  > = ({ signal }) => getAdminRubyThresholds({ signal, ...requestOptions });
+    Awaited<ReturnType<typeof getAdminEleanorThresholds>>
+  > = ({ signal }) => getAdminEleanorThresholds({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyThresholds>>,
+    Awaited<ReturnType<typeof getAdminEleanorThresholds>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetAdminRubyThresholdsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getAdminRubyThresholds>>
+export type GetAdminEleanorThresholdsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminEleanorThresholds>>
 >;
-export type GetAdminRubyThresholdsQueryError = ErrorType<RubyQualityErrorResp>;
+export type GetAdminEleanorThresholdsQueryError = ErrorType<EleanorQualityErrorResp>;
 
 /**
- * @summary Current Ruby quality tuning thresholds (ADMIN/OWNER)
+ * @summary Current Eleanor quality tuning thresholds (ADMIN/OWNER)
  */
 
-export function useGetAdminRubyThresholds<
-  TData = Awaited<ReturnType<typeof getAdminRubyThresholds>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export function useGetAdminEleanorThresholds<
+  TData = Awaited<ReturnType<typeof getAdminEleanorThresholds>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyThresholds>>,
+    Awaited<ReturnType<typeof getAdminEleanorThresholds>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetAdminRubyThresholdsQueryOptions(options);
+  const queryOptions = getGetAdminEleanorThresholdsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -37671,45 +37671,45 @@ export function useGetAdminRubyThresholds<
 }
 
 /**
- * @summary Update Ruby quality tuning thresholds (ADMIN/OWNER, audited)
+ * @summary Update Eleanor quality tuning thresholds (ADMIN/OWNER, audited)
  */
-export const getUpdateAdminRubyThresholdsUrl = () => {
-  return `/api/admin/ruby-quality/thresholds`;
+export const getUpdateAdminEleanorThresholdsUrl = () => {
+  return `/api/admin/eleanor-quality/thresholds`;
 };
 
-export const updateAdminRubyThresholds = async (
-  adminRubyThresholdsUpdateReq: AdminRubyThresholdsUpdateReq,
+export const updateAdminEleanorThresholds = async (
+  adminEleanorThresholdsUpdateReq: AdminEleanorThresholdsUpdateReq,
   options?: RequestInit,
-): Promise<AdminRubyThresholdsResp> => {
-  return customFetch<AdminRubyThresholdsResp>(
-    getUpdateAdminRubyThresholdsUrl(),
+): Promise<AdminEleanorThresholdsResp> => {
+  return customFetch<AdminEleanorThresholdsResp>(
+    getUpdateAdminEleanorThresholdsUrl(),
     {
       ...options,
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(adminRubyThresholdsUpdateReq),
+      body: JSON.stringify(adminEleanorThresholdsUpdateReq),
     },
   );
 };
 
-export const getUpdateAdminRubyThresholdsMutationOptions = <
-  TError = ErrorType<RubyQualityErrorResp>,
+export const getUpdateAdminEleanorThresholdsMutationOptions = <
+  TError = ErrorType<EleanorQualityErrorResp>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAdminRubyThresholds>>,
+    Awaited<ReturnType<typeof updateAdminEleanorThresholds>>,
     TError,
-    { data: BodyType<AdminRubyThresholdsUpdateReq> },
+    { data: BodyType<AdminEleanorThresholdsUpdateReq> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof updateAdminRubyThresholds>>,
+  Awaited<ReturnType<typeof updateAdminEleanorThresholds>>,
   TError,
-  { data: BodyType<AdminRubyThresholdsUpdateReq> },
+  { data: BodyType<AdminEleanorThresholdsUpdateReq> },
   TContext
 > => {
-  const mutationKey = ["updateAdminRubyThresholds"];
+  const mutationKey = ["updateAdminEleanorThresholds"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -37719,60 +37719,60 @@ export const getUpdateAdminRubyThresholdsMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof updateAdminRubyThresholds>>,
-    { data: BodyType<AdminRubyThresholdsUpdateReq> }
+    Awaited<ReturnType<typeof updateAdminEleanorThresholds>>,
+    { data: BodyType<AdminEleanorThresholdsUpdateReq> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return updateAdminRubyThresholds(data, requestOptions);
+    return updateAdminEleanorThresholds(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type UpdateAdminRubyThresholdsMutationResult = NonNullable<
-  Awaited<ReturnType<typeof updateAdminRubyThresholds>>
+export type UpdateAdminEleanorThresholdsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminEleanorThresholds>>
 >;
-export type UpdateAdminRubyThresholdsMutationBody =
-  BodyType<AdminRubyThresholdsUpdateReq>;
-export type UpdateAdminRubyThresholdsMutationError =
-  ErrorType<RubyQualityErrorResp>;
+export type UpdateAdminEleanorThresholdsMutationBody =
+  BodyType<AdminEleanorThresholdsUpdateReq>;
+export type UpdateAdminEleanorThresholdsMutationError =
+  ErrorType<EleanorQualityErrorResp>;
 
 /**
- * @summary Update Ruby quality tuning thresholds (ADMIN/OWNER, audited)
+ * @summary Update Eleanor quality tuning thresholds (ADMIN/OWNER, audited)
  */
-export const useUpdateAdminRubyThresholds = <
-  TError = ErrorType<RubyQualityErrorResp>,
+export const useUpdateAdminEleanorThresholds = <
+  TError = ErrorType<EleanorQualityErrorResp>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof updateAdminRubyThresholds>>,
+    Awaited<ReturnType<typeof updateAdminEleanorThresholds>>,
     TError,
-    { data: BodyType<AdminRubyThresholdsUpdateReq> },
+    { data: BodyType<AdminEleanorThresholdsUpdateReq> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof updateAdminRubyThresholds>>,
+  Awaited<ReturnType<typeof updateAdminEleanorThresholds>>,
   TError,
-  { data: BodyType<AdminRubyThresholdsUpdateReq> },
+  { data: BodyType<AdminEleanorThresholdsUpdateReq> },
   TContext
 > => {
-  return useMutation(getUpdateAdminRubyThresholdsMutationOptions(options));
+  return useMutation(getUpdateAdminEleanorThresholdsMutationOptions(options));
 };
 
 /**
  * @summary Sanitized aggregate signal-quality summary for investor reporting (ADMIN/OWNER)
  */
-export const getGetAdminRubyInvestorSummaryUrl = () => {
-  return `/api/admin/ruby-quality/investor-summary`;
+export const getGetAdminEleanorInvestorSummaryUrl = () => {
+  return `/api/admin/eleanor-quality/investor-summary`;
 };
 
-export const getAdminRubyInvestorSummary = async (
+export const getAdminEleanorInvestorSummary = async (
   options?: RequestInit,
-): Promise<AdminRubyInvestorSummaryResp> => {
-  return customFetch<AdminRubyInvestorSummaryResp>(
-    getGetAdminRubyInvestorSummaryUrl(),
+): Promise<AdminEleanorInvestorSummaryResp> => {
+  return customFetch<AdminEleanorInvestorSummaryResp>(
+    getGetAdminEleanorInvestorSummaryUrl(),
     {
       ...options,
       method: "GET",
@@ -37780,16 +37780,16 @@ export const getAdminRubyInvestorSummary = async (
   );
 };
 
-export const getGetAdminRubyInvestorSummaryQueryKey = () => {
-  return [`/api/admin/ruby-quality/investor-summary`] as const;
+export const getGetAdminEleanorInvestorSummaryQueryKey = () => {
+  return [`/api/admin/eleanor-quality/investor-summary`] as const;
 };
 
-export const getGetAdminRubyInvestorSummaryQueryOptions = <
-  TData = Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export const getGetAdminEleanorInvestorSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>,
+    Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>,
     TError,
     TData
   >;
@@ -37798,42 +37798,42 @@ export const getGetAdminRubyInvestorSummaryQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getGetAdminRubyInvestorSummaryQueryKey();
+    queryOptions?.queryKey ?? getGetAdminEleanorInvestorSummaryQueryKey();
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>
+    Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>
   > = ({ signal }) =>
-    getAdminRubyInvestorSummary({ signal, ...requestOptions });
+    getAdminEleanorInvestorSummary({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>,
+    Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetAdminRubyInvestorSummaryQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>
+export type GetAdminEleanorInvestorSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>
 >;
-export type GetAdminRubyInvestorSummaryQueryError =
-  ErrorType<RubyQualityErrorResp>;
+export type GetAdminEleanorInvestorSummaryQueryError =
+  ErrorType<EleanorQualityErrorResp>;
 
 /**
  * @summary Sanitized aggregate signal-quality summary for investor reporting (ADMIN/OWNER)
  */
 
-export function useGetAdminRubyInvestorSummary<
-  TData = Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+export function useGetAdminEleanorInvestorSummary<
+  TData = Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getAdminRubyInvestorSummary>>,
+    Awaited<ReturnType<typeof getAdminEleanorInvestorSummary>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetAdminRubyInvestorSummaryQueryOptions(options);
+  const queryOptions = getGetAdminEleanorInvestorSummaryQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -37843,7 +37843,7 @@ export function useGetAdminRubyInvestorSummary<
 }
 
 /**
- * Read-only roll-up over EXISTING resolved Ruby signal outcomes, grouped by timeframe × confidence tier. The accuracy denominator is exactly graded directional outcomes (WIN+LOSS); PENDING/UNRESOLVED are reported but never enter it. A cell whose graded sample is below `minSample` is flagged `insufficientSample` with null `accuracy`/`calibrationGap`. OBSERVATION ONLY — never an execution gate. Covers the newest 2000 matching outcomes (recency window), not full history.
+ * Read-only roll-up over EXISTING resolved Eleanor signal outcomes, grouped by timeframe × confidence tier. The accuracy denominator is exactly graded directional outcomes (WIN+LOSS); PENDING/UNRESOLVED are reported but never enter it. A cell whose graded sample is below `minSample` is flagged `insufficientSample` with null `accuracy`/`calibrationGap`. OBSERVATION ONLY — never an execution gate. Covers the newest 2000 matching outcomes (recency window), not full history.
 
  * @summary Calibration roll-up — predicted confidence tier vs realized accuracy by timeframe (ADMIN/OWNER)
  */
@@ -37889,7 +37889,7 @@ export const getGetAdminIntelligenceCalibrationQueryKey = (
 
 export const getGetAdminIntelligenceCalibrationQueryOptions = <
   TData = Awaited<ReturnType<typeof getAdminIntelligenceCalibration>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(
   params?: GetAdminIntelligenceCalibrationParams,
   options?: {
@@ -37923,7 +37923,7 @@ export type GetAdminIntelligenceCalibrationQueryResult = NonNullable<
   Awaited<ReturnType<typeof getAdminIntelligenceCalibration>>
 >;
 export type GetAdminIntelligenceCalibrationQueryError =
-  ErrorType<RubyQualityErrorResp>;
+  ErrorType<EleanorQualityErrorResp>;
 
 /**
  * @summary Calibration roll-up — predicted confidence tier vs realized accuracy by timeframe (ADMIN/OWNER)
@@ -37931,7 +37931,7 @@ export type GetAdminIntelligenceCalibrationQueryError =
 
 export function useGetAdminIntelligenceCalibration<
   TData = Awaited<ReturnType<typeof getAdminIntelligenceCalibration>>,
-  TError = ErrorType<RubyQualityErrorResp>,
+  TError = ErrorType<EleanorQualityErrorResp>,
 >(
   params?: GetAdminIntelligenceCalibrationParams,
   options?: {

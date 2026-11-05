@@ -4,7 +4,7 @@ Current checkpoint:
 - Global Instant Trade Router backend is ready.
 - Safety invariants are preserved.
 - Demo path is untouched.
-- Ruby AI trade commands are gated.
+- Eleanor AI trade commands are gated.
 - Per-user isolation is maintained.
 - Remaining work listed by agent:
   T005 UI surfaces wiring executeInstantTrade() directly into ChartTradeEntry / Scanner / SelectedMarketPanel / OpenLivePositions
@@ -33,8 +33,8 @@ Wire it into:
 - Market cards where trade actions exist
 - Watchlist trade actions if present
 - Alert/opportunity trade actions if present
-- Ruby text command execution
-- Ruby voice command execution
+- Eleanor text command execution
+- Eleanor voice command execution
 
 Every surface should call the same shared execution function/router.
 
@@ -66,9 +66,9 @@ If One-Click Live Mode is disabled:
 - Standard Mode may use the older ticket/confirmation flow.
 - Do not remove Standard Mode.
 
-4. Ruby command wiring
+4. Eleanor command wiring
 
-Ruby text and voice commands should route to the same instant trade router.
+Eleanor text and voice commands should route to the same instant trade router.
 
 Direct commands should execute only when clear:
 - Buy EURUSD 0.01
@@ -81,13 +81,13 @@ Direct commands should execute only when clear:
 - Move stop loss to break even
 - Set take profit to 1.0920
 
-Ruby must not trade from vague questions like:
+Eleanor must not trade from vague questions like:
 - What should I trade?
 - Is EURUSD good?
 - Do you think I should buy?
 - Find me a setup.
 
-For vague requests, Ruby should analyze only.
+For vague requests, Eleanor should analyze only.
 
 If a direct trade command is missing required info:
 - use saved defaults when available.
@@ -101,7 +101,7 @@ Normal users must never see:
 - executeTradeIntent
 - validateLiveTrade
 - aiInstantTradeCommandsEnabled
-- allowRubyOpenCommands
+- allowEleanorOpenCommands
 - serverLiveExecutionEnabled
 - oneClickLiveTradingEnabled
 - API route names
@@ -113,9 +113,9 @@ Use friendly labels:
 - Sending trade…
 - Closing position…
 - Checking trade readiness…
-- Ruby is thinking…
-- Ruby is typing…
-- Ruby is checking your open trades…
+- Eleanor is thinking…
+- Eleanor is typing…
+- Eleanor is checking your open trades…
 - Live trading is not armed yet.
 - Account not approved.
 - Kill switch active.
@@ -127,15 +127,15 @@ Internal names may appear only inside collapsed admin/dev “Developer details,�
 Keep the app simple-first.
 
 Scanner:
-- Focus tab should show selected market, Ruby read, confidence, risk, Buy/Sell/View Chart/Ask Ruby.
+- Focus tab should show selected market, Eleanor read, confidence, risk, Buy/Sell/View Chart/Ask Eleanor.
 - Results/Symbols/Advanced should hold scanner lists, symbol groups, diagnostics, feed details.
 
 Trade:
 - Quick Trade should show selected symbol, volume, Buy, Sell, position summary, compact status.
 - Advanced should hold pending order types and detailed controls.
 
-Ruby:
-- Chat should show clean messages and Ruby thinking/typing indicators.
+Eleanor:
+- Chat should show clean messages and Eleanor thinking/typing indicators.
 - Do not show internal tool chips.
 
 Positions:
@@ -148,7 +148,7 @@ Instant live execution must still require:
 - authenticated user
 - approved live/shared trading access
 - one-click mode enabled for one-click route
-- Ruby AI command trading enabled for Ruby open commands
+- Eleanor AI command trading enabled for Eleanor open commands
 - server dispatch armed
 - kill switch inactive for new/open-risk orders
 - real LIVE bridge, not MOCK
@@ -191,7 +191,7 @@ Every instant action must log:
 - volume
 - stopLoss or null
 - takeProfit or null
-- Ruby raw command if applicable
+- Eleanor raw command if applicable
 - parsed intent if applicable
 - accepted/rejected
 - rejection reason
@@ -212,9 +212,9 @@ Add/update tests proving:
 - SelectedMarketPanel BUY/SELL uses instant router.
 - Position CLOSE uses instant router.
 - CLOSE ALL uses instant router.
-- Ruby text command routes to instant router.
-- Ruby voice command routes to instant router.
-- Vague Ruby questions do not trade.
+- Eleanor text command routes to instant router.
+- Eleanor voice command routes to instant router.
+- Vague Eleanor questions do not trade.
 - Blank SL/TP are allowed in one-click mode.
 - Unapproved user cannot trade.
 - Server dispatch off blocks live open orders.
@@ -223,7 +223,7 @@ Add/update tests proving:
 - Daily loss limit blocks trades after limit breach.
 - Internal function names do not appear in normal user UI.
 - Mobile layout has no horizontal overflow.
-- Ruby bubble and bottom nav do not cover trade buttons.
+- Eleanor bubble and bottom nav do not cover trade buttons.
 
 Do not remove features.
 Do not create duplicate components.

@@ -14,10 +14,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildEvidence,
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   confidenceBandFor,
   explainMarketRead,
-  type RubyMarketEdgeSignal,
+  type EleanorMarketEdgeSignal,
   type SignalCandle,
   type SignalEvidenceItem,
 } from "@workspace/domain/signal-intelligence";
@@ -36,7 +36,7 @@ function risingCandles(n: number): SignalCandle[] {
   return out;
 }
 
-const base: RubyMarketEdgeSignal = buildRubyMarketEdge({
+const base: EleanorMarketEdgeSignal = buildEleanorMarketEdge({
   symbol: "R_75",
   displayName: "V75",
   timeframe: "M1",
@@ -55,7 +55,7 @@ const base: RubyMarketEdgeSignal = buildRubyMarketEdge({
 const HH_HL: SignalEvidenceItem = { key: "structure_hh_hl", label: "Higher highs / higher lows", weight: 20 };
 const MOM: SignalEvidenceItem = { key: "momentum_expanding", label: "Momentum expanding", weight: 12 };
 
-function mk(over: Partial<RubyMarketEdgeSignal> & { meetsMinimum?: boolean; forItems?: SignalEvidenceItem[]; netScore?: number } = {}): RubyMarketEdgeSignal {
+function mk(over: Partial<EleanorMarketEdgeSignal> & { meetsMinimum?: boolean; forItems?: SignalEvidenceItem[]; netScore?: number } = {}): EleanorMarketEdgeSignal {
   const { meetsMinimum = true, forItems = [HH_HL, MOM], netScore = 32, ...rest } = over;
   return {
     ...base,
@@ -74,7 +74,7 @@ function mk(over: Partial<RubyMarketEdgeSignal> & { meetsMinimum?: boolean; forI
   };
 }
 
-const CASES: Array<[string, RubyMarketEdgeSignal, number, string]> = [
+const CASES: Array<[string, EleanorMarketEdgeSignal, number, string]> = [
   ["no live data", mk({ hasSufficientData: false }), 90, "NO_LIVE_DATA"],
   ["not a live feed", mk({ dataSource: "AWAITING_FEED" }), 90, "NO_LIVE_DATA"],
   ["invalid", mk({ lifecycleStage: "INVALID" }), 92, "INVALID_OR_EXPIRED"],

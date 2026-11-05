@@ -1,8 +1,8 @@
-// ── Adversarial: Ruby chat/tool setup-level withholding ─────────────────────
+// ── Adversarial: Eleanor chat/tool setup-level withholding ─────────────────────
 //
-// Task #600 (reopened half). The dangerous bug class: Ruby's conversational
+// Task #600 (reopened half). The dangerous bug class: Eleanor's conversational
 // CHAT/TOOL path handing a user a full decimal trade setup (entry / stop loss /
-// TP1-3 / R:R) while the shared sufficiency verdict — the SAME verdict the Ruby
+// TP1-3 / R:R) while the shared sufficiency verdict — the SAME verdict the Eleanor
 // Chart Read panel uses — does NOT permit a directional read. A prompt caveat is
 // not a control; the CODE must withhold the levels.
 //
@@ -167,7 +167,7 @@ for (const c of withheldCases) {
     assert.equal(s.withheldReasonCode, c.reasonCode);
 
     // Chart/chat agreement: the withheld reason is the SAME human string the
-    // Ruby Chart Read panel shows (verdict.humanReason), or the safe default
+    // Eleanor Chart Read panel shows (verdict.humanReason), or the safe default
     // when the verdict is entirely absent.
     const expectedReason = c.verdict?.humanReason ?? SETUP_WITHHELD_SAFE_MESSAGE;
     assert.equal(s.withheldReason, expectedReason);

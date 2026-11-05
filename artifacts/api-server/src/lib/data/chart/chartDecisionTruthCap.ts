@@ -4,8 +4,8 @@
 // the candle engines, which only know whether the feed is AI-usable and not
 // stale. The chart-truth gate is a separate, stricter verdict: Chart Truth
 // below 75, a stale feed, a failed broker mirror, a candle-data check that is
-// unmeasured or failing (Ruby's handshake) or a feed that is not live means
-// the read has NOT been verified. Ruby already answers "Chart data is
+// unmeasured or failing (Eleanor's handshake) or a feed that is not live means
+// the read has NOT been verified. Eleanor already answers "Chart data is
 // syncing…" in that state; without this cap Chart Pulse said "A · Ready" and
 // the best-action sentence said "act with a defined stop" on the same board.
 //
@@ -28,7 +28,7 @@ export interface ChartReadVerification {
 }
 
 /**
- * The candle-data checks Ruby's handshake requires to PASS (measured and
+ * The candle-data checks Eleanor's handshake requires to PASS (measured and
  * scoring at least 75), in plain words. Same keys `buildChartHandshake` reads.
  */
 const HANDSHAKE_CHECKS: ReadonlyArray<{ key: string; words: string }> = [
@@ -65,12 +65,12 @@ function tradeConfirmationReasons(gate: Pick<ChartGateOutput, "blockedReasons">)
 type FeedFacts = Pick<ChartFeedStatus, "isLive"> & Partial<Pick<ChartFeedStatus, "stale" | "aiUsable" | "quality">>;
 
 /**
- * Whether the chart read is verified enough to invite action. It is Ruby's
+ * Whether the chart read is verified enough to invite action. It is Eleanor's
  * chart-read predicate (truth ≥ 75, real OHLC, feed AI-usable and not stale,
  * mirror not failed, and every candle-data handshake check measured and
  * passing — `buildChartHandshake(...).sourceOverall === "PASS"`), plus a live
  * feed: a closed market or stored bars cannot back "act now". So the board can
- * never say "Ready" while Ruby answers "syncing" on the same read. A missing
+ * never say "Ready" while Eleanor answers "syncing" on the same read. A missing
  * gate, feed status or truth score is treated as not verified.
  */
 export function chartReadVerification(

@@ -5,7 +5,7 @@ The T005 result is accepted as a good frontend improvement, but it is not enough
 Do not disturb or rewrite the working LIVE MT5/API path unless a test proves something is broken. The current report says the api-server live MT5 path for userId 4 / connId 287 is healthy, untouched, all 200s, and 2–10ms. Preserve that.
 
 Goal:
-Prove the actual app experience is fast in production-like conditions, especially Scanner, Ruby, trade modal, Confirm action, open trade path, close trade path, and route changes.
+Prove the actual app experience is fast in production-like conditions, especially Scanner, Eleanor, trade modal, Confirm action, open trade path, close trade path, and route changes.
 
 Tasks:
 
@@ -25,9 +25,9 @@ Measure from button press to visible UI response for:
 - Scanner shell visible
 - Scanner data/results visible
 - Selecting a market
-- Ruby explanation panel opening
-- Ruby “thinking/typing” indicator appearing
-- Ruby first response text appearing
+- Eleanor explanation panel opening
+- Eleanor “thinking/typing” indicator appearing
+- Eleanor first response text appearing
 - Trade modal opening
 - Confirm button press
 - Confirm button to backend queue/API acknowledgement
@@ -47,8 +47,8 @@ Use these as pass/fail goals:
 - Market row/card selection response: under 200ms target
 - Trade modal open after click: under 300ms target
 - Confirm click to backend acknowledgement: under 1s target when connection is healthy
-- Ruby typing/thinking indicator appears: under 100ms target
-- Ruby first useful response begins: under 2s target unless external AI/network delay is the cause
+- Eleanor typing/thinking indicator appears: under 100ms target
+- Eleanor first useful response begins: under 2s target unless external AI/network delay is the cause
 - Open/close trade UI state update: under 1s after backend acknowledgement
 
 4. Scanner-specific inspection
@@ -60,17 +60,17 @@ Check for:
 - Duplicate scanner fetches
 - Background polling that fires while hidden
 - Charts loading before the shell is visible
-- Ruby/voice modules loading before needed
+- Eleanor/voice modules loading before needed
 - Old scanner tabs or dormant panels still mounted
 - Unused scanner data pipelines
 - Dead UI sections that are hidden visually but still active in memory
-- Any “collapsed but mounted” panels similar to the Ruby issue from T005
+- Any “collapsed but mounted” panels similar to the Eleanor issue from T005
 
 5. Fix if targets fail
 If any route or scanner action misses the target, fix the cause without breaking working features.
 Preferred fixes:
 - Route-split Cockpit/Dashboard/Scanner where still eager
-- Lazy-load heavy charts, Ruby voice, history panels, logs, admin-only sections, and large modals
+- Lazy-load heavy charts, Eleanor voice, history panels, logs, admin-only sections, and large modals
 - Render shell first, then progressively load data
 - Memoize scanner rows/cards
 - Virtualize long lists
@@ -94,7 +94,7 @@ After fixes, run:
 - Typecheck
 - Existing route/access guard tests
 - Scanner render test
-- Ruby chat/typing indicator test
+- Eleanor chat/typing indicator test
 - Bottom navigation test
 - Mobile viewport test at 400x720
 - Desktop viewport test at 1280x720
@@ -110,7 +110,7 @@ Give a clear T006 report with:
 - What was fixed
 - What files changed
 - Whether the LIVE MT5 path was untouched
-- Whether scanner, Ruby, trade modal, open/close trade UI, and bottom nav passed
+- Whether scanner, Eleanor, trade modal, open/close trade UI, and bottom nav passed
 - Remaining risks only if they are real and measured
 
 Do not close the task by saying “no further action needed” unless the actual scanner and trade-flow micro-timing has been freshly measured and passes the speed targets.

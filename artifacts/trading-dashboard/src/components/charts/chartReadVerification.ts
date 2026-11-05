@@ -1,7 +1,7 @@
 // Whether the chart-truth gate has verified a Chart Intelligence read — the
-// same conditions the server uses to cap the decision summary and Ruby uses
+// same conditions the server uses to cap the decision summary and Eleanor uses
 // for a directional read: Chart Truth >= 75, real OHLC candles, feed clean and
-// not stale, broker mirror not failed, every candle-data check Ruby's
+// not stale, broker mirror not failed, every candle-data check Eleanor's
 // handshake reads measured and passing, and a live feed. Client surfaces may
 // only DOWNGRADE with this (cap a "ready", withhold a consensus stance), never
 // upgrade a server claim.
@@ -16,7 +16,7 @@ export interface ChartReadVerification {
   reasons: string[];
 }
 
-// The candle-data checks Ruby's handshake (server buildChartHandshake →
+// The candle-data checks Eleanor's handshake (server buildChartHandshake →
 // sourceOverall) requires to be measured and score at least 75.
 const HANDSHAKE_CHECKS: ReadonlyArray<{ key: string; words: string }> = [
   { key: "ohlc_integrity", words: "the candle integrity check" },

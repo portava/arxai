@@ -226,8 +226,8 @@ export function PositionSideCard({ position: p, reportClock, onClose, onModifySL
   const [feedStatus, setFeedStatus] = useState<FeedStatus | null>(null);
   const [candleError, setCandleError] = useState<string | null>(null);
   const [analysisAt, setAnalysisAt] = useState<Date | null>(null);
-  const [rubyBusy, setRubyBusy] = useState(false);
-  const [rubyReply, setRubyReply] = useState<string | null>(null);
+  const [eleanorBusy, setEleanorBusy] = useState(false);
+  const [eleanorReply, setEleanorReply] = useState<string | null>(null);
   const lastRefreshRef = useRef<number>(0);
   const { toast } = useToast();
   const { name } = useAssistantName();
@@ -286,15 +286,15 @@ export function PositionSideCard({ position: p, reportClock, onClose, onModifySL
     toast({ title: "Analysis refreshed", description: "Pulled fresh candles and re-rendered the chart preview." });
   };
 
-  // Ask Ruby — creates a paper-only assistant conversation seeded with the
+  // Ask Eleanor — creates a paper-only assistant conversation seeded with the
   // trade context, posts one user message, and renders the assistant reply
   // inline. No navigation. The server-side meAssistant pipeline already
   // enforces {safetyMode:"paper_only", readOnlyMode:true, allowOrderExecution:false}
-  // on every response, so Ruby cannot place / modify any trade.
-  const handleAskRuby = async () => {
-    if (rubyBusy) return;
-    setRubyBusy(true);
-    setRubyReply(null);
+  // on every response, so Eleanor cannot place / modify any trade.
+  const handleAskEleanor = async () => {
+    if (eleanorBusy) return;
+    setEleanorBusy(true);
+    setEleanorReply(null);
     try {
       const seedText = `I have an open ${p.accountMode.toLowerCase()} ${p.side ?? ""} position on ${p.symbol ?? ""} (ticket ${p.brokerTicket ?? "?"}). Entry ${p.entryPrice}, current ${p.currentPrice}, SL ${p.stopLoss}, TP ${p.takeProfit}, lot ${p.lotSize}, floating P/L ${p.floatingPnl}. Please explain in plain English how this trade is behaving right now and whether it still matches the original setup. Do NOT place or modify any trade — explanation only.`;
       const conv = await fetch(u("/api/me/assistant/conversations"), {
@@ -310,11 +310,11 @@ export function PositionSideCard({ position: p, reportClock, onClose, onModifySL
         body: JSON.stringify({ content: seedText }),
       }).then((r) => r.json());
       const reply = msg?.assistantMessage?.content ?? msg?.reply ?? msg?.message?.content ?? msg?.content ?? null;
-      setRubyReply(typeof reply === "string" && reply.trim() ? reply : `${name} received the context but didn't return a reply this time. Try Refresh analysis.`);
+      setEleanorReply(typeof reply === "string" && reply.trim() ? reply : `${name} received the context but didn't return a reply this time. Try Refresh analysis.`);
     } catch (e) {
       toast({ title: `Couldn't reach ${name}`, description: (e as Error).message, variant: "destructive" });
     } finally {
-      setRubyBusy(false);
+      setEleanorBusy(false);
     }
   };
 
@@ -391,8 +391,8 @@ export function PositionSideCard({ position: p, reportClock, onClose, onModifySL
         )}
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <Button size="sm" variant="default" onClick={handleAskRuby} disabled={rubyBusy} data-testid="btn-ask-ruby">
-            {rubyBusy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />} Ask {name}
+          <Button size="sm" variant="default" onClick={handleAskEleanor} disabled={eleanorBusy} data-testid="btn-ask-eleanor">
+            {eleanorBusy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />} Ask {name}
           </Button>
           <Button size="sm" variant="secondary" onClick={handleRefreshAnalysis} data-testid="btn-refresh-analysis">
             <RefreshCw className="mr-1 h-3 w-3" /> Refresh analysis
@@ -412,12 +412,12 @@ export function PositionSideCard({ position: p, reportClock, onClose, onModifySL
           </Button>
         </div>
 
-        {rubyReply && (
-          <div data-testid="ruby-reply" className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs leading-relaxed text-blue-100 whitespace-pre-wrap">
+        {eleanorReply && (
+          <div data-testid="eleanor-reply" className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs leading-relaxed text-blue-100 whitespace-pre-wrap">
             <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-blue-300">
               <Sparkles className="h-3 w-3" /> {name} (demo-only, read-only)
             </div>
-            {rubyReply}
+            {eleanorReply}
           </div>
         )}
       </CardContent>

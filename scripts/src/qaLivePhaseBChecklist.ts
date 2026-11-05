@@ -195,12 +195,12 @@ function gateBlockedWith(flip: Partial<typeof BASE>, expectedReason: string): { 
     ticketWarn && ctrlWarn, `ticket=${ticketWarn} ctrl=${ctrlWarn}`);
 }
 
-// ── 16. Ruby warnings never promise profit
+// ── 16. Eleanor warnings never promise profit
 {
   const files = [
     "artifacts/api-server/src/routes/meAssistant.ts",
     "artifacts/api-server/src/lib/assistant/coachTools.ts",
-    "artifacts/trading-dashboard/src/components/scanner/RubySetupReason.tsx",
+    "artifacts/trading-dashboard/src/components/scanner/EleanorSetupReason.tsx",
   ];
   let bad: string[] = [];
   for (const f of files) {
@@ -217,12 +217,12 @@ function gateBlockedWith(flip: Partial<typeof BASE>, expectedReason: string): { 
   // Positive evidence: assistant declares safetyMode paper_only + liveLocked
   const coach = read("artifacts/api-server/src/lib/assistant/coachTools.ts");
   const safeEnvelope = /safetyMode:\s*"paper_only"/.test(coach) && /liveLocked:\s*true/.test(coach);
-  record(16, "Ruby never promises profit (no forbidden phrases + paper_only envelope)",
+  record(16, "Eleanor never promises profit (no forbidden phrases + paper_only envelope)",
     bad.length === 0 && safeEnvelope,
     bad.length ? `BAD: ${bad.join("; ")}` : `envelope=${safeEnvelope}`);
 }
 
-// ── 17. No broker password / bridge token / API key / secret in UI/logs/Ruby
+// ── 17. No broker password / bridge token / API key / secret in UI/logs/Eleanor
 {
   // Server routes for live + assistant must not log or return secret VALUES.
   // Allow references to the *name* MT5_BRIDGE_TOKEN in setup-page docs
@@ -256,7 +256,7 @@ function gateBlockedWith(flip: Partial<typeof BASE>, expectedReason: string): { 
     if (/res\.json\([^)]*\bapiKeyHash\b/.test(stripped))
       leaks.push(`${f}: returns apiKeyHash in response`);
   }
-  record(17, "No broker password/bridge token/API key/secret in UI/logs/Ruby",
+  record(17, "No broker password/bridge token/API key/secret in UI/logs/Eleanor",
     leaks.length === 0, leaks.length ? leaks.join(" | ") : "no leaks");
 }
 

@@ -12,7 +12,7 @@
 
 import type {
   NewsRiskLevel,
-  RubyMarketEdgeSignal,
+  EleanorMarketEdgeSignal,
 } from "../signal-intelligence/signalIntelligence.types.js";
 
 // ── Ordered, auditable check (one handshake step) ────────────────────────────
@@ -215,9 +215,9 @@ export interface DecisionCandidateInput {
   /** Max spread (points) the agent will tolerate for this symbol, if configured. */
   maxSpreadPoints: number | null;
   /** Primary-timeframe normalized signal (real data or honest blind). */
-  signal: RubyMarketEdgeSignal;
+  signal: EleanorMarketEdgeSignal;
   /** Higher-timeframe signals for alignment (may be empty). */
-  htfSignals: RubyMarketEdgeSignal[];
+  htfSignals: EleanorMarketEdgeSignal[];
   currentPrice: number | null;
   newsRisk: NewsRiskLevel;
   execution: ExecutionContext;

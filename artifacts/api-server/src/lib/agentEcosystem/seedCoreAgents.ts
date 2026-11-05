@@ -1,8 +1,7 @@
 // Agent Ecosystem — idempotent core-agent seed (Layer 1).
 //
 // Upserts the 14 CORE_AGENTS by agentKey. Re-running is a no-op: existing rows
-// are left untouched (we never overwrite earned scores/status), except the
-// lead agent's old "Ruby" name, which is renamed to the assistant's name. Parent links
+// are left untouched (we never overwrite earned scores/status). Parent links
 // are resolved in a second pass once all rows exist.
 //
 // SAFETY: writing agent records NEVER touches any trade/live/demo path. New
@@ -10,7 +9,7 @@
 // liveInfluenceAllowed=false, exactly as defined in CORE_AGENTS.
 
 import { db, agentsTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { CORE_AGENTS, type CoreAgentDef } from "@workspace/domain/agent-system";
 
 export interface SeedResult {
@@ -59,19 +58,6 @@ export async function seedCoreAgents(): Promise<SeedResult> {
       .insert(agentsTable)
       .values(toCreate.map(toInsertRow))
       .onConflictDoNothing({ target: agentsTable.agentKey });
-  }
-
-  // The lead agent was seeded as "Ruby" before the assistant was renamed to
-  // Eleanor. Rename that one row in place (only while it still carries the old
-  // seeded name, so a name an admin set by hand is kept). Scores and status
-  // are untouched.
-  const legacyLeadName = "Ruby"; // legacy-codename: the pre-rename seeded value
-  const lead = CORE_AGENTS.find((a) => a.agentKey === "RUBY");
-  if (lead && lead.name !== legacyLeadName) {
-    await db
-      .update(agentsTable)
-      .set({ name: lead.name, updatedAt: new Date() })
-      .where(and(eq(agentsTable.agentKey, "RUBY"), eq(agentsTable.name, legacyLeadName)));
   }
 
   // Second pass: resolve parent links for any row missing one.

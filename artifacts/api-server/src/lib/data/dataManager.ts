@@ -55,7 +55,7 @@ export async function getMarketDataWithProvenance(symbol: string, timeframe = "1
 
 // Legacy bare-array accessor — signature and returned shape must stay exactly
 // as-is (routes/data, routes/watchlists, routes/multiTimeframe, routes/
-// meAssistant, rubyChartContext, rubyQuality, historicalAnalysis all consume
+// meAssistant, eleanorChartContext, eleanorQuality, historicalAnalysis all consume
 // it). It shares the validated array with the envelope-preserving accessor so
 // the two paths can never drift.
 export async function getMarketData(symbol: string, timeframe = "1m", limit = 250): Promise<Candle[]> {

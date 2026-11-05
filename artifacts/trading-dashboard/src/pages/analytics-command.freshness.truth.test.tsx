@@ -212,7 +212,7 @@ describe("Analytics Command Center saved-snapshot fallback", () => {
 });
 
 describe("Analytics Command Center P&L basis", () => {
-  it("labels Net P&L as USD and says it differs from the booked demo P&L in Ruby Memory", async () => {
+  it("labels Net P&L as USD and says it differs from the booked demo P&L in Eleanor Memory", async () => {
     const note = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Eleanor Memory and your demo account show the P&L the paper venue booked on each close: older closes may have been booked as price move × lots × 100, and a close it could not size is booked as a placeholder (0 in Eleanor Memory, the paper risk model in your demo balance), so their Net P&L can differ from this one.";
     serve({
       snapshot: SAVED,

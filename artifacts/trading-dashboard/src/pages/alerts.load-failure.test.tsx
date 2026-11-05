@@ -4,12 +4,12 @@ import { cleanup, render, screen } from "@testing-library/react";
 // When GET /api/me/notifications fails (401/500/non-JSON) the alert inbox
 // could not be read — unread critical alerts may exist. The page used to
 // treat that as an empty inbox: System "Quiet", every count 0 and
-// "No alerts right now. Ruby will notify you…".
+// "No alerts right now. Eleanor will notify you…".
 
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries: () => undefined }) }));
 vi.mock("@workspace/api-client-react", () => ({ getGetAlertUnreadCountQueryKey: () => ["alerts-unread"] }));
 vi.mock("wouter", () => ({ useLocation: () => ["/alerts", () => undefined] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: Alerts } = await import("./alerts");
 

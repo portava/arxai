@@ -134,14 +134,14 @@ Trader:
 * cannot see Admin hub
 * cannot access admin tabs
 * cannot access admin direct routes
-* still sees trader-safe Dashboard, Markets, Trade, Ruby, Risk, Settings
+* still sees trader-safe Dashboard, Markets, Trade, Eleanor, Risk, Settings
 
 Investor/view-only:
 
 * cannot see Admin hub
 * cannot access admin tabs
 * cannot access admin direct routes
-* cannot access trade/scanner/risk/Ruby trading tools
+* cannot access trade/scanner/risk/Eleanor trading tools
 * still sees investor-safe Profile/Funds/Allocation/Reports/Settings where applicable
 
 Logged-out:

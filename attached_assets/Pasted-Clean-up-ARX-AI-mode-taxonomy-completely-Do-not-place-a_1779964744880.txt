@@ -51,7 +51,7 @@ E) admin-only technical fallback
 F) dead code
 
 2. FINAL MODE SET
-Every user-facing mode selector, pill, badge, trade ticket, scanner, Ruby explanation, admin permission screen, and account status must resolve to only:
+Every user-facing mode selector, pill, badge, trade ticket, scanner, Eleanor explanation, admin permission screen, and account status must resolve to only:
 
 - Demo
 - Live
@@ -125,26 +125,26 @@ Admin controls should be:
 - Account Frozen: ON/OFF
 - Trading Frozen: ON/OFF
 - Scanner Trading Enabled: ON/OFF
-- Ruby/AI Trading Enabled: ON/OFF
+- Eleanor/AI Trading Enabled: ON/OFF
 
 But the user-facing mode should still only be:
 - Demo
 - Live
 - Live Shared
 
-8. RUBY WORDING
-Ruby should explain:
+8. ELEANOR WORDING
+Eleanor should explain:
 
 “ARX supports Demo, Live, and Live Shared trading.”
 
-Ruby should not mention:
+Eleanor should not mention:
 - Paper
 - Watch Only
 - View Only
 - Paper Trading
 - Analysis Only mode
 
-If something is blocked, Ruby should say the reason:
+If something is blocked, Eleanor should say the reason:
 - “Live access is not approved yet.”
 - “Your live shared bridge allocation is not active.”
 - “The bridge is not ready.”
@@ -187,13 +187,13 @@ Before stopping, verify:
 - Analysis Only does not appear as a trading mode.
 - Scanner Off does not appear as a trading mode.
 - Admin cannot assign Watch/View/Paper as a mode.
-- Ruby only names Demo, Live, and Live Shared as modes.
+- Eleanor only names Demo, Live, and Live Shared as modes.
 - Trade ticket only shows Demo, Live, and Live Shared mode pills.
 - Scanner only shows Demo, Live, and Live Shared as execution choices.
 - Blocked users receive direct reasons instead of extra mode labels.
 - Data-only markets are blocked with a direct reason, not a mode.
 - arx_live_commands count does not increase.
 - No live trade is placed.
-- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+- Login, Eleanor, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix anything that fails before stopping.

@@ -7,11 +7,11 @@ Read this entire command before changing anything. Execute it fully. Do not skip
 The app currently contradicts itself on screen because multiple surfaces compute their own private version of the same truth instead of reading one shared truth:
 
 1. Focus card showed Entry 1.08542–1.08558 / Stop 1.08597 / Target 1.08455 stamped "Updated 24s ago · cached" while the live chart printed 1.15629. Months-stale levels presented as 24-seconds fresh, with actionable numbers attached.
-2. Data Health said "Live, confirmed candles… fresh enough for a live entry" while Ruby Chart Read on the SAME page said "Feed not confirmed… Chart data is syncing… Chart intelligence unavailable — cannot verify chart data."
-3. One banner contradicted itself in a single sentence: "Feed not confirmed — Ruby may have limited visibility… Live data — valid for a live read."
+2. Data Health said "Live, confirmed candles… fresh enough for a live entry" while Eleanor Chart Read on the SAME page said "Feed not confirmed… Chart data is syncing… Chart intelligence unavailable — cannot verify chart data."
+3. One banner contradicted itself in a single sentence: "Feed not confirmed — Eleanor may have limited visibility… Live data — valid for a live read."
 4. "Overlays: verified" rendered directly above "cannot verify chart data."
-5. Four different news states at once: chart layers said "No economic-calendar provider is connected" (three times), Ruby read said calendar markers "arrive in a later phase," the Focus card listed real HIGH events with countdowns, and "News risk: low" sat next to "HIGH impact US CPI in 632m — proceed with caution" and "News-safety 95/100."
-6. Ruby Market Read evidence claimed "+ Scanner agrees on direction" and "+ Flame supports the move" while the scanner strip showed WAIT · neutral · trend strength 16/100 and the flame badge showed F · NO TRADE with heat 18/100.
+5. Four different news states at once: chart layers said "No economic-calendar provider is connected" (three times), Eleanor read said calendar markers "arrive in a later phase," the Focus card listed real HIGH events with countdowns, and "News risk: low" sat next to "HIGH impact US CPI in 632m — proceed with caution" and "News-safety 95/100."
+6. Eleanor Market Read evidence claimed "+ Scanner agrees on direction" and "+ Flame supports the move" while the scanner strip showed WAIT · neutral · trend strength 16/100 and the flame badge showed F · NO TRADE with heat 18/100.
 7. Scalp Signal showed "Strong" and "Weak scalp" on the same card while Timing Intelligence said No trade / Watch only / move exhausted.
 8. Focus card invalidation direction was wrong for a short-shaped setup ("Invalidates below 1.08597" — must be above), and "neutral bias" was paired with directional entry/stop/target.
 
@@ -19,7 +19,7 @@ These are not eight bugs. They are one architecture fault: there is no single pe
 
 ## THE GOAL
 
-Build ONE per-symbol Truth Snapshot — one brain — and rewire EVERY surface, card, badge, banner, and Ruby sentence to compose from it. After this command, it must be architecturally impossible for two surfaces on the same page to disagree about freshness, news state, or component verdicts, because they are rendering the same object.
+Build ONE per-symbol Truth Snapshot — one brain — and rewire EVERY surface, card, badge, banner, and Eleanor sentence to compose from it. After this command, it must be architecturally impossible for two surfaces on the same page to disagree about freshness, news state, or component verdicts, because they are rendering the same object.
 
 ## NON-NEGOTIABLE RULES
 
@@ -39,7 +39,7 @@ Create one server-side module: `lib/truth/symbolTruthSnapshot.ts` (api-server). 
 - News/calendar: `lib/news/marketImpactRadar.ts`, `lib/news/newsIntelligenceService.ts`
 - Scanner/signal verdicts: `lib/signalIntelligence/signalIntelligenceService.ts`, `lib/assistant/liveScanner.ts`
 - Scalp/timing: `lib/scalp/scalpService.ts`
-- Ruby read inputs: `lib/assistant/rubyDraftRead.ts`, `lib/assistant/rubyContext.ts`
+- Eleanor read inputs: `lib/assistant/eleanorDraftRead.ts`, `lib/assistant/eleanorContext.ts`
 
 The snapshot must contain, minimum:
 
@@ -79,9 +79,9 @@ Composition rules inside the brain:
 
 Walk the codebase function by function and produce `docs/truth-audit.md`: a table of every place that currently computes or states freshness, news state, price, or a component verdict. Minimum scope — every route and service feeding these surfaces, and the surfaces themselves:
 
-Backend: `routes/scanner.ts`, `routes/marketData.ts`, `routes/meChartSmartLayers.ts`, `routes/meScalp.ts`, `lib/aaci/snapshotService.ts`, `lib/aaci/decisionService.ts`, `lib/data/chart/*` (chartDataService, chartIntelligence, chartTruthScore, chartGateOutput, chartDecisionSnapshot, chartHandshake), `lib/handshake/layerAdapters.ts`, `lib/signalIntelligence/*` (signalIntelligenceService, opportunityMapService), `lib/scalp/scalpService.ts`, `lib/news/*` (marketImpactRadar, newsIntelligenceService), `lib/assistant/*` (rubyDraftRead, rubyContext, liveScanner, marketProvider, tools), `lib/tradeHealth/tradeHealthService.ts`, `lib/marketData/marketDataService.ts`.
+Backend: `routes/scanner.ts`, `routes/marketData.ts`, `routes/meChartSmartLayers.ts`, `routes/meScalp.ts`, `lib/aaci/snapshotService.ts`, `lib/aaci/decisionService.ts`, `lib/data/chart/*` (chartDataService, chartIntelligence, chartTruthScore, chartGateOutput, chartDecisionSnapshot, chartHandshake), `lib/handshake/layerAdapters.ts`, `lib/signalIntelligence/*` (signalIntelligenceService, opportunityMapService), `lib/scalp/scalpService.ts`, `lib/news/*` (marketImpactRadar, newsIntelligenceService), `lib/assistant/*` (eleanorDraftRead, eleanorContext, liveScanner, marketProvider, tools), `lib/tradeHealth/tradeHealthService.ts`, `lib/marketData/marketDataService.ts`.
 
-Frontend: `pages/market-scanner.tsx`, `components/scanner/*` (ScannerHeaderSummary, RubyChartRead, TimingIntelligenceCard, RubyScalpFocusCard, RubyScalpBasketPanel, RubySetupReason, BroadScanOpportunityMap, ScannerChartPanel, ScannerTradeModal), `components/trading/ChartContainer.tsx`, the Data Health card, the Focus/Broad scan cards, and any component rendering "Updated Xs ago", "Live", "cached", "verified", news lines, or evidence bullets.
+Frontend: `pages/market-scanner.tsx`, `components/scanner/*` (ScannerHeaderSummary, EleanorChartRead, TimingIntelligenceCard, EleanorScalpFocusCard, EleanorScalpBasketPanel, EleanorSetupReason, BroadScanOpportunityMap, ScannerChartPanel, ScannerTradeModal), `components/trading/ChartContainer.tsx`, the Data Health card, the Focus/Broad scan cards, and any component rendering "Updated Xs ago", "Live", "cached", "verified", news lines, or evidence bullets.
 
 For each entry record: file, function, which truth it computes, where it gets it today, and which snapshot field replaces it. Functions that duplicate the brain's job get marked REWIRE; the canonical resolvers get marked SOURCE.
 
@@ -91,10 +91,10 @@ One endpoint (e.g. `GET /api/market/truth/:symbol?tf=`) serves the snapshot. The
 
 - Replace every locally computed freshness/news/verdict with the snapshot field.
 - Delete or deprecate the private resolvers left behind (keep file, export removed, marked deprecated, if deletion is risky).
-- Data Health card, Ruby Chart Read banner, "Overlays" badge, chart-layer news lines, Impact Radar lines, Focus card freshness stamp, Scalp card labels, Timing card, Ruby Market Read evidence — ALL read the same snapshot for the same symbol+timeframe.
+- Data Health card, Eleanor Chart Read banner, "Overlays" badge, chart-layer news lines, Impact Radar lines, Focus card freshness stamp, Scalp card labels, Timing card, Eleanor Market Read evidence — ALL read the same snapshot for the same symbol+timeframe.
 - Every "Updated X ago" label renders `data.lastCandleAt`/`asOf` (data time), with cache read-time allowed only as a secondary detail, clearly worded.
 - The triple-repeated "no economic-calendar provider" disclaimer renders ONCE, from `news.providerConnected`.
-- Ruby's sentences (chart read, market read, scalp commentary) are generated from the snapshot she is handed, so her claims cannot reference different state than the cards. Pipe the snapshot into `rubyContext`/`rubyDraftRead` and remove any independent re-fetch inside those paths.
+- Eleanor's sentences (chart read, market read, scalp commentary) are generated from the snapshot she is handed, so her claims cannot reference different state than the cards. Pipe the snapshot into `eleanorContext`/`eleanorDraftRead` and remove any independent re-fetch inside those paths.
 - Fix the leak class while there: pluralization ("1 candles"), duplicated WHY NOW/TIMING template line, internal rule-name strings, duplicate event rows with identical countdowns (dedupe by event id, not label).
 
 ## PART 4 — ACCEPTANCE TESTS (THE SCREENSHOT CONTRADICTIONS, AUTOMATED)
@@ -113,7 +113,7 @@ Run: typecheck, api-server build, frontend typecheck, `pnpm run ci:guards`, plus
 
 ## PART 5 — QA PROOF IN THE RUNNING APP
 
-On /market-scanner with EURUSD: Data Health, Ruby Chart Read, Overlays badge, chart-layer news lines, Impact Radar, Ruby Market Read evidence, Timing card, Scalp card, and Focus card must all display states consistent with one snapshot — screenshot the page and point at each formerly-contradicting pair now agreeing. Then kill the candle feed (or simulate SYNCING) and screenshot every surface degrading together to the same syncing state. Then load a symbol with a stale cache and show the Focus card withholding levels with a stale label.
+On /market-scanner with EURUSD: Data Health, Eleanor Chart Read, Overlays badge, chart-layer news lines, Impact Radar, Eleanor Market Read evidence, Timing card, Scalp card, and Focus card must all display states consistent with one snapshot — screenshot the page and point at each formerly-contradicting pair now agreeing. Then kill the candle feed (or simulate SYNCING) and screenshot every surface degrading together to the same syncing state. Then load a symbol with a stale cache and show the Focus card withholding levels with a stale label.
 
 ## FINAL REPORT
 
@@ -121,7 +121,7 @@ Report exactly: (1) the audit table (or link to docs/truth-audit.md) with REWIRE
 
 ## COMPLETION STANDARD — do not mark complete until ALL true
 
-- One `getSymbolTruthSnapshot` exists and is the only path surfaces use for freshness, news state, price, and component verdicts on scanner/chart/Ruby surfaces.
+- One `getSymbolTruthSnapshot` exists and is the only path surfaces use for freshness, news state, price, and component verdicts on scanner/chart/Eleanor surfaces.
 - Every surface in the Part 2 list is rewired; no surface computes its own freshness or news state.
 - All 7 acceptance tests exist and pass for real.
 - The 8 screenshot contradictions are reproduced-then-fixed (or proven impossible) with evidence.

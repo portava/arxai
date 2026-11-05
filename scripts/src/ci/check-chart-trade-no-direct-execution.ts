@@ -46,7 +46,7 @@ const SCANNER_PANEL_FILE =
   "artifacts/trading-dashboard/src/components/scanner/ScannerChartPanel.tsx";
 
 // The sanctioned execution path the chart/scanner route MUST contain. Unlike
-// the assistant route there is no Ruby ledger boundary here — the router calls
+// the assistant route there is no Eleanor ledger boundary here — the router calls
 // the instant-trade dispatcher directly.
 // The router is reached through the Trade Engine's one-click channel
 // (submitInstantTrade → executeInstant); a direct executeInstant call is

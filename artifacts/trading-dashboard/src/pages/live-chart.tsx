@@ -85,7 +85,7 @@ export default function LiveChartPage() {
     aiUsable: boolean;
   }>({ symbol: chartSymbol || "", timeframe, aiUsable: false });
   const aiOverlays = useAiChartOverlays(chartCtx);
-  // Task #374 — AI/Ruby setup-preview drawing for the exact instrument on
+  // Task #374 — AI/Eleanor setup-preview drawing for the exact instrument on
   // screen. User-initiated, suppressed on an unconfirmed feed, mapped through
   // the bounded chart-command contract into pure `source:"preview"` overlays.
   const setupPreview = useChartSetupPreview({

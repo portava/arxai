@@ -10,7 +10,7 @@ honesty layer built OVER the existing `routeCandles()` (lib/data/marketDataRoute
 They add NO new data source and never fabricate. Code in
 `artifacts/api-server/src/lib/data/chart/{timeframes,candleNormalization,chartDataService}.ts`,
 route in `routes/chart.ts` mounted after `dataRouter`. Legacy `/api/data/candles`
-is intentionally left byte-for-byte unchanged (scanner/live/Ruby untouched).
+is intentionally left byte-for-byte unchanged (scanner/live/Eleanor untouched).
 
 **Rule:** an unavailable feed returns HTTP 200 with `candles:[]`,
 `quality:"unavailable"`, `aiUsable:false`, and the router `userMessage` as warning

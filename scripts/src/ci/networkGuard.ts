@@ -1,7 +1,7 @@
 // Deterministic offline network guard for in-process app tests.
 //
 // WHY THIS EXISTS
-//   Some read paths (e.g. the Ruby chart read) fan out to many third-party
+//   Some read paths (e.g. the Eleanor chart read) fan out to many third-party
 //   market/news providers (TwelveData, Polygon, Finnhub, AlphaVantage, NewsAPI,
 //   …) for enrichment. Those calls are rate-limited GLOBALLY per API key, so in
 //   a batch run the quota is already drained by the live workflow and other

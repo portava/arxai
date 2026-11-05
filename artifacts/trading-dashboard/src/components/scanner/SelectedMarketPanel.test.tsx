@@ -4,7 +4,7 @@ import type { ScannerTruth } from "@/lib/scannerTruth";
 
 // ── SelectedMarketPanel honesty safety-net (follow-up to the Broad Scan locks) ──
 //
-// The "Pick a market — Ruby explains it" panel is the remaining selected-symbol
+// The "Pick a market — Eleanor explains it" panel is the remaining selected-symbol
 // surface that carries explicit BUY / SELL affordances. It updates whenever the
 // user selects a symbol (via the chart bus). This suite locks that for a degraded
 // / feed-unconfirmed / historical-only selected symbol the panel:
@@ -380,8 +380,8 @@ describe("SelectedMarketPanel — every load state renders without crashing", ()
   });
 
   it("falls back to context (no throw) when ok:true but explanation is missing", () => {
-    // The mirror partial: highlights present, explanation omitted. rubyNote and
-    // the "Ruby's read" block read ok.explanation.* — must degrade, not crash.
+    // The mirror partial: highlights present, explanation omitted. eleanorNote and
+    // the "Eleanor's read" block read ok.explanation.* — must degrade, not crash.
     mockSnapshotQuery.mockReturnValue(
       hookState({
         data: {
@@ -596,7 +596,7 @@ describe("SelectedMarketPanel — 'Data as of' is an observed, advancing age", (
 
 // Truth audit 2026-10-28 (round 3) — one level is one string in this panel.
 // The Highlights box printed the raw number (1.08523, 33588.0069) while the
-// Ruby Reasoning S/R row beside it rounded with a fixed magnitude rule
+// Eleanor Reasoning S/R row beside it rounded with a fixed magnitude rule
 // (1.0852, 33588.01), so one level read at two precisions and the reasoning
 // row dropped digits the venue quoted.
 describe("SelectedMarketPanel — Highlights and the reasoning block print one level as one string", () => {

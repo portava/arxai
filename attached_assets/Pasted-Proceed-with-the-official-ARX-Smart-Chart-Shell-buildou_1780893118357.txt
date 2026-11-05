@@ -14,7 +14,7 @@ The chart should be ARX-owned at the app layer, meaning ARX owns:
 - symbol selection
 - timeframe selection
 - scanner integration
-- Ruby explanation integration
+- Eleanor explanation integration
 - Flame Scalp markers
 - Run-On Candle Momentum markers
 - trade buttons
@@ -61,7 +61,7 @@ Find and document:
 - /api/mt5/sync-candles integration
 - position marker logic if any
 - trade marker logic if any
-- Ruby chart explanation hooks if any
+- Eleanor chart explanation hooks if any
 - scanner-to-chart wiring
 - risk-to-chart wiring
 - flame/scalp markers if any
@@ -82,7 +82,7 @@ For each existing file/component/hook, decide:
 - remove only if clearly dead/test-only
 - flag if uncertain
 
-Do not break existing scanner, trade, Ruby, risk, or bridge wiring while doing this.
+Do not break existing scanner, trade, Eleanor, risk, or bridge wiring while doing this.
 
 PHASE 2 — CREATE ARX SMART CHART SHELL
 
@@ -101,7 +101,7 @@ It must own:
 - live account state
 - scanner state
 - risk state
-- Ruby explanation state
+- Eleanor explanation state
 - Flame Scalp state
 - Run-On Candle Momentum state
 - governance state
@@ -203,7 +203,7 @@ When a user selects a symbol, timeframe, candle, marker, position, or zone, the 
 
 The chart should notify:
 
-- Ruby
+- Eleanor
 - Scanner
 - Risk
 - Flame Scalp
@@ -215,17 +215,17 @@ The chart should notify:
 
 Required behavior:
 
-- selecting a market updates Ruby context
-- selecting a candle lets Ruby explain that candle in context
-- selecting a Flame/Run-On marker lets Ruby explain the scalp condition
-- selecting a position lets Risk and Ruby explain current exposure
+- selecting a market updates Eleanor context
+- selecting a candle lets Eleanor explain that candle in context
+- selecting a Flame/Run-On marker lets Eleanor explain the scalp condition
+- selecting a position lets Risk and Eleanor explain current exposure
 - selecting SL/TP zone lets Risk explain invalidation and target logic
 - scanner updates can place markers on chart
 - governance downgrades can display warnings on chart
 - chart provider freshness affects AI confidence
-- stale chart data downgrades scanner/flame/Ruby confidence
+- stale chart data downgrades scanner/flame/Eleanor confidence
 
-Ruby must explain everything in plain English.
+Eleanor must explain everything in plain English.
 
 PHASE 7 — AI TO CHART HANDSHAKE
 
@@ -272,7 +272,7 @@ Governance can send:
 - stale-data warning
 - missing-provider warning
 
-Ruby can send:
+Eleanor can send:
 - explain-selected-marker prompt
 - plain-English chart read
 - selected candle explanation
@@ -358,7 +358,7 @@ Rules:
 - If trade is filled, chart needs broker confirmation.
 - If position is closed, chart needs broker confirmation or reconciled proof.
 - If position is suspect/phantom, admin should see suspect/reconciliation status.
-- Ruby chart explanations must match chart data truth.
+- Eleanor chart explanations must match chart data truth.
 - No dummy balances.
 - No fake price/candle data.
 - No internal backend terms shown to normal users.
@@ -371,7 +371,7 @@ Targets:
 - symbol change should feel immediate
 - timeframe change should load quickly
 - active candle update should be near real-time when provider is fresh
-- chart should not freeze scanner or Ruby
+- chart should not freeze scanner or Eleanor
 - markers should update without full chart reload when possible
 - resize/mobile layout should be smooth
 - crosshair/hover should not lag
@@ -386,13 +386,13 @@ The chart must work on mobile and desktop.
 
 Desktop:
 - full chart shell
-- side Ruby/explanation panel if space allows
+- side Eleanor/explanation panel if space allows
 - marker details panel
 - trade controls where allowed
 
 Mobile:
 - clean compact chart
-- bottom sheet for Ruby explanation
+- bottom sheet for Eleanor explanation
 - compact timeframe selector
 - compact symbol selector
 - trade controls only where role allows
@@ -415,7 +415,7 @@ OWNER/admin:
 Trader:
 - trader-safe chart tools
 - trade actions if permitted
-- Ruby explanations
+- Eleanor explanations
 - risk zones
 - scanner/flame markers
 - no admin diagnostics
@@ -445,7 +445,7 @@ Do not break:
 - Broad Scan
 - Flame Scalp
 - Run-On Candle Momentum
-- Ruby
+- Eleanor
 - Risk
 - Governance
 - Trade ticket
@@ -487,8 +487,8 @@ Add or run tests for:
 - add-on allowed/blocked markers
 - governance warning markers
 - scanner-to-chart updates
-- chart-to-Ruby selected context
-- Ruby explanation from selected candle/marker
+- chart-to-Eleanor selected context
+- Eleanor explanation from selected candle/marker
 - trade ticket opens with selected symbol
 - one-click scalp controls remain role-gated
 - investor cannot trade from chart
@@ -501,7 +501,7 @@ Run:
 - typecheck
 - chart tests
 - scanner integration tests
-- Ruby integration tests
+- Eleanor integration tests
 - risk integration tests
 - governance integration tests
 - role-gating tests
@@ -541,10 +541,10 @@ Do not mark complete until:
 - chart renderer is behind a pluggable adapter
 - ARX owns the intelligence/tool layer
 - chart uses ARX truth sources
-- scanner/Ruby/risk/governance/flame/run-on can handshake with the chart
+- scanner/Eleanor/risk/governance/flame/run-on can handshake with the chart
 - trade markers and SL/TP/risk visuals are supported or clearly staged
 - live UI truth is respected
 - role gates are correct
 - mobile and desktop remain usable
-- no active trading, scanner, Ruby, bridge, or admin wiring is broken
+- no active trading, scanner, Eleanor, bridge, or admin wiring is broken
 - validation passes

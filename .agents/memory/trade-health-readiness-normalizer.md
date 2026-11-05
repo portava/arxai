@@ -6,7 +6,7 @@ description: Shared trade-health display contract's timeframe normalizer + per-t
 The shared DISPLAY-ONLY Trade Health / Eligibility contract
 (`lib/domain/src/market/tradeHealthReadinessContract.ts`) is fed by both Scanner
 (UI aliases like `15m`, per-tf bar floor from the scanner threshold table) and
-Ruby (canonical MT5 codes like `M15`). Two helpers in
+Eleanor (canonical MT5 codes like `M15`). Two helpers in
 `lib/domain/src/market/readinessTimeframes.ts` keep them in agreement:
 `normalizeReadinessTimeframe` (→ one lowercase display token) and
 `requiredClosedBarsForTimeframe` (→ per-tf min closed bars).
@@ -18,8 +18,8 @@ Rules:
 - Normalize month BEFORE the bare-`M` minute patterns so a monthly tf can't be
   swallowed as minutes.
 - Unknown/unsupported tf → STRICTEST floor (150), never the laxest.
-- Ruby must pass `minimumRequiredCandles: requiredClosedBarsForTimeframe(tf)`; if
-  it omits it the contract defaults to MIN_SUFFICIENT_CLOSED_BARS (5) and Ruby
+- Eleanor must pass `minimumRequiredCandles: requiredClosedBarsForTimeframe(tf)`; if
+  it omits it the contract defaults to MIN_SUFFICIENT_CLOSED_BARS (5) and Eleanor
   reads "Live-confirmed" while the Scanner still reads "Building history".
 
 **Why:** this contract is display-only and downgrade-only — a bigger floor can

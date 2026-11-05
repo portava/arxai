@@ -4,12 +4,12 @@
 // audited /api/admin/agent-ecosystem/* endpoints (Layers 1-3) plus the new
 // Layer 4 Household Report endpoints. Surfaces:
 //   - Overview: population, immune scan, household recommendations + seed
-//   - Family Tree: Ruby → departments → agents, accountability
+//   - Family Tree: Eleanor → departments → agents, accountability
 //   - Agents: registry table + per-agent detail + audited lifecycle controls
 //     (approve shadow-exit, immune-system actions) — every mutation reason-gated
 //   - Creation Requests: factory queue + approve/reject decision (reason-gated)
 //   - Household Reports: generate (audited) + browse the persisted daily report,
-//     including Ruby's plain-English summary
+//     including Eleanor's plain-English summary
 //   - Constitution: the read-only governing rules
 //
 // SAFETY: ADVISORY / OBSERVATION ONLY. Nothing here trades, gates, slows, or
@@ -76,7 +76,7 @@ type CreationRequest = {
   status: string; createdAt: string | null;
 };
 type HouseholdReportListItem = {
-  reportId: string; reportDate: string; headline: string; totalAgents: number; rubySummary: string;
+  reportId: string; reportDate: string; headline: string; totalAgents: number; eleanorSummary: string;
 };
 type SurfaceFinding = { symbol: string; surface: string; detail: string };
 type HouseholdReportBody = {
@@ -108,7 +108,7 @@ type GovernanceTraceRow = {
   symbol: string | null; timeframe: string | null; activeMode: string;
   agentsRequested: string; agentsAllowedToRun: string; agentsBlocked: string;
   agentsThatSteppedBack: string; finalGovernanceDecision: string;
-  rubySummaryUsed: boolean; riskVetoUsed: boolean; disagreementCourtUsed: boolean;
+  eleanorSummaryUsed: boolean; riskVetoUsed: boolean; disagreementCourtUsed: boolean;
   predictionLocked: boolean; reviewCreated: boolean; noTradeRewardCreated: boolean;
   speedCostMs: number; totalGovernanceRuntimeMs: number;
   liveExecutionBlockedByAi: boolean; errorSummary: string | null; createdAt: string | null;
@@ -574,7 +574,7 @@ function EcosystemInner() {
             <Alert>
               <Sparkles className="h-4 w-4" />
               <AlertTitle>In plain English ({name})</AlertTitle>
-              <AlertDescription className="text-txt-secondary">{openReport.rubySummary}</AlertDescription>
+              <AlertDescription className="text-txt-secondary">{openReport.eleanorSummary}</AlertDescription>
             </Alert>
             {openReport.body && (() => {
               const b = openReport.body;
@@ -690,7 +690,7 @@ function EcosystemInner() {
                       <div className="flex flex-wrap gap-1">
                         {t.riskVetoUsed && <Badge variant="outline" className="border-danger/40 text-danger">risk-veto</Badge>}
                         {t.disagreementCourtUsed && <Badge variant="outline" className="border-warning/40 text-warning">court</Badge>}
-                        {t.rubySummaryUsed && <Badge variant="outline" className="border-primary/40 text-primary">ruby</Badge>}
+                        {t.eleanorSummaryUsed && <Badge variant="outline" className="border-primary/40 text-primary">eleanor</Badge>}
                         {t.predictionLocked && <Badge variant="outline" className="border-violet-500/40 text-violet-300">predict</Badge>}
                       </div>
                     </td>

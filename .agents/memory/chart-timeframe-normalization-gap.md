@@ -1,11 +1,11 @@
 ---
-name: Chart timeframe normalization gap (Ruby read-chart)
-description: Why a confirmed-LIVE chart can still make Ruby's read-chart return INSUFFICIENT — lowercase tf ("15m") not normalized on the chart-intelligence path.
+name: Chart timeframe normalization gap (Eleanor read-chart)
+description: Why a confirmed-LIVE chart can still make Eleanor's read-chart return INSUFFICIENT — lowercase tf ("15m") not normalized on the chart-intelligence path.
 ---
 
 # Chart timeframe normalization gap
 
-**Symptom:** Ruby's chart read returns "Chart intelligence unavailable — cannot
+**Symptom:** Eleanor's chart read returns "Chart intelligence unavailable — cannot
 verify chart data" / "feed unavailable" / basis INSUFFICIENT for a symbol whose
 chart is visibly streaming LIVE candles. Looks like a symbol-mapping or feed
 outage; it is neither.
@@ -16,15 +16,15 @@ outage; it is neither.
 - The candle-render path normalizes both cases (`chartCandlesQuery` has
   `case "M15": case "m15":`) and the router `marketDataRouter.routeCandles`
   normalizes `"15m"→"M15"` — so the **chart shows live data**.
-- But `useAiChartOverlays.requestRubyRead` POSTs `{ symbol: normalized, timeframe }`
+- But `useAiChartOverlays.requestEleanorRead` POSTs `{ symbol: normalized, timeframe }`
   with the timeframe **forwarded raw** (only the symbol is uppercased). The
   backend `POST /api/me/assistant/read-chart` (`readChartSchema`) accepts any
   string and casts `timeframe as ChartTimeframe` WITHOUT normalizing, then
-  `buildRubyChartContext → buildChartIntelligenceState` uses it against
+  `buildEleanorChartContext → buildChartIntelligenceState` uses it against
   `CHART_TIMEFRAMES`/`TIMEFRAME_SECONDS` which are **UPPERCASE-only** (`timeframes.ts`,
   no lowercase normalizer). A lowercase `"15m"` → intelligence/truth build fails
-  (timeframeSeconds undefined → NaN staleness math) → buildRubyChartContext throws
-  → rubyCtx=null → basis INSUFFICIENT.
+  (timeframeSeconds undefined → NaN staleness math) → buildEleanorChartContext throws
+  → eleanorCtx=null → basis INSUFFICIENT.
 - `derivProvider.toDerivGranularity` is also uppercase-only (`"15m"→null →
   TIMEFRAME_UNSUPPORTED`), reinforcing the asymmetry.
 
@@ -36,19 +36,19 @@ INDEX", confirmed deriv LIVE_FEED:
   live clean candles for the exact `(1S)` uppercase string → 1HZ75V (symbol map +
   router path both fine; not insufficient history).
 
-**Callers:** `ScannerChartPanel` uppercases tf before `<RubyChartRead>` (works) and
+**Callers:** `ScannerChartPanel` uppercases tf before `<EleanorChartRead>` (works) and
 even rewrites storage to uppercase on mount; `ScalpSignalCard` hardcodes `"M1"`
-(works). The failing path is the **live-chart overlay** `requestRubyRead`, which
+(works). The failing path is the **live-chart overlay** `requestEleanorRead`, which
 forwards the raw lowercase scanner tf. Intermittent: after visiting Scanner,
 storage flips to "M15" and reads start working — masks the bug.
 
 **Why:** the app has TWO timeframe normalizers (frontend `normalizeChartTimeframe`/
 `chartCandlesQuery`, backend `marketDataRouter`) but the chart-intelligence /
-Ruby-read path bypasses both. Any new caller of read-chart or buildChartIntelligenceState
+Eleanor-read path bypasses both. Any new caller of read-chart or buildChartIntelligenceState
 must normalize tf to canonical uppercase ChartTimeframe first.
 
 **How to apply / safe fix (gate-neutral):** normalize the timeframe to canonical
-ChartTimeframe at the read-chart handler entry (or in buildRubyChartContext),
+ChartTimeframe at the read-chart handler entry (or in buildEleanorChartContext),
 mirroring `normalizeChartTimeframe`, and/or uppercase `timeframe` in
-`requestRubyRead` like the symbol already is. Pure robustness — weakens no gate;
+`requestEleanorRead` like the symbol already is. Pure robustness — weakens no gate;
 INSUFFICIENT stays the honest verdict for genuinely-bad feeds.

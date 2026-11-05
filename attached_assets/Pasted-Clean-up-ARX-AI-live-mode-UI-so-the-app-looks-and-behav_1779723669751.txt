@@ -10,7 +10,7 @@ Current issue:
 - Normal users should not see backend diagnostic labels, raw bridge states, endpoint names, internal constants, or false errors.
 
 Before changing code:
-1. Search the whole app for live mode UI, MT5 bridge UI, broker execution UI, diagnostics panels, badges, error banners, status chips, admin/user views, scanner trade buttons, Ruby trading status, and all places showing:
+1. Search the whole app for live mode UI, MT5 bridge UI, broker execution UI, diagnostics panels, badges, error banners, status chips, admin/user views, scanner trade buttons, Eleanor trading status, and all places showing:
    - READ_ONLY
    - Broker Execution Disabled
    - BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED
@@ -62,7 +62,7 @@ Live UI cleanup:
    - MT5 bridge page
    - scanner
    - trade ticket
-   - Ruby trade assistant
+   - Eleanor trade assistant
    - admin user approval area
    - mobile views
 3. Split status display into two layers:
@@ -100,12 +100,12 @@ Acceptance tests:
 5. Confirm normal users do not see raw values like brokerExecutionAvailable, placementLayer, mt5Deferred, mounted endpoints, or internal constants.
 6. Confirm admin can still open diagnostics when needed.
 7. Confirm real blockers still appear clearly and accurately.
-8. Confirm the scanner/trade ticket/Ruby pages all show consistent live status.
+8. Confirm the scanner/trade ticket/Eleanor pages all show consistent live status.
 9. Confirm refreshing the app does not bring back stale false errors.
 10. Confirm mobile UI is clean and not crowded with debug warnings.
 11. Confirm no safety gates, admin approvals, risk limits, kill switches, or broker checks were bypassed.
 12. Confirm no fake “ready” state appears if the backend is not actually ready.
 
 After changes:
-- Run full QA on live-mode UI, admin diagnostics, MT5 bridge status, scanner trade entry, Ruby trade assistant, and mobile layout.
+- Run full QA on live-mode UI, admin diagnostics, MT5 bridge status, scanner trade entry, Eleanor trade assistant, and mobile layout.
 - Fix anything that is inaccurate, duplicated, stale, or user-facing when it should be admin-only.

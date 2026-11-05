@@ -20,7 +20,7 @@ that false-positive (stale tick, or a sibling ticking, never reads THIS symbol
 live).
 
 **How to apply:** the single source is `getDerivSymbolFeedStatus(symbolOrLabel,
-maxAgeMs)`; every chart/scanner/Ruby/live-floor surface consumes it. When adding
+maxAgeMs)`; every chart/scanner/Eleanor/live-floor surface consumes it. When adding
 a new synthetic-feed surface, route it through that one call — never re-derive
 liveness from the global `getDerivFeedStatus()`/`client.hasRecentTick()`.
 Regression-guard it: seed only one symbol's tick AND set the global `lastTickAt`

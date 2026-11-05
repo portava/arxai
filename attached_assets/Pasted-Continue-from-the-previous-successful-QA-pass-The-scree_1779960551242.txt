@@ -6,7 +6,7 @@ Finish the next cleanup phase so the app has only two production/user-facing tra
 1. DEMO
 2. LIVE
 
-Paper Trading must no longer exist as a user-facing product mode, backend active mode, account mode, permission mode, scanner mode, Ruby mode, allocation mode, OpenAPI active enum, dashboard mode, trade-history source, AI learning source, performance source, or hidden backend fallback.
+Paper Trading must no longer exist as a user-facing product mode, backend active mode, account mode, permission mode, scanner mode, Eleanor mode, allocation mode, OpenAPI active enum, dashboard mode, trade-history source, AI learning source, performance source, or hidden backend fallback.
 
 Important:
 Do NOT weaken live-trade safety gates, broker execution guards, admin approval gates, kill switches, stop-loss rules, permission checks, or live execution validation. If a safety feature currently uses “paper” wording internally, rebuild/rename it into DEMO/LIVE-safe terminology instead of deleting the protection.
@@ -48,7 +48,7 @@ Phase 9B — Remove Paper Route Mounts
 3. If old paper routes must remain temporarily for compatibility, they must:
    - not be advertised in OpenAPI
    - not be used by the frontend
-   - not appear in Ruby
+   - not appear in Eleanor
    - not appear in the dashboard
    - return a deprecation response or internally normalize to DEMO
    - be covered by tests proving no user-facing paper wording leaks
@@ -59,7 +59,7 @@ Update these deferred areas specifically:
 1. `getUserModeScope.primaryDataDomain`
    - Remove “paper” as an output possibility.
    - Normalize any legacy paper input into DEMO.
-   - Ensure only DEMO or LIVE can be returned to UI, Ruby, scanner, dashboard, account shell, allocation shell, trading sessions, and analytics.
+   - Ensure only DEMO or LIVE can be returned to UI, Eleanor, scanner, dashboard, account shell, allocation shell, trading sessions, and analytics.
 
 2. `meAccountShell`
    - Remove paper aggregations from active user account data.
@@ -88,14 +88,14 @@ Update these deferred areas specifically:
    - Live autopilot must still require the existing live safety, approval, kill-switch, and permission protections.
    - Do not allow autopilot to silently fall back to simulated paper mode.
 
-Phase 9D — Knowledge Files / Ruby / Walkthrough Cleanup
+Phase 9D — Knowledge Files / Eleanor / Walkthrough Cleanup
 1. Search and update:
    - `arxAppKnowledge`
    - walkthrough files
    - `actionRouter`
    - `_qa-test`
    - assistant prompt files
-   - Ruby system knowledge
+   - Eleanor system knowledge
    - onboarding/help content
    - scanner help copy
    - dashboard labels
@@ -103,11 +103,11 @@ Phase 9D — Knowledge Files / Ruby / Walkthrough Cleanup
    - logs visible to users
    - error strings visible to users
 
-2. Ruby must never tell users they are in “paper trading.”
-3. Ruby may explain only:
+2. Eleanor must never tell users they are in “paper trading.”
+3. Eleanor may explain only:
    - DEMO = broker/demo or simulated-safe environment
    - LIVE = real broker/live execution environment
-4. Ruby should not expose backend enum names, internal function names, route names, database field names, or implementation details to regular users.
+4. Eleanor should not expose backend enum names, internal function names, route names, database field names, or implementation details to regular users.
 5. Admin-only diagnostics may show technical identifiers only inside admin/dev panels, never in normal user UI.
 
 Phase 9E — Database / Legacy Data Boundary
@@ -136,8 +136,8 @@ Inspect all user-facing screens and remove Paper wording from:
 - dashboard
 - account shell
 - scanner
-- Ruby chat
-- Ruby voice
+- Eleanor chat
+- Eleanor voice
 - trade tickets
 - trade confirmations
 - trade history
@@ -164,7 +164,7 @@ While doing this cleanup, do not make the app slower.
 3. Do not add repeated frontend polling.
 4. Do not add blocking startup scans.
 5. Remove dead paper branches that add unnecessary checks.
-6. Ensure scanner, Ruby, trade open/close, account shell, and dashboard remain fast.
+6. Ensure scanner, Eleanor, trade open/close, account shell, and dashboard remain fast.
 
 If a fix increases load, find a lighter approach and retest.
 
@@ -190,7 +190,7 @@ Add or update tests proving:
 
 5. OpenAPI does not expose PAPER_OPEN, PAPER_CLOSED, or PAPER_TRADING as active enums.
 
-6. Ruby does not expose backend/internal mode names to users.
+6. Eleanor does not expose backend/internal mode names to users.
 
 7. Scanner does not use paper as a mode, fallback, permission, or result source.
 
@@ -212,7 +212,7 @@ Add or update tests proving:
    - test:demo-arming
    - test:live-pass-path
    - test:onboarding
-   - any existing scanner/Ruby/account/trade tests
+   - any existing scanner/Eleanor/account/trade tests
 
 Phase 9I — Report Back Clearly
 At the end, return a concise report with:
@@ -241,6 +241,6 @@ Acceptance Criteria:
 - Paper is not a hidden fallback
 - Legacy paper data is normalized safely
 - OpenAPI no longer exposes active PAPER values
-- Ruby explains only DEMO and LIVE
+- Eleanor explains only DEMO and LIVE
 - No live execution safety regression
 - No performance regression

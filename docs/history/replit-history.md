@@ -69,10 +69,10 @@ phases, preserving every existing Scanner feature below it.
   server's `primaryReason`. Reverse is **non-atomic** (gated close → gated open
   opposite) and says so. Pending Cancel uses the real per-user
   `DELETE /api/me/pending-order-draft/:id`.
-- **Ruby chart read (Phase 7)** — `components/scanner/RubyChartRead.tsx`, an
+- **Eleanor chart read (Phase 7)** — `components/scanner/EleanorChartRead.tsx`, an
   on-demand compact explanation via the read-only `POST
   /api/me/assistant/explain-signal` (returns `readOnlyMode:true`, paper_only).
-  Ruby can never place/modify/close a trade from here.
+  Eleanor can never place/modify/close a trade from here.
 
 **Verification:** trading-dashboard typecheck green; `pnpm run ci:guards`
 **26/26 PASS** (incl. `risky-wording-frontend`, `no-internal-names-user-ui`,
@@ -96,7 +96,7 @@ blank.
   via `onConfirm`. Disabled state shows the exact blocker (`ls-confirm-disabled-reason`).
   Non-blocking inline warnings: missing exit protection (`ls-exit-protection-warning`,
   only when SL is actually waived for the profile — never contradicts a hard
-  block) and Ruby bias mismatch (`ls-ruby-bias-warning`). Loading "Sending live
+  block) and Eleanor bias mismatch (`ls-eleanor-bias-warning`). Loading "Sending live
   order…", success "Live order sent". Preview-lock + admin diagnostics drawer kept.
 - **`LiveTradeTicket.tsx`** (standard mode) — dropped the confirm checkbox
   requirement; relabeled to "Confirm Buy/Sell" / "Sending live order…". Added a
@@ -746,15 +746,15 @@ Brand:
   `createInvite` path (cap enforced only at Approve time; over-cap stays queued);
   Decline requires a reason (≥3). Detail in the history archive.
 - **MT5 Setup**: Per-user bridge token, demo readiness gate, demo execution control, demo bridge debug card, Controlled Live Test (Phase B), Open Live Positions
-- **Admin Ruby Quality** (admin-only): Outcome-learning dashboard (Part-42
+- **Admin Eleanor Quality** (admin-only): Outcome-learning dashboard (Part-42
   metrics, missed-opportunity replay, audited tuning, investor summary). Every
-  Ruby signal is tracked on-appear and resolved ONLY on real evidence (timeout
+  Eleanor signal is tracked on-appear and resolved ONLY on real evidence (timeout
   stays UNRESOLVED — never fabricated). OBSERVATION ONLY; never an execution gate.
 
 ## Architecture & Safety Documentation
 
 - [`docs/ARCHITECTURE_MAP.md`](./docs/ARCHITECTURE_MAP.md) — single source of truth for every page, route, service, table, and data flow
-- [`docs/ALGORITHM_MAP.md`](./docs/ALGORITHM_MAP.md) — what the trading algorithm decides (flame scalp, scanner truth caps, agent advisory/governance, Ruby copy discipline, data-routing honesty), the deterministic test locking each behavior, and the Task-327 surgical-gap audit
+- [`docs/ALGORITHM_MAP.md`](./docs/ALGORITHM_MAP.md) — what the trading algorithm decides (flame scalp, scanner truth caps, agent advisory/governance, Eleanor copy discipline, data-routing honesty), the deterministic test locking each behavior, and the Task-327 surgical-gap audit
 - [`docs/SAFETY_NOTES.md`](./docs/SAFETY_NOTES.md) — inviolable invariants, untouchable surfaces, live-trading sensitivity, broker-credential gates
 - [`docs/IMPLEMENTATION_ROADMAP.md`](./docs/IMPLEMENTATION_ROADMAP.md) — phased build plan (Layer 1–4)
 - [`docs/ARX_NATIVE_CHART_AUDIT.md`](./docs/ARX_NATIVE_CHART_AUDIT.md) — ARX Native Chart Level 0 audit + chart "do not touch" list
@@ -827,17 +827,17 @@ runtime.
   `MT5_BRIDGE_TOKEN`, IP addresses or account numbers (except to OWNER/ADMIN
   sessions on operator endpoints), or `safetyGateSnapshot` blobs to anonymous
   callers.
-- AI assistant (Ruby) is a **permission-bounded executor, never a second
+- AI assistant (Eleanor) is a **permission-bounded executor, never a second
   execution path**; it can never modify connections or read another user's data.
-  Ruby's *reported* safety state is **derived per-user** (`getEnvelope()` /
+  Eleanor's *reported* safety state is **derived per-user** (`getEnvelope()` /
   `deriveAssistantEnvelope`, fail-closed), never hardcoded. Read/advisory surfaces
   force `readOnlyMode: true`; the genuinely read-only `draw-setup` / `draft-read`
-  surfaces keep the forced `READ_ONLY_PAPER_ENVELOPE`. Ruby may place/manage a
-  **live** trade ONLY with explicit `rubyExecutionAuthority = AI_ASSISTED`, and
+  surfaces keep the forced `READ_ONLY_PAPER_ENVELOPE`. Eleanor may place/manage a
+  **live** trade ONLY with explicit `eleanorExecutionAuthority = AI_ASSISTED`, and
   even then routes through the SAME instant-trade router → live pipeline → 18-gate
   dispatch as a manual trade (skips only the extra app-side confirm, never a
   backend gate / approval / allocation / kill-switch). `AI_AUTO` is defined but
-  **not enabled**. (Detail: "Ruby behavior rules" below.)
+  **not enabled**. (Detail: "Eleanor behavior rules" below.)
 - Live market data is never substituted by simulator data. Providers return empty
   + honest `safetyNote` when not configured.
 
@@ -885,34 +885,34 @@ master-account data. A "Market closed — last quote …" chart badge (display-o
 distinguishes a closed-market frozen quote from a broken feed, derived from
 real per-tick broker-time staleness gated by wall-clock freshness.
 
-## Ruby (assistant) behavior rules (active)
+## Eleanor (assistant) behavior rules (active)
 
-Ruby is a **permission-bounded AI-Assisted executor**. By default its execution
-authority is `OFF` (read-only). A user may raise `rubyExecutionAuthority` to
+Eleanor is a **permission-bounded AI-Assisted executor**. By default its execution
+authority is `OFF` (read-only). A user may raise `eleanorExecutionAuthority` to
 `ADVISE_ONLY` (still read-only) or `AI_ASSISTED` (may place/manage live trades).
-**There is NO second execution path**: when authorized, every Ruby trade action —
+**There is NO second execution path**: when authorized, every Eleanor trade action —
 OPEN / CLOSE / CLOSE_ALL / MODIFY_SL_TP / MOVE_SL_TO_BREAKEVEN / PARTIAL_CLOSE
 plus the MONITOR/WATCH single-fire engines — routes through the EXISTING
 instant-trade router → live command pipeline → 18-gate Phase B dispatch (source
-`ruby_text`/`ruby_voice`), exactly like a manual trade. `AI_ASSISTED` skips only
+`eleanor_text`/`eleanor_voice`), exactly like a manual trade. `AI_ASSISTED` skips only
 the extra app-side confirmation prompt, never any backend gate, per-user approval,
-allocation, or kill-switch check. Ruby actions are bounded by per-action
-permissions, per-Ruby caps (`maxRubyLotPerTrade` / open-positions / daily-trades),
-and a symbol/asset-class allowlist, recorded in the append-only `ruby_commands`
+allocation, or kill-switch check. Eleanor actions are bounded by per-action
+permissions, per-Eleanor caps (`maxEleanorLotPerTrade` / open-positions / daily-trades),
+and a symbol/asset-class allowlist, recorded in the append-only `eleanor_commands`
 ledger with pending-dedupe + idempotency; watches fire EXACTLY ONCE via CAS.
 `AI_AUTO` is defined but **not enabled**.
 
-Read/advisory surfaces remain non-executing, but Ruby's *reported* account
+Read/advisory surfaces remain non-executing, but Eleanor's *reported* account
 live-state is **derived** from the per-user envelope on every reporting surface —
 conversational replies, the `getTradingMode` / `getPaperSafetyStatus` tools, the
-Scanner "Ruby chart read" `POST /api/me/assistant/read-chart`,
+Scanner "Eleanor chart read" `POST /api/me/assistant/read-chart`,
 `POST /api/me/assistant/explain-signal`, the realtime-voice bootstrap, and the
 system prompt — all of which spread the derived envelope and force
 `readOnlyMode: true`; the genuinely read-only `draw-setup` / `draft-read` surfaces
 keep the forced `READ_ONLY_PAPER_ENVELOPE` (the `draft-read` OpenAPI response is
 pinned to `safetyMode: paper_only`). Admins observe via
-`GET /api/admin/ruby-execution/commands` (redacted DTO) and override a user's
-authority via `POST /api/admin/ruby-execution/users/:userId/authority` (audited;
+`GET /api/admin/eleanor-execution/commands` (redacted DTO) and override a user's
+authority via `POST /api/admin/eleanor-execution/users/:userId/authority` (audited;
 `AI_AUTO` rejected).
 
 ## Performance goals (active)

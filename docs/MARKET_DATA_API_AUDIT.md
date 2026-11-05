@@ -7,7 +7,7 @@ environment.
 
 **Scope:** every API, provider, feed, bridge, env key, service, endpoint, hook,
 and UI surface involved in ARX market data, candles, quotes, scanner results,
-Ruby analysis, live execution, account totals, and open trades.
+Eleanor analysis, live execution, account totals, and open trades.
 
 ---
 
@@ -23,7 +23,7 @@ EURUSD screenshot ("assistant_real:polygon / stale / not AI-usable") is the syst
 behaving **correctly**: the reserved MT5-broker candle slot is not active yet
 (EA only heartbeats), so the router fell through to the third-party assistant chain,
 TwelveData returned nothing usable for 1-minute forex, Polygon's free tier served a
-delayed bar, the freshness rule correctly flagged it stale, and Ruby was correctly
+delayed bar, the freshness rule correctly flagged it stale, and Eleanor was correctly
 blocked from "AI-confirmed" analysis. The real cleanup opportunities are: (a) the
 **scanner's simulator fallback** for technicals (honestly tagged, analysis-only,
 but still synthetic), and (b) several **legacy `aiBrain`/`marketSimulator`
@@ -80,14 +80,14 @@ analysis coverage and force honest empty/stale states.
 
 ## 3. What is actually feeding each surface right now
 
-| Surface | Endpoint / hook | Provider actually used | Fallback | UI source label | Freshness / stale rule | Ruby? | Can affect trades? | Truth type |
+| Surface | Endpoint / hook | Provider actually used | Fallback | UI source label | Freshness / stale rule | Eleanor? | Can affect trades? | Truth type |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **Main chart** (ARXNativeChart) | `GET /api/chart/candles` → `chartDataService.ts` → `routeCandles` | mt5_broker (reserved→skip) → deriv (synthetics) / assistant_real (forex/metals/idx/crypto/stocks) | next provider in chain | winning provider, e.g. `assistant_real:polygon` | clean ≤1 trailing interval; delayed =2; **stale ≥3** | clean only | **no** | analysis / live-feed display |
 | **Scanner chart** (ScannerChartPanel) | `GET /api/chart/candles` (shared dedup cache) | same router | same | same | same | clean only | **no** | analysis |
 | **Scanner results** (rows) | `GET /api/market-scanner/opportunities` → `marketScanner.ts` | **router-first** (`routeCandles`) per row; **simulator fallback** when real feed missing | simulator (tagged) | per-row `dataSource`: `LIVE_FEED` / `AWAITING_FEED` / `HISTORY_READY_AWAITING_LIVE_TICK` / **`SIMULATOR`** | per-row tag; sim rows say "based on simulated data, not a live feed" | yes (reads rows) | **no** | analysis-only (honestly tagged) |
-| **Ruby chart read** | `POST /api/me/assistant/read-chart` → `chartStructure.ts` (deterministic, no LLM) over `/api/chart/candles` | router | — | carries `paper_only` envelope; `aiUsable` from feedStatus | clean ⇒ VERIFIED, else honest gated read | n/a | **no** (read-only) | analysis-only |
-| **Ruby trade recommendation** | scanner/`aiBrain` advisory cards | router (scanner) / simulator (legacy aiBrain card) | — | advisory | advisory | yes | **no** (advisory) | analysis-only |
-| **Ruby live trade command** | `executeInstantTrade` (`source:ruby_text/ruby_voice`) → `instantTrade.ts` → `liveCommandPipeline.ts` | **MT5 broker bridge** | none | — | 16-gate + heartbeat ≤15s | n/a | **YES** | **broker-truth** |
+| **Eleanor chart read** | `POST /api/me/assistant/read-chart` → `chartStructure.ts` (deterministic, no LLM) over `/api/chart/candles` | router | — | carries `paper_only` envelope; `aiUsable` from feedStatus | clean ⇒ VERIFIED, else honest gated read | n/a | **no** (read-only) | analysis-only |
+| **Eleanor trade recommendation** | scanner/`aiBrain` advisory cards | router (scanner) / simulator (legacy aiBrain card) | — | advisory | advisory | yes | **no** (advisory) | analysis-only |
+| **Eleanor live trade command** | `executeInstantTrade` (`source:eleanor_text/eleanor_voice`) → `instantTrade.ts` → `liveCommandPipeline.ts` | **MT5 broker bridge** | none | — | 16-gate + heartbeat ≤15s | n/a | **YES** | **broker-truth** |
 | **Dashboard account totals** | `GET /api/me/dashboard/intelligence`, `liveAccountSnapshot.ts` | MT5 heartbeat (`mt5_connection`) + `arx_live_positions` | — | `MT5_LIVE_BRIDGE` / `MT5_DEMO_BRIDGE` | fresh ≤30s, stale ≤120s, else missing | reads | **no** | **broker-truth** |
 | **Open Trades panel** | `GET /api/me/positions/all` | `arx_live_positions` (+ demo), per-user scoped; floating P/L via fresh router quote | — | bridge | position freshness | reads | **no** | **broker-truth** |
 | **Admin live account totals** | `GET /api/admin/live/master-summary` | master MT5 bridge balance/equity | — | master pool | heartbeat | n/a | **gating** | **broker-truth** |
@@ -115,7 +115,7 @@ analysis coverage and force honest empty/stale states.
 | Balance / equity / margin / free margin | `mt5_connection` heartbeat | same | **Yes** | — | stale if heartbeat ages out |
 | Open P/L | `liveAccountSnapshot.ts` (positions × fresh quote) | same | **Yes** (with reconciliation flag) | — | flags "under verification" if Σ vs equity−balance > $1 |
 | Scanner technicals | router candles **or simulator fallback** | router candles | analysis-only | **Yes** | simulator fallback still computes indicators (tagged) |
-| Ruby market analysis | router candles (deterministic) | router candles | analysis-only | **Yes** | gated to clean feed |
+| Eleanor market analysis | router candles (deterministic) | router candles | analysis-only | **Yes** | gated to clean feed |
 | News | NewsAPI or honest-empty | a connected real provider | analysis-only | **Yes** | no key in this env |
 | Economic calendar | not connected (empty) | a connected calendar API | analysis-only | **Yes** | seam only |
 | Historical backtest | CSV / seeded synthetic | persisted real candles | analysis-only | **Yes** | no candle/tick persistence layer exists |
@@ -155,9 +155,9 @@ analysis coverage and force honest empty/stale states.
 - **Is the chart frozen intentionally?** Yes. On a non-clean/non-LIVE feed the
   chart suppresses the live-price affordance (no live "Last" line update) — an
   intentional honesty behavior, not a hang.
-- **Is Ruby correctly blocked from AI-confirmed analysis?** Yes. `aiUsable` is
+- **Is Eleanor correctly blocked from AI-confirmed analysis?** Yes. `aiUsable` is
   `true` **only** when `quality === "clean"`. Stale ⇒ `aiUsable:false` ⇒ the UI
-  "AI usable: not confirmed", and Ruby's read-chart degrades to an honest gated
+  "AI usable: not confirmed", and Eleanor's read-chart degrades to an honest gated
   read instead of a VERIFIED one. Correct.
 
 **Note on the label "Polygon" + "Fallback feed":** these are accurate. Polygon is
@@ -168,7 +168,7 @@ broker slot is inactive and TwelveData came back empty.
 
 ## 6. Per-provider activation matrix
 
-| Provider | Code exists | Env key set (this env) | Reachable here | Chart | Scanner | Ruby | Execution | Safe as **execution** truth | Current health |
+| Provider | Code exists | Env key set (this env) | Reachable here | Chart | Scanner | Eleanor | Execution | Safe as **execution** truth | Current health |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MT5 broker | yes | bridge token per-user | heartbeat only | reserved (skip) | reserved | reserved | **YES (orders)** | **YES** (execution price at dispatch) | live heartbeat, **no quote/candle push** |
 | Deriv | yes | yes | yes (WS) | synthetics | synthetics | synthetics | no | No | active for synthetics |
@@ -194,7 +194,7 @@ still exist and are the main source of confusion:
 1. **Two candle endpoints.** `/api/chart/candles` (rich, normalized, carries
    `feedStatus`) vs legacy `/api/data/candles` (bare array, no status). Both call
    the same router, so no truth conflict, but two contracts mean drift risk. The
-   Native chart, Scanner chart, Ruby read, and PositionMiniChart now standardize on
+   Native chart, Scanner chart, Eleanor read, and PositionMiniChart now standardize on
    `/api/chart/candles`; `/api/data/candles` lingers.
 2. **Scanner simulator fallback.** `marketScanner.ts` is router-first but falls back
    to `marketSimulator.ts` for technicals when a real feed is missing. It is
@@ -214,7 +214,7 @@ still exist and are the main source of confusion:
    may still call itself "fresh" for 5 — a definitional mismatch to be aware of.
 
 **No mismatch reaches money:** dashboard/open-trades/allocation read broker truth;
-charts/scanner/Ruby read the router; execution re-prices at the broker.
+charts/scanner/Eleanor read the router; execution re-prices at the broker.
 
 ---
 
@@ -225,7 +225,7 @@ charts/scanner/Ruby read the router; execution re-prices at the broker.
 | External provider price can update balance/equity/open P/L | **No** — totals come only from `mt5_connection` heartbeat + `arx_live_positions`; quotes are used solely to *display* floating P/L, behind a reconciliation flag |
 | External candles can create live fills | **No** — fills exist only as `arx_live_commands` rows produced by the EA after the 16-gate dispatch |
 | External quote can override MT5 execution price | **No** — execution uses the broker's price at OrderSend; the router price never enters the dispatch |
-| Ruby trade commands use broker bridge only | **Yes** — `executeInstantTrade` → `liveCommandPipeline` → 16-gate; no second path |
+| Eleanor trade commands use broker bridge only | **Yes** — `executeInstantTrade` → `liveCommandPipeline` → 16-gate; no second path |
 | Manual trades use broker bridge only | **Yes** — same router |
 | Scanner trade buttons use broker bridge only | **Yes** — same router; PAPER renders no buttons |
 | Simulator data can reach execution | **No** — analysis-only, always tagged |
@@ -253,7 +253,7 @@ No safety violations found in the data→execution boundary.
   as designed.
 - **Scanner feed path:** `/api/market-scanner/opportunities` → `marketScanner.ts`
   router-first per row; honest `SIMULATOR` fallback tag when no real feed.
-- **Ruby feed path:** read/analysis via deterministic `chartStructure.ts` over the
+- **Eleanor feed path:** read/analysis via deterministic `chartStructure.ts` over the
   router (gated to clean); execution via `executeInstantTrade` → 16-gate bridge.
 - **Live execution feed path:** MT5 broker bridge only (`arx_live_commands` /
   `arx_live_positions`), 16-gate Phase B.
@@ -297,7 +297,7 @@ No safety violations found in the data→execution boundary.
 - **Actually connected (this env):** MT5 bridge (heartbeat/account/positions),
   Deriv WS (synthetics), TwelveData (primary), Polygon (delayed fallback). Finnhub,
   AlphaVantage, NewsAPI, economic calendar = **not** connected (no keys / seam).
-- **Truly feeding each surface right now:** §3 + §5 — charts/scanner/Ruby read the
+- **Truly feeding each surface right now:** §3 + §5 — charts/scanner/Eleanor read the
   unified router (today landing on TwelveData→Polygon for forex, Deriv for
   synthetics); dashboard/open-trades/allocation/admin totals read **broker truth**
   (MT5 bridge + `arx_live_*`); execution is **broker-only** behind the 16-gate

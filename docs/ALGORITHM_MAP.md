@@ -8,7 +8,7 @@ evidence-based surgical patch that was applied.
 
 > **Scope guard.** Nothing here is an execution path. Live broker dispatch is the
 > 18-gate Phase B pipeline (`lib/domain/src/safety-contracts/`), which this work
-> did **not** touch. The advisory/scanner/scalp/Ruby layers below only rank,
+> did **not** touch. The advisory/scanner/scalp/Eleanor layers below only rank,
 > advise, and explain — they never place or gate a live order.
 
 ---
@@ -77,9 +77,9 @@ evidence-based surgical patch that was applied.
   `approved_with_caution`, `rejected`, `downgraded`, `escalated`, `needs_more_data`,
   `delayed_speed`, `muted_low_confidence`, `learning_camp_review`. With no agent
   standing it is a pure pass-through (`governanceApplied: false`, no haircut).
-- **Locked by:** `__qa__/governanceAdvisoryRuby.test.ts` (20).
+- **Locked by:** `__qa__/governanceAdvisoryEleanor.test.ts` (20).
 
-## 4. Ruby (assistant) copy discipline
+## 4. Eleanor (assistant) copy discipline
 
 - **Where:** `lib/domain/src/security/userCopySafety.ts`
   (`findInternalLeaks`, `isUserCopyClean`, `scrubUserCopy`, `scrubUserCopyDeep`).
@@ -87,12 +87,12 @@ evidence-based surgical patch that was applied.
   internals — SCREAMING_SNAKE gate/env codes, `/api/...` route paths,
   system-prompt references, or secret shapes (sk- keys, JWTs). Clean plain-English
   passes through unchanged; deep scrub recurses objects/arrays and leaves
-  non-strings intact. (Role-gating of *which* surfaces Ruby exposes is enforced at
+  non-strings intact. (Role-gating of *which* surfaces Eleanor exposes is enforced at
   the route layer and covered by the existing route-containment/admin-gate suites,
   not duplicated here.)
-- **Locked by:** the Ruby-discipline cases in
-  `__qa__/governanceAdvisoryRuby.test.ts`.
-- **Derived safety-state honesty:** what Ruby *reports* about the account's
+- **Locked by:** the Eleanor-discipline cases in
+  `__qa__/governanceAdvisoryEleanor.test.ts`.
+- **Derived safety-state honesty:** what Eleanor *reports* about the account's
   live-state (`liveLocked` / `safetyMode` / `readOnlyMode` / `allowOrderExecution`)
   is **derived per-user** from `getEnvelope()` (shared `deriveAssistantEnvelope`
   helper, fail-closed to off/locked) on every conversational surface, the
@@ -105,8 +105,8 @@ evidence-based surgical patch that was applied.
   no orders. The read-only chart-brain / decision surfaces (`draw-setup`,
   `draft-read` — the latter's OpenAPI response pinned to `safetyMode: paper_only`)
   keep the forced `READ_ONLY_PAPER_ENVELOPE` constant.
-  - **Locked by:** `scripts/src/rubySafetyEnvelopeDerivedTest.ts` + the
-    `ruby-derived-safety-envelope` CI guard.
+  - **Locked by:** `scripts/src/eleanorSafetyEnvelopeDerivedTest.ts` + the
+    `eleanor-derived-safety-envelope` CI guard.
 
 ## 5. Market data routing (honesty about non-contributing feeds)
 
@@ -147,5 +147,5 @@ pnpm --filter @workspace/api-server run test:algorithm-locks   # all 4 lock suit
 pnpm --filter @workspace/api-server run test:scalp-addon-tiers
 pnpm --filter @workspace/api-server run test:scalp-addon-forced-zero
 pnpm --filter @workspace/api-server run test:scanner-truth-caps
-pnpm --filter @workspace/api-server run test:governance-advisory-ruby
+pnpm --filter @workspace/api-server run test:governance-advisory-eleanor
 ```

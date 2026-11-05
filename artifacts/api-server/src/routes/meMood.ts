@@ -7,7 +7,7 @@
 //   GET  /api/me/mood/states            — list of valid moods with descriptions
 //
 // SAFETY: requireUser on all routes. Never blocks trade execution.
-// Advisory only — protective warnings surfaced to Ruby and notifications.
+// Advisory only — protective warnings surfaced to Eleanor and notifications.
 
 import { Router } from "express";
 import { z } from "zod/v4";

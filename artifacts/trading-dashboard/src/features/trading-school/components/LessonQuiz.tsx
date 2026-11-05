@@ -1,12 +1,12 @@
 /**
- * LessonQuiz — runs a lesson's quiz, scores it, and on failure shows Ruby's
+ * LessonQuiz — runs a lesson's quiz, scores it, and on failure shows Eleanor's
  * plain-English explanation for each missed question. Pure presentation +
  * local scoring; persistence is delegated to lib/progress via the onComplete
  * callback so this component stays storage-agnostic.
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { RubyAvatar } from "@/components/ruby/RubyAvatar";
+import { EleanorAvatar } from "@/components/eleanor/EleanorAvatar";
 import { PASS_THRESHOLD } from "../lib/progress";
 import type { QuizQuestion } from "../data/content";
 import { CheckCircle2, XCircle, RotateCcw } from "lucide-react";
@@ -46,7 +46,7 @@ export function LessonQuiz({
       {submitted && (
         <div className={cn("rounded-2xl border p-4", passed ? "border-success/40 bg-success/10" : "border-warning/40 bg-warning/10")}>
           <div className="flex items-center gap-3">
-            <RubyAvatar state={passed ? "success" : "alert"} size="md" ariaHidden />
+            <EleanorAvatar state={passed ? "success" : "alert"} size="md" ariaHidden />
             <div>
               <div className={cn("text-sm font-semibold", passed ? "text-success" : "text-warning")}>
                 {passed ? "Passed!" : "Not quite yet"} — {correctCount}/{total} correct ({Math.round(scorePct * 100)}%)
@@ -94,9 +94,9 @@ export function LessonQuiz({
                 })}
               </div>
               {submitted && !isCorrect && (
-                <div className="ml-7 mt-2 flex items-start gap-2 rounded-lg border border-ruby/25 bg-ruby/5 p-2.5">
-                  <RubyAvatar state="thinking" size="xs" ariaHidden />
-                  <p className="text-xs text-txt-secondary"><span className="font-semibold text-ruby">{name}:</span> {q.rubyWhy}</p>
+                <div className="ml-7 mt-2 flex items-start gap-2 rounded-lg border border-eleanor/25 bg-eleanor/5 p-2.5">
+                  <EleanorAvatar state="thinking" size="xs" ariaHidden />
+                  <p className="text-xs text-txt-secondary"><span className="font-semibold text-eleanor">{name}:</span> {q.eleanorWhy}</p>
                 </div>
               )}
             </li>

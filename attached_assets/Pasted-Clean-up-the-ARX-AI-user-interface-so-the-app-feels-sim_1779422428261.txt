@@ -4,7 +4,7 @@ Important:
 Do not remove features.
 Do not remove backend logic.
 Do not remove live trading safety gates.
-Do not remove scanner, Ruby, symbols, chart, risk, admin, or advanced controls.
+Do not remove scanner, Eleanor, symbols, chart, risk, admin, or advanced controls.
 Only reorganize the UI so normal users see a simple surface first, while advanced tools remain available behind tabs, drawers, filters, and collapsible sections.
 
 Goal:
@@ -13,7 +13,7 @@ Create a simple-first interface with a power-user layer underneath.
 Core design principle:
 Every main page should quickly answer:
 1. What am I looking at?
-2. What does Ruby think?
+2. What does Eleanor think?
 3. What can I do next?
 
 Everything else should remain available but not crowd the first screen.
@@ -23,13 +23,13 @@ Everything else should remain available but not crowd the first screen.
 Before changing code, inspect the current active deployed components for:
 - Cockpit/Dashboard
 - Trade page
-- AI/Ruby page
+- AI/Eleanor page
 - Market Scanner
 - Live chart
 - Risk page
 - More/Admin pages
 - Live shared trading/admin pages
-- Ruby floating assistant
+- Eleanor floating assistant
 - bottom navigation
 - top status badges
 
@@ -41,7 +41,7 @@ Create a quick internal UI inventory:
 - warnings/status blocks
 - scanner/symbol blocks
 - trade action blocks
-- Ruby explanation blocks
+- Eleanor explanation blocks
 
 Then reorganize. Do not delete.
 
@@ -61,7 +61,7 @@ Trade:
 - Orders
 - Advanced
 
-Ruby / AI:
+Eleanor / AI:
 - Chat
 - Market Read
 - Commands
@@ -91,7 +91,7 @@ The scanner page shows too much at once:
 - synthetic index chips
 - scanner universe
 - scan buttons
-- Ruby explanation
+- Eleanor explanation
 - setup cards
 - warnings
 - feed notices
@@ -101,7 +101,7 @@ Reorganize it:
 
 Focus tab:
 - selected market
-- Ruby’s read
+- Eleanor’s read
 - bias: buy / sell / wait / reject
 - confidence
 - risk level
@@ -109,7 +109,7 @@ Focus tab:
 - suggested stop
 - target
 - risk:reward
-- main action buttons: Buy, Sell, View Chart, Ask Ruby
+- main action buttons: Buy, Sell, View Chart, Ask Eleanor
 
 Results tab:
 - scanner result cards
@@ -151,7 +151,7 @@ Positions tab:
 - one-click close
 - close all if enabled
 - profit/loss
-- Ruby trade read
+- Eleanor trade read
 
 Orders tab:
 - pending orders
@@ -167,25 +167,25 @@ Advanced tab:
 
 Do not remove advanced order types. Just stop showing everything on the first quick-trade view.
 
-5. Ruby / AI cleanup
+5. Eleanor / AI cleanup
 
-Make Ruby feel like the main guide.
+Make Eleanor feel like the main guide.
 
 Chat tab:
 - clean chat interface
 - voice button
 - text input
-- recent Ruby suggestions
+- recent Eleanor suggestions
 
 Market Read tab:
 - selected market
-- Ruby explanation
+- Eleanor explanation
 - confidence
 - entry/stop/target
 - reason breakdown
 
 Commands tab:
-- available Ruby commands
+- available Eleanor commands
 - trade command settings
 - voice command status
 - examples
@@ -193,7 +193,7 @@ Commands tab:
 Memory tab:
 - saved chats
 - user preferences
-- Ruby memory controls
+- Eleanor memory controls
 
 Hide technical AI/system details behind Advanced or Memory.
 
@@ -204,7 +204,7 @@ Current top area has too many loud badges.
 Replace with one compact status row:
 - Mode: Demo / Live / Ready / Blocked
 - Market: selected symbol
-- Ruby: Active
+- Eleanor: Active
 - Account: Approved / Not Approved
 
 Tapping the status row opens a detailed status drawer.
@@ -255,7 +255,7 @@ Any section that takes too much vertical space should become collapsible:
 - bridge heartbeat debug
 - audit logs
 - detailed readiness checklist
-- long Ruby explanations
+- long Eleanor explanations
 - old repeated help text
 
 Default collapsed state should be remembered locally per user.
@@ -267,7 +267,7 @@ On iPhone Safari:
 - no cramped chip walls on first view
 - no giant sections pushing important controls off-screen
 - bottom nav must not cover content
-- Ruby floating button must not cover action buttons or checklist rows
+- Eleanor floating button must not cover action buttons or checklist rows
 - buttons should be thumb-friendly
 - cards should use consistent spacing
 - important actions should stay visible near the top
@@ -278,7 +278,7 @@ On iPhone Safari:
 Keep:
 - one-click trading
 - standard trading mode
-- Ruby commands
+- Eleanor commands
 - scanner
 - symbol search
 - chart
@@ -300,7 +300,7 @@ This is a UI organization pass only.
 
 Do not create duplicate scanner pages.
 Do not create duplicate trade pages.
-Do not create duplicate Ruby components.
+Do not create duplicate Eleanor components.
 Do not leave old and new versions mounted at the same time.
 
 Refactor the active runtime components.
@@ -331,11 +331,11 @@ Add/update tests proving:
 - Synthetic symbols still exist under Symbols/Advanced.
 - Trade page default view shows Quick Trade first.
 - Advanced order types still exist under Advanced.
-- Ruby page still exposes chat, market read, commands, and memory.
+- Eleanor page still exposes chat, market read, commands, and memory.
 - Risk page still exposes limits/rules/audit.
 - Status details are accessible through drawer.
 - No major page has horizontal overflow on mobile.
-- Ruby bubble does not cover primary action buttons.
+- Eleanor bubble does not cover primary action buttons.
 - Bottom nav does not cover page content.
 - No duplicate legacy scanner/trade components are mounted.
 

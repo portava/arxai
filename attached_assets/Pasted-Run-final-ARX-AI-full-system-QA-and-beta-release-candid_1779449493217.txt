@@ -11,7 +11,7 @@ Do not place trades.
 Do not change MT5 execution permissions.
 Do not change kill switches.
 Do not change admin approval rules.
-Do not change scanner scoring, Ruby brain, historical/news intelligence, auth architecture, or backend trading logic unless fixing a confirmed regression.
+Do not change scanner scoring, Eleanor brain, historical/news intelligence, auth architecture, or backend trading logic unless fixing a confirmed regression.
 
 GOAL:
 Confirm the full ARX AI ecosystem is stable after U1–U6, T005, historical data upgrades, news-risk/no-trade logic, scanner upgrades, dashboard reorg, admin/regular mode protection, and mobile polish.
@@ -70,7 +70,7 @@ Verify:
    - Open positions count
    - account/slot status
    - Scanner shortcut
-   - Ruby Quick Read
+   - Eleanor Quick Read
    - Risk shortcut
    - alerts/news
    - recent activity
@@ -89,7 +89,7 @@ Verify:
 6. Selected symbol syncs with:
    - scanner result
    - chart/focus
-   - Ruby read
+   - Eleanor read
    - trade ticket
    - top selector
 7. Scanner shows technical, historical/backtest, and news-risk context where available.
@@ -97,17 +97,17 @@ Verify:
 9. Scanner does not force every result into BUY/SELL.
 10. No fake data is displayed as real.
 
-PHASE 6 — RUBY / AI QA
+PHASE 6 — ELEANOR / AI QA
 Verify:
-1. AI bottom-nav link opens correct AI/Ruby page.
+1. AI bottom-nav link opens correct AI/Eleanor page.
 2. AI top tabs work and scroll horizontally on mobile.
-3. Ruby typing/thinking animation works.
-4. Ruby uses selected market context.
-5. Ruby includes historical/backtest context when available.
-6. Ruby includes news/world-event context when available.
-7. Ruby clearly says when historical/news data is unavailable.
-8. Ruby can recommend no trade when risk is too high.
-9. Ruby does not expose raw prompts, route names, function names, or backend internals.
+3. Eleanor typing/thinking animation works.
+4. Eleanor uses selected market context.
+5. Eleanor includes historical/backtest context when available.
+6. Eleanor includes news/world-event context when available.
+7. Eleanor clearly says when historical/news data is unavailable.
+8. Eleanor can recommend no trade when risk is too high.
+9. Eleanor does not expose raw prompts, route names, function names, or backend internals.
 
 PHASE 7 — TRADE + SCANNER TRADE MODAL QA
 Verify:
@@ -126,7 +126,7 @@ Verify:
    - risk/reward
    - Historical Check
    - News Risk Check
-   - Ruby Summary
+   - Eleanor Summary
 8. Confirm still passes existing safety gates.
 9. Broker execution disabled state is respected.
 10. Kill switch state is respected.
@@ -187,7 +187,7 @@ Check iPhone/mobile view across:
 - Dashboard
 - Trade
 - Scanner
-- AI/Ruby
+- AI/Eleanor
 - Risk
 - Open Trades
 - Alerts/Calendar
@@ -200,7 +200,7 @@ Verify:
 - no clipped buttons
 - bottom nav does not cover content
 - modals scroll internally
-- Ruby bubble does not block key actions
+- Eleanor bubble does not block key actions
 - safe-area padding works
 
 PHASE 13 — CLEANUP
@@ -222,7 +222,7 @@ Grade system out of 100 using:
 - Mobile trading usability: 10
 - Navigation/discoverability: 10
 - Scanner usefulness: 10
-- Ruby/AI workflow usefulness: 10
+- Eleanor/AI workflow usefulness: 10
 - Historical/news intelligence readiness: 10
 - Risk controls/permission safety: 10
 - MT5/account data readiness: 10

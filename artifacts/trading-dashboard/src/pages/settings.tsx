@@ -310,7 +310,7 @@ function AboutArxCard() {
     ? "bg-danger/15 text-danger border-danger/30"
     : mode.isDemo
       ? "bg-primary/15 text-primary border-primary/30"
-      : "bg-ruby/15 text-ruby border-ruby/30";
+      : "bg-eleanor/15 text-eleanor border-eleanor/30";
   return (
     <div className="rounded-2xl border border-border bg-card p-4" data-testid="about-arx-ai">
       <h3 className="mb-3 text-sm font-semibold text-foreground">About ARX AI</h3>
@@ -469,7 +469,7 @@ export default function SettingsPage() {
               <label className="text-xs text-txt-secondary mb-1 block">Risk Mode</label>
               <div className="flex gap-2">
                 {["Conservative", "Balanced", "Aggressive"].map((r) => (
-                  <button key={r} onClick={() => updateBot.mutate({ riskMode: r })} className={cn("px-3 py-2 rounded text-xs font-semibold transition-colors", botSettings?.riskMode === r ? "bg-ruby text-white" : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
+                  <button key={r} onClick={() => updateBot.mutate({ riskMode: r })} className={cn("px-3 py-2 rounded text-xs font-semibold transition-colors", botSettings?.riskMode === r ? "bg-eleanor text-white" : "bg-secondary text-txt-secondary hover:bg-secondary/80")}>
                     {r}
                   </button>
                 ))}

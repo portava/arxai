@@ -4,7 +4,7 @@
 // Readiness quality comes from the candle engines, which only check that the
 // feed is AI-usable and not stale. The chart-truth gate (Chart Truth ≥ 75,
 // feed not stale, broker mirror not failed) is a separate verdict, and the
-// Ruby panel on the same board answers "Chart data is syncing…" when it is
+// Eleanor panel on the same board answers "Chart data is syncing…" when it is
 // closed. The server now caps such a summary at "watch"; the Pulse may only
 // downgrade further, and it says why the read is not verified.
 
@@ -29,7 +29,7 @@ function gate(truth: number, over: Record<string, unknown> = {}) {
   };
 }
 
-// Every candle-data check Ruby's handshake reads, measured and passing
+// Every candle-data check Eleanor's handshake reads, measured and passing
 // (a bound broker quote). `unmeasured` leaves those keys without evidence.
 const SOURCE_KEYS = ["ohlc_integrity", "source_authenticity", "timeframe_accuracy", "symbol_mirror_accuracy",
   "historical_live_merge", "feed_freshness", "price_precision"];
@@ -107,7 +107,7 @@ describe("Chart Pulse readiness respects the chart-truth gate", () => {
   });
 
   // Truth: with no bound broker quote the broker comparison is unmeasured, so
-  // a clean feed scores exactly 75 and the gate opens — but Ruby's handshake
+  // a clean feed scores exactly 75 and the gate opens — but Eleanor's handshake
   // needs that check measured and answers "syncing". Pulse must agree.
   it("Chart Truth exactly 75 with the broker comparison unmeasured is not 'Ready'", () => {
     render(<ChartPulse state={state(gate(75), "ready", true, truthScore(75, ["symbol_mirror_accuracy"]))} />);

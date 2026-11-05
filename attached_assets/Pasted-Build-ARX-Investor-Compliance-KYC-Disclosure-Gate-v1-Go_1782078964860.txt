@@ -377,7 +377,7 @@ Rules:
 - admin-only routes require admin role
 - sensitive investor info should not be exposed in public UI
 - do not log full personal documents
-- do not send private investor details to Ruby unless needed for a user-facing explanation
+- do not send private investor details to Eleanor unless needed for a user-facing explanation
 
 14. Required copy
 

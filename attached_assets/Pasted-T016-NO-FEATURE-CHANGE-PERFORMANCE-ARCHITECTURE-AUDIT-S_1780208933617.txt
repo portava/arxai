@@ -12,7 +12,7 @@ Do not add new product features unless they replace/remove a redundant feature.
 
 This is not a rebuild.
 Do not redesign the app.
-Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, auth, admin, account modes, or ledger systems.
+Do not duplicate Scanner, Eleanor, MT5 bridge, trade execution, auth, admin, account modes, or ledger systems.
 Do not change the product’s active feature set except removing, hiding, collapsing, or archiving redundant/dead/non-product surfaces.
 Do not place a live trade in this task.
 Do not reset live broker execution config.
@@ -39,7 +39,7 @@ Core performance standard:
 6. Market selection feedback under 300ms.
 7. Buy/Sell modal open under 1 second.
 8. Trade pending state under 100ms after Confirm.
-9. Ruby thinking dots under 100ms.
+9. Eleanor thinking dots under 100ms.
 10. No page feels frozen.
 11. Slow external calls must show immediate loading/pending state.
 
@@ -78,7 +78,7 @@ Include:
 1. Route list:
     * Cockpit
     * Scanner
-    * Ruby/AI
+    * Eleanor/AI
     * More/Settings
     * Trade if still present
     * Admin-only pages
@@ -90,7 +90,7 @@ Include:
     * polling behavior
     * hidden tabs loaded early
     * admin-only modules loaded for normal users
-    * chart/Ruby/voice imports
+    * chart/Eleanor/voice imports
     * notification dependencies
     * page shell render blockers
     * duplicate requests
@@ -104,18 +104,18 @@ Include:
     * user trade overlay dependencies
     * Broad Scan dependencies
     * Focus Scan dependencies
-    * Ruby explanation dependencies
+    * Eleanor explanation dependencies
     * news/history/backtest dependencies
     * trade modal dependencies
     * which parts load before first paint
     * which parts can be deferred
-4. For Ruby:
+4. For Eleanor:
     * chat shell dependencies
     * voice/speech imports
     * memory/history loading
     * market context loading
     * streaming/progressive response support
-    * whether Ruby blocks Scanner or trade actions
+    * whether Eleanor blocks Scanner or trade actions
 5. For trade actions:
     * Buy/Sell button path
     * modal open path
@@ -146,9 +146,9 @@ Capture exact browser timing for:
 9. Plan Sell modal open
 10. lot input response
 11. Confirm → pending state
-12. Ruby open
-13. Ruby thinking dots
-14. Ruby first visible response
+12. Eleanor open
+13. Eleanor thinking dots
+14. Eleanor first visible response
 15. More/Settings shell
 
 Store/show timing only in admin/dev mode:
@@ -169,8 +169,8 @@ Safe defer candidates:
 2. history
 3. backtest
 4. deep scanner analytics
-5. Ruby market explanation
-6. Ruby memory/history loading
+5. Eleanor market explanation
+6. Eleanor memory/history loading
 7. notifications badge/count
 8. admin diagnostics
 9. performance history
@@ -207,7 +207,7 @@ Check for:
 8. overly aggressive refetchOnWindowFocus
 9. unnecessary refetch on tab switch
 10. components remounting when they should update
-11. full Scanner rerender when Ruby changes
+11. full Scanner rerender when Eleanor changes
 12. chart remount when only quote changes
 13. trade modal remount when only input changes
 14. admin data loaded for normal users
@@ -245,14 +245,14 @@ Requirements:
 5. Quote/candles load independently.
 6. User trade overlays load independently.
 7. Broad/Focus Scan load independently.
-8. Ruby explanation loads independently.
+8. Eleanor explanation loads independently.
 9. News/history/backtest load after main UI.
 10. Notification badge does not block Scanner.
 
 Chart rules:
 
 1. Do not remount the chart for every quote.
-2. Do not remount the chart because Ruby updates.
+2. Do not remount the chart because Eleanor updates.
 3. Do not remount the chart because notifications update.
 4. Update candle series incrementally.
 5. Update price lines/markers incrementally.
@@ -260,22 +260,22 @@ Chart rules:
 7. Keep chart state separate from Scanner result state.
 8. Keep trade overlay state server-filtered.
 
-PART 7 — Safe optimization lane: Ruby efficiency
+PART 7 — Safe optimization lane: Eleanor efficiency
 
-Ruby must feel instant without blocking trading.
+Eleanor must feel instant without blocking trading.
 
 Requirements:
 
-1. Ruby thinking dots appear under 100ms.
-2. Ruby shell opens quickly.
-3. Ruby response may take longer, but UI must not freeze.
-4. Ruby should stream or progressively render if supported.
-5. Ruby should reuse current chart/scan state instead of refetching whenever safe.
-6. Ruby memory/history loads after shell.
-7. Ruby memory writes happen after user-visible response where safe.
-8. Ruby must not block Scanner render.
-9. Ruby must not block trade Confirm.
-10. Ruby must not bypass backend permissions.
+1. Eleanor thinking dots appear under 100ms.
+2. Eleanor shell opens quickly.
+3. Eleanor response may take longer, but UI must not freeze.
+4. Eleanor should stream or progressively render if supported.
+5. Eleanor should reuse current chart/scan state instead of refetching whenever safe.
+6. Eleanor memory/history loads after shell.
+7. Eleanor memory writes happen after user-visible response where safe.
+8. Eleanor must not block Scanner render.
+9. Eleanor must not block trade Confirm.
+10. Eleanor must not bypass backend permissions.
 
 PART 8 — Safe optimization lane: Backend/event-loop efficiency
 
@@ -296,7 +296,7 @@ Critical live trade path should stay lean:
 
 Move outside critical path where safe:
 
-1. Ruby explanation
+1. Eleanor explanation
 2. news analysis
 3. historical backtest
 4. deep scan scoring
@@ -330,7 +330,7 @@ Inspect slow/frequent queries for:
 3. live commands by user/created_at
 4. allocations by user/account mode
 5. notifications by user/read/created_at
-6. Ruby chats by user/created_at
+6. Eleanor chats by user/created_at
 7. scanner results by symbol/created_at
 8. admin runtime health reads
 9. ledger verification reads
@@ -409,7 +409,7 @@ After every meaningful change:
 7. test bottom nav
 8. test Scanner shell
 9. test Buy/Sell modal open
-10. test Ruby shell/thinking indicator
+10. test Eleanor shell/thinking indicator
 11. confirm no live trade placed
 12. confirm live MT5 path untouched unless explicitly tested
 13. confirm no Paper/Demo fallback appears
@@ -436,8 +436,8 @@ Final report must include:
 8. search usability timing
 9. Buy/Sell modal timing
 10. Confirm pending-state timing if tested
-11. Ruby thinking timing
-12. Ruby response timing
+11. Eleanor thinking timing
+12. Eleanor response timing
 13. slowest remaining frontend dependency
 14. slowest remaining backend dependency
 15. duplicate requests found/removed

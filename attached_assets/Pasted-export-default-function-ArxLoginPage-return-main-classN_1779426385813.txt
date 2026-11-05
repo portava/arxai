@@ -57,7 +57,7 @@ export default function ArxLoginPage() {
             <div className="mt-6 grid grid-cols-4 gap-4 text-center">
               {[
                 ["Risk Controls", "Always protecting your capital."],
-                ["AI Insights", "Ruby analyzes markets 24/7 so you don’t have to."],
+                ["AI Insights", "Eleanor analyzes markets 24/7 so you don’t have to."],
                 ["Execution Edge", "Tools built to help you execute with precision."],
                 ["Your Permissions", "Live access and features protected by you."],
               ].map(([title, body]) => (
@@ -154,7 +154,7 @@ export default function ArxLoginPage() {
             </div>
 
             <div className="mt-7 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-slate-300">
-              <span className="font-bold text-blue-300">Ruby</span> helps analyze markets, risk, and execution — but{" "}
+              <span className="font-bold text-blue-300">Eleanor</span> helps analyze markets, risk, and execution — but{" "}
               <span className="font-bold text-blue-300">final control</span> stays protected by your permissions.
             </div>
 

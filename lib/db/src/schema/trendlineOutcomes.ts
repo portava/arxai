@@ -5,7 +5,7 @@
 //     already surfaced, plus what happened AFTER. Writing/resolving a row NEVER
 //     places, modifies or closes a trade and NEVER touches the MT5 bridge or the
 //     live (16-gate) pipeline. It is read-only over outcomes.
-//   - The reliability stats derived from these rows feed ONLY Ruby's bounded
+//   - The reliability stats derived from these rows feed ONLY Eleanor's bounded
 //     confidence ADJUSTMENT — they remain subject to the Trendline Truth hard
 //     boundary (display/decision-support only; never produce READY_NOW, never
 //     override feed/risk/trade-health gates, never an execution path).

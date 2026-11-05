@@ -101,7 +101,7 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/api-server::test:market-sufficiency",
   "@workspace/api-server::test:trade-health-readiness",
   "@workspace/api-server::test:entry-sufficiency",
-  "@workspace/api-server::test:governance-advisory-ruby",
+  "@workspace/api-server::test:governance-advisory-eleanor",
   // Covered automatically by the test:scanner-truth umbrella (already in root
   // `ci`): the SelectedMarketPanel honesty render-proof runs inside that
   // aggregate; this standalone script is kept only for local debugging.
@@ -196,8 +196,8 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/scripts::test:provider-health-admin-containment",
   "@workspace/scripts::test:radar",
   "@workspace/scripts::test:reconciliation-center",
-  "@workspace/scripts::test:ruby-app-knowledge",
-  "@workspace/scripts::test:ruby-voice-trading-guardrails",
+  "@workspace/scripts::test:eleanor-app-knowledge",
+  "@workspace/scripts::test:eleanor-voice-trading-guardrails",
   "@workspace/scripts::test:scanner-real-feed",
   "@workspace/scripts::test:scanner-selected-market",
   "@workspace/scripts::test:system",

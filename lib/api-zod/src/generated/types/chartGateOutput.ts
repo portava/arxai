@@ -19,7 +19,7 @@ export interface ChartGateOutput {
   chartReadScore: number;
   truthLabel: string;
   readLabel: string;
-  /** Truth ≥ 75 — required for chart-based confident reads (Ruby chart-read, Scanner chart-confirm) */
+  /** Truth ≥ 75 — required for chart-based confident reads (Eleanor chart-read, Scanner chart-confirm) */
   confidentReadAllowed: boolean;
   /** Truth ≥ 75 — required for scanner chart-confirmation flag */
   scannerConfirmAllowed: boolean;

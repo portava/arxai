@@ -33,14 +33,14 @@ ARX_SINGLE_CONFIRM_LIVE_ON/OFF).
 Enabling ARX Single Confirm requires the typed phrase `ENABLE ONE CLICK TRADING`
 + master-live access; it bypasses none of the 16 gates.
 
-**Ruby/assistant denied the feature exists:** when asked "how do I turn on one
-click trading", Ruby answered it doesn't exist / "ARX is paper-only". Two root
+**Eleanor/assistant denied the feature exists:** when asked "how do I turn on one
+click trading", Eleanor answered it doesn't exist / "ARX is paper-only". Two root
 causes, and fixing only one is insufficient: (1) `featureMap.ts` had no
 `one_click_trading` entry so `getFeatureHelp` returned `found:false`; (2) the
 assistant system prompt's dominant "execution is confirmation-based / not
 fire-and-forget / read-only" priors made the LLM deny the feature even after the
 tool ran. **Why:** the registry is fuzzy-matched and the LLM overrides a weak
-tool result with strong prompt framing. **How to apply:** to make Ruby reliably
+tool result with strong prompt framing. **How to apply:** to make Eleanor reliably
 surface a real feature, add BOTH a registry entry (shortDescription must contain
 the literal user phrase for `getFeatureHelp`'s `includes()` fuzzy match) AND a
 deterministic system-prompt bullet asserting the feature exists + which tool to

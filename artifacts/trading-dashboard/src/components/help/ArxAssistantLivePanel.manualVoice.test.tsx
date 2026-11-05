@@ -5,19 +5,19 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
- * Manual-only voice regression guard for Ruby (ArxAssistantLivePanel).
+ * Manual-only voice regression guard for Eleanor (ArxAssistantLivePanel).
  *
- * Background: Ruby's spoken reply used to cut off after a few seconds because
+ * Background: Eleanor's spoken reply used to cut off after a few seconds because
  * the auto-listen VAD loop re-opened the mic and interrupted her own TTS. The
  * fix removes auto-listen entirely and makes voice strictly press-to-record:
- *   - the mic recorder is DISABLED while Ruby is speaking (so the user can't
+ *   - the mic recorder is DISABLED while Eleanor is speaking (so the user can't
  *     record over her — her speech runs to completion unless manually stopped),
  *   - there is NO auto-listen toggle anywhere in the panel,
  *   - the four required state labels render:
  *       "Tap to record" / "Recording…" / "Sending voice message…" /
- *       "Ruby is speaking…".
+ *       "Eleanor is speaking…".
  *
- * `rubySpeaking` is derived from `status === "speaking" || tts.state ===
+ * `eleanorSpeaking` is derived from `status === "speaking" || tts.state ===
  * "speaking"`, so mocking useSpeakResponses().state drives the speaking branch.
  * All other hooks are mocked to no-ops so the panel renders in isolation.
  */
@@ -56,11 +56,11 @@ vi.mock("./useSpeakResponses", () => ({
   saveServerVoicePref: vi.fn(),
 }));
 
-vi.mock("./useRubyTTS", () => ({
+vi.mock("./useEleanorTTS", () => ({
   previewVoice: vi.fn(),
 }));
 
-vi.mock("@/lib/rubyVoice", () => ({
+vi.mock("@/lib/eleanorVoice", () => ({
   setChatPanelSpeaking: vi.fn(),
 }));
 
@@ -104,7 +104,7 @@ vi.mock("wouter", () => ({
 
 import { ArxAssistantLivePanel } from "./ArxAssistantLivePanel";
 
-// The panel renders react-query-backed children (RubyTimingChip →
+// The panel renders react-query-backed children (EleanorTimingChip →
 // useGetTimingBrain, useScannerTruth). They must run inside a
 // QueryClientProvider; their network calls stay inert via the stubbed fetch.
 function renderPanel() {
@@ -161,7 +161,7 @@ describe("ArxAssistantLivePanel — manual press-to-record only", () => {
     expect(pressed.length).toBe(0);
   });
 
-  it("disables the mic recorder while Ruby is speaking so her reply runs to completion", () => {
+  it("disables the mic recorder while Eleanor is speaking so her reply runs to completion", () => {
     h.ttsState = "speaking";
     renderPanel();
     expect(screen.getByTestId("arx-status-bar").textContent).toContain("Eleanor is speaking…");

@@ -6,7 +6,7 @@ When the MT5 bridge delivered fresh broker candles/ticks for a **synthetic**
 symbol (Deriv-class instruments such as V75, BOOM1000, CRASH1000, etc.), the
 symbol was mislabeled **"historical only" / "feed limited" / "analysis only"**
 instead of reading broker-confirmed live. The mislabel surfaced on the chart
-feed badge, the scanner, the Ruby chart-read, and the owner live-entry feed
+feed badge, the scanner, the Eleanor chart-read, and the owner live-entry feed
 gate.
 
 This was **not** a gate-relaxation problem and **not** specific to BOOM1000 —

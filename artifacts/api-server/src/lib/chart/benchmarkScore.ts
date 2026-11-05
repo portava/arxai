@@ -45,7 +45,7 @@ export type BenchmarkScoreKey =
   | "entry_quality"
   | "exit_realism"
   | "agent_agreement"
-  | "ruby_explanation_quality"
+  | "eleanor_explanation_quality"
   | "no_trade_discipline"
   | "review_learning"
   | "similar_setup_usefulness"
@@ -107,7 +107,7 @@ const LABELS: Record<BenchmarkScoreKey, string> = {
   entry_quality: "Entry Quality",
   exit_realism: "Exit Realism",
   agent_agreement: "Agent Agreement",
-  ruby_explanation_quality: `${DEFAULT_ASSISTANT_NAME} Explanation Quality`,
+  eleanor_explanation_quality: `${DEFAULT_ASSISTANT_NAME} Explanation Quality`,
   no_trade_discipline: "No-Trade Discipline",
   review_learning: "Review / Learning",
   similar_setup_usefulness: "Similar-Setup Usefulness",
@@ -433,7 +433,7 @@ export async function computeChartBrainBenchmark(opts?: {
   );
   if (agentAgreement.score === null) agentAgreement.note += notConsultedNote;
 
-  // ── 11. Ruby explanation quality — not measured ───────────────────────────
+  // ── 11. Eleanor explanation quality — not measured ───────────────────────────
   // No explanation is graded. Every read stores a headline and a
   // what-would-change line, so their presence says nothing about quality.
 
@@ -512,7 +512,7 @@ export async function computeChartBrainBenchmark(opts?: {
     ),
     agentAgreement,
     notMeasured(
-      "ruby_explanation_quality",
+      "eleanor_explanation_quality",
       `Not measured: ${DEFAULT_ASSISTANT_NAME}'s explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.`,
     ),
     ratioScore(

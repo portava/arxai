@@ -1,6 +1,6 @@
 # Truth Audit — Task #512 "One Truth, One Brain"
 
-Goal: every scanner/chart/Ruby surface on the same page must read ONE per-symbol
+Goal: every scanner/chart/Eleanor surface on the same page must read ONE per-symbol
 Truth Snapshot. This document inventories every function that **produces** or
 **displays** one of the four truths, marks each as a canonical **SOURCE** (compose
 it) or a **REWIRE** (duplicate / display site that must read the snapshot), and maps
@@ -31,10 +31,10 @@ generatedAt
 | Freshness classifier | `lib/data/freshness.ts` | `buildFeedStatus` | `FeedQualityVerdict` (quality precedence, stale, aiUsable, trailingIntervals) | `data.state` mapping | **SOURCE** (already shared) |
 | Provider/source | `lib/data/marketDataRouter.ts` | `routeCandles` / `classifySymbol` | `MarketCandlesResult` (primaryProvider, assetClass) | `data.source` | **SOURCE** (via chartDataService; do not call directly for UI truth) |
 | News/calendar | `lib/news/marketImpactRadar.ts` | `buildMarketImpactRadar` | `{ radar, behavior }` (provider.connected, events[], topSeverity, highImpactWindowActive) | `news.*` | **SOURCE** |
-| Scanner verdict | `lib/signalIntelligence/signalIntelligenceService.ts` | `buildRubyMarketEdgeForUser` | `RubyMarketEdgeSignal` (bias, direction, confidenceBand, edgeScore, lifecycleStage, generatedAt) | `components.scanner` | **SOURCE** |
+| Scanner verdict | `lib/signalIntelligence/signalIntelligenceService.ts` | `buildEleanorMarketEdgeForUser` | `EleanorMarketEdgeSignal` (bias, direction, confidenceBand, edgeScore, lifecycleStage, generatedAt) | `components.scanner` | **SOURCE** |
 | Scalp verdict | `lib/scalp/scalpService.ts` | `evaluateScalpForSymbol` | `ScalpResult` (status, qualityScore, flame{flameStage, freshness, entryTiming}, generatedAt) | `components.scalp` + `verdict.stage` | **SOURCE** |
 | Timing verdict | `brain/timing/marketTimingBrainService.ts` | `computeTimingRead` | `MarketTimingRead` (timingGrade, heatScore, tradeabilityScore, entryPermission, bestAction, dataQuality, generatedAt) | `components.timing` | **SOURCE** |
-| Ruby read inputs | `lib/assistant/rubyDraftRead.ts` | `buildRubyDraftRead` | `RubyDraftReadResult` (headline, points, cautions, bestNextAction, confidenceLabel, dataQuality, generatedAt) | feeds `verdict` evidence/bestAction | **SOURCE** |
+| Eleanor read inputs | `lib/assistant/eleanorDraftRead.ts` | `buildEleanorDraftRead` | `EleanorDraftReadResult` (headline, points, cautions, bestNextAction, confidenceLabel, dataQuality, generatedAt) | feeds `verdict` evidence/bestAction | **SOURCE** |
 
 ## Backend — DUPLICATE / lower-level producers (must route through the SOURCE)
 
@@ -43,10 +43,10 @@ generatedAt
 | `lib/data/chart/chartIntelligence.ts` | `buildChartIntelligenceState` | Fast-Brain over the truth layer; inherits aiUsable — do not re-derive freshness |
 | `lib/news/newsIntelligenceService.ts` | `getNewsIntelligence` | Headlines+calendar fusion; calendar connection must come from `buildMarketImpactRadar` |
 | `lib/news/economicCalendarProvider.ts` | `getEconomicCalendar` | Low-level; only reached via `buildMarketImpactRadar` |
-| `lib/signalIntelligence/opportunityMapService.ts` | `buildOpportunityMap` | Universe scan; per-symbol verdict is `buildRubyMarketEdgeForUser` |
+| `lib/signalIntelligence/opportunityMapService.ts` | `buildOpportunityMap` | Universe scan; per-symbol verdict is `buildEleanorMarketEdgeForUser` |
 | `lib/assistant/liveScanner.ts` | `scanSymbolTimeframe`/`scoreLiveCandidates` | Assistant ranking; not the per-symbol display verdict |
 | `lib/scalp/scalpEngine.ts` | `evaluateScalp` | Pure engine; orchestrated by `evaluateScalpForSymbol` |
-| `lib/assistant/rubyContext.ts` | `buildRubyContext` | Briefing assembler; should pull the canonical draft read |
+| `lib/assistant/eleanorContext.ts` | `buildEleanorContext` | Briefing assembler; should pull the canonical draft read |
 | `lib/marketData/marketDataService.ts` | `getMarketData` | Legacy synthetic-first service; not a chart/scanner truth source |
 
 ---
@@ -61,11 +61,11 @@ generatedAt
 | `components/scanner/ScannerDataHealthPanel.tsx` | data health card | freshness | `truth.dataHealth` strings → snapshot `data.*` |
 | `components/scanner/ScannerHeaderSummary.tsx` | identity row | freshness, price, verdict | `truth` + `/selected-market` bias → snapshot `data.price` + `verdict.bias` |
 | `components/scanner/ScannerChartPanel.tsx` | chart + overlays badge + news lines | freshness, price, verdict, news | `useScannerTruth` + `/me/chart/smart-layers` → snapshot `data` + `news` + `verdict` |
-| `components/scanner/RubyChartRead.tsx` | Ruby chart read | freshness, verdict | `resolveRubyReadPanelState` + `/me/assistant/read-chart` → snapshot `verdict` + `data.state` |
-| `components/scanner/RubyMarketReadCard.tsx` | market read / best action | freshness, verdict | `useScannerReadGate` + `/me/market-edge` → snapshot `components.scanner` + `verdict` |
+| `components/scanner/EleanorChartRead.tsx` | Eleanor chart read | freshness, verdict | `resolveEleanorReadPanelState` + `/me/assistant/read-chart` → snapshot `verdict` + `data.state` |
+| `components/scanner/EleanorMarketReadCard.tsx` | market read / best action | freshness, verdict | `useScannerReadGate` + `/me/market-edge` → snapshot `components.scanner` + `verdict` |
 | `components/scanner/TimingIntelligenceCard.tsx` | timing grade + news window | freshness, verdict, news | `/me/timing-brain` + own `newsBlocks` → snapshot `components.timing` + `news` |
-| `components/scanner/RubyScalpFocusCard.tsx` / `RubyScalpBasketPanel.tsx` | scalp stage/labels | verdict | `/me/scalp/*` → snapshot `components.scalp` (labels consistent) |
-| `components/scanner/RubySetupReason.tsx` | explain-signal | verdict | `/me/assistant/explain-signal` → snapshot `verdict.evidenceFor/Against` |
+| `components/scanner/EleanorScalpFocusCard.tsx` / `EleanorScalpBasketPanel.tsx` | scalp stage/labels | verdict | `/me/scalp/*` → snapshot `components.scalp` (labels consistent) |
+| `components/scanner/EleanorSetupReason.tsx` | explain-signal | verdict | `/me/assistant/explain-signal` → snapshot `verdict.evidenceFor/Against` |
 | `components/scanner/BroadScanOpportunityMap.tsx` | opportunity map | freshness, verdict | `/me/opportunity-map` → keep universe scan; per-row freshness honest |
 | `components/scanner/ScannerTradeModal.tsx` | trade ticket price | freshness, price, verdict | `useScannerTruth` + `signal.entry` → snapshot `data.price` |
 
@@ -73,7 +73,7 @@ generatedAt
 
 ## Self-contradiction risks this task must close
 
-1. **Header bias vs Ruby pill** — `ScannerHeaderSummary` pulls bias/trend from
+1. **Header bias vs Eleanor pill** — `ScannerHeaderSummary` pulls bias/trend from
    `/selected-market` independently of the candle feed; a stopped engine + live chart
    (or vice versa) makes them disagree. Both must read snapshot `verdict.bias`.
 2. **Double candle resolution** — `ScannerChartPanel` runs its own candle `useQuery`

@@ -161,8 +161,8 @@ Show clean trade request status:
 
 No raw backend dumps.
 
-11. Ruby awareness
-Ruby should explain:
+11. Eleanor awareness
+Eleanor should explain:
 - why a trade is queued
 - why it was blocked
 - why it needs review
@@ -171,7 +171,7 @@ Ruby should explain:
 - whether master mapping is missing
 - whether risk/exposure/cooldown blocked the trade
 
-Ruby must not claim a live trade was placed unless system status confirms it.
+Eleanor must not claim a live trade was placed unless system status confirms it.
 
 12. Audit logs
 Add audit logs for:

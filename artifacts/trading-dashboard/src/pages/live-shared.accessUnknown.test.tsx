@@ -26,7 +26,7 @@ vi.mock("@/components/live/MasterLiveAccessGuard", () => ({
 vi.mock("@/hooks/useTradingMode", () => ({
   useTradingMode: () => ({ envelope: {}, isLiveShared: true, cleanBlockedReason: null, cleanModeLabel: "LIVE" }),
 }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/live/LiveSharedTradeTicket", () => ({ LiveSharedTradeTicket: () => null }));
 vi.mock("@/components/live/LiveSharedStatusPanel", () => ({ LiveSharedStatusPanel: () => null }));
 vi.mock("@/components/live/TradeHealthPanel", () => ({ TradeHealthPanel: () => null }));

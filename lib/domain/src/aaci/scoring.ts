@@ -57,7 +57,7 @@ export const AACI_COMPONENT_WEIGHTS = {
 export const AACI_SPEED_BENCHMARK_WEIGHTS: Record<string, number> = {
   marketFeedSpeed: 0.18,
   scannerDecisionSpeed: 0.15,
-  rubyResponseSpeed: 0.13,
+  eleanorResponseSpeed: 0.13,
   riskCheckSpeed: 0.12,
   executionRouteSpeed: 0.12,
   mt5RoundTripSpeed: 0.1,
@@ -69,7 +69,7 @@ export const AACI_SPEED_BENCHMARK_WEIGHTS: Record<string, number> = {
 export const AACI_SPEED_BENCHMARK_BUDGETS_MS: Record<string, number> = {
   marketFeedSpeed: 1_000,
   scannerDecisionSpeed: 3_000,
-  rubyResponseSpeed: 3_000,
+  eleanorResponseSpeed: 3_000,
   riskCheckSpeed: 800,
   executionRouteSpeed: 500,
   mt5RoundTripSpeed: 1_000,
@@ -244,8 +244,8 @@ export function computeUiConsistency(
 
 // ── X — Explainability Completeness ─────────────────────────────────────────
 export function computeExplainability(snapshot: AaciSharedTruthSnapshot): number {
-  if (snapshot.ruby?.explanationReady === undefined) return AACI_NEUTRAL_SCORE;
-  return snapshot.ruby.explanationReady ? 100 : 30;
+  if (snapshot.eleanor?.explanationReady === undefined) return AACI_NEUTRAL_SCORE;
+  return snapshot.eleanor.explanationReady ? 100 : 30;
 }
 
 // ── A — Audit & Alert Readiness ─────────────────────────────────────────────

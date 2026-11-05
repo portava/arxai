@@ -26,7 +26,7 @@ Verify:
 18. Admin can view blocked/queued/failed commands safely.
 19. Non-admin users cannot access admin queue controls or APIs.
 20. User-facing trade status is clean and understandable.
-21. Ruby explains queued/blocked/needs-review trade states accurately.
+21. Eleanor explains queued/blocked/needs-review trade states accurately.
 22. Audit logs are created for command lifecycle events.
 23. Previous hardening flags were checked: UI-side block auditing where practical, production-safe requireAdmin output, and bridge-secret masking guard.
 24. No secrets are exposed in UI, logs, routes, or responses.

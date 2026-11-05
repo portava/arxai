@@ -1,4 +1,4 @@
-// Ruby Market Timing Brain — shared domain types.
+// Eleanor Market Timing Brain — shared domain types.
 //
 // These types are the contract consumed by every engine, route, and future
 // phase. They must remain pure (no IO, no side-effects) and are the single

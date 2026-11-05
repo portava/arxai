@@ -126,7 +126,7 @@ Tests:
 8. One user’s custom name does not affect another user.
 9. Invalid empty/too-long names are rejected.
 10. ARX platform branding is not replaced by custom assistant name.
-11. No user-facing Ruby copy remains.
+11. No user-facing Eleanor copy remains.
 12. Existing reasoning-block tests still pass.
 
 Hard boundary:

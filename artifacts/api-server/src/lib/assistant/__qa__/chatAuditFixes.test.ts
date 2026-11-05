@@ -53,17 +53,17 @@ test("A2: dispatching a removed order tool is unknown_tool with the envelope and
 });
 
 test("A2: system prompt never names an order tool and states the assistant does not place orders", () => {
-  const p = buildArxAssistantSystemPrompt("Ruby");
+  const p = buildArxAssistantSystemPrompt("Eleanor");
   assert.doesNotMatch(p, /requestLiveOrder|requestDemoOrder/);
   assert.match(p, /HAVE NO ORDER-EXECUTION TOOL/);
   assert.match(p, /Trade Action Center/);
   assert.match(p, /never claim to have placed, queued, sent, armed or closed anything/);
   for (const env of [liveUnlockedEnv, FAIL_CLOSED_ENVELOPE, null]) {
-    const msgs = buildSessionSystemMessages(1, null, null, env, "Ruby").map((m) => m.content).join("\n");
+    const msgs = buildSessionSystemMessages(1, null, null, env, "Eleanor").map((m) => m.content).join("\n");
     assert.doesNotMatch(msgs, /requestLiveOrder|requestDemoOrder/);
     assert.doesNotMatch(msgs, /confirmedByUser/);
   }
-  const live = buildSessionSystemMessages(1, null, null, liveUnlockedEnv, "Ruby").map((m) => m.content).join("\n");
+  const live = buildSessionSystemMessages(1, null, null, liveUnlockedEnv, "Eleanor").map((m) => m.content).join("\n");
   assert.match(live, /Live execution IS currently available for this user/);
   assert.match(live, /You have NO order-execution tool/);
   assert.match(live, /executed by the USER from the Trade Action Center/);
@@ -72,16 +72,16 @@ test("A2: system prompt never names an order tool and states the assistant does 
 
 test("A2: capability note keeps the live posture honest both ways but never claims a chat execution path", () => {
   assert.match(ASSISTANT_ORDER_EXECUTION_NOTE, /does not place, modify or close orders/);
-  const open = liveExecutionAvailabilityNote(liveUnlockedEnv, "Ruby");
+  const open = liveExecutionAvailabilityNote(liveUnlockedEnv, "Eleanor");
   assert.match(open, /Live order execution is available for your account/);
   assert.match(open, /never places an order itself/);
-  const closed = liveExecutionAvailabilityNote(FAIL_CLOSED_ENVELOPE, "Ruby");
+  const closed = liveExecutionAvailabilityNote(FAIL_CLOSED_ENVELOPE, "Eleanor");
   assert.doesNotMatch(closed, /is available/);
 });
 
 // ── A5: data-not-instructions rule ──────────────────────────────────────────
 test("A5: the hard rules open with the data-is-not-instructions rule", () => {
-  const p = buildArxAssistantSystemPrompt("Ruby");
+  const p = buildArxAssistantSystemPrompt("Eleanor");
   const idx = p.indexOf("Hard safety rules");
   assert.ok(idx > 0);
   const rules = p.slice(idx, idx + 1200);
@@ -158,14 +158,14 @@ test("A4: bound quote accepts only a fresh producer-observed tick and prefers th
 test("A1/A3: arming is tied to the sweeper that evaluates watches; the unavailable branch stays honest", async () => {
   const src = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../../../routes/meAssistant.ts", import.meta.url), "utf8"));
   assert.match(src, /const WATCH_ARMING_ENABLED = isSweeperEnabled\(\);/);
-  assert.match(src, /RUBY_WATCH_ARM_UNAVAILABLE/);
+  assert.match(src, /ELEANOR_WATCH_ARM_UNAVAILABLE/);
   assert.match(src, /WATCH_EVALUATION_UNAVAILABLE/);
   assert.match(src, /skipReason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON/);
   // The unavailable branch must come BEFORE the arming branch so no row is written.
-  assert.ok(src.indexOf("!WATCH_ARMING_ENABLED && (parsed.kind === \"WATCH_AND_ENTER\"") < src.indexOf("action: \"RUBY_WATCH_ARMED\""));
-  // A4: the old unvalidated candle-close price source is gone (price binding lives in rubyExecution.ts).
+  assert.ok(src.indexOf("!WATCH_ARMING_ENABLED && (parsed.kind === \"WATCH_AND_ENTER\"") < src.indexOf("action: \"ELEANOR_WATCH_ARMED\""));
+  // A4: the old unvalidated candle-close price source is gone (price binding lives in eleanorExecution.ts).
   assert.doesNotMatch(src, /getMarketData\(symbol, "1m", 2\)/);
-  const exec = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../rubyExecution.ts", import.meta.url), "utf8"));
+  const exec = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../eleanorExecution.ts", import.meta.url), "utf8"));
   assert.match(exec, /boundQuotePrice\(q\)\.price/);
   // A9: no raw slice truncation of tool results handed to the model.
   assert.doesNotMatch(src, /JSON\.stringify\(result\)\.slice\(0, 8000\)/);

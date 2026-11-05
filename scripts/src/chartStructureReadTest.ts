@@ -1,4 +1,4 @@
-// Ruby chart-read structure analyzer regression suite.
+// Eleanor chart-read structure analyzer regression suite.
 //
 // Verifies the deterministic, no-LLM market-structure analyzer:
 //   - never fabricates structure on insufficient data (honest empty path)

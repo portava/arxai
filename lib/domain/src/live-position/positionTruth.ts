@@ -4,14 +4,14 @@
 //
 // PURE / no-I/O. Callers normalise a row (live_positions, shared_trade_attribution,
 // a scanner signal, or a pending order) into `PositionTruthInput`; this module
-// returns the trust verdict. Ruby/Eleanor and every total/exposure/risk read
+// returns the trust verdict. Eleanor/Eleanor and every total/exposure/risk read
 // build their honesty on this one classifier so a scanner signal or an unsynced,
 // locally-created row can never be mistaken for a broker-confirmed live position.
 //
 // SAFETY — this resolver is BLOCK-ONLY. It can only downgrade a row and withhold
 // advice. It NEVER grants trade permission, never places/modifies/closes
 // anything, and is NOT part of the live execution gate chain. `adviceAllowed`
-// governs only whether Ruby may discuss direction / hold / close on the row; it
+// governs only whether Eleanor may discuss direction / hold / close on the row; it
 // can never unlock or weaken the 18-gate live dispatch.
 
 /** Per-row freshness verdict. Mirrors the server's `positionFreshness.Freshness`
@@ -97,12 +97,12 @@ export interface PositionTruthVerdict {
    *  A broker-ticketed but data-lagging row STILL counts toward exposure/risk;
    *  only a not-broker-confirmed (no ticket) row is excluded from totals. */
   countsTowardExposure: boolean;
-  /** True ONLY when Ruby may give a side / hold / close / manage opinion on this
+  /** True ONLY when Eleanor may give a side / hold / close / manage opinion on this
    *  row. Equivalent to isVerifiedLive. Block-only — never grants execution. */
   adviceAllowed: boolean;
   /** Fields missing/unconfirmed that prevent the row being verified. */
   missingFields: VerifiedPositionField[];
-  /** Human reason Ruby can quote verbatim for why advice is allowed/withheld. */
+  /** Human reason Eleanor can quote verbatim for why advice is allowed/withheld. */
   reason: string;
 }
 
@@ -251,7 +251,7 @@ export function resolvePositionTruth(input: PositionTruthInput): PositionTruthVe
   };
 }
 
-/** Convenience: true when Ruby may discuss direction/hold/close on this verdict. */
+/** Convenience: true when Eleanor may discuss direction/hold/close on this verdict. */
 export function mayAdviseOnPosition(verdict: PositionTruthVerdict): boolean {
   return verdict.adviceAllowed === true && verdict.isVerifiedLive === true;
 }

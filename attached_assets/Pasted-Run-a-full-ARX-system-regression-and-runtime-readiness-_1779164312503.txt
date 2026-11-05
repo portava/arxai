@@ -55,13 +55,13 @@ Verify everything built so far still works together:
 - scanner master demo/live routing respects gates
 - Market Scanner live remains locked for unapproved users
 
-7. Ruby
-- Ruby name appears everywhere AI/system assistant responses appear
+7. Eleanor
+- Eleanor name appears everywhere AI/system assistant responses appear
 - saved chat/memory still works
 - clear chat/memory controls still work
-- Ruby Market Intelligence appears for selected market
-- Ruby explains master bridge routing correctly
-- Ruby does not promise profit
+- Eleanor Market Intelligence appears for selected market
+- Eleanor explains master bridge routing correctly
+- Eleanor does not promise profit
 
 8. Calendar / Events
 - economic calendar exists
@@ -74,7 +74,7 @@ Verify everything built so far still works together:
 - existing TradingView chart still works
 - position side window opens
 - mini Position Chart Preview shows entry/current/SL/TP lines
-- Ask Ruby works
+- Ask Eleanor works
 - Refresh analysis works
 - close/modify buttons respect permission gates
 - users cannot view/modify/close another user’s position
@@ -88,7 +88,7 @@ Verify everything built so far still works together:
 - no bridge token exposed
 - no API keys exposed
 - no broker passwords exposed
-- no secrets in Ruby memory/logs/UI
+- no secrets in Eleanor memory/logs/UI
 - arx_live_commands remains unchanged unless a manual live test is intentionally run
 
 Required output:

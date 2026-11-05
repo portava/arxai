@@ -37,7 +37,7 @@ All three must be ON for ANY pilot live command. ANY one off = blocked.
    - user is in `ARX_PRIVATE_BETA_10` AND invite accepted
    - `compliance_review_flag = true`
    - user has `virtual_trading_accounts.virtualBalance > 0` (allocation)
-   - user has accepted `OPERATOR_FUNDED_LIVE_PILOT_V1` disclosure (versioned)
+   - user has accepted `OPERATOR_FUNDED_LIVE_PILOT_V2` disclosure (versioned; V2 on 2026-11-05 renamed the assistant to Eleanor, so V1 acceptances must be renewed)
 2. **Master-Live User Access Gate** (existing — admin approval + toggle)
 3. **Master-Live Bridge Gate** (existing — REAL bridge bound, heartbeat fresh)
 4. **Phase B 16-Gate Evaluator** (existing — kill switch, EA flags, symbol, lot, daily-loss, stop-loss)
@@ -71,19 +71,19 @@ Per-user limits: `POST /.../limits` (existing — `allowedSymbols`, `maxLot`,
 
 Constants in `artifacts/api-server/src/lib/live/operatorFundedPilotConfig.ts`:
 
-- `OPERATOR_FUNDED_DISCLOSURE_VERSION = "OPERATOR_FUNDED_LIVE_PILOT_V1"`
+- `OPERATOR_FUNDED_DISCLOSURE_VERSION = "OPERATOR_FUNDED_LIVE_PILOT_V2"`
 - `OPERATOR_FUNDED_DISCLOSURE_TEXT` — 9 numbered acknowledgements covering
   operator-owned capital, allocation-is-not-deposit, not-withdrawable, no
-  profit-share, no-ownership, instant-revocation, Ruby-is-informational,
+  profit-share, no-ownership, instant-revocation, Eleanor-is-informational,
   confirmation-required, risk + review state.
 
 Stored append-only in `live_risk_disclosure_acceptances` keyed on
 `(userId, disclosureVersion, acceptedText, acceptedAt)`. The text hash is the
 literal text — change the text → new version → users must re-accept.
 
-## Ruby behaviour
+## Eleanor behaviour
 
-Ruby reads mode + status via `computeAccountShell(userId)` + `getEnvelope(userId)`
+Eleanor reads mode + status via `computeAccountShell(userId)` + `getEnvelope(userId)`
 (per-user). She **cannot**:
 
 - mutate `tradingMode` or `master_live_status` (no tool)

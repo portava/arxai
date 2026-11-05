@@ -286,21 +286,21 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
             <ARXWordmark mode="dark" size="lg" />
           </div>
           <div className="text-center text-sm font-semibold tracking-wide px-5">
-            <span className="text-ruby-cyan">ANALYZE.</span>{" "}
-            <span className="text-ruby">RISK.</span>{" "}
+            <span className="text-eleanor-cyan">ANALYZE.</span>{" "}
+            <span className="text-eleanor">RISK.</span>{" "}
             <span className="text-foreground">e<span className="text-primary">X</span>ECUTE.</span>
           </div>
 
           {/* Feature cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 px-5 pt-4">
             <div className="rounded-xl border border-border bg-background/40 p-3 text-center">
-              <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-ruby-cyan/15 text-ruby-cyan ring-1 ring-ruby-cyan/25"><Search className="h-5 w-5" /></span>
-              <div className="text-sm font-semibold"><span className="text-ruby-cyan">A</span> — Analyze</div>
+              <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-eleanor-cyan/15 text-eleanor-cyan ring-1 ring-eleanor-cyan/25"><Search className="h-5 w-5" /></span>
+              <div className="text-sm font-semibold"><span className="text-eleanor-cyan">A</span> — Analyze</div>
               <div className="text-xs text-txt-secondary mt-0.5">Market scans, chart reads, trade ideas</div>
             </div>
             <div className="rounded-xl border border-border bg-background/40 p-3 text-center">
-              <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-ruby/15 text-ruby ring-1 ring-ruby/25"><Shield className="h-5 w-5" /></span>
-              <div className="text-sm font-semibold"><span className="text-ruby">R</span> — Risk</div>
+              <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-eleanor/15 text-eleanor ring-1 ring-eleanor/25"><Shield className="h-5 w-5" /></span>
+              <div className="text-sm font-semibold"><span className="text-eleanor">R</span> — Risk</div>
               <div className="text-xs text-txt-secondary mt-0.5">Risk Governor, limits, protection</div>
             </div>
             <div className="rounded-xl border border-border bg-background/40 p-3 text-center">
@@ -357,13 +357,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           <div className="mx-5 mt-3 rounded-2xl border border-border bg-background/40 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-ruby">Guided Setup</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-eleanor">Guided Setup</div>
                 <div className="text-lg font-bold leading-tight">Step {stepNum}{totalSteps ? <> of {totalSteps}</> : null}</div>
               </div>
               {totalSteps > 0 && (
                 <div className="flex flex-1 items-center gap-1.5 justify-end overflow-hidden">
                   {Array.from({ length: Math.min(totalSteps, 12) }).map((_, i) => (
-                    <span key={i} className={cn("h-2 w-2 rounded-full", i < stepNum ? "bg-ruby" : "bg-secondary")} />
+                    <span key={i} className={cn("h-2 w-2 rounded-full", i < stepNum ? "bg-eleanor" : "bg-secondary")} />
                   ))}
                 </div>
               )}

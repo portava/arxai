@@ -76,4 +76,4 @@ Important:
 - Do not create tasks.
 - Give exact file:line proof for every claim.
 - If a claim cannot be proven, mark it Class 5.
-- Do not call the assistant Ruby in user-facing recommendations; use Eleanor.
+- Do not call the assistant Eleanor in user-facing recommendations; use Eleanor.

@@ -13,7 +13,7 @@ description: User-facing live command GETs must use an explicit allowlist DTO pr
 
 **Rule:** user-facing handlers project the row through an explicit allowlist DTO (`projectCommandForUser`). The allowlist is the ONLY safe shape; blacklists silently leak when new operator-only columns are added to the schema.
 
-Allowlisted user fields: id, commandId, userId, commandType, status, symbol, side, orderType, requestedVolume, executedVolume, stopLoss, takeProfit, rubyExplanationSummary, brokerTicket, fillPrice, mt5Retcode, brokerMessage, rejectionReason, createdAt, confirmedAt, sentToMt5At, pickedByEaAt, filledAt, rejectedAt, closedAt.
+Allowlisted user fields: id, commandId, userId, commandType, status, symbol, side, orderType, requestedVolume, executedVolume, stopLoss, takeProfit, eleanorExplanationSummary, brokerTicket, fillPrice, mt5Retcode, brokerMessage, rejectionReason, createdAt, confirmedAt, sentToMt5At, pickedByEaAt, filledAt, rejectedAt, closedAt.
 
 **Why:** account identifiers (`accountNumber`, `accountLogin`) are explicit invariants in `replit.md` — "no endpoint ever returns IP addresses or account numbers (except to OWNER/ADMIN sessions)". The DB row stays unchanged; only the projection is trimmed. Admin/operator endpoints that need the full row must query directly and gate behind AdminDiagnosticsGate.
 

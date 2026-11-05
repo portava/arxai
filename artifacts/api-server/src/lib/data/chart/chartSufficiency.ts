@@ -1,13 +1,13 @@
 // ── ONE DATA-SUFFICIENCY TRUTH — chart-state adapter ────────────────────────
 //
 // The SINGLE place that turns a built `ChartIntelligenceState` into the shared
-// pure `evaluateMarketDataSufficiency` verdict. Ruby's chart context, the live
+// pure `evaluateMarketDataSufficiency` verdict. Eleanor's chart context, the live
 // ENTRY gate, and the backtest reliability badge all derive their freshness +
 // closed-bar inputs THROUGH this adapter so they can never drift in HOW they
 // read the chart state. The actual decision still belongs entirely to the pure
 // engine in `@workspace/domain/market`; this module only maps state → inputs.
 //
-// SAFETY: read-only. Mirrors the long-standing rubyChartContext derivation
+// SAFETY: read-only. Mirrors the long-standing eleanorChartContext derivation
 // EXACTLY — `state.aiUsable && !state.stale ? LIVE : (delayed + recent deriv
 // tick) ? LIVE_DELAYED : AWAITING`, closed bars = `state.candleStats.barsAnalyzed`.
 // It can only feed a BLOCK / DOWNGRADE verdict; it never grants one.
@@ -24,7 +24,7 @@ import type { ChartTimeframe } from "./timeframes.js";
 /**
  * Derive the shared freshness verdict from a built chart-intelligence state.
  *
- * Identical to the rubyChartContext derivation so every surface that reads the
+ * Identical to the eleanorChartContext derivation so every surface that reads the
  * same state agrees on LIVE / LIVE_DELAYED / AWAITING. Freshness comes from the
  * chart truth layer (which recognizes the `mt5_broker` feed), NOT from the
  * Deriv-tick-gated `resolveSymbolFeedVerdictForSymbol` — a Deriv-only freshness
@@ -43,7 +43,7 @@ export function deriveFreshnessVerdictFromChartState(
  * Evaluate the ONE shared data-sufficiency verdict for a built chart state.
  *
  * Pure composition over the domain engine: same state ⇒ same verdict, so the
- * scanner, Ruby, the live ENTRY gate, and the backtest badge can never
+ * scanner, Eleanor, the live ENTRY gate, and the backtest badge can never
  * contradict each other for the same symbol + timeframe.
  */
 export function evaluateSufficiencyFromChartState(

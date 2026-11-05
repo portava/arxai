@@ -4,7 +4,7 @@
 // confirmed." while its levels were "withheld until the live feed confirms".
 // The real cause: Deriv ticks carry a last price only, so no bid/ask spread can
 // bind a quote to the candles, matchedMarketQuote returns null, and the scanner
-// geometry gate in buildRubyMarketEdgeForUser silently drops the scanner read.
+// geometry gate in buildEleanorMarketEdgeForUser silently drops the scanner read.
 // This drives the REAL producer (offline router/db/scanner) and locks that the
 // signal records WHICH gate dropped the scanner geometry and that the
 // explanation states that cause — never "delayed" — while levels stay withheld.
@@ -47,13 +47,13 @@ mock.module("../../marketScanner.js", { namedExports: { ...scanner,
 const loaders = await import("../../scalp/scalpServiceInputs.js");
 mock.module("../../scalp/scalpServiceInputs.js", { namedExports: { ...loaders, loadExecutionInput: async () => null } });
 
-const { buildRubyMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
+const { buildEleanorMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
 const { explainMarketRead } = await import("@workspace/domain/signal-intelligence");
 
 beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); oppOverride = null; });
 
 async function read() {
-  const signal = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  const signal = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   return { signal, explanation: explainMarketRead(signal) };
 }
 

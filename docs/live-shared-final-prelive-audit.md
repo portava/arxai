@@ -95,14 +95,14 @@ Phase A/B/C/T006/T007 behaviour is therefore byte-for-byte unchanged.
 | Micro test requires `QUEUE MICRO LIVE TEST` + `EXECUTE LIVE SHARED`; goes through `validate` then `execute`, never direct dispatch | unchanged |
 | Rollback engages kill switch + disables `sharedLiveTradingEnabled` + `masterBridgeLiveEnabled` atomically | unchanged |
 
-## 7. Manual / scanner / Ruby flows
+## 7. Manual / scanner / Eleanor flows
 
 No code in `artifacts/api-server/src/routes/tradesLiveShared.ts`,
-`marketScanner.ts`, or assistant/Ruby routes was modified.
+`marketScanner.ts`, or assistant/Eleanor routes was modified.
 
 - Manual live shared flow → still goes through `/validate` then `/execute`.
 - Scanner live shared flow → still validates first via the same pipeline.
-- Ruby cannot execute without typed confirmation; assistant remains
+- Eleanor cannot execute without typed confirmation; assistant remains
   `paper_only / readOnlyMode / allowOrderExecution=false`.
 
 ## 8. Secrets / leak scan

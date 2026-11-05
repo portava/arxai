@@ -1,13 +1,13 @@
 // ARX 5.0 Cockpit — modern, mobile-first trading dashboard.
 //
 // This is a UI/UX refactor of the previous developer-style dashboard. The
-// app, trading system, bridge, Ruby, scanner and risk logic are unchanged.
+// app, trading system, bridge, Eleanor, scanner and risk logic are unchanged.
 // Every card binds to the SAME existing read-only hooks (see CockpitCards).
 //
 // User-facing surface (the 7 questions a trader actually asks):
 //   • Account status      → AccountSnapshotCard
 //   • Can I trade?        → TradingPermissionSummaryCard
-//   • What is Ruby seeing → RubyMarketViewCard
+//   • What is Eleanor seeing → EleanorMarketViewCard
 //   • What's urgent       → CriticalEventsCard
 //   • What's open         → OpenPositionsCard
 //   • How am I doing      → TodayPerformanceCard
@@ -49,7 +49,7 @@ import { CockpitHeader } from "@/components/dashboard/cockpit/CockpitHeader";
 import {
   AccountSnapshotCard,
   TradingPermissionSummaryCard,
-  RubyMarketViewCard,
+  EleanorMarketViewCard,
   CriticalEventsCard,
   OpenPositionsCard,
   TodayPerformanceCard,
@@ -168,10 +168,10 @@ export default function Dashboard() {
         {/* 1 · Account snapshot — full width */}
         <AccountSnapshotCard />
 
-        {/* 2/3 · Permission + Ruby's view */}
+        {/* 2/3 · Permission + Eleanor's view */}
         <div className="grid gap-4 lg:grid-cols-2">
           <TradingPermissionSummaryCard />
-          <RubyMarketViewCard />
+          <EleanorMarketViewCard />
         </div>
 
         {/* 4/5 · Critical events + Open positions */}

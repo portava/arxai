@@ -16,7 +16,7 @@ Inspect:
 - database connection handling
 - migration system
 - auth/session secrets
-- OpenAI/Ruby keys
+- OpenAI/Eleanor keys
 - market/news/calendar API keys
 - MT5 bridge tokens
 - bridge base URLs
@@ -96,7 +96,7 @@ Core:
 - SESSION_SECRET
 - APP_BASE_URL
 
-AI/Ruby:
+AI/Eleanor:
 - OpenAI/API key config if used
 - model config if used
 
@@ -133,7 +133,7 @@ Verify/fix:
 - no secrets in frontend bundle
 - no secrets in API responses
 - no secrets in logs
-- no secrets in Ruby prompts
+- no secrets in Eleanor prompts
 - no secrets in audit exports
 - no secrets in Replit console output from health checks
 - bridge evidence masking uses the centralized masking chokepoint
@@ -166,8 +166,8 @@ Create or verify feature flags for:
 - shared master live execution
 - one-click demo
 - one-click live
-- Ruby voice
-- Ruby voice trade commands
+- Eleanor voice
+- Eleanor voice trade commands
 - scanner-to-trade
 - close-only mode
 - force-review mode
@@ -209,7 +209,7 @@ Admin health/readiness:
 - database status
 - queue status
 - bridge heartbeat status
-- Ruby service status
+- Eleanor service status
 - market data status
 - audit logging status
 - live readiness blockers
@@ -227,7 +227,7 @@ Add an admin-only Production Readiness Checklist page showing:
 - Auth/session configured
 - Admin access configured
 - Secrets present and masked
-- Ruby configured
+- Eleanor configured
 - Market/news/calendar APIs configured
 - Bridge configured
 - Bridge heartbeat
@@ -264,8 +264,8 @@ Logs must be useful but not expose secrets.
 Inspect/add basic protections for:
 
 - login/admin login attempts
-- Ruby chat requests
-- Ruby voice transcript submits
+- Eleanor chat requests
+- Eleanor voice transcript submits
 - trade ticket submits
 - trade command submit
 - bridge callbacks
@@ -302,8 +302,8 @@ Block public/live launch if:
 - open critical NEEDS_REVIEW items exist
 - arx_live_commands count changed during QA unexpectedly
 
-15. Ruby production readiness awareness
-Ruby should be able to explain:
+15. Eleanor production readiness awareness
+Eleanor should be able to explain:
 
 For normal users:
 - current account status
@@ -319,7 +319,7 @@ For admins:
 - missing configuration categories
 - no-live-command evidence
 
-Ruby must not expose secrets or raw config values.
+Eleanor must not expose secrets or raw config values.
 
 16. Audit logs
 Add audit logs for:

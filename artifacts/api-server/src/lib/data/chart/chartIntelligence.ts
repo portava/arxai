@@ -190,7 +190,7 @@ export interface ChartIntelligenceState {
 
 // ── Tuning (candle-only, deterministic) ───────────────────────────────────
 // ONE DATA-SUFFICIENCY TRUTH: the chart's "enough closed bars" floor is the
-// SAME shared constant the scanner + Ruby use, so all three surfaces agree on
+// SAME shared constant the scanner + Eleanor use, so all three surfaces agree on
 // when there are too few candles to derive a confident read (value unchanged).
 const MIN_FLAG_BARS = MIN_SUFFICIENT_CLOSED_BARS;
 const RECENT_WINDOW = 20;
@@ -652,7 +652,7 @@ export async function buildChartIntelligenceState(
 
   // An A-grade candle read is not "ready" while the chart-truth gate has not
   // verified it (Chart Truth < 75, stale, mirror failed, or feed not live):
-  // capped at "watch" with the reason, matching Ruby's "syncing" answer.
+  // capped at "watch" with the reason, matching Eleanor's "syncing" answer.
   const decisionState: ChartDecisionState = capDecisionStateByChartTruth(
     engineDecisionState,
     chartReadVerification(gateOutput, truth.feedStatus, chartTruthScore),

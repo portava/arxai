@@ -1,6 +1,6 @@
 // Learning Model Version Tracking
 //
-// Every update to ARX global learning, signal edges, Ruby confidence
+// Every update to ARX global learning, signal edges, Eleanor confidence
 // calibration, or scanner scoring must be versioned before it can
 // influence live recommendations.
 //
@@ -28,7 +28,7 @@ export const learningModelVersionsTable = pgTable("learning_model_versions", {
   versionName: text("version_name").notNull(),       // human-readable e.g. "Global edge update Mar 2024"
   changeType:  text("change_type").notNull(),
   // global_signal_edges | confidence_calibration | scanner_scoring |
-  // dna_weights | ruby_behavior | risk_thresholds
+  // dna_weights | eleanor_behavior | risk_thresholds
   changeSummary: text("change_summary").notNull(),   // plain language description
   dataSources:   jsonb("data_sources").notNull().default([]), // string[] — which sources fed this update
 

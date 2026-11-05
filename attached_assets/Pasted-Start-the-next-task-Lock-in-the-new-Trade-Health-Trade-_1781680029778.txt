@@ -9,7 +9,7 @@ The new verdict can ONLY downgrade or explain. It must never grant live-trade el
 Requirements:
 1. Inventory every surface that currently shows trade confidence, readability, health, or execution readiness:
    - Scanner
-   - Ruby chat
+   - Eleanor chat
    - Chart
    - Trade ticket
    - Manual ticket
@@ -51,12 +51,12 @@ Requirements:
 7. Add tests:
    - stale feed cannot show execution-ready
    - historical-only feed cannot show live-confirmed
-   - Ruby and Scanner labels match
+   - Eleanor and Scanner labels match
    - Trade ticket cannot become enabled from display confidence alone
    - live gate failure overrides every display label
    - display-only import guard catches unsafe imports
 
 8. Verification:
-   - Scanner, Ruby, Chart, and Trade Ticket all explain the same verdict for the same symbol/timeframe
+   - Scanner, Eleanor, Chart, and Trade Ticket all explain the same verdict for the same symbol/timeframe
    - no contradiction between “readable,” “tradable,” “live-confirmed,” and “execution allowed”
    - no surface claims live-ready when feed is stale, historical-only, or unconfirmed

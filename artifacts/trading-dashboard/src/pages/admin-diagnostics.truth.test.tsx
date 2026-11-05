@@ -7,7 +7,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 vi.mock("@/components/admin/WorkflowHealthCard", () => ({ WorkflowHealthCard: () => null }));
 vi.mock("@/components/admin/ChartTruthHealthCard", () => ({ ChartTruthHealthCard: () => null }));
 vi.mock("@/components/admin/CandleDepthDiagnosticsCard", () => ({ CandleDepthDiagnosticsCard: () => null }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/lib/perf", () => ({ setPerfTransportEnabled: () => {} }));
 
 const { default: AdminDiagnostics } = await import("./admin-diagnostics");

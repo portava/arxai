@@ -211,7 +211,7 @@ router.get("/performance/decision-quality", async (req: Request, res: Response) 
 // 9. GET /api/performance/ai-command-center
 router.get("/performance/ai-command-center", async (req: Request, res: Response) => {
   try {
-    // Ruby's Memory is built from the paper book (all closed paper_orders);
+    // Eleanor's Memory is built from the paper book (all closed paper_orders);
     // a LIVE_SHARED session gets the same withheld, mode-tagged envelope as
     // the calendar instead of paper win rate / P&L under a live account.
     const currentAccountMode = await sessionAccountMode(req);

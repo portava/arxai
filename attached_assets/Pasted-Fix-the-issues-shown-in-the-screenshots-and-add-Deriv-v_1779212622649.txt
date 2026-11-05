@@ -1,7 +1,7 @@
 Fix the issues shown in the screenshots and add Deriv volatility market feed support.
 
 Check what already exists first.
-Reuse current scanner, trade ticket, Ruby Market Intelligence, auth/session, master bridge routing, safety gates, Deriv/symbol mapping, and event badge code.
+Reuse current scanner, trade ticket, Eleanor Market Intelligence, auth/session, master bridge routing, safety gates, Deriv/symbol mapping, and event badge code.
 Build only what is missing or broken.
 Do not break the app.
 Do not auto-place live trades.
@@ -48,7 +48,7 @@ Fix mobile bottom navigation so it does not cover content awkwardly while scroll
 
 Requirements:
 - bottom nav can remain fixed/sticky, but content must have safe bottom padding so cards/buttons/tables are not hidden behind it
-- floating Ruby bubble must not cover primary action buttons
+- floating Eleanor bubble must not cover primary action buttons
 - scanner trade buttons must remain tappable
 - Recent Scanner Trades table must not be hidden by nav
 - support iPhone safe-area inset
@@ -59,7 +59,7 @@ Add QA:
 - mobile scanner scroll
 - trade ticket modal scroll
 - Recent Scanner Trades visible
-- Ruby bubble does not block buttons
+- Eleanor bubble does not block buttons
 - bottom nav does not cover content
 
 PART 3 — RISK / REWARD + REASONABLE STOP LOSS FIX
@@ -83,7 +83,7 @@ Use available data:
 - slippage/bleed buffer
 - symbol pip/tick size
 - market session volatility
-- Ruby setup invalidation point
+- Eleanor setup invalidation point
 - scanner confidence
 - news/event risk
 
@@ -113,8 +113,8 @@ Rules:
 Add UI copy:
 “Suggested SL is based on market structure, volatility, spread, and broker minimum distance.”
 
-Add Ruby explanation:
-“Ruby’s suggested stop loss is placed beyond the invalidation area with a spread/volatility buffer, not directly at entry.”
+Add Eleanor explanation:
+“Eleanor’s suggested stop loss is placed beyond the invalidation area with a spread/volatility buffer, not directly at entry.”
 
 Fix impossible/absurd R:R:
 - If risk distance is near zero, mark invalid and force recalculation.
@@ -135,7 +135,7 @@ Inputs/config:
 - optional DERIV_API_TOKEN only if needed
 - DERIV_WS_URL configurable
 - default no-auth market data where supported
-- do not expose app id/token in UI/logs/Ruby memory
+- do not expose app id/token in UI/logs/Eleanor memory
 
 Capabilities:
 - fetch active symbols
@@ -215,7 +215,7 @@ Run tests:
 2. protected routes redirect to login.
 3. valid session opens dashboard.
 4. bottom nav does not cover scanner content on mobile.
-5. Ruby bubble does not cover Buy/Sell/Trade Setup buttons.
+5. Eleanor bubble does not cover Buy/Sell/Trade Setup buttons.
 6. trade ticket calculates reasonable SL.
 7. invalid too-close SL is blocked or adjusted.
 8. R:R does not show absurd value from near-zero risk.

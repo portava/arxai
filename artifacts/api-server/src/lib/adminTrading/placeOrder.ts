@@ -53,12 +53,12 @@ export interface PlaceOrderResult {
 
 export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
   // ── AI action boundary ───────────────────────────────────────────────────
-  // No AI surface may directly execute a trade. Ruby (the read-only assistant)
+  // No AI surface may directly execute a trade. Eleanor (the read-only assistant)
   // is a read-only actor and is ALWAYS blocked here, before any guard runs. This
   // is additive: it only ever ADDS a refusal and never relaxes a downstream gate.
   if (input.requestedBy === "ai-assistant") {
     const boundary = evaluateAiActionBoundary({
-      actorKind: "ruby",
+      actorKind: "eleanor",
       action: input.mode === "LIVE" ? "LIVE_TRADE_EXECUTION" : "SELF_TRADE_EXECUTION",
       intentCreated: false,
       permissionChecked: false,

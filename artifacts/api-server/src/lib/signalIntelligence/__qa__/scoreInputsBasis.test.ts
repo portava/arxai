@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   computeScores,
   unmeasuredScoreDimensions,
   type ScoringInput,
@@ -36,7 +36,7 @@ function trendCandles(n: number): SignalCandle[] {
   return out;
 }
 
-const ownerBuilt = buildRubyMarketEdge({
+const ownerBuilt = buildEleanorMarketEdge({
   symbol: "R_75",
   displayName: "V75",
   timeframe: "M1",

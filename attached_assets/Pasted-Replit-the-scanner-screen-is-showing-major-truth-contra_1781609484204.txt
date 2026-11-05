@@ -1,4 +1,4 @@
-Replit, the scanner screen is showing major truth-contract contradictions. Do not treat this as a design-only issue. This is a scanner/feed/chart/Ruby wiring and status-normalization problem.
+Replit, the scanner screen is showing major truth-contract contradictions. Do not treat this as a design-only issue. This is a scanner/feed/chart/Eleanor wiring and status-normalization problem.
 
 The current scanner screen shows contradictory states at the same time:
 
@@ -6,10 +6,10 @@ The current scanner screen shows contradictory states at the same time:
 - Data: Live
 - Live, confirmed candles
 - Trading: Enabled
-- Ruby: Full read
+- Eleanor: Full read
 - Live bars are coming from broker feed
 
-But Ruby Chart Read says:
+But Eleanor Chart Read says:
 - MT5 broker
 - Unconfirmed
 - No AI
@@ -17,7 +17,7 @@ But Ruby Chart Read says:
 - Chart intelligence unavailable
 - Chart data is syncing
 
-These cannot both be true. The scanner header, chart, Ruby read, trade ticket, and scanner results must consume one shared truth contract.
+These cannot both be true. The scanner header, chart, Eleanor read, trade ticket, and scanner results must consume one shared truth contract.
 
 2. Scanner cards say “Ready now” while the explanation says “Wait for confirmation.”
 A card cannot be both act-ready and wait-for-confirmation. Create one final action verdict and make all badges/copy/buttons obey it.
@@ -51,7 +51,7 @@ Task: Fix scanner truth normalization and UI contradictions.
 Implement a shared ScannerTruth contract consumed by:
 - Scanner header
 - chart feed/status panel
-- Ruby Chart Read
+- Eleanor Chart Read
 - scanner opportunity cards
 - trade ticket / Plan Buy / Plan Sell
 - trade health panel
@@ -64,7 +64,7 @@ The contract should include at minimum:
 - quoteStatus: LIVE / STALE / UNAVAILABLE / FROZEN / MARKET_CLOSED
 - candleStatus: CONFIRMED / SYNCING / STALE / UNCONFIRMED / UNAVAILABLE / LIMITED_HISTORY
 - chartIntelligenceStatus: FULL / LIMITED / UNAVAILABLE
-- rubyReadStatus: FULL_READ / LIMITED_READ / NO_READ
+- eleanorReadStatus: FULL_READ / LIMITED_READ / NO_READ
 - tradingStatus: ENABLED / DISABLED / BLOCKED / REVIEW_REQUIRED
 - scannerActionability: READY_NOW / WAIT_FOR_CONFIRMATION / TOO_LATE / NO_CLEAN_SETUP / MARKET_CLOSED / FEED_LIMITED / ANALYSIS_ONLY
 - feedSource
@@ -77,8 +77,8 @@ The contract should include at minimum:
 - internalReasonCode
 
 Rules:
-- If candleStatus is UNCONFIRMED, SYNCING, STALE, UNAVAILABLE, or LIMITED_HISTORY, Ruby cannot show FULL_READ.
-- If Ruby Chart Read says No AI / chart intelligence unavailable, scanner header cannot say Ruby Full read.
+- If candleStatus is UNCONFIRMED, SYNCING, STALE, UNAVAILABLE, or LIMITED_HISTORY, Eleanor cannot show FULL_READ.
+- If Eleanor Chart Read says No AI / chart intelligence unavailable, scanner header cannot say Eleanor Full read.
 - If chart data is syncing, header cannot say live confirmed candles.
 - If scannerActionability is WAIT_FOR_CONFIRMATION, card cannot say Ready now.
 - If scannerActionability is READY_NOW, explanation cannot say Wait for confirmation.
@@ -92,26 +92,26 @@ Replace conflicting status clusters with one clear status strip:
 
 Example when verified:
 Data: Live confirmed
-Ruby: Full read
+Eleanor: Full read
 Trading: Enabled
 Action: Wait for confirmation / Ready now / No trade
 
 Example when unconfirmed:
 Data: Syncing / unconfirmed
-Ruby: Limited read
+Eleanor: Limited read
 Trading: Enabled with caution
 Action: Analysis only / wait for confirmation
 
 Example when market closed/frozen:
 Data: Feed connected, market closed
-Ruby: Limited read
+Eleanor: Limited read
 Trading: Review required
 Action: Wait
 
 Add a single “Why?” expandable explanation that tells the user exactly why the scanner is allowing, limiting, or blocking action.
 
 Tests required:
-1. Header and Ruby Chart Read cannot disagree.
+1. Header and Eleanor Chart Read cannot disagree.
 2. Header and chart candle status cannot disagree.
 3. Ready now card cannot contain wait-for-confirmation text.
 4. No-scan empty state cannot appear when results exist.
@@ -119,12 +119,12 @@ Tests required:
 6. Non-selected-symbol positions do not appear as selected-symbol trade health.
 7. Account-wide exposure is clearly labeled if shown.
 8. Scanner scores are not placeholders/defaults.
-9. Changing symbol updates header/chart/Ruby/trade ticket/card truth together.
-10. Changing timeframe updates header/chart/Ruby/trade ticket/card truth together.
+9. Changing symbol updates header/chart/Eleanor/trade ticket/card truth together.
+10. Changing timeframe updates header/chart/Eleanor/trade ticket/card truth together.
 
 Acceptance criteria:
 - The scanner screen has no contradictory truth states.
-- Scanner/header/chart/Ruby/trade ticket all agree on selected symbol, timeframe, feed status, candle status, Ruby visibility, and actionability.
+- Scanner/header/chart/Eleanor/trade ticket all agree on selected symbol, timeframe, feed status, candle status, Eleanor visibility, and actionability.
 - Scanner cards use one final action verdict.
 - Empty states only appear when truly empty.
 - Skipped symbols are explained.

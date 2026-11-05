@@ -28,12 +28,12 @@ function makeTruth(): ScannerTruth {
   return {
     strip: {
       data: { verdict: "Live", detail: "Live, confirmed candles." },
-      ruby: { detail: "" },
+      eleanor: { detail: "" },
       trading: { verdict: "Blocked", detail: "" },
     },
     candles: { lastClose: 33588.01, sourceTechnical: "deriv", count: 200, minRequired: 150, status: "live" },
     consolidated: {
-      rubyReadStatus: "FULL_READ",
+      eleanorReadStatus: "FULL_READ",
       scannerActionability: "WAIT_FOR_CONFIRMATION",
       userMessage: "",
       internalReasonCode: "",

@@ -22,7 +22,7 @@ Do not change live execution.
 Do not change Governance.
 Do not change permissions.
 Do not change MT5 bridge behavior.
-Do not change Ruby.
+Do not change Eleanor.
 Do not place trades.
 Do not use Demo/Paper/fake data.
 
@@ -49,7 +49,7 @@ Find all components/files rendering these banners, especially on:
 1. Scanner
 2. Cockpit
 3. Trade page
-4. Ruby panel
+4. Eleanor panel
 5. More/settings
 6. Admin/live pages
 7. Mobile layout header
@@ -161,7 +161,7 @@ Run:
 5. Scanner desktop smoke test
 6. Cockpit live status smoke test
 7. Trade page live status smoke test
-8. Ruby panel live status smoke test
+8. Eleanor panel live status smoke test
 9. no duplicate live banner test
 10. no Demo/Paper active-flow copy test
 11. route containment test

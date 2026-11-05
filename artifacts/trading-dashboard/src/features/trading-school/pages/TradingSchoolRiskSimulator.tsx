@@ -1,12 +1,12 @@
 /**
  * Trading School — Risk Simulator. A beginner risk calculator: enter account
  * size, risk %, stop and target distance; see dollar risk/reward, R:R, an
- * approximate position size, a too-high-risk warning, and Ruby's plain note.
+ * approximate position size, a too-high-risk warning, and Eleanor's plain note.
  * Pure education math (lib/progress calcRiskSim) — NOT connected to live
  * execution. Renders inside AppLayout.
  */
 import { useMemo, useState, type ChangeEvent } from "react";
-import { RubyAvatar } from "@/components/ruby/RubyAvatar";
+import { EleanorAvatar } from "@/components/eleanor/EleanorAvatar";
 import { calcRiskSim } from "../lib/progress";
 import { SchoolPageHeader, SchoolDisclaimer } from "../components/SchoolUI";
 import { Calculator, AlertTriangle } from "lucide-react";
@@ -81,12 +81,12 @@ export default function TradingSchoolRiskSimulator() {
             </div>
           )}
 
-          <div className="rounded-2xl border border-ruby/25 bg-card p-4">
+          <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
             <div className="mb-2 flex items-center gap-2.5">
-              <RubyAvatar state={r.tooHighRisk ? "riskWarning" : "analyzingMarket"} size="md" ariaHidden />
+              <EleanorAvatar state={r.tooHighRisk ? "riskWarning" : "analyzingMarket"} size="md" ariaHidden />
               <div className="text-sm font-semibold text-foreground">{name}'s read</div>
             </div>
-            <p className="text-sm text-txt-secondary">{r.rubyNote}</p>
+            <p className="text-sm text-txt-secondary">{r.eleanorNote}</p>
           </div>
         </div>
       </div>

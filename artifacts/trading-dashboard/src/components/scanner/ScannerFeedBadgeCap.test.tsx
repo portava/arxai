@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import type { ScannerTruth } from "@/lib/scannerTruth";
-import { resolveRubyReadPanelState } from "@/lib/rubyReadPanelState";
+import { resolveEleanorReadPanelState } from "@/lib/eleanorReadPanelState";
 import {
   feedConfidence,
   capConfidence,
@@ -14,15 +14,15 @@ import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 
 // ── Scanner feed-badge cap honesty (Task #511) ──────────────────────────────
 //
-// Task #506 made the Scanner "Ruby Chart Read" panel cap its FeedConfidenceBadge
+// Task #506 made the Scanner "Eleanor Chart Read" panel cap its FeedConfidenceBadge
 // by the ONE resolved scanner-truth verdict. This guard locks the SAME honesty
 // for every place the same badge is reachable from the Scanner chart panel and
 // the per-signal scalp cards: the badge there must never claim Clean/AI when the
 // resolved truth for that symbol/timeframe is downgraded or still unresolved.
 //
 // In the current code BOTH surfaces reach FeedConfidenceBadge exclusively through
-// <RubyChartRead> (ScannerChartPanel renders it under the chart; ScalpSignalCard
-// renders it under "Ask Ruby"), and that component caps the badge with
+// <EleanorChartRead> (ScannerChartPanel renders it under the chart; ScalpSignalCard
+// renders it under "Ask Eleanor"), and that component caps the badge with
 // `aiUsableResolved={panel.badgeAiUsable}` derived from the shared useScannerTruth
 // verdict. The Scanner chart header itself uses the honest copy-fixed
 // ChartFeedStatusBadge (Task #510), which never reads "Clean · AI".
@@ -38,7 +38,7 @@ import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 //      an honest DOM (no Clean/AI when downgraded/unresolved).
 //   4. A structural guard: neither ScannerChartPanel nor ScalpSignalCard renders
 //      a raw, uncapped FeedConfidenceBadge — they route it through the capped
-//      RubyChartRead, which always passes `aiUsableResolved`.
+//      EleanorChartRead, which always passes `aiUsableResolved`.
 
 afterEach(() => cleanup());
 
@@ -72,10 +72,10 @@ type Level = ScannerTruth["analysis"]["level"];
 const DOWNGRADED: Level[] = ["limited", "historical_only", "blocked"];
 
 // The exact verdict each surface feeds the badge: derived from the shared
-// useScannerTruth resolution via resolveRubyReadPanelState BEFORE any read has
-// run (read: null), which is what RubyChartRead passes as `badgeAiUsable`.
+// useScannerTruth resolution via resolveEleanorReadPanelState BEFORE any read has
+// run (read: null), which is what EleanorChartRead passes as `badgeAiUsable`.
 function badgeVerdictForLevel(level: Level | null): boolean | null {
-  return resolveRubyReadPanelState({
+  return resolveEleanorReadPanelState({
     truthLevel: level,
     truthReason: null,
     aiUsableProp: undefined,
@@ -171,7 +171,7 @@ describe("Scanner feed badge cap — rendered badge is capped (Task #511)", () =
 // ── Structural guard: the named surfaces never reintroduce an uncapped badge ──
 //
 // The honesty above only holds because both surfaces reach the badge through the
-// capped RubyChartRead. If a future edit drops a raw <FeedConfidenceBadge> into
+// capped EleanorChartRead. If a future edit drops a raw <FeedConfidenceBadge> into
 // either file (the original Task #511 regression), it would bypass the cap. This
 // guard reads the real source and fails the build on that reintroduction.
 describe("Scanner feed badge cap — structural routing guard (Task #511)", () => {
@@ -184,28 +184,28 @@ describe("Scanner feed badge cap — structural routing guard (Task #511)", () =
   ];
 
   for (const { file, label } of NAMED_SURFACES) {
-    it(`${label} routes feed confidence through the capped RubyChartRead, not a raw badge`, () => {
+    it(`${label} routes feed confidence through the capped EleanorChartRead, not a raw badge`, () => {
       const src = read(file);
       // No direct <FeedConfidenceBadge ...> JSX (which would be uncapped here).
       expect(
         /<FeedConfidenceBadge/.test(src),
-        `${file} must not render FeedConfidenceBadge directly — route it through the capped RubyChartRead`,
+        `${file} must not render FeedConfidenceBadge directly — route it through the capped EleanorChartRead`,
       ).toBe(false);
-      // It DOES render the capped RubyChartRead (the only sanctioned path to the
+      // It DOES render the capped EleanorChartRead (the only sanctioned path to the
       // badge on these surfaces).
       expect(
-        /<RubyChartRead/.test(src),
-        `${file} must render RubyChartRead (the capped feed-badge path)`,
+        /<EleanorChartRead/.test(src),
+        `${file} must render EleanorChartRead (the capped feed-badge path)`,
       ).toBe(true);
     });
   }
 
-  it("RubyChartRead caps the badge with a resolved verdict (aiUsableResolved)", () => {
-    const src = read("RubyChartRead.tsx");
+  it("EleanorChartRead caps the badge with a resolved verdict (aiUsableResolved)", () => {
+    const src = read("EleanorChartRead.tsx");
     expect(/<FeedConfidenceBadge/.test(src)).toBe(true);
     expect(
       /<FeedConfidenceBadge[^>]*aiUsableResolved=/.test(src),
-      "RubyChartRead must pass aiUsableResolved to FeedConfidenceBadge",
+      "EleanorChartRead must pass aiUsableResolved to FeedConfidenceBadge",
     ).toBe(true);
   });
 });

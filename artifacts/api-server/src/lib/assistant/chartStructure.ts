@@ -1,7 +1,7 @@
-// Ruby chart-read — deterministic market-structure analysis.
+// Eleanor chart-read — deterministic market-structure analysis.
 //
 // SAFETY / DESIGN:
-//  - NO LLM. Pure, deterministic, free, predictable. Ruby can never
+//  - NO LLM. Pure, deterministic, free, predictable. Eleanor can never
 //    "hallucinate a guaranteed trade". Output is hedged and conditional.
 //  - NEVER fabricates prices. All levels are derived from the REAL candles
 //    passed in. If there is not enough candle history, we say so honestly

@@ -14,7 +14,7 @@ Do not change:
 - kill switches
 - admin approval rules
 - scanner logic
-- Ruby intelligence
+- Eleanor intelligence
 - login page design
 - trade execution flow
 - slot allocation formulas
@@ -60,7 +60,7 @@ For Andraie/admin-capable accounts:
   - block direct admin route access
   - block admin-only API calls server-side
   - show only regular user dashboard/tools
-  - show only Andraie’s own user-level trades, slot metrics, activity, ledger, scanner, Ruby, risk, etc.
+  - show only Andraie’s own user-level trades, slot metrics, activity, ledger, scanner, Eleanor, risk, etc.
   - never show master MT5 account balance
   - never show all-user metrics
   - never show admin audit/reconciliation controls

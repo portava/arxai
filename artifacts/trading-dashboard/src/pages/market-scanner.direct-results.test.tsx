@@ -133,7 +133,7 @@ vi.mock("@/components/ui/select", () => ({
 
 // ---- Heavy scanner / live child surfaces → inert stubs ---------------------
 vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: () => null }));
-vi.mock("@/components/scanner/RubySetupReason", () => ({ RubySetupReason: () => null }));
+vi.mock("@/components/scanner/EleanorSetupReason", () => ({ EleanorSetupReason: () => null }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
 vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => null }));
 vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
@@ -145,15 +145,15 @@ vi.mock("@/components/scanner/SymbolExplorer", () => ({ SymbolExplorer: () => nu
 vi.mock("@/components/scanner/ScannerChartPanel", () => ({ ScannerChartPanel: () => null }));
 vi.mock("@/components/live/TradeHealthPanel", () => ({ TradeHealthPanel: () => null }));
 vi.mock("@/components/scanner/ScannerHeaderSummary", () => ({ ScannerHeaderSummary: () => null }));
-vi.mock("@/components/scanner/RubyScalpFocusCard", () => ({ RubyScalpFocusCard: () => null }));
-vi.mock("@/components/scanner/RubyScalpRanking", () => ({ RubyScalpRanking: () => null }));
-vi.mock("@/components/scanner/RubyMarketReadCard", () => ({ RubyMarketReadCard: () => null }));
+vi.mock("@/components/scanner/EleanorScalpFocusCard", () => ({ EleanorScalpFocusCard: () => null }));
+vi.mock("@/components/scanner/EleanorScalpRanking", () => ({ EleanorScalpRanking: () => null }));
+vi.mock("@/components/scanner/EleanorMarketReadCard", () => ({ EleanorMarketReadCard: () => null }));
 vi.mock("@/components/scanner/TimingIntelligenceCard", () => ({ TimingIntelligenceCard: () => null }));
 vi.mock("@/components/scanner/ScannerReadGate", () => ({ ScannerReadGate: () => null }));
 vi.mock("@/components/scanner/BroadScanOpportunityMap", () => ({ BroadScanOpportunityMap: ({ onPick, marketGroup }: { onPick: (symbol: string) => void; marketGroup: string }) => { pickCallbacks.push(onPick); mapGroups.push(marketGroup); return null; } }));
-vi.mock("@/components/scanner/RubyScalpBuilder", () => ({ RubyScalpBuilder: () => null }));
-vi.mock("@/components/scanner/RubyScalpBasketPanel", () => ({ RubyScalpBasketPanel: () => null }));
-vi.mock("@/components/scanner/RubyScalpReviewPanel", () => ({ RubyScalpReviewPanel: () => null }));
+vi.mock("@/components/scanner/EleanorScalpBuilder", () => ({ EleanorScalpBuilder: () => null }));
+vi.mock("@/components/scanner/EleanorScalpBasketPanel", () => ({ EleanorScalpBasketPanel: () => null }));
+vi.mock("@/components/scanner/EleanorScalpReviewPanel", () => ({ EleanorScalpReviewPanel: () => null }));
 
 
 import MarketScanner from "./market-scanner";

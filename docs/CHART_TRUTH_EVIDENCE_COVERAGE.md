@@ -22,7 +22,7 @@ Cached legacy sub-scores without evidence status cannot prove a PASS.
 Broker comparison provenance (2026-10-27): the comparison now carries an
 additive `quoteBinding` (`BOUND | MISMATCH | STALE | UNVERIFIED` plus every
 failed reason). Symbol Mirror Accuracy earns points, the handshake
-`BrokerPriceAlignment` can PASS and Ruby's trust line can say "Mirror synced" or
+`BrokerPriceAlignment` can PASS and Eleanor's trust line can say "Mirror synced" or
 "Mirror drifting" only when the quote is BOUND: same observed provider, bridge
 and owner as the served chart series, owner equal to the requesting user, no
 observed environment/broker-symbol contradiction (unknown on either side is not
@@ -31,17 +31,17 @@ quote freshness budget and not more than 5 s in the future (the shared
 `MAX_FUTURE_CLOCK_SKEW_MS` clock-skew allowance; before the 2026-10-27 review
 follow-up an EA clock 1 ms ahead read `QUOTE_TIME_FUTURE` permanently). The chart producer keeps the
 served series' router provenance off the wire (non-enumerable) for this check.
-`/me/chart/intelligence` and Ruby's chart context (`buildRubyChartContext`,
-used by Ruby's draw-setup/structural reads) share one enrichment,
+`/me/chart/intelligence` and Eleanor's chart context (`buildEleanorChartContext`,
+used by Eleanor's draw-setup/structural reads) share one enrichment,
 `enrichStateWithUserBrokerQuote` (`userBrokerAlignment.ts`). It tries the live
 MT5 quote pushed by the series' own bridge (only when that bridge belongs to the
 requesting user), then the user's `arx_symbol_specs` row, which binds only from
-an EA-reported `lastTickTime` on the same bridge. Ruby's `VERIFIED` basis and
+an EA-reported `lastTickTime` on the same bridge. Eleanor's `VERIFIED` basis and
 the draft read's `feedUsable` require the handshake `sourceOverall` (candle-data
 rollup, renderer telemetry excluded) to PASS, which needs a measured, BOUND
 broker comparison: with no quote, or only an unbound one (another account's
-bridge, no observed tick time, stale), Ruby stays non-VERIFIED. The earlier gap
-where Ruby's per-user path compared the spec row's bid/ask without checking its
+bridge, no observed tick time, stale), Eleanor stays non-VERIFIED. The earlier gap
+where Eleanor's per-user path compared the spec row's bid/ask without checking its
 quote age or account provenance is closed.
 Otherwise the sub-metric is null and its detail names the reasons (for example
 `BRIDGE_MISMATCH`, `QUOTE_STALE`, `QUOTE_TIME_UNKNOWN`). An observed failed

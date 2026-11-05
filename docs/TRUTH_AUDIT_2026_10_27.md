@@ -1,6 +1,6 @@
 # Truth system audit — 27 October 2026
 
-Adversarial audit of the Truth path: composer, snapshot, feed freshness, news/calendar truth, the frontend evidence cap and the Ruby market read card. Each confirmed defect below has a regression test that failed against base `5767ec5` and passes after the fix. Every fix fails closed and only downgrades. No execution, gate, broker, database or trading-permission behaviour was changed.
+Adversarial audit of the Truth path: composer, snapshot, feed freshness, news/calendar truth, the frontend evidence cap and the Eleanor market read card. Each confirmed defect below has a regression test that failed against base `5767ec5` and passes after the fix. Every fix fails closed and only downgrades. No execution, gate, broker, database or trading-permission behaviour was changed.
 
 Already fixed and documented issues (`TRUTH_EVIDENCE_INTEGRITY_2026_10_26.md`, `TRUTH_COMPONENT_EVIDENCE.md`, `CHART_TRUTH_EVIDENCE_COVERAGE.md`) were not re-reported.
 
@@ -57,11 +57,11 @@ Already fixed and documented issues (`TRUTH_EVIDENCE_INTEGRITY_2026_10_26.md`, `
 - **Repro:** `artifacts/trading-dashboard/src/lib/truthAudit.test.ts`. Five cases failed before the fix ("server … stays at least as degraded").
 - **Fix:** the capped state is now the worse of the server state and the chart-derived state.
 
-### 5. An expired Ruby market read stayed actionable indefinitely
+### 5. An expired Eleanor market read stayed actionable indefinitely
 
-- **Where:** `artifacts/trading-dashboard/src/components/scanner/RubyMarketReadCard.tsx`.
+- **Where:** `artifacts/trading-dashboard/src/components/scanner/EleanorMarketReadCard.tsx`.
 - **Failure:** the card fetches `/me/market-edge` once, with no polling and no refetch on focus. Its gate only reflected chart freshness. With a live chart, a read past its `expiresAt` kept showing its best action, levels, stage, bias and quality as current. Its "updated Ns ago" label is anchored to chart data time, so the expired read looked fresh.
-- **Repro:** `artifacts/trading-dashboard/src/components/scanner/RubyMarketReadCard.expiry.test.tsx`. Six cases failed before the fix:
+- **Repro:** `artifacts/trading-dashboard/src/components/scanner/EleanorMarketReadCard.expiry.test.tsx`. Six cases failed before the fix:
   - past `expiresAt`
   - missing `expiresAt`
   - malformed `expiresAt`
@@ -72,7 +72,7 @@ Already fixed and documented issues (`TRUTH_EVIDENCE_INTEGRITY_2026_10_26.md`, `
   - the read's `expiresAt` is missing, malformed or reached (rechecked by the existing `useEvidenceDeadline`, with no new polling);
   - the read's freshness or lifecycle is expired, stale or invalid. This uses the same unusable states as the server snapshot.
 
-  The best-action row reads "Not actionable — This Ruby read has expired — refresh for a current read." The existing card fixture gained the schema-required `expiresAt` and `validForSeconds` fields.
+  The best-action row reads "Not actionable — This Eleanor read has expired — refresh for a current read." The existing card fixture gained the schema-required `expiresAt` and `validForSeconds` fields.
 
 ## Unconfirmed suspicions (not fixed; no reproducing test)
 
@@ -108,7 +108,7 @@ All runs are offline (`DATABASE_URL=postgres://nobody@127.0.0.1:1/none`) on Node
 | `test:forming-tip-source-gate` | 17/17 |
 | `test:trading-economics-calendar` | 15/15 |
 | `test:market-heat-news-honesty` | 7/7 |
-| `test:ruby-news-risk-honesty` | 9/9 |
+| `test:eleanor-news-risk-honesty` | 9/9 |
 | `test:history-evidence` | 29/29 |
 | `test:fast-unit` | 454 pass, 2 fail |
 
