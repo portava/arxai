@@ -38,6 +38,14 @@ const DEFAULTS: { openaiModel: string; voiceInstructions: string } = {
 
 let cache: VoiceAdminSettings | null = null;
 
+// Rows seeded before the assistant was renamed still say "Speak like Ruby"
+// (the DB column default too). The voice persona must use the assistant's
+// name, so the old codename is swapped on read; nothing is rewritten in the
+// table until an admin saves the settings again.
+export function withAssistantNameInVoiceInstructions(text: string): string {
+  return text.replace(/\bRuby\b/g, DEFAULT_ASSISTANT_NAME);
+}
+
 export async function getVoiceAdminSettings(): Promise<VoiceAdminSettings> {
   if (cache) return cache;
   const rows = await db.select().from(arxVoiceAdminSettingsTable).where(eq(arxVoiceAdminSettingsTable.id, 1)).limit(1);
@@ -51,7 +59,7 @@ export async function getVoiceAdminSettings(): Promise<VoiceAdminSettings> {
   }
   cache = {
     openaiModel: row.openaiModel,
-    voiceInstructions: row.voiceInstructions,
+    voiceInstructions: withAssistantNameInVoiceInstructions(row.voiceInstructions),
     updatedAt: row.updatedAt,
     updatedByUserId: row.updatedByUserId ?? null,
   };

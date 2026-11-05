@@ -10,6 +10,7 @@
 
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { db, userSettingsTable } from "@workspace/db";
 import { listTTSDiagnostics, lastTTSDiagnostic, recordTTSDiagnostic } from "../lib/ttsDiagnostics.js";
 import { logger } from "../lib/logger.js";
@@ -162,7 +163,7 @@ router.post("/admin/ruby-voice/test", async (req, res) => {
   const voiceId  = String(req.body?.voiceId ?? "").trim();
   const phrase   = (typeof req.body?.phrase === "string" && req.body.phrase.trim().length > 0)
     ? String(req.body.phrase).slice(0, 300)
-    : "Ruby voice test successful. I'm online and ready.";
+    : `${DEFAULT_ASSISTANT_NAME} voice test successful. I'm online and ready.`;
 
   if (!["openai", "elevenlabs", "auto"].includes(provider)) {
     return res.status(400).json({ ok: false, error: "BAD_PROVIDER" });

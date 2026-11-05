@@ -69,8 +69,8 @@ export function detectConflictsAndCohesion(
     conflicts.push({
       code: "RUBY_SCANNER_DISAGREE",
       severity: "warning",
-      systems: ["Ruby", "Scanner"],
-      detail: `Ruby bias ${rubyBias} disagrees with scanner bias ${scannerBias}.`,
+      systems: ["Eleanor", "Scanner"],
+      detail: `Eleanor bias ${rubyBias} disagrees with scanner bias ${scannerBias}.`,
     });
   }
 
@@ -79,8 +79,8 @@ export function detectConflictsAndCohesion(
     conflicts.push({
       code: "RUBY_CHART_DISAGREE",
       severity: "warning",
-      systems: ["Ruby", "SmartChart"],
-      detail: `Ruby bias ${rubyBias} disagrees with chart bias ${snapshot.smartChart?.bias}.`,
+      systems: ["Eleanor", "SmartChart"],
+      detail: `Eleanor bias ${rubyBias} disagrees with chart bias ${snapshot.smartChart?.bias}.`,
     });
   }
 
@@ -128,8 +128,8 @@ export function detectConflictsAndCohesion(
     conflicts.push({
       code: "SYMBOL_CONTEXT_DRIFT",
       severity: "info",
-      systems: ["Scanner", "SmartChart", "Ruby"],
-      detail: "Selected symbol differs across scanner / chart / Ruby surfaces.",
+      systems: ["Scanner", "SmartChart", "Eleanor"],
+      detail: "Selected symbol differs across scanner / chart / Eleanor surfaces.",
     });
   }
 

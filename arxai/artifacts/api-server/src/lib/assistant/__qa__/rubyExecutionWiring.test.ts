@@ -52,14 +52,14 @@ test("evaluator: feed-scoped, bound price, fire-time permission re-check, policy
 test("tool list has the read-only watches tool and still no order tool; prompt names the direct-command path", async () => {
   const { TOOL_DEFINITIONS } = await import("../tools.js");
   const names: string[] = TOOL_DEFINITIONS.map((t) => t.name);
-  assert.ok(names.includes("getMyRubyWatches"));
+  assert.ok(names.includes("getMyWatches"));
   assert.ok(!names.includes("requestLiveOrder") && !names.includes("requestDemoOrder"));
   const { buildArxAssistantSystemPrompt } = await import("../systemPrompt.js");
   const p = buildArxAssistantSystemPrompt("Ruby");
   assert.match(p, /HAVE NO ORDER-EXECUTION TOOL/);
   assert.match(p, /"monitor my EURUSD"/);
   assert.match(p, /alert up to 3 times on reversal evidence/);
-  assert.match(p, /getMyRubyWatches/);
+  assert.match(p, /getMyWatches/);
 });
 
 test("sweep 2026-11-04: watch arming is live-only, permission-checked like the pipeline, confirmed before insert, and expires", async () => {

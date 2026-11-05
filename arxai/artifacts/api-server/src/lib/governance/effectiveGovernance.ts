@@ -19,6 +19,7 @@
 // elsewhere and are reported here only as `brokerEnforced`/`SECURITY`/
 // `TECHNICAL` metadata, never toggled.
 
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -189,7 +190,7 @@ export async function getEffectiveTradingGovernance(
       gov("enforceMarketHoursAppCheck", "App Market-Hours Check", g.enforceMarketHoursAppCheck, g.enforceMarketHoursAppCheck, src, audience),
       gov("requireSpreadLimit", "Spread Limit", g.requireSpreadLimit, g.spreadLimitPoints, src, audience),
       gov("requireScannerSignal", "Require Scanner Signal", g.requireScannerSignal, g.requireScannerSignal, src, audience),
-      gov("requireRubyExplanation", "Require Ruby Explanation", g.requireRubyExplanation, g.requireRubyExplanation, src, audience),
+      gov("requireRubyExplanation", `Require ${DEFAULT_ASSISTANT_NAME} Explanation`, g.requireRubyExplanation, g.requireRubyExplanation, src, audience),
       gov("requireBacktest", "Require Backtest", g.requireBacktest, g.requireBacktest, src, audience),
       gov("requireNewsCheck", "Require News Check", g.requireNewsCheck, g.requireNewsCheck, src, audience),
       gov("requireRiskReward", "Require Risk/Reward", g.requireRiskReward, g.requireRiskReward, src, audience),

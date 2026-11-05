@@ -5,6 +5,11 @@ description: Where user-facing "Ruby"→resolved-name copy lives, how the source
 
 # Assistant-name branding guard scope
 
+> Superseded in part (2026-11-05): the name scan now covers admin/operator
+> surfaces as well, uses the TypeScript AST (JSX text + string/template
+> literals only), and allowlists only the operator-funded disclosure and the
+> voice-persona DB default. The allowlist reasoning below is historical.
+
 The user-facing assistant-name guard (`scripts/src/ci/check-no-internal-names-user-ui.ts`)
 is a **source scan** for the literal codename in user-facing copy. Getting its
 scan roots wrong = silent leaks.

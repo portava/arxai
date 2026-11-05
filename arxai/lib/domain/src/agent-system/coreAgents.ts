@@ -7,6 +7,7 @@
 // influence, exactly per the Constitution (laws 4 & 1). "Advisory influence"
 // means weight on ranking/visibility only — NEVER the live-execution path.
 
+import { DEFAULT_ASSISTANT_NAME } from "../assistant-name/index";
 export interface CoreAgentDef {
   agentKey: string;
   name: string;
@@ -39,7 +40,7 @@ const F = [...UNIVERSAL_FORBIDDEN];
 export const CORE_AGENTS: readonly CoreAgentDef[] = [
   // ── Lead ────────────────────────────────────────────────────────────────
   {
-    agentKey: "RUBY", name: "Ruby", role: "Lead Desk Manager",
+    agentKey: "RUBY", name: DEFAULT_ASSISTANT_NAME, role: "Lead Desk Manager",
     department: "RUBY_HOUSEHOLD", parentAgentKey: null, mapsToCouncilAgentId: null,
     missionStatement: "Lead the trading desk and communicate the team's reasoning to the user in plain English. Communication authority only — no trade authority.",
     allowedTasks: ["summarize_consensus", "explain_to_user", "coordinate_agents", "request_child_agent"],

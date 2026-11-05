@@ -177,7 +177,7 @@ export const HANDSHAKE_DEFINITIONS: Record<HandshakeType, HandshakeDefinition> =
   // and the 16-gate live pipeline remains the sole authority.
   RUBY_EXECUTION: {
     type: "RUBY_EXECUTION",
-    label: "Ruby Execution Readiness",
+    label: "Eleanor Execution Readiness",
     layers: [
       { layer: "MARKET_DATA", required: true },
       { layer: "BROKER_BRIDGE", required: true },

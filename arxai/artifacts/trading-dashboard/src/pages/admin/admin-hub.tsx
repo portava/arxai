@@ -198,13 +198,13 @@ const ADMIN_TABS: AdminTabDef[] = [
           { href: "/admin/chart-brain-benchmark", label: "Chart Brain Benchmark", desc: "Real receipt/outcome/governance scorecard" },
           { href: "/admin/agent-ecosystem", label: "Agent Ecosystem", desc: "Advisory agent team, family tree, household reports" },
           { href: "/self-trade-ai", label: "Self-Trade AI", desc: "Funded autonomous trading-agent fleet — control room" },
-          { href: "/admin/ruby-quality", label: "Ruby Signal Quality", desc: "Outcome learning, missed-opportunity replay and audited tuning" },
+          { href: "/admin/eleanor-quality", label: "{assistant} Signal Quality", desc: "Outcome learning, missed-opportunity replay and audited tuning" },
           { href: "/admin/ai-fix-agent", label: "Backend Fix Agent", desc: "Advisory Claude diagnosis and dry-run patch proposals for backend errors" },
           { href: "/admin/timing-brain-snapshots", label: "Timing Brain Snapshots", desc: "Persisted heat-snapshot history per symbol — grade, entry permission, heat" },
           { href: "/admin/learning-versions", label: "Learning Versions", desc: "Learning model versions and lifecycle" },
           { href: "/learning", label: "Learning Center", desc: "Learning progress and history" },
           { href: "/brain", label: "Brain Analysis", desc: "Decision and reasoning analysis" },
-          { href: "/admin/ruby-voice", label: "Ruby Voice Settings", desc: "Assistant voice configuration" },
+          { href: "/admin/eleanor-voice", label: "{assistant} Voice Settings", desc: "Assistant voice configuration" },
         ],
       },
     ],
@@ -255,7 +255,7 @@ function LinkCard({ link }: { link: AdminLink }) {
         data-testid={`admin-hub-link-${link.href.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`}
       >
         <span className="min-w-0">
-          <span className="block text-sm font-medium text-foreground">{link.label.replace(/Ruby/g, name)}</span>
+          <span className="block text-sm font-medium text-foreground">{link.label.replace("{assistant}", name)}</span>
           <span className="mt-0.5 block text-xs text-txt-muted">{link.desc}</span>
         </span>
         <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-txt-muted transition-colors group-hover:text-primary" aria-hidden="true" />

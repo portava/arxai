@@ -4,6 +4,7 @@
 // environment variable. It NEVER reads, returns, or logs the value itself.
 // Suitable for boot-time logs and admin readiness panels.
 
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
 
 export type EnvScope = "core" | "ai" | "market" | "bridge" | "admin" | "safety";
@@ -33,7 +34,7 @@ const SPECS: EnvSpec[] = [
 
   { varName: "TWELVEDATA_API_KEY", required: false, scope: "market", note: "OHLC / market data provider. Without it the scanner returns an honest empty list." },
 
-  { varName: "OPENAI_API_KEY", required: false, scope: "ai", note: "Ruby assistant LLM. When missing, Ruby returns a safe canned response." },
+  { varName: "OPENAI_API_KEY", required: false, scope: "ai", note: `${DEFAULT_ASSISTANT_NAME} assistant LLM. When missing, ${DEFAULT_ASSISTANT_NAME} returns a safe canned response.` },
 
   { varName: "MT5_BRIDGE_TOKEN", required: false, scope: "bridge", note: "LEGACY server-wide bridge token. Now REJECTED on every EA endpoint — should NOT be configured. Per-user tokens are the only accepted shape." },
 

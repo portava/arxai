@@ -12,11 +12,11 @@
 //   3. Specific forbidden internal token strings appearing as string
 //      literals in JSX (heuristic: token appears NOT in a `from "..."`
 //      import line and NOT as an object property key).
-//   4. The raw internal assistant codename "Ruby" appearing in
-//      user-facing copy (JSX text or string literals) anywhere in the
-//      normal-user frontend, the user-facing API routes, OR the shared
-//      backend library that assembles that copy
-//      (`artifacts/api-server/src/lib`). Task #809 renamed the assistant
+//   4. The old assistant codename "Ruby" appearing in copy (JSX text or
+//      string literals) anywhere in the frontend, the API routes, the
+//      backend library, the domain library or the DB schema — admin and
+//      operator surfaces included (2026-11-05: "rename it to Eleanor app
+//      wide"). Task #809 renamed the assistant
 //      to "Eleanor" for users; every user-facing mention must resolve the
 //      display name at runtime (frontend `useAssistantName().name`,
 //      backend `getAssistantDisplayName()`).
@@ -25,8 +25,8 @@
 //      and are NOT flagged — the scan is comment/string-aware and only
 //      looks at the standalone word `Ruby`, never glued identifiers
 //      like `RubyState` / `allowRuby` / `ruby_recommendation`.
-//      Admin/operator/dev-only library surfaces keep the internal name
-//      and are listed in ASSISTANT_LIB_INTERNAL_ALLOWLIST below.
+//      The few pinned texts that cannot change for naming alone are
+//      listed in ASSISTANT_LIB_INTERNAL_ALLOWLIST below.
 //
 // This is intentionally narrow. It is a regression guard, not a
 // stylistic enforcer — the goal is to fail loudly when a leak of the
@@ -34,6 +34,7 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { type CheckResult } from "./_lib.js";
 
 const NAME = "no-internal-names-user-ui";
@@ -157,44 +158,26 @@ const ASSISTANT_SCAN_ROOTS = [
   // (e.g. signal-intelligence market-read sentences surfaced at
   // GET /me/market-edge). Include it so a copy regression there is caught.
   "lib/domain/src",
+  // DB schema defaults can become stored copy (voice persona, seeded labels).
+  "lib/db/src",
 ];
 
-// Admin/operator/dev-only LIBRARY surfaces where the internal name "Ruby"
-// legitimately survives (the brief keeps admin/operator/dev naming
-// internal). Each entry is a specific file path fragment with the surface
-// audience noted. Kept deliberately narrow (exact files, not directories)
-// so a genuine user-facing leak elsewhere in lib still fails the guard.
+// Files where the old codename "Ruby" may still appear in a string. The
+// assistant is "Eleanor" everywhere a person can see or hear it, admin and
+// operator pages included (owner request, 2026-11-05), so this list is only
+// for text that cannot change for naming alone. Exact files, not directories.
 const ASSISTANT_LIB_INTERNAL_ALLOWLIST = [
-  "/lib/chart/benchmarkScore.ts",          // admin only — GET /admin/chart/benchmark labels
-  "/lib/startup/envChecklist.ts",          // operator/dev — startup env-var checklist notes
-  "/lib/governance/effectiveGovernance.ts",// admin/owner — governance control labels
-  "/lib/live/operatorFundedPilotConfig.ts",// operator — funded-pilot config disclosure
-  // Internal command PARSER (parses user INPUT, emits no user-facing prose;
-  // its only "Ruby" is a comment). Its regex-heavy body is not fully
-  // modelled by the comment/string tokenizer, so scanning it would false-
-  // positive; allowlisted as an internal, non-copy-emitting surface.
-  "/lib/assistant/parseTradeCommand.ts",
-  // ── Pure domain library (lib/domain/src) — internal registries + admin/
-  //    operator diagnostics. The user-facing projections built ABOVE these
-  //    (e.g. AACI /me endpoints, meAssistant Ruby block) return only clean
-  //    labels/tone/userFacingExplanation and never these detail strings. ──
-  "/domain/src/aaci/conflicts.ts",   // admin/operator — AaciConflict.detail is documented "admin diagnostics"; systems[] are typed AaciHandshakeSystem identifiers
-  "/domain/src/aaci/types.ts",       // internal — "Ruby" is a typed AaciHandshakeSystem union member (identifier, not copy)
-  "/domain/src/agent-system/constitution/agentConstitution.ts", // internal agent-governance registry text
-  "/domain/src/agent-system/coreAgents.ts",                     // internal agent registry (agentKey/name pairs)
-  "/domain/src/handshake/handshake.types.ts",                   // admin-monitor label→code map
-  "/domain/src/handshake/handshakeRegistry.ts",                 // admin-monitor readiness labels
+  // Operator-funded pilot disclosure: the text is pinned to
+  // OPERATOR_FUNDED_DISCLOSURE_VERSION and accepted by users; rewording it
+  // needs a version bump and fresh acceptances, not a rename.
+  "/lib/live/operatorFundedPilotConfig.ts",
+  // DB column default for the voice persona. Changing a default is a schema
+  // change (drizzle push); the text is swapped to the assistant's name on read
+  // in lib/voiceAdminSettings.ts instead.
+  "db/src/schema/arxVoiceAdminSettings.ts",
 ];
 
-// Backend user-facing routes: admin/operator/dev route files keep the
-// internal name, mirroring the frontend admin exclusions above.
-const ASSISTANT_SCAN_EXCLUDE = [
-  ...ADMIN_DEV_EXCLUDE,
-  ...ASSISTANT_LIB_INTERNAL_ALLOWLIST,
-  "/routes/admin",
-  "/routes/operator",
-  "/routes/dev",
-];
+const ASSISTANT_SCAN_EXCLUDE = [...ASSISTANT_LIB_INTERNAL_ALLOWLIST];
 
 // Exported for the regression test: proves the admin/operator/dev
 // library allowlist excludes exactly the intended files and nothing else.
@@ -215,7 +198,13 @@ function isTestFile(file: string): boolean {
 // A deliberate name-swap line (e.g. `.replace(/Ruby/g, name)`) is the
 // mechanism that fixes leaks, not a leak itself.
 function isNameSwapLine(rawLine: string): boolean {
-  return rawLine.includes(".replace(/Ruby/") || rawLine.includes("/Ruby/g");
+  return (
+    rawLine.includes(".replace(/Ruby/") ||
+    rawLine.includes("/Ruby/g") ||
+    // A line that matches the OLD stored value in order to replace it (e.g.
+    // renaming a seeded row) carries this marker comment.
+    rawLine.includes("legacy-codename:")
+  );
 }
 
 /**
@@ -264,23 +253,50 @@ export function stripComments(src: string): string {
 
 /**
  * Return `path:line:col: <trimmed source line>` for every standalone
- * `Ruby` in user-facing copy (after comments are stripped). Pure — takes
- * source text, does no IO. Exported for the regression test.
+ * `Ruby` in human-readable copy. Uses the TypeScript parser so only string
+ * literals, template text and JSX text are inspected: comments (including
+ * JSX `{/* … *\/}` comments) and identifiers are never flagged, and an
+ * apostrophe in JSX text cannot derail the scan the way the character
+ * tokenizer could. Pure — takes source text, does no IO. Exported for the
+ * regression test.
  */
 export function findAssistantNameLeaksInSource(path: string, src: string): string[] {
-  const stripped = stripComments(src);
-  const strippedLines = stripped.split("\n");
   const rawLines = src.split("\n");
+  const kind = /\.tsx$/.test(path) || /<[A-Za-z][^>]*>/.test(src) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(path, src, ts.ScriptTarget.Latest, true, kind);
   const hits: string[] = [];
-  for (let i = 0; i < strippedLines.length; i++) {
-    const rawLine = rawLines[i] ?? "";
-    if (isNameSwapLine(rawLine)) continue;
+  const inspect = (node: ts.Node, text: string, start: number) => {
     const re = /\bRuby\b/g;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(strippedLines[i])) !== null) {
-      hits.push(`${path}:${i + 1}:${m.index + 1}: ${rawLine.trim().slice(0, 160)}`);
+    while ((m = re.exec(text)) !== null) {
+      const { line, character } = sf.getLineAndCharacterOfPosition(start + m.index);
+      const rawLine = rawLines[line] ?? "";
+      if (isNameSwapLine(rawLine)) continue;
+      hits.push(`${path}:${line + 1}:${character + 1}: ${rawLine.trim().slice(0, 160)}`);
     }
-  }
+    void node;
+  };
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node) ||
+      ts.isJsxText(node)
+    ) {
+      // Skip import/export module specifiers ("./ruby.js").
+      if (!(ts.isStringLiteral(node) && (ts.isImportDeclaration(node.parent) || ts.isExportDeclaration(node.parent)))) {
+        // getStart() points at the opening quote; +1 lands on the first
+        // content character (JSX text has no delimiter).
+        const start = node.getStart(sf) + (ts.isJsxText(node) ? 0 : 1);
+        const text = ts.isJsxText(node) ? node.getText(sf) : src.slice(start, node.getEnd() - 1);
+        inspect(node, text, start);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
   return hits;
 }
 
@@ -353,8 +369,8 @@ export function checkNoInternalNamesUserUi(): CheckResult {
       notes: [
         `0 internal-name leaks in user-facing UI (${PATTERNS.length} regex patterns over ${SCAN_ROOT}, ` +
           `plus a comment/string-aware "Ruby" scan over ${ASSISTANT_SCAN_ROOTS.join(" + ")}; ` +
-          `${ADMIN_DEV_EXCLUDE.length} admin/dev frontend paths + backend admin/operator/dev routes + ` +
-          `${ASSISTANT_LIB_INTERNAL_ALLOWLIST.length} admin/operator/dev library files excluded)`,
+          `${ADMIN_DEV_EXCLUDE.length} admin/dev frontend paths excluded from the regex patterns; ` +
+          `${ASSISTANT_LIB_INTERNAL_ALLOWLIST.length} pinned files allowlisted for the name scan)`,
       ],
     };
   }

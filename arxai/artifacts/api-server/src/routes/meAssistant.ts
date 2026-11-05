@@ -1034,7 +1034,7 @@ router.get("/me/assistant/export", requireUser, safe(async (req, res) => {
   const memory = await loadVerifiedMemory(userId);
   const assistantName = await getAssistantDisplayName(userId);
   const exportedAt = new Date().toISOString();
-  res.setHeader("Content-Disposition", `attachment; filename="ruby-export-${userId}-${exportedAt.slice(0,10)}.json"`);
+  res.setHeader("Content-Disposition", `attachment; filename="eleanor-export-${userId}-${exportedAt.slice(0,10)}.json"`);
   res.setHeader("Content-Type", "application/json");
   res.json({
     schema: "arx.ruby.export.v1",
@@ -2591,7 +2591,7 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
 
 // GET /me/assistant/watches — the signed-in user's Ruby watches (active by
 // default) with monitor alert state, for the chat panel strip and the
-// getMyRubyWatches tool. Read-only.
+// getMyWatches tool. Read-only.
 router.get("/me/assistant/watches", requireUser, safe(async (req, res) => {
   const userId = (req.authUser!).id;
   const includeFinished = String(req.query["includeFinished"] ?? "") === "true";

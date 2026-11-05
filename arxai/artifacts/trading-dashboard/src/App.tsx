@@ -382,6 +382,7 @@ function Router() {
           <Route path="/admin/agent-ecosystem" component={AdminAgentEcosystem} />
           <Route path="/self-trade-ai" component={AdminSelfTradeAi} />
           <Route path="/admin/self-trade-ai" component={AdminSelfTradeAi} />
+          <Route path="/admin/eleanor-quality" component={AdminRubyQuality} />
           <Route path="/admin/ruby-quality" component={AdminRubyQuality} />
           <Route path="/admin/ai-fix-agent" component={AdminAiFixAgent} />
           <Route path="/admin/timing-brain-snapshots" component={AdminTimingBrainSnapshots} />
@@ -453,6 +454,7 @@ function Router() {
           <Route path="/admin/provider-health" component={AdminProviderHealth} />
           <Route path="/admin/handshake-monitor" component={AdminHandshakeMonitor} />
           <Route path="/admin/system-cohesion" component={AdminSystemCohesion} />
+          <Route path="/admin/eleanor-voice" component={AdminRubyVoiceSettings} />
           <Route path="/admin/ruby-voice" component={AdminRubyVoiceSettings} />
           <Route path="/admin/chart-brain-benchmark" component={AdminChartBrainBenchmark} />
 
