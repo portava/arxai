@@ -10,6 +10,7 @@
 // `score: null` with an honest "insufficient data" note. Nothing here places,
 // modifies, or closes a trade, and it never touches the live path.
 
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import {
   db,
   chartDecisionReceiptsTable,
@@ -101,7 +102,7 @@ const LABELS: Record<BenchmarkScoreKey, string> = {
   entry_quality: "Entry Quality",
   exit_realism: "Exit Realism",
   agent_agreement: "Agent Agreement",
-  ruby_explanation_quality: "Ruby Explanation Quality",
+  ruby_explanation_quality: `${DEFAULT_ASSISTANT_NAME} Explanation Quality`,
   no_trade_discipline: "No-Trade Discipline",
   review_learning: "Review / Learning",
   similar_setup_usefulness: "Similar-Setup Usefulness",
@@ -454,7 +455,7 @@ export async function computeChartBrainBenchmark(opts?: {
       "ruby_explanation_quality",
       rubyComplete,
       receipts.length,
-      `${rubyComplete}/${receipts.length} reads had a complete Ruby explanation.`,
+      `${rubyComplete}/${receipts.length} reads had a complete ${DEFAULT_ASSISTANT_NAME} explanation.`,
     ),
     ratioScore(
       "no_trade_discipline",

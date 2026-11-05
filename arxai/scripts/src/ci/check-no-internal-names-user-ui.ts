@@ -129,6 +129,14 @@ function isAdminExcluded(line: string): boolean {
 // that *defines* the friendly mapper itself or developer comments.
 function isBenign(line: string): boolean {
   const path = pathFromRgLine(line);
+  // Tests, specs and benchmarks are not rendered to users.
+  if (isTestFile(path) || /\.benchmark\.[cm]?tsx?$/.test(path)) return true;
+  // The bug-report dialog deliberately shows the user the redacted context
+  // it is about to send ("Review"), so they can check it before submitting.
+  if (path.endsWith("/components/help/FloatingHelpWidget.tsx") && line.includes("JSON.stringify(safeCtx")) return true;
+  // `prop={JSON.stringify(...)}` is an attribute value (a React key, a
+  // data-* attribute), not text rendered in the page.
+  if (/=\{JSON\.stringify\(/.test(line)) return true;
   if (path.endsWith("/lib/friendlyLabels.ts")) return true;          // the mapper itself
   if (path.endsWith("/components/ui/RubyTypingIndicator.tsx")) return true; // friendlyToolText mapper
   // ignore JSDoc / line comments that just describe the leak shape
