@@ -28,6 +28,160 @@ const PACKAGE_FILES: Record<string, string> = {
   "@workspace/trading-dashboard": "artifacts/trading-dashboard/package.json",
 };
 
+type DuplicateJsonKey = {
+  key: string;
+  path: string;
+  firstLine: number;
+  duplicateLine: number;
+};
+
+/**
+ * JSON.parse silently keeps only the last value for duplicate object keys.
+ * Walk the raw text first so duplicate test scripts cannot hide earlier
+ * coverage before the normal manifest parsing below.
+ */
+function findDuplicateJsonKeys(raw: string): DuplicateJsonKey[] {
+  const duplicates: DuplicateJsonKey[] = [];
+  let index = 0;
+  let line = 1;
+
+  const consume = (): string => {
+    const char = raw[index++];
+    if (char === "\n") line++;
+    return char;
+  };
+
+  const skipWhitespace = (): void => {
+    while (index < raw.length && /[\t\n\r ]/.test(raw[index])) consume();
+  };
+
+  const parseString = (): string => {
+    const start = index;
+    if (consume() !== '"') throw new Error(`expected string at line ${line}`);
+    while (index < raw.length) {
+      const char = consume();
+      if (char === '"') return JSON.parse(raw.slice(start, index)) as string;
+      if (char === "\\") {
+        if (index >= raw.length) throw new Error("unterminated JSON escape");
+        consume();
+      }
+    }
+    throw new Error("unterminated JSON string");
+  };
+
+  const parseValue = (path: string): void => {
+    skipWhitespace();
+    if (raw[index] === "{") {
+      parseObject(path);
+      return;
+    }
+    if (raw[index] === "[") {
+      parseArray(path);
+      return;
+    }
+    if (raw[index] === '"') {
+      parseString();
+      return;
+    }
+
+    const start = index;
+    while (
+      index < raw.length &&
+      !/[\s,\]}]/.test(raw[index])
+    ) {
+      consume();
+    }
+    if (index === start) throw new Error(`expected JSON value at line ${line}`);
+  };
+
+  const parseObject = (path: string): void => {
+    consume(); // {
+    skipWhitespace();
+    const firstSeen = new Map<string, number>();
+    if (raw[index] === "}") {
+      consume();
+      return;
+    }
+
+    while (index < raw.length) {
+      skipWhitespace();
+      const keyLine = line;
+      const key = parseString();
+      const firstLine = firstSeen.get(key);
+      if (firstLine !== undefined) {
+        duplicates.push({
+          key,
+          path: `${path}[${JSON.stringify(key)}]`,
+          firstLine,
+          duplicateLine: keyLine,
+        });
+      } else {
+        firstSeen.set(key, keyLine);
+      }
+
+      skipWhitespace();
+      if (consume() !== ":") throw new Error(`expected ':' at line ${line}`);
+      parseValue(`${path}[${JSON.stringify(key)}]`);
+      skipWhitespace();
+      const separator = consume();
+      if (separator === "}") return;
+      if (separator !== ",") throw new Error(`expected ',' or '}' at line ${line}`);
+    }
+    throw new Error(`unterminated object at line ${line}`);
+  };
+
+  const parseArray = (path: string): void => {
+    consume(); // [
+    skipWhitespace();
+    if (raw[index] === "]") {
+      consume();
+      return;
+    }
+
+    let item = 0;
+    while (index < raw.length) {
+      parseValue(`${path}[${item++}]`);
+      skipWhitespace();
+      const separator = consume();
+      if (separator === "]") return;
+      if (separator !== ",") throw new Error(`expected ',' or ']' at line ${line}`);
+    }
+    throw new Error(`unterminated array at line ${line}`);
+  };
+
+  parseValue("$");
+  skipWhitespace();
+  if (index !== raw.length) throw new Error(`unexpected content at line ${line}`);
+  return duplicates;
+}
+
+function checkDuplicateKeyScannerFixture(): string | null {
+  const fixture = `{
+  "scripts": {
+    "test:lost": "first",
+    "test\\u003alost": "second"
+  },
+  "left": { "shared": true },
+  "right": { "shared": false }
+}`;
+  try {
+    const duplicates = findDuplicateJsonKeys(fixture);
+    const only = duplicates[0];
+    if (
+      duplicates.length !== 1 ||
+      only.key !== "test:lost" ||
+      only.path !== '$["scripts"]["test:lost"]' ||
+      only.firstLine !== 3 ||
+      only.duplicateLine !== 4
+    ) {
+      return "raw duplicate-key scanner failed its duplicate/escape/isolation fixture";
+    }
+  } catch (error) {
+    return `raw duplicate-key scanner fixture failed: ${String(error)}`;
+  }
+  return null;
+}
+
 /**
  * Intentionally-excluded `test:*` scripts, keyed `<pkg>::<script>`.
  *
@@ -240,9 +394,26 @@ const ALLOWLIST = new Set<string>([...MANUAL_ONLY, ...INTEGRATION_LANE]);
 
 const ROOT_PKG_NAME = "workspace";
 
-function loadScripts(file: string): Record<string, string> {
-  const raw = readFileSync(join(ROOT, file), "utf8");
-  return (JSON.parse(raw).scripts ?? {}) as Record<string, string>;
+function loadScripts(file: string, violations: string[]): Record<string, string> {
+  const fullPath = join(ROOT, file);
+  const raw = readFileSync(fullPath, "utf8");
+  try {
+    for (const duplicate of findDuplicateJsonKeys(raw)) {
+      violations.push(
+        `${rel(fullPath)} has duplicate JSON key ${JSON.stringify(duplicate.key)} at ` +
+          `${duplicate.path} (lines ${duplicate.firstLine} and ${duplicate.duplicateLine}); ` +
+          "merge the intended script coverage into one value",
+      );
+    }
+  } catch (error) {
+    violations.push(`${rel(fullPath)} could not be scanned for duplicate JSON keys: ${String(error)}`);
+  }
+  try {
+    return (JSON.parse(raw).scripts ?? {}) as Record<string, string>;
+  } catch (error) {
+    violations.push(`${rel(fullPath)} is not valid JSON: ${String(error)}`);
+    return {};
+  }
 }
 
 function buildReferencedSet(ciScript: string): Set<string> {
@@ -263,8 +434,10 @@ function buildReferencedSet(ciScript: string): Set<string> {
 
 export function checkTestScriptsWired(): CheckResult {
   const violations: string[] = [];
+  const scannerFixtureFailure = checkDuplicateKeyScannerFixture();
+  if (scannerFixtureFailure) violations.push(scannerFixtureFailure);
   const rootPkgPath = PACKAGE_FILES[ROOT_PKG_NAME];
-  const ciScript = loadScripts(rootPkgPath).ci;
+  const ciScript = loadScripts(rootPkgPath, violations).ci;
   if (!ciScript) {
     return {
       name: "test-scripts-wired",
@@ -279,7 +452,7 @@ export function checkTestScriptsWired(): CheckResult {
   const allTestKeys = new Set<string>();
   let totalTests = 0;
   for (const [pkgName, file] of Object.entries(PACKAGE_FILES)) {
-    const scripts = loadScripts(file);
+    const scripts = loadScripts(file, violations);
     for (const script of Object.keys(scripts)) {
       if (!script.startsWith("test:")) continue;
       const key = `${pkgName}::${script}`;
