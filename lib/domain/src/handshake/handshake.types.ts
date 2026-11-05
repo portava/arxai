@@ -138,12 +138,12 @@ export const NAMED_HANDSHAKE_SURFACES: Readonly<Record<string, HandshakeType>> =
   "Scanner Signal": "SIGNAL_INTELLIGENCE",
   "Smart Chart Overlay": "SMART_CHART_OVERLAY",
   "Trade Preview": "TRADE_PREVIEW",
-  "Ruby Execution": "RUBY_EXECUTION",
+  "Eleanor Execution": "RUBY_EXECUTION",
   "Live Trade Health": "TRADE_HEALTH",
   "Investor Value": "INVESTOR_VALUE",
   "Weekly Report": "WEEKLY_REPORT",
   "Admin Fund Control": "ADMIN_FUND_CONTROL",
-  "Ruby Explanation": "SCANNER_EXPLANATION",
+  "Eleanor Explanation": "SCANNER_EXPLANATION",
 } as const;
 
 // Handshake types that inform an EXECUTION-CRITICAL action. Their advisory

@@ -142,7 +142,7 @@ export function startRubyWatchSweeper(): boolean {
   timer = setInterval(() => { void runRubySweepOnce(); }, status.intervalMs);
   timer.unref?.();
   status.running = true;
-  logger.info({ intervalMs: status.intervalMs }, "[ruby-sweeper] Ruby watch sweeper started");
+  logger.info({ intervalMs: status.intervalMs }, "[ruby-sweeper] assistant watch sweeper started");
   return true;
 }
 

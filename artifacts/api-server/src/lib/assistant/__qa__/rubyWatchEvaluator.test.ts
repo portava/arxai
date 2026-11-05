@@ -168,7 +168,7 @@ test("reversal evidence → a delivered alert counts; positions on the confirmed
   assert.equal(stateOf().alertsSinceAck, 1);
   assert.equal(positionReads[0]!.basis, "CONFIRMED_OPEN");
   assert.deepEqual(priceCalls[0], { symbol: "EURUSD", bridge: BRIDGE });
-  assert.equal(notifications[0]!["actionUrl"], "/?ruby=watches");
+  assert.equal(notifications[0]!["actionUrl"], "/?eleanor=watches");
   assert.equal(dispatches.length, 0);
 });
 

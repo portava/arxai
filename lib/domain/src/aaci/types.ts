@@ -23,7 +23,7 @@
 
 // The systems that can contribute a handshake to an AACI decision.
 export const AACI_HANDSHAKE_SYSTEMS = [
-  "Ruby",
+  "Eleanor",
   "Scanner",
   "SmartChart",
   "MarketTimingBrain",

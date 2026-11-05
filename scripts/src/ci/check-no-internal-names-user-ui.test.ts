@@ -1,7 +1,8 @@
 // Regression suite for the no-internal-names-user-ui CI guard, focused on
 // the Task #809 assistant-name ("Ruby" → resolver) leak scan.
 //
-// Two things are proven here:
+// Two things are proven here (admin and operator surfaces are in scope since
+// the 2026-11-05 Eleanor-everywhere rename):
 //   1. The live repo is clean — `checkNoInternalNamesUserUi().ok` is true.
 //   2. The scan is NOT vacuous — `findAssistantNameLeaksInSource` flags a
 //      real user-facing "Ruby" and stays silent on comments, glued
@@ -40,6 +41,13 @@ const leakCases: Case[] = [
   { name: "lowercase ruby word", src: `const s = "the ruby gem";`, expected: 0 },
   { name: "name-swap replace line", src: `const out = template.replace(/Ruby/g, name);`, expected: 0 },
   { name: "import specifier", src: `import { RubyState } from "./ruby.js";`, expected: 0 },
+  // JSX: an apostrophe in JSX text must not derail the scan, and a JSX
+  // comment is a comment, not copy.
+  { name: "JSX comment after an apostrophe in JSX text", src: `const a = <p>Don't panic {/* Ruby note */}</p>;`, expected: 0 },
+  { name: "JSX text after an apostrophe", src: `const a = <p>Don't ask Ruby</p>;`, expected: 1 },
+  { name: "template text around a substitution", src: "const s = `${n} says Ruby ${m}`;", expected: 1 },
+  { name: "legacy-codename marker line", src: `const old = "Ruby"; // legacy-codename: stored value being replaced`, expected: 0 },
+  { name: "placeholder token", src: `const s = "Require {assistant} Explanation";`, expected: 0 },
 ];
 
 const results: Array<{ name: string; ok: boolean; detail?: string }> = [];
@@ -84,21 +92,12 @@ for (const c of leakCases) {
   record("reports 1-based column", col === 14, `col=${col}`);
 }
 
-// 4. The admin/operator/dev library allowlist excludes exactly the intended
-//    files, and does NOT over-exclude genuine user-facing library copy.
+// 4. Only the pinned texts are allowlisted; admin and operator surfaces are
+//    scanned like any other page (2026-11-05: Eleanor app wide).
 {
   const excluded = [
-    "artifacts/api-server/src/lib/chart/benchmarkScore.ts",
-    "artifacts/api-server/src/lib/startup/envChecklist.ts",
-    "artifacts/api-server/src/lib/governance/effectiveGovernance.ts",
     "artifacts/api-server/src/lib/live/operatorFundedPilotConfig.ts",
-    "artifacts/api-server/src/lib/assistant/parseTradeCommand.ts",
-    "lib/domain/src/aaci/conflicts.ts",
-    "lib/domain/src/aaci/types.ts",
-    "lib/domain/src/agent-system/constitution/agentConstitution.ts",
-    "lib/domain/src/agent-system/coreAgents.ts",
-    "lib/domain/src/handshake/handshake.types.ts",
-    "lib/domain/src/handshake/handshakeRegistry.ts",
+    "lib/db/src/schema/arxVoiceAdminSettings.ts",
   ];
   for (const f of excluded) {
     record(`allowlist excludes ${f.replace(/^.*\/src\//, "")}`, isAssistantScanExcluded(f));
@@ -107,15 +106,18 @@ for (const c of leakCases) {
     "artifacts/api-server/src/lib/assistant/tools.ts",
     "artifacts/api-server/src/lib/assistant/featureMap.ts",
     "artifacts/api-server/src/lib/chart/recordRubyRead.ts",
-    // The fixed user-facing domain surface (GET /me/market-edge sentence) must
-    // stay in scope so a future "Ruby" regression there fails the guard.
+    "artifacts/api-server/src/lib/chart/benchmarkScore.ts",
+    "artifacts/api-server/src/lib/governance/effectiveGovernance.ts",
+    "artifacts/api-server/src/routes/adminRubyVoice.ts",
+    "artifacts/trading-dashboard/src/pages/admin/admin-hub.tsx",
+    "artifacts/trading-dashboard/src/components/admin/GovernancePanel.tsx",
+    "lib/domain/src/agent-system/coreAgents.ts",
+    "lib/domain/src/aaci/conflicts.ts",
+    "lib/domain/src/handshake/handshakeRegistry.ts",
     "lib/domain/src/signal-intelligence/explainMarketRead.ts",
   ];
   for (const f of notExcluded) {
-    record(
-      `user-facing lib file NOT allowlisted: ${f.replace(/^.*\/src\//, "")}`,
-      !isAssistantScanExcluded(f),
-    );
+    record(`scanned (not allowlisted): ${f.replace(/^.*\/src\//, "")}`, !isAssistantScanExcluded(f));
   }
 }
 

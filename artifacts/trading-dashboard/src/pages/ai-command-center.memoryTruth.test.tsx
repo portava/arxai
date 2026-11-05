@@ -17,7 +17,7 @@ vi.mock("recharts", () => {
 
 const { MemoryTab } = await import("./ai-command-center");
 
-const LIVE_NOTE = "This is a live account. Ruby's memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.";
+const LIVE_NOTE = "This is a live account. Eleanor's memory is built from paper trades only and live trades are not totalled here, so no win rate, P&L or equity curve is shown. They are not zero.";
 
 function json(body: unknown, status = 200) {
   return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));

@@ -683,11 +683,13 @@ export function ArxAssistantLivePanel() {
   // confirmation and runs every backend gate. VAGUE/UNKNOWN falls through to
   // the analytical chat. Returns true when the message was handled here.
   const [watchesRefresh, setWatchesRefresh] = useState(0);
-  // Ruby's alert notifications link to "/?ruby=watches": open the panel (the
-  // watches strip with Keep it / Close it sits at its top) and refresh it.
+  // Watch alert notifications link to "/?eleanor=watches" (older ones stored
+  // before the rename say "/?ruby=watches"): open the panel (the watches strip
+  // with Keep it / Close it sits at its top) and refresh it.
   const search = useSearch();
   useEffect(() => {
-    if (new URLSearchParams(search).get("ruby") !== "watches") return;
+    const params = new URLSearchParams(search);
+    if (params.get("eleanor") !== "watches" && params.get("ruby") !== "watches") return;
     setOpen(true);
     setWatchesRefresh((n) => n + 1);
   }, [search]);

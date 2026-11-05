@@ -533,7 +533,7 @@ async function evaluateMonitor(w: RubyWatchInstruction, c: Ctx): Promise<void> {
         ? `${copy.message} (Note: ${c.assistantName} is not authorised to close for you — AI-Assisted authority, the monitor permission or the close permission is off — so this stays an alert.)`
         : copy.message,
       symbol: w.symbol, actionRequired: true, recommendedAction: "Reply keep it / close it in chat",
-      actionUrl: "/?ruby=watches",
+      actionUrl: "/?eleanor=watches",
       metadata: { watchId: w.id, alertNumber: decision.alertNumber, reversalRiskScore: intel.reversalRiskScore, health, price: mpx },
     });
     if (!delivered) {

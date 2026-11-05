@@ -462,15 +462,15 @@ test("consistency: a cancelled order with an exit price is not a closed trade", 
   assert.equal(s.netProfitLoss, 1000);
 });
 
-test("consistency: the P&L basis says it differs from Ruby Memory's booked demo P&L", async () => {
+test("consistency: the P&L basis says it differs from Eleanor Memory's booked demo P&L", async () => {
   setRows({ paper_orders: [order({ id: 1 })], trader_skill_profiles: [], post_trade_debriefs: [], edge_discovery_reports: [] });
   const s = await mod.computeSnapshot(7);
   assert.match(s.pnlCoverage.note, /USD at each instrument's contract size/);
-  assert.match(s.pnlCoverage.note, /Ruby Memory and your demo account show the P&L the paper venue booked on each close/);
+  assert.match(s.pnlCoverage.note, /Eleanor Memory and your demo account show the P&L the paper venue booked on each close/);
   assert.match(s.pnlCoverage.note, /closes booked before contract sizing may carry price move × lots × 100/);
-  // Ruby Memory leaves an unsized close out; the demo balance counts a loss at
-  // the risk model and a win as 0. It used to say "0 in Ruby Memory".
-  assert.match(s.pnlCoverage.note, /could not size is left out of Ruby Memory and counted in your demo balance at the paper risk model when it lost \(0 when it won\)/);
-  assert.doesNotMatch(s.pnlCoverage.note, /placeholder \(0 in Ruby Memory/);
+  // Eleanor Memory leaves an unsized close out; the demo balance counts a loss at
+  // the risk model and a win as 0. It used to say "0 in Eleanor Memory".
+  assert.match(s.pnlCoverage.note, /could not size is left out of Eleanor Memory and counted in your demo balance at the paper risk model when it lost \(0 when it won\)/);
+  assert.doesNotMatch(s.pnlCoverage.note, /placeholder \(0 in Eleanor Memory/);
   assert.match(s.pnlCoverage.note, /can differ from this one/);
 });

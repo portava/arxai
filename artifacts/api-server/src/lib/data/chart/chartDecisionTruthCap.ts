@@ -13,6 +13,7 @@
 // never raises anything and never touches an execution gate: the chart never
 // executes from the decision summary, and the gate output itself is unchanged.
 
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { CHART_TRUTH_THRESHOLD, type ChartGateOutput } from "./chartGateOutput.js";
 import type { ChartFeedStatus } from "./chartDataService.js";
 import type { ChartDecisionState } from "./chartIntelligence.js";
@@ -110,7 +111,7 @@ export function chartReadVerification(
       // The handshake itself is the authority: if it does not PASS for a
       // reason not named above, the read is still not verified.
       if (reasons.length === 0 && buildChartHandshake(gate, truthScore!).sourceOverall !== "PASS") {
-        reasons.push("a chart truth check Ruby's read requires did not pass");
+        reasons.push(`a chart truth check ${DEFAULT_ASSISTANT_NAME}'s read requires did not pass`);
       }
     }
   }

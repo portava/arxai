@@ -68,12 +68,12 @@ describe("Chart Brain Benchmark: load failure and coverage", () => {
 describe("Chart Brain Benchmark: a null score shows why it has none", () => {
   it("a not-measured dimension shows its reason, not a generic 'Insufficient data'", () => {
     const note =
-      "Not measured: Ruby's explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.";
+      "Not measured: Eleanor's explanations are not graded. Every read stores a headline and a what-would-change line, so their presence says nothing about quality.";
     hook = {
       data: {
         benchmark: benchmark({
           scores: [
-            { key: "ruby_explanation_quality", label: "Ruby Explanation Quality", score: null, sampleSize: 0, note },
+            { key: "ruby_explanation_quality", label: "Eleanor Explanation Quality", score: null, sampleSize: 0, note },
             { key: "reliability", label: "Reliability", score: null, sampleSize: 2, note: "Insufficient data (need ≥3, have 2)." },
             { key: "timing", label: "Timing", score: 80, sampleSize: 5, note: "4/5 trade reads at a real trigger/entry stage." },
           ],

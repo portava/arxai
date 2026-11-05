@@ -10,6 +10,7 @@
 // Honesty: no projections, no "expected return," no "guaranteed" anywhere.
 // Every response carries a disclaimer that past data does not predict future P&L.
 
+import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { Router } from "express";
 import {
   db, analyticsSnapshotsTable, analyticsHeatmapsTable,
@@ -86,7 +87,7 @@ function pnlCoverageOf(closed: Array<typeof paperOrdersTable.$inferSelect>): Pnl
   // may hold price move × lots × 100; an unsized close is left out of Ruby
   // Memory and counted in the demo balance at the paper risk model when it
   // lost (0 when it won), so the same trades can give a different figure.
-  const basis = "P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. Ruby Memory and your demo account show the P&L the paper venue booked on each close: closes booked before contract sizing may carry price move × lots × 100, and a close it could not size is left out of Ruby Memory and counted in your demo balance at the paper risk model when it lost (0 when it won), so their Net P&L can differ from this one.";
+  const basis = `P&L is in USD at each instrument's contract size (100,000 units per lot for a currency pair), recomputed from each trade's entry and exit price. ${DEFAULT_ASSISTANT_NAME} Memory and your demo account show the P&L the paper venue booked on each close: closes booked before contract sizing may carry price move × lots × 100, and a close it could not size is left out of ${DEFAULT_ASSISTANT_NAME} Memory and counted in your demo balance at the paper risk model when it lost (0 when it won), so their Net P&L can differ from this one.`;
   const note = unsized.length === 0
     ? basis
     : sizedTrades === 0

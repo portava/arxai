@@ -182,7 +182,7 @@ router.get("/me/heat/learning-report", requireUser, async (req, res): Promise<vo
           set: { tradingStyle: newStyle, updatedAt: new Date() },
         });
     } catch (memErr) {
-      logger.warn({ err: String(memErr), userId }, "meHeat: Ruby Memory persist failed (non-fatal)");
+      logger.warn({ err: String(memErr), userId }, "meHeat: assistant memory persist failed (non-fatal)");
     }
 
     res.json(report);

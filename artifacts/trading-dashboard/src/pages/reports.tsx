@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAssistantName } from "@/lib/assistant-name";
 
 const REPORT_TYPES = [
   ["account_summary", "Account Summary"],
@@ -33,6 +34,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export default function ReportsPage() {
+  const { name } = useAssistantName();
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [emptyHints, setEmptyHints] = useState<string[]>([]);
   const [reportType, setReportType] = useState<string>("paper_trades");
@@ -128,7 +130,7 @@ export default function ReportsPage() {
         </div>
         <p className="mt-2 text-[11px] text-txt-muted" data-testid="reports-range-source-note">
           Dates are UTC days and the end day is included. Demo-trade figures in these reports come from the trades you log on My Demo Trades;
-          the Calendar page and Ruby Memory read the demo sandbox order ledger, so their totals can differ.
+          the Calendar page and {name} Memory read the demo sandbox order ledger, so their totals can differ.
         </p>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm text-txt-secondary">
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={includeJournal} onChange={(e) => setIncJ(e.target.checked)} />Include journal</label>
