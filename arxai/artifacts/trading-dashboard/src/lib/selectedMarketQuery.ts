@@ -13,8 +13,13 @@ interface SelectedMarketEvent {
   title: string;
   currency: string;
   impactLevel: ImpactLevel;
+  /** A midnight-UTC date marker when `source` publishes only dates (FRED). */
   eventTime: string;
   minutesUntil: number;
+  /** Calendar source (e.g. "FRED"); absent from older servers. */
+  source?: string | null;
+  /** false when the source publishes only the release date. */
+  timePublished?: boolean;
 }
 
 type DataState = "LIVE_CONFIRMED" | "SYNCING" | "STALE" | "UNAVAILABLE";
@@ -48,7 +53,26 @@ export interface SnapshotOk {
     disclaimer: string;
   };
   upcomingEvents: SelectedMarketEvent[];
-  newsRisk: { riskLevel: string; blockTrading: boolean; summary: string; calendarAvailable?: boolean; applicability?: "applicable" | "not_applicable" };
+  newsRisk: {
+    riskLevel: string;
+    blockTrading: boolean;
+    summary: string;
+    /** Whether the calendar answered at all (absent from older servers). */
+    calendarAvailable?: boolean;
+    /** Whether scheduled news applies to this market (synthetics: not_applicable). */
+    applicability?: "applicable" | "not_applicable";
+    /** true only when the calendar was actually checked (or does not apply). */
+    calendarChecked?: boolean;
+    /** Plain-English limit of the event list, or null. */
+    calendarNote?: string | null;
+    /**
+     * What riskLevel was measured against: "release_time"; "date_only" (to a
+     * date-only release's midnight-UTC marker, not a release time); or
+     * "unscored" (a listed release dated today has no published time and is
+     * not in the level). null/absent when not checked or from older servers.
+     */
+    levelBasis?: "release_time" | "date_only" | "unscored" | null;
+  };
   // Additive truth fields (Task #518). dataAsOf = the DATA timestamp (newest
   // confirmed candle), distinct from generatedAt (analysis build time).
   dataSource?: string;
@@ -57,6 +81,8 @@ export interface SnapshotOk {
   dataAsOf?: string | null;
   levelsWithheld?: boolean;
   levelsWithheldReason?: string | null;
+  /** Why no directional read is shown (stale/syncing feed, too few bars); null when one is. */
+  readWithheldReason?: string | null;
   generatedAt: string;
   cacheHit: boolean;
 }

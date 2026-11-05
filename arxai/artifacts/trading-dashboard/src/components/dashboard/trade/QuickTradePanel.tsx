@@ -11,7 +11,7 @@
 // driven by props from the page, which owns the existing state + quote feed.
 
 import { useState, type ReactNode } from "react";
-import { Zap, TrendingUp, TrendingDown, ShieldCheck, Bot, ShieldQuestion } from "lucide-react";
+import { Zap, TrendingUp, TrendingDown, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { CockpitCard } from "@/components/dashboard/cockpit/primitives";
 import { ChartFeedConfidence } from "@/components/charts/ChartFeedConfidence";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,62 @@ export function quickTradeOrderTypeId(label: string, side: "BUY" | "SELL" = "BUY
   return known[key] ?? (side === "SELL" ? "MARKET_SELL" : "MARKET_BUY");
 }
 
-export type Quote = { bid: number; ask: number; spread: number; mid: number } | null;
+export type Quote = {
+  bid: number; ask: number; spread: number; mid: number;
+  /** Where the quote came from. /api/market/quote always says "SIMULATOR". */
+  executionEnvironment?: string | null;
+} | null;
+
+/**
+ * Quote sources whose bid/ask may be shown as tradable prices. Fail closed:
+ * a quote with no source, or from the ARX price simulator (a random walk off
+ * fixed base prices), is not a market price and is never displayed as one.
+ */
+const MARKET_QUOTE_SOURCES: ReadonlySet<string> = new Set(["BROKER", "MT5"]);
+
+/**
+ * True when the value is a priced quote (finite bid and ask). The page stores
+ * whatever JSON the quote route returned, so an error body such as
+ * {error:"Unknown symbol"} reaches the panel as a non-null object: it is not a
+ * quote of any kind.
+ */
+function isPricedQuote(q: Quote): q is NonNullable<Quote> {
+  return q != null
+    && typeof q === "object"
+    && Number.isFinite(q.bid)
+    && Number.isFinite(q.ask);
+}
+
+export function isMarketQuote(q: Quote): q is NonNullable<Quote> {
+  return isPricedQuote(q)
+    && typeof q.executionEnvironment === "string"
+    && MARKET_QUOTE_SOURCES.has(q.executionEnvironment.toUpperCase());
+}
+
+/** One read of the quote route: failed = the read itself failed. */
+export type QuoteRead = { quote: Quote; failed: boolean };
+
+/**
+ * Reads GET /api/market/quote/:symbol for the Trade Command Room. The route
+ * answers 404 {error:"Unknown symbol"} when it has no quote for the symbol:
+ * that is no quote, not a failure. Any other non-2xx answer (5xx, 401, a 404
+ * without that body), a 2xx body that is not JSON, or a request that throws is
+ * a failed read: "could not be loaded", never "no quote for this symbol".
+ */
+export async function readQuickTradeQuote(bareSymbol: string): Promise<QuoteRead> {
+  try {
+    const r = await fetch(`/api/market/quote/${bareSymbol}`);
+    if (r.status === 404) {
+      const body: unknown = await r.json().catch(() => null);
+      const unknownSymbol = body != null && typeof body === "object" && (body as { error?: unknown }).error === "Unknown symbol";
+      return { quote: null, failed: !unknownSymbol };
+    }
+    if (!r.ok) return { quote: null, failed: true };
+    return { quote: (await r.json()) as Quote, failed: false };
+  } catch {
+    return { quote: null, failed: true };
+  }
+}
 
 const ORDER_TYPES = [
   "Market", "Buy Limit", "Sell Limit", "Buy Stop", "Sell Stop", "Buy Stop Limit", "Sell Stop Limit",
@@ -56,11 +111,11 @@ export function QuickTradePanel({
   orderType, setOrderType,
   lot, setLot,
   quote,
+  quoteLoadFailed = false,
+  quoteLoading = false,
   slTpOn, setSlTpOn,
   stopLoss, setStopLoss,
   takeProfit, setTakeProfit,
-  riskCheckOn, setRiskCheckOn,
-  safetyGatesOn, setSafetyGatesOn,
   riskApprox,
   canTrade,
   blockedLabel,
@@ -70,11 +125,24 @@ export function QuickTradePanel({
   orderType: string; setOrderType: (v: string) => void;
   lot: string; setLot: (v: string) => void;
   quote: Quote;
+  /** True when the latest quote read failed (see readQuickTradeQuote). */
+  quoteLoadFailed?: boolean;
+  /**
+   * True while no quote read for this symbol has answered yet. Nothing is
+   * known about the symbol's quote then: it is not "no quote available".
+   */
+  quoteLoading?: boolean;
   slTpOn: boolean; setSlTpOn: (v: boolean) => void;
   stopLoss: string; setStopLoss: (v: string) => void;
   takeProfit: string; setTakeProfit: (v: string) => void;
-  riskCheckOn: boolean; setRiskCheckOn: (v: boolean) => void;
-  safetyGatesOn: boolean; setSafetyGatesOn: (v: boolean) => void;
+  /**
+   * Ignored. These switches never reached the server: the risk governor and
+   * every safety gate run on submit regardless, so the panel no longer shows
+   * them as protections the trader can turn on or off. Kept optional so
+   * existing callers compile.
+   */
+  riskCheckOn?: boolean; setRiskCheckOn?: (v: boolean) => void;
+  safetyGatesOn?: boolean; setSafetyGatesOn?: (v: boolean) => void;
   riskApprox: string;
   canTrade: boolean;
   blockedLabel: string;
@@ -86,9 +154,18 @@ export function QuickTradePanel({
   const maxLot = quickTradeMaxLot(oc.mode.maxLotPerClick, spec.volumeMax);
   const presets = maxLot ? [...LOT_PRESETS, "MAX"] : LOT_PRESETS;
 
-  const sell = quote ? quote.bid : null;
-  const buy = quote ? quote.ask : null;
-  const spread = quote ? quote.spread : null;
+  // Only a market quote is shown as Sell / Buy. A simulator quote is withheld
+  // (it is synthetic, not the market), and the strip says so.
+  const marketQuote = isMarketQuote(quote) ? quote : null;
+  // Withheld quotes are named by what actually came back: a simulator quote, a
+  // priced quote with no stated (or an unrecognised) source — or no quote at
+  // all (nothing, or an error body), which is never blamed on the simulator.
+  const withheld = marketQuote == null && isPricedQuote(quote) ? quote : null;
+  const withheldSource = typeof withheld?.executionEnvironment === "string" ? withheld.executionEnvironment.trim() : "";
+  const simulatedOnly = withheld != null && withheldSource.toUpperCase() === "SIMULATOR";
+  const sell = marketQuote ? marketQuote.bid : null;
+  const buy = marketQuote ? marketQuote.ask : null;
+  const spread = marketQuote ? marketQuote.spread : null;
 
   const lotNum = Number(lot) > 0 ? Number(lot) : null;
   const sl = slTpOn && Number(stopLoss) > 0 ? Number(stopLoss) : null;
@@ -163,7 +240,7 @@ export function QuickTradePanel({
       </div>
 
       {/* Price strip — SELL | spread | BUY */}
-      <div className="mt-3 grid grid-cols-3 items-center rounded-xl border border-border bg-background/40 px-4 py-3">
+      <div className="mt-3 grid grid-cols-3 items-center rounded-xl border border-border bg-background/40 px-4 py-3" data-testid="quick-trade-price-strip">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-danger">Sell</div>
           <div className="font-mono text-lg font-bold text-danger">{sell ?? "—"}</div>
@@ -177,6 +254,21 @@ export function QuickTradePanel({
           <div className="font-mono text-lg font-bold text-success">{buy ?? "—"}</div>
         </div>
       </div>
+      <p className="mt-1 text-xs text-txt-muted" data-testid="quick-trade-quote-source">
+        {marketQuote
+          ? `Quote source: ${marketQuote.executionEnvironment}.`
+          : simulatedOnly
+            ? "No market price on this panel. The only quote it can read comes from the ARX price simulator (synthetic, not the market or your broker), so it is not shown. Check the chart feed for the current price."
+            : withheld != null
+              ? withheldSource
+                ? `A quote came back from "${withheldSource}", which is not a broker or MT5 price, so it is not shown. Check the chart feed for the current price.`
+                : "A quote came back with no stated source, so it is not shown. Check the chart feed for the current price."
+              : quoteLoading
+                ? "Loading the quote…"
+                : quoteLoadFailed
+                  ? "The quote could not be loaded, so no price is shown. Check the chart feed for the current price."
+                  : "No quote available for this symbol."}
+      </p>
 
       {/* Lot sizing */}
       <div className="mt-3 flex items-end gap-3">
@@ -223,9 +315,13 @@ export function QuickTradePanel({
       {/* Toggles */}
       <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-border/60 pt-3 text-sm">
         <Toggle icon={<ShieldQuestion className="h-4 w-4" />} label="SL / TP" on={slTpOn} set={setSlTpOn} testid="trade-sltp-toggle" />
-        <Toggle icon={<Bot className="h-4 w-4" />} label="Risk check" on={riskCheckOn} set={setRiskCheckOn} testid="trade-riskcheck-toggle" />
-        <Toggle icon={<ShieldCheck className="h-4 w-4" />} label="Safety gates" on={safetyGatesOn} set={setSafetyGatesOn} testid="trade-safety-toggle" />
       </div>
+      {/* Not a switch: the server's risk check and safety gates run on every
+          submit and cannot be turned off from this panel. */}
+      <p className="mt-2 flex items-start gap-2 text-xs text-txt-muted" data-testid="trade-server-checks-note">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>Risk check and safety gates are not set here. The server runs them on every order you send (one-click, the order window or the ticket), and they cannot be turned off from this panel.</span>
+      </p>
 
       {/* SL/TP expandable */}
       {slTpOn && (

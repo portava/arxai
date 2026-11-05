@@ -4,7 +4,7 @@ import { CriticalEventsCard, AlertsSummaryCard, TodayPerformanceCard } from './C
 import { BestMarketsCard, AvoidMarketsCard } from './CockpitTimingWidgets';
 const state=vi.hoisted(()=>({data:undefined as any,isError:false,isLoading:false,dataUpdatedAt:0}));
 vi.mock('@workspace/api-client-react',()=>({
- useGetEconomicCalendar:()=>state,useGetCriticalAlerts:()=>state,useGetPerformanceSummary:()=>state,
+ useGetEconomicCalendar:()=>state,useGetEconomicCalendarEnvelope:()=>state,useGetCriticalAlerts:()=>state,useGetPerformanceSummary:()=>state,
  useGetTimingBrainMulti:()=>state,getGetTimingBrainMultiQueryKey:()=>['timing'],
 }));
 vi.mock('wouter',()=>({Link:({children,href}:any)=><a href={href}>{children}</a>}));
@@ -17,7 +17,9 @@ const cards=[CriticalEventsCard,AlertsSummaryCard,TodayPerformanceCard,BestMarke
 describe('cockpit missing data is not an all-clear',()=>{
  for(const Card of cards)it(`${Card.name}: failed request stays unavailable`,()=>{state.isError=true;render(<Card/>);expect(screen.getByText(/unavailable/i)).toBeTruthy();expect(screen.queryByText(/No major|No high-impact|No A-grade|Place or close your first|manageable/i)).toBeNull()});
  for(const Card of cards)it(`${Card.name}: malformed successful response stays unavailable`,()=>{state.data={unexpected:true};render(<Card/>);expect(screen.getByText(/unavailable/i)).toBeTruthy()});
- it('calendar empty response is scoped to returned data',()=>{state.data=[];render(<CriticalEventsCard/>);expect(screen.getByText(/No high-impact events returned/i)).toBeTruthy()});
+ // The card reads events + whether the calendar was read from ONE envelope response (Truth port);
+ // only a read calendar's empty list is an empty result.
+ it('calendar empty response is scoped to returned data',()=>{state.data={read:true,events:[]};render(<CriticalEventsCard/>);expect(screen.getByText(/No high-impact events returned/i)).toBeTruthy()});
  it('alerts refetch failure does not claim cached empty data is current',()=>{state.data=[];state.isError=true;render(<AlertsSummaryCard/>);expect(screen.getByText(/unavailable/i)).toBeTruthy();expect(screen.queryByText(/No major alerts/)).toBeNull()});
  it('timing empty success is missing coverage, not manageable conditions',()=>{state.data={results:[]};render(<AvoidMarketsCard/>);expect(screen.getByText(/unavailable/i)).toBeTruthy();expect(screen.queryByText(/manageable|No major red/)).toBeNull()});
  it('alerts without timestamps are not assigned the current time',()=>{state.data=[{id:1,title:'Unknown time alert'}];render(<AlertsSummaryCard/>);expect(screen.getByText(/Time unavailable/)).toBeTruthy();expect(screen.queryByText(/Last seen/)).toBeNull()});
@@ -33,7 +35,7 @@ describe('response boundaries and coverage',()=>{
  for(const overrides of [{symbol:'UNREQUESTED'},{dangerScore:NaN},{generatedAt:'bad'},{generatedAt:'2999-01-01T00:00:00Z'},{timingGrade:'INVALID'}])it(`rejects malformed timing evidence ${JSON.stringify(overrides)}`,()=>{state.data={results:[timing(overrides)]};render(<AvoidMarketsCard/>);expect(screen.getByText(/unavailable/)).toBeTruthy()});
  it('duplicate symbol evidence cannot inflate market coverage',()=>{state.data={results:[timing(),timing({entryPermission:'STAND_DOWN'})]};render(<AvoidMarketsCard/>);expect(screen.getByText(/unavailable/)).toBeTruthy()});
  it('valid caution remains visible with response-limited coverage',()=>{state.data={results:[timing({entryPermission:'STAND_DOWN',timingGrade:'D',dangerScore:75})]};render(<AvoidMarketsCard/>);expect(screen.getByText('EURUSD')).toBeTruthy();expect(screen.getByText('D:75')).toBeTruthy();expect(screen.getByText(/Partial coverage/)).toBeTruthy()});
- it('malformed calendar row cannot render Invalid Date',()=>{state.data=[{id:1,title:'Broken',eventTime:'bad'}];render(<CriticalEventsCard/>);expect(screen.getByText(/unavailable/i)).toBeTruthy();expect(screen.queryByText(/Invalid Date/)).toBeNull()});
+ it('malformed calendar row cannot render Invalid Date',()=>{state.data={read:true,events:[{id:1,title:'Broken',eventTime:'bad'}]};render(<CriticalEventsCard/>);expect(screen.getByText(/unavailable/i)).toBeTruthy();expect(screen.queryByText(/Invalid Date/)).toBeNull()});
  it('malformed alerts payload cannot crash grouping',()=>{state.data={alerts:'not an array'};render(<AlertsSummaryCard/>);expect(screen.getByText(/unavailable/i)).toBeTruthy()});
  it('valid empty alerts remains a response-scoped empty state',()=>{state.data={alerts:[]};render(<AlertsSummaryCard/>);expect(screen.getByText(/No critical alerts returned/)).toBeTruthy()});
  it('unknown closed results remain explicit even if known-trade count is zero',()=>{state.data={totalTrades:0,winningTrades:0,losingTrades:0,excludedUnknownCount:3,todayPnl:0,winRate:0,bestTradePnl:0};render(<TodayPerformanceCard/>);expect(screen.getByText(/3 closed trade results are unknown/)).toBeTruthy();expect(screen.getByText(/No closed trades with known results/)).toBeTruthy()});

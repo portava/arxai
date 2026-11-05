@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { GitMerge } from "lucide-react";
+import { Link } from "wouter";
 
 type Recon = {
   mt5Connected: boolean; brokerOrders: unknown[]; brokerPositions: unknown[];
@@ -30,14 +31,43 @@ function normaliseRecon(raw: unknown): Recon {
   };
 }
 
+// The broker side counts only mean something when the server actually read the
+// MT5 bridge. A DEFERRED status, or mt5Connected=false, means it did not, so
+// "0 broker orders / 0 mismatches" would be an unmeasured value shown as a pass.
+function brokerSideRead(r: Recon): boolean {
+  return r.mt5Connected && r.syncStatus.toUpperCase() !== "DEFERRED" && r.syncStatus !== "unknown";
+}
+
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; recon: Recon };
+
 export default function BrokerReconciliationPage() {
-  const [r, setR] = useState<Recon | null>(null);
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
   useEffect(() => {
     fetch("/api/broker-reconciliation/status")
-      .then((x) => x.json())
-      .then((raw) => setR(normaliseRecon(raw)))
-      .catch(() => setR(normaliseRecon(null)));
+      .then(async (x) => {
+        let raw: unknown = null;
+        try { raw = await x.json(); } catch { raw = null; }
+        if (!x.ok) {
+          const code = raw && typeof raw === "object" ? (raw as { error?: unknown }).error : undefined;
+          const message = x.status === 401 || x.status === 403 || code === "ADMIN_OR_OWNER_REQUIRED"
+            ? `Admin or owner access is required (HTTP ${x.status}). No reconciliation data was read.`
+            : `Could not load reconciliation status (HTTP ${x.status}${typeof code === "string" ? `: ${code}` : ""}). No reconciliation data was read.`;
+          setState({ kind: "error", message });
+          return;
+        }
+        setState({ kind: "ready", recon: normaliseRecon(raw) });
+      })
+      .catch((e: unknown) => setState({
+        kind: "error",
+        message: `Could not load reconciliation status (${e instanceof Error ? e.message : "request failed"}). No reconciliation data was read.`,
+      }));
   }, []);
+
+  const r = state.kind === "ready" ? state.recon : null;
+  const brokerRead = r ? brokerSideRead(r) : false;
 
   return (
     <div className="space-y-4">
@@ -47,12 +77,27 @@ export default function BrokerReconciliationPage() {
           <h1 className="text-2xl font-bold">Broker Reconciliation</h1>
           <p className="text-sm text-muted-foreground">Compare local OMS state vs MT5 bridge state.</p>
         </div>
-        <Badge className="bg-purple-500/20 text-purple-400">MT5 DEFERRED</Badge>
+        {r && (
+          <Badge className={brokerRead ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}>
+            {brokerRead ? `Broker side read · ${r.syncStatus}` : "Broker side not reconciled here"}
+          </Badge>
+        )}
       </div>
 
-      {!r ? <p className="text-sm text-muted-foreground">Loading…</p> : (
+      {state.kind === "loading" && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {state.kind === "error" && (
+        <p data-testid="recon-error" role="alert" className="rounded border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-300">
+          {state.message}
+        </p>
+      )}
+      {r && (
         <>
-          <Card><CardHeader><CardTitle className="text-base">Status</CardTitle><CardDescription>{r.notice}</CardDescription></CardHeader>
+          <Card><CardHeader><CardTitle className="text-base">Status</CardTitle>
+              <CardDescription>
+                {brokerRead
+                  ? r.notice
+                  : "This page compares only the in-app order book. It did not read MT5 orders or positions, so broker counts and mismatches below were not checked."}
+              </CardDescription></CardHeader>
             <CardContent>
               <Badge variant="outline">syncStatus={r.syncStatus}</Badge>
               <Badge className="ml-2" variant="outline">mt5Connected={String(r.mt5Connected)}</Badge>
@@ -65,12 +110,17 @@ export default function BrokerReconciliationPage() {
                 <Row label="Positions" value={String(r.localPositions)} />
                 <Row label="Live tester intents" value={String(r.localLiveIntents)} />
               </CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-base">Broker (MT5, deferred)</CardTitle></CardHeader>
+            <Card><CardHeader><CardTitle className="text-base">Broker (MT5)</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1">
-                <Row label="Broker orders" value={String(r.brokerOrders?.length ?? 0)} />
-                <Row label="Broker positions" value={String(r.brokerPositions?.length ?? 0)} />
-                <Row label="Mismatches" value={String(r.mismatches?.length ?? 0)} />
-                <p className="text-xs text-muted-foreground mt-2">Activates once MT5 bridge is connected.</p>
+                <Row label="Broker orders" value={brokerRead ? String(r.brokerOrders.length) : "Not read"} />
+                <Row label="Broker positions" value={brokerRead ? String(r.brokerPositions.length) : "Not read"} />
+                <Row label="Mismatches" value={brokerRead ? String(r.mismatches.length) : "Not checked"} />
+                {!brokerRead && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Broker reconciliation results are recorded in the{" "}
+                    <Link href="/admin/reconciliation-center" className="underline">Reconciliation Center</Link>.
+                  </p>
+                )}
               </CardContent></Card>
           </div>
         </>

@@ -23,6 +23,10 @@ export interface DiscoveredDerivSymbol {
   market: string;         // venue market key, e.g. "synthetic_index"
   submarket: string;      // venue submarket key, e.g. "random_index"
   exchangeIsOpen: boolean;
+  /** Venue-published pip (smallest quoted increment), e.g. 0.0001 for R_75.
+   *  Null when the venue omitted it or sent a non-positive / non-number value
+   *  — never guessed. */
+  pip: number | null;
 }
 
 /** Timestamped retention envelope for the most recent discovery. */
@@ -78,6 +82,7 @@ export function parseActiveSymbols(raw: unknown): DiscoveredDerivSymbol[] {
       // Venue sends 0/1; tolerate a boolean. Anything else reads as closed —
       // never assume an exchange is open without evidence.
       exchangeIsOpen: rec.exchange_is_open === 1 || rec.exchange_is_open === true,
+      pip: typeof rec.pip === "number" && Number.isFinite(rec.pip) && rec.pip > 0 ? rec.pip : null,
     });
   }
   return out;
@@ -109,4 +114,45 @@ export function validateKnownMap(
     .filter((d) => d.market === SYNTHETIC_MARKET_KEY && !knownIds.has(d.symbol))
     .map((d) => d.symbol);
   return { matched, missingFromVenue, unknownAtVenue };
+}
+
+/** Decimal places implied by a venue pip (0.0001 → 4, 0.01 → 2, 1 → 0).
+ *  Null when the pip is not a clean power of ten — never rounded into one. */
+export function precisionFromPip(pip: number | null | undefined): number | null {
+  if (pip == null || !Number.isFinite(pip) || pip <= 0 || pip > 1) return null;
+  const dp = Math.round(-Math.log10(pip)) + 0; // + 0 folds -0 (pip 1) to 0
+  if (dp < 0 || dp > 10) return null;
+  return Math.abs(pip - 10 ** -dp) <= 1e-12 ? dp : null;
+}
+
+/** A static profile precision that disagrees with the venue's published pip. */
+export interface DerivPrecisionMismatch {
+  arxSymbol: string;
+  derivId: string;
+  profilePrecision: number;
+  venuePrecision: number;
+  venuePip: number;
+}
+
+/** Compare the static per-symbol display precision (symbolProfile) against the
+ *  precision implied by the venue's published `pip`. Report-only, exactly like
+ *  validateKnownMap: returns the mismatches, mutates nothing, corrects nothing.
+ *  A venue entry without a usable pip is skipped (no evidence, no claim). */
+export function validateProfilePrecision(
+  discovered: readonly DiscoveredDerivSymbol[],
+  staticMap: readonly KnownDerivMapEntry[],
+  profilePrecisionOf: (arxSymbol: string) => number | null,
+): DerivPrecisionMismatch[] {
+  const byId = new Map(discovered.map((d) => [d.symbol, d]));
+  const out: DerivPrecisionMismatch[] = [];
+  for (const k of staticMap) {
+    const venue = byId.get(k.derivId);
+    const venuePrecision = precisionFromPip(venue?.pip ?? null);
+    const profilePrecision = profilePrecisionOf(k.symbol);
+    if (venue?.pip == null || venuePrecision == null || profilePrecision == null) continue;
+    if (venuePrecision !== profilePrecision) {
+      out.push({ arxSymbol: k.symbol, derivId: k.derivId, profilePrecision, venuePrecision, venuePip: venue.pip });
+    }
+  }
+  return out;
 }

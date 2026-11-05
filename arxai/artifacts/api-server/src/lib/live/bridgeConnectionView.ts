@@ -47,6 +47,7 @@ export interface MaskedBridgeConnection {
   previousTokenExpiresAt: string | null;
   graceWindowActive: boolean;
   lastHeartbeatAt: string | null;
+  /** Null when there is no heartbeat or it is dated in the future (age unknown). */
   heartbeatAgeSeconds: number | null;
 }
 
@@ -63,9 +64,10 @@ export function maskConnection(
   row: BridgeConnectionRow,
   now: Date = new Date(),
 ): MaskedBridgeConnection {
-  const ageSeconds = row.lastHeartbeat
-    ? Math.max(0, Math.floor((now.getTime() - row.lastHeartbeat.getTime()) / 1000))
-    : null;
+  // A future-dated heartbeat's age cannot be verified (shared heartbeat
+  // policy: unknown, never fresh): null, never clamped to 0.
+  const ageMs = row.lastHeartbeat ? now.getTime() - row.lastHeartbeat.getTime() : null;
+  const ageSeconds = ageMs == null || !Number.isFinite(ageMs) || ageMs < 0 ? null : Math.floor(ageMs / 1000);
   return {
     id: row.id,
     userId: row.userId,

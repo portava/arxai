@@ -10,7 +10,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMarketImpactRadar } from "../marketImpactRadar.js";
+import { buildMarketImpactRadar, isSyntheticSymbol } from "../marketImpactRadar.js";
+import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
 
 const NOW = Date.parse("2026-06-19T12:00:00.000Z");
 
@@ -108,10 +109,30 @@ test("radar: severity and high-impact window are earned, never asserted", async 
 
 test("radar: synthetic instrument is never driven by macro events", async () => {
   const { radar } = await buildMarketImpactRadar("Volatility 75 Index", NOW);
-  assert.deepEqual(radar.events, []);
-  assert.match(radar.summary, /synthetic instrument/i);
-  assert.match(radar.summary, /not driven by real-world economic events/i);
+  assert.equal(radar.events.some((e) => e.affectsSymbol), false);
+  if (!radar.provider.connected) assert.deepEqual(radar.events, []);
+  assert.equal(radar.summary, SYNTHETIC_EVENT_RISK_LABEL);
+  assert.match(radar.summary, /not driven by scheduled economic events/i);
 });
+
+// Owner screenshot 2026-10-27: the scanner's OWN canonical keys ("V75",
+// "V75_1S") were missed by the radar's private name regex, so the V75 truth
+// read carried calendar wording while the heat list called it immune.
+for (const key of ["V75", "V75_1S", "1HZ75V", "R_75", "CRASH500", "BOOM1000"]) {
+  test(`radar: canonical synthetic key ${key} is recognised as synthetic`, async () => {
+    assert.equal(isSyntheticSymbol(key), true);
+    const { radar } = await buildMarketImpactRadar(key, NOW);
+    assert.equal(radar.summary, SYNTHETIC_EVENT_RISK_LABEL);
+    assert.equal(radar.events.some((e) => e.affectsSymbol), false);
+    assert.equal(radar.highImpactWindowActive, false);
+    assert.equal(radar.topSeverity, null);
+  });
+}
+for (const key of ["EURUSD", "XAUUSD", "US30", "BTCUSD", "NAS100"]) {
+  test(`radar: control — ${key} is not synthetic`, () => {
+    assert.equal(isSyntheticSymbol(key), false);
+  });
+}
 
 test("radar: result is advisory-only — carries no execution field", async () => {
   const result = await buildMarketImpactRadar("EURUSD", NOW);

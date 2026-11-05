@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Gauge } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type Cal = { totalSample: number; label: string; buckets: Array<{ bucket: string; sample: number; winRate: number; avgR: number }> };
+type Cal = { totalSample: number; label: string; labelBasis?: string; buckets: Array<{ bucket: string; sample: number; winRate: number | null; avgR: number | null }> };
 const LABEL_COLOR: Record<string, string> = { WELL_CALIBRATED: "bg-emerald-500/20 text-emerald-400", OVERCONFIDENT: "bg-rose-500/20 text-rose-400", UNDERCONFIDENT: "bg-amber-500/20 text-amber-400", RANDOM_CONFIDENCE: "bg-slate-500/20 text-slate-300", NEEDS_MORE_DATA: "bg-slate-500/20 text-slate-300" };
 
 const PAGE_ICON = <Gauge className="h-6 w-6 text-primary" />;
@@ -58,19 +58,23 @@ export default function ConfidenceCalibration() {
       </div>
       {c && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Calibration buckets</CardTitle><CardDescription>Total sample: {c.totalSample}</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Calibration buckets</CardTitle><CardDescription>Total sample: {c.totalSample} tracked outcomes.{c.labelBasis ? ` ${c.labelBasis}` : ""}</CardDescription></CardHeader>
           <CardContent className="space-y-2">
-            {c.buckets.map((b) => (
-              <div key={b.bucket} className="flex items-center gap-2 text-xs">
-                <Badge variant="outline" className="w-20">{b.bucket}</Badge>
-                <div className="flex-1 h-3 bg-muted rounded relative">
-                  <div className="absolute inset-y-0 left-0 bg-primary rounded" style={{ width: `${b.winRate}%` }} />
+            {c.buckets.map((b) => {
+              // A bucket with no tracked outcome has no win rate: "no data", never a 0% bar.
+              const measured = b.sample > 0 && b.winRate != null;
+              return (
+                <div key={b.bucket} className="flex items-center gap-2 text-xs">
+                  <Badge variant="outline" className="w-20">{b.bucket}</Badge>
+                  <div className="flex-1 h-3 bg-muted rounded relative">
+                    {measured && <div className="absolute inset-y-0 left-0 bg-primary rounded" style={{ width: `${b.winRate}%` }} />}
+                  </div>
+                  <span className="w-16 text-right font-mono">{measured ? `${b.winRate}%` : "no data"}</span>
+                  <span className="w-20 text-right font-mono">{measured && b.avgR != null ? `avg R ${b.avgR}` : "avg R —"}</span>
+                  <span className="w-16 text-right text-muted-foreground">n={b.sample}</span>
                 </div>
-                <span className="w-16 text-right font-mono">{b.winRate}%</span>
-                <span className="w-20 text-right font-mono">avg R {b.avgR}</span>
-                <span className="w-16 text-right text-muted-foreground">n={b.sample}</span>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       )}

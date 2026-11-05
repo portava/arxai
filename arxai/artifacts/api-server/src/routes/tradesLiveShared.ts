@@ -41,6 +41,8 @@ import { getBrokerSymbolSpec } from "../lib/mt5/brokerSymbolSpec.js";
 import { sharedMasterAccountsTable, virtualTradingAccountsTable, globalTradingSettingsTable } from "@workspace/db/schema";
 import { randomUUID } from "node:crypto";
 import { routeCandles } from "../lib/data/marketDataRouter.js";
+import { barOpenUtcMs, measuredBrokerClockOffsetMs } from "../lib/data/freshness.js";
+import { servedSeriesBrokerClockOffsetMs } from "../lib/data/providers/mt5Provider.js";
 import { computeATR, classifyVolatility, type Candle } from "@workspace/domain/market";
 import { buildExecutionPreviewForUser } from "../lib/execution/executionPreviewService.js";
 import type {
@@ -808,6 +810,46 @@ router.get("/trades/live-shared/suggest-sltp", requireUser, async (req, res) => 
   const suggestedStopLoss = roundTo(side === "BUY" ? entry - slDist : entry + slDist, decimals);
   const suggestedTakeProfit = roundTo(side === "BUY" ? entry + tpDist : entry - tpDist, decimals);
 
+  // Say what the levels were measured from and as of when: the last M15
+  // candle can be old (closed market, stalled feed), so its close is never
+  // called "current" and never a live quote.
+  //
+  // MT5 bars are stamped on the broker-server clock (audit H7: bar times are
+  // never rewritten; the bridge's measured offset travels with them). The open
+  // time is shown in UTC only after subtracting a MEASURED offset (same rule
+  // as candleHistoryService / watchlists); with none measured the broker time
+  // is shown as broker time and its UTC age is not claimed.
+  const lastOpenMs = candles[candles.length - 1].time;
+  const newestRouted = routed.candles[routed.candles.length - 1];
+  const brokerStamped = routed.provenance?.brokerCode === "mt5"
+    || (newestRouted?.timeBasisEvidence as { basis?: unknown } | undefined)?.basis === "BROKER_SERVER";
+  const brokerClockOffsetMs = brokerStamped
+    ? (routed.provenance
+        ? servedSeriesBrokerClockOffsetMs(routed.provenance, newestRouted)
+        : measuredBrokerClockOffsetMs(newestRouted?.timeBasisEvidence))
+    : null;
+  const lastOpenKnown = Number.isFinite(lastOpenMs) && lastOpenMs > 0;
+  const utcUnknown = brokerStamped && brokerClockOffsetMs == null;
+  const lastOpenUtcMs = lastOpenKnown && !utcUnknown ? barOpenUtcMs(lastOpenMs, brokerClockOffsetMs) : null;
+  const lastCandleOpenedAt = lastOpenUtcMs != null ? new Date(lastOpenUtcMs).toISOString() : null;
+  const lastCandleAge = (() => {
+    if (lastOpenUtcMs == null) return null;
+    const ageMs = Date.now() - lastOpenUtcMs;
+    if (ageMs < 0) return "stamped ahead of the server clock";
+    if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)} min ago`;
+    if (ageMs < 86_400_000) return `${Math.floor(ageMs / 3_600_000)} h ago`;
+    return `${Math.floor(ageMs / 86_400_000)} d ago`;
+  })();
+  const candleWhen = lastCandleOpenedAt
+    ? `the last one opened at ${lastCandleOpenedAt} (${lastCandleAge})`
+    : lastOpenKnown && utcUnknown
+      ? `the last one opened at ${new Date(lastOpenMs).toISOString().slice(0, 16).replace("T", " ")} broker server time; its UTC time and age are not known`
+      : "the time of the last one is not known";
+  const anchor = entryOverride != null
+    ? `your entry ${roundTo(entry, decimals)}`
+    : `the last M15 close ${roundTo(entry, decimals)}`;
+  const note = `Measured from ${anchor} and ${vol.state.toLowerCase()} volatility (ATR ${roundTo(atr, decimals)}) on M15 candles; ${candleWhen}. Not a live quote. Editable — advisory only.`;
+
   res.json({
     ok: true,
     symbol,
@@ -821,7 +863,10 @@ router.get("/trades/live-shared/suggest-sltp", requireUser, async (req, res) => 
     suggestedStopLoss,
     suggestedTakeProfit,
     method: "ATR(14) · M15 · SL 1.5×ATR · TP 2R",
-    note: `Suggested from current ${vol.state.toLowerCase()} volatility (ATR ${roundTo(atr, decimals)}). Editable — advisory only.`,
+    // UTC open time of the last M15 bar; null when it is not known in UTC
+    // (a broker-stamped bar with no measured broker-clock offset).
+    lastCandleOpenedAt,
+    note,
     ...envelope(),
   });
 });

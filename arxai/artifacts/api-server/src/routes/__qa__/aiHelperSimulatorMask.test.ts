@@ -139,6 +139,17 @@ test("/ai/grade-trade masks for TESTER, raw for OWNER", async () => {
   assert.equal(raw.withheld, undefined, "operator sees raw trade grade");
 });
 
+// The grade is masked by the viewer's role alone (gradeTrade always runs on
+// simulator prices), so no verified feed will ever un-hide it. Its reason must
+// say that, not "hidden until a verified feed is available".
+test("/ai/grade-trade withheld reason names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/grade-trade", "TESTER", TRADE);
+  const reason = String(masked.improvementSuggestion);
+  assert.doesNotMatch(reason, /verified feed|isn't confirmed yet/i, "a feed will not un-hide a role-masked grade");
+  assert.match(reason, /simulator/i, "the reason says the grader runs on simulator prices");
+  assert.match(reason, /operator/i, "the reason says who may see simulator-based grades");
+});
+
 // ── (5) /ai/opportunity-score (scanner) ─────────────────────────────────────
 test("/ai/opportunity-score masks for TESTER, raw for OWNER", async () => {
   const masked = await post("/api/ai/opportunity-score", "TESTER", SYMBOL);
@@ -185,4 +196,65 @@ test("/ai/session-plan masks for TESTER, raw for OWNER (POST + GET)", async () =
   });
   const getMasked = (await getMaskedRes.json()) as Record<string, unknown>;
   assert.equal(getMasked.withheld, true, "GET session-plan must mask for non-admin too");
+});
+
+// The plan is masked by the viewer's role alone (sessionPlanFromSnapshot always
+// tags it SIMULATOR and maskSimulatorSessionPlan never checks a feed), so no
+// verified feed will ever un-hide it. Its text must say that, not "hidden
+// until a verified feed is available".
+test("/ai/session-plan withheld text names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/session-plan", "TESTER", {});
+  const texts = ["summary", "marketConditions", "recommendedFirstTest", "preferredStrategy"]
+    .map((k) => String(masked[k]));
+  for (const t of texts) {
+    assert.doesNotMatch(t, /verified feed|isn't confirmed yet/i, `a feed will not un-hide a role-masked plan: ${t}`);
+  }
+  assert.match(String(masked.summary), /operator/i, "the text says who may see session plans");
+});
+
+// The plan is built from the scanner's latest sweep, whose rows carry their
+// own dataSource (LIVE_FEED, STALE_FEED, …); only the plan's own tag is a
+// hard-coded "SIMULATOR". The withheld text said the plan "is built from
+// simulator scanner data" — a source the code never checks, and false on a
+// feed-connected deployment. It now states only the rule the server applies:
+// session plans are shown only to platform operators.
+test("/ai/session-plan withheld text states the operator-only rule, not an unchecked data source", async () => {
+  const masked = await post("/api/ai/session-plan", "TESTER", {});
+  for (const k of ["summary", "marketConditions", "recommendedFirstTest", "preferredStrategy"]) {
+    const t = String(masked[k]);
+    assert.doesNotMatch(t, /built from simulator|simulator scanner data|simulator data/i, `names a data source the server never checked: ${t}`);
+    assert.match(t, /session plans are shown only to platform operators/i, t);
+  }
+});
+
+// Review pass 2: the market analysis and trade card are also masked by the
+// viewer's role alone (analyzeMarket / generateTradeCard always run on
+// simulator prices), so no verified feed will ever un-hide them. Their text
+// said "hidden until a verified feed is available" / "Read withheld until a
+// verified live feed is available" — it must name the role mask instead.
+function assertRoleMaskCopy(texts: string[], what: string) {
+  for (const t of texts) {
+    assert.doesNotMatch(t, /verified (live )?feed|isn't confirmed yet/i, `a feed will not un-hide a role-masked ${what}: ${t}`);
+  }
+  const joined = texts.join(" ");
+  assert.match(joined, /simulator/i, `the ${what} text says it is built from simulator prices`);
+  assert.match(joined, /operator/i, `the ${what} text says who may see simulator-based detail`);
+}
+
+test("/ai/market-analysis withheld text names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/market-analysis", "TESTER", SYMBOL);
+  assertRoleMaskCopy([String(masked.reasonForTrade), String(masked.reasonToAvoid)], "market analysis");
+});
+
+test("/ai/generate-trade-card withheld text names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/generate-trade-card", "TESTER", SYMBOL);
+  assertRoleMaskCopy([String(masked.reasonForTrade), String(masked.reasonToAvoid), String(masked.notes)], "trade card");
+});
+
+test("/ai/setup-analysis nested analysis and card name the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/setup-analysis", "TESTER", SYMBOL);
+  const analysis = masked.analysis as Record<string, unknown>;
+  const card = masked.card as Record<string, unknown>;
+  assertRoleMaskCopy([String(analysis.reasonForTrade), String(analysis.reasonToAvoid)], "setup analysis");
+  assertRoleMaskCopy([String(card.reasonForTrade), String(card.notes)], "setup trade card");
 });

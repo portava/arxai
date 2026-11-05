@@ -25,6 +25,7 @@ import {
 import { requireUser } from "../lib/auth/middleware.js";
 import { buildEleanorMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
+import { chartLevelPersonalityWords } from "../lib/data/chart/marketSentenceEngine.js";
 import { buildMarketImpactRadar } from "../lib/news/marketImpactRadar.js";
 import { buildExecutionPreviewForUser } from "../lib/execution/executionPreviewService.js";
 
@@ -36,28 +37,14 @@ const SAFETY_ENVELOPE = {
   allowOrderExecution: false as const,
 };
 
-/** Plain-English rendering of a chart-level personality (no internal tokens). */
+/**
+ * Plain-English rendering of a chart-level personality (no internal tokens).
+ * Uses the same words as Eleanor's nearest-level line so the scanner chart's
+ * structure lines never contradict it: retest_pending means the level broke
+ * AND price came back to retest it (observed), not a retest still awaited.
+ */
 function humanizeLevelPersonality(p: string): string {
-  switch (p) {
-    case "fresh":
-      return "fresh";
-    case "defended":
-      return "defended";
-    case "weakening":
-      return "weakening";
-    case "broken":
-      return "broken";
-    case "retest_pending":
-      return "retest pending";
-    case "trap_zone":
-      return "trap zone";
-    case "scalp_only":
-      return "scalp only";
-    case "invalidated":
-      return "invalidated";
-    default:
-      return p.replace(/_/g, " ");
-  }
+  return chartLevelPersonalityWords(p);
 }
 
 /** Plain-English rendering of a signal lifecycle stage (no internal tokens). */
@@ -224,6 +211,23 @@ router.get(
     const overlayAgeMs = Number.isFinite(signalGeneratedMs)
       ? Math.max(0, nowMs - signalGeneratedMs)
       : null;
+    // overlayAgeMs is how long ago the server rebuilt the read — it is rebuilt
+    // on every request, so on its own it always looks fresh. Whether the
+    // candles UNDER the overlays are live is a separate fact: the signal's
+    // dataSource (only LIVE_FEED is live) and the structure levels' chart
+    // state (stale = not live). null = no signal, nothing to judge.
+    const signalCandlesLive = signal ? signal.dataSource === "LIVE_FEED" : null;
+    const levelCandlesStale = chartState ? chartState.stale === true : false;
+    const sourceDataLive: boolean | null =
+      signalCandlesLive == null ? null : signalCandlesLive && !levelCandlesStale;
+    const sourceDataNote: string | null =
+      sourceDataLive !== false
+        ? null
+        : !signalCandlesLive
+          ? signal?.dataSource === "LIVE_DELAYED"
+            ? "the signal's candles are delayed"
+            : "the signal's candles are not from a live feed right now"
+          : "the chart's structure-level candles are stale";
 
     // Server-side (data) handshake: chart is assumed rendered for the data view
     // and the chart symbol is the requested symbol vs the symbol the signal was
@@ -238,6 +242,8 @@ router.get(
       levelCount,
       newsMapped,
       overlayAgeMs,
+      sourceDataLive,
+      sourceDataNote,
     });
 
     res.json({
@@ -277,6 +283,8 @@ router.get(
         hasSufficientData,
         levelCount,
         newsMapped,
+        sourceDataLive,
+        sourceDataNote,
       },
       ...SAFETY_ENVELOPE,
     });

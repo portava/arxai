@@ -271,13 +271,30 @@ describe("source-bound stream warning", () => {
     expect(attempts).toBe(1);expect(streams).toHaveLength(0);
     act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(1);
     act(()=>vi.advanceTimersByTime(1));expect(attempts).toBe(2);expect(streams).toHaveLength(1);
+    // Constructing the replacement proves nothing about delivery: the chart
+    // keeps saying it is reconnecting until a frame actually arrives.
+    expect(screen.getByTestId("arx-native-stream-reconnecting")).toBeTruthy();
+    act(()=>streams[0]!.onmessage!(heartbeat));
     expect(screen.queryByTestId("arx-native-stream-reconnecting")).toBeNull();
-    act(()=>streams[0]!.onmessage!(heartbeat));act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(2);
+    act(()=>vi.advanceTimersByTime(29_999));expect(attempts).toBe(2);
   });
 
 });
 
 describe("compact chart evidence", () => {
+  it("reports an unavailable feed consistently without inventing sync progress", () => {
+    const response = liveResponse("EURUSD", "M5");
+    candleResponse = { ...response, candles: [], feedStatus: {
+      ...response.feedStatus, source: null, quality: "unavailable", isLive: false,
+      aiUsable: false, message: "No feed", stale: false,
+    } };
+    render(<ARXNativeChart symbol="EURUSD" timeframe="M5" overlays={NO_OVERLAYS} />);
+    const details = screen.getByTestId("chart-evidence-details");
+    const summary = within(details).getByText("Chart evidence details").closest("summary")!;
+    expect(summary.textContent).toContain("Unavailable");
+    expect(summary.textContent).not.toMatch(/Syncing|Mirrored/);
+  });
+
   it("names simultaneous restrictions before disclosure and retains their full explanations", () => {
     const response = liveResponse("EURUSD", "H1");
     candleResponse = {...response, candles: [0, 1, 2].map(index => ({...response.candles[0]!, timeBasisEvidence: undefined,
@@ -334,8 +351,10 @@ describe("compact chart evidence", () => {
     const summary = within(details).getByText("Chart evidence details").closest("summary")!;
     fireEvent.click(summary);
     expect(details.textContent).toContain("Original provider integrity reason");
-    fireEvent.click(screen.getByTestId("arx-mirror-lock"));
-    expect(screen.getByTestId("chart-evidence-inspection").closest("details")).toBeNull();
+    // The Mirror Lock toggle and its "inspection mode" notice were removed (it
+    // implied a lock the chart does not enforce); neither may come back.
+    expect(screen.queryByTestId("arx-mirror-lock")).toBeNull();
+    expect(screen.queryByTestId("chart-evidence-inspection")).toBeNull();
     fireEvent.click(summary);
     vi.stubGlobal("innerWidth",320);act(()=>window.dispatchEvent(new Event("resize")));
     expect(screen.getByTestId("arx-native-canvas")).toBe(canvas);
@@ -1000,11 +1019,14 @@ describe("deferred comparison engine init", () => {
     const legend = engine.setCrosshairHandler.mock.calls.at(-1)![0] as (bar: unknown) => void;
     act(() => legend({ time: OPEN_MS / 1000, open: 1.101, high: 1.103, low: 1.1, close: 1.102 }));
     const inspector = screen.getByTestId("chart-candle-inspector");
-    expect(inspector.textContent).toBe("2023-11-14 22:13 UTC  ·  O 1.10100  H 1.10300  L 1.10000  C 1.10200");
+    // One instrument precision (lib/instrumentPriceFormat): no server-declared
+    // precision here, so the loaded quotes' own digits (3) decide — the legend
+    // prints what the axis and header print, not a fiat-pair guess.
+    expect(inspector.textContent).toBe("2023-11-14 22:13 UTC  ·  O 1.101  H 1.103  L 1.100  C 1.102");
     const zoneCalls = engine.setDisplayTimeZone.mock.calls.length;
     fireEvent.change(screen.getByLabelText("Display time zone"), { target: { value: "Asia/Tokyo" } });
     expect(engine.setDisplayTimeZone.mock.calls.slice(zoneCalls)).toEqual([["Asia/Tokyo"]]);
-    expect(inspector.textContent).toBe("2023-11-15 07:13 GMT+9  ·  O 1.10100  H 1.10300  L 1.10000  C 1.10200");
+    expect(inspector.textContent).toBe("2023-11-15 07:13 GMT+9  ·  O 1.101  H 1.103  L 1.100  C 1.102");
     // Daily bars keep UTC whatever the stored zone.
     cleanup();
     candleResponse=liveResponse("EURUSD","D1");
@@ -1107,7 +1129,7 @@ describe("original candle clock disclosure",()=>{
   expect((screen.getByLabelText("Display time zone") as HTMLSelectElement).disabled).toBe(true);
   expect(engine.setDisplayTimeZone).toHaveBeenLastCalledWith("UTC");
   expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("source clock (UTC unverified)");
-  expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.10100");
+  expect(screen.getByTestId("chart-candle-inspector").textContent).toContain("O 1.101  H 1.103  L 1.100  C 1.102");
   expect(engine.setCandles).toHaveBeenCalled();expect(engine.destroy).not.toHaveBeenCalled();
  });
 });

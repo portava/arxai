@@ -42,6 +42,7 @@ export type MarketDataReasonCode =
   | "not_enough_bars" // too few closed candles to analyse
   | "feed_unavailable" // approved + enough bars, but no current live feed yet
   | "stale_feed" // approved + enough bars, but the live feed is delayed
+  | "quote_unbound" // approved + enough bars + live, but no bid/ask spread is bound to the bars
   | "partial_history" // some history, not yet enough (reserved for callers)
   | "analysis_only" // simulator / non-real source (reserved for callers)
   | "source_not_ai_usable" // symbol is not an approved ARX market
@@ -116,6 +117,7 @@ interface ReadabilityPermissions {
 function deriveReadabilityPermissions(
   status: MarketDataSufficiencyStatus,
   freshnessVerdict: SymbolFeedVerdict,
+  quoteUnbound = false,
 ): ReadabilityPermissions {
   const directional = status === "sufficient";
   let reasonCode: MarketDataReasonCode;
@@ -124,7 +126,9 @@ function deriveReadabilityPermissions(
       reasonCode = "sufficient";
       break;
     case "partial":
-      reasonCode = freshnessVerdict === "LIVE_DELAYED" ? "stale_feed" : "feed_unavailable";
+      reasonCode = quoteUnbound
+        ? "quote_unbound"
+        : freshnessVerdict === "LIVE_DELAYED" ? "stale_feed" : "feed_unavailable";
       break;
     case "insufficient":
       reasonCode = "not_enough_bars";
@@ -158,7 +162,21 @@ export interface EvaluateMarketDataSufficiencyInput {
   availableClosedCandles: number;
   /** Optional override of the closed-bar floor (defaults to MIN_SUFFICIENT_CLOSED_BARS). */
   minimumRequiredCandles?: number;
+  /**
+   * Optional: how the live quote binds to these bars (scanner input integrity).
+   * `LAST_ONLY` — a fresh same-feed price exists but no bid/ask spread is
+   * observed — keeps a LIVE read `partial` (no trade setup) with the honest
+   * quote-binding reason instead of a false "delayed feed". Absent / BOUND /
+   * NONE leave the verdict exactly as before. Downgrade-only.
+   */
+  quoteBinding?: "BOUND" | "LAST_ONLY" | "NONE" | null;
 }
+
+/** User-safe reason for a live read whose quote carries no bid/ask spread. */
+export const QUOTE_UNBOUND_HUMAN_REASON =
+  "A live price is confirmed on these candles, but no bid/ask spread is bound to them " +
+  "(the live quote is last-price only), so exact entry, stop and target levels are " +
+  "withheld — this is a quote-binding limit, not a delayed feed.";
 
 /**
  * Evaluate the ONE shared data-sufficiency verdict.
@@ -166,7 +184,8 @@ export interface EvaluateMarketDataSufficiencyInput {
  * Precedence (strict, highest first):
  *   1. blocked      — symbol is not an approved ARX market
  *   2. insufficient — too few closed bars to analyse (bar floor outranks freshness)
- *   3. partial      — enough bars, but the feed is not currently LIVE
+ *   3. partial      — enough bars, but the feed is not currently LIVE, or it
+ *                     is LIVE but no bid/ask spread is bound (quote_unbound)
  *   4. sufficient   — approved, LIVE, and enough closed bars
  *
  * Only `sufficient` yields `canShowTradeSetup === true`.
@@ -200,12 +219,19 @@ export function evaluateMarketDataSufficiency(
       input.freshnessVerdict === "LIVE_DELAYED"
         ? "Live feed is delayed — read uses the last confirmed bars, not the current candle."
         : "Waiting for a current live feed before confirming this read.";
+  } else if (input.quoteBinding === "LAST_ONLY") {
+    status = "partial";
+    humanReason = QUOTE_UNBOUND_HUMAN_REASON;
   } else {
     status = "sufficient";
     humanReason = "Enough recent closed candles on a live feed to support a read.";
   }
 
-  const readability = deriveReadabilityPermissions(status, input.freshnessVerdict);
+  const readability = deriveReadabilityPermissions(
+    status,
+    input.freshnessVerdict,
+    status === "partial" && input.freshnessVerdict === "LIVE" && input.quoteBinding === "LAST_ONLY",
+  );
 
   return {
     status,

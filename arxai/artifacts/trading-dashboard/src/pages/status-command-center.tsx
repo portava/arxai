@@ -22,6 +22,7 @@ import type { ReadinessSection, SectionLevel } from "@/statusCommand/readinessSc
 import { buildBlockerCards } from "@/statusCommand/blockerCards";
 import type { BlockerCard } from "@/statusCommand/blockerCards";
 import { buildSetupWizard } from "@/statusCommand/setupWizard";
+import { heartbeatLine } from "@/statusCommand/heartbeatLine";
 import type { WizardStep } from "@/statusCommand/setupWizard";
 import { resolveRoute } from "@/knowledge/routeKnowledge";
 import type { AskContext } from "@/knowledge/answerEngine";
@@ -51,7 +52,10 @@ function toAskContext(ctx: RuntimeContext): AskContext {
     route: ctx.route,
     selectedSymbol: ctx.selectedSymbol ?? undefined,
     safetyStatuses: ctx.activeSafetyLocks,
-    mt5Hint: ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
+    // An unread bridge summary, or a summary that could not read the EA
+    // connection (bridgeMode "unknown"), is "unknown", never "deferred" or
+    // "disconnected".
+    mt5Hint: ctx.bridge === null || ctx.bridge.bridgeMode === "unknown" ? "unknown" : ctx.mt5BridgeConnected ? "connected" : ctx.mt5Deferred ? "deferred" : "disconnected",
     tradingModeHint: ctx.paperOnly ? "paper" : ctx.simulatorMode ? "simulator" : ctx.tradingMode === "broker-readonly" ? "broker-readonly" : "unknown",
   } as AskContext;
 }
@@ -69,6 +73,14 @@ export default function StatusCommandCenter() {
   const ff = useMemo(() => fixFirst(ctx), [ctx]);
   const status = useMemo(() => explainAppStatus(ctx), [ctx]);
   const reportContext = useMemo(() => buildSafeReportContext(ctx, "status-command-center"), [ctx]);
+  // One mode authority for the whole page: the account-mode envelope. The
+  // legacy diagnostic-summary mode (status.mode, from the bridge summary) is
+  // shown only as a labelled bridge-diagnostic row, never as the account mode.
+  const accountModeLabel = tradingMode.envelope
+    ? tradingMode.cleanModeLabel
+    : tradingMode.isLoading
+      ? "Account mode not resolved yet (loading)"
+      : "Account mode not resolved (could not be read)";
 
   return (
     <div
@@ -78,7 +90,7 @@ export default function StatusCommandCenter() {
     >
       <SummaryHeader
         score={score.total}
-        mode={tradingMode.envelope ? tradingMode.cleanModeLabel : status.mode}
+        mode={accountModeLabel}
         progress={progress}
       />
 
@@ -94,7 +106,7 @@ export default function StatusCommandCenter() {
       )}
 
       {/* Fix-first */}
-      <FixFirstBlock primary={ff.primary} alternates={ff.alternates} />
+      <FixFirstBlock primary={ff.primary} alternates={ff.alternates} postureUnmeasured={ctx.executionPostureUnmeasured === true} />
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -105,7 +117,7 @@ export default function StatusCommandCenter() {
 
         <section className="lg:col-span-5 space-y-4" data-testid="scc-mid-col">
           <BlockersCard cards={blockers} />
-          <RuntimeSummaryCard ctx={ctx} status={status} />
+          <RuntimeSummaryCard ctx={ctx} status={status} accountModeLabel={accountModeLabel} />
         </section>
 
         <section className="lg:col-span-3 space-y-4" data-testid="scc-right-col">
@@ -209,12 +221,21 @@ function LiveSharedReadinessBanner({
   );
 }
 
-function FixFirstBlock({ primary, alternates }: { primary: ReturnType<typeof fixFirst>["primary"]; alternates: ReturnType<typeof fixFirst>["alternates"] }) {
+function FixFirstBlock({ primary, alternates, postureUnmeasured }: {
+  primary: ReturnType<typeof fixFirst>["primary"];
+  alternates: ReturnType<typeof fixFirst>["alternates"];
+  /** The bridge summary did not read the execution posture, so no mode is assumed. */
+  postureUnmeasured: boolean;
+}) {
   if (!primary) {
     return (
       <div className="rounded-md border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100" data-testid="scc-fix-first-empty">
         <div className="font-semibold">What to fix first</div>
-        <div>No diagnoses to address right now. Stay in simulator/paper while server gates remain in place.</div>
+        <div>
+          {postureUnmeasured
+            ? "No diagnoses from the bridge diagnostic summary. That summary does not read your account mode or the execution gates; the Mode row shows your account mode, and every order is still checked server-side."
+            : "No diagnoses to address right now. Stay in simulator/paper while server gates remain in place."}
+        </div>
       </div>
     );
   }
@@ -300,7 +321,7 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${tone.chip}`}>{tone.icon} {tone.label}</span>
               </div>
               <div className="mt-1 text-xs text-zinc-400">{item.explanation}</div>
-              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Why:</span> {item.safeNextAction}</div>
+              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Next step:</span> {item.safeNextAction}</div>
               {item.blockerReason && <div className="text-xs text-rose-300">Blocker: {item.blockerReason}</div>}
               {item.related && (
                 <Link asChild href={item.related.route}>
@@ -360,28 +381,64 @@ function BlockersCard({ cards }: { cards: BlockerCard[] }) {
   );
 }
 
-function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus> }) {
+/** A server-read flag; null (not read) renders as "unknown", never a default. */
+function tri(v: boolean | null): string {
+  return v === null ? "unknown" : String(v);
+}
+
+/**
+ * A posture flag row. When the diagnostic summary says its live / execution /
+ * read-only / demo-only flags are fixed values, the row says it was not read
+ * instead of "unknown" (the request did not fail) or the fixed value.
+ */
+function postureFlag(ctx: RuntimeContext, v: boolean | null): string {
+  if (v === null && ctx.executionPostureUnmeasured) return "not read by this page (see Mode)";
+  return tri(v);
+}
+
+function postureSource(ctx: RuntimeContext): string {
+  if (ctx.bridge) {
+    const at = new Date(ctx.bridge.fetchedAt);
+    const when = Number.isFinite(at.getTime()) ? at.toLocaleTimeString() : "unknown time";
+    if (ctx.executionPostureUnmeasured) {
+      return `bridge state read from /api/mt5/diagnostic-summary at ${when}. That summary does not read the live-trading master switch, live arming or your account mode, so the live, execution, read-only, demo and simulator rows are not readings. The Mode row is the account-mode authority.`;
+    }
+    return `read from /api/mt5/diagnostic-summary at ${when}`;
+  }
+  return ctx.bridgeStatus === "loading"
+    ? "loading /api/mt5/diagnostic-summary…"
+    : "could not be read — /api/mt5/diagnostic-summary failed or returned no data";
+}
+
+
+function RuntimeSummaryCard({ ctx, status, accountModeLabel }: { ctx: RuntimeContext; status: ReturnType<typeof explainAppStatus>; accountModeLabel: string }) {
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4" data-testid="scc-runtime-card">
       <h2 className="font-semibold text-zinc-100">Runtime Status</h2>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-300">
-        <dt className="text-zinc-500">Mode</dt><dd>{status.mode}</dd>
-        <dt className="text-zinc-500">Demo-only</dt><dd>{String(ctx.paperOnly)}</dd>
-        <dt className="text-zinc-500">Simulator</dt><dd>{String(ctx.simulatorMode)}</dd>
-        <dt className="text-zinc-500">Live trading disabled</dt><dd>{String(ctx.liveTradingDisabled)}</dd>
-        <dt className="text-zinc-500">Broker exec disabled</dt><dd>{String(ctx.brokerExecutionDisabled)}</dd>
+        <dt className="text-zinc-500">Mode</dt><dd data-testid="scc-runtime-mode">{accountModeLabel}</dd>
+        <dt className="text-zinc-500" title="From the legacy bridge diagnostic summary; the account mode above is the mode authority.">Bridge diagnostic mode</dt><dd data-testid="scc-runtime-diagnostic-mode">{ctx.executionPostureUnmeasured ? "not read — the summary's mode flags are fixed values" : status.mode}</dd>
+        <dt className="text-zinc-500">Server posture</dt><dd data-testid="scc-posture-source">{postureSource(ctx)}</dd>
+        <dt className="text-zinc-500">Demo-only</dt><dd>{postureFlag(ctx, ctx.paperOnly)}</dd>
+        <dt className="text-zinc-500">Simulator</dt><dd>{postureFlag(ctx, ctx.simulatorMode)}</dd>
+        <dt className="text-zinc-500">Live trading disabled</dt><dd>{postureFlag(ctx, ctx.liveTradingDisabled)}</dd>
+        <dt className="text-zinc-500">Broker exec disabled</dt><dd>{postureFlag(ctx, ctx.brokerExecutionDisabled)}</dd>
         <dt className="text-zinc-500">Bridge mode</dt><dd>{ctx.bridge?.bridgeMode ?? "unknown"}</dd>
-        <dt className="text-zinc-500">Heartbeat</dt><dd>{ctx.heartbeatPresent ? `present (${ctx.heartbeatAgeSeconds ?? "?"}s)` : "absent"}</dd>
-        <dt className="text-zinc-500">Broker read-only</dt><dd>{String(ctx.brokerReadOnly)}</dd>
-        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness}</dd>
-        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive ? "ENGAGED" : "off"}</dd>
+        <dt className="text-zinc-500">Heartbeat</dt><dd>{heartbeatLine(ctx.bridge)}</dd>
+        <dt className="text-zinc-500">Broker read-only</dt><dd>{postureFlag(ctx, ctx.brokerReadOnly)}</dd>
+        {/* The runtime context does not read a readiness verdict from the
+            server, so "unknown" is not a measurement. */}
+        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness === "unknown" ? "not checked by this page" : ctx.readiness}</dd>
+        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive === true ? "ENGAGED" : ctx.emergencyStopActive === false ? "off" : "not checked here (open Emergency page)"}</dd>
         <dt className="text-zinc-500">Selected symbol</dt><dd>{ctx.selectedSymbol ?? "—"}</dd>
         <dt className="text-zinc-500">Route</dt><dd className="truncate">{ctx.route}</dd>
         <dt className="text-zinc-500">Recent failed APIs</dt><dd>{ctx.recentFailedEndpoints.length}</dd>
         <dt className="text-zinc-500">Recent errors</dt><dd>{ctx.recentErrors.length}</dd>
       </dl>
       <div className="mt-3 text-xs">
-        <div className="text-zinc-500">Cannot do right now:</div>
+        {/* The list fails closed on unread flags; when the summary did not read
+            the execution gates it is "not confirmed", not "cannot". */}
+        <div className="text-zinc-500">{ctx.executionPostureUnmeasured ? "Not confirmed by this page (it does not read the execution gates):" : "Cannot do right now:"}</div>
         <ul className="list-disc pl-5 text-zinc-300">{status.cannotDo.map((s) => <li key={s}>{s}</li>)}</ul>
       </div>
     </div>

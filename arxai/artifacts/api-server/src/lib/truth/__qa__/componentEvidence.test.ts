@@ -142,7 +142,13 @@ test("a valid Deriv public forming candle remains chart context while votes use 
   assert.equal(read.evidence.source, "deriv_public"); assert.equal(read.openClosed.length, 80);
   const valid = { ...signal(), symbol: "V50", marketEvidence: { ...read.evidence, userId: 1 } };
   const result = await buildSymbolTruthSnapshot("V50", "M15", 1, { getChartCandlesFn: async () => f.chart as never, buildNewsFn: absent, evaluateScalpFn: absent, computeTimingFn: absent, buildScannerFn: async () => valid });
-  assert.equal(result.components.scanner.present, true); assert.ok(Date.parse(result.data.lastCandleAt!) > NOW);
+  assert.equal(result.components.scanner.present, true);
+  // The forming candle stays chart context (its close is the newest price), but
+  // its scheduled future close is not an observation: lastCandleAt is the
+  // preceding closed bar's close.
+  assert.equal(result.data.price, f.chart.candles.at(-1)!.close);
+  assert.equal(result.data.lastCandleAt, read.evidence.lastClosedCandleAt);
+  assert.ok(Date.parse(result.data.lastCandleAt!) <= NOW);
   assert.ok(Date.parse(result.components.scanner.asOf!) <= NOW);
 });
 
@@ -171,4 +177,21 @@ for (const change of [
   const chart = { ...fixture.chart, marketEvidence: { ...fixture.evidence, ...change } };
   const result = await snapshot(signal(), { getChartCandlesFn: async () => chart as never });
   assert.equal(result.data.sourceIdentity, null);
+});
+
+// Contract the dashboard honours (symbolTruthEvidence.ts): validUntil is never
+// later than the scheduled close of the forming bar, so on 1m a read expires
+// every minute; expiry withdraws the candle-derived advice but the calendar
+// state is NOT candle evidence and survives unchanged. The client must not
+// discard it either (owner screenshot 2026-10-27: "Event risk is loading…").
+test("validUntil never outlives the forming bar, and expiry keeps the calendar state unchanged", async () => {
+  const news = { radar: { provider: { connected: false, name: "none" }, events: [], highImpactWindowActive: false, topSeverity: null } };
+  const before = await snapshot(signal(), { buildNewsFn: async () => news as never });
+  const barClose = Date.parse(fixture.evidence.lastClosedCandleAt) + 15 * 60_000;
+  assert.ok(before.validUntil != null && Date.parse(before.validUntil) <= barClose);
+  assert.equal(before.news.riskLabel, "No event calendar is connected.");
+  const after = capExpiredTruthSnapshot(before, Date.parse(before.validUntil!));
+  assert.equal(after.verdict.bestAction, "WATCH_ONLY");
+  assert.deepEqual(after.news, before.news);
+  assert.deepEqual(after.data, before.data);
 });

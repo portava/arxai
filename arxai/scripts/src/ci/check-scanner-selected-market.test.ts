@@ -16,7 +16,7 @@ const mutations: Array<[string, string, string]> = [
   ["unavailable falsely certified", "calendarAvailable: false, reason: resolved.reason", "calendarAvailable: true, reason: resolved.reason"],
   ["missing availability accepted", "loaded.calendarAvailable === true", "loaded.calendarAvailable !== false"],
   ["truthy availability accepted", "loaded.calendarAvailable === true", "loaded.calendarAvailable"],
-  ["unavailable scored as clear", 'newsRiskUnavailable(symbol, loaded.reason || "Economic calendar unavailable — news risk could not be verified.")', "scoreNewsRisk(symbol, [])"],
+  ["unavailable scored as clear", 'newsRiskUnavailable(symbol, loaded.reason || loaded.calendar?.note || "Economic calendar unavailable — news risk could not be verified.")', "scoreNewsRisk(symbol, [])"],
   ["post-event evidence filtered out", "scorerInput: resolved.events", "scorerInput: sorted"],
   ["availability lost in envelope", "calendarAvailable: news.calendarAvailable", "calendarWasAvailable: news.calendarAvailable"],
   ["waiting envelope loses news", "upcomingEvents: events,\n      newsRisk,", "upcomingEvents: events,"],

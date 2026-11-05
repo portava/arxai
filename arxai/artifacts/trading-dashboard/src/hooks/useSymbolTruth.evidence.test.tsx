@@ -81,6 +81,24 @@ it("withdraws cached advice immediately after a failed refresh", async () => {
   expect(result.current.snapshot).toBeNull();
   expect(result.current.verdict).toBeNull();
   expect(result.current.levels).toBeNull();
+  // A failed refresh with cached data is NOT loading: event risk was not checked.
+  expect(result.current.newsState).toBe("unavailable");
+});
+
+it("says loading only while the first truth fetch is in flight", async () => {
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  await waitFor(() => expect(requests.some((r) => r.url.includes("/market/truth/"))).toBe(true));
+  expect(result.current.news).toBeNull();
+  expect(result.current.newsState).toBe("loading");
+  await loadCurrent();
+  await waitFor(() => expect(result.current.newsState).toBe("available"));
+});
+
+it("never reports loading when the query is disabled (no signed-in user)", () => {
+  client.setQueryData(["me"], null);
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  expect(result.current.news).toBeNull();
+  expect(result.current.newsState).toBe("unavailable");
 });
 
 it("isolates users even when identity changes without a full query-cache clear", async () => {
@@ -130,10 +148,24 @@ it("expires cached advice after two normal polls even while coarse candle eviden
   expect(result.current.verdict?.bestAction).toBe("BUY");
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   expect(result.current.scannerTruth?.actionable).toBe(true);
+  expectExpiredAdviceKeepsCalendar(result.current);
+  // The calendar state is not kept forever: past its bound the read is withdrawn
+  // and event risk reads as not checked — never as loading.
+  await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
   expect(result.current.snapshot).toBeNull();
-  expect(result.current.verdict).toBeNull();
+  expect(result.current.news).toBeNull();
+  expect(result.current.newsState).toBe("unavailable");
   expect(requests.filter((r) => r.url.includes("/market/truth/"))).toHaveLength(0);
 });
+
+function expectExpiredAdviceKeepsCalendar(current: ReturnType<typeof useSymbolTruth>) {
+  expect(current.verdict?.bestAction).toBe("WATCH_ONLY");
+  expect(current.actionCapped).toBe(true);
+  expect(current.levels?.withheld).toBe(true);
+  expect(current.news).toEqual(snapshot().news);
+  expect(current.newsState).toBe("available");
+  expect(current.data?.lastCandleAt).toBe(CLOSE);
+}
 
 
 function seedDeadlineSnapshot(validUntil: string) {
@@ -152,7 +184,7 @@ it("expires at the earlier server deadline without a network poll or a busy time
   await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
   expect(result.current.verdict?.bestAction).toBe("BUY");
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-  expect(result.current.snapshot).toBeNull();
+  expectExpiredAdviceKeepsCalendar(result.current);
   expect(result.current.scannerTruth?.actionable).toBe(true);
   expect(requests).toHaveLength(0);
 });
@@ -163,7 +195,7 @@ it("focus rechecks a server deadline after the browser clock jumps forward", asy
   const { result } = renderHook(() => useSymbolTruth("EURUSD", "M15", { refetchInterval: 3_600_000 }), { wrapper });
   expect(result.current.verdict?.bestAction).toBe("BUY");
   act(() => { vi.setSystemTime(NOW + 3000); window.dispatchEvent(new Event("focus")); });
-  expect(result.current.snapshot).toBeNull();
+  expectExpiredAdviceKeepsCalendar(result.current);
   expect(requests).toHaveLength(0);
 });
 
@@ -179,4 +211,51 @@ it("withdraws cached advice when the chart changes original source within the sa
   expect(result.current.verdict?.bestAction).toBe("WATCH_ONLY");
   expect(result.current.levels?.withheld).toBe(true);
   expect(result.current.scannerTruth?.actionable).toBe(true);
+});
+
+// The server's truth snapshot reports data.lastCandleAt as the newest CLOSED
+// bar's close. feedStatus.lastCandleTime is the newest PROVIDER bar's close,
+// which for a still-forming bar is a scheduled future instant, so comparing the
+// two could never match on a feed that serves a forming bar: the read was always
+// capped to "Watch only — the live feed isn't confirmed" while both sources
+// observed the same closed bar.
+function formingBarPayload() {
+  const base = candlePayload();
+  const closed = base.candles.map((c) => ({ ...c, isComplete: true }));
+  const formingOpen = CLOSE;
+  const formingClose = new Date(Date.parse(CLOSE) + 60_000).toISOString();
+  return {
+    candles: [...closed, { openTime: formingOpen, closeTime: formingClose, open: 1.1, high: 1.11, low: 1.09, close: 1.1, isComplete: false }],
+    feedStatus: { ...base.feedStatus, lastCandleTime: formingClose },
+    // The same source identity the snapshot names (a read is only confirmed
+    // for the exact source the chart shows).
+    marketEvidence: base.marketEvidence,
+  };
+}
+
+it("confirms a read when the server's closed bar is the chart's newest closed bar, even with a forming bar on the feed", async () => {
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  for (const request of requests.slice()) {
+    if (request.url.includes("/market/truth/")) await respond(request, snapshot());
+    else if (request.url.includes("/chart/candles")) await respond(request, formingBarPayload());
+    else if (request.url.includes("selected-market")) await respond(request, { ok: true, symbol: "EURUSD", timeframe: "M1", highlights: {}, explanation: {} });
+  }
+  await waitFor(() => expect(result.current.scannerTruth?.actionable).toBe(true));
+  await waitFor(() => expect(result.current.verdict?.bestAction).toBe("BUY"));
+  expect(result.current.actionCapped).toBe(false);
+  expect(result.current.data?.state).toBe("LIVE_CONFIRMED");
+});
+
+it("still caps the read when the server's closed bar is not the chart's newest closed bar", async () => {
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M1"), { wrapper });
+  const older = snapshot();
+  older.data.lastCandleAt = new Date(Date.parse(CLOSE) - 60_000).toISOString();
+  for (const request of requests.slice()) {
+    if (request.url.includes("/market/truth/")) await respond(request, older);
+    else if (request.url.includes("/chart/candles")) await respond(request, formingBarPayload());
+    else if (request.url.includes("selected-market")) await respond(request, { ok: true, symbol: "EURUSD", timeframe: "M1", highlights: {}, explanation: {} });
+  }
+  await waitFor(() => expect(result.current.scannerTruth?.actionable).toBe(true));
+  expect(result.current.verdict?.bestAction).toBe("WATCH_ONLY");
+  expect(result.current.actionCapped).toBe(true);
 });

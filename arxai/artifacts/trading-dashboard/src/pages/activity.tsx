@@ -32,7 +32,19 @@ export default function Activity() {
         </CardHeader>
         <CardContent>
           {q.isLoading && <div className="text-sm text-txt-secondary">Loading…</div>}
-          {!q.isLoading && (q.data?.events ?? []).length === 0 && (
+          {/* A failed read is not an empty timeline. */}
+          {q.isError && !q.data && (
+            <div role="alert" className="text-sm text-warning py-8 text-center">
+              <div>Your activity could not be loaded{q.error instanceof Error && /^\d+$/.test(q.error.message) ? ` (HTTP ${q.error.message})` : ""}.</div>
+              <div className="text-xs mt-1">This is not an empty timeline — retrying every 30 seconds.</div>
+            </div>
+          )}
+          {q.isError && q.data && (
+            <div role="alert" className="text-xs text-warning mb-2">
+              The latest refresh failed. Showing activity as read at {new Date(q.dataUpdatedAt).toLocaleTimeString()}.
+            </div>
+          )}
+          {!q.isLoading && !q.isError && (q.data?.events ?? []).length === 0 && (
             <div className="text-sm text-txt-secondary py-8 text-center">
               <div>No activity yet</div>
               <div className="text-xs mt-1">Your timeline will populate as you connect MT5, start sessions, create demo trades, and review your trades.</div>

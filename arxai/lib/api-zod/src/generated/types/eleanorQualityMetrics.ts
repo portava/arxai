@@ -14,19 +14,26 @@ import type { EleanorQualitySymbolSessionStat } from "./eleanorQualitySymbolSess
 
 export interface EleanorQualityMetrics {
   totals: EleanorQualityMetricsTotals;
+  /** Each rate is null when its denominator is empty (nothing to rate), never 0. */
   rates: EleanorQualityMetricsRates;
   timing: EleanorQualityMetricsTiming;
   averages: EleanorQualityMetricsAverages;
+  /** Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols. */
   bestSymbols: EleanorQualitySymbolSessionStat[];
   worstSymbols: EleanorQualitySymbolSessionStat[];
   bestSessions: EleanorQualitySymbolSessionStat[];
   worstSessions: EleanorQualitySymbolSessionStat[];
   newsFailures: number;
   executionFailures: number;
-  explanationAccuracy: number;
+  /**
+   * Win rate among graded rows where the explanation was used; null when there are none.
+   * @nullable
+   */
+  explanationAccuracy: number | null;
   ignoredWarnings: number;
   avoidedBadTrades: number;
   missedOpportunities: number;
+  /** Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once. */
   confidenceVsOutcome: EleanorQualityScoreBucket[];
   edgeVsOutcome: EleanorQualityScoreBucket[];
 }

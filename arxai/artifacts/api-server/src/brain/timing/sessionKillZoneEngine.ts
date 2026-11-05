@@ -45,7 +45,10 @@ const KILL_ZONES: KillZoneDef[] = [
   },
   {
     id: "LONDON_NY_OVERLAP",
-    label: "London/NY Overlap",
+    // The window runs to 17:00 UTC, one hour past the 16:00 UTC London
+    // close (trading-model choice, unchanged). The label says so; see
+    // overlapWindowNote for the copy shown inside the window.
+    label: "London/NY Overlap Kill Zone",
     openUTC: 13, closeUTC: 17,
     heatBonus: 30, tradeabilityBonus: 25, fakeoutRisk: 40,
     bestSymbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCAD", "US30", "NAS100", "SPX500", "GER40", "XAUUSD"],
@@ -112,11 +115,47 @@ function decimalHour(d: Date): number {
   return d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
 }
 
+/** Decimal UTC hours (e.g. 8.5) → clock time "08:30". */
+function formatUtcClock(decimal: number): string {
+  const totalMinutes = Math.round((((decimal % 24) + 24) % 24) * 60);
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function inWindow(open: number, close: number, hour: number): boolean {
   if (open <= close) return hour >= open && hour < close;
   // wraps midnight
   return hour >= open || hour < close;
 }
+
+const NY_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  weekday: "short",
+  hour: "numeric",
+  hourCycle: "h23",
+});
+
+/**
+ * Interbank FX trades from Sunday 17:00 to Friday 17:00 New York time (the
+ * standard FX week, DST-aware). Outside that window no FX session or kill zone
+ * is open, whatever the UTC hour says.
+ */
+export function isFxWeekendClosed(now: Date): boolean {
+  let weekday = "";
+  let hour = NaN;
+  for (const part of NY_PARTS.formatToParts(now)) {
+    if (part.type === "weekday") weekday = part.value;
+    else if (part.type === "hour") hour = Number(part.value) % 24;
+  }
+  if (!Number.isFinite(hour)) return false;
+  if (weekday === "Sat") return true;
+  if (weekday === "Fri") return hour >= 17;
+  if (weekday === "Sun") return hour < 17;
+  return false;
+}
+
+export const FX_WEEKEND_SESSION_NAME = "Weekend — FX market closed";
 
 function detectKillZone(hour: number): KillZoneDef | null {
   // Most specific match — prefer narrower zones (shorter duration)
@@ -128,8 +167,8 @@ function detectKillZone(hour: number): KillZoneDef | null {
 
 function detectSession(hour: number): SessionDef {
   const adjusted = hour % 24;
-  // London/NY overlap first (highest priority)
-  if (inWindow(13, 17, adjusted)) return SESSIONS.find((s) => s.name === "London")!;
+  // London (07:00-16:00 UTC) first; the caller relabels 13:00-16:00 as the
+  // London/NY overlap. After 16:00 London is closed, so New York is reported.
   if (inWindow(7, 16, adjusted)) return SESSIONS.find((s) => s.name === "London")!;
   if (inWindow(13, 22, adjusted)) return SESSIONS.find((s) => s.name === "New York")!;
   if (inWindow(0, 8, adjusted)) return SESSIONS.find((s) => s.name === "Asia")!;
@@ -137,11 +176,30 @@ function detectSession(hour: number): SessionDef {
   return SESSIONS.find((s) => s.name === "Off-hours")!;
 }
 
+/**
+ * Plain-English note for the LONDON_NY_OVERLAP kill zone: London and New York
+ * are both open only 13:00-16:00 UTC; the kill zone's last hour (16:00-17:00)
+ * is New York only, and must not read as an overlap while London is closed.
+ */
+function overlapWindowNote(londonActive: boolean): string {
+  return londonActive
+    ? "London and New York are both open 13:00-16:00 UTC; this kill zone runs one hour past the London close, to 17:00 UTC."
+    : "London closed at 16:00 UTC, so this last hour of the kill zone (16:00-17:00 UTC) is New York only, not an overlap.";
+}
+
 export interface SessionKillZoneInput {
   symbol: string;
   isSynthetic: boolean;
+  /**
+   * The symbol's asset class (classifySymbol). Crypto trades 24/7, so the FX
+   * weekend close does not close it. Optional: callers that leave it out get
+   * the FX week, as before.
+   */
+  assetClass?: string | null;
   userTimezone?: string | null;
 }
+
+export const CRYPTO_WEEKEND_SESSION_NAME = "24/7 Crypto — FX closed for the weekend";
 
 export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimingResult {
   const now = new Date();
@@ -160,6 +218,44 @@ export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimi
       bestSymbols: ["Volatility 75 Index", "Volatility 75 1s Index", "Volatility 25 1s Index"],
       dangerSymbols: [],
       sessionDescription: "Synthetic indices trade 24/7 with consistent liquidity — no session kill zones apply.",
+      userLocalTime: getUserLocalTime(now, input.userTimezone),
+    };
+  }
+
+  // Weekend: interbank FX is closed — no session, no kill zone, no session
+  // bonuses and no "best this session" symbols.
+  if (isFxWeekendClosed(now)) {
+    // Crypto keeps trading through the FX weekend. No FX session or kill zone
+    // is open, so the session/kill-zone bonuses stay at 0 (same values as the
+    // FX weekend), but the read must not call a trading market closed.
+    if (input.assetClass === "crypto") {
+      return {
+        sessionName: CRYPTO_WEEKEND_SESSION_NAME,
+        killZone: "OFF_KILLZONE",
+        isKillZoneActive: false,
+        utcHour: Math.round(hour * 10) / 10,
+        sessionHeatBonus: 0,
+        fakeoutRisk: 30,
+        tradeabilityBonus: 0,
+        bestSymbols: [],
+        dangerSymbols: [],
+        sessionDescription:
+          "Crypto trades 24/7, including weekends. Interbank FX is closed for the weekend (Friday 17:00 to Sunday 17:00 New York time), so no FX session or kill zone is open and no session or kill-zone bonus is added.",
+        userLocalTime: getUserLocalTime(now, input.userTimezone),
+      };
+    }
+    return {
+      sessionName: FX_WEEKEND_SESSION_NAME,
+      killZone: "OFF_KILLZONE",
+      isKillZoneActive: false,
+      utcHour: Math.round(hour * 10) / 10,
+      sessionHeatBonus: 0,
+      fakeoutRisk: 30,
+      tradeabilityBonus: 0,
+      bestSymbols: [],
+      dangerSymbols: [],
+      sessionDescription:
+        "Interbank FX is closed for the weekend (Friday 17:00 to Sunday 17:00 New York time). No trading session or kill zone is active.",
       userLocalTime: getUserLocalTime(now, input.userTimezone),
     };
   }
@@ -196,7 +292,9 @@ export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimi
     bestSymbols,
     dangerSymbols,
     sessionDescription: kz
-      ? `${kz.label} active (${kz.openUTC}:00-${kz.closeUTC}:00 UTC). ${session.description}`
+      ? `${kz.label} active (${formatUtcClock(kz.openUTC)}-${formatUtcClock(kz.closeUTC)} UTC). ${
+          kz.id === "LONDON_NY_OVERLAP" ? `${overlapWindowNote(londonActive)} ` : ""
+        }${session.description}`
       : session.description,
     userLocalTime: getUserLocalTime(now, input.userTimezone),
   };

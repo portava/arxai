@@ -5,7 +5,7 @@
 //   - Only the SHA-256 hash of the token is stored in apiKeyHash.
 //   - All routes require auth; queries scoped by req.authUser.id.
 //   - Client-supplied userId is ignored for ownership.
-import { classifyHeartbeatAt, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS, classifyHeartbeatAt, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { createConnection, getUserConnection, listUserConnections, updateUserConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import { db } from "@workspace/db";
@@ -49,7 +49,7 @@ function deriveStatus(row: BrokerConnectionFacts): string {
   return "disconnected";
 }
 
-function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {}) {
+export function serializeConnection(row: BrokerConnectionFacts, opts: { rawToken?: string } = {}) {
   const status = deriveStatus(row);
   const heartbeatAgeSeconds = row.lastHeartbeat
     ? Math.floor((Date.now() - new Date(row.lastHeartbeat).getTime()) / 1000)
@@ -61,11 +61,17 @@ function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {})
   const equityN = Number(row.accountEquity ?? 0);
   const marginN = Number(row.margin ?? 0);
   const marginLevelPercent = marginN > 0 ? (equityN / marginN) * 100 : null;
-  // Account snapshot freshness — heartbeat is the canonical liveness
-  // signal (EA POSTs both heartbeat and sync-account every 5s). "Fresh"
-  // is the shared heartbeat policy's fresh band (age < 15 s), the same as
-  // Phase B gate #7.
-  const accountSnapshotFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds);
+  // Account snapshot freshness is about the balance/equity figures, so it is
+  // aged from accountSyncedAt (the last time account facts were written),
+  // against the MT5 account-snapshot window (MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
+  // the same one the read-only adapter uses). A live heartbeat does not make
+  // a 10-minute-old balance fresh. The heartbeat's fresh band (< 15 s) is
+  // still required as well, so this is never looser than before.
+  const syncedAtMs = row.accountSyncedAt ? new Date(row.accountSyncedAt).getTime() : NaN;
+  const snapshotAgeMs = Number.isFinite(syncedAtMs) ? Math.max(0, Date.now() - syncedAtMs) : null;
+  const accountSnapshotAgeSeconds = snapshotAgeMs != null ? Math.floor(snapshotAgeMs / 1000) : null;
+  const accountSnapshotFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds)
+    && snapshotAgeMs != null && snapshotAgeMs <= MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
   return {
     id: row.id,
     connectionName: row.connectionName,
@@ -82,6 +88,8 @@ function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {})
     leverage: row.leverage,
     accountType: row.accountType,
     accountSnapshotFresh,
+    accountSyncedAt: Number.isFinite(syncedAtMs) ? new Date(syncedAtMs).toISOString() : null,
+    accountSnapshotAgeSeconds,
     lastHeartbeatAt: row.lastHeartbeat?.toISOString() ?? null,
     heartbeatAgeSeconds,
     tokenLast4: row.tokenLast4,
@@ -96,6 +104,8 @@ function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {})
     ...(opts.rawToken ? { rawToken: opts.rawToken, rawTokenWarning: "Shown once. Save it now — it cannot be retrieved later." } : {}),
   };
 }
+
+const serialize = serializeConnection;
 
 const CreateBody = z.object({
   connectionName: z.string().min(1).max(120),

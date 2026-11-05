@@ -8,6 +8,8 @@ import {
 } from "@/lib/setup-preview";
 import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
 import type { UseChartSetupPreview } from "@/hooks/useChartSetupPreview";
+import { formatInstrumentPrice, resolveDisplayPricePrecision } from "@/lib/instrumentPriceFormat";
+import { useChartPricePrecision } from "./chartPricePrecisionStore";
 
 // ChartSetupPreviewPanel — Task #374 control + legend surface for an AI/Eleanor
 // "drawn" trade setup. PURE VISUALISATION + a user-initiated draw trigger and an
@@ -28,10 +30,13 @@ function verdictTone(v: SetupPreview["verdict"]): string {
   }
 }
 
-function num(n: number): string {
-  const abs = Math.abs(n);
-  const dp = abs >= 100 ? 2 : abs >= 1 ? 4 : 5;
-  return n.toFixed(dp);
+// Levels print at the instrument's precision: the chart's published digits for
+// this symbol, else the digits the server's levels carry (it computes them at
+// instrument precision) — never a magnitude guess that turned entry 1.08523
+// and stop 1.08518 into the same "1.0852" while the explanation said 1.08523.
+function levelPrecision(published: number | null, levels: SetupPreview["levels"]): number | null {
+  if (published != null) return published;
+  return levels ? resolveDisplayPricePrecision(null, [levels.entry, levels.sl, levels.tp]) : null;
 }
 
 export function ChartSetupPreviewPanel({
@@ -45,6 +50,9 @@ export function ChartSetupPreviewPanel({
   onUseSetup: (preview: SetupPreview) => void;
 }) {
   const { preview, status, lifecycle, error, expired, requestDraw, discard, clear } = data;
+  const published = useChartPricePrecision(preview?.symbol ?? null);
+  const precision = levelPrecision(published, preview?.levels ?? null);
+  const num = (n: number) => formatInstrumentPrice(n, precision);
   const loading = status === "loading";
   const suppressed = status === "suppressed";
 
@@ -127,7 +135,7 @@ export function ChartSetupPreviewPanel({
               Reward:Risk <span className="text-zinc-200">{preview.rewardToRisk.toFixed(2)}:1</span>
               {preview.riskAmount != null && preview.potentialReward != null ? (
                 <span className="ml-2 text-zinc-500">
-                  (risk {preview.riskAmount.toFixed(2)} → reward {preview.potentialReward.toFixed(2)})
+                  (risk {preview.riskAmount.toFixed(2)} → reward {preview.potentialReward.toFixed(2)}, account currency)
                 </span>
               ) : (
                 <span className="ml-2 text-zinc-500">— account-currency risk shown only in the ticket</span>
@@ -137,7 +145,9 @@ export function ChartSetupPreviewPanel({
 
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
             <span>Data: {preview.dataFreshness.basis} · {preview.dataFreshness.trustLine}</span>
-            <span>Source: {preview.providerSource.label}{preview.providerSource.composite ? " (composite)" : ""}</span>
+            <span data-testid="chart-setup-source">
+              Source: {preview.providerSource.label}{preview.providerSource.composite ? " (not a broker quote)" : ""}
+            </span>
             {preview.bridgeStatus && <span>Bridge: {preview.bridgeStatus.availability}</span>}
           </div>
 

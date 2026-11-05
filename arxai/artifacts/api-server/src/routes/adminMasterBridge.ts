@@ -22,6 +22,11 @@ import {
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import { liveBrokerExecutionEnabled as phaseBEnvMasterSwitch } from "../lib/live/phaseBConfig.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import {
+  loadPlatformSettings,
+  platformStopWith,
+  type PlatformStopSource,
+} from "../lib/safety/platformSwitches.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -47,10 +52,81 @@ function liveBrokerExecutionEnabled(): boolean {
   return phaseBEnvMasterSwitch();
 }
 
+// The stored master-live settings, as read now from the one switch authority,
+// so the Master Bridge page can say whether shared live / master-bridge live
+// are on instead of asserting they are off. Unreadable settings come back as
+// readable:false with null values — never as "off".
+export interface MasterLiveSettingsView {
+  readable: boolean;
+  platformMode: string | null;
+  accountRoutingMode: string | null;
+  sharedLiveTradingEnabled: boolean | null;
+  masterBridgeLiveEnabled: boolean | null;
+  platformMasterBridgeConnectionId: number | null;
+  readAt: string;
+}
+// The execution switches a master live order also has to clear, read now, so
+// the page does not call a bridge "ready" (or the env flag green) while live
+// dispatch is refused. The effective switch is env AND operator arm; either
+// install-wide stop refuses every new live order. Unreadable state is
+// readable:false, operatorArmed null, and everything else the strict value.
+export interface LiveExecutionView {
+  readable: boolean;
+  envEnabled: boolean;
+  operatorArmed: boolean | null;
+  effectiveEnabled: boolean;
+  platformStopEngaged: boolean;
+  platformStopSources: PlatformStopSource[];
+  platformStopReason: string | null;
+  /** Each engaged source's stored reason; "state unreadable" / "settings missing" when this read could not read it. */
+  platformStopDetail: Partial<Record<PlatformStopSource, string | null>>;
+}
+async function masterLivePosture(): Promise<{
+  masterLiveSettings: MasterLiveSettingsView;
+  liveExecution: LiveExecutionView;
+}> {
+  const readAt = new Date().toISOString();
+  const { switches: sw, config } = await loadPlatformSettings();
+  const stop = await platformStopWith(sw);
+  const liveExecution: LiveExecutionView = {
+    readable: sw.readable && stop.readable,
+    envEnabled: sw.liveBrokerExecution.envEnabled,
+    operatorArmed: sw.readable ? sw.liveBrokerExecution.operatorArmed : null,
+    effectiveEnabled: sw.readable && sw.liveBrokerExecution.enabled,
+    platformStopEngaged: stop.engaged,
+    platformStopSources: [...stop.sources],
+    platformStopReason: stop.reason,
+    platformStopDetail: { ...stop.detail },
+  };
+  if (!sw.readable || !config) {
+    return {
+      masterLiveSettings: {
+        readable: false, platformMode: null, accountRoutingMode: null,
+        sharedLiveTradingEnabled: null, masterBridgeLiveEnabled: null,
+        platformMasterBridgeConnectionId: null, readAt,
+      },
+      liveExecution,
+    };
+  }
+  return {
+    masterLiveSettings: {
+      readable: true,
+      platformMode: sw.platformMode,
+      accountRoutingMode: config.accountRoutingMode ?? null,
+      sharedLiveTradingEnabled: config.sharedLiveTradingEnabled === true,
+      masterBridgeLiveEnabled: config.masterBridgeLiveEnabled === true,
+      platformMasterBridgeConnectionId: config.platformMasterBridgeConnectionId ?? null,
+      readAt,
+    },
+    liveExecution,
+  };
+}
+
 router.get("/admin/master-bridge/current", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const liveEnabled = liveBrokerExecutionEnabled();
   const det = await detectCurrentConnectedBridge();
+  const { masterLiveSettings, liveExecution } = await masterLivePosture();
   if (!det.ok) {
     return res.json({
       ok: true,
@@ -58,6 +134,8 @@ router.get("/admin/master-bridge/current", async (req, res) => {
       primaryReason: det.primaryReason,
       latestHint: det.latestHint ? maskBridgeEvidenceForUser(det.latestHint) : null,
       liveBrokerExecutionEnabled: liveEnabled,
+      masterLiveSettings,
+      liveExecution,
     });
   }
   return res.json({
@@ -65,6 +143,8 @@ router.get("/admin/master-bridge/current", async (req, res) => {
     detected: true,
     bridge: maskBridgeEvidenceForUser(det.bridge),
     liveBrokerExecutionEnabled: liveEnabled,
+    masterLiveSettings,
+    liveExecution,
   });
 });
 

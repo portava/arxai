@@ -69,7 +69,10 @@ export function classifyLifecycle(input: LifecycleInput): LifecycleVerdict {
   const actionable = action === "BUY" || action === "SELL";
   const directionalPressure =
     early.pressure === "BUILDING_BULLISH" || early.pressure === "BUILDING_BEARISH";
-  const hasEntryZone = inEntryZone(scanner);
+  // Zone presence counts only when the scanner endorses a side: the scanner
+  // emits geometry for every row, so a WAIT/REJECT row's zone is not setup
+  // evidence and must never open or approach an entry on its own.
+  const hasEntryZone = actionable && inEntryZone(scanner);
 
   // ENTRY_WINDOW_OPEN: scanner says act AND we have a concrete entry zone AND no
   // disqualifying trap. This is the ONLY "act now" stage.

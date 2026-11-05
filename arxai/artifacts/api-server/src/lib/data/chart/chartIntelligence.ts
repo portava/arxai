@@ -14,6 +14,7 @@
 //  - Adds NO new data source; reads ONLY the truth layer.
 //  - Pure Fast-Brain work — never invokes the Slow Brain (background-only).
 
+import { recordStateTruthResult } from "./stateTruthResult.js";
 import { registerHeapWatchGauge } from "../../perf/heapWatch.js";
 import {
   getChartCandles,
@@ -36,6 +37,7 @@ import { computeTrendRegime } from "./engines/trendRegime.js";
 import { computeLevelPersonality } from "./engines/levelPersonality.js";
 import { computeCandleIntent } from "./engines/candleIntent.js";
 import { computeSetupLifecycle, type ChartSetupRead } from "./engines/setupLifecycle.js";
+import { chartPriceDecimals } from "./engines/chartPriceDecimals.js";
 import { getTimeframeAgreement } from "./engines/timeframeAgreement.js";
 import { computeEvidenceStack } from "./engines/evidenceStack.js";
 import { computeTradeReadiness } from "./engines/tradeReadiness.js";
@@ -59,12 +61,14 @@ import {
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
 import { computeChartReadScore, type ChartReadScore } from "./chartReadScore.js";
 import { computeChartGateOutput, type ChartGateOutput } from "./chartGateOutput.js";
+import { capDecisionStateByChartTruth, chartReadVerification } from "./chartDecisionTruthCap.js";
 import {
   noBrokerAlignment,
   computeBrokerPriceAlignment,
   type BrokerPriceAlignment,
   type BrokerAlignmentInputs,
 } from "./brokerPriceAlignment.js";
+import { chartSeriesAttribution, type ChartSeriesAttribution } from "./brokerQuoteBinding.js";
 import type {
   ChartTrendRead,
   ChartLevelsRead,
@@ -205,12 +209,16 @@ interface CacheEntry {
   truthResult: TimeframeTruthResult | null;
   /** Feed status at build time — needed for truth-score recompute. */
   feedStatus: ChartFeedStatus;
+  /** Observed identity of the served series — binds any broker quote used
+   *  for route-level alignment enrichment. null = not attributable. */
+  seriesAttribution: ChartSeriesAttribution | null;
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
 registerHeapWatchGauge("chartIntelligence.cache", () => cache.size);
 /** Entry cap; expired entries are swept on every write (boundedCacheSet). */
 const CACHE_MAX_ENTRIES = 500;
+
 
 /**
  * Return the cached intelligence context (state + truth result + feed status)
@@ -225,10 +233,16 @@ export function getCachedIntelligenceContext(
   symbol: string,
   timeframe: ChartTimeframe,
   limit: number,
-): { state: ChartIntelligenceState; truthResult: TimeframeTruthResult | null; feedStatus: ChartFeedStatus } | null {
+): {
+  state: ChartIntelligenceState;
+  truthResult: TimeframeTruthResult | null;
+  feedStatus: ChartFeedStatus;
+  seriesAttribution: ChartSeriesAttribution | null;
+} | null {
   const entry = cache.get(`${symbol}|${timeframe}|${limit}`);
   if (!entry || entry.expiresAt <= Date.now()) return null;
-  return { state: entry.state, truthResult: entry.truthResult, feedStatus: entry.feedStatus };
+  return { state: entry.state, truthResult: entry.truthResult, feedStatus: entry.feedStatus,
+    seriesAttribution: entry.seriesAttribution };
 }
 
 /**
@@ -252,9 +266,32 @@ export function enrichStateWithBrokerAlignment(
     state.chartReadScore,
     brokerAlignment,
     truthResult,
-    feedStatus.stale,
+    feedStatus,
   );
-  return { ...state, brokerAlignment, chartTruthScore, gateOutput };
+  // The decision summary and sentences depend on the gate's verdict (an
+  // unverified read is capped at "watch"), so re-derive them from the engine
+  // outputs under THIS gate — a per-user verified read is no longer held at
+  // the build-time cap, and a closed gate caps a "ready" summary.
+  const decisionState = capDecisionStateByChartTruth(
+    deriveDecisionState(
+      state.marketUnderstanding.evidence,
+      state.marketUnderstanding.readiness,
+      state.setupState,
+      state.decisionFork,
+    ),
+    chartReadVerification(gateOutput, feedStatus, chartTruthScore),
+  );
+  const { marketSentences: _previous, ...rest } = state;
+  const sentenceInput: Omit<ChartIntelligenceState, "marketSentences"> = {
+    ...rest,
+    brokerAlignment,
+    chartTruthScore,
+    gateOutput,
+    decisionState,
+  };
+  const enriched: ChartIntelligenceState = { ...sentenceInput, marketSentences: buildMarketSentences(sentenceInput) };
+  recordStateTruthResult(enriched, truthResult);
+  return enriched;
 }
 
 function mean(xs: number[]): number {
@@ -477,15 +514,24 @@ export async function buildChartIntelligenceState(
     remembered,
     truth.symbol,
     timeframe,
+    truth.truthResult ? truth.truthResult.pricePrecision : undefined,
   );
   const levels = levelsResult.read;
   const candleIntent = computeCandleIntent(closed);
+  // One display precision for every engine that reports or prints a level
+  // price (the same rule level personality rounds its levels at): never
+  // re-rounded by magnitude downstream.
+  const priceDecimals = chartPriceDecimals(
+    closed,
+    truth.symbol,
+    truth.truthResult ? truth.truthResult.pricePrecision : undefined,
+  );
 
   // Engine 4 is heavy (4 timeframes) — read the cached value instantly and let
   // it refresh in the background (Slow Brain). Never awaited on the hot path.
   const timeframeAgreement = getTimeframeAgreement(truth.symbol);
 
-  const setup = computeSetupLifecycle(closed, timeframe, trend, levels, candleIntent);
+  const setup = computeSetupLifecycle(closed, timeframe, trend, levels, candleIntent, priceDecimals);
   const evidence = computeEvidenceStack(
     trend,
     levels,
@@ -534,15 +580,20 @@ export async function buildChartIntelligenceState(
     levels,
     evidence,
     setup,
+    priceDecimals,
   });
   const decisionFork: ChartDecisionFork = computeDecisionFork({
     trend,
     levels,
     candleIntent,
     setup,
+    priceDecimals,
   });
 
-  const decisionState: ChartDecisionState = deriveDecisionState(
+  // Engine-only summary. The read score and the (advisory) agent consensus are
+  // built from it; what the state SHOWS is capped below once the chart-truth
+  // gate has ruled on this read.
+  const engineDecisionState: ChartDecisionState = deriveDecisionState(
     evidence,
     readiness,
     setup,
@@ -552,7 +603,7 @@ export async function buildChartIntelligenceState(
   // Agent-consensus summary (advisory/shadow only; never gates a trade or the
   // live path; fail-open). Honestly absent when specialist agents are in shadow.
   const agentConsensus: ChartAgentConsensus = await computeChartAgentConsensus(
-    decisionState,
+    engineDecisionState,
     readiness.score,
   );
 
@@ -582,7 +633,7 @@ export async function buildChartIntelligenceState(
     aiUsable: truth.aiUsable,
     marketUnderstanding,
     setup: setupState,
-    decisionState,
+    decisionState: engineDecisionState,
     readiness,
     candleStats,
   });
@@ -592,7 +643,15 @@ export async function buildChartIntelligenceState(
     chartReadScore,
     brokerAlignment,
     truth.truthResult,
-    truth.feedStatus.stale,
+    truth.feedStatus,
+  );
+
+  // An A-grade candle read is not "ready" while the chart-truth gate has not
+  // verified it (Chart Truth < 75, stale, mirror failed, or feed not live):
+  // capped at "watch" with the reason, matching Eleanor's "syncing" answer.
+  const decisionState: ChartDecisionState = capDecisionStateByChartTruth(
+    engineDecisionState,
+    chartReadVerification(gateOutput, truth.feedStatus, chartTruthScore),
   );
 
   // Natural-language reader over the assembled engine outputs. Deterministic
@@ -606,6 +665,7 @@ export async function buildChartIntelligenceState(
     feedStale: truth.feedStatus.stale,
     sufficiencyAllowsSetup: closed.length >= MIN_SUFFICIENT_CLOSED_BARS,
     chartReadConfidenceLow: !truth.aiUsable,
+    priceDecimals,
   });
 
   const sentenceInput: Omit<ChartIntelligenceState, "marketSentences"> = {
@@ -640,12 +700,14 @@ export async function buildChartIntelligenceState(
     ...sentenceInput,
     marketSentences,
   };
+  recordStateTruthResult(state, truth.truthResult);
 
   const writtenAt = Date.now();
   boundedCacheSet(cache, cacheKey, {
     state,
     truthResult: truth.truthResult,
     feedStatus: truth.feedStatus,
+    seriesAttribution: chartSeriesAttribution(truth),
     expiresAt: writtenAt + CACHE_TTL_MS,
   }, { max: CACHE_MAX_ENTRIES, isExpired: (e) => e.expiresAt <= writtenAt });
   return state;

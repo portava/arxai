@@ -19,6 +19,7 @@
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
+import { heartbeatAgeSecondsFrom } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -50,6 +51,7 @@ import {
   T015_MANUAL_LIVE_PHASE_LABEL,
 } from "../lib/live/liveCommandPipeline.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { buildOperatorAccessPanel } from "../lib/live/liveTestReadinessOperatorAccess.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -128,9 +130,9 @@ async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
   }
   const caps = (picked.capabilities ?? {}) as { eaInputs?: Record<string, unknown> };
   const ea = (caps.eaInputs ?? {}) as Record<string, unknown>;
-  const hbAgeSec = picked.lastHeartbeat
-    ? Math.max(0, Math.floor((Date.now() - new Date(picked.lastHeartbeat).getTime()) / 1000))
-    : null;
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age (null, so the preflight's gate 7 fails), never a fresh 0s.
+  const hbAgeSec = heartbeatAgeSecondsFrom(picked.lastHeartbeat ?? null, Date.now());
   const bridgeKind: BridgeFacts["bridgeKind"] =
     picked.mode === "LIVE" ? "REAL_LIVE" : picked.mode === "DEMO" ? "REAL_DEMO" : "MOCK";
   return {
@@ -210,24 +212,16 @@ router.get("/admin/live-test-readiness/state", async (req, res) => {
     ok: true,
     panelA_currentConnectedBridge: bridge,
     panelB_masterLiveGates: master,
-    panelC_operatorAccess: {
+    // Stored settings only: no access row → requireStopLoss / requireTakeProfit
+    // are null (not read), never the dispatch gate's fail-closed defaults.
+    panelC_operatorAccess: buildOperatorAccessPanel({
       adminUserId: admin.id,
       adminEmail: adminUser[0]?.email ?? null,
       role: adminUser[0]?.role ?? null,
-      approvedForMasterLive: opAccess.access?.approvedForMasterLive ?? false,
-      masterLiveTradingEnabled: opAccess.access?.masterLiveTradingEnabled ?? false,
-      masterLiveStatus: opAccess.access?.masterLiveStatus ?? "NOT_APPROVED",
-      riskDisclosureAcceptedAt: opAccess.access?.riskDisclosureAcceptedAt ?? null,
-      riskSettingsConfiguredAt: opAccess.access?.riskSettingsConfiguredAt ?? null,
-      maxLot: opAccess.access?.maxLot ?? null,
-      maxOpenPositions: opAccess.access?.maxOpenPositions ?? null,
-      maxExposurePerSymbolLots: opAccess.access?.maxExposurePerSymbolLots ?? null,
-      requireStopLoss: opAccess.access?.requireStopLoss ?? true,
-      scannerLiveEnabled: opAccess.access?.scannerLiveEnabled ?? false,
+      access: opAccess.access,
+      arming: opAccess.arming,
       allowedSymbols,
-      userArmed: opAccess.arming?.isArmed ?? false,
-      userKillSwitchEngaged: opAccess.arming?.killSwitchEngaged ?? false,
-    },
+    }),
     panelD_controlledTestPreview: {
       symbol: CONTROLLED_TEST_SYMBOL,
       side: CONTROLLED_TEST_SIDE,
@@ -306,6 +300,7 @@ async function runControlledDryRun(
     killSwitchEngaged: (opAccess.arming?.killSwitchEngaged ?? false) || master.platformStopEngaged,
     bridgeAccountType: bridge.accountType,
     bridgeHeartbeatAgeSec: bridge.heartbeatAgeSeconds,
+    bridgeLastHeartbeatAt: bridge.lastHeartbeatAt,
     bridgeEaVersion: bridge.eaVersion,
     bridgeEnableLiveExecution: bridge.enableLiveExecution,
     bridgeReadOnlyMode: bridge.readOnlyMode,

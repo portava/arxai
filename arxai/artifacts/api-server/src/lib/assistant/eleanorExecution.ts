@@ -44,7 +44,7 @@ export async function ownBridgePriceOf(symbol: string, bridgeConnectionId: numbe
     // Bridge-scoped store read (this line's pinned read): only this bridge's own
     // partition is served, never another bridge's or the unattributed one.
     const r = readMt5Quote(symbol, { bridgeConnectionId });
-    if (!r.quote || r.bridgeConnectionId !== bridgeConnectionId) return null;
+    if (!r || !r.quote || r.bridgeConnectionId !== bridgeConnectionId) return null;
     const q = r.quote;
     // Only a FRESH observed tick may be acted on: the quote's timestamp is the
     // EA-UTC first sight of this tick (a weekend re-post keeps the old stamp),

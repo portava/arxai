@@ -38,6 +38,14 @@ export interface TickStreamWatchdogOptions {
   silenceMs?: number;
   /** Watchdog check cadence. */
   tickMs?: number;
+  /**
+   * Whether a stream is actually being watched. Defaults to true. When false
+   * (the chart's candle source has no tick stream, or there is no feed at all)
+   * the silence clock does not run and `stalled` stays false: a stream that was
+   * never opened cannot be "reconnecting", and saying so would describe a
+   * failure that is not happening.
+   */
+  active?: boolean;
 }
 
 export interface TickStreamWatchdog {
@@ -57,7 +65,7 @@ export interface TickStreamWatchdog {
   noteFrame: () => void;
   /** Call from `es.onerror`. Records the state; the watchdog owns the retry. */
   noteError: () => void;
-  /** Call right after a new EventSource is constructed. */
+  /** Call right after a new EventSource is constructed. Restarts the silence clock; never clears a stall. */
   noteStreamOpened: () => void;
 }
 
@@ -73,8 +81,9 @@ export function useTickStreamWatchdog(
 ): TickStreamWatchdog {
   const silenceMs = opts.silenceMs ?? STREAM_SILENCE_MS;
   const tickMs = opts.tickMs ?? STREAM_WATCHDOG_TICK_MS;
-
-  const enabled = opts.enabled ?? true;
+  // `active` (Truth line) and `enabled` (source-bound watchdog) mean the same
+  // thing: is a stream actually being watched. Either one false turns it off.
+  const enabled = (opts.enabled ?? true) && (opts.active ?? true);
   const streamKey = opts.streamKey ?? "default";
   const binding = useMemo(() => ({ enabled, streamKey }), [enabled, streamKey]);
   const bindingRef = useRef(binding);
@@ -101,14 +110,21 @@ export function useTickStreamWatchdog(
   const noteStreamOpened = useCallback(() => {
     const current = bindingRef.current;
     if (!current.enabled) return;
-    // A fresh stream starts its own silence clock; any prior stall verdict
-    // belonged to the connection it replaced.
+    // A fresh stream starts its own silence clock. It does NOT clear a stall:
+    // constructing a replacement EventSource proves nothing about delivery,
+    // so the chart keeps saying "Reconnecting" until a frame actually arrives
+    // (noteFrame) — otherwise the watchdog's own reconnect would hide the
+    // badge on a stream that is still silent. A stall recorded for a previous
+    // source never shows for this one (the binding check in `stalled` below).
     lastFrameAtRef.current = Date.now();
-    setStatus(prev => prev.binding === current && !prev.stalled ? prev : {binding: current, stalled: false});
   }, []);
 
   useEffect(() => {
+    // Nothing is being watched: no silence clock runs, and `stalled` below
+    // reads false for this binding, withdrawing any verdict about a previous
+    // stream.
     if (!binding.enabled) return;
+    // Watching starts now; silence before a stream existed is not a stall.
     lastFrameAtRef.current = Date.now();
     const timer = setInterval(() => {
       if (bindingRef.current !== binding) return;

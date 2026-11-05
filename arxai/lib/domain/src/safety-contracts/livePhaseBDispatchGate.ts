@@ -65,7 +65,14 @@ export interface LivePhaseBGateInput {
 
   // bridge facts (from latest heartbeat)
   bridgeAccountType: string | null;            // "live" | "real" | "demo" | other
-  bridgeHeartbeatAgeSec: number | null;        // null = never
+  bridgeHeartbeatAgeSec: number | null;        // null = never, or age unknown (see below)
+  /**
+   * When the bridge's last heartbeat was observed (ISO), if known. Lets gate 7
+   * say a null age is a heartbeat dated after the server's clock (age cannot
+   * be verified) rather than "No heartbeat received yet". Wording only: the
+   * gate decision reads bridgeHeartbeatAgeSec alone.
+   */
+  bridgeLastHeartbeatAt?: string | null;
   bridgeEaVersion: string | null;              // e.g. "1.27"
   bridgeEnableLiveExecution: boolean | null;   // EA input
   bridgeReadOnlyMode: boolean | null;          // EA input
@@ -171,7 +178,10 @@ export function evaluateLivePhaseBDispatchGate(
   // 7. Heartbeat fresh
   const hb = input.bridgeHeartbeatAgeSec;
   if (!isHeartbeatAgeSecondsFresh(hb)) fail("EA_HEARTBEAT_STALE",
-    hb == null ? "No heartbeat received yet."
+    hb == null
+      ? (input.bridgeLastHeartbeatAt
+        ? `Last heartbeat is dated ${input.bridgeLastHeartbeatAt}, after the server's clock, so its age cannot be verified (counts as stale).`
+        : "No heartbeat received yet.")
       : `Last heartbeat ${hb}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`);
   else pass("EA_HEARTBEAT_STALE");
 

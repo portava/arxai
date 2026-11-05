@@ -1,0 +1,120 @@
+// Live Gates diagnostic — the master switch row reports the switch the
+// dispatch gate reads (env flag AND operator arm), not the env flag alone.
+//
+// The defect this locks: with ARX_LIVE_BROKER_EXECUTION_ENABLED=true and no
+// operator arm, the panel showed "Server master switch: pass" and "Broker
+// placement layer: pass" although gate 1 refuses every live dispatch until an
+// operator arms; when off it named BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED while
+// the gate's refusal is LIVE_BROKER_EXECUTION_DISABLED.
+//
+// A heartbeat dated in the future (age unknown) read "No heartbeat received
+// yet."; it now says its age cannot be verified.
+//
+// Only the DB handle, the settings read and the bridge readers are stubbed;
+// the real router runs. No network.
+//
+// Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
+//        src/routes/__qa__/liveGatesMasterSwitchTruth.test.ts
+
+import { after, beforeEach, mock, test } from "node:test";
+import assert from "node:assert/strict";
+import { createFakeDb, withRouter } from "./_fakeRouteDb.js";
+
+const prevEnv = process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED;
+process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED = "true";
+after(() => {
+  if (prevEnv === undefined) delete process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED;
+  else process.env.ARX_LIVE_BROKER_EXECUTION_ENABLED = prevEnv;
+});
+
+const database = await import("@workspace/db");
+mock.module("@workspace/db", { namedExports: { ...database, db: createFakeDb({}).db } });
+
+let armed = false;
+let platformMode: "LIVE" | "OFF" = "LIVE";
+const switches = await import("../../lib/safety/platformSwitches.js");
+mock.module("../../lib/safety/platformSwitches.js", {
+  namedExports: {
+    ...switches,
+    loadPlatformSettings: async () => ({
+      // The arm-specific case requires LIVE mode explicitly. The install
+      // default remains OFF and is covered separately below.
+      switches: switches.switchesFromRows([{ ...switches.DEFAULT_SWITCH_ROW, platformMode, liveBrokerExecutionArmed: armed }]),
+      config: null,
+    }),
+  },
+});
+let detected: Record<string, unknown> = { ok: false, primaryReason: "NO_BRIDGE", latestHint: null };
+const detectorMod = await import("../../lib/mt5/currentConnectedBridgeDetector.js");
+mock.module("../../lib/mt5/currentConnectedBridgeDetector.js", {
+  namedExports: { ...detectorMod, detectCurrentConnectedBridge: async () => detected },
+});
+const gateMod = await import("../../lib/mt5/masterLiveBridgeGate.js");
+mock.module("../../lib/mt5/masterLiveBridgeGate.js", {
+  namedExports: { ...gateMod, loadAndEvaluateMasterLiveBridgeGate: async () => ({ decision: "BLOCKED", primaryReason: "NO_PINNED_BRIDGE" }) },
+});
+
+const router = (await import("../adminLiveGatesDiagnostic.js")).default;
+
+type Gate = { id: string; status: string; detail: string; rawCode?: string };
+async function diagnostic(): Promise<{ gates: Gate[]; nextPlatformStep: string }> {
+  let out: { gates: Gate[]; nextPlatformStep: string } | null = null;
+  await withRouter(router, { id: 1, role: "OWNER" }, async (base) => {
+    const res = await fetch(`${base}/admin/live-gates/diagnostic`);
+    assert.equal(res.status, 200);
+    out = (await res.json()) as { gates: Gate[]; nextPlatformStep: string };
+  });
+  return out!;
+}
+const gate = (d: { gates: Gate[] }, id: string): Gate => {
+  const g = d.gates.find((x) => x.id === id);
+  assert.ok(g, `row ${id} missing`);
+  return g;
+};
+
+beforeEach(() => { armed = false; platformMode = "LIVE"; detected = { ok: false, primaryReason: "NO_BRIDGE", latestHint: null }; });
+
+test("the OFF install default reports the mode prerequisite before operator arming", async () => {
+  assert.equal(switches.DEFAULT_SWITCH_ROW.platformMode, "OFF");
+  platformMode = "OFF";
+  const d = await diagnostic();
+  assert.match(d.nextPlatformStep, /Switch global platform mode to LIVE/);
+  assert.notEqual(gate(d, "server_master_switch").status, "pass");
+});
+
+test("env on, operator not armed: master switch and placement layer are not 'pass' and name the gate's refusal", async () => {
+  const d = await diagnostic();
+  for (const id of ["server_master_switch", "broker_placement_layer"]) {
+    const g = gate(d, id);
+    assert.notEqual(g.status, "pass", `${id} must not pass while the operator arm is off`);
+    assert.equal(g.rawCode, "LIVE_BROKER_EXECUTION_DISABLED");
+  }
+  assert.match(gate(d, "server_master_switch").detail, /env ARX_LIVE_BROKER_EXECUTION_ENABLED is set and no operator has armed/);
+  // The next step is the arm, not setting an env flag that is already set.
+  assert.doesNotMatch(d.nextPlatformStep, /Set ARX_LIVE_BROKER_EXECUTION_ENABLED=true/);
+  assert.match(d.nextPlatformStep, /arm/);
+});
+
+test("env on and operator armed: the master switch passes", async () => {
+  armed = true;
+  const d = await diagnostic();
+  assert.equal(gate(d, "server_master_switch").status, "pass");
+  assert.equal(gate(d, "server_master_switch").rawCode, "LIVE_BROKER_EXECUTION_ENABLED");
+  assert.equal(gate(d, "broker_placement_layer").status, "pass");
+});
+
+test("a heartbeat dated in the future reads 'cannot be verified', not 'no heartbeat received yet'", async () => {
+  const future = new Date(Date.now() + 30_000);
+  detected = {
+    ok: false, primaryReason: "MASTER_BRIDGE_HEARTBEAT_STALE",
+    latestHint: {
+      bridgeId: 21, userId: 2, mode: "LIVE", accountType: "live", eaVersion: "1.50", brokerName: "B", serverName: "S",
+      accountNumber: "77001234", lastHeartbeat: future, heartbeatAgeSec: null, tokenRevokedAt: null,
+      eaInputs: { terminalConnected: true, algoTradingAllowed: true, readOnlyMode: false, enableLiveExecution: true, enableDemoExecution: null, maxLiveLot: null },
+    },
+  };
+  const g = gate(await diagnostic(), "ea_heartbeat");
+  assert.equal(g.status, "fail");
+  assert.doesNotMatch(g.detail, /No heartbeat received yet/);
+  assert.match(g.detail, /cannot be verified/);
+});

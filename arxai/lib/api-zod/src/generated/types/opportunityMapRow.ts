@@ -7,6 +7,7 @@
  */
 import type { OpportunityMapRowCategory } from "./opportunityMapRowCategory";
 import type { OpportunityMapRowDirection } from "./opportunityMapRowDirection";
+import type { OpportunityMapRowFinalReadLabel } from "./opportunityMapRowFinalReadLabel";
 import type { OpportunityMapRowKind } from "./opportunityMapRowKind";
 import type { OpportunityMapRowNewsRisk } from "./opportunityMapRowNewsRisk";
 import type { OpportunityMapRowRecommendedAction } from "./opportunityMapRowRecommendedAction";
@@ -21,9 +22,15 @@ export interface OpportunityMapRow {
   entryQuality: number;
   executionQuality: number;
   newsRisk: OpportunityMapRowNewsRisk;
+  /** True when scheduled events for this market were not looked at: no economic calendar is connected, or the news lookup failed or a configured calendar did not answer (newsRiskUnchecked is then also true). A newsRisk of none is then a default, not an observation. Display only; the category does not read it. */
+  newsRiskNotChecked?: boolean;
+  /** True when scheduled news for this market could not be checked: the news lookup failed or a configured economic calendar did not answer (a failed check, not a missing calendar). Display only; the category does not read it. */
+  newsRiskUnchecked?: boolean;
   hasLiveData: boolean;
   isLate: boolean;
   reason: string | null;
+  /** The row's own final read. Only TRADE_WATCH rows can be READY_NOW; null means the read was unknown. */
+  finalReadLabel?: OpportunityMapRowFinalReadLabel;
   category: OpportunityMapRowCategory;
   kind: OpportunityMapRowKind;
   bestAction: string;

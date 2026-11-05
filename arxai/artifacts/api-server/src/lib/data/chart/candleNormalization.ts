@@ -54,6 +54,7 @@ import { resolveCandleVolumeEvidence, type CandleVolumeEvidence } from "../candl
 
 import type { Candle } from "../types.js";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
+import { trailingIntervalsFromOpen } from "@workspace/domain/market";
 import { isSlotExpected, type WeeklyPresenceProfile } from "./sessionProfile.js";
 
 /** Isolated one-off single-slot closures tolerated before counting as missing. */
@@ -713,8 +714,8 @@ export function trailingIntervalGap(
   if (candles.length === 0) return null;
   const intervalMs = timeframeMs(timeframe);
   const lastOpen = Date.parse(candles[candles.length - 1]!.openTime);
-  const expectedLatestOpen = Math.floor(now / intervalMs) * intervalMs;
-  return Math.round((expectedLatestOpen - lastOpen) / intervalMs);
+  // The shared domain rule (same math the dashboard scanner truth uses).
+  return trailingIntervalsFromOpen(lastOpen, intervalMs, now);
 }
 
 /**
@@ -751,6 +752,5 @@ export function rawTrailingIntervalGap(
     if (latestOpenMs == null || openMs > latestOpenMs) latestOpenMs = openMs;
   }
   if (latestOpenMs == null) return null;
-  const expectedLatestOpen = Math.floor(now / intervalMs) * intervalMs;
-  return Math.round((expectedLatestOpen - latestOpenMs) / intervalMs);
+  return trailingIntervalsFromOpen(latestOpenMs, intervalMs, now);
 }

@@ -52,6 +52,37 @@ interface Props {
   assistantActive?:boolean;
   assistantIsCurrent?:()=>boolean;
 }
+/**
+ * Export provenance line for a live chart. Built only from what the chart
+ * actually holds: the server feed source, the server's closed-candle grade
+ * (downgraded while the tick stream is reconnecting or the market is closed),
+ * the server's own warning verbatim, and the open time of the newest bar.
+ * Nothing is filled in when unknown.
+ */
+export function chartExportFeedLabel(input: {
+  source: string | null | undefined;
+  liveConfirmed: boolean;
+  warning: string | null | undefined;
+  newestBarOpenTime: string | null | undefined;
+  streamReconnecting?: boolean;
+  marketClosed?: boolean;
+  /** The broker keeps repeating one quote outside a scheduled close. */
+  quoteFrozen?: boolean;
+}): string {
+  const live = input.liveConfirmed && !input.streamReconnecting && !input.marketClosed && !input.quoteFrozen;
+  const newestMs = input.newestBarOpenTime ? Date.parse(input.newestBarOpenTime) : NaN;
+  return [
+    input.source || "Unknown source",
+    live ? "Feed graded live-confirmed at last update" : "Not live-confirmed",
+    input.streamReconnecting ? "Tick stream reconnecting, prices delayed" : null,
+    input.marketClosed ? "Market closed" : input.quoteFrozen ? "Broker quote not moving" : null,
+    input.warning || null,
+    input.newestBarOpenTime == null
+      ? "No bars received"
+      : Number.isFinite(newestMs) ? `Newest bar opened ${new Date(newestMs).toISOString()}` : "Newest bar time unknown",
+  ].filter((part): part is string => part != null).join(" · ");
+}
+
 export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,utcClockQualified=false,historyWindowOnly=false,showTemplates=true,chartTarget,getFibonacciProposal,getSupportResistanceProposal,assistantActive=false,assistantIsCurrent}: Props) {
   const displayRevision=studyEvidenceRevision??epoch;
   const needsStudyEvidence=preferences.studies.some(study=>study.kind==='vwap'||study.kind==='volume_profile');
@@ -431,7 +462,9 @@ export function ChartWorkbenchTools({adapter,epoch,studyEvidenceRevision,symbol,
       if(levelPreview){const read=getSupportResistanceProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==levelPreview.comparisonKey){withdrawLevels(read?.reason??"Source or window changed before export.");return;}}
       if(fibonacciPreview){const read=getFibonacciProposal?.();if(read?.status!=="ready"||read.proposal.comparisonKey!==fibonacciPreview.comparisonKey){withdrawPreview(read?.reason??"Source or window changed before export.");return;}}
       // Freeze display proof with this image, before asynchronous image decoding.
-      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true)),fibonacciPreview:!!fibonacciPreview&&!hidden});
+      // The wall clock is when the PNG was made, not the data time; the newest
+      // bar's time belongs in feedLabel.
+      const labels = exportLabels({symbol,timeframe,capture:captureLabel(Date.now(),zone).replace(/^Captured /,"Image exported "),feedLabel:utcClockQualified?feedLabel:`${feedLabel} · ${SOURCE_CLOCK_NOTE}`,style:preferences.style,studies:preferences.studies,studyDisplayLabels:preferences.studies.map(study=>studyDisplayLabel(study,studyDisplayAdapter,true)),fibonacciPreview:!!fibonacciPreview&&!hidden});
       if(visibleLevels&&!hidden)labels.push("UNACCEPTED support/resistance pivot candidates; historical geometry, not a trade signal");
       const url = adapter?.exportImage?.(); if(!url) return;
       // Include instrument, timeframe, capture time (display zone with its

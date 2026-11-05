@@ -4,7 +4,11 @@
 // Even when all 15 pass, the live command pipeline still blocks at
 // `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` (see liveDispatchGate.ts).
 
-import { isHeartbeatAgeSecondsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../brokerHub/freshness.js";
+import {
+  heartbeatAgeSecondsFrom,
+  isHeartbeatAgeSecondsFresh,
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+} from "../brokerHub/freshness.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
@@ -162,9 +166,11 @@ export async function evaluateLiveArmingGate(
   // 2-8: derive from the user's active MT5 bridge.
   const bridge = await getUserActiveConnection(input.userId);
 
-  const hbAge = bridge?.lastHeartbeat
-    ? Math.max(0, Math.floor((Date.now() - new Date(bridge.lastHeartbeat).getTime()) / 1000))
-    : null;
+  // Shared heartbeat policy: a heartbeat dated after the server's clock has no
+  // verifiable age (null, so check #3 fails), never clamped to a fresh 0s.
+  const hbAge = heartbeatAgeSecondsFrom(bridge?.lastHeartbeat ?? null, Date.now());
+  const hbObservedAt = bridge?.lastHeartbeat ? new Date(bridge.lastHeartbeat) : null;
+  const hbObservedIso = hbObservedAt && Number.isFinite(hbObservedAt.getTime()) ? hbObservedAt.toISOString() : null;
   const caps = (bridge?.capabilities ?? {}) as {
     eaInputs?: {
       readOnlyMode?: unknown;
@@ -194,7 +200,12 @@ export async function evaluateLiveArmingGate(
   const hbFresh = isHeartbeatAgeSecondsFresh(hbAge);
   push(3, "HEARTBEAT_FRESH", `Fresh EA heartbeat (<${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`,
     hbFresh,
-    hbAge === null ? "No heartbeat received yet." :
+    hbAge === null
+      ? (bridge?.lastHeartbeat
+        ? (hbObservedIso
+          ? `Last heartbeat is dated ${hbObservedIso}, after the server's clock, so its age cannot be verified (counts as stale).`
+          : "Last heartbeat has an invalid timestamp, so its age cannot be verified (counts as stale).")
+        : "No heartbeat received yet.") :
       hbFresh ? null : `Last heartbeat ${hbAge}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`);
 
   // 4. EA version is v1.27 or newer.

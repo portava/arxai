@@ -22,6 +22,7 @@
 
 import {
   buildRadarEvents,
+  classifyNewsSeverity,
   deriveNewsBehavior,
   severityRank,
   type MarketImpactRadar,
@@ -32,6 +33,24 @@ import {
 } from "@workspace/domain/smart-chart";
 import { getNewsIntelligence } from "./newsIntelligenceService.js";
 import { getEconomicCalendar, type CalendarProviderState } from "./economicCalendarProvider.js";
+import { FRED_PROVIDER } from "./calendar/fredCalendarProvider.js";
+import { isSyntheticSymbol as isSyntheticCalendarSymbol } from "./calendar/calendarSymbolMap.js";
+import { resolveCanonicalSymbol } from "../instruments/index.js";
+import { SYNTHETIC_EVENT_RISK_LABEL } from "@workspace/domain/truth";
+
+const DATE_SENTINEL_SUFFIX = "T00:00:00.000Z";
+
+/**
+ * FRED release dates are DATE-granularity: the provider emits a midnight-UTC
+ * sentinel, not a release time. During that UTC date the release can occur at
+ * any moment, so it must never be reported as already past (RECENT) or as
+ * outside its window. It is held as IMMINENT for the whole date (fail closed).
+ */
+function isUnconfirmedTimeToday(provider: string, e: NewsRadarEvent, nowMs: number): boolean {
+  if (provider !== FRED_PROVIDER || !e.eventTimeIso.endsWith(DATE_SENTINEL_SUFFIX)) return false;
+  const dayStart = Date.parse(e.eventTimeIso);
+  return Number.isFinite(dayStart) && nowMs >= dayStart && nowMs < dayStart + 86_400_000;
+}
 
 export interface MarketImpactRadarResult {
   radar: MarketImpactRadar;
@@ -39,13 +58,24 @@ export interface MarketImpactRadarResult {
 }
 
 /**
- * Synthetic instruments are not driven by real-world economic events. We detect
- * the common Deriv synthetic families by name so the radar never pretends a
- * macro event moves a volatility index.
+ * Synthetic instruments are not driven by real-world economic events. The
+ * canonical instrument resolver is the authority (it classifies the scanner's
+ * own keys — "V75", "V75_1S", "1HZ75V" — which the old name-only regex missed,
+ * so the V75 truth read was given calendar wording); the shared calendar
+ * matcher and the original Deriv family names are kept so no alias that was
+ * caught before regresses.
  */
-function isSyntheticSymbol(symbol: string): boolean {
+export function isSyntheticSymbol(symbol: string): boolean {
   const s = symbol.toUpperCase();
+  let canonicalSynthetic = false;
+  try {
+    canonicalSynthetic = resolveCanonicalSymbol(symbol).assetClass === "synthetic";
+  } catch {
+    canonicalSynthetic = false;
+  }
   return (
+    canonicalSynthetic ||
+    isSyntheticCalendarSymbol(s) ||
     s.includes("VOLATILITY") ||
     s.includes("CRASH") ||
     s.includes("BOOM") ||
@@ -101,12 +131,19 @@ export async function buildMarketImpactRadar(
   // Honesty gate: `buildRadarEvents` returns [] whenever `calendarConnected` is
   // false, regardless of `rawEvents` — no fabricated macro events, no actionable
   // alerts from a disconnected/synthetic source.
+  const rawImpact = new Map(rawEvents.map((e) => [e.id, e.impact]));
+  const unconfirmedToday = new Set<string>();
   const events: NewsRadarEvent[] = buildRadarEvents({
     calendarConnected,
     rawEvents,
     symbol,
     synthetic,
     nowMs,
+  }).map((e) => {
+    const impact = rawImpact.get(e.id);
+    if (!impact || !isUnconfirmedTimeToday(calendarProvider, e, nowMs)) return e;
+    unconfirmedToday.add(e.id);
+    return { ...e, state: "IMMINENT", severity: classifyNewsSeverity(impact, "IMMINENT") };
   });
 
   // Sort: affecting first, then by absolute proximity to now.
@@ -138,6 +175,7 @@ export async function buildMarketImpactRadar(
     affecting,
     topSeverity,
     highImpactWindowActive,
+    unconfirmedToday,
   );
 
   return {
@@ -169,9 +207,10 @@ function buildSummary(
   affecting: readonly NewsRadarEvent[],
   topSeverity: NewsRadarSeverity | null,
   highImpactWindowActive: boolean,
+  unconfirmedToday: ReadonlySet<string> = new Set(),
 ): string {
   if (synthetic) {
-    return "This is a synthetic instrument — it is not driven by real-world economic events.";
+    return SYNTHETIC_EVENT_RISK_LABEL;
   }
   if (affecting.length === 0) {
     return providerConnected
@@ -180,8 +219,9 @@ function buildSummary(
   }
   const next = affecting[0]!;
   const mins = Math.round(Math.abs(next.countdownSeconds) / 60);
-  const when =
-    next.countdownSeconds >= 0
+  const when = unconfirmedToday.has(next.id)
+    ? "today (release time not confirmed)"
+    : next.countdownSeconds >= 0
       ? `in about ${mins} min`
       : `about ${mins} min ago`;
   if (highImpactWindowActive) {

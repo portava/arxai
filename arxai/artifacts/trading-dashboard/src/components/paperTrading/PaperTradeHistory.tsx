@@ -7,6 +7,27 @@ interface Order {
 }
 interface Hist { orders: Order[]; closedCount: number; wins: number; losses: number; winRate: number; netPnl: number; }
 
+/**
+ * The P&L cell. paper_orders.profit_loss cannot be empty, so when the paper
+ * monitor cannot size an exit (no contract size or USD conversion for the
+ * instrument) it stores 0 as a placeholder. A 0 on an order whose exit moved
+ * away from entry is that placeholder, not a breakeven result: it reads "not
+ * sized", never "+0.00". A genuine flat exit reads "0.00" without a sign.
+ */
+export function paperHistoryPnl(o: Pick<Order, "profitLoss" | "entryPrice" | "exitPrice">): { text: string; tone: string; title?: string } {
+  const pnl = o.profitLoss;
+  if (typeof pnl !== "number" || !Number.isFinite(pnl)) {
+    return { text: "—", tone: "text-slate-400", title: "No P&L recorded for this order." };
+  }
+  if (pnl === 0) {
+    const moved = o.exitPrice != null && o.exitPrice !== o.entryPrice;
+    return moved
+      ? { text: "not sized", tone: "text-slate-400", title: "No P&L recorded: the exit price moved from entry but the stored P&L is 0, a placeholder for an instrument the simulator could not size. It is not a breakeven result." }
+      : { text: "0.00", tone: "text-slate-300" };
+  }
+  return { text: `${pnl > 0 ? "+" : ""}${pnl.toFixed(2)}`, tone: pnl > 0 ? "text-green-400" : "text-red-400" };
+}
+
 export function PaperTradeHistory({ accountId }: { accountId: number | null }) {
   const { data } = useQuery<Hist>({
     queryKey: ["paper-history", accountId],
@@ -38,7 +59,9 @@ export function PaperTradeHistory({ accountId }: { accountId: number | null }) {
                       {o.status.replace("CLOSED_","")}
                     </span>
                   </td>
-                  <td className={`p-1 font-mono ${o.profitLoss>=0?"text-green-400":"text-red-400"}`}>{o.profitLoss>=0?"+":""}{o.profitLoss.toFixed(2)}</td>
+                  {(() => { const v = paperHistoryPnl(o); return (
+                    <td className={`p-1 font-mono ${v.tone}`} title={v.title} data-testid={`paper-history-pnl-${o.id}`}>{v.text}</td>
+                  ); })()}
                 </tr>
               ))}
             </tbody>

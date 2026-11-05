@@ -209,6 +209,11 @@ function checkDuplicateKeyScannerFixture(): string | null {
  * should not run automatically at all.
  */
 const MANUAL_ONLY = new Set<string>([
+  // Offline browser geometry suites need an installed Chromium executable and,
+  // for header zoom scenarios, Chromium extension support plus built browser fixtures.
+  // Run explicitly in that environment; neither is claimed by the Node/unit CI lane.
+  "@workspace/scripts::test:compact-workspace-geometry",
+  "@workspace/scripts::test:shell-header-browser",
   // Covered automatically by the test:timing umbrella (already in root `ci`):
   "@workspace/api-server::test:timing-broadflow",
   "@workspace/api-server::test:timing-composer",

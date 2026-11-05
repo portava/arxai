@@ -48,22 +48,128 @@ export interface ChecklistResult {
 const MIN_RR_DEFAULT = 1.5;
 const MIN_CONFIDENCE = 60;
 
-function rewardToRisk(entry: number | null, sl: number | null, tp: number | null): number | null {
-  if (entry == null || sl == null || tp == null) return null;
-  const risk = Math.abs(entry - sl);
-  if (risk <= 0) return null;
-  const reward = Math.abs(tp - entry);
-  return reward / risk;
+export type LevelSide = "OK" | "WRONG" | "MISSING";
+
+export interface PlanGeometry {
+  /** Reward ÷ risk, or null when a level is missing or on the wrong side. */
+  rr: number | null;
+  stopSide: LevelSide;
+  targetSide: LevelSide;
+  /** Normalised direction the sides were judged against, or null. */
+  direction: "BUY" | "SELL" | null;
+}
+
+function normDirection(d: string | null | undefined): "BUY" | "SELL" | null {
+  const v = (d ?? "").trim().toUpperCase();
+  if (v === "BUY" || v === "LONG") return "BUY";
+  if (v === "SELL" || v === "SHORT") return "SELL";
+  return null;
+}
+
+/**
+ * Directional reward-to-risk. A BUY's stop must be below entry and its target
+ * above; a SELL is the mirror. With no BUY/SELL direction the stop and target
+ * must at least sit on opposite sides of entry. A level on the wrong side makes
+ * the plan geometrically impossible, so no R:R is returned for it.
+ */
+export function planRewardToRisk(
+  direction: string | null | undefined,
+  entry: number | null | undefined,
+  sl: number | null | undefined,
+  tp: number | null | undefined,
+): PlanGeometry {
+  const dir = normDirection(direction);
+  const has = (x: number | null | undefined): x is number => typeof x === "number" && Number.isFinite(x);
+  if (!has(entry)) {
+    return { rr: null, stopSide: has(sl) ? "OK" : "MISSING", targetSide: has(tp) ? "OK" : "MISSING", direction: dir };
+  }
+  let stopSide: LevelSide = "MISSING";
+  let targetSide: LevelSide = "MISSING";
+  if (dir === "BUY") {
+    if (has(sl)) stopSide = sl < entry ? "OK" : "WRONG";
+    if (has(tp)) targetSide = tp > entry ? "OK" : "WRONG";
+  } else if (dir === "SELL") {
+    if (has(sl)) stopSide = sl > entry ? "OK" : "WRONG";
+    if (has(tp)) targetSide = tp < entry ? "OK" : "WRONG";
+  } else {
+    if (has(sl)) stopSide = sl !== entry ? "OK" : "WRONG";
+    if (has(tp)) targetSide = tp !== entry ? "OK" : "WRONG";
+    if (has(sl) && has(tp) && stopSide === "OK" && targetSide === "OK" && (sl - entry) * (tp - entry) > 0) {
+      // Same side of entry: one of them must be wrong, but without a
+      // direction we cannot say which — both fail.
+      stopSide = "WRONG";
+      targetSide = "WRONG";
+    }
+  }
+  if (stopSide !== "OK" || targetSide !== "OK") return { rr: null, stopSide, targetSide, direction: dir };
+  const risk = Math.abs(entry - (sl as number));
+  if (risk <= 0) return { rr: null, stopSide, targetSide, direction: dir };
+  return { rr: Math.abs((tp as number) - entry) / risk, stopSide, targetSide, direction: dir };
+}
+
+function wrongSideDetail(kind: "stop" | "target", level: number, entry: number, dir: "BUY" | "SELL" | null): string {
+  const where = level > entry ? "above" : level < entry ? "below" : "at";
+  const name = kind === "stop" ? "Stop loss" : "Take profit";
+  if (dir == null) {
+    // With no direction a level fails either because it sits exactly at entry
+    // (zero distance) or because it shares a side with the other level.
+    if (where === "at") {
+      return `${name} ${level} is at the ${entry} entry — there is no ${kind === "stop" ? "stop" : "target"} distance.`;
+    }
+    return `${name} ${level} is ${where} the ${entry} entry, on the same side as the ${kind === "stop" ? "take profit" : "stop loss"} — the plan has no direction to tell which is wrong.`;
+  }
+  const should = kind === "stop"
+    ? (dir === "BUY" ? "below" : "above")
+    : (dir === "BUY" ? "above" : "below");
+  return `${name} ${level} is ${where} the ${entry} entry — for a ${dir.toLowerCase()} it must be ${should} entry.`;
+}
+
+const RR_UNMEASURABLE = " — R:R can't be measured.";
+
+/**
+ * Why reward-to-risk can't be measured when a level failed the geometry rule.
+ * A level exactly at entry is a zero distance, not a wrong side or a
+ * same-side pair, and is described as such.
+ */
+function rrGeometryDetail(geo: PlanGeometry, entry: number | null, sl: number | null, tp: number | null): string {
+  const at = (x: number | null) => x != null && entry != null && x === entry;
+  const stopAt = geo.stopSide === "WRONG" && at(sl);
+  const targetAt = geo.targetSide === "WRONG" && at(tp);
+  if (stopAt || targetAt) {
+    let clause = stopAt && targetAt
+      ? "The stop loss and take profit are at the entry price, so there is no stop or target distance"
+      : stopAt
+        ? "The stop loss is at the entry price, so there is no stop distance"
+        : "The take profit is at the entry price, so there is no target distance";
+    const otherWrong = stopAt !== targetAt && (stopAt ? geo.targetSide : geo.stopSide) === "WRONG";
+    if (otherWrong && geo.direction) {
+      clause += `, and the ${stopAt ? "take profit" : "stop loss"} is on the wrong side of entry for a ${geo.direction.toLowerCase()}`;
+    }
+    return clause + RR_UNMEASURABLE;
+  }
+  return geo.direction
+    ? `Stop loss or take profit is on the wrong side of entry for a ${geo.direction.toLowerCase()} — R:R can't be measured.`
+    : "Stop loss and take profit are on the same side of entry (wrong side) — R:R can't be measured.";
 }
 
 export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   const items: ChecklistItem[] = [];
-  const rr = rewardToRisk(input.entryPrice, input.stopLoss, input.takeProfit);
+  const geo = planRewardToRisk(input.directionBias, input.entryPrice, input.stopLoss, input.takeProfit);
+  const rr = geo.rr;
   const minRr = (input.rewardToRiskTarget && input.rewardToRiskTarget > 0) ? input.rewardToRiskTarget : MIN_RR_DEFAULT;
+
+  // Items 1, 2 and 6 only echo values the user typed (a dropdown, a
+  // confidence number, a risk amount): ARX observed no market condition or
+  // strategy fit and computed no risk. A satisfied self-reported value is
+  // UNKNOWN ("your input — not checked by ARX"), never a PASS; one that breaks
+  // the rule still FAILs. Readiness is unchanged (UNKNOWN never blocks).
 
   // 1. Market condition supports setup
   if (input.marketCondition === "TRENDING" || input.marketCondition === "RANGING") {
-    items.push({ key: "MARKET_CONDITION", label: "Market condition supports setup", status: "PASS", detail: input.marketCondition });
+    items.push({
+      key: "MARKET_CONDITION", label: "Market condition supports setup", status: "UNKNOWN",
+      detail: `Your input — not checked by ARX: you marked the market ${input.marketCondition}.`,
+    });
   } else if (input.marketCondition === "NO_TRADE") {
     items.push({ key: "MARKET_CONDITION", label: "Market condition supports setup", status: "FAIL", detail: "Current condition is NO_TRADE." });
   } else {
@@ -74,13 +180,22 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   if (input.confidenceLevel == null) {
     items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "WARN", detail: "Confidence level not set." });
   } else if (input.confidenceLevel >= MIN_CONFIDENCE) {
-    items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "PASS", detail: `Confidence ${input.confidenceLevel}% (≥ ${MIN_CONFIDENCE}%).` });
+    items.push({
+      key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "UNKNOWN",
+      detail: `Your input — not checked by ARX: you set confidence ${input.confidenceLevel}% (≥ ${MIN_CONFIDENCE}%); no strategy fit was measured.`,
+    });
   } else {
     items.push({ key: "STRATEGY_FIT", label: "Strategy fit is acceptable", status: "FAIL", detail: `Confidence ${input.confidenceLevel}% (< ${MIN_CONFIDENCE}%).` });
   }
 
-  // 3. Reward-to-risk acceptable
-  if (rr == null) {
+  // 3. Reward-to-risk acceptable (directional: levels on the wrong side of
+  // entry make the plan impossible, so they never yield an R:R).
+  if (geo.stopSide === "WRONG" || geo.targetSide === "WRONG") {
+    items.push({
+      key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL",
+      detail: rrGeometryDetail(geo, input.entryPrice, input.stopLoss, input.takeProfit),
+    });
+  } else if (rr == null) {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL", detail: "Entry / SL / TP missing." });
   } else if (rr >= minRr) {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "PASS", detail: `R:R ${rr.toFixed(2)} (≥ ${minRr.toFixed(2)}).` });
@@ -88,21 +203,28 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
     items.push({ key: "RR_OK", label: "Reward-to-risk is acceptable", status: "FAIL", detail: `R:R ${rr.toFixed(2)} (< ${minRr.toFixed(2)}).` });
   }
 
-  // 4. Stop loss defined
-  items.push(input.stopLoss != null
-    ? { key: "SL_DEFINED", label: "Stop loss is defined", status: "PASS", detail: String(input.stopLoss) }
-    : { key: "SL_DEFINED", label: "Stop loss is defined", status: "FAIL", detail: "Missing." });
+  // 4. Stop loss defined (and on the correct side of entry)
+  items.push(input.stopLoss == null
+    ? { key: "SL_DEFINED", label: "Stop loss is defined", status: "FAIL", detail: "Missing." }
+    : geo.stopSide === "WRONG" && input.entryPrice != null
+      ? { key: "SL_DEFINED", label: "Stop loss is defined", status: "FAIL", detail: wrongSideDetail("stop", input.stopLoss, input.entryPrice, geo.direction) }
+      : { key: "SL_DEFINED", label: "Stop loss is defined", status: "PASS", detail: String(input.stopLoss) });
 
-  // 5. Take profit defined
-  items.push(input.takeProfit != null
-    ? { key: "TP_DEFINED", label: "Take profit is defined", status: "PASS", detail: String(input.takeProfit) }
-    : { key: "TP_DEFINED", label: "Take profit is defined", status: "FAIL", detail: "Missing." });
+  // 5. Take profit defined (and on the correct side of entry)
+  items.push(input.takeProfit == null
+    ? { key: "TP_DEFINED", label: "Take profit is defined", status: "FAIL", detail: "Missing." }
+    : geo.targetSide === "WRONG" && input.entryPrice != null
+      ? { key: "TP_DEFINED", label: "Take profit is defined", status: "FAIL", detail: wrongSideDetail("target", input.takeProfit, input.entryPrice, geo.direction) }
+      : { key: "TP_DEFINED", label: "Take profit is defined", status: "PASS", detail: String(input.takeProfit) });
 
   // 6. Risk amount within limit
   if (input.riskAmount == null || input.maxLossAllowed == null) {
     items.push({ key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "WARN", detail: "Risk amount or max loss not set." });
   } else if (input.riskAmount <= input.maxLossAllowed) {
-    items.push({ key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "PASS", detail: `Risk ${input.riskAmount} ≤ max ${input.maxLossAllowed}.` });
+    items.push({
+      key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "UNKNOWN",
+      detail: `Your input — not checked by ARX: you entered risk ${input.riskAmount} ≤ max ${input.maxLossAllowed}; ARX did not compute risk from the lot size and stop distance.`,
+    });
   } else {
     items.push({ key: "RISK_AMOUNT", label: "Risk amount is within limit", status: "FAIL", detail: `Risk ${input.riskAmount} > max ${input.maxLossAllowed}.` });
   }
@@ -137,7 +259,9 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   return { items, passCount, failCount, warnCount, isReady: failCount === 0, rewardToRisk: rr };
 }
 
-// ── AI plan review (deterministic, advisory-only) ──────────────────────────
+// ── Plan review (deterministic rules, advisory-only) ───────────────────────
+// No AI model is consulted: the text restates the plan's inputs and the
+// checklist results, so the UI labels it a rule-based review, not an AI one.
 
 export interface PlanForReview {
   symbol: string | null;
@@ -159,24 +283,41 @@ export function summarizePlan(plan: PlanForReview, checklist: ChecklistResult, _
     parts.push(plan.rewardToRisk >= target
       ? `Reward-to-risk ${plan.rewardToRisk.toFixed(2)} meets your ${target.toFixed(2)} target.`
       : `Reward-to-risk ${plan.rewardToRisk.toFixed(2)} is below your ${target.toFixed(2)} target — consider tighter stop or wider target.`);
+  } else if (checklist.items.some((i) =>
+    (i.key === "SL_DEFINED" || i.key === "TP_DEFINED") && i.status === "FAIL" && i.detail !== "Missing.")) {
+    const rrDetail = checklist.items.find((i) => i.key === "RR_OK")?.detail ?? "";
+    if (rrDetail.includes("at the entry price") && rrDetail.endsWith(RR_UNMEASURABLE)) {
+      const why = rrDetail.slice(0, -RR_UNMEASURABLE.length);
+      parts.push(`Reward-to-risk cannot be measured — ${why.charAt(0).toLowerCase()}${why.slice(1)}.`);
+    } else {
+      parts.push("Reward-to-risk cannot be measured — the stop loss or take profit is on the wrong side of entry.");
+    }
   } else {
     parts.push("Reward-to-risk cannot be computed — entry, stop, and take-profit are required.");
   }
 
+  // confidenceLevel is the number the user typed: restate it as their input,
+  // never as ARX's assessment of the setup.
   if (plan.confidenceLevel != null) {
-    parts.push(plan.confidenceLevel >= 75 ? "Confidence is strong."
-      : plan.confidenceLevel >= 60 ? "Confidence is acceptable."
-      : "Confidence is low — wait for a cleaner setup.");
+    const typed = `You set confidence to ${plan.confidenceLevel}% (your input, not checked by ARX)`;
+    parts.push(plan.confidenceLevel >= 60 ? `${typed}.`
+      : `${typed} — that is low; wait for a cleaner setup.`);
   }
 
   const fails = checklist.items.filter((i) => i.status === "FAIL");
   const warns = checklist.items.filter((i) => i.status === "WARN");
+  const unchecked = checklist.items.filter((i) => i.status === "UNKNOWN");
   if (fails.length > 0) {
     parts.push(`Blocking issues: ${fails.map((f) => f.label.toLowerCase()).join("; ")}.`);
   } else if (warns.length > 0) {
     parts.push(`Cautions to acknowledge: ${warns.map((w) => w.label.toLowerCase()).join("; ")}.`);
+  } else if (unchecked.length > 0) {
+    parts.push("Every check ARX ran passes. Proceed only if your written plan still matches what you see on the chart.");
   } else {
     parts.push("All pre-trade checks pass. Proceed only if your written plan still matches what you see on the chart.");
+  }
+  if (unchecked.length > 0) {
+    parts.push(`Not checked by ARX (your own inputs): ${unchecked.map((u) => u.label.toLowerCase()).join("; ")}.`);
   }
 
   // Inviolable advisory note — Safety Core, not this layer, gates execution.

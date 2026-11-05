@@ -348,7 +348,10 @@ test("guardian: automation or Eleanor cannot widen a stop, even within the per-t
 
 test("guardian: automation cannot remove a stop, and cannot modify a position it cannot identify", () => {
   const removed = evaluatePreTradeRisk(modify({ origin: "automation", stopLoss: null }), baseCtx());
-  assert.deepEqual(removed.blockedBy, ["stop_loss_required"]);
+  // The stop requirement leads; a removal also leaves the loss unbounded, so
+  // the per-trade limit refuses it too (s3-governor).
+  assert.deepEqual(removed.blockedBy, ["stop_loss_required", "per_trade_loss_limit"]);
+  assert.match(removed.primaryReason!, /stop loss is required; it cannot be removed/);
   const unknown = evaluatePreTradeRisk(modify({ origin: "eleanor", stopLoss: 1.098, position: null }), baseCtx());
   assert.deepEqual(unknown.blockedBy, ["stop_loss_required"]);
   assert.match(unknown.primaryReason!, /could not be found/);
@@ -361,6 +364,26 @@ test("guardian: a trader may widen a stop by hand only within the per-trade loss
   const r = blockedOnly(modify({ stopLoss: 1.085 }), baseCtx(), "per_trade_loss_limit");
   assert.equal(r.measured?.["lossAtStop"], 150);
   assert.equal(r.measured?.["cap"], 100);
+});
+
+// Round-3 safety review (s3-governor): removing the stop is the widest widen.
+// The per-trade check sat inside `if (stopLoss != null)`, so with the
+// trader's stop requirement off a manual removal fell to NOT_APPLICABLE
+// ("modify does not add exposure") and was allowed at any equity, even −200.
+// An OPEN without a stop is always refused by rule 8; a removal now is too.
+test("guardian: removing the stop by hand is refused by the per-trade loss limit, with the stop requirement off, at any equity", () => {
+  const limits = { ...resolveEffectiveLimits({}), requireStopLoss: false };
+  for (const equity of [-200, 10_000]) {
+    const ctx = baseCtx({ limits, account: { equity, freeMargin: equity, leverage: 100, currency: "USD", source: "test" } });
+    const r = blockedOnly(modify({ stopLoss: null }), ctx, "per_trade_loss_limit");
+    assert.equal(r.reason, "Removing the stop leaves the loss on this position unbounded, so it cannot stay within your per-trade loss limit. Closing or tightening the stop is allowed.");
+    assert.equal(r.measured?.["currentStopLoss"], 1.0951);
+    assert.equal(r.measured?.["newStopLoss"], null);
+  }
+  // A position with no stop keeps its (absent) stop on a target-only change: not a removal.
+  const noStop = evaluatePreTradeRisk(modify({ stopLoss: null, takeProfit: 1.11, position: { entryPrice: 1.1, stopLoss: null } }),
+    baseCtx({ limits }));
+  assert.equal(noStop.rules.find((x) => x.rule === "per_trade_loss_limit")!.outcome, "NOT_APPLICABLE");
 });
 
 test("guardian: a widened stop whose size cannot be measured is refused", () => {

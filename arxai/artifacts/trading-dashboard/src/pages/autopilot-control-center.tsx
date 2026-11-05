@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Bot, Play, Pause, StopCircle, AlertOctagon, Zap, ThumbsUp, ThumbsDown, Brain, ShieldAlert } from "lucide-react";
+import { rowTimeLabel } from "@/lib/rowTimeLabel";
 
 type Status = {
   mode: string; state: string;
@@ -15,8 +16,26 @@ type Status = {
   dailyRiskRemainingUsd: number; dailyTradesRemaining: number;
   activeRiskLocks: string[];
   mt5Connected: boolean; killSwitchEngaged: boolean;
+  /** False when nothing feeds the losing-streak counter (it then stays 0). Missing = not reported. */
+  consecutiveLossesMeasured?: boolean;
+  /** The platform's install-wide stops as they bear on the autopilot. Missing = not reported. */
+  platformStop?: PlatformStop;
+  /** Today's orders the MAX_TRADES rule counts (every non-manual simulator order, any user). */
+  tradesCountedToday?: number;
+  /** "ALL_SIMULATOR_USERS": open positions and daily P/L are the whole simulator book. */
+  bookScope?: string;
+  /** Recent decisions (last 50) discipline is based on. Missing or 0 = not measured. */
+  disciplineDecisions?: number;
   discipline: number;
   lastDecision: Decision | null;
+};
+
+type PlatformStopSource = {
+  source: string; reason: string | null; engagedAt: string | null; haltsAutopilotOrders: boolean;
+};
+type PlatformStop = {
+  readable: boolean; engaged: boolean; sources: PlatformStopSource[];
+  haltsAutopilotOrders: boolean; readByAutopilot: boolean; checkedAt: string;
 };
 
 type Decision = {
@@ -27,9 +46,38 @@ type Decision = {
   marketHealth: string; newsRisk: string; sessionRisk: string;
   finalDecision: string; nextAction: string; orderId?: string;
   humanOverride?: { mark: string; note?: string };
+  /** "SIMULATED_PRICE_DRIFT" today. Anything else (or missing) is not confirmed as a model score. */
+  scoreBasis?: string;
+  newsBasis?: string;
+  newsDetail?: string;
 };
 
-type Lock = { code: string; tripped: boolean; reason?: string };
+type Lock = {
+  code: string; tripped: boolean; reason?: string; ts?: string;
+  /** True only when some autopilot code path sets this lock. Missing = not confirmed. */
+  evaluated?: boolean;
+  lastCheckedAt?: string | null;
+  checks?: string;
+};
+
+const PLATFORM_STOP_NAME: Record<string, string> = {
+  safety_core_kill_switch: "Safety-core kill switch",
+  platform_emergency_stop: "Platform emergency stop",
+};
+
+/** What a lock badge may claim. A lock reads "clear" only when the autopilot checked it. */
+function lockReading(l: Lock): { label: string; tone: "set" | "clear" | "unchecked" } {
+  if (l.tripped) return { label: "set", tone: "set" };
+  if (l.evaluated !== true) return { label: "not checked", tone: "unchecked" };
+  if (!l.lastCheckedAt) return { label: "not checked yet", tone: "unchecked" };
+  return { label: "clear", tone: "clear" };
+}
+
+function fmtTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : null;
+}
 
 const MODE_COLOR: Record<string, string> = {
   OFF: "bg-zinc-500/20 text-zinc-300",
@@ -175,19 +223,31 @@ export default function AutopilotControlCenter() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold">AI Autopilot Control Center</h1>
           <p className="text-sm text-muted-foreground">Coordinate scanner + risk + OMS into supervised AI runs. MT5 live execution is locked until the bridge is connected.</p>
+          <p data-testid="autopilot-engine-scope" className="text-xs text-muted-foreground mt-1">
+            This board reports the simulator autopilot: an in-memory engine that places simulator (OMS)
+            orders, and whose state resets when the server restarts. The paper autopilot, whose cycles
+            are counted on the Command Center&apos;s Memory tab, is a separate engine and is not shown here.
+          </p>
         </div>
-        <Badge variant="outline">SIMULATOR</Badge>
+        <Badge variant="outline">SIMULATOR AUTOPILOT</Badge>
         {s && <Badge className={MODE_COLOR[s.mode] ?? ""}>{s.mode}</Badge>}
         {s && <Badge variant="outline">state {s.state}</Badge>}
       </div>
 
       {s?.killSwitchEngaged && (
-        <Card className="border-rose-500/40 bg-rose-500/10">
-          <CardContent className="p-3 text-rose-300 text-sm flex items-center gap-2">
-            <AlertOctagon className="h-4 w-4" />Kill switch is engaged — autopilot cannot start.
+        <Card className="border-rose-500/40 bg-rose-500/10" data-testid="autopilot-emergency-stop">
+          <CardContent className="p-3 text-rose-300 text-sm flex items-start gap-2">
+            <AlertOctagon className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              Autopilot emergency stop is engaged{fmtTime(locks.find((l) => l.code === "KILL_SWITCH")?.ts) ? ` since ${fmtTime(locks.find((l) => l.code === "KILL_SWITCH")?.ts)}` : ""}.
+              New sessions and scans are refused. Nothing on this page releases it; it clears only when the API server restarts.
+              This is the autopilot's own stop, not the platform kill switch.
+            </span>
           </CardContent>
         </Card>
       )}
+
+      {s && <PlatformStopNotice stop={s.platformStop} />}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Start session</CardTitle>
@@ -224,30 +284,63 @@ export default function AutopilotControlCenter() {
         <div className="grid gap-2 md:grid-cols-4">
           <Stat label="Mode" value={s.mode} />
           <Stat label="State" value={s.state} />
-          <Stat label="Open positions" value={String(s.openSimulatedPositions)} />
-          <Stat label="Daily risk left" value={`$${s.dailyRiskRemainingUsd}`} />
-          <Stat label="Trades remaining" value={String(s.dailyTradesRemaining)} />
-          <Stat label="Consec losses" value={String(s.consecutiveLosses)} />
-          <Stat label="Discipline" value={`${s.discipline}/100`} />
+          <Stat label="Open sim positions (all users)" value={String(s.openSimulatedPositions)} />
+          <Stat label="Daily risk left (whole sim book)" value={s.session ? `$${s.dailyRiskRemainingUsd}` : "no session"} />
+          <Stat label="Trades remaining today" value={s.session ? String(s.dailyTradesRemaining) : "no session"} />
+          <Stat label="Consec losses" value={s.consecutiveLossesMeasured === true ? String(s.consecutiveLosses) : "not measured"} />
+          <Stat label="Discipline" value={(s.disciplineDecisions ?? 0) > 0 ? `${s.discipline}/100` : "not measured"} />
           <Stat label="MT5" value={s.mt5Connected ? "ON" : "DEFERRED"} />
+          <p className="md:col-span-4 text-xs text-muted-foreground" data-testid="autopilot-tile-basis">
+            Open positions and daily risk use the whole simulator book (every user), not one trader's.
+            Trades remaining counts every non-manual simulator order created today (UTC) by anyone, as the MAX_TRADES rule does
+            {typeof s.tradesCountedToday === "number" ? ` (${s.tradesCountedToday} so far)` : ""}.
+            Discipline is 100 minus 5 for each of the last 50 decisions marked bad
+            {(s.disciplineDecisions ?? 0) > 0 ? ` (${s.disciplineDecisions} decisions)` : "; with no decisions there is nothing to measure"}.
+          </p>
         </div>
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Safety locks</CardTitle></CardHeader>
-        <CardContent className="flex flex-wrap gap-1">
+        <CardHeader><CardTitle className="text-base">Safety locks</CardTitle>
+          <CardDescription>
+            A lock reads clear only after the autopilot checked it. A lock marked "not checked" has no autopilot check behind it.
+            A set lock stays set until the API server restarts. Only KILL_SWITCH stops sessions and scans.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
           {locks.length === 0 && <p className="text-xs text-muted-foreground">No locks data yet.</p>}
-          {locks.map((l) => (
-            <Badge key={l.code} variant={l.tripped ? "destructive" : "outline"} title={l.reason ?? ""}>
-              {l.code}{l.tripped ? " ⚠" : ""}
-            </Badge>
-          ))}
+          <div className="flex flex-wrap gap-1">
+            {locks.map((l) => {
+              const r = lockReading(l);
+              const when = fmtTime(l.tripped ? l.ts : l.lastCheckedAt);
+              return (
+                <Badge
+                  key={l.code}
+                  data-testid={`lock-${l.code}`}
+                  variant={r.tone === "set" ? "destructive" : "outline"}
+                  className={r.tone === "unchecked" ? "border-dashed text-muted-foreground" : undefined}
+                  title={[l.reason, l.checks, when ? `as of ${when}` : null].filter(Boolean).join(" — ")}
+                >
+                  {l.code} · {r.label}
+                </Badge>
+              );
+            })}
+          </div>
+          {locks.some((l) => lockReading(l).tone === "unchecked") && (
+            <p className="text-xs text-muted-foreground" data-testid="locks-unchecked">
+              Not checked by the autopilot: {locks.filter((l) => lockReading(l).tone === "unchecked").map((l) => l.code).join(", ")}.
+            </p>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><Brain className="h-4 w-4" />Decisions</CardTitle>
-          <CardDescription>Each AI decision shows scores, rules passed/failed, market context, and next action.</CardDescription>
+          <CardDescription data-testid="decisions-basis">
+            Scores are simulated: confidence, opportunity, sniper and grade come from the simulator's price drift against its
+            30-bar average, not from a trained model, and risk is 100 minus grade. News comes from the simulator's news list
+            (seeded simulated events and any added by hand), not a live economic calendar.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {decisions.length === 0 && <p className="text-xs text-muted-foreground">No decisions yet — start a session and force a scan.</p>}
@@ -259,13 +352,18 @@ export default function AutopilotControlCenter() {
                 <Badge variant="outline">{d.timeframe}</Badge>
                 <Badge variant="outline">{d.strategy}</Badge>
                 <span className="text-muted-foreground">{d.reason}</span>
-                <span className="ml-auto text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span>
+                <span className="ml-auto text-muted-foreground">{rowTimeLabel(d.ts)}</span>
               </div>
               <div className="flex flex-wrap gap-2 text-muted-foreground">
+                <Badge variant="outline" className="border-dashed">
+                  {d.scoreBasis === "SIMULATED_PRICE_DRIFT" ? "simulated scores" : "score source not reported"}
+                </Badge>
                 <span>conf {d.confidenceScore}</span><span>opp {d.opportunityScore}</span>
                 <span>sniper {d.entrySniperScore}</span><span>grade {d.tradeGrade}</span>
-                <span>risk {d.riskScore}</span>
-                <span>mh {d.marketHealth}</span><span>news {d.newsRisk}</span><span>session {d.sessionRisk}</span>
+                <span>risk {d.riskScore} (100 − grade)</span>
+                <span>mh {d.marketHealth}</span>
+                <span title={d.newsDetail ?? "News source not reported."}>simulated news {d.newsRisk}</span>
+                <span>session {d.sessionRisk}</span>
               </div>
               {d.rulesPassed.length > 0 && <div className="text-emerald-400">✓ {d.rulesPassed.join(", ")}</div>}
               {d.rulesFailed.length > 0 && <div className="text-rose-400">✗ {d.rulesFailed.join(", ")}</div>}
@@ -286,6 +384,54 @@ export default function AutopilotControlCenter() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function PlatformStopNotice({ stop }: { stop: PlatformStop | undefined }) {
+  if (!stop) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="platform-stop">
+        Platform kill switch: not reported by the server.
+      </p>
+    );
+  }
+  const asOf = fmtTime(stop.checkedAt);
+  if (!stop.readable) {
+    return (
+      <Card className="border-amber-500/40 bg-amber-500/10" data-testid="platform-stop">
+        <CardContent className="p-3 text-amber-300 text-sm">
+          Could not read the platform kill switch{asOf ? ` (checked ${asOf})` : ""}. The pre-trade Risk Governor treats a stop it
+          cannot read as engaged, so it refuses the autopilot's simulator orders. The autopilot itself does not read this switch.
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!stop.engaged) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="platform-stop">
+        Platform kill switch and emergency stop: released{asOf ? ` as of ${asOf}` : ""}.
+      </p>
+    );
+  }
+  return (
+    <Card className="border-rose-500/40 bg-rose-500/10" data-testid="platform-stop">
+      <CardContent className="p-3 text-rose-300 text-sm space-y-1">
+        {stop.sources.map((src) => {
+          const since = fmtTime(src.engagedAt);
+          return (
+            <p key={src.source}>
+              {PLATFORM_STOP_NAME[src.source] ?? src.source} is engaged{since ? ` since ${since}` : ""}{src.reason ? ` (${src.reason})` : ""}.{" "}
+              {src.haltsAutopilotOrders
+                ? "The pre-trade Risk Governor refuses every simulator order the autopilot places."
+                : "It does not halt the paper simulator, so it does not refuse the autopilot's simulator orders."}
+            </p>
+          );
+        })}
+        <p className="text-xs text-rose-300/80">
+          The autopilot does not read the platform stops: sessions can still start and scans still decide{asOf ? ` (checked ${asOf})` : ""}.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

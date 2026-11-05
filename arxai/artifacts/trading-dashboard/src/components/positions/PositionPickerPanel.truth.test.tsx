@@ -1,0 +1,151 @@
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
+import React from "react";
+import { PositionPickerPanel } from "./PositionPickerPanel";
+import type { UnifiedPosition } from "./PositionSideCard";
+
+/**
+ * Truth guard for the "My open positions" list and the side card it feeds.
+ * The server's per-row freshness verdict must reach every place that shows the
+ * row's P/L, and a FRESH verdict must not outlive its 30s window when the
+ * poll starts failing.
+ */
+
+vi.mock("./PositionMiniChart", () => ({ PositionMiniChart: () => null }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: () => {} }) }));
+vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: null }) }));
+
+function row(patch: Partial<UnifiedPosition>): UnifiedPosition {
+  return {
+    scope: "live",
+    brokerTicket: "777",
+    symbol: "EURUSD",
+    side: "BUY",
+    lotSize: 0.1,
+    entryPrice: 1.1,
+    currentPrice: 1.101,
+    stopLoss: 1.099,
+    takeProfit: 1.103,
+    floatingPnl: 12.5,
+    openedAt: new Date().toISOString(),
+    sourceCommandId: null,
+    accountMode: "LIVE",
+    source: "MT5_LIVE_BRIDGE",
+    ...patch,
+  };
+}
+
+function body(live: UnifiedPosition[]) {
+  // generatedAt: the server clock reading the verdicts were taken against (the
+  // server always sends it; here server and browser clocks agree).
+  return JSON.stringify({ ok: true, generatedAt: new Date().toISOString(), live, demo: [], liveCount: live.length, demoCount: 0, notLiveReason: null });
+}
+
+/** positions: a queue of responses for /api/me/positions/all ("fail" = network error). */
+function stubFetch(positions: Array<string | "fail">) {
+  let i = 0;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (String(url).includes("/api/chart/candles")) {
+      return new Response(JSON.stringify({ candles: [], feedStatus: null }), { status: 200 });
+    }
+    const next = positions[Math.min(i++, positions.length - 1)];
+    if (next === "fail") throw new Error("network down");
+    return new Response(next, { status: 200 });
+  }));
+}
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("PositionPickerPanel side card after the poll starts failing", () => {
+  it("downgrades a cached FRESH row once its report is older than 30s, and the age keeps moving", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    stubFetch([body([row({ observedAt: new Date(Date.now() - 3_000).toISOString(), freshness: "FRESH" })]), "fail"]);
+    render(<PositionPickerPanel />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByTestId("btn-select-position-live-777"));
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Open — reported by bridge");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Unconfirmed — last reported 1m ago");
+    expect(screen.getByTestId("text-position-last-reported").textContent).toMatch(/\(1m ago\)$/);
+    // The failed refresh is named, and the kept list is labelled as the last successful load.
+    expect(screen.getByTestId("positions-load-error").textContent).toMatch(/^Could not refresh positions \(network down\)\. The list below is from the last successful load at /);
+  });
+});
+
+describe("PositionPickerPanel list rows carry the server freshness verdict", () => {
+  it("a STALE row's P/L is not shown in green as current; the row says it is unconfirmed, like the side card", async () => {
+    stubFetch([body([row({ floatingPnl: 12.5, observedAt: new Date(Date.now() - 5 * 60_000).toISOString(), freshness: "STALE" })])]);
+    render(<PositionPickerPanel />);
+    const pnl = await screen.findByTestId("text-row-pnl-live-777");
+    expect(pnl.textContent).toBe("+12.50");
+    expect(pnl.className).not.toMatch(/text-emerald-300/);
+    expect(pnl.getAttribute("title")).toBe("Last reported P/L — not confirmed as current");
+    expect(screen.getByTestId("text-row-report-live-777").textContent).toBe("Unconfirmed — last reported 5m ago");
+
+    fireEvent.click(screen.getByTestId("btn-select-position-live-777"));
+    expect(screen.getByTestId("text-position-status").textContent).toBe("Unconfirmed — last reported 5m ago");
+  });
+
+  it("a MISSING row is unconfirmed in the list too", async () => {
+    stubFetch([body([row({ floatingPnl: -3, observedAt: null, freshness: "MISSING" })])]);
+    render(<PositionPickerPanel />);
+    const pnl = await screen.findByTestId("text-row-pnl-live-777");
+    expect(pnl.className).not.toMatch(/text-rose-300/);
+    expect(screen.getByTestId("text-row-report-live-777").textContent).toBe("Unconfirmed — no bridge report time");
+  });
+
+  it("a FRESH row keeps its coloured P/L and no unconfirmed marker", async () => {
+    stubFetch([body([row({ floatingPnl: 12.5, observedAt: new Date().toISOString(), freshness: "FRESH" })])]);
+    render(<PositionPickerPanel />);
+    const pnl = await screen.findByTestId("text-row-pnl-live-777");
+    expect(pnl.className).toMatch(/text-emerald-300/);
+    expect(screen.queryByTestId("text-row-report-live-777")).toBeNull();
+  });
+});
+
+// Round 3 review: the count badge fell back to (liveCount ?? 0) + (demoCount
+// ?? 0), so before the first answer and after a failed first load it read "0"
+// next to "Positions could not be loaded: HTTP 500". A failed or pending read
+// is not a zero count.
+describe("PositionPickerPanel open-positions count badge", () => {
+  const badge = () => screen.getByTestId("badge-open-positions-count").textContent;
+
+  it("a first load that fails with HTTP 500 shows no count, not 0", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "boom" }), { status: 500 })));
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("positions-load-error");
+    expect(screen.getByTestId("positions-load-error").textContent).toBe("Positions could not be loaded: HTTP 500");
+    expect(badge()).not.toBe("0");
+    expect(badge()).toBe("—");
+  });
+
+  it("a first load that throws shows no count, not 0", async () => {
+    stubFetch(["fail"]);
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("positions-load-error");
+    expect(badge()).toBe("—");
+  });
+
+  it("before the first answer arrives the badge shows no count", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    render(<PositionPickerPanel />);
+    expect(badge()).toBe("—");
+  });
+
+  it("a successful load still counts its rows, including an answered zero", async () => {
+    stubFetch([body([row({ observedAt: new Date().toISOString(), freshness: "FRESH" })])]);
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("text-row-pnl-live-777");
+    expect(badge()).toBe("1");
+    cleanup();
+    stubFetch([body([])]);
+    render(<PositionPickerPanel />);
+    await screen.findByTestId("text-no-open-positions");
+    expect(badge()).toBe("0");
+  });
+});

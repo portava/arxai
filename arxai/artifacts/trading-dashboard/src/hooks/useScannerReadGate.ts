@@ -21,19 +21,29 @@ export interface ScannerReadGateState {
   isFull: boolean;
   /** True until truth positively confirms a full read, including loading/error. */
   downgraded: boolean;
+  /**
+   * True when there is no truth because its candles request FAILED (not
+   * because it is still loading): the live-feed check could not be loaded.
+   * Absent/false while pending.
+   */
+  loadFailed?: boolean;
   reason: string | null;
 }
 
 export function useScannerReadGate(symbol: string, timeframe?: string): ScannerReadGateState {
   const [scannerTimeframe] = useScannerTimeframe();
-  const { truth } = useScannerTruth(symbol, timeframe || scannerTimeframe);
+  const { truth, isError } = useScannerTruth(symbol, timeframe || scannerTimeframe);
   const level = truth?.analysis.level ?? null;
   const isFull = level === "full";
+  const loadFailed = truth == null && isError === true;
   return {
     truth,
     level,
     isFull,
     downgraded: !isFull,
-    reason: truth?.analysis.reason ?? "Confirming this market's live feed — directional reads and trade ideas are withheld.",
+    loadFailed,
+    reason: truth?.analysis.reason ?? (loadFailed
+      ? "The live-feed check for this market could not be loaded — directional reads and trade ideas are withheld."
+      : "Confirming this market's live feed — directional reads and trade ideas are withheld."),
   };
 }

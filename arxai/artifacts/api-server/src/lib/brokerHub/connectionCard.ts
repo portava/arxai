@@ -11,7 +11,7 @@
 //
 // PURE: no DB, no clock beyond an injected `now`. The route supplies rows.
 
-import { MT5_POSITIONS_SNAPSHOT_FRESH_SECONDS, classifyHeartbeatAt } from "./freshness.js";
+import { MT5_POSITIONS_SNAPSHOT_FRESH_SECONDS, classifyHeartbeatAt, heartbeatAgeSecondsFrom } from "./freshness.js";
 
 /** Spec §3.1 connection states, plus the states this system actually has. */
 export type ConnectionCardState =
@@ -117,9 +117,14 @@ export function buildConnectionCard(i: ConnectionCardInput): ConnectionCard {
   const unavailable: string[] = [];
   const state = resolveConnectionState(i);
 
-  const hbAgeSec = i.lastHeartbeat == null
-    ? null
-    : Math.round(Math.max(0, (i.now.getTime() - i.lastHeartbeat.getTime()) / 1000));
+  // Shared heartbeat policy: a heartbeat dated after the server's clock (or
+  // not a valid time) has no verifiable age, so it is null, never "0s".
+  const hbAgeSec = heartbeatAgeSecondsFrom(i.lastHeartbeat, i.now.getTime());
+  if (i.lastHeartbeat != null && hbAgeSec == null) {
+    unavailable.push(Number.isFinite(i.lastHeartbeat.getTime())
+      ? "heartbeatAgeSeconds: the last heartbeat is dated after the server's clock, so its age cannot be verified"
+      : "heartbeatAgeSeconds: the last heartbeat time is not a valid time, so its age cannot be verified");
+  }
 
   // Market-data health keys off the POSITIONS/telemetry push, which is the
   // EA's data path — deliberately NOT the same signal as trading health, and

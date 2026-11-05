@@ -11,5 +11,9 @@ export interface EleanorQualityScoreBucket {
   total: number;
   wins: number;
   losses: number;
-  winRate: number;
+  /**
+   * wins / (wins + losses); null when the bucket has no graded rows (nothing to rate, not 0%).
+   * @nullable
+   */
+  winRate: number | null;
 }

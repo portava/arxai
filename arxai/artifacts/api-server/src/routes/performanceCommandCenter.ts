@@ -19,13 +19,16 @@ import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 // T006 — mode-scope helper. Every aggregate below is computed from the
 // signed-in user's own paper book. LIVE_SHARED sessions still get an empty,
 // mode-tagged calendar so paper P&L never shows on a live view.
-async function isLiveSharedSession(req: Request): Promise<boolean> {
+async function sessionAccountMode(req: Request): Promise<string | null> {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  if (!u || typeof u.id !== "number") return false;
+  if (!u || typeof u.id !== "number") return null;
   const role = String(u.role ?? "").toUpperCase();
   const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(u.id, { isAdmin });
-  return scope.currentAccountMode === "LIVE_SHARED";
+  return scope.currentAccountMode;
+}
+async function isLiveSharedSession(req: Request): Promise<boolean> {
+  return (await sessionAccountMode(req)) === "LIVE_SHARED";
 }
 
 const router = Router();
@@ -45,6 +48,18 @@ function fail(res: Response, status: number, error: string) {
   return res.status(status).json({ ...SAFETY, error });
 }
 
+// LIVE_SHARED copy: the calendar only totals the paper book, so for a live
+// account it shows nothing and says the live figures are unknown, not zero.
+const LIVE_CALENDAR_NOTE =
+  "This is a live account. The ARX calendar only totals paper trades and does not total live trades yet, " +
+  "so live P&L, trade counts and winning or losing days are not shown here. They are not zero.";
+const LIVE_DAY_NOTE =
+  "This is a live account. ARX does not total live trades by day yet, so this day's live P&L, " +
+  "win rate, profit factor and rating are not shown. They are not zero.";
+const LIVE_MEMORY_NOTE =
+  "This is a live account. Eleanor's memory is built from paper trades only and live trades are not totalled here, " +
+  "so no win rate, P&L or equity curve is shown. They are not zero.";
+
 function parseRange(q: unknown): RangeKey {
   const v = String(q ?? "30d").toLowerCase();
   if (v === "7d" || v === "30d" || v === "90d" || v === "all") return v;
@@ -57,18 +72,19 @@ router.get("/performance/calendar", async (req: Request, res: Response) => {
     const month = String(req.query.month ?? new Date().toISOString().slice(0, 7));
     if (!/^\d{4}-\d{2}$/.test(month)) return fail(res, 400, "month must be YYYY-MM");
 
-    // T006 — LIVE_SHARED never shows paper P&L on the calendar. Until
-    // live trade aggregation is wired into performanceCC, return an
-    // empty live calendar with a clean note.
+    // T006 — LIVE_SHARED never shows paper P&L on the calendar. Live
+    // trade aggregation is not wired into performanceCC, so the live
+    // month is unknown: totals are null (not 0) and the note says so.
     if (await isLiveSharedSession(req)) {
       return ok(res, {
         calendar: {
-          month, days: [], total_pnl: 0, total_trades: 0,
-          winning_days: 0, losing_days: 0, no_trade_days: 0,
+          month, days: [], total_pnl: null, total_trades: null,
+          winning_days: null, losing_days: null, no_trade_days: null,
         },
         currentAccountMode: "LIVE_SHARED",
         modeScopeApplied: true,
-        modeNote: "Live calendar — no live trades recorded yet.",
+        liveAggregation: "NOT_AVAILABLE",
+        modeNote: LIVE_CALENDAR_NOTE,
       });
     }
     const data = await computeCalendarMonth(req.authUser!.id, month);
@@ -85,15 +101,18 @@ router.get("/performance/day", async (req: Request, res: Response) => {
     const date = String(req.query.date ?? new Date().toISOString().slice(0, 10));
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 400, "date must be YYYY-MM-DD");
     if (await isLiveSharedSession(req)) {
+      // Live day stats are not computed here: every figure is null and the
+      // day is not rated, rather than a measured 0 / "F".
       return ok(res, {
         day: {
           date,
-          stats: { net_pnl: 0, total_trades: 0, win_rate: 0, profit_factor: 0, day_rating: "F", top_lesson: null },
+          stats: { net_pnl: null, total_trades: null, win_rate: null, profit_factor: null, day_rating: null, top_lesson: null },
           trades: [],
         },
         currentAccountMode: "LIVE_SHARED",
         modeScopeApplied: true,
-        modeNote: "Live day detail — no live trades recorded yet.",
+        liveAggregation: "NOT_AVAILABLE",
+        modeNote: LIVE_DAY_NOTE,
       });
     }
     const data = await computeDayDetail(req.authUser!.id, date);
@@ -120,11 +139,20 @@ router.get("/performance/range-summary", async (req: Request, res: Response) => 
 });
 
 // 4. GET /api/performance/equity-curve?range=30d
+//    Built from the paper book; withheld from a LIVE_SHARED session like the
+//    calendar, so a paper curve never shows under a live account.
 router.get("/performance/equity-curve", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
+    const currentAccountMode = await sessionAccountMode(req);
+    if (currentAccountMode === "LIVE_SHARED") {
+      return ok(res, {
+        equityCurve: null, range, currentAccountMode, modeScopeApplied: true,
+        liveAggregation: "NOT_AVAILABLE", modeNote: LIVE_MEMORY_NOTE,
+      });
+    }
     const data = await computeEquityCurve(req.authUser!.id, range);
-    return ok(res, { equityCurve: data, range });
+    return ok(res, { equityCurve: data, range, currentAccountMode, modeScopeApplied: true, dataSource: "paper_orders" });
   } catch (err) {
     req.log.error({ err }, "performance/equity-curve failed");
     return fail(res, 500, (err as Error).message);
@@ -182,11 +210,21 @@ router.get("/performance/decision-quality", async (req: Request, res: Response) 
 // 9. GET /api/performance/ai-command-center
 router.get("/performance/ai-command-center", async (req: Request, res: Response) => {
   try {
+    // Eleanor's Memory is built from the paper book (all closed paper_orders);
+    // a LIVE_SHARED session gets the same withheld, mode-tagged envelope as
+    // the calendar instead of paper win rate / P&L under a live account.
+    const currentAccountMode = await sessionAccountMode(req);
+    if (currentAccountMode === "LIVE_SHARED") {
+      return ok(res, {
+        commandCenter: null, autopilot: null, currentAccountMode, modeScopeApplied: true,
+        liveAggregation: "NOT_AVAILABLE", modeNote: LIVE_MEMORY_NOTE,
+      });
+    }
     req.log.info("GG command-center: building from sources [paper_orders, trade_decision_logs, post_trade_debriefs, learning_events, strategy_edges, mistake_patterns, autopilot_cycles]");
     const cc = await buildCommandCenter(req.authUser!.id);
     const autopilot = await computeAutopilotSummary(req.authUser!.id);
     req.log.info({ insights: cc.insights.length, warnings: cc.warnings.length }, "GG command-center: insights generated");
-    return ok(res, { commandCenter: cc, autopilot });
+    return ok(res, { commandCenter: cc, autopilot, currentAccountMode, modeScopeApplied: true, dataSource: "paper_orders" });
   } catch (err) {
     req.log.error({ err }, "performance/ai-command-center failed");
     return fail(res, 500, (err as Error).message);

@@ -5,8 +5,13 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { TraderSkillPillar } from "./traderSkillPillar";
 import type { TraderSkillProfile } from "./traderSkillProfile";
 
 export type GetTraderSkillProfile200 = {
   profile?: TraderSkillProfile | null;
+  /** Pillars of this profile with no evidence (no debriefs, edge reports ...) when the profile was calculated, and a stored 0: not measured. Judged on the rows that existed at the profile's createdAt, not on today's. They still count as 0 in totalScore. null when the evidence could not be read. */
+  unmeasuredPillars?: TraderSkillPillar[] | null;
+  /** The unmeasuredPillars that have evidence now (added after the profile was calculated). A recalculation would score them; until then their stored 0 is still not a measurement. null when the evidence could not be read. */
+  unmeasuredPillarsWithNewEvidence?: TraderSkillPillar[] | null;
 };

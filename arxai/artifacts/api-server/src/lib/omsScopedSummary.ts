@@ -31,7 +31,11 @@ export function omsDashboardSummaryFor(scope: OmsOwnerScope) {
   return {
     openPositions: open.length,
     pendingOrders: ownOrders.filter((o) => o.status === "APPROVED_FOR_SIMULATION" || o.status === "PENDING_MT5_CONNECTION").length,
-    todayPnL: Number(closedToday.reduce((a, b) => a + b.realizedPnL, 0).toFixed(2)),
+    // Booked by the day each realization happened, as pnlSummary().dailyPnL
+    // is: a partial close today counts today while the rest is still open,
+    // and a partial from an earlier day is not counted again when the
+    // remainder closes today.
+    todayPnL: Number(rows.flatMap((p) => p.realizations).filter((r) => r.at.slice(0, 10) === today).reduce((a, r) => a + r.pnl, 0).toFixed(2)),
     bestTradeToday: best ? { symbol: best.symbol, pnl: best.realizedPnL } : null,
     worstTradeToday: worst ? { symbol: worst.symbol, pnl: worst.realizedPnL } : null,
     pendingMt5Intents: ownOrders.filter((o) => o.status === "PENDING_MT5_CONNECTION").length,

@@ -100,12 +100,23 @@ function aggregate(subMetrics: ChartTruthSubMetric[]): ChartTruthScore {
       (primaryConcern ?? "All measured checks healthy.") };
 }
 
+/** True only when a closed-to-forming bar pair let the merge seam be observed. */
+export function isMergeSeamMeasured(truthResult: TimeframeTruthResult | null | undefined): boolean {
+  if (!truthResult || !Number.isFinite(truthResult.candleCount) || truthResult.candleCount <= 0) return false;
+  const seam = truthResult.mergeSeam;
+  return !!seam && seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
+    seam.formingBarCount > 0 && truthResult.candleCount > seam.formingBarCount &&
+    Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
+}
+
 /**
  * Compute the Chart Truth Score from Phase 1 truth result + feed status.
  *
- * @param alignment - Optional broker price alignment. When supplied and
- *   `brokerDataAvailable === true`, the broker deviation is folded into the
- *   SymbolMirrorAccuracy sub-metric so real mis-sync degrades the score.
+ * @param alignment - Optional broker price alignment. When supplied,
+ *   `brokerDataAvailable === true` AND its quote binding is BOUND (same
+ *   provider/bridge/owner as the series, observed fresh tick), the broker
+ *   deviation is folded into the SymbolMirrorAccuracy sub-metric so real
+ *   mis-sync degrades the score. An unbound comparison stays unmeasured.
  *   Pass `undefined` or `noBrokerAlignment(...)` when no per-user broker
  *   data is available (broker mirror accuracy is then unmeasured).
  *
@@ -224,13 +235,17 @@ export function computeChartTruthScore(
   // When real broker bid/ask is available, a wide or failed deviation means the
   // chart price and broker price have diverged — a real mirror sync issue.
   const seam = truthResult.mergeSeam;
-  const seamMeasured = seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
-    seam.formingBarCount > 0 && n > seam.formingBarCount && Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
+  const seamMeasured = isMergeSeamMeasured(truthResult);
   let mirrorRaw: number;
   let mirrorDetail: string;
   if (!seamMeasured) {
-    mirrorRaw = 80;
-    mirrorDetail = "No closed-to-forming pair available — seam not assessable.";
+    // Half of this check (seam integrity) was not observed, so it earns no
+    // placeholder points: below, only an observed broker FAILURE is scored
+    // (it stays a measured failure), on the broker half alone at half weight;
+    // anything else is left unmeasured. 100 here is that half's starting
+    // value, never credit for the unobserved seam.
+    mirrorRaw = 100;
+    mirrorDetail = "Merge seam could not be checked (no closed-to-forming bar pair).";
   } else if (seam.overlapAtSeam) {
     mirrorRaw = 30;
     mirrorDetail = "Seam overlap detected — forming bar open overlaps last closed bar.";
@@ -268,6 +283,13 @@ export function computeChartTruthScore(
         alignNote = `Broker alignment ${alignment.tolerance}.`;
     }
     mirrorRaw = clamp(mirrorRaw - alignPenalty - basisPenalty);
+    // Unobserved seam: that half earns nothing, so only the observed broker
+    // failure counts, at half weight — never scored like an observed clean
+    // seam. (Any other comparison with an unobserved seam stays unmeasured.)
+    if (!seamMeasured && alignment.tolerance === "failed") {
+      mirrorRaw = mirrorRaw / 2;
+      alignNote += " Only the broker comparison is scored (half of this check); the unobserved seam earns nothing.";
+    }
     // Preserve the observed failed comparison in the downstream <50 FAIL band.
     if (alignment.tolerance === "failed") mirrorRaw = Math.min(mirrorRaw, 49);
     mirrorDetail = [mirrorDetail, alignNote].filter(Boolean).join(" ");
@@ -276,9 +298,25 @@ export function computeChartTruthScore(
     mirrorDetail += " Broker quote unavailable for alignment check.";
   }
   const alignmentMeasured = hasMeasuredBrokerAlignment(alignment);
+  // Seam not checked: a failure in either half fails the whole check, so an
+  // observed broker FAILURE is scored. A healthy or drifting comparison cannot
+  // confirm the mirror on its own and earns no points.
+  const mirrorScored = alignmentMeasured && (seamMeasured || alignment!.tolerance === "failed");
+  // A numeric comparison whose quote is not bound to this series' identity and
+  // freshness earns nothing; the observed binding failure stays named.
+  const binding = alignment?.quoteBinding;
+  const unboundDetail = alignment?.brokerDataAvailable && binding && binding.status !== "BOUND"
+    ? `Broker mirror accuracy unmeasured — broker quote ${binding.status === "MISMATCH" ? "identity does not match this chart series"
+      : binding.status === "STALE" ? "tick time is outside the freshness budget" : "identity or tick time is unverified"}` +
+      (binding.reasons.length ? ` (${binding.reasons.join(", ")}).` : ".")
+    : alignment?.brokerDataAvailable && !binding
+      ? "Broker mirror accuracy unmeasured — broker quote identity and freshness were not evaluated."
+      : "Broker mirror accuracy unmeasured — no usable broker-price comparison.";
   subMetrics.push(sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12,
-    alignmentMeasured ? mirrorRaw : null,
-    alignmentMeasured ? mirrorDetail : "Broker mirror accuracy unmeasured — no usable broker-price comparison."));
+    mirrorScored ? mirrorRaw : null,
+    mirrorScored ? mirrorDetail
+      : alignmentMeasured ? `${mirrorDetail} Symbol mirror not confirmed — this check earns no points until the seam is observed too.`
+        : unboundDetail));
 
   // ── 5. Historical/Live Merge Quality (0.10) ───────────────────────────────
   // Strictly the quality of the merge seam itself.
@@ -314,7 +352,10 @@ export function computeChartTruthScore(
       break;
     case "stale":
       freshnessRaw = 35;
-      freshnessDetail = "Feed stale — lagging by 3+ intervals.";
+      // The feed status's own lag wording: a closed market ("Market closed …
+      // Not a feed fault"), a session market that may be closed or delayed, a
+      // silent forming-tip tick stream, or a 24/7 feed lagging 3+ intervals.
+      freshnessDetail = feedStatus.warning?.trim() || "Feed stale — lagging by 3+ intervals.";
       break;
     case "partial":
       freshnessRaw = 55;

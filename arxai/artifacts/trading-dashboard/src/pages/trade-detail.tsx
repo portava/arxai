@@ -335,7 +335,8 @@ export default function TradeDetailPage() {
     stopLoss: t.stopLoss, takeProfit: t.takeProfit,
     unrealizedPnl: t.unrealizedPnl, pnlIsEstimate: t.pnlIsEstimate,
     pnlPercent: null, status: "OPEN", openedAt: null,
-    brokerLabelMasked: t.brokerLabelMasked, waitingForSync: false,
+    // A null P/L means the broker has not reported it yet.
+    brokerLabelMasked: t.brokerLabelMasked, waitingForSync: t.unrealizedPnl == null,
   };
 
   const tradeAlerts = alerts.filter((a) => a.tradeKey === tradeKey);

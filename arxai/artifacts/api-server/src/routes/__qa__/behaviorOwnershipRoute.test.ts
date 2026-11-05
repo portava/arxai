@@ -71,6 +71,16 @@ const ENTRY = 100;
 const FAR_SL = 0.0001;
 const FAR_TP = 1e9;
 
+// Closed trades sit on real fiat XXXUSD pairs (with a QA suffix) so the
+// analytics boards can size their P&L at the standard lot: price move × lots ×
+// 100,000 USD (paperPnl). A "QAOWN.*" symbol has no contract size, so its close
+// is left out of every money figure and a leak check on it proves nothing.
+// Each user's close is on its own pair, at its own recognisable amount.
+const CLOSED_ENTRY = 1;
+const SYM_A_CLOSED = "SEKUSD.QAOWNA"; // 0.01 lot, +0.001 → +$1
+const SYM_B_CLOSED = "NOKUSD.QAOWNB"; // 0.01 lot, +0.5 → +$500
+const SYM_LEGACY_CLOSED = "DKKUSD.QAOWNLEGACY"; // 0.01 lot, +0.9 → +$900
+
 let server: Server;
 let base = "";
 let userAId = 0;
@@ -162,11 +172,11 @@ async function seedAccount(userId: number | null, name: string, isActive = 1): P
 
 async function seedOrder(
   userId: number | null, accountId: number, symbol: string,
-  closed?: { exitPrice: number; profitLoss: number },
+  closed?: { entryPrice: number; exitPrice: number; profitLoss: number },
 ): Promise<number> {
   const [row] = await db.insert(paperOrdersTable).values({
     userId, paperAccountId: accountId, symbol, direction: "BUY", lotSize: 0.01,
-    entryPrice: ENTRY, stopLoss: FAR_SL, takeProfit: FAR_TP,
+    entryPrice: closed?.entryPrice ?? ENTRY, stopLoss: FAR_SL, takeProfit: FAR_TP,
     status: closed ? "CLOSED_MANUAL" : "OPEN",
     exitPrice: closed?.exitPrice ?? null,
     profitLoss: closed?.profitLoss ?? 0,
@@ -200,14 +210,17 @@ before(async () => {
   accountAId = await seedAccount(userAId, "A practice");
   accountBId = await seedAccount(userBId, "B practice");
   openOrderAId = await seedOrder(userAId, accountAId, "QAOWN.A");
-  closedOrderAId = await seedOrder(userAId, accountAId, "QAOWN.A", { exitPrice: ENTRY + 1, profitLoss: 1 });
+  closedOrderAId = await seedOrder(userAId, accountAId, SYM_A_CLOSED,
+    { entryPrice: CLOSED_ENTRY, exitPrice: CLOSED_ENTRY + 0.001, profitLoss: 1 });
   // B's closed trade carries a large, recognisable P&L so any leak into A's
   // aggregates is obvious.
-  closedOrderBId = await seedOrder(userBId, accountBId, "QAOWN.B", { exitPrice: ENTRY + 500, profitLoss: 500 });
+  closedOrderBId = await seedOrder(userBId, accountBId, SYM_B_CLOSED,
+    { entryPrice: CLOSED_ENTRY, exitPrice: CLOSED_ENTRY + 0.5, profitLoss: 500 });
 
   legacy.accountId = await seedAccount(null, "legacy single-tenant");
   legacy.orderId = await seedOrder(null, legacy.accountId, "QAOWN.LEGACY");
-  legacy.closedOrderId = await seedOrder(null, legacy.accountId, "QAOWN.LEGACY", { exitPrice: ENTRY + 900, profitLoss: 900 });
+  legacy.closedOrderId = await seedOrder(null, legacy.accountId, SYM_LEGACY_CLOSED,
+    { entryPrice: CLOSED_ENTRY, exitPrice: CLOSED_ENTRY + 0.9, profitLoss: 900 });
 
   [{ id: legacy.debriefId }] = await db.insert(postTradeDebriefsTable).values({
     userId: null, tradeId: legacy.closedOrderId, result: "WIN", checklist: [], followedPlan: 1,
@@ -386,20 +399,39 @@ test("prop challenges cannot be opened on another user's or a legacy paper accou
 });
 
 test("analytics aggregates only the caller's own closed trades", async () => {
+  type Coverage = { closedTrades: number; sizedTrades: number; unsizedTrades: number; unsizedSymbols: string[] };
+  // Every closed trade here is sized, so a leak would move a real money figure
+  // (B +$500, legacy +$900) instead of hiding in an unsized count.
+  const allSized: Coverage = { closedTrades: 1, sizedTrades: 1, unsizedTrades: 0, unsizedSymbols: [] };
+  const coverageOf = (c: Coverage & Record<string, unknown>): Coverage => ({
+    closedTrades: c.closedTrades, sizedTrades: c.sizedTrades, unsizedTrades: c.unsizedTrades, unsizedSymbols: c.unsizedSymbols,
+  });
+
   const res = await send("POST", "/analytics/snapshot", cookieA);
   assert.equal(res.status, 200);
-  const { snapshot } = await json<{ snapshot: { userId: number; totalTrades: number; netProfitLoss: number } }>(res);
+  const { snapshot, pnlCoverage } = await json<{
+    snapshot: { userId: number; totalTrades: number; netProfitLoss: number };
+    pnlCoverage: Coverage & Record<string, unknown>;
+  }>(res);
   assert.equal(snapshot.userId, userAId);
   assert.equal(snapshot.totalTrades, 1, "only A's one closed trade counts");
+  assert.deepEqual(coverageOf(pnlCoverage), allSized, "A's one close is sized; B's and legacy closes are not counted");
   assert.ok(snapshot.netProfitLoss < 100, `B's and legacy P&L must not leak into A (got ${snapshot.netProfitLoss})`);
+  assert.equal(snapshot.netProfitLoss, 1, "A's net P&L is A's own sized +$1 close");
 
   const latestB = await json<{ snapshot: unknown }>(await request("/analytics/snapshot", cookieB));
   assert.equal(latestB.snapshot, null);
 
-  const dd = await json<{ equityCurve: Array<{ tradeId: number }> }>(await request("/analytics/drawdown", cookieA));
+  const dd = await json<{ equityCurve: Array<{ tradeId: number; equity: number }>; pnlCoverage: Coverage & Record<string, unknown> }>(
+    await request("/analytics/drawdown", cookieA));
   assert.deepEqual(dd.equityCurve.map((p) => p.tradeId), [closedOrderAId]);
-  const strat = await json<{ strategies: Array<{ symbol: string }> }>(await request("/analytics/strategy", cookieA));
-  assert.deepEqual(strat.strategies.map((s) => s.symbol), ["QAOWN.A"]);
+  assert.deepEqual(dd.equityCurve.map((p) => p.equity), [1], "the curve steps only on A's own +$1");
+  assert.deepEqual(coverageOf(dd.pnlCoverage), allSized);
+  const strat = await json<{ strategies: Array<{ symbol: string; totalPnl: number }>; pnlCoverage: Coverage & Record<string, unknown> }>(
+    await request("/analytics/strategy", cookieA));
+  assert.deepEqual(strat.strategies.map((s) => s.symbol), [SYM_A_CLOSED]);
+  assert.deepEqual(strat.strategies.map((s) => s.totalPnl), [1]);
+  assert.deepEqual(coverageOf(strat.pnlCoverage), allSized);
 });
 
 test("mentor sessions and action items are per user", async () => {
@@ -440,7 +472,8 @@ test("edge reports are built from and visible to the owner only", async () => {
   const { reports } = await json<{ reports: Array<{ id: number; userId: number; edgeName: string }> }>(gen);
   assert.ok(reports.length > 0);
   assert.ok(reports.every((r) => r.userId === userAId));
-  assert.ok(reports.every((r) => !r.edgeName.includes("QAOWN.B") && !r.edgeName.includes("LEGACY")),
+  assert.ok(reports.every((r) => !r.edgeName.includes(SYM_B_CLOSED) && !r.edgeName.includes("QAOWN.B")
+    && !r.edgeName.includes("LEGACY")),
     "A's report must not group B's or legacy trades");
 
   assert.equal((await request(`/edge/reports/${reports[0]!.id}`, cookieB)).status, 404);
