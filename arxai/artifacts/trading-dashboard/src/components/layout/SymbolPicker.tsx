@@ -30,7 +30,7 @@ function friendlyName(v: ResolvedSymbol): string {
 
 export function SymbolPicker({ compact = false }: { compact?: boolean }) {
   // The shared chart-symbol bus (use-chart-symbol) is the single source of
-  // truth the scanner chart, Ruby chart-read, and trade ticket all read. The
+  // truth the scanner chart, Eleanor chart-read, and trade ticket all read. The
   // picker WRITES to it so a selection propagates everywhere immediately; we
   // also keep writing the legacy SymbolProvider so the recent list and any
   // legacy consumer stay in sync, and we DISPLAY the chart bus so the picker

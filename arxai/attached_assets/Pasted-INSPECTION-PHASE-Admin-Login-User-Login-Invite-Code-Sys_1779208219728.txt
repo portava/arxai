@@ -113,7 +113,7 @@ Check:
 - user dashboard filters by authenticated userId
 - user trades filtered by authenticated userId
 - user P/L filtered by authenticated userId
-- user Ruby memory filtered by authenticated userId
+- user Eleanor memory filtered by authenticated userId
 - user notifications filtered by authenticated userId
 - user scanner/watchlist state filtered by authenticated userId
 - logout/login clears cached state

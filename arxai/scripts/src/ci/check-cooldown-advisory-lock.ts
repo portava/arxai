@@ -1,7 +1,7 @@
 // Rate-limiter race guard — the per-(action, scope) advisory lock must stay.
 //
 // artifacts/api-server/src/lib/security/cooldowns.ts is a safety-critical shared
-// primitive used by LOGIN, ADMIN_ACTION, RUBY_*, and MANUAL_SCAN. Its
+// primitive used by LOGIN, ADMIN_ACTION, ELEANOR_*, and MANUAL_SCAN. Its
 // consumeRateLimit() serializes concurrent attempts on the SAME (action, scope)
 // by taking a Postgres advisory lock (pg_advisory_xact_lock) keyed by
 // hashtext("<action>:<scope>") at the TOP of its transaction — BEFORE the SELECT

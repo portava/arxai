@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, Loader2, ShieldCheck, Info, Radio, RadioTower } from "lucide-react";
-import { RubySetupReason, type SignalContext } from "./RubySetupReason";
+import { EleanorSetupReason, type SignalContext } from "./EleanorSetupReason";
 import { assessStopLoss, computeValidatedRR } from "@/lib/risk/stopLossAssessment";
 import { useToast } from "@/hooks/use-toast";
 import { LiveTradeTicket } from "@/components/live/LiveTradeTicket";
@@ -546,7 +546,7 @@ export function ScannerTradeModal({
         onOpenChange={(o) => { if (!o) onClose(); }}
         defaultSymbol={signal.symbol}
         defaultSide={direction}
-        rubyExplanationSummary={signal.reasonForTrade ?? null}
+        eleanorExplanationSummary={signal.reasonForTrade ?? null}
         feedWarning={liveFeedWarning}
       />
     );
@@ -581,7 +581,7 @@ export function ScannerTradeModal({
           defaultSymbol={signal.symbol}
           defaultSide={direction}
           sourcePage="MARKET_SCANNER_LIVE"
-          rubyExplanationSummary={signal.reasonForTrade ?? null}
+          eleanorExplanationSummary={signal.reasonForTrade ?? null}
           feedWarning={liveFeedWarning}
         />
 
@@ -592,7 +592,7 @@ export function ScannerTradeModal({
           </div>
 
           <SectionLabel>{name} Summary</SectionLabel>
-          <RubySetupReason signal={signal} dense />
+          <EleanorSetupReason signal={signal} dense />
 
           <SectionLabel>Historical Check</SectionLabel>
           <HistoricalCheckPanel symbol={signal.symbol} timeframe={signal.timeframe ?? "1d"} defaultOpen />

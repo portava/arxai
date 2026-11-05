@@ -117,7 +117,7 @@ export function toInput(
 
 /**
  * Compute REAL lateness for one row using the same shared engine the per-symbol
- * Ruby Market Read uses (`computeLateDetection`). It is fed a live quote +
+ * Eleanor Market Read uses (`computeLateDetection`). It is fed a live quote +
  * candles routed through the unified market data router (the same source the
  * scan itself read), plus the row's own entry/SL/TP. Only LIVE_FEED rows are
  * evaluated — anything without a verified current quote returns null (unknown

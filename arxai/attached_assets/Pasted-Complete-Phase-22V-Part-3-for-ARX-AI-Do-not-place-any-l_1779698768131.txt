@@ -221,6 +221,6 @@ Before stopping, verify:
 - Final dispatch chokepoint still calls 16-gate evaluator.
 - Broker execution still requires env AND operator switch.
 - Regular users cannot see admin/operator controls.
-- Login, Ruby voice/chat, scanner, trade modal, bridge status, user request flow, admin queue, and bottom nav still work.
+- Login, Eleanor voice/chat, scanner, trade modal, bridge status, user request flow, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix all errors before stopping.

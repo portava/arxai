@@ -47,25 +47,25 @@ let captured: Record<string, any> | undefined;
 mock.module("../../scalp/scalpEngine.js", { namedExports: { ...scalpEngine, evaluateScalp: (input: Record<string, unknown>) => {
   captured = input; return { symbol: "EURUSD", direction: null, flame: { flameStage: "NONE" }, generatedAt: new Date(NOW).toISOString() };
 } } });
-const { buildRubyMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
+const { buildEleanorMarketEdgeForUser } = await import("../../signalIntelligence/signalIntelligenceService.js");
 const { evaluateScalpForSymbol } = await import("../../scalp/scalpService.js");
 const { getChartCandles } = await import("../../data/chart/chartDataService.js");
 beforeEach(() => { f = marketFixture({ timeframe: "M5", forming: true }); wrongRowSource = wrongRowBar = false; candleCalls = quoteCalls = 0; captured = undefined; memories.clear(); failWrite = false; });
 
-test("real Ruby service keeps closed-bar and user evidence, drops forming-price shocks", async () => {
-  const before = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+test("real Eleanor service keeps closed-bar and user evidence, drops forming-price shocks", async () => {
+  const before = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   assert.deepEqual(before.marketEvidence, { ...f.evidence, userId: 1 }); assert.equal(before.stopLoss, 1.097);
   const tip = f.result.candles.at(-1)!; tip.high = 50; tip.low = 0.01; tip.close = 0.02;
-  const after = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  const after = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   for (const key of ["direction", "bias", "stopLoss", "takeProfitZones", "scores", "regime", "marketEvidence"] as const) assert.deepEqual(after[key], before[key], key);
   assert.equal(candleCalls, 2); assert.equal(quoteCalls, 2);
 });
 
-for (const kind of ["source", "bar", "quote"] as const) test(`real Ruby service refuses scanner geometry with mismatched ${kind}`, async () => {
+for (const kind of ["source", "bar", "quote"] as const) test(`real Eleanor service refuses scanner geometry with mismatched ${kind}`, async () => {
   if (kind === "source") wrongRowSource = true;
   if (kind === "bar") wrongRowBar = true;
   if (kind === "quote") f.quote.provenance!.bridgeConnectionId = 8;
-  const result = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  const result = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   assert.equal(result.stopLoss, null); assert.deepEqual(result.takeProfitZones, []);
 });
 
@@ -87,27 +87,27 @@ for (const kind of ["source", "bar", "quote"] as const) test(`real scalp focus d
   if (kind === "quote") { assert.equal(captured!.currentPrice, null); assert.equal(result.marketEvidence, null); }
 });
 
-test("real Ruby producer binds durable continuity to source and never changes its public timeframe", async () => {
-  const first = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { scalp: null });
+test("real Eleanor producer binds durable continuity to source and never changes its public timeframe", async () => {
+  const first = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { scalp: null });
   assert.deepEqual(first.continuity, { basis: "current_observation", saved: true });
   assert.equal(first.timeframe, "M5");
   const stored = [...memories.values()][0];
   assert.match(stored.timeframe, /^source-v1:/);
   stored.firstSeenAt = new Date(NOW - 30 * 60_000);
-  const same = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  const same = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   assert.equal(same.lifecycleStage, "EXPIRED");
   assert.deepEqual(same.continuity, { basis: "source_bound_memory", saved: false });
   f = marketFixture({ timeframe: "M5", source: "assistant_real:twelve_data" });
-  const changed = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  const changed = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
   assert.notEqual(changed.lifecycleStage, "EXPIRED");
   assert.deepEqual(changed.continuity, { basis: "current_observation", saved: false });
   assert.equal(memories.size, 1);
 });
 
-test("real Ruby producer ignores unbound legacy memory and failed writes never claim saved continuity", async () => {
+test("real Eleanor producer ignores unbound legacy memory and failed writes never claim saved continuity", async () => {
   memories.set(JSON.stringify([1, "EURUSD", "M5"]), { userId: 1, symbol: "EURUSD", timeframe: "M5", direction: "BUY", generatedAt: new Date(NOW), firstSeenAt: new Date(NOW - 86_400_000) });
   failWrite = true;
-  const result = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { scalp: null });
+  const result = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { scalp: null });
   assert.notEqual(result.lifecycleStage, "EXPIRED");
   assert.deepEqual(result.continuity, { basis: "current_observation", saved: false });
   assert.equal(memories.size, 1);
@@ -124,7 +124,7 @@ if (process.env.ARX_TRUTH_REVIEW_PROBE) test("same actual producer inputs reprod
   const output = process.env.ARX_TRUTH_REVIEW_PROBE;
   assert.ok(output);
   assert.ok(process.env.ARX_TRUTH_BASELINE_SERVICE); assert.ok(process.env.ARX_TRUTH_BASELINE_SCALP);
-  const oldRuby = (await import(pathToFileURL(process.env.ARX_TRUTH_BASELINE_SERVICE).href)).buildRubyMarketEdgeForUser;
+  const oldEleanor = (await import(pathToFileURL(process.env.ARX_TRUTH_BASELINE_SERVICE).href)).buildEleanorMarketEdgeForUser;
   const oldScalp = (await import(pathToFileURL(process.env.ARX_TRUTH_BASELINE_SCALP).href)).evaluateScalpForSymbol;
   wrongRowSource = true;
   await oldScalp(1, { symbol: "EURUSD", mode: "ANY" });
@@ -134,8 +134,8 @@ if (process.env.ARX_TRUTH_REVIEW_PROBE) test("same actual producer inputs reprod
   assert.equal(beforePattern.status, "failed"); assert.equal(afterPattern, null);
   wrongRowSource = false;
   memories.set(JSON.stringify([1, "EURUSD", "M5"]), { userId: 1, symbol: "EURUSD", timeframe: "M5", direction: "BUY", bias: "bullish", regime: "TRENDING", lifecycleStage: "ACTIVE", confidenceBand: "HIGH", edgeScore: 80, overallScore: 80, generatedAt: new Date(NOW), firstSeenAt: new Date(NOW - 86_400_000) });
-  const beforeRuby = await oldRuby(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
-  const afterRuby = await buildRubyMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
-  assert.equal(beforeRuby.lifecycleStage, "EXPIRED"); assert.notEqual(afterRuby.lifecycleStage, "EXPIRED");
-  writeFileSync(output, JSON.stringify({ sourceRejectedPattern: { before: beforePattern, after: afterPattern }, legacyUnboundMemory: { before: { firstSeenAt: beforeRuby.firstSeenAt, lifecycle: beforeRuby.lifecycleStage }, after: { firstSeenAt: afterRuby.firstSeenAt, lifecycle: afterRuby.lifecycleStage, continuity: afterRuby.continuity } }, limits: "Actual Ruby/scalp producer methods with offline I/O and a captured scalp-engine input; no provider/broker/network. Separate PostgreSQL tests validate real persistence." }, null, 2));
+  const beforeEleanor = await oldEleanor(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  const afterEleanor = await buildEleanorMarketEdgeForUser(1, { symbol: "EURUSD", timeframe: "M5" }, { skipPersist: true, scalp: null });
+  assert.equal(beforeEleanor.lifecycleStage, "EXPIRED"); assert.notEqual(afterEleanor.lifecycleStage, "EXPIRED");
+  writeFileSync(output, JSON.stringify({ sourceRejectedPattern: { before: beforePattern, after: afterPattern }, legacyUnboundMemory: { before: { firstSeenAt: beforeEleanor.firstSeenAt, lifecycle: beforeEleanor.lifecycleStage }, after: { firstSeenAt: afterEleanor.firstSeenAt, lifecycle: afterEleanor.lifecycleStage, continuity: afterEleanor.continuity } }, limits: "Actual Eleanor/scalp producer methods with offline I/O and a captured scalp-engine input; no provider/broker/network. Separate PostgreSQL tests validate real persistence." }, null, 2));
 });

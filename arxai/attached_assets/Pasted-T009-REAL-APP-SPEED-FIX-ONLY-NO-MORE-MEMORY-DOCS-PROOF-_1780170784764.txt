@@ -40,8 +40,8 @@ Hard UX target:
 4. Scanner search usable: under 1 second.
 5. Chart skeleton visible: under 1 second.
 6. Trade button feedback: under 100ms.
-7. Ruby thinking indicator: under 100ms.
-8. Any slow backend/MT5/Ruby/market data call must show a loading state immediately.
+7. Eleanor thinking indicator: under 100ms.
+8. Any slow backend/MT5/Eleanor/market data call must show a loading state immediately.
 
 PART 1 — Verify the running app is actually updated
 
@@ -80,7 +80,7 @@ Pages:
 1. Cockpit
 2. Scanner
 3. Trade, if still present
-4. Ruby / AI
+4. Eleanor / AI
 5. More / Settings
 6. Admin as owner/admin, if available
 
@@ -125,7 +125,7 @@ Inspect:
 
 1. heavy global imports
 2. chart/TradingView library loaded globally
-3. Ruby voice/speech modules loaded globally
+3. Eleanor voice/speech modules loaded globally
 4. admin-only modules loaded for normal users
 5. hidden tabs loading before selected
 6. notification badge blocking route render
@@ -159,7 +159,7 @@ Fix safely:
 11. reduce bridge-health polling
 12. do not load hidden tabs until selected
 13. do not load admin/dev pages for normal users
-14. do not let Ruby block Scanner
+14. do not let Eleanor block Scanner
 15. do not let news/history/backtest block Scanner
 16. do not let MT5 bridge health block first page shell
 
@@ -176,7 +176,7 @@ Measure:
 5. shell → trade controls usable
 6. shell → quote/candles
 7. shell → Broad Scan/Focus Scan
-8. shell → Ruby explanation
+8. shell → Eleanor explanation
 
 Scanner must load in progressive layers:
 
@@ -187,7 +187,7 @@ Scanner must load in progressive layers:
 5. quote/candles
 6. user trade overlays
 7. scanner results
-8. Ruby explanation
+8. Eleanor explanation
 9. news/history/backtest last
 
 If Scanner waits on any slow dependency before showing shell, fix it.
@@ -209,7 +209,7 @@ Test:
 5. Confirm pending state
 6. backend request start
 7. “Confirming with broker…” state
-8. Ruby not blocking trade flow
+8. Eleanor not blocking trade flow
 
 Rules:
 
@@ -233,7 +233,7 @@ Final report must include:
 4. desktop timing table
 5. Cockpit timing
 6. Scanner timing
-7. Ruby timing
+7. Eleanor timing
 8. More/Settings timing
 9. Trade page timing if present
 10. bottom-nav feedback timing

@@ -163,7 +163,7 @@ Use this resolver consistently on:
 - scanner
 - chart
 - trade ticket
-- Ruby trade context
+- Eleanor trade context
 - open trades
 - account/live status surfaces
 

@@ -22,7 +22,7 @@ Trace every source currently feeding Scanner candles:
 - ARX market-data fallback
 - the existing MT5 bridge/candle ingestion code (see above)
 - cache/database layer
-- Ruby/scanner read path
+- Eleanor/scanner read path
 
 Produce a short report in your response naming:
 

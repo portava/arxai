@@ -11,7 +11,7 @@
 // Architecture:
 //   Layer A — Private: user's own DNA profile (traderDnaProfiles table)
 //   Layer B — Anonymous group: global_signal_edges (this file)
-//   Layer C — System: Ruby reads global edges to adjust confidence scores
+//   Layer C — System: Eleanor reads global edges to adjust confidence scores
 //
 // SAFETY: Never affects live trading. Never bypasses gates. Advisory only.
 
@@ -35,7 +35,7 @@ export const userPrivacySettingsTable = pgTable("user_privacy_settings", {
   contributionOptedInAt:  timestamp("contribution_opted_in_at",  { withTimezone: true }),
   contributionOptedOutAt: timestamp("contribution_opted_out_at", { withTimezone: true }),
 
-  // Receive global learning insights in Ruby responses
+  // Receive global learning insights in Eleanor responses
   // Default ON — users can turn off if they don't want platform-wide hints
   receiveGlobalInsights: boolean("receive_global_insights")
     .notNull().default(true),
@@ -81,7 +81,7 @@ export const globalSignalEdgesTable = pgTable("global_signal_edges", {
   isSurfaceable: boolean("is_surfaceable").notNull().default(false),
 
   // ── Confidence adjustment ──────────────────────────────────────────────
-  // Applied to Ruby's confidence score when this cohort matches current setup.
+  // Applied to Eleanor's confidence score when this cohort matches current setup.
   // Bounded to [-10, 10] — cannot override local signals.
   confidenceAdjustment: real("confidence_adjustment").notNull().default(0),
 

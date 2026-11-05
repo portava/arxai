@@ -1,4 +1,4 @@
-// Timing Intelligence card — surfaces Ruby's Market Timing Brain read for the
+// Timing Intelligence card — surfaces Eleanor's Market Timing Brain read for the
 // active chart symbol on the Scanner page (Task #224).
 //
 // SAFETY: reads ONLY the read-only `GET /api/me/timing-brain/:symbol`

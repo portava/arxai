@@ -2,7 +2,7 @@ TASK: Cluster D — Live Entitlement, Revocation Close Policy, and Emergency-Clo
 
 Mode: BUILD, but preserve all existing live-safety foundations. Do not weaken ownership checks, broker confirmation truth, audit truth, route-level permissions, kill-switch semantics, or the live command pipeline. No direct mt5_commands inserts. All live broker actions must flow through the approved pipeline unless explicitly proven otherwise.
 
-Assistant name is Eleanor. Legacy ruby* names are rename debt only; do not rename in this task unless required.
+Assistant name is Eleanor. Legacy eleanor* names are rename debt only; do not rename in this task unless required.
 
 Goal:
 Lock Cluster D with code + tests. This task resolves the remaining defense-in-depth gaps around revoked approvals, investor/admin route access, and admin emergency-close behavior.
@@ -193,4 +193,4 @@ Deliverables:
    - no direct mt5_commands insert was introduced
 5. Any unresolved issue must be reported clearly with file:line proof.
 
-Do not create unrelated tasks. Do not refactor unrelated systems. Do not rename Eleanor/Ruby files in this task unless absolutely required.
+Do not create unrelated tasks. Do not refactor unrelated systems. Do not rename Eleanor/Eleanor files in this task unless absolutely required.

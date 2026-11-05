@@ -12,7 +12,7 @@
 //
 // Tab labels match the T006 spec:
 //   Place Trade · Open Positions · Pending Orders · SL/TP Manager ·
-//   Risk/Reward · Trade History · Ruby Review
+//   Risk/Reward · Trade History · Eleanor Review
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ type Attribution = {
   createdAt: string | null; updatedAt: string | null;
 };
 
-type TabKey = "place" | "open" | "pending" | "sltp" | "rr" | "history" | "ruby";
+type TabKey = "place" | "open" | "pending" | "sltp" | "rr" | "history" | "eleanor";
 
 // Tabs that need the commands list (open/pending/sltp/rr).
 const COMMAND_TABS = new Set<TabKey>(["open", "pending", "sltp", "rr"]);
@@ -90,8 +90,8 @@ export default function LiveSharedPage() {
   useEffect(() => {
     if (COMMAND_TABS.has(tab)) void loadCommands();
     if (tab === "history") void loadTrades();
-    // ruby + place don't need either list (place uses the ticket dialog;
-    // ruby uses LiveSharedStatusPanel which has its own internal fetch).
+    // eleanor + place don't need either list (place uses the ticket dialog;
+    // eleanor uses LiveSharedStatusPanel which has its own internal fetch).
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = useMemo(
@@ -187,7 +187,7 @@ export default function LiveSharedPage() {
           <TabsTrigger value="sltp" data-testid="tab-sltp">SL/TP Manager</TabsTrigger>
           <TabsTrigger value="rr" data-testid="tab-rr">Risk / Reward</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">Trade History</TabsTrigger>
-          <TabsTrigger value="ruby" data-testid="tab-ruby">{name} Review</TabsTrigger>
+          <TabsTrigger value="eleanor" data-testid="tab-eleanor">{name} Review</TabsTrigger>
         </TabsList>
 
         <TabsContent value="place" className="mt-3">
@@ -296,7 +296,7 @@ export default function LiveSharedPage() {
           </CardContent></Card>
         </TabsContent>
 
-        <TabsContent value="ruby" className="mt-3 space-y-3">
+        <TabsContent value="eleanor" className="mt-3 space-y-3">
           <LiveSharedStatusPanel />
           <TradeHealthPanel />
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{name} Review (read-only)</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground space-y-1">

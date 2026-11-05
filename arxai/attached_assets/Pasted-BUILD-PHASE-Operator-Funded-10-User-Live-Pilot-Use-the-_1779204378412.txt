@@ -159,7 +159,7 @@ User must acknowledge:
 - access can be paused/revoked at any time
 - assigned allocation is not a deposit
 - assigned allocation is not withdrawable
-- Ruby analysis is informational
+- Eleanor analysis is informational
 - trading involves risk
 - results are not guaranteed
 - live orders require confirmation
@@ -172,8 +172,8 @@ Store acceptance by:
 - mode: OPERATOR_FUNDED_LIVE_PILOT
 - text hash/version
 
-8. Ruby behavior
-Ruby should explain:
+8. Eleanor behavior
+Eleanor should explain:
 - “You are in an operator-funded live pilot.”
 - “Your allocation is assigned by the operator.”
 - “This is not a deposit or withdrawable balance.”
@@ -181,7 +181,7 @@ Ruby should explain:
 - “This trade is blocked because your max lot size is exceeded.”
 - “I prepared the ticket. Please confirm before any live order is sent.”
 
-Ruby must not:
+Eleanor must not:
 - promise profits
 - call ARX AI a broker
 - say users own the master account
@@ -224,7 +224,7 @@ Add or update tests for:
 - one-click live OFF by default
 - one-click cannot bypass gates
 - user-facing UI does not say deposit/withdrawal/custody/user funds
-- Ruby explains operator-funded pilot safely
+- Eleanor explains operator-funded pilot safely
 - User 1 cannot see User 2 data
 - non-admin cannot approve live users
 - no secrets exposed

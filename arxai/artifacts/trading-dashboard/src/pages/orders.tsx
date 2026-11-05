@@ -19,7 +19,7 @@ const STATUS_COLOR: Record<string, string> = {
   RISK_REJECTED: "border-danger/40 bg-danger/10 text-danger",
   APPROVED_FOR_SIMULATION: "border-primary/40 bg-primary/10 text-primary",
   FILLED_SIMULATOR: "border-success/40 bg-success/10 text-success",
-  PENDING_MT5_CONNECTION: "border-ruby/40 bg-ruby/10 text-ruby",
+  PENDING_MT5_CONNECTION: "border-eleanor/40 bg-eleanor/10 text-eleanor",
   CANCELLED: "border-border bg-secondary/40 text-txt-muted",
   CLOSED: "border-border bg-secondary/40 text-txt-secondary",
   ERROR: "border-danger/40 bg-danger/10 text-danger",

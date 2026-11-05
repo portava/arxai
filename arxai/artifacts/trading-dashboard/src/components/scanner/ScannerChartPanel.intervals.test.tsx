@@ -9,15 +9,15 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", vi.fn()], bareSymbol: (value: string) => value }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => [h.timeframe, vi.fn()] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: null }) }));
 vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ news: null, verdict: null }) }));
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isPaper: true, canManualTrade: false, isFrozen: true }) }));
 vi.mock("@/hooks/useProductRole", () => ({ useProductRole: () => ({ isInvestor: true }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("./selectedActionStore", () => ({ useSelectedActionStore: () => ({ get: () => null }) }));
-vi.mock("./rubyReadStore", () => ({ useRubyReadStore: () => ({ get: () => null }) }));
-vi.mock("./RubyChartRead", () => ({ RubyChartRead: () => null }));
+vi.mock("./eleanorReadStore", () => ({ useEleanorReadStore: () => ({ get: () => null }) }));
+vi.mock("./EleanorChartRead", () => ({ EleanorChartRead: () => null }));
 vi.mock("@/components/mt5/OneClickArmedBadge", () => ({ OneClickArmedBadge: () => null }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: any) => ({ data: queryKey[0] === "chart-candles" ? h.candles : undefined, refetch: vi.fn(), isError: false, isLoading: false, isFetching: false }),

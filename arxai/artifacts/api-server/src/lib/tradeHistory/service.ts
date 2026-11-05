@@ -259,7 +259,7 @@ export async function listImportedTrades(opts: ListImportedTradesOptions): Promi
   return { trades, total: countResult[0]?.count ?? 0 };
 }
 
-// ── Summary stats for Ruby ────────────────────────────────────────────────────
+// ── Summary stats for Eleanor ────────────────────────────────────────────────────
 export async function getTradeHistorySummary(userId: number) {
   const trades = await db.select().from(importedTradesTable)
     .where(eq(importedTradesTable.userId, userId))

@@ -4,7 +4,7 @@
 // Reverse, Cancel) must route ONLY through the Global Instant Trade Router
 // (Trade Engine `submitInstantTrade` → `executeInstant`). This suite exercises the shared `scanForViolations`
 // scanner against synthetic instant-trade-route snippets with the chart-route
-// REQUIRED anchor (submitInstantTrade, WITHOUT the Ruby ledger boundary). The
+// REQUIRED anchor (submitInstantTrade, WITHOUT the Eleanor ledger boundary). The
 // sanctioned path must stay clean; every direct-execution escape — direct
 // command-table insert, the legacy `/api/me/trades/close` bypass, a broker
 // order-send primitive, or an ALIASED import of any of those — MUST be flagged.
@@ -24,7 +24,7 @@ import {
 export {};
 
 // The chart/scanner instant-trade route's sanctioned anchor (the guard's own
-// list): submitInstantTrade only (no recordAndExecuteRuby — that boundary is
+// list): submitInstantTrade only (no recordAndExecuteEleanor — that boundary is
 // assistant-specific).
 
 // A minimal sanctioned tail so the REQUIRED check is satisfied; append to any
@@ -51,7 +51,7 @@ const cases: Case[] = [
   {
     name: "assistant ledger boundary is NOT required on the chart route",
     shouldFlag: false,
-    // No recordAndExecuteRuby — must still be clean (chart route never uses it).
+    // No recordAndExecuteEleanor — must still be clean (chart route never uses it).
     src: `const r = await submitInstantTrade({ source: "chart" });`,
   },
   {

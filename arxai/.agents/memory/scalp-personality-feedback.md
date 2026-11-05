@@ -1,6 +1,6 @@
 ---
 name: Scalp per-symbol personality feedback
-description: How learned per-symbol "personality" nudges must be applied and folded in the Ruby Flame Scalp Engine.
+description: How learned per-symbol "personality" nudges must be applied and folded in the Eleanor Flame Scalp Engine.
 ---
 
 # Scalp per-symbol personality feedback

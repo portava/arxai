@@ -1,6 +1,6 @@
 // MarketNewsIntelligenceService — fuses existing news provider + economic
 // calendar + news risk scorer into a single normalized pack for the scanner,
-// Ruby, and the trade-ticket news-risk panel.
+// Eleanor, and the trade-ticket news-risk panel.
 //
 // SAFETY:
 //   - Pure read-side. Never places trades, never writes to live tables.

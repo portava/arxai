@@ -97,7 +97,7 @@ Requirements:
 9. Keep Market Scanner live trading protected.
    Scanner live trade can only be submitted after live mode is unlocked.
    Scanner live command source must be MARKET_SCANNER_LIVE.
-   Ruby must show:
+   Eleanor must show:
    “This is not guaranteed. Confirm risk before placing a live trade.”
 
 10. Add controlled first-live-test mode.
@@ -127,7 +127,7 @@ Requirements:
    - live OrderSend requires EA v1.27+
    - live OrderSend requires EnableLiveExecution=true
    - duplicate live command id cannot execute twice
-   - no secrets exposed in UI/logs/Ruby memory
+   - no secrets exposed in UI/logs/Eleanor memory
 
 Acceptance proof:
 - Demo trading still passes.

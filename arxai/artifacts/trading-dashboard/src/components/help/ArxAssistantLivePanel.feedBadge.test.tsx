@@ -6,11 +6,11 @@ import path from "node:path";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 
-// ── Ruby chat chart-read feed-confidence badge (Task #777) ───────────────────
+// ── Eleanor chat chart-read feed-confidence badge (Task #777) ───────────────────
 //
 // The chat chart-read footer reported a feed verdict in PROSE only. Task #777
 // brings in the SAME compact FeedConfidenceBadge the chart popover and the
-// Scanner "Ruby Chart Read" panel render, driven off the ONE resolved verdict
+// Scanner "Eleanor Chart Read" panel render, driven off the ONE resolved verdict
 // that already produced the reasoning block — never a second source of truth.
 //
 // The honesty contract this guard pins:
@@ -55,7 +55,7 @@ function badgeEl(c: HTMLElement): HTMLElement {
   return el!;
 }
 
-describe("Ruby chat chart-read badge — capped by the resolved read verdict (Task #777)", () => {
+describe("Eleanor chat chart-read badge — capped by the resolved read verdict (Task #777)", () => {
   it("shows Clean + AI on a clean feed only when the read was fully confirmed (true)", () => {
     const view = render(
       <FeedConfidenceBadge feedStatus={cleanLiveFeed()} aiUsableResolved={true} />,
@@ -91,7 +91,7 @@ describe("Ruby chat chart-read badge — capped by the resolved read verdict (Ta
 // truth (the SAME source the scanner badge uses). If a future edit drops a raw,
 // uncapped <FeedConfidenceBadge> into the chat panel, or fetches feed status
 // from a second source, this guard reads the real source and fails the build.
-describe("Ruby chat chart-read badge — structural wiring guard (Task #777)", () => {
+describe("Eleanor chat chart-read badge — structural wiring guard (Task #777)", () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(path.join(here, "ArxAssistantLivePanel.tsx"), "utf8");
 

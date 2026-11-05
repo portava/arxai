@@ -10,7 +10,7 @@
 // - Economic impact: netChange = flows + marketChange. flows come straight from
 //   recorded ledger movements; marketChange is the residual (netChange − flows)
 //   and is null whenever netChange is null. No baseline ⇒ no marketChange claim.
-// - "What Ruby is watching next week" is STATE-derived only (a pool under review,
+// - "What Eleanor is watching next week" is STATE-derived only (a pool under review,
 //   elevated drawdown, a deposit lock releasing next week, stale data). It is
 //   never a fabricated forecast.
 // - No paper / simulation / mock / demo / guaranteed-return wording anywhere.

@@ -1,4 +1,4 @@
-Upgrade ARX Native Chart into Chart Brain v2: a fast, intelligent, self-critical, Ruby-aware, agent-aware decision surface.
+Upgrade ARX Native Chart into Chart Brain v2: a fast, intelligent, self-critical, Eleanor-aware, agent-aware decision surface.
 
 This is not a rebuild.
 This is not a redesign-only task.
@@ -7,11 +7,11 @@ This is not permission to break live trading.
 This is not permission to introduce paper trading.
 This is not permission to fake intelligence with static labels.
 
-The purpose of this upgrade is to make the ARX chart act like it lives inside Ruby’s brain.
+The purpose of this upgrade is to make the ARX chart act like it lives inside Eleanor’s brain.
 
-The chart should not only display candles. It should produce structured market understanding that Ruby, scanner, Risk AI, Scalp AI, Entry AI, Exit AI, Market Structure AI, Agent Court, Trade Review AI, and Learning Camp can all use.
+The chart should not only display candles. It should produce structured market understanding that Eleanor, scanner, Risk AI, Scalp AI, Entry AI, Exit AI, Market Structure AI, Agent Court, Trade Review AI, and Learning Camp can all use.
 
-The chart must become Ruby’s:
+The chart must become Eleanor’s:
 
 * eyes
 * memory
@@ -22,7 +22,7 @@ The chart must become Ruby’s:
 * review surface
 * agent training ground
 
-The chart is only successful if it helps Ruby and the agents read the market more naturally, faster, more accurately, and with better discipline than a normal chart.
+The chart is only successful if it helps Eleanor and the agents read the market more naturally, faster, more accurately, and with better discipline than a normal chart.
 
 Do not pass this task unless the chart is actually doing what it is supposed to do. If something fails, rerun, fix, retest, and only pass when the full flow is working.
 
@@ -32,7 +32,7 @@ NON-NEGOTIABLE RULES
 1. Do not remove TradingView fallback/reference.
 2. Do not break ARX Native Chart’s current candle rendering.
 3. Do not break scanner.
-4. Do not break Ruby.
+4. Do not break Eleanor.
 5. Do not break the Agent Ecosystem.
 6. Do not break MT5/live bridge.
 7. Do not break live trade execution.
@@ -42,7 +42,7 @@ NON-NEGOTIABLE RULES
 11. Do not introduce paper trading as a product feature.
 12. Do not present replay as paper trading.
 13. Do not fake live candles.
-14. Do not fake Ruby/agent signals.
+14. Do not fake Eleanor/agent signals.
 15. Do not show placeholder overlays as if they are real.
 16. Do not create dead buttons.
 17. Do not create admin pages with fake data.
@@ -57,7 +57,7 @@ Build Chart Brain v2.
 
 Chart Brain v2 must create a live structured intelligence state for every active symbol/timeframe.
 
-Ruby and agents should read from this state before giving chart analysis.
+Eleanor and agents should read from this state before giving chart analysis.
 
 The chart should be able to answer:
 
@@ -75,7 +75,7 @@ The chart should be able to answer:
 * Is the chart data reliable enough for live confirmation?
 * Is the AI signal fresh or decaying?
 * Is this a trade, watchlist, or no-trade?
-* Did Ruby and the agents learn from the outcome?
+* Did Eleanor and the agents learn from the outcome?
 
 The chart must become an intelligence layer, not only a display component.
 
@@ -137,14 +137,14 @@ Layer 4: Agent Integration Layer
 * Learning Camp AI
 * Agent Traffic Controller
 
-Layer 5: Ruby Intelligence Layer
+Layer 5: Eleanor Intelligence Layer
 
-* Ruby draft read
-* Ruby chart summary
-* Ruby “what would change my mind”
-* Ruby “why not now”
-* Ruby trade plan explanation
-* Ruby natural market sentences
+* Eleanor draft read
+* Eleanor chart summary
+* Eleanor “what would change my mind”
+* Eleanor “why not now”
+* Eleanor trade plan explanation
+* Eleanor natural market sentences
 
 Layer 6: Review/Learning Layer
 
@@ -162,7 +162,7 @@ Layer 7: Benchmark Layer
 * Chart Brain Score
 * Chart Speed Score
 * Chart Reliability Score
-* Ruby Read Quality Score
+* Eleanor Read Quality Score
 * Agent Chart Accuracy Score
 * No-Trade Discipline Score
 
@@ -182,7 +182,7 @@ Audit:
 7. Current symbol/timeframe controls.
 8. Current overlay support.
 9. Current live position overlay support.
-10. Current Ruby integration, if any.
+10. Current Eleanor integration, if any.
 11. Current scanner integration, if any.
 12. Current agent/governance integration, if any.
 13. Current chart performance issues.
@@ -208,7 +208,7 @@ PHASE 1 — CHART TRUTH LAYER
 
 Build or verify the Truth Layer.
 
-The chart must know whether it can be trusted before Ruby or agents rely on it.
+The chart must know whether it can be trusted before Eleanor or agents rely on it.
 
 Create/verify Chart Truth State:
 
@@ -239,7 +239,7 @@ Rules:
 * If symbol mapping confidence is low, aiUsable=false.
 * If price source is unknown, aiUsable=false or caution.
 * If chart data is clean, aiUsable=true.
-* Ruby must not present live trade confirmation from dirty data.
+* Eleanor must not present live trade confirmation from dirty data.
 * Agents must downgrade decisions when chart truth is poor.
 
 Add or verify visual badge:
@@ -263,7 +263,7 @@ Add backend logic:
 Acceptance:
 
 * Chart clearly shows clean vs bad feed.
-* Ruby receives chart truth state.
+* Eleanor receives chart truth state.
 * Risk/agent logic can read aiUsable.
 * Bad data causes downgrade/refusal.
 * No fake data shown as live.
@@ -276,14 +276,14 @@ QA:
 * Test invalid symbol.
 * Test source unknown.
 * Test aiUsable=false.
-* Confirm Ruby does not call dirty chart data “confirmed.”
+* Confirm Eleanor does not call dirty chart data “confirmed.”
 
 ============================================================
 PHASE 2 — CHART INTELLIGENCE STATE
 
 Create a centralized Chart Intelligence State object.
 
-This is the living object Ruby and agents read.
+This is the living object Eleanor and agents read.
 
 For each active symbol/timeframe, create/update:
 
@@ -307,7 +307,7 @@ setupState,
 evidenceStack,
 contradictionStack,
 bestNextAction,
-rubyDraftRead,
+eleanorDraftRead,
 agentConsensus,
 decisionState,
 speedState,
@@ -403,7 +403,7 @@ Decision state:
 Acceptance:
 
 * Chart Intelligence State updates when candles update.
-* Ruby can fetch/read latest state.
+* Eleanor can fetch/read latest state.
 * Agents can fetch/read latest state.
 * State is persisted or cached safely.
 * State does not block candle rendering.
@@ -440,7 +440,7 @@ Fast Brain includes:
 * entry timing quick check
 * exit/TP quick check
 * Chart Pulse
-* Ruby Draft Read from cached state
+* Eleanor Draft Read from cached state
 
 Slow Brain:
 Runs background only.
@@ -462,7 +462,7 @@ Speed rules:
 * Candles must never wait for Slow Brain.
 * Live execution must never wait for Slow Brain.
 * Scalp Mode must never wait for Slow Brain.
-* Ruby can answer from Fast Brain first, then update later if deep info arrives.
+* Eleanor can answer from Fast Brain first, then update later if deep info arrives.
 * Slow Brain should write updated insight to memory/cache after completion.
 
 Create speed budgets:
@@ -479,7 +479,7 @@ Fast scalp read:
 
 * target 100–800ms
 
-Ruby chart read:
+Eleanor chart read:
 
 * target 1–3 seconds, faster if cached
 
@@ -494,7 +494,7 @@ renderLatencyMs,
 feedLatencyMs,
 stateBuildMs,
 overlayLatencyMs,
-rubyReadMs,
+eleanorReadMs,
 agentRuntimeMs,
 slowBrainRuntimeMs,
 activeMode,
@@ -505,7 +505,7 @@ score
 Acceptance:
 
 * Candles render before AI overlays.
-* Ruby can answer from cached chart intelligence.
+* Eleanor can answer from cached chart intelligence.
 * Deep processing does not block chart.
 * Live trade actions are not blocked.
 * Slow agents step back or move background.
@@ -514,7 +514,7 @@ QA:
 
 * Measure candle render time.
 * Measure state build time.
-* Measure Ruby read time.
+* Measure Eleanor read time.
 * Measure scanner read time.
 * Measure live action path.
 * Confirm live_execution_blocked_by_ai=false.
@@ -539,7 +539,7 @@ It should show:
 * Best next action
 * Setup age
 * Agent Court status
-* Ruby status
+* Eleanor status
 
 Example output:
 
@@ -552,7 +552,7 @@ V75 Chart Pulse:
 * Risk: Elevated
 * Trade readiness: Watchlist
 * Best action: Wait for break/retest
-* Ruby status: No strong buy yet
+* Eleanor status: No strong buy yet
 * Agent Court: Risk caution active
 
 Chart Pulse must be generated from Chart Intelligence State, not hardcoded.
@@ -579,7 +579,7 @@ PHASE 5 — MARKET SENTENCE ENGINE
 
 Create a Market Sentence Engine that turns chart state into natural language.
 
-This powers Ruby’s more natural readings.
+This powers Eleanor’s more natural readings.
 
 Do not output raw indicator jargon unless useful.
 
@@ -617,7 +617,7 @@ The sentence engine must use Chart Intelligence State.
 
 Acceptance:
 
-* Ruby can use generated sentences.
+* Eleanor can use generated sentences.
 * Sentences match market state.
 * Sentences avoid generic filler.
 * Sentences explain why, not just what.
@@ -687,7 +687,7 @@ Decay rules:
 * If invalidation breaks, setup becomes invalid.
 * If opposite signal appears, setup downgrades.
 
-Ruby must say when a setup is stale or late.
+Eleanor must say when a setup is stale or late.
 
 Example:
 “This setup expired. It did not confirm within the expected candle window.”
@@ -696,7 +696,7 @@ Acceptance:
 
 * Setup age is tracked.
 * Signal freshness is visible.
-* Ruby reads freshness/decay.
+* Eleanor reads freshness/decay.
 * Old signals stop appearing as active.
 * Stale ideas downgrade automatically.
 * Invalid ideas are marked invalid.
@@ -740,7 +740,7 @@ trapRisk,
 notes
 }
 
-Ruby should be able to say:
+Eleanor should be able to say:
 
 * “This is defended resistance.”
 * “This support is weakening.”
@@ -760,7 +760,7 @@ Market memory should track important chart events:
 * wick trap
 * Risk AI veto
 * Agent Court conflict
-* Ruby changed bias
+* Eleanor changed bias
 * signal expired
 * trade entered
 * trade exited
@@ -771,7 +771,7 @@ Do not store every candle equally. Store meaningful events.
 Acceptance:
 
 * Levels have personality.
-* Ruby references level personality.
+* Eleanor references level personality.
 * Events are stored.
 * Chart Pulse can show active level personality.
 * Similar setup foundation can use event memory later.
@@ -824,7 +824,7 @@ A bearish candle with long lower wick at support should say:
 Acceptance:
 
 * Candle details show intent.
-* Ruby can explain candle intent.
+* Eleanor can explain candle intent.
 * Scalp AI uses pressure/exhaustion.
 * Risk AI uses rejection/trap.
 * Entry AI uses late/chase.
@@ -845,7 +845,7 @@ PHASE 9 — TIMEFRAME AGREEMENT AND MULTI-TIMEFRAME VISION
 
 Build multi-timeframe chart context.
 
-For each symbol, Ruby should know at least:
+For each symbol, Eleanor should know at least:
 
 * current chart timeframe
 * lower timeframe state if available
@@ -877,13 +877,13 @@ M30 neutral
 H1 bearish
 H4 bearish
 
-Ruby should say:
+Eleanor should say:
 “Lower timeframe is trying to bounce, but higher timeframe is still against it. This is scalp-only unless resistance breaks.”
 
 Acceptance:
 
 * Multi-timeframe state is built.
-* Ruby uses timeframe agreement.
+* Eleanor uses timeframe agreement.
 * Trade readiness downgrades when timeframes conflict.
 * Scalp-only labels appear when lower timeframe conflicts with higher timeframe.
 * Chart does not block if one timeframe is unavailable.
@@ -951,7 +951,7 @@ For sell:
 * entry late after big drop
 * no clear target
 
-Ruby should say:
+Eleanor should say:
 “There are too many contradictions for a clean buy.”
 
 Acceptance:
@@ -959,7 +959,7 @@ Acceptance:
 * Evidence stack created.
 * Contradictions created.
 * Trade readiness uses evidence/contradictions.
-* Ruby explains both sides.
+* Eleanor explains both sides.
 * Agent Court can use contradiction data.
 
 QA:
@@ -1017,7 +1017,7 @@ Acceptance:
 
 * Readiness score visible.
 * Quality label visible.
-* Ruby references score naturally.
+* Eleanor references score naturally.
 * Scanner ranking can use score.
 * Risk AI can downgrade score.
 * No-trade states are respected.
@@ -1093,11 +1093,11 @@ QA:
 * Exit warning.
 
 ============================================================
-PHASE 13 — RUBY DRAFT READ AND NATURAL CHART BRAIN
+PHASE 13 — ELEANOR DRAFT READ AND NATURAL CHART BRAIN
 
-Create Ruby Draft Read.
+Create Eleanor Draft Read.
 
-For every watched symbol/timeframe, maintain a prepared Ruby read:
+For every watched symbol/timeframe, maintain a prepared Eleanor read:
 
 {
 symbol,
@@ -1119,14 +1119,14 @@ confidenceBreakdown,
 agentConsensusSummary
 }
 
-Ruby should use this when user asks about the chart.
+Eleanor should use this when user asks about the chart.
 
-Ruby should answer naturally:
+Eleanor should answer naturally:
 
 Example:
 “V75 is trying to bounce, but it is still under defended resistance. The buy is early. Momentum is decent, but entry and risk are weak, so I would keep it watchlist unless price breaks and holds above 29,289.”
 
-Ruby should always be able to answer:
+Eleanor should always be able to answer:
 
 * what is happening
 * what matters
@@ -1138,12 +1138,12 @@ Ruby should always be able to answer:
 
 Acceptance:
 
-* Ruby uses Chart Intelligence State.
-* Ruby references chart truth if feed is dirty.
-* Ruby references setup stage/freshness.
-* Ruby references Risk AI/Agent Court when relevant.
-* Ruby does not dump raw internal data.
-* Ruby feels natural and decisive.
+* Eleanor uses Chart Intelligence State.
+* Eleanor references chart truth if feed is dirty.
+* Eleanor references setup stage/freshness.
+* Eleanor references Risk AI/Agent Court when relevant.
+* Eleanor does not dump raw internal data.
+* Eleanor feels natural and decisive.
 
 QA prompts:
 
@@ -1197,13 +1197,13 @@ Opposite scenario:
 * if buy idea, what makes sell possible
 * if sell idea, what makes buy possible
 
-Ruby must include this when asked.
+Eleanor must include this when asked.
 
 Acceptance:
 
 * Engine generates clear conditions.
 * Conditions are tied to actual levels/state.
-* Ruby can explain them.
+* Eleanor can explain them.
 * Chart can display them in panel.
 
 QA:
@@ -1258,7 +1258,7 @@ For a sell:
 Acceptance:
 
 * Fork map exists.
-* Ruby can answer “what should happen next?”
+* Eleanor can answer “what should happen next?”
 * Setup downgrades if expected candle behavior fails.
 * Fork map does not force predictions as certainty.
 
@@ -1294,7 +1294,7 @@ Use existing trade/user history if available.
 Do not shame the user.
 Use plain protective language.
 
-Ruby examples:
+Eleanor examples:
 “This looks like a chase entry. The cleaner move already happened.”
 “This matches your common early-entry pattern. Waiting for confirmation would reduce risk.”
 “This was marked scalp-only. Holding too long increases risk.”
@@ -1303,7 +1303,7 @@ Ruby examples:
 Acceptance:
 
 * Protection detects common behavioral risks.
-* Ruby can mention risk respectfully.
+* Eleanor can mention risk respectfully.
 * User behavior signals do not override actual market truth.
 * Admin can view behavior patterns if needed.
 * Investor users do not see inappropriate trading controls.
@@ -1334,7 +1334,7 @@ Store meaningful events:
 * exhaustion event
 * Risk AI veto
 * Agent Court conflict
-* Ruby recommendation
+* Eleanor recommendation
 * no-trade recommendation
 * setup became stale
 * setup invalidated
@@ -1344,7 +1344,7 @@ Store meaningful events:
 * trade reviewed
 * Learning Camp marker created
 
-Create Decision Receipt for every official Ruby recommendation or chart trade plan.
+Create Decision Receipt for every official Eleanor recommendation or chart trade plan.
 
 Decision Receipt fields:
 
@@ -1364,7 +1364,7 @@ Decision Receipt fields:
 * agent votes
 * Risk AI warning
 * Agent Court result
-* Ruby final read
+* Eleanor final read
 * confidence breakdown
 * what would change decision
 * invalidation
@@ -1385,7 +1385,7 @@ Acceptance:
 
 QA:
 
-* Ruby read receipt.
+* Eleanor read receipt.
 * No-trade receipt.
 * Trade plan receipt.
 * Open trade receipt.
@@ -1431,7 +1431,7 @@ findSimilarSetups(fingerprint, limit)
 
 Initial implementation can search past receipts/events/fingerprints by structured similarity.
 
-Ruby can say:
+Eleanor can say:
 “This resembles prior early buys under defended resistance. Historically, ARX performs better after break-and-hold confirmation.”
 
 Acceptance:
@@ -1439,8 +1439,8 @@ Acceptance:
 * Fingerprints are created for setups.
 * Fingerprints are stored.
 * Similar setup service exists.
-* Ruby can reference similar setup only when enough data exists.
-* If not enough data, Ruby says there is not enough history yet.
+* Eleanor can reference similar setup only when enough data exists.
+* If not enough data, Eleanor says there is not enough history yet.
 
 QA:
 
@@ -1468,7 +1468,7 @@ Scores:
 8. Entry Quality Score
 9. Exit Realism Score
 10. Agent Agreement Quality Score
-11. Ruby Explanation Quality Score
+11. Eleanor Explanation Quality Score
 12. No-Trade Discipline Score
 13. Review/Learning Score
 14. Similar Setup Usefulness Score
@@ -1479,7 +1479,7 @@ Below 70 = decorative / not intelligent enough
 70–80 = useful but needs improvement
 80–90 = strong AI chart
 90–95 = excellent
-95+ = chart feels alive inside Ruby’s brain
+95+ = chart feels alive inside Eleanor’s brain
 
 Dashboard should show:
 
@@ -1491,7 +1491,7 @@ Dashboard should show:
 * speed warnings
 * feed warnings
 * agent disagreement quality
-* Ruby read quality
+* Eleanor read quality
 * recommended fixes
 
 Acceptance:
@@ -1527,7 +1527,7 @@ Modes:
 
 2. AI Mode
 
-* Ruby notes
+* Eleanor notes
 * agent consensus
 * readiness
 * evidence
@@ -1605,7 +1605,7 @@ Add chart command actions carefully.
 
 Long-press/tap candle or level should allow:
 
-* Ask Ruby about this candle
+* Ask Eleanor about this candle
 * Explain this candle
 * Why not now?
 * What would change your mind?
@@ -1635,7 +1635,7 @@ Acceptance:
 
 * Long press works.
 * Actions are role-aware.
-* Ruby candle explanation works.
+* Eleanor candle explanation works.
 * Plan actions create draft plan only.
 * Invalid actions hidden/disabled.
 * Mobile works.
@@ -1745,8 +1745,8 @@ Measure:
 * feed latency
 * state build time
 * overlay load time
-* Ruby draft read time
-* Ruby response time
+* Eleanor draft read time
+* Eleanor response time
 * scanner response time
 * Scalp Mode response time
 * risk quick check time
@@ -1762,7 +1762,7 @@ Targets:
 * Candle/crosshair UI should feel instant.
 * Fast chart state should be under 500ms where possible.
 * Scalp quick read should be under 800ms where possible.
-* Ruby should use cached state and respond within normal app expectations.
+* Eleanor should use cached state and respond within normal app expectations.
 * Slow Brain must be background.
 * Live execution must not be slowed.
 
@@ -1793,10 +1793,10 @@ Scenario 1: Clean chart read
 
 * Feed clean
 * Structure clear
-* Ruby analyzes chart
+* Eleanor analyzes chart
     Expected:
-* Ruby uses Chart Intelligence State.
-* Chart Pulse matches Ruby.
+* Eleanor uses Chart Intelligence State.
+* Chart Pulse matches Eleanor.
 * Decision receipt created.
 
 Scenario 2: Dirty data
@@ -1805,7 +1805,7 @@ Scenario 2: Dirty data
     Expected:
 * Chart badge warns.
 * aiUsable=false.
-* Ruby refuses/downgrades live confirmation.
+* Eleanor refuses/downgrades live confirmation.
 
 Scenario 3: Early buy under resistance
 Expected:
@@ -1814,7 +1814,7 @@ Expected:
 * Entry state says early.
 * Risk warns.
 * Readiness score low/watchlist.
-* Ruby says not clean yet.
+* Eleanor says not clean yet.
 * What-would-change-mind says break and hold.
 
 Scenario 4: Scalp flame but chase risk high
@@ -1824,7 +1824,7 @@ Expected:
 * Chase risk high.
 * Entry AI late/chase.
 * Risk downgrades.
-* Ruby says too late/watchlist/no-trade.
+* Eleanor says too late/watchlist/no-trade.
 
 Scenario 5: Agent conflict
 Expected:
@@ -1841,7 +1841,7 @@ Scenario 6: Open trade management
 Expected:
 
 * Entry line, P/L, TP/SL/invalidation visible.
-* Ruby changes from entry analysis to management analysis.
+* Eleanor changes from entry analysis to management analysis.
 * Exit AI gives partial/hold/exit logic.
 * Risk warns near invalidation.
 
@@ -1850,7 +1850,7 @@ Expected:
 
 * Setup age increases.
 * Freshness decays.
-* Ruby says setup expired.
+* Eleanor says setup expired.
 * Active marker removed/downgraded.
 
 Scenario 8: No-trade discipline
@@ -1865,7 +1865,7 @@ Expected:
 
 * Fingerprint created.
 * Similar setup search runs in background/when requested.
-* Ruby references history only if enough data exists.
+* Eleanor references history only if enough data exists.
 
 Scenario 10: Learning Camp hook
 Expected:
@@ -1901,7 +1901,7 @@ This task is complete only when:
 
 1. Chart Truth Layer exists.
 2. Chart Intelligence State exists.
-3. Ruby reads Chart Intelligence State.
+3. Eleanor reads Chart Intelligence State.
 4. Agents can read Chart Intelligence State.
 5. Chart Pulse exists and updates.
 6. Feed quality controls AI trust.
@@ -1957,7 +1957,7 @@ Report must include:
 6. Database/schema changes.
 7. Chart Truth Layer proof.
 8. Chart Intelligence State proof.
-9. Ruby integration proof.
+9. Eleanor integration proof.
 10. Agent integration proof.
 11. Chart Pulse proof.
 12. Market Sentence Engine examples.
@@ -1990,7 +1990,7 @@ Report must include:
 Do not mark this task complete unless the chart is doing what it is supposed to do:
 
 * reading the market,
-* grounding Ruby,
+* grounding Eleanor,
 * guiding agents,
 * protecting from bad trades,
 * staying fast,
@@ -1999,7 +1999,7 @@ Do not mark this task complete unless the chart is doing what it is supposed to 
 * and preserving live execution safety.
 
 If it is only prettier, it failed.
-If it only shows overlays but Ruby does not use them, it failed.
+If it only shows overlays but Eleanor does not use them, it failed.
 If it only stores state but does not affect reads, it failed.
 If it slows live trading, it failed.
 If it fakes intelligence, it failed.

@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { RubyAvatar } from "@/components/ruby/RubyAvatar";
+import { EleanorAvatar } from "@/components/eleanor/EleanorAvatar";
 import type { ScenarioLab } from "../../data/labs";
 import { scoreScenarioQuiz } from "../../lib/labMath";
 import { PASS_THRESHOLD } from "../../lib/progress";
@@ -40,7 +40,7 @@ export function ScenarioQuizLab({ lab, onComplete }: { lab: ScenarioLab; onCompl
       <div className="space-y-3" data-testid="lab-quiz-result">
         <div className={cn("rounded-2xl border p-4", good ? "border-success/40 bg-success/10" : "border-warning/40 bg-warning/10")}>
           <div className="flex items-center gap-3">
-            <RubyAvatar state={good ? "success" : "thinking"} size="md" ariaHidden />
+            <EleanorAvatar state={good ? "success" : "thinking"} size="md" ariaHidden />
             <div className="min-w-0">
               <div className={cn("text-sm font-semibold", good ? "text-success" : "text-warning")} data-testid="lab-quiz-score">
                 {score.correct}/{score.total} correct ({Math.round(score.pct * 100)}%)

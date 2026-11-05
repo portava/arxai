@@ -14,7 +14,7 @@ Do not change:
 - kill switches
 - admin approvals
 - scanner scoring
-- Ruby intelligence
+- Eleanor intelligence
 - historical/news logic
 - auth/session logic
 - open-trade P/L
@@ -77,8 +77,8 @@ PHASE 4 — CONSOLIDATE /ai-mentor ROUTE
 If /ai-mentor is duplicate/legacy:
 - remove from navigation
 - remove from bottom nav/side menu/AI tabs
-- redirect /ai-mentor to the current AI/Ruby main route, likely /ai-command-center
-- ensure AI bottom-nav link goes only to the current AI/Ruby page
+- redirect /ai-mentor to the current AI/Eleanor main route, likely /ai-command-center
+- ensure AI bottom-nav link goes only to the current AI/Eleanor page
 - ensure AI tabs still work
 - ensure selected symbol context remains synced
 

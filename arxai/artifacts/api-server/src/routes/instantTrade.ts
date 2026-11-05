@@ -2,7 +2,7 @@
 //
 // Single shared backend used by every trade-capable surface in the
 // app: trade panel, scanner, chart, watchlist, position card, dashboard,
-// alert click-through, and Ruby AI (text + voice). All callers send the
+// alert click-through, and Eleanor AI (text + voice). All callers send the
 // same `InstantTradeIntent` shape so audit logs and source attribution
 // are uniform.
 //
@@ -90,7 +90,7 @@ const IntentSchema = z.object({
   oneClick: z.boolean().optional(),
   aiCommand: z.boolean().optional(),
   rawUserCommand: z.string().max(1024).nullable().optional(),
-  parsedByRuby: z.boolean().optional(),
+  parsedByEleanor: z.boolean().optional(),
 }) satisfies z.ZodType<InstantTradeIntent>;
 
 function parseIntent(req: Request, defaultAction?: "BUY" | "SELL" | "CLOSE" | "CLOSE_ALL" | "MODIFY_SL_TP") {

@@ -107,7 +107,7 @@ export default function PositionsPage() {
 
       {tab === "MT5" ? (
         <div className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
-          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby" data-testid="mt5-positions-bridge-note" title="Real broker positions are read through the MT5 bridge; nothing is shown until it is connected.">Bridge required</span>
+          <span className="mr-2 rounded-md border border-eleanor/40 bg-eleanor/10 px-2 py-0.5 text-xs text-eleanor" data-testid="mt5-positions-bridge-note" title="Real broker positions are read through the MT5 bridge; nothing is shown until it is connected.">Bridge required</span>
           Real broker positions route through the MT5 bridge. This panel activates once the bridge is connected.
         </div>
       ) : visible.length === 0 ? (

@@ -22,7 +22,7 @@ Confirmed strong systems:
 - MT5 bridge status
 - Open/closed positions
 - Notifications/event truth
-- Eleanor/Ruby assisted execution path
+- Eleanor/Eleanor assisted execution path
 - Profit Mission
 - Backtesting Lab
 - Auto Pilot admin error handling

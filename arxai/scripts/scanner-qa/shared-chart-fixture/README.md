@@ -56,7 +56,7 @@ external HTTP, WebSockets and every write, including the app's presence ping
 and scheduled chart AI-alert scan. Those two exact POST routes are recorded
 as blocked background attempts; they never reach a server.
 The exact `POST /api/me/scalp/focus` is separately recorded as blocked analysis.
-`RubyScalpFocusCard.tsx` invokes it on symbol/mode changes; `meScalp.ts` calls
+`EleanorScalpFocusCard.tsx` invokes it on symbol/mode changes; `meScalp.ts` calls
 `evaluateScalpForSymbol`, which gathers read inputs and returns analysis with
 advisory traces. It is not an order route. It still receives 503 in this fixture;
 this classification does not authorize running the analysis or its traces.

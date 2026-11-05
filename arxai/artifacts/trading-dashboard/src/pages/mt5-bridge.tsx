@@ -18,11 +18,11 @@ import { useTradingMode } from "@/hooks/useTradingMode";
 import { useAssistantName } from "@/lib/assistant-name";
 import { useToast } from "@/hooks/use-toast";
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* sessionStorage unavailable — silent */ }
 }
 
@@ -205,7 +205,7 @@ export default function MT5BridgePage() {
     );
   }
 
-  const rubyRead = frozen
+  const eleanorRead = frozen
     ? "Your account is currently risk-locked, so live execution is paused. Market analysis and the scanner stay available. Clear the lock from Risk Settings, then your route will reopen."
     : connected
       ? "Your trading route is healthy. The shared MT5 bridge is connected, market data is active, and your account is approved. You can prepare trades normally. If the bridge disconnects, ARX will pause live execution until the connection returns."
@@ -230,8 +230,8 @@ export default function MT5BridgePage() {
             <p className="text-sm text-txt-secondary">View your live trading connection, shared bridge access, and account route status.</p>
           </div>
         </div>
-        <button onClick={openRubyLiveChat} data-testid="bridge-ask-ruby"
-          className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/20">
+        <button onClick={openEleanorLiveChat} data-testid="bridge-ask-eleanor"
+          className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/20">
           <Sparkles className="h-4 w-4" /> Ask {name}
         </button>
       </div>
@@ -288,7 +288,7 @@ export default function MT5BridgePage() {
         </SectionCard>
 
         <SectionCard title={`${name}'s Bridge Read`} icon={Sparkles}>
-          <p className="text-sm leading-relaxed text-txt-secondary">{rubyRead}</p>
+          <p className="text-sm leading-relaxed text-txt-secondary">{eleanorRead}</p>
           <div className="mt-3 grid grid-cols-3 gap-2">
             <StatusTile icon={ShieldCheck} label="Bridge" value={bridgeHealthy ? "Healthy" : "Unavailable"} tone={bridgeHealthy ? "success" : "warning"} />
             <StatusTile icon={UserCheck} label="Access" value={approvalLabel} tone={approvalTone} />
@@ -297,7 +297,7 @@ export default function MT5BridgePage() {
             <StatusTile icon={Wifi} label="Market Data" value={connected ? "Connected" : "Unavailable"} tone={connected ? "success" : "warning"} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/20">
+            <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/20">
               <Sparkles className="h-4 w-4" /> Ask {name}
             </button>
             <Link href="/risk-settings" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/40 px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">

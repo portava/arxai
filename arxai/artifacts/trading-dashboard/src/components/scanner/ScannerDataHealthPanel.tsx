@@ -3,7 +3,7 @@
 //
 // UI ONLY. Consumes the single shared scanner-truth contract
 // (useScannerTruth → resolveScannerTruth) so it can NEVER disagree with the
-// header strip, the chart, or Ruby about feed state. It exists to answer the
+// header strip, the chart, or Eleanor about feed state. It exists to answer the
 // GBPUSD question in user language: the data may be genuinely live, but it is
 // ARX market data — NOT the broker's chart feed — and that distinction is shown
 // honestly. A connected MT5 *execution* bridge never makes this card claim

@@ -2,12 +2,12 @@
 //
 // PURPOSE
 //   Assemble the EXISTING chart-intelligence outputs into ONE normalized
-//   envelope (SmartChartIntelligence) that Ruby, the chart UI, Scanner, and
+//   envelope (SmartChartIntelligence) that Eleanor, the chart UI, Scanner, and
 //   future review/replay surfaces can consume without each re-deriving truth
 //   from disconnected state.
 //
 // THIS FILE IS ADDITIVE AND READ-ONLY. It:
-//   • imports the existing RubyChartContext (which already carries the Phase-3
+//   • imports the existing EleanorChartContext (which already carries the Phase-3
 //     gate output + the full ChartIntelligenceState) and reshapes it,
 //   • NEVER recomputes Chart Truth, Chart Read, candle truth, structure, or any
 //     engine — it only maps already-computed values,
@@ -30,7 +30,7 @@
 // verified broad-flow read. This is deliberate — the adapter must not imply a
 // broad-market confirmation that the system cannot prove.
 
-import type { RubyChartContext } from "./rubyChartContext.js";
+import type { EleanorChartContext } from "./eleanorChartContext.js";
 import type { ChartIntelligenceState } from "./chartIntelligence.js";
 import type { ChartGateOutput } from "./chartGateOutput.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
@@ -51,7 +51,7 @@ export type SmartChartMarketStage =
 export type SmartChartBestAction =
   | "trade_now" | "prepare_buy" | "prepare_sell" | "wait_for_pullback"
   | "wait_for_retest" | "wait_for_candle_close" | "watch_only" | "avoid"
-  | "protect_open_trade" | "ask_ruby" | "open_scanner" | "no_trade"
+  | "protect_open_trade" | "ask_eleanor" | "open_scanner" | "no_trade"
   | "unavailable";
 
 export interface SmartChartKeyLevels {
@@ -330,19 +330,19 @@ function bestActionFrom(
     case "active_move": return "watch_only"; // do not chase an active move by default
     case "range_bound": return "watch_only";
     case "reversal_risk": return "watch_only";
-    default: return "ask_ruby";
+    default: return "ask_eleanor";
   }
 }
 
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
 /**
- * Assemble a normalized SmartChartIntelligence from an existing RubyChartContext
+ * Assemble a normalized SmartChartIntelligence from an existing EleanorChartContext
  * (which already embeds the authoritative Phase-3 gate output + full intelligence
  * state) plus any caller-supplied external context. Pure, read-only, no I/O.
  */
 export function buildSmartChartIntelligence(
-  ctx: RubyChartContext,
+  ctx: EleanorChartContext,
   external: SmartChartExternalContext = {},
 ): SmartChartIntelligence {
   const createdAt = external.now ?? Date.now();
@@ -424,7 +424,7 @@ export function buildSmartChartIntelligence(
   if (!external.riskAaciSecurity) unavailableInputs.push("riskAaciSecurity");
 
   // ── Honest data-confidence line ────────────────────────────────────────────
-  // Reuse the already-scrubbed trust line from RubyChartContext (user-safe; no
+  // Reuse the already-scrubbed trust line from EleanorChartContext (user-safe; no
   // internal gate codes). When the gate is closed this already reads "syncing".
   const dataConfidenceLine = ctx.trustLine;
 

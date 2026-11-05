@@ -92,8 +92,8 @@ export function omittedObservationSelftest() {
 // Per-text counts also tolerate a disappearing welcome card.
 export function freshAssistantReply({ old, texts }) {
   texts ??= [...document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div')]
-    .filter(b => !b.querySelector('[data-testid="ruby-tool-indicator"]')).map(b => b.innerText);
-  return texts.findLast(t => t.length > 20 && !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(t) &&
+    .filter(b => !b.querySelector('[data-testid="eleanor-tool-indicator"]')).map(b => b.innerText);
+  return texts.findLast(t => t.length > 20 && !/^(Eleanor|Eleanor) is (thinking|reviewing|working|using)/i.test(t) &&
     texts.filter(s => s === t).length > old.filter(s => s === t).length);
 }
 
@@ -182,12 +182,12 @@ export async function run(page, output, { withdrawal = false, omittedObservation
       await fresh.dispose();
     } else {
       await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div')]
-        .some(b => b.innerText.length > 20 && !window.__fibPriorReplies.has(b) && !b.querySelector('[data-testid="ruby-tool-indicator"]') &&
-          !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(b.innerText)), null, { timeout: 15000 });
+        .some(b => b.innerText.length > 20 && !window.__fibPriorReplies.has(b) && !b.querySelector('[data-testid="eleanor-tool-indicator"]') &&
+          !/^(Eleanor|Eleanor) is (thinking|reviewing|working|using)/i.test(b.innerText)), null, { timeout: 15000 });
       await frames();
       reply = await page.evaluate(() => [...document.querySelectorAll('[data-testid="arx-assistant-panel"] div.flex.justify-start > div')]
         .filter(b => !window.__fibPriorReplies.has(b)).map(b => b.innerText)
-        .findLast(t => t.length > 20 && !/^(Eleanor|Ruby) is (thinking|reviewing|working|using)/i.test(t)));
+        .findLast(t => t.length > 20 && !/^(Eleanor|Eleanor) is (thinking|reviewing|working|using)/i.test(t)));
     }
     receipts.push({ stage, text, reply }); return reply;
   }

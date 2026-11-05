@@ -1,12 +1,12 @@
 Run an ARX Historical Candle Depth Fix.
 
-The chart is still only showing about 6 months of history. This is not acceptable for Smart Chart, Ruby historical reads, scanner context, backtesting, or user chart scrolling.
+The chart is still only showing about 6 months of history. This is not acceptable for Smart Chart, Eleanor historical reads, scanner context, backtesting, or user chart scrolling.
 
 Current visible issue:
 - EURUSD chart only reaches around 6 months.
 - UI shows “Provider free tier has no older-than cursor.”
 - UI says “Historical only / no live price marker.”
-- Ruby has limited visibility.
+- Eleanor has limited visibility.
 - User cannot scroll back years.
 - This means ARX still does not have true deep historical candle coverage.
 
@@ -271,7 +271,7 @@ The chart should no longer just stop silently around 6 months.
 If deep history exists:
 - user can scroll back
 - 1Y / 5Y / ALL works
-- Ruby can use historical context if coverage is enough
+- Eleanor can use historical context if coverage is enough
 
 If deep history does not exist:
 Show:
@@ -290,10 +290,10 @@ Regular user:
 “More history is being prepared.”
 
 ==================================================
-STEP 8 — RUBY / SMART CHART BEHAVIOR
+STEP 8 — ELEANOR / SMART CHART BEHAVIOR
 ==================================================
 
-Ruby must distinguish:
+Eleanor must distinguish:
 
 - current live read
 - recent historical read
@@ -301,10 +301,10 @@ Ruby must distinguish:
 - backtest-supported read
 
 If only 6 months exists:
-Ruby can say:
+Eleanor can say:
 “I only have about 6 months of history here, so I can read current structure but not long-term behavior.”
 
-Ruby must not say:
+Eleanor must not say:
 - “multi-year comparison”
 - “5-year pattern”
 - “historically this setup”
@@ -334,7 +334,7 @@ Add/update tests:
 7. MT5 historical backfill stores candles by symbol+timeframe+openTime.
 8. Duplicate candles are deduped.
 9. Historical/live merge does not duplicate latest candles.
-10. Ruby does not claim deep history when coverage is 6 months.
+10. Eleanor does not claim deep history when coverage is 6 months.
 11. Smart Chart shows historical coverage honestly.
 12. Backtest is blocked when deep history is unavailable.
 13. User can scroll left until actual earliest candle.
@@ -345,7 +345,7 @@ Run:
 - chart tests
 - market data tests
 - historical coverage tests
-- Ruby read tests
+- Eleanor read tests
 - typecheck
 - CI guards if feasible
 
@@ -367,7 +367,7 @@ Return:
 - backend range query updated
 - candle warehouse status
 - MT5 backfill plan/status
-- Ruby/Smart Chart historical behavior updated
+- Eleanor/Smart Chart historical behavior updated
 - tests added/updated
 - typecheck/guard results
 - remaining blockers

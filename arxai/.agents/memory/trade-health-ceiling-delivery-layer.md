@@ -11,7 +11,7 @@ label, trust line, and four DISPLAY-ONLY ceilings
 **Rule:** cross-surface consistency is guaranteed at the SOURCE layer, not by
 plumbing the trust line into every component. The authoritative consumers are
 `scannerTruth.ts` (composes the contract into `ScannerTruth.readiness`),
-`rubyStructuralReadService.ts`, and the `resolveTradeAffordance` hub (mirrors
+`eleanorStructuralReadService.ts`, and the `resolveTradeAffordance` hub (mirrors
 `truth.readiness` verbatim; forces all ceilings OFF in `read_only`; null truth →
 all-false NONE). Any trade surface reading the hub inherits the same verdict, so
 proving consistency = asserting `resolveTradeAffordance(t).readiness* === t.readiness.*`

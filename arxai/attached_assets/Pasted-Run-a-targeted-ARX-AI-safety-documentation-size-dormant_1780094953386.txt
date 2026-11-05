@@ -3,7 +3,7 @@ Run a targeted ARX AI safety, documentation-size, dormant-file, and dead-end wir
 This is not a rebuild.
 Do not create a new product.
 Do not redesign ARX AI.
-Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, permissions, or account modes.
+Do not duplicate Scanner, Eleanor, MT5 bridge, trade execution, permissions, or account modes.
 Do not delete working code just because it looks old.
 Do not break the app to clean it.
 
@@ -55,7 +55,7 @@ Acceptance criteria:
 4. Normal users cannot access admin views.
 5. Admin routes still fail closed.
 6. Existing auth/security guards still pass or improve.
-7. No unrelated Scanner, Ruby, dashboard, MT5 bridge, or trade route behavior breaks.
+7. No unrelated Scanner, Eleanor, dashboard, MT5 bridge, or trade route behavior breaks.
 
 Part 2 — Trim replit.md size safely
 
@@ -76,7 +76,7 @@ Required work:
 8. Do not remove current architecture rules.
 9. Do not remove DEMO/LIVE-only rule.
 10. Do not remove MT5 bridge rules.
-11. Do not remove Ruby rules.
+11. Do not remove Eleanor rules.
 12. Do not remove Scanner priorities.
 13. Do not remove shared/master bridge privacy rules.
 14. Do not remove current safety, permission, and trade-execution rules.
@@ -95,7 +95,7 @@ After trimming, replit.md should contain:
 4. Current DEMO/LIVE mode rule.
 5. Current MT5 bridge rule.
 6. Current Scanner priority.
-7. Current Ruby behavior rules.
+7. Current Eleanor behavior rules.
 8. Current permission/security rules.
 9. Current performance goals.
 10. Current unresolved risks.
@@ -118,7 +118,7 @@ Look for:
 
 1. Duplicate app folders.
 2. Old Scanner versions.
-3. Old Ruby versions.
+3. Old Eleanor versions.
 4. Old chart components.
 5. Old trade modal components.
 6. Old dashboard components.
@@ -138,7 +138,7 @@ Look for:
 20. API endpoints that exist but are not wired to UI.
 21. UI controls that call missing endpoints.
 22. UI controls with no action handler.
-23. Backend routes with no frontend caller but still needed for Ruby/admin/MT5.
+23. Backend routes with no frontend caller but still needed for Eleanor/admin/MT5.
 24. Files imported nowhere.
 25. Files that are imported but only by old unused routes.
 26. Unused environment/config references.
@@ -196,9 +196,9 @@ High-priority dead ends to check:
 12. Partial close.
 13. Reverse trade.
 14. Cancel pending order.
-15. Ruby text input.
-16. Ruby voice input.
-17. Ruby speech output.
+15. Eleanor text input.
+16. Eleanor voice input.
+17. Eleanor speech output.
 18. Admin user approval toggles.
 19. Allocation controls.
 20. Freeze/unfreeze user.
@@ -226,7 +226,7 @@ Only remove or archive code when all of these are true:
 5. It is not needed by deployment/build.
 6. It is not a database migration/schema file.
 7. It is not a bridge/auth/security file.
-8. It is not used by Ruby action registry.
+8. It is not used by Eleanor action registry.
 9. It is not used by Scanner, trade execution, admin controls, or user account mode.
 10. Tests/build pass after removal.
 
@@ -246,7 +246,7 @@ After the auth fix, documentation trim, and any cleanup/repair, run:
 4. Auth/security tests.
 5. Endpoint auth tests.
 6. Scanner smoke test.
-7. Ruby smoke test.
+7. Eleanor smoke test.
 8. Admin route protection test.
 9. Normal user route protection test.
 10. API endpoint health check.
@@ -265,7 +265,7 @@ Regression checks:
 9. Focus Scan works.
 10. Scanner search works.
 11. Trade controls still respond.
-12. Ruby still responds.
+12. Eleanor still responds.
 13. MT5 bridge status still displays correctly.
 14. No Paper Trading fallback appears.
 15. No master-account trade data is exposed.
@@ -299,7 +299,7 @@ Provide a completion report with:
 14. Dead UI controls repaired, removed, or disabled.
 15. Paper/mock/simulated leftovers found, if any.
 16. Scanner regression status.
-17. Ruby regression status.
+17. Eleanor regression status.
 18. MT5 bridge regression status.
 19. Admin/user permission regression status.
 20. Typecheck result.

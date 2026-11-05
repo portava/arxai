@@ -42,7 +42,7 @@ handshake never reads or writes it on any hot/execution path.
 | 6 | Admin Control / Global Settings | Wired | `global_trading_settings` (singleton id=1: `platformMode`) | Reads platform mode only. Never writes. |
 | 7 | Kill Switch / Emergency Stop | Wired (read-only awareness) | `global_trading_settings.emergencyKillSwitch` | Engaged → FAIL in the handshake verdict (advisory). The real kill switch remains authoritative and independent. |
 | 8 | Live Execution Pipeline (16-gate) | **Must not touch** | `lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts` | Handshake imports nothing from the dispatch path and never appends a gate. |
-| 9 | Ruby Assistant | **Must not touch** | `meAssistant.ts` (read-only assistant) | Ruby stays read-only; handshake never routes through it. |
+| 9 | Eleanor Assistant | **Must not touch** | `meAssistant.ts` (read-only assistant) | Eleanor stays read-only; handshake never routes through it. |
 | 10 | Smart Chart / Scanner Chart render | **Must not touch** | `components/scanner/ScannerChartPanel.tsx`, candles endpoints | No handshake call on the candle render or chart trade-action path. |
 | 11 | Weekly Report / Investor Statements | Wired (via Fund Book) | Fund Book NAV + reconciliation state | Shares layer #5 readiness; report generation path unchanged. |
 | 12 | Feature layers (#194–#199) | Scaffold | n/a yet | `SIGNAL_INTELLIGENCE`, `SCANNER_EXPLANATION`, `EXECUTION_COST`, `NEWS_RADAR`, `TRADE_HEALTH` registered as planned handshakes; evaluate to `UNKNOWN` until their phase wires real adapters. No fabricated logic. |

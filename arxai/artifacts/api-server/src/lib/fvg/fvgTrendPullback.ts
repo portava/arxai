@@ -10,7 +10,7 @@
 //   - Never fabricates candles, prices, or levels.
 //   - Does NOT import any execution module, live-pipeline module, or safety-contract.
 //   - Adding / changing this file cannot weaken any existing strategy, scanner route,
-//     Ruby tool, chart overlay, or feed-truth gate.
+//     Eleanor tool, chart overlay, or feed-truth gate.
 
 export interface FvgCandle {
   open: number;

@@ -1,10 +1,10 @@
 // ONE TRADE-HEALTH / READINESS DISPLAY CONTRACT (Phase 3) — engine + the
 // inviolable "display may only downgrade, never grant" property.
 //
-// This locks the SINGLE shared verdict that the scanner, Ruby (chat + chart),
+// This locks the SINGLE shared verdict that the scanner, Eleanor (chat + chart),
 // the chart panel, the trade ticket, the manual ticket, backtest cards, alerts,
 // and AI-setup cards all consume so they can never contradict each other (e.g.
-// scanner header says "historical only / feed not confirmed" while Ruby's footer
+// scanner header says "historical only / feed not confirmed" while Eleanor's footer
 // says "Live-confirmed · execution-ready" for the same symbol+timeframe).
 //
 // The contract COMPOSES evaluateMarketDataSufficiency and is PURE, so identical
@@ -178,11 +178,11 @@ test("trust line never makes a confirmed/verified claim unless the read is live-
   }
 });
 
-test("ONE TRUTH: identical inputs => bit-for-bit identical verdict (scanner vs Ruby agree)", () => {
+test("ONE TRUTH: identical inputs => bit-for-bit identical verdict (scanner vs Eleanor agree)", () => {
   const input = liveConfirmedInput({ availableClosedCandles: 3 }); // the contradiction scenario
   const scannerVerdict = evaluateTradeHealthReadiness(input);
-  const rubyVerdict = evaluateTradeHealthReadiness(input);
-  assert.deepEqual(scannerVerdict, rubyVerdict);
+  const eleanorVerdict = evaluateTradeHealthReadiness(input);
+  assert.deepEqual(scannerVerdict, eleanorVerdict);
   assert.equal(scannerVerdict.mayShowTradeButton, false);
 });
 
@@ -264,7 +264,7 @@ test("affordance ceilings NEVER true unless the read is genuinely live-confirmed
                 }
 });
 
-// ── SHARED FLOOR + DISPLAY-TOKEN NORMALIZATION (Ruby ↔ Scanner parity) ────────
+// ── SHARED FLOOR + DISPLAY-TOKEN NORMALIZATION (Eleanor ↔ Scanner parity) ────────
 // The contract is fed by two adapters that spell the timeframe differently and
 // (before the shared floor) used different bar minimums. These lock the helpers
 // that make BOTH adapters feed identical inputs for the same real-world facts.
@@ -311,7 +311,7 @@ test("requiredClosedBarsForTimeframe: canonical + alias share a floor; unknown �
 test("identical verdict + trust line for the SAME timeframe regardless of spelling (M15 ≡ 15m)", () => {
   const canonical = evaluateTradeHealthReadiness(liveConfirmedInput({ timeframe: "M15" }));
   const alias = evaluateTradeHealthReadiness(liveConfirmedInput({ timeframe: "15m" }));
-  // The contract normalizes the tf token, so Ruby (canonical) and the Scanner
+  // The contract normalizes the tf token, so Eleanor (canonical) and the Scanner
   // (alias) emit a byte-identical trust line — not just the same display label.
   assert.equal(canonical.userFacingTrustLine, alias.userFacingTrustLine);
   assert.deepEqual(canonical, alias);

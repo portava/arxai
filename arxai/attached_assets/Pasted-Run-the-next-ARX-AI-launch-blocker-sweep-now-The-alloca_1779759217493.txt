@@ -17,7 +17,7 @@ The allocations system is now green:
 Do not redo the allocations work unless this sweep finds a real regression.
 
 Main objective:
-Find and fix the remaining launch blockers across Deriv, macro/news data, scanner historical data, Ruby runtime behavior, and full UI click-through.
+Find and fix the remaining launch blockers across Deriv, macro/news data, scanner historical data, Eleanor runtime behavior, and full UI click-through.
 
 Important:
 Do NOT rebuild the app.
@@ -76,14 +76,14 @@ If Deriv credentials are not valid yet:
 3. Macro/news/dataHub connectors
 Earlier deleted/stale dataHub.ts included connector ideas like FRED, CoinGecko, Marketaux, Alpaca News.
 
-ARX ecosystem requires Ruby/scanner to use market news, macro data, economic data, and current events when relevant.
+ARX ecosystem requires Eleanor/scanner to use market news, macro data, economic data, and current events when relevant.
 
 Audit:
 - Which macro/news/economic providers are currently configured in env/secrets.
 - Which providers are actually used.
 - Which providers are configured but unused.
 - Which providers are not configured.
-- Whether scanner/Ruby can access news/macro context.
+- Whether scanner/Eleanor can access news/macro context.
 - Whether Provider Health shows news/macro provider status.
 
 Fix only what is already configured and clearly broken/unwired.
@@ -117,7 +117,7 @@ Scanner must:
 - not silently return empty arrays
 - not fake candles
 
-5. Ruby runtime behavior
+5. Eleanor runtime behavior
 Do a real runtime check, not just structural code review.
 
 Test:
@@ -130,7 +130,7 @@ Test:
 - stale audio cancellation
 - research summarization
 
-Ruby should:
+Eleanor should:
 - start responding quickly
 - show typing/thinking immediately
 - type naturally instead of dumping one giant block
@@ -157,7 +157,7 @@ Go through the actual app UI and verify every active launch-critical section:
 - market search
 - watchlist
 - charts
-- Ruby assistant
+- Eleanor assistant
 - trade ticket
 - command queue
 - live readiness
@@ -192,7 +192,7 @@ Run:
 - allocation runtime QA
 - provider health checks
 - scanner historical checks
-- Ruby runtime checks if available
+- Eleanor runtime checks if available
 - route/import graph checks
 - user/admin visibility leak checks
 
@@ -211,9 +211,9 @@ Include:
 - Deriv status and exact remaining operator action if any
 - macro/news provider status
 - scanner historical data status
-- Ruby runtime status
+- Eleanor runtime status
 - UI click-through status
 - routes/buttons/toggles tested
 - fixes made
 - remaining launch blockers
-- whether app is launch-ready for live UI, live bridge, scanner, Ruby, and allocations
+- whether app is launch-ready for live UI, live bridge, scanner, Eleanor, and allocations

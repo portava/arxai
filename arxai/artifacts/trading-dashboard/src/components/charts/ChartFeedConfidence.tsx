@@ -2,7 +2,7 @@
 // surfaces that don't already track the chart feed status (the Trade Command
 // Room quick-trade panel, the live-chart "Trade from chart" card).
 //
-// It resolves the SAME shared scanner truth the Scanner uses (see RubyChartRead)
+// It resolves the SAME shared scanner truth the Scanner uses (see EleanorChartRead)
 // from the ONE honest candles query (useScannerTruth → /api/chart/candles), so
 // every surface names the real data source — MT5 broker bars vs a third-party /
 // synthetic fallback — identically, AND caps the badge by that resolved verdict:
@@ -14,7 +14,7 @@ import { bareSymbol } from "@/lib/use-chart-symbol";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
-import { resolveFeedBadgeVerdict } from "@/lib/rubyReadPanelState";
+import { resolveFeedBadgeVerdict } from "@/lib/eleanorReadPanelState";
 
 export interface ChartFeedConfidenceProps {
   /** Raw chart-bus symbol (may carry an exchange prefix like "FX:EURUSD"). */
@@ -41,7 +41,7 @@ export function ChartFeedConfidence({
   // Never flash a misleading "No feed" chip before the first result resolves.
   if (!bare || (isLoading && !feedStatus)) return null;
   // Cap the badge by the resolved scanner-truth verdict (Task #521) — mirrors
-  // RubyChartRead so Clean/AI is impossible on a downgraded/unresolved feed.
+  // EleanorChartRead so Clean/AI is impossible on a downgraded/unresolved feed.
   return (
     <FeedConfidenceBadge
       feedStatus={feedStatus}

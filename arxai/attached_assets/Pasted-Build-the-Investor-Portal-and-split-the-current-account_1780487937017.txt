@@ -87,7 +87,7 @@ CANNOT:
 - close trades
 - access scanner trade buttons
 - use Confirm Live Trade
-- access Ruby execution tools
+- access Eleanor execution tools
 - access admin controls
 - access bridge/EA controls
 - access kill switches
@@ -434,9 +434,9 @@ PART 11 — PROTECT EXISTING LIVE TRADING SYSTEM
 
 Do not break or change:
 - scanner
-- Ruby chat
+- Eleanor chat
 - manual voice recording
-- Ruby Scalp Signals
+- Eleanor Scalp Signals
 - trade modal
 - live bridge status
 - retcode display
@@ -491,7 +491,7 @@ Admin:
 Regression:
 - trader/user dashboard still works.
 - scanner still works.
-- Ruby still works.
+- Eleanor still works.
 - trade modal still works for authorized trader.
 - live bridge status still works.
 - admin dashboard still works for separate admin account.

@@ -10,7 +10,7 @@ does not fix. Repair tasks are created separately from these findings._
 > **not** a failure when the rest of the path is verified in code/config.
 >
 > **No fake passes.** Nothing is marked **PASS** unless the full wiring chain is proven
-> from UI action → hook → endpoint → service → DB/MT5/feed/Ruby truth source → back to
+> from UI action → hook → endpoint → service → DB/MT5/feed/Eleanor truth source → back to
 > the UI. A 200 response alone is not a pass. Where a feed/EA/credential/env is missing,
 > the item is **BLOCKED** with the exact missing dependency named — never PASS.
 
@@ -63,7 +63,7 @@ PASS is the *actual broker fill*, which is correctly **`BLOCKED_FOR_SUPERVISED_L
 (requires an operator + live EA) — not a defect.
 
 **Strongest qualities (verified by tracing the wiring chain, not status codes):**
-- **One live execution path.** Manual, scanner, chart, and Ruby all funnel through
+- **One live execution path.** Manual, scanner, chart, and Eleanor all funnel through
   `executeInstant` → the Phase-B dispatch gate. No second path; the legacy
   `placeLiveOrderGuarded()` chokepoint is permanently locked and CI-enforced.
 - **Dispatch ≠ fill.** A sent command is never reported as executed without a real broker
@@ -112,23 +112,23 @@ Counts taken from the working tree at audit time (shell-enumerated).
 **Truth sources in play:** PostgreSQL (Drizzle ORM) for all durable state; MT5 EA bridge
 (per-user token) for live broker facts; market-data providers (TwelveData/Polygon/
 AlphaVantage composite + Deriv synthetics + durable `broker_candles`); the AI integrations
-proxy (OpenAI) for Ruby/voice. No simulator data is ever substituted for live data.
+proxy (OpenAI) for Eleanor/voice. No simulator data is ever substituted for live data.
 
 <!--SECTION:ECOSYSTEM-->
 ## 3. Ecosystem Map (expected vs actual chains)
 
 Each chain below was traced UI → hook → endpoint → service → truth source → UI.
 
-### 3.1 Live trade backbone (manual / scanner / chart / Ruby / one-click)
+### 3.1 Live trade backbone (manual / scanner / chart / Eleanor / one-click)
 **Expected:** every live action funnels through one server orchestrator and the live
 dispatch-gate evaluator (**18 gates**; documented as 16 — see §7.3); no second execution path.
 **Actual (verified):** ✅ matches.
 ```
-UI button (LiveSharedTradeTicket / ScannerTradeModal / ScannerChartPanel / QuickTradeModal / Ruby)
+UI button (LiveSharedTradeTicket / ScannerTradeModal / ScannerChartPanel / QuickTradeModal / Eleanor)
   → executeInstantTrade()            artifacts/trading-dashboard/src/lib/instantTradeRouter.ts:54
   → POST /api/trades/instant/execute (/close, /close-all)   routes/instantTrade.ts
   → executeInstant()                 lib/live/instantTrade.ts:277
-      (Ruby auth → master-access gate → AACI handshake)
+      (Eleanor auth → master-access gate → AACI handshake)
   → createLiveDraft → confirmLiveCommand → dispatchLiveCommand   lib/live/liveCommandPipeline.ts
   → evaluateLivePhaseBDispatch()     lib/domain/src/safety-contracts/livePhaseBDispatchGate.ts
   → arx_live_commands (SENT_TO_MT5_LIVE, authoritative)  +  mt5_commands mirror row (bridged:"LIVE_PHASE_B", transport only)  lib/live/liveCommandPipeline.ts:1753
@@ -178,11 +178,11 @@ allocated capital (`routes/performance.ts:36`) — see §7.
 role guards. Sidebar / MobileBottomNav / CommandPalette all honor `isAdmin`/`isInvestor`
 consistently; no investor/admin nav leak found.
 
-### 3.6 Ruby (AI assistant)
+### 3.6 Eleanor (AI assistant)
 **Expected:** one execution path shared with manual; reported safety state derived per-user;
 advisory surfaces non-executing.
-**Actual (verified):** ✅ matches. Ruby trade actions route through the same
-`executeInstant` → 18-gate path (`instantTrade.ts:277`); `rubyExecutionAuthority` bounds
+**Actual (verified):** ✅ matches. Eleanor trade actions route through the same
+`executeInstant` → 18-gate path (`instantTrade.ts:277`); `eleanorExecutionAuthority` bounds
 capability (`OFF`/`ADVISE_ONLY` refuse; `AI_ASSISTED` permitted per-action; `AI_AUTO`
 defined-not-enabled); reporting surfaces use `deriveAssistantEnvelope`, read-only surfaces
 force `READ_ONLY_PAPER_ENVELOPE`; `scrubUserCopyDeep` strips internal codes.
@@ -202,8 +202,8 @@ honest empty/blocked state — never fabricated.
 | Live fill status | broker ticket required | `mapBridgedLiveOutcome` (no ticket ⇒ `LIVE_FAILED`) | **PASS** |
 | Chart candles + freshness | data-time freshness | `chartDataService` trailing-interval quality | **PASS** |
 | Scanner signal actionability | live-feed gated | truth-caps downgrade non-`LIVE_FEED` | **PASS** |
-| Ruby market read | sufficient clean data | `feedUsable`/`honestInsufficient` neutralizes dirty reads | **PASS** |
-| Ruby news/calendar | connected provider only | returns `connected:false` when unwired | **PASS** |
+| Eleanor market read | sufficient clean data | `feedUsable`/`honestInsufficient` neutralizes dirty reads | **PASS** |
+| Eleanor news/calendar | connected provider only | returns `connected:false` when unwired | **PASS** |
 | EA heartbeat freshness | data-time age | `bridgeHeartbeatAgeSec` vs 15s gate; clock-drift mitigated | **PASS** |
 | Bot/risk settings | persisted + re-read | `bot_settings` / `user_risk_settings` | **PASS** |
 | Strategy / news / session filter toggles | persisted | **local `useState` only — not persisted** (`settings.tsx:107-109`) | **FAIL (Medium)** |
@@ -278,10 +278,10 @@ source — a `200`/no-error alone is never a pass.
 | `mt5_broker` live slot | PARTIAL | Low | passive fall-through until EA pushes ticks (BLOCKED for non-forex live confirm) |
 | SSE tick-stream + poll pause | PASS | — | `chartTickStream`; `visibilitychange` pause |
 
-### 5.9 Ruby AI / Voice / Realtime
+### 5.9 Eleanor AI / Voice / Realtime
 | Function | Verdict | Sev | Evidence |
 | :-- | :-- | :-- | :-- |
-| Permission-bounded executor | PASS | — | `rubyExecutionAuthority` OFF/ADVISE refuse; AI_ASSISTED per-action; AI_AUTO not enabled |
+| Permission-bounded executor | PASS | — | `eleanorExecutionAuthority` OFF/ADVISE refuse; AI_ASSISTED per-action; AI_AUTO not enabled |
 | Derived safety envelope | PASS | — | `deriveAssistantEnvelope`; read-only surfaces force paper |
 | Honest insufficient-data read | PASS | — | `honestInsufficient` neutralizes dirty reads |
 | Standard TTS | PASS | — | AI proxy `AI_INTEGRATIONS_OPENAI_API_KEY` |
@@ -298,7 +298,7 @@ source — a `200`/no-error alone is never a pass.
 ### 5.11 Admin (33 surfaces)
 | Function | Verdict | Sev | Evidence |
 | :-- | :-- | :-- | :-- |
-| Beta Control / Fund Book / Ruby / User / AACI / Master-bridge | PASS | — | reason≥3 + fail-closed audit row; effective-role gate |
+| Beta Control / Fund Book / Eleanor / User / AACI / Master-bridge | PASS | — | reason≥3 + fail-closed audit row; effective-role gate |
 | Effective-vs-real role | PASS | — | preview-as-user auto-downgraded to 403 |
 | Real data (no placeholder controls) | PASS | — | live snapshots / DB truth; masked secrets |
 | Operator bridge mutations (rotate/emergency) | **BLOCKED** | — | gated+audited; live effect needs bridge |
@@ -319,7 +319,7 @@ source — a `200`/no-error alone is never a pass.
 ### 6.1 Dormant-by-design (KEEP — safety scaffold, flag only)
 | Item | Path | Why it stays |
 | :-- | :-- | :-- |
-| `AI_AUTO` authority | `lib/live/instantTrade.ts:182`, `adminRubyExecution.ts` | defined-not-enabled; returns `AI_AUTO_NOT_ENABLED`. Intentional. |
+| `AI_AUTO` authority | `lib/live/instantTrade.ts:182`, `adminEleanorExecution.ts` | defined-not-enabled; returns `AI_AUTO_NOT_ENABLED`. Intentional. |
 | Live-intent review queue | `routes/liveIntent.ts` | admin review surface; audit-only (lot≤0.01, accepted=false). |
 | Legacy live chokepoint | `lib/liveTrading/guard.ts`, `routes/liveTrading.ts`, `routes/broker.ts` | `placeLiveOrderGuarded()` permanently REJECTED; CI-enforced (`check-live-trading-readiness-lock.ts`). Parallel to Phase B by design. |
 
@@ -354,8 +354,8 @@ documentation drift. No fabricated data was found on any live truth surface.
 `BLOCKED_FOR_SUPERVISED_LIVE_SESSION` — not a defect.**
 
 **What is proven (code/config):**
-- One execution path for every source (manual/scanner/chart/Ruby/one-click) →
-  `executeInstant` → draft/confirm/dispatch → **18-gate** evaluator. No second path; Ruby
+- One execution path for every source (manual/scanner/chart/Eleanor/one-click) →
+  `executeInstant` → draft/confirm/dispatch → **18-gate** evaluator. No second path; Eleanor
   uses the same pipeline (`AI_ASSISTED` skips only the extra app-side prompt).
 - Master switch resolves **env AND db** (`ARX_LIVE_BROKER_EXECUTION_ENABLED="true"` in this
   env satisfies **only gate #1** — it bypasses nothing). DB arm flag, per-user approval,
@@ -421,7 +421,7 @@ graded on code-readiness (the real fill is `BLOCKED_FOR_SUPERVISED_LIVE_SESSION`
 | 6 | MT5 Bridge | 90 | A- | PASS | per-user token; v1.55 live; some confirm BLOCKED |
 | 7 | Scanner | 90 | A- | PASS | truth-caps gate actionability |
 | 8 | Chart | 92 | A | PASS | data-time freshness; forming-tip not persisted |
-| 9 | Ruby AI | 93 | A | PASS | bounded executor, derived envelope |
+| 9 | Eleanor AI | 93 | A | PASS | bounded executor, derived envelope |
 | 10 | Risk / Governance | 94 | A | PASS | env AND db; TOCTOU kill-switch; physics for all |
 | 11 | Admin | 94 | A | PASS | reason-gate + fail-closed audit; effective-role |
 | 12 | User Permissions | 95 | A | PASS | per-user isolation; live perms role-independent |

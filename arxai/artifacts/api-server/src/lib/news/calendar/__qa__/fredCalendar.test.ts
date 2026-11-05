@@ -235,9 +235,9 @@ test("6. Deriv synthetics ⇒ no fabricated country events (macro not applicable
   assert.equal(filterEventsForSymbol(all.events, "R_75").length, 0);
 });
 
-// ── 7. Ruby says calendar unavailable when provider missing ──────────────────
+// ── 7. Eleanor says calendar unavailable when provider missing ──────────────────
 
-test("7. Ruby market-provider calendar is unavailable when provider missing", async () => {
+test("7. Eleanor market-provider calendar is unavailable when provider missing", async () => {
   unconfigureNoKey();
   assert.equal(isEconomicCalendarConfigured(), false);
   const mp = getMarketProvider();
@@ -246,9 +246,9 @@ test("7. Ruby market-provider calendar is unavailable when provider missing", as
   assert.equal(cal.events.length, 0); // never fabricates a schedule
 });
 
-// ── 8. Ruby cites an upcoming high-impact event when configured ──────────────
+// ── 8. Eleanor cites an upcoming high-impact event when configured ──────────────
 
-test("8. Ruby market-provider surfaces an upcoming high-impact event when configured", async () => {
+test("8. Eleanor market-provider surfaces an upcoming high-impact event when configured", async () => {
   configure();
   fetcherReturning([rawRelease({ release_id: "u4", release_name: "Employment Situation", date: ymd(2) })]);
   const mp = getMarketProvider();

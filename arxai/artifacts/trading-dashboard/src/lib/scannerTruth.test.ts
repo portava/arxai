@@ -200,7 +200,7 @@ describe("candle status", () => {
     const t = resolveScannerTruth(inputs());
     expect(t.candles.status).toBe("live");
     expect(t.analysis.level).toBe("full");
-    expect(t.ruby.readLevel).toBe("full");
+    expect(t.eleanor.readLevel).toBe("full");
     expect(t.overlays.status).toBe("verified");
     expect(t.actionable).toBe(true);
     expect(t.strip.data.verdict).toBe("Live");
@@ -210,7 +210,7 @@ describe("candle status", () => {
     const t = resolveScannerTruth(inputs({ candleCount: 40 }));
     expect(t.candles.status).toBe("insufficient");
     expect(t.analysis.level).toBe("historical_only");
-    expect(t.ruby.readLevel).toBe("historical_only");
+    expect(t.eleanor.readLevel).toBe("historical_only");
     expect(t.actionable).toBe(false);
     expect(t.strip.data.verdict).toBe("Historical only");
   });
@@ -219,7 +219,7 @@ describe("candle status", () => {
     const t = resolveScannerTruth(inputs({ feedStatus: feed({ quality: "delayed", isLive: false, aiUsable: false }) }));
     expect(t.candles.status).toBe("delayed");
     expect(t.analysis.level).toBe("limited");
-    expect(t.ruby.readLevel).toBe("limited");
+    expect(t.eleanor.readLevel).toBe("limited");
     expect(t.overlays.status).toBe("limited");
     expect(t.strip.data.verdict).toBe("Delayed");
   });
@@ -235,8 +235,8 @@ describe("candle status", () => {
     const t = resolveScannerTruth(inputs({ candleCount: 0, lastClose: null, lastTime: null, feedStatus: feed({ quality: "empty", isLive: false, aiUsable: false }) }));
     expect(t.candles.status).toBe("unavailable");
     expect(t.analysis.level).toBe("blocked");
-    expect(t.ruby.readLevel).toBe("blocked");
-    expect(t.ruby.chartReadAllowed).toBe(false);
+    expect(t.eleanor.readLevel).toBe("blocked");
+    expect(t.eleanor.chartReadAllowed).toBe(false);
     expect(t.overlays.allowed).toBe(false);
     expect(t.strip.data.verdict).toBe("Unavailable");
   });
@@ -325,7 +325,7 @@ describe("source labels are user-safe", () => {
 
 describe("cross-surface consistency (one truth, every surface agrees)", () => {
   // The whole point of Task #391 is that the header strip, the chart panel, and
-  // the advisory read-gate (Ruby Market Read / Timing Intelligence) can never
+  // the advisory read-gate (Eleanor Market Read / Timing Intelligence) can never
   // disagree about whether the market is live. They each read DIFFERENT fields of
   // the SAME resolved truth, so these tests assert those fields stay in lockstep:
   //   • header strip   → strip.data.verdict
@@ -509,14 +509,14 @@ describe("timeframe normalization feeds the correct threshold (Task #464 cross-s
 
 describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE: display may only downgrade, never grant)", () => {
   // The scanner maps its resolved truth into the ONE shared Trade Health
-  // readiness verdict (resolveScannerTruth().readiness). Ruby's chart read
+  // readiness verdict (resolveScannerTruth().readiness). Eleanor's chart read
   // composes the SAME pure contract (evaluateTradeHealthReadiness) and surfaces
   // its displayLabel / userFacingTrustLine / dataFreshness VERBATIM, so the two
   // surfaces agree by construction:
   //   1. the pure contract is deterministic (identical inputs ⇒ identical
   //      verdict — locked by tradeHealthReadinessContract.test.ts), and
   //   2. each surface feeds the contract faithfully (these tests lock the
-  //      scanner side; the Ruby side is a verbatim passthrough).
+  //      scanner side; the Eleanor side is a verbatim passthrough).
   // The affordance flags are DISPLAY CEILINGS only — they may hide a button,
   // never reveal one the execution stack forbids. None of these inputs carries
   // any privilege/role, so nothing here can upgrade an affordance.
@@ -594,13 +594,13 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
 
   it("readiness IS a faithful contract evaluation of the scanner's RAW facts (independent reconstruction, no echo)", () => {
     // Rebuild the contract inputs INDEPENDENTLY from the scanner's published RAW
-    // facts (candle status, analysis + ruby read levels, bar counts, the
+    // facts (candle status, analysis + eleanor read levels, bar counts, the
     // per-timeframe floor) — NOT from the verdict's own feedVerdict/readLayer,
     // which the pure contract echoes back verbatim (echoing them would prove
     // nothing about the scanner's raw-facts → contract-inputs MAPPING — the bug a
     // prior version of this test masked). Mirror the adapter exactly: the
     // structure/setup bands are NOT passed (they default inside the contract).
-    // Exact equality proves the scanner fed the SAME shared contract Ruby feeds,
+    // Exact equality proves the scanner fed the SAME shared contract Eleanor feeds,
     // so the two surfaces cannot drift.
     const cases: ScannerTruthInputs[] = [
       inputs(),
@@ -626,7 +626,7 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
           t.candles.status === "insufficient" ||
           count < minRequired
             ? "INSUFFICIENT"
-            : t.ruby.readLevel === "full" && t.analysis.level === "full"
+            : t.eleanor.readLevel === "full" && t.analysis.level === "full"
               ? "FULL"
               : "STRUCTURAL_ONLY",
       });
@@ -635,7 +635,7 @@ describe("trade-health readiness DISPLAY contract — scanner adapter (HARD RULE
   });
 });
 
-describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity (one truth, no drift)", () => {
+describe("trade-health readiness — shared floor + direct Eleanor↔Scanner parity (one truth, no drift)", () => {
   const AFFORDANCES = [
     "mayDescribeSetup",
     "mayShowTradeButton",
@@ -644,7 +644,7 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
   ] as const;
 
   it("shared domain floor matches the scanner threshold table for EVERY timeframe (drift-lock)", () => {
-    // requiredClosedBarsForTimeframe (domain, fed to Ruby) and the scanner's
+    // requiredClosedBarsForTimeframe (domain, fed to Eleanor) and the scanner's
     // TIMEFRAME_THRESHOLDS.minCandles MUST stay identical or the two surfaces
     // would label the same symbol+tf differently in the thin-history window.
     for (const key of Object.keys(TIMEFRAME_THRESHOLDS)) {
@@ -674,7 +674,7 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
     }
   });
 
-  it("live 200-bar read: scanner(1m + thr floor) and ruby(M1 + shared floor) compose a byte-identical verdict", () => {
+  it("live 200-bar read: scanner(1m + thr floor) and eleanor(M1 + shared floor) compose a byte-identical verdict", () => {
     const facts = {
       symbol: "EURUSD",
       freshnessVerdict: "LIVE" as const,
@@ -686,21 +686,21 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
       minimumRequiredCandles: thresholdsFor("1m").minCandles,
       readLayer: "FULL",
     });
-    const ruby = evaluateTradeHealthReadiness({
+    const eleanor = evaluateTradeHealthReadiness({
       ...facts,
       timeframe: "M1",
       minimumRequiredCandles: requiredClosedBarsForTimeframe("M1"),
       readLayer: "FULL",
     });
-    expect(ruby).toEqual(scanner);
+    expect(eleanor).toEqual(scanner);
     expect(scanner.displayLabel).toBe("Live-confirmed");
   });
 
-  it("100-bar 1m edge: the shared floor forces Ruby to the SAME 'Building history' label as Scanner", () => {
-    // The EXACT pre-fix divergence. At 100 closed 1m bars (< the 150 floor) Ruby
+  it("100-bar 1m edge: the shared floor forces Eleanor to the SAME 'Building history' label as Scanner", () => {
+    // The EXACT pre-fix divergence. At 100 closed 1m bars (< the 150 floor) Eleanor
     // used to fall back to a floor of 5 and read "Live-confirmed" while the
-    // Scanner read "Building history". Ruby is now fed the SAME per-timeframe
-    // floor, so it downgrades identically — EVEN though Ruby's own read layer is
+    // Scanner read "Building history". Eleanor is now fed the SAME per-timeframe
+    // floor, so it downgrades identically — EVEN though Eleanor's own read layer is
     // still FULL: the floor (not the read layer) drives the label here.
     const facts = {
       symbol: "EURUSD",
@@ -713,20 +713,20 @@ describe("trade-health readiness — shared floor + direct Ruby↔Scanner parity
       minimumRequiredCandles: thresholdsFor("1m").minCandles,
       readLayer: "INSUFFICIENT", // scanner maps count<minCandles → INSUFFICIENT
     });
-    const ruby = evaluateTradeHealthReadiness({
+    const eleanor = evaluateTradeHealthReadiness({
       ...facts,
       timeframe: "M1",
       minimumRequiredCandles: requiredClosedBarsForTimeframe("M1"),
-      readLayer: "FULL", // Ruby's own read-layer gating still says FULL at 100 bars
+      readLayer: "FULL", // Eleanor's own read-layer gating still says FULL at 100 bars
     });
-    expect(ruby.displayLabel).toBe("Building history");
+    expect(eleanor.displayLabel).toBe("Building history");
     expect(scanner.displayLabel).toBe("Building history");
-    expect(ruby.dataFreshness).toBe("AWAITING");
+    expect(eleanor.dataFreshness).toBe("AWAITING");
     expect(scanner.dataFreshness).toBe("AWAITING");
     // tf token normalized (M1 ≡ 1m) ⇒ identical trust line despite the spelling.
-    expect(ruby.userFacingTrustLine).toBe(scanner.userFacingTrustLine);
+    expect(eleanor.userFacingTrustLine).toBe(scanner.userFacingTrustLine);
     for (const flag of AFFORDANCES) {
-      expect(ruby[flag], `ruby ${flag}`).toBe(false);
+      expect(eleanor[flag], `eleanor ${flag}`).toBe(false);
       expect(scanner[flag], `scanner ${flag}`).toBe(false);
     }
   });

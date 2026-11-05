@@ -183,11 +183,11 @@ test("chartConfirmed !== true withholds the actionable label", () => {
 
 // ── Closed-bar sufficiency cap (ONE DATA-SUFFICIENCY TRUTH) ─────────────────
 
-test("LIVE feed with too few closed bars (<MIN) is never actionable — the exact scanner/Ruby contradiction", () => {
+test("LIVE feed with too few closed bars (<MIN) is never actionable — the exact scanner/Eleanor contradiction", () => {
   // The feed IS live (so the step-5 data-source cap passes), but there are too
   // few closed bars to analyse. The SHARED sufficiency verdict — the same one
-  // Ruby consumes — must demote the read so the scanner can't show a confident
-  // setup while Ruby says "candles syncing".
+  // Eleanor consumes — must demote the read so the scanner can't show a confident
+  // setup while Eleanor says "candles syncing".
   const r = computeFinalRead(opp({
     dataSource: "LIVE_FEED",
     newsContext: news(),
@@ -222,7 +222,7 @@ test("LIVE feed with sufficient bars + a clean verdict is NOT demoted by the suf
 test("non-live feed with too few closed bars surfaces the SAME shared insufficiency reason (not just freshness copy)", () => {
   // LIVE_DELAYED already floors actionability via the step-5 freshness cap, but
   // the shared sufficiency verdict must STILL be the reason shown so scanner +
-  // Ruby agree on WHY for the same symbol/timeframe (the 'one reason' contract).
+  // Eleanor agree on WHY for the same symbol/timeframe (the 'one reason' contract).
   // The cap is downgrade-only, so on an already-floored non-live row it only
   // unifies the reason copy.
   const r = computeFinalRead(opp({

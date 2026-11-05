@@ -3,10 +3,10 @@ BUILD PHASE — Per-User Private Trading Workspace + Shared Master Ledger
 Use the current codebase. Do not rebuild unrelated systems.
 
 Goal:
-Make every user feel like they are using ARX AI by themselves, even when the backend uses a shared master MT5 bridge. Each user must have a private trading workspace, private trade history, private P/L, private Ruby context, private notifications, and private account-like ledger view. No user should see or feel another user’s activity.
+Make every user feel like they are using ARX AI by themselves, even when the backend uses a shared master MT5 bridge. Each user must have a private trading workspace, private trade history, private P/L, private Eleanor context, private notifications, and private account-like ledger view. No user should see or feel another user’s activity.
 
 1. Inspect current user/session/account model first
-- Inspect current auth, user sessions, account mode handling, trade command model, queue, positions, P/L tracking, scanner, Ruby chat, notifications, and admin approval systems.
+- Inspect current auth, user sessions, account mode handling, trade command model, queue, positions, P/L tracking, scanner, Eleanor chat, notifications, and admin approval systems.
 - Reuse existing models and routes where possible.
 - Do not create a second disconnected account system.
 - Only add the missing per-user isolation and ledger pieces.
@@ -22,7 +22,7 @@ Each user should have their own isolated app experience:
 - My trade history
 - My P/L calendar
 - My risk settings
-- My Ruby chat memory/context
+- My Eleanor chat memory/context
 - My notifications
 - My one-click settings
 - My broker/bridge/account mode status
@@ -73,7 +73,7 @@ Ledger entries should include:
 - status
 - reservationId
 - risk allocation used
-- source page: scanner, chart, Ruby chat, manual ticket, etc.
+- source page: scanner, chart, Eleanor chat, manual ticket, etc.
 - createdAt / updatedAt
 
 The ledger must support partial fills, rejects, failed commands, cancelled orders, and needs-review states if the queue supports them.
@@ -113,18 +113,18 @@ When a user views open positions:
 - If multiple users are in the same symbol, each user should only see their own entry, lot size, SL/TP, P/L, and status.
 - User A must not be able to close, edit, view, or affect User B’s position.
 
-8. Personal Ruby context
-Ruby should feel private to each user:
-- Ruby should only reference that user’s trades, risk settings, watchlist, scanner selections, chat history, and account mode.
-- Ruby should not mention other users, shared account totals, or global bridge activity to normal users.
-- Ruby can explain:
+8. Personal Eleanor context
+Eleanor should feel private to each user:
+- Eleanor should only reference that user’s trades, risk settings, watchlist, scanner selections, chat history, and account mode.
+- Eleanor should not mention other users, shared account totals, or global bridge activity to normal users.
+- Eleanor can explain:
   - “your trade”
   - “your open risk”
   - “your P/L today”
   - “your active position”
   - “your trade is queued”
   - “your account is waiting for admin approval”
-- Ruby should not say a trade belongs to the user unless it is mapped to that user.
+- Eleanor should not say a trade belongs to the user unless it is mapped to that user.
 
 9. Notifications must be private
 Each user should only receive notifications for their own:
@@ -134,7 +134,7 @@ Each user should only receive notifications for their own:
 - trade closed
 - SL/TP update
 - queue status
-- Ruby warning
+- Eleanor warning
 - risk alert
 - admin approval status
 - bridge/account mode issue that affects them
@@ -148,7 +148,7 @@ Normal users see:
 - only their own trading workspace
 - their own allocated balance/risk/P/L
 - their own positions and history
-- their own Ruby explanations
+- their own Eleanor explanations
 
 Admins see:
 - shared master account overview
@@ -167,14 +167,14 @@ Add strict access checks so:
 - every trade action validates ownership
 - every ledger lookup validates ownership
 - every notification lookup validates ownership
-- every Ruby context lookup validates ownership
+- every Eleanor context lookup validates ownership
 - admin-only data is blocked from normal users
 
 Do not trust frontend userId. Use authenticated session userId on the backend.
 
 12. UI/UX feeling
 Clean up the user-facing experience so it feels personal:
-- Use “My Trades,” “My Performance,” “My Risk,” “My Watchlist,” “My Ruby Notes”
+- Use “My Trades,” “My Performance,” “My Risk,” “My Watchlist,” “My Eleanor Notes”
 - Avoid labels that expose shared infrastructure like “shared master account” to normal users unless needed for transparency.
 - Show simple status language:
   - Connected
@@ -199,14 +199,14 @@ Add or update tests for:
 - User A cannot see User B closed trades
 - User A cannot see User B P/L calendar
 - User A cannot see User B notifications
-- User A cannot ask Ruby about User B trade
+- User A cannot ask Eleanor about User B trade
 - User A cannot close/edit User B trade
 - shared master trade maps to the correct user ledger
 - two users trading same symbol receive separate P/L
 - admin can see per-user allocations
 - normal user cannot see shared master global totals
 - unmapped master execution becomes NEEDS_REVIEW
-- private Ruby context only uses current user data
+- private Eleanor context only uses current user data
 - no secrets exposed
 - no live command created during tests without full approval
 

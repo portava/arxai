@@ -2,7 +2,7 @@ Run a dedicated end-to-end governance and AI-layer involvement test for the ARX 
 
 This is not a visual-only QA. The purpose is to prove the new AI governance layer is actually active, purposeful, connected to app actions, and influencing decisions where appropriate.
 
-Do not just confirm that agent records, pages, or database tables exist. Prove that the agents are involved in real app workflows and that their outputs affect scanner decisions, Ruby responses, risk downgrades, trade/no-trade recommendations, speed routing, learning records, and admin visibility.
+Do not just confirm that agent records, pages, or database tables exist. Prove that the agents are involved in real app workflows and that their outputs affect scanner decisions, Eleanor responses, risk downgrades, trade/no-trade recommendations, speed routing, learning records, and admin visibility.
 
 Do not rebuild the app. Do not remove existing features. Do not introduce paper trading or simulation as a product feature. Do not block the existing live-trading mission. This is a test, repair, and integration pass for the new governance/AI layer.
 
@@ -13,7 +13,7 @@ Verify that the AI governance layer is not decorative.
 
 Confirm that each governance component has a real purpose and is called during the correct app actions:
 
-1. Ruby
+1. Eleanor
 2. Market Structure AI
 3. Scalp AI
 4. Risk AI
@@ -48,7 +48,7 @@ ABSOLUTE RULES
 
 1. Do not claim an agent is functional just because it exists in the database.
 2. Do not claim a page works if it uses hardcoded/fake data.
-3. Do not claim governance works unless it changes routing, scoring, Ruby wording, scanner ranking, risk decisions, admin state, or stored records.
+3. Do not claim governance works unless it changes routing, scoring, Eleanor wording, scanner ranking, risk decisions, admin state, or stored records.
 4. Do not allow every agent to run on every action.
 5. Do not let deep governance slow live execution.
 6. Do not let new or shadow agents influence live trade recommendations.
@@ -56,7 +56,7 @@ ABSOLUTE RULES
 8. Do not ignore broken or missing integrations.
 9. If an agent exists but is not connected, connect it or mark it clearly as not built.
 10. If an agent slows the app without value, make it step back and log why.
-11. Ruby must remain the clean user-facing voice.
+11. Eleanor must remain the clean user-facing voice.
 
 ============================================================
 STEP 1 — MAP EVERY APP ACTION TO GOVERNANCE
@@ -68,8 +68,8 @@ Inspect the app and list every major action, including:
 * User login
 * Admin login
 * Investor login
-* Ruby chat message
-* Ruby market analysis request
+* Eleanor chat message
+* Eleanor market analysis request
 * Scanner page load
 * Scanner refresh
 * Focus scanner search
@@ -130,7 +130,7 @@ Each major app action should create a governance trace record/log showing:
 * step_back_reasons
 * agent_outputs
 * final_governance_decision
-* Ruby_summary_used boolean
+* Eleanor_summary_used boolean
 * risk_veto_used boolean
 * prediction_locked boolean
 * review_created boolean
@@ -146,23 +146,23 @@ Purpose:
 I need proof that agents are actually involved in workflows and not just sitting in tables.
 
 ============================================================
-STEP 3 — TEST RUBY GOVERNANCE INVOLVEMENT
+STEP 3 — TEST ELEANOR GOVERNANCE INVOLVEMENT
 
-Test Ruby with real app requests.
+Test Eleanor with real app requests.
 
 Run these tests:
 
-1. User asks Ruby for market analysis.
+1. User asks Eleanor for market analysis.
     Expected:
 
-* Ruby calls or receives prepared output from Market Structure AI.
+* Eleanor calls or receives prepared output from Market Structure AI.
 * Risk AI checks major dangers.
 * Entry/Exit agents contribute only if trade levels are discussed.
 * Traffic Controller decides which agents are needed.
 * Prediction journal records agent opinions if a trade idea/no-trade decision is formed.
-* Ruby gives a clean plain-English summary.
+* Eleanor gives a clean plain-English summary.
 
-2. User asks Ruby, “Is this a scalp?”
+2. User asks Eleanor, “Is this a scalp?”
     Expected:
 
 * Traffic Controller enters Scalp Mode.
@@ -172,24 +172,24 @@ Run these tests:
 * Exit / TP AI is active.
 * Market Structure AI performs fast higher-timeframe check.
 * Nonessential agents step back.
-* Ruby summarizes consensus.
+* Eleanor summarizes consensus.
 
-3. User asks Ruby why a trade is risky.
+3. User asks Eleanor why a trade is risky.
     Expected:
 
 * Risk AI leads.
 * Entry Timing AI checks late/chase behavior.
 * Market Structure AI checks major zones.
-* Ruby explains clearly.
+* Eleanor explains clearly.
 
 4. User asks what agents are saying.
     Expected:
 
-* Ruby gives summarized consensus, not raw dumps.
+* Eleanor gives summarized consensus, not raw dumps.
 * Admin may see more detail than regular user.
 * Internal trace shows which agents contributed.
 
-Fix if Ruby:
+Fix if Eleanor:
 
 * answers without governance involvement,
 * ignores Risk AI,
@@ -242,7 +242,7 @@ E. Scalp opportunity request
 * Only fast scalp-critical agents run.
 * Long/deep agents step back.
 * Output is fast and useful.
-* Ruby explanation is short and actionable.
+* Eleanor explanation is short and actionable.
 
 For every scanner test, verify:
 
@@ -270,7 +270,7 @@ Expected:
 * Risk AI checks trade danger.
 * Entry AI checks entry quality.
 * Exit AI checks TP/SL realism.
-* Ruby can summarize the setup.
+* Eleanor can summarize the setup.
 * Prediction is truth-locked if an official recommendation is formed.
 
 B. Trade confirmation
@@ -320,7 +320,7 @@ Run actions in each mode:
 
 * Execution AI
 * Risk AI only if critical
-* Ruby only for short status if needed
+* Eleanor only for short status if needed
 
 Expected sleeping/background:
 
@@ -356,7 +356,7 @@ Expected step-back:
 * Risk AI
 * relevant specialists
 
-4. Ruby Explanation Mode
+4. Eleanor Explanation Mode
     More agents may contribute because speed is less critical.
 5. Learning Mode
     Only background learning/review agents should run.
@@ -393,7 +393,7 @@ For each agent, answer in the QA report:
 
 Test agents:
 
-Ruby:
+Eleanor:
 
 * User-facing summary and coordination.
 
@@ -469,7 +469,7 @@ Expected:
 * It does not simply average votes.
 * It checks specialty authority, recent performance, risk veto, setup type, and current mode.
 * Final decision is downgraded to caution/watchlist/no-trade if risk dominates.
-* Ruby summary reflects the downgrade.
+* Eleanor summary reflects the downgrade.
 * Disagreement is saved.
 * Later review can grade which agents were right.
 
@@ -605,7 +605,7 @@ Test:
 * Confirm agent moves to Fast Mode, Silent Support, On-Demand Only, Sleeping, or Background.
 * Confirm step-back reason is logged.
 * Confirm Traffic Controller respects the step-back status.
-* Confirm Ruby/scanner remains faster.
+* Confirm Eleanor/scanner remains faster.
 * Confirm step-back can be rewarded when correct.
 
 Expected examples:
@@ -627,7 +627,7 @@ Scenario:
 * Scanner finds weak setup.
 * Risk AI rejects.
 * Entry AI cautions.
-* Ruby says no-trade/watchlist.
+* Eleanor says no-trade/watchlist.
 * Prediction locks as no-trade/reject.
 * Later outcome shows setup failed or remained bad.
 * Risk AI/Entry AI/Scanner AI receive reward.
@@ -636,7 +636,7 @@ Expected:
 
 * No-trade record exists.
 * Protection score updates.
-* Ruby can summarize avoided loss.
+* Eleanor can summarize avoided loss.
 * Household Report counts no-trade win.
 
 Fix if only executed trades are scored.
@@ -691,7 +691,7 @@ Admin:
 
 Trader/user:
 
-* Can use Ruby/scanner.
+* Can use Eleanor/scanner.
 * Can receive summarized agent consensus.
 * Cannot manipulate agent scores/ranks/authority.
 * Cannot access internal admin-only logs unless allowed.
@@ -730,7 +730,7 @@ Run these before/after or controlled comparisons:
 6. Agent Factory test
     Good agent creates child in Shadow Mode only.
 7. Speed test
-    Slow agent steps back and scanner/Ruby gets faster or avoids extra delay.
+    Slow agent steps back and scanner/Eleanor gets faster or avoids extra delay.
 
 If the governance layer does not change any decisions, routing, scoring, state, or logs, it is not functional. Fix it.
 

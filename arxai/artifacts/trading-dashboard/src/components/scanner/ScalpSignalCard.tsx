@@ -16,7 +16,7 @@ import {
   SCANNER_ACTIONABILITY_UI,
   type ScannerActionability,
 } from "@/lib/scannerActionability";
-import { RubyChartRead } from "@/components/scanner/RubyChartRead";
+import { EleanorChartRead } from "@/components/scanner/EleanorChartRead";
 import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
 import {
   scalpStatusToSetup,
@@ -44,12 +44,12 @@ import {
   fmtMoney,
   fmtRr,
 } from "./scalpLabels";
-import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromScalp } from "@/lib/rubyReasoningBlock";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
+import { buildReasoningFromScalp } from "@/lib/eleanorReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 
 // ScalpSignalCard — one shared, mobile-clean card that renders a single
-// Ruby Scalp Signal (the `ScalpResult` the shared engine produced). Used by
+// Eleanor Scalp Signal (the `ScalpResult` the shared engine produced). Used by
 // the Focus card, the Broad-scan ranking picks, and the Builder result so
 // the three surfaces always look and behave identically.
 //
@@ -88,7 +88,7 @@ function Tip({
   );
 }
 
-// The scalp engine reads M1 (see `evaluateMarketDataSufficiency` + RubyChartRead
+// The scalp engine reads M1 (see `evaluateMarketDataSufficiency` + EleanorChartRead
 // below, both timeframe "M1"). Its lifted action verdict is therefore the M1
 // verdict — published under the SCANNER BUS form of M1 ("1m") so it keys
 // identically to what the header reads via `coerceVisibleTimeframe(selectedTf)`.
@@ -113,14 +113,14 @@ export function ScalpSignalCard({
 }) {
   const r = result;
   const { name } = useAssistantName();
-  const [askRuby, setAskRuby] = useState(false);
+  const [askEleanor, setAskEleanor] = useState(false);
 
   const flame = r.flame;
   const flameLive = flame != null && !flame.blind;
 
   // READABILITY CONTRACT (display-only): route the direction/confidence affordance
   // through the ONE shared data-sufficiency contract instead of hard-coding a
-  // status check, so this surface can never drift from the scanner, Ruby, and
+  // status check, so this surface can never drift from the scanner, Eleanor, and
   // chart reads (identical mayShow* flags + reasonCode app-wide). The scalp ENGINE
   // is the authority on scalp data readiness — it collapses ANY non-live /
   // insufficient read to AWAITING_DATA across BOTH the candle-backed Focus path
@@ -161,7 +161,7 @@ export function ScalpSignalCard({
   // passes onActionability so the header's Action cell shows EXACTLY this card's
   // setup-aware verdict instead of its own data-only one. Keyed by r.symbol (the
   // engine's bare symbol) AND the scalp's bus timeframe ("1m") — matching the
-  // rubyReadStore symbol+timeframe convention — so the header only adopts this
+  // eleanorReadStore symbol+timeframe convention — so the header only adopts this
   // verdict when the user is actually viewing 1m, and a timeframe switch can
   // never leave a stale M1 verdict showing under another timeframe. MUST sit
   // after `actionability` is declared (temporal-dead-zone trap). Other render
@@ -193,7 +193,7 @@ export function ScalpSignalCard({
           <CardTitle className="text-base flex items-center gap-2 min-w-0">
             <span className="truncate">{r.displayName || r.symbol}</span>
             {highlightLabel && (
-              <Badge className="bg-ruby/15 text-ruby border-ruby/30 text-[10px] shrink-0">
+              <Badge className="bg-eleanor/15 text-eleanor border-eleanor/30 text-[10px] shrink-0">
                 {highlightLabel}
               </Badge>
             )}
@@ -389,13 +389,13 @@ export function ScalpSignalCard({
           </div>
         )}
 
-        {/* ONE standardized, ALWAYS-VISIBLE Ruby Reasoning Block (no collapse).
+        {/* ONE standardized, ALWAYS-VISIBLE Eleanor Reasoning Block (no collapse).
             The scalp engine collapses any non-live / insufficient read to
             AWAITING_DATA, which the builder turns into WAIT + the limitation in
             Feed/Data with no fabricated direction or levels. Display only — this
             grants no execution permission; "Build Scalp Trade" still routes
             through every server gate. */}
-        <RubyReasoningBlock
+        <EleanorReasoningBlock
           data={buildReasoningFromScalp({
             result: r,
             patternLabel: flameLive && flame ? FLAME_SETUP_LABEL[flame.setupType] : null,
@@ -445,16 +445,16 @@ export function ScalpSignalCard({
             <Button
               variant="outline"
               className="h-11 text-sm"
-              onClick={() => setAskRuby((v) => !v)}
-              data-testid={`scalp-ask-ruby-${r.symbol}`}
+              onClick={() => setAskEleanor((v) => !v)}
+              data-testid={`scalp-ask-eleanor-${r.symbol}`}
             >
               <Sparkles className="h-4 w-4 mr-1" />Ask {name}
             </Button>
           )}
         </div>
 
-        {askRuby && (
-          <RubyChartRead
+        {askEleanor && (
+          <EleanorChartRead
             symbol={r.symbol}
             timeframe="M1"
             draft={

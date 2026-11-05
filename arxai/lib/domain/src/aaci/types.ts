@@ -11,7 +11,7 @@
 //   AACI can only ADD caution, never remove an existing block.
 // - Authority order is fixed and one-directional: Admin governance > funding /
 //   allocation > kill switches > Risk Governor hard blocks > bridge/data health >
-//   AACI cohesion > Ruby / Self-Trade intelligence > agent strategy.
+//   AACI cohesion > Eleanor / Self-Trade intelligence > agent strategy.
 // - FAIL-OPEN to honest UNKNOWN / empty. Missing inputs are labelled, never
 //   fabricated. No sim / mock / placeholder values ever masquerade as truth.
 // - Per-user isolation on every read. Admin-only diagnostic detail; regular
@@ -98,7 +98,7 @@ export interface AaciSharedTruthSnapshot {
     executionSymbol?: string;
     scannerSymbol?: string;
     chartSymbol?: string;
-    rubySymbol?: string;
+    eleanorSymbol?: string;
   };
 
   account: {
@@ -141,7 +141,7 @@ export interface AaciSharedTruthSnapshot {
     lastUpdated?: string;
   };
 
-  ruby?: {
+  eleanor?: {
     bias?: AaciDirectionalBias;
     confidence?: number;
     explanationReady?: boolean;
@@ -211,7 +211,7 @@ export interface AaciSharedTruthSnapshot {
     HistoricalLiveMerge: "PASS" | "WARN" | "FAIL";
     BrokerPriceAlignment: "PASS" | "WARN" | "FAIL";
     RenderHealth: "PASS" | "WARN" | "FAIL";
-    RubyReadAllowed: "PASS" | "WARN" | "FAIL";
+    EleanorReadAllowed: "PASS" | "WARN" | "FAIL";
     SelfTradeChartAllowed: "PASS" | "WARN" | "FAIL";
     overall: "PASS" | "WARN" | "FAIL";
     chartTruthScore: number;
@@ -368,7 +368,7 @@ export interface AaciScoreBreakdown {
 
 // ── Decision object ─────────────────────────────────────────────────────────
 
-export const AACI_ACTOR_TYPES = ["user", "ruby", "self_trade_agent", "admin", "system"] as const;
+export const AACI_ACTOR_TYPES = ["user", "eleanor", "self_trade_agent", "admin", "system"] as const;
 export type AaciActorType = (typeof AACI_ACTOR_TYPES)[number];
 
 export const AACI_RECOMMENDED_ACTIONS = [

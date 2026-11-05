@@ -18,7 +18,7 @@ CURRENT PROBLEMS FROM SCREENSHOTS:
   - POST /api/admin/master-bridge/snapshot
 - Admin sees technical architecture instructions that should not be in the main UI.
 - Admin controls are spread across confusing pages.
-- Bottom nav and Ruby bubble cover controls/content.
+- Bottom nav and Eleanor bubble cover controls/content.
 - Toggle buttons look active but do not reliably save or update state.
 
 REQUIREMENTS:
@@ -62,7 +62,7 @@ Fix broken switches in:
 - Account Access
 - Trading Access
 - Bridge Access
-- Ruby / AI Access
+- Eleanor / AI Access
 - Scanner Access
 - Risk Limits
 - Push Settings
@@ -96,10 +96,10 @@ Bridge Access:
 - Personal MT5 Bridge: ON/OFF
 - Shared/Master Bridge: ON/OFF
 
-Ruby / AI:
-- Ruby Chat: ON/OFF
-- Ruby Voice: ON/OFF
-- Ruby Auto-Listen: ON/OFF
+Eleanor / AI:
+- Eleanor Chat: ON/OFF
+- Eleanor Voice: ON/OFF
+- Eleanor Auto-Listen: ON/OFF
 - News Intelligence: ON/OFF
 - Historical Backtest Intelligence: ON/OFF
 
@@ -192,7 +192,7 @@ For regular low-risk actions:
 - Keep labels simple.
 - Hide backend/internal names.
 - Make mobile layout clean.
-- Make sure bottom nav and Ruby bubble do not cover important buttons.
+- Make sure bottom nav and Eleanor bubble do not cover important buttons.
 - Add enough bottom padding so controls are reachable.
 
 9. AUDIT LOG
@@ -234,6 +234,6 @@ Before stopping, verify:
 - User search still finds andraie.co@gmail.com.
 - Test users remain hidden from normal admin user lists.
 - Regular users cannot see admin/operator controls.
-- Login, scanner, Ruby, trade modal, bridge status, and bottom navigation still work.
+- Login, scanner, Eleanor, trade modal, bridge status, and bottom navigation still work.
 
 Reuse existing code where possible. Do not rebuild unrelated pages. Fix the broken controls and simplify the admin workflow.

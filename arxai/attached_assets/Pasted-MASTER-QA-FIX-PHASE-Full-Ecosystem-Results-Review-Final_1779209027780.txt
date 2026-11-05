@@ -45,7 +45,7 @@ Fix any issue involving:
 - invite gate bypass
 - beta cap bypass
 - live safety gate bypass
-- Ruby leaking user/admin/secret data
+- Eleanor leaking user/admin/secret data
 - voice bypassing confirmation
 - scanner-to-trade bypassing confirmation
 - one-click safety failure
@@ -70,7 +70,7 @@ Verify saved features specifically:
 - saved scanner selections
 - saved market notes
 - saved trade ideas
-- saved Ruby memory
+- saved Eleanor memory
 - saved chat history
 - saved alerts
 - saved calendar events
@@ -84,12 +84,12 @@ Rules:
 - clears from UI on logout
 - scoped to authenticated userId
 - User A cannot see User B saved items
-- Ruby only references current user saved data
+- Eleanor only references current user saved data
 
 Fix broken saved-feature behavior.
 
-4. Ruby intelligence final check
-Verify Ruby can:
+4. Eleanor intelligence final check
+Verify Eleanor can:
 - explain the full app
 - explain every account mode
 - explain onboarding status
@@ -104,7 +104,7 @@ Verify Ruby can:
 - remember user preferences safely
 - clear memory when requested
 
-Ruby must not:
+Eleanor must not:
 - promise profits
 - claim legal approval
 - expose another user
@@ -112,7 +112,7 @@ Ruby must not:
 - expose secrets
 - claim a trade fired unless confirmed
 
-Fix any Ruby context, memory, or prompt boundary issue.
+Fix any Eleanor context, memory, or prompt boundary issue.
 
 5. Scanner/watch calendar/alert final check
 Verify:
@@ -126,8 +126,8 @@ Verify:
 - alert calendar works or missing parts are clearly listed
 - alerts trigger privately
 - alerts do not spam
-- economic calendar connects to Ruby/scanner
-- impact calendar connects to Ruby/scanner
+- economic calendar connects to Eleanor/scanner
+- impact calendar connects to Eleanor/scanner
 - high-impact events can create warnings
 - user can dismiss alerts
 - notification center receives alerts privately
@@ -181,8 +181,8 @@ It must:
 - snapshot arx_live_commands before
 - run auth/invite tests
 - run user isolation tests
-- run Ruby intelligence tests
-- run Ruby voice guardrail tests
+- run Eleanor intelligence tests
+- run Eleanor voice guardrail tests
 - run scanner/watchlist/alert tests
 - run trade ticket safety tests
 - run queue/concurrency tests
@@ -208,7 +208,7 @@ Include:
 - fixed items
 - deferred items
 - manual QA items
-- Ruby intelligence status
+- Eleanor intelligence status
 - scanner/watch/calendar alert status
 - saved feature status
 - admin/user/invite status

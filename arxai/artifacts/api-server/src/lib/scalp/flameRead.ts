@@ -1,4 +1,4 @@
-// Ruby Flame Scalp — flame-reading core (pure, deterministic).
+// Eleanor Flame Scalp — flame-reading core (pure, deterministic).
 //
 // A "flame" is a running momentum burst. This module reads the live candle
 // window and the current price geometry to answer the human questions a scalper

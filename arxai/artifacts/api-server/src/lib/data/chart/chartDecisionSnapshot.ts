@@ -71,7 +71,7 @@ export interface ChartDecisionSnapshot {
    * additional information. MUST NOT be removed or modified by any caller.
    */
   replayNote: "Point-in-time snapshot — replay must only judge with data known at capturedAt; any later-known information must be explicitly labelled.";
-  /** Source that triggered the snapshot (e.g. "chart_read", "ruby_draft_read"). */
+  /** Source that triggered the snapshot (e.g. "chart_read", "eleanor_draft_read"). */
   source: string;
 }
 

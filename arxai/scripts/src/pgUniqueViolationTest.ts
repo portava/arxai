@@ -6,7 +6,7 @@
 //
 // This is the regression guard for the in-transaction duplicate-detection path
 // shared by adminWaterfall (run/reverse inserts run inside a tx), meAssistant's
-// recordAndExecuteRuby, and agentEcosystem's proposeAgentCreationRequest.
+// recordAndExecuteEleanor, and agentEcosystem's proposeAgentCreationRequest.
 //
 // Run: pnpm --filter @workspace/scripts run test:pg-unique-violation
 import { isUniqueViolation, isPgErrorCode } from "../../artifacts/api-server/src/lib/pgError.js";

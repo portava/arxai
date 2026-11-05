@@ -1,12 +1,12 @@
 // Phase 1 — Server adapter for the Live-Position Truth resolver.
 //
-// Builds the pure `PositionTruthInput` from the two row shapes Ruby/Eleanor and
+// Builds the pure `PositionTruthInput` from the two row shapes Eleanor/Eleanor and
 // the open-trade surfaces actually read — `live_positions` (USER_OWNED_MT5) and
 // `shared_trade_attribution` (SHARED_MASTER_MT5) — and splits a batch into
 // verified-vs-unsynced/incomplete buckets for callers.
 //
 // This is the ONLY place that translates DB rows into the trust contract, so the
-// resolver stays pure and every caller (Ruby tools, totals checks, tests) shares
+// resolver stays pure and every caller (Eleanor tools, totals checks, tests) shares
 // one mapping. It is read-only and block-only: it never mutates rows and never
 // grants execution.
 

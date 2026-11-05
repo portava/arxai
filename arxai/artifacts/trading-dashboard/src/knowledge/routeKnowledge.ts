@@ -138,8 +138,8 @@ export const ROUTE_KNOWLEDGE: RouteKnowledge[] = [
   // ── Centers (markets/forex/indices/etc.) ───────────────────────────────
   // P0-4 — these four centers have NO market-data provider wired. They render
   // an honest not-connected state (no levels, no bias, no confidence, no ATR).
-  // Ruby reads these descriptions, so they must say so plainly: previously the
-  // pages served Math.random()-derived numbers and Ruby described the pages as
+  // Eleanor reads these descriptions, so they must say so plainly: previously the
+  // pages served Math.random()-derived numbers and Eleanor described the pages as
   // live workspaces, which made the assistant the last surface still implying
   // fabricated data was real. Point users at the Scanner, which uses real
   // broker data.

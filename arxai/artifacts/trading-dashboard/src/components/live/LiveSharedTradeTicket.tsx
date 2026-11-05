@@ -75,22 +75,22 @@ type LiveOutcome =
     };
 
 export function LiveSharedTradeTicket({
-  open, onOpenChange, defaultSymbol, defaultSide, rubyExplanationSummary,
+  open, onOpenChange, defaultSymbol, defaultSide, eleanorExplanationSummary,
   prefillSltp, suppressAutoConfirm = false, feedWarning = null,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   defaultSymbol?: string;
   defaultSide?: Side;
-  rubyExplanationSummary?: string | null;
-  // Optional SL/TP prefill from an AI/Ruby setup-preview "Use this setup". The
+  eleanorExplanationSummary?: string | null;
+  // Optional SL/TP prefill from an AI/Eleanor setup-preview "Use this setup". The
   // token forces a re-apply each time the user re-picks a setup. Only pre-fills
   // the editable fields — every 16-gate / master / exposure check still runs
   // server-side on confirm; a prefill can never place an order.
   prefillSltp?: { token: number; stopLoss: number | null; takeProfit: number | null } | null;
   // When true, the one-click auto-confirm-on-open is suppressed so the user
   // MUST click Confirm explicitly. Set when the ticket was opened from an
-  // AI/Ruby setup-preview "Use this setup": a drawing must never become a
+  // AI/Eleanor setup-preview "Use this setup": a drawing must never become a
   // dispatched order without an explicit human confirm gesture, even for
   // one-click-armed users.
   suppressAutoConfirm?: boolean;
@@ -254,8 +254,8 @@ export function LiveSharedTradeTicket({
     volume: Number(volume),
     stopLoss: slNum,
     takeProfit: tpNum,
-    rubyExplanationSummary: rubyExplanationSummary ?? null,
-  }), [symbol, side, volume, slNum, tpNum, rubyExplanationSummary]);
+    eleanorExplanationSummary: eleanorExplanationSummary ?? null,
+  }), [symbol, side, volume, slNum, tpNum, eleanorExplanationSummary]);
 
   // SL is required only when the user's profile demands it. Owner/admin
   // unrestricted profiles report access.requireStopLoss === false.
@@ -334,9 +334,9 @@ export function LiveSharedTradeTicket({
     return null;
   })();
 
-  // Ruby bias mismatch — non-blocking. Ruby suggested `defaultSide`; if the
+  // Eleanor bias mismatch — non-blocking. Eleanor suggested `defaultSide`; if the
   // operator flipped to the opposite side, surface it but never block.
-  const rubyBiasMismatch = defaultSide && side !== defaultSide
+  const eleanorBiasMismatch = defaultSide && side !== defaultSide
     ? `Heads up: your selected side (${side}) is the opposite of ${name}'s suggested bias (${defaultSide}). Confirm only if this is intentional.`
     : null;
 
@@ -617,10 +617,10 @@ export function LiveSharedTradeTicket({
                   Estimated R:R <span className="font-mono">{rr.toFixed(2)}</span>
                 </div>
               )}
-              {rubyExplanationSummary && (
+              {eleanorExplanationSummary && (
                 <Alert>
                   <AlertTitle className="text-amber-300">{name} note</AlertTitle>
-                  <AlertDescription className="text-xs">{rubyExplanationSummary}</AlertDescription>
+                  <AlertDescription className="text-xs">{eleanorExplanationSummary}</AlertDescription>
                 </Alert>
               )}
 
@@ -677,11 +677,11 @@ export function LiveSharedTradeTicket({
               </Alert>
             )}
 
-            {/* Non-blocking Ruby bias-mismatch warning. */}
-            {!isPreviewing && rubyBiasMismatch && (
-              <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="ls-ruby-bias-warning">
+            {/* Non-blocking Eleanor bias-mismatch warning. */}
+            {!isPreviewing && eleanorBiasMismatch && (
+              <Alert className="border-amber-500/40 bg-amber-500/5" data-testid="ls-eleanor-bias-warning">
                 <AlertTriangle className="h-4 w-4 text-amber-300" />
-                <AlertDescription className="text-xs text-amber-200">{rubyBiasMismatch}</AlertDescription>
+                <AlertDescription className="text-xs text-amber-200">{eleanorBiasMismatch}</AlertDescription>
               </Alert>
             )}
 

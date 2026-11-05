@@ -1,6 +1,6 @@
 Run the ARX Smart Chart Truth + Timeframe Repair Mission.
 
-This is NOT a chart redesign task yet. This is a chart data integrity, timeframe accuracy, rendering accuracy, mirror sync, and Ruby-read protection task.
+This is NOT a chart redesign task yet. This is a chart data integrity, timeframe accuracy, rendering accuracy, mirror sync, and Eleanor-read protection task.
 
 The screenshots show that the chart is inconsistent by timeframe:
 - 5m looks closer to real market candles.
@@ -9,9 +9,9 @@ The screenshots show that the chart is inconsistent by timeframe:
 - 4h and 1D compress price action due to scaling/history/outlier behavior.
 - 1D shows a suspicious abnormal downside wick that may be a bad tick, corrupted candle, provider mismatch, or scale/outlier issue.
 - XAUUSD latest price appears inconsistent across views.
-- Ruby is still showing directional states like WAIT / bullish / neutral even when candle truth may not be verified.
+- Eleanor is still showing directional states like WAIT / bullish / neutral even when candle truth may not be verified.
 
-This means the issue is deeper than candlestick styling. It may involve source, OHLC mapping, aggregation, historical/live merge, symbol mirror, bid/ask/last basis, price precision, scaling, or Ruby reading stale/mismatched chart state.
+This means the issue is deeper than candlestick styling. It may involve source, OHLC mapping, aggregation, historical/live merge, symbol mirror, bid/ask/last basis, price precision, scaling, or Eleanor reading stale/mismatched chart state.
 
 Do not add new overlays.
 Do not redesign the full chart UI yet.
@@ -26,7 +26,7 @@ ABSOLUTE PRESERVATION RULES
 
 Do not rebuild the app.
 Do not replace the chart route unless absolutely necessary.
-Do not replace Ruby.
+Do not replace Eleanor.
 Do not replace Scanner.
 Do not replace Risk Governor.
 Do not replace AACI.
@@ -37,7 +37,7 @@ Do not create a new trading path.
 Do not fake candle data.
 Do not use mock/sample/dev candles in live mode.
 Do not generate synthetic candlesticks from weak line data unless clearly marked as dev-only or unavailable for trading decisions.
-Do not let Ruby give confident buy/sell reads from invalid, stale, mismatched, or incomplete candle data.
+Do not let Eleanor give confident buy/sell reads from invalid, stale, mismatched, or incomplete candle data.
 Do not let Self-Trade AI use chart confirmation unless Chart Truth passes.
 
 Preserve all existing wiring:
@@ -45,7 +45,7 @@ Preserve all existing wiring:
 - selected timeframe state
 - chart candle feed
 - scanner connection
-- Ruby chart read connection
+- Eleanor chart read connection
 - Plan Buy / Plan Sell actions
 - Trade Ticket connection
 - MT5/shared bridge route
@@ -57,18 +57,18 @@ Preserve all existing wiring:
 - Market Timing Brain / Heat Map if present
 - Economic Calendar / News if present
 - bottom navigation
-- Ruby floating button
+- Eleanor floating button
 - admin/user visibility rules
 
 ==================================================
 PRIMARY GOAL
 ==================================================
 
-Make the ARX Smart Chart prove that the candles are real, synced, fresh, correctly timed, correctly mirrored, correctly scaled, and correctly rendered before Ruby, Scanner, Self-Trade AI, Risk Governor, AACI, or Trade Planning use the chart for trading decisions.
+Make the ARX Smart Chart prove that the candles are real, synced, fresh, correctly timed, correctly mirrored, correctly scaled, and correctly rendered before Eleanor, Scanner, Self-Trade AI, Risk Governor, AACI, or Trade Planning use the chart for trading decisions.
 
 Final locked rule:
 
-ARX Smart Chart must prove candle truth before candle beauty, and prove chart truth before Ruby confidence, Scanner confirmation, or Self-Trade action.
+ARX Smart Chart must prove candle truth before candle beauty, and prove chart truth before Eleanor confidence, Scanner confirmation, or Self-Trade action.
 
 ==================================================
 CORE MODULE NAME
@@ -79,7 +79,7 @@ Create or upgrade this module:
 ARX Candle Truth Engine
 
 Purpose:
-Verify the chart is showing accurate, live, symbol-matched, timeframe-matched OHLC candles before Ruby, Scanner, Self-Trade AI, Trade Planning, or AACI use chart context.
+Verify the chart is showing accurate, live, symbol-matched, timeframe-matched OHLC candles before Eleanor, Scanner, Self-Trade AI, Trade Planning, or AACI use chart context.
 
 Also create or upgrade:
 
@@ -92,7 +92,7 @@ Also create or upgrade:
 - CandleTruthEngine
 - ChartTruthScore engine
 - ChartReadScore engine
-- RubyChartGate
+- EleanorChartGate
 - AACIChartHandshake
 - ChartDiagnostics
 - ChartSafeMode
@@ -117,7 +117,7 @@ Before editing, inspect and document:
 - current timeframe switch handler
 - current symbol switch handler
 - current scanner-to-chart wiring
-- current Ruby chart read wiring
+- current Eleanor chart read wiring
 - current trade ticket wiring
 - current Plan Buy / Plan Sell wiring
 - current Open Trades overlay wiring
@@ -165,7 +165,7 @@ Hard rule:
 If app mode is live/shared MT5, do not use mock/sample/dev candles for chart trading decisions.
 
 If mock/sample/dev candles are detected in live mode:
-- block Ruby confident chart read
+- block Eleanor confident chart read
 - block Self-Trade chart confirmation
 - show user-safe message
 - show admin diagnostic
@@ -175,7 +175,7 @@ If mock/sample/dev candles are detected in live mode:
 STEP 3 — STANDARDIZE VERIFIED CANDLE CONTRACT
 ==================================================
 
-Create one standard candle contract used by chart, Ruby, Scanner confirmation, AACI, and Self-Trade.
+Create one standard candle contract used by chart, Eleanor, Scanner confirmation, AACI, and Self-Trade.
 
 Suggested type:
 
@@ -207,7 +207,7 @@ type VerifiedCandle = {
 
 Everything using candles should use normalized VerifiedCandle or a clearly mapped adapter from raw provider data.
 
-Do not let Ruby, Scanner, or Self-Trade read random component-level candle formats.
+Do not let Eleanor, Scanner, or Self-Trade read random component-level candle formats.
 
 ==================================================
 STEP 4 — OHLC INTEGRITY VALIDATION
@@ -247,13 +247,13 @@ For each candle, verify:
 
 If validation fails:
 - mark Chart Truth degraded or failed
-- do not let Ruby give confident read
+- do not let Eleanor give confident read
 - do not let Self-Trade use chart confirmation
 - show clean user state
 - show admin diagnostics only to admin
 
 User-facing:
-“Chart data is syncing. Ruby will read the market once candles are verified.”
+“Chart data is syncing. Eleanor will read the market once candles are verified.”
 
 Admin-facing:
 Show reason category:
@@ -284,7 +284,7 @@ Use OHLCAggregator.
 If only line data exists and cannot create true OHLC:
 - disable candlestick mode for that source
 - show line/tick chart clearly labeled
-- disable candle-structure Ruby read
+- disable candle-structure Eleanor read
 - disable chart-based self-trade confirmation
 
 Do not fake candlesticks from poor data.
@@ -342,7 +342,7 @@ For each timeframe verify:
 - no stale candles from previous timeframe
 - no duplicate candles
 - no outlier corruption
-- Ruby reads same timeframe user sees
+- Eleanor reads same timeframe user sees
 
 Bucket rules:
 
@@ -400,12 +400,12 @@ Current forming candle rules:
 - candle remains same timestamp until bucket closes
 - new candle starts only when new bucket starts
 
-Ruby must distinguish:
+Eleanor must distinguish:
 - current forming candle
 - closed candle confirmation
 - current tick pressure
 
-Ruby language:
+Eleanor language:
 “Buy pressure is forming, but this candle has not closed. Confirmation is not complete.”
 
 Self-trade rule:
@@ -433,7 +433,7 @@ Reconnect flow:
 - merge backfilled candles
 - validate OHLC
 - resume live updates
-- allow Ruby read only after validation
+- allow Eleanor read only after validation
 
 If backfill fails:
 Show “Chart data is syncing” and block confident read.
@@ -461,12 +461,12 @@ Read-type history requirements:
 - news reaction read: pre-news and post-news candles
 
 If history is short:
-Ruby can only give limited read.
+Eleanor can only give limited read.
 
 User-facing:
-“Limited chart history loaded. Ruby can give short-term context only.”
+“Limited chart history loaded. Eleanor can give short-term context only.”
 
-Do not let Ruby claim major support/resistance from only a few candles.
+Do not let Eleanor claim major support/resistance from only a few candles.
 
 ==================================================
 STEP 12 — PRICE PRECISION AND SYMBOL PROFILE
@@ -526,7 +526,7 @@ Track:
 
 If chart price and broker/execution price mismatch beyond tolerance:
 - mark chart/execution alignment failed
-- pause Ruby live execution confidence
+- pause Eleanor live execution confidence
 - block Self-Trade chart confirmation
 - warn user cleanly
 
@@ -551,7 +551,7 @@ The chart must know candle basis:
 - last-price candles
 - unknown basis
 
-Ruby must factor this into:
+Eleanor must factor this into:
 - buy entry
 - sell entry
 - stop placement
@@ -582,7 +582,7 @@ When Plan Buy / Plan Sell exists:
 Ensure it uses chart truth + broker price context before showing confidence.
 
 If spread data missing:
-Cap scalp/trade confidence and inform Ruby context.
+Cap scalp/trade confidence and inform Eleanor context.
 
 ==================================================
 STEP 16 — BAD TICK / OUTLIER DETECTION
@@ -611,7 +611,7 @@ Actions:
 - reduce Chart Truth Score
 - widen y-axis handling or exclude from visible auto-scale only if clearly marked
 - show admin diagnostic
-- Ruby caution or read pause depending severity
+- Eleanor caution or read pause depending severity
 
 For screenshot:
 Investigate 1D abnormal downside wick around 2000 while XAUUSD is near 4327. Determine whether it is:
@@ -637,7 +637,7 @@ Repair rules:
 - request reload/backfill
 - use fallback source only if verified
 - label fallback source
-- pause Ruby confidence until repaired
+- pause Eleanor confidence until repaired
 - log repair actions safely
 
 ==================================================
@@ -689,7 +689,7 @@ Track:
 - candle close time
 - news event time conversion
 
-Ruby must know whether it refers to:
+Eleanor must know whether it refers to:
 - user local time
 - broker time
 - New York/London/Tokyo session time
@@ -714,7 +714,7 @@ The following must agree:
 - header selected symbol
 - chart symbol
 - chart timeframe
-- Ruby read symbol/timeframe
+- Eleanor read symbol/timeframe
 - Scanner focus symbol/timeframe
 - Trade Ticket symbol/timeframe context
 - Open Trade overlay symbol
@@ -737,7 +737,7 @@ User-facing:
 “Chart syncing…”
 
 If conflict:
-Pause confident Ruby read.
+Pause confident Eleanor read.
 
 ==================================================
 STEP 21 — CHART TRUTH SCORE
@@ -767,7 +767,7 @@ Labels:
 - below 60: chart read blocked
 
 Hard rules:
-- Chart Truth < 75: no confident Ruby buy/sell read.
+- Chart Truth < 75: no confident Eleanor buy/sell read.
 - Chart Truth < 75: Scanner cannot use chart as confirmation.
 - Chart Truth < 75: Self-Trade cannot use chart confirmation.
 - No true OHLC source: no candlestick mode.
@@ -790,39 +790,39 @@ Meaning: candles are real, but no good trade.
 
 Chart Truth: 48
 Chart Read: blocked
-Meaning: Ruby cannot give serious read.
+Meaning: Eleanor cannot give serious read.
 
-Ruby should not confuse a high-quality chart with a good trade.
+Eleanor should not confuse a high-quality chart with a good trade.
 
 ==================================================
-STEP 23 — RUBY CHART GATE
+STEP 23 — ELEANOR CHART GATE
 ==================================================
 
-Ruby Chart Read requires:
+Eleanor Chart Read requires:
 
 - Chart Truth Pass
 - Mirror Pass
 - Freshness Pass
 - Timeframe Pass
 - AACI Chart Handshake Pass
-- verified RubyChartContext object
+- verified EleanorChartContext object
 
 If not passed:
-Ruby may say:
+Eleanor may say:
 “Chart data is syncing. I’ll read the market once candles are verified.”
 
-Ruby may not give:
+Eleanor may not give:
 - bullish/bearish confidence
 - buy/sell confirmation
 - entry recommendation
 - self-trade confirmation
 - false certainty
 
-Ruby must read structured data, not just the visual canvas.
+Eleanor must read structured data, not just the visual canvas.
 
-Create RubyChartContext:
+Create EleanorChartContext:
 
-type RubyChartContext = {
+type EleanorChartContext = {
   symbol: string;
   timeframe: string;
   candles: VerifiedCandle[];
@@ -843,7 +843,7 @@ type RubyChartContext = {
   aaciChartHandshake?: any;
 };
 
-Ruby should include a compact trust line:
+Eleanor should include a compact trust line:
 “Read source: Verified M5 candles · Live feed · Mirror synced”
 
 If limited:
@@ -883,7 +883,7 @@ Handshake fields:
 - HistoricalLiveMerge: PASS/WARN/FAIL
 - BrokerPriceAlignment: PASS/WARN/FAIL
 - RenderHealth: PASS/WARN/FAIL
-- RubyReadAllowed: PASS/WARN/FAIL
+- EleanorReadAllowed: PASS/WARN/FAIL
 - SelfTradeChartAllowed: PASS/WARN/FAIL
 
 AACI receives:
@@ -893,7 +893,7 @@ AACI receives:
 - mirror status
 - OHLC source
 - execution price alignment
-- Ruby read permission
+- Eleanor read permission
 - Self-Trade chart permission
 
 If chart handshake fails:
@@ -908,7 +908,7 @@ Regular users see only clean messages:
 - Chart data is syncing.
 - Candles are refreshing.
 - Live candles unavailable.
-- Ruby is waiting for verified candle data.
+- Eleanor is waiting for verified candle data.
 - Chart and execution price are syncing.
 - Limited chart history loaded.
 - This chart is in line mode because OHLC candles are unavailable.
@@ -932,7 +932,7 @@ Admin-only diagnostics should classify:
 - Rendering failure
 - Scale failure
 - Overlay anchoring failure
-- Ruby context failure
+- Eleanor context failure
 - Execution price mismatch
 - Bad tick/outlier detected
 - Mock data detected
@@ -961,7 +961,7 @@ If chart truth fails, enter Chart Safe Mode.
 
 Safe Mode behavior:
 - show chart syncing state
-- Ruby read paused
+- Eleanor read paused
 - chart-based trade confirmation unavailable
 - self-trade chart confirmation paused
 - open trades still visible if execution data is available
@@ -1021,14 +1021,14 @@ This applies to:
 STEP 31 — DECISION SNAPSHOTS
 ==================================================
 
-Every serious Ruby chart read should save or prepare a snapshot:
+Every serious Eleanor chart read should save or prepare a snapshot:
 
 - symbol
 - timeframe
 - last verified candles reference
 - chart truth score
 - chart read score
-- Ruby read
+- Eleanor read
 - scanner agreement
 - news phase
 - heat state
@@ -1043,7 +1043,7 @@ This feeds:
 - Wins & Losses
 - Account Analytics
 - Chart Replay
-- Ruby learning
+- Eleanor learning
 - AACI learning
 
 If persistence is not ready, create future-ready type/service without breaking.
@@ -1055,14 +1055,14 @@ STEP 32 — REPLAY TRUTH RULE
 Trade replay must preserve what was known at the time.
 
 Replay should show:
-- what Ruby saw at entry
+- what Eleanor saw at entry
 - candles available then
 - chart truth score then
 - live price/feed state then
 - scanner/heat/news/AACI state then
 - what changed after
 
-Do not judge Ruby with future-corrected data unless labeled.
+Do not judge Eleanor with future-corrected data unless labeled.
 
 ==================================================
 STEP 33 — PERFORMANCE BUDGET
@@ -1077,7 +1077,7 @@ Rules:
 - debounce symbol/timeframe switching
 - lazy-load heavy overlays
 - virtualize heavy marker/replay layers later
-- keep Ruby panel separate from chart render loop
+- keep Eleanor panel separate from chart render loop
 - track chart render latency if possible
 - avoid expensive recalculation on every tick
 
@@ -1111,7 +1111,7 @@ STEP 35 — TIMEFRAME QA TABLE REQUIRED
 
 After repair, return this table:
 
-Timeframe | Candle count | Source | OHLC pass | Aggregation pass | Forming candle pass | Merge pass | Outlier pass | Mirror pass | Price alignment pass | Scale pass | Ruby allowed
+Timeframe | Candle count | Source | OHLC pass | Aggregation pass | Forming candle pass | Merge pass | Outlier pass | Mirror pass | Price alignment pass | Scale pass | Eleanor allowed
 
 Rows:
 - 1m
@@ -1175,7 +1175,7 @@ Verify:
 20. Candles visually readable.
 21. Chart/execution price checked.
 22. Bid/ask/mid/last basis identified or marked unknown.
-23. Ruby read gated by Chart Truth.
+23. Eleanor read gated by Chart Truth.
 24. Scanner chart confirmation gated.
 25. Self-Trade chart confirmation gated.
 26. AACI chart handshake added.
@@ -1188,7 +1188,7 @@ Verify:
 33. Existing Risk Governor preserved.
 34. Existing AACI preserved.
 35. Existing Security Handshake preserved.
-36. Existing Ruby floating button and bottom nav preserved.
+36. Existing Eleanor floating button and bottom nav preserved.
 37. Build/typecheck/lint pass.
 38. No runtime errors.
 
@@ -1215,7 +1215,7 @@ Return:
 - bid/ask/mid/last basis status
 - Chart Truth Score implemented
 - Chart Read Score implemented
-- RubyChartGate implemented
+- EleanorChartGate implemented
 - AACI Chart Handshake implemented
 - Self-Trade chart gating implemented
 - Scanner chart confirmation gating implemented
@@ -1228,4 +1228,4 @@ Return:
 - remaining follow-up needed
 
 IMPORTANT:
-Do not move on to smart overlays, extra chart design, Ruby panels, or new intelligence layers until the chart passes truth validation. ARX Smart Chart must prove candle truth before candle beauty, and chart truth before Ruby confidence, Scanner confirmation, or Self-Trade action.
+Do not move on to smart overlays, extra chart design, Eleanor panels, or new intelligence layers until the chart passes truth validation. ARX Smart Chart must prove candle truth before candle beauty, and chart truth before Eleanor confidence, Scanner confirmation, or Self-Trade action.

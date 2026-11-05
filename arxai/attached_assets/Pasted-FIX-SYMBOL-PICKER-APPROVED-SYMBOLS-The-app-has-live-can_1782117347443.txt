@@ -81,7 +81,7 @@ Use this resolver for:
 - market scanner symbol selector
 - chart symbol selector
 - trade ticket symbol selector
-- Ruby chart context symbol selector if applicable
+- Eleanor chart context symbol selector if applicable
 
 Do not let the frontend symbol dropdown directly depend on enumerated symbols only.
 

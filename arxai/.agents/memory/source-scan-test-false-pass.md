@@ -20,7 +20,7 @@ strings from doc comments too. Pair presence + absence checks so the test
 actually tracks rendered behavior, not incidental comment text.
 
 ## Forbidden-token guards must be narrow when the token lives in legit CODE
-A `mustNotContain` needle that blacklists a stale phrase will false-POSITIVE if the same token legitimately appears in CODE (not just a stripped comment). When deriving the assistant safety state, the AUTHORITATIVE prompt block intentionally uses words like "system-locked" / "paper-only" in code *to instruct Ruby NOT to make that claim*. Blacklist the exact stale sentence (`/live remains system-locked/i`), never the bare word. A blanket `/system-locked/i` is only safe where every code occurrence was removed and the token survives solely in a stripped doc-comment (true for tools.ts, false for systemPrompt.ts).
+A `mustNotContain` needle that blacklists a stale phrase will false-POSITIVE if the same token legitimately appears in CODE (not just a stripped comment). When deriving the assistant safety state, the AUTHORITATIVE prompt block intentionally uses words like "system-locked" / "paper-only" in code *to instruct Eleanor NOT to make that claim*. Blacklist the exact stale sentence (`/live remains system-locked/i`), never the bare word. A blanket `/system-locked/i` is only safe where every code occurrence was removed and the token survives solely in a stripped doc-comment (true for tools.ts, false for systemPrompt.ts).
 
 **Also:** the system prompt builder CONSUMES the per-user envelope as a param (`buildSafetyStateBlock(envelope)`) — it does NOT call `deriveAssistantEnvelope` itself (callers do). A `mustContain: deriveAssistantEnvelope` on systemPrompt.ts is wrong; assert `buildSafetyStateBlock` + the derived branch consts instead.
 

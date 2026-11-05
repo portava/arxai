@@ -1,7 +1,7 @@
 // ── Honesty-aware Market Heat verdict (Task #611) ───────────────────────────
 //
 // PURE, deterministic heat-verdict calculation. The single contract the heat
-// page, Ruby, and the impact radar all consume.
+// page, Eleanor, and the impact radar all consume.
 //
 // NON-NEGOTIABLE HONESTY RULES (enforced here, tested deterministically):
 //  - News and economic-calendar signals contribute to heat ONLY when their

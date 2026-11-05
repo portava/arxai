@@ -1,9 +1,9 @@
 // ── ONE DATA-SUFFICIENCY TRUTH (Phase 1) ────────────────────────────────────
 //
 // SINGLE SOURCE OF TRUTH for "is there enough proven market data to show a
-// confident read for this symbol/timeframe right now?". The scanner, Ruby, and
+// confident read for this symbol/timeframe right now?". The scanner, Eleanor, and
 // the chart all consume THIS verdict so they can never contradict each other
-// (the bug this fixes: scanner shows a confident BUY while Ruby says "candles
+// (the bug this fixes: scanner shows a confident BUY while Eleanor says "candles
 // syncing / cannot verify" for the same symbol+timeframe).
 //
 // This module is PURE: no IO, no DB, no HTTP, no clock. Same inputs ⇒ same
@@ -20,7 +20,7 @@ import type { SymbolFeedVerdict } from "../safety-contracts/syntheticLiveFloor";
 
 /**
  * Minimum number of fully-closed bars required before any surface may present a
- * confident, directional read. Shared by the scanner row build, Ruby's chart
+ * confident, directional read. Shared by the scanner row build, Eleanor's chart
  * context, and the chart Fast-Brain flag gate so all three agree on "enough
  * candles".
  */
@@ -34,7 +34,7 @@ export type MarketDataSufficiencyStatus =
 
 /**
  * Stable machine code for WHY this verdict came out the way it did. The SAME
- * code is emitted for the SAME input on every surface (scanner, Ruby, chart) so
+ * code is emitted for the SAME input on every surface (scanner, Eleanor, chart) so
  * they can be matched/compared without parsing prose. Pairs with `humanReason`.
  */
 export type MarketDataReasonCode =
@@ -66,7 +66,7 @@ export interface MarketDataSufficiencyVerdict {
   canShowTradeSetup: boolean;
   /**
    * Plain-English, user-safe reason. Identical across surfaces for identical
-   * inputs, so the scanner and Ruby always say the same thing. Free of internal
+   * inputs, so the scanner and Eleanor always say the same thing. Free of internal
    * codes/route paths (passes the user-copy safety net).
    */
   humanReason: string;

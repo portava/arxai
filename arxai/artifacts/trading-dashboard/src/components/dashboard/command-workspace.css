@@ -103,7 +103,7 @@
 .arx-col-left #workspace-heat .arx-panel-body { max-height: 340px; overflow: auto; }
 .arx-col-center > #workspace-intelligence .arx-panel-body { max-height: 300px; overflow: auto; }
 .arx-intelligence-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
-.arx-col-right #workspace-ruby .arx-panel-body { max-height: 420px; overflow: auto; }
+.arx-col-right #workspace-eleanor .arx-panel-body { max-height: 420px; overflow: auto; }
 .arx-workspace .arx-panel-body > [data-testid^="cockpit-"] { border-color: #28475a; background: rgba(8,18,27,.72); }
 .arx-workspace :is(button,a,input):focus-visible { outline: 2px solid var(--arx-cyan); outline-offset: 2px; }
 .arx-workspace .arx-panel:focus-visible { outline: 2px solid var(--arx-cyan); outline-offset: 3px; }
@@ -117,7 +117,7 @@
   .arx-col-right { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; }
   .arx-col-left #workspace-discovery .arx-panel-body,
   .arx-col-left #workspace-heat .arx-panel-body,
-  .arx-col-right #workspace-ruby .arx-panel-body { max-height: 300px; }
+  .arx-col-right #workspace-eleanor .arx-panel-body { max-height: 300px; }
   .arx-col-center > #workspace-intelligence .arx-panel-body { max-height: 220px; }
   .arx-chart-panel > .arx-panel-body { max-height: min(620px, calc(100dvh - 260px)); overflow-y: auto; }
 }
@@ -164,14 +164,14 @@
   .arx-intelligence-grid { grid-template-columns: minmax(0,1fr); }
   .arx-col-left > #workspace-clock { order: 3; width: 100%; }
   #workspace-risk { order: 5; width: 100%; }
-  #workspace-ruby { order: 7; width: 100%; }
+  #workspace-eleanor { order: 7; width: 100%; }
   #workspace-order { order: 8; width: 100%; }
   .arx-chart-panel .arx-panel-body { min-width: 0; padding: 3px; }
   .arx-chart-panel [data-testid="scanner-chart-panel"] { min-height: 0; }
   .arx-chart-panel [data-testid="scanner-chart-panel"] > * { min-height: 0; }
   .arx-col-left #workspace-discovery .arx-panel-body,
   .arx-col-center > #workspace-intelligence .arx-panel-body,
-  .arx-col-right #workspace-ruby .arx-panel-body { max-height: 360px; }
+  .arx-col-right #workspace-eleanor .arx-panel-body { max-height: 360px; }
   .arx-positions { margin-top: 9px; }
 }
 
@@ -180,7 +180,7 @@
   .arx-col-left #workspace-heat .arx-panel-body { max-height: 165px; }
   .arx-col-left #workspace-clock .arx-panel-body { max-height: 115px; overflow: auto; }
   .arx-col-center > #workspace-intelligence .arx-panel-body { max-height: 140px; }
-  .arx-col-right #workspace-ruby .arx-panel-body { max-height: 190px; }
+  .arx-col-right #workspace-eleanor .arx-panel-body { max-height: 190px; }
   .arx-col-right #workspace-risk .arx-panel-body { max-height: 145px; overflow: auto; }
   .arx-col-right #workspace-order .arx-panel-body { max-height: 115px; overflow: auto; }
   .arx-chart-panel > .arx-panel-body {
@@ -239,7 +239,7 @@
 .arx-approval-compact { display: flex; min-height: 28px; align-items: center; gap: 7px; overflow: visible; border: 1px solid rgba(251,191,36,.28); border-radius: 7px; background: rgba(120,75,10,.12); padding: 3px 8px; font-size: 10px; }
 .arx-approval-compact > span { min-width: 0; flex: 1 1 auto; color: #acbfce; }
 .arx-approval-compact details { position: relative; flex: 0 0 auto; }
-.arx-approval-compact summary, .arx-scanner-more summary, .arx-heat-details summary, .arx-ruby-details summary, .arx-positions-more summary { cursor: pointer; color: #23eff1; font-size: 10px; }
+.arx-approval-compact summary, .arx-scanner-more summary, .arx-heat-details summary, .arx-eleanor-details summary, .arx-positions-more summary { cursor: pointer; color: #23eff1; font-size: 10px; }
 .arx-workspace-grid { min-height: 0; grid-template-columns: minmax(210px,.86fr) minmax(390px,1.72fr) minmax(230px,.92fr); gap: 8px; }
 .arx-col { min-height: 0; gap: 7px; }
 .arx-panel { min-height: 0; border-radius: 10px; }
@@ -252,7 +252,7 @@
 .arx-col-left #workspace-heat .arx-panel-body,
 .arx-col-left #workspace-clock .arx-panel-body,
 .arx-col-center > #workspace-intelligence .arx-panel-body,
-.arx-col-right #workspace-ruby .arx-panel-body,
+.arx-col-right #workspace-eleanor .arx-panel-body,
 .arx-col-right #workspace-risk .arx-panel-body,
 .arx-col-right #workspace-order .arx-panel-body,
 .arx-positions .arx-panel-body { max-height: none; overflow: visible; }
@@ -281,7 +281,7 @@
 .arx-chart-details-close:hover { background: rgba(35,239,241,.08); }
 .arx-intelligence-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; }
 .arx-col-center > #workspace-intelligence .arx-panel-body { padding: 4px; }
-.arx-col-right #workspace-ruby .arx-panel-body { padding: 5px; }
+.arx-col-right #workspace-eleanor .arx-panel-body { padding: 5px; }
 .arx-risk-compact-stack { display: grid; gap: 5px; }
 .arx-risk-usage { gap: 4px; padding: 6px; }
 .arx-risk-usage > div:nth-of-type(3) { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 3px; }
@@ -347,22 +347,22 @@
 .arx-heat-hot-row button span { color: #acbfce; }
 .arx-heat-honesty { color: #fbbf24; font-size: 8px; line-height: 1.2; }
 .arx-heat-details { border-top: 1px solid rgba(40,71,90,.6); padding-top: 3px; }
-.arx-ruby-compact { display: grid; gap: 4px; }
-.arx-ruby-compact-meta { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 5px; }
-.arx-ruby-market, .arx-ruby-freshness { overflow: hidden; color: #acbfce; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.arx-ruby-headline { overflow: hidden; color: #f0faff; font-size: 11px; font-weight: 650; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.arx-ruby-decision-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 5px; }
-.arx-ruby-decision-grid > div { display: grid; min-width: 0; gap: 1px; }
-.arx-ruby-decision-grid small, .arx-ruby-next span { color: #8197a7; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
-.arx-ruby-decision-grid b { overflow: hidden; color: #dcebf3; font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-.arx-ruby-reason, .arx-ruby-next { overflow: hidden; color: #acbfce; font-size: 9px; line-height: 1.25; text-overflow: ellipsis; }
-.arx-ruby-next { display: grid; gap: 1px; }
-.arx-ruby-warning, .arx-ruby-status { display: flex; align-items: center; gap: 4px; color: #acbfce; font-size: 9px; line-height: 1.2; }
-.arx-ruby-warning { color: #fbbf24; }
-.arx-ruby-actions { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(40,71,90,.5); padding-top: 3px; }
-.arx-ruby-actions button { display: grid; width: 22px; height: 22px; place-items: center; color: #acbfce; }
-.arx-ruby-actions a { color: #23eff1; font-size: 9px; }
-.arx-ruby-details { border-top: 1px solid rgba(40,71,90,.5); padding-top: 3px; }
+.arx-eleanor-compact { display: grid; gap: 4px; }
+.arx-eleanor-compact-meta { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 5px; }
+.arx-eleanor-market, .arx-eleanor-freshness { overflow: hidden; color: #acbfce; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.arx-eleanor-headline { overflow: hidden; color: #f0faff; font-size: 11px; font-weight: 650; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.arx-eleanor-decision-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 5px; }
+.arx-eleanor-decision-grid > div { display: grid; min-width: 0; gap: 1px; }
+.arx-eleanor-decision-grid small, .arx-eleanor-next span { color: #8197a7; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
+.arx-eleanor-decision-grid b { overflow: hidden; color: #dcebf3; font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.arx-eleanor-reason, .arx-eleanor-next { overflow: hidden; color: #acbfce; font-size: 9px; line-height: 1.25; text-overflow: ellipsis; }
+.arx-eleanor-next { display: grid; gap: 1px; }
+.arx-eleanor-warning, .arx-eleanor-status { display: flex; align-items: center; gap: 4px; color: #acbfce; font-size: 9px; line-height: 1.2; }
+.arx-eleanor-warning { color: #fbbf24; }
+.arx-eleanor-actions { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(40,71,90,.5); padding-top: 3px; }
+.arx-eleanor-actions button { display: grid; width: 22px; height: 22px; place-items: center; color: #acbfce; }
+.arx-eleanor-actions a { color: #23eff1; font-size: 9px; }
+.arx-eleanor-details { border-top: 1px solid rgba(40,71,90,.5); padding-top: 3px; }
 .arx-workspace :is(button,a,select,input,summary):focus-visible { outline: 2px solid var(--arx-cyan); outline-offset: 2px; }
 .arx-admin-details-button:focus-visible, .arx-signout:focus-visible { outline: 2px solid var(--arx-cyan); outline-offset: 2px; }
 @media (min-width: 768px) {
@@ -407,7 +407,7 @@
   .arx-col-left #workspace-clock .arx-panel-body { max-height: 112px; overflow: visible; }
   .arx-col-center { grid-template-rows: minmax(0,1fr) auto; gap: 5px; }
   .arx-col-center > #workspace-intelligence .arx-panel-body { max-height: 130px; overflow: auto; }
-  .arx-col-right #workspace-ruby .arx-panel-body { max-height: 190px; overflow: auto; }
+  .arx-col-right #workspace-eleanor .arx-panel-body { max-height: 190px; overflow: auto; }
   .arx-col-right #workspace-risk .arx-panel-body { max-height: 145px; overflow: auto; }
   .arx-col-right #workspace-order .arx-panel-body { max-height: 115px; overflow: auto; }
   .arx-chart-panel { min-height: 0; }
@@ -625,9 +625,9 @@
   }
 }
 
-.arx-ruby-details,
-.arx-ruby-rationale-scroll { min-width: 0; max-width: 100%; }
-.arx-ruby-rationale-scroll {
+.arx-eleanor-details,
+.arx-eleanor-rationale-scroll { min-width: 0; max-width: 100%; }
+.arx-eleanor-rationale-scroll {
   max-height: 320px;
   overflow-y: auto;
   overflow-wrap: anywhere;
@@ -635,9 +635,9 @@
   scrollbar-gutter: stable;
   padding-inline-end: 8px;
 }
-.arx-ruby-rationale-scroll * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-.arx-ruby-rationale-scroll :is(p,li,span,dd,b,strong,code) { white-space: normal; }
-.arx-ruby-rationale-scroll pre { white-space: pre-wrap; }
+.arx-eleanor-rationale-scroll * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.arx-eleanor-rationale-scroll :is(p,li,span,dd,b,strong,code) { white-space: normal; }
+.arx-eleanor-rationale-scroll pre { white-space: pre-wrap; }
 
 /* Labels and amounts must not compete for the same narrow inline row. */
 .arx-risk-usage > .arx-risk-usage-heading { flex-wrap: wrap; min-width: 0; }

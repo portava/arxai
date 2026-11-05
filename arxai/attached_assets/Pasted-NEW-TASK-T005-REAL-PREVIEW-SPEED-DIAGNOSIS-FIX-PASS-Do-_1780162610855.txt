@@ -40,7 +40,7 @@ Measure these pages:
 1. Cockpit
 2. Scanner
 3. Trade, if still present
-4. Ruby / AI
+4. Eleanor / AI
 5. More / Settings
 6. Admin page as owner/admin, if available
 
@@ -69,7 +69,7 @@ Target:
 5. chart skeleton visible under 1 second
 6. market selection feedback under 300ms
 7. trade button feedback under 100ms
-8. Ruby thinking dots under 100ms
+8. Eleanor thinking dots under 100ms
 
 PART 1 — Real preview speed test
 
@@ -87,7 +87,7 @@ If a page takes over 1 second to show usable shell:
 3. retest
 4. report before/after timing
 
-If final data takes longer because of MT5, bridge, market data, Ruby, notifications, or scanner results:
+If final data takes longer because of MT5, bridge, market data, Eleanor, notifications, or scanner results:
 
 1. render page shell first
 2. show skeleton/pending state immediately
@@ -108,7 +108,7 @@ Test:
 6. timing to selected symbol visible
 7. timing to quote/bid/ask/spread
 8. timing to scanner results
-9. timing to Ruby explanation
+9. timing to Eleanor explanation
 10. timing to trade controls usable
 
 Scanner must load progressively:
@@ -118,7 +118,7 @@ Scanner must load progressively:
 3. quote/candles independently
 4. user trade overlays independently
 5. Broad Scan / Focus Scan independently
-6. Ruby explanation independently
+6. Eleanor explanation independently
 7. news/history/backtest only after main UI is usable
 
 If Scanner waits for any of these before showing shell, fix it:
@@ -127,7 +127,7 @@ If Scanner waits for any of these before showing shell, fix it:
 2. bridge health
 3. market data
 4. candles
-5. Ruby
+5. Eleanor
 6. Broad Scan
 7. Focus Scan
 8. news/history
@@ -150,7 +150,7 @@ Test:
 5. Confirm button pending state
 6. time from Confirm to backend request start
 7. whether UI shows “Confirming with broker…” immediately
-8. whether Ruby blocks any part of the trade flow
+8. whether Eleanor blocks any part of the trade flow
 
 Rules:
 
@@ -168,7 +168,7 @@ Inspect and fix:
 
 1. heavy global imports
 2. chart/TradingView library loaded globally
-3. Ruby voice/speech modules loaded globally
+3. Eleanor voice/speech modules loaded globally
 4. admin-only panels loaded for normal users
 5. hidden tabs loaded before selected
 6. notification badge blocking route render
@@ -224,7 +224,7 @@ Final report must include:
 2. real desktop preview timing table
 3. Cockpit before/after timing
 4. Scanner before/after timing
-5. Ruby before/after timing
+5. Eleanor before/after timing
 6. More/Settings before/after timing
 7. Trade page before/after timing, if still present
 8. bottom-nav feedback timing

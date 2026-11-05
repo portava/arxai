@@ -1,4 +1,4 @@
-// Ruby Flame Scalp — manage-side intelligence (Phase 2), pure & deterministic.
+// Eleanor Flame Scalp — manage-side intelligence (Phase 2), pure & deterministic.
 //
 // This module reasons about ALREADY-OPEN scalp positions. It answers three
 // questions, all as ADVICE ONLY (the system never adds or closes on the user's
@@ -344,7 +344,7 @@ function exit(
 /**
  * Exit-urgency monitor. Maps the current flame + basket P/L to a rung on the
  * ladder: None → Watch → Protect profit → Close latest → Close partial →
- * Close all → Emergency. ALERT_ONLY — Ruby recommends, it never closes.
+ * Close all → Emergency. ALERT_ONLY — Eleanor recommends, it never closes.
  */
 export function evaluateExitUrgency(
   flame: ScalpFlameRead,

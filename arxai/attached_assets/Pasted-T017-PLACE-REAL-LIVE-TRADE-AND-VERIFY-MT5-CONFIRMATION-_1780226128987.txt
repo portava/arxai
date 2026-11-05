@@ -129,7 +129,7 @@ Default:
 
 1. Symbol: V75 only if confirmed tradable, otherwise EURUSD.
 2. Lot: 0.01 or the smallest broker-allowed lot if different.
-3. Direction: use the current selected user direction if manually selected in UI. Do not let Ruby choose direction.
+3. Direction: use the current selected user direction if manually selected in UI. Do not let Eleanor choose direction.
 4. This is a wiring test, not a strategy trade.
 5. Do not open more than one trade.
 
@@ -162,7 +162,7 @@ Execution:
 12. Confirm ARX writes the live command row.
 13. Confirm ARX writes/updates the position ledger.
 14. Confirm Scanner/chart shows the open trade.
-15. Confirm Ruby can explain the open trade in plain English.
+15. Confirm Eleanor can explain the open trade in plain English.
 16. Close the trade immediately through ARX.
 17. Confirm close request reaches MT5.
 18. Confirm MT5 confirms the close.
@@ -271,7 +271,7 @@ Final report must include:
 19. ARX live command row verification
 20. ARX ledger verification
 21. Scanner/chart verification
-22. Ruby explanation verification
+22. Eleanor explanation verification
 23. arx_live_commands after count/max_id
 24. owner open positions after
 25. MT5 open positions after

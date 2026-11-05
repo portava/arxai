@@ -247,8 +247,8 @@ export default function OperatorCommandCenter() {
         </div>
       </Panel>
 
-      {/* H. Ruby Admin Summary */}
-      <Panel title={`${name} Admin Summary`} testid="panel-ruby-admin">
+      {/* H. Eleanor Admin Summary */}
+      <Panel title={`${name} Admin Summary`} testid="panel-eleanor-admin">
         <p className="text-sm text-txt-secondary">
           Ask {name}: <em>"{name}, summarize launch readiness."</em> {name} will
           summarize what is ready, what is blocked, what needs admin

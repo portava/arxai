@@ -119,11 +119,11 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
     toast({ title: "Analysis refreshed", description: "Pulled fresh candles and re-rendered the chart preview." });
   };
 
-  // Ask Ruby — opens the assistant chat panel with the trade context typed in.
+  // Ask Eleanor — opens the assistant chat panel with the trade context typed in.
   // The panel's own conversation and stream reader handle the turn, so this
   // card no longer opens a new conversation per click or parses the SSE
   // stream itself. Explanation only: the analyst chat has no order tools.
-  const handleAskRuby = () => {
+  const handleAskEleanor = () => {
     const seedText = `I have an open ${p.accountMode.toLowerCase()} ${p.side ?? ""} position on ${p.symbol ?? ""} (ticket ${p.brokerTicket ?? "?"}). Entry ${p.entryPrice}, current ${p.currentPrice}, SL ${p.stopLoss}, TP ${p.takeProfit}, lot ${p.lotSize}, floating P/L ${p.floatingPnl}. Please explain in plain English how this trade is behaving right now and whether it still matches the original setup. Explanation only — don't place or change any trade.`;
     openAssistantWithPrompt(seedText);
   };
@@ -196,7 +196,7 @@ export function PositionSideCard({ position: p, onClose, onModifySLTP, onCloseTr
         )}
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <Button size="sm" variant="default" onClick={handleAskRuby} data-testid="btn-ask-ruby">
+          <Button size="sm" variant="default" onClick={handleAskEleanor} data-testid="btn-ask-eleanor">
             <Sparkles className="mr-1 h-3 w-3" /> Ask {name}
           </Button>
           <Button size="sm" variant="secondary" onClick={handleRefreshAnalysis} data-testid="btn-refresh-analysis">

@@ -2,7 +2,7 @@
 // the 12 exposure rules plus the trader's own trading discipline (rule 13).
 //
 // Every path that can open, close or modify a position (Trade Action Center,
-// Ruby drafts, paper automation, manual demo orders, the demo MT5 queue and
+// Eleanor drafts, paper automation, manual demo orders, the demo MT5 queue and
 // the live command pipeline) hands a TradeIntent to `enforcePreTradeRisk`
 // (./enforce.ts), which loads a RiskContext and calls `evaluatePreTradeRisk`
 // below. Nothing here can be relaxed by the caller: the limits come from
@@ -20,7 +20,7 @@
 // never traps open exposure.
 
 export type RiskVenue = "PAPER" | "DEMO" | "LIVE";
-export type IntentOrigin = "manual" | "ruby" | "automation" | "strategy" | "api" | "system";
+export type IntentOrigin = "manual" | "eleanor" | "automation" | "strategy" | "api" | "system";
 export type IntentAction = "OPEN" | "CLOSE" | "PARTIAL_CLOSE" | "MODIFY";
 
 export interface TradeIntent {
@@ -468,7 +468,7 @@ export interface VenueRules {
   source: string;
   requireTakeProfit?: boolean;
   minRewardRiskRatio?: number | null;
-  /** Minimum model confidence for orders from ruby / automation / strategy origins. */
+  /** Minimum model confidence for orders from eleanor / automation / strategy origins. */
   minAiConfidence?: number | null;
 }
 
@@ -706,7 +706,7 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   } else set("stop_loss_required", "PASS", null, { requireStopLoss: false });
 
   if (intent.action === "MODIFY") {
-    // Position Guardian invariant: an automated action (Ruby, a strategy,
+    // Position Guardian invariant: an automated action (Eleanor, a strategy,
     // automation) may only tighten a stop. A trader may widen it by hand, but
     // never past their per-trade loss limit.
     const pos = intent.position ?? null;
@@ -1122,7 +1122,7 @@ function evaluateDiscipline(
       const rr = risk > 0 ? reward / risk : 0;
       if (rr < V.minRewardRiskRatio) hard.push(`reward:risk ${round(rr, 2)} is below the ${V.source} floor of ${V.minRewardRiskRatio}`);
     }
-    if (V.minAiConfidence != null && (intent.origin === "ruby" || intent.origin === "automation" || intent.origin === "strategy")) {
+    if (V.minAiConfidence != null && (intent.origin === "eleanor" || intent.origin === "automation" || intent.origin === "strategy")) {
       const c = intent.aiConfidence ?? 0;
       measured["aiConfidence"] = c;
       if (c < V.minAiConfidence) hard.push(`model confidence ${c} is below the ${V.source} minimum of ${V.minAiConfidence}`);

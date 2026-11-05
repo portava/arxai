@@ -144,7 +144,7 @@ Close button rules:
 On mobile:
 - BUY and SELL buttons must be large and easy to tap.
 - CLOSE button must be visible on active positions.
-- Ruby bubble must not cover trade buttons.
+- Eleanor bubble must not cover trade buttons.
 - Bottom nav must not cover trade buttons.
 - No horizontal scrolling.
 - No giant warning modal on every trade.

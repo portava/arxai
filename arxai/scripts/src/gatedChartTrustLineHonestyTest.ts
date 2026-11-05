@@ -2,7 +2,7 @@
 //
 // Proves the fix for the gated-branch trust-line leak in
 // `POST /api/me/assistant/read-chart` (meAssistant.ts). The gated branch used
-// to reuse `rubyCtx.trustLine`, which is composed from the raw Phase-3 gate
+// to reuse `eleanorCtx.trustLine`, which is composed from the raw Phase-3 gate
 // flags by `buildTrustLine`. Those flags can ALL be true (so the line reads
 // "Verified W1 candles · Live feed · Mirror synced · AACI verified") even when
 // the read is gated because the feed is delayed (`state.aiUsable === false`),
@@ -11,7 +11,7 @@
 // verification or a live feed.
 //
 // The SAME leak exists in `POST /api/me/assistant/draft-read`, whose trust line
-// comes from `buildRubyDraftRead` (also composed from the raw Phase-3 gate flags
+// comes from `buildEleanorDraftRead` (also composed from the raw Phase-3 gate flags
 // via `buildTrustLine`). It is fixed the same way — gating on
 // `basis !== "VERIFIED"` and overriding the line with `buildGatedTrustLine`.
 // Check #10 below is the static wiring guard for that endpoint.
@@ -25,8 +25,8 @@ import { dirname, resolve } from "node:path";
 import {
   buildGatedTrustLine,
   buildStructuralReadTrustLine,
-  type RubyChartReadBasis,
-} from "../../artifacts/api-server/src/lib/data/chart/rubyChartContext.js";
+  type EleanorChartReadBasis,
+} from "../../artifacts/api-server/src/lib/data/chart/eleanorChartContext.js";
 
 type CheckResult = { id: number; name: string; ok: boolean; detail: string };
 const results: CheckResult[] = [];
@@ -67,7 +67,7 @@ rec(
   w1,
 );
 
-// 4. Feed unavailable (rubyCtx null) → honest "feed unavailable".
+// 4. Feed unavailable (eleanorCtx null) → honest "feed unavailable".
 const unavail = buildGatedTrustLine("M5", {
   available: false,
   stale: false,
@@ -130,7 +130,7 @@ rec(
 // 8. EXHAUSTIVE INVARIANT: across every feed-state combination, a gated trust
 //    line must never contain "Verified" or "Live feed", and must echo the
 //    timeframe + the "read gated" suffix.
-const bases: RubyChartReadBasis[] = ["INSUFFICIENT", "PARTIAL", "SYNCING", "VERIFIED"];
+const bases: EleanorChartReadBasis[] = ["INSUFFICIENT", "PARTIAL", "SYNCING", "VERIFIED"];
 const tfs = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
 const leaks: string[] = [];
 for (const tf of tfs) {
@@ -158,14 +158,14 @@ rec(
 );
 
 // 9. STATIC WIRING GUARD (read-chart): the read-chart gated/structural pipeline
-//    was EXTRACTED into rubyStructuralReadService.ts (buildRubyStructuralRead).
+//    was EXTRACTED into eleanorStructuralReadService.ts (buildEleanorStructuralRead).
 //    So the guard now spans two facts: (9a) the read-chart ROUTE delegates to the
 //    service and keeps NO inline gated branch that could re-leak, and (9b) the
 //    service's WITHHELD branches derive their trust line from the dedicated
 //    builders — buildGatedTrustLine (INSUFFICIENT) / buildStructuralReadTrustLine
-//    (STRUCTURAL_ONLY) — and reuse the verified success-path `rubyCtx.trustLine`
+//    (STRUCTURAL_ONLY) — and reuse the verified success-path `eleanorCtx.trustLine`
 //    EXACTLY ONCE, only in the VERIFIED/FULL branch. Comments are stripped so the
-//    explanatory text (which legitimately names rubyCtx.trustLine) can't cause a
+//    explanatory text (which legitimately names eleanorCtx.trustLine) can't cause a
 //    false pass/fail.
 const here = dirname(fileURLToPath(import.meta.url));
 const meAssistantPath = resolve(here, "../../artifacts/api-server/src/routes/meAssistant.ts");
@@ -179,7 +179,7 @@ const stripComments = (s: string) =>
     })
     .join("\n");
 
-// 9a. read-chart route delegates to buildRubyStructuralRead and keeps NO inline
+// 9a. read-chart route delegates to buildEleanorStructuralRead and keeps NO inline
 //     gated branch (no `gated: true`, no buildGatedTrustLine, no trust line).
 const readChartAnchor = src.indexOf('router.post("/me/assistant/read-chart"');
 const readChartEnd =
@@ -188,7 +188,7 @@ let routeOk = false;
 let routeDetail = "read-chart route not found";
 if (readChartAnchor !== -1 && readChartEnd !== -1 && readChartEnd > readChartAnchor) {
   const routeCode = stripComments(src.slice(readChartAnchor, readChartEnd));
-  const delegates = routeCode.includes("buildRubyStructuralRead(");
+  const delegates = routeCode.includes("buildEleanorStructuralRead(");
   const noInlineGated =
     !routeCode.includes("gated: true") &&
     !routeCode.includes("buildGatedTrustLine(") &&
@@ -198,25 +198,25 @@ if (readChartAnchor !== -1 && readChartEnd !== -1 && readChartEnd > readChartAnc
 }
 
 // 9b. the extracted service wires both withheld builders and reuses the
-//     success-path rubyCtx.trustLine exactly once, only in the VERIFIED branch.
+//     success-path eleanorCtx.trustLine exactly once, only in the VERIFIED branch.
 const servicePath = resolve(
   here,
-  "../../artifacts/api-server/src/lib/assistant/rubyStructuralReadService.ts",
+  "../../artifacts/api-server/src/lib/assistant/eleanorStructuralReadService.ts",
 );
 const svc = stripComments(readFileSync(servicePath, "utf8"));
 const usesGated = svc.includes("buildGatedTrustLine(");
 const usesStructural = svc.includes("buildStructuralReadTrustLine(");
-const successReuses = (svc.match(/rubyCtx\.trustLine/g) ?? []).length;
-const optionalReuse = svc.includes("rubyCtx?.trustLine");
-const verifiedIdx = svc.indexOf('rubyCtx.basis === "VERIFIED"');
-const reuseIdx = svc.indexOf("rubyCtx.trustLine");
+const successReuses = (svc.match(/eleanorCtx\.trustLine/g) ?? []).length;
+const optionalReuse = svc.includes("eleanorCtx?.trustLine");
+const verifiedIdx = svc.indexOf('eleanorCtx.basis === "VERIFIED"');
+const reuseIdx = svc.indexOf("eleanorCtx.trustLine");
 const reuseInVerifiedBranch = verifiedIdx !== -1 && reuseIdx !== -1 && reuseIdx > verifiedIdx;
 const serviceOk =
   usesGated && usesStructural && successReuses === 1 && !optionalReuse && reuseInVerifiedBranch;
 const serviceDetail = `usesGated=${usesGated} usesStructural=${usesStructural} successReuses=${successReuses} optionalReuse=${optionalReuse} reuseInVerified=${reuseInVerifiedBranch}`;
 rec(
   9,
-  "read-chart delegates to the service; withheld branches use the dedicated trust-line builders, not rubyCtx.trustLine",
+  "read-chart delegates to the service; withheld branches use the dedicated trust-line builders, not eleanorCtx.trustLine",
   routeOk && serviceOk,
   `route(${routeDetail}) service(${serviceDetail})`,
 );
@@ -224,7 +224,7 @@ rec(
 // 10. STATIC WIRING GUARD (draft-read): the POST /me/assistant/draft-read
 //     handler must override its trust line with buildGatedTrustLine, gated on
 //     `basis !== "VERIFIED"` — exactly like the read-chart gated branch — so a
-//     gated draft read can never keep buildRubyDraftRead's success-path
+//     gated draft read can never keep buildEleanorDraftRead's success-path
 //     "Verified … · Live feed …" line. Scope to the handler block (anchor → the
 //     next route registration) and strip line comments so the explanatory
 //     comment can't cause a false pass.

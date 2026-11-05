@@ -1,6 +1,6 @@
 // ── MARKET INTELLIGENCE — backend producer (Task #652) ────────────────────────
 //
-// The ONE backend call site that turns a RubyChartContext (real candles + the
+// The ONE backend call site that turns a EleanorChartContext (real candles + the
 // already-decided feed/sufficiency truth, mt5_broker-aware via the chart
 // intelligence path) into the shared, DISPLAY-ONLY `MarketIntelligenceSnapshot`
 // and its `StrategyVerdict`. It runs the SIX pure domain "Truth" contracts
@@ -53,7 +53,7 @@ import {
 } from "@workspace/domain/market";
 import { isChartTimeframe, type ChartTimeframe } from "./timeframes.js";
 import type { ChartDirection } from "./engines/marketUnderstandingTypes.js";
-import type { RubyChartContext } from "./rubyChartContext.js";
+import type { EleanorChartContext } from "./eleanorChartContext.js";
 import {
   buildPatternTruthVerdict,
   buildPatternLibraryRead,
@@ -168,11 +168,11 @@ function htfPriorPeriod(htf: Candle[]): PivotPriorPeriod | null {
 
 /**
  * Build the shared MarketIntelligenceSnapshot + StrategyVerdict from a
- * RubyChartContext. Returns `null` on an unsupported timeframe or any error —
+ * EleanorChartContext. Returns `null` on an unsupported timeframe or any error —
  * the caller then leaves its base read completely untouched.
  */
 export function buildMarketIntelligenceSnapshot(
-  ctx: RubyChartContext,
+  ctx: EleanorChartContext,
   opts: BuildMarketIntelligenceOptions = {},
 ): MarketIntelligenceServiceResult | null {
   try {

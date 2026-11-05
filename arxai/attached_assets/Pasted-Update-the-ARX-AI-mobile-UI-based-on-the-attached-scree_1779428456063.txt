@@ -4,10 +4,10 @@ SCOPE LOCK:
 Only work on:
 1. Top trading status banners/text.
 2. Buy/Sell trade action buttons.
-3. Market symbol filter/category UI inside the AI / Ruby market picker and Symbols tab.
+3. Market symbol filter/category UI inside the AI / Eleanor market picker and Symbols tab.
 4. Small layout fixes required for those areas only.
 
-Do not change login, MT5 bridge execution logic, Ruby intelligence, scanner logic, risk calculations, admin permissions, live/demo approval logic, open-trade calculations, or backend trading safety systems.
+Do not change login, MT5 bridge execution logic, Eleanor intelligence, scanner logic, risk calculations, admin permissions, live/demo approval logic, open-trade calculations, or backend trading safety systems.
 
 Main fixes:
 
@@ -97,7 +97,7 @@ Behavior:
 - Clicking a symbol updates:
   - current market focus
   - chart symbol
-  - Ruby market explanation
+  - Eleanor market explanation
   - trade ticket symbol
   - top symbol selector
 - Keep search bar above the category chips.
@@ -121,7 +121,7 @@ Do not remove:
 - Search any market
 - Favorites/recent
 - Forex, metals, indices, crypto, stocks, synthetic indices
-- Ruby explanation
+- Eleanor explanation
 - Chart focus updates
 - Trade ticket connection
 - Risk controls
@@ -146,5 +146,5 @@ Acceptance checklist:
 - Category chips are swipeable on mobile.
 - One active category shows symbols cleanly.
 - Search still works for any symbol.
-- Clicking symbols updates Ruby/chart/trade ticket focus.
+- Clicking symbols updates Eleanor/chart/trade ticket focus.
 - No unrelated app areas were changed.

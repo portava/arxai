@@ -75,10 +75,10 @@ tags:
     description: User-facing Master/Shared Live access gate
   - name: adminAllocations
     description: Admin — shared-bridge allocations and shared-live pause/resume
-  - name: rubyQuality
-    description: User — my Ruby signal outcomes and plain-language self-reviews (read-only)
-  - name: adminRubyQuality
-    description: Admin — Ruby signal-quality metrics, missed-opportunity replay, and audited tuning (ADMIN/OWNER)
+  - name: eleanorQuality
+    description: User — my Eleanor signal outcomes and plain-language self-reviews (read-only)
+  - name: adminEleanorQuality
+    description: Admin — Eleanor signal-quality metrics, missed-opportunity replay, and audited tuning (ADMIN/OWNER)
   - name: selfTradeAi
     description: Self-Trade AI — autonomous agent fleet read surfaces (owner-isolated). Foundation phase — no autonomous execution
   - name: adminSelfTradeAi
@@ -90,7 +90,7 @@ tags:
   - name: adminSecurity
     description: Admin — Security posture surfaces (security score + band, encryption/protection status, redacted security-event timeline). Read-only; ADMIN/OWNER only; never exposes secret values
   - name: adminIntelligence
-    description: Admin — Ruby signal calibration roll-up (predicted confidence tier vs realized accuracy by timeframe). Read-only over existing resolved outcomes; ADMIN/OWNER only; never an execution gate
+    description: Admin — Eleanor signal calibration roll-up (predicted confidence tier vs realized accuracy by timeframe). Read-only over existing resolved outcomes; ADMIN/OWNER only; never an execution gate
 paths:
   /healthz:
     get:
@@ -2328,7 +2328,7 @@ paths:
         canonical resolvers — chart feed (data state, price, data timestamps),
         market-impact radar (news provider + events), the scanner signal, the
         scalp/flame reads, and the timing read — into ONE object so every
-        scanner/chart/Ruby surface renders identical freshness, news state, price,
+        scanner/chart/Eleanor surface renders identical freshness, news state, price,
         and component verdicts. Read-only: it never places, modifies, or closes a
         trade, never gates execution, and never fabricates data — a blind or
         failing source becomes an absent component (present:false), never a guess.
@@ -2368,10 +2368,10 @@ paths:
       tags: [data]
       summary: Smart Chart Layers & Market Impact Radar for a symbol/timeframe (Task #197)
       description: |
-        Per-user-safe Smart Chart overlay model. Returns Ruby's signal geometry
+        Per-user-safe Smart Chart overlay model. Returns Eleanor's signal geometry
         (watch / entry / retest / late / invalidation / stop / take-profit) and
         structure levels as drawable visual layers that stay CONSISTENT with
-        Ruby's text, plus a Market Impact Radar that maps events from a
+        Eleanor's text, plus a Market Impact Radar that maps events from a
         connected, real economic-calendar provider onto the symbol (severity +
         countdown), an honest news behavior note, reserved execution-cost and
         trade-health overlay slots, and a data-side Smart Chart Overlay
@@ -2520,15 +2520,15 @@ paths:
     post:
       operationId: postMeAssistantDraftRead
       tags: [assistant]
-      summary: Ruby Draft Read — read-only prepared read over the Chart Intelligence State
+      summary: Eleanor Draft Read — read-only prepared read over the Chart Intelligence State
       description: |
-        Deterministic, READ-ONLY Ruby read assembled from the already-built
+        Deterministic, READ-ONLY Eleanor read assembled from the already-built
         Chart Intelligence State for a symbol/timeframe. No LLM and no provider
         re-probe — it restates the chart's own truth/understanding/decision
         layers in plain language for a small set of fixed intents
         (analyze, is-this-a-buy, is-this-a-scalp, why-not-now,
         what-changes-my-mind, what-invalidates, hold-or-close, agent-consensus).
-        Ruby is strictly read-only: it never places, modifies, or closes a trade,
+        Eleanor is strictly read-only: it never places, modifies, or closes a trade,
         never mutates a connection, and never reads another user's data. Every
         response carries the paper_only / liveLocked / readOnlyMode /
         allowOrderExecution=false envelope. Honest by construction — degrades to
@@ -2539,14 +2539,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RubyDraftReadRequest"
+              $ref: "#/components/schemas/EleanorDraftReadRequest"
       responses:
         "200":
-          description: Ruby Draft Read result with the read-only safety envelope
+          description: Eleanor Draft Read result with the read-only safety envelope
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RubyDraftReadResponse"
+                $ref: "#/components/schemas/EleanorDraftReadResponse"
         "400":
           description: Invalid body
         "401":
@@ -3194,7 +3194,7 @@ paths:
         window-filtered array of enriched events. `connected` is false when no
         provider is configured (`ECONOMIC_CALENDAR_PROVIDER` + `TRADING_ECONOMICS_KEY`)
         or the last fetch failed. This is the primary/unified endpoint for both
-        the Economic Calendar page and the radar/Ruby seam — do not drift by
+        the Economic Calendar page and the radar/Eleanor seam — do not drift by
         sourcing status and event list from separate endpoints.
       parameters:
         - name: symbol
@@ -6747,7 +6747,7 @@ paths:
     post:
       operationId: createMeScalpFocus
       tags: [meScalp]
-      summary: Read a Ruby Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
+      summary: Read a Eleanor Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
       requestBody:
         required: true
         content:
@@ -6769,7 +6769,7 @@ paths:
     post:
       operationId: createMeScalpRank
       tags: [meScalp]
-      summary: Rank Ruby Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
+      summary: Rank Eleanor Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
       requestBody:
         required: true
         content:
@@ -6791,7 +6791,7 @@ paths:
     post:
       operationId: createMeScalpBuild
       tags: [meScalp]
-      summary: Find the best Ruby Scalp matching a target profit / risk amount (Ruby Scalp Builder).
+      summary: Find the best Eleanor Scalp matching a target profit / risk amount (Eleanor Scalp Builder).
       requestBody:
         required: true
         content:
@@ -6852,7 +6852,7 @@ paths:
     get:
       operationId: getMeScalpJournal
       tags: [meScalp]
-      summary: The user's own scalp journal — every signal Ruby recorded with its full context and outcome (newest first). Read-only.
+      summary: The user's own scalp journal — every signal Eleanor recorded with its full context and outcome (newest first). Read-only.
       parameters:
         - in: query
           name: limit
@@ -6896,7 +6896,7 @@ paths:
     get:
       operationId: getMeScalpPersonality
       tags: [meScalp]
-      summary: What Ruby has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
+      summary: What Eleanor has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
       parameters:
         - in: query
           name: limit
@@ -6918,7 +6918,7 @@ paths:
     get:
       operationId: getMeMarketEdge
       tags: [meScalp]
-      summary: The normalized "Ruby Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
+      summary: The normalized "Eleanor Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
       parameters:
         - in: query
           name: symbol
@@ -6930,7 +6930,7 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 8 }
       responses:
         "200":
-          description: The Ruby Market Edge signal for the requested symbol/timeframe
+          description: The Eleanor Market Edge signal for the requested symbol/timeframe
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MeMarketEdgeResp" }
@@ -6945,7 +6945,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MeScalpErrorResp" }
         "500":
-          description: Ruby could not read this market just now
+          description: Eleanor could not read this market just now
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MeScalpErrorResp" }
@@ -6985,7 +6985,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MeScalpErrorResp" }
         "500":
-          description: Ruby could not scan the markets just now
+          description: Eleanor could not scan the markets just now
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MeScalpErrorResp" }
@@ -8889,11 +8889,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/InvestorErrorResp" }
 
-  /me/ruby-quality/outcomes:
+  /me/eleanor-quality/outcomes:
     get:
-      operationId: getMyRubyOutcomes
-      tags: [rubyQuality]
-      summary: My tracked Ruby signal outcomes (read-only, user-simple)
+      operationId: getMyEleanorOutcomes
+      tags: [eleanorQuality]
+      summary: My tracked Eleanor signal outcomes (read-only, user-simple)
       parameters:
         - name: symbol
           in: query
@@ -8908,13 +8908,13 @@ paths:
           description: My outcomes
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MyRubyOutcomesResp" }
+              schema: { $ref: "#/components/schemas/MyEleanorOutcomesResp" }
 
-  /me/ruby-quality/reviews:
+  /me/eleanor-quality/reviews:
     get:
-      operationId: getMyRubyReviews
-      tags: [rubyQuality]
-      summary: My Ruby signal self-reviews (read-only, plain-language only)
+      operationId: getMyEleanorReviews
+      tags: [eleanorQuality]
+      summary: My Eleanor signal self-reviews (read-only, plain-language only)
       parameters:
         - name: limit
           in: query
@@ -8925,13 +8925,13 @@ paths:
           description: My self-reviews
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MyRubyReviewsResp" }
+              schema: { $ref: "#/components/schemas/MyEleanorReviewsResp" }
 
-  /admin/ruby-quality/metrics:
+  /admin/eleanor-quality/metrics:
     get:
-      operationId: getAdminRubyQualityMetrics
-      tags: [adminRubyQuality]
-      summary: Ruby signal-quality metrics with filters (ADMIN/OWNER)
+      operationId: getAdminEleanorQualityMetrics
+      tags: [adminEleanorQuality]
+      summary: Eleanor signal-quality metrics with filters (ADMIN/OWNER)
       parameters:
         - name: userId
           in: query
@@ -8962,17 +8962,17 @@ paths:
           description: Quality metrics
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AdminRubyQualityMetricsResp" }
+              schema: { $ref: "#/components/schemas/AdminEleanorQualityMetricsResp" }
         "403":
           description: Admin required
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
 
-  /admin/ruby-quality/missed-opportunities:
+  /admin/eleanor-quality/missed-opportunities:
     get:
-      operationId: getAdminRubyMissedOpportunities
-      tags: [adminRubyQuality]
+      operationId: getAdminEleanorMissedOpportunities
+      tags: [adminEleanorQuality]
       summary: Missed-opportunity replays (ADMIN/OWNER)
       parameters:
         - name: symbol
@@ -8993,66 +8993,66 @@ paths:
           description: Admin required
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
 
-  /admin/ruby-quality/thresholds:
+  /admin/eleanor-quality/thresholds:
     get:
-      operationId: getAdminRubyThresholds
-      tags: [adminRubyQuality]
-      summary: Current Ruby quality tuning thresholds (ADMIN/OWNER)
+      operationId: getAdminEleanorThresholds
+      tags: [adminEleanorQuality]
+      summary: Current Eleanor quality tuning thresholds (ADMIN/OWNER)
       responses:
         "200":
           description: Thresholds
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AdminRubyThresholdsResp" }
+              schema: { $ref: "#/components/schemas/AdminEleanorThresholdsResp" }
         "403":
           description: Admin required
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
     post:
-      operationId: updateAdminRubyThresholds
-      tags: [adminRubyQuality]
-      summary: Update Ruby quality tuning thresholds (ADMIN/OWNER, audited)
+      operationId: updateAdminEleanorThresholds
+      tags: [adminEleanorQuality]
+      summary: Update Eleanor quality tuning thresholds (ADMIN/OWNER, audited)
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/AdminRubyThresholdsUpdateReq" }
+            schema: { $ref: "#/components/schemas/AdminEleanorThresholdsUpdateReq" }
       responses:
         "200":
           description: Updated thresholds
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AdminRubyThresholdsResp" }
+              schema: { $ref: "#/components/schemas/AdminEleanorThresholdsResp" }
         "400":
           description: Validation error
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
         "403":
           description: Admin required
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
 
-  /admin/ruby-quality/investor-summary:
+  /admin/eleanor-quality/investor-summary:
     get:
-      operationId: getAdminRubyInvestorSummary
-      tags: [adminRubyQuality]
+      operationId: getAdminEleanorInvestorSummary
+      tags: [adminEleanorQuality]
       summary: Sanitized aggregate signal-quality summary for investor reporting (ADMIN/OWNER)
       responses:
         "200":
           description: Investor summary
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AdminRubyInvestorSummaryResp" }
+              schema: { $ref: "#/components/schemas/AdminEleanorInvestorSummaryResp" }
         "403":
           description: Admin required
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
 
   /admin/intelligence/calibration:
     get:
@@ -9060,7 +9060,7 @@ paths:
       tags: [adminIntelligence]
       summary: Calibration roll-up — predicted confidence tier vs realized accuracy by timeframe (ADMIN/OWNER)
       description: >
-        Read-only roll-up over EXISTING resolved Ruby signal outcomes, grouped by
+        Read-only roll-up over EXISTING resolved Eleanor signal outcomes, grouped by
         timeframe × confidence tier. The accuracy denominator is exactly graded
         directional outcomes (WIN+LOSS); PENDING/UNRESOLVED are reported but never
         enter it. A cell whose graded sample is below `minSample` is flagged
@@ -9099,12 +9099,12 @@ paths:
           description: Validation error
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
         "403":
           description: Admin required
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RubyQualityErrorResp" }
+              schema: { $ref: "#/components/schemas/EleanorQualityErrorResp" }
 
   /auth/forgot-password:
     post:
@@ -9571,7 +9571,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SelfTradeErrorResp" }
 
-  # ── Ruby Market Timing Brain (Task #220) ──────────────────────────────────
+  # ── Eleanor Market Timing Brain (Task #220) ──────────────────────────────────
   # Advisory only — never an execution gate.
 
   /me/timing-brain/{symbol}:
@@ -9905,7 +9905,7 @@ paths:
         - in: query
           name: actorType
           required: false
-          schema: { type: string, enum: [user, ruby, self_trade_agent, admin, system] }
+          schema: { type: string, enum: [user, eleanor, self_trade_agent, admin, system] }
         - in: query
           name: symbol
           required: false
@@ -12813,7 +12813,7 @@ components:
         count: { type: integer, minimum: 0 }
         events: { type: array, items: { $ref: "#/components/schemas/AdminSecurityTimelineEvent" } }
 
-    # ── Ruby Market Timing Brain schemas (Task #220) ─────────────────────────
+    # ── Eleanor Market Timing Brain schemas (Task #220) ─────────────────────────
 
     HeatSourceBreakdown:
       type: object
@@ -13219,7 +13219,7 @@ components:
       properties:
         decisionId: { type: string }
         timestamp: { type: string }
-        actorType: { type: string, enum: [user, ruby, self_trade_agent, admin, system] }
+        actorType: { type: string, enum: [user, eleanor, self_trade_agent, admin, system] }
         actorId: { type: string, nullable: true }
         symbol: { type: string, nullable: true }
         timeframe: { type: string, nullable: true }
@@ -13311,14 +13311,14 @@ components:
         error: { type: string }
         message: { type: string }
 
-    RubyQualityErrorResp:
+    EleanorQualityErrorResp:
       type: object
       required: [ok, error]
       properties:
         ok: { type: boolean }
         error: { type: string }
 
-    MyRubyOutcome:
+    MyEleanorOutcome:
       type: object
       required: [outcomeId, symbol, timeframe, decision, outcomeStatus, createdAt]
       properties:
@@ -13333,16 +13333,16 @@ components:
         createdAt: { type: string }
         resolvedAt: { type: string, nullable: true }
 
-    MyRubyOutcomesResp:
+    MyEleanorOutcomesResp:
       type: object
       required: [ok, outcomes]
       properties:
         ok: { type: boolean }
         outcomes:
           type: array
-          items: { $ref: "#/components/schemas/MyRubyOutcome" }
+          items: { $ref: "#/components/schemas/MyEleanorOutcome" }
 
-    MyRubyReview:
+    MyEleanorReview:
       type: object
       required: [reviewId, outcomeId, reviewType, outcomeStatus, userSummary, createdAt]
       properties:
@@ -13353,16 +13353,16 @@ components:
         userSummary: { type: string }
         createdAt: { type: string }
 
-    MyRubyReviewsResp:
+    MyEleanorReviewsResp:
       type: object
       required: [ok, reviews]
       properties:
         ok: { type: boolean }
         reviews:
           type: array
-          items: { $ref: "#/components/schemas/MyRubyReview" }
+          items: { $ref: "#/components/schemas/MyEleanorReview" }
 
-    RubyQualitySymbolSessionStat:
+    EleanorQualitySymbolSessionStat:
       type: object
       required: [key, graded, wins, winRate]
       properties:
@@ -13372,7 +13372,7 @@ components:
         winRate: { type: number }
         avgPnlR: { type: number, nullable: true }
 
-    RubyQualityScoreBucket:
+    EleanorQualityScoreBucket:
       type: object
       required: [bucket, total, wins, losses, winRate]
       properties:
@@ -13382,7 +13382,7 @@ components:
         losses: { type: number }
         winRate: { type: number }
 
-    RubyQualityMetrics:
+    EleanorQualityMetrics:
       type: object
       required:
         [totals, rates, timing, averages, bestSymbols, worstSymbols, bestSessions,
@@ -13418,16 +13418,16 @@ components:
             mae: { type: number, nullable: true }
         bestSymbols:
           type: array
-          items: { $ref: "#/components/schemas/RubyQualitySymbolSessionStat" }
+          items: { $ref: "#/components/schemas/EleanorQualitySymbolSessionStat" }
         worstSymbols:
           type: array
-          items: { $ref: "#/components/schemas/RubyQualitySymbolSessionStat" }
+          items: { $ref: "#/components/schemas/EleanorQualitySymbolSessionStat" }
         bestSessions:
           type: array
-          items: { $ref: "#/components/schemas/RubyQualitySymbolSessionStat" }
+          items: { $ref: "#/components/schemas/EleanorQualitySymbolSessionStat" }
         worstSessions:
           type: array
-          items: { $ref: "#/components/schemas/RubyQualitySymbolSessionStat" }
+          items: { $ref: "#/components/schemas/EleanorQualitySymbolSessionStat" }
         newsFailures: { type: number }
         executionFailures: { type: number }
         explanationAccuracy: { type: number }
@@ -13436,19 +13436,19 @@ components:
         missedOpportunities: { type: number }
         confidenceVsOutcome:
           type: array
-          items: { $ref: "#/components/schemas/RubyQualityScoreBucket" }
+          items: { $ref: "#/components/schemas/EleanorQualityScoreBucket" }
         edgeVsOutcome:
           type: array
-          items: { $ref: "#/components/schemas/RubyQualityScoreBucket" }
+          items: { $ref: "#/components/schemas/EleanorQualityScoreBucket" }
 
-    AdminRubyQualityMetricsResp:
+    AdminEleanorQualityMetricsResp:
       type: object
       required: [ok, metrics]
       properties:
         ok: { type: boolean }
-        metrics: { $ref: "#/components/schemas/RubyQualityMetrics" }
+        metrics: { $ref: "#/components/schemas/EleanorQualityMetrics" }
 
-    RubyCalibrationCell:
+    EleanorCalibrationCell:
       type: object
       required:
         [timeframe, confidenceTier, tierLow, tierHigh, total, resolved, pending,
@@ -13471,7 +13471,7 @@ components:
         calibrationGap: { type: number, nullable: true }
         insufficientSample: { type: boolean }
 
-    RubyCalibrationRollup:
+    EleanorCalibrationRollup:
       type: object
       required: [minSample, tierEdges, totals, cells]
       properties:
@@ -13490,24 +13490,24 @@ components:
             directionalGraded: { type: number }
         cells:
           type: array
-          items: { $ref: "#/components/schemas/RubyCalibrationCell" }
+          items: { $ref: "#/components/schemas/EleanorCalibrationCell" }
 
     AdminIntelligenceCalibrationResp:
       type: object
       required: [ok, calibration]
       properties:
         ok: { type: boolean }
-        calibration: { $ref: "#/components/schemas/RubyCalibrationRollup" }
+        calibration: { $ref: "#/components/schemas/EleanorCalibrationRollup" }
 
-    RubyMissedOpportunity:
+    EleanorMissedOpportunity:
       type: object
-      required: [outcomeId, symbol, timeframe, verdict, whatRubySaw, howItMoved, evidenceNote]
+      required: [outcomeId, symbol, timeframe, verdict, whatEleanorSaw, howItMoved, evidenceNote]
       properties:
         outcomeId: { type: string }
         symbol: { type: string }
         timeframe: { type: string }
         verdict: { type: string }
-        whatRubySaw:
+        whatEleanorSaw:
           type: object
           properties:
             direction: { type: string, nullable: true }
@@ -13536,9 +13536,9 @@ components:
         ok: { type: boolean }
         replays:
           type: array
-          items: { $ref: "#/components/schemas/RubyMissedOpportunity" }
+          items: { $ref: "#/components/schemas/EleanorMissedOpportunity" }
 
-    RubyQualityThresholds:
+    EleanorQualityThresholds:
       type: object
       required:
         [lateEntrySeconds, minConfidence, minEdge, newsLockoutMinutes, maxSpread,
@@ -13555,18 +13555,18 @@ components:
         breakevenR: { type: number }
         evidenceExpiryMinutes: { type: number }
 
-    AdminRubyThresholdsResp:
+    AdminEleanorThresholdsResp:
       type: object
       required: [ok, thresholds, defaults]
       properties:
         ok: { type: boolean }
-        thresholds: { $ref: "#/components/schemas/RubyQualityThresholds" }
-        defaults: { $ref: "#/components/schemas/RubyQualityThresholds" }
+        thresholds: { $ref: "#/components/schemas/EleanorQualityThresholds" }
+        defaults: { $ref: "#/components/schemas/EleanorQualityThresholds" }
         updatedByAdminId: { type: integer, nullable: true }
         updatedReason: { type: string, nullable: true }
         updatedAt: { type: string, nullable: true }
 
-    AdminRubyThresholdsUpdateReq:
+    AdminEleanorThresholdsUpdateReq:
       type: object
       required: [reason, thresholds]
       properties:
@@ -13585,7 +13585,7 @@ components:
             breakevenR: { type: number }
             evidenceExpiryMinutes: { type: number }
 
-    AdminRubyInvestorSummaryResp:
+    AdminEleanorInvestorSummaryResp:
       type: object
       required: [ok, summary]
       properties:
@@ -13668,7 +13668,7 @@ components:
           description: >
             Task #496 — true ONLY for a server-synthesized real-time tip composed
             from live EA ticks (isComplete=false, isFinal=false). A closed provider
-            bar is isForming=false. Analysis / Ruby / chart-intelligence exclude
+            bar is isForming=false. Analysis / Eleanor / chart-intelligence exclude
             isForming bars (closed-bars-only); the tip is display telemetry, never
             persisted and never an execution input.
         # ── Phase 1: VerifiedCandle extension ─────────────────────────────────
@@ -14013,7 +14013,7 @@ components:
         readLabel: { type: string }
         confidentReadAllowed:
           type: boolean
-          description: Truth ≥ 75 — required for chart-based confident reads (Ruby chart-read, Scanner chart-confirm)
+          description: Truth ≥ 75 — required for chart-based confident reads (Eleanor chart-read, Scanner chart-confirm)
         scannerConfirmAllowed:
           type: boolean
           description: Truth ≥ 75 — required for scanner chart-confirmation flag
@@ -14495,7 +14495,7 @@ components:
         slowBrainBlockedLiveExecution: { type: boolean, description: INVARIANT — always false; the Slow Brain never runs on the live-execution path }
         slowBrainLastRunAt: { type: ["string", "null"], description: Last background Slow Brain run, or null when it has never run }
 
-    RubyDraftReadRequest:
+    EleanorDraftReadRequest:
       type: object
       required: [symbol, intent]
       properties:
@@ -14506,7 +14506,7 @@ components:
           type: string
           enum: [analyze, is-this-a-buy, is-this-a-scalp, why-not-now, what-changes-my-mind, what-invalidates, hold-or-close, agent-consensus]
         draft:
-          description: Optional draft the user is contemplating. Ruby reads it but NEVER executes it.
+          description: Optional draft the user is contemplating. Eleanor reads it but NEVER executes it.
           oneOf:
             - type: object
               required: [side, entry, sl, tp]
@@ -14517,7 +14517,7 @@ components:
                 tp: { type: number }
             - type: "null"
 
-    RubyDraftConsensusView:
+    EleanorDraftConsensusView:
       type: object
       description: Advisory/shadow agent-consensus view — never gates a trade or the live path.
       required: [populated, headline, stance, conflict, protective, cautions]
@@ -14529,9 +14529,9 @@ components:
         protective: { type: boolean }
         cautions: { type: array, items: { type: string } }
 
-    RubyDraftRead:
+    EleanorDraftRead:
       type: object
-      description: Deterministic, read-only prepared Ruby read over the Chart Intelligence State. Decision support only — the chart never executes from it.
+      description: Deterministic, read-only prepared Eleanor read over the Chart Intelligence State. Decision support only — the chart never executes from it.
       required: [intent, symbol, displaySymbol, timeframe, feedUsable, dataQuality, bias, headline, points, cautions, bestNextAction, confidenceLabel, confidenceScore, agentConsensus, disclaimer]
       properties:
         intent:
@@ -14549,14 +14549,14 @@ components:
         bestNextAction: { type: string }
         confidenceLabel: { type: string }
         confidenceScore: { type: ["number", "null"] }
-        agentConsensus: { $ref: "#/components/schemas/RubyDraftConsensusView" }
+        agentConsensus: { $ref: "#/components/schemas/EleanorDraftConsensusView" }
         disclaimer: { type: string }
 
-    RubyDraftReadResponse:
+    EleanorDraftReadResponse:
       type: object
       required: [draftRead, safetyMode, liveLocked, readOnlyMode, allowOrderExecution]
       properties:
-        draftRead: { $ref: "#/components/schemas/RubyDraftRead" }
+        draftRead: { $ref: "#/components/schemas/EleanorDraftRead" }
         safetyMode: { type: string, enum: [paper_only] }
         liveLocked: { type: boolean }
         readOnlyMode: { type: boolean }
@@ -14625,7 +14625,7 @@ components:
         agentConflict: { type: boolean }
         courtResult: { type: ["string", "null"] }
         riskWarning: { type: ["string", "null"] }
-        rubyFinalRead: { type: ["string", "null"] }
+        eleanorFinalRead: { type: ["string", "null"] }
         confidenceScore: { type: ["integer", "null"] }
         confidenceLabel: { type: ["string", "null"] }
         whatWouldChange: { type: ["string", "null"] }
@@ -14672,7 +14672,7 @@ components:
              agent-consensus]
         source:
           type: string
-          enum: [ruby_draft_read, ruby_explain_signal, chart_read, chart_trade_plan]
+          enum: [eleanor_draft_read, eleanor_explain_signal, chart_read, chart_trade_plan]
         direction: { type: string, enum: [BUY, SELL, NEUTRAL] }
 
     ChartDecisionReceiptCreateResponse:
@@ -15505,7 +15505,7 @@ components:
           enum: [info, success, warning, danger, neutral]
         source:
           type: string
-          enum: [signal, ruby, structure, execution, news, position, plan]
+          enum: [signal, eleanor, structure, execution, news, position, plan]
         reserved: { type: boolean }
     NewsRadarEvent:
       type: object
@@ -19811,7 +19811,7 @@ components:
       required: [id, title, currency, impact, eventTimeIso, affectedMarkets]
       description: |
         A raw economic-calendar event from a connected real provider (Trading
-        Economics). Never fabricated — the radar/Ruby surfaces these only when
+        Economics). Never fabricated — the radar/Eleanor surfaces these only when
         `connected:true` from the calendar seam. The live-calendar endpoint
         (`GET /economic-calendar/events`) returns enriched fields in addition to
         the base radar fields: country, source, forecast, previous, actual, plus
@@ -22314,9 +22314,9 @@ components:
           items: { $ref: "#/components/schemas/SignalChange" }
         summary: { type: string }
 
-    RubyMarketEdgeSignal:
+    EleanorMarketEdgeSignal:
       type: object
-      description: ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation/UX. Direction (BUY/SELL/NEUTRAL) is always kept separate from edge/quality. When data is insufficient the read collapses to an honest WATCHING/UNKNOWN/NONE state with hasSufficientData=false — never a fabricated number.
+      description: ONE normalized signal object shared by Scanner, Scalp, Eleanor, and downstream explanation/UX. Direction (BUY/SELL/NEUTRAL) is always kept separate from edge/quality. When data is insufficient the read collapses to an honest WATCHING/UNKNOWN/NONE state with hasSufficientData=false — never a fabricated number.
       required:
         - symbol
         - displayName
@@ -22398,12 +22398,12 @@ components:
       type: object
       required: [signal]
       properties:
-        signal: { $ref: "#/components/schemas/RubyMarketEdgeSignal" }
+        signal: { $ref: "#/components/schemas/EleanorMarketEdgeSignal" }
         explanation:
-          allOf: [{ $ref: "#/components/schemas/RubyMarketReadExplanation" }]
+          allOf: [{ $ref: "#/components/schemas/EleanorMarketReadExplanation" }]
           nullable: true
 
-    RubyExplanationMode:
+    EleanorExplanationMode:
       type: object
       required:
         - whatIsHappening
@@ -22430,7 +22430,7 @@ components:
         whatInvalidates: { type: string }
         whatToDoNext: { type: string }
 
-    RubyExplanationLevels:
+    EleanorExplanationLevels:
       type: object
       required: [entryZone, watchZone, lateZone, invalidation, takeProfits, stopLoss]
       properties:
@@ -22443,7 +22443,7 @@ components:
           items: { $ref: "#/components/schemas/SignalPriceZone" }
         stopLoss: { type: number, nullable: true }
 
-    RubyNoTradeIntelligence:
+    EleanorNoTradeIntelligence:
       type: object
       required: [isNoTrade, confidence, reason]
       properties:
@@ -22451,7 +22451,7 @@ components:
         confidence: { type: number }
         reason: { type: string, nullable: true }
 
-    RubyMarketReadExplanation:
+    EleanorMarketReadExplanation:
       type: object
       required:
         - headline
@@ -22468,11 +22468,11 @@ components:
       properties:
         headline: { type: string }
         defaultMode: { type: string, enum: [SIMPLE, ADVANCED] }
-        simple: { $ref: "#/components/schemas/RubyExplanationMode" }
-        advanced: { $ref: "#/components/schemas/RubyExplanationMode" }
-        levels: { $ref: "#/components/schemas/RubyExplanationLevels" }
+        simple: { $ref: "#/components/schemas/EleanorExplanationMode" }
+        advanced: { $ref: "#/components/schemas/EleanorExplanationMode" }
+        levels: { $ref: "#/components/schemas/EleanorExplanationLevels" }
         bestAction: { type: string }
-        noTrade: { $ref: "#/components/schemas/RubyNoTradeIntelligence" }
+        noTrade: { $ref: "#/components/schemas/EleanorNoTradeIntelligence" }
         hasSufficientData: { type: boolean }
         actionable: { type: boolean }
         missingContext:
@@ -22771,7 +22771,7 @@ components:
 
     ScalpExitVerdict:
       type: object
-      description: Exit-urgency monitor. ALERT_ONLY — Ruby recommends, it never closes.
+      description: Exit-urgency monitor. ALERT_ONLY — Eleanor recommends, it never closes.
       required: [urgency, action, headline, detail, alertOnly]
       properties:
         urgency: { type: string, enum: [NONE, WATCH, PROTECT_PROFIT, CLOSE_LATEST, CLOSE_PARTIAL, CLOSE_ALL, EMERGENCY] }
@@ -22911,7 +22911,7 @@ components:
         realizedPl: { type: number, nullable: true }
         lastFloatingPl: { type: number, nullable: true }
         flameContinued: { type: boolean, nullable: true }
-        rubyWarnedCorrectly: { type: boolean, nullable: true }
+        eleanorWarnedCorrectly: { type: boolean, nullable: true }
         exitReason: { type: string, nullable: true }
         lesson: { type: string, nullable: true }
         openedAt: { type: string, nullable: true }

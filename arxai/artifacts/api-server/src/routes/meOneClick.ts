@@ -52,9 +52,9 @@ import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipe
 
 export const REQUIRED_TYPED_PHRASE = "ENABLE ONE CLICK TRADING";
 
-// Ruby execution-authority model (Task #319). Only AI_ASSISTED executes; AI_AUTO
+// Eleanor execution-authority model (Task #319). Only AI_ASSISTED executes; AI_AUTO
 // is a stored-but-disabled preference (the instant-trade auth layer refuses it).
-export const RUBY_AUTHORITY_VALUES = ["OFF", "ADVISE_ONLY", "AI_ASSISTED", "AI_AUTO"] as const;
+export const ELEANOR_AUTHORITY_VALUES = ["OFF", "ADVISE_ONLY", "AI_ASSISTED", "AI_AUTO"] as const;
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -118,32 +118,32 @@ router.get("/me/one-click", requireUser, async (req, res) => {
     defaultOrderType: row.defaultOrderType,
     allowOrdersWithoutStopLoss: row.allowOrdersWithoutStopLoss,
     reduceOnlyCloseAllowed: row.reduceOnlyCloseAllowed,
-    // Ruby AI command-execution settings (default OFF). When OFF, the
-    // instant-trade router refuses any source ∈ {ruby_text, ruby_voice}.
+    // Eleanor AI command-execution settings (default OFF). When OFF, the
+    // instant-trade router refuses any source ∈ {eleanor_text, eleanor_voice}.
     aiInstantTradeCommandsEnabled: row.aiInstantTradeCommandsEnabled,
     defaultAiTradeSymbol: row.defaultAiTradeSymbol,
     defaultAiTradeVolume: row.defaultAiTradeVolume,
     defaultAiOrderType: row.defaultAiOrderType,
-    allowRubyOpenCommands: row.allowRubyOpenCommands,
-    allowRubyCloseCommands: row.allowRubyCloseCommands,
-    allowRubyModifyCommands: row.allowRubyModifyCommands,
-    // Ruby execution-authority model (Task #319). `rubyExecutionAuthority` is
+    allowEleanorOpenCommands: row.allowEleanorOpenCommands,
+    allowEleanorCloseCommands: row.allowEleanorCloseCommands,
+    allowEleanorModifyCommands: row.allowEleanorModifyCommands,
+    // Eleanor execution-authority model (Task #319). `eleanorExecutionAuthority` is
     // the source of truth; AI_ASSISTED is the only mode that executes (skips
     // ONLY the extra prompt, never a backend gate). AI_AUTO is defined but not
     // enabled in this build.
-    rubyExecutionAuthority: row.rubyExecutionAuthority,
-    rubyRequireExtraConfirmation: row.rubyRequireExtraConfirmation,
-    allowRubyBreakEven: row.allowRubyBreakEven,
-    allowRubyPartialClose: row.allowRubyPartialClose,
-    allowRubyMonitor: row.allowRubyMonitor,
-    allowRubyWatchEnter: row.allowRubyWatchEnter,
-    allowRubyWatchClose: row.allowRubyWatchClose,
-    allowRubyScalpScanner: row.allowRubyScalpScanner,
-    maxRubyLotPerTrade: row.maxRubyLotPerTrade,
-    maxRubyOpenPositions: row.maxRubyOpenPositions,
-    maxRubyDailyTrades: row.maxRubyDailyTrades,
-    allowedRubySymbols: row.allowedRubySymbols,
-    allowedRubyAssetClasses: row.allowedRubyAssetClasses,
+    eleanorExecutionAuthority: row.eleanorExecutionAuthority,
+    eleanorRequireExtraConfirmation: row.eleanorRequireExtraConfirmation,
+    allowEleanorBreakEven: row.allowEleanorBreakEven,
+    allowEleanorPartialClose: row.allowEleanorPartialClose,
+    allowEleanorMonitor: row.allowEleanorMonitor,
+    allowEleanorWatchEnter: row.allowEleanorWatchEnter,
+    allowEleanorWatchClose: row.allowEleanorWatchClose,
+    allowEleanorScalpScanner: row.allowEleanorScalpScanner,
+    maxEleanorLotPerTrade: row.maxEleanorLotPerTrade,
+    maxEleanorOpenPositions: row.maxEleanorOpenPositions,
+    maxEleanorDailyTrades: row.maxEleanorDailyTrades,
+    allowedEleanorSymbols: row.allowedEleanorSymbols,
+    allowedEleanorAssetClasses: row.allowedEleanorAssetClasses,
     requiredTypedPhrase: REQUIRED_TYPED_PHRASE,
     canEnableLive: access.decision === "PASS",
     canEnableLiveBlockedReason: access.decision === "BLOCKED" ? access.primaryReason : null,
@@ -167,27 +167,27 @@ router.put("/me/one-click", requireUser, async (req, res) => {
     defaultAiTradeSymbol?: string;
     defaultAiTradeVolume?: number;
     defaultAiOrderType?: string;
-    allowRubyOpenCommands?: boolean;
-    allowRubyCloseCommands?: boolean;
-    allowRubyModifyCommands?: boolean;
-    rubyExecutionAuthority?: string;
-    rubyRequireExtraConfirmation?: boolean;
-    allowRubyBreakEven?: boolean;
-    allowRubyPartialClose?: boolean;
-    allowRubyMonitor?: boolean;
-    allowRubyWatchEnter?: boolean;
-    allowRubyWatchClose?: boolean;
-    allowRubyScalpScanner?: boolean;
-    maxRubyLotPerTrade?: number | null;
-    maxRubyOpenPositions?: number | null;
-    maxRubyDailyTrades?: number | null;
-    allowedRubySymbols?: string[] | null;
-    allowedRubyAssetClasses?: string[] | null;
+    allowEleanorOpenCommands?: boolean;
+    allowEleanorCloseCommands?: boolean;
+    allowEleanorModifyCommands?: boolean;
+    eleanorExecutionAuthority?: string;
+    eleanorRequireExtraConfirmation?: boolean;
+    allowEleanorBreakEven?: boolean;
+    allowEleanorPartialClose?: boolean;
+    allowEleanorMonitor?: boolean;
+    allowEleanorWatchEnter?: boolean;
+    allowEleanorWatchClose?: boolean;
+    allowEleanorScalpScanner?: boolean;
+    maxEleanorLotPerTrade?: number | null;
+    maxEleanorOpenPositions?: number | null;
+    maxEleanorDailyTrades?: number | null;
+    allowedEleanorSymbols?: string[] | null;
+    allowedEleanorAssetClasses?: string[] | null;
   };
   // `scope`/`enable` drive the one-click demo/live toggle. They are OPTIONAL:
   // when both are present we run the toggle (with its typed-confirmation +
   // master-live gates); when absent the request only updates the standalone
-  // Ruby authority/permission/cap fields below. If a caller sends one without
+  // Eleanor authority/permission/cap fields below. If a caller sends one without
   // the other we reject — a half-specified toggle is a client bug.
   const togglingScope = body.scope === "demo" || body.scope === "live";
   if (togglingScope && typeof body.enable !== "boolean") {
@@ -271,20 +271,20 @@ router.put("/me/one-click", requireUser, async (req, res) => {
   if (typeof body.reduceOnlyCloseAllowed === "boolean") {
     update.reduceOnlyCloseAllowed = body.reduceOnlyCloseAllowed;
   }
-  // Ruby AI command-execution settings. Flipping
+  // Eleanor AI command-execution settings. Flipping
   // aiInstantTradeCommandsEnabled to true is the master switch that allows
-  // Ruby to call /api/trades/instant/*; the three allow* flags scope WHICH
-  // actions Ruby may perform. Default ON for close/modify, OFF for open.
+  // Eleanor to call /api/trades/instant/*; the three allow* flags scope WHICH
+  // actions Eleanor may perform. Default ON for close/modify, OFF for open.
   let aiToggleAuditAction: "AI_INSTANT_TRADE_ENABLED" | "AI_INSTANT_TRADE_DISABLED" | null = null;
   if (typeof body.aiInstantTradeCommandsEnabled === "boolean") {
     if (body.aiInstantTradeCommandsEnabled === true && body.scope === "live") {
-      // Enabling Ruby trading requires the user to ALSO be approved for
+      // Enabling Eleanor trading requires the user to ALSO be approved for
       // live (master-live access PASS) — defence in depth.
       const access = await loadAndEvaluateUserMasterLiveAccessGate(userId);
       if (access.decision === "BLOCKED") {
         return res.status(403).json({
           ok: false,
-          error: "RUBY_TRADING_REQUIRES_MASTER_LIVE_ACCESS",
+          error: "ELEANOR_TRADING_REQUIRES_MASTER_LIVE_ACCESS",
           blockReason: access.primaryReason,
         });
       }
@@ -302,79 +302,79 @@ router.put("/me/one-click", requireUser, async (req, res) => {
   if (typeof body.defaultAiOrderType === "string" && body.defaultAiOrderType.length > 0) {
     update.defaultAiOrderType = body.defaultAiOrderType.slice(0, 32);
   }
-  if (typeof body.allowRubyOpenCommands === "boolean") update.allowRubyOpenCommands = body.allowRubyOpenCommands;
-  if (typeof body.allowRubyCloseCommands === "boolean") update.allowRubyCloseCommands = body.allowRubyCloseCommands;
-  if (typeof body.allowRubyModifyCommands === "boolean") update.allowRubyModifyCommands = body.allowRubyModifyCommands;
+  if (typeof body.allowEleanorOpenCommands === "boolean") update.allowEleanorOpenCommands = body.allowEleanorOpenCommands;
+  if (typeof body.allowEleanorCloseCommands === "boolean") update.allowEleanorCloseCommands = body.allowEleanorCloseCommands;
+  if (typeof body.allowEleanorModifyCommands === "boolean") update.allowEleanorModifyCommands = body.allowEleanorModifyCommands;
 
-  // ── Ruby execution-authority model (Task #319) ───────────────────────────
-  // `rubyExecutionAuthority` is the SOURCE OF TRUTH. Only AI_ASSISTED executes.
+  // ── Eleanor execution-authority model (Task #319) ───────────────────────────
+  // `eleanorExecutionAuthority` is the SOURCE OF TRUTH. Only AI_ASSISTED executes.
   // AI_AUTO is accepted as a stored preference but is NOT enabled in this build
   // (the instant-trade auth layer refuses execution under AI_AUTO). Setting
   // AI_ASSISTED requires master-live access (defence in depth) just like the
   // legacy aiInstantTradeCommandsEnabled master switch.
   let newAuthority: string | null = null;
-  if (typeof body.rubyExecutionAuthority === "string") {
-    const authority = body.rubyExecutionAuthority.trim().toUpperCase();
-    if (!RUBY_AUTHORITY_VALUES.includes(authority as (typeof RUBY_AUTHORITY_VALUES)[number])) {
-      return res.status(400).json({ ok: false, error: "INVALID_RUBY_AUTHORITY" });
+  if (typeof body.eleanorExecutionAuthority === "string") {
+    const authority = body.eleanorExecutionAuthority.trim().toUpperCase();
+    if (!ELEANOR_AUTHORITY_VALUES.includes(authority as (typeof ELEANOR_AUTHORITY_VALUES)[number])) {
+      return res.status(400).json({ ok: false, error: "INVALID_ELEANOR_AUTHORITY" });
     }
     if (authority === "AI_ASSISTED") {
       const access = await loadAndEvaluateUserMasterLiveAccessGate(userId);
       if (access.decision === "BLOCKED") {
         return res.status(403).json({
           ok: false,
-          error: "RUBY_TRADING_REQUIRES_MASTER_LIVE_ACCESS",
+          error: "ELEANOR_TRADING_REQUIRES_MASTER_LIVE_ACCESS",
           blockReason: access.primaryReason,
         });
       }
     }
-    update.rubyExecutionAuthority = authority;
+    update.eleanorExecutionAuthority = authority;
     // Keep the legacy boolean in lockstep so older readers stay consistent:
     // enabled iff the authority is the only executing mode.
     update.aiInstantTradeCommandsEnabled = authority === "AI_ASSISTED";
     newAuthority = authority;
   }
-  if (typeof body.rubyRequireExtraConfirmation === "boolean") {
-    update.rubyRequireExtraConfirmation = body.rubyRequireExtraConfirmation;
+  if (typeof body.eleanorRequireExtraConfirmation === "boolean") {
+    update.eleanorRequireExtraConfirmation = body.eleanorRequireExtraConfirmation;
   }
-  if (typeof body.allowRubyBreakEven === "boolean") update.allowRubyBreakEven = body.allowRubyBreakEven;
-  if (typeof body.allowRubyPartialClose === "boolean") update.allowRubyPartialClose = body.allowRubyPartialClose;
-  if (typeof body.allowRubyMonitor === "boolean") update.allowRubyMonitor = body.allowRubyMonitor;
-  if (typeof body.allowRubyWatchEnter === "boolean") update.allowRubyWatchEnter = body.allowRubyWatchEnter;
-  if (typeof body.allowRubyWatchClose === "boolean") update.allowRubyWatchClose = body.allowRubyWatchClose;
-  if (typeof body.allowRubyScalpScanner === "boolean") update.allowRubyScalpScanner = body.allowRubyScalpScanner;
+  if (typeof body.allowEleanorBreakEven === "boolean") update.allowEleanorBreakEven = body.allowEleanorBreakEven;
+  if (typeof body.allowEleanorPartialClose === "boolean") update.allowEleanorPartialClose = body.allowEleanorPartialClose;
+  if (typeof body.allowEleanorMonitor === "boolean") update.allowEleanorMonitor = body.allowEleanorMonitor;
+  if (typeof body.allowEleanorWatchEnter === "boolean") update.allowEleanorWatchEnter = body.allowEleanorWatchEnter;
+  if (typeof body.allowEleanorWatchClose === "boolean") update.allowEleanorWatchClose = body.allowEleanorWatchClose;
+  if (typeof body.allowEleanorScalpScanner === "boolean") update.allowEleanorScalpScanner = body.allowEleanorScalpScanner;
 
   // Caps. `null` clears the cap (account limits still apply); a positive number
-  // sets a stricter Ruby-only ceiling. Negative/zero/NaN are rejected.
-  if (body.maxRubyLotPerTrade !== undefined) {
-    if (body.maxRubyLotPerTrade === null) update.maxRubyLotPerTrade = null;
-    else if (typeof body.maxRubyLotPerTrade === "number" && body.maxRubyLotPerTrade > 0) {
-      update.maxRubyLotPerTrade = body.maxRubyLotPerTrade;
-    } else return res.status(400).json({ ok: false, error: "INVALID_MAX_RUBY_LOT" });
+  // sets a stricter Eleanor-only ceiling. Negative/zero/NaN are rejected.
+  if (body.maxEleanorLotPerTrade !== undefined) {
+    if (body.maxEleanorLotPerTrade === null) update.maxEleanorLotPerTrade = null;
+    else if (typeof body.maxEleanorLotPerTrade === "number" && body.maxEleanorLotPerTrade > 0) {
+      update.maxEleanorLotPerTrade = body.maxEleanorLotPerTrade;
+    } else return res.status(400).json({ ok: false, error: "INVALID_MAX_ELEANOR_LOT" });
   }
-  if (body.maxRubyOpenPositions !== undefined) {
-    if (body.maxRubyOpenPositions === null) update.maxRubyOpenPositions = null;
-    else if (Number.isInteger(body.maxRubyOpenPositions) && body.maxRubyOpenPositions > 0) {
-      update.maxRubyOpenPositions = body.maxRubyOpenPositions;
-    } else return res.status(400).json({ ok: false, error: "INVALID_MAX_RUBY_OPEN_POSITIONS" });
+  if (body.maxEleanorOpenPositions !== undefined) {
+    if (body.maxEleanorOpenPositions === null) update.maxEleanorOpenPositions = null;
+    else if (Number.isInteger(body.maxEleanorOpenPositions) && body.maxEleanorOpenPositions > 0) {
+      update.maxEleanorOpenPositions = body.maxEleanorOpenPositions;
+    } else return res.status(400).json({ ok: false, error: "INVALID_MAX_ELEANOR_OPEN_POSITIONS" });
   }
-  if (body.maxRubyDailyTrades !== undefined) {
-    if (body.maxRubyDailyTrades === null) update.maxRubyDailyTrades = null;
-    else if (Number.isInteger(body.maxRubyDailyTrades) && body.maxRubyDailyTrades > 0) {
-      update.maxRubyDailyTrades = body.maxRubyDailyTrades;
-    } else return res.status(400).json({ ok: false, error: "INVALID_MAX_RUBY_DAILY_TRADES" });
+  if (body.maxEleanorDailyTrades !== undefined) {
+    if (body.maxEleanorDailyTrades === null) update.maxEleanorDailyTrades = null;
+    else if (Number.isInteger(body.maxEleanorDailyTrades) && body.maxEleanorDailyTrades > 0) {
+      update.maxEleanorDailyTrades = body.maxEleanorDailyTrades;
+    } else return res.status(400).json({ ok: false, error: "INVALID_MAX_ELEANOR_DAILY_TRADES" });
   }
   // Allowlists. `null` or [] = inherit account allowlist / all asset classes.
-  if (body.allowedRubySymbols !== undefined) {
-    update.allowedRubySymbols = Array.isArray(body.allowedRubySymbols) && body.allowedRubySymbols.length > 0
-      ? JSON.stringify(body.allowedRubySymbols
+  if (body.allowedEleanorSymbols !== undefined) {
+    update.allowedEleanorSymbols = Array.isArray(body.allowedEleanorSymbols) && body.allowedEleanorSymbols.length > 0
+      ? JSON.stringify(body.allowedEleanorSymbols
           .filter((s) => typeof s === "string" && s.trim().length > 0)
           .map((s) => s.trim().toUpperCase().slice(0, 32)))
       : null;
   }
-  if (body.allowedRubyAssetClasses !== undefined) {
-    update.allowedRubyAssetClasses = Array.isArray(body.allowedRubyAssetClasses) && body.allowedRubyAssetClasses.length > 0
-      ? JSON.stringify(body.allowedRubyAssetClasses
+  if (body.allowedEleanorAssetClasses !== undefined) {
+    update.allowedEleanorAssetClasses = Array.isArray(body.allowedEleanorAssetClasses) && body.allowedEleanorAssetClasses.length > 0
+      ? JSON.stringify(body.allowedEleanorAssetClasses
           .filter((s) => typeof s === "string" && s.trim().length > 0)
           .map((s) => s.trim().toLowerCase().slice(0, 32)))
       : null;
@@ -395,21 +395,21 @@ router.put("/me/one-click", requireUser, async (req, res) => {
     await writeAudit({
       userId, action: aiToggleAuditAction, ip, ua,
       metadata: {
-        allowRubyOpenCommands: body.allowRubyOpenCommands ?? null,
-        allowRubyCloseCommands: body.allowRubyCloseCommands ?? null,
-        allowRubyModifyCommands: body.allowRubyModifyCommands ?? null,
+        allowEleanorOpenCommands: body.allowEleanorOpenCommands ?? null,
+        allowEleanorCloseCommands: body.allowEleanorCloseCommands ?? null,
+        allowEleanorModifyCommands: body.allowEleanorModifyCommands ?? null,
       },
     });
   }
   if (newAuthority) {
     await writeAudit({
-      userId, action: "RUBY_AUTHORITY_UPDATED", ip, ua,
+      userId, action: "ELEANOR_AUTHORITY_UPDATED", ip, ua,
       metadata: {
-        rubyExecutionAuthority: newAuthority,
-        rubyRequireExtraConfirmation: update.rubyRequireExtraConfirmation ?? null,
-        maxRubyLotPerTrade: update.maxRubyLotPerTrade ?? null,
-        maxRubyOpenPositions: update.maxRubyOpenPositions ?? null,
-        maxRubyDailyTrades: update.maxRubyDailyTrades ?? null,
+        eleanorExecutionAuthority: newAuthority,
+        eleanorRequireExtraConfirmation: update.eleanorRequireExtraConfirmation ?? null,
+        maxEleanorLotPerTrade: update.maxEleanorLotPerTrade ?? null,
+        maxEleanorOpenPositions: update.maxEleanorOpenPositions ?? null,
+        maxEleanorDailyTrades: update.maxEleanorDailyTrades ?? null,
       },
     });
   }
@@ -434,7 +434,7 @@ router.put("/me/one-click", requireUser, async (req, res) => {
 // NOTE (2026-11-04 sweep): no dashboard surface calls this route any more —
 // every one-click surface uses the instant-trade router
 // (/api/trades/instant/execute), which also applies the MT5 pending-order
-// rules, the security handshake and source-aware Ruby gates. It is kept because
+// rules, the security handshake and source-aware Eleanor gates. It is kept because
 // the DB-backed route suite (test:one-click-route) and the one-click CI guards
 // pin it; it now at least refuses investors and enforces the per-click lot cap
 // like the router does.
@@ -457,7 +457,7 @@ router.post("/me/one-click/submit-live", denyInvestorExecution, requireUser, asy
     symbol?: string; side?: "BUY" | "SELL"; orderType?: string;
     commandType?: "PLACE_LIVE_MARKET_ORDER" | "PLACE_LIVE_PENDING_ORDER";
     requestedVolume?: number; stopLoss?: number | null; takeProfit?: number | null;
-    sourcePage?: string; rubyExplanationSummary?: string | null;
+    sourcePage?: string; eleanorExplanationSummary?: string | null;
     payload?: Record<string, unknown>;
   };
   if (!body.symbol || (body.side !== "BUY" && body.side !== "SELL") || typeof body.requestedVolume !== "number") {
@@ -503,7 +503,7 @@ router.post("/me/one-click/submit-live", denyInvestorExecution, requireUser, asy
       stopLoss: body.stopLoss ?? null,
       takeProfit: body.takeProfit ?? null,
       sourcePage: body.sourcePage ?? "ONE_CLICK",
-      rubyExplanationSummary: body.rubyExplanationSummary ?? null,
+      eleanorExplanationSummary: body.eleanorExplanationSummary ?? null,
       payload: body.payload ?? {},
       allowNoStopLossThisDraft: noSlOverride,
     });

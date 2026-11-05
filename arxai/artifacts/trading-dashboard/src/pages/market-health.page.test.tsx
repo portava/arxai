@@ -13,7 +13,7 @@
 // AFTER
 //   It consumes `useScannerTruth`, which composes the one honest market query
 //   (GET /api/chart/candles) and resolves it through the shared
-//   `resolveScannerTruth` contract. Scanner, chart, Ruby reads and this page
+//   `resolveScannerTruth` contract. Scanner, chart, Eleanor reads and this page
 //   now share one evaluator, so they cannot disagree about feed liveness.
 //
 //   The real "Market Data Provider" card (/api/me/market-data/status) and its

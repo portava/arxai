@@ -1,5 +1,5 @@
 // CS6/CS7 regression (panel): a failed scanner fetch says "unavailable", not
-// "no signal"; drawn FVG zones get a legend line; a Ruby read shows its as-of
+// "no signal"; drawn FVG zones get a legend line; a Eleanor read shows its as-of
 // time and says when it has expired.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
@@ -11,8 +11,8 @@ afterEach(() => cleanup());
 function data(over: Partial<UseAiChartOverlaysResult> = {}): UseAiChartOverlaysResult {
   return {
     overlays: [], signal: null, scannerStatus: "ok", fvg: null,
-    ruby: { status: "idle", read: null, error: null },
-    suppressed: false, suppressedReason: null, requestRubyRead: vi.fn(), ...over,
+    eleanor: { status: "idle", read: null, error: null },
+    suppressed: false, suppressedReason: null, requestEleanorRead: vi.fn(), ...over,
   };
 }
 
@@ -37,9 +37,9 @@ describe("ChartAiOverlayPanel scanner status + legends", () => {
     expect(fvg.textContent).toContain("M5 read as of 11:55 UTC");
   });
 
-  it("shows the Ruby read's as-of time and an expired notice", () => {
-    render(<ChartAiOverlayPanel data={data({ ruby: { status: "ok", read: READ, error: null, expired: true, asOf: "11:45 UTC" } })} />);
-    expect(screen.getByTestId("chart-ai-overlay-ruby-asof").textContent).toContain("11:45 UTC");
-    expect(screen.getByTestId("chart-ai-overlay-ruby-expired")).toBeTruthy();
+  it("shows the Eleanor read's as-of time and an expired notice", () => {
+    render(<ChartAiOverlayPanel data={data({ eleanor: { status: "ok", read: READ, error: null, expired: true, asOf: "11:45 UTC" } })} />);
+    expect(screen.getByTestId("chart-ai-overlay-eleanor-asof").textContent).toContain("11:45 UTC");
+    expect(screen.getByTestId("chart-ai-overlay-eleanor-expired")).toBeTruthy();
   });
 });

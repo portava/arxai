@@ -79,8 +79,8 @@ export interface ChartTruthAuditRow {
   mirrorPass: boolean;
   /** Price decimal count consistent with symbolProfile.pricePrecision. */
   priceAlignPass: boolean;
-  /** aiUsable = (quality === "clean") — Ruby reads only when confirmed clean. */
-  rubyAllowed: boolean;
+  /** aiUsable = (quality === "clean") — Eleanor reads only when confirmed clean. */
+  eleanorAllowed: boolean;
 
   // ── Derived health verdict (small-probe aware) ──────────────────────────
   status: ChartTruthAuditStatus;
@@ -175,7 +175,7 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
       historicalPeriodShiftCount: 0,
       mirrorPass: false,
       priceAlignPass: false,
-      rubyAllowed: false,
+      eleanorAllowed: false,
       status: "UNAVAILABLE",
       rawAssessment: "UNAVAILABLE",
       quality: "unavailable",
@@ -255,7 +255,7 @@ async function probeRow(symbol: string, timeframe: ChartTimeframe): Promise<Char
     historicalPeriodShiftCount: tr?.historicalPeriodShiftCount ?? 0,
     mirrorPass,
     priceAlignPass,
-    rubyAllowed: resp.aiUsable,
+    eleanorAllowed: resp.aiUsable,
     status,
     rawAssessment: tr?.assessment ?? "UNAVAILABLE",
     quality: resp.quality,

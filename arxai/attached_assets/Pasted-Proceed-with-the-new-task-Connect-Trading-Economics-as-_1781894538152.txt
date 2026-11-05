@@ -16,7 +16,7 @@ Surfaces that must use the provider:
 - News Risk page
 - Chart Impact Radar
 - Scanner risk context
-- Ruby explanations
+- Eleanor explanations
 - Global Market Heat / country heat
 - Any calendar/provider diagnostics panel
 
@@ -108,8 +108,8 @@ Tests:
 4. EURUSD pulls EUR + USD events.
 5. XAUUSD pulls USD high-impact macro events.
 6. Deriv synthetics do not receive fake country events.
-7. Ruby says calendar unavailable when provider missing.
-8. Ruby can cite upcoming high-impact event when provider returns one.
+7. Eleanor says calendar unavailable when provider missing.
+8. Eleanor can cite upcoming high-impact event when provider returns one.
 9. Chart Impact Radar renders real upcoming events.
 10. Global Market Heat uses calendar events only when provider is connected.
 11. Diagnostics never expose secrets.
@@ -128,5 +128,5 @@ Validation:
 Hard boundary:
 Do not touch live execution gates, MT5 bridge execution, broker dispatch, trade-ticket execution, kill switches, owner/admin permissions, or risk gate bypass logic.
 Economic calendar is read/risk context only.
-It may warn, explain, downgrade, or inform Scanner/Ruby.
+It may warn, explain, downgrade, or inform Scanner/Eleanor.
 It must never grant live trade permission.

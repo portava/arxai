@@ -8,13 +8,13 @@ not replace its source-provenance or deployment limitations.
 
 | Finding | Classification | Repair |
 | --- | --- | --- |
-| Ruby traffic selection had no `RUBY` surface entry | Application wiring defect | Include the same advisory departments used by Ruby's signal alignment, retaining the existing participant cap and risk authority. Added participant-selection assertions. |
+| Eleanor traffic selection had no `ELEANOR` surface entry | Application wiring defect | Include the same advisory departments used by Eleanor's signal alignment, retaining the existing participant cap and risk authority. Added participant-selection assertions. |
 | Draw-setup test assumed normal server startup had seeded core agents | Test prerequisite defect | Explicitly call the real idempotent core-agent seed and invalidate the registry snapshot before the route test. Existing earned authority/status is not overwritten. |
 | Risk-template insert omitted required `created_by` | Fixture defect | Supply the fixture owner's real user ID; remove the type assertion hiding the missing required field. |
 | A reused ADMIN fixture occupied legacy owner ID 4 | Fixture collision with an existing application policy | Avoid ID 4 for restricted ADMIN/USER controls, verify their identities explicitly, and leave the legacy application policy unchanged. Never delete a pre-existing ID 4. |
 | Fundbook tier checks required canonical BALANCED/CONSERVATIVE pools | Fixture defect | Create two dedicated, paused, zero-capital QA pools and NAV rows transactionally, and remove their financial rows in `finally`. Never alter canonical pools. |
 | Exposure-reservation concurrency checks assumed user ID 1 | Fixture defect | Create a dedicated system-test user, pass its returned ID, and remove its reservations/master/user in `finally`. No live access is granted. |
-| No-feed and Ruby chat/chart parity network guards expected a provider attempt despite absent credentials | Offline test prerequisite defects | Use dummy provider configuration only inside the installed external-network guard. Preserve the assertions that external requests were intercepted and no feed was fabricated. The reusable parity test removes only its own dummy configuration and resets provider caches. |
+| No-feed and Eleanor chat/chart parity network guards expected a provider attempt despite absent credentials | Offline test prerequisite defects | Use dummy provider configuration only inside the installed external-network guard. Preserve the assertions that external requests were intercepted and no feed was fabricated. The reusable parity test removes only its own dummy configuration and resets provider caches. |
 | Security regression assumed the shared API had invite-only registration enabled | Test-server configuration defect | Default to an in-process API with the invite gate enabled in that test process only. Keep the real invalid-code/rate-limit assertions. An explicit `BASE_URL` still supports an already configured invite-gated API. The managed API's registration policy is unchanged. |
 
 No risk thresholds, verdict expectations, live execution gates, or no-live-command
@@ -32,7 +32,7 @@ dummy loopback AI configuration, broker/bootstrap/provider secrets excluded, and
    - Type checks and preceding guards passed.
    - Shared in-process tests: **523 passing, 0 failing across 18 groups**, compared
      with the baseline's 519 passing / 4 failing.
-   - Ruby draw-setup: **53 passing, 0 failing**. Scanner risk **77** produces
+   - Eleanor draw-setup: **53 passing, 0 failing**. Scanner risk **77** produces
      `governanceOutcome="downgraded"` and verdict **`caution`**.
    - The command subsequently stopped at `test:security-regression`:
      **57/58 passing**, with `07d_invite_rate_limit_enforced_on_real_endpoint`
@@ -57,14 +57,14 @@ repaired without changing the corresponding application policies.
 - Ran the **232 previously unreached root-CI steps** in their original order,
   collecting every exit status rather than stopping at the first failure.
   **231 passed initially**; the only failure was
-  `test:ruby-chat-chart-read-parity`, whose offline guard had zero provider
+  `test:eleanor-chat-chart-read-parity`, whose offline guard had zero provider
   attempts without a configured provider.
 - Targeted final rechecks:
   - `test:admin-unrestricted-risk`: **17/17 passing**.
   - `test:scanner-no-feed-honesty`: **4/4 passing**.
   - `test:security-regression`: **58/58 passing**, including the actual HTTP
     invite-rate-limit check.
-  - `test:ruby-chat-chart-read-parity`: **20/20 passing**, with **26 intercepted
+  - `test:eleanor-chat-chart-read-parity`: **20/20 passing**, with **26 intercepted
     external attempts**.
   - Final `@workspace/scripts` typecheck: passed.
   - `git diff --check`: passed.

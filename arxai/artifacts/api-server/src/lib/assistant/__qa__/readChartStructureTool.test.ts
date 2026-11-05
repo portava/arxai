@@ -1,18 +1,18 @@
 // readChartStructure chat tool — wrapper logic lock (Task #602 follow-on).
 //
-// The chat tool that unifies Ruby CHAT's chart read with the Scanner "Ruby Chart
+// The chat tool that unifies Eleanor CHAT's chart read with the Scanner "Eleanor Chart
 // Read" panel. This test pins the tool's OWN logic — symbol resolution, the
 // symbol/timeframe priority rules, and honest replies when a market can't be
 // resolved — in ISOLATION from the shared structural-read service.
 //
 // WHY MOCK THE SERVICE:
-//   buildRubyStructuralRead reaches the live market-data router, which serves
+//   buildEleanorStructuralRead reaches the live market-data router, which serves
 //   majors (EURUSD) non-deterministically from real providers. To lock the
 //   tool's deterministic wrapper logic (what symbol + timeframe it FORWARDS, and
 //   when it refuses), we replace the service with an instrumented stub that
 //   records its arguments. The real service is exercised end-to-end (panel vs
 //   chat parity, STRUCTURAL_ONLY withholding, INSUFFICIENT honesty) by the
-//   in-process harness `rubyChatChartReadParityTest.ts`.
+//   in-process harness `eleanorChatChartReadParityTest.ts`.
 //
 // Requires Node's experimental module-mock flag (wired into the npm script:
 //   pnpm --filter @workspace/api-server run test:read-chart-structure-tool).
@@ -22,15 +22,15 @@ import assert from "node:assert/strict";
 
 // ── Instrument the shared service seam BEFORE importing the tool ─────────────
 // The specifier resolves to the SAME absolute module URL that tools.ts imports
-// (`./rubyStructuralReadService.js`), so the tool picks up this stub.
+// (`./eleanorStructuralReadService.js`), so the tool picks up this stub.
 const calls: Array<{ symbol: string; timeframe: string; clientFeedUnconfirmed: boolean; draft: unknown }> = [];
 function resetCalls(): void {
   calls.length = 0;
 }
 
-mock.module("../rubyStructuralReadService.js", {
+mock.module("../eleanorStructuralReadService.js", {
   namedExports: {
-    buildRubyStructuralRead: async (params: {
+    buildEleanorStructuralRead: async (params: {
       symbol: string;
       timeframe: string;
       clientFeedUnconfirmed?: boolean;

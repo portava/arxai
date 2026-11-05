@@ -18,7 +18,7 @@ vi.mock("../../../../../lib/integrations-openai-ai-react/src/audio/useAudioPlayb
   useAudioPlayback: () => playback,
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@workspace/api-client-react", () => ({
   useGetMeOneClickStatus: () => ({ data: null, isLoading: false, isError: false, error: null, refetch: vi.fn() }),
 }));
@@ -86,8 +86,8 @@ describe("AC4 settings card — command permissions", () => {
     const settings = {
       demoOneClickEnabled: false, liveOneClickEnabled: false, maxLotPerClick: null, updatedAt: null,
       canEnableLive: true, canEnableLiveBlockedReason: null,
-      rubyExecutionAuthority: "AI_ASSISTED", rubyRequireExtraConfirmation: true,
-      allowRubyOpenCommands: false, allowRubyCloseCommands: false, allowRubyModifyCommands: false,
+      eleanorExecutionAuthority: "AI_ASSISTED", eleanorRequireExtraConfirmation: true,
+      allowEleanorOpenCommands: false, allowEleanorCloseCommands: false, allowEleanorModifyCommands: false,
     };
     vi.stubGlobal("fetch", vi.fn(async (_u: string, init?: RequestInit) => {
       if ((init?.method ?? "GET").toUpperCase() === "PUT") {
@@ -97,13 +97,13 @@ describe("AC4 settings card — command permissions", () => {
       return new Response(JSON.stringify(settings), { status: 200 });
     }));
     render(<OneClickToggleCard />);
-    const open = await screen.findByTestId("switch-ruby-allowRubyOpenCommands");
-    expect(screen.getByTestId("switch-ruby-allowRubyCloseCommands")).toBeTruthy();
-    expect(screen.getByTestId("switch-ruby-allowRubyModifyCommands")).toBeTruthy();
+    const open = await screen.findByTestId("switch-eleanor-allowEleanorOpenCommands");
+    expect(screen.getByTestId("switch-eleanor-allowEleanorCloseCommands")).toBeTruthy();
+    expect(screen.getByTestId("switch-eleanor-allowEleanorModifyCommands")).toBeTruthy();
     // defaults stay OFF
     expect(open.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(open);
-    await waitFor(() => expect(puts).toContainEqual({ allowRubyOpenCommands: true }));
+    await waitFor(() => expect(puts).toContainEqual({ allowEleanorOpenCommands: true }));
   });
 });
 
@@ -120,7 +120,7 @@ describe("AC5 position side card — Ask", () => {
       openedAt: new Date().toISOString(), sourceCommandId: null, accountMode: "LIVE", source: "MT5_LIVE_BRIDGE",
     } as UnifiedPosition;
     render(<PositionSideCard position={p} />);
-    fireEvent.click(screen.getByTestId("btn-ask-ruby"));
+    fireEvent.click(screen.getByTestId("btn-ask-eleanor"));
     window.removeEventListener(ASSISTANT_PROMPT_EVENT, listener);
     expect(got.length).toBe(1);
     expect(got[0]).toMatch(/EURUSD/);

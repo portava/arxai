@@ -1,4 +1,4 @@
-// explainMarketRead — composes a RubyMarketEdgeSignal into ONE plain-English
+// explainMarketRead — composes a EleanorMarketEdgeSignal into ONE plain-English
 // explanation (Simple + Advanced) that always answers: what is happening, why,
 // why this market, why this direction, why now, early/ready/late, entry zone,
 // risk, what confirms, what invalidates, what to do next.
@@ -16,8 +16,8 @@ import type {
   MarketRegime,
   NewsRiskLevel,
   PriceZone,
-  RubyMarketEdgeSignal,
-  RubyMarketReadExplanation,
+  EleanorMarketEdgeSignal,
+  EleanorMarketReadExplanation,
   SignalBias,
   SignalDirection,
   SignalEvidenceItem,
@@ -190,7 +190,7 @@ interface Derived {
   invalSide: "above" | "below";
 }
 
-function derive(signal: RubyMarketEdgeSignal): Derived {
+function derive(signal: EleanorMarketEdgeSignal): Derived {
   const newsL: NewsRiskLevel = "none"; // overwritten below if carried
   return {
     name: signal.displayName || signal.symbol,
@@ -228,7 +228,7 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
 // News risk is not a typed field on the signal; it is folded into evidence
 // ("Elevated news/event risk"). Detect it from the against-evidence so the copy
 // stays honest without inventing a level.
-function newsRiskFromEvidence(d: Derived, signal: RubyMarketEdgeSignal): NewsRiskLevel {
+function newsRiskFromEvidence(d: Derived, signal: EleanorMarketEdgeSignal): NewsRiskLevel {
   const hit = signal.evidence.against.find((i) => i.key === "news_risk");
   if (!hit) return "none";
   return hit.weight >= 18 ? "critical" : "high";
@@ -427,8 +427,8 @@ function buildMode(
 // ── Public seam ───────────────────────────────────────────────────────────────
 
 export function explainMarketRead(
-  signal: RubyMarketEdgeSignal,
-): RubyMarketReadExplanation {
+  signal: EleanorMarketEdgeSignal,
+): EleanorMarketReadExplanation {
   const d = derive(signal);
   d.newsL = newsRiskFromEvidence(d, signal);
 

@@ -91,7 +91,7 @@ describe("G-FINISH — Open Trades has no dead affordances", () => {
     // Refresh, Open Trade and Ask-the-assistant all do something.
     expect(myTrades).toMatch(/Refresh/);
     expect(myTrades).toMatch(/Open Trade/);
-    expect(myTrades).toMatch(/openRubyLiveChat/);
+    expect(myTrades).toMatch(/openEleanorLiveChat/);
   });
 });
 

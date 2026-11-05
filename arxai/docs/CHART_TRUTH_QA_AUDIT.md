@@ -20,13 +20,13 @@ Verified against the Phase 1–4 implementation in `artifacts/api-server/src/lib
 | **Mirror pass** | Symbol + timeframe from response match the requested values |
 | **Price-align pass** | Price decimal count consistent with `symbolProfile.pricePrecision` |
 | **Scale pass** | Y-axis `autoScale=true` in `ARXNativeChart`; `rightPriceScale.autoScale` enabled (Phase 2) |
-| **Ruby allowed** | `aiUsable = (quality === "clean")` — Ruby reads only when the feed is confirmed clean |
+| **Eleanor allowed** | `aiUsable = (quality === "clean")` — Eleanor reads only when the feed is confirmed clean |
 
 ---
 
 ### EURUSD (Forex — representative major)
 
-| Timeframe | Count | Source | OHLC | Aggregation | Forming | Merge | Outlier | Mirror | Price-align | Scale | Ruby |
+| Timeframe | Count | Source | OHLC | Aggregation | Forming | Merge | Outlier | Mirror | Price-align | Scale | Eleanor |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **M1** | 0–300 | `assistant_real:twelve_data` | ✓ | ✓ | ✓ | ✓ | advisory | ✓ | ✓ (4 dp) | ✓ | ⚠ Provider-limited† |
 | **M5** | 0–300 | `assistant_real:twelve_data` | ✓ | ✓ | ✓ | ✓ | advisory | ✓ | ✓ (4 dp) | ✓ | ✓ when clean |
@@ -35,7 +35,7 @@ Verified against the Phase 1–4 implementation in `artifacts/api-server/src/lib
 | **H4** | 0–300 | `assistant_real:twelve_data` | ✓ | ✓ | ✓ | ✓ | advisory + OUTLIER_WICK gate | ✓ | ✓ (4 dp) | ✓ | ✓ when clean |
 | **D1** | 0–300 | `assistant_real:twelve_data` | ✓ | ✓ | ✓ | ✓ | HISTORICAL_PERIOD_SHIFT on old-epoch bars‡ | ✓ | ✓ (4 dp) | ✓ | ✓ when clean |
 
-**†** M1: TwelveData free tier allocates ≈800 requests/day total. Under high usage M1 data may be absent or exhausted. Safe-mode behaviour: router returns honest empty + `safetyNote`; quality="unavailable"; no fallback to simulator data. Ruby blocked (`aiUsable=false`).
+**†** M1: TwelveData free tier allocates ≈800 requests/day total. Under high usage M1 data may be absent or exhausted. Safe-mode behaviour: router returns honest empty + `safetyNote`; quality="unavailable"; no fallback to simulator data. Eleanor blocked (`aiUsable=false`).
 
 **‡** XAUUSD/D1 specifically: 2023 bars (~\$1900–\$2100) appear in a 300-bar D1 view alongside 2025 bars (~\$3200+). These are **real historical data**, not bad ticks. HISTORICAL_PERIOD_SHIFT flag is applied to the old-epoch bars. Assessment stays CLEAN (advisory). Y-axis `autoScale=true` (Phase 2) includes all visible bars automatically.
 
@@ -43,7 +43,7 @@ Verified against the Phase 1–4 implementation in `artifacts/api-server/src/lib
 
 ### V75 Index (Deriv Synthetic — representative)
 
-| Timeframe | Count | Source | OHLC | Aggregation | Forming | Merge | Outlier | Mirror | Price-align | Scale | Ruby |
+| Timeframe | Count | Source | OHLC | Aggregation | Forming | Merge | Outlier | Mirror | Price-align | Scale | Eleanor |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **M1** | 0–300 | `deriv` | ✓ | ✓ | ✓ | ✓ | advisory | ✓ | ✓ (3 dp) | ✓ | ✓ when clean |
 | **M5** | 0–300 | `deriv` | ✓ | ✓ | ✓ | ✓ | advisory | ✓ | ✓ (3 dp) | ✓ | ✓ when clean |
@@ -101,8 +101,8 @@ Volume is always 0 for Deriv synthetics (algorithm-generated; no traded volume).
 - [x] **22. Chart Safe Mode present** — when quality="invalid", `ARXNativeChart` shows a clean user message overlay and pauses AI confidence. Defined in Phase 2.
 
 ### Gating
-- [x] **23. Ruby gated on aiUsable** — `aiUsable = (quality === "clean")`. When the feed is stale/invalid/mock, `aiUsable=false` is published via `onChartContextChange`. Scanner/Ruby/Self-Trade surfaces must not trigger chart-confirmation reads on `aiUsable=false` feeds. Fixture test [F14]–[F15] verify.
-- [x] **24. Scanner gated** — Scanner uses `feedConfidence()` from `lib/feed-confidence.ts`; `aiUsable` flag in the response controls whether Ruby chart reads are offered.
+- [x] **23. Eleanor gated on aiUsable** — `aiUsable = (quality === "clean")`. When the feed is stale/invalid/mock, `aiUsable=false` is published via `onChartContextChange`. Scanner/Eleanor/Self-Trade surfaces must not trigger chart-confirmation reads on `aiUsable=false` feeds. Fixture test [F14]–[F15] verify.
+- [x] **24. Scanner gated** — Scanner uses `feedConfidence()` from `lib/feed-confidence.ts`; `aiUsable` flag in the response controls whether Eleanor chart reads are offered.
 - [x] **25. Self-Trade gated** — `executeInstantTrade` does not use chart data directly; it re-runs the 16-gate evaluator server-side on every submission, independent of chart quality.
 - [x] **26. AACI handshake present** — `chartHandshake.ts` implements the advisory readiness check for the chart surface; `enforceSensitiveAction` is called for chart-truth-dependent operations. Never a 17th live gate.
 - [x] **27. User-safe messages present** — quality-to-message mapping in `buildMessage()` in `chartDataService.ts`; mock data shows "Chart data is unavailable — feed is syncing" (no admin detail). Warning field carries more context for admin-facing surfaces.
@@ -114,7 +114,7 @@ Volume is always 0 for Deriv synthetics (algorithm-generated; no traded volume).
 - [x] **31. Risk Governor intact** — Risk parameters and per-symbol lot limits are evaluated server-side at dispatch, not at the chart layer.
 - [x] **32. AACI intact** — AACI advisory-shadow layer is unaffected; chart truth signals are read-only inputs.
 - [x] **33. Security Handshake intact** — `enforceSensitiveAction` catalog is unchanged; chart surfaces remain advisory.
-- [x] **34. Ruby floating button intact** — `RubyChartRead` component unchanged; routes through read-only `POST /api/me/assistant/read-chart`.
+- [x] **34. Eleanor floating button intact** — `EleanorChartRead` component unchanged; routes through read-only `POST /api/me/assistant/read-chart`.
 - [x] **35. Bottom nav intact** — Navigation components are unchanged.
 - [x] **36. `pnpm run typecheck` passes** — Verified after all Phase 5 changes.
 - [x] **37. `pnpm run ci` passes** — All CI guards + test suites pass including the new `test:chart-truth-fixtures` and `check-chart-truth-mock-leak` guard.

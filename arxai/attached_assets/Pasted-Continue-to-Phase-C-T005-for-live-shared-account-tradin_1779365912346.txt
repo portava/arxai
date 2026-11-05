@@ -1,7 +1,7 @@
 Continue to Phase C / T005 for live shared-account trading.
 
 Goal:
-Wire the user-facing trading UI, scanner trade buttons, and Ruby live-mode flow into the Phase B live shared-account endpoints.
+Wire the user-facing trading UI, scanner trade buttons, and Eleanor live-mode flow into the Phase B live shared-account endpoints.
 
 Do not rebuild from scratch. First inspect and reuse the existing Phase A and Phase B work:
 - /api/trades/live-shared/validate
@@ -17,7 +17,7 @@ Do not rebuild from scratch. First inspect and reuse the existing Phase A and Ph
 - ARX_LIVE_BROKER_EXECUTION_ENABLED hard kill
 - existing manual trade page
 - existing scanner page
-- existing Ruby assistant UI
+- existing Eleanor assistant UI
 - existing demo/paper trading flow
 - existing risk/reward and SL/TP logic
 
@@ -33,7 +33,7 @@ User Trading tabs:
 - SL / TP Manager
 - Risk / Reward
 - Trade History
-- Ruby Review
+- Eleanor Review
 
 The page should clearly show the current mode:
 - Demo / Paper
@@ -118,7 +118,7 @@ Scanner card should show compact:
 - Spread warning
 - Volatility warning
 - News/current-event warning
-- Ruby explanation summary
+- Eleanor explanation summary
 - “Validate Trade” button
 
 When clicked:
@@ -130,10 +130,10 @@ When clicked:
 
 Scanner must not directly execute without validation and confirmation.
 
-Ruby live-mode hookup:
-Update Ruby so she understands and can use the Phase B endpoint contract.
+Eleanor live-mode hookup:
+Update Eleanor so she understands and can use the Phase B endpoint contract.
 
-Ruby should be able to answer:
+Eleanor should be able to answer:
 - Am I approved for live shared trading?
 - Is shared live trading active?
 - Is the master bridge pinned?
@@ -150,16 +150,16 @@ Ruby should be able to answer:
 - Is this setup worth validating?
 - Is this a pullback, retracement, continuation, or fakeout?
 
-Ruby trade flow:
-- Ruby may suggest a trade setup.
-- Ruby may call validation or prepare a validation request.
-- Ruby must show a trade preview.
-- Ruby must require explicit user confirmation before execution.
-- Ruby must never silently execute.
-- Ruby must explain blocked reasons clearly if validation fails.
-- Ruby must keep live shared-account mode separate from demo/paper mode.
+Eleanor trade flow:
+- Eleanor may suggest a trade setup.
+- Eleanor may call validation or prepare a validation request.
+- Eleanor must show a trade preview.
+- Eleanor must require explicit user confirmation before execution.
+- Eleanor must never silently execute.
+- Eleanor must explain blocked reasons clearly if validation fails.
+- Eleanor must keep live shared-account mode separate from demo/paper mode.
 
-Ruby UI tabs or sections:
+Eleanor UI tabs or sections:
 - Live Chat
 - Voice Mode
 - Trade Questions
@@ -227,7 +227,7 @@ Show:
 - completed trades
 - queued commands
 - blocked attempts if available
-- source: manual / scanner / Ruby
+- source: manual / scanner / Eleanor
 - P/L
 - timestamps
 - status
@@ -238,7 +238,7 @@ UI cleanup:
 - Move bulky filters into filter drawers.
 - Collapse long explanations under “View details.”
 - Replace repeated alerts with compact status chips.
-- Do not let Ruby, floating menus, or bottom navigation block buttons/tabs.
+- Do not let Eleanor, floating menus, or bottom navigation block buttons/tabs.
 - Mobile tabs should horizontally scroll or swipe cleanly.
 - No duplicate warnings on the same screen.
 
@@ -271,8 +271,8 @@ Acceptance checks:
 - Manual trade UI requires second confirmation before execute.
 - Scanner trade button calls validate first.
 - Scanner trade button requires confirmation before execute.
-- Ruby can explain live shared-account status.
-- Ruby can prepare validation but cannot execute without confirmation.
+- Eleanor can explain live shared-account status.
+- Eleanor can prepare validation but cannot execute without confirmation.
 - Approved users can access live shared trade controls.
 - Unapproved users cannot access executable live trade buttons.
 - Demo/paper trading still works.

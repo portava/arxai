@@ -35,7 +35,7 @@ function preview(): SetupPreview {
     governanceOutcome: null,
     explanation: [],
     invalidationNote: "",
-    createdBy: "ruby",
+    createdBy: "eleanor",
     createdAt: new Date(NOW).toISOString(),
     expiresAt: new Date(NOW + 90_000).toISOString(),
     status: "preview",

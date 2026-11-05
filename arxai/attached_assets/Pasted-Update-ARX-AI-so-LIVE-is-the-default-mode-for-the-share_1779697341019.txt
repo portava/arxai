@@ -237,6 +237,6 @@ Before stopping, verify:
 - arx_live_commands stays 0 unless a manually confirmed approved live order passes every gate.
 - No live trade is placed automatically.
 - Audit log records request, approval, and access changes.
-- Login, Ruby voice/chat, scanner, trade modal, bridge status, user control center, and bottom nav still work.
+- Login, Eleanor voice/chat, scanner, trade modal, bridge status, user control center, and bottom nav still work.
 
 Run typecheck/build/tests and fix all errors before stopping.

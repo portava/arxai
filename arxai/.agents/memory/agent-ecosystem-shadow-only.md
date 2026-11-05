@@ -1,6 +1,6 @@
 ---
 name: Agent Ecosystem is advisory/shadow — bounded re-weighting, never an execution gate
-description: The ARX "Agent Ecosystem" is an ADVISORY operational-intelligence layer. It DOES re-weight Scanner/Ruby/Risk/Scalp scores, but only advisory-only, fail-open, shadow=0; it is never a live/demo execution gate.
+description: The ARX "Agent Ecosystem" is an ADVISORY operational-intelligence layer. It DOES re-weight Scanner/Eleanor/Risk/Scalp scores, but only advisory-only, fail-open, shadow=0; it is never a live/demo execution gate.
 ---
 
 # Agent Ecosystem governance layer — advisory wiring, prove involvement by grep
@@ -16,7 +16,7 @@ EXISTING engine scores via the api-server service
 (`lib/agentEcosystem/advisoryInfluence.ts`) at these read-side action paths:
 - Scanner ranking (`marketScanner.ts` `scanSymbolTimeframe` → `agentAdvisory`
   field + re-rank by `effectiveOpportunityScore`)
-- Ruby `explain-signal` (`meAssistant.ts` → `setupReason.deskView` + cautions)
+- Eleanor `explain-signal` (`meAssistant.ts` → `setupReason.deskView` + cautions)
   — this is also the Risk surface (RISK dept pushback on high riskScore)
 - Scalp Focus / Broad / Builder (`scalp/scalpService.ts`)
 - Admin trace endpoint `GET /api/admin/agent-ecosystem/advisory-traces`

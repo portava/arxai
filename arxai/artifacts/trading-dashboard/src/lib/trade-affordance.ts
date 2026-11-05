@@ -45,7 +45,7 @@ export interface TradeAffordance {
   warningDetail: string;
   // ── Shared trade-health / readiness (DISPLAY-ONLY) ─────────────────────────
   // Mirrors `ScannerTruth.readiness` (the ONE Trade-Health contract verdict that
-  // Ruby's chart read also composes) so every trade surface shows an IDENTICAL
+  // Eleanor's chart read also composes) so every trade surface shows an IDENTICAL
   // read-quality label + trust line and the SAME display affordance ceilings for
   // the same symbol+timeframe.
   //

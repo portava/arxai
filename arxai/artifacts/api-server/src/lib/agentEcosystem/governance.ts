@@ -1,7 +1,7 @@
 // Agent Ecosystem — Layer 3 Governance service (wiring).
 //
 // Bridges the PURE Governance Court / Traffic Controller into the real read-side
-// surfaces (Scanner ranking, Ruby wording, Scalp scoring, Risk grading). It takes
+// surfaces (Scanner ranking, Eleanor wording, Scalp scoring, Risk grading). It takes
 // the AdvisoryResult a surface ALREADY computed (no second registry read on the
 // hot path), runs the Court to produce a bounded, protective governance outcome,
 // records an in-memory admin trace, and projects a plain-English summary for users.
@@ -40,7 +40,7 @@ import {
 import { getAgentRegistrySnapshot } from "./advisoryInfluence";
 import { recordDisagreement } from "./layer3";
 
-export type GovernanceSurface = "SCANNER" | "RISK" | "SCALP" | "RUBY";
+export type GovernanceSurface = "SCANNER" | "RISK" | "SCALP" | "ELEANOR";
 
 function effectiveInfluence(a: AdvisoryAgentSnapshot): number {
   const authority = Math.max(0, Math.min(1, a.authorityWeight));
@@ -221,14 +221,14 @@ export function getGovernanceTraces(
 const SURFACE_TO_MODE: Record<GovernanceSurface, string> = {
   SCANNER: "SCANNER",
   SCALP: "SCALP",
-  RUBY: "RUBY_EXPLANATION",
+  ELEANOR: "ELEANOR_EXPLANATION",
   RISK: "DEEP_REVIEW",
 };
 
 export interface GovernancePersistInput {
   /** Stable per-action id; one user action → one row. Generated if omitted. */
   actionId?: string;
-  /** Real app action, e.g. SCANNER_REFRESH, RUBY_ANALYSIS, SCALP_SCAN. */
+  /** Real app action, e.g. SCANNER_REFRESH, ELEANOR_ANALYSIS, SCALP_SCAN. */
   actionType: string;
   surface: GovernanceSurface;
   /** Override the surface→mode default (e.g. LIVE_EXECUTION bypass traces). */
@@ -239,13 +239,13 @@ export interface GovernancePersistInput {
   timeframe?: string | null;
   tradeId?: string | null;
   scannerSignalId?: string | null;
-  rubyMessageId?: string | null;
+  eleanorMessageId?: string | null;
   review: GovernanceReview;
   /** Allowed participant set the Traffic Controller selected. */
   participants: { agentKey: string }[];
   /** Full considered set (allowed ∪ blocked); from runTrafficSelection. */
   consideredKeys?: string[];
-  rubySummaryUsed?: boolean;
+  eleanorSummaryUsed?: boolean;
   disagreementCourtUsed?: boolean;
   predictionLocked?: boolean;
   reviewCreated?: boolean;
@@ -291,7 +291,7 @@ function riskVetoApplied(review: GovernanceReview): boolean {
  *
  * Detection is PURE and synchronous (safe on the hot path); the DB write is
  * best-effort and unawaited. This NEVER runs on the live execution path — it is
- * called only from advisory read surfaces (scanner / scalp / Ruby analysis).
+ * called only from advisory read surfaces (scanner / scalp / Eleanor analysis).
  */
 export function maybeRecordDisagreement(
   review: GovernanceReview,
@@ -331,7 +331,7 @@ export async function persistGovernanceTrace(
       timeframe: inp.timeframe ?? null,
       tradeId: inp.tradeId ?? null,
       scannerSignalId: inp.scannerSignalId ?? null,
-      rubyMessageId: inp.rubyMessageId ?? null,
+      eleanorMessageId: inp.eleanorMessageId ?? null,
       activeMode: inp.activeMode ?? SURFACE_TO_MODE[inp.surface],
       agentsRequested: JSON.stringify(considered),
       agentsAllowedToRun: JSON.stringify(allowed),
@@ -340,7 +340,7 @@ export async function persistGovernanceTrace(
       stepBackReasons: JSON.stringify(sb.reasons),
       agentOutputs: JSON.stringify(outputs),
       finalGovernanceDecision: inp.review.finalDecision,
-      rubySummaryUsed: inp.rubySummaryUsed ?? false,
+      eleanorSummaryUsed: inp.eleanorSummaryUsed ?? false,
       riskVetoUsed: riskVetoApplied(inp.review),
       disagreementCourtUsed: inp.disagreementCourtUsed ?? false,
       predictionLocked: inp.predictionLocked ?? false,
@@ -391,7 +391,7 @@ export async function persistLiveBypassTrace(inp: {
       stepBackReasons: JSON.stringify({}),
       agentOutputs: empty,
       finalGovernanceDecision: "LIVE_PATH_NOT_AI_GATED",
-      rubySummaryUsed: false,
+      eleanorSummaryUsed: false,
       riskVetoUsed: false,
       disagreementCourtUsed: false,
       predictionLocked: false,

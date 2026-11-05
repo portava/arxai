@@ -1,13 +1,13 @@
 STOP. Freeze the rest of the app.
 
 Scope lock:
-Only work on the ARX AI login/access page shown in the attached/reference image. Do not redesign, refactor, rename, move, or modify any unrelated dashboard pages, trading pages, scanner pages, Ruby chat, MT5 bridge logic, admin dashboard, live trading controls, role permissions, layouts, menus, routes, or global app behavior.
+Only work on the ARX AI login/access page shown in the attached/reference image. Do not redesign, refactor, rename, move, or modify any unrelated dashboard pages, trading pages, scanner pages, Eleanor chat, MT5 bridge logic, admin dashboard, live trading controls, role permissions, layouts, menus, routes, or global app behavior.
 
 Goal:
 Recreate this clean ARX AI login screen style as close as possible:
 - Dark premium fintech UI
-- Left side: ARX AI brand, “AI-Powered Trading. Discipline Wins.”, trading chart visual area, AI/Ruby visual, risk/AI/execution/permissions benefits, secure-by-design notice
-- Right side: large glass login card with ARX AI logo, email/password fields, remember me, forgot password, sign in, invite code, request access, Ruby note, encrypted/secure message
+- Left side: ARX AI brand, “AI-Powered Trading. Discipline Wins.”, trading chart visual area, AI/Eleanor visual, risk/AI/execution/permissions benefits, secure-by-design notice
+- Right side: large glass login card with ARX AI logo, email/password fields, remember me, forgot password, sign in, invite code, request access, Eleanor note, encrypted/secure message
 - Trading/AI focused, clean, simple, not crowded
 - Do not use “Top reasons to sign up”
 - Do not add extra marketing blocks beyond what is in the scope
@@ -38,7 +38,7 @@ Only touch backend/auth if needed to make this page work:
 - invite code validation
 - request access submission
 - existing session handling
-Do not change trading execution, MT5 bridge, live/demo permissions, Ruby intelligence, scanner logic, admin approvals, or user role architecture except where required to read existing auth permissions after login.
+Do not change trading execution, MT5 bridge, live/demo permissions, Eleanor intelligence, scanner logic, admin approvals, or user role architecture except where required to read existing auth permissions after login.
 
 Implementation steps:
 1. Inspect current auth pages, routes, protected-route logic, layout wrappers, role redirect logic, invite-code logic, forgot-password logic, request-access logic, and global navigation visibility.
@@ -59,7 +59,7 @@ Left panel:
   - Risk Level: Low
 - Feature row:
   - Risk Controls — Always protecting your capital.
-  - AI Insights — Ruby analyzes markets 24/7 so you don’t have to.
+  - AI Insights — Eleanor analyzes markets 24/7 so you don’t have to.
   - Execution Edge — Tools built to help you execute with precision.
   - Your Permissions — Live access and features protected by you.
 - Secure by Design:
@@ -80,8 +80,8 @@ Right login card:
 - OR
 - Use Invite Code
 - Request Access
-- Ruby note:
-  Ruby helps analyze markets, risk, and execution — but final control stays protected by your permissions.
+- Eleanor note:
+  Eleanor helps analyze markets, risk, and execution — but final control stays protected by your permissions.
 - Secure footer:
   Your data is encrypted. Your permissions protect everything.
   Secure. Private. Yours.
@@ -94,7 +94,7 @@ Style requirements:
 - Clean spacing, rounded corners, soft shadows
 - High-end fintech / AI trading look
 - Candlestick chart-inspired background on left side
-- Subtle AI head/Ruby visual can be created with CSS glow/grid shapes if no image asset exists
+- Subtle AI head/Eleanor visual can be created with CSS glow/grid shapes if no image asset exists
 - No fake claims like “50K traders” unless already real in the app
 - Avoid clutter and avoid cartoon visuals
 

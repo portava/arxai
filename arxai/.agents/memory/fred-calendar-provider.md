@@ -10,7 +10,7 @@ The economic calendar is provider-agnostic behind one central service
 precedence** (when its key resolves) **then FRED**. FRED is active when
 `ECONOMIC_CALENDAR_PROVIDER="fred"` AND `FRED_API_KEY` is present. All consumer
 seams (Market Heat `readCalendarProvider`, impact-radar `getEconomicCalendar`,
-Ruby `withTradingEconomicsCalendar` which gates on the now-provider-aware
+Eleanor `withTradingEconomicsCalendar` which gates on the now-provider-aware
 `isEconomicCalendarConfigured`) flow through this one service, so wiring a new
 provider there lights up every surface at once.
 

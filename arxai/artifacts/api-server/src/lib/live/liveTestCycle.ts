@@ -264,7 +264,7 @@ export async function previewCycle(input: LiveTestCycleInput) {
       stopLoss: input.stopLoss,
       takeProfit: input.takeProfit ?? null,
       sourcePage: "LIVE_TEST_CYCLE_PREVIEW",
-      rubyExplanationSummary: "Live Test Cycle dry-run preview",
+      eleanorExplanationSummary: "Live Test Cycle dry-run preview",
       payload: { livetestCycleDryRun: true },
     });
     if (d.ok) {
@@ -370,7 +370,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
     stopLoss: input.stopLoss,
     takeProfit: input.takeProfit ?? null,
     sourcePage: "LIVE_TEST_CYCLE",
-    rubyExplanationSummary: `Live Test Cycle ${cycleId} (auto-close after open fill)`,
+    eleanorExplanationSummary: `Live Test Cycle ${cycleId} (auto-close after open fill)`,
     payload: { liveTestCycleId: cycleId },
   });
   if (!draft.ok) {

@@ -82,7 +82,7 @@ router.get("/me/market-context/:symbol", async (req, res) => {
     const classification = classify(ctx);
     // Persist the snapshot for the per-symbol cache (non-blocking on failure).
     try { await persistSymbolSnapshot(ctx); } catch { /* honest log inside, never crash request */ }
-    // Resolve tradability so Ruby's market-context responses can honestly
+    // Resolve tradability so Eleanor's market-context responses can honestly
     // explain "analyze vs execute" for synthetic / data-only markets.
     const tradability = await getSymbolTradability(sym, userId);
     return res.json({

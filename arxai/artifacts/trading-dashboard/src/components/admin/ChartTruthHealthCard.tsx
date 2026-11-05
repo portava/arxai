@@ -26,7 +26,7 @@ interface AuditRow {
   historicalPeriodShiftCount: number;
   mirrorPass: boolean;
   priceAlignPass: boolean;
-  rubyAllowed: boolean;
+  eleanorAllowed: boolean;
   status: AuditStatus;
   rawAssessment: string;
   quality: string;
@@ -210,7 +210,7 @@ export function ChartTruthHealthCard() {
                       <td className="text-center py-1 pr-2"><PassCell ok={row.mergePass} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.mirrorPass} /></td>
                       <td className="text-center py-1 pr-2"><PassCell ok={row.priceAlignPass} /></td>
-                      <td className="text-center py-1 pr-2"><PassCell ok={row.rubyAllowed} /></td>
+                      <td className="text-center py-1 pr-2"><PassCell ok={row.eleanorAllowed} /></td>
                       <td className="py-1 text-muted-foreground max-w-[280px] whitespace-normal break-words">
                         {row.reasons.length > 0 ? row.reasons.join(" ") : "—"}
                       </td>

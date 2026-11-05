@@ -26,7 +26,7 @@ Verify:
 15. Beta users default to demo/testing mode.
 16. Beta users cannot create live commands by default.
 17. Paused beta users cannot trade.
-18. User 1 cannot see User 2 dashboard, trades, P/L, notifications, scanner state, or Ruby memory.
+18. User 1 cannot see User 2 dashboard, trades, P/L, notifications, scanner state, or Eleanor memory.
 19. Logout/login switch clears cached user state.
 20. 2-user internal pilot checklist is documented.
 21. Private beta docs were updated.

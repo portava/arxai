@@ -324,7 +324,7 @@ Add repair actions:
 BOTS & AI AGENTS TAB
 ============================================================
 
-Move all approved bots, AI agents, system agents, scanner agents, Ruby/Eleanor agents, Claude/OpenAI backend agents, and automation accounts to this separate list.
+Move all approved bots, AI agents, system agents, scanner agents, Eleanor/Eleanor agents, Claude/OpenAI backend agents, and automation accounts to this separate list.
 
 Identify by:
 - user_type = bot

@@ -80,7 +80,7 @@ export interface ImmuneFinding {
   anomalyType: ImmuneAnomalyType;
   severity: ImmuneSeverity;
   recommendedAction: ImmuneAction;
-  /** Neutral machine reason; admin UI / Ruby humanize it. */
+  /** Neutral machine reason; admin UI / Eleanor humanize it. */
   reason: string;
   /** Core/destructive actions always require admin. */
   requiresAdmin: boolean;

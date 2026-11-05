@@ -123,7 +123,7 @@ function StatusBadgePill({ s }: { s: StatusBadge }) {
 }
 
 export function LiveTradeTicket({
-  open, onOpenChange, defaultSymbol, defaultSide, sourcePage, rubyExplanationSummary,
+  open, onOpenChange, defaultSymbol, defaultSide, sourcePage, eleanorExplanationSummary,
   prefillSltp, feedWarning = null,
 }: {
   open: boolean;
@@ -131,8 +131,8 @@ export function LiveTradeTicket({
   defaultSymbol?: string;
   defaultSide?: "BUY" | "SELL";
   sourcePage?: string;
-  rubyExplanationSummary?: string | null;
-  // Optional SL/TP prefill from an AI/Ruby setup-preview "Use this setup". The
+  eleanorExplanationSummary?: string | null;
+  // Optional SL/TP prefill from an AI/Eleanor setup-preview "Use this setup". The
   // token forces a re-apply each time the user re-picks a setup. This only
   // pre-fills the editable fields — every Phase B / master / exposure gate still
   // runs server-side on confirm; a prefill can never place an order.
@@ -339,7 +339,7 @@ export function LiveTradeTicket({
           symbol, side: sideOf(orderType), orderType,
           requestedVolume: vol, stopLoss: sl, takeProfit: tp,
           sourcePage: sourcePage ?? "LIVE_TRADE_TICKET",
-          rubyExplanationSummary: rubyExplanationSummary ?? null,
+          eleanorExplanationSummary: eleanorExplanationSummary ?? null,
           payload: pendingPayload(),
         }),
       });
@@ -633,11 +633,11 @@ export function LiveTradeTicket({
           )}
         </div>
 
-        {rubyExplanationSummary && (
+        {eleanorExplanationSummary && (
           <Alert>
             <AlertTitle className="text-amber-300">{name} note</AlertTitle>
             <AlertDescription className="text-sm">
-              {rubyExplanationSummary}
+              {eleanorExplanationSummary}
               <div className="mt-1.5 text-xs italic text-muted-foreground">
                 This is not guaranteed. Confirm risk before placing a live trade.
               </div>

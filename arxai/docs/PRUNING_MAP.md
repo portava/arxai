@@ -1,7 +1,7 @@
 # ARX AI — Product-Scope Pruning Map
 
 Purpose: classify every navigable surface so the normal-user experience collapses
-to a focused AI trading command center (**Cockpit · Scanner/Trade · Ruby · Risk ·
+to a focused AI trading command center (**Cockpit · Scanner/Trade · Eleanor · Risk ·
 More**) while **nothing is deleted** and admins/owner keep full access.
 
 ## Method & safety rules
@@ -22,7 +22,7 @@ More**) while **nothing is deleted** and admins/owner keep full access.
 ## Classification legend
 
 1. **KEEP-CORE** — visible in normal-user nav (one of: find a trade, analyze a
-   market, understand risk, execute/manage a trade, let Ruby assist, account).
+   market, understand risk, execute/manage a trade, let Eleanor assist, account).
 2. **ADMIN-ADVANCED** — removed from normal-user nav, moved to an `adminOnly`
    group; reachable by admin/owner sessions only. Normal users are now blocked
    at the route level (not just hidden in nav) — see "Route-level enforcement".
@@ -64,7 +64,7 @@ reachable by typing the URL. As of this pass that gap is closed:
 | `/` | `dashboard.tsx` | Cockpit: account health, P&L, signals | yes | KEEP-CORE (Primary) |
 | `/market-scanner` | `market-scanner.tsx` | Scanner / trading terminal (chart + signals + trade) | yes | KEEP-CORE (Primary) |
 | `/trade-command-room` | `trade-command-room.tsx` | Compose/review trade tickets | yes | KEEP-CORE (Primary) |
-| `/ai-command-center` | `ai-command-center.tsx` | Ruby (AI) assistant | yes | KEEP-CORE (Primary) |
+| `/ai-command-center` | `ai-command-center.tsx` | Eleanor (AI) assistant | yes | KEEP-CORE (Primary) |
 | `/my-trades` | `my-trades.tsx` | Open trades | yes | KEEP-CORE (Primary) |
 | `/positions` | `positions.tsx` | Positions / OMS | yes | KEEP-CORE (Primary) |
 | `/risk-command-center` | `risk-command-center.tsx` | Risk status, limits, kill switch | yes | KEEP-CORE (Primary) |
@@ -100,7 +100,7 @@ reachable by typing the URL. As of this pass that gap is closed:
   `/brain`, `/edge-discovery`, `/trader-skill`, `/ai-readiness-score`,
   `/trading-intelligence`, `/weekly-review`, `/trade-plan-builder`,
   `/post-trade-debriefs`, `/replay-simulator` — experimentation/coaching surfaces
-  that duplicate or feed Ruby; not part of the core Analyze→Risk→eXecute loop.
+  that duplicate or feed Eleanor; not part of the core Analyze→Risk→eXecute loop.
 - **Advanced Risk & Data:** `/risk-settings` (governor config), `/risk-profile`,
   `/risk-events`, `/data-quality`, `/prop-firm-mode` — detailed/diagnostic risk
   config behind the user-facing Risk command center.

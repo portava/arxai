@@ -224,7 +224,7 @@ async function main(): Promise<void> {
   }
   record(21, "Every action writes admin audit log", auditOk, auditNote);
 
-  // ── 22-23. Ruby tools — static source verification
+  // ── 22-23. Eleanor tools — static source verification
   const toolsSrc = await fsm.readFile(`${repoRoot}/artifacts/api-server/src/lib/assistant/tools.ts`, "utf8");
   const userToolMatch = toolsSrc.match(/async function explainMyReconciliationIssueTool\([\s\S]*?\n\}\n/);
   const adminToolMatch = toolsSrc.match(/async function getReconciliationCenterSummaryTool\([\s\S]*?\n\}\n/);
@@ -234,14 +234,14 @@ async function main(): Promise<void> {
   const adminHasRoleGate = /ADMIN_REQUIRED/.test(adminTool) && /role !== "ADMIN"/.test(adminTool);
   const adminEmitsWhitelist = /id: i\.id, type: i\.type, severity: i\.severity/.test(adminTool);
   const adminLeak = bodyHasSecret(adminTool);
-  record(22, "Admin Ruby explanation works without exposing secrets/tokens",
+  record(22, "Admin Eleanor explanation works without exposing secrets/tokens",
     adminTool.length > 0 && adminHasRoleGate && adminEmitsWhitelist && !adminLeak,
     `gate=${adminHasRoleGate} whitelist=${adminEmitsWhitelist} secretMarker=${adminLeak ?? "none"}`);
 
   const userHasAdminFields = /\bcommandId\b|\bbridgeConnectionId\b|\bbrokerTicket\b|\bcountsByType\b/.test(userTool);
   const userQueriesOther = /\.from\(usersTable\)|\.from\(arxLiveCommands|\.from\(mt5_demo/.test(userTool);
   const userLeak = bodyHasSecret(userTool);
-  record(23, "Per-user Ruby explanation works without exposing other-user/admin-only data",
+  record(23, "Per-user Eleanor explanation works without exposing other-user/admin-only data",
     userTool.length > 0 && !userHasAdminFields && !userQueriesOther && !userLeak,
     `adminFields=${userHasAdminFields} otherUserQuery=${userQueriesOther} secretMarker=${userLeak ?? "none"}`);
 

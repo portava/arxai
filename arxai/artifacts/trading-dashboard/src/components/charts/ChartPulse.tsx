@@ -12,7 +12,7 @@ import { useAssistantName } from "@/lib/assistant-name";
 // A small, mobile-friendly grid that summarises the live Chart Intelligence
 // State: feed status, regime, bias, active level, momentum, risk, readiness,
 // best action, setup age — plus honest standby chips for the agent court and
-// Ruby (those consumers land in a later task). EVERYTHING is generated from the
+// Eleanor (those consumers land in a later task). EVERYTHING is generated from the
 // state object; nothing is hardcoded and no verdict is invented. PURE DISPLAY —
 // it never places, modifies, or closes a trade.
 
@@ -249,7 +249,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         <div className={`text-[11px] ${baTone.text}`}>{bestAction.text}</div>
       </div>
 
-      {/* Honest standby chips: the agent court + Ruby consumers land in a later
+      {/* Honest standby chips: the agent court + Eleanor consumers land in a later
           task, so we never fake a verdict here. */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
         <span
@@ -260,7 +260,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
         </span>
         <span
           className="rounded border border-zinc-800 px-1.5 py-0.5"
-          data-testid="pulse-ruby"
+          data-testid="pulse-eleanor"
         >
           {name}: read-only · on demand
         </span>

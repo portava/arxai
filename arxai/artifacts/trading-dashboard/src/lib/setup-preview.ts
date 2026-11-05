@@ -1,6 +1,6 @@
 // Setup-preview model + client lifecycle (Task #374).
 //
-// A SetupPreview is a DRAWING the AI/Ruby places on the chart: concrete
+// A SetupPreview is a DRAWING the AI/Eleanor places on the chart: concrete
 // entry / stop / target levels, a confidence + setup-type label, an
 // invalidation marker, and a plain-English explanation. It is produced
 // SERVER-SIDE (so the honesty gates run against real data) and consumed here
@@ -26,7 +26,7 @@ export type SetupPreviewStatus =
   | "stale";
 
 export type SetupPreviewAuthor =
-  | "ruby"
+  | "eleanor"
   | "scanner"
   | "risk"
   | "flame"

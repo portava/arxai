@@ -10,12 +10,12 @@
 //     awaiting-data row can NEVER be READY_NOW; best-vs-selected only surfaces a
 //     genuinely cleaner live alternative.
 //
-// No DB, no IO — buildRubyMarketEdge takes `now` explicitly.
+// No DB, no IO — buildEleanorMarketEdge takes `now` explicitly.
 //
 // Run: pnpm --filter @workspace/scripts run test:scanner-explanation
 
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   explainMarketRead,
   categorizeOpportunities,
   compareBestVsSelected,
@@ -122,7 +122,7 @@ function modeComplete(m: ExplanationMode): boolean {
 console.log("Scanner & Explanation UX test");
 
 // ----- explainMarketRead: clean read --------------------------------------
-const cleanSignal = buildRubyMarketEdge(baseInput({}));
+const cleanSignal = buildEleanorMarketEdge(baseInput({}));
 const clean = explainMarketRead(cleanSignal);
 
 check("clean: headline is non-empty", clean.headline.trim().length > 0);
@@ -151,7 +151,7 @@ check(
 );
 
 // ----- explainMarketRead: blind read fabricates no levels ------------------
-const blindSignal = buildRubyMarketEdge(baseInput({ candles: null, currentPrice: null }));
+const blindSignal = buildEleanorMarketEdge(baseInput({ candles: null, currentPrice: null }));
 const blind = explainMarketRead(blindSignal);
 
 check("blind: hasSufficientData false", blind.hasSufficientData === false);
@@ -184,8 +184,8 @@ check(
 );
 
 // ----- explainMarketRead determinism --------------------------------------
-const e1 = explainMarketRead(buildRubyMarketEdge(baseInput({})));
-const e2 = explainMarketRead(buildRubyMarketEdge(baseInput({})));
+const e1 = explainMarketRead(buildEleanorMarketEdge(baseInput({})));
+const e2 = explainMarketRead(buildEleanorMarketEdge(baseInput({})));
 check("deterministic: same signal → same headline", e1.headline === e2.headline);
 check("deterministic: same signal → same bestAction", e1.bestAction === e2.bestAction);
 

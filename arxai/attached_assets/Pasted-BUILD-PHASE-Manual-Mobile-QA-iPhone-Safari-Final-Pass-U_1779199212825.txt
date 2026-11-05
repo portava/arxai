@@ -3,7 +3,7 @@ BUILD PHASE — Manual Mobile QA + iPhone Safari Final Pass
 Use the current codebase. Do not rebuild unrelated systems.
 
 Goal:
-Make ARX AI clean, stable, and usable on iPhone Safari before launch candidate approval. Fix only mobile/iPhone Safari blockers, layout issues, tap issues, keyboard issues, Ruby voice issues, chart/scanner issues, and critical user-flow bugs.
+Make ARX AI clean, stable, and usable on iPhone Safari before launch candidate approval. Fix only mobile/iPhone Safari blockers, layout issues, tap issues, keyboard issues, Eleanor voice issues, chart/scanner issues, and critical user-flow bugs.
 
 Important:
 Do not add new major features.
@@ -21,8 +21,8 @@ Check:
 - dashboard
 - My Account
 - My Scanner
-- Ruby chat
-- Ruby voice
+- Eleanor chat
+- Eleanor voice
 - trade ticket
 - chart position window
 - My Trades
@@ -51,15 +51,15 @@ Check and fix:
 - drawers/sidebar blocking buttons
 - chart panels being too wide
 - trade ticket buttons off-screen
-- Ruby widget blocking menu/trade buttons
+- Eleanor widget blocking menu/trade buttons
 - admin tables overflowing without horizontal scroll
 - touch targets too small
 - inputs zooming unexpectedly on iOS
 - long text wrapping badly
 - dark/light contrast issues if applicable
 
-3. Ruby mobile behavior
-Ruby must be usable on mobile:
+3. Eleanor mobile behavior
+Eleanor must be usable on mobile:
 
 - visible but not blocking core controls
 - opens/closes smoothly
@@ -70,29 +70,29 @@ Ruby must be usable on mobile:
 - transcript preview fits
 - speaking/listening state is clear
 - mute/pause/stop controls fit
-- Ruby does not cover confirm/cancel buttons
-- Ruby state clears on logout/account switch
+- Eleanor does not cover confirm/cancel buttons
+- Eleanor state clears on logout/account switch
 
 4. iPhone Safari voice/audio constraints
-Check Ruby Voice specifically for iOS/Safari:
+Check Eleanor Voice specifically for iOS/Safari:
 
 - requires tap-to-start when needed
 - microphone permission prompt works
 - audio playback starts only after allowed user gesture
 - auto-listen works after permission
 - silence detection submits once
-- Ruby speech does not feed back into mic
-- mic pauses while Ruby speaks
-- mic resumes after Ruby speaks
+- Eleanor speech does not feed back into mic
+- mic pauses while Eleanor speaks
+- mic resumes after Eleanor speaks
 - permission denied shows clean fallback
-- voice mode stops when Ruby closes
+- voice mode stops when Eleanor closes
 - voice cannot bypass trade confirmation
 
 5. Mobile trading flow
 Verify and fix mobile usability for:
 
 - scanner direct symbol search
-- Ruby market explanation panel
+- Eleanor market explanation panel
 - trade ticket from scanner
 - lot size input
 - stop loss input
@@ -105,7 +105,7 @@ Verify and fix mobile usability for:
 - SL/TP edit confirmation
 - chart position markers
 - trade detail window
-- Ruby trade explanation
+- Eleanor trade explanation
 - blocked trade reason display
 
 No live command should be created.
@@ -133,10 +133,10 @@ Confirm mobile does not bypass:
 Verify:
 
 - logout clears previous user state
-- account switch clears scanner/chart/Ruby cache
+- account switch clears scanner/chart/Eleanor cache
 - User A cannot see User B data after login switch
 - old chart markers do not remain
-- old Ruby chat does not appear
+- old Eleanor chat does not appear
 - notifications are private
 - no shared master global totals appear for normal users
 - frontend does not expose secrets
@@ -180,8 +180,8 @@ Create or update a mobile QA checklist with:
 - onboarding tested
 - demo flow tested
 - scanner tested
-- Ruby text tested
-- Ruby voice tested
+- Eleanor text tested
+- Eleanor voice tested
 - trade ticket tested
 - chart tested
 - admin screens tested
@@ -195,7 +195,7 @@ Create or update a mobile QA checklist with:
 Add or update mobile-focused tests where practical:
 
 - viewport/mobile route smoke tests
-- Ruby widget does not block main controls
+- Eleanor widget does not block main controls
 - mobile trade ticket confirmation visible
 - mobile modal scroll works
 - logout clears mobile cache
@@ -212,7 +212,7 @@ Return:
 - mobile routes/screens tested
 - iPhone Safari issues found
 - iPhone Safari fixes applied
-- Ruby mobile/voice status
+- Eleanor mobile/voice status
 - admin mobile status
 - tests added/run
 - manual QA checklist location

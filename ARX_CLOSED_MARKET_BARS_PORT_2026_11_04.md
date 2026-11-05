@@ -18,7 +18,7 @@
 
 The existing chart service now accepts an explicit stored-history opt-in.
 Only the existing `/api/chart/candles` and `/api/chart/feed-status` display
-handlers opt in. Router, decision, scanner-analysis, Ruby, execution and
+handlers opt in. Router, decision, scanner-analysis, Eleanor, execution and
 trading callers retain their previous defaults.
 
 The new separate `storedCandleHistory.ts` reads the requested symbol and

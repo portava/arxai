@@ -29,8 +29,8 @@ export interface AaciChartHandshake {
   BrokerPriceAlignment: ChartHandshakeVerdict;
   /** Actual renderer evidence; source-bar shape alone cannot prove this. */
   RenderHealth: ChartHandshakeVerdict;
-  /** Ruby read allowed — confidentReadAllowed from gate. */
-  RubyReadAllowed: ChartHandshakeVerdict;
+  /** Eleanor read allowed — confidentReadAllowed from gate. */
+  EleanorReadAllowed: ChartHandshakeVerdict;
   /** Self-trade chart allowed — selfTradeChartAllowed from gate. */
   SelfTradeChartAllowed: ChartHandshakeVerdict;
 
@@ -115,7 +115,7 @@ export function buildChartHandshake(
     ? scoreToVerdict(subMetricScore(truthScore, "render_accuracy"))
     : "WARN";
 
-  const RubyReadAllowed = boolToVerdict(gate.confidentReadAllowed);
+  const EleanorReadAllowed = boolToVerdict(gate.confidentReadAllowed);
 
   const SelfTradeChartAllowed = boolToVerdict(gate.selfTradeChartAllowed);
 
@@ -128,7 +128,7 @@ export function buildChartHandshake(
     HistoricalLiveMerge,
     BrokerPriceAlignment,
     RenderHealth,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
   ];
 
@@ -141,7 +141,7 @@ export function buildChartHandshake(
     HistoricalLiveMerge,
     BrokerPriceAlignment,
     RenderHealth,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
     overall: rollup(all),
     chartTruthScore: gate.chartTruthScore,

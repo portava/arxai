@@ -6,7 +6,7 @@ Goal:
 When the operator activates Close-Only Emergency Mode, ARX AI must block all new trade openings while still allowing safe, verified exits from existing user-owned positions. The system should help users reduce risk without allowing unsafe, blind, duplicated, or cross-user close actions.
 
 Important:
-Check what already exists first. Reuse the current liveCommandPipeline, trade queue, kill switches, admin controls, user ownership checks, shared master ledger, bridge mapping, exposure reservations, cooldowns, Ruby context, audit logs, and confirmation system. Do not create a second trade execution path.
+Check what already exists first. Reuse the current liveCommandPipeline, trade queue, kill switches, admin controls, user ownership checks, shared master ledger, bridge mapping, exposure reservations, cooldowns, Eleanor context, audit logs, and confirmation system. Do not create a second trade execution path.
 
 1. Inspect existing close/exit systems first
 Inspect:
@@ -20,7 +20,7 @@ Inspect:
 - liveCommandPipeline
 - kill switch / close-only state
 - admin dashboard controls
-- Ruby trade explanation
+- Eleanor trade explanation
 - audit logs
 - tests around closing trades
 
@@ -35,7 +35,7 @@ Allowed if safe:
 - cancel user-owned pending order if supported
 - reduce exposure
 - view positions
-- ask Ruby about open risk
+- ask Eleanor about open risk
 - refresh position state
 - admin review of unsafe positions
 
@@ -47,7 +47,7 @@ Blocked:
 - opening hedge positions unless explicitly supported as a risk-reduction action
 - one-click opening
 - scanner-to-open trade
-- Ruby voice open trade
+- Eleanor voice open trade
 - auto-trade opening
 
 3. Safe close verification
@@ -169,10 +169,10 @@ For Demo:
 - demo open commands should be blocked only if close-only applies to demo scope
 - live kill switch should not break demo unless explicitly scoped
 
-10. Ruby awareness
-Ruby should understand close-only and safe exit state.
+10. Eleanor awareness
+Eleanor should understand close-only and safe exit state.
 
-Ruby can explain:
+Eleanor can explain:
 - “Close-only mode is active.”
 - “You can close existing trades, but you cannot open new ones right now.”
 - “This close request needs review because the system cannot verify the position.”
@@ -180,14 +180,14 @@ Ruby can explain:
 - “This trade cannot be closed from your account because ownership cannot be verified.”
 - “The bridge heartbeat is stale, so I’m blocking unsafe action.”
 
-Ruby must not:
+Eleanor must not:
 - claim a trade was closed unless confirmed
 - close a trade without confirmation
 - reveal other users or shared master global exposure
 - expose secrets
 
 11. Voice guardrail connection
-If Ruby voice is active:
+If Eleanor voice is active:
 
 - “Close my trade” should prepare the close confirmation, not execute silently
 - “Close all my trades” should show a confirmation list first
@@ -228,7 +228,7 @@ Add or update tests for:
 - personal MT5 close does not route through shared master
 - demo close never creates live command
 - voice close requires confirmation
-- Ruby explains close-only state
+- Eleanor explains close-only state
 - admin can enable/disable close-only with reason
 - non-admin cannot use close-only controls
 - admin can cancel queued open command before dispatch
@@ -243,7 +243,7 @@ Return:
 - admin route/API names
 - user route/UI names
 - queue behavior
-- Ruby behavior
+- Eleanor behavior
 - tests added/run
 - manual test steps
 - remaining risks

@@ -1,4 +1,4 @@
-// Ruby/AI Setup-Preview producer — deterministic, honest, READ-ONLY (Task #374).
+// Eleanor/AI Setup-Preview producer — deterministic, honest, READ-ONLY (Task #374).
 //
 // Turns a verified chart read into a *setup preview*: concrete entry / stop /
 // target levels, a risk zone and reward zone, an invalidation marker, a
@@ -24,7 +24,7 @@
 
 import type { Candle } from "../data/types.js";
 import type { ChartReadResult, StructureBias } from "./chartStructure.js";
-import type { RubyChartReadBasis } from "../data/chart/rubyChartContext.js";
+import type { EleanorChartReadBasis } from "../data/chart/eleanorChartContext.js";
 
 export type SetupSide = "BUY" | "SELL";
 
@@ -40,7 +40,7 @@ export type SetupPreviewStatus =
 
 /** Who drew the preview. */
 export type SetupPreviewAuthor =
-  | "ruby"
+  | "eleanor"
   | "scanner"
   | "risk"
   | "flame"
@@ -107,7 +107,7 @@ export interface SetupPreview {
   /** Honest reason when verdict is "refused"/"avoid", else null. */
   refusalReason: string | null;
 
-  dataFreshness: { basis: RubyChartReadBasis; trustLine: string };
+  dataFreshness: { basis: EleanorChartReadBasis; trustLine: string };
   providerSource: SetupPreviewProviderSource;
   bridgeStatus: SetupPreviewBridge | null;
   allocationKnown: boolean;
@@ -136,7 +136,7 @@ export interface BuildSetupPreviewInput {
   requestedSide?: SetupSide | null;
   read: ChartReadResult;
   candles: Candle[];
-  basis: RubyChartReadBasis;
+  basis: EleanorChartReadBasis;
   trustLine: string;
   blockReason?: string | null;
   providerSource: SetupPreviewProviderSource;
@@ -252,7 +252,7 @@ export function buildSetupPreview(input: BuildSetupPreviewInput): SetupPreview {
   const ttlMs = input.ttlMs ?? DEFAULT_TTL_MS;
   const createdAt = new Date(nowMs).toISOString();
   const expiresAt = new Date(nowMs + ttlMs).toISOString();
-  const createdBy: SetupPreviewAuthor = input.createdBy ?? "ruby";
+  const createdBy: SetupPreviewAuthor = input.createdBy ?? "eleanor";
   const allocationKnown =
     typeof input.availableAllocation === "number" &&
     Number.isFinite(input.availableAllocation);

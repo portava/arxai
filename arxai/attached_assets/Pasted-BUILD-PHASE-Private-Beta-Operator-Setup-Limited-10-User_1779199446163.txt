@@ -3,7 +3,7 @@ BUILD PHASE — Private Beta Operator Setup + Limited 10-User Test Plan
 Use the current codebase. Do not rebuild unrelated systems.
 
 Goal:
-Prepare ARX AI for a controlled private beta with exactly 10 invited users. The beta should test onboarding, demo mode, Ruby, scanner, trade ticket flow, privacy isolation, mobile usability, admin controls, safety gates, and optional operator-approved shared master readiness without turning on public live trading.
+Prepare ARX AI for a controlled private beta with exactly 10 invited users. The beta should test onboarding, demo mode, Eleanor, scanner, trade ticket flow, privacy isolation, mobile usability, admin controls, safety gates, and optional operator-approved shared master readiness without turning on public live trading.
 
 Important:
 Do not open public registration.
@@ -52,7 +52,7 @@ A. Demo Tester
 - default for all beta users
 - private demo balance
 - no live commands
-- test scanner, Ruby, trade tickets, chart, P/L calendar
+- test scanner, Eleanor, trade tickets, chart, P/L calendar
 
 B. Personal MT5 Setup Tester
 - only if selected by admin
@@ -70,7 +70,7 @@ Add a beta QA routine that creates or simulates 10 users:
 - User 1 through User 10
 - each has private onboarding
 - each has private dashboard
-- each has private Ruby memory
+- each has private Eleanor memory
 - each has private scanner state
 - each has private trades/history/P/L
 - each has private notifications
@@ -118,7 +118,7 @@ Show:
 - allocation/risk profile status
 - disclosure status
 - last activity
-- last Ruby use
+- last Eleanor use
 - last trade ticket opened
 - last safety block
 - feedback submitted
@@ -144,7 +144,7 @@ Add a lightweight feedback/report tool:
 Users can submit:
 - bug report
 - confusing screen
-- Ruby issue
+- Eleanor issue
 - voice issue
 - scanner issue
 - trade ticket issue
@@ -172,7 +172,7 @@ Add private beta messaging:
 - “Beta access is limited to 10 invited users.”
 - “Start in demo mode first.”
 - “Live trading is disabled unless explicitly approved by the operator.”
-- “Ruby’s analysis is informational and does not guarantee results.”
+- “Eleanor’s analysis is informational and does not guarantee results.”
 - “Please report bugs, confusing screens, or anything that feels unsafe.”
 
 9. Beta launch checklist
@@ -187,7 +187,7 @@ Include:
 - personal MT5 tester checklist
 - shared master review checklist
 - mobile tester checklist
-- Ruby tester checklist
+- Eleanor tester checklist
 - safety gate checklist
 - feedback checklist
 - no-live-command checklist
@@ -218,9 +218,9 @@ PRIVATE_BETA_10_TEST_PLAN.md
 
 Suggested schedule:
 - Day 1: onboarding + demo only
-- Day 2: scanner + Ruby market explanation
+- Day 2: scanner + Eleanor market explanation
 - Day 3: trade ticket + SL/TP + chart window
-- Day 4: Ruby voice + voice guardrails
+- Day 4: Eleanor voice + voice guardrails
 - Day 5: mobile/iPhone Safari pass
 - Day 6: admin controls + safety blocks
 - Day 7: feedback review + fix sprint
@@ -251,7 +251,7 @@ Add or update tests for:
 - beta users default to demo mode
 - beta users cannot create live commands by default
 - User 1 cannot see User 2 data
-- all 10 users have isolated Ruby memory
+- all 10 users have isolated Eleanor memory
 - all 10 users have isolated scanner/trade/cache state
 - admin can pause/resume beta user
 - admin can export beta evidence

@@ -1,17 +1,17 @@
 // Phase C (T005) — Read-only Live Shared-Account status panel.
 //
 // Used by:
-//   - the /live-shared page (Risk/Reward + Ruby Review tabs)
+//   - the /live-shared page (Risk/Reward + Eleanor Review tabs)
 //   - the ArxAssistant ("Live Shared Account Status" section)
 //
-// Pure read endpoints only. Renders the answers to the questions Ruby
+// Pure read endpoints only. Renders the answers to the questions Eleanor
 // must be able to answer at a glance:
 //   - Am I approved for live shared trading?
 //   - Is the master switch on (server default-deny still applies)?
 //   - Is shared-routing the active mode for me?
 //   - What are my most recent commands / blocked attempts?
 //
-// Ruby CANNOT execute from this panel. There is no execute button.
+// Eleanor CANNOT execute from this panel. There is no execute button.
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

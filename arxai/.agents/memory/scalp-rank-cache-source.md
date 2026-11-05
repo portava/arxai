@@ -1,6 +1,6 @@
 ---
-name: Broad scan + Ruby opportunities read on-demand, not the frontend cache
-description: Where Broad scalp rank, Ruby's opportunities tool, and the opportunity radar get their scored rows (on-demand scanSymbolTimeframe, NOT the frontend-driven cache)
+name: Broad scan + Eleanor opportunities read on-demand, not the frontend cache
+description: Where Broad scalp rank, Eleanor's opportunities tool, and the opportunity radar get their scored rows (on-demand scanSymbolTimeframe, NOT the frontend-driven cache)
 ---
 
 Broad scalp ranking (`rankScalpsForUniverse` → `/me/scalp/rank`) reads its
@@ -12,10 +12,10 @@ this). The old belief that `/me/scalp/rank` returns `scanned: 0` on a fresh
 server because it reads an empty cache is **stale** — that is no longer how it
 works.
 
-Ruby's broad market intelligence is the same shape: the opportunities tool and
+Eleanor's broad market intelligence is the same shape: the opportunities tool and
 the per-user opportunity radar both route through `scanCoreOpportunities`
 (`lib/data/marketOverview.ts`), which loops the SAME single scoring path
-(`scanSymbolTimeframe`) and keeps ONLY `dataStatus === "live"` rows. So Ruby's
+(`scanSymbolTimeframe`) and keeps ONLY `dataStatus === "live"` rows. So Eleanor's
 opportunities also work immediately on a fresh server and never depend on the
 frontend cache.
 
@@ -26,7 +26,7 @@ misleading empty state.
 
 **How to apply:** the in-memory `scannerOpportunities(n)` cache (populated by the
 scanner's `scanOnce` loop) is now only read by the **Scanner page route**
-(`routes/scanner.ts`). Do not assume Broad scan, the Ruby opportunities tool, or
+(`routes/scanner.ts`). Do not assume Broad scan, the Eleanor opportunities tool, or
 the radar read it. If any of those return empty, it is an honest no-live-feed /
 no-live-row result from the on-demand scan, never an unfilled cache — never
 "fix" it by fabricating or forcing a server-side scan onto the request hot path.

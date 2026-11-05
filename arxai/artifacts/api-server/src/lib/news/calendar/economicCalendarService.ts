@@ -1,5 +1,5 @@
 // Central economic-calendar service — the SINGLE source of truth every consumer
-// surface (Market Impact Radar, Global Market Heat, Ruby, the Economic Calendar
+// surface (Market Impact Radar, Global Market Heat, Eleanor, the Economic Calendar
 // page DB-sync, /news/calendar) derives from.
 //
 // HONESTY (inviolable):

@@ -16,8 +16,8 @@ import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveSelectedMarketView } from "@/components/scanner/selectedMarketView";
-import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
+import { buildReasoningFromOppMap } from "@/lib/eleanorReasoningBlock";
 import { selectedAnalysisAvailable, selectedNewsDisplay } from "@/lib/selectedMarketEvidence";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -45,7 +45,7 @@ function timeAgo(iso: string, now: number): string {
 
 export function SelectedMarketPanel() {
   // Bridge with the app-wide chart symbol bus. Selecting a symbol here
-  // immediately updates chart / trade ticket / Ruby context everywhere.
+  // immediately updates chart / trade ticket / Eleanor context everywhere.
   const [chartSym] = useChartSymbol();
   const { name } = useAssistantName();
   const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
@@ -105,7 +105,7 @@ export function SelectedMarketPanel() {
 
   /** Single point that switches global market focus. */
   function selectSymbol(canonical: string) {
-    // Broadcast to chart, trade ticket, Ruby context.
+    // Broadcast to chart, trade ticket, Eleanor context.
     setChartSymbol(canonical);
     // Scroll the explanation card into view on mobile.
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -136,12 +136,12 @@ export function SelectedMarketPanel() {
   const analysisAvailable = selectedAnalysisAvailable(ok?.dataState);
   const newsDisplay = selectedNewsDisplay(ok?.newsRisk);
 
-  const rubyNote = useMemo(() => {
+  const eleanorNote = useMemo(() => {
     if (!ok) return null;
     return `${ok.explanation.hedge} ${ok.explanation.why}`;
   }, [ok]);
 
-  // ONE always-visible Ruby Reasoning Block for the selected/detail view.
+  // ONE always-visible Eleanor Reasoning Block for the selected/detail view.
   // Honesty: levelsWithheld / a degraded dataState collapse this to
   // WAIT/conditional with the limit stated in Feed/Data — never a fabricated
   // entry/stop/target. Display only; grants no execution permission.
@@ -268,7 +268,7 @@ export function SelectedMarketPanel() {
                   : "Awaiting live market data"}
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-ruby-cache-note">
+            <p className="text-[10px] text-muted-foreground -mt-1" data-testid="text-eleanor-cache-note">
               {ok.dataAsOf
                 ? <>Analysis built <TickingTime timestamp={ok.generatedAt} format={timeAgo} />{ok.cacheHit ? " · cached" : ""}. </>
                 : ""}
@@ -316,7 +316,7 @@ export function SelectedMarketPanel() {
               <div className="rounded-xl border border-border bg-background/40 p-3">
                 <div className="text-xs font-semibold mb-2 text-foreground">{name}'s read</div>
                 {oppReasoning && (
-                  <RubyReasoningBlock data={oppReasoning} testid="opp-map-reasoning" dense />
+                  <EleanorReasoningBlock data={oppReasoning} testid="opp-map-reasoning" dense />
                 )}
                 <p className="text-[10px] italic text-muted-foreground mt-2">{ok.explanation.disclaimer}</p>
               </div>
@@ -381,7 +381,7 @@ export function SelectedMarketPanel() {
           defaultSymbol={ok.symbol}
           defaultSide={ticket?.side ?? "BUY"}
           sourcePage="SCANNER_SELECTED_MARKET"
-          rubyExplanationSummary={rubyNote}
+          eleanorExplanationSummary={eleanorNote}
           feedWarning={liveFeedWarning}
         />
       )}

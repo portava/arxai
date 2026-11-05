@@ -23,7 +23,7 @@ untouched.
 | **ChartTradeEntry** | `artifacts/trading-dashboard/src/components/charts/ChartTradeEntry.tsx` | Trade-ticket side panel next to the TV embed | `pages/live-chart.tsx` |
 | **ScannerChartPanel** | `artifacts/trading-dashboard/src/components/scanner/ScannerChartPanel.tsx` | **Native** lightweight-charts v5 (candlesticks + draggable Entry/SL/TP draft lines + position/pending overlays + gated chart trade actions) | `pages/market-scanner.tsx` (priority #1 surface) |
 | **PositionMiniChart** | `artifacts/trading-dashboard/src/components/positions/PositionMiniChart.tsx` | **Native** lightweight-charts v5 (view-only mini OHLC + entry/SL/TP/current price lines + entry marker) | `components/positions/PositionSideCard.tsx`, also imported by `ScannerChartPanel.tsx` |
-| **RubyChartRead** | `artifacts/trading-dashboard/src/components/scanner/RubyChartRead.tsx` | Read-only "Ruby reads this chart" panel (no canvas; calls the assistant) | inside `ScannerChartPanel.tsx` |
+| **EleanorChartRead** | `artifacts/trading-dashboard/src/components/scanner/EleanorChartRead.tsx` | Read-only "Eleanor reads this chart" panel (no canvas; calls the assistant) | inside `ScannerChartPanel.tsx` |
 
 **Symbol / timeframe controls**
 
@@ -176,7 +176,7 @@ PAPER mode renders no trade buttons.
 
 ---
 
-## 5. Current scanner / Ruby / agent integration points (for read-only overlay)
+## 5. Current scanner / Eleanor / agent integration points (for read-only overlay)
 
 All intelligence outputs a future chart could overlay are already produced
 server-side and exposed via API. None of them is a trade path.
@@ -190,16 +190,16 @@ server-side and exposed via API. None of them is a trade path.
     `agentAdvisory` + `agentGovernance`.
   - `GET /api/market-scanner/status`, `GET /api/market-scanner/universes`,
     `POST /api/market-scanner/scan` (admin).
-- **Ruby (read-only assistant)** — logic
+- **Eleanor (read-only assistant)** — logic
   `artifacts/api-server/src/lib/assistant/chartStructure.ts` (deterministic, no
   LLM), routes `artifacts/api-server/src/routes/meAssistant.ts`:
   - `POST /api/me/assistant/read-chart` → `chartRead` (`bias`, `confidence`,
     `why`, `supportZone`, `resistanceZone`, `buyCondition`, `sellCondition`,
     `invalidation`, `cautions`, `dataQuality`). Already wired into the native
-    chart via `RubyChartRead.tsx`.
+    chart via `EleanorChartRead.tsx`.
   - `POST /api/me/assistant/explain-signal` → `setupReason`;
     `GET /api/me/assistant/briefing` → desk briefing.
-  - Ruby is **read-only** — it cannot place/modify/close trades or read another
+  - Eleanor is **read-only** — it cannot place/modify/close trades or read another
     user's data. Each response carries a per-user safety envelope built by
     `buildPerUserEnvelope` (from `lib/adminTrading/safetyEnvelope.ts`'s
     `getEnvelope`) with `readOnlyMode:true` added; the envelope's
@@ -301,7 +301,7 @@ Scanner page (priority #1 surface).** Rationale:
 
 - It already proves the full loop: real candles → lightweight-charts v5 render →
   per-user overlays → gated trade actions via `executeInstantTrade` → honest live
-  outcome polling → read-only Ruby read.
+  outcome polling → read-only Eleanor read.
 - It already reads the canonical symbol bus and registry, so it stays in sync with
   Focus / Symbols / scalp picks for free.
 - Building here means **adding to a proven, already-safe surface** rather than
@@ -338,7 +338,7 @@ non-negotiable invariants in `replit.md`.)
 - **TradingView embed** — `TradingViewLiveChart.tsx` and its pages
   (`live-chart`, `live-ai-assist`, `live-ai-auto-test`, `live-manual`). Stays as
   fallback/reference.
-- **Ruby read-only contract** — `chartStructure.ts`, `meAssistant.ts`; never add a
+- **Eleanor read-only contract** — `chartStructure.ts`, `meAssistant.ts`; never add a
   trade capability or cross-user read.
 - **Candle honesty** — `marketDataRouter.ts` / `dataManager.ts`: never fabricate
   candles, never substitute simulator/paper/master data, keep the honest empty

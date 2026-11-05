@@ -2,7 +2,7 @@
 //
 // All functions here are pure & deterministic (no IO, DB, HTTP, Date.now, or
 // randomness — callers pass `now`/age in). They convert real upstream reads
-// (Ruby signal geometry, structure levels, the economic calendar, the news
+// (Eleanor signal geometry, structure levels, the economic calendar, the news
 // provider connection state) into the visual layer model + radar + behavior +
 // overlay handshake.
 //
@@ -402,10 +402,10 @@ function band(b: PriceBand | null): b is PriceBand {
 }
 
 /**
- * Build Ruby's signal geometry as visual layers. Layers are ONLY produced when
+ * Build Eleanor's signal geometry as visual layers. Layers are ONLY produced when
  * the signal was built for the SAME symbol the chart is showing — otherwise we
  * return [] and let the overlay handshake flag the mismatch (consistency). This
- * guarantees the drawn layers never contradict Ruby's text for another symbol.
+ * guarantees the drawn layers never contradict Eleanor's text for another symbol.
  */
 export function buildSignalLayers(
   signal: SignalLayerInput | null,

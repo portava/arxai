@@ -96,12 +96,12 @@ function fromDb(e: EconomicEvent): DisplayEvent {
   return { ...e, key: String(e.id) };
 }
 
-// Open the existing Ruby live chat (same cross-tab mechanism the AI hub uses).
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
+// Open the existing Eleanor live chat (same cross-tab mechanism the AI hub uses).
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* sessionStorage unavailable — silent */ }
 }
 
@@ -377,7 +377,7 @@ export default function EconomicCalendarPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={openRubyLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/15">
+          <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/15">
             <MessageCircle className="h-4 w-4" /> Ask {name}
           </button>
           <button onClick={() => setSettingsOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40">
@@ -629,7 +629,7 @@ export default function EconomicCalendarPage() {
                           <EventTimingHeat affectedSymbols={e.affectedSymbols} />
                         )}
                         <div className="mt-2 flex flex-wrap gap-2">
-                          <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-2.5 py-1 text-xs text-ruby">
+                          <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-2.5 py-1 text-xs text-eleanor">
                             <MessageCircle className="h-3.5 w-3.5" /> Ask {name}
                           </button>
                           <button onClick={() => goScanner(e.affectedSymbols?.[0])} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-foreground hover:border-primary/40">
@@ -670,13 +670,13 @@ export default function EconomicCalendarPage() {
 
         {/* Right rail */}
         <div className="space-y-4">
-          {/* Ruby's News Read */}
-          <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-            <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name}’s News Read</h3></div>
+          {/* Eleanor's News Read */}
+          <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
+            <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-eleanor" /><h3 className="text-sm font-semibold text-eleanor">{name}’s News Read</h3></div>
             {summary.next ? (
               <>
                 <div className="mt-2 flex gap-2 text-sm text-txt-secondary">
-                  <Quote className="h-4 w-4 shrink-0 text-ruby/70" />
+                  <Quote className="h-4 w-4 shrink-0 text-eleanor/70" />
                   <p>{summary.next.eventName} {timeUntil(summary.next.eventTime)}. Risk is {summary.overall.toLowerCase()} — major releases can move {summary.next.currency} pairs quickly. Best action: wait for the first reaction, then let Scanner confirm direction.</p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
@@ -688,7 +688,7 @@ export default function EconomicCalendarPage() {
             ) : (
               <p className="mt-2 text-sm text-txt-muted">{name} is waiting for calendar data.</p>
             )}
-            <button onClick={openRubyLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby">
+            <button onClick={openEleanorLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor">
               <span className="inline-flex items-center gap-1.5"><MessageCircle className="h-4 w-4" /> Ask {name}</span>
               <ChevronRight className="h-4 w-4" />
             </button>

@@ -111,7 +111,7 @@ export interface OrderFlowTruthVerdict {
   isProxy: boolean;
   confidenceCapReason: string | null;
   scannerTruthImpact: OrderFlowScannerImpact;
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -216,7 +216,7 @@ export function resolveOrderFlowTruth(
         edgeAdjustment: 0,
         supportive: false,
       },
-      rubyExplanation: "Order flow is unavailable for this symbol — no depth or reliable proxy data.",
+      eleanorExplanation: "Order flow is unavailable for this symbol — no depth or reliable proxy data.",
       warnings: dedupe(warnings),
     };
   }
@@ -373,7 +373,7 @@ export function resolveOrderFlowTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation: buildOrderFlowExplanation({
+    eleanorExplanation: buildOrderFlowExplanation({
       dataTier,
       pressure,
       strength,

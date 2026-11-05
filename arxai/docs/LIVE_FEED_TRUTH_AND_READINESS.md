@@ -64,7 +64,7 @@ symbol through the chain:
 | Broker-confirmed predicate | `data/brokerConfirmedFeed.ts` | **new** — one explicit predicate over the shared verdict + tf normalization |
 | Chart endpoint | `data/chart/chartDataService.ts` | L1 truth seam; carries `feedStatus` |
 | Scanner | `marketScanner.ts` | enriches, never gates; same verdict |
-| Eleanor/Ruby chart read | `assistant/` read layers | same verdict; withholds setup when feed unconfirmed |
+| Eleanor/Eleanor chart read | `assistant/` read layers | same verdict; withholds setup when feed unconfirmed |
 | Live preflight feed gate | `live/entryDataSufficiency.ts` | composes the pure engine; block-only, fail-closed |
 | Dispatch | `executeInstant` → `liveCommandPipeline` → 18-gate | sanctioned chokepoint; unchanged |
 
@@ -200,7 +200,7 @@ Honest classification of every live-related function. UI labels must match.
 | Chart / manual ticket (`LiveSharedTradeTicket`) | **LIVE EXECUTION SUPPORTED** | Yes | place/close/modify/reverse/cancel all route via `executeInstantTrade`; PAPER renders no buttons |
 | Scanner chart trade actions | **LIVE EXECUTION SUPPORTED** | Yes | `executeInstantTrade(source:"chart")`; pending-cancel = DELETE draft |
 | Chart drag-to-modify SL/TP | **LIVE EXECUTION SUPPORTED** | Yes | own LIVE SL/TP only, `MODIFY_SL_TP`; entry never draggable; feed+entitlement re-checked at send |
-| Eleanor / Ruby (assistant) | **LIVE EXECUTION SUPPORTED (conditional)** | Yes | only with `rubyExecutionAuthority = AI_ASSISTED`; same router/pipeline/18-gate; `AI_AUTO` defined but **not enabled** |
+| Eleanor / Eleanor (assistant) | **LIVE EXECUTION SUPPORTED (conditional)** | Yes | only with `eleanorExecutionAuthority = AI_ASSISTED`; same router/pipeline/18-gate; `AI_AUTO` defined but **not enabled** |
 | Profit Mission | **LIVE EXECUTION SUPPORTED (gated)** | Yes | drafts reach real exec ONLY via `executeInstant(source:"mission")`; CAS-claim single-flight |
 | Self-Trade agent executor | **LIVE EXECUTION SUPPORTED (gated)** | Yes | scoped autonomous cycle; fail-closed audit before side effect; `AI_AUTO` not enabled |
 | Final Live Test page (owner) | **LIVE EXECUTION SUPPORTED (owner-only)** | Yes | no command until owner confirms; all gates re-evaluated server-side |

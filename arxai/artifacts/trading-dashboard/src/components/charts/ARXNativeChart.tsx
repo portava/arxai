@@ -64,7 +64,7 @@ import { StoredHistoryChip } from "./StoredHistoryChip";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
-import { resolveFeedBadgeVerdict } from "@/lib/rubyReadPanelState";
+import { resolveFeedBadgeVerdict } from "@/lib/eleanorReadPanelState";
 import {
   type ChartOverlay,
   overlayMetaNumber,
@@ -298,7 +298,7 @@ export interface ARXNativeChartProps {
   /**
    * Level 5 — reports the chart's resolved symbol, current timeframe, and the
    * Level 3 `aiUsable` verdict (true only on a clean feed) whenever any of them
-   * change. Lets a parent source AI overlays (scanner/Ruby) against the exact
+   * change. Lets a parent source AI overlays (scanner/Eleanor) against the exact
    * instrument the chart is showing and suppress them on an unconfirmed feed —
    * WITHOUT duplicating the candle fetch. Pure read-out: never gates candles
    * or trade execution.
@@ -1249,7 +1249,7 @@ export function ARXNativeChart({
 
   // Cap the Level 3 feed badge by the SHARED scanner-truth verdict (Task #521)
   // so the chip can never claim Clean/AI when the resolved truth for this exact
-  // symbol/timeframe is downgraded or still unresolved — mirroring RubyChartRead.
+  // symbol/timeframe is downgraded or still unresolved — mirroring EleanorChartRead.
   // Normalize first: `timeframe` is contract-style ("M15") but useScannerTruth's
   // toApiTimeframe only understands chart ids, so a raw label would resolve the
   // wrong (M5) feed. This is a read-only verdict for the badge ONLY; the Level 5

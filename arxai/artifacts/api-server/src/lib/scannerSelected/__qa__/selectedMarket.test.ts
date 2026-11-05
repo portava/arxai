@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// selectedMarket.test.ts — truth contract for the "Pick a market — Ruby
+// selectedMarket.test.ts — truth contract for the "Pick a market — Eleanor
 // explains it" selected-market builder (Task #518).
 //
 // The bug this locks down: the panel previously analyzed SIMULATOR candles

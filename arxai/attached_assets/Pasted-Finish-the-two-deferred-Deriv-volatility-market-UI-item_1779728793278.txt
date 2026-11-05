@@ -18,14 +18,14 @@ Previous pass validated:
   - V75 tick
   - V75_1s candles
 - Deriv data now flows through the actual client code.
-- Ruby reads through dataManager.getMarketData(), which now routes through the unified router.
+- Eleanor reads through dataManager.getMarketData(), which now routes through the unified router.
 
 DEFERRED ITEMS TO COMPLETE:
 1. Trade-ticket “Data-only via Deriv / Tradable via MT5” badge
-2. Ruby’s explanation wording for volatility/synthetic markets
+2. Eleanor’s explanation wording for volatility/synthetic markets
 
 GOAL:
-Make the app clearly distinguish between markets that are only available as data feeds from Deriv and markets that can actually be traded through the current MT5 bridge. Also make Ruby explain volatility/synthetic markets accurately, without implying live trade execution is available unless the MT5 bridge supports that symbol.
+Make the app clearly distinguish between markets that are only available as data feeds from Deriv and markets that can actually be traded through the current MT5 bridge. Also make Eleanor explain volatility/synthetic markets accurately, without implying live trade execution is available unless the MT5 bridge supports that symbol.
 
 1. TRADE TICKET MARKET SOURCE BADGE
 Update the trade ticket component carefully.
@@ -34,9 +34,9 @@ For every selected symbol/market, show a clear badge near the symbol/header:
 
 If market data is coming from Deriv but the symbol is NOT tradable through the connected MT5 bridge:
 - Badge: “Data-only via Deriv”
-- Helper text: “Ruby can analyze this market, but live execution is not available through the current MT5 bridge.”
+- Helper text: “Eleanor can analyze this market, but live execution is not available through the current MT5 bridge.”
 - Disable live order submit for that symbol.
-- Keep analysis, chart, Ruby explanation, and watch/scanner features available.
+- Keep analysis, chart, Eleanor explanation, and watch/scanner features available.
 
 If market is available/tradable through the connected MT5 bridge:
 - Badge: “Tradable via MT5”
@@ -63,7 +63,7 @@ For each symbol, determine:
 Use this in:
 - Trade ticket
 - Scanner results
-- Ruby selected market explanation
+- Eleanor selected market explanation
 - Market detail panel
 - Any “place trade” button
 
@@ -78,20 +78,20 @@ If symbol is Deriv-data-only and not available through MT5:
   “This market is currently analysis-only. It is not tradable through the connected MT5 bridge.”
 - Write audit log only if a live submit attempt was made.
 
-4. RUBY VOLATILITY / SYNTHETIC MARKET EXPLANATIONS
-Update Ruby’s market explanation logic so she correctly explains volatility/synthetic markets.
+4. ELEANOR VOLATILITY / SYNTHETIC MARKET EXPLANATIONS
+Update Eleanor’s market explanation logic so she correctly explains volatility/synthetic markets.
 
-Ruby should be able to say:
+Eleanor should be able to say:
 - This is a synthetic/volatility market if applicable.
 - The app has Deriv market data for analysis.
-- Ruby can analyze recent candles/ticks, movement, volatility, trend, pullbacks, and risk.
+- Eleanor can analyze recent candles/ticks, movement, volatility, trend, pullbacks, and risk.
 - Live execution depends on whether the connected MT5 bridge supports that symbol.
-- If it is data-only, Ruby should not say the user can trade it live from ARX.
-- If tradable via MT5, Ruby can explain that trade execution is possible only if all live gates pass.
+- If it is data-only, Eleanor should not say the user can trade it live from ARX.
+- If tradable via MT5, Eleanor can explain that trade execution is possible only if all live gates pass.
 
-Ruby should not overpromise.
-Ruby should not say “place a live trade” on data-only markets.
-Ruby should say “analyze/watch” when execution is not supported.
+Eleanor should not overpromise.
+Eleanor should not say “place a live trade” on data-only markets.
+Eleanor should say “analyze/watch” when execution is not supported.
 
 5. SCANNER / MARKET CARD LABELS
 Update scanner/market cards to show small labels:
@@ -107,8 +107,8 @@ Keep these labels clean and not overwhelming.
 If user tries to trade a data-only market, show:
 “This market is available for analysis, but not live trading through your current MT5 bridge.”
 
-If user asks Ruby to trade it:
-Ruby should respond:
+If user asks Eleanor to trade it:
+Eleanor should respond:
 “I can analyze this market, but I can’t send a live order for it unless it is available through your connected MT5 bridge.”
 
 7. SECURITY / NO INTERNAL LEAKS
@@ -131,10 +131,10 @@ Before stopping, verify:
 - Live submit is disabled/blocked for data-only markets.
 - arx_live_commands remains 0 when trying to submit data-only market.
 - MT5-tradable symbols show “Tradable via MT5.”
-- Ruby explains volatility markets as analysis-capable but not necessarily executable.
-- Ruby does not imply data-only markets can be live traded.
+- Eleanor explains volatility markets as analysis-capable but not necessarily executable.
+- Eleanor does not imply data-only markets can be live traded.
 - Scanner/market cards show clean source/tradability labels.
 - No backend/API/env/internal names leak to regular users.
-- Login, Ruby voice/chat, scanner, trade modal, bridge status, live request flow, admin queue, and bottom nav still work.
+- Login, Eleanor voice/chat, scanner, trade modal, bridge status, live request flow, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix errors before stopping.

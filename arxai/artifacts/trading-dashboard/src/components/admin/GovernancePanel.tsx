@@ -39,7 +39,7 @@ interface EffectiveGovernance {
   requireSpreadLimit: boolean;
   spreadLimitPoints: number | null;
   requireScannerSignal: boolean;
-  requireRubyExplanation: boolean;
+  requireEleanorExplanation: boolean;
   requireBacktest: boolean;
   requireNewsCheck: boolean;
   requireRiskReward: boolean;
@@ -80,7 +80,7 @@ const REQUIRE_TOGGLES: { key: keyof EffectiveGovernance; label: string; hint: st
   { key: "enforceMarketHoursAppCheck", label: "App Market-Hours Check", hint: "Block outside app-defined market hours." },
   { key: "requireSpreadLimit", label: "Enforce Spread Limit", hint: "Block when spread exceeds the limit." },
   { key: "requireScannerSignal", label: "Require Scanner Signal", hint: "Only trade with a fresh scanner signal." },
-  { key: "requireRubyExplanation", label: "Require {assistant} Explanation", hint: "Require a {assistant} read before trading." },
+  { key: "requireEleanorExplanation", label: "Require {assistant} Explanation", hint: "Require a {assistant} read before trading." },
   { key: "requireBacktest", label: "Require Backtest", hint: "Require a backtest before trading." },
   { key: "requireNewsCheck", label: "Require News Check", hint: "Require a news check before trading." },
   { key: "requireRiskReward", label: "Require Risk/Reward", hint: "Require an R:R on the ticket." },

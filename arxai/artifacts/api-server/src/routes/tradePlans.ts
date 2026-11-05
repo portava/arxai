@@ -349,7 +349,7 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
         if (cached) {
           chartTruthScore = cached.state.gateOutput.chartTruthScore;
           // Gate on Chart Truth (confidentReadAllowed) — this is the same
-          // threshold (≥ 75) that gates Ruby reads and scanner confirmation.
+          // threshold (≥ 75) that gates Eleanor reads and scanner confirmation.
           // tradeConfirmationAllowed/autonomousChartActionAllowed may still be
           // false even when truth passes (mirror degraded, feed stale), so
           // surface the primary block reason either way.

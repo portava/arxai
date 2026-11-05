@@ -34,7 +34,7 @@
 ## 1. Per-entry-point procedure
 
 Repeat for each live-capable entry point you are proving (chart/manual ticket,
-scanner chart action, Eleanor/Ruby AI-assisted, Profit Mission, Final Live Test
+scanner chart action, Eleanor/Eleanor AI-assisted, Profit Mission, Final Live Test
 page). Each routes through the same `executeInstant` → `liveCommandPipeline` →
 18-gate dispatch.
 

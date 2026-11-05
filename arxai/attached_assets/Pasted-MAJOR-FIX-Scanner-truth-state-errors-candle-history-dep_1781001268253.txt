@@ -1,13 +1,13 @@
 MAJOR FIX: Scanner truth-state errors + candle history depth + feed reliability audit.
 
-This is not a cosmetic fix. The screenshots show serious data, feed, chart, Ruby, scanner, and execution-state contradictions. Fix this as a full scanner/chart/feed integrity repair.
+This is not a cosmetic fix. The screenshots show serious data, feed, chart, Eleanor, scanner, and execution-state contradictions. Fix this as a full scanner/chart/feed integrity repair.
 
 Current visible problems from screenshots:
 1. App says LIVE · Shared MT5 while the selected market says Historical only.
 2. Trading says Enabled while selected symbol execution may not be available through current MT5 bridge.
-3. Ruby says Limited read but Ruby Market Read also shows green “Live feed updated.”
+3. Eleanor says Limited read but Eleanor Market Read also shows green “Live feed updated.”
 4. Chart says last-known / live feed unavailable while still rendering candles like active data.
-5. Ruby gives language like “entry approaching” even though data says historical only.
+5. Eleanor gives language like “entry approaching” even though data says historical only.
 6. Scalp Builder cannot build because live symbol specs are missing.
 7. Position Manager shows Volatility 25 (1s) while selected scanner market is Volatility 75 Index without clearly separating them.
 8. The feed falls off.
@@ -21,7 +21,7 @@ Fix the entire market data pipeline so ARX AI has reliable, deep, scrollable can
 - global bridge live status
 - selected symbol data status
 - selected symbol execution status
-- Ruby read/actionability status
+- Eleanor read/actionability status
 - chart history depth
 - broker symbol specs readiness
 
@@ -39,7 +39,7 @@ or
 
 useScannerSymbolTruth(symbol, timeframe)
 
-Every scanner/chart/Ruby/scalp/timing component must consume this same truth object.
+Every scanner/chart/Eleanor/scalp/timing component must consume this same truth object.
 
 Required output:
 
@@ -99,7 +99,7 @@ Required output:
     missing: []
   },
 
-  rubyReadiness: {
+  eleanorReadiness: {
     canGiveHistoricalRead: boolean,
     canGiveLiveRead: boolean,
     canSuggestActionableEntry: boolean,
@@ -132,9 +132,9 @@ Show separately:
 - Bridge: LIVE · Shared MT5
 - Market data: Live / Stale / Historical only / Unavailable
 - Symbol execution: Enabled / Not available through current bridge
-- Ruby: Live read / Historical read only / Not actionable
+- Eleanor: Live read / Historical read only / Not actionable
 
-2. Ruby Market Read must not show green “Live feed” unless symbolData.status === "live".
+2. Eleanor Market Read must not show green “Live feed” unless symbolData.status === "live".
 
 If symbolData.status is historical_only:
 Show:
@@ -148,10 +148,10 @@ If unavailable:
 Show:
 “Feed unavailable”
 
-3. Ruby must not say “entry approaching” as if live when the feed is historical only.
+3. Eleanor must not say “entry approaching” as if live when the feed is historical only.
 
 Replace with:
-“Historical pattern shows a possible setup, but live confirmation is missing, so Ruby cannot treat this as an actionable entry.”
+“Historical pattern shows a possible setup, but live confirmation is missing, so Eleanor cannot treat this as an actionable entry.”
 
 4. Chart must not show stale/last-known candles as live.
 If candles are historical:
@@ -448,18 +448,18 @@ Test 4: Feed drop recovery
 - Simulate feed disconnect.
 - Chart remains visible.
 - Badge changes to stale.
-- Ruby becomes not actionable.
+- Eleanor becomes not actionable.
 - Reconnect resumes feed.
 - Missing candle gap is backfilled.
 
 Test 5: No false live labels
 - When historical only, no component says green Live feed.
-- Ruby, chart, timing, scalp, scanner header all agree.
+- Eleanor, chart, timing, scalp, scanner header all agree.
 
 Test 6: Global bridge live but selected symbol historical
 - App can show bridge live.
 - Selected symbol says historical only.
-- Ruby is not actionable.
+- Eleanor is not actionable.
 - Trade/scalp blocked only for that symbol.
 
 Test 7: Execution-enabled symbol
@@ -489,7 +489,7 @@ PART 11 — DO NOT BREAK EXISTING LIVE TRADING
 Do not disable live trading globally.
 Do not add demo-only restrictions.
 Do not remove scanner trade buttons.
-Do not remove Ruby.
+Do not remove Eleanor.
 Do not remove scalp builder.
 Do not remove existing MT5 command path.
 Do not remove admin approvals.
@@ -504,6 +504,6 @@ The Scanner passes only when:
 1. every visible status agrees with the shared truth contract,
 2. V75 and other markets have deep scrollable candles,
 3. feed drops are handled without losing the chart,
-4. Ruby never treats historical/stale data as live,
+4. Eleanor never treats historical/stale data as live,
 5. users can scroll back months/years where the provider supports it,
 6. admin diagnostics prove exactly how many candles exist per symbol/timeframe/source.

@@ -94,7 +94,7 @@ Express semantics: a request must therefore be `/api/api/<path>` to reach these 
 
 **User-visible breakage:** `artifacts/trading-dashboard/src/components/readiness/TradingSetupReadinessCard.tsx:39` fetches `/api/readiness/me` (single prefix). That path matches nothing — `routes/readiness.ts` defines only `/readiness/status|run|reports|checklist|demo|export|integration/*` (readiness.ts:64-112), not `/readiness/me`. The card is rendered on the **main dashboard** (`pages/dashboard.tsx:216`, imported at :75) and permanently shows its error branch "Couldn't load readiness right now." (`TradingSetupReadinessCard.tsx:60-63`), refetching a 404 every 60s (`:44`). The slash-collapse middleware at `app.ts:24-32` only collapses `//`, it does not strip a duplicated `/api` segment.
 
-None of the 13 endpoints appear in the spec under any prefix (grep for `readiness/me`, `onboarding/me`, `/opportunities` in `openapi.yaml` — only unrelated ruby-scalp/missed-opportunities matches).
+None of the 13 endpoints appear in the spec under any prefix (grep for `readiness/me`, `onboarding/me`, `/opportunities` in `openapi.yaml` — only unrelated eleanor-scalp/missed-opportunities matches).
 
 **Repair (route fix, not spec fix):** change `routes/index.ts:428` and `:432` to `router.use(userReadinessRouter)` / `router.use(opportunityRadarRouter)` (matching every other mount). No path-collision blocks this: `/readiness/me` does not clash with `readiness.ts`'s `/readiness/*` set, and no other file defines `/opportunities` or `/watchlist/intelligence` (`watchlists.ts` uses `/watchlists/*`). Then add the 13 operations to the spec. The per-user readiness "14-status engine" is a P1-Discovery-relevant surface; it deserves typed hooks.
 

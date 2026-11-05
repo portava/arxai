@@ -1,0 +1,181 @@
+import { useState } from "react";
+import {
+  usePostMeAssistantDraftRead,
+  EleanorDraftReadRequestIntent,
+  type EleanorDraftReadRequestIntent as EleanorDraftReadIntentValue,
+  type EleanorDraftReadRequestTimeframe,
+} from "@workspace/api-client-react";
+import { Sparkles, AlertCircle, ShieldCheck } from "lucide-react";
+import { useAssistantName } from "@/lib/assistant-name";
+
+// EleanorDraftReadPanel — Chart Brain v2 (Task 4) read-only Eleanor reader.
+//
+// Lets the user ask Eleanor a small set of fixed questions about the CURRENT
+// symbol/timeframe. Eleanor is strictly read-only: the endpoint never places,
+// modifies, or closes a trade and the response always carries the
+// paper_only / readOnlyMode / allowOrderExecution=false envelope, which we
+// surface so the user can see Eleanor cannot act. Honest by construction — on a
+// dirty/insufficient feed the read says so rather than inventing a setup.
+
+const INTENTS: { key: EleanorDraftReadIntentValue; label: string }[] = [
+  { key: EleanorDraftReadRequestIntent.analyze, label: "Analyze" },
+  { key: EleanorDraftReadRequestIntent["is-this-a-buy"], label: "Is this a buy?" },
+  { key: EleanorDraftReadRequestIntent["is-this-a-scalp"], label: "Scalp?" },
+  { key: EleanorDraftReadRequestIntent["why-not-now"], label: "Why not now?" },
+  {
+    key: EleanorDraftReadRequestIntent["what-changes-my-mind"],
+    label: "What changes my mind?",
+  },
+  {
+    key: EleanorDraftReadRequestIntent["what-invalidates"],
+    label: "What invalidates?",
+  },
+  { key: EleanorDraftReadRequestIntent["hold-or-close"], label: "Hold or close?" },
+  {
+    key: EleanorDraftReadRequestIntent["agent-consensus"],
+    label: "Agent consensus",
+  },
+];
+
+export function EleanorDraftReadPanel({
+  symbol,
+  timeframe,
+}: {
+  symbol: string;
+  timeframe: EleanorDraftReadRequestTimeframe;
+}) {
+  const { name } = useAssistantName();
+  const [active, setActive] = useState<EleanorDraftReadIntentValue | null>(null);
+  const mut = usePostMeAssistantDraftRead();
+  const trimmed = (symbol ?? "").trim();
+
+  function ask(intent: EleanorDraftReadIntentValue) {
+    if (!trimmed) return;
+    setActive(intent);
+    mut.mutate({
+      data: {
+        symbol: trimmed,
+        timeframe,
+        intent,
+      },
+    });
+  }
+
+  const resp = mut.data;
+  const read = resp?.draftRead;
+
+  return (
+    <div
+      className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-[11px] leading-snug"
+      data-testid="eleanor-draft-read-panel"
+    >
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
+        <span className="font-semibold text-zinc-200">Ask {name} (read-only)</span>
+        <span className="ml-auto flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+          <ShieldCheck className="h-3 w-3" /> read-only
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {INTENTS.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            disabled={!trimmed || mut.isPending}
+            onClick={() => ask(it.key)}
+            className={`rounded border px-2 py-1 text-[10px] transition-colors disabled:opacity-50 ${
+              active === it.key
+                ? "border-fuchsia-500/60 bg-fuchsia-500/10 text-fuchsia-200"
+                : "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:border-zinc-700"
+            }`}
+            data-testid={`eleanor-draft-intent-${it.key}`}
+          >
+            {it.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-2 space-y-1.5">
+        {mut.isPending && (
+          <div className="text-zinc-500">Reading the chart…</div>
+        )}
+
+        {mut.isError && (
+          <div className="flex items-start gap-1 text-amber-300">
+            <AlertCircle className="mt-0.5 h-3 w-3" />
+            <span>{name} couldn't read this right now. Try again shortly.</span>
+          </div>
+        )}
+
+        {read && !mut.isPending && (
+          <>
+            {read.dataQuality === "insufficient" && (
+              <div
+                className="flex items-start gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-amber-300"
+                data-testid="eleanor-draft-feed-not-confirmed"
+              >
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  Feed not confirmed for {read.displaySymbol || trimmed} ·{" "}
+                  {read.timeframe} — {name} has limited visibility, so treat this
+                  read as low-confidence.
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+                {read.bias} · {read.confidenceLabel}
+                {read.confidenceScore != null
+                  ? ` · ${read.confidenceScore}/100`
+                  : ""}
+              </span>
+            </div>
+
+            <div className="rounded border border-zinc-800/70 bg-zinc-900/40 px-2 py-1.5 text-zinc-200">
+              {read.headline}
+            </div>
+
+            {read.points.map((p, i) => (
+              <div
+                key={`pt-${i}`}
+                className="rounded border border-zinc-800/70 bg-zinc-900/40 px-2 py-1.5 text-zinc-300"
+              >
+                {p}
+              </div>
+            ))}
+
+            {read.cautions.map((c, i) => (
+              <div
+                key={`ca-${i}`}
+                className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-amber-300"
+              >
+                {c}
+              </div>
+            ))}
+
+            {read.bestNextAction && (
+              <div className="rounded border border-zinc-800/70 bg-zinc-900/40 px-2 py-1.5">
+                <span className="mr-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                  Best next action
+                </span>
+                <span className="text-zinc-300">{read.bestNextAction}</span>
+              </div>
+            )}
+
+            <p className="text-[10px] text-zinc-600">{read.disclaimer}</p>
+          </>
+        )}
+
+        {!read && !mut.isPending && !mut.isError && (
+          <div className="text-zinc-500">
+            Pick a question above to get {name}'s read on {trimmed || "this symbol"}.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default EleanorDraftReadPanel;

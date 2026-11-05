@@ -3,7 +3,7 @@
 > Historical audit. See [the 2026-10-26 reliability review](SELF_TRADING_RELIABILITY_2026_10_26.md) for subsequently confirmed lifecycle defects, fixes and remaining validation gaps. The ratings below are not current certification.
 
 **Date:** 2026-06-19  
-**Scope:** Self-Trade AI stack + Ruby AI_ASSISTED path + all shared execution gates  
+**Scope:** Self-Trade AI stack + Eleanor AI_ASSISTED path + all shared execution gates  
 **Auditor:** ARX AI agent executor (automated, evidence-backed)  
 **Classification:** Confidential — operator/admin only
 
@@ -29,7 +29,7 @@
 
 ## 1. Executive Summary
 
-**Reality confirmed:** there is **no always-on autonomous loop**. The Self-Trade autonomous cycle is admin-trigger-only. `AI_AUTO_EXECUTION_ENABLED` defaults to `false` and is never set to `true` in any code path. Ruby tops out at `AI_ASSISTED`. Every auto/agent decision routes through the identical `executeInstant` → `createLiveDraft` → `confirm` → `dispatchLiveCommand` → 18-gate Phase B pipeline as a manual trade. No new MT5 path exists. No gate is bypassed.
+**Reality confirmed:** there is **no always-on autonomous loop**. The Self-Trade autonomous cycle is admin-trigger-only. `AI_AUTO_EXECUTION_ENABLED` defaults to `false` and is never set to `true` in any code path. Eleanor tops out at `AI_ASSISTED`. Every auto/agent decision routes through the identical `executeInstant` → `createLiveDraft` → `confirm` → `dispatchLiveCommand` → 18-gate Phase B pipeline as a manual trade. No new MT5 path exists. No gate is bypassed.
 
 **Key findings:**
 
@@ -45,7 +45,7 @@
 | Module | File | Role |
 |---|---|---|
 | Autonomous Cycle Orchestrator | `artifacts/api-server/src/lib/selfTrade/autonomousCycle.ts` | Admin-triggered only. Sequences decision → safety ctx → execute → reconcile/learn. |
-| Decision Engine (Shadow Brain) | `artifacts/api-server/src/lib/selfTrade/decisionEngine.ts` | Read-only. Builds candidates via Ruby Market Edge + Chart Truth gate. Never dispatches. |
+| Decision Engine (Shadow Brain) | `artifacts/api-server/src/lib/selfTrade/decisionEngine.ts` | Read-only. Builds candidates via Eleanor Market Edge + Chart Truth gate. Never dispatches. |
 | Execution Gate (Context Gatherer) | `artifacts/api-server/src/lib/selfTrade/executionGate.ts` | Reads kill switches, master-live access, quota, real daily P/L. Feeds pure evaluator. |
 | Execution Permission (Pure Judge) | `lib/domain/src/self-trade/executionPermission.ts` | Deterministic. 11 pre-conditions → action (EXECUTE/PREPARE_ONLY/LOG_ONLY/BLOCK). |
 | Agent Executor (Dispatcher) | `artifacts/api-server/src/lib/selfTrade/agentExecutor.ts` | Turns one approved decision into a real live entry via `executeInstant`. Exactly-once. |
@@ -66,7 +66,7 @@
 | Entry Data Sufficiency | `artifacts/api-server/src/lib/live/entryDataSufficiency.ts` | Live-entry block if feed not LIVE or insufficient candles. |
 | Trade Health Service | `artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts` | Read-only health report. Honest nulls on missing data — never fabricates. |
 | News Risk Engine | `artifacts/api-server/src/brain/news/newsRiskEngine.ts` | Hardcoded schedule. blockTrading=true during HIGH-impact live events. |
-| Ruby Self-Review | `artifacts/api-server/src/lib/rubyQuality/selfReview.ts` | Post-trade idempotent review: success/mistake tags, plain-English + admin detail. |
+| Eleanor Self-Review | `artifacts/api-server/src/lib/eleanorQuality/selfReview.ts` | Post-trade idempotent review: success/mistake tags, plain-English + admin detail. |
 | Live Position Exposure | `artifacts/api-server/src/lib/live/livePositionExposure.ts` | Ghost exclusion: exposure only if `closedAt IS NULL AND reconcileState IS NULL`. |
 | Feature Flags | `lib/domain/src/flags/featureFlags.types.ts` | `AI_AUTO_EXECUTION_ENABLED`: defaultEnabled=false. Never set to true. |
 | AACI Types | `lib/domain/src/aaci/types.ts` | 18-system handshake registry. Advisory authority order documented. |
@@ -83,7 +83,7 @@ flowchart TD
 
     subgraph SHADOW_BRAIN [Decision Engine — READ-ONLY, never dispatches]
         B --> C[Load ACTIVE/FUNDED_IDLE agents + their allowedSymbols]
-        C --> D[For each agent × symbol:\nbuildRubyMarketEdgeForUser M5 + H1]
+        C --> D[For each agent × symbol:\nbuildEleanorMarketEdgeForUser M5 + H1]
         D --> E{Chart Truth Gate\n≥75 score?\nFeed LIVE?\nBroker aligned?\nCandle closed?}
         E -- NO --> F[Inject CHART_TRUTH_BLOCKED\ninto handshake.blocked]
         E -- YES --> G[chartGateAllowed = true]
@@ -153,8 +153,8 @@ Every input the bot reads before proposing or placing a trade:
 ### Market Signals
 | Input | Source Module | File |
 |---|---|---|
-| Ruby Market Edge signal (M5 primary) | `buildRubyMarketEdgeForUser` | `signalIntelligenceService.ts` |
-| Ruby Market Edge signal (H1 HTF alignment) | `buildRubyMarketEdgeForUser` | `signalIntelligenceService.ts` |
+| Eleanor Market Edge signal (M5 primary) | `buildEleanorMarketEdgeForUser` | `signalIntelligenceService.ts` |
+| Eleanor Market Edge signal (H1 HTF alignment) | `buildEleanorMarketEdgeForUser` | `signalIntelligenceService.ts` |
 | Chart Truth score (≥75 required) | `getCachedIntelligenceContext` | `chartIntelligence.ts` |
 | Feed freshness / selfTradeChartAllowed | `gateOutput.selfTradeChartAllowed` | `chartIntelligence.ts` |
 | autonomousChartActionAllowed (stale guard) | `gateOutput.autonomousChartActionAllowed` | `chartIntelligence.ts` |
@@ -324,7 +324,7 @@ Feed confidence can **only downgrade, never grant** execution:
 
 Pre-conditions:
 - Chart Truth score = 82, feed = LIVE, broker aligned, previous candle closed
-- Ruby M5 signal: directional BUY, confidence = 78, news safety = 90
+- Eleanor M5 signal: directional BUY, confidence = 78, news safety = 90
 - Agent: ALPHA profile, LIVE mode, autonomy L2, 1 position open (max=2)
 - Kill switch: not engaged. Governor: PAPER_ALLOWED. Handshake: ready.
 - AACI advisory score: 83 → `ALLOW`, sizeMultiplier = 1
@@ -443,7 +443,7 @@ Each score /100 reflects the depth and correctness of implementation, honesty of
 | **Feed-Truth Honesty** | 88/100 | Feed verdict LIVE required end-to-end (decision + entryDataSufficiency). AWAITING = honest block. No fabrication of OHLC. Broker alignment verified. Gap: stale-candle edge case in Chart Truth cache expiry. |
 | **Risk Control** | 85/100 | 11-layer execution permission, quota pressure PROTECT/RECOVERY, ghost-position exclusion, concurrent cap, agent daily P/L. Gap: weekly drawdown not evaluated at agent layer. |
 | **Execution Safety** | 92/100 | 18-gate Phase B, exactly-once idempotency, TOCTOU kill-switch, anomaly screen fail-safe, audit pre-dispatch, dispatch ≠ fill, zero fabricated fills. Outstanding architecture. |
-| **Explanation Quality** | 70/100 | Thesis includes direction/entry/SL/TP/confidence/newsRisk/edge. Ruby self-review produces mistake/success tags + plain-English summary. Gap: no per-trade reward:risk or invalidation narrated in the control room UI. |
+| **Explanation Quality** | 70/100 | Thesis includes direction/entry/SL/TP/confidence/newsRisk/edge. Eleanor self-review produces mistake/success tags + plain-English summary. Gap: no per-trade reward:risk or invalidation narrated in the control room UI. |
 | **Performance Consistency** | 68/100 | Quota engine handles NORMAL/RECOVERY/PROTECT regimes. Post-trade learning via Bayesian trust. Gap: weekly cap missing at agent level; learning cold start not surfaced; no backtest harness for live scenario replay. |
 | **Stop/Skip Discipline** | 90/100 | NO_THESIS/NO_PROTECTIVE_STOP/KILL_SWITCH/CHART_TRUTH_BLOCKED/HANDSHAKE_BLOCKED/AACI_DEFERRED all explicitly block. Default-deny throughout. |
 | **Overall Readiness** | 78/100 | Weighted average, anchored by execution safety and honesty but discounted for the news/spread gaps and missing weekly drawdown at agent layer. |
@@ -459,7 +459,7 @@ Each score /100 reflects the depth and correctness of implementation, honesty of
 **What qualifies it for demo:**
 - All 18 execution gates are enforced and tested.
 - No always-on autonomous loop; admin-trigger-only with full audit trail.
-- Decision intelligence uses real signals (Ruby Market Edge), not fabricated data.
+- Decision intelligence uses real signals (Eleanor Market Edge), not fabricated data.
 - Exactly-once idempotency, TOCTOU kill switch, anomaly screen fail-safe.
 - Complete thesis required (SL, TP, direction, edge, newsRisk, confidence).
 - Post-trade learning loop wired end-to-end and idempotent.

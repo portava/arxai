@@ -1,4 +1,4 @@
-// QA — Scanner Direct Symbol Selection + Ruby Market Explanation.
+// QA — Scanner Direct Symbol Selection + Eleanor Market Explanation.
 //
 // Verifies:
 //   1. Symbol normalization handles broker suffixes.

@@ -19,7 +19,7 @@ const GROUP_OF: Record<SessionType, GroupKey> = {
 
 const GROUP_META: Record<GroupKey, { title: string; noun: string; icon: typeof ShieldAlert; accent: string; ring: string; text: string; btn: string }> = {
   risk:        { title: "Risk Warnings",       noun: "warning",      icon: ShieldAlert,  accent: "border-danger/30 bg-danger/[0.05]",  ring: "bg-danger/15 text-danger ring-danger/25",   text: "text-danger",  btn: "border-danger/40 text-danger hover:bg-danger/10" },
-  "post-trade":{ title: "Post-Trade Guidance", noun: "note",         icon: NotebookPen,  accent: "border-ruby/30 bg-ruby/[0.05]",      ring: "bg-ruby/15 text-ruby ring-ruby/25",         text: "text-ruby",    btn: "border-ruby/40 text-ruby hover:bg-ruby/10" },
+  "post-trade":{ title: "Post-Trade Guidance", noun: "note",         icon: NotebookPen,  accent: "border-eleanor/30 bg-eleanor/[0.05]",      ring: "bg-eleanor/15 text-eleanor ring-eleanor/25",         text: "text-eleanor",    btn: "border-eleanor/40 text-eleanor hover:bg-eleanor/10" },
   coaching:    { title: "Weekly Coaching",     noun: "coaching note",icon: Trophy,       accent: "border-warning/30 bg-warning/[0.05]",ring: "bg-warning/15 text-warning ring-warning/25",text: "text-warning", btn: "border-warning/40 text-warning hover:bg-warning/10" },
   briefing:    { title: "Daily Briefings",     noun: "briefing",     icon: Sparkles,     accent: "border-primary/30 bg-primary/[0.05]",ring: "bg-primary/15 text-primary ring-primary/25",text: "text-primary", btn: "border-primary/40 text-primary hover:bg-primary/10" },
 };

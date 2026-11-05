@@ -1,5 +1,5 @@
 // Tiny window-event bus so any surface can open the assistant chat panel with
-// a question already typed in (e.g. the position side card's "Ask Ruby").
+// a question already typed in (e.g. the position side card's "Ask Eleanor").
 // The panel's own conversation + stream reader then handle the turn, so no
 // second SSE parser and no throw-away conversations.
 

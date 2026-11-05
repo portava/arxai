@@ -84,7 +84,7 @@ The execute endpoint must still refuse live broker dispatch unless serverLiveExe
 - No horizontal cutoff on Live EA Heartbeat Debug.
 - Values stack under labels on iPhone.
 - Bottom nav must not cover buttons, checklist rows, or kill switch controls.
-- Ruby floating button must not cover critical live controls.
+- Eleanor floating button must not cover critical live controls.
 
 8. Run tests:
 - pnpm run typecheck

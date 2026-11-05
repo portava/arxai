@@ -2,10 +2,10 @@
 //
 // SAFETY:
 //   - Alerts are NEVER auto-executed. They are scored and presented to the
-//     user/Ruby for review only.
+//     user/Eleanor for review only.
 //   - No broker calls, no MT5 commands, no canPlaceTrades modifications.
 //   - Each alert is scored against the scanner, user history, and market
-//     structure before Ruby considers it.
+//     structure before Eleanor considers it.
 //   - Source trust = MEDIUM (user-configured, unverified external signal).
 
 import {

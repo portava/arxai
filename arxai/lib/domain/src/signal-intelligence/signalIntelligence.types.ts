@@ -1,6 +1,6 @@
-// Ruby Market Edge — Signal Intelligence Core (Task #194).
+// Eleanor Market Edge — Signal Intelligence Core (Task #194).
 //
-// ONE normalized signal object shared by Scanner, Scalp, Ruby, and any
+// ONE normalized signal object shared by Scanner, Scalp, Eleanor, and any
 // downstream explanation/UX surface. This module is PURE: no IO, no DB, no
 // HTTP, no Date.now() inside the engines (every entry point takes `now`
 // explicitly so reads are deterministic and testable).
@@ -252,7 +252,7 @@ export interface PreviousSignalSnapshot {
 
 // ── The normalized signal object ─────────────────────────────────────────────
 
-export interface RubyMarketEdgeSignal {
+export interface EleanorMarketEdgeSignal {
   /** First observation is not proof of when a setup formed. A read-side poll
    * or failed persistence must never claim it saved durable continuity. */
   continuity?: { basis: "source_bound_memory" | "current_observation"; saved: boolean };
@@ -391,7 +391,7 @@ export const MIN_STRUCTURE_CANDLES = 20;
 // ── Phase 2: Explanation engine (Scanner & Explanation UX, Task #195) ─────────
 //
 // A pure, deterministic plain-English explanation composed FROM a
-// RubyMarketEdgeSignal. It never fabricates: when the signal is blind /
+// EleanorMarketEdgeSignal. It never fabricates: when the signal is blind /
 // insufficient the explanation collapses to an honest watching state with no
 // invented levels, actionable=false, and the missing context named. No internal
 // enum keys or backend wording are ever surfaced in user-facing copy.
@@ -413,7 +413,7 @@ export interface ExplanationMode {
   whatToDoNext: string;
 }
 
-/** Levels echoed verbatim from the signal — Ruby "speaks in levels". */
+/** Levels echoed verbatim from the signal — Eleanor "speaks in levels". */
 export interface ExplanationLevels {
   entryZone: PriceZone | null;
   watchZone: PriceZone | null;
@@ -426,12 +426,12 @@ export interface ExplanationLevels {
 /** No-trade intelligence — why skipping is the right call, and how sure. */
 export interface NoTradeIntelligence {
   isNoTrade: boolean;
-  /** 0–100 — how confident Ruby is that not trading is correct right now. */
+  /** 0–100 — how confident Eleanor is that not trading is correct right now. */
   confidence: number;
   reason: string | null;
 }
 
-export interface RubyMarketReadExplanation {
+export interface EleanorMarketReadExplanation {
   headline: string;
   defaultMode: ExplanationModeName;
   simple: ExplanationMode;

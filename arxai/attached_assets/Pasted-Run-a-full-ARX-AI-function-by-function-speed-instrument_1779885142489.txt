@@ -21,7 +21,7 @@ Create checkpoints after each major repair group:
 - speed-instrumentation-installed
 - speed-scanner-repaired
 - speed-trade-ticket-repaired
-- speed-ruby-response-repaired
+- speed-eleanor-response-repaired
 - speed-chart-symbol-repaired
 - speed-alerts-account-admin-repaired
 - final-speed-optimized-launch-state
@@ -59,8 +59,8 @@ Performance targets:
 - Trade ticket validation: under 750ms unless broker/feed call is genuinely slower
 - Chart symbol switch UI response: under 250ms
 - Live chart data refresh: as fast as provider allows, no UI freeze
-- Ruby first text response: under 1.5 seconds target
-- Ruby TTS must never block text response
+- Eleanor first text response: under 1.5 seconds target
+- Eleanor TTS must never block text response
 - Alert dismiss: under 300ms optimistic UI
 - Admin allocation search response: under 500ms with debounce
 - Any action over 1 second must show an honest loading state and exact slow segment in diagnostics
@@ -167,11 +167,11 @@ Actions to time individually:
 - live AI Assist symbol change
 - live AI Assist generate card
 - live AI Assist validate/confirm rendering
-- Ruby send text message
-- Ruby voice input start/stop
-- Ruby response first text
-- Ruby TTS start
-- Ruby TTS cancel
+- Eleanor send text message
+- Eleanor voice input start/stop
+- Eleanor response first text
+- Eleanor TTS start
+- Eleanor TTS cancel
 - open positions refresh
 - close position button rendering and validation only
 - trade history load
@@ -229,7 +229,7 @@ Fix:
 - repeated Market Data Router calls
 - slow trade modal opening
 - validation blocked by unnecessary prerequisites for OWNER
-- slow Ruby summary rendering
+- slow Eleanor summary rendering
 - slow historical check rendering
 
 Scanner must:
@@ -337,7 +337,7 @@ Measure:
 - symbol dropdown open/select
 - feed fetch
 - AI card generation
-- Ruby explanation generation
+- Eleanor explanation generation
 - chart update
 - Validate/Confirm rendering
 - TTS/voice if used
@@ -348,14 +348,14 @@ Fix:
 - stale old-symbol card overwrite
 - repeated chart reload
 - repeated feed calls
-- huge Ruby response
+- huge Eleanor response
 - raw backend dump
 - TTS blocking text
 - delayed stale audio
 - voice queue pileup
 - unresponsive confirm buttons
 
-Ruby response system timing:
+Eleanor response system timing:
 - user sends message timestamp
 - request sent timestamp
 - first token/text visible timestamp
@@ -365,8 +365,8 @@ Ruby response system timing:
 - TTS cancelled if new message
 - TTS finished
 
-Ruby target:
-- show “Ruby is thinking/typing…” immediately
+Eleanor target:
+- show “Eleanor is thinking/typing…” immediately
 - first text fast
 - voice async
 - no minutes-late speech
@@ -414,7 +414,7 @@ Wrap and time hot endpoints:
 - market data quote/candles endpoints
 - live shared validate/submit endpoints
 - live AI Assist endpoints
-- Ruby chat/voice endpoints
+- Eleanor chat/voice endpoints
 - admin allocations endpoints
 - provider health endpoints
 - Deriv status endpoints
@@ -441,7 +441,7 @@ Fix:
 - polling while modal closed
 - Deriv duplicate subscriptions
 - MT5 bridge duplicate sync loops
-- Ruby voice duplicate listeners
+- Eleanor voice duplicate listeners
 - alert duplicate polling
 - scanner auto duplicate jobs
 - memory leaks from uncleaned intervals
@@ -485,7 +485,7 @@ Add performance regression checks:
 5. Validate trade does not make duplicate calls
 6. chart symbol change cancels stale old-symbol requests
 7. Live AI Assist symbol selection updates without stale overwrite
-8. Ruby first text response timing logged
+8. Eleanor first text response timing logged
 9. alert badge uses lightweight endpoint
 10. no duplicate intervals after route navigation
 11. no launch-critical button has empty handler
@@ -535,7 +535,7 @@ Report these exact sections:
 5. open/close trade timing instrumentation status
 6. chart timing table
 7. Live AI Assist timing table
-8. Ruby timing table
+8. Eleanor timing table
 9. alerts timing table
 10. account/admin timing table
 11. backend endpoint timing table

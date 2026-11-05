@@ -1,6 +1,6 @@
 // Chart Brain v2 — Task 5: per-user chart-event memory (Slow Brain).
 //
-// Records MEANINGFUL per-user chart events (not every candle) so Ruby can review
+// Records MEANINGFUL per-user chart events (not every candle) so Eleanor can review
 // what happened and the system can learn over time. Strictly per-user: every
 // write carries userId, every read is scoped by it. Writes are best-effort and
 // fire-and-forget — they NEVER throw into the caller and NEVER block the live
@@ -23,7 +23,7 @@ export type ChartDecisionEventType =
   | "exhaustion"
   | "risk_veto"
   | "court_conflict"
-  | "ruby_recommendation"
+  | "eleanor_recommendation"
   | "no_trade"
   | "setup_stale"
   | "setup_invalid"
@@ -44,7 +44,7 @@ export const CHART_DECISION_EVENT_TYPES: ChartDecisionEventType[] = [
   "exhaustion",
   "risk_veto",
   "court_conflict",
-  "ruby_recommendation",
+  "eleanor_recommendation",
   "no_trade",
   "setup_stale",
   "setup_invalid",

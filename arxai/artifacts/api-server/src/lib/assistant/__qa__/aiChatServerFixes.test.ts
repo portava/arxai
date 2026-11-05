@@ -54,10 +54,10 @@ mock.module("../../riskGovernor/limitSettings.js", { namedExports: {
   }),
 } });
 const realName = await import("../assistantName.js");
-mock.module("../assistantName.js", { namedExports: { ...realName, getAssistantDisplayName: async () => "Ruby" } });
+mock.module("../assistantName.js", { namedExports: { ...realName, getAssistantDisplayName: async () => "Eleanor" } });
 
 const { parseTradeCommand } = await import("../parseTradeCommand.js");
-const { parseEntryProtection } = await import("../rubyWatchEvaluator.js");
+const { parseEntryProtection } = await import("../eleanorWatchEvaluator.js");
 const { resolveAssistantToolChoice } = await import("../chartReadRouting.js");
 const tools = await import("../tools.js");
 const { buildArxAssistantSystemPrompt, buildSessionSystemMessages } = await import("../systemPrompt.js");
@@ -178,7 +178,7 @@ test("AICS-2: tool descriptions and the prompt route by `source`", () => {
     const d = tools.TOOL_DEFINITIONS.find((t) => t.name === name)!;
     assert.match(d.description, /SAME book as the Performance Calendar/, name);
   }
-  assert.match(buildArxAssistantSystemPrompt("Ruby"), /withheld_live_shared/);
+  assert.match(buildArxAssistantSystemPrompt("Eleanor"), /withheld_live_shared/);
 });
 
 // ── AICS-3: pre-trade check runs the real governor preview ─────────────────
@@ -245,7 +245,7 @@ test("AICS-5: the gpt-audio voice route appends the same no-tools instruction as
 
 // ── AICS-6 / AICS-7: prompt names real tools and honest ticket wording ────
 test("AICS-6/7: prompt sends feed questions to getMarketDataProviderStatus and calls prepare*Ticket previews", () => {
-  const p = buildArxAssistantSystemPrompt("Ruby");
+  const p = buildArxAssistantSystemPrompt("Eleanor");
   assert.doesNotMatch(p, /read getMarketStatus/);
   assert.match(p, /call getMarketDataProviderStatus and\s+answer from its dataFreshness/);
   assert.doesNotMatch(p, /prepareOpenTicket \/ prepareCloseTicket \/ createTradeActionDraft for the Trade Action Center/);
@@ -257,7 +257,7 @@ test("AICS-9: getCurrentEvents is not advertised and the prompt says current eve
   const names = tools.TOOL_DEFINITIONS.map((t) => t.name as string);
   assert.ok(!names.includes("getCurrentEvents"));
   for (const t of tools.TOOL_DEFINITIONS) assert.doesNotMatch(t.description, /call getCurrentEvents/);
-  const p = buildSessionSystemMessages(1, null, null, FAIL_CLOSED_ENVELOPE, "Ruby").map((m) => m.content).join("\n");
+  const p = buildSessionSystemMessages(1, null, null, FAIL_CLOSED_ENVELOPE, "Eleanor").map((m) => m.content).join("\n");
   assert.doesNotMatch(p, /call getCurrentEvents/);
   assert.match(p, /current events \/ real-world news are not available in ARX right now/);
 });
@@ -270,7 +270,7 @@ test("AICS-10: the chat route derives the envelope once and passes it to every t
 
 // ── Coordinator item 3: no "paper trading" copy in the performance routing ──
 test("copy: the performance empty-state and routing say demo trades, not paper trading", () => {
-  const p = buildArxAssistantSystemPrompt("Ruby");
+  const p = buildArxAssistantSystemPrompt("Eleanor");
   assert.doesNotMatch(p, /Place a paper trade/);
   assert.match(p, /Log a demo trade on My Demo Trades/);
   const d = tools.TOOL_DEFINITIONS.find((t) => t.name === "getOpenPositions")!;

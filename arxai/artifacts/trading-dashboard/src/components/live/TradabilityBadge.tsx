@@ -1,7 +1,7 @@
 // Compact badge that explains, in plain language, whether the selected
 // market is live-tradable through the connected MT5 bridge or
 // analysis-only. Reads from /api/market-data/tradability so trade
-// ticket, scanner card, and Ruby panel all agree.
+// ticket, scanner card, and Eleanor panel all agree.
 import { Badge } from "@/components/ui/badge";
 import { Info } from "lucide-react";
 import { useTradability } from "@/lib/useTradability";

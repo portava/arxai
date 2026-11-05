@@ -8,7 +8,7 @@ import { useEvidenceDeadline } from "./useEvidenceDeadline";
 import { chartCandlesQueryKey } from "@/lib/chartCandlesQuery";
 
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/hooks/useSelectedMarketSnapshot", () => ({ useSelectedMarketSnapshot: () => ({ data: { ok: true }, isError: false }) }));
 const NOW = Date.parse("2026-10-26T14:00:00Z");
 let client: QueryClient;

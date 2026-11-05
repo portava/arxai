@@ -13,7 +13,7 @@
 //
 //   - POST /api/me/scalp/focus  (deep, per-symbol candle-backed read)
 //   - POST /api/me/scalp/rank   (Broad scan over the synthetic universe)
-//   - POST /api/me/scalp/build  (Ruby Scalp Builder over the synthetic universe)
+//   - POST /api/me/scalp/build  (Eleanor Scalp Builder over the synthetic universe)
 //
 // WHAT IT PROVES
 //   1. LIVE-DATA case (flame.blind === false): Focus on a synthetic symbol with

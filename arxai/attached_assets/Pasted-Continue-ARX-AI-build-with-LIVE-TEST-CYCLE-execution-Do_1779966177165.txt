@@ -283,6 +283,6 @@ Before stopping, verify with dry-run/simulation first if possible:
 - arx_live_commands only changes when owner confirms actual live test.
 - No new trading modes are created.
 - Demo, Live, and Live Shared remain the only user-facing modes.
-- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+- Login, Eleanor, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix errors before stopping.

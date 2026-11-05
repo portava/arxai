@@ -27,9 +27,9 @@ Verify:
 19. Admin compliance flag changes require confirmation and reason.
 20. User cannot self-approve shared master access.
 21. Trade ticket, live confirmation, one-click, voice confirmation, and SL/TP edit flows show short risk reminders.
-22. Ruby explains mode/risk boundaries safely.
-23. Ruby does not claim legal approval, licensed status, guaranteed profits, or regulatory compliance.
-24. Ruby does not reveal admin-only compliance settings to normal users beyond clean status.
+22. Eleanor explains mode/risk boundaries safely.
+23. Eleanor does not claim legal approval, licensed status, guaranteed profits, or regulatory compliance.
+24. Eleanor does not reveal admin-only compliance settings to normal users beyond clean status.
 25. Audit logs are created for disclosure views, acceptances, missing-disclosure blocks, compliance flag changes, and failed non-admin access.
 26. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
 27. No live trade is fired during QA.

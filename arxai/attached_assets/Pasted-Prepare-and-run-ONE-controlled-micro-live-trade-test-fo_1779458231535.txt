@@ -21,7 +21,7 @@ Do not:
 - Disable kill switches.
 - Remove admin approvals.
 - Change scanner logic.
-- Change Ruby intelligence.
+- Change Eleanor intelligence.
 - Change risk rules except temporary test gating if already supported.
 - Place more than one live test order.
 - Place any order without final in-app operator confirmation.

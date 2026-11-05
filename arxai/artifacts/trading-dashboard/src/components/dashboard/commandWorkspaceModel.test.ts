@@ -6,7 +6,7 @@ import {
 
 describe("command workspace catalog and preferences", () => {
   it("searches route metadata by multiple tokens and aliases", () => {
-    const catalog = buildDashboardCatalog("Ruby", { isAdmin: false, isApprovedTrader: true, isInvestor: false });
+    const catalog = buildDashboardCatalog("Eleanor", { isAdmin: false, isApprovedTrader: true, isInvestor: false });
     expect(filterDashboardCatalog(catalog, "scanner signals").some(item => item.href === "/market-scanner")).toBe(true);
     expect(filterDashboardCatalog(catalog, "risk drawdown").some(item => item.href === "/risk-command-center")).toBe(true);
     expect(filterDashboardCatalog(catalog, "does not exist")).toEqual([]);
@@ -17,7 +17,7 @@ describe("command workspace catalog and preferences", () => {
     expect(dashboardPanelForTool("/live-chart")).toBe("chart");
     expect(dashboardPanelForTool("/market-heat-map")).toBe("heat");
     expect(dashboardPanelForTool("/economic-calendar")).toBe("intelligence");
-    expect(dashboardPanelForTool("/ai-coach")).toBe("ruby");
+    expect(dashboardPanelForTool("/ai-coach")).toBe("eleanor");
     expect(dashboardPanelForTool("/risk-command-center")).toBe("risk");
     expect(dashboardPanelForTool("/positions")).toBe("positions");
     expect(dashboardPanelForTool("/trade-command-room")).toBe("order");
@@ -28,11 +28,11 @@ describe("command workspace catalog and preferences", () => {
   });
 
   it("keeps admin and approval gated routes out of regular catalogs", () => {
-    const pending = buildDashboardCatalog("Ruby", { isAdmin: false, isApprovedTrader: false, isInvestor: false });
+    const pending = buildDashboardCatalog("Eleanor", { isAdmin: false, isApprovedTrader: false, isInvestor: false });
     expect(pending.some(item => item.href === "/market-scanner")).toBe(false);
     expect(pending.some(item => item.href === "/admin")).toBe(false);
-    expect(buildDashboardCatalog("Ruby", { isAdmin: true, isApprovedTrader: false, isInvestor: false }).some(item => item.href === "/admin")).toBe(true);
-    expect(buildDashboardCatalog("Ruby", { isAdmin: false, isApprovedTrader: false, isInvestor: true }).every(item => ["/investor", "/my-account", "/settings", "/help"].includes(item.href))).toBe(true);
+    expect(buildDashboardCatalog("Eleanor", { isAdmin: true, isApprovedTrader: false, isInvestor: false }).some(item => item.href === "/admin")).toBe(true);
+    expect(buildDashboardCatalog("Eleanor", { isAdmin: false, isApprovedTrader: false, isInvestor: true }).every(item => ["/investor", "/my-account", "/settings", "/help"].includes(item.href))).toBe(true);
   });
 
   it("suppresses shared navigation only on the root workspace", () => {
@@ -50,16 +50,16 @@ describe("command workspace catalog and preferences", () => {
   });
 
   it("applies presets while retaining pinned preferences", () => {
-    const trade = applyWorkspacePreset({ collapsed: [], pinned: ["ruby", "clock"], preset: "Analyze" as const }, "Trade");
+    const trade = applyWorkspacePreset({ collapsed: [], pinned: ["eleanor", "clock"], preset: "Analyze" as const }, "Trade");
     expect(trade.preset).toBe("Trade");
-    expect(trade.pinned).toEqual(["ruby", "clock"]);
-    expect(trade.collapsed).not.toContain("ruby");
+    expect(trade.pinned).toEqual(["eleanor", "clock"]);
+    expect(trade.collapsed).not.toContain("eleanor");
     expect(trade.collapsed).not.toContain("clock");
     expect(trade.collapsed).not.toContain("heat");
     expect(trade.collapsed).not.toContain("risk");
     expect(trade.collapsed).not.toContain("order");
     const review = applyWorkspacePreset(trade, "Review");
-    expect(review.collapsed).not.toContain("ruby");
+    expect(review.collapsed).not.toContain("eleanor");
     expect(review.collapsed).not.toContain("clock");
     expect(review.collapsed).toContain("order");
   });

@@ -49,7 +49,7 @@ Primary questions:
 1. Does any current frontend call /me/trades/open with mode:"LIVE"?
 2. Does any current frontend call /trade/place with mode:"LIVE"?
 3. Does any current frontend call /me/trades/close for real live positions?
-4. Are these endpoints exposed through Trade page, Open Trades, Positions, Manual Ticket, Scanner, Ruby, Watchlist, Chart, Admin, or legacy components?
+4. Are these endpoints exposed through Trade page, Open Trades, Positions, Manual Ticket, Scanner, Eleanor, Watchlist, Chart, Admin, or legacy components?
 5. Does the live EA poll and execute PENDING rows from these paths exactly the same way it executes Phase B mirrored commands?
 6. Does mt5_commands have any origin/source/safetyMode/accountMode filtering that prevents legacy PENDING rows from reaching the EA?
 7. Does /me/trades/close have any broker-result callback that later corrects the premature EXECUTED audit row?

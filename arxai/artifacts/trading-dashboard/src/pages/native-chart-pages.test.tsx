@@ -16,7 +16,7 @@ vi.mock("@/hooks/useProductRole", () => ({useProductRole:()=>({isInvestor:state.
 vi.mock("@/hooks/useViewMode", () => ({useViewMode:()=>({effectiveIsAdmin:false})}));
 vi.mock("@/hooks/useFeatureUnlock", () => ({useAllUnlocks:()=>({mt5:false,simulator:false})}));
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({useMasterLiveAccess:()=>({loaded:true,canTrade:false})}));
-vi.mock("@/lib/assistant-name", () => ({useAssistantName:()=>({name:"Ruby"})}));
+vi.mock("@/lib/assistant-name", () => ({useAssistantName:()=>({name:"Eleanor"})}));
 vi.mock("@/components/live/LiveSharedTradeTicket", () => ({LiveSharedTradeTicket:()=>null}));
 vi.mock("@/hooks/useLivePositionOverlays", () => ({useLivePositionOverlays:()=>({overlays:[],positions:[]})}));
 vi.mock("@/hooks/useAiChartOverlays", () => ({useAiChartOverlays:()=>({overlays:[]})}));

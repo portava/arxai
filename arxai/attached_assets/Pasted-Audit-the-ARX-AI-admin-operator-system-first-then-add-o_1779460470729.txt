@@ -67,7 +67,7 @@ Create a Push Settings panel that allows admin to push:
 - AI-assisted trading enabled/disabled
 - AI auto-close permission enabled/disabled
 - Scanner access level
-- Ruby voice/chat access settings
+- Eleanor voice/chat access settings
 - News intelligence enabled/disabled
 - Historical/backtest intelligence enabled/disabled
 - Risk/reward minimum
@@ -126,7 +126,7 @@ Check existing database/schema first. Add missing fields only if needed:
 - aiTradingEnabled
 - aiAutoCloseEnabled
 - scannerAccessLevel
-- rubyVoiceEnabled
+- eleanorVoiceEnabled
 - newsIntelligenceEnabled
 - historicalBacktestEnabled
 - minRewardRiskRatio
@@ -171,7 +171,7 @@ After building, verify:
 11. Push settings are saved in database.
 12. Audit log records every change.
 13. Live trading cannot activate without explicit admin approval.
-14. Existing login, scanner, Ruby chat, bridge status, and trading pages still work.
+14. Existing login, scanner, Eleanor chat, bridge status, and trading pages still work.
 15. No internal backend/function names are exposed to users.
 
 Do not remove existing features. Reuse current code where possible. Fix broken or hidden controls instead of duplicating pages.

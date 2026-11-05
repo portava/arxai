@@ -6,7 +6,7 @@ Only work on:
 2. Economic calendar/news feed integrations.
 3. Public social/post monitoring where provider access already exists or can be safely configured.
 4. Scanner news-risk integration.
-5. Ruby/AI news intelligence context.
+5. Eleanor/AI news intelligence context.
 6. Trade ticket news-risk precheck.
 7. Admin/source configuration and clean status display if needed.
 
@@ -23,7 +23,7 @@ Do not:
 - Show fake news as real.
 
 GOAL:
-ARX AI scanner and Ruby should constantly monitor market-moving news, economic events, world leader statements, central bank decisions, geopolitical developments, and global economic conditions that could affect trades.
+ARX AI scanner and Eleanor should constantly monitor market-moving news, economic events, world leader statements, central bank decisions, geopolitical developments, and global economic conditions that could affect trades.
 
 The AI should use this information when:
 - ranking scanner results
@@ -39,7 +39,7 @@ Before building anything, inspect current app for existing:
 - news service
 - economic calendar service
 - scanner news-risk logic
-- Ruby market context builder
+- Eleanor market context builder
 - Finnhub integration
 - NewsAPI/Benzinga/Alpha Vantage/Trading Economics/FRED integration
 - RSS feed readers
@@ -48,7 +48,7 @@ Before building anything, inspect current app for existing:
 - market event database/cache
 - existing endpoints for news/calendar/alerts
 - current scanner scoring pipeline
-- current Ruby prompt/context pipeline
+- current Eleanor prompt/context pipeline
 
 Do not create duplicate systems if one already exists.
 Upgrade existing systems first.
@@ -165,8 +165,8 @@ Scanner ranking should consider:
 If a setup looks good technically but news risk is high, scanner should clearly warn:
 “Technical setup is strong, but news risk is high. Wait for confirmation.”
 
-PHASE 6 — RUBY / AI INTEGRATION
-Ruby must use news intelligence in all trading-related answers.
+PHASE 6 — ELEANOR / AI INTEGRATION
+Eleanor must use news intelligence in all trading-related answers.
 
 When user asks:
 - “What should I trade?”
@@ -179,7 +179,7 @@ When user asks:
 - “Check scanner”
 - “What’s risky right now?”
 
-Ruby should receive a structured MarketNewsDecisionPack with:
+Eleanor should receive a structured MarketNewsDecisionPack with:
 - latest relevant news
 - economic calendar events
 - world leader/public policy statements if available
@@ -193,14 +193,14 @@ Ruby should receive a structured MarketNewsDecisionPack with:
 - current technical context
 - unavailable data warnings
 
-Ruby should explain clearly:
+Eleanor should explain clearly:
 - what news matters
 - why it matters
 - which asset/currency it affects
 - whether it supports or conflicts with the technical setup
 - whether to watch, wait, avoid, or proceed carefully
 
-Ruby must not hallucinate news.
+Eleanor must not hallucinate news.
 If news feed is unavailable:
 “News feed is unavailable right now, so I’m relying on chart/history/scanner data only.”
 
@@ -213,7 +213,7 @@ Show:
 - Affected asset/currency
 - Bias: bullish / bearish / mixed / unclear
 - Timing: now / upcoming / recently released
-- Ruby warning summary
+- Eleanor warning summary
 - Source freshness
 - “No major news detected” if true
 - “News feed unavailable” if provider missing
@@ -246,7 +246,7 @@ If missing, add minimal read-only endpoints such as:
 - GET /api/calendar/economic-events
 - POST /api/news/impact-analysis
 - POST /api/scanner/news-adjusted-results
-- POST /api/ruby/market-news-context
+- POST /api/eleanor/market-news-context
 
 Endpoint rules:
 - read-only
@@ -300,7 +300,7 @@ Scanner:
 - Bias chip
 - “Why news matters” expandable section
 
-Ruby:
+Eleanor:
 - Historical Context
 - News Context
 - Current Technical Read
@@ -324,7 +324,7 @@ Do not finish until:
 1. Existing news/calendar/social/feed systems are inspected first.
 2. No duplicate conflicting news system is created.
 3. Scanner uses news intelligence when available.
-4. Ruby uses news intelligence for trading questions.
+4. Eleanor uses news intelligence for trading questions.
 5. Trade ticket shows news risk before confirmation.
 6. News data is sourced from real providers only.
 7. Social/public post monitoring uses official/configured APIs only.

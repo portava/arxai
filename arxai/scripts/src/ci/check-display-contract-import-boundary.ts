@@ -33,7 +33,7 @@
 // Allowing such an import would let "what we can DISPLAY/OFFER" leak into "what
 // we may TRADE" — exactly the coupling the contracts forbid (see the boundary
 // comments in those modules and docs/SAFETY_NOTES.md). Display surfaces (scanner,
-// Ruby, chart, trade ticket, opportunity map) consume the contracts freely;
+// Eleanor, chart, trade ticket, opportunity map) consume the contracts freely;
 // execution/safety surfaces must never see them.
 //
 // Fenced roots (execution + safety surfaces):

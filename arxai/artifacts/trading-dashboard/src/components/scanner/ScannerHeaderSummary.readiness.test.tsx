@@ -81,12 +81,12 @@ function makeTruth(): ScannerTruth {
   return {
     strip: {
       data: { verdict: "Live", detail: "Live feed confirmed." },
-      ruby: { detail: "" },
+      eleanor: { detail: "" },
       trading: { verdict: "Enabled", detail: "" },
     },
     candles: { lastClose: 1.1, sourceTechnical: "test", count: 300, minRequired: 200, status: "CONFIRMED" },
     consolidated: {
-      rubyReadStatus: "NO_READ",
+      eleanorReadStatus: "NO_READ",
       scannerActionability: "WAIT_FOR_CONFIRMATION",
       userMessage: "Live data is confirmed.",
       internalReasonCode: "FEED_OK",

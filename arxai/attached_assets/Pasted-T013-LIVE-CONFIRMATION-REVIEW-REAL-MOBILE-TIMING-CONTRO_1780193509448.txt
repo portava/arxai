@@ -19,7 +19,7 @@ Primary goals:
 
 1. Review and resolve the live-confirmation files flagged by the previous validation review.
 2. Capture real mobile browser timing with exact frontend markers.
-3. Verify Scanner, trade modal, Ruby, and bottom navigation on the actual running preview.
+3. Verify Scanner, trade modal, Eleanor, and bottom navigation on the actual running preview.
 4. Run one controlled owner/admin LIVE micro-trade only if all live-readiness gates pass.
 5. Confirm the trade appears in ARX, appears on the chart/ledger, then closes cleanly.
 6. Keep every action truthful and backed by the live MT5 path.
@@ -79,9 +79,9 @@ Add or verify lightweight browser performance markers that capture exact timings
 9. Plan Sell modal open
 10. lot input ready
 11. Confirm pending-state render
-12. Ruby open
-13. Ruby thinking dots render
-14. Ruby first response token/render
+12. Eleanor open
+13. Eleanor thinking dots render
+14. Eleanor first response token/render
 15. More/Settings shell render
 
 Expose timing only in admin/dev mode through:
@@ -103,7 +103,7 @@ Targets:
 7. Buy/Sell modal open: under 1 second.
 8. Lot input response: under 100ms.
 9. Confirm pending state: under 100ms.
-10. Ruby thinking dots: under 100ms.
+10. Eleanor thinking dots: under 100ms.
 
 If any timing exceeds target:
 
@@ -140,8 +140,8 @@ Then test the actual running preview:
 8. Open Plan Buy modal.
 9. Open Plan Sell modal.
 10. Test lot input responsiveness.
-11. Open Ruby.
-12. Confirm Ruby thinking dots timing.
+11. Open Eleanor.
+12. Confirm Eleanor thinking dots timing.
 13. Confirm More/Settings timing.
 14. Confirm normal users remain blocked from admin/dev/dormant/Paper routes.
 15. Confirm admin/owner routes remain accessible.
@@ -150,7 +150,7 @@ PART 4 — Controlled owner/admin LIVE micro-trade test
 
 Run one controlled LIVE micro-trade only after all readiness checks pass.
 
-Do not let Ruby choose the trade.
+Do not let Eleanor choose the trade.
 Do not select a strategy-based trade.
 This is a wiring test, not a signal.
 
@@ -185,7 +185,7 @@ Execution:
 8. Confirm MT5 ticket/order is returned.
 9. Confirm ARX ledger records the trade.
 10. Confirm Scanner/chart shows the trade only for the authorized owner/admin.
-11. Confirm Ruby can explain the opened position in plain English without exposing internals.
+11. Confirm Eleanor can explain the opened position in plain English without exposing internals.
 12. Close the trade immediately.
 13. Confirm MT5 close result.
 14. Confirm ARX ledger marks the trade closed.
@@ -216,7 +216,7 @@ Verify:
 7. Raw MT5 internals are not shown to normal users.
 8. Stack traces, route names, and bridge internals are not shown to normal users.
 9. Admin logs keep detailed technical information.
-10. Ruby does not bypass backend permissions.
+10. Eleanor does not bypass backend permissions.
 
 PART 6 — Tests and review
 
@@ -263,14 +263,14 @@ Final report must include:
 11. Plan Buy modal timing
 12. Plan Sell modal timing
 13. Confirm pending-state timing
-14. Ruby thinking timing
-15. Ruby response timing
+14. Eleanor thinking timing
+15. Eleanor response timing
 16. live-readiness gate result
 17. whether controlled LIVE micro-trade ran
 18. if trade ran: ticket/order ID, symbol, lot, open time, close time, P/L
 19. ARX ledger verification
 20. Scanner/chart verification
-21. Ruby explanation verification
+21. Eleanor explanation verification
 22. arx_live_commands before/after count
 23. confirmation no extra live trade was placed
 24. confirmation no Demo/Paper fallback was used

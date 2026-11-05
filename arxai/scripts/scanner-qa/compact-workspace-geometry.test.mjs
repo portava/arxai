@@ -11,7 +11,7 @@ const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const fixtureBuild=path.join(repo,'scripts/scanner-qa/shared-chart-fixture/build.mjs');
 const setupPath=path.join(repo,'scripts/scanner-qa/shared-chart-setup.js');
 const viewports=[{width:1280,height:720},{width:1440,height:900}];
-const panelIds=['discovery','chart','heat','intelligence','clock','ruby','risk','order','positions'];
+const panelIds=['discovery','chart','heat','intelligence','clock','eleanor','risk','order','positions'];
 const panelTitles=['Market scanner','Smart Chart','Market heat','Market intelligence','Desk & world time','Eleanor · AI read','Risk & permission','Order entry','Open positions'];
 
 function findChromiumExecutable() {

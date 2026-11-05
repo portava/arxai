@@ -6,7 +6,7 @@ Current state:
 - Demo MT5 bridge works.
 - EA v1.26 demo execution works.
 - Live broker execution is currently disabled.
-- Ruby is the assistant.
+- Eleanor is the assistant.
 - Market Scanner can create demo trade commands.
 - Live mode must remain separate from demo mode.
 
@@ -87,7 +87,7 @@ Live command rows must store:
 - stop loss
 - take profit
 - source page
-- Ruby explanation summary if applicable
+- Eleanor explanation summary if applicable
 - confirmation timestamp
 - broker ticket
 - fill price
@@ -170,7 +170,7 @@ Before unlock:
 
 After unlock:
 - Scanner trade modal may allow LIVE, but must show:
-  - Ruby’s Setup Reason
+  - Eleanor’s Setup Reason
   - confidence level
   - invalidation point
   - suggested stop loss area
@@ -197,7 +197,7 @@ Show:
 - opened time
 - source command id
 - source page
-- Ruby note if applicable
+- Eleanor note if applicable
 
 Actions:
 - close selected live position
@@ -220,11 +220,11 @@ When activated:
    - Disable new live trades and close all ARX-opened live positions
 5. Log who activated it and when.
 
-PART 9 — RUBY LIVE WARNINGS
+PART 9 — ELEANOR LIVE WARNINGS
 
-Ruby must clearly distinguish trading ideas from execution.
+Eleanor must clearly distinguish trading ideas from execution.
 
-Ruby can explain:
+Eleanor can explain:
 - possible setup
 - risk
 - support/resistance
@@ -235,9 +235,9 @@ Ruby can explain:
 - invalidation
 - stop loss / take profit zones
 
-Ruby must not use guaranteed-profit language.
+Eleanor must not use guaranteed-profit language.
 
-Ruby live trade language must include:
+Eleanor live trade language must include:
 “This is not guaranteed. Confirm risk before placing a live trade.”
 
 PART 10 — ACCEPTANCE TESTS
@@ -260,4 +260,4 @@ Do not mark live trading complete until these tests pass:
 14. Kill switch disables new live trades immediately.
 15. Market Scanner live trade stays locked until live mode is enabled.
 16. All live actions are logged.
-17. No API keys, bridge tokens, or broker passwords are exposed in UI or Ruby memory.
+17. No API keys, bridge tokens, or broker passwords are exposed in UI or Eleanor memory.

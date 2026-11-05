@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Radar, Play, Square, RefreshCw, Send, TrendingUp, TrendingDown, Sliders, Target, Layers, Wand2 } from "lucide-react";
 import { Link } from "wouter";
 import { SetupQualityBadge } from "@/components/trading/SetupQualityBadge";
-import { RubySetupReason } from "@/components/scanner/RubySetupReason";
+import { EleanorSetupReason } from "@/components/scanner/EleanorSetupReason";
 import { ScannerTimingBadges, type ScannerTimingContext } from "@/components/scanner/ScannerTimingBadges";
 import { isGoldMode } from "@workspace/domain/market";
 import { ScannerTradeModal } from "@/components/scanner/ScannerTradeModal";
@@ -21,7 +21,7 @@ import { SymbolExplorer } from "@/components/scanner/SymbolExplorer";
 import { ScannerChartPanel } from "@/components/scanner/ScannerChartPanel";
 import { TradeHealthPanel } from "@/components/live/TradeHealthPanel";
 import { ScannerHeaderSummary } from "@/components/scanner/ScannerHeaderSummary";
-import { RubyReadStoreProvider } from "@/components/scanner/rubyReadStore";
+import { EleanorReadStoreProvider } from "@/components/scanner/eleanorReadStore";
 import { SelectedActionStoreProvider } from "@/components/scanner/selectedActionStore";
 import { SectionErrorBoundary } from "@/components/layout/SectionErrorBoundary";
 import { PageTabs } from "@/components/ui/PageTabs";
@@ -30,16 +30,16 @@ import { CompactAlert } from "@/components/ui/CompactAlert";
 import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symbol";
 import { resolveSymbol } from "@/lib/symbolRegistry";
 import { useViewMode } from "@/hooks/useViewMode";
-import { RubyScalpFocusCard } from "@/components/scanner/RubyScalpFocusCard";
-import { RubyScalpRanking } from "@/components/scanner/RubyScalpRanking";
-import { RubyMarketReadCard } from "@/components/scanner/RubyMarketReadCard";
+import { EleanorScalpFocusCard } from "@/components/scanner/EleanorScalpFocusCard";
+import { EleanorScalpRanking } from "@/components/scanner/EleanorScalpRanking";
+import { EleanorMarketReadCard } from "@/components/scanner/EleanorMarketReadCard";
 import { GlobalMarketHeatCard } from "@/components/scanner/GlobalMarketHeatCard";
 import { TimingIntelligenceCard } from "@/components/scanner/TimingIntelligenceCard";
 import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
 import { BroadScanOpportunityMap } from "@/components/scanner/BroadScanOpportunityMap";
-import { RubyScalpBuilder } from "@/components/scanner/RubyScalpBuilder";
-import { RubyScalpBasketPanel } from "@/components/scanner/RubyScalpBasketPanel";
-import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel";
+import { EleanorScalpBuilder } from "@/components/scanner/EleanorScalpBuilder";
+import { EleanorScalpBasketPanel } from "@/components/scanner/EleanorScalpBasketPanel";
+import { EleanorScalpReviewPanel } from "@/components/scanner/EleanorScalpReviewPanel";
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
 import { useScannerOpportunityClock } from "@/components/scanner/useScannerOpportunityClock";
@@ -202,7 +202,7 @@ export function scalpResultToSignal(r: ScalpResult) {
 
 /**
  * Simple-first scanner page. Four tabs:
- *  Focus    — selected market + Ruby read + safety banners. Default tab.
+ *  Focus    — selected market + Eleanor read + safety banners. Default tab.
  *  Results  — opportunity cards from the running scan.
  *  Symbols  — full SymbolExplorer with search + collapsible groups.
  *  Advanced — scan universe selector, scan engine controls, feed status,
@@ -211,7 +211,7 @@ export function scalpResultToSignal(r: ScalpResult) {
  * Nothing is removed — only reorganised. Universe controls / scanner
  * engine controls / feed config notes / recent commands all still live in
  * Advanced. The default Focus view stays calm: one selected-market card,
- * one Ruby read, no chip walls.
+ * one Eleanor read, no chip walls.
  */
 // Parent scan polling/cooldowns do not change this subtree's inputs. Its own
 // queries, symbol subscriptions and shared Truth contexts still update normally.
@@ -225,12 +225,12 @@ const ScannerFocusPanels = memo(function ScannerFocusPanels({ symbol, onBuild }:
     <GlobalMarketHeatCard />
     <SelectedMarketPanel />
     <ScannerDataHealthPanel />
-    <RubyScalpBasketPanel />
-    <RubyScalpReviewPanel />
-    <RubyScalpFocusCard symbol={symbol} onBuild={onBuild} />
+    <EleanorScalpBasketPanel />
+    <EleanorScalpReviewPanel />
+    <EleanorScalpFocusCard symbol={symbol} onBuild={onBuild} />
     <ScannerReadGate symbol={symbol} />
     <TimingIntelligenceCard symbol={symbol} />
-    <RubyMarketReadCard symbol={symbol} />
+    <EleanorMarketReadCard symbol={symbol} />
   </div>;
 });
 
@@ -618,7 +618,7 @@ export default function MarketScanner() {
 
   const scalpBuilderTab = (
     <div className="space-y-4">
-      <RubyScalpBuilder onBuild={openScalpTrade} />
+      <EleanorScalpBuilder onBuild={openScalpTrade} />
     </div>
   );
 
@@ -759,7 +759,7 @@ export default function MarketScanner() {
                 </div>
                 <div className="text-xs text-muted-foreground italic">"{o.reasonForTrade}"</div>
                 {o.reasonToAvoid && <div className="text-xs text-rose-400">⚠ {o.reasonToAvoid}</div>}
-                <RubySetupReason
+                <EleanorSetupReason
                   signal={{
                     symbol: o.symbol, timeframe: o.timeframe,
                     recommendedAction: o.recommendedAction, bias: o.bias,
@@ -901,7 +901,7 @@ export default function MarketScanner() {
         </CardContent>
       </Card>
 
-      <RubyScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} />
+      <EleanorScalpRanking onPick={handleScalpPick} onBuild={openScalpTrade} />
 
       <BroadScanOpportunityMap
         marketGroup={opportunityMapGroup(universe)}
@@ -949,13 +949,13 @@ export default function MarketScanner() {
   );
 
   return (
-    // The Ruby Chart Read store is page-scoped (Task #600): the header strip's
-    // Ruby cell, the chart panel's read, and any scalp-card reads all share ONE
+    // The Eleanor Chart Read store is page-scoped (Task #600): the header strip's
+    // Eleanor cell, the chart panel's read, and any scalp-card reads all share ONE
     // server read keyed by symbol+timeframe so they can never disagree.
-    <RubyReadStoreProvider>
+    <EleanorReadStoreProvider>
     <SelectedActionStoreProvider>
     {/* Keep the last result card clear of the fixed mobile bottom nav (h-14) and
-        the floating Ruby orb (bottom-20 right-4 on mobile); add the device
+        the floating Eleanor orb (bottom-20 right-4 on mobile); add the device
         safe-area inset so content is not hidden behind a home indicator. */}
     <div className="mx-auto w-full max-w-[1200px] space-y-4 pt-1 sm:pt-2 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-6">
       <ScannerHeaderSummary running={Boolean(status?.running)} />
@@ -1034,6 +1034,6 @@ export default function MarketScanner() {
       )}
     </div>
     </SelectedActionStoreProvider>
-    </RubyReadStoreProvider>
+    </EleanorReadStoreProvider>
   );
 }

@@ -32,8 +32,8 @@ describe("workspace panel controls", () => {
       getItem: (key: string) => memory.get(key) ?? null,
       setItem: (key: string, value: string) => { memory.set(key, value); },
     };
-    persistWorkspaceLayout({ collapsed: ["ruby"], pinned: ["chart"], preset: "Review" }, storage);
-    expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["ruby"], pinned: ["chart"], preset: "Review" });
+    persistWorkspaceLayout({ collapsed: ["eleanor"], pinned: ["chart"], preset: "Review" }, storage);
+    expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["eleanor"], pinned: ["chart"], preset: "Review" });
     persistWorkspaceLayout({ collapsed: ["heat"], pinned: ["clock"], preset: "Trade" }, storage);
     expect(readWorkspaceLayout(storage)).toEqual({ collapsed: ["heat"], pinned: ["clock"], preset: "Trade" });
     memory.delete("arx.shell.panel-layout.v1:anonymous:cockpit");
@@ -44,11 +44,11 @@ describe("workspace panel controls", () => {
   });
 
   it("keeps non-focused mobile panels out of view without removing their content", () => {
-    const { container, rerender } = render(<WorkspacePanel id="ruby" title="AI read" icon={Search} collapsed={false} pinned={false} hidden onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
-    const panel = container.querySelector("#workspace-ruby") as HTMLElement;
+    const { container, rerender } = render(<WorkspacePanel id="eleanor" title="AI read" icon={Search} collapsed={false} pinned={false} hidden onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
+    const panel = container.querySelector("#workspace-eleanor") as HTMLElement;
     expect(panel.hidden).toBe(true);
     expect(panel.textContent).toContain("AI summary");
-    rerender(<WorkspacePanel id="ruby" title="AI read" icon={Search} collapsed={false} pinned={false} hidden={false} onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
+    rerender(<WorkspacePanel id="eleanor" title="AI read" icon={Search} collapsed={false} pinned={false} hidden={false} onCollapse={vi.fn()} onPin={vi.fn()}>AI summary</WorkspacePanel>);
     expect(panel.hidden).toBe(false);
     expect(screen.getByText("AI summary")).toBeTruthy();
   });

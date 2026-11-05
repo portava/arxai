@@ -19,7 +19,7 @@ Create checkpoints:
 1. checkpoint: before-per-action-speed-budget-audit
 2. checkpoint: speed-instrumentation-budget-matrix-added
 3. checkpoint: speed-hot-paths-repaired
-4. checkpoint: speed-trade-scanner-ruby-chart-optimized
+4. checkpoint: speed-trade-scanner-eleanor-chart-optimized
 5. checkpoint: final-per-action-speed-launch-state
 
 MAIN REQUIREMENT:
@@ -104,8 +104,8 @@ Backend/API budgets:
 - Market Data Router quote live provider: under 500ms target
 - Candle/history cache hit: under 100ms
 - Candle/history provider call: under 1,500ms target
-- Ruby initial backend acknowledgement: under 200ms
-- Ruby first text/token visible: under 1,500ms target
+- Eleanor initial backend acknowledgement: under 200ms
+- Eleanor first text/token visible: under 1,500ms target
 - TTS start after text: async, must not block text
 - TTS cancel after new user message: under 150ms
 
@@ -145,9 +145,9 @@ Trade/open/close budgets:
 
 Do not place or close live trades during automated QA. Create timing instrumentation/dry-run harness for dispatch timing. Live open/close real timing should only record when I manually choose to place the first live trade.
 
-Ruby budgets:
+Eleanor budgets:
 - User sends message → input clears/sending state: under 50ms
-- “Ruby is thinking/typing…” appears: under 100ms
+- “Eleanor is thinking/typing…” appears: under 100ms
 - Chat request starts: under 150ms
 - First text appears: under 1,500ms target
 - Final concise answer visible: under 4,000ms target unless external research is used
@@ -155,8 +155,8 @@ Ruby budgets:
 - TTS must not delay first text
 - TTS queue cancel: under 150ms
 - Stale TTS must never play minutes later
-- Ruby must not dump raw research/tool JSON
-- Ruby market explanation should stream useful summary first, then optional detail
+- Eleanor must not dump raw research/tool JSON
+- Eleanor market explanation should stream useful summary first, then optional detail
 
 Chart budgets:
 - Live chart route shell: under 500ms
@@ -203,7 +203,7 @@ Add:
 - render counter for hot components
 - polling/subscription registry
 - scanner job timing registry
-- Ruby timing registry
+- Eleanor timing registry
 - trade validation timing registry
 - chart symbol timing registry
 
@@ -300,12 +300,12 @@ Measure pages:
 - generate AI trade card
 - card render
 - chart update
-- Ruby explanation render
+- Eleanor explanation render
 - Validate
 - Confirm button render
 - cancel/close
 
-7. Ruby
+7. Eleanor
 - open chat
 - send text
 - first text response
@@ -398,7 +398,7 @@ Fix each category based on evidence.
 2. If modal opening is slow:
 - lazy-load heavy internals after modal shell appears
 - render modal shell first
-- defer chart/history/Ruby sections
+- defer chart/history/Eleanor sections
 - remove duplicate hidden modals
 - prefetch only lightweight profile data
 
@@ -468,7 +468,7 @@ Regardless of measured results, explicitly verify and repair:
 - exact blocker appears fast
 - Confirm button appears immediately after pass
 
-3. Ruby:
+3. Eleanor:
 - text first
 - voice async
 - cancel stale audio
@@ -537,8 +537,8 @@ Time these endpoints under real dev conditions:
 - live shared validate endpoint
 - live shared execute endpoint dry-run/preflight only
 - Live AI Assist card endpoint
-- Ruby chat endpoint
-- Ruby voice/TTS endpoint
+- Eleanor chat endpoint
+- Eleanor voice/TTS endpoint
 - admin allocations endpoints
 - admin Deriv status endpoint
 - MT5 bridge sync endpoints
@@ -558,7 +558,7 @@ This pass fails if:
 - any launch-critical button has no immediate visual response
 - any modal takes over 500ms to appear without reason
 - scanner freezes the page
-- Ruby text waits on TTS
+- Eleanor text waits on TTS
 - alerts dismiss only after full refresh
 - owner trade validation waits on irrelevant allocation/risk prerequisites
 - repeated duplicate API calls remain
@@ -612,7 +612,7 @@ Open the real app and perform these manually/automated without final live trade 
 11. Open Live AI Assist.
 12. Change symbol.
 13. Generate card.
-14. Open Ruby.
+14. Open Eleanor.
 15. Send a short message.
 16. Confirm first text response timing.
 17. Confirm TTS does not block.
@@ -642,8 +642,8 @@ Report:
 7. trade ticket timing before/after
 8. validation timing before/after
 9. open/close trade timing instrumentation status
-10. Ruby response timing before/after
-11. Ruby TTS timing before/after
+10. Eleanor response timing before/after
+11. Eleanor TTS timing before/after
 12. chart symbol timing before/after
 13. alerts timing before/after
 14. account/admin timing before/after

@@ -1,5 +1,5 @@
 /**
- * Trading School — Lesson Detail. The main teaching page: lesson body, Ruby's
+ * Trading School — Lesson Detail. The main teaching page: lesson body, Eleanor's
  * three-mode teacher card, vocabulary, beginner example, ARX tie-in, the quiz,
  * a practice-lab link, and prev/next navigation. Auto-saves "started" on open
  * and records quiz attempts/completion on submit, all via the local progress
@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { buildSteps } from "../data/content";
 import { markLessonStarted, recordQuizAttempt } from "../lib/progress";
-import { RubyTeacherCard, SchoolPageHeader, askRuby } from "../components/SchoolUI";
+import { EleanorTeacherCard, SchoolPageHeader, askEleanor } from "../components/SchoolUI";
 import { LessonQuiz } from "../components/LessonQuiz";
 import { useAssistantName } from "@/lib/assistant-name";
 import {
@@ -78,8 +78,8 @@ export default function TradingSchoolLesson() {
             ))}
           </div>
 
-          {/* Ruby teacher card with 3 modes */}
-          <RubyTeacherCard ruby={step.ruby} />
+          {/* Eleanor teacher card with 3 modes */}
+          <EleanorTeacherCard eleanor={step.eleanor} />
 
           {/* beginner example */}
           <div className="rounded-2xl border border-primary/25 bg-card p-4">
@@ -103,8 +103,8 @@ export default function TradingSchoolLesson() {
           </div>
 
           {/* ARX tie-in */}
-          <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ruby">In the ARX app</div>
+          <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-eleanor">In the ARX app</div>
             <p className="text-sm text-txt-secondary">{step.arxTieIn}</p>
           </div>
 
@@ -116,7 +116,7 @@ export default function TradingSchoolLesson() {
             <button onClick={() => setTab("quiz")} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90">
               <ListChecks className="h-4 w-4" /> Take quiz
             </button>
-            <button onClick={askRuby} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/20">
+            <button onClick={askEleanor} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/20">
               <Sparkles className="h-4 w-4" /> Ask {name}
             </button>
           </div>

@@ -310,7 +310,7 @@ Fix:
    - risk
    - bias
    - setup
-   - Ruby explanation
+   - Eleanor explanation
    - trade setup
 5. If historical candles are missing, show exact clean reason.
 6. Do not fake candles.

@@ -40,7 +40,7 @@ export type BenchmarkScoreKey =
   | "entry_quality"
   | "exit_realism"
   | "agent_agreement"
-  | "ruby_explanation_quality"
+  | "eleanor_explanation_quality"
   | "no_trade_discipline"
   | "review_learning"
   | "similar_setup_usefulness"
@@ -102,7 +102,7 @@ const LABELS: Record<BenchmarkScoreKey, string> = {
   entry_quality: "Entry Quality",
   exit_realism: "Exit Realism",
   agent_agreement: "Agent Agreement",
-  ruby_explanation_quality: `${DEFAULT_ASSISTANT_NAME} Explanation Quality`,
+  eleanor_explanation_quality: `${DEFAULT_ASSISTANT_NAME} Explanation Quality`,
   no_trade_discipline: "No-Trade Discipline",
   review_learning: "Review / Learning",
   similar_setup_usefulness: "Similar-Setup Usefulness",
@@ -364,14 +364,14 @@ export async function computeChartBrainBenchmark(opts?: {
   // ── 10. Agent agreement — receipts with no agent conflict ─────────────────
   const agentAgree = receipts.filter((r) => !r.agentConflict).length;
 
-  // ── 11. Ruby explanation quality — complete explanations ──────────────────
-  let rubyComplete = 0;
+  // ── 11. Eleanor explanation quality — complete explanations ──────────────────
+  let eleanorComplete = 0;
   for (const r of receipts) {
-    const hasRead = !!(r.rubyFinalRead && r.rubyFinalRead.trim().length > 0);
+    const hasRead = !!(r.eleanorFinalRead && r.eleanorFinalRead.trim().length > 0);
     const hasContext =
       !!(r.whatWouldChange && r.whatWouldChange.trim()) ||
       !!(r.invalidation && r.invalidation.trim());
-    if (hasRead && hasContext) rubyComplete++;
+    if (hasRead && hasContext) eleanorComplete++;
   }
 
   // ── 14. Similar-setup usefulness — reads with prior matching history ───────
@@ -452,10 +452,10 @@ export async function computeChartBrainBenchmark(opts?: {
       `${agentAgree}/${receipts.length} reads had agents in agreement.`,
     ),
     ratioScore(
-      "ruby_explanation_quality",
-      rubyComplete,
+      "eleanor_explanation_quality",
+      eleanorComplete,
       receipts.length,
-      `${rubyComplete}/${receipts.length} reads had a complete ${DEFAULT_ASSISTANT_NAME} explanation.`,
+      `${eleanorComplete}/${receipts.length} reads had a complete ${DEFAULT_ASSISTANT_NAME} explanation.`,
     ),
     ratioScore(
       "no_trade_discipline",

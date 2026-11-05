@@ -314,7 +314,7 @@ test("an AI or automation origin gets no relaxation: every manual block applies 
   const ctx = baseCtx({ daily: { realizedPnl: -400, floatingPnl: 0 } });
   const manual = evaluatePreTradeRisk(baseIntent({ origin: "manual" }), ctx);
   assert.deepEqual(manual.blockedBy, ["daily_loss_limit"]);
-  for (const origin of ["ruby", "automation", "strategy", "api"] as const) {
+  for (const origin of ["eleanor", "automation", "strategy", "api"] as const) {
     const d = evaluatePreTradeRisk(baseIntent({ origin }), ctx);
     for (const r of manual.blockedBy) assert.ok(d.blockedBy.includes(r), `${origin}: ${r}`);
   }
@@ -331,14 +331,14 @@ function modify(over: Partial<TradeIntent> = {}): TradeIntent {
 }
 
 test("guardian: automation may tighten a stop", () => {
-  for (const origin of ["automation", "ruby", "strategy"] as const) {
+  for (const origin of ["automation", "eleanor", "strategy"] as const) {
     const d = evaluatePreTradeRisk(modify({ origin, stopLoss: 1.098 }), baseCtx());
     assert.equal(d.decision, "ALLOW", `${origin}: ${d.primaryReason ?? ""}`);
   }
 });
 
-test("guardian: automation or Ruby cannot widen a stop, even within the per-trade limit", () => {
-  for (const origin of ["automation", "ruby", "strategy", "api"] as const) {
+test("guardian: automation or Eleanor cannot widen a stop, even within the per-trade limit", () => {
+  for (const origin of ["automation", "eleanor", "strategy", "api"] as const) {
     const r = blockedOnly(modify({ origin, stopLoss: 1.095 }), baseCtx(), "stop_loss_required");
     assert.match(r.reason!, /only tighten/);
     assert.equal(r.measured?.["currentStopLoss"], 1.0951);
@@ -349,7 +349,7 @@ test("guardian: automation or Ruby cannot widen a stop, even within the per-trad
 test("guardian: automation cannot remove a stop, and cannot modify a position it cannot identify", () => {
   const removed = evaluatePreTradeRisk(modify({ origin: "automation", stopLoss: null }), baseCtx());
   assert.deepEqual(removed.blockedBy, ["stop_loss_required"]);
-  const unknown = evaluatePreTradeRisk(modify({ origin: "ruby", stopLoss: 1.098, position: null }), baseCtx());
+  const unknown = evaluatePreTradeRisk(modify({ origin: "eleanor", stopLoss: 1.098, position: null }), baseCtx());
   assert.deepEqual(unknown.blockedBy, ["stop_loss_required"]);
   assert.match(unknown.primaryReason!, /could not be found/);
 });
@@ -391,7 +391,7 @@ test("halt: closes and tightened stops stay open under a halt; widened stops and
   assert.equal(evaluatePreTradeRisk(tighten, baseCtx({ halt: HALTED })).decision, "ALLOW", "tightening a stop cuts risk");
   const widen = baseIntent({ action: "MODIFY", stopLoss: 1.095, takeProfit: null, position: { entryPrice: 1.1, stopLoss: 1.0951 } });
   assert.deepEqual(evaluatePreTradeRisk(widen, baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
-  assert.deepEqual(evaluatePreTradeRisk(baseIntent({ origin: "ruby" }), baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
+  assert.deepEqual(evaluatePreTradeRisk(baseIntent({ origin: "eleanor" }), baseCtx({ halt: HALTED })).blockedBy, ["trading_halt"]);
   assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ halt: { engaged: false, sources: [], reason: null } })).decision, "ALLOW");
 });
 

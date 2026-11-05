@@ -155,7 +155,7 @@ PatternChangeVerdict:
 - confirmationLevel
 - invalidationLevel
 - scannerTruthImpact
-- rubyExplanation
+- eleanorExplanation
 
 Scanner Truth integration:
 TrendlineTruth should become a child input to Scanner Truth alongside PatternTruth.

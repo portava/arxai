@@ -113,10 +113,10 @@ Return clean user-facing reasons such as:
 - “Your daily loss limit has been reached.”
 - “Your available risk is too low for this trade.”
 
-7. Personal Ruby awareness
-Ruby should understand each user’s private account shell.
+7. Personal Eleanor awareness
+Eleanor should understand each user’s private account shell.
 
-Ruby can explain:
+Eleanor can explain:
 - “Your available risk is…”
 - “Your daily loss remaining is…”
 - “This trade is blocked because it exceeds your max lot size.”
@@ -124,7 +124,7 @@ Ruby can explain:
 - “Your open exposure is high on this symbol.”
 - “Your personal P/L today is…”
 
-Ruby must not reveal:
+Eleanor must not reveal:
 - other users
 - full shared master balance
 - global master P/L
@@ -199,7 +199,7 @@ Add or update tests for:
 - paused account blocks trade
 - missing allocation blocks trade
 - unapproved shared-master user blocks trade
-- Ruby only uses current user account data
+- Eleanor only uses current user account data
 - admin can view per-user allocation breakdown
 - uncertain execution becomes NEEDS_REVIEW
 - no secrets exposed

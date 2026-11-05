@@ -35,7 +35,7 @@ Inspect and reuse:
 - close-only mode
 - force-review mode
 - audit logs
-- Ruby context
+- Eleanor context
 - user dashboard routing
 
 Do not create a duplicate account system.
@@ -103,7 +103,7 @@ PAPER mode:
 - no MT5 command
 - no demo broker command
 - no live command
-- scanner/trade ticket/Ruby can be tested safely
+- scanner/trade ticket/Eleanor can be tested safely
 - user sees “Paper Mode”
 
 DEMO mode:
@@ -180,8 +180,8 @@ If bulk LIVE is attempted:
 - do not enable LIVE for failed users
 - audit every user separately
 
-8. Ruby awareness
-Ruby should explain the user’s current mode:
+8. Eleanor awareness
+Eleanor should explain the user’s current mode:
 
 For PAPER:
 - “You are in Paper Mode. I can help you practice without sending orders to MT5.”
@@ -192,7 +192,7 @@ For DEMO:
 For LIVE:
 - “You are in Live Mode. I will still require confirmation and safety checks before any order is sent.”
 
-Ruby must not:
+Eleanor must not:
 - switch user mode herself
 - tell a user they are live unless backend confirms it
 - place live orders because the user asked by voice/text
@@ -218,7 +218,7 @@ Rules:
 - Live trades stay live
 - switching mode does not convert old trades
 - P/L calendar should filter or label by mode
-- Ruby should not mix paper/demo/live performance unless user asks for combined summary
+- Eleanor should not mix paper/demo/live performance unless user asks for combined summary
 - normal users only see their own data
 
 11. Audit logs
@@ -233,7 +233,7 @@ Add audit logs for:
 - bulk mode change attempted
 - bulk mode change partially failed
 - user attempted live action while not in LIVE mode
-- Ruby explained mode status
+- Eleanor explained mode status
 
 Do not log secrets.
 
@@ -257,7 +257,7 @@ Add or update tests for:
 - LIVE mode blocked when kill switch active
 - mode switch does not convert existing trades
 - User A cannot change or see User B mode
-- Ruby explains current user mode only
+- Eleanor explains current user mode only
 - one-click live remains OFF by default
 - no secrets exposed
 - no live command created during QA
@@ -270,7 +270,7 @@ Return:
 - admin route/API names
 - user route/API names
 - mode enforcement behavior
-- Ruby mode behavior
+- Eleanor mode behavior
 - tests added/run
 - remaining risks
 - confirmation no live trade was fired

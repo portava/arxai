@@ -6,7 +6,7 @@
 //   - Reports whether each provider is CONFIGURED (boolean only — never the
 //     raw secret value), whether it is currently SELECTED by the router for
 //     a given asset class, which app modules USE it (scanner / chart /
-//     ruby / trade ticket / news / backtest / watchlist), and whether the
+//     eleanor / trade ticket / news / backtest / watchlist), and whether the
 //     most recent self-test succeeded.
 //   - Runs a sanitized self-test:
 //       * one historical candle pull per asset class (EURUSD, BTCUSDT,
@@ -52,7 +52,7 @@ export interface ProviderEntry {
   secretEnvKeys: string[];
   configured: boolean;
   secretMasks: Array<{ envKey: string; configured: boolean; lastFourMasked: string | null }>;
-  usedBy: Array<"scanner" | "chart" | "ruby" | "trade_ticket" | "watchlist" | "backtest" | "news" | "ai_assistant">;
+  usedBy: Array<"scanner" | "chart" | "eleanor" | "trade_ticket" | "watchlist" | "backtest" | "news" | "ai_assistant">;
   selectedForAssetClasses: AssetClass[];
   configuredButUnused: boolean;
   status: "healthy" | "degraded" | "failing" | "not_configured" | "reserved";
@@ -258,7 +258,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: deriv.mode === "public" ? [] : ["DERIV_APP_ID", "DERIV_API_TOKEN"],
     configured: deriv.configured,
     secretMasks: deriv.mode === "public" ? [] : [maskLastFour("DERIV_APP_ID"), maskLastFour("DERIV_API_TOKEN")],
-    usedBy: ["scanner", "chart", "ruby"],
+    usedBy: ["scanner", "chart", "eleanor"],
     selectedForAssetClasses: classesWhereSelected("deriv"),
     configuredButUnused: deriv.configured && classesWhereSelected("deriv").length === 0,
     status: !deriv.configured ? "not_configured" : deriv.healthSummary === "healthy" ? "healthy" : "degraded",
@@ -283,7 +283,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["TWELVEDATA_API_KEY"],
     configured: tdConfigured,
     secretMasks: [maskLastFour("TWELVEDATA_API_KEY")],
-    usedBy: tdConfigured && assistant.name.startsWith("twelve_data") ? ["scanner", "chart", "ruby", "trade_ticket", "watchlist"] : [],
+    usedBy: tdConfigured && assistant.name.startsWith("twelve_data") ? ["scanner", "chart", "eleanor", "trade_ticket", "watchlist"] : [],
     selectedForAssetClasses: tdConfigured && assistant.name.startsWith("twelve_data") ? assistantSelected : [],
     configuredButUnused: tdConfigured && !assistant.name.startsWith("twelve_data"),
     status: !tdConfigured ? "not_configured" : (assistant.name.startsWith("twelve_data") ? "healthy" : "degraded"),
@@ -302,7 +302,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["POLYGON_API_KEY"],
     configured: polygonConfigured,
     secretMasks: [maskLastFour("POLYGON_API_KEY")],
-    usedBy: polygonConfigured && assistant.name === "polygon" ? ["scanner", "chart", "ruby"] : [],
+    usedBy: polygonConfigured && assistant.name === "polygon" ? ["scanner", "chart", "eleanor"] : [],
     selectedForAssetClasses: polygonConfigured && assistant.name === "polygon" ? assistantSelected : [],
     configuredButUnused: polygonConfigured && assistant.name !== "polygon",
     status: !polygonConfigured ? "not_configured" : (assistant.name === "polygon" ? "healthy" : "degraded"),
@@ -322,7 +322,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     configured: finnhubConfigured,
     secretMasks: [maskLastFour("FINNHUB_API_KEY")],
     // hybridTwelveDataFinnhub keeps name="twelve_data" but uses Finnhub for quotes/news.
-    usedBy: finnhubConfigured && tdConfigured ? ["trade_ticket", "ruby", "news"] : (finnhubConfigured && assistant.name === "finnhub" ? ["scanner", "chart", "ruby", "news"] : []),
+    usedBy: finnhubConfigured && tdConfigured ? ["trade_ticket", "eleanor", "news"] : (finnhubConfigured && assistant.name === "finnhub" ? ["scanner", "chart", "eleanor", "news"] : []),
     selectedForAssetClasses: finnhubConfigured && assistant.name === "finnhub" ? assistantSelected : [],
     configuredButUnused: finnhubConfigured && !tdConfigured && assistant.name !== "finnhub",
     status: !finnhubConfigured ? "not_configured" : "healthy",
@@ -341,7 +341,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["ALPHA_VANTAGE_API_KEY"],
     configured: avConfigured,
     secretMasks: [maskLastFour("ALPHA_VANTAGE_API_KEY")],
-    usedBy: avConfigured && assistant.name === "alpha_vantage" ? ["scanner", "chart", "ruby"] : [],
+    usedBy: avConfigured && assistant.name === "alpha_vantage" ? ["scanner", "chart", "eleanor"] : [],
     selectedForAssetClasses: avConfigured && assistant.name === "alpha_vantage" ? assistantSelected : [],
     configuredButUnused: avConfigured && assistant.name !== "alpha_vantage",
     status: !avConfigured ? "not_configured" : (assistant.name === "alpha_vantage" ? "healthy" : "degraded"),
@@ -360,17 +360,17 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["NEWSAPI_API_KEY"],
     configured: newsConfigured,
     secretMasks: [maskLastFour("NEWSAPI_API_KEY")],
-    usedBy: newsConfigured ? ["news", "ruby"] : [],
+    usedBy: newsConfigured ? ["news", "eleanor"] : [],
     selectedForAssetClasses: [],
     configuredButUnused: false,
     status: !newsConfigured ? "not_configured" : "healthy",
-    statusReason: !newsConfigured ? "NEWSAPI_API_KEY not set." : "Active for news/ruby market explanations.",
+    statusReason: !newsConfigured ? "NEWSAPI_API_KEY not set." : "Active for news/eleanor market explanations.",
     features: { liveQuote: false, historicalCandles: false, news: true, symbolSearch: false },
     rateLimitNote: "Free tier ≈ 100 req/day.",
     lastSelfTestAt: null, lastSelfTestMs: null, lastSelfTestOk: null,
   });
 
-  // OpenAI (Ruby brain — listed for completeness; not a market-data provider)
+  // OpenAI (Eleanor brain — listed for completeness; not a market-data provider)
   const openAiConfigured = !!process.env.OPENAI_API_KEY;
   providers.push({
     id: "openai",
@@ -379,7 +379,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
     secretEnvKeys: ["OPENAI_API_KEY"],
     configured: openAiConfigured,
     secretMasks: [maskLastFour("OPENAI_API_KEY")],
-    usedBy: openAiConfigured ? ["ai_assistant", "ruby"] : [],
+    usedBy: openAiConfigured ? ["ai_assistant", "eleanor"] : [],
     selectedForAssetClasses: [],
     configuredButUnused: false,
     status: !openAiConfigured ? "not_configured" : "healthy",

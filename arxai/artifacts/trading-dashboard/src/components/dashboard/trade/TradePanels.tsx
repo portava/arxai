@@ -149,7 +149,7 @@ export function OrdersPanel({
 }: { opps: Opp[]; intentCount: number; picked: { symbol: string; timeframe: string } | null; onPick: (o: Opp) => void }) {
   return (
     <div className="space-y-4" data-testid="orders-tab">
-      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="ruby" badge={opps.length ? String(opps.length) : undefined}>
+      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="eleanor" badge={opps.length ? String(opps.length) : undefined}>
         {opps.length === 0 ? (
           <p className="py-4 text-center text-sm text-txt-secondary">No scan results yet — start the scanner from the Market Scanner page.</p>
         ) : (
@@ -245,7 +245,7 @@ export function RiskGovernorCard({
 /* ── 7 · Decision Stream ────────────────────────────────────────────── */
 export function DecisionStreamCard({ decisions }: { decisions: Array<{ id: string; type: string; summary: string; createdAt: string }> }) {
   return (
-    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="ruby" badge={decisions.length ? String(decisions.length) : undefined}>
+    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="eleanor" badge={decisions.length ? String(decisions.length) : undefined}>
       {decisions.length === 0 ? (
         <p className="py-4 text-center text-sm text-txt-secondary">No decisions yet.</p>
       ) : (

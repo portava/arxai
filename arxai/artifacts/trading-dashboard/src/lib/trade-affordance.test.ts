@@ -174,7 +174,7 @@ describe("resolveTradeAffordance — never blocks, honest when not live", () => 
 
 // ── T004: ONE shared Trade-Health verdict across every surface ────────────────
 //
-// The contract's purpose is that the scanner, Ruby, the chart, the trade ticket,
+// The contract's purpose is that the scanner, Eleanor, the chart, the trade ticket,
 // and the AI-setup card can NEVER contradict each other for the same
 // symbol+timeframe, AND that a confident DISPLAY read can never make a ticket
 // executable. These deterministic tests lock both guarantees at the shared layer.
@@ -203,8 +203,8 @@ describe("Trade-Health contract — cross-surface label consistency", () => {
     }
   });
 
-  it("the scanner readiness equals a direct (Ruby-style) contract evaluation for identical inputs", () => {
-    // Scanner composes evaluateTradeHealthReadiness; Ruby composes the SAME pure
+  it("the scanner readiness equals a direct (Eleanor-style) contract evaluation for identical inputs", () => {
+    // Scanner composes evaluateTradeHealthReadiness; Eleanor composes the SAME pure
     // contract. Identical inputs ⇒ identical user-facing trust line + ceilings, so
     // the two surfaces can never disagree. We reproduce the scanner's exact mapping
     // for a clean, live, sufficient EURUSD 1m read.

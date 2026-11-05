@@ -1,14 +1,14 @@
 // Canonical investor live-balance composer — pure unit tests (Task #430).
 //
 // Proves the SINGLE mark-to-market composer that every balance surface
-// (Dashboard, Open Trades, account, admin investor table, Ruby, risk engine,
+// (Dashboard, Open Trades, account, admin investor table, Eleanor, risk engine,
 // wallet/allocation, SSE) reads from cannot diverge:
 //   • floating P/L moves liveEquity up and down (live + open trades)
 //   • a closed trade leaves realized P/L and zeroes floating (live, 0 open)
 //   • floating is null (unavailable) — NEVER 0-faked — when no live snapshot
 //   • a non-live (PAPER/DEMO) user never receives live floating P/L (isolation)
 //   • stale broker data is reported stale, never relabelled fresh
-//   • liveEquity = allocated + realized + (floating ?? 0) for Ruby + risk
+//   • liveEquity = allocated + realized + (floating ?? 0) for Eleanor + risk
 //   • source maps from account mode (master master/investor separation honesty)
 // No DB, no IO. Run:
 //   pnpm --filter @workspace/scripts run test:investor-live-balance
@@ -159,7 +159,7 @@ function input(over: Partial<ComposeInvestorBalanceInput> = {}): ComposeInvestor
   check("live → fresh", r.freshness.status === "fresh", r.freshness.status);
 }
 
-// 8. liveEquity = allocated + realized + (floating ?? 0) — the number Ruby and
+// 8. liveEquity = allocated + realized + (floating ?? 0) — the number Eleanor and
 //    the risk engine both consume. marginUsed reduces freeMargin only.
 {
   const r = composeInvestorBalance(input({
@@ -168,7 +168,7 @@ function input(over: Partial<ComposeInvestorBalanceInput> = {}): ComposeInvestor
     reservedRisk: 1_000,
     liveSnapshot: liveSnap({ openPL: 200, positions: [pos({ unrealizedPL: 200 })] }),
   }));
-  check("ruby/risk live equity", r.liveEquity === 8_500, `eq=${r.liveEquity}`);
+  check("eleanor/risk live equity", r.liveEquity === 8_500, `eq=${r.liveEquity}`);
   check("marginUsed surfaced", r.marginUsed === 1_000, `mu=${r.marginUsed}`);
   check("freeMargin = equity − margin", r.freeMargin === 7_500, `fm=${r.freeMargin}`);
 }

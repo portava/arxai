@@ -1,4 +1,4 @@
-// Pure render-state resolver for the "Pick a market — Ruby explains it" panel
+// Pure render-state resolver for the "Pick a market — Eleanor explains it" panel
 // (Task #518). The panel must NEVER render numeric entry/stop/target when the
 // stale-level guard withheld them, and must NEVER render zeros styled as levels
 // when there is no confirmed live feed. This pure function encodes exactly the

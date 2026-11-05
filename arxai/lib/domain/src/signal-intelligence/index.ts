@@ -1,4 +1,4 @@
-// Signal Intelligence Core (Ruby Market Edge) — public barrel.
+// Signal Intelligence Core (Eleanor Market Edge) — public barrel.
 // Pure & deterministic: no IO, no Date.now() inside the engines.
 
 export * from "./signalIntelligence.types.js";
@@ -25,7 +25,7 @@ export {
   sessionContext,
   playbookWeight,
 } from "./sessionIntelligence.js";
-export { buildRubyMarketEdge } from "./buildSignal.js";
+export { buildEleanorMarketEdge } from "./buildSignal.js";
 export { explainMarketRead } from "./explainMarketRead.js";
 export {
   categorizeOpportunities,

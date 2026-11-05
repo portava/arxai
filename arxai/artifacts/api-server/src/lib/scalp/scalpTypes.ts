@@ -1,7 +1,7 @@
-// Ruby Scalp Signals — shared normalized types.
+// Eleanor Scalp Signals — shared normalized types.
 //
 // One engine, one result shape. The Focus Scan card, the Broad Scan ranking,
-// and the Ruby Scalp Builder all consume `ScalpResult` so the app never gives
+// and the Eleanor Scalp Builder all consume `ScalpResult` so the app never gives
 // conflicting answers. No paper/sim/mock anything: when live data is not
 // available the engine returns an honest AWAITING_DATA state, never a
 // fabricated lot/TP/SL.
@@ -61,7 +61,7 @@ export type TargetRealityCheck =
   | "TOO_RISKY"
   | "NOT_AVAILABLE_RIGHT_NOW";
 
-// ── Flame-reading model (Ruby Flame Scalp intelligence core) ──────────────
+// ── Flame-reading model (Eleanor Flame Scalp intelligence core) ──────────────
 //
 // These describe a *running momentum burst* ("flame") read off the live candle
 // window, kept strictly separate from the trade-sizing fields above. When the
@@ -219,7 +219,7 @@ export interface ScalpEntryZone {
   to: number;
 }
 
-/** The single normalized object shared by UI, Ruby, and the trade modal. */
+/** The single normalized object shared by UI, Eleanor, and the trade modal. */
 export interface ScalpResult {
   /** Focus reads carry their actual M5/provider/user evidence. */
   marketEvidence?: import("@workspace/domain/truth").TruthReadEvidence | null;
@@ -331,7 +331,7 @@ export type ScalpExitUrgency =
   | "CLOSE_ALL"
   | "EMERGENCY";
 
-/** What Ruby recommends doing (advice only — the system NEVER auto-closes). */
+/** What Eleanor recommends doing (advice only — the system NEVER auto-closes). */
 export type ScalpExitAction =
   | "HOLD"
   | "PROTECT"

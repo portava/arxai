@@ -41,7 +41,7 @@ router.get("/chart/candles", async (req, res) => {
     return;
   }
   // Task #496 — display route opts INTO the synthesized real-time forming tip.
-  // Analysis / Ruby / chart-intelligence callers keep the default (false) and
+  // Analysis / Eleanor / chart-intelligence callers keep the default (false) and
   // stay strictly closed-bars-only.
   const out = await getChartCandles(q.symbol, q.timeframe, q.limit, true, { storedHistoryFallback: true });
   res.json(out);

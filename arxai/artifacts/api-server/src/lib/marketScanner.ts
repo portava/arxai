@@ -312,7 +312,7 @@ export interface ScannerOpportunity {
    */
   chartConfirmed?: boolean;
   /**
-   * ONE DATA-SUFFICIENCY TRUTH — the shared, read-only verdict (same engine Ruby
+   * ONE DATA-SUFFICIENCY TRUTH — the shared, read-only verdict (same engine Eleanor
    * + the chart consume) for whether there is enough proven data to SHOW a
    * confident setup. Optional so existing fixtures/builders stay valid; when
    * present and `canShowTradeSetup` is false on a LIVE feed, computeFinalRead
@@ -607,7 +607,7 @@ export function computeFinalRead(
   }
 
   // 5b. CLOSED-BAR SUFFICIENCY CAP (ONE DATA-SUFFICIENCY TRUTH). The shared
-  //     verdict is the SAME one Ruby + the chart consume, so every surface shows
+  //     verdict is the SAME one Eleanor + the chart consume, so every surface shows
   //     the SAME reason for the SAME symbol/timeframe. The headline case is a
   //     LIVE feed with too few closed bars to analyse — actionable to the
   //     data-source cap (step 5) because the feed IS live, yet not analysable.
@@ -746,7 +746,7 @@ export function computeFinalRead(
 
   // Simulator-derived reads are analysis-only: the truth cap above already
   // floored them to non-actionable/LOW; this marks them explicitly so every
-  // surface (frontend, Ruby) renders them as analysis, never a trade-ready setup.
+  // surface (frontend, Eleanor) renders them as analysis, never a trade-ready setup.
   const analysisOnly = opp.dataSource === "SIMULATOR";
 
   return {
@@ -1302,7 +1302,7 @@ async function analyzeViaRouter(
 
 // Scan ONE symbol+timeframe and return a normalized opportunity (or null on
 // error/skip). Pure read — does NOT mutate scannerState or emit alerts/
-// decisions — so per-user surfaces (e.g. the Ruby Scalp Focus card) can reuse
+// decisions — so per-user surfaces (e.g. the Eleanor Scalp Focus card) can reuse
 // the exact same scanner read as the global loop without clobbering its state.
 export async function scanSymbolTimeframe(sym: string, tf: string): Promise<ScannerOpportunity | null> {
   // Task #412 — hard universe lock. A symbol outside the approved ARX Top 250
@@ -1445,9 +1445,9 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     }
 
     // ── ONE DATA-SUFFICIENCY TRUTH ─────────────────────────────────────────
-    // Compute the SAME shared verdict Ruby + the chart consume so the scanner
+    // Compute the SAME shared verdict Eleanor + the chart consume so the scanner
     // can never present a confident setup the closed-bar floor rejects (the
-    // exact scanner-vs-Ruby contradiction). Read-only + downgrade-only.
+    // exact scanner-vs-Eleanor contradiction). Read-only + downgrade-only.
     const sufficiency = evaluateMarketDataSufficiency({
       symbol: sym,
       timeframe: tf,

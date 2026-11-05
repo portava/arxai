@@ -2,7 +2,7 @@
 //
 // Reads the caller's REAL open positions (mode-scoped exactly like the unified
 // positions feed: live for a LIVE_SHARED user, demo for a DEMO user, nothing for
-// PAPER), pulls a best-effort original Ruby signal per distinct symbol, and the
+// PAPER), pulls a best-effort original Eleanor signal per distinct symbol, and the
 // caller's real recent-command pace, then composes the pure TradeHealthReport.
 //
 // SAFETY:
@@ -25,7 +25,7 @@ import {
   type TradeSide,
 } from "@workspace/domain/trade-health";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
-import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
+import { buildEleanorMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
 import { readLatestUserMt5State, MT5_STATE_NOT_ATTRIBUTED_NOTE } from "../brokerHub/mt5StateReader.js";
 
@@ -344,7 +344,7 @@ async function readOvertradingInput(
   };
 }
 
-/** Best-effort original Ruby signal per distinct symbol (null on any failure). */
+/** Best-effort original Eleanor signal per distinct symbol (null on any failure). */
 async function readSignalsBySymbol(
   userId: number,
   symbols: readonly string[],
@@ -353,7 +353,7 @@ async function readSignalsBySymbol(
   const entries = await Promise.all(
     distinct.map(async (symbol): Promise<[string, OriginalSignalInput | null]> => {
       try {
-        const signal = await buildRubyMarketEdgeForUser(userId, { symbol });
+        const signal = await buildEleanorMarketEdgeForUser(userId, { symbol });
         if (!signal) return [symbol, null];
         return [
           symbol,

@@ -21,8 +21,8 @@ Pass 3 is accepted as the Deriv/MT5 balance sync and admin allocation truth audi
    - Either rename/label it honestly as “show latest received snapshot” with age, or wire a true on-demand EA snapshot request later.
    - Do not imply broker pull if it is only DB reread.
 
-4. Eleanor/Ruby note:
-   - Pass 3 still references rubyContext.ts.
+4. Eleanor/Eleanor note:
+   - Pass 3 still references eleanorContext.ts.
    - Lock this into the Eleanor rename debt.
    - The context behavior may be correct, but the name must become Eleanor-facing and centralized.
 
@@ -35,7 +35,7 @@ Audit only. No code changes. No tasks yet.
 Focus on:
 
 1. Scanner page load and render order.
-2. Whether Scanner waits on Eleanor/Ruby before rendering.
+2. Whether Scanner waits on Eleanor/Eleanor before rendering.
 3. Whether Scanner waits on all scan results before chart appears.
 4. Scanner chart candle source and long-history loading.
 5. Why candle history still appears limited or falls off.

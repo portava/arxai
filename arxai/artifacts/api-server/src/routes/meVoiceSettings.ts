@@ -1,4 +1,4 @@
-// Per-user Ruby Voice preferences — backend = source of truth.
+// Per-user Eleanor Voice preferences — backend = source of truth.
 // GET  /api/me/voice-settings
 // PUT  /api/me/voice-settings
 //
@@ -19,12 +19,12 @@ const log = logger.child({ component: "meVoiceSettings" });
 const router = Router();
 
 const VOICE_DEFAULTS = {
-  rubyVoiceEnabled:    true,
-  rubySpeakResponses:  true,
-  rubyAutoListen:      true,
-  rubyBrowserFallback: true,
-  rubyTtsProvider:     "auto" as const,
-  rubyTtsVoiceId:      null as string | null,
+  eleanorVoiceEnabled:    true,
+  eleanorSpeakResponses:  true,
+  eleanorAutoListen:      true,
+  eleanorBrowserFallback: true,
+  eleanorTtsProvider:     "auto" as const,
+  eleanorTtsVoiceId:      null as string | null,
 };
 
 interface VoicePrefs {
@@ -37,21 +37,21 @@ interface VoicePrefs {
 }
 
 function rowToPrefs(row: {
-  rubyVoiceEnabled: boolean | null;
-  rubySpeakResponses: boolean | null;
-  rubyAutoListen: boolean | null;
-  rubyBrowserFallback: boolean | null;
-  rubyTtsProvider: string | null;
-  rubyTtsVoiceId: string | null;
+  eleanorVoiceEnabled: boolean | null;
+  eleanorSpeakResponses: boolean | null;
+  eleanorAutoListen: boolean | null;
+  eleanorBrowserFallback: boolean | null;
+  eleanorTtsProvider: string | null;
+  eleanorTtsVoiceId: string | null;
 }): VoicePrefs {
-  const p = (row.rubyTtsProvider ?? VOICE_DEFAULTS.rubyTtsProvider) as VoicePrefs["provider"];
+  const p = (row.eleanorTtsProvider ?? VOICE_DEFAULTS.eleanorTtsProvider) as VoicePrefs["provider"];
   return {
-    enabled:         row.rubyVoiceEnabled    ?? VOICE_DEFAULTS.rubyVoiceEnabled,
-    speakResponses:  row.rubySpeakResponses  ?? VOICE_DEFAULTS.rubySpeakResponses,
-    autoListen:      row.rubyAutoListen      ?? VOICE_DEFAULTS.rubyAutoListen,
-    browserFallback: row.rubyBrowserFallback ?? VOICE_DEFAULTS.rubyBrowserFallback,
+    enabled:         row.eleanorVoiceEnabled    ?? VOICE_DEFAULTS.eleanorVoiceEnabled,
+    speakResponses:  row.eleanorSpeakResponses  ?? VOICE_DEFAULTS.eleanorSpeakResponses,
+    autoListen:      row.eleanorAutoListen      ?? VOICE_DEFAULTS.eleanorAutoListen,
+    browserFallback: row.eleanorBrowserFallback ?? VOICE_DEFAULTS.eleanorBrowserFallback,
     provider:        ["auto", "elevenlabs", "openai", "browser"].includes(p) ? p : "auto",
-    voiceId:         row.rubyTtsVoiceId ?? null,
+    voiceId:         row.eleanorTtsVoiceId ?? null,
   };
 }
 
@@ -115,12 +115,12 @@ router.put("/me/voice-settings", requireUser, async (req: Request, res: Response
     // Ensure row exists, then apply partial update.
     await loadOrCreate(userId);
     const patch: Record<string, unknown> = { updatedAt: new Date() };
-    if (p.enabled         !== undefined) patch["rubyVoiceEnabled"]    = p.enabled;
-    if (p.speakResponses  !== undefined) patch["rubySpeakResponses"]  = p.speakResponses;
-    if (p.autoListen      !== undefined) patch["rubyAutoListen"]      = p.autoListen;
-    if (p.browserFallback !== undefined) patch["rubyBrowserFallback"] = p.browserFallback;
-    if (p.provider        !== undefined) patch["rubyTtsProvider"]     = p.provider;
-    if (p.voiceId         !== undefined) patch["rubyTtsVoiceId"]      = p.voiceId;
+    if (p.enabled         !== undefined) patch["eleanorVoiceEnabled"]    = p.enabled;
+    if (p.speakResponses  !== undefined) patch["eleanorSpeakResponses"]  = p.speakResponses;
+    if (p.autoListen      !== undefined) patch["eleanorAutoListen"]      = p.autoListen;
+    if (p.browserFallback !== undefined) patch["eleanorBrowserFallback"] = p.browserFallback;
+    if (p.provider        !== undefined) patch["eleanorTtsProvider"]     = p.provider;
+    if (p.voiceId         !== undefined) patch["eleanorTtsVoiceId"]      = p.voiceId;
 
     await db.update(userSettingsTable).set(patch).where(eq(userSettingsTable.userId, userId));
     const prefs = await loadOrCreate(userId);

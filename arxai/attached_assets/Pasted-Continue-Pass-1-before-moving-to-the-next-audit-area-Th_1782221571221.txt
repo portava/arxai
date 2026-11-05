@@ -9,7 +9,7 @@ Do this next, still read-only, no code changes:
    - LiveTradeTicket.tsx standard path
    - LiveSharedTradeTicket.tsx
    - ScannerTradeModal.tsx
-   - Eleanor/Ruby assistant instant trade command path
+   - Eleanor/Eleanor assistant instant trade command path
 
 2. For each path, prove whether it converges into the same backend live dispatch chokepoint:
    - dispatchLiveCommand

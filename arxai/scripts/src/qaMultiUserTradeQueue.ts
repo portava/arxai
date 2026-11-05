@@ -285,19 +285,19 @@ async function main() {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // 13. Ruby tools surface queue/blocking explanations
+  // 13. Eleanor tools surface queue/blocking explanations
   // ──────────────────────────────────────────────────────────────────────
   {
     const tools = read("artifacts/api-server/src/lib/assistant/tools.ts");
     const needed = ["getTradingMode", "getReconciliationStatus", "getMT5BridgeStatus", "getRiskUtilization", "getMyAccountShell"];
     const missing = needed.filter((n) => !tools.includes(n));
-    record("13-ruby-tools-explain-queue",
+    record("13-eleanor-tools-explain-queue",
       missing.length === 0,
-      missing.length === 0 ? "Ruby has all tools needed to explain why a trade is queued/blocked/needs-review" : `MISSING: ${missing.join(",")}`);
+      missing.length === 0 ? "Eleanor has all tools needed to explain why a trade is queued/blocked/needs-review" : `MISSING: ${missing.join(",")}`);
     const sys = read("artifacts/api-server/src/lib/assistant/systemPrompt.ts");
-    record("13-ruby-placed-honesty",
+    record("13-eleanor-placed-honesty",
       /NEVER claim.*PLACED|never tell the user.*live|never tell the user.*placed/i.test(sys),
-      "Ruby prompt forbids claiming a live trade was placed without confirmed status");
+      "Eleanor prompt forbids claiming a live trade was placed without confirmed status");
   }
 
   // ──────────────────────────────────────────────────────────────────────

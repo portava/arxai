@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // AI client sweep 2026-11-04 — panel-level checks:
 //   AC1  voice bubble never stays on "Transcribing…" after completion
 //   AC5  "Ask <name>" bus opens the panel with the question typed in
-//   AC8  a spoken command goes through the gated command route (ruby_voice)
+//   AC8  a spoken command goes through the gated command route (eleanor_voice)
 //   AC11 empty-state copy
 //   AC12 chat 429 shows the retry time, not "Assistant error (429)."
 
@@ -33,8 +33,8 @@ vi.mock("./useSpeakResponses", () => ({
   getServerVoicePref: vi.fn(),
   saveServerVoicePref: vi.fn(),
 }));
-vi.mock("./useRubyTTS", () => ({ previewVoice: vi.fn() }));
-vi.mock("@/lib/rubyVoice", () => ({ setChatPanelSpeaking: vi.fn() }));
+vi.mock("./useEleanorTTS", () => ({ previewVoice: vi.fn() }));
+vi.mock("@/lib/eleanorVoice", () => ({ setChatPanelSpeaking: vi.fn() }));
 vi.mock("@/hooks/useTradingMode", () => ({
   useTradingMode: () => ({
     envelope: { cleanModeLabel: "Live" },
@@ -85,7 +85,7 @@ function installFetch() {
       return json({ error: "rate_limited", retryAfterSeconds: 42 }, 429, { "Retry-After": "42" });
     }
     if (url.endsWith("/api/me/assistant/instant-trade-command")) {
-      return json({ ok: false, classification: "CLOSE", error: "RUBY_CLOSE_COMMANDS_NOT_ENABLED", message: "I couldn't execute: RUBY_CLOSE_COMMANDS_NOT_ENABLED." }, 403);
+      return json({ ok: false, classification: "CLOSE", error: "ELEANOR_CLOSE_COMMANDS_NOT_ENABLED", message: "I couldn't execute: ELEANOR_CLOSE_COMMANDS_NOT_ENABLED." }, 403);
     }
     return json({});
   }));
@@ -115,7 +115,7 @@ describe("ArxAssistantLivePanel — AI client sweep", () => {
     expect(screen.getByText(/only trade on your direct command/)).toBeTruthy();
   });
 
-  it("AC8: a spoken command goes to the command route as ruby_voice with the live account mode", async () => {
+  it("AC8: a spoken command goes to the command route as eleanor_voice with the live account mode", async () => {
     renderPanel();
     expect(h.voiceOpts).toBeTruthy();
     // Voice can only be sent once the conversation is loaded.
@@ -125,10 +125,10 @@ describe("ArxAssistantLivePanel — AI client sweep", () => {
     await act(async () => { h.voiceOpts!.onComplete!(""); });
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/instant-trade-command"))).toBe(true));
     const cmd = calls.find((c) => c.url.endsWith("/instant-trade-command"))!;
-    expect(cmd.body).toMatchObject({ text: "close it", source: "ruby_voice", accountMode: "live" });
+    expect(cmd.body).toMatchObject({ text: "close it", source: "eleanor_voice", accountMode: "live" });
     // AC4: the refusal reads as a sentence, not the raw code.
     await waitFor(() => expect(screen.getByText(/isn't allowed to close trades yet/)).toBeTruthy());
-    expect(screen.queryByText(/RUBY_CLOSE_COMMANDS_NOT_ENABLED/)).toBeNull();
+    expect(screen.queryByText(/ELEANOR_CLOSE_COMMANDS_NOT_ENABLED/)).toBeNull();
     // the spoken words appear once as the user's bubble
     expect(screen.getAllByText("close it").length).toBe(1);
   });

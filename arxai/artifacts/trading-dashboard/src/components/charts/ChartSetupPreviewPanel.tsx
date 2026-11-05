@@ -9,7 +9,7 @@ import {
 import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
 import type { UseChartSetupPreview } from "@/hooks/useChartSetupPreview";
 
-// ChartSetupPreviewPanel — Task #374 control + legend surface for an AI/Ruby
+// ChartSetupPreviewPanel — Task #374 control + legend surface for an AI/Eleanor
 // "drawn" trade setup. PURE VISUALISATION + a user-initiated draw trigger and an
 // optional, role-gated "Use this setup" ticket prefill. It NEVER places,
 // modifies, or closes a trade — a drawing is a preview, not an order.

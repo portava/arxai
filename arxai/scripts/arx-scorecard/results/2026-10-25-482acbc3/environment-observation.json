@@ -35,8 +35,8 @@
       "scripts/src/ci/runIntegrationTests.ts",
       "scripts/src/fundBookTierIntegrationTest.ts",
       "scripts/src/qaOneClickConcurrency.ts",
-      "scripts/src/rubyChatChartReadParityTest.ts",
-      "scripts/src/rubyDrawSetupRouteTest.ts",
+      "scripts/src/eleanorChatChartReadParityTest.ts",
+      "scripts/src/eleanorDrawSetupRouteTest.ts",
       "scripts/src/securityRegressionSuite.ts",
       "scripts/src/trafficControllerTest.ts"
     ],
@@ -49,8 +49,8 @@
       "scripts/src/adminUnrestrictedRiskTest.ts",
       "scripts/src/fundBookTierIntegrationTest.ts",
       "scripts/src/qaOneClickConcurrency.ts",
-      "scripts/src/rubyChatChartReadParityTest.ts",
-      "scripts/src/rubyDrawSetupRouteTest.ts"
+      "scripts/src/eleanorChatChartReadParityTest.ts",
+      "scripts/src/eleanorDrawSetupRouteTest.ts"
     ]
   },
   "limitations": [

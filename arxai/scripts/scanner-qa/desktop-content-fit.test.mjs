@@ -95,7 +95,7 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
       if (preset !== "All") {
         await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: preset, exact: true }).click();
       } else {
-        for (const id of ["discovery","heat","clock","ruby","risk","order","intelligence","positions","chart"]) await dock(id);
+        for (const id of ["discovery","heat","clock","eleanor","risk","order","intelligence","positions","chart"]) await dock(id);
       }
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const receipt = await page.evaluate(() => {
@@ -144,32 +144,32 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(viewport);
     await page.getByRole("group", { name: "Workspace preset" }).getByRole("button", { name: "Trade", exact: true }).click();
-    await dock("ruby");
-    const summary = page.locator(".arx-ruby-details > summary");
+    await dock("eleanor");
+    const summary = page.locator(".arx-eleanor-details > summary");
     await summary.waitFor({ state: "visible" });
     for (const open of [false, true]) {
-      const details = page.locator(".arx-ruby-details");
+      const details = page.locator(".arx-eleanor-details");
       if (await details.evaluate(element => element.open) !== open) await summary.click();
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const result = await page.evaluate(() => {
         const canvas = document.querySelector('[data-testid="arx-native-canvas"]');
-        const content = document.querySelector(".arx-ruby-rationale-scroll");
+        const content = document.querySelector(".arx-eleanor-rationale-scroll");
         const left = document.querySelector(".arx-col-left");
         const lastLeft = [...left.querySelectorAll(":scope > .arx-panel:not([hidden])")].at(-1);
         const risk = document.getElementById("workspace-risk"), order = document.getElementById("workspace-order");
-        const ruby = document.getElementById("workspace-ruby");
+        const eleanor = document.getElementById("workspace-eleanor");
         return { canvas: canvas.getBoundingClientRect().height, plot: window.__arxChartQa.layoutGeometry().plot.height,
           rationaleHeight: content.clientHeight, rationaleScrollHeight: content.scrollHeight,
           rationaleWidth: content.clientWidth, rationaleScrollWidth: content.scrollWidth,
           leftGap: left.getBoundingClientRect().bottom - lastLeft.getBoundingClientRect().bottom,
-          riskFollowsRuby: risk.getBoundingClientRect().top >= ruby.getBoundingClientRect().bottom - 1
-            && risk.getBoundingClientRect().top - ruby.getBoundingClientRect().bottom < 20,
+          riskFollowsEleanor: risk.getBoundingClientRect().top >= eleanor.getBoundingClientRect().bottom - 1
+            && risk.getBoundingClientRect().top - eleanor.getBoundingClientRect().bottom < 20,
           orderBodyHeight: order.querySelector(".arx-panel-body").clientHeight };
       });
       rationaleResults.push({ viewport, open, ...result });
       console.log(JSON.stringify({ rationaleCase: { viewport, open, ...result } }));
       assert.ok(result.canvas >= 390 && result.canvas <= viewport.height * .65 + 1 && result.plot >= 360);
-      assert.ok(Math.abs(result.leftGap) < 2 && result.riskFollowsRuby && result.orderBodyHeight > 30);
+      assert.ok(Math.abs(result.leftGap) < 2 && result.riskFollowsEleanor && result.orderBodyHeight > 30);
       if (open) {
         assert.ok(result.rationaleHeight <= 320 && result.rationaleScrollHeight > result.rationaleHeight);
         assert.ok(result.rationaleScrollWidth <= result.rationaleWidth + 1, "rationale text overflows horizontally");
@@ -185,8 +185,8 @@ test("actual desktop desk preserves plot, expanded bodies and risk text across p
   }
   console.log(JSON.stringify({ rationaleCases: rationaleResults.length, passed: true }));
   const slidingResults = [];
-  for (const id of ["discovery","heat","clock","ruby","risk","order","intelligence","positions","chart"]) await dock(id);
-  for (const id of ["discovery","heat","clock","ruby","risk","order","intelligence","positions","chart","chart-details"]) {
+  for (const id of ["discovery","heat","clock","eleanor","risk","order","intelligence","positions","chart"]) await dock(id);
+  for (const id of ["discovery","heat","clock","eleanor","risk","order","intelligence","positions","chart","chart-details"]) {
     const panel = page.locator(`[data-layout-panel="${id}"]`);
     if (await panel.getAttribute("data-panel-state") !== "closed") {
       await page.getByTestId(`layout-panel-collapse-${id}`).click();

@@ -1246,7 +1246,7 @@ export interface LiveDraftInput {
   stopLoss?: number | null;
   takeProfit?: number | null;
   sourcePage?: string;
-  rubyExplanationSummary?: string | null;
+  eleanorExplanationSummary?: string | null;
   payload?: Record<string, unknown>;
   /**
    * Task #30 — optional price the order was drafted against. Persisted on
@@ -2295,7 +2295,7 @@ export async function createLiveDraft(
         const d = new Date(input.signalTimestamp);
         return Number.isFinite(d.getTime()) ? d : null;
       })(),
-      rubyExplanationSummary: input.rubyExplanationSummary ?? null,
+      eleanorExplanationSummary: input.eleanorExplanationSummary ?? null,
       payload: signedPayload,
       payloadHash: integrity.payloadHash,
       integrityHash: integrity.integrityHash,
@@ -3841,7 +3841,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     const risk = await enforcePreTradeRisk({
       userId: args.userId,
       venue: "LIVE",
-      origin: /RUBY|ASSISTANT/i.test(row.sourcePage ?? "") ? "ruby"
+      origin: /ELEANOR|ASSISTANT/i.test(row.sourcePage ?? "") ? "eleanor"
         : /SELF_TRADE|MISSION|AUTOPILOT|AUTOMATION|POSITION_GUARDIAN/i.test(row.sourcePage ?? "") ? "automation" : "manual",
       action: rgAction,
       symbol: row.symbol,

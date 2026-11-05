@@ -21,7 +21,7 @@ For a brand-new user, the app should show:
 - no old chart positions
 - no old scanner selections
 - no fake bridge connection
-- no fake Ruby trade memory
+- no fake Eleanor trade memory
 - no fake notifications
 - no leftover admin/master bridge details
 
@@ -38,7 +38,7 @@ Add polished empty states for:
 - My Watchlist
 - My Scanner
 - My Notifications
-- My Ruby Chat
+- My Eleanor Chat
 - My Account
 - My Risk Profile
 
@@ -47,7 +47,7 @@ Use simple user-facing language like:
 - “Your trade history will appear here.”
 - “Choose a market to start scanning.”
 - “Your watchlist is empty.”
-- “Ruby is ready when you are.”
+- “Eleanor is ready when you are.”
 - “Finish account setup to unlock trading.”
 - “Waiting for admin approval.”
 - “No notifications yet.”
@@ -60,7 +60,7 @@ Make sure each user’s first-load state is private and clean:
 - do not reuse previous user’s selected symbol
 - do not reuse previous user’s chart position
 - do not reuse previous user’s account mode UI
-- do not reuse previous user’s Ruby context
+- do not reuse previous user’s Eleanor context
 - do not reuse previous user’s notifications
 - do not reuse previous user’s risk panel
 - do not show cached data until it is confirmed for the authenticated user
@@ -88,15 +88,15 @@ For Personal MT5 and Shared Master MT5 users:
 - If bridge is disconnected, show connection-needed state.
 - If ready, show only the user’s private account shell data.
 
-7. Ruby clean first-load behavior
-Ruby should not pretend to know trades or account data that does not exist.
+7. Eleanor clean first-load behavior
+Eleanor should not pretend to know trades or account data that does not exist.
 
-For new users, Ruby should say things like:
+For new users, Eleanor should say things like:
 - “I’m ready to help you set up your trading workspace.”
 - “Choose Demo, Personal MT5, or Request Shared Master Access to begin.”
 - “Once you place trades, I’ll help track your risk, performance, and market context.”
 
-Ruby must not:
+Eleanor must not:
 - reference fake trades
 - reference other users
 - reference shared master totals
@@ -109,7 +109,7 @@ Scanner should:
 - open with no forced fake recommendation
 - allow direct symbol search
 - show clean prompt: “Choose a symbol to scan.”
-- only show Ruby market explanation after a symbol is selected
+- only show Eleanor market explanation after a symbol is selected
 - not show fake buy/sell signals as if they are live
 - label unavailable data clearly
 
@@ -130,7 +130,7 @@ Notifications should:
 
 11. Cache and session safety
 Harden cache behavior:
-- key cached scanner/account/Ruby/trade data by authenticated userId
+- key cached scanner/account/Eleanor/trade data by authenticated userId
 - clear sensitive UI cache on logout
 - invalidate cached data after account mode switch
 - invalidate cached data after onboarding reset
@@ -178,7 +178,7 @@ Add or update tests for:
 - shared master user sees waiting/approval/allocation state correctly
 - scanner has no fake recommendation on first load
 - chart has no fake position lines
-- Ruby does not reference fake trades
+- Eleanor does not reference fake trades
 - notifications are empty for new user
 - logout/login switch clears previous user state
 - cached data is keyed by authenticated user

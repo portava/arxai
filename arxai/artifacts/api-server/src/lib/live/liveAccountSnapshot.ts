@@ -2,7 +2,7 @@
 //
 // PURPOSE
 //   One normalized account+positions snapshot consumed by Dashboard, Open
-//   Trades, Ruby, Risk Governor, and the Cockpit — so a single real account
+//   Trades, Eleanor, Risk Governor, and the Cockpit — so a single real account
 //   fact never shows differently across surfaces. This module is a pure
 //   function over already-fetched inputs: the caller does the user/role-scoped
 //   DB read (open arx_live_positions rows + account equity) and supplies any

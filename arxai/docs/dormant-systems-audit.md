@@ -17,7 +17,7 @@ Author: T006 cleanup pass
 |---|---|---|---|---|
 | `artifacts/trading-dashboard/src/lib/api/liveShared.ts` | **active** | `LiveSharedTradeTicket`, `LiveSharedStatusPanel`, `pages/live-shared.tsx`, `ScannerTradeModal` | Keep. Sole frontend wrapper for `/api/trades/live-shared/*`. | high — removing breaks every shared-live UI surface |
 | `artifacts/trading-dashboard/src/components/live/LiveSharedTradeTicket.tsx` | **active** | `/live-shared` Place Trade tab, `ScannerTradeModal` LIVE SHARED button | Keep. | high — sole validate→typed-phrase→execute dialog |
-| `artifacts/trading-dashboard/src/components/live/LiveSharedStatusPanel.tsx` | **active** | `/live-shared` Risk/Reward + Ruby Review tabs | Keep. Designed to be embeddable in the assistant once a tabbed slot is opened up in `ArxAssistantLivePanel`. | low |
+| `artifacts/trading-dashboard/src/components/live/LiveSharedStatusPanel.tsx` | **active** | `/live-shared` Risk/Reward + Eleanor Review tabs | Keep. Designed to be embeddable in the assistant once a tabbed slot is opened up in `ArxAssistantLivePanel`. | low |
 | `artifacts/trading-dashboard/src/pages/live-shared.tsx` | **active** | route `/live-shared`, registered in `App.tsx` | Keep. | high |
 
 ## Phase C wiring — touched
@@ -31,7 +31,7 @@ Author: T006 cleanup pass
 
 | Item | Status | Where it should land | Why deferred |
 |---|---|---|---|
-| Add a "Live Shared Status" section to `ArxAssistantLivePanel.tsx` | **investigate** | inside the Ruby live-mode panel (1313 LOC file, non-Tabs layout) | The Ruby panel does not use the shadcn Tabs primitive; adding a clean mount point requires a non-trivial refactor and risks regressions in an unrelated surface. `LiveSharedStatusPanel` is already designed to be drop-in (`<LiveSharedStatusPanel compact />`) — a single import + render is all that's needed once the layout owner picks a slot. |
+| Add a "Live Shared Status" section to `ArxAssistantLivePanel.tsx` | **investigate** | inside the Eleanor live-mode panel (1313 LOC file, non-Tabs layout) | The Eleanor panel does not use the shadcn Tabs primitive; adding a clean mount point requires a non-trivial refactor and risks regressions in an unrelated surface. `LiveSharedStatusPanel` is already designed to be drop-in (`<LiveSharedStatusPanel compact />`) — a single import + render is all that's needed once the layout owner picks a slot. |
 | `idempotencyKeyRef` in `ScannerTradeModal` | **investigate** | the field is initialised on every modal mount and used by the legacy LIVE flow, not the new LIVE SHARED flow | Keep until a separate pass confirms the legacy flow no longer needs it; LIVE SHARED uses server-side SHA-256 idempotency exclusively |
 
 ---
@@ -93,7 +93,7 @@ These exist because removing them would break a documented invariant.
 - Demo arming, demo dispatch gate, demo bridge debug card.
 - Kill switches (server-side + UI surfaces).
 - Audit log writers (`auditWarn`, etc.).
-- Ruby memory / chat history.
+- Eleanor memory / chat history.
 - All scanner strategy + signal generation code.
 - Per-user isolation guards on every route that reads MT5 / demo / live
   / assistant data.
@@ -121,7 +121,7 @@ This is recorded below so the over-flagging is not repeated in a future pass.
 | `routes/adminBetaControl.ts`, `routes/meBetaStatus.ts` | "dead / legacy QA only" | Drive `pages/admin/beta-control.tsx` + `pages/admin/beta-readiness.tsx` (and `AppLayout`); reconnected in Section 29 prefix fix | **1. Active — keep** (admin surface = also #8 admin-only) |
 | `routes/meMood.ts` | "leftover trader-mood feature" | `me/mood` referenced by a frontend component | **1. Active — keep** |
 | `routes/mePrivacy.ts` | "no privacy UI" | `me/privacy` + `me/global-insights` power the global-insights feature; referenced in frontend | **1. Active — keep** |
-| `routes/meTTS.ts` | "superseded by voice-settings" | `/me/assistant/tts` referenced in **7** frontend files (RubyVoiceProvider, useRubyTTS, useSpeakResponses, ArxAssistantLivePanel, ruby-voice-settings, ControlledLiveTestButton, useUserVoiceSettings) | **1. Active — keep** (Ruby speech output, Part-4 high-priority item #17) |
+| `routes/meTTS.ts` | "superseded by voice-settings" | `/me/assistant/tts` referenced in **7** frontend files (EleanorVoiceProvider, useEleanorTTS, useSpeakResponses, ArxAssistantLivePanel, eleanor-voice-settings, ControlledLiveTestButton, useUserVoiceSettings) | **1. Active — keep** (Eleanor speech output, Part-4 high-priority item #17) |
 | `routes/testerData.ts` | "not mounted" | Mounted at `routes/index.ts` (`router.use(testerDataRouter)`); `tester-data` referenced in frontend | **1. Active — keep** |
 | `scripts/demoDispatch3aQa.ts` | "dead module" | Registered as the `qa:demo-dispatch-3a` npm script in `artifacts/api-server/package.json` | **1. Active — keep** |
 
@@ -152,7 +152,7 @@ This is recorded below so the over-flagging is not repeated in a future pass.
 No new broken dead-ends were found. The 7-route "doubled `/api/` prefix + phantom
 `req.userSession`" dead-end cluster (Scanner deriv status, beta status, market-data
 diagnostics, etc.) was already repaired in Section 29 (now archived in
-`docs/history/replit-history.md`). Scanner trade actions, Ruby speech output, admin
+`docs/history/replit-history.md`). Scanner trade actions, Eleanor speech output, admin
 controls, and kill switch all trace to live, mounted, guarded routes.
 
 ## Net result

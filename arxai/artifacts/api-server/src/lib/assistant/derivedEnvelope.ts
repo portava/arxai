@@ -1,6 +1,6 @@
-// Derived safety envelope for the AI assistant (Ruby).
+// Derived safety envelope for the AI assistant (Eleanor).
 //
-// SAFETY / HONESTY: Ruby must REPORT the user's real, per-user trading state —
+// SAFETY / HONESTY: Eleanor must REPORT the user's real, per-user trading state —
 // never a hardcoded "paper-only / system-locked" stub that drifts from reality.
 // The canonical truth is `getEnvelope(userId)` in adminTrading/safetyEnvelope.ts
 // (fail-closed in every branch). This module is the single place the assistant
@@ -9,7 +9,7 @@
 // This is ADVISORY / REPORTING ONLY. It authorizes nothing. Live execution is
 // still gated by the order-guard chain + the 16-gate Phase B dispatch + the
 // explicit per-trade user-confirmation choreography. Deriving the envelope
-// changes only what Ruby *says*, never what it is *allowed to do*.
+// changes only what Eleanor *says*, never what it is *allowed to do*.
 
 import {
   getEnvelope,
@@ -22,7 +22,7 @@ import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 export type { SafetyEnvelope };
 export { FAIL_CLOSED_ENVELOPE };
 
-// Forced read-only envelope for Ruby's READ-ONLY chart surfaces (draft-read,
+// Forced read-only envelope for Eleanor's READ-ONLY chart surfaces (draft-read,
 // draw-setup, chart-intelligence). These surfaces can NEVER place or manage an
 // order regardless of the user's live permissions, so reporting paper_only /
 // readOnly is HONEST here — and the OpenAPI contract pins safetyMode to
@@ -37,7 +37,7 @@ export const READ_ONLY_PAPER_ENVELOPE = {
 };
 
 // The subset of the full SafetyEnvelope that assistant tool/route results
-// carry. Kept stable so every Ruby surface advertises the same shape. Honest
+// carry. Kept stable so every Eleanor surface advertises the same shape. Honest
 // both ways: when the live path is open these report it; when it is locked they
 // report the real top blocker — never a fabricated paper-only stub.
 export interface AssistantEnvelopeFields {
@@ -130,7 +130,7 @@ export function buildPaperSafetyStatus(
 }
 
 /**
- * One-line, honest "can Ruby place a live order for you right now?" note for the
+ * One-line, honest "can Eleanor place a live order for you right now?" note for the
  * per-user status / CRUD assistant surfaces (MT5 bridge status, pre-trade risk
  * check, capability status). DERIVED per-user and honest BOTH ways — never a
  * hardcoded "system-locked / paper-only" claim:

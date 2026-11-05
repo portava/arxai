@@ -1,6 +1,6 @@
 // Bounded AI chart-tool command contract (Task #374).
 //
-// This is the ONLY vocabulary the AI/Ruby may use to draw on the chart. A
+// This is the ONLY vocabulary the AI/Eleanor may use to draw on the chart. A
 // SetupPreview is translated into a small, fixed list of AiChartCommands, each
 // of which maps mechanically to one or more pure ChartOverlay rows. There is no
 // free-form chart scripting: any object that isn't a recognised, well-formed

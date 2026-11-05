@@ -103,7 +103,7 @@ export type LiveSharedTradeIntent = {
   // (16-gate evaluator gate 16 still runs — owner-unrestricted waives it).
   stopLoss: number | null;
   takeProfit?: number | null;
-  rubyExplanationSummary?: string | null;
+  eleanorExplanationSummary?: string | null;
 };
 
 async function postJson<T>(path: string, body: unknown): Promise<T & { __httpStatus: number }> {
@@ -143,7 +143,7 @@ export function executeLiveSharedTrade(intent: LiveSharedTradeIntent) {
     symbol: intent.symbol, brokerSymbol: intent.brokerSymbol ?? null,
     side: intent.side, volume: intent.volume,
     stopLoss: intent.stopLoss ?? null, takeProfit: intent.takeProfit ?? null,
-    rubyExplanationSummary: intent.rubyExplanationSummary ?? null,
+    eleanorExplanationSummary: intent.eleanorExplanationSummary ?? null,
   });
 }
 

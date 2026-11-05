@@ -38,12 +38,12 @@ SYSTEMS TO AUDIT:
 7. Admin-only access
 8. Bottom navigation
 9. Side menu / More menu organization
-10. AI / Ruby page tabs
+10. AI / Eleanor page tabs
 11. Market Scanner primary navigation
 12. Market Scanner route and UI
 13. Market symbol search
 14. Horizontal symbol category chips
-15. Ruby market explanation panel
+15. Eleanor market explanation panel
 16. Trade buttons and trade ticket
 17. Risk Command Center
 18. Open trades / positions window
@@ -89,7 +89,7 @@ Before changing code:
 9. Inspect database schema/models/migrations.
 10. Inspect MT5 bridge/account read endpoints.
 11. Inspect scanner data provider/backend.
-12. Inspect Ruby/chat backend endpoints.
+12. Inspect Eleanor/chat backend endpoints.
 13. Inspect trade ticket/backend execution guards.
 14. Inspect open trades/account metrics backend.
 15. Inspect admin/user permission enforcement.
@@ -215,11 +215,11 @@ Backend scanner:
 - Search any symbol backend support works or frontend safely handles local symbol list.
 - Deriv feed unavailable state is clean and not a broken error.
 
-Backend Ruby/AI:
-- Ruby market read endpoint works or cleanly falls back to cached analysis.
-- Ruby does not expose internal prompts, function names, stack traces, or raw route names.
-- Ruby selected-symbol context sync works where backend is involved.
-- Existing Ruby memory/chat system is not broken.
+Backend Eleanor/AI:
+- Eleanor market read endpoint works or cleanly falls back to cached analysis.
+- Eleanor does not expose internal prompts, function names, stack traces, or raw route names.
+- Eleanor selected-symbol context sync works where backend is involved.
+- Existing Eleanor memory/chat system is not broken.
 
 Backend trading safety:
 - BUY/SELL buttons open ticket only.
@@ -268,7 +268,7 @@ Do not build:
 - New trading execution features.
 - New broker permissions.
 - New unrelated pages.
-- New AI systems outside current Ruby integration.
+- New AI systems outside current Eleanor integration.
 
 PHASE 6 — VERIFY LOGIN / ACCESS:
 Verify and fix only if broken:
@@ -291,7 +291,7 @@ Verify and fix only if broken:
 - Search any market works.
 - Market categories are horizontal chips.
 - Active category shows compact symbols.
-- Symbols update selected market, chart, Ruby read, and trade ticket.
+- Symbols update selected market, chart, Eleanor read, and trade ticket.
 - No vertical accordion clutter remains where replaced.
 
 PHASE 8 — VERIFY BUY/SELL + STATUS LABELS:
@@ -345,7 +345,7 @@ Test without placing live trades:
 11. AI page tabs work.
 12. Search EURUSD.
 13. Select symbol from horizontal chips.
-14. Ruby market read updates.
+14. Eleanor market read updates.
 15. BUY opens trade ticket.
 16. SELL opens trade ticket.
 17. Risk page opens.
@@ -363,7 +363,7 @@ Categories:
 - Mobile trading usability: 10
 - Navigation/discoverability: 10
 - Market scanner usefulness: 10
-- AI/Ruby workflow usefulness: 10
+- AI/Eleanor workflow usefulness: 10
 - Risk controls/permission safety: 10
 - Backend completeness/intended behavior: 10
 - MT5 bridge/account data readiness: 10

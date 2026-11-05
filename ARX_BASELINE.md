@@ -53,7 +53,7 @@ All paths below are beneath `arxai/`:
 | Shared packages and API contracts | `lib/` |
 | Test/operational scripts | `scripts/` |
 | Authentication | API `src/routes/auth.ts`, `src/lib/auth` |
-| Ruby/assistant | API `src/lib/assistant` |
+| Eleanor/assistant | API `src/lib/assistant` |
 | Broker integrations | API `src/lib/broker`, `brokerHub`, `deriv`, `mt5` |
 | Execution, live safeguards, risk | API `src/lib/execution`, `live`, `risk` |
 | Backtests | API `src/lib/backtest`, `src/routes/backtests.ts`, `backtestRuns.ts` |
@@ -96,7 +96,7 @@ No tests were weakened or edited to produce passing results.
 
 The first `pnpm run ci` stopped because `security_events` did not yet exist. After the official integration runner provisioned the schema, root CI was run again through the isolated check wrapper.
 
-The repeat passed type checking and earlier checks, then stopped at `test:ci-inprocess`, which reported **519 passing and 4 failing assertions across 18 groups**. All four failures are in `rubyDrawSetupRouteTest`:
+The repeat passed type checking and earlier checks, then stopped at `test:ci-inprocess`, which reported **519 passing and 4 failing assertions across 18 groups**. All four failures are in `eleanorDrawSetupRouteTest`:
 
 - The treatment has scanner risk score 77, in the expected downgrade band.
 - Expected `governanceOutcome="downgraded"` is `null`.
@@ -113,7 +113,7 @@ Targeted follow-up checks used dummy loopback AI settings, not real model reques
 
 - `test:registration-key-rolegrant`: passed.
 - `test:scanner-no-feed-honesty`: passed with a dummy provider key while the test's fetch guard blocked external requests.
-- `ci:integration-inprocess`: **342 passing and 4 failing assertions across 11 groups**; the same Ruby draw-setup failures above. Ten groups passed, including the previously blocked broker-candle route checks.
+- `ci:integration-inprocess`: **342 passing and 4 failing assertions across 11 groups**; the same Eleanor draw-setup failures above. Ten groups passed, including the previously blocked broker-candle route checks.
 
 Independent unresolved fixture/setup defects from the full integration run:
 
@@ -176,7 +176,7 @@ Nothing was published. Artifact eligibility is not a readiness claim. Production
 The repository import, provenance audit, dependency installation, build, API wiring, and baseline checks are complete. The baseline is **red/blocked** by:
 
 1. Shared frontend preview forwarding (resolved by the preview-routing update below).
-2. Four Ruby risk-governance assertions.
+2. Four Eleanor risk-governance assertions.
 3. Three database fixture/setup assumptions.
 
 No redesign, restructuring, strategy changes, risk-rule changes, test weakening, or live-trading enablement was undertaken to hide these issues.

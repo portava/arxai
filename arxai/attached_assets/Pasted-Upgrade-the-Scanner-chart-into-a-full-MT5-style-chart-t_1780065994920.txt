@@ -16,9 +16,9 @@ The backend must send only the logged-in user’s authorized trades, pending ord
 
 Core Chart Placement:
 1. Put the live chart at the very top of the Scanner page.
-2. Scanner results, Broad Scan, Focus Scan, filters, and Ruby explanations should remain below or beside the chart depending on screen size.
+2. Scanner results, Broad Scan, Focus Scan, filters, and Eleanor explanations should remain below or beside the chart depending on screen size.
 3. The chart must load immediately when Scanner opens.
-4. Do not wait for Ruby to finish before loading the chart.
+4. Do not wait for Eleanor to finish before loading the chart.
 5. Do not wait for full scanner results before loading the chart.
 6. Use skeleton loading inside the chart panel only.
 
@@ -110,7 +110,7 @@ When the user right-clicks, long-presses, or taps a price level on the chart, sh
 4. Sell Stop at this price
 5. Set SL here for selected trade
 6. Set TP here for selected trade
-7. Alert/Ruby watch level
+7. Alert/Eleanor watch level
 8. Cancel
 
 For mobile:
@@ -126,7 +126,7 @@ For each open position shown on the chart, allow:
 5. Move SL to break-even.
 6. Reverse position.
 7. Add to position.
-8. View Ruby explanation.
+8. View Eleanor explanation.
 9. View risk/reward.
 10. View current P/L.
 11. View entry, current price, SL, TP, and distance in pips.
@@ -199,12 +199,12 @@ Required trade ledger fields:
 10. stopLoss
 11. takeProfit
 12. status
-13. openedBy: user / Ruby / admin
+13. openedBy: user / Eleanor / admin
 14. allocationId
 15. createdAt
 16. updatedAt
 17. closedAt if closed
-18. source: scanner-chart / scanner-result / Ruby / admin
+18. source: scanner-chart / scanner-result / Eleanor / admin
 
 The frontend must never receive trades that do not belong to the logged-in user unless the logged-in user is an admin viewing an admin-only mode.
 
@@ -244,10 +244,10 @@ Upgrade the bridge if necessary to support:
 
 If any operation is not supported by the current bridge, add it cleanly instead of faking it.
 
-Ruby Integration:
-Ruby should become a chart trading assistant, not a blocker.
+Eleanor Integration:
+Eleanor should become a chart trading assistant, not a blocker.
 
-Ruby should be able to explain:
+Eleanor should be able to explain:
 1. why the selected market may be buy/sell biased
 2. what the open trade is doing
 3. current risk
@@ -260,7 +260,7 @@ Ruby should be able to explain:
 10. whether SL/TP placement looks too tight or too wide
 11. what happens if user moves SL/TP to the selected level
 
-Ruby should not:
+Eleanor should not:
 1. expose backend route names
 2. expose function names
 3. expose stack traces
@@ -268,7 +268,7 @@ Ruby should not:
 5. block urgent chart actions
 6. overload the user with raw data
 
-Ruby note should be plain English and compact.
+Eleanor note should be plain English and compact.
 
 Mobile Requirements:
 1. Chart trading must work on mobile.
@@ -331,7 +331,7 @@ Acceptance Criteria:
 25. TradingView/chart library is not treated as the source of truth.
 26. UI updates only after MT5 confirms success.
 27. Failed actions roll back visually.
-28. Ruby explanations remain clean and user-facing.
+28. Eleanor explanations remain clean and user-facing.
 29. No backend/internal function names appear to users.
 30. Scanner results still work.
 31. Broad Scan and Focus Scan still work.
@@ -376,7 +376,7 @@ After implementation, test the following in DEMO first, then LIVE only if the ad
 31. Confirm no Paper Trading terminology appears.
 32. Confirm mobile dragging works.
 33. Confirm fullscreen chart mode works if added.
-34. Confirm Ruby does not block trading.
+34. Confirm Eleanor does not block trading.
 35. Confirm admin logs capture technical failures.
 36. Confirm user-facing errors are clean.
 
@@ -384,4 +384,4 @@ Important:
 Do not only build SL/TP dragging.
 The chart must become a complete MT5-style chart trading interface for ARX AI.
 If an existing feature or endpoint is missing, build it properly.
-If something breaks, do not ignore it. Find a clean fix, retest, and preserve the existing Scanner, Ruby, DEMO/LIVE, user-permission, and MT5 bridge systems.
+If something breaks, do not ignore it. Find a clean fix, retest, and preserve the existing Scanner, Eleanor, DEMO/LIVE, user-permission, and MT5 bridge systems.

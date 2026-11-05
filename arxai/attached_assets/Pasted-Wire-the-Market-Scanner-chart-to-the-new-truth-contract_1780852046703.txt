@@ -56,5 +56,5 @@ In LIVE account mode, use only feed language (live / stale / analysis-only / las
 
 Do not expose provider/source/internal field names to users; badges use reason only.
 
-Step 5 — verify in the running app: select EURUSD (composite/feed-unavailable) and confirm header and chart agree and no live-looking 1.15 candles render; select a live synthetic (V75) and confirm LIVE still renders normally; confirm symbol switching, Ruby panel, and trade buttons still work; run pnpm run typecheck and ci:guards.
+Step 5 — verify in the running app: select EURUSD (composite/feed-unavailable) and confirm header and chart agree and no live-looking 1.15 candles render; select a live synthetic (V75) and confirm LIVE still renders normally; confirm symbol switching, Eleanor panel, and trade buttons still work; run pnpm run typecheck and ci:guards.
 

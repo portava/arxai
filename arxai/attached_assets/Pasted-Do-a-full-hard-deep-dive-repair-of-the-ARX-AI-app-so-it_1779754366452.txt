@@ -3,7 +3,7 @@ Do a full hard deep-dive repair of the ARX AI app so it is launch-ready.
 You have permission to do a hard fix, but only fix what is actually broken. Do not rebuild the app from scratch. Do not create duplicate systems. Do not remove working features. Do not hide real safety blockers. Do not fake live readiness, fake balances, fake API feeds, fake historical data, or fake broker execution.
 
 Primary goal:
-The app must feel ready to launch and operate cleanly in live mode, with accurate UI, working APIs, clean scanner data, Ruby functioning properly, MT5/Deriv/provider routing working, and no false error spam.
+The app must feel ready to launch and operate cleanly in live mode, with accurate UI, working APIs, clean scanner data, Eleanor functioning properly, MT5/Deriv/provider routing working, and no false error spam.
 
 Important repair rule:
 If fixing something breaks another part of the app, do not stop and send the broken result back. Figure out a safer repair path, rollback that specific change if needed, and fix it another way. Only report issues that genuinely require outside credentials, platform access, or human action.
@@ -21,7 +21,7 @@ Use the best available method:
    - Otherwise create a timestamped backup copy of the changed files before modifying them.
 
 After each meaningful fix, save another checkpoint/commit with a clear message, such as:
-- fix: ruby response speed and stale tts
+- fix: eleanor response speed and stale tts
 - fix: provider health and scanner history
 - fix: live ui status resolver
 - fix: mt5 balance sync
@@ -105,7 +105,7 @@ Audit and repair the entire ARX AI app, especially:
 - Create or repair one unified router used by:
   - scanner
   - charts
-  - Ruby
+  - Eleanor
   - trade ticket
   - watchlist
   - market search
@@ -116,14 +116,14 @@ Audit and repair the entire ARX AI app, especially:
 - Admin diagnostics should show selected provider/fallback chain.
 - Normal users should see only clean statuses.
 
-9. Ruby assistant
-- Ruby already exists. Do not rebuild Ruby.
+9. Eleanor assistant
+- Eleanor already exists. Do not rebuild Eleanor.
 - Fix slow response time.
 - Fix delayed voice playback.
 - Fix stale audio playing minutes later.
 - Fix selected voice not matching spoken voice.
-- Fix Ruby pasting entire research dumps.
-- Ruby should respond quickly, type naturally, and summarize research.
+- Fix Eleanor pasting entire research dumps.
+- Eleanor should respond quickly, type naturally, and summarize research.
 - TTS must not block text response.
 - TTS should read only the concise final answer, not raw research.
 - Cancel stale audio if the user sends a new message.
@@ -189,9 +189,9 @@ Run full QA across:
 - scanner historical data
 - market search
 - charts
-- Ruby text response
-- Ruby voice/TTS
-- selected Ruby voice
+- Eleanor text response
+- Eleanor voice/TTS
+- selected Eleanor voice
 - trade ticket
 - command queue
 - admin user approval
@@ -207,8 +207,8 @@ Acceptance criteria:
 7. Scanner historical data loads or shows a real clean reason.
 8. API Health shows which providers work/fail without exposing secrets.
 9. Deriv/Volatility symbols are not wrongly routed to TwelveData.
-10. Ruby responds faster, types naturally, and does not dump research.
-11. Ruby voice does not play minutes late.
+10. Eleanor responds faster, types naturally, and does not dump research.
+11. Eleanor voice does not play minutes late.
 12. No duplicate systems were created.
 13. No safety gates were bypassed.
 14. Every major fix has a rollback checkpoint/commit.

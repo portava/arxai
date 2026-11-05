@@ -66,7 +66,7 @@ export interface CourtResolution {
   /** The winning camp's decision label. */
   winningDecision: CourtDecision;
   winningAgentKeys: string[];
-  /** Neutral machine reasoning; Ruby translates to plain English. */
+  /** Neutral machine reasoning; Eleanor translates to plain English. */
   reasoning: string;
   riskVetoApplied: boolean;
   resolvedByAuthorityNotAverage: true;

@@ -12,7 +12,7 @@
 //   - In-memory only. A forming bar is NEVER written to broker_candles /
 //     market_candles or any durable store — it carries isForming=true and is
 //     a synthesized tip, not provider truth.
-//   - It NEVER feeds analysis / Ruby / chart-intelligence / scoring: the chart
+//   - It NEVER feeds analysis / Eleanor / chart-intelligence / scoring: the chart
 //     data service appends it OPT-IN for the display route only; every analysis
 //     caller keeps consuming closed bars.
 //   - No execution-path involvement: this touches no arx_live_* table, no

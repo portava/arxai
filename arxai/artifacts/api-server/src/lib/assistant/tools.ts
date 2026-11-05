@@ -58,7 +58,7 @@ import { mapLegacyBridgeMode, applyHeartbeatStaleness } from "@workspace/domain/
 import { computeAccountShell } from "../../routes/meAccountShell.js";
 import { aggregateReconciliationIssues } from "../reconciliation/detect.js";
 import { resolveAssistantMarket } from "../markets/assistantMarketResolver.js";
-import { buildRubyStructuralRead } from "./rubyStructuralReadService.js";
+import { buildEleanorStructuralRead } from "./eleanorStructuralReadService.js";
 import {
   deriveAssistantEnvelope,
   assistantEnvelopeFields,
@@ -78,8 +78,8 @@ import {
 // A market read is only "confirmed" when the data quality is good AND the most
 // recent bar/quote is a live (REALTIME) tick. Anything else — partial /
 // insufficient candles, or a DELAYED/STALE/UNAVAILABLE last value — is an
-// unconfirmed feed, so Ruby must caveat the read. Advisory only: this never
-// gates execution (Ruby is read-only) and never fabricates data.
+// unconfirmed feed, so Eleanor must caveat the read. Advisory only: this never
+// gates execution (Eleanor is read-only) and never fabricates data.
 const FEED_NOT_CONFIRMED_CAVEAT =
   "Feed not confirmed at read-time — limited visibility. Tell the user this read is low-confidence and to verify the live feed before trading.";
 
@@ -265,15 +265,15 @@ export async function getRoutingContext(userId: number) {
 // ── 1c. getTeamReportSummary ────────────────────────────────────────────
 // User-facing, read-only: returns the latest day's plain-English summary of
 // how the decision-support "trading team" performed. Reuses ONLY the persisted
-// `rubySummary` (built by buildRubySummary), which carries no internal agent
+// `eleanorSummary` (built by buildEleanorSummary), which carries no internal agent
 // codes, table/route names, or operator/admin numbers. Never returns the
 // structured report body, headline, or registry totals. Honest empty state when
 // no report has been generated yet — never fabricates a summary. Not user-scoped
 // because the report is a system-wide picture of the advisory desk, but it
 // exposes nothing operator-only and nothing about any other user.
 export async function getTeamReportSummary() {
-  const { getLatestRubyTeamSummary } = await import("../agentEcosystem/householdReport.js");
-  const latest = await getLatestRubyTeamSummary();
+  const { getLatestEleanorTeamSummary } = await import("../agentEcosystem/householdReport.js");
+  const latest = await getLatestEleanorTeamSummary();
   if (!latest) {
     return {
       isEmpty: true,
@@ -285,7 +285,7 @@ export async function getTeamReportSummary() {
   return {
     isEmpty: false,
     reportDate: latest.reportDate,
-    summary: latest.rubySummary,
+    summary: latest.eleanorSummary,
   };
 }
 
@@ -328,7 +328,7 @@ export async function getMT5Heartbeat(userId: number) {
     return {
       connectionId: r.id, status: r.status, lastHeartbeat: r.lastHeartbeat,
       ageSeconds: ageSec,
-      // Shared heartbeat policy → Ruby's vocabulary: fresh → healthy,
+      // Shared heartbeat policy → Eleanor's vocabulary: fresh → healthy,
       // degraded → stale, offline → unhealthy, missing / invalid → unknown.
       health: HEARTBEAT_HEALTH_WORD[classifyHeartbeatAgeSeconds(ageSec)],
     };
@@ -341,7 +341,7 @@ export async function getMT5Heartbeat(userId: number) {
 // the Performance Calendar shows this user (lib/performanceCC/closedTradeLedger):
 // live_trades for a LIVE trading mode, paper_trades otherwise, and nothing for
 // a LIVE_SHARED user (withheld — never stale paper rows in a live view). Every
-// result carries `source` + `sourceNote` + `currentAccountMode` so Ruby labels
+// result carries `source` + `sourceNote` + `currentAccountMode` so Eleanor labels
 // the numbers with the book they came from.
 function ledgerLabel(b: LedgerBasis) {
   return { source: b.source, sourceNote: b.sourceNote, currentAccountMode: b.currentAccountMode };
@@ -990,7 +990,7 @@ export async function runPreTradeRiskCheck(userId: number, args: {
     }
     const { enforcePreTradeRisk } = await import("../riskGovernor/enforce.js");
     const risk = await enforcePreTradeRisk({
-      userId, venue, origin: "ruby", action: "OPEN", symbol, side, lots,
+      userId, venue, origin: "eleanor", action: "OPEN", symbol, side, lots,
       entryPrice: null,
       stopLoss: args.stopLoss ?? null, takeProfit: args.takeProfit ?? null,
     }, { preview: true, connectionId, virtualAccountId });
@@ -1030,7 +1030,7 @@ export async function runPreTradeRiskCheck(userId: number, args: {
 
 // ── 11–13. Market tools (provider adapter, "not connected" by default) ──
 export async function getMarketSnapshot(symbol: string) {
-  // Task #558 — ARX Focus lock: Ruby may only snapshot approved markets. An
+  // Task #558 — ARX Focus lock: Eleanor may only snapshot approved markets. An
   // unapproved symbol returns an honest blocked result with NO market data —
   // never a fabricated or fetched price for an outside-universe market.
   if (!isApprovedArxMarket((symbol ?? "").toString())) {
@@ -1039,7 +1039,7 @@ export async function getMarketSnapshot(symbol: string) {
       isApprovedMarket: false as const,
       blocked: true as const,
       reason: ARX_FOCUS_BLOCKED_REASON,
-      // Honest feed status so Ruby never reports an undefined/blank feed for an
+      // Honest feed status so Eleanor never reports an undefined/blank feed for an
       // off-universe market — there is no usable ARX feed for it. No data is
       // fetched and no price is fabricated; the block above still stands. Uses
       // the shared helper so every block/error branch emits the SAME shape.
@@ -1051,7 +1051,7 @@ export async function getMarketSnapshot(symbol: string) {
       quote: null,
     };
   }
-  // Source of truth = the SAME shared chart resolver the chart uses, so Ruby's
+  // Source of truth = the SAME shared chart resolver the chart uses, so Eleanor's
   // per-symbol snapshot reports identical source/quality/freshness to the chart.
   // A provider quote is OPTIONAL enrichment (bid/ask/spread) layered on top —
   // it never overrides the shared feed status and is never fabricated.
@@ -1769,7 +1769,7 @@ export async function getMarketScannerOpportunities(args: { limit?: number } = {
       const opportunityLabel = deriveOpportunityLabel(score);
       // Sufficiency-gated setup (withhold-only). Assemble entry/stop/TP/R:R ONLY
       // when this row's SHARED sufficiency verdict permits it — the SAME verdict
-      // the Ruby Chart Read panel uses. A missing/insufficient verdict withholds
+      // the Eleanor Chart Read panel uses. A missing/insufficient verdict withholds
       // EVERY level (including alternate fields) and carries the chart panel's
       // exact reason, so chat can never hand a user a setup the chart refuses.
       // Display-only; never an execution gate.
@@ -1805,7 +1805,7 @@ export async function getMarketScannerOpportunities(args: { limit?: number } = {
         bestTargetLabel: setup.bestTargetLabel,
         targetsUnavailableReason: setup.targetsUnavailableReason,
         // Withhold-only sufficiency state (additive). withheldReason mirrors the
-        // Ruby Chart Read panel's reason for the same symbol/timeframe.
+        // Eleanor Chart Read panel's reason for the same symbol/timeframe.
         setupWithheld: setup.setupWithheld,
         withheldReason: setup.withheldReason,
         withheldReasonCode: setup.withheldReasonCode,
@@ -1938,7 +1938,7 @@ export type ToolName = typeof TOOL_DEFINITIONS[number]["name"];
 // non-broker-confirmed or not-yet-verifiable row is moved into the separate
 // `unsyncedOrIncomplete` bucket WITHOUT a side or any advice field, carrying its
 // category, badge, missingFields, and a human cannotVerifyReason. This is the
-// chokepoint that stops Ruby/Eleanor from ever calling an unverified row a
+// chokepoint that stops Eleanor/Eleanor from ever calling an unverified row a
 // buy/sell or giving hold/close advice on data the broker never confirmed.
 export async function getMyLiveOpenTrades(userId: number) {
   const { getEnvelope } = await import("../adminTrading/safetyEnvelope.js");
@@ -2373,10 +2373,10 @@ async function getReconciliationCenterSummaryTool(userId: number): Promise<unkno
     return { ok: false, error: "ADMIN_REQUIRED",};
   }
   const agg = await aggregateReconciliationIssues();
-  // Write per-call audit for Ruby admin explanations.
+  // Write per-call audit for Eleanor admin explanations.
   try {
     await db.insert(adminActionAuditLogTable).values({
-      adminId: userId, adminRole: role, action: "RECONCILIATION_RUBY_ADMIN_EXPLAINED",
+      adminId: userId, adminRole: role, action: "RECONCILIATION_ELEANOR_ADMIN_EXPLAINED",
       targetUserId: null, beforeState: {}, afterState: { total: agg.total }, reason: null, ipAddress: null,
     });
   } catch { /* non-fatal for read-only summary */ }
@@ -2403,7 +2403,7 @@ async function explainMyReconciliationIssueTool(issueType: string | null): Promi
   const explanation = generic[t] ?? "If a trade looks out of sync, reconciliation is the process where ARX double-checks with the broker. Support will handle it.";
   try {
     await db.insert(adminActionAuditLogTable).values({
-      adminId: null, adminRole: "USER", action: "RECONCILIATION_RUBY_USER_EXPLAINED",
+      adminId: null, adminRole: "USER", action: "RECONCILIATION_ELEANOR_USER_EXPLAINED",
       targetUserId: null, beforeState: {}, afterState: { issueType: t || null }, reason: null, ipAddress: null,
     });
   } catch { /* non-fatal */ }
@@ -2412,7 +2412,7 @@ async function explainMyReconciliationIssueTool(issueType: string | null): Promi
 
 export async function dispatchTool(name: string, args: Record<string, unknown>, userId: number, reqKey?: object, envelope?: SafetyEnvelope): Promise<unknown> {
   // Derive the per-user safety envelope ONCE at the boundary. Honest both ways:
-  // when the live path is open Ruby reports it; when locked it reports the real
+  // when the live path is open Eleanor reports it; when locked it reports the real
   // top blocker. Advisory/reporting only — authorizes nothing.
   const env = envelope ?? await deriveAssistantEnvelope(userId);
   const result = await dispatchToolInner(name, args, userId, env, reqKey);
@@ -2574,14 +2574,11 @@ async function dispatchToolInner(name: string, args: Record<string, unknown>, us
       // Derived at the boundary; reuse it (no second getEnvelope round-trip).
       return { envelope: env };
     }
-    // "getMyRubyWatches" is the tool's old name; a conversation started before
-    // the rename can still replay it.
-    case "getMyWatches":
-    case "getMyRubyWatches": {
-      const { listRubyWatches } = await import("./rubyWatchEvaluator.js");
-      const { getRubySweeperStatus } = await import("./rubyWatchSweeper.js");
-      const watches = await listRubyWatches(userId, { includeFinished: args.includeFinished === true, limit: 25 });
-      const sweeper = getRubySweeperStatus();
+    case "getMyWatches": {
+      const { listEleanorWatches } = await import("./eleanorWatchEvaluator.js");
+      const { getEleanorSweeperStatus } = await import("./eleanorWatchSweeper.js");
+      const watches = await listEleanorWatches(userId, { includeFinished: args.includeFinished === true, limit: 25 });
+      const sweeper = getEleanorSweeperStatus();
       return {
         watches, count: watches.length,
         sweeper: { enabled: sweeper.enabled, running: sweeper.running, intervalMs: sweeper.intervalMs, lastCycleAt: sweeper.lastCycleAt },
@@ -2893,7 +2890,7 @@ export async function getSymbolMarketContextTool(symbol: string) {
   try {
     const { buildMarketContext } = await import("../marketContext/contextBuilder.js");
     const { classify } = await import("../marketContext/classifier.js");
-    // includeSharedFeed: this is one of Ruby's broad surfaces, so it must report
+    // includeSharedFeed: this is one of Eleanor's broad surfaces, so it must report
     // the SAME source/quality/freshness the chart shows for this symbol. The
     // overlay sets ctx.source/ctx.freshness from the shared resolver and adds
     // ctx.sharedFeed. Multi-timeframe candle analysis below stays provider-based.
@@ -2938,8 +2935,8 @@ export async function getSymbolMarketContextTool(symbol: string) {
 
 // ── readChartStructure (Task #602 follow-on) ────────────────────────────────
 // THE chat entry point for "read / analyze / what do you see on <symbol>".
-// Calls the SAME shared structural-read service the Scanner "Ruby Chart Read"
-// panel uses (buildRubyStructuralRead), so chat and the panel never disagree.
+// Calls the SAME shared structural-read service the Scanner "Eleanor Chart Read"
+// panel uses (buildEleanorStructuralRead), so chat and the panel never disagree.
 // Honest on resolution: an off-universe / ambiguous / empty symbol returns a
 // plain message and NO read — never a fabricated one. readLayer is DISPLAY-ONLY
 // and authorizes nothing (no execution / gate involvement).
@@ -2979,7 +2976,7 @@ export async function readChartStructureTool(
   const tf = (typeof timeframe === "string" && timeframe.trim())
     ? timeframe.trim()
     : (chartCtx?.chartTimeframe?.trim() || "H1");
-  const outcome = await buildRubyStructuralRead({
+  const outcome = await buildEleanorStructuralRead({
     symbol: resolution.downstreamSymbol,
     timeframe: tf,
     draft: null,

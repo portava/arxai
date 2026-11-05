@@ -1,10 +1,10 @@
 // ── data/marketOverview.ts ──────────────────────────────────────────────────
-// Shared broad-market composer for Ruby (the assistant).
+// Shared broad-market composer for Eleanor (the assistant).
 //
 // PURPOSE
-//   Ruby's broad market-intelligence surfaces (opportunities, per-symbol
+//   Eleanor's broad market-intelligence surfaces (opportunities, per-symbol
 //   snapshot, symbol-context, briefing) must read from the SAME truth layer the
-//   chart uses, so what Ruby says about a market matches exactly what the chart
+//   chart uses, so what Eleanor says about a market matches exactly what the chart
 //   shows for that symbol at the same moment.
 //
 //   - Per-symbol picture  →  getChartCandles() (chartDataService) → the unified
@@ -189,7 +189,7 @@ export interface CoreOpportunityScanResult {
  * CRITICAL never-simulator invariant: ONLY rows whose dataStatus is "live" are
  * kept. scanSymbolTimeframe falls back to the simulator for non-synthetic
  * symbols with no live feed; those rows (and awaiting-feed / history-only rows)
- * are dropped here so a fabricated/simulator setup can never reach Ruby.
+ * are dropped here so a fabricated/simulator setup can never reach Eleanor.
  */
 export async function scanCoreOpportunities(
   symbols: readonly string[],

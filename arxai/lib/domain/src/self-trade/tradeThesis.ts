@@ -2,7 +2,7 @@
 // when there is a real directional edge, a protective stop, and sufficient data;
 // otherwise it returns null and the pipeline downgrades the decision honestly.
 
-import type { RubyMarketEdgeSignal } from "../signal-intelligence/signalIntelligence.types.js";
+import type { EleanorMarketEdgeSignal } from "../signal-intelligence/signalIntelligence.types.js";
 import type {
   SetupKind,
   TradeSide,
@@ -12,7 +12,7 @@ import type {
 const MIN_THESIS_EDGE = 30;
 
 export function buildTradeThesis(args: {
-  signal: RubyMarketEdgeSignal;
+  signal: EleanorMarketEdgeSignal;
   setup: SetupKind;
   side: TradeSide | null;
   decayedConfidence: number;
@@ -47,7 +47,7 @@ export function buildTradeThesis(args: {
   };
 }
 
-function deriveNewsRisk(signal: RubyMarketEdgeSignal): TradeThesis["newsRisk"] {
+function deriveNewsRisk(signal: EleanorMarketEdgeSignal): TradeThesis["newsRisk"] {
   // newsSafety 0–100 inverted to a coarse risk band (honest, derived).
   const ns = signal.scores.newsSafety;
   if (ns <= 10) return "critical";

@@ -18,7 +18,7 @@ Paper Trading should not exist as:
 * auth mode
 * permission mode
 * scanner mode
-* Ruby mode
+* Eleanor mode
 * allocation mode
 * dashboard mode
 * active database mode
@@ -78,7 +78,7 @@ Hard constraints:
 8. Do not route Paper to Live.
 9. Do not silently make old Paper users live-enabled.
 10. Do not leave Paper as a hidden backend fallback.
-11. Do not let fake/simulated Paper data feed Ruby, scanner, AI learning, calendar, journal, or performance reports.
+11. Do not let fake/simulated Paper data feed Eleanor, scanner, AI learning, calendar, journal, or performance reports.
 12. Do not place real live trades during this cleanup unless I explicitly approve a specific live test.
 13. If a change risks launch readiness, stop that part and find a safer workaround.
 14. If something cannot be safely deleted now, disconnect it from active runtime and mark it as legacy for later removal.
@@ -89,7 +89,7 @@ Priority order:
 2. Preserve Demo trading functionality.
 3. Preserve live-execution safety gates.
 4. Remove Paper Trading from active/user-facing/product flows.
-5. Remove fake/simulated Paper data from active Ruby/scanner/AI/journal/performance usage.
+5. Remove fake/simulated Paper data from active Eleanor/scanner/AI/journal/performance usage.
 6. Reduce load and speed up the app.
 7. Delete or rename legacy internals only when proven safe.
 
@@ -179,7 +179,7 @@ Search terms:
 Categorize every finding into one of these groups:
 
 1. User-facing UI/copy
-2. Ruby user-facing response/context
+2. Eleanor user-facing response/context
 3. Scanner user-facing/result logic
 4. Auth/session/JWT/middleware
 5. Route guards/feature gates
@@ -233,9 +233,9 @@ Measure:
 * account mode resolution time
 * scanner initial results time
 * scanner market switch time
-* Ruby thinking indicator appearance time
-* Ruby first-response start time
-* Ruby full response time
+* Eleanor thinking indicator appearance time
+* Eleanor first-response start time
+* Eleanor full response time
 * trade ticket open time
 * open trade button feedback time
 * close trade button feedback time
@@ -274,7 +274,7 @@ Check and clean:
 * admin allocation pages
 * admin approval panels
 * scanner
-* Ruby panel
+* Eleanor panel
 * trade ticket
 * market detail page
 * chart panels
@@ -324,7 +324,7 @@ Acceptance for this phase:
 * No user-facing Paper wording remains.
 * No admin-facing active Paper controls remain.
 * No Paper option appears in account mode controls.
-* No Paper mode appears in scanner, Ruby, trade ticket, journal, or performance views.
+* No Paper mode appears in scanner, Eleanor, trade ticket, journal, or performance views.
 * Demo and Live still render properly.
 
 PHASE 4 — Remove Paper from auth/session/permissions
@@ -474,7 +474,7 @@ Remove Paper from:
 * risk engine
 * kill switches
 * scanner-to-trade flow
-* Ruby-to-trade flow
+* Eleanor-to-trade flow
 * trade status lifecycle
 * command queue routing
 
@@ -517,14 +517,14 @@ Acceptance for this phase:
 * Live safety gates still work
 * No live order is placed during cleanup tests unless explicitly approved
 
-PHASE 7 — Ruby cleanup
+PHASE 7 — Eleanor cleanup
 
-Ruby should only understand Demo and Live.
+Eleanor should only understand Demo and Live.
 
 Remove Paper from:
 
-* Ruby system prompts
-* Ruby tool/context builders
+* Eleanor system prompts
+* Eleanor tool/context builders
 * market explanation context
 * trade recommendation context
 * risk summary context
@@ -535,7 +535,7 @@ Remove Paper from:
 * memory/history loaders
 * any “paper” explanation copy
 
-Ruby should not:
+Eleanor should not:
 
 * tell users they are in Paper Mode
 * expose Paper backend terms
@@ -543,7 +543,7 @@ Ruby should not:
 * use fake/simulated Paper trades in recommendations
 * say paper, paper trading, paper account, or paper-only unless discussing legacy cleanup in admin-only logs
 
-Ruby should:
+Eleanor should:
 
 * treat Demo as safe testing/practice connected to broker/demo data
 * treat Live as real-money execution subject to approval/risk controls
@@ -554,10 +554,10 @@ Ruby should:
 
 Acceptance:
 
-* Ruby never presents Paper as a mode
-* Ruby does not use simulated Paper history in active decisions
-* Ruby still works in Demo and Live
-* Ruby response speed is not worse
+* Eleanor never presents Paper as a mode
+* Eleanor does not use simulated Paper history in active decisions
+* Eleanor still works in Demo and Live
+* Eleanor response speed is not worse
 
 PHASE 8 — Scanner cleanup
 
@@ -616,8 +616,8 @@ Find Paper-related rows/tables in:
 * trade_history
 * paper_trades
 * scanner_results
-* ruby_messages
-* ruby_context
+* eleanor_messages
+* eleanor_context
 * AI learning tables
 * performance tables
 * calendar/journal tables
@@ -646,7 +646,7 @@ Rules:
 * Preserve real live data.
 * Preserve real broker demo data.
 * Do not mix fake Paper history into Demo or Live history.
-* Do not let fake Paper history feed Ruby, scanner, AI learning, calendar, journal, or performance reports.
+* Do not let fake Paper history feed Eleanor, scanner, AI learning, calendar, journal, or performance reports.
 * Archive or export fake Paper data before deleting or disconnecting.
 * Delete only confirmed test junk after dry-run confirmation.
 * If unsure, archive and disconnect from active runtime instead of deleting.
@@ -656,7 +656,7 @@ If paper_trades contains fake simulated trades:
 * stop active app usage of paper_trades
 * archive/export to legacy_simulated_trade_archive or a JSON/CSV report
 * remove it from active history queries
-* remove it from Ruby/AI/scanner/performance/calendar/journal queries
+* remove it from Eleanor/AI/scanner/performance/calendar/journal queries
 
 If paper_trades contains real broker demo/live data:
 
@@ -694,7 +694,7 @@ After action, output:
 
 Acceptance:
 
-* Paper data is no longer active input to Ruby/scanner/AI/journal/calendar/performance
+* Paper data is no longer active input to Eleanor/scanner/AI/journal/calendar/performance
 * real live data preserved
 * real demo data preserved
 * fake/simulated data archived or disconnected
@@ -776,7 +776,7 @@ If a legacy endpoint must temporarily remain for migration/admin archive:
 * clearly marked legacy
 * not used by active app
 * not loaded by normal users
-* not feeding Ruby/scanner/AI/performance
+* not feeding Eleanor/scanner/AI/performance
 
 Acceptance:
 
@@ -827,7 +827,7 @@ If a file cannot be safely deleted:
 
 * remove it from active runtime
 * stop loading it in production
-* stop using it for Ruby/scanner/AI/journal/performance
+* stop using it for Eleanor/scanner/AI/journal/performance
 * mark it as legacy/internal
 * create a follow-up removal task
 * do not let it slow down the app
@@ -868,7 +868,7 @@ Optimize:
 
 * trade history queries
 * scanner queries
-* Ruby context queries
+* Eleanor context queries
 * account mode resolver
 * dashboard load
 * admin allocation load
@@ -882,12 +882,12 @@ After cleanup, re-measure:
 * app initial load time
 * dashboard load time
 * scanner response time
-* Ruby response start time
+* Eleanor response start time
 * trade ticket open time
 * open/close trade UI feedback time
 * admin allocation page load time
 * account mode resolution time
-* database queries touching trade history/performance/Ruby/scanner
+* database queries touching trade history/performance/Eleanor/scanner
 
 Final performance report must show:
 
@@ -913,7 +913,7 @@ Required tests:
 
 1. UI never renders Paper Mode.
 2. Admin UI never renders active Paper controls.
-3. Ruby never presents Paper as a user mode.
+3. Eleanor never presents Paper as a user mode.
 4. Scanner never presents Paper as a mode/filter/result path.
 5. Trade ticket never presents Paper.
 6. Auth/session never includes Paper as production mode.
@@ -925,7 +925,7 @@ Required tests:
 12. Old PAPER users migrate to DEMO.
 13. Old Paper sessions/tokens are invalidated.
 14. Fake Paper trades are archived/excluded from active trade history.
-15. Fake Paper history does not feed Ruby.
+15. Fake Paper history does not feed Eleanor.
 16. Fake Paper history does not feed scanner.
 17. Fake Paper history does not feed AI learning.
 18. Fake Paper history does not feed performance reports.
@@ -938,8 +938,8 @@ Required tests:
 25. Account freeze/unfreeze still works.
 26. Scanner works in Demo.
 27. Scanner works in Live.
-28. Ruby works in Demo.
-29. Ruby works in Live.
+28. Eleanor works in Demo.
+29. Eleanor works in Live.
 30. No Paper production route remains reachable.
 31. No Paper fallback exists.
 32. No live audit history is deleted.
@@ -960,7 +960,7 @@ Run full verification:
 * test:account-mode
 * test:master-bridge
 * scanner tests
-* Ruby tests
+* Eleanor tests
 * admin allocation tests
 * auth/session tests
 * migration tests
@@ -987,10 +987,10 @@ The task is complete only when all are true:
 6. No Paper execution path remains.
 7. No Paper account mode remains.
 8. No Paper scanner mode remains.
-9. No Paper Ruby mode remains.
+9. No Paper Eleanor mode remains.
 10. No Paper allocation mode remains.
 11. No Paper active trade-history mode remains.
-12. No fake/simulated Paper data feeds Ruby.
+12. No fake/simulated Paper data feeds Eleanor.
 13. No fake/simulated Paper data feeds scanner.
 14. No fake/simulated Paper data feeds AI learning.
 15. No fake/simulated Paper data feeds calendar/journal.
@@ -1003,7 +1003,7 @@ The task is complete only when all are true:
 22. Admin allocation still works.
 23. Account freeze/unfreeze still works.
 24. Scanner still works.
-25. Ruby still works.
+25. Eleanor still works.
 26. No live audit history was deleted.
 27. No real demo broker history was deleted.
 28. Fake/simulated Paper history was archived, exported, deleted as confirmed junk, or disconnected from active use.

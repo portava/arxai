@@ -12,7 +12,7 @@ This applies system-wide:
 1. Scanner
 2. Trade page
 3. Chart trading
-4. Ruby actions
+4. Eleanor actions
 5. Admin trade tools
 6. One-click / Single Confirm
 7. Live shared master bridge
@@ -41,7 +41,7 @@ Move these behind Governance and default OFF for owner/admin:
 10. market-hours app check
 11. allocation enforcement
 12. scanner signal requirement
-13. Ruby explanation requirement
+13. Eleanor explanation requirement
 14. backtest requirement
 15. news requirement
 16. risk/reward requirement
@@ -64,7 +64,7 @@ Owner/admin default state:
 8. Reverse allowed
 9. Partial close allowed
 10. Break-even allowed
-11. Ruby does not block trades
+11. Eleanor does not block trades
 12. Scanner signal does not block trades
 13. Backtest/news/history do not block trades
 14. No app-added max lot unless I set it
@@ -154,7 +154,7 @@ Tests required:
 9. backend block category tests
 10. Scanner trade modal tests
 11. chart trading tests
-12. Ruby non-blocking test
+12. Eleanor non-blocking test
 13. Trade page display test
 14. route containment tests
 15. live-readiness tests
@@ -171,7 +171,7 @@ Final report must include:
 8. Single Confirm ON confirmation
 9. max lot controlled by Governance confirmation
 10. symbol control moved to Governance/broker truth confirmation
-11. Ruby/scanner/backtest/news not blocking confirmation
+11. Eleanor/scanner/backtest/news not blocking confirmation
 12. live proof result
 13. if trade executed: MT5 ticket/order/position/deal ID, open price, close price, P/L
 14. if trade blocked: exact BROKER/TECHNICAL reason

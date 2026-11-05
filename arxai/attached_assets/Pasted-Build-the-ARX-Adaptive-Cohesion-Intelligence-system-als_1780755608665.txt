@@ -2,7 +2,7 @@ Build the ARX Adaptive Cohesion Intelligence system, also called AACI 2.0.
 
 AACI 2.0 is the master adaptive cohesion algorithm for ARX AI. Its job is to make sure the entire ARX ecosystem works as one connected intelligent trading system.
 
-AACI must constantly check whether Ruby, Scanner, Smart Chart, Market Timing Brain, Economic Calendar, Critical News Alerts, Self-Trade AI, Risk Governor, MT5 Shared Bridge, Open Trades, My Alerts, Account Analytics, Wins & Losses, Agent Ledger, Audit Log, user permissions, and admin controls are all working from the same truth.
+AACI must constantly check whether Eleanor, Scanner, Smart Chart, Market Timing Brain, Economic Calendar, Critical News Alerts, Self-Trade AI, Risk Governor, MT5 Shared Bridge, Open Trades, My Alerts, Account Analytics, Wins & Losses, Agent Ledger, Audit Log, user permissions, and admin controls are all working from the same truth.
 
 This is not a normal QA checker. This is an adaptive AI control layer that grows with the system.
 
@@ -33,7 +33,7 @@ AACI should:
 
 Do not rebuild the app.
 Do not replace existing systems.
-Do not replace Ruby.
+Do not replace Eleanor.
 Do not replace Scanner.
 Do not replace Smart Chart.
 Do not replace Self-Trade AI.
@@ -123,7 +123,7 @@ Respect this authority order:
 4. Risk Governor hard blocks
 5. Bridge/data health
 6. AACI cohesion score
-7. Ruby/Self-Trade intelligence
+7. Eleanor/Self-Trade intelligence
 8. Agent strategy preference
 
 No lower layer can override a higher layer.
@@ -165,12 +165,12 @@ Before writing code, inspect the current app and identify existing wiring for:
 * Smart Chart
 * chart candles
 * chart overlays
-* Ruby market read
-* Ruby chart read
-* Ruby popup
-* Ruby chat
-* Ruby memory
-* Ruby lessons
+* Eleanor market read
+* Eleanor chart read
+* Eleanor popup
+* Eleanor chat
+* Eleanor memory
+* Eleanor lessons
 * Market Timing Brain / Heat Map if present
 * Economic Calendar
 * critical news alerts
@@ -221,7 +221,7 @@ Phase 7:
 Admin System Cohesion Page
 
 Phase 8:
-Integrations across Ruby, Scanner, Trade, Self-Trade, Risk, Alerts, Open Trades, Analytics, Wins/Losses
+Integrations across Eleanor, Scanner, Trade, Self-Trade, Risk, Alerts, Open Trades, Analytics, Wins/Losses
 
 Run QA after each phase before moving forward.
 
@@ -373,7 +373,7 @@ selectedTimeframe?: string;
 executionSymbol?: string;
 scannerSymbol?: string;
 chartSymbol?: string;
-rubySymbol?: string;
+eleanorSymbol?: string;
 };
 
 account: {
@@ -416,7 +416,7 @@ lastCandleTime?: string;
 lastUpdated?: string;
 };
 
-ruby?: {
+eleanor?: {
 bias?: “buy” | “sell” | “neutral” | “mixed”;
 confidence?: number;
 explanationReady?: boolean;
@@ -485,7 +485,7 @@ Handshake type:
 
 type AaciHandshake = {
 system:
-| “Ruby”
+| “Eleanor”
 | “Scanner”
 | “SmartChart”
 | “MarketTimingBrain”
@@ -538,13 +538,13 @@ Manual trade handshakes:
 * AuditLog
 * OpenTrades
 
-Ruby market explanation handshakes:
+Eleanor market explanation handshakes:
 
 * Scanner
 * SmartChart
 * MarketTimingBrain
 * EconomicCalendar
-* Ruby
+* Eleanor
 * DataFreshness
 
 If a required handshake fails, AACI score should fall or HARD_GATE should fail depending on severity.
@@ -558,7 +558,7 @@ type AaciDecision = {
 decisionId: string;
 timestamp: string;
 
-actorType: “user” | “ruby” | “self_trade_agent” | “admin” | “system”;
+actorType: “user” | “eleanor” | “self_trade_agent” | “admin” | “system”;
 actorId?: string;
 
 symbol?: string;
@@ -626,7 +626,7 @@ Inputs:
 * market feed age
 * candle age
 * scanner read age
-* Ruby read age
+* Eleanor read age
 * heat snapshot age
 * economic calendar age
 * bridge heartbeat age
@@ -641,7 +641,7 @@ Suggested freshness thresholds:
 
 * market feed: fresh under 1 second where possible
 * scanner: fresh under 1–3 seconds for fast markets
-* Ruby read: fresh based on context
+* Eleanor read: fresh based on context
 * bridge heartbeat: fresh under app-defined bridge threshold
 * open positions: fresh under 1–3 seconds after execution
 * economic calendar: fresh based on provider update cycle
@@ -653,7 +653,7 @@ F = weighted_average(
 marketFeedFreshness,
 candleFreshness,
 scannerFreshness,
-rubyFreshness,
+eleanorFreshness,
 heatFreshness,
 newsFreshness,
 bridgeFreshness,
@@ -680,11 +680,11 @@ Graph Cohesion checks whether systems agree.
 Compare:
 
 * selected symbol across pages
-* timeframe across Scanner/Chart/Ruby
+* timeframe across Scanner/Chart/Eleanor
 * account state across Cockpit/Account/Trade
 * open positions across MT5/Open Trades/Account Analytics
 * Scanner bias vs Smart Chart bias
-* Ruby explanation vs Scanner/Chart data
+* Eleanor explanation vs Scanner/Chart data
 * Heat Map vs News phase
 * Risk Governor vs Trade action
 * Agent Ledger vs allocation
@@ -699,7 +699,7 @@ timeframeConsistency,
 accountConsistency,
 positionConsistency,
 scannerChartAgreement,
-rubyScannerAgreement,
+eleanorScannerAgreement,
 heatNewsAgreement,
 riskTradeAgreement,
 ledgerAgreement,
@@ -830,8 +830,8 @@ SPEED / LATENCY EDGE SCORE — S
 
 Speed is a core part of ARX.
 
-Ruby must not only be right.
-Ruby must be right early enough for the trade to still have edge.
+Eleanor must not only be right.
+Eleanor must be right early enough for the trade to still have edge.
 
 Speed measures the app’s ability to go from market movement to action quickly enough.
 
@@ -839,7 +839,7 @@ Inputs:
 
 * market feed speed
 * scanner decision speed
-* Ruby response speed
+* Eleanor response speed
 * risk check speed
 * execution route speed
 * MT5 round-trip speed
@@ -855,7 +855,7 @@ S =
 0.18 × marketFeedSpeed
 
 * 0.15 × scannerDecisionSpeed
-* 0.13 × rubyResponseSpeed
+* 0.13 × eleanorResponseSpeed
 * 0.12 × riskCheckSpeed
 * 0.12 × executionRouteSpeed
 * 0.10 × mt5RoundTripSpeed
@@ -870,7 +870,7 @@ Track benchmarks:
 * Trade command prepared: under 500ms
 * Market feed update: under 500ms–1s where possible
 * Scanner candidate refresh: under 1–3s
-* Ruby short explanation: under 1.5–3s
+* Eleanor short explanation: under 1.5–3s
 * MT5 command send: under 1s
 * Open Trades refresh after fill: under 1–3s
 * Alert delivery: under 1–2s
@@ -973,7 +973,7 @@ Track drift in:
 * heat alert accuracy
 * spread/slippage profile
 * scanner accuracy
-* Ruby accuracy
+* Eleanor accuracy
 * volatility relationship accuracy
 * execution quality
 
@@ -993,7 +993,7 @@ Example:
 Agent Blaze used to win V75 flame scalps at 64%.
 This week that setup dropped to 38%.
 Drift detected.
-Ruby raises minimum setup score and reduces risk.
+Eleanor raises minimum setup score and reduces risk.
 
 ==================================================
 AUDIT & ALERT READINESS SCORE — A
@@ -1007,7 +1007,7 @@ Inputs:
 * trade thesis saved
 * agent owner tag attached
 * risk decision saved
-* Ruby explanation saved
+* Eleanor explanation saved
 * alert pipeline available
 * My Alerts update available
 * post-trade review path available
@@ -1021,7 +1021,7 @@ A =
 * 0.14 × thesisSaved
 * 0.12 × ownerTagAttached
 * 0.12 × riskDecisionSaved
-* 0.10 × rubyExplanationSaved
+* 0.10 × eleanorExplanationSaved
 * 0.08 × alertPipelineReady
 * 0.08 × reviewPathReady
 * 0.04 × dataLineageSaved
@@ -1056,7 +1056,7 @@ Track trust for:
 
 * Scanner
 * Smart Chart
-* Ruby
+* Eleanor
 * Market Timing Brain
 * Heat Map
 * News Engine
@@ -1079,8 +1079,8 @@ scanner_alpha += 1
 Heat Map said dirty heat/avoid and market trapped:
 heat_alpha += 1
 
-Ruby said wait but waiting missed a clean move:
-ruby_beta += 0.5
+Eleanor said wait but waiting missed a clean move:
+eleanor_beta += 0.5
 
 Agent Blaze entered exhausted heat and lost:
 agent_blaze_beta += 1
@@ -1162,7 +1162,7 @@ Check:
 * regular users do not see admin controls
 * disabled actions match permissions
 * trade buttons reflect actual availability
-* Ruby status matches thinking/listening/speaking state
+* Eleanor status matches thinking/listening/speaking state
 
 If UI shows wrong state:
 Flag system cohesion warning.
@@ -1187,11 +1187,11 @@ Explainability inputs:
 * handshakes known
 * confidence breakdown known
 
-If Ruby cannot explain a fully autonomous setup:
+If Eleanor cannot explain a fully autonomous setup:
 Recommended action = WATCH_ONLY or PREPARE_ONLY.
 
 User-facing:
-Ruby cannot explain this setup clearly enough yet. Watch only.
+Eleanor cannot explain this setup clearly enough yet. Watch only.
 
 ==================================================
 UNCERTAINTY CONFIDENCE
@@ -1369,7 +1369,7 @@ If market regime changes sharply:
 Example:
 Market regime changed.
 Old V75 flame scalp performance may not apply.
-Ruby reduces risk until new evidence forms.
+Eleanor reduces risk until new evidence forms.
 
 ==================================================
 CROSS-AGENT CONTAMINATION CONTROL
@@ -1406,7 +1406,7 @@ Track:
 ==================================================
 VERSIONING AND ROLLBACK
 
-Every AACI, Ruby, agent, heat scoring, self-trade, and weighting update should have a version.
+Every AACI, Eleanor, agent, heat scoring, self-trade, and weighting update should have a version.
 
 Example:
 
@@ -1549,9 +1549,9 @@ If scanner stale:
 
 * refresh scanner universe
 
-If Ruby read stale:
+If Eleanor read stale:
 
-* request/recompute Ruby read
+* request/recompute Eleanor read
 
 If heat stale:
 
@@ -1587,7 +1587,7 @@ Applies to:
 * manual trade
 * one-click trade
 * scanner-to-trade
-* Ruby-assisted trade
+* Eleanor-assisted trade
 * self-trade agent trade
 * modify SL/TP
 * close position
@@ -1625,7 +1625,7 @@ After order execution, verify:
 * account balance/equity refreshed
 * My Alerts updated
 * Audit Log updated
-* Ruby explanation saved
+* Eleanor explanation saved
 * agent ledger updated if self-trade
 * Account Analytics updated
 * Wins/Losses ready after close
@@ -1662,7 +1662,7 @@ For open trades, AACI should check:
 * SL/TP state fresh
 * Risk Governor exposure state current
 * Heat/News/Open Trade manager aligned
-* Ruby management read current
+* Eleanor management read current
 * alerts created if needed
 
 If position is exposed before critical news:
@@ -1898,7 +1898,7 @@ Trade Command Room:
 Scanner:
 
 * show AACI cohesion badge on candidates
-* reduce confidence when Scanner/Chart/Ruby conflict
+* reduce confidence when Scanner/Chart/Eleanor conflict
 * speed decay on stale signals
 
 Smart Chart:
@@ -1906,9 +1906,9 @@ Smart Chart:
 * show data freshness/heat/conflict badges if useful
 * do not break chart
 
-Ruby:
+Eleanor:
 
-* Ruby should be able to explain AACI decision:
+* Eleanor should be able to explain AACI decision:
     “Why did ARX block this?”
     “Why is this watch only?”
     “What system disagrees?”
@@ -1962,11 +1962,11 @@ Allowed:
 
 * ARX systems are synced.
 * Market data is refreshing.
-* Ruby is updating the trade read.
+* Eleanor is updating the trade read.
 * Bridge unavailable.
 * Trading paused by risk controls.
 * This setup is watch only.
-* Entry is late. Ruby is waiting for a new setup.
+* Entry is late. Eleanor is waiting for a new setup.
 * Open position data is syncing.
 * ARX is checking account safety.
 
@@ -2077,7 +2077,7 @@ After each phase, run build/typecheck/lint if available and verify:
 3. Existing routes still work.
 4. Global header still works.
 5. Bottom nav still works.
-6. Ruby floating button still works.
+6. Eleanor floating button still works.
 7. Selected symbol remains synced.
 8. Trade execution path not changed.
 9. Risk Governor not bypassed.
@@ -2087,7 +2087,7 @@ After each phase, run build/typecheck/lint if available and verify:
 13. No fake data appears.
 14. No backend/debug wording appears to regular users.
 15. Mobile layout has no horizontal overflow.
-16. Existing Scanner/Ruby/Trade/Open Trades/Alerts/Analytics pages still work.
+16. Existing Scanner/Eleanor/Trade/Open Trades/Alerts/Analytics pages still work.
 
 ==================================================
 FINAL QA

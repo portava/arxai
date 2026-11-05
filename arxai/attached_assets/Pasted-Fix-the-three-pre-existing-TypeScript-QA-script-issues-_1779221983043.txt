@@ -17,7 +17,7 @@ Current verified status:
 
 Fix these pre-existing typecheck issues:
 
-1. scripts/src/qaRubyVoiceTradingGuardrails.ts:68,71
+1. scripts/src/qaEleanorVoiceTradingGuardrails.ts:68,71
 Issue:
 - Uses non-existent displayName column on users insert.
 
@@ -26,7 +26,7 @@ Fix:
 - Update the QA script to use only valid user fields.
 - If the test needs a display label, derive it locally from email or an allowed profile/name field.
 - Do not add a new database column unless the existing app architecture already expects it.
-- Keep the purpose of the Ruby voice trading guardrail test intact.
+- Keep the purpose of the Eleanor voice trading guardrail test intact.
 
 2. scripts/src/qaScannerBridgeRouting.ts:16,21
 Issue:
@@ -57,7 +57,7 @@ After fixing:
 - Confirm arx_live_commands remains 0.
 
 Print a clear report:
-- qaRubyVoiceTradingGuardrails typecheck: PASS/FAIL
+- qaEleanorVoiceTradingGuardrails typecheck: PASS/FAIL
 - qaScannerBridgeRouting typecheck: PASS/FAIL
 - qaScannerSelectedMarket typecheck: PASS/FAIL
 - Auth/RBAC regression: PASS/FAIL

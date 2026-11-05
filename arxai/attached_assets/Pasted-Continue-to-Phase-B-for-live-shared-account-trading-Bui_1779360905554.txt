@@ -41,7 +41,7 @@ POST /api/trades/live-shared/validate should accept:
 - takeProfit
 - riskAmount
 - riskPercent
-- source: manual / scanner / ruby
+- source: manual / scanner / eleanor
 - confirmationIntent optional
 - notes / reason optional
 
@@ -182,8 +182,8 @@ Connect the existing manual trade form to:
 
 Do not let the frontend directly queue live commands without validation.
 
-Scanner/Ruby:
-Do not fully build Phase C yet, but prepare the endpoint contract so scanner and Ruby can call validate first, then execute only after user confirmation.
+Scanner/Eleanor:
+Do not fully build Phase C yet, but prepare the endpoint contract so scanner and Eleanor can call validate first, then execute only after user confirmation.
 
 Testing:
 Add truth-table tests for:

@@ -55,7 +55,7 @@ export interface ChartTradePrefill {
 
 export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | null } = {}) {
   // Pulls from the shared chart-symbol bus — the SAME source of truth
-  // the chart, scanner focus panel, AI assist card, ticket and ruby
+  // the chart, scanner focus panel, AI assist card, ticket and eleanor
   // explanation all read from. Picking a symbol in any of them flips
   // this card in the same paint.
   const [chartSymbol] = useChartSymbol();
@@ -68,7 +68,7 @@ export function ChartTradeEntry({ prefill }: { prefill?: ChartTradePrefill | nul
   // access-load resolution can never swap the modal underneath the
   // user (LiveTradeTicket → LiveSharedTradeTicket flicker).
   const [openedAsShared, setOpenedAsShared] = useState(false);
-  // Whether the CURRENT open was initiated by an AI/Ruby setup-preview
+  // Whether the CURRENT open was initiated by an AI/Eleanor setup-preview
   // "Use this setup" (vs a manual Buy/Sell button). When true, the shared
   // ticket's one-click auto-confirm is suppressed so a drawing can never
   // auto-dispatch — the user must click Confirm explicitly.

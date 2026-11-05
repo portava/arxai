@@ -6,7 +6,7 @@
 //
 // Purpose:
 //   - Capture emotional state BEFORE a trade is placed
-//   - Feed into Ruby's risk assessment and DNA profile
+//   - Feed into Eleanor's risk assessment and DNA profile
 //   - Correlate mood with trade outcomes over time
 //   - Trigger protective warnings when dangerous states are detected
 //

@@ -64,7 +64,7 @@ unconditional toast ignores the user's explicit notification choices — both re
 as incomplete against a "smart chart layer + alert routing" task.
 
 **Every news-risk surface (not just the radar) must share the connected-calendar
-seam.** Review will REJECT a scanner/Ruby/ticket news-risk that scores its BASE
+seam.** Review will REJECT a scanner/Eleanor/ticket news-risk that scores its BASE
 level off the mock schedule while reporting `calendar.connected:false` — that is
 the same mock-as-real violation as a fabricated radar event, because the mock
 schedule fabricates forecast/actual numbers and impossible cadences. Score base

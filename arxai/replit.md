@@ -83,7 +83,7 @@ runtime-gated live broker execution (default-deny).
 ## Architecture & Safety Documentation
 
 - [`docs/ARCHITECTURE_MAP.md`](./docs/ARCHITECTURE_MAP.md) — single source of truth for every page, route, service, table, and data flow
-- [`docs/ALGORITHM_MAP.md`](./docs/ALGORITHM_MAP.md) — what the trading algorithm decides (flame scalp, scanner truth caps, agent advisory/governance, Ruby copy discipline, data-routing honesty) + the deterministic test locking each behavior
+- [`docs/ALGORITHM_MAP.md`](./docs/ALGORITHM_MAP.md) — what the trading algorithm decides (flame scalp, scanner truth caps, agent advisory/governance, Eleanor copy discipline, data-routing honesty) + the deterministic test locking each behavior
 - [`docs/SAFETY_NOTES.md`](./docs/SAFETY_NOTES.md) — inviolable invariants, untouchable surfaces, live-trading sensitivity, broker-credential gates
 - [`docs/IMPLEMENTATION_ROADMAP.md`](./docs/IMPLEMENTATION_ROADMAP.md) — phased build plan (Layer 1–4)
 - [`docs/ARX_NATIVE_CHART_AUDIT.md`](./docs/ARX_NATIVE_CHART_AUDIT.md) — ARX Native Chart Level 0 audit + chart "do not touch" list
@@ -132,17 +132,17 @@ runtime.
   `MT5_BRIDGE_TOKEN`, IP addresses or account numbers (except to OWNER/ADMIN
   sessions on operator endpoints), or `safetyGateSnapshot` blobs to anonymous
   callers.
-- AI assistant (Ruby) is a **permission-bounded executor, never a second
+- AI assistant (Eleanor) is a **permission-bounded executor, never a second
   execution path**; it can never modify connections or read another user's data.
-  Ruby's *reported* safety state is **derived per-user** (`getEnvelope()` /
+  Eleanor's *reported* safety state is **derived per-user** (`getEnvelope()` /
   `deriveAssistantEnvelope`, fail-closed), never hardcoded. Read/advisory surfaces
   force `readOnlyMode: true`; the genuinely read-only `draw-setup` / `draft-read`
-  surfaces keep the forced `READ_ONLY_PAPER_ENVELOPE`. Ruby may place/manage a
-  **live** trade ONLY with explicit `rubyExecutionAuthority = AI_ASSISTED`, and
+  surfaces keep the forced `READ_ONLY_PAPER_ENVELOPE`. Eleanor may place/manage a
+  **live** trade ONLY with explicit `eleanorExecutionAuthority = AI_ASSISTED`, and
   even then routes through the SAME instant-trade router → live pipeline → 18-gate
   dispatch as a manual trade (skips only the extra app-side confirm, never a
   backend gate / approval / allocation / kill-switch). `AI_AUTO` is defined but
-  **not enabled**. (Detail: "Ruby behavior rules" below.)
+  **not enabled**. (Detail: "Eleanor behavior rules" below.)
 - Live market data is never substituted by simulator data. Providers return empty
   + honest `safetyNote` when not configured.
 
@@ -175,31 +175,31 @@ per-user allocation server-side. There is **no** frontend-only trade path; PAPER
 mode renders **no** trade buttons. Candles are real or an honest empty state —
 never fabricated/simulator data, never master-account data.
 
-## Ruby (assistant) behavior rules (active)
+## Eleanor (assistant) behavior rules (active)
 
-Ruby is a **permission-bounded AI-Assisted executor**. Default execution
-authority is `OFF` (read-only); a user may raise `rubyExecutionAuthority` to
+Eleanor is a **permission-bounded AI-Assisted executor**. Default execution
+authority is `OFF` (read-only); a user may raise `eleanorExecutionAuthority` to
 `ADVISE_ONLY` (still read-only) or `AI_ASSISTED` (may place/manage live trades).
-**There is NO second execution path**: when authorized, every Ruby trade action
+**There is NO second execution path**: when authorized, every Eleanor trade action
 (OPEN / CLOSE / CLOSE_ALL / MODIFY_SL_TP / MOVE_SL_TO_BREAKEVEN / PARTIAL_CLOSE
 plus the MONITOR/WATCH single-fire engines) routes through the EXISTING
 instant-trade router → live command pipeline → 18-gate Phase B dispatch (source
-`ruby_text`/`ruby_voice`), exactly like a manual trade. `AI_ASSISTED` skips only
+`eleanor_text`/`eleanor_voice`), exactly like a manual trade. `AI_ASSISTED` skips only
 the extra app-side confirmation, never any backend gate, per-user approval,
 allocation, or kill-switch. Actions are bounded by per-action permissions,
-per-Ruby caps (`maxRubyLotPerTrade` / open-positions / daily-trades), and a
-symbol/asset-class allowlist, recorded in the append-only `ruby_commands` ledger
+per-Eleanor caps (`maxEleanorLotPerTrade` / open-positions / daily-trades), and a
+symbol/asset-class allowlist, recorded in the append-only `eleanor_commands` ledger
 (pending-dedupe + idempotency; watches fire EXACTLY ONCE via CAS). `AI_AUTO` is
 defined but **not enabled**.
 
-Ruby's *reported* account live-state is **derived** from the per-user envelope on
+Eleanor's *reported* account live-state is **derived** from the per-user envelope on
 every reporting surface (conversational replies, `getTradingMode` /
-`getPaperSafetyStatus`, the Scanner Ruby chart read, explain-signal, the
+`getPaperSafetyStatus`, the Scanner Eleanor chart read, explain-signal, the
 realtime-voice bootstrap, the system prompt) and forces `readOnlyMode: true`; the
 genuinely read-only `draw-setup` / `draft-read` surfaces keep the forced
 `READ_ONLY_PAPER_ENVELOPE`. Admins observe via
-`GET /api/admin/ruby-execution/commands` (redacted) and override authority via
-`POST /api/admin/ruby-execution/users/:userId/authority` (audited; `AI_AUTO`
+`GET /api/admin/eleanor-execution/commands` (redacted) and override authority via
+`POST /api/admin/eleanor-execution/users/:userId/authority` (audited; `AI_AUTO`
 rejected).
 
 ## QA commands

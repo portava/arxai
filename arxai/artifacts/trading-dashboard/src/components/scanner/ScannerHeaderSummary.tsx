@@ -17,12 +17,12 @@ import { useTradingMode } from "@/hooks/useTradingMode";
 import {
   type DataVerdict,
   type TradingVerdict,
-  type RubyVerdict,
+  type EleanorVerdict,
   type ScannerTruth,
 } from "@/lib/scannerTruth";
-import { resolveCappedRubyReadStatus } from "@/lib/rubyReadPanelState";
+import { resolveCappedEleanorReadStatus } from "@/lib/eleanorReadPanelState";
 import {
-  type RubyReadStatus,
+  type EleanorReadStatus,
   type ActionabilityTone,
   type ScannerActionabilityDisplay,
   actionabilityDisplayUi,
@@ -31,17 +31,17 @@ import {
   biasToActionDirection,
   PENDING_RESOLVE_TIMEOUT_MS,
 } from "@/lib/scannerActionability";
-import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
+import { useEleanorReadStore } from "@/components/scanner/eleanorReadStore";
 import { useSelectedActionStore } from "@/components/scanner/selectedActionStore";
 import { coerceVisibleTimeframe } from "@/components/scanner/scannerChartFormat";
 import { TruthVerdictBias, TruthVerdictStage } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { useAssistantName } from "@/lib/assistant-name";
 
-// The contract's Ruby read status → the header's plain-English verdict label.
-// These map 1:1 onto the existing RubyVerdict copy so the existing `rubyTone`
+// The contract's Eleanor read status → the header's plain-English verdict label.
+// These map 1:1 onto the existing EleanorVerdict copy so the existing `eleanorTone`
 // keeps working after the cap.
-const RUBY_STATUS_LABEL: Record<RubyReadStatus, RubyVerdict> = {
+const ELEANOR_STATUS_LABEL: Record<EleanorReadStatus, EleanorVerdict> = {
   FULL_READ: "Full read",
   LIMITED_READ: "Limited read",
   NO_READ: "No read",
@@ -82,7 +82,7 @@ function tradingTone(v: TradingVerdict): string {
     default: return "text-txt-muted";
   }
 }
-function rubyTone(v: RubyVerdict): string {
+function eleanorTone(v: EleanorVerdict): string {
   switch (v) {
     case "Full read": return "text-success";
     case "Limited read": return "text-warning";
@@ -134,11 +134,11 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   const { scannerTruth: truth, verdict } = useSymbolTruth(bare, timeframe);
   const { shouldShowAdminDiagnostics } = useTradingMode();
   const { name } = useAssistantName();
-  const rubyStore = useRubyReadStore();
+  const eleanorStore = useEleanorReadStore();
   const selectedActionStore = useSelectedActionStore();
 
   // ONE directional read: bias + stage come from the composed snapshot verdict
-  // so the header can never disagree with the chart / Ruby surfaces about which
+  // so the header can never disagree with the chart / Eleanor surfaces about which
   // way the market is leaning (closes the header-vs-pill self-contradiction).
   const biasLabel = verdict ? BIAS_LABEL[verdict.bias] ?? "" : "";
   const stageLabel = verdict ? STAGE_LABEL[verdict.stage] ?? "" : "";
@@ -153,23 +153,23 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
   const dataV = truth?.strip.data.verdict ?? "Unavailable";
   const tradingV = truth?.strip.trading.verdict ?? "Read-only";
 
-  // Ruby cell reconciliation (Task #600): the base read CAPABILITY comes from the
+  // Eleanor cell reconciliation (Task #600): the base read CAPABILITY comes from the
   // shared contract, then is capped DOWN by the actual server read the panel ran
   // (lifted into the page store, keyed by symbol+timeframe). Header and panel call
   // the SAME pure monotonic cap, so the header can never claim a fuller read than
   // the panel actually produced. The timeframe is coerced to match the panel's
   // store key exactly.
-  const sharedRead = rubyStore.get(bare, coerceVisibleTimeframe(timeframe));
-  const rubyBase: RubyReadStatus = truth?.consolidated.rubyReadStatus ?? "NO_READ";
-  const cappedRuby = resolveCappedRubyReadStatus(rubyBase, sharedRead, undefined, name);
-  const rubyV: RubyVerdict = RUBY_STATUS_LABEL[cappedRuby.status];
-  const rubyDetail = cappedRuby.reason ?? truth?.strip.ruby.detail ?? "";
+  const sharedRead = eleanorStore.get(bare, coerceVisibleTimeframe(timeframe));
+  const eleanorBase: EleanorReadStatus = truth?.consolidated.eleanorReadStatus ?? "NO_READ";
+  const cappedEleanor = resolveCappedEleanorReadStatus(eleanorBase, sharedRead, undefined, name);
+  const eleanorV: EleanorVerdict = ELEANOR_STATUS_LABEL[cappedEleanor.status];
+  const eleanorDetail = cappedEleanor.reason ?? truth?.strip.eleanor.detail ?? "";
 
   // Action cell + single "Why?" (Task #600): the Action cell shows the SELECTED
   // symbol+timeframe's verdict. The Focus scalp card lifts its setup-aware
   // verdict into the page store (keyed by bare symbol AND the timeframe it read);
   // the header consumes that ONLY for the SAME symbol+timeframe — coerced to the
-  // panel's store key exactly like the Ruby cell above — so the cell can never
+  // panel's store key exactly like the Eleanor cell above — so the cell can never
   // disagree with the card (e.g. card "Ready now" while the header's data-only
   // verdict reads "Wait for confirmation"), and a timeframe switch can never
   // leave a stale cross-timeframe verdict showing. With no published card verdict
@@ -295,12 +295,12 @@ export function ScannerHeaderSummary({ running }: { running: boolean }) {
         );
       })()}
 
-      {/* ONE truth strip — Data / Ruby / Trading / Action (single source). All
+      {/* ONE truth strip — Data / Eleanor / Trading / Action (single source). All
           four cells derive from the SAME shared contract, so they can never
           disagree with each other or with a card's badge. */}
       <div id={statusDetailsId} className={cn("grid gap-1 md:grid-cols-4 md:gap-2", statusDetailsOpen ? "grid-cols-2" : "grid-cols-2 min-[360px]:grid-cols-4")} data-testid="scanner-header-strip">
         <TruthPill showDetail={statusDetailsOpen} label="Data" verdict={dataV} tone={dataTone(dataV)} detail={truth?.strip.data.detail ?? "Waiting for market data…"} testId="scanner-header-data" />
-        <TruthPill showDetail={statusDetailsOpen} label={name} verdict={rubyV} tone={rubyTone(rubyV)} detail={rubyDetail} testId="scanner-header-ruby" />
+        <TruthPill showDetail={statusDetailsOpen} label={name} verdict={eleanorV} tone={eleanorTone(eleanorV)} detail={eleanorDetail} testId="scanner-header-eleanor" />
         <TruthPill showDetail={statusDetailsOpen} label="Trading" verdict={tradingV} tone={tradingTone(tradingV)} detail={truth?.strip.trading.detail ?? ""} testId="scanner-header-trading" />
         <TruthPill
           showDetail={statusDetailsOpen}

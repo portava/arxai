@@ -23,7 +23,7 @@ Undefined ≠ false, and undefined is what broke her.
 - EXEMPT: `getTradeDecisionTool` — its success shape has no `context.feedConfirmed`;
   Eleanor reads `decision.dataQuality.marketContextQuality` there (systemPrompt). Do
   NOT add a context field to its branches.
-- OUT OF SCOPE: `rubyStructuralReadService.ts`, `rubyReadLayers.ts`,
+- OUT OF SCOPE: `eleanorStructuralReadService.ts`, `eleanorReadLayers.ts`,
   `readChartStructureTool` — they carry feedConfirmed inside a `readLayer` contract
   that is already honest on every branch (different contract, don't touch).
 - Purely response-shape. Never weakens an honesty gate: blocks still block, nothing

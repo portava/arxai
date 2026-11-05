@@ -164,7 +164,7 @@ assert.ok(shape({ [PIPELINE]: goodPipe + "\nawait db.insert(paperOrdersTable)", 
   .some((v) => v.includes("must not write")), "the pipeline may not write tables");
 assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper.replace(/action: "MODIFY"/, 'action: "X"') })
   .some((v) => v.includes("MODIFY")), "an ungoverned paper modify fails");
-// Owner decision 13: the trader ticket's governor origin may come from the caller (Ruby-suggested opens).
+// Owner decision 13: the trader ticket's governor origin may come from the caller (Eleanor-suggested opens).
 assert.deepEqual(shape({ ...base, [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper.replace('origin: "manual", action: "OPEN"', 'origin: a.origin ?? "manual", action: "OPEN"') }), []);
 assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper.replace('venue: "PAPER", origin: "manual", action: "OPEN"', 'venue: v, origin: a.origin ?? "manual", action: "OPEN"') })
   .some((v) => v.includes("OPEN")), "a non-PAPER venue on open still fails");

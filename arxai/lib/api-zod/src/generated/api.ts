@@ -5400,7 +5400,7 @@ export const GetChartCandlesResponse = zod.object({
         isForming: zod
           .boolean()
           .describe(
-            "Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis \/ Ruby \/ chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.\n",
+            "Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis \/ Eleanor \/ chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.\n",
           ),
         sourceMode: zod
           .enum(["live", "demo", "mock", "dev", "unknown"])
@@ -6373,7 +6373,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
             isForming: zod
               .boolean()
               .describe(
-                "Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis \/ Ruby \/ chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.\n",
+                "Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis \/ Eleanor \/ chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.\n",
               ),
             sourceMode: zod
               .enum(["live", "demo", "mock", "dev", "unknown"])
@@ -6529,7 +6529,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
             isForming: zod
               .boolean()
               .describe(
-                "Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis \/ Ruby \/ chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.\n",
+                "Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis \/ Eleanor \/ chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.\n",
               ),
             sourceMode: zod
               .enum(["live", "demo", "mock", "dev", "unknown"])
@@ -7609,7 +7609,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
           confidentReadAllowed: zod
             .boolean()
             .describe(
-              "Truth ≥ 75 — required for chart-based confident reads (Ruby chart-read, Scanner chart-confirm)",
+              "Truth ≥ 75 — required for chart-based confident reads (Eleanor chart-read, Scanner chart-confirm)",
             ),
           scannerConfirmAllowed: zod
             .boolean()
@@ -7694,7 +7694,7 @@ export const GetMeChartIntelligenceResponse = zod.object({
 canonical resolvers — chart feed (data state, price, data timestamps),
 market-impact radar (news provider + events), the scanner signal, the
 scalp/flame reads, and the timing read — into ONE object so every
-scanner/chart/Ruby surface renders identical freshness, news state, price,
+scanner/chart/Eleanor surface renders identical freshness, news state, price,
 and component verdicts. Read-only: it never places, modifies, or closes a
 trade, never gates execution, and never fabricates data — a blind or
 failing source becomes an absent component (present:false), never a guess.
@@ -7849,10 +7849,10 @@ export const GetMeMarketTruthResponse = zod.object({
 });
 
 /**
- * Per-user-safe Smart Chart overlay model. Returns Ruby's signal geometry
+ * Per-user-safe Smart Chart overlay model. Returns Eleanor's signal geometry
 (watch / entry / retest / late / invalidation / stop / take-profit) and
 structure levels as drawable visual layers that stay CONSISTENT with
-Ruby's text, plus a Market Impact Radar that maps events from a
+Eleanor's text, plus a Market Impact Radar that maps events from a
 connected, real economic-calendar provider onto the symbol (severity +
 countdown), an honest news behavior note, reserved execution-cost and
 trade-health overlay slots, and a data-side Smart Chart Overlay
@@ -7908,7 +7908,7 @@ export const GetMeChartSmartLayersResponse = zod.object({
       severity: zod.enum(["info", "success", "warning", "danger", "neutral"]),
       source: zod.enum([
         "signal",
-        "ruby",
+        "eleanor",
         "structure",
         "execution",
         "news",
@@ -8128,7 +8128,7 @@ export const GetMeTradeHealthResponse = zod.object({
       severity: zod.enum(["info", "success", "warning", "danger", "neutral"]),
       source: zod.enum([
         "signal",
-        "ruby",
+        "eleanor",
         "structure",
         "execution",
         "news",
@@ -8260,20 +8260,20 @@ export const DeleteMeTradingSchoolProgressResponse = zod.object({
 });
 
 /**
- * Deterministic, READ-ONLY Ruby read assembled from the already-built
+ * Deterministic, READ-ONLY Eleanor read assembled from the already-built
 Chart Intelligence State for a symbol/timeframe. No LLM and no provider
 re-probe — it restates the chart's own truth/understanding/decision
 layers in plain language for a small set of fixed intents
 (analyze, is-this-a-buy, is-this-a-scalp, why-not-now,
 what-changes-my-mind, what-invalidates, hold-or-close, agent-consensus).
-Ruby is strictly read-only: it never places, modifies, or closes a trade,
+Eleanor is strictly read-only: it never places, modifies, or closes a trade,
 never mutates a connection, and never reads another user's data. Every
 response carries the paper_only / liveLocked / readOnlyMode /
 allowOrderExecution=false envelope. Honest by construction — degrades to
 an "insufficient" read on a dirty/empty feed rather than inventing a
 setup.
 
- * @summary Ruby Draft Read — read-only prepared read over the Chart Intelligence State
+ * @summary Eleanor Draft Read — read-only prepared read over the Chart Intelligence State
  */
 export const postMeAssistantDraftReadBodySymbolMax = 64;
 
@@ -8335,7 +8335,7 @@ export const PostMeAssistantDraftReadBody = zod.object({
     ])
     .optional()
     .describe(
-      "Optional draft the user is contemplating. Ruby reads it but NEVER executes it.",
+      "Optional draft the user is contemplating. Eleanor reads it but NEVER executes it.",
     ),
 });
 
@@ -8387,7 +8387,7 @@ export const PostMeAssistantDraftReadResponse = zod.object({
       disclaimer: zod.string(),
     })
     .describe(
-      "Deterministic, read-only prepared Ruby read over the Chart Intelligence State. Decision support only — the chart never executes from it.",
+      "Deterministic, read-only prepared Eleanor read over the Chart Intelligence State. Decision support only — the chart never executes from it.",
     ),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),
@@ -8484,8 +8484,8 @@ export const PostMeChartDecisionReceiptBody = zod.object({
     "agent-consensus",
   ]),
   source: zod.enum([
-    "ruby_draft_read",
-    "ruby_explain_signal",
+    "eleanor_draft_read",
+    "eleanor_explain_signal",
     "chart_read",
     "chart_trade_plan",
   ]),
@@ -8515,7 +8515,7 @@ export const PostMeChartDecisionReceiptResponse = zod.object({
         agentConflict: zod.boolean(),
         courtResult: zod.string().nullish(),
         riskWarning: zod.string().nullish(),
-        rubyFinalRead: zod.string().nullish(),
+        eleanorFinalRead: zod.string().nullish(),
         confidenceScore: zod.number().nullish(),
         confidenceLabel: zod.string().nullish(),
         whatWouldChange: zod.string().nullish(),
@@ -8617,7 +8617,7 @@ export const GetMeChartDecisionReceiptsResponse = zod.object({
         agentConflict: zod.boolean(),
         courtResult: zod.string().nullish(),
         riskWarning: zod.string().nullish(),
-        rubyFinalRead: zod.string().nullish(),
+        eleanorFinalRead: zod.string().nullish(),
         confidenceScore: zod.number().nullish(),
         confidenceLabel: zod.string().nullish(),
         whatWouldChange: zod.string().nullish(),
@@ -8708,7 +8708,7 @@ export const GetMeChartDecisionReceiptResponse = zod.object({
       agentConflict: zod.boolean(),
       courtResult: zod.string().nullish(),
       riskWarning: zod.string().nullish(),
-      rubyFinalRead: zod.string().nullish(),
+      eleanorFinalRead: zod.string().nullish(),
       confidenceScore: zod.number().nullish(),
       confidenceLabel: zod.string().nullish(),
       whatWouldChange: zod.string().nullish(),
@@ -9026,7 +9026,7 @@ export const GetAdminChartDecisionReceiptsResponse = zod.object({
         agentConflict: zod.boolean(),
         courtResult: zod.string().nullish(),
         riskWarning: zod.string().nullish(),
-        rubyFinalRead: zod.string().nullish(),
+        eleanorFinalRead: zod.string().nullish(),
         confidenceScore: zod.number().nullish(),
         confidenceLabel: zod.string().nullish(),
         whatWouldChange: zod.string().nullish(),
@@ -9857,7 +9857,7 @@ provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no
 provider is configured (`ECONOMIC_CALENDAR_PROVIDER` + `TRADING_ECONOMICS_KEY`)
 or the last fetch failed. This is the primary/unified endpoint for both
-the Economic Calendar page and the radar/Ruby seam — do not drift by
+the Economic Calendar page and the radar/Eleanor seam — do not drift by
 sourcing status and event list from separate endpoints.
 
  */
@@ -9955,7 +9955,7 @@ export const GetLiveCalendarEventsResponse = zod.object({
           ),
       })
       .describe(
-        "A raw economic-calendar event from a connected real provider (Trading\nEconomics). Never fabricated — the radar\/Ruby surfaces these only when\n`connected:true` from the calendar seam. The live-calendar endpoint\n(`GET \/economic-calendar\/events`) returns enriched fields in addition to\nthe base radar fields: country, source, forecast, previous, actual, plus\nthe explicit contract fields eventTimeUtc, affectedSymbols, and riskNote.\n",
+        "A raw economic-calendar event from a connected real provider (Trading\nEconomics). Never fabricated — the radar\/Eleanor surfaces these only when\n`connected:true` from the calendar seam. The live-calendar endpoint\n(`GET \/economic-calendar\/events`) returns enriched fields in addition to\nthe base radar fields: country, source, forecast, previous, actual, plus\nthe explicit contract fields eventTimeUtc, affectedSymbols, and riskNote.\n",
       ),
   ),
 });
@@ -16049,7 +16049,7 @@ export const SubmitMePendingOrderDraftResponse = zod.object({
 });
 
 /**
- * @summary Read a Ruby Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
+ * @summary Read a Eleanor Scalp signal for the selected market (Focus card). Honest AWAITING_DATA when live data is missing — never a fabricated lot/TP/SL.
  */
 export const createMeScalpFocusBodySymbolMax = 64;
 
@@ -16217,7 +16217,7 @@ export const CreateMeScalpFocusResponse = zod.object({
 });
 
 /**
- * @summary Rank Ruby Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
+ * @summary Rank Eleanor Scalp opportunities for a market group (Broad scan) — Best/Safer/Fastest picks plus a ranked list.
  */
 export const createMeScalpRankBodyLimitMax = 20;
 
@@ -16915,7 +16915,7 @@ export const CreateMeScalpRankResponse = zod.object({
 });
 
 /**
- * @summary Find the best Ruby Scalp matching a target profit / risk amount (Ruby Scalp Builder).
+ * @summary Find the best Eleanor Scalp matching a target profit / risk amount (Eleanor Scalp Builder).
  */
 export const CreateMeScalpBuildBody = zod.object({
   targetProfitAmount: zod.number().nullish(),
@@ -17396,7 +17396,7 @@ export const GetMeScalpBasketsResponse = zod.object({
           alertOnly: zod.boolean(),
         })
         .describe(
-          "Exit-urgency monitor. ALERT_ONLY — Ruby recommends, it never closes.",
+          "Exit-urgency monitor. ALERT_ONLY — Eleanor recommends, it never closes.",
         ),
       addOn: zod
         .object({
@@ -17575,7 +17575,7 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
           alertOnly: zod.boolean(),
         })
         .describe(
-          "Exit-urgency monitor. ALERT_ONLY — Ruby recommends, it never closes.",
+          "Exit-urgency monitor. ALERT_ONLY — Eleanor recommends, it never closes.",
         ),
       addOn: zod
         .object({
@@ -17700,7 +17700,7 @@ export const CreateMeScalpAddOnCheckResponse = zod.object({
 });
 
 /**
- * @summary The user's own scalp journal — every signal Ruby recorded with its full context and outcome (newest first). Read-only.
+ * @summary The user's own scalp journal — every signal Eleanor recorded with its full context and outcome (newest first). Read-only.
  */
 export const getMeScalpJournalQueryLimitMax = 200;
 
@@ -17735,7 +17735,7 @@ export const GetMeScalpJournalResponse = zod.object({
       realizedPl: zod.number().nullish(),
       lastFloatingPl: zod.number().nullish(),
       flameContinued: zod.boolean().nullish(),
-      rubyWarnedCorrectly: zod.boolean().nullish(),
+      eleanorWarnedCorrectly: zod.boolean().nullish(),
       exitReason: zod.string().nullish(),
       lesson: zod.string().nullish(),
       openedAt: zod.string().nullish(),
@@ -17781,7 +17781,7 @@ export const GetMeScalpReviewsResponse = zod.object({
       realizedPl: zod.number().nullish(),
       lastFloatingPl: zod.number().nullish(),
       flameContinued: zod.boolean().nullish(),
-      rubyWarnedCorrectly: zod.boolean().nullish(),
+      eleanorWarnedCorrectly: zod.boolean().nullish(),
       exitReason: zod.string().nullish(),
       lesson: zod.string().nullish(),
       openedAt: zod.string().nullish(),
@@ -17792,7 +17792,7 @@ export const GetMeScalpReviewsResponse = zod.object({
 });
 
 /**
- * @summary What Ruby has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
+ * @summary What Eleanor has learned about how each market behaves for this user (most-traded first). Tightening-only nudges, plain-English. Read-only.
  */
 export const getMeScalpPersonalityQueryLimitMax = 100;
 
@@ -17828,7 +17828,7 @@ export const GetMeScalpPersonalityResponse = zod.object({
 });
 
 /**
- * @summary The normalized "Ruby Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
+ * @summary The normalized "Eleanor Market Edge" signal for one symbol/timeframe — direction, lifecycle stage, separate quality scores, early-trend/fakeout/late reads, evidence, session, and what changed since the last read. Read-only intelligence that ENRICHES the scanner/scalp engines; never places, modifies, or closes any trade. Honest blind read (hasSufficientData=false) when candles are missing or too short — never fabricated.
  */
 export const getMeMarketEdgeQuerySymbolMax = 64;
 
@@ -18031,7 +18031,7 @@ export const GetMeMarketEdgeResponse = zod.object({
       lateReason: zod.string().nullable(),
     })
     .describe(
-      "ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation\/UX. Direction (BUY\/SELL\/NEUTRAL) is always kept separate from edge\/quality. When data is insufficient the read collapses to an honest WATCHING\/UNKNOWN\/NONE state with hasSufficientData=false — never a fabricated number.",
+      "ONE normalized signal object shared by Scanner, Scalp, Eleanor, and downstream explanation\/UX. Direction (BUY\/SELL\/NEUTRAL) is always kept separate from edge\/quality. When data is insufficient the read collapses to an honest WATCHING\/UNKNOWN\/NONE state with hasSufficientData=false — never a fabricated number.",
     ),
   explanation: zod
     .object({
@@ -22997,14 +22997,14 @@ export const UpdateAdminInvestorStrategyConfigResponse = zod.object({
 });
 
 /**
- * @summary My tracked Ruby signal outcomes (read-only, user-simple)
+ * @summary My tracked Eleanor signal outcomes (read-only, user-simple)
  */
-export const GetMyRubyOutcomesQueryParams = zod.object({
+export const GetMyEleanorOutcomesQueryParams = zod.object({
   symbol: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
 });
 
-export const GetMyRubyOutcomesResponse = zod.object({
+export const GetMyEleanorOutcomesResponse = zod.object({
   ok: zod.boolean(),
   outcomes: zod.array(
     zod.object({
@@ -23023,13 +23023,13 @@ export const GetMyRubyOutcomesResponse = zod.object({
 });
 
 /**
- * @summary My Ruby signal self-reviews (read-only, plain-language only)
+ * @summary My Eleanor signal self-reviews (read-only, plain-language only)
  */
-export const GetMyRubyReviewsQueryParams = zod.object({
+export const GetMyEleanorReviewsQueryParams = zod.object({
   limit: zod.coerce.number().optional(),
 });
 
-export const GetMyRubyReviewsResponse = zod.object({
+export const GetMyEleanorReviewsResponse = zod.object({
   ok: zod.boolean(),
   reviews: zod.array(
     zod.object({
@@ -23044,9 +23044,9 @@ export const GetMyRubyReviewsResponse = zod.object({
 });
 
 /**
- * @summary Ruby signal-quality metrics with filters (ADMIN/OWNER)
+ * @summary Eleanor signal-quality metrics with filters (ADMIN/OWNER)
  */
-export const GetAdminRubyQualityMetricsQueryParams = zod.object({
+export const GetAdminEleanorQualityMetricsQueryParams = zod.object({
   userId: zod.coerce.number().optional(),
   symbol: zod.coerce.string().optional(),
   session: zod.coerce.string().optional(),
@@ -23055,7 +23055,7 @@ export const GetAdminRubyQualityMetricsQueryParams = zod.object({
   toMs: zod.coerce.number().optional(),
 });
 
-export const GetAdminRubyQualityMetricsResponse = zod.object({
+export const GetAdminEleanorQualityMetricsResponse = zod.object({
   ok: zod.boolean(),
   metrics: zod.object({
     totals: zod.object({
@@ -23143,12 +23143,12 @@ export const GetAdminRubyQualityMetricsResponse = zod.object({
 /**
  * @summary Missed-opportunity replays (ADMIN/OWNER)
  */
-export const GetAdminRubyMissedOpportunitiesQueryParams = zod.object({
+export const GetAdminEleanorMissedOpportunitiesQueryParams = zod.object({
   symbol: zod.coerce.string().optional(),
   limit: zod.coerce.number().optional(),
 });
 
-export const GetAdminRubyMissedOpportunitiesResponse = zod.object({
+export const GetAdminEleanorMissedOpportunitiesResponse = zod.object({
   ok: zod.boolean(),
   replays: zod.array(
     zod.object({
@@ -23156,7 +23156,7 @@ export const GetAdminRubyMissedOpportunitiesResponse = zod.object({
       symbol: zod.string(),
       timeframe: zod.string(),
       verdict: zod.string(),
-      whatRubySaw: zod.object({
+      whatEleanorSaw: zod.object({
         direction: zod.string().nullish(),
         decision: zod.string().optional(),
         confidence: zod.number().optional(),
@@ -23180,9 +23180,9 @@ export const GetAdminRubyMissedOpportunitiesResponse = zod.object({
 });
 
 /**
- * @summary Current Ruby quality tuning thresholds (ADMIN/OWNER)
+ * @summary Current Eleanor quality tuning thresholds (ADMIN/OWNER)
  */
-export const GetAdminRubyThresholdsResponse = zod.object({
+export const GetAdminEleanorThresholdsResponse = zod.object({
   ok: zod.boolean(),
   thresholds: zod.object({
     lateEntrySeconds: zod.number(),
@@ -23214,9 +23214,9 @@ export const GetAdminRubyThresholdsResponse = zod.object({
 });
 
 /**
- * @summary Update Ruby quality tuning thresholds (ADMIN/OWNER, audited)
+ * @summary Update Eleanor quality tuning thresholds (ADMIN/OWNER, audited)
  */
-export const UpdateAdminRubyThresholdsBody = zod.object({
+export const UpdateAdminEleanorThresholdsBody = zod.object({
   reason: zod.string(),
   thresholds: zod.object({
     lateEntrySeconds: zod.number().optional(),
@@ -23232,7 +23232,7 @@ export const UpdateAdminRubyThresholdsBody = zod.object({
   }),
 });
 
-export const UpdateAdminRubyThresholdsResponse = zod.object({
+export const UpdateAdminEleanorThresholdsResponse = zod.object({
   ok: zod.boolean(),
   thresholds: zod.object({
     lateEntrySeconds: zod.number(),
@@ -23266,7 +23266,7 @@ export const UpdateAdminRubyThresholdsResponse = zod.object({
 /**
  * @summary Sanitized aggregate signal-quality summary for investor reporting (ADMIN/OWNER)
  */
-export const GetAdminRubyInvestorSummaryResponse = zod.object({
+export const GetAdminEleanorInvestorSummaryResponse = zod.object({
   ok: zod.boolean(),
   summary: zod.object({
     signalsTracked: zod.number(),
@@ -23278,7 +23278,7 @@ export const GetAdminRubyInvestorSummaryResponse = zod.object({
 });
 
 /**
- * Read-only roll-up over EXISTING resolved Ruby signal outcomes, grouped by timeframe × confidence tier. The accuracy denominator is exactly graded directional outcomes (WIN+LOSS); PENDING/UNRESOLVED are reported but never enter it. A cell whose graded sample is below `minSample` is flagged `insufficientSample` with null `accuracy`/`calibrationGap`. OBSERVATION ONLY — never an execution gate. Covers the newest 2000 matching outcomes (recency window), not full history.
+ * Read-only roll-up over EXISTING resolved Eleanor signal outcomes, grouped by timeframe × confidence tier. The accuracy denominator is exactly graded directional outcomes (WIN+LOSS); PENDING/UNRESOLVED are reported but never enter it. A cell whose graded sample is below `minSample` is flagged `insufficientSample` with null `accuracy`/`calibrationGap`. OBSERVATION ONLY — never an execution gate. Covers the newest 2000 matching outcomes (recency window), not full history.
 
  * @summary Calibration roll-up — predicted confidence tier vs realized accuracy by timeframe (ADMIN/OWNER)
  */
@@ -24760,7 +24760,7 @@ export const GetAdminAaciDecisionQueryParams = zod.object({
 export const GetAdminAaciDecisionResponse = zod.object({
   decisionId: zod.string(),
   timestamp: zod.string(),
-  actorType: zod.enum(["user", "ruby", "self_trade_agent", "admin", "system"]),
+  actorType: zod.enum(["user", "eleanor", "self_trade_agent", "admin", "system"]),
   actorId: zod.string().nullish(),
   symbol: zod.string().nullish(),
   timeframe: zod.string().nullish(),
@@ -24832,7 +24832,7 @@ export const ListAdminAaciDecisionsQueryParams = zod.object({
     .max(listAdminAaciDecisionsQueryLimitMax)
     .default(listAdminAaciDecisionsQueryLimitDefault),
   actorType: zod
-    .enum(["user", "ruby", "self_trade_agent", "admin", "system"])
+    .enum(["user", "eleanor", "self_trade_agent", "admin", "system"])
     .optional(),
   symbol: zod.coerce
     .string()

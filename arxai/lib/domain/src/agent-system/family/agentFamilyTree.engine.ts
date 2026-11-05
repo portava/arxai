@@ -1,7 +1,7 @@
 // Agent Ecosystem — Layer 3 Agent Family Tree / Departments (§9). PURE.
 //
 // PURPOSE
-//   Build the Ruby-Household → Department → child-agents tree from the registry,
+//   Build the Eleanor-Household → Department → child-agents tree from the registry,
 //   summarize each department (score, strongest/weakest child, speed cost,
 //   usefulness, Learning Camp count, bloat risk), and compute parent
 //   accountability roll-ups for the admin family-tree view.
@@ -11,7 +11,7 @@
 //     agent. Department scores influence ranking/visibility only.
 //   - PURE: deterministic, no I/O, no clock, no DB.
 
-// Canonical departments under the Ruby Household (§9).
+// Canonical departments under the Eleanor Household (§9).
 export const DEPARTMENTS = [
   "MARKET_STRUCTURE",
   "SCALP",
@@ -86,7 +86,7 @@ export interface FamilyTree {
   parentAccountability: ParentAccountabilitySummary[];
 }
 
-const ROOT_KEY = "RUBY";
+const ROOT_KEY = "ELEANOR";
 const BLOAT_USEFULNESS_FLOOR = 35;
 
 function buildNode(
