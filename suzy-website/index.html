@@ -1,12 +1,38 @@
 <!doctype html>
-<html lang="en">
-<head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Suzy Nails & Total Care</title>
-<meta name="description" content="Suzy Nails & Total Care — nails, foot care, Korean-style barbershop and massage at 109 Trần Phú, Đà Nẵng Open daily 9:00–22:00.">
+<title>Suzy Nails &amp; Total Care – Nail Salon, Foot Care &amp; Korean Barbershop in Da Nang</title>
+<meta name="description" content="Nail salon in Da Nang at 109 Trần Phú: gel nail art, pedicure, callus removal, foot massage, Korean-style barbershop, shaving and ear cleaning. English, Korean, Chinese and Japanese spoken. Open daily 9:00–22:00.">
+<link rel="alternate" hreflang="en" href="index.html">
+<link rel="alternate" hreflang="ko" href="ko.html">
+<link rel="alternate" hreflang="zh-Hans" href="zh.html">
+<link rel="alternate" hreflang="ja" href="ja.html">
+<link rel="alternate" hreflang="x-default" href="index.html">
+<meta property="og:type" content="website">
+<meta property="og:image" content="images/storefront.jpg">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"NailSalon","name":"Suzy Nails & Total Care",
+"alternateName":["Suzy Nail","다낭 수지네일","수지 네일 & 이발관","Suzy Nails & Cắt Tóc"],
+"description":"Nail salon, foot care, callus removal, Korean-style barbershop (shaving, ear cleaning) and massage in Da Nang, Vietnam. Staff serve guests in English, Korean, Chinese and Japanese. Since 2019.",
+"image":["images/storefront.jpg","images/salon.jpg","images/nails1.jpg"],
+"address":{"@type":"PostalAddress","streetAddress":"109 Trần Phú","addressLocality":"Đà Nẵng","addressCountry":"VN"},
+"telephone":"+84365628752","priceRange":"200,000–550,000 VND","currenciesAccepted":"VND",
+"openingHoursSpecification":{"@type":"OpeningHoursSpecification","dayOfWeek":["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],"opens":"09:00","closes":"22:00"},
+"hasMap":"https://maps.app.goo.gl/kn7EjaDZ1heai2TW9",
+"sameAs":["https://www.instagram.com/danang.suzynails/","http://pf.kakao.com/_ueJzn","https://maps.app.goo.gl/kn7EjaDZ1heai2TW9"],
+"knowsLanguage":["en","ko","zh","ja","vi"],"foundingDate":"2019",
+"hasOfferCatalog":{"@type":"OfferCatalog","name":"Services","itemListElement":[
+{"@type":"Offer","name":"Gel design nail art (hands or feet)","price":"550000","priceCurrency":"VND"},
+{"@type":"Offer","name":"Basic gel nail colour (hands or feet)","price":"350000","priceCurrency":"VND"},
+{"@type":"Offer","name":"Gel nail extensions","price":"350000","priceCurrency":"VND"},
+{"@type":"Offer","name":"Cuticle care manicure or pedicure","price":"200000","priceCurrency":"VND"},
+{"@type":"Offer","name":"Foot combo 7 steps with callus removal","price":"350000","priceCurrency":"VND"},
+{"@type":"Offer","name":"VIP foot combo 8 steps","price":"500000","priceCurrency":"VND"},
+{"@type":"Offer","name":"VIP 14-step barbershop full spa, 90 minutes (shave, ear cleaning, massage, shampoo)","price":"400000","priceCurrency":"VND"}]}}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&amp;family=Noto+Sans+KR:wght@400;700&amp;family=Noto+Sans+SC:wght@400;700&amp;family=Playfair+Display:wght@600&amp;display=swap" rel="stylesheet">
 <style>
 :root{--brand:#b5552f;--brand-d:#8e3f20;--cream:#faf6f1;--ink:#2b211c;--muted:#7a6a60;--line:#eadfd5;--card:#fff}
 *{box-sizing:border-box}
@@ -23,8 +49,8 @@ header{position:sticky;top:0;z-index:10;background:rgba(250,246,241,.95);backdro
 .links a{text-decoration:none;font-size:15px}
 .links a:hover{color:var(--brand)}
 .langs{display:flex;gap:4px}
-.langs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;cursor:pointer;font:inherit;font-size:13px}
-.langs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.langs a{text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;cursor:pointer;font:inherit;font-size:13px}
+.langs a.on{background:var(--brand);color:#fff;border-color:var(--brand)}
 .hero{position:relative;min-height:78vh;display:flex;align-items:flex-end;color:#fff;background:#3a2a22}
 .hero::before{z-index:1;content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(40,20,10,.75))}
 .hero .wrap{position:relative;z-index:2;padding-bottom:64px}
@@ -125,93 +151,93 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
 <header><div class="wrap nav">
   <a class="logo" href="#top">SUZY</a>
   <nav class="links">
-    <a href="#services" data-i="nav_services"></a><a href="#prices" data-i="nav_prices"></a>
-    <a href="#gallery" data-i="nav_gallery"></a><a href="#reviews" data-i="rv_title"></a><a href="#contact" data-i="nav_contact"></a>
+    <a href="#services" data-i="nav_services">Services</a><a href="#prices" data-i="nav_prices">Prices</a>
+    <a href="#gallery" data-i="nav_gallery">Gallery</a><a href="#reviews" data-i="rv_title">Customer reviews</a><a href="#contact" data-i="nav_contact">Contact</a>
   </nav>
   <div class="langs">
-    <button data-l="en">EN</button><button data-l="ko">한국어</button><button data-l="zh">中文</button><button data-l="ja">日本語</button>
+    <a data-l="en" href="index.html" class="on">EN</a><a data-l="ko" href="ko.html">한국어</a><a data-l="zh" href="zh.html">中文</a><a data-l="ja" href="ja.html">日本語</a>
   </div>
 </div></header>
 
 <div class="hero" id="top">
   <div class="slides" id="heroSlides">
-    <img src="images/feet.jpg" alt=""><img src="images/massage.jpg" alt=""><img src="images/nails1.jpg" alt="">
+    <img src="images/feet.jpg" alt="" class=""><img src="images/massage.jpg" alt=""><img src="images/nails1.jpg" alt="">
     <img src="images/shave.jpg" alt=""><img src="images/chairs.jpg" alt=""><img src="images/ear.jpg" alt="">
   </div>
   <div class="wrap">
     <h1>Suzy Nails &amp; Total Care</h1>
-    <p data-i="hero_text"></p>
-    <a class="btn" href="#prices" data-i="hero_btn"></a><a class="btn ghost" href="#contact" data-i="nav_contact"></a>
+    <p data-i="hero_text">Nails, foot care, Korean-style barbershop and massage under one roof. For women, men and kids. Open every day.</p>
+    <a class="btn" href="#prices" data-i="hero_btn">See prices</a><a class="btn ghost" href="#contact" data-i="nav_contact">Contact</a>
     <div class="dots" id="heroDots"></div>
   </div>
 </div>
 
 <section id="services"><div class="wrap">
-  <h2 data-i="svc_title"></h2><p class="sub" data-i="svc_sub"></p>
+  <h2 data-i="svc_title">Our services</h2><p class="sub" data-i="svc_sub">Relax in our cozy salon while our team takes care of you from head to toe.</p>
   <div class="carousel">
-    <div class="card"><img src="images/nails1.jpg" alt=""><div class="b"><h3 data-i="s1"></h3><p data-i="s1d"></p></div></div>
-    <div class="card"><img src="images/chairs.jpg" alt=""><div class="b"><h3 data-i="s2"></h3><p data-i="s2d"></p></div></div>
-    <div class="card"><img src="images/shave.jpg" alt=""><div class="b"><h3 data-i="s3"></h3><p data-i="s3d"></p></div></div>
-    <div class="card"><img src="images/ear.jpg" alt=""><div class="b"><h3 data-i="s4"></h3><p data-i="s4d"></p></div></div>
-    <div class="card"><img src="images/massage.jpg" alt=""><div class="b"><h3 data-i="s5"></h3><p data-i="s5d"></p></div></div>
-    <div class="card"><img src="images/polish.jpg" alt=""><div class="b"><h3 data-i="s6"></h3><p data-i="s6d"></p></div></div>
+    <div class="card"><img src="images/nails1.jpg" alt=""><div class="b"><h3 data-i="s1">Nail art &amp; gel</h3><p data-i="s1d">Gel colour, hand-painted designs, extensions and tips.</p></div></div>
+    <div class="card"><img src="images/chairs.jpg" alt=""><div class="b"><h3 data-i="s2">Foot care &amp; callus removal</h3><p data-i="s2d">Herbal foot soak, callus removal, scrub, mask and cream care.</p></div></div>
+    <div class="card"><img src="images/shave.jpg" alt=""><div class="b"><h3 data-i="s3">Barbershop &amp; shaving</h3><p data-i="s3d">Classic straight-razor shave, shampoo and hair drying.</p></div></div>
+    <div class="card"><img src="images/ear.jpg" alt=""><div class="b"><h3 data-i="s4">Ear cleaning</h3><p data-i="s4d">Gentle, careful ear cleaning by experienced staff.</p></div></div>
+    <div class="card"><img src="images/massage.jpg" alt=""><div class="b"><h3 data-i="s5">Massage</h3><p data-i="s5d">Foot, arm, back, head, neck and shoulder massage.</p></div></div>
+    <div class="card"><img src="images/polish.jpg" alt=""><div class="b"><h3 data-i="s6">Hundreds of colours</h3><p data-i="s6d">Choose from our big collection of gel colours and designs.</p></div></div>
   </div>
 </div></section>
 
 <section id="prices" class="alt"><div class="wrap">
-  <h2 data-i="pr_title"></h2><p class="sub" data-i="pr_sub"></p>
-  <div class="tabs"><button class="on" data-t="t1" data-i="pg_nails"></button><button data-t="t2" data-i="pg_foot"></button><button data-t="t3" data-i="pg_spa"></button></div>
+  <h2 data-i="pr_title">Prices</h2><p class="sub" data-i="pr_sub">All prices in Vietnamese đồng (VND).</p>
+  <div class="tabs"><button class="on" data-t="t1" data-i="pg_nails">Nails</button><button data-t="t2" data-i="pg_foot">Foot combos</button><button data-t="t3" data-i="pg_spa">Barbershop full service</button></div>
   <div class="price-list tab on" id="t1">
-    <div class="row"><span data-i="p_design"></span><span class="p">550,000</span></div>
-    <div class="row"><span data-i="p_basic"></span><span class="p">350,000</span></div>
-    <div class="row"><span data-i="p_gelext"></span><span class="p">350,000</span></div>
-    <div class="row"><span data-i="p_tips"></span><span class="p">250,000</span></div>
-    <div class="row"><span data-i="p_cuticle"></span><span class="p">200,000</span></div>
-    <div class="row"><span data-i="p_off"></span><span class="p">30,000–70,000</span></div>
-    <div class="row"><span data-i="p_kids"></span><span class="p">15% OFF</span></div>
+    <div class="row"><span data-i="p_design">All Design Nail (hands or feet)</span><span class="p">550,000</span></div>
+    <div class="row"><span data-i="p_basic">Basic Nail colour (hands or feet)</span><span class="p">350,000</span></div>
+    <div class="row"><span data-i="p_gelext">Gel nail extensions set</span><span class="p">350,000</span></div>
+    <div class="row"><span data-i="p_tips">Fake nails (tips) set</span><span class="p">250,000</span></div>
+    <div class="row"><span data-i="p_cuticle">Cuticle care – manicure or pedicure</span><span class="p">200,000</span></div>
+    <div class="row"><span data-i="p_off">Nail removal</span><span class="p">30,000–70,000</span></div>
+    <div class="row"><span data-i="p_kids">Kids under 15</span><span class="p">15% OFF</span></div>
   </div>
   <div class="price-list tab" id="t2">
-    <div class="row"><span><span data-i="p_f7"></span><small data-i="p_f7d"></small></span><span class="p">350,000</span></div>
-    <div class="row"><span><span data-i="p_f8"></span><small data-i="p_f8d"></small></span><span class="p"><span class="old">550,000</span>500,000</span></div>
-    <div class="row"><span><span data-i="p_c8"></span><small data-i="p_c8d"></small></span><span class="p">350,000</span></div>
+    <div class="row"><span><span data-i="p_f7">Suzy Foot Combo – 7 steps</span><small data-i="p_f7d">Soak · arm massage · callus removal · foot mask · foot massage · scrub · cream</small></span><span class="p">350,000</span></div>
+    <div class="row"><span><span data-i="p_f8">Suzy VIP Foot Combo – 8 steps</span><small data-i="p_f8d">7-step combo + hand cuticle care</small></span><span class="p"><span class="old">550,000</span>500,000</span></div>
+    <div class="row"><span><span data-i="p_c8">Cuticle Manicure &amp; Pedicure Combo – 8 steps</span><small data-i="p_c8d">Soak · arm massage · hand &amp; foot cuticle care · mask · massage · scrub · cream</small></span><span class="p">350,000</span></div>
   </div>
   <div class="price-list tab" id="t3">
-    <div class="row"><span><span data-i="p_vip"></span><small data-i="p_vipd"></small></span><span class="p"><span class="old">520,000</span>400,000</span></div>
+    <div class="row"><span><span data-i="p_vip">VIP 14-Step Full Spa – 90 min</span><small data-i="p_vipd">Foot wash · facial cleansing · nail care · shave · facial massage · cucumber mask · ear cleaning · foot, arm &amp; back massage · shampoo · face wash · head/neck/shoulder massage · hair drying</small></span><span class="p"><span class="old">520,000</span>400,000</span></div>
   </div>
-  <p class="note" data-i="pr_note"></p>
+  <p class="note" data-i="pr_note">Leave us a Google review with photos and get a free coconut snack! Luggage storage and cool water are free.</p>
 </div></section>
 
 <section id="gallery"><div class="wrap">
-  <h2 data-i="gal_title"></h2><p class="sub" data-i="gal_sub"></p>
+  <h2 data-i="gal_title">Gallery</h2><p class="sub" data-i="gal_sub">A look inside our salon and some of our work.</p>
   <div class="carousel pics">
     <img src="images/nails2.jpg" alt=""><img src="images/nails3.jpg" alt=""><img src="images/nails4.jpg" alt="">
-    <figure><img src="images/before.jpg" alt=""><figcaption data-i="before"></figcaption></figure>
-    <figure><img src="images/after.jpg" alt=""><figcaption data-i="after"></figcaption></figure>
+    <figure><img src="images/before.jpg" alt=""><figcaption data-i="before">Before</figcaption></figure>
+    <figure><img src="images/after.jpg" alt=""><figcaption data-i="after">After</figcaption></figure>
     <img src="images/reception.jpg" alt=""><img src="images/shelves.jpg" alt=""><img src="images/lamps.jpg" alt="">
     <img src="images/barber.jpg" alt=""><img src="images/polish.jpg" alt=""><img src="images/storefront.jpg" alt="">
   </div>
 </div></section>
 
 <section id="reviews" class="alt"><div class="wrap">
-  <h2 data-i="rv_title"></h2><p class="sub" data-i="rv_sub"></p>
+  <h2 data-i="rv_title">Customer reviews</h2><p class="sub" data-i="rv_sub">What our guests say about us on Google.</p>
   <!-- ===== GOOGLE REVIEWS WIDGET: paste the code from Trustindex / Elfsight between these lines ===== -->
   <div class="widget"></div>
   <!-- ===== END WIDGET ===== -->
-  <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="rv_btn"></a>
+  <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="rv_btn">Read all reviews on Google</a>
 </div></section>
 
 <section id="contact" class="loc">
-  <div class="loc-head"><div class="wrap"><h2 data-i="ct_title"></h2><p data-i="ct_sub"></p></div></div>
+  <div class="loc-head"><div class="wrap"><h2 data-i="ct_title">Visit us</h2><p data-i="ct_sub">Walk-ins welcome. Please take off your shoes at the entrance.</p></div></div>
   <div class="wrap">
-    <div class="gmap" id="gmap"><a class="open" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9"><span>📍 <span data-i="ct_map" style="all:unset"></span></span></a></div>
+    <div class="gmap" id="gmap"><a class="open" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9"><span>📍 <span data-i="ct_map" style="all:unset">Open in Google Maps</span></span></a></div>
     <div class="info card">
-      <p><b data-i="ct_addr"></b>109 Trần Phú, Đà Nẵng</p>
-      <p><b data-i="ct_hours"></b><span data-i="ct_daily"></span> 9:00 – 22:00</p>
-      <p><b data-i="ct_phone"></b><a href="tel:+84365628752">+84 365 628 752</a><br><a href="tel:+84935349534">+84 935 34 95 34</a></p>
+      <p><b data-i="ct_addr">Address</b>109 Trần Phú, Đà Nẵng</p>
+      <p><b data-i="ct_hours">Opening hours</b><span data-i="ct_daily">Every day</span> 9:00 – 22:00</p>
+      <p><b data-i="ct_phone">Phone</b><a href="tel:+84365628752">+84 365 628 752</a><br><a href="tel:+84935349534">+84 935 34 95 34</a></p>
       <p><b>KakaoTalk</b><a target="_blank" rel="noopener" href="http://pf.kakao.com/_ueJzn/chat">@suzynail</a> · ID ssazangnim</p>
       <p><b>Zalo · WhatsApp · WeChat</b>+84 365 628 752</p>
-      <p><b data-i="ct_floors"></b><span data-i="ct_floorsd"></span></p>
-      <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="ct_map"></a>
+      <p><b data-i="ct_floors">Floors</b><span data-i="ct_floorsd">1F nails &amp; foot care · 2F–4F barbershop &amp; massage</span></p>
+      <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="ct_map">Open in Google Maps</a>
     </div>
   </div>
 </section>
@@ -219,9 +245,9 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
 <!-- Floating social buttons. Edit the links in SOCIAL (script below). -->
 <div class="social" id="social"></div>
 <div class="pop" id="pop"><div><h3 id="popT"></h3><p id="popId"></p>
-<button id="popCopy" data-i="copy"></button><button class="x" id="popX" data-i="close"></button></div></div>
+<button id="popCopy" data-i="copy">Copy</button><button class="x" id="popX" data-i="close">Close</button></div></div>
 
-<footer>© Suzy Nails &amp; Total Care · <span data-i="since"></span></footer>
+<footer>© Suzy Nails &amp; Total Care · <span data-i="since">Since 2019</span></footer>
 
 <script>
 // ===== Social links. A button with url:"" and no id is hidden (Telegram, Messenger: add when available) =====
@@ -271,7 +297,7 @@ p_c8:"Cuticle Manicure & Pedicure Combo – 8 steps",p_c8d:"Soak · arm massage 
 pg_spa:"Barbershop full service",p_vip:"VIP 14-Step Full Spa – 90 min",p_vipd:"Foot wash · facial cleansing · nail care · shave · facial massage · cucumber mask · ear cleaning · foot, arm & back massage · shampoo · face wash · head/neck/shoulder massage · hair drying",
 pr_note:"Leave us a Google review with photos and get a free coconut snack! Luggage storage and cool water are free.",
 gal_title:"Gallery",gal_sub:"A look inside our salon and some of our work.",before:"Before",after:"After",
-ct_title:"Visit us",ct_sub:"Walk-ins welcome. Please take off your shoes at the entrance.",ct_addr:"Address",ct_hours:"Opening hours",ct_daily:"Every day",ct_phone:"Phone",ct_floors:"Floors",ct_floorsd:"1F nails & foot care · 2F–4F barbershop & massage",ct_map:"Open in Google Maps",rv_title:"Customer reviews",rv_sub:"What our guests say about us on Google.",rv_btn:"Read all reviews on Google",since:"Since 2019",copy:"Copy",close:"Close"},
+ct_title:"Visit us",ct_sub:"Walk-ins welcome. Please take off your shoes at the entrance.",ct_addr:"Address",ct_hours:"Opening hours",ct_daily:"Every day",ct_phone:"Phone",ct_floors:"Floors",ct_floorsd:"1F nails & foot care · 2F–4F barbershop & massage",ct_map:"Open in Google Maps",rv_title:"Customer reviews",rv_sub:"What our guests say about us on Google.",rv_btn:"Read all reviews on Google",meta_title:'Suzy Nails & Total Care – Nail Salon, Foot Care & Korean Barbershop in Da Nang',meta_desc:'Nail salon in Da Nang at 109 Trần Phú: gel nail art, pedicure, callus removal, foot massage, Korean-style barbershop, shaving and ear cleaning. English, Korean, Chinese and Japanese spoken. Open daily 9:00–22:00.',since:"Since 2019",copy:"Copy",close:"Close"},
 ko:{nav_services:"서비스",nav_prices:"가격",nav_gallery:"갤러리",nav_contact:"오시는 길",
 hero_text:"네일, 발 케어, 이발관, 마사지를 한 곳에서. 여성·남성·어린이 모두 환영합니다. 연중무휴.",hero_btn:"가격 보기",
 svc_title:"서비스 안내",svc_sub:"아늑한 매장에서 머리부터 발끝까지 편안하게 관리받으세요.",
@@ -289,7 +315,7 @@ p_c8:"손톱, 발톱 큐티클 제거 8단계 콤보",p_c8d:"족욕 · 팔마사
 pg_spa:"이발소 풀서비스",p_vip:"프리미엄 14단계 90분 이발소 풀서비스",p_vipd:"발 세척 · 클렌징 · 손·발톱 정리 · 면도 · 얼굴 마사지 · 오이팩 · 귀청소 · 발·팔·등 마사지 · 샴푸 · 세안 · 머리·목·어깨 마사지 · 헤어 드라이",
 pr_note:"구글에 사진 리뷰를 남기시면 코코넛 과자를 드려요! 짐 보관과 시원한 생수는 무료입니다.",
 gal_title:"갤러리",gal_sub:"매장 내부와 작업 사진을 구경하세요.",before:"전",after:"후",
-ct_title:"오시는 길",ct_sub:"예약 없이 방문 가능합니다. 입구에서 신발을 벗어 주세요.",ct_addr:"주소",ct_hours:"영업시간",ct_daily:"매일",ct_phone:"전화",ct_floors:"층 안내",ct_floorsd:"1층 네일 & 발 케어 · 2–4층 이발관 & 마사지",ct_map:"구글 지도에서 보기",rv_title:"고객 리뷰",rv_sub:"구글에 남겨주신 고객님들의 후기입니다.",rv_btn:"구글에서 리뷰 전체 보기",since:"Since 2019",copy:"복사",close:"닫기"},
+ct_title:"오시는 길",ct_sub:"예약 없이 방문 가능합니다. 입구에서 신발을 벗어 주세요.",ct_addr:"주소",ct_hours:"영업시간",ct_daily:"매일",ct_phone:"전화",ct_floors:"층 안내",ct_floorsd:"1층 네일 & 발 케어 · 2–4층 이발관 & 마사지",ct_map:"구글 지도에서 보기",rv_title:"고객 리뷰",rv_sub:"구글에 남겨주신 고객님들의 후기입니다.",rv_btn:"구글에서 리뷰 전체 보기",meta_title:'다낭 수지네일 & 이발관 – 다낭 네일샵, 발각질 제거, 이발소, 마사지',meta_desc:'다낭 쩐푸 109 수지네일: 젤 네일 아트, 페디큐어, 발각질 제거, 발마사지, 한국식 이발관, 면도, 귀청소. 한국어 가능. 매일 9:00–22:00 영업.',since:"Since 2019",copy:"복사",close:"닫기"},
 zh:{nav_services:"服务",nav_prices:"价格",nav_gallery:"图库",nav_contact:"联系我们",
 hero_text:"美甲、足部护理、韩式理发馆与按摩，一站式服务。欢迎女士、男士和儿童。每天营业。",hero_btn:"查看价格",
 svc_title:"服务项目",svc_sub:"在温馨的店里放松，让我们从头到脚为您护理。",
@@ -307,7 +333,7 @@ p_c8:"手足去死皮套餐 – 8步",p_c8d:"泡脚 · 手臂按摩 · 手足去
 pg_spa:"理发馆全套服务",p_vip:"VIP 14步全套水疗 – 90分钟",p_vipd:"洗脚 · 面部清洁 · 手足指甲护理 · 剃须 · 面部按摩 · 黄瓜面膜 · 采耳 · 足部、手臂、背部按摩 · 洗发 · 洗面 · 头颈肩按摩 · 吹干",
 pr_note:"在谷歌地图留下带照片的好评，即送椰子零食！免费寄存行李和提供冰水。",
 gal_title:"图库",gal_sub:"看看我们的店内环境和作品。",before:"之前",after:"之后",
-ct_title:"欢迎光临",ct_sub:"无需预约。进门请脱鞋。",ct_addr:"地址",ct_hours:"营业时间",ct_daily:"每天",ct_phone:"电话",ct_floors:"楼层",ct_floorsd:"1楼 美甲与足部护理 · 2–4楼 理发馆与按摩",ct_map:"在谷歌地图中打开",rv_title:"顾客评价",rv_sub:"顾客在谷歌上对我们的评价。",rv_btn:"在谷歌上查看全部评价",since:"创立于 2019 年",copy:"复制",close:"关闭"},
+ct_title:"欢迎光临",ct_sub:"无需预约。进门请脱鞋。",ct_addr:"地址",ct_hours:"营业时间",ct_daily:"每天",ct_phone:"电话",ct_floors:"楼层",ct_floorsd:"1楼 美甲与足部护理 · 2–4楼 理发馆与按摩",ct_map:"在谷歌地图中打开",rv_title:"顾客评价",rv_sub:"顾客在谷歌上对我们的评价。",rv_btn:"在谷歌上查看全部评价",meta_title:'Suzy Nails & Total Care – 岘港美甲店、足部护理、韩式理发馆',meta_desc:'岘港陈富街109号美甲店：凝胶美甲、修脚、去脚皮、足部按摩、韩式理发馆、剃须、采耳。会说中文。每天9:00–22:00营业。',since:"创立于 2019 年",copy:"复制",close:"关闭"},
 ja:{nav_services:"サービス",nav_prices:"料金",nav_gallery:"ギャラリー",nav_contact:"アクセス",
 hero_text:"ネイル、フットケア、韓国式理髪店、マッサージをひとつのお店で。女性・男性・お子様も大歓迎。年中無休。",hero_btn:"料金を見る",
 svc_title:"サービス",svc_sub:"居心地の良い店内で、頭からつま先までリラックスしてください。",
@@ -325,18 +351,16 @@ p_c8:"手足の甘皮ケアコンボ – 8ステップ",p_c8d:"フットバス �
 pg_spa:"理髪店フルサービス",p_vip:"VIP 14ステップ フルスパ – 90分",p_vipd:"足洗い · 洗顔クレンジング · 手足のネイルケア · シェービング · フェイシャルマッサージ · キュウリパック · 耳掃除 · 足・腕・背中マッサージ · シャンプー · 洗顔 · 頭・首・肩マッサージ · ドライ",
 pr_note:"Googleマップに写真付きレビューを書くとココナッツのお菓子をプレゼント！荷物預かりと冷たいお水は無料です。",
 gal_title:"ギャラリー",gal_sub:"店内の様子と施術例をご覧ください。",before:"ビフォー",after:"アフター",
-ct_title:"アクセス",ct_sub:"予約なしでもご来店いただけます。入口で靴をお脱ぎください。",ct_addr:"住所",ct_hours:"営業時間",ct_daily:"毎日",ct_phone:"電話",ct_floors:"フロア",ct_floorsd:"1階 ネイル & フットケア · 2〜4階 理髪店 & マッサージ",ct_map:"Googleマップで開く",rv_title:"お客様の声",rv_sub:"Googleに寄せられたお客様のレビューです。",rv_btn:"Googleですべてのレビューを見る",since:"2019年創業",copy:"コピー",close:"閉じる"}};
+ct_title:"アクセス",ct_sub:"予約なしでもご来店いただけます。入口で靴をお脱ぎください。",ct_addr:"住所",ct_hours:"営業時間",ct_daily:"毎日",ct_phone:"電話",ct_floors:"フロア",ct_floorsd:"1階 ネイル & フットケア · 2〜4階 理髪店 & マッサージ",ct_map:"Googleマップで開く",rv_title:"お客様の声",rv_sub:"Googleに寄せられたお客様のレビューです。",rv_btn:"Googleですべてのレビューを見る",meta_title:'Suzy Nails & Total Care – ダナンのネイルサロン・フットケア・韓国式理髪店',meta_desc:'ダナン・チャンフー通り109番地のネイルサロン：ジェルネイル、ペディキュア、角質除去、フットマッサージ、韓国式理髪店、シェービング、耳掃除。日本語対応。毎日9:00〜22:00営業。',since:"2019年創業",copy:"コピー",close:"閉じる"}};
 function setLang(l){
   if(!T[l])l="en";
   document.documentElement.lang=l;
   document.querySelectorAll("[data-i]").forEach(e=>{e.textContent=T[l][e.dataset.i]??T.en[e.dataset.i]});
-  document.querySelectorAll(".langs button").forEach(b=>b.classList.toggle("on",b.dataset.l===l));
-  try{localStorage.setItem("suzy-lang",l)}catch(e){}
+  document.querySelectorAll(".langs a").forEach(b=>b.classList.toggle("on",b.dataset.l===l));
+  document.title=T[l].meta_title;document.querySelector('meta[name=description]').content=T[l].meta_desc;
 }
-document.querySelectorAll(".langs button").forEach(b=>b.onclick=()=>setLang(b.dataset.l));
-let saved=null;try{saved=localStorage.getItem("suzy-lang")}catch(e){}
-const nav=(navigator.language||"en").slice(0,2);
-setLang(new URLSearchParams(location.search).get("lang")||saved||(T[nav]?nav:"en"));
+setLang(new URLSearchParams(location.search).get("lang")||document.documentElement.lang);
 </script>
-</body>
-</html>
+
+
+</body></html>

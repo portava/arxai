@@ -1,0 +1,3 @@
+# Welcome all search engines and AI assistants (Google, Bing, ChatGPT, Claude, Perplexity, etc.)
+User-agent: *
+Allow: /
