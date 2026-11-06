@@ -1,4 +1,4 @@
-// Builds index.html (English), ko.html, zh.html and ja.html from src/template.html.
+// Builds index.html (English), ko.html, zh.html, ja.html and vi.html from src/template.html.
 // Each page is saved with its text already filled in, so Google and AI crawlers can read it
 // without running JavaScript. Run from the suzy-website folder:  node src/build.js
 const { chromium } = require('playwright');
@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const pages = { en: 'index.html', ko: 'ko.html', zh: 'zh.html', ja: 'ja.html' };
+const pages = { en: 'index.html', ko: 'ko.html', zh: 'zh.html', ja: 'ja.html', vi: 'vi.html' };
 const alt = Object.entries(pages)
   .map(([l, f]) => `<link rel="alternate" hreflang="${l === 'zh' ? 'zh-Hans' : l}" href="${f}">`)
   .concat('<link rel="alternate" hreflang="x-default" href="index.html">').join('\n');

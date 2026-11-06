@@ -25,6 +25,7 @@
 - 한국어: ko.html
 - 中文: zh.html
 - 日本語: ja.html
+- Tiếng Việt: vi.html
 
 ## Discounts
 - Returning customers: 10% off
