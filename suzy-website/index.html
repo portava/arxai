@@ -194,9 +194,9 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
 
 <section id="reviews" class="alt"><div class="wrap">
   <h2 data-i="rv_title"></h2><p class="sub" data-i="rv_sub"></p>
-  <div class="rating" id="ratingSum"></div>
-  <div class="carousel" id="reviewList"></div>
-  <p class="note" id="rvAttr"></p>
+  <!-- ===== GOOGLE REVIEWS WIDGET: paste the code from Trustindex / Elfsight between these lines ===== -->
+  <div class="widget"></div>
+  <!-- ===== END WIDGET ===== -->
   <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="rv_btn"></a>
 </div></section>
 
@@ -248,35 +248,11 @@ hs.forEach((_,i)=>{const b=document.createElement("button");b.ariaLabel="Slide "
 function show(i){hi=i;hs.forEach((im,j)=>{im.classList.toggle("on",j===i);hbg[j].classList.toggle("on",j===i)});[...hd.children].forEach((b,j)=>b.classList.toggle("on",j===i))}
 show(0);setInterval(()=>show((hi+1)%hs.length),4500);
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabs button,.tab").forEach(e=>e.classList.remove("on"));b.classList.add("on");document.getElementById(b.dataset.t).classList.add("on")});
-// ===== Google Maps + live Google reviews =====
-// Put your Google Maps Platform API key here (Maps JavaScript API + Places API (New) enabled,
-// restricted to your website's domain). Without a key, a simple pinned map is shown and reviews are hidden.
-const GOOGLE_API_KEY="";
+// ===== Google map (free embed, no API key needed) =====
 const PLACE_QUERY="Suzy Nails & Total Care, 109 Trần Phú, Đà Nẵng";
-const gmapEl=document.getElementById("gmap"),rl=document.getElementById("reviewList");
-function embedMap(){if(window.self!==window.top)return;const f=document.createElement("iframe");f.loading="lazy";f.title="Map";
+const gmapEl=document.getElementById("gmap");
+if(window.self===window.top){const f=document.createElement("iframe");f.loading="lazy";f.title="Map";
  f.src="https://maps.google.com/maps?q="+encodeURIComponent(PLACE_QUERY)+"&z=17&output=embed";gmapEl.appendChild(f)}
-function esc(t){const d=document.createElement("div");d.textContent=t||"";return d.innerHTML}
-async function initGoogle(){
- try{
-  const {Place}=await google.maps.importLibrary("places");
-  const {Map}=await google.maps.importLibrary("maps");
-  const {places}=await Place.searchByText({textQuery:PLACE_QUERY,fields:["displayName","location","rating","userRatingCount","reviews","googleMapsURI"],language:document.documentElement.lang});
-  const p=places[0];if(!p)throw new Error("Place not found");
-  const map=new Map(gmapEl,{center:p.location,zoom:17,mapId:"DEMO_MAP_ID"});
-  const {AdvancedMarkerElement}=await google.maps.importLibrary("marker");
-  new AdvancedMarkerElement({map,position:p.location,title:p.displayName});
-  if(p.rating)ratingSum.innerHTML=`<span class="big">${p.rating.toFixed(1)}</span> <span class="stars">${"★".repeat(Math.round(p.rating))}</span> <span>(${p.userRatingCount})</span>`;
-  rl.innerHTML="";
-  (p.reviews||[]).forEach(r=>{const a=r.authorAttribution||{};const d=document.createElement("div");d.className="review";
-   d.innerHTML=`<div class="who">${a.photoURI?`<img src="${esc(a.photoURI)}" alt="">`:""}<div><b>${esc(a.displayName)}</b><small>${esc(r.relativePublishTimeDescription)}</small></div></div>
-   <div class="stars">${"★".repeat(r.rating||0)}${"☆".repeat(5-(r.rating||0))}</div><p>${esc(r.text)}</p>`;rl.appendChild(d)});
-  rvAttr.textContent="Reviews from Google";
- }catch(e){console.warn("Google API",e);gmapEl.innerHTML="";embedMap()}
-}
-if(GOOGLE_API_KEY&&window.self===window.top){window.initGoogle=initGoogle;const sc=document.createElement("script");
- sc.src="https://maps.googleapis.com/maps/api/js?key="+GOOGLE_API_KEY+"&v=weekly&loading=async&libraries=places,marker&callback=initGoogle";sc.async=true;document.head.appendChild(sc)}
-else embedMap();
 const T={
 en:{nav_services:"Services",nav_prices:"Prices",nav_gallery:"Gallery",nav_contact:"Contact",
 hero_text:"Nails, foot care, Korean-style barbershop and massage under one roof. For women, men and kids. Open every day.",hero_btn:"See prices",
