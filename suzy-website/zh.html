@@ -143,6 +143,8 @@ h2{font-size:clamp(26px,4vw,36px);margin:0 0 8px;color:var(--brand-d)}
 .rating{display:flex;align-items:center;gap:8px;margin-bottom:16px}.rating .big{font-size:32px;font-weight:700}.rating .stars{color:#f4b400;font-size:20px}
 .review .who{display:flex;gap:10px;align-items:center}.review .who img{width:36px;height:36px;border-radius:50%}.review small{display:block;color:var(--muted)}
 .review p{display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden}
+.vid{width:100%;background:#2b211c;line-height:0}
+.vid video{width:100%;height:min(85vh,149vw);object-fit:cover;display:block}
 footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-align:center}
 @media(max-width:820px){.links{display:none}.btn.ghost{margin:10px 0 0}}
 </style>
@@ -171,6 +173,8 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
     <div class="dots" id="heroDots"></div>
   </div>
 </div>
+
+<div class="vid"><video src="video/salon.mp4" poster="video/poster.jpg" autoplay="" muted="" loop="" playsinline="" preload="auto"></video></div>
 
 <section id="services"><div class="wrap">
   <h2 data-i="svc_title">服务项目</h2><p class="sub" data-i="svc_sub">在温馨的店里放松，让我们从头到脚为您护理。</p>
