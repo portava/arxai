@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Suzy Nails & Total Care</title>
-<meta name="description" content="Suzy Nails & Total Care — nails, foot care, Korean-style barbershop and massage at 109 Trần Phú St. Open daily 9:00–22:00.">
+<meta name="description" content="Suzy Nails & Total Care — nails, foot care, Korean-style barbershop and massage at 109 Trần Phú, Đà Nẵng Open daily 9:00–22:00.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
 <style>
@@ -205,10 +205,11 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
   <div class="wrap">
     <div class="gmap" id="gmap"><a class="open" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9"><span>📍 <span data-i="ct_map" style="all:unset"></span></span></a></div>
     <div class="info card">
-      <p><b data-i="ct_addr"></b>109 Trần Phú St.</p>
+      <p><b data-i="ct_addr"></b>109 Trần Phú, Đà Nẵng</p>
       <p><b data-i="ct_hours"></b><span data-i="ct_daily"></span> 9:00 – 22:00</p>
       <p><b data-i="ct_phone"></b><a href="tel:+84365628752">+84 365 628 752</a><br><a href="tel:+84935349534">+84 935 34 95 34</a></p>
-      <p><b>KakaoTalk</b>ssazangnim</p>
+      <p><b>KakaoTalk</b><a target="_blank" rel="noopener" href="http://pf.kakao.com/_ueJzn/chat">@suzynail</a> · ID ssazangnim</p>
+      <p><b>Zalo · WhatsApp · WeChat</b>+84 365 628 752</p>
       <p><b data-i="ct_floors"></b><span data-i="ct_floorsd"></span></p>
       <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="ct_map"></a>
     </div>
@@ -223,16 +224,17 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
 <footer>© Suzy Nails &amp; Total Care · <span data-i="since"></span></footer>
 
 <script>
-// ===== Social links: replace the TODO values with your real accounts =====
+// ===== Social links. A button with url:"" and no id is hidden (Telegram, Messenger: add when available) =====
 const SOCIAL=[
- {k:"instagram",name:"Instagram",color:"#E4405F",url:"https://instagram.com/TODO_INSTAGRAM"},
+ {k:"instagram",name:"Instagram",color:"#E4405F",url:"https://www.instagram.com/danang.suzynails/"},
  {k:"whatsapp",name:"WhatsApp",color:"#25D366",url:"https://wa.me/84365628752"},
- {k:"telegram",name:"Telegram",color:"#26A5E4",url:"https://t.me/TODO_TELEGRAM"},
- {k:"wechat",name:"WeChat",color:"#07C160",id:"TODO_WECHAT_ID"},
- {k:"kakaotalk",name:"KakaoTalk",color:"#FFCD00",id:"ssazangnim",cls:"kakao"},
- {k:"messenger",name:"Messenger",color:"#0084FF",url:"https://m.me/TODO_FACEBOOK_PAGE"}];
+ {k:"zalo",name:"Zalo",color:"#0068FF",url:"https://zalo.me/0365628752"},
+ {k:"telegram",name:"Telegram",color:"#26A5E4",url:""},
+ {k:"wechat",name:"WeChat",color:"#07C160",id:"+84 365 628 752"},
+ {k:"kakaotalk",name:"KakaoTalk",color:"#FFCD00",url:"http://pf.kakao.com/_ueJzn/chat",cls:"kakao"},
+ {k:"messenger",name:"Messenger",color:"#0084FF",url:""}];
 const box=document.getElementById("social"),pop=document.getElementById("pop");
-SOCIAL.forEach(s=>{const a=document.createElement("a");a.style.background=s.color;a.className=s.cls||"";
+SOCIAL.filter(s=>s.url||s.id).forEach(s=>{const a=document.createElement("a");a.style.background=s.color;a.className=s.cls||"";
  a.title=a.ariaLabel=s.name;a.innerHTML=`<img src="icons/${s.k}.svg" alt="">`;
  if(s.url){a.href=s.url;a.target="_blank";a.rel="noopener"}
  else{a.href="#";a.onclick=e=>{e.preventDefault();popT.textContent=s.name+" ID";popId.textContent=s.id;pop.classList.add("on")}}
@@ -250,7 +252,7 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{document.que
 // Put your Google Maps Platform API key here (Maps JavaScript API + Places API (New) enabled,
 // restricted to your website's domain). Without a key, a simple pinned map is shown and reviews are hidden.
 const GOOGLE_API_KEY="";
-const PLACE_QUERY="Suzy Nails & Total Care, 109 Trần Phú";
+const PLACE_QUERY="Suzy Nails & Total Care, 109 Trần Phú, Đà Nẵng";
 const gmapEl=document.getElementById("gmap"),rl=document.getElementById("reviewList");
 function embedMap(){if(window.self!==window.top)return;const f=document.createElement("iframe");f.loading="lazy";f.title="Map";
  f.src="https://maps.google.com/maps?q="+encodeURIComponent(PLACE_QUERY)+"&z=17&output=embed";gmapEl.appendChild(f)}
