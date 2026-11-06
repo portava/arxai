@@ -25,15 +25,15 @@ header{position:sticky;top:0;z-index:10;background:rgba(250,246,241,.95);backdro
 .langs{display:flex;gap:4px}
 .langs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;cursor:pointer;font:inherit;font-size:13px}
 .langs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
-.hero{position:relative;min-height:78vh;display:flex;align-items:flex-end;color:#fff;background:#3a2a22 url(images/salon.jpg) center/cover}
-.hero::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(40,20,10,.75))}
-.hero .wrap{position:relative;padding-bottom:64px}
+.hero{position:relative;min-height:78vh;display:flex;align-items:flex-end;color:#fff;background:#3a2a22}
+.hero::before{z-index:1;content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(40,20,10,.75))}
+.hero .wrap{position:relative;z-index:2;padding-bottom:64px}
 .hero h1{font-family:"Playfair Display",serif;font-size:clamp(36px,7vw,68px);margin:0;line-height:1.1}
 .hero p{font-size:clamp(16px,2.2vw,20px);max-width:620px;margin:14px 0 26px}
 .btn{display:inline-block;background:var(--brand);color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:700}
 .btn:hover{background:var(--brand-d)}
 .btn.ghost{background:transparent;border:2px solid #fff;margin-left:8px}
-section{padding:72px 0}
+section{padding:52px 0}
 h2{font-size:clamp(26px,4vw,36px);margin:0 0 8px;color:var(--brand-d)}
 .sub{color:var(--muted);margin:0 0 36px}
 .grid{display:grid;gap:20px}
@@ -76,6 +76,23 @@ h2{font-size:clamp(26px,4vw,36px);margin:0 0 8px;color:var(--brand-d)}
 .pop h3{margin:0 0 8px}.pop p{font-size:22px;font-weight:700;margin:8px 0 16px}
 .pop button{font:inherit;border:0;border-radius:999px;padding:10px 20px;cursor:pointer;background:var(--brand);color:#fff;margin:4px}
 .pop button.x{background:var(--line);color:var(--ink)}
+.hero .slides img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1s}
+.hero .slides img.on{opacity:1}
+.dots{display:flex;gap:8px;margin-top:22px}.dots button{width:10px;height:10px;border-radius:50%;border:0;background:rgba(255,255,255,.5);padding:0;cursor:pointer}.dots button.on{background:#fff}
+.carousel{display:grid;grid-auto-flow:column;grid-auto-columns:min(78%,300px);gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:10px;margin-bottom:20px;scrollbar-width:thin}
+.carousel>*{scroll-snap-align:start}
+.carousel.pics{grid-auto-columns:min(70%,260px)}
+.carousel.pics img{aspect-ratio:1;object-fit:cover;border-radius:12px;width:100%;height:100%}
+.carousel figure{margin:0;position:relative}
+.carousel figcaption{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font-size:13px;padding:3px 10px;border-radius:999px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 16px;cursor:pointer}
+.tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tab{display:none}.tab.on{display:block}
+.review{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px}
+.review .stars{color:#f4b400;letter-spacing:2px}.review p{margin:8px 0;font-size:15px}.review b{font-size:14px}
+.contact .map{margin:0;height:100%;min-height:340px}
+.info.card{padding:24px}
 footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-align:center}
 @media(max-width:820px){.links{display:none}.btn.ghost{margin:10px 0 0}}
 </style>
@@ -85,22 +102,29 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
   <a class="logo" href="#top">SUZY</a>
   <nav class="links">
     <a href="#services" data-i="nav_services"></a><a href="#prices" data-i="nav_prices"></a>
-    <a href="#gallery" data-i="nav_gallery"></a><a href="#contact" data-i="nav_contact"></a>
+    <a href="#gallery" data-i="nav_gallery"></a><a href="#reviews" data-i="rv_title"></a><a href="#contact" data-i="nav_contact"></a>
   </nav>
   <div class="langs">
     <button data-l="en">EN</button><button data-l="ko">한국어</button><button data-l="zh">中文</button><button data-l="ja">日本語</button>
   </div>
 </div></header>
 
-<div class="hero" id="top"><div class="wrap">
-  <h1>Suzy Nails &amp; Total Care</h1>
-  <p data-i="hero_text"></p>
-  <a class="btn" href="#prices" data-i="hero_btn"></a><a class="btn ghost" href="#contact" data-i="nav_contact"></a>
-</div></div>
+<div class="hero" id="top">
+  <div class="slides" id="heroSlides">
+    <img src="images/feet.jpg" alt=""><img src="images/massage.jpg" alt=""><img src="images/nails1.jpg" alt="">
+    <img src="images/shave.jpg" alt=""><img src="images/chairs.jpg" alt=""><img src="images/ear.jpg" alt="">
+  </div>
+  <div class="wrap">
+    <h1>Suzy Nails &amp; Total Care</h1>
+    <p data-i="hero_text"></p>
+    <a class="btn" href="#prices" data-i="hero_btn"></a><a class="btn ghost" href="#contact" data-i="nav_contact"></a>
+    <div class="dots" id="heroDots"></div>
+  </div>
+</div>
 
 <section id="services"><div class="wrap">
   <h2 data-i="svc_title"></h2><p class="sub" data-i="svc_sub"></p>
-  <div class="grid g3">
+  <div class="carousel">
     <div class="card"><img src="images/nails1.jpg" alt=""><div class="b"><h3 data-i="s1"></h3><p data-i="s1d"></p></div></div>
     <div class="card"><img src="images/chairs.jpg" alt=""><div class="b"><h3 data-i="s2"></h3><p data-i="s2d"></p></div></div>
     <div class="card"><img src="images/shave.jpg" alt=""><div class="b"><h3 data-i="s3"></h3><p data-i="s3d"></p></div></div>
@@ -112,56 +136,58 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
 
 <section id="prices" class="alt"><div class="wrap">
   <h2 data-i="pr_title"></h2><p class="sub" data-i="pr_sub"></p>
-  <div class="prices">
-    <div class="price-list">
-      <h3 data-i="pg_nails"></h3>
-      <div class="row"><span data-i="p_design"></span><span class="p">550,000</span></div>
-      <div class="row"><span data-i="p_basic"></span><span class="p">350,000</span></div>
-      <div class="row"><span data-i="p_gelext"></span><span class="p">350,000</span></div>
-      <div class="row"><span data-i="p_tips"></span><span class="p">250,000</span></div>
-      <div class="row"><span data-i="p_cuticle"></span><span class="p">200,000</span></div>
-      <div class="row"><span data-i="p_off"></span><span class="p">30,000–70,000</span></div>
-      <div class="row"><span data-i="p_kids"></span><span class="p">15% OFF</span></div>
-    </div>
-    <div class="price-list">
-      <h3 data-i="pg_foot"></h3>
-      <div class="row"><span><span data-i="p_f7"></span><small data-i="p_f7d"></small></span><span class="p">350,000</span></div>
-      <div class="row"><span><span data-i="p_f8"></span><small data-i="p_f8d"></small></span><span class="p"><span class="old">550,000</span>500,000</span></div>
-      <div class="row"><span><span data-i="p_c8"></span><small data-i="p_c8d"></small></span><span class="p">350,000</span></div>
-      <h3 data-i="pg_spa"></h3>
-      <div class="row"><span><span data-i="p_vip"></span><small data-i="p_vipd"></small></span><span class="p"><span class="old">520,000</span>400,000</span></div>
-    </div>
+  <div class="tabs"><button class="on" data-t="t1" data-i="pg_nails"></button><button data-t="t2" data-i="pg_foot"></button><button data-t="t3" data-i="pg_spa"></button></div>
+  <div class="price-list tab on" id="t1">
+    <div class="row"><span data-i="p_design"></span><span class="p">550,000</span></div>
+    <div class="row"><span data-i="p_basic"></span><span class="p">350,000</span></div>
+    <div class="row"><span data-i="p_gelext"></span><span class="p">350,000</span></div>
+    <div class="row"><span data-i="p_tips"></span><span class="p">250,000</span></div>
+    <div class="row"><span data-i="p_cuticle"></span><span class="p">200,000</span></div>
+    <div class="row"><span data-i="p_off"></span><span class="p">30,000–70,000</span></div>
+    <div class="row"><span data-i="p_kids"></span><span class="p">15% OFF</span></div>
+  </div>
+  <div class="price-list tab" id="t2">
+    <div class="row"><span><span data-i="p_f7"></span><small data-i="p_f7d"></small></span><span class="p">350,000</span></div>
+    <div class="row"><span><span data-i="p_f8"></span><small data-i="p_f8d"></small></span><span class="p"><span class="old">550,000</span>500,000</span></div>
+    <div class="row"><span><span data-i="p_c8"></span><small data-i="p_c8d"></small></span><span class="p">350,000</span></div>
+  </div>
+  <div class="price-list tab" id="t3">
+    <div class="row"><span><span data-i="p_vip"></span><small data-i="p_vipd"></small></span><span class="p"><span class="old">520,000</span>400,000</span></div>
   </div>
   <p class="note" data-i="pr_note"></p>
 </div></section>
 
 <section id="gallery"><div class="wrap">
   <h2 data-i="gal_title"></h2><p class="sub" data-i="gal_sub"></p>
-  <div class="gallery">
+  <div class="carousel pics">
     <img src="images/nails2.jpg" alt=""><img src="images/nails3.jpg" alt=""><img src="images/nails4.jpg" alt="">
-    <img src="images/reception.jpg" alt=""><img src="images/shelves.jpg" alt=""><img src="images/lamps.jpg" alt="">
-    <img src="images/barber.jpg" alt=""><img src="images/polish.jpg" alt="">
-  </div>
-  <div class="ba">
     <figure><img src="images/before.jpg" alt=""><figcaption data-i="before"></figcaption></figure>
     <figure><img src="images/after.jpg" alt=""><figcaption data-i="after"></figcaption></figure>
+    <img src="images/reception.jpg" alt=""><img src="images/shelves.jpg" alt=""><img src="images/lamps.jpg" alt="">
+    <img src="images/barber.jpg" alt=""><img src="images/polish.jpg" alt=""><img src="images/storefront.jpg" alt="">
   </div>
 </div></section>
 
-<section id="contact" class="alt"><div class="wrap contact">
-  <div class="info">
-    <h2 data-i="ct_title"></h2><p class="sub" data-i="ct_sub"></p>
-    <p><b data-i="ct_addr"></b>109 Trần Phú St.</p>
-    <p><b data-i="ct_hours"></b><span data-i="ct_daily"></span> 9:00 – 22:00</p>
-    <p><b data-i="ct_phone"></b><a href="tel:+84365628752">+84 365 628 752</a> · <a href="tel:+84935349534">+84 935 34 95 34</a></p>
-    <p><b>KakaoTalk</b>ssazangnim</p>
-    <p><b data-i="ct_floors"></b><span data-i="ct_floorsd"></span></p>
-    <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="ct_map"></a>
+<section id="reviews" class="alt"><div class="wrap">
+  <h2 data-i="rv_title"></h2><p class="sub" data-i="rv_sub"></p>
+  <div class="carousel" id="reviewList"></div>
+  <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="rv_btn"></a>
+</div></section>
+
+<section id="contact"><div class="wrap">
+  <h2 data-i="ct_title"></h2><p class="sub" data-i="ct_sub"></p>
+  <div class="contact">
+    <div class="map"><iframe loading="lazy" title="Map" referrerpolicy="no-referrer-when-downgrade" src="https://maps.google.com/maps?q=Suzy%20Nails%20%26%20Total%20Care%2C%20109%20Tr%E1%BA%A7n%20Ph%C3%BA&output=embed"></iframe></div>
+    <div class="info card">
+      <p><b data-i="ct_addr"></b>109 Trần Phú St.</p>
+      <p><b data-i="ct_hours"></b><span data-i="ct_daily"></span> 9:00 – 22:00</p>
+      <p><b data-i="ct_phone"></b><a href="tel:+84365628752">+84 365 628 752</a><br><a href="tel:+84935349534">+84 935 34 95 34</a></p>
+      <p><b>KakaoTalk</b>ssazangnim</p>
+      <p><b data-i="ct_floors"></b><span data-i="ct_floorsd"></span></p>
+      <a class="btn" target="_blank" rel="noopener" href="https://maps.app.goo.gl/kn7EjaDZ1heai2TW9" data-i="ct_map"></a>
+    </div>
   </div>
-  <img src="images/storefront.jpg" alt="Suzy Nails & Total Care storefront">
-</div>
-<div class="wrap"><div class="map"><iframe loading="lazy" title="Map" referrerpolicy="no-referrer-when-downgrade" src="https://maps.google.com/maps?q=Suzy%20Nails%20%26%20Total%20Care%2C%20109%20Tr%E1%BA%A7n%20Ph%C3%BA&output=embed"></iframe></div></div>
-</section>
+</div></section>
 
 <!-- Floating social buttons. Edit the links in SOCIAL (script below). -->
 <div class="social" id="social"></div>
@@ -187,6 +213,17 @@ SOCIAL.forEach(s=>{const a=document.createElement("a");a.style.background=s.colo
  box.appendChild(a)});
 popX.onclick=()=>pop.classList.remove("on");pop.onclick=e=>{if(e.target===pop)pop.classList.remove("on")};
 popCopy.onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(popId.textContent);popCopy.textContent="✓"};
+// ===== Google reviews: paste real reviews here (name, stars, text) =====
+const REVIEWS=[];
+const rl=document.getElementById("reviewList");
+REVIEWS.forEach(r=>{const d=document.createElement("div");d.className="review";
+ d.innerHTML=`<div class="stars">${"★".repeat(r.stars)}</div><p></p><b></b>`;d.querySelector("p").textContent=r.text;d.querySelector("b").textContent="— "+r.name;rl.appendChild(d)});
+if(!REVIEWS.length)rl.style.display="none";
+const hs=[...document.querySelectorAll("#heroSlides img")],hd=document.getElementById("heroDots");let hi=0;
+hs.forEach((_,i)=>{const b=document.createElement("button");b.ariaLabel="Slide "+(i+1);b.onclick=()=>show(i);hd.appendChild(b)});
+function show(i){hi=i;hs.forEach((im,j)=>im.classList.toggle("on",j===i));[...hd.children].forEach((b,j)=>b.classList.toggle("on",j===i))}
+show(0);setInterval(()=>show((hi+1)%hs.length),4500);
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabs button,.tab").forEach(e=>e.classList.remove("on"));b.classList.add("on");document.getElementById(b.dataset.t).classList.add("on")});
 const T={
 en:{nav_services:"Services",nav_prices:"Prices",nav_gallery:"Gallery",nav_contact:"Contact",
 hero_text:"Nails, foot care, Korean-style barbershop and massage under one roof. For women, men and kids. Open every day.",hero_btn:"See prices",
@@ -205,7 +242,7 @@ p_c8:"Cuticle Manicure & Pedicure Combo – 8 steps",p_c8d:"Soak · arm massage 
 pg_spa:"Barbershop full service",p_vip:"VIP 14-Step Full Spa – 90 min",p_vipd:"Foot wash · facial cleansing · nail care · shave · facial massage · cucumber mask · ear cleaning · foot, arm & back massage · shampoo · face wash · head/neck/shoulder massage · hair drying",
 pr_note:"Leave us a Google review with photos and get a free coconut snack! Luggage storage and cool water are free.",
 gal_title:"Gallery",gal_sub:"A look inside our salon and some of our work.",before:"Before",after:"After",
-ct_title:"Visit us",ct_sub:"Walk-ins welcome. Please take off your shoes at the entrance.",ct_addr:"Address",ct_hours:"Opening hours",ct_daily:"Every day",ct_phone:"Phone",ct_floors:"Floors",ct_floorsd:"1F nails & foot care · 2F–4F barbershop & massage",ct_map:"Open in Google Maps",since:"Since 2019",copy:"Copy",close:"Close"},
+ct_title:"Visit us",ct_sub:"Walk-ins welcome. Please take off your shoes at the entrance.",ct_addr:"Address",ct_hours:"Opening hours",ct_daily:"Every day",ct_phone:"Phone",ct_floors:"Floors",ct_floorsd:"1F nails & foot care · 2F–4F barbershop & massage",ct_map:"Open in Google Maps",rv_title:"Customer reviews",rv_sub:"What our guests say about us on Google.",rv_btn:"Read all reviews on Google",since:"Since 2019",copy:"Copy",close:"Close"},
 ko:{nav_services:"서비스",nav_prices:"가격",nav_gallery:"갤러리",nav_contact:"오시는 길",
 hero_text:"네일, 발 케어, 이발관, 마사지를 한 곳에서. 여성·남성·어린이 모두 환영합니다. 연중무휴.",hero_btn:"가격 보기",
 svc_title:"서비스 안내",svc_sub:"아늑한 매장에서 머리부터 발끝까지 편안하게 관리받으세요.",
@@ -223,7 +260,7 @@ p_c8:"손톱, 발톱 큐티클 제거 8단계 콤보",p_c8d:"족욕 · 팔마사
 pg_spa:"이발소 풀서비스",p_vip:"프리미엄 14단계 90분 이발소 풀서비스",p_vipd:"발 세척 · 클렌징 · 손·발톱 정리 · 면도 · 얼굴 마사지 · 오이팩 · 귀청소 · 발·팔·등 마사지 · 샴푸 · 세안 · 머리·목·어깨 마사지 · 헤어 드라이",
 pr_note:"구글에 사진 리뷰를 남기시면 코코넛 과자를 드려요! 짐 보관과 시원한 생수는 무료입니다.",
 gal_title:"갤러리",gal_sub:"매장 내부와 작업 사진을 구경하세요.",before:"전",after:"후",
-ct_title:"오시는 길",ct_sub:"예약 없이 방문 가능합니다. 입구에서 신발을 벗어 주세요.",ct_addr:"주소",ct_hours:"영업시간",ct_daily:"매일",ct_phone:"전화",ct_floors:"층 안내",ct_floorsd:"1층 네일 & 발 케어 · 2–4층 이발관 & 마사지",ct_map:"구글 지도에서 보기",since:"Since 2019",copy:"복사",close:"닫기"},
+ct_title:"오시는 길",ct_sub:"예약 없이 방문 가능합니다. 입구에서 신발을 벗어 주세요.",ct_addr:"주소",ct_hours:"영업시간",ct_daily:"매일",ct_phone:"전화",ct_floors:"층 안내",ct_floorsd:"1층 네일 & 발 케어 · 2–4층 이발관 & 마사지",ct_map:"구글 지도에서 보기",rv_title:"고객 리뷰",rv_sub:"구글에 남겨주신 고객님들의 후기입니다.",rv_btn:"구글에서 리뷰 전체 보기",since:"Since 2019",copy:"복사",close:"닫기"},
 zh:{nav_services:"服务",nav_prices:"价格",nav_gallery:"图库",nav_contact:"联系我们",
 hero_text:"美甲、足部护理、韩式理发馆与按摩，一站式服务。欢迎女士、男士和儿童。每天营业。",hero_btn:"查看价格",
 svc_title:"服务项目",svc_sub:"在温馨的店里放松，让我们从头到脚为您护理。",
@@ -241,7 +278,7 @@ p_c8:"手足去死皮套餐 – 8步",p_c8d:"泡脚 · 手臂按摩 · 手足去
 pg_spa:"理发馆全套服务",p_vip:"VIP 14步全套水疗 – 90分钟",p_vipd:"洗脚 · 面部清洁 · 手足指甲护理 · 剃须 · 面部按摩 · 黄瓜面膜 · 采耳 · 足部、手臂、背部按摩 · 洗发 · 洗面 · 头颈肩按摩 · 吹干",
 pr_note:"在谷歌地图留下带照片的好评，即送椰子零食！免费寄存行李和提供冰水。",
 gal_title:"图库",gal_sub:"看看我们的店内环境和作品。",before:"之前",after:"之后",
-ct_title:"欢迎光临",ct_sub:"无需预约。进门请脱鞋。",ct_addr:"地址",ct_hours:"营业时间",ct_daily:"每天",ct_phone:"电话",ct_floors:"楼层",ct_floorsd:"1楼 美甲与足部护理 · 2–4楼 理发馆与按摩",ct_map:"在谷歌地图中打开",since:"创立于 2019 年",copy:"复制",close:"关闭"},
+ct_title:"欢迎光临",ct_sub:"无需预约。进门请脱鞋。",ct_addr:"地址",ct_hours:"营业时间",ct_daily:"每天",ct_phone:"电话",ct_floors:"楼层",ct_floorsd:"1楼 美甲与足部护理 · 2–4楼 理发馆与按摩",ct_map:"在谷歌地图中打开",rv_title:"顾客评价",rv_sub:"顾客在谷歌上对我们的评价。",rv_btn:"在谷歌上查看全部评价",since:"创立于 2019 年",copy:"复制",close:"关闭"},
 ja:{nav_services:"サービス",nav_prices:"料金",nav_gallery:"ギャラリー",nav_contact:"アクセス",
 hero_text:"ネイル、フットケア、韓国式理髪店、マッサージをひとつのお店で。女性・男性・お子様も大歓迎。年中無休。",hero_btn:"料金を見る",
 svc_title:"サービス",svc_sub:"居心地の良い店内で、頭からつま先までリラックスしてください。",
@@ -259,7 +296,7 @@ p_c8:"手足の甘皮ケアコンボ – 8ステップ",p_c8d:"フットバス �
 pg_spa:"理髪店フルサービス",p_vip:"VIP 14ステップ フルスパ – 90分",p_vipd:"足洗い · 洗顔クレンジング · 手足のネイルケア · シェービング · フェイシャルマッサージ · キュウリパック · 耳掃除 · 足・腕・背中マッサージ · シャンプー · 洗顔 · 頭・首・肩マッサージ · ドライ",
 pr_note:"Googleマップに写真付きレビューを書くとココナッツのお菓子をプレゼント！荷物預かりと冷たいお水は無料です。",
 gal_title:"ギャラリー",gal_sub:"店内の様子と施術例をご覧ください。",before:"ビフォー",after:"アフター",
-ct_title:"アクセス",ct_sub:"予約なしでもご来店いただけます。入口で靴をお脱ぎください。",ct_addr:"住所",ct_hours:"営業時間",ct_daily:"毎日",ct_phone:"電話",ct_floors:"フロア",ct_floorsd:"1階 ネイル & フットケア · 2〜4階 理髪店 & マッサージ",ct_map:"Googleマップで開く",since:"2019年創業",copy:"コピー",close:"閉じる"}};
+ct_title:"アクセス",ct_sub:"予約なしでもご来店いただけます。入口で靴をお脱ぎください。",ct_addr:"住所",ct_hours:"営業時間",ct_daily:"毎日",ct_phone:"電話",ct_floors:"フロア",ct_floorsd:"1階 ネイル & フットケア · 2〜4階 理髪店 & マッサージ",ct_map:"Googleマップで開く",rv_title:"お客様の声",rv_sub:"Googleに寄せられたお客様のレビューです。",rv_btn:"Googleですべてのレビューを見る",since:"2019年創業",copy:"コピー",close:"閉じる"}};
 function setLang(l){
   if(!T[l])l="en";
   document.documentElement.lang=l;
