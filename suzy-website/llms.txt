@@ -25,3 +25,14 @@
 - 한국어: ko.html
 - 中文: zh.html
 - 日本語: ja.html
+
+## Discounts
+- Returning customers: 10% off
+- Coming alone: 5% off
+- Groups of 2–3: 15% off
+- Groups of 4 or more: 15% off plus free pick-up or drop-off
+
+## Free extras
+- Free shower, free luggage storage, complimentary tea, herbal foot soak
+- Free 15-minute foot massage with a manicure + pedicure combo
+- Free foot scrub with a pedicure
