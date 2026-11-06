@@ -253,11 +253,11 @@ footer{background:var(--ink);color:#d9cfc7;padding:28px 0;font-size:14px;text-al
 <script>
 // ===== Social links. A button with url:"" and no id is hidden (Telegram, Messenger: add when available) =====
 const SOCIAL=[
+ {k:"kakaotalk",name:"KakaoTalk",color:"#FFCD00",url:"http://pf.kakao.com/_ueJzn/chat",cls:"kakao"},
  {k:"instagram",name:"Instagram",color:"#E4405F",url:"https://www.instagram.com/danang.suzynails/"},
  {k:"whatsapp",name:"WhatsApp",color:"#25D366",url:"https://wa.me/84365628752"},
  {k:"telegram",name:"Telegram",color:"#26A5E4",url:""},
  {k:"wechat",name:"WeChat",color:"#07C160",id:"+84 365 628 752"},
- {k:"kakaotalk",name:"KakaoTalk",color:"#FFCD00",url:"http://pf.kakao.com/_ueJzn/chat",cls:"kakao"},
  {k:"messenger",name:"Messenger",color:"#0084FF",url:""}];
 const box=document.getElementById("social"),pop=document.getElementById("pop");
 SOCIAL.filter(s=>s.url||s.id).forEach(s=>{const a=document.createElement("a");a.style.background=s.color;a.className=s.cls||"";
