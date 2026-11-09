@@ -59,5 +59,5 @@ export interface ExecuteFromDecisionOpts {
   // already open. Default false (conservative).
   allowConflicts?: boolean;
   // Who asked for the trade, recorded on the Risk Governor audit row.
-  origin?: "manual" | "ruby" | "automation" | "strategy";
+  origin?: "manual" | "eleanor" | "automation" | "strategy";
 }

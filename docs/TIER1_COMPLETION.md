@@ -86,7 +86,7 @@ fixtures/contracts and are repaired without changing trading policy:
   now creates and cleans its own user before exercising the real foreign key.
 - `fundbook-tier`: required boot-seeded pools; it now owns and cleans two isolated
   pools and NAV rows, preserving the same tier/rollback/isolation assertions.
-- `ruby-draw-setup-route`: the app harness does not run the production agent
+- `eleanor-draw-setup-route`: the app harness does not run the production agent
   seeder. An isolated RISK registry participant now drives the actual advisory
   and governance engines, then is cleaned up with cache invalidation.
 - `scanner-no-feed-honesty`: assumed a configured external provider would attempt

@@ -16,12 +16,12 @@ vi.mock("@/components/live/MasterLiveAccessGuard", () => ({
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, isLiveShared: false }) }));
 vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: null }) }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/live/LiveTradeTicket", () => ({ LiveTradeTicket: () => null }));
 vi.mock("@/components/live/LiveSharedTradeTicket", () => ({ LiveSharedTradeTicket: () => null }));
 vi.mock("@/components/trading/HistoricalCheckPanel", () => ({ HistoricalCheckPanel: () => null }));
 vi.mock("@/components/trading/NewsRiskCheckPanel", () => ({ NewsRiskCheckPanel: () => null }));
-vi.mock("./RubySetupReason", () => ({ RubySetupReason: () => null }));
+vi.mock("./EleanorSetupReason", () => ({ EleanorSetupReason: () => null }));
 
 import { ScannerTradeModal } from "./ScannerTradeModal";
 

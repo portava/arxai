@@ -31,7 +31,7 @@ Set/confirm live readiness:
 - owner account must be allowed to reach LiveSharedTradeTicket.
 - owner account must be allowed to create SENT_TO_MT5_LIVE rows.
 - owner account must be allowed to send commands to the EA/live bridge.
-- Ruby, scanner, selected market panel, manual trade page, and admin tools must all use the real live execution path for this owner account.
+- Eleanor, scanner, selected market panel, manual trade page, and admin tools must all use the real live execution path for this owner account.
 
 If row 182 still exists:
 - If row 182 is still valid, intentional, not expired, not duplicated, and still EA-pickup eligible, leave it available for the live EA test.
@@ -57,7 +57,7 @@ Run the full live functionality test suite using the real live path:
 11. Test close-trade flow if the trade fills.
 12. Confirm the close command reaches the live bridge.
 13. Confirm close result from broker/EA.
-14. Test Ruby live trade action.
+14. Test Eleanor live trade action.
 15. Test scanner live trade action.
 16. Test selected market live trade action.
 17. Test manual trade page live action.
@@ -77,7 +77,7 @@ Timing measurements required:
 - broker result to UI update
 - open trade full cycle time
 - close trade full cycle time
-- Ruby live action latency
+- Eleanor live action latency
 - scanner live action latency
 - selected market live action latency
 - manual trade live action latency
@@ -105,7 +105,7 @@ Final report must include:
 9. broker result
 10. open trade timing
 11. close trade timing if filled
-12. Ruby timing
+12. Eleanor timing
 13. scanner timing
 14. selected market timing
 15. manual trade timing

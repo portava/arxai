@@ -1,8 +1,8 @@
 // Self-Trade decision modules — pure verdict helpers derived FROM the already
-// computed RubyMarketEdgeSignal (no candle math is duplicated here). Each module
+// computed EleanorMarketEdgeSignal (no candle math is duplicated here). Each module
 // answers one focused question for the ordered decision pipeline.
 
-import type { RubyMarketEdgeSignal } from "../signal-intelligence/signalIntelligence.types.js";
+import type { EleanorMarketEdgeSignal } from "../signal-intelligence/signalIntelligence.types.js";
 import { clamp, round } from "../signal-intelligence/_math.js";
 import type {
   ConfidenceDecayVerdict,
@@ -20,7 +20,7 @@ import type {
 
 // ── MarketRegimeDetector ─────────────────────────────────────────────────────
 
-export function detectMarketRegime(signal: RubyMarketEdgeSignal): RegimeFit {
+export function detectMarketRegime(signal: EleanorMarketEdgeSignal): RegimeFit {
   const regime = signal.regime;
   switch (regime) {
     case "TRENDING":
@@ -40,7 +40,7 @@ export function detectMarketRegime(signal: RubyMarketEdgeSignal): RegimeFit {
 
 // ── SetupClassifier ──────────────────────────────────────────────────────────
 
-export function classifySetup(signal: RubyMarketEdgeSignal): SetupClassification {
+export function classifySetup(signal: EleanorMarketEdgeSignal): SetupClassification {
   if (!signal.hasSufficientData || signal.direction === "NEUTRAL") {
     return { setup: "NONE", side: null, score: 0, reasons: ["No directional read / insufficient data."] };
   }
@@ -80,8 +80,8 @@ export function classifySetup(signal: RubyMarketEdgeSignal): SetupClassification
 // ── MultiTimeframeAlignment ──────────────────────────────────────────────────
 
 export function evaluateMtfAlignment(
-  primary: RubyMarketEdgeSignal,
-  htf: RubyMarketEdgeSignal[],
+  primary: EleanorMarketEdgeSignal,
+  htf: EleanorMarketEdgeSignal[],
 ): MtfAlignmentVerdict {
   const ltfBias = primary.bias;
   if (htf.length === 0) {
@@ -134,7 +134,7 @@ export function evaluateMtfAlignment(
 // ── EntryZoneEngine ──────────────────────────────────────────────────────────
 
 export function evaluateEntryZone(
-  signal: RubyMarketEdgeSignal,
+  signal: EleanorMarketEdgeSignal,
   currentPrice: number | null,
 ): EntryZoneVerdict {
   const zone = signal.entryZone;
@@ -156,7 +156,7 @@ export function evaluateEntryZone(
 
 // ── LateEntryDetector ────────────────────────────────────────────────────────
 
-export function evaluateLateEntry(signal: RubyMarketEdgeSignal): LateEntryVerdict {
+export function evaluateLateEntry(signal: EleanorMarketEdgeSignal): LateEntryVerdict {
   return {
     isLate: signal.late.isLate,
     doNotChase: signal.late.doNotChase,
@@ -196,7 +196,7 @@ export function evaluateSpreadSlippage(
 // ── NoTradeScore ─────────────────────────────────────────────────────────────
 
 export function computeNoTradeScore(
-  signal: RubyMarketEdgeSignal,
+  signal: EleanorMarketEdgeSignal,
   regime: RegimeFit,
 ): NoTradeVerdict {
   if (!signal.hasSufficientData) {
@@ -238,7 +238,7 @@ export function computeNoTradeScore(
 // ── ConfidenceDecay ──────────────────────────────────────────────────────────
 
 export function applyConfidenceDecay(
-  signal: RubyMarketEdgeSignal,
+  signal: EleanorMarketEdgeSignal,
   now: number,
 ): ConfidenceDecayVerdict {
   const base = signal.scores.overall;

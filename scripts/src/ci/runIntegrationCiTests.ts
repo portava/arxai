@@ -133,8 +133,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/scripts", script: "test:pg-unique-violation" },
   { pkg: "@workspace/scripts", script: "test:realized-daily-pnl", inProcess: true },
   { pkg: "@workspace/scripts", script: "test:reconcile-orphans" },
-  { pkg: "@workspace/scripts", script: "test:ruby-draw-setup-route", inProcess: true },
-  { pkg: "@workspace/scripts", script: "test:ruby-quality-route-db", inProcess: true },
+  { pkg: "@workspace/scripts", script: "test:eleanor-draw-setup-route", inProcess: true },
+  { pkg: "@workspace/scripts", script: "test:eleanor-quality-route-db", inProcess: true },
   { pkg: "@workspace/scripts", script: "test:shared-bridge-reconciliation" },
   { pkg: "@workspace/scripts", script: "test:shared-bridge-attach-flow" },
   { pkg: "@workspace/scripts", script: "test:shared-positions-truth" },
@@ -245,7 +245,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:platform-controls-route" },
   // Pre-trade Risk Governor: the 12 mandatory rules one by one and in
   // combination (pure), then end to end on a real DB through the manual paper
-  // route, Ruby Trade Action drafts, paper automation and the live venue
+  // route, Eleanor Trade Action drafts, paper automation and the live venue
   // against a sandbox bridge — decision, enforcement, rejection and the
   // user_risk_events audit row for each.
   { pkg: "@workspace/api-server", script: "test:risk-governor-rules" },
@@ -374,7 +374,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:testing-lab-smoke" },
   // Live-Position Truth (Phase 1) — advisory-tool refusal lock. Seeds a single
   // throwaway user with an unsynced and a verified live_positions row and invokes
-  // the REAL Ruby advisory tools (intelligence / close-review / exit / market-
+  // the REAL Eleanor advisory tools (intelligence / close-review / exit / market-
   // context / decision), proving each withholds advice on the not-broker-verified
   // row, never over-blocks the verified row, and never crosses users. Imports
   // @workspace/db via tools.ts, so it lives in the integration lane.

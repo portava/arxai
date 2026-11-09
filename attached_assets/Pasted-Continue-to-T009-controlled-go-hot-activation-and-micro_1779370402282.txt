@@ -175,15 +175,15 @@ Rollback must:
 - engage kill switch
 - disable global shared live trading
 - pause scanner live entries
-- pause Ruby live assists
+- pause Eleanor live assists
 - pause manual live entries
 - cancel queued commands not picked up
 - preserve audit logs
 - preserve trade history
 - keep demo/paper working
 
-10. Ruby final activation knowledge
-Update Ruby so she can answer:
+10. Eleanor final activation knowledge
+Update Eleanor so she can answer:
 - Are we ready to go hot?
 - What is blocking live activation?
 - Is the hard kill released?
@@ -195,7 +195,7 @@ Update Ruby so she can answer:
 - Did the EA pick up the command?
 - How do we roll back immediately?
 
-Ruby must never execute without explicit confirmation and backend validation.
+Eleanor must never execute without explicit confirmation and backend validation.
 
 11. Final tests
 Run:
@@ -225,7 +225,7 @@ Acceptance checks:
 - Command queue monitor shows status changes.
 - Stale commands cannot execute.
 - Rollback works and is guarded.
-- Ruby can explain activation readiness.
+- Eleanor can explain activation readiness.
 - No MT5 credentials added.
 - No secrets exposed.
 - No frontend path directly queues live commands.

@@ -1,5 +1,5 @@
 // Mode-aware closed-trade ledger shared by the Performance Calendar routes
-// (routes/mePerformanceCalendar.ts) and Ruby's performance tools
+// (routes/mePerformanceCalendar.ts) and Eleanor's performance tools
 // (lib/assistant/tools.ts), so both answer "what's my P&L" from the SAME book.
 //
 //  - LIVE_SHARED mode scope → withheld (no per-user book here; mixing stale
@@ -139,7 +139,7 @@ export async function resolveLedgerBasis(
 }
 
 // Full Performance-Calendar resolution for callers outside the HTTP route
-// (Ruby's tools): the basis plus its closed rows (none when withheld).
+// (Eleanor's tools): the basis plus its closed rows (none when withheld).
 export async function resolveClosedTradeLedger(
   userId: number,
   opts: { isAdmin?: boolean; fromIso?: string; toIso?: string } = {},

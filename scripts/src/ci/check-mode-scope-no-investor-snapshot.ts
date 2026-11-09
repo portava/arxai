@@ -9,7 +9,7 @@
 // Every hop is `async`/`await`, so the cycle does NOT overflow the stack or
 // throw — getUserModeScope's try/catch → PAPER fallback never fires; it just
 // recurses forever doing DB queries and HANGS with no error and no timeout.
-// That silently breaks /api/me/account, the balance SSE stream, Ruby, and the
+// That silently breaks /api/me/account, the balance SSE stream, Eleanor, and the
 // risk engine. It was fixed by having the resolver call
 // `computeAccountShell(userId, { skipInvestorSnapshot: true })`, which makes
 // the shell return a null investor snapshot (the resolver only reads

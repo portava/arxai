@@ -2,7 +2,7 @@
 // market is allowed for MT5 live trading (on the live market list and an
 // ARX Focus market) or analysis-only. It does not check the bridge
 // connection — the server copy says so. Reads from
-// /api/market-data/tradability so trade ticket, scanner card, and Ruby
+// /api/market-data/tradability so trade ticket, scanner card, and Eleanor
 // panel all agree.
 import { Badge } from "@/components/ui/badge";
 import { Info } from "lucide-react";

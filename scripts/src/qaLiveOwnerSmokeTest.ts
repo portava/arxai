@@ -84,7 +84,7 @@ async function main() {
     volume: 0.01,
     stopLoss: 1.0000,   // wide SL well below any plausible EURUSD entry; satisfies physics SL gate
     takeProfit: null,
-    rubyExplanationSummary: "qaLiveOwnerSmokeTest authorized owner live smoke",
+    eleanorExplanationSummary: "qaLiveOwnerSmokeTest authorized owner live smoke",
   });
   console.log(`execute                    → HTTP ${dispatch.status}  ${fmt(dispatch.ms)}`);
   const dj = dispatch.json as { commandId?: string; stage?: string; reason?: string; detail?: string; ok?: boolean } | null;

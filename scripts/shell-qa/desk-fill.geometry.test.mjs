@@ -22,7 +22,7 @@ const css = [
   "../../artifacts/trading-dashboard/src/components/layout/arx-shell-frame.css",
   "../../artifacts/trading-dashboard/src/components/dashboard/command-workspace.css",
 ].map(file => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
-const columns = [["discovery", "heat", "clock"], ["chart", "intelligence"], ["ruby", "risk", "order"]];
+const columns = [["discovery", "heat", "clock"], ["chart", "intelligence"], ["eleanor", "risk", "order"]];
 const ids = columns.flat();
 const panel = id => `<section id="workspace-${id}" class="arx-panel ${id === "chart" ? "arx-chart-panel" : ""}" data-collapsed="false">
   <div class="arx-panel-head"><h2>${id}</h2><button aria-expanded="true">Collapse</button></div>

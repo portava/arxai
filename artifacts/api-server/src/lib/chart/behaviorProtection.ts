@@ -239,7 +239,7 @@ export async function getBehaviorProtection(
     // 6) Ignoring invalidation — open losing position past a meaningful floating loss.
     const deepUnderwater = openLive.filter((p) => (p.floatingPl ?? 0) < 0).length;
     const reExitWarned = closedBaskets.filter(
-      (b) => b.rubyWarnedCorrectly === true && b.result === "LOSS",
+      (b) => b.eleanorWarnedCorrectly === true && b.result === "LOSS",
     ).length;
     if (reExitWarned >= 2) {
       signals.push({

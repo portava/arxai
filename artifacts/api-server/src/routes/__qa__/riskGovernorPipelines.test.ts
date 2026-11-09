@@ -8,7 +8,7 @@ enabledBrokerControlsFixture();
 // audit trail (one user_risk_events row naming the rules).
 //
 //   A  demo, manual      POST /paper/orders through the real router + session
-//   B  demo, Ruby        a Ruby-suggested Trade Action draft, confirmed
+//   B  demo, Eleanor        a Eleanor-suggested Trade Action draft, confirmed
 //   C  demo, automated   paper execution with origin "automation"
 //                        (riskGovernorAutomation.test.ts)
 //   D  live, sandbox     the LIVE venue against a seeded bridge and the live
@@ -260,7 +260,7 @@ test("A demo manual: today's realized loss at the cap blocks new risk (daily los
   assert.match(body.error, /Daily loss/);
 });
 
-// ── B. Demo, Ruby ──────────────────────────────────────────────────────────
+// ── B. Demo, Eleanor ──────────────────────────────────────────────────────────
 
 test("Position Guardian (paper): a stop tightens freely; widening past the per-trade limit is refused, audited, and leaves the stop", async () => {
   const acct = await resetPaper(u.a);
@@ -346,7 +346,7 @@ test("Position Guardian: live, demo and trade-action modifies hand the governor 
   assert.match(read("../../lib/positions/governedOps.ts"), /createLiveOpsDraft\(/);
 });
 
-test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm and audited as origin ruby", async () => {
+test("B demo Eleanor: a Eleanor-suggested draft with no stop is rejected at confirm and audited as origin eleanor", async () => {
   await resetPaper(u.a);
   await seedBridge(u.a); // gives the quote source for the paper venue
   const draft = await createActionDraft({
@@ -364,11 +364,11 @@ test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm an
   const cmds = await db.select().from(mt5CommandsTable).where(eq(mt5CommandsTable.userId, u.a));
   assert.equal(cmds.length, 0, "nothing queued");
   const ev = await latestEvent(u.a);
-  assert.equal(ev.intent["origin"], "ruby");
+  assert.equal(ev.intent["origin"], "eleanor");
   assert.ok(ev.blockedBy.includes("stop_loss_required"));
 });
 
-test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the PAPER venue", async () => {
+test("B demo Eleanor: a sound Eleanor draft passes the governor and moves on to the PAPER venue", async () => {
   await resetPaper(u.a);
   await seedBridge(u.a);
   const draft = await createActionDraft({
@@ -387,7 +387,7 @@ test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the PA
   assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0);
   const ev = await latestEvent(u.a);
   assert.equal(ev.row.decision, "pass");
-  assert.equal(ev.intent["origin"], "ruby");
+  assert.equal(ev.intent["origin"], "eleanor");
   assert.equal(ev.intent["venue"], "PAPER");
 });
 

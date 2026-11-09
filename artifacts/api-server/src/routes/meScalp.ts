@@ -1,9 +1,9 @@
-// Ruby Scalp Signals — per-user HTTP surface.
+// Eleanor Scalp Signals — per-user HTTP surface.
 //
 // Three endpoints, ONE shared engine behind them (lib/scalp):
 //   POST /me/scalp/focus  -> evaluate the selected symbol (Focus card)
 //   POST /me/scalp/rank   -> Best/Safer/Fastest + ranked list (Broad scan)
-//   POST /me/scalp/build  -> target/risk driven best scalp (Ruby Builder)
+//   POST /me/scalp/build  -> target/risk driven best scalp (Eleanor Builder)
 //
 // SAFETY: requireUser on every route; all reads scoped to req.authUser.id.
 // Nothing here places, modifies, or closes a trade — it only produces a
@@ -29,7 +29,7 @@ import {
   getSymbolPersonalities,
 } from "../lib/scalp/scalpJournalService.js";
 import { normalizeSymbol } from "../lib/instruments/index.js";
-import { buildRubyMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
+import { buildEleanorMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
 import { getCachedOpportunityMap } from "../lib/signalIntelligence/opportunityMapReadCache.js";
 import { explainMarketRead } from "@workspace/domain/signal-intelligence";
 import type { UniverseId } from "../lib/marketScanner.js";
@@ -312,7 +312,7 @@ router.get("/me/market-edge", requireUser, async (req, res) => {
     return res.status(400).json({ error: "invalid_symbol", message: "That market is not recognized." });
   }
   try {
-    const signal = await buildRubyMarketEdgeForUser(req.authUser!.id, {
+    const signal = await buildEleanorMarketEdgeForUser(req.authUser!.id, {
       symbol,
       timeframe: parsed.data.timeframe ?? undefined,
     });

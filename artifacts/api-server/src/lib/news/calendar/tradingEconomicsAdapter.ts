@@ -2,7 +2,7 @@
 //
 // Implements:
 //   - NewsProvider (fetchEvents) — for the /economic-events/sync path
-//   - getCalendarSnapshot(symbol?) → EconomicCalendarSnapshot — for the radar/Ruby seam
+//   - getCalendarSnapshot(symbol?) → EconomicCalendarSnapshot — for the radar/Eleanor seam
 //
 // Honesty rules (inviolable):
 //   - `connected` is true ONLY when a real fetch succeeded from TE API.
@@ -258,7 +258,7 @@ function teToFull(e: TeEvent): CalendarEventFull | null {
 }
 
 /**
- * Build an `EconomicCalendarSnapshot` for the given symbol (for the radar/Ruby seam).
+ * Build an `EconomicCalendarSnapshot` for the given symbol (for the radar/Eleanor seam).
  * `connected` is true ONLY when the API key is set and the fetch succeeded.
  * Events are filtered to the upcoming window AND to the requested symbol via
  * `eventAffectsSymbol` — empty symbol ("") returns all events in window.

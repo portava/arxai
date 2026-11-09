@@ -20,7 +20,7 @@ function makePreview(over: Partial<SetupPreview> = {}): SetupPreview {
     providerSource: { assetClass: "forex", composite: false, label: "Broker feed" },
     bridgeStatus: null, allocationKnown: true,
     scannerScore: null, flameStage: null, runOnQuality: null, riskScore: null, governanceOutcome: null,
-    explanation: ["A long idea."], invalidationNote: "x", createdBy: "ruby",
+    explanation: ["A long idea."], invalidationNote: "x", createdBy: "eleanor",
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 90_000).toISOString(),
     status: "preview", ...over,
   };

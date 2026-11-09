@@ -1,6 +1,6 @@
 Run a full ARX AI app-wide wiring audit, repair, and end-to-end cooperation check.
 
-The goal is to make sure the entire app and entire AI ecosystem are actually connected across all layers, functions, pages, agents, services, routes, UI surfaces, backend logic, admin controls, scanner, Ruby, risk system, scalp engine, governance, lifecycle, live execution readiness, and MT5/Deriv bridge systems.
+The goal is to make sure the entire app and entire AI ecosystem are actually connected across all layers, functions, pages, agents, services, routes, UI surfaces, backend logic, admin controls, scanner, Eleanor, risk system, scalp engine, governance, lifecycle, live execution readiness, and MT5/Deriv bridge systems.
 
 The premise of ARX AI only works if every part of the system cooperates with the rest of the system. Do not leave isolated modules, decorative agents, fake traces, unused services, disconnected UI buttons, orphaned functions, duplicated logic, or features that exist in code but do not affect real app behavior.
 
@@ -8,7 +8,7 @@ Do not rebuild the app. Do not remove working features. Do not redesign the UI. 
 
 MAIN OBJECTIVE
 
-Search every file, every function, every route, every service, every agent, every scanner path, every Ruby path, every admin path, every trade path, every risk path, every lifecycle/governance path, and every UI action.
+Search every file, every function, every route, every service, every agent, every scanner path, every Eleanor path, every admin path, every trade path, every risk path, every lifecycle/governance path, and every UI action.
 
 Confirm that each feature:
 
@@ -38,7 +38,7 @@ Create a complete internal inventory of:
 * all modals
 * all dashboards
 * all scanner functions
-* all Ruby functions
+* all Eleanor functions
 * all AI agent functions
 * all governance functions
 * all lifecycle/scoring functions
@@ -73,8 +73,8 @@ PHASE 2 — APP-WIDE WIRING MAP
 
 Build and verify the full cooperation map between systems:
 
-1. Ruby
-    Ruby must be connected to:
+1. Eleanor
+    Eleanor must be connected to:
 
 * Scanner signals
 * selected market explanations
@@ -90,7 +90,7 @@ Build and verify the full cooperation map between systems:
 * saved chats/memory
 * admin-safe vs user-safe explanation modes
 
-Ruby must explain things in plain English and never expose backend function names, raw schema names, route names, environment variable names, or developer-only wording to normal users.
+Eleanor must explain things in plain English and never expose backend function names, raw schema names, route names, environment variable names, or developer-only wording to normal users.
 
 2. Scanner
     Scanner must be connected to:
@@ -99,7 +99,7 @@ Ruby must explain things in plain English and never expose backend function name
 * Broad Scan
 * Flame Scalp
 * selected market explanation
-* Ruby reasoning
+* Eleanor reasoning
 * agent scores
 * governance decisions
 * risk downgrades
@@ -118,7 +118,7 @@ Scanner rankings must actually change when agent confidence, risk score, governa
 * Focus path
 * Broad path
 * Builder path
-* Ruby explanations
+* Eleanor explanations
 * risk engine
 * reward-to-risk
 * candle momentum logic
@@ -135,7 +135,7 @@ Confirm flame/scalp logic is not just detecting fast candles. It must evaluate s
     Risk must be connected to:
 
 * scanner ranking
-* Ruby explanation
+* Eleanor explanation
 * trade ticket
 * one-click scalping
 * SL/TP editor
@@ -154,7 +154,7 @@ Risk AI must be able to downgrade or caution weak setups. It should not be decor
     Reward-to-risk must be connected to:
 
 * scanner
-* Ruby
+* Eleanor
 * trade ticket
 * recommended stop loss
 * recommended take profit
@@ -170,7 +170,7 @@ Users should be able to enter and edit SL/TP where intended. Recommended SL/TP s
 6. AI Agent Scoring & Lifecycle
     Agent scoring/lifecycle must be connected to:
 
-* Ruby
+* Eleanor
 * Scanner
 * Flame Scalp
 * Risk
@@ -190,7 +190,7 @@ Weak agents should lose influence. Strong agents should gain influence. Agents i
 
 * agent challenges
 * scanner ranking changes
-* Ruby explanation changes
+* Eleanor explanation changes
 * risk warnings
 * scalp/flame confidence
 * agent lifecycle changes
@@ -203,7 +203,7 @@ Governance must produce actual outcomes such as approved, approved with caution,
 8. Traffic Controller
     Traffic Controller must be connected to:
 
-* Ruby requests
+* Eleanor requests
 * scanner runs
 * scalp/flame scans
 * governance reviews
@@ -254,7 +254,7 @@ Admin/OWNER should have visibility and control. Normal users should not.
 * Dashboard
 * Markets
 * Trade
-* Ruby
+* Eleanor
 * Risk
 * Settings
 
@@ -300,7 +300,7 @@ Search the entire app for:
 * unused exports
 * orphaned routes
 * duplicate scanner logic
-* duplicate Ruby panels
+* duplicate Eleanor panels
 * duplicate risk calculations
 * duplicate trade forms
 * duplicate admin panels
@@ -308,7 +308,7 @@ Search the entire app for:
 * placeholder agent decisions
 * fake governance traces
 * fake scanner outputs
-* fake Ruby reasoning
+* fake Eleanor reasoning
 * buttons with no handler
 * handlers with no UI
 * APIs with no callers
@@ -352,14 +352,14 @@ Functions should not complete in isolation if related systems need updates.
 
 Examples:
 
-* Scanner result changes should notify Ruby/risk/governance surfaces where appropriate.
+* Scanner result changes should notify Eleanor/risk/governance surfaces where appropriate.
 * Trade placement should update positions/order status/logs/admin trace.
 * SL/TP edits should update trade display and risk/reward.
-* Governance downgrade should update scanner score and Ruby explanation.
+* Governance downgrade should update scanner score and Eleanor explanation.
 * Agent demotion should reduce influence across all related surfaces.
 * Learning Camp state should affect agent participation.
 * Traffic Controller should affect which agents run.
-* Market selection should update explanation, scanner context, Ruby context, and risk context.
+* Market selection should update explanation, scanner context, Eleanor context, and risk context.
 
 PHASE 5 — UI / BACKEND CONSISTENCY CHECK
 
@@ -377,7 +377,7 @@ Check:
 * all trade buttons
 * all admin controls
 * all investor controls
-* all Ruby controls
+* all Eleanor controls
 * all voice controls
 * all market selection controls
 * all role switches
@@ -411,7 +411,7 @@ OWNER/admin:
 
 Trader:
 
-* user-safe market/trade/Ruby/risk tools
+* user-safe market/trade/Eleanor/risk tools
 * no admin internals
 * no unrestricted controls unless explicitly authorized
 
@@ -442,7 +442,7 @@ Check the speed of:
 * scanner start
 * scanner result display
 * market explanation
-* Ruby response
+* Eleanor response
 * trade ticket open
 * order submit button response
 * position update
@@ -466,7 +466,7 @@ Run full end-to-end tests for these workflows:
 5. User runs Flame Scalp scan.
 6. Scanner rankings reflect agent/risk/governance influence.
 7. User selects a market.
-8. Ruby explains the market in plain English.
+8. Eleanor explains the market in plain English.
 9. Risk AI cautions or supports where appropriate.
 10. Reward-to-risk produces reasonable SL/TP logic.
 11. Trade ticket opens with correct symbol/context.
@@ -502,7 +502,7 @@ When complete, provide a clear final report with:
 
 1. Full system wiring status:
 
-* Ruby
+* Eleanor
 * Scanner
 * Flame Scalp
 * Risk
@@ -535,10 +535,10 @@ Do not mark this task complete until:
 * every reachable feature works
 * every major backend function has a caller or is flagged
 * every major UI button has a working handler or is removed/flagged
-* AI agents cooperate across Ruby, Scanner, Risk, Scalp, Governance, Lifecycle, Admin, and Traffic Controller
+* AI agents cooperate across Eleanor, Scanner, Risk, Scalp, Governance, Lifecycle, Admin, and Traffic Controller
 * governance decisions affect real app behavior
 * scanner rankings respond to agent/risk/governance changes
-* Ruby explains agent/risk/governance influence in plain English
+* Eleanor explains agent/risk/governance influence in plain English
 * admin can inspect what happened
 * normal users do not see internal code/backend terms
 * role permissions are correct

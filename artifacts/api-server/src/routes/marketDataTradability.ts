@@ -1,5 +1,5 @@
 // Public per-user tradability endpoint. Returns the same fields the
-// trade ticket badge, scanner card label, and Ruby market-context
+// trade ticket badge, scanner card label, and Eleanor market-context
 // pipeline consume so they cannot drift apart.
 import { Router } from "express";
 import { getSymbolTradability } from "../lib/data/symbolTradability.js";

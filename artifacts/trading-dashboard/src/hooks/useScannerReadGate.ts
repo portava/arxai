@@ -2,7 +2,7 @@
 // from the ONE scanner-truth contract (Task #391).
 //
 // Every advisory surface that renders confidence/actionable content (the
-// ScannerReadGate banner, Ruby Market Read, Timing Intelligence) consumes this
+// ScannerReadGate banner, Eleanor Market Read, Timing Intelligence) consumes this
 // so the downgrade decision is computed ONCE, from the same truth, against the
 // same scanner timeframe. A card can therefore never present a confident,
 // actionable read while the shared truth says the data is historical / limited /

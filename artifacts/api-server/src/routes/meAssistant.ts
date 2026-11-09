@@ -32,19 +32,19 @@ import {
   arxAssistantToolCallsTable,
   oneClickAuditTable,
   userOneClickSettingsTable,
-  rubyCommandsTable,
-  rubyWatchInstructionsTable,
-  type RubyCommandKind,
+  eleanorCommandsTable,
+  eleanorWatchInstructionsTable,
+  type EleanorCommandKind,
 } from "@workspace/db";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
 import type { InstantTradeIntent } from "../lib/live/instantTrade.js";
-import { MAX_ACTIVE_RUBY_WATCHES, ownBridgePriceOf, recordAndExecuteRuby, rubyWatchPermissionBlock } from "../lib/assistant/rubyExecution.js";
+import { MAX_ACTIVE_ELEANOR_WATCHES, ownBridgePriceOf, recordAndExecuteEleanor, eleanorWatchPermissionBlock } from "../lib/assistant/eleanorExecution.js";
 import { currentFeedScopeBridge } from "../lib/data/feedScope.js";
-import { cancelScope, isCloseAlertAnswer, pickWatchesToCancel } from "../lib/assistant/rubyAlertAnswers.js";
-import { evaluateRubyWatchesForUser, acknowledgeRubyWatch, listRubyWatches, setRubyWatchFakeoutAuthority } from "../lib/assistant/rubyWatchEvaluator.js";
-import { isSweeperEnabled, getRubySweeperStatus } from "../lib/assistant/rubyWatchSweeper.js";
-import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/rubyMonitorPolicy.js";
+import { cancelScope, isCloseAlertAnswer, pickWatchesToCancel } from "../lib/assistant/eleanorAlertAnswers.js";
+import { evaluateEleanorWatchesForUser, acknowledgeEleanorWatch, listEleanorWatches, setEleanorWatchFakeoutAuthority } from "../lib/assistant/eleanorWatchEvaluator.js";
+import { isSweeperEnabled, getEleanorSweeperStatus } from "../lib/assistant/eleanorWatchSweeper.js";
+import { parseMonitorState, emptyMonitorState, serializeMonitorState, setFakeoutAuthority } from "../lib/assistant/eleanorMonitorPolicy.js";
 import { chatMessageLimiter, conversationCreateLimiter, tradeCommandLimiter, rateLimitBody } from "../lib/assistant/chatRateLimit.js";
 import { toolResultText } from "../lib/assistant/toolResultText.js";
 import { analyzeChartStructure, readHigherTimeframeBias, type StructureBias } from "../lib/assistant/chartStructure.js";
@@ -65,16 +65,16 @@ import {
 import { buildSessionSystemMessages, type PageContext } from "../lib/assistant/systemPrompt.js";
 import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
 import { getMarketStatus } from "../lib/assistant/marketProvider.js";
-import { buildRubyContext, composeRubyBriefing, type RubyRole } from "../lib/assistant/rubyContext.js";
+import { buildEleanorContext, composeEleanorBriefing, type EleanorRole } from "../lib/assistant/eleanorContext.js";
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { knownPricePrecision } from "../lib/data/chart/symbolProfile.js";
-import { buildRubyChartContext, buildGatedTrustLine, gatedReadReason } from "../lib/data/chart/rubyChartContext.js";
-import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
+import { buildEleanorChartContext, buildGatedTrustLine, gatedReadReason } from "../lib/data/chart/eleanorChartContext.js";
+import { buildEleanorStructuralRead } from "../lib/assistant/eleanorStructuralReadService.js";
 import { buildDecisionSnapshot, recordDecisionSnapshot } from "../lib/data/chart/chartDecisionSnapshot.js";
-import { buildRubyDraftRead, type RubyDraftIntent } from "../lib/assistant/rubyDraftRead.js";
-import { recordRubyReadDecision } from "../lib/chart/recordRubyRead.js";
+import { buildEleanorDraftRead, type EleanorDraftIntent } from "../lib/assistant/eleanorDraftRead.js";
+import { recordEleanorReadDecision } from "../lib/chart/recordEleanorRead.js";
 import { classifySymbol } from "../lib/data/marketDataRouter.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
@@ -94,9 +94,9 @@ import { buildAaciDecision } from "../lib/aaci/decisionService.js";
 import { aaciRecommendedActionLabel, aaciCohesionTone } from "@workspace/domain/aaci";
 import { scrubUserCopyDeep } from "@workspace/domain/security";
 import { neutralizeFeedCopyDeep } from "../lib/honesty/feedTruthCopy.js";
-import { recordSignalOnAppear } from "../lib/rubyQuality/index.js";
+import { recordSignalOnAppear } from "../lib/eleanorQuality/index.js";
 import { mintRealtimeSession, getVoiceModeStatus, VOICE_NO_TOOLS_INSTRUCTION } from "../lib/assistant/realtimeSession.js";
-import { computeRubySignalAdvisory, recordAdvisoryTrace } from "../lib/agentEcosystem/advisoryInfluence.js";
+import { computeEleanorSignalAdvisory, recordAdvisoryTrace } from "../lib/agentEcosystem/advisoryInfluence.js";
 import {
   computeSurfaceGovernance,
   maybeRecordDisagreement,
@@ -114,10 +114,10 @@ import {
 
 const router = Router();
 
-// Ruby's REPORTED safety state is DERIVED per-user (honest both ways) — never a
+// Eleanor's REPORTED safety state is DERIVED per-user (honest both ways) — never a
 // hardcoded paper-only stub that drifts from reality. The shared helper is
 // fail-closed: any envelope read failure collapses to FAIL_CLOSED_ENVELOPE
-// (off / locked). Advisory / reporting only — this changes what Ruby *says*,
+// (off / locked). Advisory / reporting only — this changes what Eleanor *says*,
 // never what it is *allowed to do* (order-guard chain + 16-gate Phase B dispatch
 // + the explicit per-trade confirmation choreography are untouched).
 async function buildPerUserEnvelope(userId: number | null | undefined) {
@@ -139,7 +139,7 @@ function err(res: import("express").Response, status: number, message: string) {
   res.status(status).json({ error: message, ...FAIL_CLOSED_FIELDS });
 }
 
-// Task #412 — Top-250 universe gate for Ruby's READ-ONLY chart surfaces.
+// Task #412 — Top-250 universe gate for Eleanor's READ-ONLY chart surfaces.
 // Resolves the requested symbol against the approved universe. When it is NOT
 // an approved market, respond with an honest, user-safe "not available" read
 // (read-only envelope) and return true so the caller can stop. When ambiguous,
@@ -248,7 +248,7 @@ router.get("/me/assistant/provider-status", requireUser, async (req, res) => {
   });
 });
 
-// ── T023: context-aware Ruby briefing ────────────────────────────────────
+// ── T023: context-aware Eleanor briefing ────────────────────────────────────
 // Replaces the static repeated greeting. Builds a compact, plain-English
 // briefing from REAL app state only (live bridge, MT5 snapshot for owner/
 // admin, ARX allocation, market session, selected-symbol tradability, open
@@ -261,17 +261,17 @@ const BriefingQuery = z.object({
 router.get("/me/assistant/briefing", requireUser, safe(async (req, res) => {
   const userId = req.authUser!.id;
   const rawRole = String(req.authUser?.role ?? "USER").toUpperCase();
-  const role: RubyRole = rawRole === "OWNER" ? "OWNER" : rawRole === "ADMIN" ? "ADMIN" : "USER";
+  const role: EleanorRole = rawRole === "OWNER" ? "OWNER" : rawRole === "ADMIN" ? "ADMIN" : "USER";
   const parsed = BriefingQuery.safeParse(req.query);
   const page = parsed.success ? (parsed.data.page ?? "/") : "/";
   const symbol = parsed.success ? (parsed.data.symbol ?? null) : null;
   const assistantName = await getAssistantDisplayName(userId);
   try {
-    const ctx = await buildRubyContext(userId, role, page, symbol);
-    const briefing = composeRubyBriefing(ctx);
+    const ctx = await buildEleanorContext(userId, role, page, symbol);
+    const briefing = composeEleanorBriefing(ctx);
     res.json({ briefing, ...(await buildPerUserEnvelope(userId)) });
   } catch (e) {
-    try { req.log?.error({ err: (e as Error)?.message }, "ruby_briefing_failed"); } catch { /* noop */ }
+    try { req.log?.error({ err: (e as Error)?.message }, "eleanor_briefing_failed"); } catch { /* noop */ }
     // Honest, internals-free fallback so the panel always opens cleanly.
     res.json({
       briefing: {
@@ -356,13 +356,13 @@ router.get("/me/assistant/conversations/:id/messages", requireUser, safe(async (
   res.json({ messages, isEmpty: messages.length === 0, ...(await buildPerUserEnvelope(userId)) });
 }));
 
-// ── Ruby Setup Reason — scanner signal explanation ───────────────────────
+// ── Eleanor Setup Reason — scanner signal explanation ───────────────────────
 // Small deterministic structured explanation used by the Market Scanner
-// cards (and trade modal) under the heading "Ruby's Setup Reason".
+// cards (and trade modal) under the heading "Eleanor's Setup Reason".
 //
 // Design notes:
 //  - No LLM call. The scanner has already produced reasonForTrade /
-//    reasonToAvoid / bias / confidence; Ruby just rephrases them into a
+//    reasonToAvoid / bias / confidence; Eleanor just rephrases them into a
 //    hedged, user-friendly micro-summary. Predictable latency, free, and
 //    no chance of the model hallucinating a "guaranteed trade".
 //  - Language is hedged ("looks like a possible buy setup", "may favor
@@ -386,10 +386,10 @@ const explainSignalSchema = z.object({
   takeProfit: z.number().optional(),
   statusBadge: z.string().max(60).optional(),
 });
-// Ruby AACI advisory block — a clean, plain-English cohesion read attached to
-// Ruby's signal/chart explanations. READ-ONLY and fail-open: any error returns
-// null and Ruby's read is unchanged. Never leaks machine codes or sub-scores.
-async function buildRubyAaciBlock(
+// Eleanor AACI advisory block — a clean, plain-English cohesion read attached to
+// Eleanor's signal/chart explanations. READ-ONLY and fail-open: any error returns
+// null and Eleanor's read is unchanged. Never leaks machine codes or sub-scores.
+async function buildEleanorAaciBlock(
   userId: number | null | undefined,
   symbol: string,
   timeframe: string | null | undefined,
@@ -410,7 +410,7 @@ async function buildRubyAaciBlock(
     const decision = await buildAaciDecision({
       snapshot,
       userId,
-      actorType: "ruby",
+      actorType: "eleanor",
       actionRequested: "EVALUATE",
       symbol,
       timeframe: timeframe ?? undefined,
@@ -422,7 +422,7 @@ async function buildRubyAaciBlock(
       tone: aaciCohesionTone(decision.recommendedAction),
     };
   } catch {
-    // Advisory only — never fail Ruby's read on an AACI hiccup.
+    // Advisory only — never fail Eleanor's read on an AACI hiccup.
     return null;
   }
 }
@@ -442,7 +442,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
     ? "This setup may favor sellers."
     : "No clear directional edge right now — consider waiting for confirmation.";
   // Build a short "why" — keep it small and clear. Source data comes from
-  // the scanner; Ruby just reshapes it.
+  // the scanner; Eleanor just reshapes it.
   const whyParts: string[] = [];
   if (s.setupType) whyParts.push(s.setupType);
   if (s.reasonForTrade) whyParts.push(s.reasonForTrade);
@@ -468,14 +468,14 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
     cautions.push(`Scanner flagged ${s.statusBadge.replace(/_/g, " ").toLowerCase()}.`);
   }
 
-  // Agent Ecosystem advisory (Phase 0). Ruby surfaces, in plain English, how the
+  // Agent Ecosystem advisory (Phase 0). Eleanor surfaces, in plain English, how the
   // desk's trusted agents weigh in on this read — and folds any agent cautions
   // (e.g. a trusted Risk agent pushing back) into the existing caution list.
   // Advisory only: it never changes liveLocked / allowOrderExecution and never
-  // gates a trade. Fail-open: any error leaves Ruby's read unchanged.
+  // gates a trade. Fail-open: any error leaves Eleanor's read unchanged.
   let deskView: string | null = null;
   try {
-    const advisory = await computeRubySignalAdvisory({
+    const advisory = await computeEleanorSignalAdvisory({
       baseScore: conf,
       direction: side,
       confidenceScore: conf,
@@ -489,12 +489,12 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
         direction: side, at: new Date().toISOString(), result: advisory,
       });
       // Layer 3 governance — the Court reviews the desk's advisory read and emits
-      // a bounded, PROTECTIVE plain-English outcome. Ruby surfaces the headline +
+      // a bounded, PROTECTIVE plain-English outcome. Eleanor surfaces the headline +
       // any agent push-backs as cautions. Read-only: it never changes liveLocked /
       // allowOrderExecution and never gates a trade. Fail-open within this try.
-      const traffic = await runTrafficSelection("RUBY", "LOW");
+      const traffic = await runTrafficSelection("ELEANOR", "LOW");
       const review = computeSurfaceGovernance({
-        surface: "RUBY",
+        surface: "ELEANOR",
         direction: side,
         importance: "LOW",
         advisory,
@@ -507,7 +507,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
         deskView = `${userGov.headline} ${userGov.detail}`.trim();
         for (const c of userGov.cautions) if (!cautions.includes(c)) cautions.push(c);
         recordGovernanceTrace({
-          surface: "RUBY", symbol: s.symbol, timeframe: s.timeframe ?? null,
+          surface: "ELEANOR", symbol: s.symbol, timeframe: s.timeframe ?? null,
           direction: side, at: new Date().toISOString(), review,
         });
         // Agent Court auto-wiring — record a Court learning entry on a genuine
@@ -515,35 +515,35 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
         const disagreementCourtUsed = maybeRecordDisagreement(review, {
           symbol: s.symbol, timeframe: s.timeframe ?? "—", tradeType: "intraday",
         });
-        // Durable proof (fail-soft, fire-and-forget — never blocks Ruby's read).
+        // Durable proof (fail-soft, fire-and-forget — never blocks Eleanor's read).
         void persistGovernanceTrace({
-          actionType: "RUBY_ANALYSIS", surface: "RUBY",
+          actionType: "ELEANOR_ANALYSIS", surface: "ELEANOR",
           userId: req.authUser?.id ?? null, role: req.authUser?.role ?? null,
           symbol: s.symbol, timeframe: s.timeframe ?? null,
           review, participants: traffic.participants,
-          consideredKeys: traffic.consideredKeys, rubySummaryUsed: true,
+          consideredKeys: traffic.consideredKeys, eleanorSummaryUsed: true,
           disagreementCourtUsed,
         });
       }
     }
-  } catch { /* advisory + governance are best-effort; never fail Ruby's read */ }
+  } catch { /* advisory + governance are best-effort; never fail Eleanor's read */ }
 
   // Chart Brain v2 (Task 5): record an immutable Decision Receipt + chart events
-  // for this official Ruby signal explanation. Fire-and-forget, fail-open, Slow
+  // for this official Eleanor signal explanation. Fire-and-forget, fail-open, Slow
   // Brain. Only when a timeframe is present (a fingerprint needs one — we never
   // fabricate context).
   if (req.authUser?.id != null && s.timeframe) {
-    recordRubyReadDecision({
+    recordEleanorReadDecision({
       userId: req.authUser.id,
-      source: "ruby_explain_signal",
+      source: "eleanor_explain_signal",
       intent: "analyze",
       direction: side,
       symbol: s.symbol,
       timeframe: s.timeframe,
     });
-    // Task #199 — Outcome Learning: track this Ruby signal the moment it
+    // Task #199 — Outcome Learning: track this Eleanor signal the moment it
     // appears, locking its "at signal" snapshot. Fire-and-forget, fail-open:
-    // never block or fail Ruby's read. OBSERVATION ONLY — places nothing.
+    // never block or fail Eleanor's read. OBSERVATION ONLY — places nothing.
     void recordSignalOnAppear({
       userId: req.authUser.id,
       symbol: s.symbol,
@@ -555,12 +555,12 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
       stopLoss: s.stopLoss ?? null,
       takeProfit: s.takeProfit ?? null,
       explanationUsed: true,
-    }).catch(() => { /* outcome tracking is best-effort; never fail Ruby's read */ });
+    }).catch(() => { /* outcome tracking is best-effort; never fail Eleanor's read */ });
 
     // Phase 3 — Chart Decision Snapshot: capture the point-in-time chart
     // state at this serious read moment (truth score, read score, gate output,
     // broker alignment, latest candle ref). Fire-and-forget, fail-open — never
-    // blocks Ruby's response. Provides a replay-honesty anchor for the read.
+    // blocks Eleanor's response. Provides a replay-honesty anchor for the read.
     void buildChartIntelligenceState(s.symbol, s.timeframe as ChartTimeframe, 300).then((intel) => {
       const verifiedCandleRef = intel.latestClosedCandle
         ? {
@@ -583,14 +583,14 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
         brokerAlignment: intel.brokerAlignment,
         verifiedCandleRef,
         plan,
-        source: "ruby_explain_signal",
+        source: "eleanor_explain_signal",
       });
       recordDecisionSnapshot(req.authUser!.id, snapshot);
-    }).catch(() => { /* snapshot capture is best-effort; never fail Ruby's read */ });
+    }).catch(() => { /* snapshot capture is best-effort; never fail Eleanor's read */ });
   }
   const [envelope, aaci] = await Promise.all([
     buildPerUserEnvelope(req.authUser?.id ?? null),
-    buildRubyAaciBlock(req.authUser?.id ?? null, s.symbol, s.timeframe ?? null),
+    buildEleanorAaciBlock(req.authUser?.id ?? null, s.symbol, s.timeframe ?? null),
   ]);
   res.json({
     // Defence in depth — scrub any backend internals (gate codes, env names,
@@ -615,7 +615,7 @@ router.post("/me/assistant/explain-signal", requireUser, safe(async (req, res) =
   });
 }));
 
-// ── Ruby chart read — structural, plain-English market-structure read ─────
+// ── Eleanor chart read — structural, plain-English market-structure read ─────
 // SAFETY: read-only. Computes a deterministic structural read from the REAL
 // candles the chart is showing (never fabricated). Identifies higher-timeframe
 // bias and gives conditional buy/sell triggers; never forces a trade when
@@ -626,7 +626,7 @@ const readChartSchema = z.object({
   timeframe: z.string().min(1).max(10),
   // Client-observed Level 3 feed verdict at the moment the user asked for the
   // read (true only when the chart feed is clean/confirmed). Advisory only — the
-  // server still runs its own authoritative gate via buildRubyChartContext. When
+  // server still runs its own authoritative gate via buildEleanorChartContext. When
   // the client reports `false`, we additionally stamp the read as
   // `dataQuality: "insufficient"` so the caveat surfaces even if the backend
   // gate happened to pass.
@@ -651,7 +651,7 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   // "insufficient" caveat — even on the verified branch.
   const clientFeedUnconfirmed = parsed.data.aiUsable === false;
 
-  const outcome = await buildRubyStructuralRead({
+  const outcome = await buildEleanorStructuralRead({
     symbol,
     timeframe,
     draft: draft ?? null,
@@ -664,7 +664,7 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   // STRUCTURAL_ONLY reads record a decision (INSUFFICIENT / unsupported do not),
   // preserving the inline pipeline's behavior before this extraction.
   if (outcome.shouldRecordReadDecision && req.authUser?.id != null) {
-    recordRubyReadDecision({
+    recordEleanorReadDecision({
       userId: req.authUser.id,
       source: "chart_read",
       intent: "analyze",
@@ -677,7 +677,7 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   // service), so the response shape stays identical across every read layer.
   const [envelope, aaci] = await Promise.all([
     buildPerUserEnvelope(req.authUser?.id ?? null),
-    buildRubyAaciBlock(req.authUser?.id ?? null, symbol, outcome.normalizedTimeframe ?? timeframe),
+    buildEleanorAaciBlock(req.authUser?.id ?? null, symbol, outcome.normalizedTimeframe ?? timeframe),
   ]);
   res.json({
     chartRead: outcome.chartRead,
@@ -691,12 +691,12 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   });
 }));
 
-// ── Task #374: Ruby/AI Setup-Preview ("draw a setup on the chart") ───────
+// ── Task #374: Eleanor/AI Setup-Preview ("draw a setup on the chart") ───────
 // READ-ONLY. Produces a SETUP DRAWING (entry/SL/TP, risk/reward zones,
 // invalidation, confidence, setup-type, plain-English explanation) for the
 // symbol/timeframe on screen. A preview is a visual reasoning aid — it is NEVER
 // an order and this endpoint can never place, modify, or close a trade. It
-// reuses the SAME verified RubyChartContext honesty gate as read-chart (no
+// reuses the SAME verified EleanorChartContext honesty gate as read-chart (no
 // directional setup is drawn unless basis === "VERIFIED") and feeds the
 // deterministic, pure setup-preview producer with REAL data only.
 const drawSetupSchema = z.object({
@@ -729,16 +729,16 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
 
   // Same canonical, gate-checked chart context as read-chart. Fail-safe to a
   // null context (→ INSUFFICIENT basis → the producer refuses a drawing).
-  let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
+  let eleanorCtx: Awaited<ReturnType<typeof buildEleanorChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200, { userId: req.authUser?.id });
+    eleanorCtx = await buildEleanorChartContext(symbol, timeframe as ChartTimeframe, 200, { userId: req.authUser?.id });
   } catch {
     // fail-safe — handled as a gated (non-VERIFIED) read below.
   }
 
-  const candles = rubyCtx?.candles ?? [];
-  const htfTimeframe = rubyCtx?.htfTimeframe ?? null;
-  const htfBias: StructureBias | null = readHigherTimeframeBias(rubyCtx?.htfCandles, htfTimeframe);
+  const candles = eleanorCtx?.candles ?? [];
+  const htfTimeframe = eleanorCtx?.htfTimeframe ?? null;
+  const htfBias: StructureBias | null = readHigherTimeframeBias(eleanorCtx?.htfCandles, htfTimeframe);
   const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, pricePrecision: knownPricePrecision(symbol) });
   if (clientFeedUnconfirmed) {
     read.dataQuality = "insufficient";
@@ -747,23 +747,23 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
     }
   }
 
-  const basis = rubyCtx?.basis ?? "INSUFFICIENT";
+  const basis = eleanorCtx?.basis ?? "INSUFFICIENT";
   // HONESTY (same rule as draft-read and read-chart): a gated read never shows
   // the success-path "Verified … · Live feed …" line, which is composed from
   // raw gate flags and can disagree with the feed state that set the basis.
-  const trustLine = rubyCtx && basis === "VERIFIED"
-    ? rubyCtx.trustLine
+  const trustLine = eleanorCtx && basis === "VERIFIED"
+    ? eleanorCtx.trustLine
     : buildGatedTrustLine(timeframe, {
-        available: rubyCtx != null,
-        stale: rubyCtx?.state.stale ?? false,
-        aiUsable: rubyCtx?.state.aiUsable ?? false,
+        available: eleanorCtx != null,
+        stale: eleanorCtx?.state.stale ?? false,
+        aiUsable: eleanorCtx?.state.aiUsable ?? false,
         basis,
-        quality: rubyCtx?.state.truthState?.quality ?? null,
-        notLiveReason: rubyCtx?.state.truthState?.notLiveReason ?? null,
+        quality: eleanorCtx?.state.truthState?.quality ?? null,
+        notLiveReason: eleanorCtx?.state.truthState?.notLiveReason ?? null,
       });
   // Name what is actually not confirmed (feed, candles, or the specific chart
   // check) so the refusal never says "the feed isn't confirmed" when it is.
-  const blockReason = gatedReadReason(rubyCtx);
+  const blockReason = gatedReadReason(eleanorCtx);
 
   // Provider honesty: name the source that actually served this series. Only
   // the MetaTrader 5 broker bridge is broker-native; any other (or unreported)
@@ -771,7 +771,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   const assetClass = classifySymbol(symbol);
   const providerSource: SetupPreviewProviderSource = setupPreviewProviderSource(
     assetClass,
-    rubyCtx?.state.truthState.source ?? null,
+    eleanorCtx?.state.truthState.source ?? null,
   );
 
   // Bridge + allocation truth (per-user). Allocation is used only to decide
@@ -791,7 +791,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   // Task #380 — assemble the richer real signals (live scanner score + per-symbol
   // risk score, flame/run-on momentum stage, and the agent-governance outcome) so
   // the drawn setup is confidence-calibrated, momentum-aware, and governance-aware.
-  // Each signal is sourced from the SAME service the scanner/Ruby/scalp/governance
+  // Each signal is sourced from the SAME service the scanner/Eleanor/scalp/governance
   // surfaces already use — never a new fabricated input. On any failure or genuine
   // absence we pass null, which the pure producer treats as an honest "not
   // consulted" (no fabrication). We only consult these on a VERIFIED feed: a gated
@@ -812,7 +812,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
     // Here we only inject the production data sources:
     //   - scoreLiveCandidates: live scanner score + per-symbol risk score
     //   - evaluateScalpForSymbol: flame stage + run-on quality
-    //   - runGovernance: the SAME advisory → Traffic → Court flow the Ruby
+    //   - runGovernance: the SAME advisory → Traffic → Court flow the Eleanor
     //     explain-signal / chart-consensus surfaces use (advisory/shadow only;
     //     it never gates a trade and never changes the safety envelope).
     signals = await assembleSetupSignals(
@@ -828,16 +828,16 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
         evaluateScalpForSymbol: () =>
           evaluateScalpForSymbol(userId, { symbol, mode: "ANY" }),
         runGovernance: async ({ side: govSide, confNum, riskNum }) => {
-          const advisory = await computeRubySignalAdvisory({
+          const advisory = await computeEleanorSignalAdvisory({
             baseScore: confNum,
             direction: govSide,
             confidenceScore: confNum,
             riskScore: riskNum,
           });
           if (!advisory || advisory.influencingAgentCount <= 0) return null;
-          const traffic = await runTrafficSelection("RUBY", "LOW");
+          const traffic = await runTrafficSelection("ELEANOR", "LOW");
           const review = computeSurfaceGovernance({
-            surface: "RUBY",
+            surface: "ELEANOR",
             direction: govSide,
             importance: "LOW",
             advisory,
@@ -880,13 +880,13 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
     runOnQuality,
     governanceOutcome,
     governanceCautions,
-    createdBy: "ruby",
+    createdBy: "eleanor",
   });
 
   // Chart Brain v2: record an immutable Decision Receipt for this official read.
   // Fire-and-forget, fail-open, Slow Brain — never awaited, never on the live path.
   if (req.authUser?.id != null) {
-    recordRubyReadDecision({
+    recordEleanorReadDecision({
       userId: req.authUser.id,
       source: "chart_read",
       intent: "analyze",
@@ -895,7 +895,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
       timeframe,
       // The state this drawing was built from (enriched with the user's own
       // broker quote), so the receipt records the read the user saw.
-      state: rubyCtx?.state,
+      state: eleanorCtx?.state,
     });
   }
 
@@ -915,8 +915,8 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   });
 }));
 
-// ── Chart Brain v2 (Task 4): Ruby Draft Read ─────────────────────────────
-// READ-ONLY. Assembles a deterministic prepared Ruby read over the cached
+// ── Chart Brain v2 (Task 4): Eleanor Draft Read ─────────────────────────────
+// READ-ONLY. Assembles a deterministic prepared Eleanor read over the cached
 // Chart Intelligence State for a fixed intent. No LLM, no provider re-probe,
 // no execution. Per-user gated; the state itself carries no per-user data.
 const draftReadSchema = z.object({
@@ -952,49 +952,49 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
   if (!parsed.success) { err(res, 400, "invalid_body"); return; }
   const { symbol, timeframe, limit, intent, draft } = parsed.data;
 
-  // Build (or reuse the 3s-cached) RubyChartContext — the SAME canonical chart
+  // Build (or reuse the 3s-cached) EleanorChartContext — the SAME canonical chart
   // source POST /me/assistant/read-chart uses — so we have an honest `basis`
   // ("VERIFIED" | "PARTIAL" | "SYNCING" | "INSUFFICIENT") alongside the
   // intelligence state. The builder degrades to an honest empty/insufficient
   // context on a dirty feed and never fabricates; a build failure is treated as
   // gate-blocked (basis !== "VERIFIED") below.
-  let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
+  let eleanorCtx: Awaited<ReturnType<typeof buildEleanorChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit, { userId: req.authUser?.id });
+    eleanorCtx = await buildEleanorChartContext(symbol, timeframe as ChartTimeframe, limit, { userId: req.authUser?.id });
   } catch {
     // fail-safe — treat as gate-blocked below
   }
-  const state = rubyCtx?.state ?? (await buildChartIntelligenceState(symbol, timeframe, limit));
+  const state = eleanorCtx?.state ?? (await buildChartIntelligenceState(symbol, timeframe, limit));
   const draftAssistantName = req.authUser?.id != null ? await getAssistantDisplayName(req.authUser.id) : undefined;
-  const draftRead = buildRubyDraftRead(state, intent as RubyDraftIntent, draft ?? null, draftAssistantName);
+  const draftRead = buildEleanorDraftRead(state, intent as EleanorDraftIntent, draft ?? null, draftAssistantName);
   // HONESTY (same pattern as the read-chart gated branch): when the read is
   // gated (basis !== "VERIFIED"), never let the success-path trust line claim
-  // "Verified … · Live feed …". `buildRubyDraftRead` composes its trustLine from
+  // "Verified … · Live feed …". `buildEleanorDraftRead` composes its trustLine from
   // raw Phase-3 gate flags (buildTrustLine) which can disagree with the feed
   // truth that drives `basis` — e.g. every gate flag passes but the feed is
   // delayed (state.aiUsable === false), so basis is INSUFFICIENT while the line
   // still reads "Verified … · Live feed …". Derive a feed-state-driven gated
-  // line from the ACTUAL feed state instead. Advisory-only: Ruby stays
+  // line from the ACTUAL feed state instead. Advisory-only: Eleanor stays
   // read-only and this never gates execution.
-  if (!rubyCtx || rubyCtx.basis !== "VERIFIED") {
+  if (!eleanorCtx || eleanorCtx.basis !== "VERIFIED") {
     draftRead.trustLine = buildGatedTrustLine(timeframe, {
-      available: rubyCtx != null,
-      stale: rubyCtx?.state.stale ?? state.stale,
-      aiUsable: rubyCtx?.state.aiUsable ?? state.aiUsable,
-      basis: rubyCtx?.basis ?? "INSUFFICIENT",
-      quality: (rubyCtx?.state ?? state).truthState?.quality ?? null,
-      notLiveReason: (rubyCtx?.state ?? state).truthState?.notLiveReason ?? null,
+      available: eleanorCtx != null,
+      stale: eleanorCtx?.state.stale ?? state.stale,
+      aiUsable: eleanorCtx?.state.aiUsable ?? state.aiUsable,
+      basis: eleanorCtx?.basis ?? "INSUFFICIENT",
+      quality: (eleanorCtx?.state ?? state).truthState?.quality ?? null,
+      notLiveReason: (eleanorCtx?.state ?? state).truthState?.notLiveReason ?? null,
     });
   }
   // Chart Brain v2 (Task 5): record an immutable Decision Receipt + the implied
-  // chart events for this official Ruby read. Fire-and-forget, fail-open, Slow
+  // chart events for this official Eleanor read. Fire-and-forget, fail-open, Slow
   // Brain — never awaited, never blocks the read, never on the live path.
   if (req.authUser?.id != null) {
-    recordRubyReadDecision({
+    recordEleanorReadDecision({
       userId: req.authUser.id,
-      source: "ruby_draft_read",
+      source: "eleanor_draft_read",
       intent,
-      draftReadIntent: intent as RubyDraftIntent,
+      draftReadIntent: intent as EleanorDraftIntent,
       direction: draft?.side ?? null,
       symbol,
       timeframe,
@@ -1002,11 +1002,11 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
       state,
     });
   }
-  // Ruby's chart-read surface is unconditionally read-only. We return the
+  // Eleanor's chart-read surface is unconditionally read-only. We return the
   // compile-time fail-closed envelope (paper_only / liveLocked / readOnlyMode /
   // allowOrderExecution:false) rather than the per-user trading envelope, so the
   // contract (safetyMode enum [paper_only]) is truthful and matches the sibling
-  // GET /me/chart/intelligence endpoint. Ruby can never act regardless of the
+  // GET /me/chart/intelligence endpoint. Eleanor can never act regardless of the
   // caller's live-trading permissions.
   res.json({
     draftRead,
@@ -1031,7 +1031,7 @@ router.delete("/me/assistant/memory", requireUser, safe(async (req, res) => {
   res.json({ ok: true, ...counts, ...(await buildPerUserEnvelope(userId)) });
 }));
 
-// Ruby memory settings — flip the per-user long-term memory toggle.
+// Eleanor memory settings — flip the per-user long-term memory toggle.
 // When disabled, the rolling summarizer is a no-op AND the system prompt
 // stops injecting saved memory. Past chats remain queryable / exportable.
 const MemorySettingsBody = z.object({ memoryEnabled: z.boolean() });
@@ -1044,7 +1044,7 @@ router.patch("/me/assistant/memory/settings", requireUser, safe(async (req, res)
   res.json({ ok: true, memoryEnabled: snap.memoryEnabled, ...(await buildPerUserEnvelope(userId)) });
 }));
 
-// Export all Ruby chat history + memory snapshot for this user as JSON.
+// Export all Eleanor chat history + memory snapshot for this user as JSON.
 // Per-user scoped. No secrets, no other users' rows. Returns one bundle
 // for the user to download / archive locally.
 router.get("/me/assistant/export", requireUser, safe(async (req, res) => {
@@ -1058,10 +1058,10 @@ router.get("/me/assistant/export", requireUser, safe(async (req, res) => {
   const memory = await loadVerifiedMemory(userId);
   const assistantName = await getAssistantDisplayName(userId);
   const exportedAt = new Date().toISOString();
-  res.setHeader("Content-Disposition", `attachment; filename="ruby-export-${userId}-${exportedAt.slice(0,10)}.json"`);
+  res.setHeader("Content-Disposition", `attachment; filename="eleanor-export-${userId}-${exportedAt.slice(0,10)}.json"`);
   res.setHeader("Content-Type", "application/json");
   res.json({
-    schema: "arx.ruby.export.v1",
+    schema: "arx.eleanor.export.v1",
     assistantName,
     userId,
     exportedAt,
@@ -1162,7 +1162,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
         forcedTool: forceStructuralRead ? "readChartStructure" : null,
         len: userText.length,
       },
-      "ruby_chat_request",
+      "eleanor_chat_request",
     );
   } catch { /* noop */ }
 
@@ -1173,9 +1173,9 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     .limit(MAX_HISTORY_MESSAGES);
   const ordered = history.slice().reverse();
 
-  // Open the SSE stream IMMEDIATELY so the user sees "Ruby is thinking…"
+  // Open the SSE stream IMMEDIATELY so the user sees "Eleanor is thinking…"
   // within milliseconds, not after the memory/history load completes.
-  // (Phase Ruby-Speed) — previously we awaited Promise.all([memory,
+  // (Phase Eleanor-Speed) — previously we awaited Promise.all([memory,
   // pending, toolHistory]) BEFORE flushing headers, which gave the user
   // 1-3 seconds of silence after pressing send. Open the channel first,
   // emit safety + intent + ping right away, then load memory in parallel
@@ -1215,7 +1215,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
   // Any other shape (raw provider event, unknown payload, exception
   // string) MUST be filtered here. The frontend whitelist is the
   // second line of defense; this is the first.
-  // `content_clear` (Phase 22V Part-4 — Ruby streaming fix) tells the
+  // `content_clear` (Phase 22V Part-4 — Eleanor streaming fix) tells the
   // frontend to remove the last N characters from the current assistant
   // message. Used when the model streamed preamble text live and then
   // started calling tools — that preamble is dropped from the visible
@@ -1246,7 +1246,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
 
   // Now resolve the safety envelope + memory in parallel; the SSE channel
   // is already open and pinging, so the user sees activity while these
-  // finish. Cap memory load at 1500ms — Ruby will still answer if the
+  // finish. Cap memory load at 1500ms — Eleanor will still answer if the
   // long-term memory snapshot is slow; she just won't have it for this
   // turn. Better than blocking the whole response.
   const [safetyEnvelope, memoryTriple, chatAssistantName] = await Promise.all([
@@ -1307,7 +1307,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
     // Phase 22V Part-4 — live token streaming with deferred preamble drop.
     //
     // We now flush `delta.content` to the client as it arrives so users see
-    // Ruby's reply build up token-by-token (natural typewriter feel)
+    // Eleanor's reply build up token-by-token (natural typewriter feel)
     // instead of receiving the whole answer in one paste-block at the end
     // of the turn. We also track the running per-turn char count so that
     // IF this turn turns out to be preamble (i.e. tool_calls followed),
@@ -1402,9 +1402,9 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
       }
       const ms = Date.now() - t0;
       send({ type: "tool_result", name: c.name, status, durationMs: ms });
-      // Surface the SAME honesty-gated structural read the Scanner Ruby Chart
+      // Surface the SAME honesty-gated structural read the Scanner Eleanor Chart
       // Read uses so the chat can render the ONE standardized, always-visible
-      // Ruby Reasoning Block. This forwards ONLY the structured read object the
+      // Eleanor Reasoning Block. This forwards ONLY the structured read object the
       // tool already produced (display tier `readLayer` + `chartRead`) — never
       // fabricated prose, never an execution signal. The client builds the block
       // from this via buildReasoningFromChartRead; a gated/insufficient read
@@ -1432,7 +1432,7 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
       try {
         (req as { log?: { info: (...a: unknown[]) => void } }).log?.info(
           { userId, conversationId: id, tool: c.name, status, durationMs: ms },
-          "ruby_tool_call",
+          "eleanor_tool_call",
         );
       } catch { /* noop */ }
       try {
@@ -1686,7 +1686,7 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // ───────────────────────────────────────────────────────────────────────
 // POST /me/assistant/instant-trade-command
 //
-// Ruby AI text/voice command → instant-trade router. Frontend sends the
+// Eleanor AI text/voice command → instant-trade router. Frontend sends the
 // raw user utterance ("buy EURUSD 0.01", "close my XAUUSD", "close all"
 // "set TP on EURUSD to 1.0920"); this endpoint parses it, decides whether
 // it's a CLEAR direct command or a VAGUE analysis question, and — only
@@ -1697,13 +1697,13 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // per-user advisory lock, idempotency).
 //
 // VAGUE questions ("what should I trade?", "is gold bullish?") are NEVER
-// executed — they return `{ok:false, classification:"VAGUE"}` so Ruby
+// executed — they return `{ok:false, classification:"VAGUE"}` so Eleanor
 // answers the question instead of trading.
 // ───────────────────────────────────────────────────────────────────────
-// Cap on concurrent ACTIVE Ruby watches per user — keeps the evaluator cheap
+// Cap on concurrent ACTIVE Eleanor watches per user — keeps the evaluator cheap
 // and prevents an accidental flood of armed conditionals.
-// Ruby ledger/dispatch wrapper, price binding and watch constants live in
-// lib/assistant/rubyExecution.ts; the evaluator in lib/assistant/rubyWatchEvaluator.ts
+// Eleanor ledger/dispatch wrapper, price binding and watch constants live in
+// lib/assistant/eleanorExecution.ts; the evaluator in lib/assistant/eleanorWatchEvaluator.ts
 // (called by the sweeper worker and by POST /me/assistant/watch/evaluate).
 // Arming a watch is honest by construction: it is only offered when the sweeper
 // that evaluates watches is enabled in this process.
@@ -1776,7 +1776,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   const userId = (req as Request & { authUser?: { id: number } }).authUser!.id;
   // Phase 5: "paper" removed from accountMode union. Legacy callers
   // sending accountMode=paper are intercepted below and rejected with
-  // the canonical 400 error before the Ruby pipeline runs.
+  // the canonical 400 error before the Eleanor pipeline runs.
   const { detectLegacyPaperModeRequest } = await import("../lib/safety/rejectLegacyPaperMode.js");
   const legacyPaper = detectLegacyPaperModeRequest(req.body);
   if (legacyPaper) { res.status(400).json({ ok: false, ...legacyPaper }); return; }
@@ -1786,12 +1786,12 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   const body = (req.body ?? {}) as {
     text?: string;
     accountMode?: "live" | "demo";
-    source?: "ruby_text" | "ruby_voice";
+    source?: "eleanor_text" | "eleanor_voice";
     confirm?: boolean;
     conversationId?: number | string;
   };
   const text = (body.text ?? "").trim();
-  const source = body.source === "ruby_voice" ? "ruby_voice" : "ruby_text";
+  const source = body.source === "eleanor_voice" ? "eleanor_voice" : "eleanor_text";
   const accountMode: "live" | "demo" = body.accountMode === "demo" ? "demo" : "live";
   const assistantName = await getAssistantDisplayName(userId);
   const ipEarly = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
@@ -1799,7 +1799,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   const uaEarly = (req.headers["user-agent"] as string | undefined) ?? null;
   if (!text) {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip: ipEarly, userAgent: uaEarly,
+      userId, action: "ELEANOR_TRADE_COMMAND_VAGUE_REJECTED", ip: ipEarly, userAgent: uaEarly,
       metadata: JSON.stringify({ reason: "MISSING_TEXT", source }),
     });
     res.status(400).json({ ok: false, error: "MISSING_TEXT" });
@@ -1815,7 +1815,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   await attachCommandTranscript(res, userId, body.conversationId,
     body.confirm === true ? `Confirm: ${text}` : text);
 
-  // Pull per-user Ruby defaults so commands like "buy EURUSD" without a
+  // Pull per-user Eleanor defaults so commands like "buy EURUSD" without a
   // size can still resolve when the user has configured a default volume.
   const settingsRows = await db.select().from(userOneClickSettingsTable)
     .where(eq(userOneClickSettingsTable.userId, userId)).limit(1);
@@ -1831,11 +1831,11 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // when a monitor is actually awaiting an answer, so ordinary chat is untouched.
   const keepMatch = /^(?:ok(?:ay)?[,\s]*)?(?:keep(?:\s+(?:it|the\s+trade|running))?|hold(?:\s+it)?|stay\s+in|leave\s+it(?:\s+open)?|don'?t\s+close(?:\s+it)?)[.!\s]*$/i.test(text);
   if (keepMatch) {
-    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
+    const awaiting = (await listEleanorWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
     if (awaiting.length === 1) {
       const ipK = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
       const uaK = (req.headers["user-agent"] as string | undefined) ?? null;
-      const r = await acknowledgeRubyWatch(userId, awaiting[0]!.id, "keep", { ip: ipK, ua: uaK, trigger: "ack" });
+      const r = await acknowledgeEleanorWatch(userId, awaiting[0]!.id, "keep", { ip: ipK, ua: uaK, trigger: "ack" });
       res.json({
         ok: r.ok, classification: "MONITOR_ALERT_ACK_KEEP", watchId: awaiting[0]!.id,
         message: r.ok
@@ -1855,12 +1855,12 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // awaiting an answer; otherwise the text parses as before.
   const closeAnswer = isCloseAlertAnswer(text);
   if (closeAnswer) {
-    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
+    const awaiting = (await listEleanorWatches(userId)).filter((w) => w.monitor?.awaitingAnswer);
     if (awaiting.length === 1) {
       const ipC = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
       const uaC = (req.headers["user-agent"] as string | undefined) ?? null;
       const target = awaiting[0]!;
-      const r = await acknowledgeRubyWatch(userId, target.id, "close", { ip: ipC, ua: uaC, trigger: "ack" });
+      const r = await acknowledgeEleanorWatch(userId, target.id, "close", { ip: ipC, ua: uaC, trigger: "ack" });
       const fired = r.ok && r.decision === "close" ? r.result.fired[0] : undefined;
       const skipped = r.ok && r.decision === "close" ? r.result.skipped[0] : undefined;
       res.json({
@@ -1881,11 +1881,11 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   const keepSymbol = /^(?:keep|hold)\s+([A-Za-z0-9._#-]{3,20})[.!\s]*$/i.exec(text);
   if (keepSymbol) {
     const sym = keepSymbol[1]!.toUpperCase();
-    const awaiting = (await listRubyWatches(userId)).filter((w) => w.monitor?.awaitingAnswer && (w.symbol ?? "").toUpperCase() === sym);
+    const awaiting = (await listEleanorWatches(userId)).filter((w) => w.monitor?.awaitingAnswer && (w.symbol ?? "").toUpperCase() === sym);
     if (awaiting.length >= 1) {
       const ipK = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
       const uaK = (req.headers["user-agent"] as string | undefined) ?? null;
-      const r = await acknowledgeRubyWatch(userId, awaiting[0]!.id, "keep", { ip: ipK, ua: uaK, trigger: "ack" });
+      const r = await acknowledgeEleanorWatch(userId, awaiting[0]!.id, "keep", { ip: ipK, ua: uaK, trigger: "ack" });
       res.json({ ok: r.ok, classification: "MONITOR_ALERT_ACK_KEEP", watchId: awaiting[0]!.id, message: r.ok ? `Understood — staying in ${sym}. I'll keep monitoring.` : `I couldn't record that: ${(r as { error: string }).error}.` });
       return;
     }
@@ -1898,7 +1898,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
 
   if (parsed.kind === "VAGUE" || parsed.kind === "UNKNOWN") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, parsed, source }),
     });
     res.json({
@@ -1911,7 +1911,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   }
   if (parsed.kind === "MISSING_VOLUME") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, reason: "MISSING_VOLUME", symbol: parsed.symbol, source }),
     });
     res.json({
@@ -1922,7 +1922,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   }
   if (parsed.kind === "MISSING_SYMBOL") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, reason: "MISSING_SYMBOL", source }),
     });
     res.json({
@@ -1933,37 +1933,37 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   }
 
   await db.insert(oneClickAuditTable).values({
-    userId, action: "RUBY_TRADE_COMMAND_PARSED", ip, userAgent: ua,
+    userId, action: "ELEANOR_TRADE_COMMAND_PARSED", ip, userAgent: ua,
     metadata: JSON.stringify({ text, parsed, source, channel: "ELEANOR_CHAT" }),
   });
 
   // ── Bookkeeping commands — never touch the broker ──────────────────────
-  // STATUS_CHECK: honestly report what Ruby is currently watching / pending.
+  // STATUS_CHECK: honestly report what Eleanor is currently watching / pending.
   if (parsed.kind === "STATUS_CHECK") {
-    let watches = await db.select().from(rubyWatchInstructionsTable).where(and(
-      eq(rubyWatchInstructionsTable.userId, userId),
-      eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+    let watches = await db.select().from(eleanorWatchInstructionsTable).where(and(
+      eq(eleanorWatchInstructionsTable.userId, userId),
+      eq(eleanorWatchInstructionsTable.status, "ACTIVE"),
     ));
     // Audit A1: with no evaluator running, an ACTIVE row is a promise nobody
     // keeps. Retire it honestly (SKIPPED + reason) and tell the user.
     let retiredWatches = 0;
     if (!WATCH_ARMING_ENABLED && watches.length > 0) {
-      const retired = await db.update(rubyWatchInstructionsTable)
+      const retired = await db.update(eleanorWatchInstructionsTable)
         .set({ status: "SKIPPED", skipReason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON, updatedAt: new Date() })
         .where(and(
-          eq(rubyWatchInstructionsTable.userId, userId),
-          eq(rubyWatchInstructionsTable.status, "ACTIVE"),
-        )).returning({ id: rubyWatchInstructionsTable.id });
+          eq(eleanorWatchInstructionsTable.userId, userId),
+          eq(eleanorWatchInstructionsTable.status, "ACTIVE"),
+        )).returning({ id: eleanorWatchInstructionsTable.id });
       retiredWatches = retired.length;
       await db.insert(oneClickAuditTable).values({
-        userId, action: "RUBY_WATCH_RETIRED_NO_EVALUATOR", ip, userAgent: ua,
+        userId, action: "ELEANOR_WATCH_RETIRED_NO_EVALUATOR", ip, userAgent: ua,
         metadata: JSON.stringify({ retired: retired.map((r) => r.id), reason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON, source }),
       });
       watches = [];
     }
-    const pending = await db.select({ id: rubyCommandsTable.id }).from(rubyCommandsTable).where(and(
-      eq(rubyCommandsTable.userId, userId),
-      inArray(rubyCommandsTable.status, ["PENDING", "EXECUTING"]),
+    const pending = await db.select({ id: eleanorCommandsTable.id }).from(eleanorCommandsTable).where(and(
+      eq(eleanorCommandsTable.userId, userId),
+      inArray(eleanorCommandsTable.status, ["PENDING", "EXECUTING"]),
     ));
     res.json({
       ok: true, classification: "STATUS_CHECK",
@@ -2001,28 +2001,28 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // the pending entries (of that symbol when named); otherwise the most
     // recent non-monitor watch.
     const scope = cancelScope(text, parsed.kind);
-    const activeRows = await db.select().from(rubyWatchInstructionsTable).where(and(
-      eq(rubyWatchInstructionsTable.userId, userId),
-      eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+    const activeRows = await db.select().from(eleanorWatchInstructionsTable).where(and(
+      eq(eleanorWatchInstructionsTable.userId, userId),
+      eq(eleanorWatchInstructionsTable.status, "ACTIVE"),
     ));
     const targets = pickWatchesToCancel(activeRows, scope, parsed.kind === "CANCEL_PENDING_ORDER" ? parsed.symbol : null);
-    const cancelledWatches = targets.length === 0 ? [] : await db.update(rubyWatchInstructionsTable)
+    const cancelledWatches = targets.length === 0 ? [] : await db.update(eleanorWatchInstructionsTable)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(
-        eq(rubyWatchInstructionsTable.userId, userId),
-        eq(rubyWatchInstructionsTable.status, "ACTIVE"),
-        inArray(rubyWatchInstructionsTable.id, targets.map((w) => w.id)),
-      )).returning({ id: rubyWatchInstructionsTable.id });
+        eq(eleanorWatchInstructionsTable.userId, userId),
+        eq(eleanorWatchInstructionsTable.status, "ACTIVE"),
+        inArray(eleanorWatchInstructionsTable.id, targets.map((w) => w.id)),
+      )).returning({ id: eleanorWatchInstructionsTable.id });
     const monitorsLeft = activeRows.filter((w) => w.kind === "MONITOR_TRADE" && !cancelledWatches.some((c) => c.id === w.id));
-    const cancelledCmds = await db.update(rubyCommandsTable)
+    const cancelledCmds = await db.update(eleanorCommandsTable)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(
-        eq(rubyCommandsTable.userId, userId),
-        eq(rubyCommandsTable.status, "PENDING"),
-      )).returning({ id: rubyCommandsTable.id });
+        eq(eleanorCommandsTable.userId, userId),
+        eq(eleanorCommandsTable.status, "PENDING"),
+      )).returning({ id: eleanorCommandsTable.id });
     const n = cancelledWatches.length + cancelledCmds.length;
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_PENDING_ACTION_CANCELLED", ip, userAgent: ua,
+      userId, action: "ELEANOR_PENDING_ACTION_CANCELLED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, kind: parsed.kind, watches: cancelledWatches.length, watchIds: cancelledWatches.map((c) => c.id), commands: cancelledCmds.length, scope, source, channel: "ELEANOR_CHAT" }),
     });
     const monitorNote = monitorsLeft.length > 0
@@ -2047,7 +2047,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // it "trailing" — that would mis-represent live risk.
   if (parsed.kind === "TRAILING_STOP_UNSUPPORTED") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_DECLINED", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_DECLINED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, reason: "TRAILING_STOP_UNSUPPORTED", symbol: parsed.symbol ?? null, source, channel: "ELEANOR_CHAT" }),
     });
     res.json({
@@ -2062,7 +2062,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // Ask the user for an exact lot instead.
   if (parsed.kind === "RISK_PERCENT_SIZING") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_NEEDS_LOT", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_NEEDS_LOT", ip, userAgent: ua,
       metadata: JSON.stringify({ text, reason: "RISK_PERCENT_SIZING", symbol: parsed.symbol, riskPercent: parsed.riskPercent, side: parsed.side, source, channel: "ELEANOR_CHAT" }),
     });
     res.json({
@@ -2076,7 +2076,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // only, so ask for the level rather than open without the protection.
   if (parsed.kind === "SLTP_NEEDS_PRICE") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_NEEDS_PRICE", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_NEEDS_PRICE", ip, userAgent: ua,
       metadata: JSON.stringify({ text, reason: "SLTP_NEEDS_PRICE", symbol: parsed.symbol, side: parsed.side, source, channel: "ELEANOR_CHAT" }),
     });
     res.json({
@@ -2090,7 +2090,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   // rather than arm a priceless conditional entry.
   if (parsed.kind === "PENDING_NEEDS_PRICE") {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_NEEDS_PRICE", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_NEEDS_PRICE", ip, userAgent: ua,
       metadata: JSON.stringify({ text, reason: "PENDING_NEEDS_PRICE", symbol: parsed.symbol, side: parsed.side, pendingKind: parsed.pendingKind, source, channel: "ELEANOR_CHAT" }),
     });
     res.json({
@@ -2101,14 +2101,14 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   }
 
   // ── Watch / monitor — arm a single-fire conditional instruction ─────────
-  // These persist an ACTIVE ruby_watch_instructions row. The evaluator
+  // These persist an ACTIVE eleanor_watch_instructions row. The evaluator
   // (POST /me/assistant/watch/evaluate) checks live price and CAS-fires each
   // exactly once through the SAME instant-trade router. Arming touches no
   // broker — only the evaluator can dispatch, and only after all gates pass.
   if (!WATCH_ARMING_ENABLED && (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE"
       || parsed.kind === "MONITOR_TRADE")) {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_WATCH_ARM_UNAVAILABLE", ip, userAgent: ua,
+      userId, action: "ELEANOR_WATCH_ARM_UNAVAILABLE", ip, userAgent: ua,
       metadata: JSON.stringify({ text, kind: parsed.kind, reason: WATCH_EVALUATION_UNAVAILABLE_SKIP_REASON, source }),
     });
     res.json({
@@ -2120,7 +2120,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
   }
   if (parsed.kind === "WATCH_AND_ENTER" || parsed.kind === "WATCH_AND_CLOSE"
       || parsed.kind === "MONITOR_TRADE") {
-    // Per-action Ruby authorization for arming a watch/monitor. Default-deny
+    // Per-action Eleanor authorization for arming a watch/monitor. Default-deny
     // when settings are unset. Executing watches (enter/close/monitor) all
     // require AI_ASSISTED authority on top of their own per-action permission —
     // MONITOR now fires a protective close on trigger (see the evaluator), so it
@@ -2132,7 +2132,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // and fail. Refuse honestly at arm time (sweep 2026-11-04).
     if (accountMode !== "live") {
       await db.insert(oneClickAuditTable).values({
-        userId, action: "RUBY_WATCH_ARM_BLOCKED", ip, userAgent: ua,
+        userId, action: "ELEANOR_WATCH_ARM_BLOCKED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, kind: parsed.kind, reason: "LIVE_ACCOUNT_ONLY", accountMode, source }),
       });
       res.json({
@@ -2142,20 +2142,20 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       return;
     }
     // The same permission rule the evaluator applies at fire time, including
-    // the pipeline's open/close command permissions (rubyWatchPermissionBlock).
-    const armBlockReason = rubyWatchPermissionBlock(parsed.kind, settings);
+    // the pipeline's open/close command permissions (eleanorWatchPermissionBlock).
+    const armBlockReason = eleanorWatchPermissionBlock(parsed.kind, settings);
     if (armBlockReason) {
       await db.insert(oneClickAuditTable).values({
-        userId, action: "RUBY_WATCH_ARM_BLOCKED", ip, userAgent: ua,
+        userId, action: "ELEANOR_WATCH_ARM_BLOCKED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, kind: parsed.kind, reason: armBlockReason, source }),
       });
       res.status(403).json({
-        ok: false, classification: "RUBY_NOT_AUTHORIZED", reason: armBlockReason,
-        message: armBlockReason === "RUBY_EXECUTION_NOT_AUTHORIZED"
+        ok: false, classification: "ELEANOR_NOT_AUTHORIZED", reason: armBlockReason,
+        message: armBlockReason === "ELEANOR_EXECUTION_NOT_AUTHORIZED"
           ? `Turn on ${assistantName} AI-Assisted execution before I can arm that.`
-          : armBlockReason === "RUBY_OPEN_COMMANDS_NOT_ENABLED"
+          : armBlockReason === "ELEANOR_OPEN_COMMANDS_NOT_ENABLED"
           ? `That watch would open a trade, but ${assistantName} isn't allowed to open trades in your settings — turn on open commands first.`
-          : armBlockReason === "RUBY_CLOSE_COMMANDS_NOT_ENABLED"
+          : armBlockReason === "ELEANOR_CLOSE_COMMANDS_NOT_ENABLED"
           ? `That watch may close your trade, but ${assistantName} isn't allowed to close trades in your settings — turn on close commands first.`
           : `That ${assistantName} action isn't enabled in your settings.`,
       });
@@ -2163,7 +2163,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     }
     if (parsed.kind === "WATCH_AND_ENTER" && !(typeof parsed.volume === "number" && parsed.volume > 0)) {
       await db.insert(oneClickAuditTable).values({
-        userId, action: "RUBY_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
+        userId, action: "ELEANOR_TRADE_COMMAND_VAGUE_REJECTED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, reason: "MISSING_VOLUME", symbol: parsed.symbol, kind: parsed.kind, source }),
       });
       res.json({ ok: false, classification: "MISSING_VOLUME", message: `How much ${parsed.symbol} should I ${parsed.side.toLowerCase()} when it triggers? Tell me a lot size like 0.01.` });
@@ -2171,12 +2171,12 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     }
 
     // Bound the number of concurrent ACTIVE watches per user.
-    const active = await db.select({ id: rubyWatchInstructionsTable.id }).from(rubyWatchInstructionsTable)
+    const active = await db.select({ id: eleanorWatchInstructionsTable.id }).from(eleanorWatchInstructionsTable)
       .where(and(
-        eq(rubyWatchInstructionsTable.userId, userId),
-        eq(rubyWatchInstructionsTable.status, "ACTIVE"),
+        eq(eleanorWatchInstructionsTable.userId, userId),
+        eq(eleanorWatchInstructionsTable.status, "ACTIVE"),
       ));
-    if (active.length >= MAX_ACTIVE_RUBY_WATCHES) {
+    if (active.length >= MAX_ACTIVE_ELEANOR_WATCHES) {
       res.status(409).json({
         ok: false, classification: "TOO_MANY_WATCHES",
         message: `You already have ${active.length} active watches — cancel one before adding another.`,
@@ -2241,8 +2241,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // (pending) entry. ARX arms it as a watch that fires a market order at the
     // trigger, which is functionally the requested limit/stop entry.
     const pendingKind = parsed.kind === "WATCH_AND_ENTER" ? parsed.pendingKind : undefined;
-    // Owner spec 2026-11-04: a monitor may carry the trader's authority for Ruby
-    // to shift SL/TP on a fakeout (bounded; see rubyFakeoutPolicy.ts). Stored in
+    // Owner spec 2026-11-04: a monitor may carry the trader's authority for Eleanor
+    // to shift SL/TP on a fakeout (bounded; see eleanorFakeoutPolicy.ts). Stored in
     // risk_params; also toggled later via POST /me/assistant/watches/:id/fakeout-authority.
     const fakeoutAuthority = parsed.kind === "MONITOR_TRADE" && parsed.fakeoutAuthority === true;
     const expirySuffix = expiresAt
@@ -2255,9 +2255,9 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     // Extra-confirmation gate, same rule as an immediate command (see below):
     // arming a watch is a decision to trade later, so it is confirmed before
     // the row exists, not after it fires.
-    if (settings?.rubyRequireExtraConfirmation !== false && body.confirm !== true) {
+    if (settings?.eleanorRequireExtraConfirmation !== false && body.confirm !== true) {
       await db.insert(oneClickAuditTable).values({
-        userId, action: "RUBY_TRADE_COMMAND_CONFIRM_REQUIRED", ip, userAgent: ua,
+        userId, action: "ELEANOR_TRADE_COMMAND_CONFIRM_REQUIRED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, kind: parsed.kind, action: "ARM_WATCH", symbol, triggerCondition, source }),
       });
       res.json({
@@ -2271,7 +2271,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       return;
     }
 
-    const [w] = await db.insert(rubyWatchInstructionsTable).values({
+    const [w] = await db.insert(eleanorWatchInstructionsTable).values({
       userId, kind: parsed.kind, accountMode, source,
       symbol: symbol ?? null,
       side: parsed.kind === "WATCH_AND_ENTER" ? parsed.side : null,
@@ -2291,15 +2291,15 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       status: "ACTIVE",
       expiresAt,
       ...(fakeoutAuthority ? { riskParams: serializeMonitorState(setFakeoutAuthority(emptyMonitorState(), true)) } : {}),
-    }).returning({ id: rubyWatchInstructionsTable.id });
+    }).returning({ id: eleanorWatchInstructionsTable.id });
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_WATCH_ARMED", ip, userAgent: ua,
+      userId, action: "ELEANOR_WATCH_ARMED", ip, userAgent: ua,
       metadata: JSON.stringify({ text, kind: parsed.kind, symbol, triggerCondition, positionTicket, expiresAt, pendingKind: pendingKind ?? null, fakeoutAuthority, source, channel: "ELEANOR_CHAT" }),
     });
     res.json({
       ok: true, classification: parsed.kind, watchId: w!.id,
       message: parsed.kind === "MONITOR_TRADE"
-        ? `Watching your ${symbol} position (checked about every ${Math.round(getRubySweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.${fakeoutAuthority ? " You also let me shift the stop loss or take profit when I see a fakeout (a spike that snaps back); each shift is bounded, announced, and confirmed by the broker." : ""}`
+        ? `Watching your ${symbol} position (checked about every ${Math.round(getEleanorSweeperStatus().intervalMs / 1000)} s). If the idea is invalidated or price reaches your stop I close it at once. If I see a reversal building I alert you — up to 3 times; answer "keep it" or "close it". No answer after the third alert and I take the decision to close.${fakeoutAuthority ? " You also let me shift the stop loss or take profit when I see a fakeout (a spike that snaps back); each shift is bounded, announced, and confirmed by the broker." : ""}`
         : `Armed a ${pendingKind ? `${pendingKind}-style pending entry` : "conditional order"}: I'll ${parsed.kind === "WATCH_AND_ENTER" ? parsed.side?.toLowerCase() : "close"} ${symbol} when it ${triggerCondition!.op === ">=" ? "reaches/exceeds" : "drops to"} ${triggerCondition!.price}${parsed.kind === "WATCH_AND_ENTER" && parsed.stopLoss !== undefined ? `, SL ${parsed.stopLoss}` : ""}${parsed.kind === "WATCH_AND_ENTER" && parsed.takeProfit !== undefined ? `, TP ${parsed.takeProfit}` : ""}${expirySuffix}.`,
     });
     return;
@@ -2318,7 +2318,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
 
   // Map parsed command → InstantTradeIntent
   let intent: InstantTradeIntent;
-  let commandKind: RubyCommandKind;
+  let commandKind: EleanorCommandKind;
   switch (parsed.kind) {
     case "OPEN":
       commandKind = "OPEN_TRADE";
@@ -2328,8 +2328,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         // SL/TP typed on the command itself ("buy EURUSD 0.01 sl 1.0850 tp 1.0950").
         ...(parsed.stopLoss !== undefined ? { stopLoss: parsed.stopLoss } : {}),
         ...(parsed.takeProfit !== undefined ? { takeProfit: parsed.takeProfit } : {}),
-        aiCommand: true, parsedByRuby: true, rawUserCommand: text,
-        rubyCommandKind: "OPEN",
+        aiCommand: true, parsedByEleanor: true, rawUserCommand: text,
+        eleanorCommandKind: "OPEN",
       };
       break;
     case "CLOSE_ONE": {
@@ -2359,8 +2359,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       intent = {
         source, action: "CLOSE", accountMode, symbol: parsed.symbol,
         positionId: open[0]!.brokerTicket,
-        aiCommand: true, parsedByRuby: true, rawUserCommand: text,
-        rubyCommandKind: "CLOSE",
+        aiCommand: true, parsedByEleanor: true, rawUserCommand: text,
+        eleanorCommandKind: "CLOSE",
       };
       break;
     }
@@ -2407,8 +2407,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         intent = {
           source, action: "CLOSE", accountMode, symbol: parsed.symbol,
           positionId: row.brokerTicket,
-          aiCommand: true, parsedByRuby: true, rawUserCommand: text,
-          rubyCommandKind: "CLOSE",
+          aiCommand: true, parsedByEleanor: true, rawUserCommand: text,
+          eleanorCommandKind: "CLOSE",
         };
         break;
       }
@@ -2416,8 +2416,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       intent = {
         source, action: "CLOSE", accountMode, symbol: parsed.symbol,
         positionId: row.brokerTicket, closeVolume: closeVol,
-        aiCommand: true, parsedByRuby: true, rawUserCommand: text,
-        rubyCommandKind: "PARTIAL_CLOSE",
+        aiCommand: true, parsedByEleanor: true, rawUserCommand: text,
+        eleanorCommandKind: "PARTIAL_CLOSE",
       };
       break;
     }
@@ -2425,7 +2425,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       commandKind = "CLOSE_ALL";
       intent = {
         source, action: "CLOSE_ALL", accountMode, aiCommand: true,
-        parsedByRuby: true, rawUserCommand: text, rubyCommandKind: "CLOSE_ALL",
+        parsedByEleanor: true, rawUserCommand: text, eleanorCommandKind: "CLOSE_ALL",
       };
       break;
     case "CLOSE_ALL_SYMBOL_UNSUPPORTED":
@@ -2440,7 +2440,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       return;
     case "CLOSE_PROFITABLE":
     case "CLOSE_LOSING":
-      // Not auto-executed — defer to user; Ruby will offer it as a list.
+      // Not auto-executed — defer to user; Eleanor will offer it as a list.
       await db.insert(oneClickAuditTable).values({
         userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
         metadata: JSON.stringify({ text, reason: parsed.kind, source }),
@@ -2486,8 +2486,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         source, action: "MODIFY_SL_TP", accountMode, symbol: sym,
         positionId: row.brokerTicket,
         newStopLoss: newSl, newTakeProfit: parsed.newTakeProfit ?? null,
-        aiCommand: true, parsedByRuby: true, rawUserCommand: text,
-        rubyCommandKind: "MODIFY",
+        aiCommand: true, parsedByEleanor: true, rawUserCommand: text,
+        eleanorCommandKind: "MODIFY",
       };
       break;
     }
@@ -2515,8 +2515,8 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         source, action: "MODIFY_SL_TP", accountMode, symbol: sym,
         positionId: row.brokerTicket,
         newStopLoss: Number(row.entryPrice), newTakeProfit: null,
-        aiCommand: true, parsedByRuby: true, rawUserCommand: text,
-        rubyCommandKind: "MOVE_SL_TO_BREAKEVEN",
+        aiCommand: true, parsedByEleanor: true, rawUserCommand: text,
+        eleanorCommandKind: "MOVE_SL_TO_BREAKEVEN",
       };
       break;
     }
@@ -2527,18 +2527,18 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     }
   }
 
-  // Extra-confirmation gate — makes rubyRequireExtraConfirmation FUNCTIONAL.
-  // When AI-Assisted is ON and rubyRequireExtraConfirmation is OFF, Ruby acts on
+  // Extra-confirmation gate — makes eleanorRequireExtraConfirmation FUNCTIONAL.
+  // When AI-Assisted is ON and eleanorRequireExtraConfirmation is OFF, Eleanor acts on
   // an allowed user-commanded action without re-asking. When it is ON (the safe
-  // default) Ruby returns a confirmation-required response and executes nothing
+  // default) Eleanor returns a confirmation-required response and executes nothing
   // until the caller resends with confirm:true. This is the ONLY thing the
   // confirmation setting controls — it never bypasses any backend gate; the full
   // 16-gate live pipeline still runs on the confirmed dispatch. Default-deny: a
   // missing or true setting requires confirmation.
-  const requireExtraConfirm = settings?.rubyRequireExtraConfirmation !== false;
+  const requireExtraConfirm = settings?.eleanorRequireExtraConfirmation !== false;
   if (requireExtraConfirm && body.confirm !== true) {
     await db.insert(oneClickAuditTable).values({
-      userId, action: "RUBY_TRADE_COMMAND_CONFIRM_REQUIRED", ip, userAgent: ua,
+      userId, action: "ELEANOR_TRADE_COMMAND_CONFIRM_REQUIRED", ip, userAgent: ua,
       metadata: JSON.stringify({
         text, kind: parsed.kind, action: intent.action,
         symbol: intent.symbol ?? null, source,
@@ -2558,7 +2558,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
 
   // Record → advisory handshake → dispatch through the EXISTING router. This is
   // the ONLY execution path; the ledger never bypasses a single gate.
-  const ledger = await recordAndExecuteRuby({
+  const ledger = await recordAndExecuteEleanor({
     userId, intent, commandKind,
     symbol: intent.symbol ?? null, rawText: text, ip, ua, params: parsed,
   });
@@ -2597,11 +2597,11 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
 // then dispatches through the SAME instant-trade router (all gates apply).
 // MONITOR_TRADE is a permission-bounded monitor-and-manage engine: it builds a
 // Trade Management Plan from the real position + live price (trade-health
-// engine) and — ONLY when the user granted AI_ASSISTED + allowRubyMonitor —
+// engine) and — ONLY when the user granted AI_ASSISTED + allowEleanorMonitor —
 // CAS-fires a single protective CLOSE through the SAME router when the plan's
 // trigger is met (original thesis invalidated, or price at/through the user's
 // own stop). It never fabricates an exit level and never closes a healthy
-// position. This is the USER-AUTHORIZED Ruby path; the system-wide unilateral
+// position. This is the USER-AUTHORIZED Eleanor path; the system-wide unilateral
 // auto-close engine stays ALERT_ONLY.
 // ───────────────────────────────────────────────────────────────────────
 router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) => {
@@ -2609,18 +2609,18 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
     ?? req.socket.remoteAddress ?? null;
   const ua = (req.headers["user-agent"] as string | undefined) ?? null;
-  const r = await evaluateRubyWatchesForUser(userId, { ip, ua, trigger: "route" });
-  res.json({ ok: true, ...r, sweeper: getRubySweeperStatus() });
+  const r = await evaluateEleanorWatchesForUser(userId, { ip, ua, trigger: "route" });
+  res.json({ ok: true, ...r, sweeper: getEleanorSweeperStatus() });
 }));
 
-// GET /me/assistant/watches — the signed-in user's Ruby watches (active by
+// GET /me/assistant/watches — the signed-in user's Eleanor watches (active by
 // default) with monitor alert state, for the chat panel strip and the
-// getMyRubyWatches tool. Read-only.
+// getMyEleanorWatches tool. Read-only.
 router.get("/me/assistant/watches", requireUser, safe(async (req, res) => {
   const userId = (req.authUser!).id;
   const includeFinished = String(req.query["includeFinished"] ?? "") === "true";
-  const watches = await listRubyWatches(userId, { includeFinished, limit: 25 });
-  res.json({ ok: true, watches, sweeper: getRubySweeperStatus() });
+  const watches = await listEleanorWatches(userId, { includeFinished, limit: 25 });
+  res.json({ ok: true, watches, sweeper: getEleanorSweeperStatus() });
 }));
 
 // POST /me/assistant/watches/:id/ack { decision: "keep" | "close" } — the
@@ -2635,7 +2635,7 @@ router.post("/me/assistant/watches/:id/ack", requireUser, safe(async (req, res) 
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
     ?? req.socket.remoteAddress ?? null;
   const ua = (req.headers["user-agent"] as string | undefined) ?? null;
-  const r = await acknowledgeRubyWatch(userId, id, decision, { ip, ua, trigger: "ack" });
+  const r = await acknowledgeEleanorWatch(userId, id, decision, { ip, ua, trigger: "ack" });
   if (!r.ok) { res.status(r.error === "WATCH_NOT_FOUND" ? 404 : 409).json(r); return; }
   const assistantName = await getAssistantDisplayName(userId);
   if (r.decision === "keep") {
@@ -2655,7 +2655,7 @@ router.post("/me/assistant/watches/:id/ack", requireUser, safe(async (req, res) 
 }));
 
 // POST /me/assistant/watches/:id/fakeout-authority { enabled } — the trader
-// grants or withdraws Ruby's bounded authority to shift SL/TP on a fakeout for
+// grants or withdraws Eleanor's bounded authority to shift SL/TP on a fakeout for
 // one monitor (owner spec 2026-11-04). The user-level modify permission and
 // AI-Assisted authority are still required at fire time.
 router.post("/me/assistant/watches/:id/fakeout-authority", requireUser, safe(async (req, res) => {
@@ -2664,11 +2664,11 @@ router.post("/me/assistant/watches/:id/fakeout-authority", requireUser, safe(asy
   if (!Number.isInteger(id) || id <= 0) { err(res, 400, "invalid_id"); return; }
   const enabled = (req.body as { enabled?: unknown } | undefined)?.enabled;
   if (typeof enabled !== "boolean") { err(res, 400, "invalid_enabled"); return; }
-  const r = await setRubyWatchFakeoutAuthority(userId, id, enabled);
+  const r = await setEleanorWatchFakeoutAuthority(userId, id, enabled);
   if (!r.ok) { res.status(r.error === "WATCH_NOT_FOUND" ? 404 : 409).json(r); return; }
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? null;
   await db.insert(oneClickAuditTable).values({
-    userId, action: enabled ? "RUBY_FAKEOUT_AUTHORITY_GRANTED" : "RUBY_FAKEOUT_AUTHORITY_WITHDRAWN", ip,
+    userId, action: enabled ? "ELEANOR_FAKEOUT_AUTHORITY_GRANTED" : "ELEANOR_FAKEOUT_AUTHORITY_WITHDRAWN", ip,
     userAgent: (req.headers["user-agent"] as string | undefined) ?? null,
     metadata: JSON.stringify({ watchId: id, enabled }),
   });

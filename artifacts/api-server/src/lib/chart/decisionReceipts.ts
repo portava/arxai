@@ -1,6 +1,6 @@
 // Chart Brain v2 — Task 5: immutable decision receipts (Slow Brain).
 //
-// Every OFFICIAL Ruby read / chart trade plan creates ONE immutable receipt that
+// Every OFFICIAL Eleanor read / chart trade plan creates ONE immutable receipt that
 // captures exactly what the chart + intelligence layers said at decision time.
 // The original row is written ONCE and NEVER mutated or deleted by this service —
 // there is deliberately no update/delete path. Later OUTCOME and REVIEW records
@@ -26,15 +26,15 @@ import type {
 import { and, desc, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import type { ChartIntelligenceState } from "../data/chart/chartIntelligence.js";
-import type { RubyDraftReadResult } from "../assistant/rubyDraftRead.js";
+import type { EleanorDraftReadResult } from "../assistant/eleanorDraftRead.js";
 import {
   buildSetupFingerprint,
   type ChartSetupFingerprint,
 } from "./setupFingerprint.js";
 
 export type ReceiptSource =
-  | "ruby_draft_read"
-  | "ruby_explain_signal"
+  | "eleanor_draft_read"
+  | "eleanor_explain_signal"
   | "chart_read"
   | "chart_trade_plan";
 
@@ -89,7 +89,7 @@ function computeExpiresAt(state: ChartIntelligenceState): Date | null {
 export interface ReceiptCreateArgs {
   userId: number;
   state: ChartIntelligenceState;
-  draftRead: RubyDraftReadResult;
+  draftRead: EleanorDraftReadResult;
   source: ReceiptSource;
   intent?: string | null;
   /** Optional explicit trade direction (e.g. from a chart trade plan). */
@@ -115,7 +115,7 @@ export interface DecisionReceiptView {
   agentConflict: boolean;
   courtResult: string | null;
   riskWarning: string | null;
-  rubyFinalRead: string | null;
+  eleanorFinalRead: string | null;
   confidenceScore: number | null;
   confidenceLabel: string | null;
   whatWouldChange: string | null;
@@ -253,7 +253,7 @@ function buildReceiptRow(args: ReceiptCreateArgs): {
     })(),
     courtResult,
     riskWarning: sentence(state, "risk"),
-    rubyFinalRead: draftRead.headline ?? null,
+    eleanorFinalRead: draftRead.headline ?? null,
     confidenceScore: draftRead.confidenceScore ?? null,
     confidenceLabel: draftRead.confidenceLabel ?? null,
     whatWouldChange: sentence(state, "whatWouldChange"),
@@ -302,7 +302,7 @@ function toView(r: ChartDecisionReceipt): DecisionReceiptView {
     agentConflict: r.agentConflict,
     courtResult: r.courtResult,
     riskWarning: r.riskWarning,
-    rubyFinalRead: r.rubyFinalRead,
+    eleanorFinalRead: r.eleanorFinalRead,
     confidenceScore: r.confidenceScore,
     confidenceLabel: r.confidenceLabel,
     whatWouldChange: r.whatWouldChange,

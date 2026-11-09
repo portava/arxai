@@ -30,7 +30,7 @@ import { submitTrade } from "../tradeEngine/pipeline.js";
 import type { SimulatedOpenReceipt } from "../tradeEngine/simulatedOpen.js";
 
 export const TRADE_ACTION_SOURCE = "TRADE_ACTION_CENTER";
-export const TRADE_ACTION_RUBY_SOURCE = "TRADE_ACTION_RUBY";
+export const TRADE_ACTION_ELEANOR_SOURCE = "TRADE_ACTION_ELEANOR";
 
 export interface RoutableAction {
   userId: number;
@@ -49,18 +49,18 @@ export interface RoutableAction {
   sourcePage?: string;
   /** The action row id: the idempotency key of a SIMULATED open's paper order. */
   actionId?: number;
-  /** Ruby / decision-engine origin for the PAPER governor intent. */
-  origin?: "manual" | "ruby" | "automation";
+  /** Eleanor / decision-engine origin for the PAPER governor intent. */
+  origin?: "manual" | "eleanor" | "automation";
 }
 
 export type RouteResult =
   | { ok: true; venue: "DEMO" | "LIVE" | "PAPER" | null; commandId: string | null; sent: boolean; paper?: SimulatedOpenReceipt }
   | { ok: false; venue: "DEMO" | "LIVE" | "PAPER" | null; commandId: string | null; reason: string; message?: string };
 
-/** The source stamped on the venue command; Ruby-suggested actions keep the ruby origin. */
+/** The source stamped on the venue command; Eleanor-suggested actions keep the eleanor origin. */
 export function sourceFor(a: Pick<RoutableAction, "source" | "sourcePage">): string {
   if (a.sourcePage) return a.sourcePage;
-  return a.source === "ai_suggested" ? TRADE_ACTION_RUBY_SOURCE : TRADE_ACTION_SOURCE;
+  return a.source === "ai_suggested" ? TRADE_ACTION_ELEANOR_SOURCE : TRADE_ACTION_SOURCE;
 }
 
 export interface TradeRef { ticket: string; stopLoss: number | null; takeProfit: number | null }

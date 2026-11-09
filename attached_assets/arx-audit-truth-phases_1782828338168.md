@@ -11,7 +11,7 @@
 - **Overall (priority phases):** The honesty architecture is fundamentally sound where it counts most. The two highest-stakes truths — *no synthetic-candle fabrication* and *demo pipeline separated from live* — both PASS at the source level.
 - **Biggest live-money risk found:** None proven in the priority phases. One **RISK-to-verify**: 10 route files touch command-table inserts (Phase 2) — needs per-route confirmation they all route through `dispatchLiveCommand` and none write directly. Not proven to be a bypass; proven to *need checking*.
 - **Biggest truth/data finding:** Clean. The data layer fails honestly (empty + `quality:"unavailable"`), does not fabricate candles. This is the single most important honesty property and it holds.
-- **Biggest product mismatch:** The **Eleanor rename is ~99% undone** (77 frontend files say "Ruby", 1 says "Eleanor"). Cosmetic, no safety impact, but large debt vs the stated product direction.
+- **Biggest product mismatch:** The **Eleanor rename is ~99% undone** (77 frontend files say "Eleanor", 1 says "Eleanor"). Cosmetic, no safety impact, but large debt vs the stated product direction.
 - **Recommended next action:** Have the agent run the RUNTIME CHECKLIST (especially the Phase-2 bypass verification and the test suite), then triage the Eleanor rename as its own cosmetic pass.
 
 ---
@@ -84,9 +84,9 @@
 - **This is the #1 thing for the agent to verify** (checklist item A). Until verified, treat as RISK, not PASS.
 
 **Phase 10 — Eleanor rename.** ❌ FAIL/PARTIAL (cosmetic, no safety impact)
-- 77 frontend files still reference "Ruby"; only 1 references "Eleanor." The product direction (Eleanor everywhere user-facing) is essentially unstarted in the UI.
+- 77 frontend files still reference "Eleanor"; only 1 references "Eleanor." The product direction (Eleanor everywhere user-facing) is essentially unstarted in the UI.
 - **Impact:** Product-consistency only. No execution/safety effect.
-- **Fix:** A dedicated rename pass (find/replace with care for the `rubyChartContext`/`rubyReadLayers` *internal* names which may intentionally stay, vs user-facing strings which should become Eleanor).
+- **Fix:** A dedicated rename pass (find/replace with care for the `eleanorChartContext`/`eleanorReadLayers` *internal* names which may intentionally stay, vs user-facing strings which should become Eleanor).
 
 **Phase 17 — Secrets in frontend.** ✅ PASS (preliminary)
 - Only frontend "secret"-matching reference is `assistant/errorBuffer.ts` (likely scrubbing logic, not a key). No `SERVICE_ROLE`/`PRIVATE_KEY` leak in frontend src. Verify the bundle at runtime to be thorough, but source is clean.

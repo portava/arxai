@@ -25,20 +25,20 @@ type Settings = {
   updatedAt: string | null;
   canEnableLive: boolean;
   canEnableLiveBlockedReason: string | null;
-  // Ruby execution-authority model (Task #319).
-  rubyExecutionAuthority?: string | null;
-  rubyRequireExtraConfirmation?: boolean | null;
-  allowRubyOpenCommands?: boolean | null;
-  allowRubyCloseCommands?: boolean | null;
-  allowRubyModifyCommands?: boolean | null;
-  allowRubyBreakEven?: boolean | null;
-  allowRubyPartialClose?: boolean | null;
-  allowRubyMonitor?: boolean | null;
-  allowRubyWatchEnter?: boolean | null;
-  allowRubyWatchClose?: boolean | null;
-  maxRubyLotPerTrade?: number | null;
-  maxRubyOpenPositions?: number | null;
-  maxRubyDailyTrades?: number | null;
+  // Eleanor execution-authority model (Task #319).
+  eleanorExecutionAuthority?: string | null;
+  eleanorRequireExtraConfirmation?: boolean | null;
+  allowEleanorOpenCommands?: boolean | null;
+  allowEleanorCloseCommands?: boolean | null;
+  allowEleanorModifyCommands?: boolean | null;
+  allowEleanorBreakEven?: boolean | null;
+  allowEleanorPartialClose?: boolean | null;
+  allowEleanorMonitor?: boolean | null;
+  allowEleanorWatchEnter?: boolean | null;
+  allowEleanorWatchClose?: boolean | null;
+  maxEleanorLotPerTrade?: number | null;
+  maxEleanorOpenPositions?: number | null;
+  maxEleanorDailyTrades?: number | null;
 };
 
 function ArmStatusSection({ onRefresh }: { onRefresh: () => void }) {
@@ -137,9 +137,9 @@ async function fetchSettings(): Promise<Settings> {
   return r.json();
 }
 
-// Ruby-only settings save — no scope/enable, so the backend updates the Ruby
+// Eleanor-only settings save — no scope/enable, so the backend updates the Eleanor
 // authority/permission/cap fields without touching the one-click toggle.
-async function putRubySettings(body: Record<string, unknown>): Promise<void> {
+async function putEleanorSettings(body: Record<string, unknown>): Promise<void> {
   const r = await fetch("/api/me/one-click", {
     method: "PUT",
     credentials: "include",
@@ -306,7 +306,7 @@ export function OneClickToggleCard() {
           </AlertDescription>
         </Alert>
 
-        <RubyAuthoritySection s={s} onSaved={(next) => setS(next)} />
+        <EleanorAuthoritySection s={s} onSaved={(next) => setS(next)} />
 
         <Button
           variant="outline"
@@ -324,23 +324,23 @@ export function OneClickToggleCard() {
 
 // Authority levels shown in the UI. AI_AUTO exists in the data model but is
 // intentionally NOT offered here — it is defined and not enabled in this build.
-const RUBY_AUTHORITY_OPTIONS = (name: string): Array<{ value: string; label: string; hint: string }> => [
+const ELEANOR_AUTHORITY_OPTIONS = (name: string): Array<{ value: string; label: string; hint: string }> => [
   { value: "OFF", label: "Off", hint: `${name} never trades. Read-only answers only.` },
   { value: "ADVISE_ONLY", label: "Advise only", hint: `${name} explains and proposes, but never executes.` },
   { value: "AI_ASSISTED", label: "AI-Assisted", hint: `${name} executes your direct chat commands ("buy EURUSD 0.01", "close my XAUUSD"), runs the watches and monitors you arm, and can close a monitored trade after 3 unanswered reversal alerts — every safety gate still runs on every action.` },
 ];
 
-function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Settings) => void }) {
+function EleanorAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Settings) => void }) {
   const { toast } = useToast();
   const { name } = useAssistantName();
   const [busy, setBusy] = useState(false);
-  const authority = (s.rubyExecutionAuthority ?? "OFF").toUpperCase();
+  const authority = (s.eleanorExecutionAuthority ?? "OFF").toUpperCase();
   const isAssisted = authority === "AI_ASSISTED";
 
   async function save(patch: Record<string, unknown>, label: string) {
     setBusy(true);
     try {
-      await putRubySettings(patch);
+      await putEleanorSettings(patch);
       const next = await fetchSettings();
       onSaved(next);
       toast({ title: `${name}: ${label}` });
@@ -352,24 +352,24 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
   }
 
   const perms: Array<{ key: keyof Settings; field: string; label: string }> = [
-    { key: "allowRubyOpenCommands", field: "allowRubyOpenCommands", label: "Open new trades (\"buy EURUSD 0.01\")" },
-    { key: "allowRubyCloseCommands", field: "allowRubyCloseCommands", label: "Close trades (\"close my XAUUSD\", \"close all\")" },
-    { key: "allowRubyBreakEven", field: "allowRubyBreakEven", label: "Move stop to break-even" },
-    { key: "allowRubyPartialClose", field: "allowRubyPartialClose", label: "Partial close" },
-    { key: "allowRubyMonitor", field: "allowRubyMonitor", label: "Monitor a position (reversal alerts ×3, then protective close)" },
-    { key: "allowRubyWatchEnter", field: "allowRubyWatchEnter", label: "Watch & enter at a level" },
-    { key: "allowRubyWatchClose", field: "allowRubyWatchClose", label: "Watch & close at a level" },
-    { key: "allowRubyModifyCommands", field: "allowRubyModifyCommands", label: "Change Stop Loss / Take Profit (your chat commands, and bounded fakeout shifts on positions you opt in per monitor)" },
+    { key: "allowEleanorOpenCommands", field: "allowEleanorOpenCommands", label: "Open new trades (\"buy EURUSD 0.01\")" },
+    { key: "allowEleanorCloseCommands", field: "allowEleanorCloseCommands", label: "Close trades (\"close my XAUUSD\", \"close all\")" },
+    { key: "allowEleanorBreakEven", field: "allowEleanorBreakEven", label: "Move stop to break-even" },
+    { key: "allowEleanorPartialClose", field: "allowEleanorPartialClose", label: "Partial close" },
+    { key: "allowEleanorMonitor", field: "allowEleanorMonitor", label: "Monitor a position (reversal alerts ×3, then protective close)" },
+    { key: "allowEleanorWatchEnter", field: "allowEleanorWatchEnter", label: "Watch & enter at a level" },
+    { key: "allowEleanorWatchClose", field: "allowEleanorWatchClose", label: "Watch & close at a level" },
+    { key: "allowEleanorModifyCommands", field: "allowEleanorModifyCommands", label: "Change Stop Loss / Take Profit (your chat commands, and bounded fakeout shifts on positions you opt in per monitor)" },
   ];
 
   const caps: Array<{ key: keyof Settings; field: string; label: string; step: string }> = [
-    { key: "maxRubyLotPerTrade", field: "maxRubyLotPerTrade", label: `Max lot per ${name} trade`, step: "0.01" },
-    { key: "maxRubyOpenPositions", field: "maxRubyOpenPositions", label: `Max open ${name} positions`, step: "1" },
-    { key: "maxRubyDailyTrades", field: "maxRubyDailyTrades", label: `Max ${name} trades per day`, step: "1" },
+    { key: "maxEleanorLotPerTrade", field: "maxEleanorLotPerTrade", label: `Max lot per ${name} trade`, step: "0.01" },
+    { key: "maxEleanorOpenPositions", field: "maxEleanorOpenPositions", label: `Max open ${name} positions`, step: "1" },
+    { key: "maxEleanorDailyTrades", field: "maxEleanorDailyTrades", label: `Max ${name} trades per day`, step: "1" },
   ];
 
   return (
-    <div className="rounded-md border-2 border-violet-500/30 bg-violet-500/5 p-3 space-y-4" data-testid="section-ruby-authority">
+    <div className="rounded-md border-2 border-violet-500/30 bg-violet-500/5 p-3 space-y-4" data-testid="section-eleanor-authority">
       <div>
         <Label className="text-sm font-semibold flex items-center gap-2">
           <Zap className="w-4 h-4 text-violet-400" /> {name} execution authority
@@ -385,18 +385,18 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
       </div>
 
       <div className="grid gap-2">
-        {RUBY_AUTHORITY_OPTIONS(name).map((opt) => (
+        {ELEANOR_AUTHORITY_OPTIONS(name).map((opt) => (
           <button
             key={opt.value}
             type="button"
             disabled={busy}
-            onClick={() => save({ rubyExecutionAuthority: opt.value }, `authority ${opt.label}`)}
+            onClick={() => save({ eleanorExecutionAuthority: opt.value }, `authority ${opt.label}`)}
             className={`text-left rounded-md border p-2.5 transition ${
               authority === opt.value
                 ? "border-violet-400 bg-violet-500/10"
                 : "border-border bg-background/40 hover:border-violet-500/40"
             }`}
-            data-testid={`button-ruby-authority-${opt.value.toLowerCase()}`}
+            data-testid={`button-eleanor-authority-${opt.value.toLowerCase()}`}
           >
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{opt.label}</span>
@@ -417,10 +417,10 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
               </p>
             </div>
             <Switch
-              checked={s.rubyRequireExtraConfirmation !== false}
+              checked={s.eleanorRequireExtraConfirmation !== false}
               disabled={busy}
-              onCheckedChange={(v) => save({ rubyRequireExtraConfirmation: v }, v ? "confirm-first ON" : "confirm-first OFF")}
-              data-testid="switch-ruby-extra-confirm"
+              onCheckedChange={(v) => save({ eleanorRequireExtraConfirmation: v }, v ? "confirm-first ON" : "confirm-first OFF")}
+              data-testid="switch-eleanor-extra-confirm"
             />
           </div>
 
@@ -433,7 +433,7 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
                   checked={s[p.key] === true}
                   disabled={busy}
                   onCheckedChange={(v) => save({ [p.field]: v }, `${p.label} ${v ? "on" : "off"}`)}
-                  data-testid={`switch-ruby-${p.field}`}
+                  data-testid={`switch-eleanor-${p.field}`}
                 />
               </div>
             ))}
@@ -459,7 +459,7 @@ function RubyAuthoritySection({ s, onSaved }: { s: Settings; onSaved: (next: Set
                     if ((s[c.key] ?? null) === val) return;
                     save({ [c.field]: val }, `${c.label} saved`);
                   }}
-                  data-testid={`input-ruby-${c.field}`}
+                  data-testid={`input-eleanor-${c.field}`}
                 />
               </div>
             ))}

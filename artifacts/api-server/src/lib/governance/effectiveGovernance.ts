@@ -69,7 +69,7 @@ export interface EffectiveTradingGovernance {
   requireSpreadLimit: boolean;
   spreadLimitPoints: number | null;
   requireScannerSignal: boolean;
-  requireRubyExplanation: boolean;
+  requireEleanorExplanation: boolean;
   requireBacktest: boolean;
   requireNewsCheck: boolean;
   requireRiskReward: boolean;
@@ -100,7 +100,7 @@ function governanceDefaults(): Omit<OwnerGovernanceSettingsRow, "id" | "userId" 
     requireSpreadLimit: false,
     spreadLimitPoints: null,
     requireScannerSignal: false,
-    requireRubyExplanation: false,
+    requireEleanorExplanation: false,
     requireBacktest: false,
     requireNewsCheck: false,
     requireRiskReward: false,
@@ -189,7 +189,7 @@ export async function getEffectiveTradingGovernance(
       gov("enforceMarketHoursAppCheck", "App Market-Hours Check", g.enforceMarketHoursAppCheck, g.enforceMarketHoursAppCheck, src, audience),
       gov("requireSpreadLimit", "Spread Limit", g.requireSpreadLimit, g.spreadLimitPoints, src, audience),
       gov("requireScannerSignal", "Require Scanner Signal", g.requireScannerSignal, g.requireScannerSignal, src, audience),
-      gov("requireRubyExplanation", "Require Ruby Explanation", g.requireRubyExplanation, g.requireRubyExplanation, src, audience),
+      gov("requireEleanorExplanation", "Require Eleanor Explanation", g.requireEleanorExplanation, g.requireEleanorExplanation, src, audience),
       gov("requireBacktest", "Require Backtest", g.requireBacktest, g.requireBacktest, src, audience),
       gov("requireNewsCheck", "Require News Check", g.requireNewsCheck, g.requireNewsCheck, src, audience),
       gov("requireRiskReward", "Require Risk/Reward", g.requireRiskReward, g.requireRiskReward, src, audience),
@@ -223,7 +223,7 @@ export async function getEffectiveTradingGovernance(
       requireSpreadLimit: g.requireSpreadLimit,
       spreadLimitPoints: g.spreadLimitPoints,
       requireScannerSignal: g.requireScannerSignal,
-      requireRubyExplanation: g.requireRubyExplanation,
+      requireEleanorExplanation: g.requireEleanorExplanation,
       requireBacktest: g.requireBacktest,
       requireNewsCheck: g.requireNewsCheck,
       requireRiskReward: g.requireRiskReward,
@@ -309,7 +309,7 @@ function buildProtective(
     requireSpreadLimit: false,
     spreadLimitPoints: null,
     requireScannerSignal: false,
-    requireRubyExplanation: false,
+    requireEleanorExplanation: false,
     requireBacktest: false,
     requireNewsCheck: false,
     requireRiskReward: false,

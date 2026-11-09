@@ -1,4 +1,4 @@
-// Truth: Ruby's Memory (GET /performance/ai-command-center and
+// Truth: Eleanor's Memory (GET /performance/ai-command-center and
 // /performance/equity-curve) is built from the paper book (paper_orders).
 // The calendar and day routes in the same file withhold the paper book from
 // a LIVE_SHARED session; these two did not, so paper win rate, P&L and the
@@ -38,7 +38,7 @@ async function getJson(path: string): Promise<Record<string, any>> {
   return body;
 }
 
-test("LIVE_SHARED: Ruby's Memory does not carry paper win rate / P&L", async () => {
+test("LIVE_SHARED: Eleanor's Memory does not carry paper win rate / P&L", async () => {
   accountMode = "LIVE_SHARED";
   paperReads = 0;
   const body = await getJson("/performance/ai-command-center");

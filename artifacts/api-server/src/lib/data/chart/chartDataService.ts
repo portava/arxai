@@ -214,7 +214,7 @@ function buildFormingTipCandle(
  * `includeFormingTip` (default FALSE) is the ONLY switch that folds the live
  * forming-bar tip onto the newest bar. It is passed `true` ONLY by the chart
  * display/feed-status surfaces. Every analysis caller (chart-intelligence,
- * flame signal, timeframe agreement, market overview, Ruby) leaves it false.
+ * flame signal, timeframe agreement, market overview, Eleanor) leaves it false.
  * A provider may already include its unfinished interval; analysis consumers
  * must still respect completion flags. marketEvidence refers only to accepted
  * closed bars; truthResult + chartTruthScore precede any appended display tip.

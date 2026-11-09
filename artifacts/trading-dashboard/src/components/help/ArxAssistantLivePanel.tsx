@@ -14,29 +14,29 @@ import { requestChartResearch } from "@/lib/chart-research/chartResearchAssistan
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useAssistantDockTarget, useAssistantChartSelection, useLocalChartAssistantReceiver } from "./AssistantDock";
-import { RubyTimingChip } from "./RubyTimingChip";
+import { EleanorTimingChip } from "./EleanorTimingChip";
 import { Mic, MicOff, Send, X, Sparkles, Loader2, ChevronDown, ChevronUp, ShieldCheck, Wrench, AlertCircle, Wifi, WifiOff, Radio, Square, VolumeX, Volume2, MoreHorizontal, Plus, Trash2, Eraser, Download, Brain, BrainCircuit, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { RubyTypingIndicator, friendlyToolText } from "@/components/ui/RubyTypingIndicator";
+import { EleanorTypingIndicator, friendlyToolText } from "@/components/ui/EleanorTypingIndicator";
 import { useVoiceStream, useVoiceRecorder } from "@workspace/integrations-openai-ai-react/audio";
 import { AnimatedArxAssistantIcon, useAssistantIconState, usePrefersReducedMotion } from "./AnimatedArxAssistantIcon";
 import { useLocation, useSearch } from "wouter";
 import { useRealtimeVoice, type RealtimeMode } from "./useRealtimeVoice";
 import { useSpeakResponses, getAvailableVoices, saveVoiceName, getSavedVoiceName, getServerVoicePref, saveServerVoicePref } from "./useSpeakResponses";
-import { previewVoice } from "./useRubyTTS";
+import { previewVoice } from "./useEleanorTTS";
 import { useUserVoiceSettings } from "./useUserVoiceSettings";
-import { setChatPanelSpeaking } from "@/lib/rubyVoice";
+import { setChatPanelSpeaking } from "@/lib/eleanorVoice";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { markActionStart, markActionEnd, markUiFeedback, markRenderComplete, markApiStart, markApiEnd } from "@/lib/perf";
 import { useAssistantName, DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-name";
-import { sendRubyTradeCommand, type RubyCommandResponse } from "@/lib/instantTradeRouter";
-import { looksLikeRubyCommand, rubyCommandHandled, rubyCommandAccountMode, rubyCommandReplyText, rubyNotLiveReply } from "@/lib/rubyCommandIntent";
-import { pollRubyCommandOutcome, rubyCommandOutcomeText } from "@/lib/rubyCommandOutcome";
+import { sendEleanorTradeCommand, type EleanorCommandResponse } from "@/lib/instantTradeRouter";
+import { looksLikeEleanorCommand, eleanorCommandHandled, eleanorCommandAccountMode, eleanorCommandReplyText, eleanorNotLiveReply } from "@/lib/eleanorCommandIntent";
+import { pollEleanorCommandOutcome, eleanorCommandOutcomeText } from "@/lib/eleanorCommandOutcome";
 import { onAssistantPrompt, chatRateLimitedText } from "@/lib/assistantPanelBus";
-import { RubyWatchesStrip } from "./RubyWatchesStrip";
+import { EleanorWatchesStrip } from "./EleanorWatchesStrip";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 const STORAGE_OPEN_KEY = "arx.assistant.open.v2";
@@ -92,9 +92,9 @@ const STORAGE_CHIPS_KEY = "arx.assistant.chips.v2";
 type Status = "idle" | "thinking" | "streaming" | "tool" | "speaking" | "listening" | "recording" | "realtime" | "error";
 
 interface ToolEvent { name: string; status?: string; durationMs?: number }
-import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
-import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
-import type { RubyReasoningBlockData } from "@/lib/rubyReasoningBlock";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
+import { buildReasoningFromChartRead } from "@/lib/eleanorReasoningBlock";
+import type { EleanorReasoningBlockData } from "@/lib/eleanorReasoningBlock";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 interface ChatMessage {
@@ -105,25 +105,25 @@ interface ChatMessage {
   intent?: string;
   pending?: boolean;
   voicePending?: boolean;
-  /** Ruby execution (2026-11-04): this bubble is the reply of the gated command
+  /** Eleanor execution (2026-11-04): this bubble is the reply of the gated command
    *  route. When confirmationRequired is set the bubble shows Confirm / Cancel;
    *  Confirm resends the SAME text with confirm:true (the only thing the extra
    *  confirmation step controls — every backend gate still runs). */
-  rubyCommand?: {
+  eleanorCommand?: {
     text: string;
     accountMode: "live" | "demo";
     classification?: string;
     confirmationRequired?: boolean;
     resolved?: "confirmed" | "cancelled";
   };
-  /** Optional structured Ruby reasoning. When present, the bubble renders the
+  /** Optional structured Eleanor reasoning. When present, the bubble renders the
    *  ONE standardized, ALWAYS-VISIBLE reasoning block — the same labeled format
    *  used on the Scalp / Scanner surfaces. Never fabricated from prose: it is
    *  only set when a structured (honesty-gated) read is attached to the reply. */
-  reasoning?: RubyReasoningBlockData;
+  reasoning?: EleanorReasoningBlockData;
   /** Optional feed-confidence context for a chart read (Task #777). When present
    *  the bubble renders the SAME compact FeedConfidenceBadge the chart popover
-   *  and Scanner Ruby Chart Read show, capped by `aiUsableResolved` — the SINGLE
+   *  and Scanner Eleanor Chart Read show, capped by `aiUsableResolved` — the SINGLE
    *  resolved verdict that already drove the reasoning prose (no second source of
    *  truth). DISPLAY ONLY — never an execution input. */
   chartReadFeed?: {
@@ -136,8 +136,8 @@ interface ChatMessage {
   };
 }
 interface MarketStatus { provider: string; connected: boolean; notes?: string | null }
-// T023 — context-aware Ruby briefing (state-derived; replaces static greeting).
-interface RubyBriefing {
+// T023 — context-aware Eleanor briefing (state-derived; replaces static greeting).
+interface EleanorBriefing {
   headline: string;
   lines: string[];
   setupGuidance: string | null;
@@ -221,7 +221,7 @@ export function ArxAssistantLivePanel() {
     return localStorage.getItem(STORAGE_CHIPS_KEY) !== "0";
   });
   // Auto-listen (hands-free continuous voice) is intentionally DISABLED.
-  // The VAD loop restarted the mic and interrupted Ruby's own speech, so the
+  // The VAD loop restarted the mic and interrupted Eleanor's own speech, so the
   // only voice-input path is manual press-to-record. The `useAutoListen` hook
   // file is kept on disk for a future deliberate rebuild but is no longer
   // wired into this panel.
@@ -337,7 +337,7 @@ export function ArxAssistantLivePanel() {
   // activeTTS = tts with server voice support baked into speak()
   const activeTTS = tts;
 
-  // Coordinate with RubyVoiceProvider so it never interrupts chat responses
+  // Coordinate with EleanorVoiceProvider so it never interrupts chat responses
   useEffect(() => {
     setChatPanelSpeaking(tts.state === "speaking");
   }, [tts.state]);
@@ -349,13 +349,13 @@ export function ArxAssistantLivePanel() {
   // user_transcript events) and the id of its optimistic bubble.
   const voiceUserTranscriptRef = useRef("");
   const voiceUserBubbleIdRef = useRef<string | null>(null);
-  // Set once runRubyCommand exists (declared further down) so the voice
+  // Set once runEleanorCommand exists (declared further down) so the voice
   // completion handler can route spoken commands through the same pre-filter.
-  const runRubyCommandRef = useRef<((text: string, confirm?: boolean, opts?: { source?: "ruby_text" | "ruby_voice"; userBubble?: boolean }) => Promise<boolean>) | null>(null);
+  const runEleanorCommandRef = useRef<((text: string, confirm?: boolean, opts?: { source?: "eleanor_text" | "eleanor_voice"; userBubble?: boolean }) => Promise<boolean>) | null>(null);
   const { streamVoiceResponse, cancelVoiceResponse } = useVoiceStream({
     workletPath,
     onUserTranscript: (chunk) => {
-      // Show what Ruby heard as a user bubble. Fill the optimistic
+      // Show what Eleanor heard as a user bubble. Fill the optimistic
       // "transcribing…" placeholder (chunks accumulate); otherwise append.
       voiceUserTranscriptRef.current += chunk;
       const heard = voiceUserTranscriptRef.current;
@@ -399,8 +399,8 @@ export function ArxAssistantLivePanel() {
       setStatus("idle");
       // AC8 — a spoken direct command ("close it", "keep it", "buy EURUSD
       // 0.01") goes through the same gated command route as typed text.
-      if (heard && looksLikeRubyCommand(heard)) {
-        void runRubyCommandRef.current?.(heard, false, { source: "ruby_voice", userBubble: false });
+      if (heard && looksLikeEleanorCommand(heard)) {
+        void runEleanorCommandRef.current?.(heard, false, { source: "eleanor_voice", userBubble: false });
       }
     },
     onError: (e) => {
@@ -500,7 +500,7 @@ export function ArxAssistantLivePanel() {
 
   // ── T023: context-aware briefing (replaces the static greeting) ───────────
   // Fetches a state-derived briefing from the server (real live/market/account
-  // state only — never fabricated) and renders it as Ruby's opening message
+  // state only — never fabricated) and renders it as Eleanor's opening message
   // plus contextual suggestions. Used on open and by the Refresh button.
   const loadBriefing = useCallback(async (opts?: { refresh?: boolean }) => {
     if(remoteChartBlockedRef.current)return;
@@ -513,7 +513,7 @@ export function ArxAssistantLivePanel() {
       const symQs = chartSymbol ? `&symbol=${encodeURIComponent(chartSymbol)}` : "";
       const r = await fetch(`${BASE}/api/me/assistant/briefing?page=${page}${symQs}`, { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = (await r.json()) as { briefing: RubyBriefing };
+      const data = (await r.json()) as { briefing: EleanorBriefing };
       if(obsolete())return;
       const b = data.briefing;
       const parts: string[] = [b.headline];
@@ -521,8 +521,8 @@ export function ArxAssistantLivePanel() {
       if (b.setupGuidance) parts.push("", b.setupGuidance);
       const content = parts.join("\n");
       setMessages((cur) => {
-        const next = cur.filter((m) => m.id !== "ruby-briefing");
-        return [...next, { id: "ruby-briefing", role: "assistant" as const, content }];
+        const next = cur.filter((m) => m.id !== "eleanor-briefing");
+        return [...next, { id: "eleanor-briefing", role: "assistant" as const, content }];
       });
       if (Array.isArray(b.suggestions) && b.suggestions.length > 0) setBriefingSuggestions(b.suggestions);
       setBriefingUpdatedAt(b.updatedAt);
@@ -531,8 +531,8 @@ export function ArxAssistantLivePanel() {
       if(obsolete())return;
       // Honest, non-fabricated fallback so the panel always opens cleanly.
       setMessages((cur) => {
-        if (cur.some((m) => m.id === "ruby-briefing")) return cur;
-        return [...cur, { id: "ruby-briefing", role: "assistant" as const, content: `Hi — I'm ${name}. I'm here when you're ready.` }];
+        if (cur.some((m) => m.id === "eleanor-briefing")) return cur;
+        return [...cur, { id: "eleanor-briefing", role: "assistant" as const, content: `Hi — I'm ${name}. I'm here when you're ready.` }];
       });
     } finally {
       setBriefingLoading(false);
@@ -562,7 +562,7 @@ export function ArxAssistantLivePanel() {
   }, [open,chartCompact,dockTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure conversation + load market status when opened.
-  // Ruby rehydration: on first open per session, try to resume the user's
+  // Eleanor rehydration: on first open per session, try to resume the user's
   // most recent conversation (with its messages) so chats persist across
   // refresh/logout/login. Only fall back to a brand-new "Live chat" if
   // there is no prior conversation. Page reloads then start fresh inside
@@ -836,24 +836,24 @@ export function ArxAssistantLivePanel() {
   // ── Manual voice flow — explicit state lock ─────────────────────────
   // Voice is press-to-record ONLY. There is no auto-listen / VAD loop and
   // nothing ever re-opens the mic on its own. The flow always returns to
-  // `idle` after Ruby finishes — it never auto-restarts listening.
+  // `idle` after Eleanor finishes — it never auto-restarts listening.
   //
   //   idle                      → nothing happening; mic is inactive
   //   recording_user_voice      → user tapped the mic; capturing their clip
-  //   processing_voice_message  → clip uploaded; waiting on Ruby's reply
-  //   ruby_speaking             → Ruby is talking back (TTS or voice stream);
+  //   processing_voice_message  → clip uploaded; waiting on Eleanor's reply
+  //   eleanor_speaking             → Eleanor is talking back (TTS or voice stream);
   //                               the mic stays inactive and recording is
   //                               blocked until she finishes or the user
   //                               manually stops her.
-  const voiceFlow: "idle" | "recording_user_voice" | "processing_voice_message" | "ruby_speaking" =
+  const voiceFlow: "idle" | "recording_user_voice" | "processing_voice_message" | "eleanor_speaking" =
     status === "recording"
       ? "recording_user_voice"
       : (isVoiceUploading || status === "listening")
         ? "processing_voice_message"
         : (status === "speaking" || tts.state === "speaking")
-          ? "ruby_speaking"
+          ? "eleanor_speaking"
           : "idle";
-  const rubySpeaking = voiceFlow === "ruby_speaking";
+  const eleanorSpeaking = voiceFlow === "eleanor_speaking";
 
   // Keep the auto-stop timer pointing at the latest stopVoiceAndSend.
   useEffect(() => { stopAndSendRef.current = () => { void stopVoiceAndSend(); }; }, [stopVoiceAndSend]);
@@ -869,17 +869,17 @@ export function ArxAssistantLivePanel() {
     return true;
   },[tts.stop]);
   useLocalChartAssistantReceiver(acceptLocalChartReply);
-  // Ruby execution (2026-11-04): a DIRECT trade/watch command typed in the chat
-  // box goes to Ruby's gated command route first. The server parses it, checks
+  // Eleanor execution (2026-11-04): a DIRECT trade/watch command typed in the chat
+  // box goes to Eleanor's gated command route first. The server parses it, checks
   // the user's AI-Assisted authority + per-action permissions, asks for
   // confirmation and runs every backend gate. VAGUE/UNKNOWN falls through to
   // the analytical chat. Returns true when the message was handled here.
   const [watchesRefresh, setWatchesRefresh] = useState(0);
-  // Ruby's alert notifications link to "/?ruby=watches": open the panel (the
+  // Eleanor's alert notifications link to "/?eleanor=watches": open the panel (the
   // watches strip with Keep it / Close it sits at its top) and refresh it.
   const search = useSearch();
   useEffect(() => {
-    if (new URLSearchParams(search).get("ruby") !== "watches") return;
+    if (new URLSearchParams(search).get("eleanor") !== "watches") return;
     setOpen(true);
     setWatchesRefresh((n) => n + 1);
   }, [search]);
@@ -887,11 +887,11 @@ export function ArxAssistantLivePanel() {
   // status and post one fill / reject / still-pending line. Cancelled on unmount.
   const panelMountedRef = useRef(true);
   useEffect(() => { panelMountedRef.current = true; return () => { panelMountedRef.current = false; }; }, []);
-  const followUpRubyCommand = useCallback((commandId: string) => {
-    void pollRubyCommandOutcome(commandId, { isCancelled: () => !panelMountedRef.current }).then((outcome) => {
+  const followUpEleanorCommand = useCallback((commandId: string) => {
+    void pollEleanorCommandOutcome(commandId, { isCancelled: () => !panelMountedRef.current }).then((outcome) => {
       if (!outcome || !panelMountedRef.current) return;
       setMessages((cur) => [...cur, {
-        id: `a-cmd-${commandId}-${Date.now()}`, role: "assistant", content: rubyCommandOutcomeText(outcome), intent: "ruby_command",
+        id: `a-cmd-${commandId}-${Date.now()}`, role: "assistant", content: eleanorCommandOutcomeText(outcome), intent: "eleanor_command",
       }]);
       setWatchesRefresh((n) => n + 1);
     });
@@ -900,55 +900,55 @@ export function ArxAssistantLivePanel() {
   // AC3 — send the account mode the instant route executes: a LIVE_SHARED user
   // is live whether or not they armed one-click (same rule as QuickTradeModal);
   // while the mode is loading we fail closed to "demo".
-  const rubyAccountMode = rubyCommandAccountMode(tradingMode);
-  const runRubyCommand = useCallback(async (
+  const eleanorAccountMode = eleanorCommandAccountMode(tradingMode);
+  const runEleanorCommand = useCallback(async (
     text: string,
     confirm = false,
-    opts: { source?: "ruby_text" | "ruby_voice"; userBubble?: boolean } = {},
+    opts: { source?: "eleanor_text" | "eleanor_voice"; userBubble?: boolean } = {},
   ): Promise<boolean> => {
-    const accountMode = rubyAccountMode;
-    let resp: RubyCommandResponse;
+    const accountMode = eleanorAccountMode;
+    let resp: EleanorCommandResponse;
     try {
-      const source = opts.source ?? "ruby_text";
+      const source = opts.source ?? "eleanor_text";
       // Typed commands are saved in the conversation (AC7) so they survive a
       // reload and the analyst sees them; the voice route already saves the
       // spoken transcript, so voice commands are not saved twice.
-      resp = await sendRubyTradeCommand({
+      resp = await sendEleanorTradeCommand({
         text, accountMode, source, confirm,
-        conversationId: source === "ruby_text" ? conversation?.id ?? null : null,
+        conversationId: source === "eleanor_text" ? conversation?.id ?? null : null,
       });
     } catch {
       return false;
     }
-    if (!rubyCommandHandled(resp)) return false;
+    if (!eleanorCommandHandled(resp)) return false;
     // A non-live account can't execute from chat. Say so plainly instead of
     // offering Confirm and then failing with a raw code.
     const blockedNotLive = resp.confirmationRequired === true && accountMode !== "live";
-    const reply = blockedNotLive ? rubyNotLiveReply(name) : rubyCommandReplyText(resp, name);
+    const reply = blockedNotLive ? eleanorNotLiveReply(name) : eleanorCommandReplyText(resp, name);
     const showUserBubble = !confirm && opts.userBubble !== false;
     setMessages((cur) => [
       ...cur,
       ...(showUserBubble ? [{ id: `u-${Date.now()}`, role: "user" as const, content: text }] : []),
       {
-        id: `a-${Date.now() + 1}`, role: "assistant" as const, content: reply, intent: "ruby_command",
-        rubyCommand: { text, accountMode, classification: resp.classification, confirmationRequired: resp.confirmationRequired === true && !blockedNotLive },
+        id: `a-${Date.now() + 1}`, role: "assistant" as const, content: reply, intent: "eleanor_command",
+        eleanorCommand: { text, accountMode, classification: resp.classification, confirmationRequired: resp.confirmationRequired === true && !blockedNotLive },
       },
     ]);
     setInput("");
     setWatchesRefresh((n) => n + 1);
-    if (resp.ok && typeof resp.commandId === "string" && resp.commandId) followUpRubyCommand(resp.commandId);
+    if (resp.ok && typeof resp.commandId === "string" && resp.commandId) followUpEleanorCommand(resp.commandId);
     return true;
-  }, [rubyAccountMode, name, followUpRubyCommand, conversation?.id]);
-  useEffect(() => { runRubyCommandRef.current = runRubyCommand; }, [runRubyCommand]);
+  }, [eleanorAccountMode, name, followUpEleanorCommand, conversation?.id]);
+  useEffect(() => { runEleanorCommandRef.current = runEleanorCommand; }, [runEleanorCommand]);
 
-  const resolveRubyConfirmation = useCallback(async (m: ChatMessage, decision: "confirmed" | "cancelled") => {
-    setMessages((cur) => cur.map((x) => x.id === m.id && x.rubyCommand ? { ...x, rubyCommand: { ...x.rubyCommand, resolved: decision } } : x));
-    if (decision === "confirmed" && m.rubyCommand) {
-      await runRubyCommand(m.rubyCommand.text, true);
+  const resolveEleanorConfirmation = useCallback(async (m: ChatMessage, decision: "confirmed" | "cancelled") => {
+    setMessages((cur) => cur.map((x) => x.id === m.id && x.eleanorCommand ? { ...x, eleanorCommand: { ...x.eleanorCommand, resolved: decision } } : x));
+    if (decision === "confirmed" && m.eleanorCommand) {
+      await runEleanorCommand(m.eleanorCommand.text, true);
     } else {
-      setMessages((cur) => [...cur, { id: `a-${Date.now()}`, role: "assistant", content: "Cancelled — nothing was sent.", intent: "ruby_command" }]);
+      setMessages((cur) => [...cur, { id: `a-${Date.now()}`, role: "assistant", content: "Cancelled — nothing was sent.", intent: "eleanor_command" }]);
     }
-  }, [runRubyCommand]);
+  }, [runEleanorCommand]);
 
   const sendText = useCallback(async (text: string) => {
     if (!text.trim()) return;
@@ -969,22 +969,22 @@ export function ArxAssistantLivePanel() {
     }
     if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}
     if (!conversation || conversationChangePending.current) { setErrorBanner("Chat session not ready yet. One moment…"); return; }
-    if (looksLikeRubyCommand(text)) {
+    if (looksLikeEleanorCommand(text)) {
       tts.stop();
       setErrorBanner(null);
       setStatus("thinking");
-      const handled = await runRubyCommand(text);
+      const handled = await runEleanorCommand(text);
       setStatus("idle");
       if (handled) return;
     }
-    // PART 8 — Ruby first-text timing. Three distinct moments matter:
+    // PART 8 — Eleanor first-text timing. Three distinct moments matter:
     //   send (T0) → "thinking" indicator visible (T1, sub-100ms)
     //              → first visible token (markRenderComplete — the
     //                budget the user actually feels)
     //              → done (markActionEnd — full message complete)
     // TTS deliberately does NOT block the text path; the action ends as
     // soon as the SSE "done" event lands.
-    const rubyPid = markActionStart("ruby.sendMessage", { page: typeof location !== "undefined" ? location.pathname : undefined });
+    const eleanorPid = markActionStart("eleanor.sendMessage", { page: typeof location !== "undefined" ? location.pathname : undefined });
     let firstTextMarked = false;
     // Silence any in-flight TTS before starting a new turn so we never
     // talk over ourselves.
@@ -995,7 +995,7 @@ export function ArxAssistantLivePanel() {
     setMessages((cur) => [...cur, userMsg, placeholder]);
     setInput("");
     setStatus("thinking");
-    markUiFeedback(rubyPid); // "Ruby is thinking…" indicator visible
+    markUiFeedback(eleanorPid); // "Eleanor is thinking…" indicator visible
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -1003,7 +1003,7 @@ export function ArxAssistantLivePanel() {
     const requestedChartKey=selectedChartKeyRef.current;
     const requestedChartRevision=selectedChartRevision.current;
     const staleScope=()=>controller.signal.aborted||abortRef.current!==controller||remoteChartBlockedRef.current||selectedChartKeyRef.current!==requestedChartKey||selectedChartRevision.current!==requestedChartRevision;
-    markApiStart(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
+    markApiStart(eleanorPid, "POST /api/me/assistant/conversations/:id/messages");
 
     let res: Response;
     try {
@@ -1014,16 +1014,16 @@ export function ArxAssistantLivePanel() {
         signal: controller.signal,
       });
     } catch (e) {
-      markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
-      if(staleScope()){markActionEnd(rubyPid);return;}
-      if ((e as { name?: string }).name === "AbortError") { setStatus("idle"); markActionEnd(rubyPid); return; }
+      markApiEnd(eleanorPid, "POST /api/me/assistant/conversations/:id/messages");
+      if(staleScope()){markActionEnd(eleanorPid);return;}
+      if ((e as { name?: string }).name === "AbortError") { setStatus("idle"); markActionEnd(eleanorPid); return; }
       setStatus("error"); setErrorBanner("Connection lost. Please try again.");
-      markActionEnd(rubyPid, { bottleneck: "network" });
+      markActionEnd(eleanorPid, { bottleneck: "network" });
       return;
     }
-    if(staleScope()){void res.body?.cancel().catch(()=>{});markApiEnd(rubyPid,"POST /api/me/assistant/conversations/:id/messages");markActionEnd(rubyPid);return;}
+    if(staleScope()){void res.body?.cancel().catch(()=>{});markApiEnd(eleanorPid,"POST /api/me/assistant/conversations/:id/messages");markActionEnd(eleanorPid);return;}
     if (!res.ok || !res.body) {
-      markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
+      markApiEnd(eleanorPid, "POST /api/me/assistant/conversations/:id/messages");
       setStatus("error");
       if (res.status === 429) {
         let retry: number | null = null;
@@ -1041,7 +1041,7 @@ export function ArxAssistantLivePanel() {
       } else {
         setErrorBanner(res.status === 401 ? `Sign in to chat with ${name}.` : `Assistant error (${res.status}).`);
       }
-      markActionEnd(rubyPid, { bottleneck: "api" });
+      markActionEnd(eleanorPid, { bottleneck: "api" });
       return;
     }
     const reader = res.body.getReader();
@@ -1052,7 +1052,7 @@ export function ArxAssistantLivePanel() {
     let intent: string | undefined;
 
     setStatus("streaming");
-    // Begin a fresh streaming-speech turn so Ruby reads each sentence aloud
+    // Begin a fresh streaming-speech turn so Eleanor reads each sentence aloud
     // as it arrives instead of waiting for the whole reply. Suppressed in
     // realtime/mic voice mode (handled by WebRTC) — see voiceModeActive below.
     const streamingVoiceActive =
@@ -1064,7 +1064,7 @@ export function ArxAssistantLivePanel() {
     while (true) {
       let chunk: ReadableStreamReadResult<Uint8Array>;
       try { chunk = await reader.read(); } catch { break; }
-      if(staleScope()){try{await reader.cancel();}catch{/* already closed */}markApiEnd(rubyPid,"POST /api/me/assistant/conversations/:id/messages");markActionEnd(rubyPid);return;}
+      if(staleScope()){try{await reader.cancel();}catch{/* already closed */}markApiEnd(eleanorPid,"POST /api/me/assistant/conversations/:id/messages");markActionEnd(eleanorPid);return;}
       if (chunk.done) break;
       buffer += decoder.decode(chunk.value, { stream: true });
       const events = buffer.split("\n\n");
@@ -1090,7 +1090,7 @@ export function ArxAssistantLivePanel() {
           if (import.meta.env.DEV) console.warn("[arx-assistant] dropped non-canonical SSE event", ev?.type);
           continue;
         }
-        // Phase Ruby-Speed — server emits `content_clear` when a turn that
+        // Phase Eleanor-Speed — server emits `content_clear` when a turn that
         // streamed preamble ("Let me check the scanner...") turned into a
         // tool call. Strip exactly that many trailing characters from the
         // visible assistant message so the user never sees the preamble.
@@ -1138,7 +1138,7 @@ export function ArxAssistantLivePanel() {
           const envelopeMalformed =
             !envelopeMissing && !VALID_MODES.has(ev.safetyMode as string);
           // Only disable assistant if envelope is missing/malformed.
-          // allowOrderExecution=true is valid in live mode — Ruby still
+          // allowOrderExecution=true is valid in live mode — Eleanor still
           // cannot bypass backend guards; execution is always server-gated.
           const executionUnlocked = false; // no longer block on this
           if (envelopeMissing || envelopeMalformed) {
@@ -1152,9 +1152,9 @@ export function ArxAssistantLivePanel() {
             }
             setErrorBanner("Safety envelope mismatch — assistant disabled.");
             // PART 8 — close out the perf row before bailing so we don't
-            // leak a "still running" ruby.sendMessage action.
-            markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
-            markActionEnd(rubyPid, { bottleneck: "api" });
+            // leak a "still running" eleanor.sendMessage action.
+            markApiEnd(eleanorPid, "POST /api/me/assistant/conversations/:id/messages");
+            markActionEnd(eleanorPid, { bottleneck: "api" });
             controller.abort(); return;
           }
         }
@@ -1167,14 +1167,14 @@ export function ArxAssistantLivePanel() {
             return [...cur.slice(0, -1), { ...last, content: assistantText, intent, toolCalls: tools.slice() }];
           });
           setStatus("streaming");
-          // Read aloud as Ruby types: feed the text so far; completed
+          // Read aloud as Eleanor types: feed the text so far; completed
           // sentences are spoken in order, the trailing partial is held.
           if (streamingVoiceActive) activeTTS.speakStreamPush(assistantText);
           // PART 8 — first-text time is the budget the user actually
           // feels (target ≤1500ms). Recorded once per turn.
           if (!firstTextMarked && assistantText.trim().length > 0) {
             firstTextMarked = true;
-            markRenderComplete(rubyPid);
+            markRenderComplete(eleanorPid);
           }
         }
         else if (ev.type === "tool_call" && ev.name) {
@@ -1197,8 +1197,8 @@ export function ArxAssistantLivePanel() {
         }
         else if (ev.type === "reasoning" && ev.read && typeof ev.read === "object") {
           // Structured, honesty-gated chart read from the readChartStructure
-          // tool. Build the ONE standardized Ruby Reasoning Block from the SAME
-          // builder the Scanner Ruby Chart Read uses — NEVER fabricated from
+          // tool. Build the ONE standardized Eleanor Reasoning Block from the SAME
+          // builder the Scanner Eleanor Chart Read uses — NEVER fabricated from
           // prose. The builder honours readLayer: an INSUFFICIENT / gated read
           // renders WAIT, STRUCTURAL_ONLY renders a conditional read with the
           // limit stated in Feed/Data, and no direction or level is invented.
@@ -1210,7 +1210,7 @@ export function ArxAssistantLivePanel() {
             read: ev.read as Parameters<typeof buildReasoningFromChartRead>[0]["read"],
             symbol: ev.symbol ?? "",
             timeframe: ev.timeframe ?? "",
-            // INDEPENDENT booleans, exactly like the Scanner Ruby Chart Read panel:
+            // INDEPENDENT booleans, exactly like the Scanner Eleanor Chart Read panel:
             // structuralOnly comes from the read tier, feedNotConfirmed from the
             // server's explicit feed verdict. Both can be true (feed-unconfirmed
             // STRUCTURAL_ONLY → WAIT) or only one (sufficiency-withheld on a clean
@@ -1220,7 +1220,7 @@ export function ArxAssistantLivePanel() {
           }, name);
           // Task #777 — attach the SAME feed-confidence verdict that drove the
           // reasoning so the chat bubble can render the identical FeedConfidenceBadge
-          // the chart popover / Scanner Ruby Chart Read show. `aiUsableResolved`
+          // the chart popover / Scanner Eleanor Chart Read show. `aiUsableResolved`
           // mirrors the builder's `withheld` gate EXACTLY (gated / feed-unconfirmed
           // / structural-only ⇒ false; fully-confirmed ⇒ true), so the badge can
           // never look more confident than the prose. Only when we know the exact
@@ -1248,8 +1248,8 @@ export function ArxAssistantLivePanel() {
           // PART 8 — full-message budget (concise ≤4000ms target).
           // TTS is kicked off below but is INTENTIONALLY excluded from
           // this action's timing — text-completion is what blocks the UI.
-          markApiEnd(rubyPid, "POST /api/me/assistant/conversations/:id/messages");
-          markActionEnd(rubyPid);
+          markApiEnd(eleanorPid, "POST /api/me/assistant/conversations/:id/messages");
+          markActionEnd(eleanorPid);
           setMessages((cur) => {
             const last = cur[cur.length - 1];
             if (!last || last.role !== "assistant") return cur;
@@ -1268,7 +1268,7 @@ export function ArxAssistantLivePanel() {
             micActiveRef.current;
           if (activeTTS.enabled && !voiceModeActive && assistantText.trim()) {
             if (streamingVoiceActive) {
-              // Ruby has been reading sentences aloud AS they streamed in
+              // Eleanor has been reading sentences aloud AS they streamed in
               // (speakStreamPush). At end-of-stream just flush the trailing
               // partial sentence so speech stays in sync with the text —
               // do NOT call the one-shot speak() here, which would restart
@@ -1287,14 +1287,14 @@ export function ArxAssistantLivePanel() {
         }
       }
     }
-    if(staleScope()){markActionEnd(rubyPid);return;}
+    if(staleScope()){markActionEnd(eleanorPid);return;}
     setStatus((s) => (s === "streaming" || s === "tool" || s === "thinking" ? "idle" : s));
     // Safety net — if the stream ended without a `done` event (network
     // hang-up, server crash mid-stream), close the perf row anyway so
     // the action doesn't leak as "still running" in the ring buffer.
     // markActionEnd is idempotent (returns null on the second call).
-    markActionEnd(rubyPid);
-  }, [conversation, runRubyCommand, tts, activeTTS, realtime, name]);
+    markActionEnd(eleanorPid);
+  }, [conversation, runEleanorCommand, tts, activeTTS, realtime, name]);
 
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void sendText(input); };
 
@@ -1315,12 +1315,12 @@ export function ArxAssistantLivePanel() {
       case "tool":      return { label: `${name} is checking`, cls: "bg-violet-500/20 text-violet-200 border-violet-500/40", pulse: true };
       case "recording": return { label: "Recording…",  cls: "bg-rose-500/20 text-danger border-rose-500/40", pulse: true };
       case "listening": return { label: "Sending voice message…", cls: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40", pulse: true };
-      case "realtime":  return { label: realtime.isMuted ? `${name} is on standby` : `${name} is listening`, cls: "bg-fuchsia-500/20 text-ruby border-fuchsia-500/40", pulse: !realtime.isMuted };
+      case "realtime":  return { label: realtime.isMuted ? `${name} is on standby` : `${name} is listening`, cls: "bg-fuchsia-500/20 text-eleanor border-fuchsia-500/40", pulse: !realtime.isMuted };
       case "speaking":  return { label: `${name} is speaking…`,   cls: "bg-cyan-500/20 text-cyan-200 border-cyan-500/40", pulse: true };
       case "error":     return { label: `${name} is reconnecting`, cls: "bg-red-500/20 text-danger border-red-500/40", pulse: true };
       default: {
         // When typed-reply TTS is reading the answer aloud the overall status
-        // is "idle" but the user is hearing speech — surface "Ruby is
+        // is "idle" but the user is hearing speech — surface "Eleanor is
         // speaking…" so the badge matches what they hear. Once it ends the
         // flow returns to idle; the mic is never auto-restarted.
         if (tts.state === "speaking") {
@@ -1381,7 +1381,7 @@ export function ArxAssistantLivePanel() {
         >
           <div className={cn("flex shrink-0 items-center justify-between border-b border-border px-3 py-2",shortChartViewport&&"sticky top-0 z-10 bg-card")}>
             <div className="flex min-w-0 items-center gap-2.5">
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-ruby/15 text-ruby ring-1 ring-ruby/30">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-eleanor/15 text-eleanor ring-1 ring-eleanor/30">
                 <Brain className="h-4 w-4" />
               </span>
               <div className="min-w-0">
@@ -1436,10 +1436,10 @@ export function ArxAssistantLivePanel() {
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-foreground hover:bg-secondary disabled:opacity-50"
                       data-testid="arx-menu-new-chat"
                     >
-                      <Plus className="h-3.5 w-3.5 text-ruby" />
+                      <Plus className="h-3.5 w-3.5 text-eleanor" />
                       Start new {name} chat
                     </button>
-                    {/* Memory on/off toggle. Disabled = Ruby stops using
+                    {/* Memory on/off toggle. Disabled = Eleanor stops using
                         long-term recall but past chats remain saved. */}
                     <button
                       role="menuitem"
@@ -1479,7 +1479,7 @@ export function ArxAssistantLivePanel() {
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-foreground hover:bg-secondary"
                       data-testid="arx-menu-export"
                     >
-                      <Download className="h-3.5 w-3.5 text-ruby" />
+                      <Download className="h-3.5 w-3.5 text-eleanor" />
                       Export {name} chat history
                     </a>
                     <button
@@ -1566,7 +1566,7 @@ export function ArxAssistantLivePanel() {
               input bar; the mic is next to the chat input. */}
           {(() => {
             // Single source of truth for *voice* status. Thinking/typing are
-            // shown by the in-chat pending bubble (RubyTypingIndicator), so we
+            // shown by the in-chat pending bubble (EleanorTypingIndicator), so we
             // deliberately don't repeat them here — that was the duplicated
             // status in multiple places. "Speaking" follows the live speech
             // engine (tts.state) so it clears the moment she stops.
@@ -1582,7 +1582,7 @@ export function ArxAssistantLivePanel() {
             if (!statusText) return null;
             return (
               <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-txt-secondary" data-testid="arx-status-bar">
-                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ruby/15 text-ruby">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-eleanor/15 text-eleanor">
                   <Brain className="h-3 w-3" />
                 </span>
                 <span>{statusText}</span>
@@ -1608,14 +1608,14 @@ export function ArxAssistantLivePanel() {
           })()}
 
           {/* Messages */}
-          <RubyWatchesStrip refreshKey={watchesRefresh} onMessage={(t) => setMessages((cur) => [...cur, { id: `a-${Date.now()}`, role: "assistant", content: t, intent: "ruby_command" }])} />
+          <EleanorWatchesStrip refreshKey={watchesRefresh} onMessage={(t) => setMessages((cur) => [...cur, { id: `a-${Date.now()}`, role: "assistant", content: t, intent: "eleanor_command" }])} />
           <div id="arx-assistant-messages" ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-3",shortChartViewport&&"min-h-16 flex-none")}>
             <p className="mb-2 text-xs text-cyan-300" data-testid="assistant-selected-chart">{chartSelection.selected?`Local chart tools: ${chartSelection.selected.symbol} · ${chartSelection.selected.timeframe} · ${chartSelection.selected.source}${chartSelection.selected.analysisOnly?" · analysis only":" · primary"}`:"No chart selected. Choose Use chart with assistant on a ready chart; no other pane will be substituted."}{remoteChartBlocked?" General chat and voice are held here; primary trading controls are unchanged.":""}</p>
             {messages.length===0&&chartCompact&&<p className="text-sm text-txt-secondary">Ask about the current chart, for example “show RSI”. Expand for conversation history and voice settings.</p>}
             {messages.length === 0 && !chartCompact && (
               <div className="rounded-2xl border border-border bg-secondary/60 p-3.5 text-sm text-foreground">
                 <div className="font-semibold mb-1 flex items-center gap-2">
-                  <span className="grid h-6 w-6 place-items-center rounded-full bg-ruby/15 text-ruby"><Brain className="h-3.5 w-3.5" /></span>
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-eleanor/15 text-eleanor"><Brain className="h-3.5 w-3.5" /></span>
                   Hi, I’m {name} — your ARX trading assistant.
                 </div>
                 <div className="text-txt-secondary">
@@ -1623,7 +1623,7 @@ export function ArxAssistantLivePanel() {
                 </div>
                 <ul className="mt-2.5 space-y-2">
                   <li className="flex items-start gap-2">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-ruby/15 text-ruby"><Mic className="h-3.5 w-3.5" /></span>
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-eleanor/15 text-eleanor"><Mic className="h-3.5 w-3.5" /></span>
                     <span className="text-txt-secondary"><span className="text-foreground font-medium">Talk to me by voice</span> — tap the mic, speak, and I’ll show what I heard, then reply.</span>
                   </li>
                   <li className="flex items-start gap-2">
@@ -1649,7 +1649,7 @@ export function ArxAssistantLivePanel() {
                 )}
               </div>
             )}
-            {messages.map((m,index) => (<div key={m.id} hidden={chartCompact&&index!==messages.length-1} data-chart-chat-hidden={chartCompact&&index!==messages.length-1?"true":undefined}><MessageBubble onRubyDecision={resolveRubyConfirmation} m={m} /></div>))}
+            {messages.map((m,index) => (<div key={m.id} hidden={chartCompact&&index!==messages.length-1} data-chart-chat-hidden={chartCompact&&index!==messages.length-1?"true":undefined}><MessageBubble onEleanorDecision={resolveEleanorConfirmation} m={m} /></div>))}
             {errorBanner && (
               <div className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/15 px-3 py-2 text-xs text-danger">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5" />
@@ -1671,7 +1671,7 @@ export function ArxAssistantLivePanel() {
                   Quick suggestions
                 </button>
                 {/* Phase 3 — advisory timing chip for active chart symbol */}
-                {!remoteChartBlocked&&<RubyTimingChip symbol={chartSymbol ?? "EURUSD"} chartTimeframe={scannerTimeframe ?? null} />}
+                {!remoteChartBlocked&&<EleanorTimingChip symbol={chartSymbol ?? "EURUSD"} chartTimeframe={scannerTimeframe ?? null} />}
               </div>
               <div className="flex items-center gap-2">
                 {briefingUpdatedAt && (
@@ -1749,7 +1749,7 @@ export function ArxAssistantLivePanel() {
               <button
                 type="button"
                 onClick={() => { if(remoteChartBlockedRef.current){setErrorBanner(analysisOnlyNotice);return;}void realtime.start(); }}
-                className="h-9 w-9 rounded-full flex items-center justify-center border border-ruby/50 bg-ruby/15 text-ruby hover:border-ruby hover:text-ruby"
+                className="h-9 w-9 rounded-full flex items-center justify-center border border-eleanor/50 bg-eleanor/15 text-eleanor hover:border-eleanor hover:text-eleanor"
                 aria-label="Start Realtime voice (WebRTC)"
                 data-testid="arx-realtime-start"
                 disabled={remoteChartBlocked || micActive || status === "thinking" || status === "streaming"}
@@ -1767,7 +1767,7 @@ export function ArxAssistantLivePanel() {
                     "h-9 w-9 rounded-full flex items-center justify-center border",
                     realtime.isMuted
                       ? "border-border bg-card text-txt-secondary"
-                      : "border-fuchsia-500/60 bg-fuchsia-500/10 text-ruby animate-pulse",
+                      : "border-fuchsia-500/60 bg-fuchsia-500/10 text-eleanor animate-pulse",
                   )}
                   aria-label={realtime.isMuted ? "Unmute Realtime mic" : "Mute Realtime mic"}
                   data-testid="arx-realtime-mute"
@@ -1792,7 +1792,7 @@ export function ArxAssistantLivePanel() {
               onClick={async () => {
                 // Manual press-to-record ONLY. Tap to start; tap again to stop
                 // and send. The mic is never re-opened automatically and the
-                // recorder is blocked while Ruby is speaking so the user can't
+                // recorder is blocked while Eleanor is speaking so the user can't
                 // record over her — they must let her finish or hit Stop first.
                 if (status === "recording") {
                   await stopVoiceAndSend();
@@ -1804,13 +1804,13 @@ export function ArxAssistantLivePanel() {
                 "h-9 w-9 rounded-full flex items-center justify-center border",
                 micActive
                   ? "border-emerald-500/60 bg-emerald-500/10 text-success animate-pulse"
-                  : "border-border bg-card text-foreground hover:text-ruby hover:border-cyan-500",
+                  : "border-border bg-card text-foreground hover:text-eleanor hover:border-cyan-500",
               )}
               aria-label={status === "recording" ? "Stop and send voice message" : "Record voice message"}
               data-testid="arx-mic-toggle"
-              disabled={remoteChartBlocked&&status!=="recording" || realtimeEngaged || isVoiceUploading || rubySpeaking || status === "thinking" || status === "streaming" || status === "listening"}
+              disabled={remoteChartBlocked&&status!=="recording" || realtimeEngaged || isVoiceUploading || eleanorSpeaking || status === "thinking" || status === "streaming" || status === "listening"}
               title={
-                rubySpeaking
+                eleanorSpeaking
                   ? `${name} is speaking — let her finish or tap Stop first`
                   : status === "recording"
                     ? "Recording… tap to send"
@@ -1974,19 +1974,19 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
 
       {serverVoices.length > 0 && (
         <>
-          <div className="text-[10px] text-ruby/70 mb-2">✨ Natural AI Voices</div>
+          <div className="text-[10px] text-eleanor/70 mb-2">✨ Natural AI Voices</div>
           {serverFemale.length > 0 && (
             <div className="mb-3">
               <div className="text-xs text-txt-muted mb-1">♀ Women</div>
               <div className="space-y-1">
                 {serverFemale.map(v => (
                   <button key={v.id} type="button" onClick={() => selectVoice(v.id, v.provider)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-cyan-500/20 text-ruby border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-cyan-500/20 text-eleanor border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
                     <div className="min-w-0">
                       <div className="font-medium truncate">{v.label}</div>
                       <div className="text-txt-muted text-[10px]">{v.accent} · {v.note}</div>
                     </div>
-                    {selected === v.id && <span className="text-ruby shrink-0">✓</span>}
+                    {selected === v.id && <span className="text-eleanor shrink-0">✓</span>}
                   </button>
                 ))}
               </div>
@@ -1998,12 +1998,12 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
               <div className="space-y-1">
                 {serverMale.map(v => (
                   <button key={v.id} type="button" onClick={() => selectVoice(v.id, v.provider)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-cyan-500/20 text-ruby border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.id ? "bg-cyan-500/20 text-eleanor border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
                     <div className="min-w-0">
                       <div className="font-medium truncate">{v.label}</div>
                       <div className="text-txt-muted text-[10px]">{v.accent} · {v.note}</div>
                     </div>
-                    {selected === v.id && <span className="text-ruby shrink-0">✓</span>}
+                    {selected === v.id && <span className="text-eleanor shrink-0">✓</span>}
                   </button>
                 ))}
               </div>
@@ -2023,12 +2023,12 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
                 <div className="space-y-1">
                   {(list as typeof browserVoices).map(v => (
                     <button key={v.name} type="button" onClick={() => selectVoice(v.name, "browser")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.name ? "bg-cyan-500/20 text-ruby border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition ${selected === v.name ? "bg-cyan-500/20 text-eleanor border-cyan-500/40" : "text-foreground hover:bg-secondary border-transparent"}`}>
                       <div className="min-w-0">
                         <div className="font-medium truncate">{v.name.replace(/ Online.*$/, "").replace(/Microsoft |Google /, "")}</div>
                         {"accent" in v && <div className="text-txt-muted text-[10px]">{(v as {accent:string}).accent}</div>}
                       </div>
-                      {selected === v.name && <span className="text-ruby shrink-0">✓</span>}
+                      {selected === v.name && <span className="text-eleanor shrink-0">✓</span>}
                     </button>
                   ))}
                 </div>
@@ -2044,7 +2044,7 @@ function VoicePicker({ onClose }: { onClose: () => void }) {
 
 // ── ChatChartReadFeedBadge ─────────────────────────────────────────────────
 // Renders the SAME compact FeedConfidenceBadge the chart popover and Scanner
-// Ruby Chart Read show, for a chat chart-read message (Task #777). The live
+// Eleanor Chart Read show, for a chat chart-read message (Task #777). The live
 // feed-status detail (source, last candle/tick, broker-synthetic "broker
 // candles" note, anomalies) comes from the SAME shared `useScannerTruth` query
 // the scanner badge uses — no independent feed-status poll. The verdict, though,
@@ -2070,18 +2070,18 @@ function ChatChartReadFeedBadge({
   );
 }
 
-function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?: (m: ChatMessage, decision: "confirmed" | "cancelled") => void }) {
+function MessageBubble({ m, onEleanorDecision }: { m: ChatMessage; onEleanorDecision?: (m: ChatMessage, decision: "confirmed" | "cancelled") => void }) {
   const { name } = useAssistantName();
   const isUser = m.role === "user";
   const [expanded, setExpanded] = useState(false);
-  // Long Ruby answers collapse to a readable height with Show more/less so the
+  // Long Eleanor answers collapse to a readable height with Show more/less so the
   // panel never shows an unreadable wall of text. Full content is preserved.
   const isLong = !isUser && (m.content?.length ?? 0) > 480;
   // Dev/admin debug drawer — only inside the chat bubble in dev builds.
   // Regular users never see raw internal tool/function names.
   const showInternalToolNames = import.meta.env.DEV;
   // Pick the most-recent pending tool call for the friendly contextual line
-  // (e.g. "Ruby is reviewing your performance…").
+  // (e.g. "Eleanor is reviewing your performance…").
   const pendingTool = !isUser && m.toolCalls?.find((t) => !t.status);
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -2096,10 +2096,10 @@ function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?:
             in flight so the chat never falls silent during background work. */}
         {pendingTool && (
           <div className="mb-1">
-            <RubyTypingIndicator
+            <EleanorTypingIndicator
               state="usingTool"
               contextText={friendlyToolText(pendingTool.name, name)}
-              testId="ruby-tool-indicator"
+              testId="eleanor-tool-indicator"
             />
           </div>
         )}
@@ -2107,7 +2107,7 @@ function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?:
             engineers can still verify the wire protocol. Collapsed by
             default in dev; never rendered in production builds. */}
         {showInternalToolNames && m.toolCalls && m.toolCalls.length > 0 && (
-          <details className="mb-1 text-[10px] text-txt-muted" data-testid="ruby-tool-debug">
+          <details className="mb-1 text-[10px] text-txt-muted" data-testid="eleanor-tool-debug">
             <summary className="cursor-pointer select-none">debug · tools</summary>
             <div className="mt-1 flex flex-wrap gap-1">
               {m.toolCalls.map((t, i) => (
@@ -2139,8 +2139,8 @@ function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?:
                 <button
                   type="button"
                   onClick={() => setExpanded((v) => !v)}
-                  className="mt-1.5 text-xs font-semibold text-ruby hover:underline"
-                  data-testid="ruby-msg-toggle"
+                  className="mt-1.5 text-xs font-semibold text-eleanor hover:underline"
+                  data-testid="eleanor-msg-toggle"
                 >
                   {expanded ? "Show less" : "Show more"}
                 </button>
@@ -2148,27 +2148,27 @@ function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?:
             </>
           )
           : m.pending
-            ? <RubyTypingIndicator state={pendingTool ? "usingTool" : "thinking"}
+            ? <EleanorTypingIndicator state={pendingTool ? "usingTool" : "thinking"}
                                    contextText={pendingTool ? friendlyToolText(pendingTool.name, name) : undefined}
-                                   testId="ruby-pending-indicator" />
+                                   testId="eleanor-pending-indicator" />
             : m.voicePending
               ? (
                 <span className="inline-flex items-center gap-1.5 text-txt-secondary" data-testid="arx-voice-transcribing">
-                  <Mic className="h-3.5 w-3.5 text-ruby" />
+                  <Mic className="h-3.5 w-3.5 text-eleanor" />
                   Transcribing your message…
                 </span>
               )
               : null}
-        {!isUser && m.rubyCommand?.confirmationRequired && (
-          <div className="mt-2 flex items-center gap-2" data-testid="ruby-command-confirm">
-            {m.rubyCommand.resolved ? (
-              <span className="text-xs text-txt-muted">{m.rubyCommand.resolved === "confirmed" ? "Confirmed" : "Cancelled"}</span>
+        {!isUser && m.eleanorCommand?.confirmationRequired && (
+          <div className="mt-2 flex items-center gap-2" data-testid="eleanor-command-confirm">
+            {m.eleanorCommand.resolved ? (
+              <span className="text-xs text-txt-muted">{m.eleanorCommand.resolved === "confirmed" ? "Confirmed" : "Cancelled"}</span>
             ) : (
               <>
-                <Button size="sm" className="h-7 px-3 text-xs" onClick={() => onRubyDecision?.(m, "confirmed")} data-testid="ruby-command-confirm-yes">
+                <Button size="sm" className="h-7 px-3 text-xs" onClick={() => onEleanorDecision?.(m, "confirmed")} data-testid="eleanor-command-confirm-yes">
                   Confirm
                 </Button>
-                <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={() => onRubyDecision?.(m, "cancelled")} data-testid="ruby-command-confirm-no">
+                <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={() => onEleanorDecision?.(m, "cancelled")} data-testid="eleanor-command-confirm-no">
                   Cancel
                 </Button>
               </>
@@ -2176,16 +2176,16 @@ function MessageBubble({ m, onRubyDecision }: { m: ChatMessage; onRubyDecision?:
           </div>
         )}
         {!isUser && m.reasoning && (
-          <div className="mt-2" data-testid="ruby-chat-reasoning-wrap">
+          <div className="mt-2" data-testid="eleanor-chat-reasoning-wrap">
             {/* Task #777 — the SAME compact feed-confidence badge the chart popover
-                and Scanner Ruby Chart Read show, driven off the single resolved
+                and Scanner Eleanor Chart Read show, driven off the single resolved
                 verdict that produced the reasoning below (no second source). */}
             {m.chartReadFeed && (
-              <div className="mb-2 flex items-center gap-2" data-testid="ruby-chat-feed-badge-wrap">
+              <div className="mb-2 flex items-center gap-2" data-testid="eleanor-chat-feed-badge-wrap">
                 <ChatChartReadFeedBadge {...m.chartReadFeed} />
               </div>
             )}
-            <RubyReasoningBlock data={m.reasoning} testid="ruby-chat-reasoning" dense />
+            <EleanorReasoningBlock data={m.reasoning} testid="eleanor-chat-reasoning" dense />
           </div>
         )}
       </div>

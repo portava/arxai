@@ -282,7 +282,7 @@ Important:
 - Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
 - Give exact file:line proof for every claim.
 - If a claim cannot be proven, mark it Class 5 instead of assuming.
-- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+- Do not call the assistant Eleanor in the report except when quoting legacy code/file names. Report user-facing Eleanor as Eleanor naming drift.
 
 After Pass 12:
 Continue remaining audit sequence unless a Class 2 issue requires pausing for acceptance.

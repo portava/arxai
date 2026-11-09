@@ -51,7 +51,7 @@ Implement or complete the final live execution chokepoint in lib/liveTrading.
 
 All live order dispatch must pass through one backend chokepoint before anything can be inserted into arx_live_commands or sent to MT5/EA.
 
-No frontend route, scanner route, Ruby route, trade modal, admin route, or direct API call should bypass this chokepoint.
+No frontend route, scanner route, Eleanor route, trade modal, admin route, or direct API call should bypass this chokepoint.
 
 The chokepoint must check:
 - user is authenticated
@@ -184,6 +184,6 @@ Before stopping, verify:
 - No live trade is placed automatically.
 - All blocked attempts return friendly reasons.
 - Audit log records allowed and blocked attempts.
-- Login, scanner, Ruby voice/chat, trade modal, bridge status, admin controls, and bottom nav still work.
+- Login, scanner, Eleanor voice/chat, trade modal, bridge status, admin controls, and bottom nav still work.
 
 Run typecheck/build/tests and fix all errors before stopping.

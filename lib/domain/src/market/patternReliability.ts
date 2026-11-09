@@ -2,13 +2,13 @@
 //
 // PURE, deterministic aggregation of recorded pattern OUTCOMES into reliability
 // statistics: win rate, false-positive rate, average realized R, MFE/MAE,
-// best/worst session and market, a 0–100 reliability score, and a BOUNDED Ruby
+// best/worst session and market, a 0–100 reliability score, and a BOUNDED Eleanor
 // confidence ADJUSTMENT. No IO, no DB, no clock — same inputs ⇒ same output.
 //
 // ── SAFETY: still subject to the Pattern Truth hard boundary ──────────────────
 // The reliability score and the confidence adjustment this module produces are
 // DISPLAY / DECISION-SUPPORT signals ONLY. The adjustment is clamped to a small
-// symmetric band so it can colour Ruby's wording / confidence WITHIN the caller's
+// symmetric band so it can colour Eleanor's wording / confidence WITHIN the caller's
 // existing caps — it can NEVER produce READY_NOW, override feed/sufficiency/
 // trade-health/risk gates, or reach a live-execution path. Synthetic-market rows
 // are aggregated SEPARATELY from forex/indices because their behaviour differs.
@@ -86,14 +86,14 @@ export interface PatternReliabilityReport {
   worstSession: string | null;
   /** 0–100 reliability score (null until enough resolved evidence). */
   reliabilityScore: number | null;
-  /** Bounded Ruby confidence adjustment, clamped to ±MAX_CONFIDENCE_ADJUSTMENT. */
-  rubyConfidenceAdjustment: number;
+  /** Bounded Eleanor confidence adjustment, clamped to ±MAX_CONFIDENCE_ADJUSTMENT. */
+  eleanorConfidenceAdjustment: number;
 }
 
 export type PatternMarketClass = "forex_indices" | "synthetic";
 
 /**
- * Hard cap on how far reliability may move Ruby's confidence. Display-only and
+ * Hard cap on how far reliability may move Eleanor's confidence. Display-only and
  * intentionally small: it COLOURS wording within existing caps and can never
  * unlock a gate. Symmetric (penalty as large as the bonus).
  */
@@ -176,7 +176,7 @@ function reliabilityScore(overall: PatternReliabilityBucket): number | null {
 }
 
 /**
- * Bounded Ruby confidence adjustment from a reliability score. Centred on a
+ * Bounded Eleanor confidence adjustment from a reliability score. Centred on a
  * neutral score of 50 and clamped to ±MAX_CONFIDENCE_ADJUSTMENT. Returns 0 when
  * there is not enough resolved evidence (never a default bonus).
  */
@@ -233,7 +233,7 @@ export function aggregatePatternMarket(
     bestSession: best,
     worstSession: worst,
     reliabilityScore: score,
-    rubyConfidenceAdjustment: confidenceAdjustment(score),
+    eleanorConfidenceAdjustment: confidenceAdjustment(score),
   };
 }
 

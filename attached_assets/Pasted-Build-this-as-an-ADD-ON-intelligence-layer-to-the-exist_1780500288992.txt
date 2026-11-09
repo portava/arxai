@@ -1,4 +1,4 @@
-Build this as an ADD-ON intelligence layer to the existing ARX AI system. Do not rebuild the app. Do not replace Ruby, the scanner, live trade flow, MT5 bridge, live execution paths, existing database, existing users, existing admin system, or existing trading features. This task is to add a governed self-growing AI agent ecosystem on top of the current system.
+Build this as an ADD-ON intelligence layer to the existing ARX AI system. Do not rebuild the app. Do not replace Eleanor, the scanner, live trade flow, MT5 bridge, live execution paths, existing database, existing users, existing admin system, or existing trading features. This task is to add a governed self-growing AI agent ecosystem on top of the current system.
 
 IMPORTANT:
 This is not a redesign.
@@ -6,10 +6,10 @@ This is not a rewrite.
 This is not a separate app.
 This is not paper trading.
 This is not a simulation feature.
-This must integrate into the current live ARX AI system and current Ruby/scanner/trade review architecture.
+This must integrate into the current live ARX AI system and current Eleanor/scanner/trade review architecture.
 
 Goal:
-Create the ARX AI Agent Ecosystem: a self-improving AI workforce where multiple AI agents work under Ruby, earn promotions, lose authority, go to Learning Camp, create new specialist agents when needed, step back when they slow the system, and improve trade decision quality over time. Ruby remains the main user-facing AI voice. The other agents can operate behind the scenes unless their output is needed.
+Create the ARX AI Agent Ecosystem: a self-improving AI workforce where multiple AI agents work under Eleanor, earn promotions, lose authority, go to Learning Camp, create new specialist agents when needed, step back when they slow the system, and improve trade decision quality over time. Eleanor remains the main user-facing AI voice. The other agents can operate behind the scenes unless their output is needed.
 
 Core principle:
 Agents are rewarded for QUALITY, PROTECTION, SPEED, DISCIPLINE, and USEFULNESS — not for calling more trades.
@@ -17,7 +17,7 @@ Agents are rewarded for QUALITY, PROTECTION, SPEED, DISCIPLINE, and USEFULNESS �
 Agents should be rewarded for:
 - Finding high-quality trade opportunities
 - Rejecting bad trades
-- Warning Ruby about danger
+- Warning Eleanor about danger
 - Identifying late/chase entries
 - Protecting capital
 - Knowing when to say “no trade”
@@ -48,7 +48,7 @@ Build the following system.
 
 Add an internal agent ecosystem layer with the following default core agents if they do not already exist:
 
-1. Ruby
+1. Eleanor
 Role: Lead Trading Desk Manager and user-facing AI voice.
 Purpose: Coordinate all agent opinions, speak clearly to the user, summarize trade logic, and present only useful information.
 
@@ -104,7 +104,7 @@ Purpose: Evaluate promotions, demotions, authority changes, Learning Camp placem
 Role: Live execution flow monitor.
 Purpose: Ensure AI reasoning does not block or slow live trade execution paths.
 
-Use existing AI/provider services already in the app where possible. Do not add a completely separate AI stack unless required. Reuse current Ruby infrastructure wherever possible.
+Use existing AI/provider services already in the app where possible. Do not add a completely separate AI stack unless required. Reuse current Eleanor infrastructure wherever possible.
 
 ====================================================================
 2. AGENT DATABASE MODEL
@@ -192,7 +192,7 @@ Authority weights:
 - Lead: 20% to 30%
 - Chief: configurable
 - Risk AI can have veto rights when enabled
-- Ruby has final communication authority, not unchecked trade authority
+- Eleanor has final communication authority, not unchecked trade authority
 
 Do not allow new agents to start with live trade influence.
 Every new agent must start in Shadow Mode with 0% live authority.
@@ -370,7 +370,7 @@ Promotion unlocks:
 - Higher authority weight
 - More scanner influence
 - Ability to challenge other agents
-- More visibility to Ruby
+- More visibility to Eleanor
 - Access to deeper analysis tools
 - Ability to create child agents if qualified
 - Department lead status
@@ -491,7 +491,7 @@ Create family/departments for agents.
 
 Examples:
 
-Ruby Household
+Eleanor Household
 - Market Structure Department
 - Scalp Department
 - Risk Department
@@ -536,7 +536,7 @@ Fast. Only scalp-critical agents run.
 3. Scanner Mode
 Moderate. Find and rank opportunities quickly.
 
-4. Ruby Explanation Mode
+4. Eleanor Explanation Mode
 Slower allowed. More agents can contribute to plain-English explanation.
 
 5. Learning Mode
@@ -577,7 +577,7 @@ Silent/background:
 
 Example routing for deep user question:
 Run:
-- Ruby
+- Eleanor
 - Market Structure AI
 - Risk AI
 - Trade Review AI
@@ -589,7 +589,7 @@ Latency budget guidelines:
 - Emergency close: highest priority
 - Scalp signal decision: very fast
 - Scanner refresh: fast enough to stay useful
-- Deep Ruby explanation: can take longer only after decision is formed
+- Deep Eleanor explanation: can take longer only after decision is formed
 - Learning Camp and Agent Factory: background only
 
 ====================================================================
@@ -632,7 +632,7 @@ Examples of internal acknowledgement:
 - “My recent usefulness is low and I am adding delay. I recommend On-Demand Only.”
 - “Risk AI is better suited for this decision. I will remain silent unless called.”
 
-Build this as internal logs and optional admin-visible messages, not necessarily user-facing unless Ruby chooses to summarize.
+Build this as internal logs and optional admin-visible messages, not necessarily user-facing unless Eleanor chooses to summarize.
 
 ====================================================================
 12. AGENT IMMUNE SYSTEM
@@ -693,8 +693,8 @@ Risk AI says too close to resistance.
 Entry AI says entry is late.
 Market Structure AI says H4 is bearish.
 
-Ruby should not blindly recommend buy.
-Ruby should downgrade:
+Eleanor should not blindly recommend buy.
+Eleanor should downgrade:
 “Scalp AI detected momentum, but Risk AI and Entry AI rejected the timing. Setup is watchlist only unless confirmation improves.”
 
 Store disagreement records so the system learns who was right later.
@@ -720,7 +720,7 @@ Create scoring records for:
 
 No-trade reward should be equal in importance to trade reward.
 
-Ruby should be able to say:
+Eleanor should be able to say:
 “ARX reviewed 40 setups. Only 3 were worth attention. Risk AI blocked 14 weak trades and 9 later failed.”
 
 ====================================================================
@@ -748,7 +748,7 @@ Creation rights:
 - Senior: can create Shadow Mode child agents if allowed
 - Lead: can create and supervise child agents
 - Chief: can propose department restructuring
-- Ruby/Admin: final override
+- Eleanor/Admin: final override
 
 New agents must pass:
 - Shadow predictions
@@ -786,7 +786,7 @@ Admin should see these recommendations and be able to approve or manually apply.
 17. DAILY HOUSEHOLD REPORT
 ====================================================================
 
-Create a daily Ruby Agent Household Report.
+Create a daily Eleanor Agent Household Report.
 
 Include:
 - Best performing agent
@@ -809,7 +809,7 @@ Include:
 - What the system learned today
 - Recommended admin actions
 
-This report should be visible in admin dashboard and optionally summarized by Ruby.
+This report should be visible in admin dashboard and optionally summarized by Eleanor.
 
 ====================================================================
 18. ADMIN DASHBOARD ADDITIONS
@@ -882,14 +882,14 @@ Show:
 Daily reports with filter/search.
 
 ====================================================================
-19. USER-FACING RUBY BEHAVIOR
+19. USER-FACING ELEANOR BEHAVIOR
 ====================================================================
 
-Ruby should remain the clean user-facing voice.
+Eleanor should remain the clean user-facing voice.
 
-Ruby should not overwhelm users with every agent message.
+Eleanor should not overwhelm users with every agent message.
 
-Ruby should summarize only what matters:
+Eleanor should summarize only what matters:
 
 Example:
 “Scalp AI sees momentum, but Risk AI and Entry AI downgraded the setup because price is too close to resistance. I would treat this as watchlist only unless confirmation improves.”
@@ -903,8 +903,8 @@ Example:
 Example:
 “Several agents stepped back to preserve speed. Only scalp-critical agents are active for this live decision.”
 
-Ruby should be plain English, not overloaded.
-Ruby should explain technical reasons only when useful.
+Eleanor should be plain English, not overloaded.
+Eleanor should explain technical reasons only when useful.
 
 ====================================================================
 20. INTEGRATION WITH CURRENT SCANNER AND LIVE TRADE FLOW
@@ -918,7 +918,7 @@ The scanner should:
 - Rank opportunities based on quality, risk, speed, and confidence
 - Avoid flooding user with weak signals
 - Reward Scanner AI for filtering noise
-- Allow Ruby to recommend only high-quality setups
+- Allow Eleanor to recommend only high-quality setups
 
 Trade recommendation flow:
 1. Scanner or user request identifies possible setup
@@ -926,7 +926,7 @@ Trade recommendation flow:
 3. Agents produce structured outputs
 4. Risk AI checks danger
 5. Agent Court resolves disagreement if needed
-6. Ruby gives final plain-English summary
+6. Eleanor gives final plain-English summary
 7. Prediction journal truth-locks agent decisions
 8. Outcome is reviewed later
 9. Scores/ranks/statuses update
@@ -960,13 +960,13 @@ All agents should output internally in structured JSON-like format:
   isUniqueContribution:
   duplicateOf:
   speedCostMs:
-  shouldSpeakToRuby:
+  shouldSpeakToEleanor:
   shouldStepBack:
   stepBackReason:
 }
 
 Do not require long paragraphs internally.
-Ruby can translate into plain English.
+Eleanor can translate into plain English.
 
 ====================================================================
 22. TESTING REQUIREMENTS
@@ -978,7 +978,7 @@ Do not just claim it works. Prove it.
 
 Test cases:
 
-1. Existing Ruby still responds.
+1. Existing Eleanor still responds.
 2. Existing scanner still loads.
 3. Existing live trade flow is not broken.
 4. Agents are created in database.
@@ -1006,12 +1006,12 @@ Test cases:
 26. Admin can promote/demote/restrict/send to Learning Camp/archive.
 27. Daily Household Report generates.
 28. Scanner does not slow down badly.
-29. Ruby summarizes agent consensus cleanly.
+29. Eleanor summarizes agent consensus cleanly.
 30. Existing app performance is not degraded.
 
 Performance tests:
 - Measure scanner before and after.
-- Measure Ruby response before and after.
+- Measure Eleanor response before and after.
 - Measure live action UI response before and after.
 - Measure each agent runtime.
 - Show logs of which agents stepped back.
@@ -1026,7 +1026,7 @@ If the agent ecosystem slows live execution or scanner heavily, do not ignore it
 This is complete only when:
 
 - ARX has an Agent Ecosystem layer without rebuilding the app.
-- Ruby remains the main user-facing AI.
+- Eleanor remains the main user-facing AI.
 - Multiple agents can contribute behind the scenes.
 - Agents have ranks, statuses, scores, authority, and creation rights.
 - Agents can be promoted/demoted.
@@ -1048,7 +1048,7 @@ This is complete only when:
 - No simulation mode is introduced.
 - No existing working feature is broken.
 
-Before finishing, run the app, inspect logs, test the UI, test backend routes, test database migration, and verify the existing live trading/scanner/Ruby flows still operate.
+Before finishing, run the app, inspect logs, test the UI, test backend routes, test database migration, and verify the existing live trading/scanner/Eleanor flows still operate.
 
 If something breaks, fix it before passing the work.
 Do not say it is done until the system is actually working end-to-end.

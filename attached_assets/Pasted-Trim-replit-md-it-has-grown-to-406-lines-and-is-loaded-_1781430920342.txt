@@ -9,7 +9,7 @@ KEEP in replit.md (these are load-bearing / frequently needed):
 - Run & Operate, Stack, Where things live, QA commands
 - Non-negotiable invariants (full)
 - Current safety gates (Phase B, 16 total) (full)
-- Active ARX AI trading rules, Scanner priority, Ruby behavior rules — but trim each to the currently-true bullets only
+- Active ARX AI trading rules, Scanner priority, Eleanor behavior rules — but trim each to the currently-true bullets only
 - Known issues (current only)
 - A short "Architecture & Safety Documentation" index that POINTS to docs/ and docs/history/ rather than restating them
 

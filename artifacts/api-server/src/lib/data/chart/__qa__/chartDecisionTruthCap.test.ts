@@ -4,7 +4,7 @@
 // Readiness is graded from the candle engines, which only check aiUsable and
 // staleness. The chart-truth gate is a stricter, separate verdict (Chart Truth
 // ≥ 75, feed not stale, mirror not failed); for a user without a bound broker
-// quote it is usually closed. Ruby already answers "Chart data is syncing…"
+// quote it is usually closed. Eleanor already answers "Chart data is syncing…"
 // for that state, so the decision summary and the best-action sentence must
 // not invite action on the same read. Offline: no provider, DB or broker calls.
 
@@ -55,7 +55,7 @@ function boundScore(truth: TimeframeTruthResult = truthFixture()) {
 /**
  * The same score with the chart-rendering check MEASURED and passing. The
  * server never measures rendering (client telemetry), so computeChartTruthScore
- * leaves it unmeasured and Ruby's VERIFIED basis (the full handshake rollup,
+ * leaves it unmeasured and Eleanor's VERIFIED basis (the full handshake rollup,
  * RenderHealth included) is out of reach; the verified path is pinned with
  * renderer evidence supplied here.
  */
@@ -226,13 +226,13 @@ test("route enrichment re-derives the summary from the per-user gate (both direc
   const enriched = enrichStateWithBrokerAlignment(built, truth, feed, verifiedInputs);
   assert.equal(enriched.gateOutput.confidentReadAllowed, true);
   // Re-derived under the per-user gate: every candle-data reason is gone. The
-  // server never measures chart rendering, and Ruby's VERIFIED basis keeps the
+  // server never measures chart rendering, and Eleanor's VERIFIED basis keeps the
   // full handshake rollup, so the only reason left is rendering and the
-  // summary stays at watch, exactly where Ruby's read stands.
+  // summary stays at watch, exactly where Eleanor's read stands.
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const enrichedHandshake = buildChartHandshake(enriched.gateOutput, enriched.chartTruthScore);
   assert.equal(enrichedHandshake.sourceOverall, "PASS");
-  assert.notEqual(enrichedHandshake.overall, "PASS", "Ruby's basis is not VERIFIED");
+  assert.notEqual(enrichedHandshake.overall, "PASS", "Eleanor's basis is not VERIFIED");
   assert.deepEqual(chartReadVerification(enriched.gateOutput, feed, enriched.chartTruthScore).reasons,
     ["chart rendering is not measured"]);
   assert.equal(enriched.decisionState.actionability, "watch");
@@ -255,13 +255,13 @@ test("route enrichment re-derives the summary from the per-user gate (both direc
   assert.doesNotMatch(blocked.marketSentences.bestNextAction.text, /act with a defined stop/);
 });
 
-// Truth: the verification claimed "Same conditions Ruby's chart read requires"
-// but left out Ruby's handshake check (every candle-data check measured and
+// Truth: the verification claimed "Same conditions Eleanor's chart read requires"
+// but left out Eleanor's handshake check (every candle-data check measured and
 // passing, real OHLC). With no bound broker quote the broker comparison is
 // unmeasured, so a clean feed scores exactly 75: the gate opened, the board
-// said "A · Ready" / "act with a defined stop", and Ruby on the same tab
+// said "A · Ready" / "act with a defined stop", and Eleanor on the same tab
 // answered "syncing" because BrokerPriceAlignment was WARN.
-test("Chart Truth exactly 75 with no broker comparison is not verified, matching Ruby's handshake", async () => {
+test("Chart Truth exactly 75 with no broker comparison is not verified, matching Eleanor's handshake", async () => {
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const truth = truthFixture();
   const alignment = noBrokerAlignment(1.1, "LAST");
@@ -269,7 +269,7 @@ test("Chart Truth exactly 75 with no broker comparison is not verified, matching
   assert.equal(score.score, 75, "fixture: every measured check is perfect, the broker comparison is unmeasured");
   const g = computeChartGateOutput(score, read as never, alignment, truth, feed);
   assert.equal(g.confidentReadAllowed, true);
-  assert.notEqual(buildChartHandshake(g, score).sourceOverall, "PASS", "Ruby's read is syncing");
+  assert.notEqual(buildChartHandshake(g, score).sourceOverall, "PASS", "Eleanor's read is syncing");
 
   const v = chartReadVerification(g, feed, score);
   assert.equal(v.verified, false);
@@ -293,24 +293,24 @@ test("candles that are not real OHLC are not a verified read", async () => {
   assert.ok(v.reasons.includes("the provider does not deliver real OHLC candles"), v.reasons.join("; "));
 });
 
-test("a verified read is exactly one Ruby's handshake also passes", async () => {
+test("a verified read is exactly one Eleanor's handshake also passes", async () => {
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const truth = truthFixture();
   const s = withMeasuredRender(boundScore(truth));
   const g = computeChartGateOutput(s, read as never, boundAlignment(), truth, feed);
   const v = chartReadVerification(g, feed, s);
   assert.deepEqual(v, { verified: true, reasons: [] });
-  // Ruby's VERIFIED basis and draft read require the FULL rollup.
+  // Eleanor's VERIFIED basis and draft read require the FULL rollup.
   assert.equal(buildChartHandshake(g, s).overall, "PASS");
   // A feed the candle engines do not call clean is not verified either.
   assert.equal(chartReadVerification(g, { ...feed, aiUsable: false, quality: "delayed" }, s).verified, false);
 });
 
 // Review (truth port, S02): the board's cap read the candle-data rollup
-// (sourceOverall) while Ruby's basis keeps the full rollup, RenderHealth
+// (sourceOverall) while Eleanor's basis keeps the full rollup, RenderHealth
 // included. The server never measures rendering, so the board said "Ready"
-// while Ruby, on the same read, refused a setup.
-test("every candle check passing with chart rendering unmeasured is not verified, matching Ruby's basis", async () => {
+// while Eleanor, on the same read, refused a setup.
+test("every candle check passing with chart rendering unmeasured is not verified, matching Eleanor's basis", async () => {
   const { buildChartHandshake } = await import("../chartHandshake.js");
   const truth = truthFixture();
   const s = boundScore(truth);
@@ -318,7 +318,7 @@ test("every candle check passing with chart rendering unmeasured is not verified
   const g = computeChartGateOutput(s, read as never, boundAlignment(), truth, feed);
   const h = buildChartHandshake(g, s);
   assert.equal(h.sourceOverall, "PASS", "fixture: every candle-data check passes");
-  assert.notEqual(h.overall, "PASS", "Ruby's basis is not VERIFIED");
+  assert.notEqual(h.overall, "PASS", "Eleanor's basis is not VERIFIED");
   const v = chartReadVerification(g, feed, s);
   assert.deepEqual(v, { verified: false, reasons: ["chart rendering is not measured"] });
   const state = aGradeState(g);

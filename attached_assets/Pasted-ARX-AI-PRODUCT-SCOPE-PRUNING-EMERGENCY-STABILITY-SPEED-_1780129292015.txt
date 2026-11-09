@@ -5,7 +5,7 @@ The app is becoming too heavy, cluttered, and slow. Some sections, pages, functi
 This is not a rebuild.
 Do not create a new product.
 Do not redesign the app from scratch.
-Do not duplicate Scanner, Ruby, MT5 bridge, trade execution, permissions, users, account modes, or dashboards.
+Do not duplicate Scanner, Eleanor, MT5 bridge, trade execution, permissions, users, account modes, or dashboards.
 Do not remove working safety gates.
 Do not reset LIVE broker execution config unless explicitly instructed.
 Do not place a live trade during this cleanup/hotfix.
@@ -20,7 +20,7 @@ Every page, section, feature, and visible UI element should support at least one
 2. Analyze a market.
 3. Understand trade risk.
 4. Execute or manage a trade.
-5. Let Ruby assist the user.
+5. Let Eleanor assist the user.
 6. Let admin safely manage users, allocations, live access, and bridge readiness.
 7. Protect user privacy, permissions, trade ownership, and execution safety.
 
@@ -33,7 +33,7 @@ Highest priorities:
 3. Stop Scanner from crashing.
 4. Stop pages from taking around 7 seconds to load.
 5. Make Scanner and trade placement feel immediate.
-6. Preserve all working trading, permission, Ruby, and MT5 bridge functionality.
+6. Preserve all working trading, permission, Eleanor, and MT5 bridge functionality.
 
 PHASE 1 — Product-scope pruning before speed work
 
@@ -45,7 +45,7 @@ Preferred simplified user-facing structure:
 
 1. Cockpit
 2. Scanner / Trading Terminal
-3. Ruby / AI
+3. Eleanor / AI
 4. More / Settings
 
 Admin should remain accessible only for admin users through role-gated access, not as clutter in the normal user flow.
@@ -59,7 +59,7 @@ Scanner should become the main trading workspace:
 5. Active positions
 6. Pending orders
 7. Trade management
-8. Ruby market explanation
+8. Eleanor market explanation
 
 If the current Trade page duplicates Scanner/trade controls, merge its useful functionality into Scanner or keep it only if it has a clear non-duplicated purpose. Do not keep duplicate trade-entry screens that confuse users.
 
@@ -70,7 +70,7 @@ For each page, section, tab, panel, button, drawer, floating widget, footer bloc
 1. Core user trading feature — keep.
 2. Core admin safety/control feature — keep but admin-only.
 3. Useful but too noisy — collapse into Details/Advanced.
-4. Useful but misplaced — move to Scanner, Cockpit, Ruby, More, or Admin.
+4. Useful but misplaced — move to Scanner, Cockpit, Eleanor, More, or Admin.
 5. Duplicate — merge into the stronger version.
 6. Dormant but harmless — archive or leave for manual review.
 7. Dead/disconnected but should work — repair.
@@ -81,7 +81,7 @@ For each page, section, tab, panel, button, drawer, floating widget, footer bloc
 Do not blindly delete.
 First remove/hide from the normal UI.
 Then verify no flow breaks.
-Only delete files after proving they are unused, not dynamically routed, not imported, not tested, not used by build/deploy, and not needed by Scanner, Ruby, MT5 bridge, auth, admin, or trade execution.
+Only delete files after proving they are unused, not dynamically routed, not imported, not tested, not used by build/deploy, and not needed by Scanner, Eleanor, MT5 bridge, auth, admin, or trade execution.
 
 PHASE 3 — Remove or merge things that do not fit ARX AI
 
@@ -124,7 +124,7 @@ These can stay, but they should not clutter normal users:
 3. EA readiness.
 4. Account safety gates.
 5. Allocation details.
-6. Ruby voice settings.
+6. Eleanor voice settings.
 7. Privacy settings.
 8. Notification settings.
 9. Trade logs.
@@ -156,7 +156,7 @@ Do not remove or weaken:
 8. Trade ownership filtering.
 9. Backend permission checks.
 10. MT5 confirmation before trade success.
-11. Ruby action permission layer.
+11. Eleanor action permission layer.
 12. Auth/admin separation.
 13. Shared/master bridge privacy filtering.
 14. Normal-user protection from admin routes.
@@ -282,7 +282,7 @@ Layer 4: Scanner results
 * Focus Scan
 * result cards
 
-Layer 5: Ruby explanation
+Layer 5: Eleanor explanation
 
 * plain-English analysis
 * never block chart or scanner results
@@ -299,13 +299,13 @@ Rules:
 
 1. Scanner shell must render even if quote fails.
 2. Scanner shell must render even if candles fail.
-3. Scanner shell must render even if Ruby fails.
+3. Scanner shell must render even if Eleanor fails.
 4. Scanner shell must render even if Broad Scan fails.
 5. Scanner shell must render even if Focus Scan fails.
 6. Scanner shell must render even if MT5 bridge status is slow.
 7. A failed sub-section should show a clean local error inside that section.
 8. One failed widget must not crash the whole Scanner page.
-9. Add section-level error boundaries for chart, results, Ruby, trade overlays, and notifications if needed.
+9. Add section-level error boundaries for chart, results, Eleanor, trade overlays, and notifications if needed.
 
 PHASE 9 — Remove the 7-second page load problem
 
@@ -317,7 +317,7 @@ Check:
 2. Route-level code splitting.
 3. Heavy imports loaded globally.
 4. TradingView/chart library loaded globally instead of only where needed.
-5. Ruby voice/speech modules loaded globally instead of only when needed.
+5. Eleanor voice/speech modules loaded globally instead of only when needed.
 6. Scanner feeds loaded globally.
 7. Admin dashboards loaded for normal users.
 8. Repeated auth/session calls.
@@ -338,7 +338,7 @@ Fix with the smallest safe changes:
 
 1. Lazy-load heavy page modules.
 2. Lazy-load chart library only when chart is visible.
-3. Lazy-load Ruby voice modules only when Ruby/voice is opened.
+3. Lazy-load Eleanor voice modules only when Eleanor/voice is opened.
 4. Lazy-load admin-only modules only for admin users.
 5. Split Scanner into independent sections.
 6. Cache safe static metadata.
@@ -377,15 +377,15 @@ Specific targets:
 11. Focus Scan start feedback: under 100ms.
 12. Trade button feedback: under 100ms.
 13. Trade pending state after Confirm: under 100ms.
-14. Ruby thinking dots: under 100ms.
+14. Eleanor thinking dots: under 100ms.
 
-If final market data, Ruby response, or MT5 confirmation takes longer, show active state:
+If final market data, Eleanor response, or MT5 confirmation takes longer, show active state:
 
 1. “Loading quote…”
 2. “Loading chart…”
 3. “Loading your trades…”
 4. “Scanning…”
-5. “Ruby is thinking…”
+5. “Eleanor is thinking…”
 6. “Confirming with broker…”
 
 Do not let the app appear frozen.
@@ -402,7 +402,7 @@ For Buy/Sell and trade actions:
 4. UI shows “Confirming with broker…” while MT5 responds.
 5. UI does not say “Trade placed” until MT5 confirms.
 6. If MT5 rejects, show clean error and rollback.
-7. Ruby must not block trade placement.
+7. Eleanor must not block trade placement.
 8. News/history/backtest must not block manual trade placement.
 9. Scanner results must not block manual trade placement.
 10. Noncritical logging must not block user feedback.
@@ -418,7 +418,7 @@ Add local fallbacks:
 
 1. Chart failed: “Chart failed to load. Try again.”
 2. Scanner results failed: “Scanner results failed to load. Retry.”
-3. Ruby failed: “Ruby had trouble responding. Try again.”
+3. Eleanor failed: “Eleanor had trouble responding. Try again.”
 4. Trade overlays failed: “Your trades could not be loaded.”
 5. Notification count failed: show no badge or small retry state.
 6. Bridge status failed: “Bridge status unavailable.”
@@ -435,7 +435,7 @@ After each cleanup or speed fix, test:
 4. Cockpit loads.
 5. Trade page loads if kept.
 6. Scanner loads.
-7. Ruby page loads.
+7. Eleanor page loads.
 8. More page loads.
 9. Scanner no longer shows “This page hit a snag.”
 10. Scanner search works.
@@ -443,7 +443,7 @@ After each cleanup or speed fix, test:
 12. Focus Scan works or shows clean local error.
 13. Chart shell renders.
 14. Trade controls respond.
-15. Ruby responds.
+15. Eleanor responds.
 16. Normal users do not see admin internals.
 17. Admin view still works.
 18. DEMO/LIVE modes remain intact.
@@ -473,7 +473,7 @@ Do not mark complete until:
 6. Other pages no longer take around 7 seconds to become usable.
 7. Every visible button responds or is removed/disabled with a clear reason.
 8. Scanner loads progressively.
-9. Chart, Ruby, results, notifications, and bridge status do not block each other.
+9. Chart, Eleanor, results, notifications, and bridge status do not block each other.
 10. Trade controls show pending state immediately.
 11. Trade success still waits for MT5 confirmation.
 12. Normal users see clean errors only.

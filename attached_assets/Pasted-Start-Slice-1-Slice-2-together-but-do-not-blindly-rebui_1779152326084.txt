@@ -1,6 +1,6 @@
 Start Slice 1 + Slice 2 together, but do not blindly rebuild.
 
-First, check what already exists in the current ARX codebase, database schema, bridge logic, MT5 setup page, market scanner, command pipeline, Ruby responses, and live/demo bridge routing. Then build only the missing pieces needed for Centralized Master MT5 Bridge Mode.
+First, check what already exists in the current ARX codebase, database schema, bridge logic, MT5 setup page, market scanner, command pipeline, Eleanor responses, and live/demo bridge routing. Then build only the missing pieces needed for Centralized Master MT5 Bridge Mode.
 
 Do not touch Slice 3.
 Do not enable pooled live trading.
@@ -40,7 +40,7 @@ Audit first:
    - Recent Demo Commands
    - Open Demo Positions
    - Live Trading page
-   - Ruby explanation panels
+   - Eleanor explanation panels
    - admin/settings pages
 
 4. Reuse existing structures wherever possible.
@@ -128,7 +128,7 @@ In MASTER_BRIDGE_DEMO mode:
 - users can place demo trades without their own MT5 bridge
 - Buy/Sell from Market Scanner routes through master demo bridge
 - source remains MARKET_SCANNER
-- Ruby explains:
+- Eleanor explains:
   “This trade is routed through the ARX master demo bridge and tracked under your ARX account.”
 
 H. Add/extend user-facing My Trades:
@@ -167,7 +167,7 @@ L. Do not break existing behavior:
 - per-user live gates still work
 - demo command history still works
 - scanner demo trading still works
-- Ruby still appears as Ruby
+- Eleanor still appears as Eleanor
 - no secrets exposed
 
 Acceptance proof:
@@ -179,13 +179,13 @@ Acceptance proof:
 6. Trade appears under that user’s My Trades.
 7. Another user cannot see that trade.
 8. Market Scanner Buy/Sell works through master demo bridge.
-9. Ruby explains master bridge routing.
+9. Eleanor explains master bridge routing.
 10. Duplicate tap does not create duplicate orders.
 11. Oversized trade is blocked by per-user risk.
 12. Admin dashboard shows master bridge activity.
 13. MASTER_BRIDGE_LIVE_LOCKED blocks all live commands.
 14. No live command is created.
-15. No bridge token, API key, broker password, or secret appears in UI/logs/Ruby memory.
+15. No bridge token, API key, broker password, or secret appears in UI/logs/Eleanor memory.
 
 After the audit, tell me:
 - what already existed

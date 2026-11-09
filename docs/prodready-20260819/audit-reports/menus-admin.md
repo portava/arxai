@@ -124,9 +124,9 @@ Each entry: **Nav source → Route → Page → Hooks/endpoints → Server evide
 - Reads → `selfTradeAi.ts:51-161` (overview, agents, ledger, allocations, kill-switches, audit, decisions, volatility-matrix, executions, run-autonomous-cycle); admin writes → `adminSelfTradeAi.ts:102-202` (create/fund/defund/config/autonomy/status/kill-switch). Revoke-path test exists (`one-click-controls.revoke.test.tsx` covers the sibling surface).
 - Build-out: none required.
 
-### 2.15 `/admin/ruby-quality` — Ruby Signal Quality — **BUILT**
-- Hub (:201). Route: App.tsx:382. Page: `pages/admin/ruby-quality.tsx` (552 lines, `AdminDiagnosticsGate`).
-- Endpoints: metrics/missed-opportunities/thresholds(GET+POST)/investor-summary → `adminRubyQuality.ts:62,77,135,162,177`.
+### 2.15 `/admin/eleanor-quality` — Eleanor Signal Quality — **BUILT**
+- Hub (:201). Route: App.tsx:382. Page: `pages/admin/eleanor-quality.tsx` (552 lines, `AdminDiagnosticsGate`).
+- Endpoints: metrics/missed-opportunities/thresholds(GET+POST)/investor-summary → `adminEleanorQuality.ts:62,77,135,162,177`.
 - Build-out: none required.
 
 ### 2.16 `/admin/ai-fix-agent` — Backend Fix Agent — **BUILT**
@@ -214,9 +214,9 @@ Each entry: **Nav source → Route → Page → Hooks/endpoints → Server evide
 - Endpoints: AACI decision/decisions → `aaci.ts:225,319`; learning summary/trust/changes → `adminAaciLearning.ts:171,203,232`; security overview/timeline → `adminSecurity.ts:70,180`.
 - Build-out: none required.
 
-### 2.33 `/admin/ruby-voice` — Ruby Voice Settings — **BUILT**
-- Hub (:207). Route: App.tsx:453. Page: `pages/admin/ruby-voice-settings.tsx` (595 lines).
-- Endpoints: health/admin-settings(GET+POST)/test/reset-all-to-bella → `adminRubyVoice.ts:45,95,120,155,289`.
+### 2.33 `/admin/eleanor-voice` — Eleanor Voice Settings — **BUILT**
+- Hub (:207). Route: App.tsx:453. Page: `pages/admin/eleanor-voice-settings.tsx` (595 lines).
+- Endpoints: health/admin-settings(GET+POST)/test/reset-all-to-bella → `adminEleanorVoice.ts:45,95,120,155,289`.
 - Build-out: none required.
 
 ### 2.34 `/admin/chart-brain-benchmark` — Chart Brain Benchmark — **BUILT**

@@ -75,7 +75,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/scripts run test:ruby-chat-chart-read-parity && pnpm --filter @workspace/api-server run test:read-chart-structure-tool && pnpm --filter @workspace/api-server run test:ruby-read-layers && pnpm --filter @workspace/api-server run test:scanner-truth-caps && pnpm --filter @workspace/api-server run test:chart-timeframe-normalization"
+args = "pnpm --filter @workspace/scripts run test:eleanor-chat-chart-read-parity && pnpm --filter @workspace/api-server run test:read-chart-structure-tool && pnpm --filter @workspace/api-server run test:eleanor-read-layers && pnpm --filter @workspace/api-server run test:scanner-truth-caps && pnpm --filter @workspace/api-server run test:chart-timeframe-normalization"
 
 [workflows.workflow.metadata]
 isValidation = true

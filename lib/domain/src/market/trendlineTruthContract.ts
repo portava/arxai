@@ -6,7 +6,7 @@
 // COLOUR the existing Scanner Truth + Pattern Truth read?". The geometry detector
 // (api-server) produces the raw `ActiveTrendline[]` + change blocks; this contract
 // folds them — together with the caller's ALREADY-DECIDED feed/sufficiency facts —
-// into one `TrendlineTruthVerdict` that the Scanner, Ruby, and Pattern Truth all
+// into one `TrendlineTruthVerdict` that the Scanner, Eleanor, and Pattern Truth all
 // consume so they can never contradict each other about a trendline.
 //
 // This module is PURE: no IO, no DB, no HTTP, no clock, no role/privilege input.
@@ -226,7 +226,7 @@ export interface TrendlineTruthVerdict {
   confidenceCapReason: string | null;
   scannerTruthImpact: TrendlineScannerImpact;
   /** Plain-language explanation (pre feed-honesty neutralization at the surface). */
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -371,7 +371,7 @@ export function resolveTrendlineTruth(
         edgeAdjustment: 0,
         supportive: false,
       },
-      rubyExplanation:
+      eleanorExplanation:
         patternChange.kind === "none"
           ? "No clear trendline structure on this timeframe yet."
           : `Structure change detected (${patternChange.reason ?? patternChange.kind}).`,
@@ -523,7 +523,7 @@ export function resolveTrendlineTruth(
   const confidence = Math.min(clampConfidence(dominant.confidence), confidenceCeiling);
   const quality = minQuality(dominant.quality, qualityCeiling);
 
-  const rubyExplanation = buildTrendlineExplanation({
+  const eleanorExplanation = buildTrendlineExplanation({
     dominant,
     status,
     contextOnly,
@@ -558,7 +558,7 @@ export function resolveTrendlineTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation,
+    eleanorExplanation,
     warnings: dedupe([...warnings, ...dominant.failureModes]),
   };
 }

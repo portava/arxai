@@ -1,7 +1,7 @@
 // Agent Ecosystem — Phase 0 advisory influence service (wiring).
 //
 // Bridges the GLOBAL agent registry (trust + lifecycle + authority) into the
-// real read-side surfaces (Scanner ranking, Risk grading, Scalp scoring, Ruby
+// real read-side surfaces (Scanner ranking, Risk grading, Scalp scoring, Eleanor
 // wording) via the PURE `computeAgentAdvisory` engine.
 //
 // SAFETY / SCOPE (inviolable):
@@ -154,9 +154,9 @@ export async function computeScannerAdvisory(
   });
 }
 
-// ── Ruby signal mapping (overall confidence + risk, no per-factor detail) ───
+// ── Eleanor signal mapping (overall confidence + risk, no per-factor detail) ───
 
-export interface RubySignalContext {
+export interface EleanorSignalContext {
   baseScore: number; // overall confidence 0-100
   direction: AdvisoryDirection;
   confidenceScore: number; // 0-100
@@ -164,15 +164,15 @@ export interface RubySignalContext {
 }
 
 /**
- * Ruby's explain-signal only knows overall confidence + risk (no 8-factor
+ * Eleanor's explain-signal only knows overall confidence + risk (no 8-factor
  * breakdown). Structure / entry / execution / scanner agents read the overall
  * confidence; the Risk agent reads safety (1 - risk). This lets a trusted Risk
  * agent CAUTION/CHALLENGE a confident-looking setup (P0-E), and trusted
  * structure/entry agents reinforce a clean one.
  */
-export function rubySignalAlignment(
+export function eleanorSignalAlignment(
   snap: AdvisoryAgentSnapshot,
-  ctx: RubySignalContext,
+  ctx: EleanorSignalContext,
 ): AgentAlignment | null {
   switch (snap.department) {
     case "MARKET_STRUCTURE":
@@ -187,13 +187,13 @@ export function rubySignalAlignment(
   }
 }
 
-export async function computeRubySignalAdvisory(
-  ctx: RubySignalContext,
+export async function computeEleanorSignalAdvisory(
+  ctx: EleanorSignalContext,
 ): Promise<AdvisoryResult | null> {
   return computeSurfaceAdvisory({
     baseScore: ctx.baseScore,
     direction: ctx.direction,
-    align: (snap) => rubySignalAlignment(snap, ctx),
+    align: (snap) => eleanorSignalAlignment(snap, ctx),
   });
 }
 

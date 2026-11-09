@@ -1,12 +1,12 @@
 /**
  * Trading School — Glossary. Searchable list of plain-English trading terms,
- * each with a simple definition, example, related lesson link, and Ask Ruby.
+ * each with a simple definition, example, related lesson link, and Ask Eleanor.
  * Renders inside AppLayout.
  */
 import { useMemo, useState, type ChangeEvent } from "react";
 import { Link } from "wouter";
 import { GLOSSARY, STEPS } from "../data/content";
-import { SchoolPageHeader, askRuby } from "../components/SchoolUI";
+import { SchoolPageHeader, askEleanor } from "../components/SchoolUI";
 import { ScrollText, Search, Sparkles, ChevronRight } from "lucide-react";
 import { useAssistantName } from "@/lib/assistant-name";
 
@@ -50,7 +50,7 @@ export default function TradingSchoolGlossary() {
                       Step {step.number} <ChevronRight className="h-3 w-3" />
                     </Link>
                   )}
-                  <button onClick={askRuby} className="inline-flex items-center gap-1 text-xs text-ruby hover:underline">
+                  <button onClick={askEleanor} className="inline-flex items-center gap-1 text-xs text-eleanor hover:underline">
                     <Sparkles className="h-3 w-3" /> Ask {name}
                   </button>
                 </div>

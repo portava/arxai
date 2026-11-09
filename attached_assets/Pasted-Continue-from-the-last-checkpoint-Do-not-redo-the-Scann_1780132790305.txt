@@ -11,7 +11,7 @@ Now complete the remaining work that was explicitly not done:
 This is not a rebuild.
 Do not create a new product.
 Do not replace the existing app architecture.
-Do not duplicate Scanner, Ruby, MT5 bridge, auth, permissions, admin, trade execution, or account modes.
+Do not duplicate Scanner, Eleanor, MT5 bridge, auth, permissions, admin, trade execution, or account modes.
 Do not disturb the live MT5 path.
 Do not reset live broker execution config.
 Do not place a live trade during this task.
@@ -31,7 +31,7 @@ Every normal-user page, tab, section, button, card, and function must support on
 2. Analyze a market.
 3. Understand risk.
 4. Execute or manage a trade.
-5. Let Ruby assist.
+5. Let Eleanor assist.
 6. Let admin safely manage users, allocations, live access, and bridge readiness.
 
 Anything outside that should be:
@@ -62,7 +62,7 @@ Normal user-facing app should be reduced toward these main surfaces:
     * pending orders
     * trade placement
     * trade management
-3. Ruby / AI
+3. Eleanor / AI
     * chat
     * voice
     * market explanation
@@ -72,7 +72,7 @@ Normal user-facing app should be reduced toward these main surfaces:
     * profile/settings
     * legal/risk disclosure
     * notification settings
-    * Ruby voice settings
+    * Eleanor voice settings
     * support
     * admin entry if user is admin
 
@@ -87,7 +87,7 @@ Classify every visible page/route/surface into:
 1. Keep as core.
 2. Merge into Cockpit.
 3. Merge into Scanner.
-4. Merge into Ruby.
+4. Merge into Eleanor.
 5. Move to More/Settings.
 6. Move to Admin-only.
 7. Remove from navigation but keep code for now.
@@ -136,7 +136,7 @@ Target cleanup:
 18. Dormant developer tools visible to users.
 19. Paper Trading remnants.
 20. Mock/simulated trade data connected to active UI.
-21. Any page that does not support Analyze, Risk, Execute, Ruby, or Admin safety.
+21. Any page that does not support Analyze, Risk, Execute, Eleanor, or Admin safety.
 
 Risk disclosure rule:
 Keep the risk disclosure, but move long legal/risk text into More / Legal / Risk Disclosure. Use compact links or short notices in the main app. Do not let a large footer dominate Scanner or trading pages.
@@ -159,7 +159,7 @@ Do not remove or weaken:
 9. Trade ownership filtering.
 10. Backend permission checks.
 11. MT5 confirmation before trade success.
-12. Ruby action permission layer.
+12. Eleanor action permission layer.
 13. Auth/admin separation.
 14. Shared/master bridge privacy filtering.
 15. Normal-user protection from admin routes.
@@ -180,7 +180,7 @@ Measure before fixing:
 2. Cockpit load
 3. Trade page load if still kept
 4. Scanner load
-5. Ruby page load
+5. Eleanor page load
 6. More page load
 7. bottom navigation tap feedback
 8. first usable content timing
@@ -196,7 +196,7 @@ Check:
 
 1. Heavy imports loaded globally.
 2. Chart/TradingView library loaded on every page.
-3. Ruby voice/speech modules loaded globally.
+3. Eleanor voice/speech modules loaded globally.
 4. Admin-only modules loaded for normal users.
 5. Scanner feeds loaded globally.
 6. Repeated auth/session calls.
@@ -217,7 +217,7 @@ Fix safely:
 
 1. Lazy-load heavy route modules.
 2. Lazy-load chart library only when chart is needed.
-3. Lazy-load Ruby voice modules only when voice is opened.
+3. Lazy-load Eleanor voice modules only when voice is opened.
 4. Lazy-load admin-only panels only for admins.
 5. Do not load hidden tabs until selected.
 6. Split Scanner into independent sections.
@@ -234,7 +234,7 @@ Fix safely:
 17. Memoize heavy components.
 18. Virtualize long lists if needed.
 19. Stop loading all markets before search is usable.
-20. Stop Ruby, news, history, or deep analytics from blocking Scanner.
+20. Stop Eleanor, news, history, or deep analytics from blocking Scanner.
 
 PHASE 5 — Scanner must stay stable and become fast
 
@@ -271,7 +271,7 @@ Layer 4: Scanner results
 * Focus Scan
 * result cards
 
-Layer 5: Ruby explanation
+Layer 5: Eleanor explanation
 
 * plain-English analysis
 * never blocks chart/results/trading
@@ -288,13 +288,13 @@ Rules:
 
 1. Scanner shell renders even if quote fails.
 2. Scanner shell renders even if candles fail.
-3. Scanner shell renders even if Ruby fails.
+3. Scanner shell renders even if Eleanor fails.
 4. Scanner shell renders even if Broad Scan fails.
 5. Scanner shell renders even if Focus Scan fails.
 6. Scanner shell renders even if MT5 bridge status is slow.
 7. A failed widget shows a local inline retry state.
 8. One widget must not crash the whole page.
-9. Keep section-level error boundaries around chart, tabs, trade modal, results, Ruby, and overlays.
+9. Keep section-level error boundaries around chart, tabs, trade modal, results, Eleanor, and overlays.
 
 PHASE 6 — Speed targets
 
@@ -315,7 +315,7 @@ Targets:
 11. Focus Scan start feedback: under 100ms.
 12. Trade button feedback: under 100ms.
 13. Trade pending state after Confirm: under 100ms.
-14. Ruby thinking dots: under 100ms.
+14. Eleanor thinking dots: under 100ms.
 
 If final data takes longer, show:
 
@@ -323,7 +323,7 @@ If final data takes longer, show:
 2. “Loading chart…”
 3. “Loading your trades…”
 4. “Scanning…”
-5. “Ruby is thinking…”
+5. “Eleanor is thinking…”
 6. “Confirming with broker…”
 
 Do not let the app look frozen.
@@ -340,7 +340,7 @@ For Buy/Sell and trade actions:
 4. UI shows “Confirming with broker…” while MT5 responds.
 5. UI does not say “Trade placed” until MT5 confirms.
 6. If MT5 rejects, show clean error and rollback.
-7. Ruby must not block trade placement.
+7. Eleanor must not block trade placement.
 8. Scanner results must not block trade placement.
 9. News/history/backtest must not block manual trade placement.
 10. Noncritical logging must not block user feedback.
@@ -361,7 +361,7 @@ Required:
 3. Keep DEMO/LIVE-only rule.
 4. Keep MT5 bridge rules.
 5. Keep Scanner priority.
-6. Keep Ruby rules.
+6. Keep Eleanor rules.
 7. Keep performance goals.
 8. Keep safety gates.
 9. Keep unresolved risks.
@@ -386,8 +386,8 @@ After each meaningful change, test:
 10. Focus Scan works or shows local clean error.
 11. Chart shell renders.
 12. Trade controls respond.
-13. Ruby page loads.
-14. Ruby responds.
+13. Eleanor page loads.
+14. Eleanor responds.
 15. More page loads.
 16. Admin view works for admin.
 17. Normal users do not see admin internals.
@@ -430,14 +430,14 @@ If a full 142-page pruning is too large for one pass:
 
 Acceptance criteria:
 
-1. App navigation feels focused around Cockpit, Scanner, Ruby, More/Settings, and Admin-only controls.
+1. App navigation feels focused around Cockpit, Scanner, Eleanor, More/Settings, and Admin-only controls.
 2. Normal user clutter is removed, merged, collapsed, or admin-hidden.
 3. Scanner stays stable.
 4. Scanner shell appears in under 1 second or closest achievable with documented blocker.
 5. Other pages no longer take around 7 seconds to become usable.
 6. Every visible button responds or is removed/disabled with a clear reason.
 7. Scanner loads progressively.
-8. Chart, Ruby, results, notifications, and bridge status do not block each other.
+8. Chart, Eleanor, results, notifications, and bridge status do not block each other.
 9. Trade controls show pending state immediately.
 10. Trade success still waits for MT5 confirmation.
 11. Normal users see clean errors only.

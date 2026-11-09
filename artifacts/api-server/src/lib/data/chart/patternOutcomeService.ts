@@ -3,7 +3,7 @@
 // Records every detected chart pattern as an OBSERVATION, resolves it ONLY on
 // real evidence (a matched closed trade or an observed decisive move past the
 // confirmation / invalidation level), and rolls the recorded outcomes into the
-// pure reliability aggregation (`aggregatePatternReliability`) that feeds Ruby's
+// pure reliability aggregation (`aggregatePatternReliability`) that feeds Eleanor's
 // bounded confidence adjustment.
 //
 // SAFETY / honesty:

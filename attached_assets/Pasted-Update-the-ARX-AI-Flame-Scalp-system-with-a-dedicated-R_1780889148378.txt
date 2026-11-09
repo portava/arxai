@@ -2,7 +2,7 @@ Update the ARX AI Flame Scalp system with a dedicated Run-On Candle Momentum upg
 
 The goal is to improve scalp detection for one of the strongest scalp conditions: aggressive same-direction candle movement with minimal pullbacks. These are “run-on candles” — candles that keep driving in the same direction, showing clean momentum, continuation pressure, and little hesitation.
 
-Do not rebuild the app. Do not rewrite the entire algorithm. Do not change live broker execution settings. Do not place trades. This is a surgical upgrade to the existing Flame Scalp engine, Scanner scoring, Ruby explanation, Risk review, and Governance challenge logic.
+Do not rebuild the app. Do not rewrite the entire algorithm. Do not change live broker execution settings. Do not place trades. This is a surgical upgrade to the existing Flame Scalp engine, Scanner scoring, Eleanor explanation, Risk review, and Governance challenge logic.
 
 MAIN CONCEPT
 
@@ -48,7 +48,7 @@ Check existing logic for:
 - entry timing
 - no-entry states
 - scanner ranking effect
-- Ruby explanation effect
+- Eleanor explanation effect
 - risk/governance effect
 
 Do not duplicate existing logic. If RUN_ON already exists, upgrade it surgically instead of creating a competing system.
@@ -205,9 +205,9 @@ For run-on scalps, review:
 - take profit should account for nearest danger zone
 - reward-to-risk must still make sense
 - risk should shrink as chase/exhaustion risk increases
-- if the move is too late, scanner/Ruby should recommend avoid or caution
+- if the move is too late, scanner/Eleanor should recommend avoid or caution
 
-Ruby should explain:
+Eleanor should explain:
 - why the run is strong
 - whether it is early, active, late, or exhausted
 - where the danger is
@@ -222,13 +222,13 @@ Wire Run-On Candle Momentum into Scanner ranking.
 If run-on quality is strong:
 - scanner score can increase
 - flame/scalp confidence can increase
-- Ruby can call it a clean run-on scalp
+- Eleanor can call it a clean run-on scalp
 - trade recommendation can become stronger if risk allows
 
 If run-on quality is weak/late/exhausted:
 - scanner score should decrease
 - risk warning should increase
-- Ruby should warn against chasing
+- Eleanor should warn against chasing
 - governance can downgrade the signal
 
 Scanner should never rank a late/exhausted run-on move as a high-quality scalp just because candles were moving fast.
@@ -258,9 +258,9 @@ Flame Scalp Agent should challenge if:
 
 Traffic Controller should avoid calling unnecessary agents on every candle, but allow deeper review for high-score run-on opportunities.
 
-PHASE 10 — RUBY EXPLANATION UPDATE
+PHASE 10 — ELEANOR EXPLANATION UPDATE
 
-Ruby must explain run-on candles in plain English.
+Eleanor must explain run-on candles in plain English.
 
 Examples of acceptable wording:
 
@@ -270,7 +270,7 @@ Examples of acceptable wording:
 - “Add-ons are not supported here because the run is showing exhaustion.”
 - “This is a technical-only read because news feed data is unavailable.”
 
-Ruby must not expose backend terms, enum names, function names, route names, schema names, or developer wording to normal users.
+Eleanor must not expose backend terms, enum names, function names, route names, schema names, or developer wording to normal users.
 
 PHASE 11 — ADMIN TRACE
 
@@ -331,7 +331,7 @@ Add or update tests for:
 - add-on blocked for exhausted/failed/reversal/blind
 - scanner score boost for high-quality run-on
 - scanner downgrade for late/exhausted run-on
-- Ruby explanation wording
+- Eleanor explanation wording
 - governance challenge behavior
 - admin trace fields
 
@@ -341,7 +341,7 @@ Run:
 - scanner tests
 - risk tests
 - governance tests
-- Ruby explanation tests
+- Eleanor explanation tests
 - UI truth tests
 - CI guards
 - architect review if available
@@ -355,7 +355,7 @@ Report:
 3. How run-on candles are detected.
 4. How add-on rules changed or were confirmed.
 5. How scanner ranking is affected.
-6. How Ruby explains run-on scalps.
+6. How Eleanor explains run-on scalps.
 7. How risk/governance can challenge bad run-on setups.
 8. What tests passed.
 9. Any remaining limitations due to candle feed quality.
@@ -369,7 +369,7 @@ Do not mark complete until:
 - clean same-direction aggressive candles are rewarded
 - late/exhausted/choppy movement is not rewarded
 - add-ons are allowed only when the run is still healthy
-- scanner, Ruby, risk, governance, and admin trace all understand run-on candles
+- scanner, Eleanor, risk, governance, and admin trace all understand run-on candles
 - stale/missing data lowers confidence
 - no fake candle assumptions are introduced
 - all validation passes

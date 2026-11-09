@@ -16,7 +16,7 @@
 1. (Resolved-static) Scanner "Exec" score is a feed-status relabel, not per-symbol execution quality — honest-but-mislabeled. Now correctly downgrades on insufficient feed (#790). 
 2. (Unresolved-runtime) Positions/balance/PnL freshness — whether dashboards show live bridge truth vs a stale DB snapshot is a runtime fact (Flow F).
 3. (Unresolved-runtime) Investor NAV — whether it uses confirmed vs indicative PnL (Flow H) needs reading + likely runtime.
-4. (Cosmetic) Eleanor rename ~undone (Ruby still in ~77 UI files) — product-consistency, no safety effect.
+4. (Cosmetic) Eleanor rename ~undone (Eleanor still in ~77 UI files) — product-consistency, no safety effect.
 5. (Cosmetic) Known scanner card-text display drifts (the #601 items) — UI honesty, not execution.
 
 **Top 5 execution risks:** None proven P0. The one structural note: a second guarded live pipeline (`adminTrading`) exists, now **structurally** locked (#786, env-independent hard-deny) and guarded against regression (#791). No live-OPEN bypass found at HEAD.
@@ -37,7 +37,7 @@
 | Entry score | `entrySniperScore` on real routed candles (`marketScanner.ts`) | Real per-symbol; empty→AWAITING_FEED downgrade (#790) | ✅ PASS |
 | Exec score | `executionQualityFor(dataSource)` (`opportunityMapService.ts:59`) | Feed-status switch — honest but feed-derived, not per-trade | ⚠️ PASS-with-label-caveat |
 | AI trade reasoning | `analyzeViaRouter` (real candles); `analyzeMarket` (sim) NOT on live card path | Live path real | ✅ PASS |
-| Eleanor chat read | `rubyStructuralReadService.ts` → `buildRubyChartContext` (SAME as panel) | One read path (#602) | ✅ PASS |
+| Eleanor chat read | `eleanorStructuralReadService.ts` → `buildEleanorChartContext` (SAME as panel) | One read path (#602) | ✅ PASS |
 | Trade intent / approval | `createLiveDraft → confirm → dispatchLiveCommand` | One pipeline | ✅ PASS |
 | Live command queue | `arxLiveCommandsTable` ← Phase B only; `mt5_commands` mailbox ← pipeline mirror | Canonical | ✅ PASS |
 | Broker confirmation | EA reconciler; executed-state gated on confirmation | (Runtime-verify) | ⚠️ Unresolved-runtime |
@@ -59,7 +59,7 @@
 - **Direct command-writer classification:** the ~33 files referencing `mt5_commands` are overwhelmingly reads/status-updates/reconcilers/close-paths; the OPEN-inserting sites are the pipeline (`liveCommandPipeline.ts`) and `adminTrading` (structurally locked). No unguarded live-OPEN insert found. (Full per-file table → runtime agent should confirm the few I classify Unknown below.)
 
 **FLOW A — Eleanor / AI source-of-truth → PASS.**
-- Chat read goes through `rubyStructuralReadService.ts` → `buildRubyChartContext` — the SAME function the Scanner Ruby Chart Read panel uses (#602), so chat and panel agree by construction.
+- Chat read goes through `eleanorStructuralReadService.ts` → `buildEleanorChartContext` — the SAME function the Scanner Eleanor Chart Read panel uses (#602), so chat and panel agree by construction.
 - **Eleanor cannot execute:** the trade tools are draft-only. `createTradeActionDraft` (`tools.ts:1629`) "NEVER executes... NEVER closes/opens/moves a stop," creates an `ai_suggested` draft the user MUST confirm; `requestDemoOrder` (1613) routes through `runOrderGuards()` and is demo-only. The protective-close engine "only ever drafts a CLOSE (cannot OPEN/ADD/WIDEN)" and "even drafted actions remain BLOCKED" under the paper-only lock (`tools.ts:3682`). So Eleanor has no execution bypass and cannot widen risk.
 - Eleanor reads real market data via the same router; the structural read withholds exact entry/SL/TP on unconfirmed data (the #602 STRUCTURAL_ONLY contract).
 
@@ -87,7 +87,7 @@
 ---
 
 ## 5. ELEANOR / AI TRUTH VERDICT
-- Same truth as the app? **YES** — chat read = panel read (`buildRubyChartContext`), market data = same router.
+- Same truth as the app? **YES** — chat read = panel read (`buildEleanorChartContext`), market data = same router.
 - Advice on stale/mock data? **No** — structural read withholds levels on unconfirmed feed; live card path uses real candles, not the simulator.
 - Execute via bypass? **No** — all trade tools are draft-only + user-confirm + paper-locked; cannot OPEN/widen.
 - Explanation matches executable truth? **Yes** (same verdict source).
@@ -116,7 +116,7 @@
 
 - **P2 — Relabel scanner "Exec" score.** Risk: user reads feed-derived number as per-trade execution quality. Files: `opportunityMapService.ts`, the card render. Approach: rename surfaced label to "Feed"/"Exec-readiness" or tie visibly to feed state. No migration. Safe (display-only).
 - **P2 — Close residual scanner card-text drifts** (the #601 items: "Ready now"+"Wait", empty-state under results, "Overlays: verified", Trade Health headline). Display-only, no execution risk.
-- **P3 — Eleanor rename** (~77 UI files say Ruby). Cosmetic; careful to keep internal `ruby*` module names.
+- **P3 — Eleanor rename** (~77 UI files say Eleanor). Cosmetic; careful to keep internal `eleanor*` module names.
 - **(No P0/P1 fixes recommended — none found.)** The execution and AI-safety core is sound at HEAD.
 
 ## 10. TESTS THAT SHOULD EXIST (gaps)

@@ -26,11 +26,11 @@ import { resolveProductRole } from "../lib/auth/productRole.js";
 import { logger } from "../lib/logger.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import {
-  buildRubyDraftRead,
-  type RubyDraftIntent,
-} from "../lib/assistant/rubyDraftRead.js";
+  buildEleanorDraftRead,
+  type EleanorDraftIntent,
+} from "../lib/assistant/eleanorDraftRead.js";
 import { buildSetupFingerprint } from "../lib/chart/setupFingerprint.js";
-import { buildReceiptState } from "../lib/chart/recordRubyRead.js";
+import { buildReceiptState } from "../lib/chart/recordEleanorRead.js";
 import {
   createDecisionReceipt,
   getUserReceipt,
@@ -66,7 +66,7 @@ const router = Router();
 // Compile-time fail-closed envelope. The chart-memory surface is unconditionally
 // read-only regardless of the caller's live-trading permissions, so we return
 // the truthful paper_only envelope (matches the contract enum [paper_only] and
-// the sibling Ruby draft-read / chart-intelligence endpoints).
+// the sibling Eleanor draft-read / chart-intelligence endpoints).
 const SAFETY_ENVELOPE = {
   safetyMode: "paper_only" as const,
   liveLocked: true,
@@ -108,8 +108,8 @@ const createReceiptSchema = z.object({
     "agent-consensus",
   ]),
   source: z.enum([
-    "ruby_draft_read",
-    "ruby_explain_signal",
+    "eleanor_draft_read",
+    "eleanor_explain_signal",
     "chart_read",
     "chart_trade_plan",
   ]),
@@ -130,12 +130,12 @@ router.post(
     // Build (or reuse the short-cached) Chart Intelligence State + an honest
     // deterministic draft read for this symbol/timeframe. The builder degrades
     // to an honest empty/insufficient state on a dirty feed — never fabricates.
-    // Enriched with this user's own broker quote, as the Ruby read the user
+    // Enriched with this user's own broker quote, as the Eleanor read the user
     // saw was, so the receipt records that read and not a gated "syncing" one.
     const state = await buildReceiptState({ userId, symbol, timeframe, limit });
-    const draftRead = buildRubyDraftRead(
+    const draftRead = buildEleanorDraftRead(
       state,
-      intent as RubyDraftIntent,
+      intent as EleanorDraftIntent,
       null,
     );
 

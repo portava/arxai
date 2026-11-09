@@ -17,7 +17,7 @@ vi.mock("@/hooks/useScannerReadGate", () => ({
 }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["5m", () => {}] }));
 vi.mock("@/hooks/useSymbolTruth", () => ({ useSymbolTruth: () => ({ news: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/scanner/ChartTimingChip", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/scanner/ChartTimingChip")>()),
   timingTimeframeLabel: (c: string | null | undefined) => (c === "M15" ? "15m" : c ?? null),

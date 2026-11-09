@@ -1,11 +1,11 @@
-// Chart levels, sentences and Ruby's level line print at the instrument's
+// Chart levels, sentences and Eleanor's level line print at the instrument's
 // precision (truth upgrade, 2026-10-28).
 //
 // Level prices were rounded server-side by a magnitude rule (>= 1000 → 1 dp,
 // >= 1 → 4 dp): XAUUSD support 2400.55 became 2400.6 and EURUSD 1.08523 became
 // 1.0852, which the dashboard then padded back out ("2400.60", "1.08520") — a
 // precision the server had rounded away. The sentence engine printed with its
-// own magnitude rule (V10 3-dp prices at 2 dp, XAGUSD 4-dp at 3 dp), and Ruby
+// own magnitude rule (V10 3-dp prices at 2 dp, XAGUSD 4-dp at 3 dp), and Eleanor
 // printed the raw number and the raw personality token ("retest_pending").
 // Offline: no provider, DB or broker calls.
 
@@ -16,7 +16,7 @@ import { computeLevelPersonality } from "../engines/levelPersonality.js";
 import type { NormalizedChartCandle } from "../candleNormalization.js";
 import type { ChartIntelligenceState } from "../chartIntelligence.js";
 import { buildMarketSentences, chartLevelPersonalityWords } from "../marketSentenceEngine.js";
-import { activeLevelLine } from "../../../assistant/rubyDraftRead.js";
+import { activeLevelLine } from "../../../assistant/eleanorDraftRead.js";
 
 const epoch = Date.parse("2026-10-20T00:00:00Z");
 
@@ -133,7 +133,7 @@ test("level personality reads as words, not the raw token", () => {
   assert.equal(chartLevelPersonalityWords("defended"), "defended");
 });
 
-test("Ruby's nearest-level line uses instrument precision and plain personality words", () => {
+test("Eleanor's nearest-level line uses instrument precision and plain personality words", () => {
   const line = activeLevelLine(sentenceState("XAUUSD", "metals", 2400.5, 2405.1));
   assert.equal(line, "Nearest level: support at 2400.50 (0.10% away), broken, and price has come back to retest it.");
   const eur = activeLevelLine(sentenceState("EURUSD", "forex", 1.08523, 1.0861));

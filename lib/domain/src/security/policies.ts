@@ -2,7 +2,7 @@
 // security/policies.ts — versioned, typed security policy structure.
 //
 // One place that declares the security posture as data, not scattered checks.
-// Later phases (HARD_GATE integration, audit chaining, Ruby boundaries,
+// Later phases (HARD_GATE integration, audit chaining, Eleanor boundaries,
 // hardening) read these instead of re-deriving rules ad hoc. Pure constants.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -44,13 +44,13 @@ export interface ExportPolicy {
   maxSensitivity: SensitivityLevel;
 }
 
-export interface RubyMemoryPolicy {
+export interface EleanorMemoryPolicy {
   policyVersion: number;
-  /** Ruby (assistant) is read-only and may never persist secrets. */
+  /** Eleanor (assistant) is read-only and may never persist secrets. */
   readOnly: boolean;
-  /** Secrets are stripped from anything Ruby could remember or echo. */
+  /** Secrets are stripped from anything Eleanor could remember or echo. */
   redactBeforeStore: boolean;
-  /** Ruby is strictly scoped to the requesting user's own data. */
+  /** Eleanor is strictly scoped to the requesting user's own data. */
   perUserScoped: boolean;
 }
 
@@ -75,7 +75,7 @@ export interface SecurityPolicies {
   encryptionPolicy: EncryptionPolicy;
   auditPolicy: AuditPolicy;
   exportPolicy: ExportPolicy;
-  rubyMemoryPolicy: RubyMemoryPolicy;
+  eleanorMemoryPolicy: EleanorMemoryPolicy;
   promptInjectionPolicy: PromptInjectionPolicy;
   securityLockdownPolicy: SecurityLockdownPolicy;
 }
@@ -101,7 +101,7 @@ export const DEFAULT_SECURITY_POLICIES: SecurityPolicies = {
     maskAccountIds: true,
     maxSensitivity: "CONFIDENTIAL",
   },
-  rubyMemoryPolicy: {
+  eleanorMemoryPolicy: {
     policyVersion: SECURITY_POLICY_VERSION,
     readOnly: true,
     redactBeforeStore: true,

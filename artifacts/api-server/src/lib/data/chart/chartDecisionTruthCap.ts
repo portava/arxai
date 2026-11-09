@@ -4,8 +4,8 @@
 // the candle engines, which only know whether the feed is AI-usable and not
 // stale. The chart-truth gate is a separate, stricter verdict: Chart Truth
 // below 75, a stale feed, a failed broker mirror, a handshake check that is
-// unmeasured or failing (Ruby's handshake, chart rendering included) or a
-// feed that is not live means the read has NOT been verified. Ruby already
+// unmeasured or failing (Eleanor's handshake, chart rendering included) or a
+// feed that is not live means the read has NOT been verified. Eleanor already
 // refuses a setup in that state; without this cap Chart Pulse said
 // "A · Ready" and the best-action sentence said "act with a defined stop" on
 // the same board.
@@ -28,7 +28,7 @@ export interface ChartReadVerification {
 }
 
 /**
- * The candle-data checks Ruby's handshake requires to PASS (measured and
+ * The candle-data checks Eleanor's handshake requires to PASS (measured and
  * scoring at least 75), in plain words. Same keys `buildChartHandshake` reads.
  */
 const HANDSHAKE_CHECKS: ReadonlyArray<{ key: string; words: string }> = [
@@ -66,13 +66,13 @@ function tradeConfirmationReasons(gate: Pick<ChartGateOutput, "blockedReasons">)
 type FeedFacts = Pick<ChartFeedStatus, "isLive"> & Partial<Pick<ChartFeedStatus, "stale" | "aiUsable" | "quality">>;
 
 /**
- * Whether the chart read is verified enough to invite action. It is Ruby's
+ * Whether the chart read is verified enough to invite action. It is Eleanor's
  * chart-read predicate (truth ≥ 75, real OHLC, feed AI-usable and not stale,
  * mirror not failed, and every handshake check measured and passing —
- * `buildChartHandshake(...).overall === "PASS"`, the same full rollup Ruby's
+ * `buildChartHandshake(...).overall === "PASS"`, the same full rollup Eleanor's
  * VERIFIED basis and draft read require, chart rendering included), plus a
  * live feed: a closed market or stored bars cannot back "act now". So the
- * board can never say "Ready" while Ruby refuses a setup on the same read.
+ * board can never say "Ready" while Eleanor refuses a setup on the same read.
  * Chart rendering is client telemetry the server does not measure, so while
  * it stays unmeasured no read is verified, and the reason says so. A missing
  * gate, feed status or truth score is treated as not verified.
@@ -108,7 +108,7 @@ export function chartReadVerification(
           reasons.push(`${check.words} scored ${Math.round(m.rawScore)}/100 (needs ${HANDSHAKE_PASS})`);
         }
       }
-      // Ruby's basis keeps the full handshake rollup, RenderHealth included,
+      // Eleanor's basis keeps the full handshake rollup, RenderHealth included,
       // so an unmeasured or weak render check blocks here too.
       const render = subMetrics.find((x) => x.key === "render_accuracy");
       if (!render || render.evidenceStatus !== "measured" || render.rawScore == null || !Number.isFinite(render.rawScore)) {
@@ -121,7 +121,7 @@ export function chartReadVerification(
       // The handshake itself is the authority: if it does not PASS for a
       // reason not named above, the read is still not verified.
       if (reasons.length === 0 && buildChartHandshake(gate, truthScore!).overall !== "PASS") {
-        reasons.push("a chart truth check Ruby's read requires did not pass");
+        reasons.push("a chart truth check Eleanor's read requires did not pass");
       }
     }
   }

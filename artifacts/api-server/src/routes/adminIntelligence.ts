@@ -3,8 +3,8 @@
 // SAFETY / SCOPE:
 //   - Every route requires an ADMIN/OWNER session. Admin-previewing-as-user is
 //     auto-downgraded by requireAdmin and lands in the 403 branch (mirrors
-//     adminRubyQuality).
-//   - READ-ONLY over EXISTING resolved Ruby signal outcomes. ZERO new tables.
+//     adminEleanorQuality).
+//   - READ-ONLY over EXISTING resolved Eleanor signal outcomes. ZERO new tables.
 //     Nothing here places / modifies / closes a trade or touches the MT5 bridge
 //     or the 16-gate live pipeline. OBSERVATION ONLY.
 //   - Calibration is descriptive (confidence tier vs realized accuracy). It is
@@ -13,7 +13,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
-import { computeCalibrationRollup, type CalibrationFilter } from "../lib/rubyQuality/index.js";
+import { computeCalibrationRollup, type CalibrationFilter } from "../lib/eleanorQuality/index.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
@@ -27,7 +27,7 @@ type AdminRole = "ADMIN" | "OWNER";
 /**
  * Resolve a true ADMIN/OWNER session. Admin-previewing-as-user is downgraded by
  * the upstream product-role gate and lands in the 403 branch here too (mirrors
- * the adminRubyQuality pattern — checks the EFFECTIVE req.authUser.role).
+ * the adminEleanorQuality pattern — checks the EFFECTIVE req.authUser.role).
  */
 function requireAdmin(req: Request, res: Response): { id: number; role: AdminRole } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;

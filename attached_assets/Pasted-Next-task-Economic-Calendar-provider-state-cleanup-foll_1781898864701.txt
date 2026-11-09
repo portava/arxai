@@ -40,7 +40,7 @@ Surfaces to verify:
 - Economic Calendar page
 - Chart Impact Radar
 - News Risk
-- Ruby explanation
+- Eleanor explanation
 - Global Market Heat upcoming events
 - provider diagnostics/sync response if event times appear
 
@@ -60,7 +60,7 @@ Tests:
 3. invalid from/to returns 400.
 4. valid from/to reaches provider.
 5. UTC/local labels are rendered distinctly.
-6. Ruby/calendar copy does not collapse not_configured and fetch_error.
+6. Eleanor/calendar copy does not collapse not_configured and fetch_error.
 7. Diagnostics never expose API keys.
 
 Validation:

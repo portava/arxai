@@ -13,12 +13,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   confidenceBandFor,
   explainMarketRead,
   unmeasuredScoreDimensions,
   type ConfidenceBand,
-  type RubyMarketEdgeSignal,
+  type EleanorMarketEdgeSignal,
   type SignalCandle,
 } from "@workspace/domain/signal-intelligence";
 
@@ -38,7 +38,7 @@ function risingCandles(n: number): SignalCandle[] {
 
 // The owner's state: Deriv public synthetic series, no scanner geometry, no
 // scalp read, no MT5 bridge, calendar unavailable.
-const baseSignal: RubyMarketEdgeSignal = buildRubyMarketEdge({
+const baseSignal: EleanorMarketEdgeSignal = buildEleanorMarketEdge({
   symbol: "R_75",
   displayName: "V75",
   timeframe: "M1",
@@ -77,7 +77,7 @@ function mkSignal(opts: {
   netScore?: number;
   /** FULL = every score input observed (banding allowed). Default FULL. */
   basis?: "FULL" | "PARTIAL";
-}): RubyMarketEdgeSignal {
+}): EleanorMarketEdgeSignal {
   const basis = opts.basis ?? "FULL";
   return {
     ...baseSignal,

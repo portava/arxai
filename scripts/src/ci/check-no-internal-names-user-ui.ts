@@ -12,7 +12,7 @@
 //   3. Specific forbidden internal token strings appearing as string
 //      literals in JSX (heuristic: token appears NOT in a `from "..."`
 //      import line and NOT as an object property key).
-//   4. The raw internal assistant codename "Ruby" appearing in
+//   4. The raw internal assistant codename "Eleanor" appearing in
 //      user-facing copy (JSX text or string literals) anywhere in the
 //      normal-user frontend, the user-facing API routes, OR the shared
 //      backend library that assembles that copy
@@ -20,11 +20,11 @@
 //      to "Eleanor" for users; every user-facing mention must resolve the
 //      display name at runtime (frontend `useAssistantName().name`,
 //      backend `getAssistantDisplayName()`).
-//      Internal identifiers (types, hooks, DB columns, `ruby_*` event
+//      Internal identifiers (types, hooks, DB columns, `eleanor_*` event
 //      sources, permission keys, CSS/test-ids) keep the internal name
 //      and are NOT flagged — the scan is comment/string-aware and only
-//      looks at the standalone word `Ruby`, never glued identifiers
-//      like `RubyState` / `allowRuby` / `ruby_recommendation`.
+//      looks at the standalone word `Eleanor`, never glued identifiers
+//      like `EleanorState` / `allowEleanor` / `eleanor_recommendation`.
 //      Admin/operator/dev-only library surfaces keep the internal name
 //      and are listed in ASSISTANT_LIB_INTERNAL_ALLOWLIST below.
 //
@@ -85,9 +85,9 @@ const PATTERNS: Pattern[] = [
     reason: "JSON.stringify rendered in JSX",
   },
   {
-    id: "ruby-tool-name-literal",
+    id: "eleanor-tool-name-literal",
     regex: "(getMyPerformanceSummary|getMarketRead|executeTradeIntent|validateLiveTrade|fetchScannerData)",
-    reason: "internal Ruby tool/function name appears as identifier in non-admin source",
+    reason: "internal Eleanor tool/function name appears as identifier in non-admin source",
   },
   // T003-6 regression: typed-phrase prompts. Operator-style "type X to
   // enable/dispatch/confirm" wording must never appear in normal-user
@@ -129,7 +129,7 @@ function isAdminExcluded(line: string): boolean {
 function isBenign(line: string): boolean {
   const path = pathFromRgLine(line);
   if (path.endsWith("/lib/friendlyLabels.ts")) return true;          // the mapper itself
-  if (path.endsWith("/components/ui/RubyTypingIndicator.tsx")) return true; // friendlyToolText mapper
+  if (path.endsWith("/components/ui/EleanorTypingIndicator.tsx")) return true; // friendlyToolText mapper
   // ignore JSDoc / line comments that just describe the leak shape
   if (/^\s*\*\s/.test(line.split(":").slice(2).join(":"))) return true;
   if (/^\s*\/\//.test(line.split(":").slice(2).join(":"))) return true;
@@ -138,12 +138,12 @@ function isBenign(line: string): boolean {
 
 // ── Assistant-name leak scan (Task #809) ──────────────────────────────────────
 //
-// The word "Ruby" is the internal assistant codename. Users now see
+// The word "Eleanor" is the internal assistant codename. Users now see
 // "Eleanor" (or whatever the display-name resolver returns). This scan
 // is comment/string-aware so it flags ONLY genuine user-facing copy:
 // JSX text and string/template literals. Comments are neutralized;
-// glued identifiers (RubyState, allowRuby, ruby_recommendation) never
-// match because we require the standalone word boundary `\bRuby\b`.
+// glued identifiers (EleanorState, allowEleanor, eleanor_recommendation) never
+// match because we require the standalone word boundary `\bEleanor\b`.
 
 const ASSISTANT_SCAN_ROOTS = [
   SCAN_ROOT,
@@ -159,7 +159,7 @@ const ASSISTANT_SCAN_ROOTS = [
   "lib/domain/src",
 ];
 
-// Admin/operator/dev-only LIBRARY surfaces where the internal name "Ruby"
+// Admin/operator/dev-only LIBRARY surfaces where the internal name "Eleanor"
 // legitimately survives (the brief keeps admin/operator/dev naming
 // internal). Each entry is a specific file path fragment with the surface
 // audience noted. Kept deliberately narrow (exact files, not directories)
@@ -170,16 +170,16 @@ const ASSISTANT_LIB_INTERNAL_ALLOWLIST = [
   "/lib/governance/effectiveGovernance.ts",// admin/owner — governance control labels
   "/lib/live/operatorFundedPilotConfig.ts",// operator — funded-pilot config disclosure
   // Internal command PARSER (parses user INPUT, emits no user-facing prose;
-  // its only "Ruby" is a comment). Its regex-heavy body is not fully
+  // its only "Eleanor" is a comment). Its regex-heavy body is not fully
   // modelled by the comment/string tokenizer, so scanning it would false-
   // positive; allowlisted as an internal, non-copy-emitting surface.
   "/lib/assistant/parseTradeCommand.ts",
   // ── Pure domain library (lib/domain/src) — internal registries + admin/
   //    operator diagnostics. The user-facing projections built ABOVE these
-  //    (e.g. AACI /me endpoints, meAssistant Ruby block) return only clean
+  //    (e.g. AACI /me endpoints, meAssistant Eleanor block) return only clean
   //    labels/tone/userFacingExplanation and never these detail strings. ──
   "/domain/src/aaci/conflicts.ts",   // admin/operator — AaciConflict.detail is documented "admin diagnostics"; systems[] are typed AaciHandshakeSystem identifiers
-  "/domain/src/aaci/types.ts",       // internal — "Ruby" is a typed AaciHandshakeSystem union member (identifier, not copy)
+  "/domain/src/aaci/types.ts",       // internal — "Eleanor" is a typed AaciHandshakeSystem union member (identifier, not copy)
   "/domain/src/agent-system/constitution/agentConstitution.ts", // internal agent-governance registry text
   "/domain/src/agent-system/coreAgents.ts",                     // internal agent registry (agentKey/name pairs)
   "/domain/src/handshake/handshake.types.ts",                   // admin-monitor label→code map
@@ -212,10 +212,10 @@ function isTestFile(file: string): boolean {
   );
 }
 
-// A deliberate name-swap line (e.g. `.replace(/Ruby/g, name)`) is the
+// A deliberate name-swap line (e.g. `.replace(/Eleanor/g, name)`) is the
 // mechanism that fixes leaks, not a leak itself.
 function isNameSwapLine(rawLine: string): boolean {
-  return rawLine.includes(".replace(/Ruby/") || rawLine.includes("/Ruby/g");
+  return rawLine.includes(".replace(/Eleanor/") || rawLine.includes("/Eleanor/g");
 }
 
 /**
@@ -264,7 +264,7 @@ export function stripComments(src: string): string {
 
 /**
  * Return `path:line:col: <trimmed source line>` for every standalone
- * `Ruby` in user-facing copy (after comments are stripped). Pure — takes
+ * `Eleanor` in user-facing copy (after comments are stripped). Pure — takes
  * source text, does no IO. Exported for the regression test.
  */
 export function findAssistantNameLeaksInSource(path: string, src: string): string[] {
@@ -275,7 +275,7 @@ export function findAssistantNameLeaksInSource(path: string, src: string): strin
   for (let i = 0; i < strippedLines.length; i++) {
     const rawLine = rawLines[i] ?? "";
     if (isNameSwapLine(rawLine)) continue;
-    const re = /\bRuby\b/g;
+    const re = /\bEleanor\b/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(strippedLines[i])) !== null) {
       hits.push(`${path}:${i + 1}:${m.index + 1}: ${rawLine.trim().slice(0, 160)}`);
@@ -290,7 +290,7 @@ export function findAssistantNameLeaksInSource(path: string, src: string): strin
 function listCandidateFiles(root: string): string[] {
   try {
     const out = execSync(
-      `rg -l --no-heading -g'*.{ts,tsx}' -e '\\bRuby\\b' ${root} || true`,
+      `rg -l --no-heading -g'*.{ts,tsx}' -e '\\bEleanor\\b' ${root} || true`,
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     );
     return out.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -313,7 +313,7 @@ function scanAssistantNameLeaks(): string[] {
       }
       for (const hit of findAssistantNameLeaksInSource(file, src)) {
         violations.push(
-          `[assistant-name-user-copy] raw internal assistant name "Ruby" in user-facing copy — ` +
+          `[assistant-name-user-copy] raw internal assistant name "Eleanor" in user-facing copy — ` +
             `route it through the name resolver (frontend useAssistantName().name / backend getAssistantDisplayName) — ${hit}`,
         );
       }
@@ -352,7 +352,7 @@ export function checkNoInternalNamesUserUi(): CheckResult {
       violations: [],
       notes: [
         `0 internal-name leaks in user-facing UI (${PATTERNS.length} regex patterns over ${SCAN_ROOT}, ` +
-          `plus a comment/string-aware "Ruby" scan over ${ASSISTANT_SCAN_ROOTS.join(" + ")}; ` +
+          `plus a comment/string-aware "Eleanor" scan over ${ASSISTANT_SCAN_ROOTS.join(" + ")}; ` +
           `${ADMIN_DEV_EXCLUDE.length} admin/dev frontend paths + backend admin/operator/dev routes + ` +
           `${ASSISTANT_LIB_INTERNAL_ALLOWLIST.length} admin/operator/dev library files excluded)`,
       ],

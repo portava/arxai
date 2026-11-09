@@ -6,7 +6,7 @@
 // 1. FABRICATED EXIT PRICE. `aiCoach.coachTrade` computed
 //        exit = pnl >= 0 ? trade.takeProfit : trade.stopLoss
 //    i.e. it ASSUMED every winner closed exactly at TP and every loser exactly
-//    at SL. `rubyQuality/selfReview` — a LIVE path — did the same off
+//    at SL. `eleanorQuality/selfReview` — a LIVE path — did the same off
 //    `status === "CLOSED_WIN"`. The `trades` table has no close-price column,
 //    so there is no real exit to read: the honest fix is to stop claiming one.
 //    `TradeOutcomeInput.exit` never influenced a single output field, so it is

@@ -128,7 +128,7 @@ place the predicate is written moved.
 | `lib/selfTrade/executionGate.ts` | 1 → 0 | per-user `EXPOSURE` with `tickets` |
 | `lib/live/emergencyClose.ts` | 5 → 0 | per-user `UNCLOSED` (ticket / user / allocation scopes); cross-user `UNCLOSED` (`all_shared`, `all`) |
 | `lib/live/liveTestCycle.ts` | 1 → 0 | per-user `UNCLOSED`, symbol, limit 1 |
-| `lib/live/instantTrade.ts` | 2 → 0 | per-user `UNCLOSED` (Ruby open cap; close-all whole rows) |
+| `lib/live/instantTrade.ts` | 2 → 0 | per-user `UNCLOSED` (Eleanor open cap; close-all whole rows) |
 | `lib/live/liveCommandPipeline.ts` | 4 → 1 | per-user `UNCLOSED` for the cluster, daily-loss and concurrent-cap pre-gates |
 | `routes/meLive.ts` | 3 → 0 | per-user `UNCLOSED` whole rows (close-all, account snapshot, account stream) |
 | `routes/meTrades.ts` | 1 → 0 | per-user DEMO `CONFIRMED_OPEN` + `confirmedTicket`, `opened_at DESC` |

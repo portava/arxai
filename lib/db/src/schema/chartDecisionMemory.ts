@@ -15,7 +15,7 @@ import {
 // fingerprints, and the similar-setup foundation.
 //
 // These tables are the SLOW BRAIN learning layer. They only RECORD what already
-// happened on a user's chart so Ruby can reference prior setups and the system
+// happened on a user's chart so Eleanor can reference prior setups and the system
 // can review no-trades and outcomes later. They are NEVER read on the live
 // execution path and NEVER block candle render or order dispatch.
 //
@@ -34,7 +34,7 @@ import {
 // ── 1. Per-user chart event memory ──────────────────────────────────────────
 // MEANINGFUL events only (level touch/rejection, breakout/failed-breakout,
 // retest/failure, wick trap, flame, exhaustion, risk-AI veto, agent-court
-// conflict, ruby recommendation, no-trade, setup stale/invalid, trade
+// conflict, eleanor recommendation, no-trade, setup stale/invalid, trade
 // entered/exited/reviewed, learning marker) — never every candle.
 export const chartDecisionEventsTable = pgTable(
   "chart_decision_events",
@@ -84,7 +84,7 @@ export type ChartDecisionEvent = typeof chartDecisionEventsTable.$inferSelect;
 export type NewChartDecisionEvent = typeof chartDecisionEventsTable.$inferInsert;
 
 // ── 2. Immutable decision receipts ──────────────────────────────────────────
-// One row per OFFICIAL Ruby read / chart trade plan. The original is written
+// One row per OFFICIAL Eleanor read / chart trade plan. The original is written
 // ONCE and never mutated. Indexed fingerprint columns + the full `fingerprint`
 // jsonb power the similar-setup lookup; the two snapshot blobs preserve exactly
 // what the chart/intelligence layers said at decision time.
@@ -99,7 +99,7 @@ export const chartDecisionReceiptsTable = pgTable(
     symbol: text("symbol").notNull(),
     displaySymbol: text("display_symbol"),
     timeframe: text("timeframe").notNull(),
-    // ruby_draft_read | ruby_explain_signal | chart_read | chart_trade_plan
+    // eleanor_draft_read | eleanor_explain_signal | chart_read | chart_trade_plan
     source: text("source").notNull(),
     intent: text("intent"),
     direction: text("direction"), // BUY | SELL | NEUTRAL | null
@@ -116,7 +116,7 @@ export const chartDecisionReceiptsTable = pgTable(
     agentConflict: boolean("agent_conflict").notNull().default(false),
     courtResult: text("court_result"),
     riskWarning: text("risk_warning"),
-    rubyFinalRead: text("ruby_final_read"),
+    eleanorFinalRead: text("eleanor_final_read"),
     confidenceScore: integer("confidence_score"),
     confidenceLabel: text("confidence_label"),
     whatWouldChange: text("what_would_change"),

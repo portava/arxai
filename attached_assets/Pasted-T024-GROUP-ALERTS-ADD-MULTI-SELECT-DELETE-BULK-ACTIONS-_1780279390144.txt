@@ -13,7 +13,7 @@ This task is only for the Alerts page alert organization and deletion UX.
 
 Do not change live execution.
 Do not change Governance.
-Do not change Ruby behavior.
+Do not change Eleanor behavior.
 Do not place trades.
 Do not use Demo/Paper/fake data.
 Do not weaken route containment or user privacy.
@@ -74,7 +74,7 @@ Required grouping:
     * account sync stale
     * symbol not tradable
     * broker rejected
-5. Ruby/Market alerts
+5. Eleanor/Market alerts
     * news risk
     * volatility warning
     * watch level hit
@@ -195,7 +195,7 @@ Add or repair filters:
 3. Trading
 4. Risk
 5. MT5/Bridge
-6. Ruby/Market
+6. Eleanor/Market
 7. System
 8. Deleted/Archived only if needed for admin
 

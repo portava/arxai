@@ -1,7 +1,7 @@
-// instantTradeParserTest — proves the Ruby trade-command parser
+// instantTradeParserTest — proves the Eleanor trade-command parser
 // distinguishes CLEAR direct commands from VAGUE analysis questions.
 // Vague questions MUST never reach the executor. Run with:
-//   pnpm --filter @workspace/scripts run test:ruby-parser
+//   pnpm --filter @workspace/scripts run test:eleanor-parser
 import { parseTradeCommand } from "../../artifacts/api-server/src/lib/assistant/parseTradeCommand.js";
 
 type Case = { name: string; text: string; expectKind: string; extra?: (got: ReturnType<typeof parseTradeCommand>) => boolean };

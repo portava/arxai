@@ -1,7 +1,7 @@
 // Smart Chart Layers & Market Impact Radar (Task #197).
 //
 // SAFETY: requireUser (per-user gated → 401 when unauthenticated). The signal is
-// built per-user via buildRubyMarketEdgeForUser; structure levels come from the
+// built per-user via buildEleanorMarketEdgeForUser; structure levels come from the
 // public candle-truth layer (no per-user data). ADVISORY / VISUAL ONLY — this
 // endpoint never places, modifies, or closes a trade and never gates execution.
 // HONEST: news is real or honestly absent (no connected economic-calendar
@@ -23,7 +23,7 @@ import {
   type StructureLevelInput,
 } from "@workspace/domain/smart-chart";
 import { requireUser } from "../lib/auth/middleware.js";
-import { buildRubyMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
+import { buildEleanorMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { chartLevelPersonalityWords } from "../lib/data/chart/marketSentenceEngine.js";
 import { buildMarketImpactRadar } from "../lib/news/marketImpactRadar.js";
@@ -39,7 +39,7 @@ const SAFETY_ENVELOPE = {
 
 /**
  * Plain-English rendering of a chart-level personality (no internal tokens).
- * Uses the same words as Ruby's nearest-level line so the scanner chart's
+ * Uses the same words as Eleanor's nearest-level line so the scanner chart's
  * structure lines never contradict it: retest_pending means the level broke
  * AND price came back to retest it (observed), not a retest still awaited.
  */
@@ -78,7 +78,7 @@ router.get(
 
     const nowMs = Date.now();
     const [signal, chartState, radarResult, openPositions] = await Promise.all([
-      buildRubyMarketEdgeForUser(userId, { symbol, timeframe }).catch((err) => {
+      buildEleanorMarketEdgeForUser(userId, { symbol, timeframe }).catch((err) => {
         req.log.warn({ err }, "smart-layers signal build failed");
         return null;
       }),

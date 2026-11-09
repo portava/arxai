@@ -161,11 +161,11 @@ Trade ticket:
 Market Scanner:
 - Buy/Sell buttons should work without each user connecting MT5
 - scanner trade source remains MARKET_SCANNER
-- show Ruby’s Setup Reason
+- show Eleanor’s Setup Reason
 - route to master bridge according to bridge mode
 
-Ruby:
-- Ruby should explain:
+Eleanor:
+- Eleanor should explain:
   “This account is using the ARX master bridge. Your trade is tracked under your ARX virtual account.”
 
 PART 5 — POSITION ATTRIBUTION
@@ -320,12 +320,12 @@ Build tests for:
 8. Per-user max lot blocks oversized trade.
 9. Master account exposure limit blocks all users when reached.
 10. Market Scanner trade routes through master bridge in master mode.
-11. Ruby explains master bridge mode correctly.
+11. Eleanor explains master bridge mode correctly.
 12. MASTER_BRIDGE_LIVE_LOCKED blocks all live commands.
 13. MASTER_BRIDGE_LIVE_ENABLED is impossible unless compliance flag and live gates pass.
 14. Kill switch blocks all master live commands.
 15. Demo bridge remains unaffected.
-16. No bridge tokens, API keys, broker passwords, or secrets leak in UI/logs/Ruby memory.
+16. No bridge tokens, API keys, broker passwords, or secrets leak in UI/logs/Eleanor memory.
 
 Acceptance proof required:
 - One user with no personal MT5 connection can place a demo trade through MASTER_BRIDGE_DEMO.

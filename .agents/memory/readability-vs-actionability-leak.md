@@ -42,11 +42,11 @@ label, keeps `bias`. The bug recurs because the design treats direction as
 **Leaking surfaces (class C):** marketScanner `computeFinalRead`/L1012,
 aiBrain `analyzeCore`, opportunityMapService `hasLiveData`, symbolTruthSnapshot
 `verdict.bias`, `useSymbolTruth` cap, `ScannerHeaderSummary` L118,
-`RubyMarketReadCard` Bias chip L285 (+ `whyThisDirection` row), `ScalpSignalCard`
+`EleanorMarketReadCard` Bias chip L285 (+ `whyThisDirection` row), `ScalpSignalCard`
 direction L144, `chartStructure.quickTrend` (≥10-bar threshold).
 
 **Already honest (class A — copy these patterns):**
-`rubyDraftRead.neutralizeDirectionalFields`, `rubyChartContext` (withholds on
+`eleanorDraftRead.neutralizeDirectionalFields`, `eleanorChartContext` (withholds on
 non-VERIFIED basis), `BroadScanOpportunityMap` (gates everything on
 `row.hasLiveData` — safe *given a correct* `hasLiveData`),
 `analyzeChartStructure` (`<20` honest-insufficient), `useScannerReadGate`

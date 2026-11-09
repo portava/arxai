@@ -22,7 +22,7 @@ import { spawnSync } from "node:child_process";
 import { pool } from "@workspace/db";
 
 type Persona = "BrandNew" | "DemoTrader" | "PersonalMt5" | "SharedMaster" | "Admin"
-             | "TradingSafety" | "QueueConcurrency" | "Privacy" | "Ruby" | "Voice"
+             | "TradingSafety" | "QueueConcurrency" | "Privacy" | "Eleanor" | "Voice"
              | "Reconciliation" | "AuditExport" | "ProductionLockdown" | "CIGuards";
 
 interface SuiteSpec {
@@ -82,9 +82,9 @@ const SUITES: SuiteSpec[] = [
   // Audit + reconciliation + admin
   { name: "test:audit-log-center", personas: ["AuditExport", "Reconciliation", "Admin"] },
 
-  // Ruby
-  { name: "test:ruby-app-knowledge", personas: ["Ruby"] },
-  // test:ruby-voice-trading-guardrails — SKIPPED: pre-existing typecheck
+  // Eleanor
+  { name: "test:eleanor-app-knowledge", personas: ["Eleanor"] },
+  // test:eleanor-voice-trading-guardrails — SKIPPED: pre-existing typecheck
   //   regression. Tracked as outstanding fix. Run standalone if needed.
 ];
 
@@ -204,7 +204,7 @@ async function main() {
   // persona coverage matrix
   console.log("");
   console.log("Persona / category coverage:");
-  const personas: Persona[] = ["BrandNew","DemoTrader","PersonalMt5","SharedMaster","Admin","TradingSafety","QueueConcurrency","Privacy","Ruby","Voice","Reconciliation","AuditExport","ProductionLockdown","CIGuards"];
+  const personas: Persona[] = ["BrandNew","DemoTrader","PersonalMt5","SharedMaster","Admin","TradingSafety","QueueConcurrency","Privacy","Eleanor","Voice","Reconciliation","AuditExport","ProductionLockdown","CIGuards"];
   for (const p of personas) {
     const hit = results.filter((r) => r.personas.includes(p));
     const allPass = hit.length > 0 && hit.every((r) => r.status === "PASS");

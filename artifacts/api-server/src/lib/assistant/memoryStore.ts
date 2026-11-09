@@ -91,7 +91,7 @@ export async function getMemory(userId: number): Promise<AssistantMemorySnapshot
 }
 
 /**
- * Verified-access boundary for assistant memory. Ruby memory is per-user and
+ * Verified-access boundary for assistant memory. Eleanor memory is per-user and
  * MUST never be read on behalf of another user or an agent. This is an explicit
  * guard in front of {@link getMemory}: it asserts a positive numeric userId and
  * that the loaded row (if any) belongs to that user. On any mismatch it records

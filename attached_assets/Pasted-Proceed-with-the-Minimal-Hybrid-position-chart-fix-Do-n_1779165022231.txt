@@ -58,13 +58,13 @@ Fix the issues found in QA:
 7. Standardize the 6 audit/status codes:
    - POSITION_SELECTED
    - TRADE_DETAIL_OPENED
-   - RUBY_TRADE_ANALYSIS_REFRESHED
+   - ELEANOR_TRADE_ANALYSIS_REFRESHED
    - CLOSE_TRADE_REQUESTED
    - SLTP_EDIT_REQUESTED
    - SAFETY_GATE_BLOCKED
 
 8. Add buttons in the position side panel:
-   - Ask Ruby
+   - Ask Eleanor
    - Refresh analysis
    - View full chart
    - Modify SL/TP if permission allows
@@ -80,7 +80,7 @@ Fix the issues found in QA:
    - selected position opens beside chart
    - mini Position Chart Preview renders entry/current/SL/TP markers
    - trade detail shows orderType/openTime/riskAmount/R:R
-   - Ask Ruby uses cache
+   - Ask Eleanor uses cache
    - audit codes are emitted
    - permission gates block cross-user access
    - no live trade auto-fires
@@ -92,7 +92,7 @@ Acceptance proof:
 - selected existing position details render correctly
 - missing fields are present
 - audit codes are standardized
-- Ask Ruby + Refresh analysis work
+- Ask Eleanor + Refresh analysis work
 - cross-user access is blocked
 - all safety matrix tests still pass
 - arx_live_commands count remains unchanged

@@ -16,7 +16,7 @@ greps the **scrubbed** read-chart/panel HTTP response for the literal
   display booleans that ride alongside the scrubbed copy — `gated`,
   `canReadStructure`, `canShowLiveTradeSetup`, `liveSetupWithheld` — not the
   enum token in the text.
-- The shared `rubyStructuralReadService` returns the raw `readLayer` enum as a
+- The shared `eleanorStructuralReadService` returns the raw `readLayer` enum as a
   **separate top-level field** (not scrubbed); assert on that directly when you
   have the service return value. The blanking only bites when you only have the
   scrubbed `chartRead`/HTTP payload.

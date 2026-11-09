@@ -317,7 +317,7 @@ async function cleanup(): Promise<void> {
   }));
 
   // Child-row cleanup is DYNAMIC. Real browser QA (opening the trade modal,
-  // Ruby, navigating) writes rows into many per-user tables beyond the seed's
+  // Eleanor, navigating) writes rows into many per-user tables beyond the seed's
   // own inserts (e.g. user_one_click_settings). A hardcoded child list silently
   // rots, and the final `DELETE users` then fails on an unexpected FK. So we
   // discover EVERY public table that has a `user_id` column and delete the test

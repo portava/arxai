@@ -81,7 +81,7 @@ export * as systemIntegration from "./system-integration";
 export * as globalState from "./global-state";
 export * as handshake from "./handshake";
 export * as executionPreview from "./execution-preview";
-export * as rubyQuality from "./ruby-quality";
+export * as eleanorQuality from "./eleanor-quality";
 export * as timingBrain from "./timing-brain";
 export * as security from "./security";
 export * as derivContracts from "./deriv-contracts";

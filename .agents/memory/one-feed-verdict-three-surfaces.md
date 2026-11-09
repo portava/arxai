@@ -1,6 +1,6 @@
 ---
-name: One feed verdict across scanner/Ruby/floor
-description: there is ONE per-symbol freshness verdict feeding scanner, Ruby, and the synthetic-live floor; the non-obvious constraints when wiring a new surface to it.
+name: One feed verdict across scanner/Eleanor/floor
+description: there is ONE per-symbol freshness verdict feeding scanner, Eleanor, and the synthetic-live floor; the non-obvious constraints when wiring a new surface to it.
 ---
 
 There is exactly ONE per-symbol feed verdict (recent-tick + candle freshness → live / live-but-delayed / awaiting), and it reuses the existing candle-freshness classifier's thresholds.
@@ -14,4 +14,4 @@ There is exactly ONE per-symbol feed verdict (recent-tick + candle freshness →
 - After editing the OpenAPI spec + running codegen you MUST rebuild the composite libs (`pnpm run typecheck:libs`) before any consumer typecheck. The lib's emitted `dist/*.d.ts` is gitignored, so a stale build makes apps fail on freshly-added fields even though the committed generated source is correct.
 - The synthetic-live floor must require the *clean-live* verdict to pass; both live-delayed AND awaiting block it, at BOTH preflight and dispatch (two separate call sites — easy to tighten one and miss the other).
 
-**Verification gotcha:** an authenticated side-by-side scanner/Ruby screenshot is NOT capturable in this env — the app is behind a login wall (401) and the screenshot tool sends no cookies and cannot interact. Prove these surfaces with the scanner-truth-caps copy test + the synthetic-live-floor unit test instead.
+**Verification gotcha:** an authenticated side-by-side scanner/Eleanor screenshot is NOT capturable in this env — the app is behind a login wall (401) and the screenshot tool sends no cookies and cannot interact. Prove these surfaces with the scanner-truth-caps copy test + the synthetic-live-floor unit test instead.

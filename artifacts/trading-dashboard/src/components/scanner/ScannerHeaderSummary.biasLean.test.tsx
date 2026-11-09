@@ -14,12 +14,12 @@ function makeTruth(): ScannerTruth {
   return {
     strip: {
       data: { verdict: "Live", detail: "Live, confirmed candles." },
-      ruby: { detail: "" },
+      eleanor: { detail: "" },
       trading: { verdict: "Blocked", detail: "Trading is restricted on your account." },
     },
     candles: { lastClose: 33588.01, sourceTechnical: "test", count: 200, minRequired: 150, status: "CONFIRMED" },
     consolidated: {
-      rubyReadStatus: "LIMITED_READ",
+      eleanorReadStatus: "LIMITED_READ",
       scannerActionability: "WAIT_FOR_CONFIRMATION",
       userMessage: "",
       internalReasonCode: "",
@@ -45,8 +45,8 @@ vi.mock("@/hooks/useSymbolTruth", () => ({
 vi.mock("@/hooks/useTradingMode", () => ({
   useTradingMode: () => ({ shouldShowAdminDiagnostics: false }),
 }));
-vi.mock("@/components/scanner/rubyReadStore", () => ({
-  useRubyReadStore: () => ({ get: () => null, set: () => {} }),
+vi.mock("@/components/scanner/eleanorReadStore", () => ({
+  useEleanorReadStore: () => ({ get: () => null, set: () => {} }),
 }));
 
 import { ScannerHeaderSummary } from "./ScannerHeaderSummary";

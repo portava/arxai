@@ -1,6 +1,6 @@
 // The one LLM gateway for the API (Tier 1 Platform Safety).
 //
-// Every model call goes through here: Ruby chat (streaming with tools), Ruby
+// Every model call goes through here: Eleanor chat (streaming with tools), Eleanor
 // voice, the memory summariser, the trade coach, and the Backend Fix Agent's
 // provider factory. Before this, three files imported the OpenAI client
 // directly, each with its own timeout and error handling. One seam means one
@@ -67,7 +67,7 @@ export interface ToolChatStreamChunk {
   }>;
 }
 
-/** Ruby chat: a streaming completion with tool definitions. The caller consumes the stream. */
+/** Eleanor chat: a streaming completion with tool definitions. The caller consumes the stream. */
 export async function streamToolChat(input: {
   model: string;
   messages: unknown[];
@@ -91,7 +91,7 @@ export async function streamToolChat(input: {
   return stream as unknown as AsyncIterable<ToolChatStreamChunk>;
 }
 
-/** Ruby voice: the audio helpers (format conversion, voice chat stream). */
+/** Eleanor voice: the audio helpers (format conversion, voice chat stream). */
 export async function voiceAudio() {
   return import("@workspace/integrations-openai-ai-server/audio");
 }

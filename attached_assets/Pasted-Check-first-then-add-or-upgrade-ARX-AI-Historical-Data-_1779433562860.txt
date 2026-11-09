@@ -5,7 +5,7 @@ Only work on:
 1. Historical market data services.
 2. Historical data storage/cache if needed.
 3. Scanner historical-analysis integration.
-4. Ruby/AI historical-analysis context.
+4. Eleanor/AI historical-analysis context.
 5. Trade setup/backtest summary shown before trade ticket decisions.
 6. Backend read-only endpoints required for historical analysis.
 
@@ -21,7 +21,7 @@ Do not:
 - Refactor unrelated backend systems.
 
 GOAL:
-Every major scanner, Ruby, and trade-decision workflow should use historical market data before giving a trade read.
+Every major scanner, Eleanor, and trade-decision workflow should use historical market data before giving a trade read.
 
 If ARX AI is looking at a market now, it should also check what the chart did historically:
 - this time yesterday
@@ -46,7 +46,7 @@ Before building anything, inspect the current app for existing:
 - Finnhub/other market data provider usage
 - cached candle database/table
 - scanner scoring engine
-- Ruby market context builder
+- Eleanor market context builder
 - backtest service
 - strategy simulation code
 - indicator calculation utilities
@@ -104,7 +104,7 @@ Support these timeframes if data is available:
 - W1
 - MN1
 
-Scanner and Ruby should at minimum use:
+Scanner and Eleanor should at minimum use:
 - selected active timeframe
 - one lower timeframe when available
 - one higher timeframe when available
@@ -144,7 +144,7 @@ If historical sample is weak, say so.
 PHASE 5 — BACKTEST ENGINE
 Create or upgrade a lightweight read-only backtest engine.
 
-Before scanner/Ruby recommends or rates a possible trade setup, run a quick historical test.
+Before scanner/Eleanor recommends or rates a possible trade setup, run a quick historical test.
 
 Backtest should support:
 - symbol
@@ -207,8 +207,8 @@ Scanner ranking should consider:
 
 Do not hide current scanner logic. Add historical scoring into the decision stack.
 
-PHASE 7 — RUBY / AI INTEGRATION
-Ruby must use historical data in all trading-related answers.
+PHASE 7 — ELEANOR / AI INTEGRATION
+Eleanor must use historical data in all trading-related answers.
 
 When user asks:
 - “Should I buy?”
@@ -222,7 +222,7 @@ When user asks:
 - “Check the scanner”
 - “What should I trade now?”
 
-Ruby should receive a structured HistoricalDecisionPack with:
+Eleanor should receive a structured HistoricalDecisionPack with:
 - current market snapshot
 - multi-timeframe trend
 - same-time yesterday behavior
@@ -237,13 +237,13 @@ Ruby should receive a structured HistoricalDecisionPack with:
 - confidence/sample size
 - unavailable data warnings
 
-Ruby should explain it cleanly:
+Eleanor should explain it cleanly:
 - “Historically, this setup has worked better during London session.”
 - “Same-time comparisons are mixed, so confidence is lower.”
 - “The last 30 similar pullbacks reached target 58% of the time.”
 - “History is unavailable for this symbol/timeframe, so I’m relying on current structure only.”
 
-Ruby must not pretend data exists.
+Eleanor must not pretend data exists.
 
 PHASE 8 — TRADE TICKET PRE-CHECK
 Before a BUY or SELL trade ticket is opened or confirmed, show a compact “Historical Check” panel.
@@ -278,7 +278,7 @@ PHASE 10 — UI REQUIREMENTS
 Add clean, compact UI where needed:
 - Scanner card: “Historical Bias”
 - Scanner card: “Backtest”
-- Ruby read: “Historical Context”
+- Eleanor read: “Historical Context”
 - Trade ticket: “Historical Check”
 - Symbol details: “Past Behavior”
 
@@ -298,7 +298,7 @@ If missing, add minimal read-only endpoints such as:
 - POST /api/market/historical-analysis
 - POST /api/market/backtest
 - GET /api/scanner/results-with-history
-- POST /api/ruby/historical-decision-pack
+- POST /api/eleanor/historical-decision-pack
 
 Endpoint rules:
 - read-only only
@@ -314,7 +314,7 @@ Do not finish until:
 1. Existing historical/backtest code is inspected first.
 2. No duplicate historical system is created if one already exists.
 3. Scanner uses historical data when available.
-4. Ruby uses historical data for trading decisions/questions.
+4. Eleanor uses historical data for trading decisions/questions.
 5. Trade ticket flow shows a historical check before decision confirmation.
 6. Same-time comparisons work:
    - yesterday

@@ -11,7 +11,7 @@ The app has the Economic Calendar UI, but no connected calendar provider/feed is
 - News Risk
 - Chart news radar / impact radar
 - Scanner trade-readiness context
-- Ruby risk explanations
+- Eleanor risk explanations
 
 Goal:
 Wire a real economic calendar provider into ARX and make all calendar surfaces honestly show:
@@ -27,7 +27,7 @@ Scope:
    - Economic Calendar page
    - News Risk page
    - chart Impact Radar
-   - Scanner/Ruby event-risk hooks
+   - Scanner/Eleanor event-risk hooks
    - backend calendar endpoints/services
    - env vars/API keys for calendar providers
 
@@ -96,10 +96,10 @@ Preferred providers:
    - show "No relevant events" only when provider is connected and query returns zero events
    - do not confuse missing provider with no events
 
-   Scanner/Ruby:
+   Scanner/Eleanor:
    - add event-risk note if high-impact event is near
    - do not block trades automatically unless existing safety rules say so
-   - Ruby should say when calendar data is unavailable instead of pretending no news risk exists
+   - Eleanor should say when calendar data is unavailable instead of pretending no news risk exists
 
 7. Honesty states:
    Use clear statuses:
@@ -123,7 +123,7 @@ Preferred providers:
    - connected provider with empty result shows "No relevant events"
    - provider error shows degraded/error state, not empty
    - chart impact radar receives selected-symbol events
-   - Ruby/Scanner risk copy says calendar unavailable when provider is missing
+   - Eleanor/Scanner risk copy says calendar unavailable when provider is missing
 
 9. Admin diagnostics:
    Add/check Admin → Market Data diagnostics section:

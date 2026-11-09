@@ -11,7 +11,7 @@ Important context from prior passes:
 - Display-freshness unification remains in held ledger.
 - Refresh truth / wording remains in held ledger.
 - Economic calendar / news risk / market scanner truth still need final proof.
-- Do not call the assistant Ruby in report text except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+- Do not call the assistant Eleanor in report text except when quoting legacy code/file names. Report user-facing Eleanor as Eleanor naming drift.
 
 Required proof areas:
 
@@ -178,7 +178,7 @@ Prove:
 - whether Eleanor refuses to overstate stale/unavailable data
 - whether Eleanor distinguishes analysis from execution
 - whether Eleanor recommendations include data age/source when needed
-- whether legacy Ruby copy is user-facing naming drift
+- whether legacy Eleanor copy is user-facing naming drift
 
 10. Refresh / auto-refresh truth
 Audit refresh buttons, auto-refresh hooks, polling, query invalidation.
@@ -226,7 +226,7 @@ Find tests/checks/scripts that would catch:
 - market-closed execution allowed without warning
 - watchlist stale quote shown as live
 - chart/scanner source drift
-- user-facing Ruby naming drift in market explanation cards
+- user-facing Eleanor naming drift in market explanation cards
 
 Classify coverage:
 - strong
@@ -273,7 +273,7 @@ Important:
 - Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
 - Give exact file:line proof for every claim.
 - If a claim cannot be proven, mark it Class 5 instead of assuming.
-- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+- Do not call the assistant Eleanor in the report except when quoting legacy code/file names. Report user-facing Eleanor as Eleanor naming drift.
 
 After Pass 14:
 Proceed to Pass 15 — final consolidation and fix-task plan. Fold the full held ledger from Passes 4–14 into a prioritized repair sequence with task order, blast radius, tests, CI guards, and rollback notes.

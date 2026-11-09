@@ -1,5 +1,5 @@
 // AICS-2 (2026-11-04): the closed-trade ledger shared by the Performance
-// Calendar route and Ruby's performance tools picks the same book the
+// Calendar route and Eleanor's performance tools picks the same book the
 // calendar does — LIVE_SHARED withheld, LIVE envelope → live trades,
 // otherwise paper trades — and labels it.
 import { test, mock } from "node:test";

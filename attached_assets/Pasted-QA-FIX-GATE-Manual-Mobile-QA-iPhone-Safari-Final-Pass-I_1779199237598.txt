@@ -13,15 +13,15 @@ Verify:
 5. Returning users land on their private dashboard.
 6. No fake first-load data appears.
 7. Bottom nav/header/sidebar do not block content.
-8. Ruby widget is visible but does not block important controls.
-9. Ruby chat input works with iOS keyboard.
-10. Ruby voice shows tap-to-start when iOS requires it.
+8. Eleanor widget is visible but does not block important controls.
+9. Eleanor chat input works with iOS keyboard.
+10. Eleanor voice shows tap-to-start when iOS requires it.
 11. Microphone permission denied state is clean.
-12. Ruby voice auto-listen works after permission where supported.
-13. Ruby speech response does not feed into mic.
+12. Eleanor voice auto-listen works after permission where supported.
+13. Eleanor speech response does not feed into mic.
 14. Voice trade commands require confirmation.
 15. Scanner direct symbol search works on mobile.
-16. Ruby market explanation panel fits on mobile.
+16. Eleanor market explanation panel fits on mobile.
 17. Trade ticket fields are usable on mobile.
 18. Confirmation modal fits on mobile.
 19. One-click defaults OFF on mobile.

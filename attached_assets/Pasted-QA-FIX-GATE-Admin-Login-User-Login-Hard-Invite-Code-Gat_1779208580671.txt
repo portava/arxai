@@ -31,7 +31,7 @@ Verify:
 20. User login still works.
 21. Admin login/admin route protection still works.
 22. Logout clears frontend query/client user cache.
-23. Logout/login switch does not leak previous user dashboard, scanner, Ruby memory, notifications, trades, or account state.
+23. Logout/login switch does not leak previous user dashboard, scanner, Eleanor memory, notifications, trades, or account state.
 24. No hardcoded admin credentials are present in frontend code.
 25. requireAdmin output remains production-safe.
 26. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, invite hashes, or sensitive bridge payloads are exposed.

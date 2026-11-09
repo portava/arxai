@@ -1,7 +1,7 @@
 /**
  * AnimatedArxAssistantIcon
  *
- * Premium animated icon for the floating Ruby assistant trigger.
+ * Premium animated icon for the floating Eleanor assistant trigger.
  * Pure CSS + SVG — no external animation libraries, no network calls.
  *
  * Motion states (drives shape/animation):

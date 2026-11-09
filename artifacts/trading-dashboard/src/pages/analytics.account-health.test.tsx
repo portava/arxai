@@ -18,7 +18,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useGetMeSharedAccountPositions: () => ({ data: posData }),
 }));
 vi.mock("wouter", () => ({ useLocation: () => ["/analytics", () => undefined] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: Analytics } = await import("./analytics");
 

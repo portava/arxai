@@ -1,12 +1,12 @@
 You are now running a deep, end-to-end, full-scale ARX AI system audit, wiring verification, scanner/feed/candle-history audit, floating-error audit, repair, optimization, and grading pass.
 
-This is not a normal QA pass. This must be a complete ecosystem audit touching every frontend page, route, menu item, tab, button, form, modal, chart interaction, scanner function, Ruby AI function, admin function, user function, backend endpoint, service, hook, database model/table, realtime stream, MT5 bridge function, market data function, candle history function, risk/governance function, and live trade function.
+This is not a normal QA pass. This must be a complete ecosystem audit touching every frontend page, route, menu item, tab, button, form, modal, chart interaction, scanner function, Eleanor AI function, admin function, user function, backend endpoint, service, hook, database model/table, realtime stream, MT5 bridge function, market data function, candle history function, risk/governance function, and live trade function.
 
 The goal is to catch 99% of bugs, wasted features, dead buttons, unused pages, wrong data, fake passes, broken wiring, stale information, broken ecosystem connections, duplicate features, dormant code, misleading UI, scanner/feed failures, candle-history failures, and floating errors around the app.
 
 IMPORTANT PRODUCT CONTEXT:
 This is ARX AI: Analyze. Risk. eXecute.
-Ruby is the in-app AI assistant. All AI/user-facing analysis should appear from Ruby, not raw backend wording.
+Eleanor is the in-app AI assistant. All AI/user-facing analysis should appear from Eleanor, not raw backend wording.
 This app is being prepared for live trading operation.
 Live trade testing must be included as part of the audit using the existing approved live test pathway and approved user/operator account only. Do not add new “block live” behavior. Do not convert this into demo-only testing. Live trading paths must be honestly tested, but every live test must use the smallest safe micro lot available and must produce a full audit trail showing exact command, route, MT5 bridge status, EA result, UI update, and final position/account state.
 Do not expose internal function names, backend terms, raw route names, stack traces, or developer language to regular users.
@@ -135,11 +135,11 @@ Inventory every discovered item under these sections:
 * source/freshness metadata
 * chart consumers
 * scanner consumers
-* Ruby consumers
+* Eleanor consumers
 * backend endpoints serving candles/quotes
 * any old/demo/mock/composite candle paths
 
-10. Ruby AI Functions
+10. Eleanor AI Functions
 
 * market analysis
 * scanner explanation
@@ -149,8 +149,8 @@ Inventory every discovered item under these sections:
 * risk explanation
 * chat memory
 * tool/data access
-* whether Ruby is grounded in current selected symbol and live/stale feed truth
-* whether Ruby exposes internal/backend wording to users
+* whether Eleanor is grounded in current selected symbol and live/stale feed truth
+* whether Eleanor exposes internal/backend wording to users
 
 11. Trading Functions
 
@@ -158,7 +158,7 @@ Inventory every discovered item under these sections:
 * manual sell
 * one-click scalp
 * multi-trade scalp
-* Ruby-commanded trade
+* Eleanor-commanded trade
 * scanner trade
 * chart trade
 * close trade
@@ -185,12 +185,12 @@ C. Open Trades Flow
 MT5 open positions → backend live positions endpoint/SSE → Open Trades UI → dashboard totals → close/modify actions
 
 D. Scanner Flow
-symbol source → feed availability → scanner result → selected symbol → chart → Ruby explanation → trade buttons → live order path
+symbol source → feed availability → scanner result → selected symbol → chart → Eleanor explanation → trade buttons → live order path
 
 E. Chart Flow
 selected symbol → candle endpoint → source/freshness check → quote alignment → historical candle backfill/pagination → render candles or honest unavailable state → draggable SL/TP/order tools
 
-F. Ruby Flow
+F. Eleanor Flow
 selected market/user request → data gathering → chart/history/news/risk context → plain-English explanation → entry/SL/TP/reward/risk → optional trade command
 
 G. Live Trade Flow
@@ -203,7 +203,7 @@ I. Realtime Flow
 MT5 updates → backend snapshot → SSE/polling/websocket → dashboard/open trades/scanner/chart updates
 
 J. Market Data Flow
-symbol selection → symbol mapping → provider selection → quote fetch → candle fetch → historical backfill → cache/storage → freshness validation → scanner/chart/Ruby consumers → UI freshness state
+symbol selection → symbol mapping → provider selection → quote fetch → candle fetch → historical backfill → cache/storage → freshness validation → scanner/chart/Eleanor consumers → UI freshness state
 
 K. Floating Error Flow
 frontend error source → visible UI error/toast/banner/card → backend/API/log source → root cause → correct user-safe message → fix/retest
@@ -221,11 +221,11 @@ For each chain, identify:
 
 PHASE 2B — FULL WIRING AUDIT
 
-Wiring is one of the most important parts of this audit. Do not only test whether a page, button, route, or backend function exists. Prove that every feature is correctly wired from frontend action → state update → backend request → backend service → database/MT5/feed/Ruby truth source → normalized response → UI update → realtime refresh → history/logging where applicable.
+Wiring is one of the most important parts of this audit. Do not only test whether a page, button, route, or backend function exists. Prove that every feature is correctly wired from frontend action → state update → backend request → backend service → database/MT5/feed/Eleanor truth source → normalized response → UI update → realtime refresh → history/logging where applicable.
 
 For every feature, document the complete wiring chain.
 
-For each UI control, page, tab, menu item, Ruby command, scanner action, chart action, admin toggle, live trade button, settings control, candle request, feed request, and error message, verify:
+For each UI control, page, tab, menu item, Eleanor command, scanner action, chart action, admin toggle, live trade button, settings control, candle request, feed request, and error message, verify:
 
 1. Frontend Wiring
 
@@ -276,12 +276,12 @@ For each UI control, page, tab, menu item, Ruby command, scanner action, chart a
 * Open Trades updates from MT5 truth.
 * Dashboard updates from the same normalized account snapshot.
 * Trade history/journal updates correctly.
-* Ruby post-trade explanation uses the real result, not assumed success.
+* Eleanor post-trade explanation uses the real result, not assumed success.
 
 6. Scanner Wiring
     Verify:
 
-* Scanner selected symbol is the same symbol used by chart, Ruby, trade panel, and scanner explanation.
+* Scanner selected symbol is the same symbol used by chart, Eleanor, trade panel, and scanner explanation.
 * Broad Scan results use the correct data source.
 * Focus mode uses the correct focused symbol.
 * Search result selection updates every dependent component.
@@ -296,7 +296,7 @@ For each UI control, page, tab, menu item, Ruby command, scanner action, chart a
 * Chart uses the selected symbol and timeframe.
 * Candle endpoint, quote endpoint, provider, and freshness logic agree.
 * Candle history supports backwards scrolling/pagination/backfill beyond the current visible window.
-* Ruby chart analysis uses the same chart data displayed to the user.
+* Eleanor chart analysis uses the same chart data displayed to the user.
 * Entry/SL/TP drawings match the trade ticket values.
 * Dragging SL/TP updates the trade ticket.
 * Trade ticket updates chart overlays.
@@ -304,16 +304,16 @@ For each UI control, page, tab, menu item, Ruby command, scanner action, chart a
 * Stale/unavailable feed state blocks misleading live rendering.
 * Chart does not silently fall back to fake, composite, demo, or wrong-symbol candles.
 
-8. Ruby Wiring
+8. Eleanor Wiring
     Verify:
 
-* Ruby receives the correct user message, selected symbol, timeframe, scanner context, chart context, account context, risk context, feed freshness, candle history depth, and trade state.
-* Ruby tool calls are connected to real app services, not placeholders.
-* Ruby can explain why it is taking or avoiding a trade using the same truth sources the app displays.
-* Ruby can draw or request chart overlays for entry, SL, and TP before execution.
-* Ruby-commanded trades use the exact same execution path as manual/scanner/chart trades.
-* Ruby post-trade explanations are based on real MT5/EA result.
-* Ruby never fabricates a pass, fill, rejection, feed status, candle status, or market condition.
+* Eleanor receives the correct user message, selected symbol, timeframe, scanner context, chart context, account context, risk context, feed freshness, candle history depth, and trade state.
+* Eleanor tool calls are connected to real app services, not placeholders.
+* Eleanor can explain why it is taking or avoiding a trade using the same truth sources the app displays.
+* Eleanor can draw or request chart overlays for entry, SL, and TP before execution.
+* Eleanor-commanded trades use the exact same execution path as manual/scanner/chart trades.
+* Eleanor post-trade explanations are based on real MT5/EA result.
+* Eleanor never fabricates a pass, fill, rejection, feed status, candle status, or market condition.
 
 9. Admin/User Wiring
     Verify:
@@ -433,10 +433,10 @@ Every live MT5 position must appear in UI with correct symbol, direction, lot, e
 * historical lookback depth
 * timeframe selected
 * provider used
-* Ruby/scanner explanation context
+* Eleanor/scanner explanation context
 
 Pass condition:
-Scanner must not rank or recommend a market using missing, stale, mismatched, incomplete, or wrong-symbol data without clearly labeling it. Scanner results must match the selected market and must not fabricate confidence. Scanner result, chart, Ruby explanation, and trade ticket must agree on the same symbol, timeframe, direction, price, feed state, and data freshness.
+Scanner must not rank or recommend a market using missing, stale, mismatched, incomplete, or wrong-symbol data without clearly labeling it. Scanner results must match the selected market and must not fabricate confidence. Scanner result, chart, Eleanor explanation, and trade ticket must agree on the same symbol, timeframe, direction, price, feed state, and data freshness.
 
 4. Chart Truth
     Source of truth:
@@ -515,7 +515,7 @@ For each symbol/timeframe record:
 Pass condition:
 Every symbol must have a clearly identified feed source. The app must not silently mix unrelated providers or map the wrong symbol. If Polygon is configured, verify whether ARX actually uses Polygon for the intended symbols and whether the new key is loaded. If TwelveData is present, verify what it feeds and whether it is still used. If Deriv volatility symbols require a different feed, verify whether that feed exists and is wired. Feed errors must be shown honestly and not hidden behind fake candles or fake scanner results.
 
-7. Ruby Truth
+7. Eleanor Truth
     Source of truth:
 
 * selected symbol
@@ -527,7 +527,7 @@ Every symbol must have a clearly identified feed source. The app must not silent
 * feed/candle freshness
 
 Pass condition:
-Ruby must analyze the correct market, use available current data, disclose stale/unavailable data, explain entry/SL/TP/risk/reward/confidence, and never expose backend function names or developer terms to normal users.
+Eleanor must analyze the correct market, use available current data, disclose stale/unavailable data, explain entry/SL/TP/risk/reward/confidence, and never expose backend function names or developer terms to normal users.
 
 8. Live Trade Truth
     Source of truth:
@@ -558,7 +558,7 @@ Admin-only features must be hidden from regular users and blocked by backend if 
 * actual request payload
 * actual backend route
 * actual service call
-* actual database/feed/MT5/Ruby truth source
+* actual database/feed/MT5/Eleanor truth source
 * actual normalized response
 * actual UI state update
 * actual realtime refresh
@@ -602,8 +602,8 @@ Suggested thresholds:
 * scanner symbol switch visible response: under 500ms
 * chart first render: under 1.5 seconds when feed available
 * candle backfill response: under 1.5 seconds for normal range, with honest loading state if longer
-* Ruby typing indicator: under 150ms
-* Ruby first response activity: under 1 second when possible
+* Eleanor typing indicator: under 150ms
+* Eleanor first response activity: under 1 second when possible
 
 PHASE 4 — AUTOMATED AND MANUAL TEST MATRIX
 
@@ -681,7 +681,7 @@ Check:
 * auth errors
 * permission errors
 * scanner/chart feed errors
-* Ruby errors
+* Eleanor errors
 * MT5 bridge errors
 
 For each error record:
@@ -732,7 +732,7 @@ E. Open Trades Tests
 
 F. SPECIAL SCANNER SYSTEM AUDIT
 
-Scanner is a priority system. Do not treat it as just a visual page. Audit it as a decision engine, feed consumer, chart coordinator, Ruby context provider, and trade-entry surface.
+Scanner is a priority system. Do not treat it as just a visual page. Audit it as a decision engine, feed consumer, chart coordinator, Eleanor context provider, and trade-entry surface.
 
 Scanner inventory:
 
@@ -765,10 +765,10 @@ Scanner tests:
 * selected market highlights correctly
 * selected symbol updates scanner header
 * selected symbol updates chart
-* selected symbol updates Ruby explanation
+* selected symbol updates Eleanor explanation
 * selected symbol updates trade ticket
 * selected symbol updates buy/sell action
-* changing timeframe updates scanner/chart/Ruby consistently
+* changing timeframe updates scanner/chart/Eleanor consistently
 * scanner result uses actual feed/candle/quote data
 * scanner confidence is based on real computed inputs
 * scanner does not use stale/missing feed as live
@@ -801,7 +801,7 @@ For every scanner-tested symbol/timeframe, record:
 * symbol sent to backend
 * symbol used by scanner service
 * symbol used by chart
-* symbol used by Ruby
+* symbol used by Eleanor
 * symbol used by trade ticket
 * quote source
 * candle source
@@ -822,7 +822,7 @@ Give scanner sub-scores:
 * Scanner Data Accuracy: __/100
 * Scanner Feed Freshness: __/100
 * Scanner Candle History Use: __/100
-* Scanner Ruby Integration: __/100
+* Scanner Eleanor Integration: __/100
 * Scanner Trade Execution Path: __/100
 * Scanner Performance: __/100
 * Scanner Overall: __/100
@@ -838,7 +838,7 @@ Find:
 * where candle requests originate
 * chart candle endpoint
 * scanner candle endpoint if separate
-* Ruby candle/history data access
+* Eleanor candle/history data access
 * provider adapters
 * MT5 history import/use
 * Polygon/TwelveData/Deriv adapters if present
@@ -893,7 +893,7 @@ For every symbol/timeframe test:
 * confirm whether backend is called for older candles
 * confirm whether UI appends/prepends correctly
 * confirm whether scanner can access the same history
-* confirm whether Ruby can access the same history
+* confirm whether Eleanor can access the same history
 * classify as PASS / LIMITED_BY_PROVIDER / BROKEN_BACKFILL / BROKEN_FRONTEND_SCROLL / BROKEN_BACKEND_LIMIT / BROKEN_CACHE / WRONG_SYMBOL / WRONG_TIMEFRAME / STALE
 
 Required pass behavior:
@@ -901,7 +901,7 @@ Required pass behavior:
 * If older candles are available, chart must load them when user scrolls back.
 * If older candles are not available, UI must clearly say the provider/source only has limited history.
 * Scanner must not claim it used deep history if only shallow history was available.
-* Ruby must not claim deep historical analysis unless that history was actually retrieved.
+* Eleanor must not claim deep historical analysis unless that history was actually retrieved.
 * Do not use fake generated candles to fill missing history.
 * Do not silently cap at six months unless that is a documented provider limit and the UI explains it.
 
@@ -909,7 +909,7 @@ Fix requirements:
 
 * Remove accidental frontend/backend hardcoded shallow limits.
 * Add or repair candle pagination/backfill if provider supports it.
-* Ensure scanner, chart, and Ruby use a shared candle-history service or at least a shared truth contract.
+* Ensure scanner, chart, and Eleanor use a shared candle-history service or at least a shared truth contract.
 * Ensure candle responses include source, freshness, oldest timestamp, newest timestamp, count, requested range, returned range, limitedByProvider, pagination cursor, and stale status.
 * Ensure chart shows honest loading, unavailable, stale, and limited-history states.
 * Ensure user can scroll back as far as available data allows.
@@ -932,7 +932,7 @@ Find:
 * whether Deriv volatility symbols have a real feed source
 * whether MT5 is being used as quote/history source
 * whether any mock/demo/composite feed remains in active user flow
-* whether scanner, chart, Ruby, and dashboard use consistent feed truth
+* whether scanner, chart, Eleanor, and dashboard use consistent feed truth
 
 For each provider:
 
@@ -954,7 +954,7 @@ For each symbol group:
 * provider used for historical data
 * provider used by scanner
 * provider used by chart
-* provider used by Ruby
+* provider used by Eleanor
 * provider used by trade execution if relevant
 * fallback provider
 * freshness threshold
@@ -979,7 +979,7 @@ I. Chart Tests
 * quote/candle mismatch detection
 * draggable order tools
 * entry/SL/TP preview drawing
-* Ruby can draw proposed entry/SL/TP before trade
+* Eleanor can draw proposed entry/SL/TP before trade
 * trade menu opens
 * chart does not disappear on symbol switch
 * chart does not render wrong market
@@ -989,25 +989,25 @@ I. Chart Tests
 * chart scroll-back loads older candles if available
 * chart clearly shows limited-history state if provider is limited
 
-J. Ruby AI Tests
+J. Eleanor AI Tests
 
-* Ruby typing indicator appears immediately with animated dots
-* Ruby answers as Ruby
+* Eleanor typing indicator appears immediately with animated dots
+* Eleanor answers as Eleanor
 * no backend/internal names exposed
 * selected market explanation is correct
 * scanner explanation is correct
 * chart explanation is correct
-* Ruby gives plain-English and technical breakdown
-* Ruby states entry, stop loss, take profit, planned loss, planned gain, confidence, and invalidation before any trade recommendation
-* Ruby explains what happened after trade
-* Ruby admits stale/unavailable data
-* Ruby does not over-paste raw research
-* Ruby response speed
-* Ruby memory/chat persistence if implemented
-* Ruby can use chart tools to draw entry/SL/TP preview before trade
-* Ruby can access all intended trading tools without inventing unavailable ones
-* Ruby-commanded trades use the exact same execution wiring as manual/scanner/chart trades
-* Ruby does not claim candle history depth that was not actually retrieved
+* Eleanor gives plain-English and technical breakdown
+* Eleanor states entry, stop loss, take profit, planned loss, planned gain, confidence, and invalidation before any trade recommendation
+* Eleanor explains what happened after trade
+* Eleanor admits stale/unavailable data
+* Eleanor does not over-paste raw research
+* Eleanor response speed
+* Eleanor memory/chat persistence if implemented
+* Eleanor can use chart tools to draw entry/SL/TP preview before trade
+* Eleanor can access all intended trading tools without inventing unavailable ones
+* Eleanor-commanded trades use the exact same execution wiring as manual/scanner/chart trades
+* Eleanor does not claim candle history depth that was not actually retrieved
 
 K. Live Trading Tests
 Test every live trade path using the smallest safe live test size and approved user/operator account only.
@@ -1019,7 +1019,7 @@ Paths to test:
 * scanner Buy
 * scanner Sell
 * chart Buy/Sell
-* Ruby-commanded trade
+* Eleanor-commanded trade
 * one-click scalp
 * multi-trade scalp if implemented
 * close trade
@@ -1098,7 +1098,7 @@ N. Settings Tests
 * trading mode settings
 * governance settings
 * voice settings
-* Ruby settings
+* Eleanor settings
 * bridge settings
 * feed/provider settings if present
 * candle/history settings if present
@@ -1109,7 +1109,7 @@ N. Settings Tests
 
 O. Voice Tests
 
-* Ruby voice setting
+* Eleanor voice setting
 * default voice Bella if still intended
 * auto-play response if still implemented
 * no delayed voice minutes later
@@ -1157,8 +1157,8 @@ R. History/Journal Tests
 * rejected trades recorded or visibly reported
 * closed trades recorded
 * P/L recorded accurately
-* Ruby post-trade explanation stored if intended
-* trade source recorded: scanner/chart/Ruby/manual/scalp
+* Eleanor post-trade explanation stored if intended
+* trade source recorded: scanner/chart/Eleanor/manual/scalp
 * history wiring reads from actual trade lifecycle events, not guessed UI status
 
 S. Performance Tests
@@ -1179,9 +1179,9 @@ Measure:
 * candle initial load
 * candle scroll-back/backfill load
 * feed health check
-* Ruby typing indicator start
-* Ruby first response
-* Ruby full response
+* Eleanor typing indicator start
+* Eleanor first response
+* Eleanor full response
 * trade button click to backend
 * backend to command queue
 * command queue to MT5/EA result
@@ -1253,12 +1253,12 @@ Rules:
 8. Fix the root cause, not the symptom.
 9. After each fix, rerun the failed test and connected ecosystem tests.
 10. If a fix risks breaking another system, choose a safer adapter/wrapper approach instead.
-11. Preserve routes, hooks, services, state stores, permissions, MT5 bridge paths, scanner paths, Ruby paths, realtime update paths, feed paths, and candle-history paths unless you prove they are broken and replace them with a verified equivalent.
+11. Preserve routes, hooks, services, state stores, permissions, MT5 bridge paths, scanner paths, Eleanor paths, realtime update paths, feed paths, and candle-history paths unless you prove they are broken and replace them with a verified equivalent.
 12. Do not bypass existing wiring to make a test pass. If existing wiring is wrong, repair the chain properly.
 13. If a UI feature is not wired, either wire it fully, hide it, or convert it into a truthful empty state.
 14. If a backend function is not involved with the ecosystem, document it and classify it as dormant, future-use, duplicate, or remove candidate.
 15. Every fix must include a retest showing the full wiring chain works.
-16. For scanner/feed/candle fixes, do not make chart, Ruby, and scanner use separate conflicting data truth. Prefer one normalized market data truth contract.
+16. For scanner/feed/candle fixes, do not make chart, Eleanor, and scanner use separate conflicting data truth. Prefer one normalized market data truth contract.
 17. For floating errors, do not simply hide the error unless it is redundant and the underlying root cause is fixed or represented by a better user-safe state.
 18. For candle history, do not generate fake candles to cover missing data. Fix retrieval/backfill/pagination or show honest provider limitation.
 
@@ -1287,14 +1287,14 @@ Grade these:
 * Scanner Data Accuracy
 * Scanner Feed Freshness
 * Scanner Candle History Use
-* Scanner Ruby Integration
+* Scanner Eleanor Integration
 * Scanner Trade Execution Path
 * Scanner Performance
 * Scanner Overall
 * Chart
 * Candle History
 * Feed System
-* Ruby AI
+* Eleanor AI
 * Risk/Governance
 * Admin Controls
 * User Permissions
@@ -1319,7 +1319,7 @@ For each grade include:
 * remaining risks
 * next recommended upgrade
 
-Wiring Integrity must carry extra weight in the final overall score. If Wiring Integrity is below 85/100, the app cannot receive an overall grade higher than B, even if the UI looks good. If Live Trade Execution is below 90/100, the app cannot be considered live-production ready. If Data Accuracy is below 90/100, the app cannot be considered trustworthy. If Scanner Overall is below 90/100, the app cannot be considered decision-ready. If Candle History is below 85/100, scanner and Ruby must not claim deep historical analysis. If Feed System is below 90/100, scanner/chart/Ruby must show honest feed limitation states.
+Wiring Integrity must carry extra weight in the final overall score. If Wiring Integrity is below 85/100, the app cannot receive an overall grade higher than B, even if the UI looks good. If Live Trade Execution is below 90/100, the app cannot be considered live-production ready. If Data Accuracy is below 90/100, the app cannot be considered trustworthy. If Scanner Overall is below 90/100, the app cannot be considered decision-ready. If Candle History is below 85/100, scanner and Eleanor must not claim deep historical analysis. If Feed System is below 90/100, scanner/chart/Eleanor must show honest feed limitation states.
 
 PHASE 7 — FINAL REPORT FORMAT
 
@@ -1350,7 +1350,7 @@ Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
 * MT5 functions
 * market data/feed functions
 * candle history functions
-* Ruby functions
+* Eleanor functions
 * trading functions
 
 3. Ecosystem Map
@@ -1360,7 +1360,7 @@ Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
 * open trades flow
 * scanner flow
 * chart flow
-* Ruby flow
+* Eleanor flow
 * live trade flow
 * admin/user flow
 * realtime flow
@@ -1385,7 +1385,7 @@ Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
 * scanner inventory
 * scanner wiring map
 * scanner data truth
-* scanner/chart/Ruby/trade consistency table
+* scanner/chart/Eleanor/trade consistency table
 * scanner errors found
 * scanner fixes applied
 * scanner retest results
@@ -1504,12 +1504,12 @@ Do not finish until:
 * every menu item has been clicked/tested
 * every major button has been tested
 * every backend endpoint has been classified
-* every important feature has a verified wiring chain from UI action to backend/service/database/MT5/feed/Ruby truth source and back to UI
+* every important feature has a verified wiring chain from UI action to backend/service/database/MT5/feed/Eleanor truth source and back to UI
 * no feature is marked passed if it only works visually but is not fully wired
-* no backend function is marked useful unless at least one active UI/API/Ruby/system path uses it
+* no backend function is marked useful unless at least one active UI/API/Eleanor/system path uses it
 * no UI element is allowed to remain active if it has no real handler, no backend path, or no truthful empty state
 * every live trade path has been tested or clearly marked blocked with reason
-* every scanner/chart/Ruby truth contract has been checked
+* every scanner/chart/Eleanor truth contract has been checked
 * scanner has received its own special audit and grade
 * candle history has received its own special audit and grade
 * feed providers have received their own special audit and grade

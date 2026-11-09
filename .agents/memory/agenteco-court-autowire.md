@@ -23,7 +23,7 @@ record by the PURE mapper `buildDisagreementDraftFromReview` (domain
   carry weight. Everything else returns null (no row) — pass-through,
   agreement, single camp, or governance-not-applied.
 - Wired on exactly three ADVISORY surfaces: scanner (SCANNER_SCAN), scalp
-  (SCALP_SCAN), Ruby analysis (RUBY_ANALYSIS).
+  (SCALP_SCAN), Eleanor analysis (ELEANOR_ANALYSIS).
 
 **Why:** the Court is advisory/shadow. Persisting a "disagreement" on every
 review would be noise and could imply the Court gates trades. Only real

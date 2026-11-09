@@ -23,11 +23,11 @@ import { run as runLiveCycleCloseGuard } from "../liveTestCycleCloseGuardIntegra
 import { run as runAggregatesExcludeUnknown } from "../aggregatesExcludeUnknownPnlTest.js";
 import { run as runInvestorPerformanceRoute } from "../investorPerformanceRouteHonestyTest.js";
 import { run as runHandshakeMonitorPerm } from "../handshakeMonitorPermissionTest.js";
-import { run as runRubyQualityRouteDb } from "../rubyQualityRouteDbTest.js";
+import { run as runEleanorQualityRouteDb } from "../eleanorQualityRouteDbTest.js";
 import { run as runReconciledGhostExposureDb } from "../reconciledGhostExposureDbTest.js";
 import { run as runRealizedDailyPnlDb } from "../realizedDailyPnlDbTest.js";
 import { run as runReconcileSummaryEndpoint } from "../reconcileSummaryEndpointTest.js";
-import { run as runRubyDrawSetupRoute } from "../rubyDrawSetupRouteTest.js";
+import { run as runEleanorDrawSetupRoute } from "../eleanorDrawSetupRouteTest.js";
 import { run as runWatchlistUniverseGate } from "../watchlistUniverseGateRouteTest.js";
 import { run as runCandleDepthDiagnostics } from "../candleDepthDiagnosticsTest.js";
 import { run as runCandleDepthRoute } from "../candleDepthDiagnosticsRouteTest.js";
@@ -43,11 +43,11 @@ const TESTS: Array<{ label: string; run: () => Promise<CiTestResultLike> }> = [
   { label: "test:aggregates-exclude-unknown", run: runAggregatesExcludeUnknown },
   { label: "test:investor-performance-route", run: runInvestorPerformanceRoute },
   { label: "test:handshake-monitor-perm", run: runHandshakeMonitorPerm },
-  { label: "test:ruby-quality-route-db", run: runRubyQualityRouteDb },
+  { label: "test:eleanor-quality-route-db", run: runEleanorQualityRouteDb },
   { label: "test:reconciled-ghost-exposure-db", run: runReconciledGhostExposureDb },
   { label: "test:realized-daily-pnl", run: runRealizedDailyPnlDb },
   { label: "test:reconcile-summary-endpoint", run: runReconcileSummaryEndpoint },
-  { label: "test:ruby-draw-setup-route", run: runRubyDrawSetupRoute },
+  { label: "test:eleanor-draw-setup-route", run: runEleanorDrawSetupRoute },
   { label: "test:watchlist-universe-gate", run: runWatchlistUniverseGate },
   { label: "test:candle-depth-diagnostics", run: runCandleDepthDiagnostics },
   { label: "test:candle-depth-route", run: runCandleDepthRoute },

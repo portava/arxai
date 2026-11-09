@@ -15,7 +15,7 @@ Do not expose admin-only/internal diagnostics directly to regular users.
 Use the already-confirmed findings:
 
 - resolveScannerTruth already exists and produces the single ScannerTruth object.
-- Header, chart, and Ruby already consume ScannerTruth/feedStatus.
+- Header, chart, and Eleanor already consume ScannerTruth/feedStatus.
 - GET /api/chart/candles is the honest source.
 - GBPUSD is stale/delayed because MT5 broker candles are not active for that symbol/timeframe and fallback intraday forex provider coverage is limited.
 - This is not a missing-key bug.
@@ -33,7 +33,7 @@ Focus on:
 1. GBPUSD user-facing reason panel
 Surface the exact reason in regular-user language:
 
-“GBPUSD live broker chart feed is not active yet. ARX is using fallback analysis data, but this feed is delayed/stale for this timeframe. Ruby can only give a limited read until verified live candles are available.”
+“GBPUSD live broker chart feed is not active yet. ARX is using fallback analysis data, but this feed is delayed/stale for this timeframe. Eleanor can only give a limited read until verified live candles are available.”
 
 Do not show internal labels like:
 - assistant_real
@@ -55,7 +55,7 @@ The header should make it clear:
 - Execution bridge: connected/disconnected
 - Account/positions: broker truth
 - Market data: live / delayed / stale / waiting for broker candles
-- Ruby read: verified / limited / blocked
+- Eleanor read: verified / limited / blocked
 
 Do not let a connected MT5 heartbeat imply broker chart candles are active.
 
@@ -66,8 +66,8 @@ Confirm and enforce:
 - trade buttons should not look ready based on stale chart data
 - if execution bridge is live but chart feed is stale, user-facing action should say limited/read-only unless broker trade path independently passes all gates
 
-4. Scanner/chart/Ruby consistency
-Make sure Scanner header, Scanner chart, and Ruby read all tell the same story for GBPUSD:
+4. Scanner/chart/Eleanor consistency
+Make sure Scanner header, Scanner chart, and Eleanor read all tell the same story for GBPUSD:
 
 - same data status
 - same freshness
@@ -82,7 +82,7 @@ Check:
 - scanner header
 - feed reason panel
 - chart area
-- Ruby read card
+- Eleanor read card
 - CTA/action row
 - status chips
 - long provider/reason text
@@ -115,7 +115,7 @@ Run relevant checks:
 
 - scanner feed-truth tests
 - chart feedStatus tests
-- Ruby read limited-data tests
+- Eleanor read limited-data tests
 - Plan Buy/Sell stale-block tests
 - mobile viewport checks at 390px and 430px
 - typecheck

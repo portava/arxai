@@ -352,7 +352,7 @@ describe("ScalpSignalCard — unchecked news risk", () => {
 // No economic calendar configured: scheduled news was never checked. The read
 // stays technicals-only (the scalp is still offered), but the chip must not
 // show "News LOW" as if the calendar had been read. The match is
-// case-insensitive so it also covers the card's Ruby Reasoning Block, which
+// case-insensitive so it also covers the card's Eleanor Reasoning Block, which
 // wrote "Risk read — ..., news LOW." beside the chip (round 3 review).
 describe("ScalpSignalCard — no calendar configured", () => {
   it("renders 'Not checked (no calendar)' and never 'LOW' for news", () => {

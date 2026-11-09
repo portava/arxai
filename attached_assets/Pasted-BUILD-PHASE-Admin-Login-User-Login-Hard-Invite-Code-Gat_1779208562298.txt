@@ -84,7 +84,7 @@ Audit:
 Update frontend logout behavior:
 - after logout API call resolves, call queryClient.clear()
 - clear user-specific cache/state after logout
-- prevent previous user dashboard/scanner/Ruby/notifications/trades from appearing after login switch
+- prevent previous user dashboard/scanner/Eleanor/notifications/trades from appearing after login switch
 - add an e2e probe for logout/login cache clearing
 
 6. Admin/user login protection check

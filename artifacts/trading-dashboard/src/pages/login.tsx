@@ -424,7 +424,7 @@ export default function LoginPage() {
               </Button>
             </div>
 
-            {/* Ruby note */}
+            {/* Eleanor note */}
             <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-slate-300">
               <span className="font-bold text-blue-300">{name}</span> helps
               analyze markets, risk, and execution — but{" "}

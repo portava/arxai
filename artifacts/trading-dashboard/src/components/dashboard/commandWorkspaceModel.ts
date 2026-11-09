@@ -4,7 +4,7 @@ import { cockpitPanelForRoute } from "@/components/layout/cockpitPanelMap";
 export type WorkspacePreset = "Analyze" | "Trade" | "Review";
 export type WorkspaceTool = { href: string; label: string; group: string; aliases?: string[]; description?: string };
 export type CatalogRole = { isAdmin: boolean; isApprovedTrader: boolean; isInvestor: boolean };
-export const WORKSPACE_PANEL_IDS = ["discovery", "chart", "heat", "intelligence", "clock", "ruby", "risk", "order", "positions"] as const;
+export const WORKSPACE_PANEL_IDS = ["discovery", "chart", "heat", "intelligence", "clock", "eleanor", "risk", "order", "positions"] as const;
 export type WorkspacePanelId = typeof WORKSPACE_PANEL_IDS[number];
 
 export function buildDashboardCatalog(name: string, role: CatalogRole): WorkspaceTool[] {
@@ -26,9 +26,9 @@ export function dashboardPanelForTool(href: string): WorkspacePanelId | null {
 
 export function applyWorkspacePreset<T extends { collapsed: string[]; pinned: string[]; railed?: string[]; peek?: string; preset: WorkspacePreset }>(current: T, preset: WorkspacePreset): T {
   const visible: Record<WorkspacePreset, string[]> = {
-    Analyze: ["discovery", "chart", "heat", "intelligence", "clock", "ruby", "risk"],
+    Analyze: ["discovery", "chart", "heat", "intelligence", "clock", "eleanor", "risk"],
     Trade: ["discovery", "chart", "heat", "clock", "risk", "order", "positions"],
-    Review: ["chart", "heat", "clock", "ruby", "intelligence", "positions"],
+    Review: ["chart", "heat", "clock", "eleanor", "intelligence", "positions"],
   };
   return {
     ...current, preset,

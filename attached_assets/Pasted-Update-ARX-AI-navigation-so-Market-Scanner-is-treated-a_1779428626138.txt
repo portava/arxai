@@ -5,7 +5,7 @@ Only work on navigation placement, labels, menu organization, and scanner entry 
 
 Do not change:
 - scanner calculations
-- Ruby intelligence
+- Eleanor intelligence
 - MT5 bridge
 - trade execution
 - live/demo permissions
@@ -27,7 +27,7 @@ Recommended Primary Tools order:
 2. Trade
 3. Market Scanner
 4. Open Trades / Positions
-5. AI / Ruby
+5. AI / Eleanor
 6. Risk Command Center
 7. Alerts / Watchlist
 8. Calendar / News
@@ -53,7 +53,7 @@ Cockpit / Trade / Scanner / AI / More
 Since scanner is AI-related, it should also remain available as a top tab inside the AI page.
 
 AI page tabs should include:
-- Ruby
+- Eleanor
 - Symbols
 - Market Read
 - Scanner
@@ -65,7 +65,7 @@ AI page tabs should include:
 Do not remove scanner from AI. Just also make it primary.
 
 4. Add clear scanner entry points
-Anywhere the user is choosing markets or reading Ruby analysis, add a clean shortcut:
+Anywhere the user is choosing markets or reading Eleanor analysis, add a clean shortcut:
 - “Open Scanner”
 - “Scan Markets”
 - or “Market Scanner”
@@ -94,4 +94,4 @@ Acceptance checklist:
 - Market Scanner is still available inside AI top tabs.
 - Scanner active state works.
 - Scanner route opens correctly.
-- No scanner logic, trading execution, Ruby brain, MT5 bridge, risk rules, admin controls, or auth logic was changed.
+- No scanner logic, trading execution, Eleanor brain, MT5 bridge, risk rules, admin controls, or auth logic was changed.

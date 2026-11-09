@@ -74,16 +74,16 @@ Constants in `artifacts/api-server/src/lib/live/operatorFundedPilotConfig.ts`:
 - `OPERATOR_FUNDED_DISCLOSURE_VERSION = "OPERATOR_FUNDED_LIVE_PILOT_V1"`
 - `OPERATOR_FUNDED_DISCLOSURE_TEXT` — 9 numbered acknowledgements covering
   operator-owned capital, allocation-is-not-deposit, not-withdrawable, no
-  profit-share, no-ownership, instant-revocation, Ruby-is-informational,
+  profit-share, no-ownership, instant-revocation, Eleanor-is-informational,
   confirmation-required, risk + review state.
 
 Stored append-only in `live_risk_disclosure_acceptances` keyed on
 `(userId, disclosureVersion, acceptedText, acceptedAt)`. The text hash is the
 literal text — change the text → new version → users must re-accept.
 
-## Ruby behaviour
+## Eleanor behaviour
 
-Ruby reads mode + status via `computeAccountShell(userId)` + `getEnvelope(userId)`
+Eleanor reads mode + status via `computeAccountShell(userId)` + `getEnvelope(userId)`
 (per-user). She **cannot**:
 
 - mutate `tradingMode` or `master_live_status` (no tool)

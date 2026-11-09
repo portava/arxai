@@ -91,8 +91,8 @@ Both should test:
 - onboarding
 - demo mode
 - scanner
-- Ruby chat
-- Ruby voice fallback if available
+- Eleanor chat
+- Eleanor voice fallback if available
 - trade ticket demo flow
 - chart/trade detail
 - logout/login cache clearing

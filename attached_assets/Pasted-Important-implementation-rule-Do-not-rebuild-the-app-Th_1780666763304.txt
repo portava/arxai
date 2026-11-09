@@ -3,7 +3,7 @@ Do not rebuild the app.
 
 This is an upgrade to the existing ARX AI system, not a replacement, rewrite, redesign, or rebuild.
 
-Preserve the current app architecture, routes, components, services, hooks, database models, live bridge flow, scanner flow, Ruby flow, Smart Chart flow, trade modal flow, admin/user/investor role system, and all existing permissions.
+Preserve the current app architecture, routes, components, services, hooks, database models, live bridge flow, scanner flow, Eleanor flow, Smart Chart flow, trade modal flow, admin/user/investor role system, and all existing permissions.
 
 Before changing anything:
 1. Inspect what already exists.
@@ -14,7 +14,7 @@ Before changing anything:
 6. Do not create parallel systems that conflict with existing ones.
 7. Do not remove current functionality to make the upgrade easier.
 8. Do not break the live execution path.
-9. Do not break scanner, Ruby, Smart Chart, trade modal, open positions, retcodes, investor portal, admin controls, or role permissions.
+9. Do not break scanner, Eleanor, Smart Chart, trade modal, open positions, retcodes, investor portal, admin controls, or role permissions.
 
 This upgrade must make the entire system more connected.
 
@@ -23,7 +23,7 @@ Build an internal ARX Handshake System so every major layer checks in with the o
 The purpose of the handshake system:
 Every layer, function, module, and agent should know whether the required connected systems are available, fresh, valid, and aligned.
 
-Ruby should not give a signal unless scanner data, chart data, symbol specs, broker state, news context, execution conditions, user/account permissions, and risk logic have checked in successfully.
+Eleanor should not give a signal unless scanner data, chart data, symbol specs, broker state, news context, execution conditions, user/account permissions, and risk logic have checked in successfully.
 
 Investor values should not update unless investor ledger, NAV engine, broker mirror, pool allocation, lock status, fee logic, and reconciliation status have checked in successfully.
 
@@ -36,7 +36,7 @@ PART 1 — DO NOT REBUILD / DO NOT DUPLICATE
 Strict rules:
 - Do not rebuild the app.
 - Do not rewrite the app from scratch.
-- Do not replace existing scanner, Ruby, Smart Chart, trade modal, bridge, investor portal, or admin dashboard.
+- Do not replace existing scanner, Eleanor, Smart Chart, trade modal, bridge, investor portal, or admin dashboard.
 - Do not create disconnected duplicate services.
 - Do not create a second bridge path unless explicitly required.
 - Do not create fake/mock/simulated/Paper Trading fallbacks.
@@ -91,8 +91,8 @@ Audit these layers:
 3. Scanner Layer
 - Focus Scan
 - Broad Scan
-- Ruby Scalp Signals
-- Ruby Scalp Builder
+- Eleanor Scalp Signals
+- Eleanor Scalp Builder
 - scanner result ranking
 - scanner cache
 - symbol selection
@@ -100,22 +100,22 @@ Audit these layers:
 - signal lifecycle
 - signal freshness
 
-4. Ruby Intelligence Layer
-- Ruby market explanation
-- Ruby scanner explanation
-- Ruby chat prompt
-- Ruby trade analysis
-- Ruby voice/text state
-- Ruby memory/context
-- Ruby reason chain
-- Ruby news/economic explanation
-- Ruby signal quality tracking
+4. Eleanor Intelligence Layer
+- Eleanor market explanation
+- Eleanor scanner explanation
+- Eleanor chat prompt
+- Eleanor trade analysis
+- Eleanor voice/text state
+- Eleanor memory/context
+- Eleanor reason chain
+- Eleanor news/economic explanation
+- Eleanor signal quality tracking
 
 5. Smart Chart Layer
 - chart data
 - selected symbol sync
 - chart overlays
-- Ruby zones
+- Eleanor zones
 - news/event overlay
 - support/resistance zones
 - entry/watch/late/invalid zones
@@ -167,7 +167,7 @@ Audit these layers:
 - order type
 - lot size
 - SL/TP
-- Ruby explanation
+- Eleanor explanation
 - live readiness checks
 - confirm live trade
 - retcode/result display
@@ -201,7 +201,7 @@ Audit these layers:
 - investor management
 - bridge controls
 - kill switches
-- Ruby quality dashboard
+- Eleanor quality dashboard
 - discrepancy center
 - audit logs
 - settings/tuning controls
@@ -289,7 +289,7 @@ PART 4 — REQUIRED HANDSHAKE TYPES
 Implement at least these handshake types:
 
 1. Scanner Signal Handshake
-Used before Ruby presents scanner signal as actionable.
+Used before Eleanor presents scanner signal as actionable.
 
 Must check:
 - live price freshness
@@ -303,7 +303,7 @@ Must check:
 - spread/slippage conditions
 - execution cost viability
 - risk/reward viability
-- Ruby explanation ready
+- Eleanor explanation ready
 - chart overlay sync
 - user permissions if trade action is shown
 - bridge readiness if Build Trade is shown
@@ -314,7 +314,7 @@ Used before chart overlays are drawn.
 Must check:
 - chart data loaded
 - selected symbol matches scanner symbol
-- Ruby signal exists
+- Eleanor signal exists
 - levels/zones available
 - news events mapped to symbol
 - execution cost data available if layer enabled
@@ -322,7 +322,7 @@ Must check:
 - overlay timestamps/freshness
 
 3. Trade Preview Handshake
-Used before opening Build Trade / trade modal from Ruby/scanner/chart.
+Used before opening Build Trade / trade modal from Eleanor/scanner/chart.
 
 Must check:
 - signal not stale
@@ -350,7 +350,7 @@ Must check:
 - selected symbol matches
 - TP/SL known
 - current price fresh
-- Ruby original signal available if trade came from Ruby
+- Eleanor original signal available if trade came from Eleanor
 - trade health engine active
 - retcode/fill data stored
 - slippage actual vs estimate if available
@@ -400,8 +400,8 @@ Must check:
 - required reason/note captured
 - action does not violate policy
 
-8. Ruby Explanation Handshake
-Used before Ruby answers scanner/trade questions.
+8. Eleanor Explanation Handshake
+Used before Eleanor answers scanner/trade questions.
 
 Must check:
 - market data context
@@ -423,7 +423,7 @@ Every major layer should expose a lightweight readiness/check method.
 Examples:
 - marketData.checkReadiness(symbol)
 - scanner.checkSignalReadiness(symbol)
-- ruby.checkExplanationReadiness(context)
+- eleanor.checkExplanationReadiness(context)
 - chart.checkOverlayReadiness(symbol)
 - news.checkMarketImpact(symbol)
 - broker.checkBridgeReadiness()
@@ -450,13 +450,13 @@ Examples:
 
 Scanner:
 If scanner data is fresh but news risk is high:
-“Setup forming, but news risk is high. Ruby is watching zones, not recommending entry yet.”
+“Setup forming, but news risk is high. Eleanor is watching zones, not recommending entry yet.”
 
 If price signal is late:
-“Late — do not chase. Price moved too far from Ruby’s entry zone.”
+“Late — do not chase. Price moved too far from Eleanor’s entry zone.”
 
 If market data is stale:
-“Waiting for fresh price before Ruby updates this signal.”
+“Waiting for fresh price before Eleanor updates this signal.”
 
 Smart Chart:
 If news event mapped:
@@ -464,10 +464,10 @@ If news event mapped:
 
 Trade Preview:
 If SL/TP invalid:
-“Ruby needs a valid stop loss and take profit before this trade can be reviewed.”
+“Eleanor needs a valid stop loss and take profit before this trade can be reviewed.”
 
 If bridge not ready:
-“Live bridge is not ready. Ruby can analyze but cannot prepare live execution.”
+“Live bridge is not ready. Eleanor can analyze but cannot prepare live execution.”
 
 Investor:
 If reconciliation passed:
@@ -508,10 +508,10 @@ Warning examples:
 - broker sync delayed but investor value clearly marked under review
 
 Degraded mode:
-If news is unavailable, Ruby can still analyze technicals but must say:
+If news is unavailable, Eleanor can still analyze technicals but must say:
 “No confirmed news driver available from current data.”
 
-If slippage history unavailable, Ruby can estimate from spread/volatility and say:
+If slippage history unavailable, Eleanor can estimate from spread/volatility and say:
 “Slippage estimate is based on current spread and volatility because recent execution history is unavailable.”
 
 ====================================================
@@ -558,7 +558,7 @@ Events:
 - CANDLE_DATA_UPDATED
 - SYMBOL_SPECS_UPDATED
 - SCANNER_SIGNAL_UPDATED
-- RUBY_EXPLANATION_UPDATED
+- ELEANOR_EXPLANATION_UPDATED
 - CHART_OVERLAY_UPDATED
 - NEWS_EVENT_UPDATED
 - BROKER_HEARTBEAT_UPDATED
@@ -580,7 +580,7 @@ When market price updates:
 When news event updates:
 - chart event overlay updates
 - scanner news risk updates
-- Ruby explanation updates
+- Eleanor explanation updates
 - signal stage may downgrade
 
 When position sync updates:
@@ -601,20 +601,20 @@ PART 10 — CROSS-LAYER CONSISTENCY RULES
 Enforce consistency:
 
 1. Selected symbol consistency
-Scanner selected symbol, Smart Chart selected symbol, Ruby explanation, and trade modal symbol must match unless user intentionally changes it.
+Scanner selected symbol, Smart Chart selected symbol, Eleanor explanation, and trade modal symbol must match unless user intentionally changes it.
 
 2. Signal consistency
-Ruby explanation must refer to the same signal/level shown on chart.
+Eleanor explanation must refer to the same signal/level shown on chart.
 
 3. Chart consistency
-Chart levels must match Ruby text:
+Chart levels must match Eleanor text:
 - entry zone
 - late zone
 - invalidation
 - TP/SL
 
 4. Trade preview consistency
-Trade modal prefill must match current Ruby setup:
+Trade modal prefill must match current Eleanor setup:
 - symbol
 - direction
 - lot
@@ -688,13 +688,13 @@ Backend tests:
 
 7. Event Bus / Check-in
 - price update triggers scanner/chart/risk recalculation
-- news update triggers chart/scanner/Ruby update
+- news update triggers chart/scanner/Eleanor update
 - position update triggers trade health/investor overlay update
 - NAV update triggers investor dashboard/withdrawal recalculation
 
 Frontend tests:
 - scanner shows handshake states cleanly
-- chart overlay syncs with Ruby text
+- chart overlay syncs with Eleanor text
 - trade modal shows blocker/warning messages
 - investor dashboard shows fresh/under-review correctly
 - admin monitor shows handshake failures
@@ -703,7 +703,7 @@ Frontend tests:
 
 Regression tests:
 - scanner still works
-- Ruby still works
+- Eleanor still works
 - Smart Chart still works
 - trade modal still works
 - live bridge status still works
@@ -730,7 +730,7 @@ Report back with:
 8. Scanner handshake proof
 9. Smart Chart handshake proof
 10. Trade Preview handshake proof
-11. Ruby Explanation handshake proof
+11. Eleanor Explanation handshake proof
 12. Investor Value handshake proof
 13. Weekly Report handshake proof
 14. Admin handshake proof
@@ -751,4 +751,4 @@ This is not a rebuild.
 This is not a disconnected feature.
 Every major layer should check in with the others.
 Every function should know whether its required connected systems are fresh, valid, and aligned.
-Ruby, Scanner, Smart Chart, Trade Preview, Broker Mirror, Investor Fund Book, and Admin Controls must communicate through the internal handshake/check-in system.
+Eleanor, Scanner, Smart Chart, Trade Preview, Broker Mirror, Investor Fund Book, and Admin Controls must communicate through the internal handshake/check-in system.

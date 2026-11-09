@@ -2,7 +2,7 @@
 
 Prerequisite: Phase A is complete and verified — broker_candles, broker_candle_backfill_status, the extended /api/mt5/candles/ingest endpoint, and the closed-bar finalization + timeframe canonicalization rules all exist and their tests pass. If any Phase A piece is missing, stop and report instead of rebuilding it.
 
-Phase B wires stored broker candles into Scanner, Ruby, and market-read systems, fixes the frontend, and adds diagnostics. Do not break live trading, heartbeat, or command execution.
+Phase B wires stored broker candles into Scanner, Eleanor, and market-read systems, fixes the frontend, and adds diagnostics. Do not break live trading, heartbeat, or command execution.
 
 ## Step 1 — Scanner candle source priority
 
@@ -56,9 +56,9 @@ When a user opens Scanner for a symbol/timeframe:
 
 This prevents backfilling every market before the user can see a chart.
 
-## Step 4 — Ruby / market-read integration
+## Step 4 — Eleanor / market-read integration
 
-Ruby and the market-read/scanner systems must read candle qualityStatus/backfillStatus and reduce stated confidence when history is partial. A read over isPartialHistory=true data must not present itself as fully verified.
+Eleanor and the market-read/scanner systems must read candle qualityStatus/backfillStatus and reduce stated confidence when history is partial. A read over isPartialHistory=true data must not present itself as fully verified.
 
 ## Step 5 — Admin Candle Bridge Diagnostics
 
@@ -80,7 +80,7 @@ Prove:
 - Free provider “no older-than cursor” does not block scrollback when broker candles exist (db cursor used instead).
 - 1m with only 2 bars returns isPartialHistory=true and backfillStatus=BUILDING or PARTIAL, never “verified”/complete.
 - Source tagging: provider candles are never labeled as broker candles.
-- Ruby/scanner reads reflect reduced confidence on partial history.
+- Eleanor/scanner reads reflect reduced confidence on partial history.
 - Normal user cannot access another user’s bridge candle data through the Scanner endpoint.
 - Admin diagnostics does not leak raw account details.
 - Scanner mobile badge row does not overflow the viewport.
@@ -94,7 +94,7 @@ Do not pass unless:
 - User can scroll older candles via the ARX database cursor.
 - API clearly reports source and backfill quality in every response.
 - Mobile Scanner no longer has overflowing source badges.
-- Ruby read confidence changes based on candle completeness.
+- Eleanor read confidence changes based on candle completeness.
 - Tests pass. Typecheck passes.
 - Response includes: what now feeds Scanner candles, the exact priority decision logic location, and the remaining blocker that EA-side code cannot be deployed from Replit (the EA candle pump is delivered separately).
 

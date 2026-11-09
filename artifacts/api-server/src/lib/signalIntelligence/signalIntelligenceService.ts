@@ -2,7 +2,7 @@
 //
 // Wires the REAL subsystems (market-data router, scanner, scalp/flame, MT5
 // execution health) plus the per-user market memory into the pure
-// `buildRubyMarketEdge` domain engine, and persists the minimal what-changed
+// `buildEleanorMarketEdge` domain engine, and persists the minimal what-changed
 // snapshot.
 //
 // SAFETY:
@@ -15,9 +15,9 @@
 
 import { db, signalMemoryTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { buildRubyMarketEdge } from "@workspace/domain/signal-intelligence";
+import { buildEleanorMarketEdge } from "@workspace/domain/signal-intelligence";
 import type {
-  RubyMarketEdgeSignal,
+  EleanorMarketEdgeSignal,
   SignalCandle,
   SignalScannerInput,
   SignalScalpInput,
@@ -170,7 +170,7 @@ async function loadPreviousSnapshot(
 /** Persist the minimal what-changed snapshot for next time (per-user upsert). */
 async function persistSnapshot(
   userId: number,
-  signal: RubyMarketEdgeSignal,
+  signal: EleanorMarketEdgeSignal,
   contextKey: string,
 ): Promise<boolean> {
   try {
@@ -242,14 +242,14 @@ export interface BuildSignalOptions {
 }
 
 /**
- * Build the normalized Ruby Market Edge signal for one symbol/timeframe, for a
+ * Build the normalized Eleanor Market Edge signal for one symbol/timeframe, for a
  * specific user. Read-only and honest: real inputs or an explicit blind read.
  */
-export async function buildRubyMarketEdgeForUser(
+export async function buildEleanorMarketEdgeForUser(
   userId: number,
   args: BuildSignalArgs,
   options: BuildSignalOptions = {},
-): Promise<RubyMarketEdgeSignal> {
+): Promise<EleanorMarketEdgeSignal> {
   const symbol = args.symbol;
   const timeframe = args.timeframe?.trim() || DEFAULT_SIGNAL_TIMEFRAME;
   const assetClass = classifySymbol(symbol);
@@ -364,7 +364,7 @@ export async function buildRubyMarketEdgeForUser(
 
   const displayName = scalp?.displayName || symbol;
 
-  const signal = buildRubyMarketEdge({
+  const signal = buildEleanorMarketEdge({
     symbol,
     displayName,
     timeframe,

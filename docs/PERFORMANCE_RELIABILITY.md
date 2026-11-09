@@ -40,7 +40,7 @@ risk limits, live dispatch gates, broker confirmation, or execution authority.
   local; they are not a distributed consistency mechanism.
 - AI deadlines cancel the SDK transport and cover streaming body reads. Models,
   prompts, token budgets, tool permissions, and SDK retry policy are unchanged.
-- The monitor and Ruby outcome workers skip overlapping ticks and expose stop
+- The monitor and Eleanor outcome workers skip overlapping ticks and expose stop
   behavior. Whole-process graceful shutdown/drain is still incomplete across
   the other workers and long-lived streams.
 

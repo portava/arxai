@@ -11,7 +11,7 @@ export type AaciDecisionActorType =
 
 export const AaciDecisionActorType = {
   user: "user",
-  ruby: "ruby",
+  eleanor: "eleanor",
   self_trade_agent: "self_trade_agent",
   admin: "admin",
   system: "system",

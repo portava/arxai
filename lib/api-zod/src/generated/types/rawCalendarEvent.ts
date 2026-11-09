@@ -10,7 +10,7 @@ import type { RawCalendarEventImpactTier } from "./rawCalendarEventImpactTier";
 
 /**
  * A raw economic-calendar event from a connected real provider (Trading
-Economics). Never fabricated — the radar/Ruby surfaces these only when
+Economics). Never fabricated — the radar/Eleanor surfaces these only when
 `connected:true` from the calendar seam. The live-calendar endpoint
 (`GET /economic-calendar/events`) returns enriched fields in addition to
 the base radar fields: country, source, forecast, previous, actual, plus

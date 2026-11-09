@@ -136,7 +136,7 @@ Verify allocation values/status appear correctly anywhere relevant:
 - user dashboard
 - trade ticket
 - live readiness panel
-- Ruby trade assistant
+- Eleanor trade assistant
 - scanner trade entry
 - command queue
 - user account/live status page

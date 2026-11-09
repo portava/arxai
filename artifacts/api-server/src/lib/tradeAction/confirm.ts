@@ -31,7 +31,7 @@ const routable = (row: ActionRow, sourcePage?: string) => ({
   stopLoss: row.stopLoss ?? null, takeProfit: row.takeProfit ?? null, source: row.source ?? null,
   actionId: row.id,
   ...(sourcePage ? { sourcePage } : {}),
-  origin: (row.source === "ai_suggested" ? "ruby" : row.source === "decision_engine" ? "automation" : "manual") as "manual" | "ruby" | "automation",
+  origin: (row.source === "ai_suggested" ? "eleanor" : row.source === "decision_engine" ? "automation" : "manual") as "manual" | "eleanor" | "automation",
 });
 const isSimulatedOpen = (row: ActionRow) => row.requestedMode === "SIMULATED" && row.actionType === "OPEN";
 
@@ -116,7 +116,7 @@ export async function confirmAction(opts: {
     requestedPrice: row.orderType && !row.orderType.endsWith("_MARKET") ? row.requestedPrice ?? null : null,
     stopLoss: row.stopLoss ?? null,
     takeProfit: row.takeProfit ?? null,
-    origin: row.source === "ai_suggested" ? "ruby" : row.source === "decision_engine" ? "automation" : "manual",
+    origin: row.source === "ai_suggested" ? "eleanor" : row.source === "decision_engine" ? "automation" : "manual",
     tradeKey: row.tradeKey,
     confirmedByUser: true,
     expiresAt: row.expiresAt,

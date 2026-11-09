@@ -1,6 +1,6 @@
 Proceed with T003 — Layer 3 Governance.
 
-T002 has now been verified and wired across Ruby, Scanner, Risk, Scalp, Admin trace, and app-wide advisory surfaces. Continue from that verified state.
+T002 has now been verified and wired across Eleanor, Scanner, Risk, Scalp, Admin trace, and app-wide advisory surfaces. Continue from that verified state.
 
 Do not rebuild the app. Do not undo the T002 wiring. Build the next layer on top of the existing operational agent scoring/lifecycle system.
 
@@ -8,7 +8,7 @@ T003 GOAL
 
 Build the Governance/Court/Factory layer so the AI agent ecosystem becomes a coordinated decision system instead of separate advisory agents.
 
-The agents must interact with each other, challenge each other, confirm each other, downgrade weak signals, escalate conflicts, and produce final governance outcomes that can affect Ruby explanations, Scanner rankings, risk warnings, scalp/flame confidence, and admin visibility.
+The agents must interact with each other, challenge each other, confirm each other, downgrade weak signals, escalate conflicts, and produce final governance outcomes that can affect Eleanor explanations, Scanner rankings, risk warnings, scalp/flame confidence, and admin visibility.
 
 1. Governance Court
 
@@ -20,8 +20,8 @@ Governance should support reviews for:
 * Focus scan results
 * Broad scan results
 * Builder scan results
-* Ruby market explanations
-* Ruby trade recommendation explanations
+* Eleanor market explanations
+* Eleanor trade recommendation explanations
 * Flame scalp opportunities
 * Risk/reward analysis
 * Stop loss / take profit reasoning
@@ -77,7 +77,7 @@ The outcome must include:
 * challenges raised
 * winning reasoning
 * confidence score
-* impact on Scanner/Ruby/Risk/Scalp/Admin
+* impact on Scanner/Eleanor/Risk/Scalp/Admin
 * timestamp
 * surface/workflow affected
 
@@ -88,7 +88,7 @@ Governance must affect real app behavior.
 Wire governance output into:
 
 * Scanner ranking adjustments
-* Ruby plain-English explanations
+* Eleanor plain-English explanations
 * Risk warnings
 * Flame scalp confidence
 * trade recommendation strength
@@ -98,7 +98,7 @@ Wire governance output into:
 
 If governance downgrades a signal, the Scanner score should change.
 
-If governance rejects a setup, Ruby should explain why in plain English.
+If governance rejects a setup, Eleanor should explain why in plain English.
 
 If governance escalates a conflict, admin should see it.
 
@@ -118,7 +118,7 @@ Admin/OWNER should be able to see:
 * challenges submitted
 * final decision
 * score impact
-* Ruby explanation impact
+* Eleanor explanation impact
 * Scanner ranking impact
 * Risk warning impact
 * Scalp/flame impact
@@ -198,7 +198,7 @@ Prove:
 * agents can challenge each other
 * challenges produce final governance outcomes
 * Scanner scores change because of governance
-* Ruby explanations change because of governance
+* Eleanor explanations change because of governance
 * Risk AI can downgrade a setup through governance
 * Flame Scalp Agent can challenge weak flame signals
 * News/current-event agent can challenge technical-only setups
@@ -218,7 +218,7 @@ Do not mark T003 complete until:
 * governance is wired into real workflows
 * governance outcomes affect the app
 * admin can inspect decisions
-* Ruby can explain governance influence plainly
+* Eleanor can explain governance influence plainly
 * Scanner/risk/scalp surfaces respond to governance decisions
 * all validation/typecheck/guard tests pass
 * disconnected, fake, duplicated, or unused governance code is fixed or removed

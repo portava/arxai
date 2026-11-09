@@ -24,9 +24,9 @@ Required checks:
 1. App starts cleanly.
 2. Reconciliation Center is admin-only and functional.
 3. scanner-selected-market no longer hangs.
-4. Ruby voice trading guardrails typecheck passes.
+4. Eleanor voice trading guardrails typecheck passes.
 5. userReadinessState exists.
-6. Ruby getLaunchReadiness exists.
+6. Eleanor getLaunchReadiness exists.
 7. Phase B disclosure check is included.
 8. Master bridge user approval toggles still block unapproved users.
 9. Current connected bridge remains selected as platform master bridge.
@@ -115,18 +115,18 @@ G. Reconciliation Summary
 - missing attribution rows
 - blocked/rejected commands needing review
 
-H. Ruby Admin Summary
-Add a Ruby admin panel:
-“Ruby, summarize launch readiness.”
+H. Eleanor Admin Summary
+Add a Eleanor admin panel:
+“Eleanor, summarize launch readiness.”
 
-Ruby should summarize:
+Eleanor should summarize:
 - what is ready
 - what is blocked
 - what needs admin action
 - what should not be touched
 - whether live trading is safe to manually test
 
-Ruby must not expose secrets.
+Eleanor must not expose secrets.
 
 Step 3 — QA
 
@@ -140,7 +140,7 @@ Run QA for the Operator Command Center:
 6. User approval toggles display correctly.
 7. Safety controls display correctly.
 8. Reconciliation summary displays correctly.
-9. Ruby admin summary works without secrets.
+9. Eleanor admin summary works without secrets.
 10. No live trade auto-fires.
 11. arx_live_commands remains unchanged.
 12. Existing full safety matrix still passes.

@@ -5,7 +5,7 @@ import { setChartSymbol } from "@/lib/use-chart-symbol";
 
 vi.mock("@/hooks/useScannerTruth", () => ({ useScannerTruth: () => ({ truth: null }) }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["5m", vi.fn()] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/components/live/TradabilityBadge", () => ({ TradabilityBadge: () => null }));
 vi.mock("@/components/scanner/SymbolExplorer", () => ({
   SymbolExplorer: ({ onSelect }: { onSelect: (symbol: string) => void }) => <>

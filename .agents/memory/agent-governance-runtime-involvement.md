@@ -14,7 +14,7 @@ api-server wrappers in `artifacts/api-server/src/lib/agentEcosystem/`.)
 - Scanner: `computeScannerAdvisory` + governance `computeGovernanceReview`
   (via `computeSurfaceGovernance`) feed `effectiveOpportunityScore`, which the
   scan sort uses. Governance can only **lower** a rank (protective haircut).
-- Ruby: `computeRubySignalAdvisory` updates deskView/cautions.
+- Eleanor: `computeEleanorSignalAdvisory` updates deskView/cautions.
 - Scalp: `computeScalpAdvisory` attaches agentAdvisory/agentGovernance.
 - The wired court = `computeGovernanceReview` (governance/agentCourt.engine.ts):
   authority-weighted (NOT averaging) + Risk protective veto downgrades from APPROVE.
@@ -39,9 +39,9 @@ api-server wrappers in `artifacts/api-server/src/lib/agentEcosystem/`.)
 
 **Why this matters:** an architect review flagged me for overclaiming
 "behavior-changing across all engines." The honest line: advisory + governance
-re-rank scanner/Ruby/scalp NOW; Traffic routing and the disagreement court are
+re-rank scanner/Eleanor/scalp NOW; Traffic routing and the disagreement court are
 computed/tested but not enforced/auto-invoked; lifecycle engines are manual.
 Live execution path imports none of this (verified: no advisory/governance refs
 under lib/live or lib/liveTrading) — so it can't slow/block live, by design.
 Admin frontend dashboard (operator visibility) was owned by a separate
-in-progress task; don't edit scanner/Ruby/agent wiring while that's open.
+in-progress task; don't edit scanner/Eleanor/agent wiring while that's open.

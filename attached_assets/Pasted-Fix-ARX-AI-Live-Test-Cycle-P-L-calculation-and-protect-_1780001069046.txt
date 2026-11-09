@@ -64,7 +64,7 @@ If pnlStatus is UNKNOWN:
 - do not reduce live bridge balance
 - do not reduce AI-managed allocation
 - do not update realized P/L totals
-- do not feed it into Ruby/AI performance learning
+- do not feed it into Eleanor/AI performance learning
 - do not show it as a real loss
 
 Show:
@@ -110,11 +110,11 @@ Before stopping, verify:
 - Existing bad cycle no longer shows -1163.59 as real P/L.
 - Allocation balances are not changed by unknown P/L.
 - Reports do not count unknown P/L as loss.
-- Ruby/AI learning does not ingest unknown/fake P/L.
+- Eleanor/AI learning does not ingest unknown/fake P/L.
 - Audit log records correction.
 - arx_live_commands count does not increase during this fix.
 - No live trade is placed.
 - Demo, Live, and Live Shared remain the only modes.
-- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+- Login, Eleanor, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix errors before stopping.

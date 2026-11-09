@@ -8,7 +8,7 @@ import { useAssistantName } from "@/lib/assistant-name";
 import { useChartSymbol, bareSymbol } from "@/lib/use-chart-symbol";
 import { ScannerChartPanel } from "@/components/scanner/ScannerChartPanel";
 import { SymbolExplorer } from "@/components/scanner/SymbolExplorer";
-import { RubyMarketReadCard } from "@/components/scanner/RubyMarketReadCard";
+import { EleanorMarketReadCard } from "@/components/scanner/EleanorMarketReadCard";
 import { GlobalMarketHeatCard } from "@/components/scanner/GlobalMarketHeatCard";
 import { ReviewedOrderCallout } from "@/components/dashboard/ReviewedOrderCallout";
 import { ReviewedOrderFlowSheet } from "@/components/dashboard/ReviewedOrderFlowSheet";
@@ -23,7 +23,7 @@ import { BestMarketsCard, AvoidMarketsCard } from "@/components/dashboard/cockpi
 import { LiveAccountSnapshotProvider, useLiveAccountSnapshotCtx } from "@/hooks/useLiveAccountSnapshotContext";
 import { useLiveBridgeRefreshState } from "@/hooks/useLiveBridgeRefresh";
 import { LiveBridgeAutoRefreshControl } from "@/components/live/LiveBridgeAutoRefreshControl";
-import { RubyReadStoreProvider } from "@/components/scanner/rubyReadStore";
+import { EleanorReadStoreProvider } from "@/components/scanner/eleanorReadStore";
 import { SelectedActionStoreProvider } from "@/components/scanner/selectedActionStore";
 import {
   Activity, Search, Crosshair, Shield, Brain, Briefcase, CalendarDays,
@@ -40,7 +40,7 @@ const PANELS = [
   { id: "heat", title: "Heat", icon: BarChart3 },
   { id: "intelligence", title: "Intelligence", icon: ScanLine },
   { id: "clock", title: "Desk clock", icon: CalendarDays },
-  { id: "ruby", title: "AI read", icon: Brain },
+  { id: "eleanor", title: "AI read", icon: Brain },
   { id: "risk", title: "Risk", icon: Shield },
   { id: "order", title: "Order entry", icon: Crosshair },
   { id: "positions", title: "Positions", icon: Briefcase },
@@ -55,7 +55,7 @@ const LEFT_SIDE_PANELS = [
   { id: "chart", title: "Smart Chart", icon: Activity },
 ];
 const RIGHT_SIDE_PANELS = [
-  { id: "ruby", title: "AI read", icon: Brain },
+  { id: "eleanor", title: "AI read", icon: Brain },
   { id: "risk", title: "Risk and permission", icon: Shield },
   { id: "order", title: "Order entry", icon: Crosshair },
   { id: "intelligence", title: "Market intelligence", icon: ScanLine },
@@ -254,7 +254,7 @@ export function CommandWorkspace({
       <div className="arx-workspace-grid"
         data-center-closed={panelIsClosed(layout, "chart") && panelIsClosed(layout, "intelligence")}
         data-left-rail={sideIsRailed(layout, ["discovery", "heat", "clock"])}
-        data-right-rail={sideIsRailed(withSlidingPanels(layout), ["ruby", "risk", "order", "chart-details"])}>
+        data-right-rail={sideIsRailed(withSlidingPanels(layout), ["eleanor", "risk", "order", "chart-details"])}>
         <SidePanelArea side="left" className="arx-col arx-col-left" panels={LEFT_SIDE_PANELS}
           columnIds={["discovery", "heat", "clock"]}
           layout={layout} onChange={next => { setSavedLayoutControlsUsed(true); updateLayout(next); }}>
@@ -267,10 +267,10 @@ export function CommandWorkspace({
           <WorkspacePanel id="intelligence" hidden={mobileHidden("intelligence")} title="Market intelligence" icon={ScanLine} collapsed={visibleLayout.collapsed.includes("intelligence")} pinned={layout.pinned.includes("intelligence")} onCollapse={() => togglePanel("intelligence")} onPin={() => togglePin("intelligence")}><div className="arx-intelligence-grid"><CriticalEventsCard compactWorkspace/><BestMarketsCard compactWorkspace/><AvoidMarketsCard compactWorkspace/><AlertsSummaryCard compactWorkspace/></div></WorkspacePanel>
         </div>
         <SidePanelArea side="right" className="arx-col arx-col-right" panels={RIGHT_SIDE_PANELS}
-          columnIds={["ruby", "risk", "order", "chart-details"]}
+          columnIds={["eleanor", "risk", "order", "chart-details"]}
           layout={layout} onChange={next => { setSavedLayoutControlsUsed(true); updateLayout(next); }}
           quickAction={<button type="button" className="arx-side-quick-action" aria-label="Review order" title="Review order" onClick={() => { updateLayout({ ...layout, peek: undefined }); setOrderReviewOpen(true); }}><Crosshair size={17} aria-hidden="true"/></button>}>
-          <WorkspacePanel id="ruby" hidden={mobileHidden("ruby")} title={`${name} · AI read`} icon={Brain} collapsed={visibleLayout.collapsed.includes("ruby")} pinned={layout.pinned.includes("ruby")} onCollapse={() => togglePanel("ruby")} onPin={() => togglePin("ruby")}><RubyMarketReadCard compactWorkspace symbol={active}/></WorkspacePanel>
+          <WorkspacePanel id="eleanor" hidden={mobileHidden("eleanor")} title={`${name} · AI read`} icon={Brain} collapsed={visibleLayout.collapsed.includes("eleanor")} pinned={layout.pinned.includes("eleanor")} onCollapse={() => togglePanel("eleanor")} onPin={() => togglePin("eleanor")}><EleanorMarketReadCard compactWorkspace symbol={active}/></WorkspacePanel>
           <WorkspacePanel id="risk" hidden={mobileHidden("risk")} title="Risk & permission" icon={Shield} collapsed={visibleLayout.collapsed.includes("risk")} pinned={layout.pinned.includes("risk")} onCollapse={() => togglePanel("risk")} onPin={() => togglePin("risk")}><div className="arx-risk-compact-stack"><RiskUtilizationSummary/><TradingPermissionSummaryCard compactWorkspace/></div></WorkspacePanel>
           <WorkspacePanel id="order" hidden={mobileHidden("order")} title="Order entry" icon={Crosshair} collapsed={visibleLayout.collapsed.includes("order")} pinned={layout.pinned.includes("order")} onCollapse={() => togglePanel("order")} onPin={() => togglePin("order")}><ReviewedOrderCallout symbol={active} onOpen={() => { updateLayout({ ...layout, peek: undefined }); setOrderReviewOpen(true); }}/></WorkspacePanel>
           <div data-panel-details-slot/>
@@ -289,6 +289,6 @@ export function CommandWorkspace({
 }
 
 export function CommandWorkspaceProviders(props: { headerActions?: ReactNode; warningContent?: ReactNode }) {
-  return <LiveAccountSnapshotProvider><RubyReadStoreProvider><SelectedActionStoreProvider><CommandWorkspace {...props}/></SelectedActionStoreProvider></RubyReadStoreProvider></LiveAccountSnapshotProvider>;
+  return <LiveAccountSnapshotProvider><EleanorReadStoreProvider><SelectedActionStoreProvider><CommandWorkspace {...props}/></SelectedActionStoreProvider></EleanorReadStoreProvider></LiveAccountSnapshotProvider>;
 }
 

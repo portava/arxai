@@ -351,7 +351,7 @@ function makeSnapshot(
   const now = 0;
   const bare = makeSnapshot({
     bridge: { status: "unknown" },
-    unavailableSystems: ["Scanner", "SmartChart", "Ruby", "MarketTimingBrain", "EconomicCalendar", "RiskGovernor"],
+    unavailableSystems: ["Scanner", "SmartChart", "Eleanor", "MarketTimingBrain", "EconomicCalendar", "RiskGovernor"],
   });
   let threw = false;
   let finalScore = -1;

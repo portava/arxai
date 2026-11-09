@@ -39,12 +39,12 @@ const roster: AdvisoryAgentSnapshot[] = [
   agent({ agentKey: "TRAFFIC_CONTROLLER", department: "AGENT_OPERATIONS", authorityWeight: 0, currentStatus: "SHADOW" }),
 ];
 
-// Ruby uses the same advisory departments, with the normal light-review cap.
+// Eleanor uses the same advisory departments, with the normal light-review cap.
 {
-  const r = selectParticipants({ surface: "RUBY", importance: "LOW", agents: roster, effectiveInfluence: eff });
-  check("Ruby LOW review includes the active RISK agent", r.participants.some((p) => p.agentKey === "RISK"));
-  check("Ruby LOW review has nonempty, capped participation", r.participants.length > 0 && r.participants.length <= 3);
-  check("Ruby LOW review excludes operations and scalp agents",
+  const r = selectParticipants({ surface: "ELEANOR", importance: "LOW", agents: roster, effectiveInfluence: eff });
+  check("Eleanor LOW review includes the active RISK agent", r.participants.some((p) => p.agentKey === "RISK"));
+  check("Eleanor LOW review has nonempty, capped participation", r.participants.length > 0 && r.participants.length <= 3);
+  check("Eleanor LOW review excludes operations and scalp agents",
     r.participants.every((p) => p.department !== "AGENT_OPERATIONS" && p.department !== "SCALP"));
 }
 

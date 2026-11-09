@@ -1,5 +1,5 @@
 // Event-risk copy — the ONE sentence every surface on the scanner page prints
-// for scheduled event risk (Ruby market-read NEWS block and Risk row, the chart
+// for scheduled event risk (Eleanor market-read NEWS block and Risk row, the chart
 // read's Risk row, the chart's Economic-events strip). One module so they can
 // never drift apart again (owner screenshot 2026-10-27: the same null snapshot
 // read "Event risk is loading…" in one box and "News/calendar unavailable" in

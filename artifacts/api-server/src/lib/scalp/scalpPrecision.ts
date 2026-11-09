@@ -1,4 +1,4 @@
-// Ruby Scalp — one price-precision authority for the entry engine and the
+// Eleanor Scalp — one price-precision authority for the entry engine and the
 // manage side, so the same broker spec can never be rounded two ways.
 //
 // Broker truth only: digits as reported, or derived from the reported point

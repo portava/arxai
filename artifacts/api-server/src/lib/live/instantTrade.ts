@@ -1,6 +1,6 @@
 // instantTrade.ts — shared helper used by:
 //   - POST /api/trades/instant/{execute,close,close-all,validate}
-//   - POST /api/me/assistant/instant-trade-command (Ruby text/voice)
+//   - POST /api/me/assistant/instant-trade-command (Eleanor text/voice)
 //   - any future trade-capable widget
 //
 // SAFETY: this is a thin orchestrator. Every actual safety decision
@@ -14,9 +14,9 @@
 //     reservation + bridge dispatch
 //
 // What this helper adds is SOURCE-AWARENESS:
-//   - When `intent.source ∈ {ruby_text, ruby_voice}` it also requires
+//   - When `intent.source ∈ {eleanor_text, eleanor_voice}` it also requires
 //     `aiInstantTradeCommandsEnabled = true` AND the action-appropriate
-//     allowRuby* flag. This is a per-user Ruby authorization layer that
+//     allowEleanor* flag. This is a per-user Eleanor authorization layer that
 //     sits on TOP of every other live gate, never replacing them.
 //
 // `accountMode: "demo"` is recognized for API symmetry but the helper
@@ -28,7 +28,7 @@
 // "Paper Trading has been removed" 400 before this helper runs.
 import { livePositionLedger, livePositionColumns, type LivePositionRow } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
-import { db, userOneClickSettingsTable, oneClickAuditTable, rubyCommandsTable } from "@workspace/db";
+import { db, userOneClickSettingsTable, oneClickAuditTable, eleanorCommandsTable } from "@workspace/db";
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { getSymbolProfile } from "../data/chart/symbolProfile.js";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../mt5/userMasterLiveAccessGate.js";
@@ -46,7 +46,7 @@ import { classifyOrderType, validatePendingOrder, validateProtection, validateEx
 
 export const INSTANT_TRADE_SOURCES = [
   "trade_panel", "scanner", "chart", "chart_drag", "watchlist", "position_card",
-  "dashboard", "alert", "ruby_text", "ruby_voice", "self_trade", "mission",
+  "dashboard", "alert", "eleanor_text", "eleanor_voice", "self_trade", "mission",
 ] as const;
 export type InstantTradeSource = (typeof INSTANT_TRADE_SOURCES)[number];
 
@@ -79,7 +79,7 @@ export type InstantTradeIntent = {
   oneClick?: boolean;
   aiCommand?: boolean;
   rawUserCommand?: string | null;
-  parsedByRuby?: boolean;
+  parsedByEleanor?: boolean;
   // Task #213 — Self-Trade AI autonomous execution ownership tags (additive,
   // optional). When set, the OPEN draft is attributed to the originating agent
   // + supervisor-approved decision, and `prepareOnly` (autonomy L1) stops the
@@ -93,13 +93,13 @@ export type InstantTradeIntent = {
   prepareOnly?: boolean;
   /** Internal reference only. Public request schemas do not accept this field. */
   selfTradeManagement?: ManagementReference;
-  // Task #319 — Ruby bounded executor. `rubyCommandKind` lets the auth layer
+  // Task #319 — Eleanor bounded executor. `eleanorCommandKind` lets the auth layer
   // distinguish a plain MODIFY from a break-even move, and a full CLOSE from a
   // PARTIAL_CLOSE, so the per-action permission flags map correctly. Optional;
-  // absent for every non-Ruby caller. `closeVolume`, when set on a CLOSE,
+  // absent for every non-Eleanor caller. `closeVolume`, when set on a CLOSE,
   // reduces only that many lots (the existing CLOSE_LIVE_POSITION draft already
   // takes a volume — this is the SAME primitive, not a new path).
-  rubyCommandKind?: string | null;
+  eleanorCommandKind?: string | null;
   closeVolume?: number | null;
   // Task #804 — Profit Mission ownership tag (additive, optional). When a mission
   // dispatches or manages a trade it sets `source: "mission"` and stamps the
@@ -112,24 +112,24 @@ export type InstantTradeIntent = {
   missionId?: number | null;
 };
 
-// Reasons surfaced by the Ruby authorization layer. Each is AND-gated on TOP of
+// Reasons surfaced by the Eleanor authorization layer. Each is AND-gated on TOP of
 // every other live gate; none can ever relax the 16-gate dispatch.
-export const RUBY_AUTH_REASONS = [
-  "RUBY_TRADING_NOT_ENABLED",
-  "RUBY_ADVISE_ONLY_MODE",
-  "RUBY_AI_AUTO_NOT_ENABLED",
-  "RUBY_OPEN_COMMANDS_NOT_ENABLED",
-  "RUBY_CLOSE_COMMANDS_NOT_ENABLED",
-  "RUBY_PARTIAL_CLOSE_NOT_ENABLED",
-  "RUBY_MODIFY_COMMANDS_NOT_ENABLED",
-  "RUBY_BREAK_EVEN_NOT_ENABLED",
-  "RUBY_LOT_CAP_EXCEEDED",
-  "RUBY_SYMBOL_NOT_ALLOWED",
-  "RUBY_ASSET_CLASS_NOT_ALLOWED",
-  "RUBY_MAX_OPEN_POSITIONS_REACHED",
-  "RUBY_DAILY_TRADE_LIMIT_REACHED",
+export const ELEANOR_AUTH_REASONS = [
+  "ELEANOR_TRADING_NOT_ENABLED",
+  "ELEANOR_ADVISE_ONLY_MODE",
+  "ELEANOR_AI_AUTO_NOT_ENABLED",
+  "ELEANOR_OPEN_COMMANDS_NOT_ENABLED",
+  "ELEANOR_CLOSE_COMMANDS_NOT_ENABLED",
+  "ELEANOR_PARTIAL_CLOSE_NOT_ENABLED",
+  "ELEANOR_MODIFY_COMMANDS_NOT_ENABLED",
+  "ELEANOR_BREAK_EVEN_NOT_ENABLED",
+  "ELEANOR_LOT_CAP_EXCEEDED",
+  "ELEANOR_SYMBOL_NOT_ALLOWED",
+  "ELEANOR_ASSET_CLASS_NOT_ALLOWED",
+  "ELEANOR_MAX_OPEN_POSITIONS_REACHED",
+  "ELEANOR_DAILY_TRADE_LIMIT_REACHED",
 ] as const;
-export type RubyAuthReason = (typeof RUBY_AUTH_REASONS)[number];
+export type EleanorAuthReason = (typeof ELEANOR_AUTH_REASONS)[number];
 
 export type InstantTradeResult =
   | { ok: true; commandId?: string; action: InstantTradeAction; detail?: unknown }
@@ -155,23 +155,23 @@ async function getSettings(userId: number) {
   return row!;
 }
 
-type RubySettingsView = {
-  rubyExecutionAuthority: string;
+type EleanorSettingsView = {
+  eleanorExecutionAuthority: string;
   aiInstantTradeCommandsEnabled: boolean;
-  allowRubyOpenCommands: boolean;
-  allowRubyCloseCommands: boolean;
-  allowRubyModifyCommands: boolean;
-  allowRubyBreakEven: boolean;
-  allowRubyPartialClose: boolean;
-  maxRubyLotPerTrade: number | null;
-  maxRubyOpenPositions: number | null;
-  maxRubyDailyTrades: number | null;
-  allowedRubySymbols: string | null;
-  allowedRubyAssetClasses: string | null;
+  allowEleanorOpenCommands: boolean;
+  allowEleanorCloseCommands: boolean;
+  allowEleanorModifyCommands: boolean;
+  allowEleanorBreakEven: boolean;
+  allowEleanorPartialClose: boolean;
+  maxEleanorLotPerTrade: number | null;
+  maxEleanorOpenPositions: number | null;
+  maxEleanorDailyTrades: number | null;
+  allowedEleanorSymbols: string | null;
+  allowedEleanorAssetClasses: string | null;
 };
 
-function isRubySource(source: InstantTradeSource): boolean {
-  return source === "ruby_text" || source === "ruby_voice";
+function isEleanorSource(source: InstantTradeSource): boolean {
+  return source === "eleanor_text" || source === "eleanor_voice";
 }
 
 function parseJsonStringArray(raw: string | null): string[] | null {
@@ -187,76 +187,76 @@ function parseJsonStringArray(raw: string | null): string[] | null {
 }
 
 /**
- * Ruby authorization — runs only when source is ruby_text/ruby_voice.
+ * Eleanor authorization — runs only when source is eleanor_text/eleanor_voice.
  * AND-gated against every other live gate; NEVER relaxes the 16-gate dispatch.
  *
- * Source of truth is `rubyExecutionAuthority`:
+ * Source of truth is `eleanorExecutionAuthority`:
  *   - OFF         → refuse (analysis only).
- *   - ADVISE_ONLY → refuse execution (Ruby proposes; user submits manually).
+ *   - ADVISE_ONLY → refuse execution (Eleanor proposes; user submits manually).
  *   - AI_AUTO     → refuse (defined, NOT enabled in this build).
  *   - AI_ASSISTED → permitted, subject to per-action perms + caps + allowlists.
  *
  * Sync portion: authority, per-action permissions, lot cap, and symbol/
- * asset-class allowlists. Per-Ruby count caps (open positions, daily trades)
- * are checked asynchronously in `rubyCapsCheck` because they query live state.
+ * asset-class allowlists. Per-Eleanor count caps (open positions, daily trades)
+ * are checked asynchronously in `eleanorCapsCheck` because they query live state.
  */
-function rubyAuthCheck(
+function eleanorAuthCheck(
   intent: InstantTradeIntent,
-  settings: RubySettingsView,
-): { ok: true } | { ok: false; reason: RubyAuthReason } {
-  if (!isRubySource(intent.source)) return { ok: true };
+  settings: EleanorSettingsView,
+): { ok: true } | { ok: false; reason: EleanorAuthReason } {
+  if (!isEleanorSource(intent.source)) return { ok: true };
 
-  const authority = (settings.rubyExecutionAuthority ?? "OFF").trim().toUpperCase();
-  if (authority === "ADVISE_ONLY") return { ok: false, reason: "RUBY_ADVISE_ONLY_MODE" };
-  if (authority === "AI_AUTO") return { ok: false, reason: "RUBY_AI_AUTO_NOT_ENABLED" };
-  if (authority !== "AI_ASSISTED") return { ok: false, reason: "RUBY_TRADING_NOT_ENABLED" };
+  const authority = (settings.eleanorExecutionAuthority ?? "OFF").trim().toUpperCase();
+  if (authority === "ADVISE_ONLY") return { ok: false, reason: "ELEANOR_ADVISE_ONLY_MODE" };
+  if (authority === "AI_AUTO") return { ok: false, reason: "ELEANOR_AI_AUTO_NOT_ENABLED" };
+  if (authority !== "AI_ASSISTED") return { ok: false, reason: "ELEANOR_TRADING_NOT_ENABLED" };
 
-  const kind = (intent.rubyCommandKind ?? "").trim().toUpperCase();
+  const kind = (intent.eleanorCommandKind ?? "").trim().toUpperCase();
   const isOpen = intent.action === "BUY" || intent.action === "SELL";
   const isClose = intent.action === "CLOSE" || intent.action === "CLOSE_ALL";
   const isModify = intent.action === "MODIFY_SL_TP";
 
-  if (isOpen && !settings.allowRubyOpenCommands) {
-    return { ok: false, reason: "RUBY_OPEN_COMMANDS_NOT_ENABLED" };
+  if (isOpen && !settings.allowEleanorOpenCommands) {
+    return { ok: false, reason: "ELEANOR_OPEN_COMMANDS_NOT_ENABLED" };
   }
   if (isClose) {
     if (kind === "PARTIAL_CLOSE") {
-      if (!settings.allowRubyPartialClose) return { ok: false, reason: "RUBY_PARTIAL_CLOSE_NOT_ENABLED" };
-    } else if (!settings.allowRubyCloseCommands) {
-      return { ok: false, reason: "RUBY_CLOSE_COMMANDS_NOT_ENABLED" };
+      if (!settings.allowEleanorPartialClose) return { ok: false, reason: "ELEANOR_PARTIAL_CLOSE_NOT_ENABLED" };
+    } else if (!settings.allowEleanorCloseCommands) {
+      return { ok: false, reason: "ELEANOR_CLOSE_COMMANDS_NOT_ENABLED" };
     }
   }
   if (isModify) {
     if (kind === "MOVE_SL_TO_BREAKEVEN") {
-      if (!settings.allowRubyBreakEven) return { ok: false, reason: "RUBY_BREAK_EVEN_NOT_ENABLED" };
-    } else if (!settings.allowRubyModifyCommands) {
-      return { ok: false, reason: "RUBY_MODIFY_COMMANDS_NOT_ENABLED" };
+      if (!settings.allowEleanorBreakEven) return { ok: false, reason: "ELEANOR_BREAK_EVEN_NOT_ENABLED" };
+    } else if (!settings.allowEleanorModifyCommands) {
+      return { ok: false, reason: "ELEANOR_MODIFY_COMMANDS_NOT_ENABLED" };
     }
   }
 
-  // Risk-adding (OPEN) actions only: enforce the per-Ruby lot cap and the
-  // Ruby symbol/asset-class allowlists. Reduce-risk actions (close/modify)
+  // Risk-adding (OPEN) actions only: enforce the per-Eleanor lot cap and the
+  // Eleanor symbol/asset-class allowlists. Reduce-risk actions (close/modify)
   // are NEVER blocked by an allowlist or lot cap — the user must always be
-  // able to reduce live exposure via Ruby.
+  // able to reduce live exposure via Eleanor.
   if (isOpen) {
-    if (settings.maxRubyLotPerTrade != null
+    if (settings.maxEleanorLotPerTrade != null
       && typeof intent.volume === "number"
-      && intent.volume > settings.maxRubyLotPerTrade) {
-      return { ok: false, reason: "RUBY_LOT_CAP_EXCEEDED" };
+      && intent.volume > settings.maxEleanorLotPerTrade) {
+      return { ok: false, reason: "ELEANOR_LOT_CAP_EXCEEDED" };
     }
     const symbol = (intent.symbol ?? "").trim();
-    const allowedSymbols = parseJsonStringArray(settings.allowedRubySymbols);
+    const allowedSymbols = parseJsonStringArray(settings.allowedEleanorSymbols);
     if (allowedSymbols && symbol) {
       const want = symbol.toUpperCase();
       if (!allowedSymbols.some((s) => s.trim().toUpperCase() === want)) {
-        return { ok: false, reason: "RUBY_SYMBOL_NOT_ALLOWED" };
+        return { ok: false, reason: "ELEANOR_SYMBOL_NOT_ALLOWED" };
       }
     }
-    const allowedClasses = parseJsonStringArray(settings.allowedRubyAssetClasses);
+    const allowedClasses = parseJsonStringArray(settings.allowedEleanorAssetClasses);
     if (allowedClasses && symbol) {
       const cls = String(getSymbolProfile(symbol).assetClass).toLowerCase();
       if (!allowedClasses.some((c) => c.trim().toLowerCase() === cls)) {
-        return { ok: false, reason: "RUBY_ASSET_CLASS_NOT_ALLOWED" };
+        return { ok: false, reason: "ELEANOR_ASSET_CLASS_NOT_ALLOWED" };
       }
     }
   }
@@ -265,40 +265,40 @@ function rubyAuthCheck(
 }
 
 /**
- * Per-Ruby COUNT caps — async because they read live state. OPEN actions only
+ * Per-Eleanor COUNT caps — async because they read live state. OPEN actions only
  * (caps bound NEW risk). Enforced IN ADDITION to (never instead of) account
  * limits and the 16-gate dispatch.
  */
-async function rubyCapsCheck(
+async function eleanorCapsCheck(
   userId: number,
   intent: InstantTradeIntent,
-  settings: RubySettingsView,
-): Promise<{ ok: true } | { ok: false; reason: RubyAuthReason }> {
-  if (!isRubySource(intent.source)) return { ok: true };
+  settings: EleanorSettingsView,
+): Promise<{ ok: true } | { ok: false; reason: EleanorAuthReason }> {
+  if (!isEleanorSource(intent.source)) return { ok: true };
   if (intent.action !== "BUY" && intent.action !== "SELL") return { ok: true };
 
-  if (settings.maxRubyOpenPositions != null) {
+  if (settings.maxEleanorOpenPositions != null) {
     const open = await selectLiveOpenPositions(
       { c: livePositionColumns.id },
       { userId, basis: "UNCLOSED" },
     );
-    if (open.length >= settings.maxRubyOpenPositions) {
-      return { ok: false, reason: "RUBY_MAX_OPEN_POSITIONS_REACHED" };
+    if (open.length >= settings.maxEleanorOpenPositions) {
+      return { ok: false, reason: "ELEANOR_MAX_OPEN_POSITIONS_REACHED" };
     }
   }
 
-  if (settings.maxRubyDailyTrades != null) {
+  if (settings.maxEleanorDailyTrades != null) {
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
-    const today = await db.select({ id: rubyCommandsTable.id }).from(rubyCommandsTable)
+    const today = await db.select({ id: eleanorCommandsTable.id }).from(eleanorCommandsTable)
       .where(and(
-        eq(rubyCommandsTable.userId, userId),
-        eq(rubyCommandsTable.action, "OPEN_TRADE"),
-        gte(rubyCommandsTable.createdAt, since),
-        inArray(rubyCommandsTable.status, ["EXECUTING", "DISPATCHED", "COMPLETED"]),
+        eq(eleanorCommandsTable.userId, userId),
+        eq(eleanorCommandsTable.action, "OPEN_TRADE"),
+        gte(eleanorCommandsTable.createdAt, since),
+        inArray(eleanorCommandsTable.status, ["EXECUTING", "DISPATCHED", "COMPLETED"]),
       ));
-    if (today.length >= settings.maxRubyDailyTrades) {
-      return { ok: false, reason: "RUBY_DAILY_TRADE_LIMIT_REACHED" };
+    if (today.length >= settings.maxEleanorDailyTrades) {
+      return { ok: false, reason: "ELEANOR_DAILY_TRADE_LIMIT_REACHED" };
     }
   }
 
@@ -342,21 +342,21 @@ export async function executeInstant(args: {
     return { ok: false, httpStatus: 412, error: "LIVE_ONE_CLICK_DISABLED" };
   }
 
-  const rubyCheck = rubyAuthCheck(intent, settings);
-  if (!rubyCheck.ok) {
+  const eleanorCheck = eleanorAuthCheck(intent, settings);
+  if (!eleanorCheck.ok) {
     await writeAudit({
       userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua,
-      metadata: { intent, blockReason: rubyCheck.reason },
+      metadata: { intent, blockReason: eleanorCheck.reason },
     });
-    return { ok: false, httpStatus: 403, error: rubyCheck.reason, primaryReason: rubyCheck.reason };
+    return { ok: false, httpStatus: 403, error: eleanorCheck.reason, primaryReason: eleanorCheck.reason };
   }
-  const rubyCaps = await rubyCapsCheck(userId, intent, settings);
-  if (!rubyCaps.ok) {
+  const eleanorCaps = await eleanorCapsCheck(userId, intent, settings);
+  if (!eleanorCaps.ok) {
     await writeAudit({
       userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua,
-      metadata: { intent, blockReason: rubyCaps.reason },
+      metadata: { intent, blockReason: eleanorCaps.reason },
     });
-    return { ok: false, httpStatus: 403, error: rubyCaps.reason, primaryReason: rubyCaps.reason };
+    return { ok: false, httpStatus: 403, error: eleanorCaps.reason, primaryReason: eleanorCaps.reason };
   }
 
   const access = await loadAndEvaluateUserMasterLiveAccessGate(userId);
@@ -524,7 +524,7 @@ async function executeOpen(args: {
       userId, commandType, symbol, side: intent.action as "BUY" | "SELL", orderType,
       requestedVolume: intent.volume!, stopLoss: intent.stopLoss ?? null, takeProfit: intent.takeProfit ?? null,
       sourcePage: `INSTANT_${intent.source.toUpperCase()}`,
-      rubyExplanationSummary: intent.rawUserCommand ?? null,
+      eleanorExplanationSummary: intent.rawUserCommand ?? null,
       // Server-created provenance survives canonical → broker symbol mapping.
       // createLiveDraft integrity-signs this payload with the exact broker symbol.
       payload: { ...pendingPayload, ...(intent.source === "self_trade" ? { selfTradeSymbolBinding: { requestedSymbol: typedSymbol, brokerSymbol: symbol } } : {}) },
@@ -779,7 +779,7 @@ async function closeOnePosition(args: {
 
 /**
  * Dry-run validator — never inserts a command. Builds a draft and
- * immediately tears it down so callers (preview UI, Ruby preview) can
+ * immediately tears it down so callers (preview UI, Eleanor preview) can
  * see whether dispatch WOULD pass without committing. Re-uses the same
  * preflight gates as the real path.
  */
@@ -807,10 +807,10 @@ export async function validateInstant(args: {
     await audit("BLOCKED", "LIVE_ONE_CLICK_DISABLED");
     return { ok: false, httpStatus: 412, error: "LIVE_ONE_CLICK_DISABLED" };
   }
-  const ruby = rubyAuthCheck(intent, settings);
-  if (!ruby.ok) {
-    await audit("BLOCKED", ruby.reason);
-    return { ok: false, httpStatus: 403, error: ruby.reason };
+  const eleanor = eleanorAuthCheck(intent, settings);
+  if (!eleanor.ok) {
+    await audit("BLOCKED", eleanor.reason);
+    return { ok: false, httpStatus: 403, error: eleanor.reason };
   }
   const access = await loadAndEvaluateUserMasterLiveAccessGate(userId);
   if (access.decision === "BLOCKED") {

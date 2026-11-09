@@ -6,7 +6,7 @@
 // evaluates all 18 Phase B gates, and only THEN writes the row to
 // SENT_TO_MT5_LIVE. That read-then-write is a TOCTOU window. Two concurrent
 // dispatches of the SAME LIVE_APPROVED command — a double-tap, a retried
-// fetch, two browser tabs, Ruby racing a manual click — both read
+// fetch, two browser tabs, Eleanor racing a manual click — both read
 // status=LIVE_APPROVED, both pass all 18 gates (every gate is a property of
 // the user/bridge/symbol, not of "has this command already been sent"), and
 // both reach the write.

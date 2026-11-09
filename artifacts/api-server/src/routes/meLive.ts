@@ -100,7 +100,7 @@ function envelope() {
  *
  * `dispatchLiveCommand` reads the command row, runs all 18 Phase B gates, and
  * only then writes SENT_TO_MT5_LIVE. Two concurrent requests from the same
- * user (double-tap, retried fetch, two tabs, Ruby racing a manual click) both
+ * user (double-tap, retried fetch, two tabs, Eleanor racing a manual click) both
  * enter that window. The compare-and-set inside the pipeline is the
  * authoritative stop — this lock is the outer layer that keeps the two
  * requests from overlapping at all, matching what
@@ -282,7 +282,7 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
     stopLoss: b.stopLoss != null ? Number(b.stopLoss) : null,
     takeProfit: b.takeProfit != null ? Number(b.takeProfit) : null,
     sourcePage: b.sourcePage ?? b.source ?? "LIVE_TRADE_TICKET",
-    rubyExplanationSummary: b.rubyExplanationSummary ?? null,
+    eleanorExplanationSummary: b.eleanorExplanationSummary ?? null,
     payload: b.payload ?? {},
     ip,
   });
@@ -656,7 +656,7 @@ router.post("/me/live/controlled-test-trigger", requireUser, async (req, res) =>
     stopLoss: sl,
     takeProfit: b.takeProfit != null ? Number(b.takeProfit) : null,
     sourcePage: "CONTROLLED_LIVE_TEST",
-    rubyExplanationSummary: "Controlled live test trigger (EURUSD 0.01)",
+    eleanorExplanationSummary: "Controlled live test trigger (EURUSD 0.01)",
     payload: { controlledTest: true },
     ip,
   });

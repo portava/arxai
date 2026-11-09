@@ -1,4 +1,4 @@
-// Trading Calendar / Ruby Memory aggregates (performanceCC/aggregator.ts).
+// Trading Calendar / Eleanor Memory aggregates (performanceCC/aggregator.ts).
 //
 // The real aggregator runs; the database handle is a table-aware stub that
 // returns the rows each test sets for a table (and honours .limit()).

@@ -18,10 +18,10 @@ function data(signal: Partial<AiSignalSummary>): UseAiChartOverlaysResult {
       entry: 1.1, stopLoss: 1.09, takeProfit: 1.12, finalReadHeadline: null,
       ...signal,
     } as AiSignalSummary,
-    ruby: { status: "idle", read: null, error: null },
+    eleanor: { status: "idle", read: null, error: null },
     suppressed: false,
     suppressedReason: null,
-    requestRubyRead: vi.fn(),
+    requestEleanorRead: vi.fn(),
   };
 }
 

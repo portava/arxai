@@ -33,9 +33,9 @@ import {
   LayoutGrid, Plus, Activity, Trophy, Newspaper, Waves, Rocket,
 } from "lucide-react";
 import { STATUS_COLORS, type StatusTone } from "@/lib/design-tokens";
-import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
+import { EleanorReasoningBlock } from "@/components/eleanor/EleanorReasoningBlock";
 import { AccountingSummary } from "@/components/selfTrade/AccountingSummary";
-import { buildReasoningFromSelfTrade } from "@/lib/rubyReasoningBlock";
+import { buildReasoningFromSelfTrade } from "@/lib/eleanorReasoningBlock";
 import {
   useGetSelfTradeOverview,
   useGetSelfTradeAgents,
@@ -794,7 +794,7 @@ function DecisionCard({ d }: { d: SelfTradeDecision }) {
   const checks = (d.checks ?? []) as DecisionCheckLike[];
   const thesis = (d.thesis ?? null) as ThesisLike | null;
   const blockingFail = checks.some((c) => c.status === "FAIL" && c.blocking);
-  // ONE standardized, ALWAYS-VISIBLE Ruby Reasoning Block for the auto-bot's
+  // ONE standardized, ALWAYS-VISIBLE Eleanor Reasoning Block for the auto-bot's
   // proposed trade. The decision cycle is SHADOW / decision-only — the block
   // mirrors that honestly (blocked/denied -> NO TRADE) and grants NO execution
   // permission; this control room never bypasses a safety gate.
@@ -826,7 +826,7 @@ function DecisionCard({ d }: { d: SelfTradeDecision }) {
         <CardDescription className="text-xs">{d.reason}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <RubyReasoningBlock data={reasoning} testid="self-trade-reasoning" dense />
+        <EleanorReasoningBlock data={reasoning} testid="self-trade-reasoning" dense />
         <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 md:grid-cols-6">
           <div><div className="text-muted-foreground">Setup</div><div className="font-medium">{d.setup}</div></div>
           <div><div className="text-muted-foreground">Setup score</div><div className="font-medium">{num(d.setupScore, 0)}</div></div>

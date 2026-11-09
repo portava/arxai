@@ -1,4 +1,4 @@
-// Ruby Market Timing Brain — HTTP route.
+// Eleanor Market Timing Brain — HTTP route.
 //
 // GET /me/timing-brain/:symbol   → MarketTimingRead (per-user, auth required)
 // GET /me/timing-brain           → multi-symbol shortlist (up to 6 symbols)

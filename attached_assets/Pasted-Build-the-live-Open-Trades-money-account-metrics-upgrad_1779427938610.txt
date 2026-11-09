@@ -7,7 +7,7 @@ Only work on:
 3. The backend calculations needed to show each user’s live trade P/L and slotted-fund account metrics.
 
 Do not redesign or refactor unrelated pages.
-Do not touch login page, scanner, Ruby chat, admin dashboard, live execution logic, MT5 order placement logic, invite system, or global layout unless absolutely required to display this data correctly.
+Do not touch login page, scanner, Eleanor chat, admin dashboard, live execution logic, MT5 order placement logic, invite system, or global layout unless absolutely required to display this data correctly.
 
 GOAL:
 The open trades window should show each open trade’s live real-time money value and the user’s current account/slot metrics.

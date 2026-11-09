@@ -241,7 +241,7 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         const risk = await enforcePreTradeRisk({
           userId: req.userId,
           venue: req.mode === "SIMULATED" ? "PAPER" : req.mode,
-          origin: req.requestedBy === "ai-assistant" ? "ruby" : req.requestedBy === "system" ? "automation" : "manual",
+          origin: req.requestedBy === "ai-assistant" ? "eleanor" : req.requestedBy === "system" ? "automation" : "manual",
           action: "OPEN",
           symbol: req.symbol, side: req.side, lots: req.lotSize,
           stopLoss: req.stopLoss ?? null, takeProfit: req.takeProfit ?? null,

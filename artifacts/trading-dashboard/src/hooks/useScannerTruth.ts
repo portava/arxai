@@ -3,7 +3,7 @@
 // Composes the ONE honest market query (GET /api/chart/candles, shared cache)
 // with the user's account-mode permissions (useTradingMode) and resolves them
 // through the pure resolveScannerTruth contract. Every scanner surface (header
-// strip, chart panel, timing card, Ruby reads, overlays, trade buttons) should
+// strip, chart panel, timing card, Eleanor reads, overlays, trade buttons) should
 // consume this rather than re-deriving freshness/permission logic on its own.
 
 import { useQuery } from "@tanstack/react-query";

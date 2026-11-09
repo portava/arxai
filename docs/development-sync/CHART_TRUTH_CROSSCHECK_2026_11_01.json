@@ -90,7 +90,7 @@
       "sha256": "285d0d7164b2df5a0711cd9a8209f07861b5cad04128807d6c3a90d9bbb5efb8"
     },
     {
-      "path": "artifacts/trading-dashboard/src/lib/rubyReasoningBlock.ts",
+      "path": "artifacts/trading-dashboard/src/lib/eleanorReasoningBlock.ts",
       "sha256": "60c54cba43887a137d87218760d0f27e93b214f63525d5d600ce0c26a64351b0"
     },
     {

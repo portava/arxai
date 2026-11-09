@@ -19,7 +19,7 @@ vi.mock("@/components/live/MasterLiveAccessGuard", () => ({
   useMasterLiveAccess: () => ({ canTrade: false, loaded: true }),
 }));
 vi.mock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ effectiveIsAdmin: false }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: LiveAiAssistPage, snapshotToState } = await import("./live-ai-assist");
 

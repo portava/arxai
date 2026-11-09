@@ -23,7 +23,7 @@ Last refreshed alongside `ARX_AI_LAUNCH_CANDIDATE_0.1`. Items below are
 - Mobile bottom nav does not yet collapse admin entries when role is
   not ADMIN/OWNER — admin links are visually hidden but appear in the
   DOM. No data leak (admin routes return 403); cosmetic only.
-- Some Ruby tool descriptions are long enough to push the system
+- Some Eleanor tool descriptions are long enough to push the system
   prompt close to the model context. Plan: refactor into a tool
   registry with short summaries (post-launch).
 - Reconciliation Center "byType" counts are not yet sorted by

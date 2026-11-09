@@ -24,9 +24,9 @@ const SURFACE_DEPARTMENTS: Record<string, readonly string[]> = {
   SCANNER: ["MARKET_STRUCTURE", "ENTRY", "EXECUTION", "RISK", "SCANNER", "NEWS"],
   RISK: ["MARKET_STRUCTURE", "ENTRY", "EXECUTION", "RISK", "SCANNER", "NEWS", "EXIT"],
   SCALP: ["SCALP", "RISK"],
-  // Match the departments used by rubySignalAlignment. Ruby explanations must
+  // Match the departments used by eleanorSignalAlignment. Eleanor explanations must
   // include risk review rather than silently selecting an empty participant set.
-  RUBY: ["MARKET_STRUCTURE", "ENTRY", "EXECUTION", "RISK", "SCANNER"],
+  ELEANOR: ["MARKET_STRUCTURE", "ENTRY", "EXECUTION", "RISK", "SCANNER"],
 };
 
 /** Operations agents only join HIGH-importance reviews (they watch the system, not the signal). */

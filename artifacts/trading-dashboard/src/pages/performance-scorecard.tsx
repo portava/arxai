@@ -42,11 +42,11 @@ type HeatReport = {
   symbolBreakdown?: Array<{ symbol: string; avgHeat: number; bestGrade: string; count: number }>;
 };
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* silent */ }
 }
 
@@ -118,7 +118,7 @@ export default function PerformanceScorecard() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={openRubyLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/15">
+          <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/15">
             <MessageCircle className="h-4 w-4" /> Ask {name}
           </button>
         </div>
@@ -154,11 +154,11 @@ export default function PerformanceScorecard() {
           </div>
           </RouteLayoutPanel>
 
-          {/* Ruby read + best/worst */}
+          {/* Eleanor read + best/worst */}
           <RouteLayoutPanel routeKey="/performance-scorecard/review" id="performance-review" title="Performance review" icon={Sparkles}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-ruby/25 bg-card p-4">
-              <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-ruby" /><h3 className="text-sm font-semibold text-ruby">{name}’s Performance Read</h3></div>
+            <div className="rounded-2xl border border-eleanor/25 bg-card p-4">
+              <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-eleanor" /><h3 className="text-sm font-semibold text-eleanor">{name}’s Performance Read</h3></div>
               {s.headline.totalTrades === 0 ? (
                 <p className="mt-2 text-sm text-txt-muted">{name} will generate a performance read after more closed trades are available.</p>
               ) : (
@@ -170,7 +170,7 @@ export default function PerformanceScorecard() {
                   {s.worstSymbol ? <>Watch <span className="text-danger font-medium">{s.worstSymbol}</span> — it’s been your weakest.</> : null}
                 </p>
               )}
-              <button onClick={openRubyLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby">
+              <button onClick={openEleanorLiveChat} className="mt-3 flex w-full items-center justify-between rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor">
                 <span className="inline-flex items-center gap-1.5"><MessageCircle className="h-4 w-4" /> Ask {name}</span>
                 <ChevronRight className="h-4 w-4" />
               </button>

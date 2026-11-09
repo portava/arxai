@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQue
 vi.mock("@/hooks/useTradingMode", () => ({
   useTradingMode: () => ({ isLoading: false, isFrozen: false, isLiveShared: false, approvalStatus: "APPROVED" }),
 }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: MT5BridgePage } = await import("./mt5-bridge");
 

@@ -1,4 +1,4 @@
-// Regression locks for the Ruby Flame Scalp add-on tier table and exit ladder.
+// Regression locks for the Eleanor Flame Scalp add-on tier table and exit ladder.
 // Run via:
 //   node --import tsx --test src/lib/scalp/__qa__/scalpAddonTiers.test.ts
 // (wired as `pnpm --filter @workspace/api-server run test:scalp-addon-tiers`)

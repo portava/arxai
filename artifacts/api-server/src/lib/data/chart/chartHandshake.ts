@@ -29,8 +29,8 @@ export interface AaciChartHandshake {
   BrokerPriceAlignment: ChartHandshakeVerdict;
   /** Actual renderer evidence; source-bar shape alone cannot prove this. */
   RenderHealth: ChartHandshakeVerdict;
-  /** Ruby read allowed — confidentReadAllowed from gate. */
-  RubyReadAllowed: ChartHandshakeVerdict;
+  /** Eleanor read allowed — confidentReadAllowed from gate. */
+  EleanorReadAllowed: ChartHandshakeVerdict;
   /** Self-trade chart allowed — selfTradeChartAllowed from gate. */
   SelfTradeChartAllowed: ChartHandshakeVerdict;
 
@@ -46,7 +46,7 @@ export interface AaciChartHandshake {
    * checks passed while client renderer telemetry is unmeasured (wording), and
    * the decision-summary cap reads it as one more reason to lower a read. It
    * never turns an unmeasured RenderHealth into a PASS (`overall` still
-   * carries it, and the Ruby read basis keeps `overall`), and a measured
+   * carries it, and the Eleanor read basis keeps `overall`), and a measured
    * renderer FAIL still fails this rollup.
    */
   sourceOverall: ChartHandshakeVerdict;
@@ -127,7 +127,7 @@ export function buildChartHandshake(
     ? scoreToVerdict(subMetricScore(truthScore, "render_accuracy"))
     : "WARN";
 
-  const RubyReadAllowed = boolToVerdict(gate.confidentReadAllowed);
+  const EleanorReadAllowed = boolToVerdict(gate.confidentReadAllowed);
 
   const SelfTradeChartAllowed = boolToVerdict(gate.selfTradeChartAllowed);
 
@@ -140,7 +140,7 @@ export function buildChartHandshake(
     HistoricalLiveMerge,
     BrokerPriceAlignment,
     RenderHealth,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
   ];
   // Every check about the candle data itself (all but RenderHealth).
@@ -152,7 +152,7 @@ export function buildChartHandshake(
     FeedFreshness,
     HistoricalLiveMerge,
     BrokerPriceAlignment,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
   ];
 
@@ -165,7 +165,7 @@ export function buildChartHandshake(
     HistoricalLiveMerge,
     BrokerPriceAlignment,
     RenderHealth,
-    RubyReadAllowed,
+    EleanorReadAllowed,
     SelfTradeChartAllowed,
     overall: rollup(all),
     sourceOverall: rollup(RenderHealth === "FAIL" ? ["FAIL"] : source),

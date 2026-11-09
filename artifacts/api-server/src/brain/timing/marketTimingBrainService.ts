@@ -1,4 +1,4 @@
-// Ruby Market Timing Brain — Composer Service.
+// Eleanor Market Timing Brain — Composer Service.
 //
 // `marketTimingBrainService` composes all timing engine outputs into one
 // structured MarketTimingRead per symbol. Applies honesty/empty-state rules

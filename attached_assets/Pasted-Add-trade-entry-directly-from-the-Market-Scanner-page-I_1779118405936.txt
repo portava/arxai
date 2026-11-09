@@ -4,7 +4,7 @@ Important:
 - Check what already exists first, then adjust.
 - Do not break the working MT5 demo bridge.
 - Live broker execution must remain disabled unless separately enabled through the protected live flow.
-- All AI explanations must come from Ruby.
+- All AI explanations must come from Eleanor.
 
 Build this:
 
@@ -37,10 +37,10 @@ Trade ticket modal must include:
 - margin impact if available
 - confirmation button
 
-3. Add a small Ruby explanation window inside the scanner card or trade modal.
+3. Add a small Eleanor explanation window inside the scanner card or trade modal.
 
 Title:
-“Ruby’s Setup Reason”
+“Eleanor’s Setup Reason”
 
 The explanation should briefly say why the scanner thinks the market may be a buy or sell based on available tools, including:
 - trend direction
@@ -66,7 +66,7 @@ Example format:
 - Possible TP area: ___
 - Confidence: Medium
 
-4. Ruby must not present scanner ideas as guaranteed trades.
+4. Eleanor must not present scanner ideas as guaranteed trades.
 Use language like:
 - “This looks like a possible buy setup.”
 - “This setup may favor sellers.”
@@ -82,7 +82,7 @@ Do not use guaranteed/profit-certain language.
 - spread if available
 - volatility warning if high
 - signal age
-- Ruby explanation preview
+- Eleanor explanation preview
 - Buy / Sell buttons
 
 6. If the user submits the trade from the scanner:
@@ -121,12 +121,12 @@ On the scanner page, add a compact “Recent Scanner Trades” section showing:
 - status
 - broker ticket
 - source signal confidence
-- Ruby reason summary
+- Eleanor reason summary
 
 Acceptance proof:
 - User can place a demo trade directly from a Market Scanner result.
 - Trade modal opens from scanner without leaving page.
-- Ruby explanation appears beside the trade setup.
+- Eleanor explanation appears beside the trade setup.
 - Submitted scanner trade appears in Recent Demo Commands.
 - Filled scanner trade appears in Open Demo Positions.
 - Rejected scanner trade shows exact reason.

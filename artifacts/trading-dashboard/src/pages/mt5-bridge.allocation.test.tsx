@@ -24,7 +24,7 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries: () => {} }) }));
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => mode }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 
 const { default: MT5BridgePage } = await import("./mt5-bridge");
 

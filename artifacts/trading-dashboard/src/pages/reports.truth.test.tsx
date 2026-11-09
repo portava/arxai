@@ -1,7 +1,7 @@
 // Reports page truth: the Rows column printed `rowCount ?? 0`, so a report
 // still processing or one that failed read "0 rows" as if it had completed
 // empty. The demo-trade report types also read a different book (the trades
-// logged on My Demo Trades) from the Calendar page and Ruby Memory (the demo
+// logged on My Demo Trades) from the Calendar page and Eleanor Memory (the demo
 // sandbox order ledger) under the same "Demo Trades" name.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";

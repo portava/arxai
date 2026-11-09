@@ -104,7 +104,7 @@ export interface FeedConfidenceBadgeProps {
    * Task #780 — when true, the ALWAYS-VISIBLE quality sub-chip appends an inline
    * "· N missing" trailing-interval count (the SAME `trailingIntervals` the
    * detail popover already shows) so a degrading feed is diagnosable without
-   * opening the popover. Opt-in (Ruby chat feed chip): other callers keep the
+   * opening the popover. Opt-in (Eleanor chat feed chip): other callers keep the
    * bare chip. Suppressed for a current feed (<=1), honest "· —" when null.
    */
   showTrailingGap?: boolean;

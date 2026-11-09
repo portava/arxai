@@ -9,7 +9,7 @@ import type { ScalpExitVerdictAction } from "./scalpExitVerdictAction";
 import type { ScalpExitVerdictUrgency } from "./scalpExitVerdictUrgency";
 
 /**
- * Exit-urgency monitor. ALERT_ONLY — Ruby recommends, it never closes.
+ * Exit-urgency monitor. ALERT_ONLY — Eleanor recommends, it never closes.
  */
 export interface ScalpExitVerdict {
   urgency: ScalpExitVerdictUrgency;

@@ -25,7 +25,7 @@ export interface UseSpeakResponsesApi {
   state: SpeakState;
   speak: (text: string) => void;
   stop: () => void;
-  // ── Streaming speech (read aloud while Ruby types) ────────────────────
+  // ── Streaming speech (read aloud while Eleanor types) ────────────────────
   // Begin a fresh streaming utterance for a new turn. Clears any queued
   // sentences and resets the consumed-text pointer.
   speakStreamReset: () => void;
@@ -132,8 +132,8 @@ export function saveVoiceName(name: string) {
 
 // ── Server voice preference (ElevenLabs / OpenAI) ─────────────────────────
 // ONE voice store: `arx.tts.preference.v1` is the key useUserVoiceSettings
-// mirrors the per-user server prefs into, and the one useRubyTTS /
-// RubyVoiceProvider read for proactive speech. The old chat-only key
+// mirrors the per-user server prefs into, and the one useEleanorTTS /
+// EleanorVoiceProvider read for proactive speech. The old chat-only key
 // (`arx.tts.server.v1`) is still read as a fallback so an earlier pick is
 // not lost, and is cleared on the next save.
 const SHARED_VOICE_KEY = "arx.tts.preference.v1";

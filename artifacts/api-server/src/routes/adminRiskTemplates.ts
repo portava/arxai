@@ -79,7 +79,7 @@ const payloadSchema = z.object({
   oneClickTradingEnabled: z.boolean().optional(),
   aiTradingEnabled: z.boolean().optional(),
   aiAutoCloseEnabled: z.boolean().optional(),
-  rubyVoiceEnabled: z.boolean().optional(),
+  eleanorVoiceEnabled: z.boolean().optional(),
   newsIntelligenceEnabled: z.boolean().optional(),
   historicalBacktestEnabled: z.boolean().optional(),
   scannerLiveEnabled: z.boolean().optional(),

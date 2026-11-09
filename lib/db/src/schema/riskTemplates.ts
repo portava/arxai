@@ -28,7 +28,7 @@ export interface RiskTemplatePayload {
   oneClickTradingEnabled?: boolean;
   aiTradingEnabled?: boolean;
   aiAutoCloseEnabled?: boolean;
-  rubyVoiceEnabled?: boolean;
+  eleanorVoiceEnabled?: boolean;
   newsIntelligenceEnabled?: boolean;
   historicalBacktestEnabled?: boolean;
   scannerLiveEnabled?: boolean;

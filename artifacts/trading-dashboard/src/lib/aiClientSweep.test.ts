@@ -2,9 +2,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { normalizeVoiceStreamEvent, parseVoiceStreamEvent } from "@workspace/integrations-openai-ai-react/audio";
 import { isRealtimeSafetyEnvelopeAcceptable } from "@/components/help/useRealtimeVoice";
 import {
-  rubyCommandAccountMode, friendlyRubyCommandError, rubyCommandReplyText, rubyNotLiveReply,
-} from "./rubyCommandIntent";
-import { classifyCommandStatus, pollRubyCommandOutcome, rubyCommandOutcomeText } from "./rubyCommandOutcome";
+  eleanorCommandAccountMode, friendlyEleanorCommandError, eleanorCommandReplyText, eleanorNotLiveReply,
+} from "./eleanorCommandIntent";
+import { classifyCommandStatus, pollEleanorCommandOutcome, eleanorCommandOutcomeText } from "./eleanorCommandOutcome";
 import { openAssistantWithPrompt, onAssistantPrompt, chatRateLimitedText } from "./assistantPanelBus";
 
 // AI client sweep 2026-11-04 (AC1, AC2, AC3, AC4, AC6, AC12, AC5 bus).
@@ -49,35 +49,35 @@ describe("AC2 realtime safety envelope", () => {
 
 describe("AC3 account mode for the command route", () => {
   it("LIVE_SHARED counts as live even when not armed; armed counts as live", () => {
-    expect(rubyCommandAccountMode({ isLiveShared: true, isLiveArmed: false })).toBe("live");
-    expect(rubyCommandAccountMode({ isLiveShared: false, isLiveArmed: true })).toBe("live");
+    expect(eleanorCommandAccountMode({ isLiveShared: true, isLiveArmed: false })).toBe("live");
+    expect(eleanorCommandAccountMode({ isLiveShared: false, isLiveArmed: true })).toBe("live");
   });
   it("demo / loading fail closed to demo", () => {
-    expect(rubyCommandAccountMode({ isLiveShared: false, isLiveArmed: false })).toBe("demo");
-    expect(rubyCommandAccountMode({ isLoading: true, isLiveShared: true, isLiveArmed: true })).toBe("demo");
+    expect(eleanorCommandAccountMode({ isLiveShared: false, isLiveArmed: false })).toBe("demo");
+    expect(eleanorCommandAccountMode({ isLoading: true, isLiveShared: true, isLiveArmed: true })).toBe("demo");
   });
   it("non-live reply is plain and names where to go", () => {
-    expect(rubyNotLiveReply("Ruby")).toMatch(/live account only/);
-    expect(rubyNotLiveReply("Ruby")).not.toMatch(/[A-Z]{3,}_[A-Z_]+/);
+    expect(eleanorNotLiveReply("Eleanor")).toMatch(/live account only/);
+    expect(eleanorNotLiveReply("Eleanor")).not.toMatch(/[A-Z]{3,}_[A-Z_]+/);
   });
 });
 
 describe("AC4 friendly refusal copy", () => {
-  it("RUBY_OPEN_COMMANDS_NOT_ENABLED says where to turn it on", () => {
-    const t = friendlyRubyCommandError("RUBY_OPEN_COMMANDS_NOT_ENABLED", "Ruby")!;
+  it("ELEANOR_OPEN_COMMANDS_NOT_ENABLED says where to turn it on", () => {
+    const t = friendlyEleanorCommandError("ELEANOR_OPEN_COMMANDS_NOT_ENABLED", "Eleanor")!;
     expect(t).toMatch(/Open new trades/);
     expect(t).toMatch(/Settings/);
   });
   it("the chat reply never shows a raw code for known refusals", () => {
-    const reply = rubyCommandReplyText({ ok: false, error: "RUBY_OPEN_COMMANDS_NOT_ENABLED", message: "I couldn't execute: RUBY_OPEN_COMMANDS_NOT_ENABLED." }, "Ruby");
-    expect(reply).not.toMatch(/RUBY_OPEN_COMMANDS_NOT_ENABLED/);
-    for (const code of ["RUBY_CLOSE_COMMANDS_NOT_ENABLED", "RUBY_MODIFY_COMMANDS_NOT_ENABLED", "LIVE_ONE_CLICK_DISABLED", "UNSUPPORTED_ACCOUNT_MODE_FOR_INSTANT_LIVE"]) {
-      expect(rubyCommandReplyText({ ok: false, error: code, message: `I couldn't execute: ${code}.` }, "Ruby")).not.toContain(code);
+    const reply = eleanorCommandReplyText({ ok: false, error: "ELEANOR_OPEN_COMMANDS_NOT_ENABLED", message: "I couldn't execute: ELEANOR_OPEN_COMMANDS_NOT_ENABLED." }, "Eleanor");
+    expect(reply).not.toMatch(/ELEANOR_OPEN_COMMANDS_NOT_ENABLED/);
+    for (const code of ["ELEANOR_CLOSE_COMMANDS_NOT_ENABLED", "ELEANOR_MODIFY_COMMANDS_NOT_ENABLED", "LIVE_ONE_CLICK_DISABLED", "UNSUPPORTED_ACCOUNT_MODE_FOR_INSTANT_LIVE"]) {
+      expect(eleanorCommandReplyText({ ok: false, error: code, message: `I couldn't execute: ${code}.` }, "Eleanor")).not.toContain(code);
     }
   });
   it("keeps the server message for ok / unknown cases and handles rate limits", () => {
-    expect(rubyCommandReplyText({ ok: true, message: "Sent." }, "Ruby")).toBe("Sent.");
-    expect(rubyCommandReplyText({ ok: false, error: "rate_limited", retryAfterSeconds: 12 }, "Ruby")).toMatch(/12 s/);
+    expect(eleanorCommandReplyText({ ok: true, message: "Sent." }, "Eleanor")).toBe("Sent.");
+    expect(eleanorCommandReplyText({ ok: false, error: "rate_limited", retryAfterSeconds: 12 }, "Eleanor")).toMatch(/12 s/);
   });
 });
 
@@ -95,23 +95,23 @@ describe("AC6 command follow-up", () => {
     const replies = [{ status: "SENT_TO_MT5_LIVE" }, { status: "LIVE_FILLED", brokerTicket: "123", fillPrice: 1.0912 }];
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(replies.shift()), { status: 200 })) as unknown as typeof fetch;
     let t = 0;
-    const out = await pollRubyCommandOutcome("cmd-1", { fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
+    const out = await pollEleanorCommandOutcome("cmd-1", { fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
     expect(out).toMatchObject({ phase: "filled", brokerTicket: "123" });
-    expect(rubyCommandOutcomeText(out!)).toBe("Filled at 1.0912 — ticket 123.");
+    expect(eleanorCommandOutcomeText(out!)).toBe("Filled at 1.0912 — ticket 123.");
     expect((fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![0]).toBe("/api/me/live/command-status/cmd-1");
   });
 
   it("stops after the bounded window and says pending", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ status: "SENT_TO_MT5_LIVE" }), { status: 200 })) as unknown as typeof fetch;
     let t = 0;
-    const out = await pollRubyCommandOutcome("cmd-2", { fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t, windowMs: 5000 });
+    const out = await pollEleanorCommandOutcome("cmd-2", { fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t, windowMs: 5000 });
     expect(out).toEqual({ phase: "pending" });
-    expect(rubyCommandOutcomeText(out!)).toMatch(/still pending/);
+    expect(eleanorCommandOutcomeText(out!)).toMatch(/still pending/);
   });
 
   it("returns null when cancelled (panel unmounted)", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
-    const out = await pollRubyCommandOutcome("cmd-3", { fetchImpl, sleep: async () => {}, isCancelled: () => true });
+    const out = await pollEleanorCommandOutcome("cmd-3", { fetchImpl, sleep: async () => {}, isCancelled: () => true });
     expect(out).toBeNull();
   });
 });

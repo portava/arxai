@@ -27,7 +27,7 @@ export interface ScalpJournalEntry {
   realizedPl?: number | null;
   lastFloatingPl?: number | null;
   flameContinued?: boolean | null;
-  rubyWarnedCorrectly?: boolean | null;
+  eleanorWarnedCorrectly?: boolean | null;
   exitReason?: string | null;
   lesson?: string | null;
   openedAt?: string | null;

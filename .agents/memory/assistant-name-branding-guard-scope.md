@@ -1,6 +1,6 @@
 ---
 name: Assistant-name branding guard scope
-description: Where user-facing "Ruby"→resolved-name copy lives, how the source-scan guard must be scoped, and how to classify library hits (allowlist vs fix).
+description: Where user-facing "Eleanor"→resolved-name copy lives, how the source-scan guard must be scoped, and how to classify library hits (allowlist vs fix).
 ---
 
 # Assistant-name branding guard scope
@@ -38,7 +38,7 @@ comment, before allowlisting:
   admin-only. `/me/aaci/*` returns only `userFacingExplanation` =
   `buildUserExplanation(action, hardGate.userMessages)` — it NEVER reads
   `cohesion.conflicts`; `systemConflicts` = `conflicts.map(c=>c.code)` (machine
-  codes, not `.detail`). `systems: ["Ruby",...]` are typed `AaciHandshakeSystem`
+  codes, not `.detail`). `systems: ["Eleanor",...]` are typed `AaciHandshakeSystem`
   identifiers (renaming forbidden). → allowlist, don't change.
 - Agent-system (`coreAgents.ts`, `constitution/agentConstitution.ts`) and
   handshake (`handshake.types.ts`, `handshakeRegistry.ts`) are internal
@@ -48,12 +48,12 @@ comment, before allowlisting:
 
 Everything else repo-wide that still contains the codename is out of scope by
 construction: DB columns (`lib/db/src/schema/*`), generated types
-(`lib/api-zod`, `lib/api-client-react`), OpenAPI schema names, `ruby_*` event
+(`lib/api-zod`, `lib/api-client-react`), OpenAPI schema names, `eleanor_*` event
 sources, and code comments — all internal identifiers the task must not rename.
 
 ## Prove completeness
 Re-measure by walking the target roots through the guard's own
 `findAssistantNameLeaksInSource` + `isAssistantScanExcluded` and assert zero
 non-allowlisted hits; then run the regression suite + `ci:guards`. A repo-wide
-`rg -w Ruby` (files/counts only — content can mangle in this env) confirms
+`rg -w Eleanor` (files/counts only — content can mangle in this env) confirms
 nothing user-facing hides outside the scan roots.

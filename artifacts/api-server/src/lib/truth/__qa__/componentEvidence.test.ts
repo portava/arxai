@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRubyMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
+import { buildEleanorMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
 import { MIN_SUFFICIENT_CLOSED_BARS } from "@workspace/domain/market";
 import { composeVerdict } from "@workspace/domain/truth";
 import { buildSymbolTruthSnapshot, capExpiredTruthSnapshot, type TruthSnapshotDeps } from "../symbolTruthSnapshot.js";
@@ -15,7 +15,7 @@ const inputs: SignalEngineInput = { symbol: "EURUSD", displayName: "EURUSD", tim
     setupType: "Trend", entry: 1.098, entryZone: { from: 1.0978, to: 1.0982 }, stopLoss: 1.097, takeProfit: 1.1, reasonForTrade: "", reasonToAvoid: "" },
   scalp: null, execution: null, newsRiskLevel: null, previous: null, now: NOW };
 function signal() {
-  const value = buildRubyMarketEdge(inputs);
+  const value = buildEleanorMarketEdge(inputs);
   return { ...value, marketEvidence: { ...fixture.evidence, userId: 1 } };
 }
 async function snapshot(scanner = signal(), over: Partial<TruthSnapshotDeps> = {}) {
@@ -27,9 +27,9 @@ async function snapshot(scanner = signal(), over: Partial<TruthSnapshotDeps> = {
 const quietTiming = { computeNewsHeatFn: async () => ({ phase: "NONE", eventName: null, minutesUntil: null, minutesSince: null, eventType: "none", surpriseScore: null, heatAdjustment: 0, blocksTrade: false }) as never,
   computeBroadFlowFn: async () => ({ verdict: "UNAVAILABLE", institutionalFlowScore: 50, competingCatalyst: false, description: "", correlatedAssets: [], dataQuality: "unavailable" }) as never };
 
-test("real expired Ruby output cannot become a fresh actionable snapshot", async () => {
+test("real expired Eleanor output cannot become a fresh actionable snapshot", async () => {
   const old = new Date(NOW - 86_400_000).toISOString();
-  const expired = { ...buildRubyMarketEdge({ ...inputs, previous: { ...signal(), firstSeenAt: old, generatedAt: old, overallScore: 80 } }), marketEvidence: { ...fixture.evidence, userId: 1 } };
+  const expired = { ...buildEleanorMarketEdge({ ...inputs, previous: { ...signal(), firstSeenAt: old, generatedAt: old, overallScore: 80 } }), marketEvidence: { ...fixture.evidence, userId: 1 } };
   assert.equal(expired.hasSufficientData, true); assert.equal(expired.direction, "BUY"); assert.equal(expired.lifecycleStage, "EXPIRED");
   const result = await snapshot(expired);
   assert.equal(result.components.scanner.present, false); assert.equal(result.levels.withheld, true); assert.equal(result.verdict.bestAction, "WATCH_ONLY");

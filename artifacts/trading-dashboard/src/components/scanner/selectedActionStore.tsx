@@ -14,7 +14,7 @@ import type { ActionDirection, PublishedScannerAction } from "@/lib/scannerActio
 // engine reads M5 → bus "5m") and lifts it here; the header strip's Action cell
 // reads it back via `resolveSelectedSymbolActionability` so the header can never
 // disagree with the selected-symbol card. Keyed by bare symbol (uppercased) AND
-// timeframe, mirroring the rubyReadStore convention exactly: publishers pass the
+// timeframe, mirroring the eleanorReadStore convention exactly: publishers pass the
 // engine's bare symbol + the bus timeframe they read; readers pass
 // `bareSymbol(chartSym)` + `coerceVisibleTimeframe(selectedTimeframe)`. Keying by
 // timeframe is what stops a stale cross-timeframe verdict masquerading as the

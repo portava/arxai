@@ -1,7 +1,7 @@
-// Ruby Scalp Signals — shared scalp evaluation engine (pure, deterministic).
+// Eleanor Scalp Signals — shared scalp evaluation engine (pure, deterministic).
 //
 // `evaluateScalp(input)` is the single brain behind the Focus Scan card, the
-// Broad Scan ranking, and the Ruby Scalp Builder. It is pure (no I/O); the
+// Broad Scan ranking, and the Eleanor Scalp Builder. It is pure (no I/O); the
 // service layer gathers live inputs (scanner read, broker specs, account) and
 // calls this. Same scoring + same risk math everywhere => no conflicting
 // answers.

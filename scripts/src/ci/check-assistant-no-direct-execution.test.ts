@@ -1,7 +1,7 @@
 // Regression suite for the assistant-no-direct-execution CI guard (#750/#755).
 //
 // Exercises the pure `scanAssistantForViolations` against synthetic assistant-
-// route snippets. The sanctioned pipeline (submitInstantTrade → executeInstant + recordAndExecuteRuby)
+// route snippets. The sanctioned pipeline (submitInstantTrade → executeInstant + recordAndExecuteEleanor)
 // must stay clean; every direct-execution escape — including ALIASED imports
 // (local `as` and cross-file re-export) of a forbidden command table / order-send
 // primitive — MUST be flagged. Pure source analysis: no network, DB, or fs.
@@ -22,8 +22,8 @@ export {};
 // any "should stay clean" or "should still flag the bypass" snippet so a test
 // failure is unambiguously about the forbidden scan, not a MISSING path.
 const SANCTIONED = `
-  const r = await submitInstantTrade({ source: "ruby_text" });
-  await recordAndExecuteRuby(userId, action);
+  const r = await submitInstantTrade({ source: "eleanor_text" });
+  await recordAndExecuteEleanor(userId, action);
 `;
 
 type Case = {
@@ -37,7 +37,7 @@ type Case = {
 const cases: Case[] = [
   // ── Must stay CLEAN ────────────────────────────────────────────────────────
   {
-    name: "sanctioned pipeline only (submitInstantTrade + recordAndExecuteRuby)",
+    name: "sanctioned pipeline only (submitInstantTrade + recordAndExecuteEleanor)",
     shouldFlag: false,
     src: SANCTIONED,
   },
@@ -104,10 +104,10 @@ const cases: Case[] = [
   {
     name: "a direct executeInstant call no longer satisfies the router anchor",
     shouldFlag: true,
-    src: `const r = await executeInstant({ source: "ruby_text" });\nawait recordAndExecuteRuby(userId, action);\n`,
+    src: `const r = await executeInstant({ source: "eleanor_text" });\nawait recordAndExecuteEleanor(userId, action);\n`,
   },
   {
-    name: "missing submitInstantTrade + recordAndExecuteRuby is flagged",
+    name: "missing submitInstantTrade + recordAndExecuteEleanor is flagged",
     shouldFlag: true,
     src: `const noop = 1;\n`,
   },

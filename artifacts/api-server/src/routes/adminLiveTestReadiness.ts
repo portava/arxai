@@ -475,7 +475,7 @@ router.get("/admin/live-test-readiness/t015-status", async (req, res) => {
       perTradeLimit: null,
       note: "Owner/admin manual live testing is ongoing. There is no global "
         + "\"one live trade\" limit on the manual path — place additional live "
-        + "trades from the scanner, chart, Trade page, or Ruby entry as needed.",
+        + "trades from the scanner, chart, Trade page, or Eleanor entry as needed.",
     },
     readiness: {
       decision: result.decision,

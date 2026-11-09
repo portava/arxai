@@ -115,7 +115,7 @@ export interface NormalizedChartCandle {
   // True ONLY for a server-synthesized real-time tip composed from live ticks
   // (Task #496). Distinct from isComplete: a closed provider bar is
   // isComplete=true/isForming=false; the live tick tip is
-  // isComplete=false/isForming=true. Analysis/Ruby/chart-intelligence MUST
+  // isComplete=false/isForming=true. Analysis/Eleanor/chart-intelligence MUST
   // exclude isForming bars (closed-bars-only). Never persisted.
   isForming: boolean;
   receivedAt: string;   // ISO 8601 — when this batch was fetched from the provider

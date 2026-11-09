@@ -31,11 +31,11 @@ import { formatPnl, formatPercent } from "@/lib/format";
 import { useAssistantName } from "@/lib/assistant-name";
 import { downloadCsv, csvTimestamp } from "@/lib/csvExport";
 
-const RUBY_OPEN_KEY = "arx.assistant.open.v2";
-function openRubyLiveChat() {
+const ELEANOR_OPEN_KEY = "arx.assistant.open.v2";
+function openEleanorLiveChat() {
   try {
-    sessionStorage.setItem(RUBY_OPEN_KEY, "1");
-    window.dispatchEvent(new StorageEvent("storage", { key: RUBY_OPEN_KEY }));
+    sessionStorage.setItem(ELEANOR_OPEN_KEY, "1");
+    window.dispatchEvent(new StorageEvent("storage", { key: ELEANOR_OPEN_KEY }));
   } catch { /* silent */ }
 }
 
@@ -114,7 +114,7 @@ export default function Analytics() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={openRubyLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-sm font-medium text-ruby hover:bg-ruby/15">
+          <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-2 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-sm font-medium text-eleanor hover:bg-eleanor/15">
             <MessageCircle className="h-4 w-4" /> Ask {name}
           </button>
           <button
@@ -228,7 +228,7 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
 
   return (
     <div className="space-y-4">
-      {/* 1+2: Account Health + Ruby read */}
+      {/* 1+2: Account Health + Eleanor read */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardTitle icon={<ShieldCheck className="h-4 w-4 text-primary" />} title="Account Health"
@@ -252,8 +252,8 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
           )}
         </Card>
 
-        <Card className="border-ruby/25">
-          <CardTitle icon={<Sparkles className="h-4 w-4 text-ruby" />} title={`${name}’s Account Read`} tone="text-ruby" />
+        <Card className="border-eleanor/25">
+          <CardTitle icon={<Sparkles className="h-4 w-4 text-eleanor" />} title={`${name}’s Account Read`} tone="text-eleanor" />
           {totalTrades === 0 && !hasAcct ? (
             <p className="mt-3 text-sm text-txt-muted">{name} needs more account history before giving a trend read.</p>
           ) : (
@@ -273,7 +273,7 @@ function OverviewTab({ summary, daily, loadingDaily, balance, equity, openPnl, p
             <Chip label="Exposure" value={!positionsRead ? "—" : positions.length === 0 ? "Clear" : "Active"} tone={!positionsRead ? "text-txt-muted" : positions.length === 0 ? "text-success" : "text-warning"} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={openRubyLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-2.5 py-1.5 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
+            <button onClick={openEleanorLiveChat} className="inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-2.5 py-1.5 text-xs text-eleanor"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
             <button onClick={() => navigate("/risk-settings")} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground hover:border-primary/40"><ShieldAlert className="h-3.5 w-3.5" /> Review Risk</button>
             <button onClick={() => navigate("/journal")} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground hover:border-primary/40"><BookOpen className="h-3.5 w-3.5" /> View Lessons</button>
           </div>
@@ -521,7 +521,7 @@ function CalendarPLTab({ daily, loading, summary, navigate }: any) {
             <p className="mt-3 text-[11px] text-txt-muted">Per-trade detail, mistakes, and {name}’s daily read appear here once that day’s trades are reviewed.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button onClick={() => navigate("/performance-scorecard")} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white hover:bg-primary/90">View Trades</button>
-              <button onClick={openRubyLiveChat} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-2 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
+              <button onClick={openEleanorLiveChat} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-2 text-xs text-eleanor"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
               <button onClick={() => navigate("/journal")} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:border-primary/40">Create Lesson</button>
             </div>
           </>
@@ -554,9 +554,9 @@ function RiskTab({ summary }: any) {
         )}
       </Card>
       <Card>
-        <CardTitle icon={<Sparkles className="h-4 w-4 text-ruby" />} title={`${name}’s Risk Read`} tone="text-ruby" />
+        <CardTitle icon={<Sparkles className="h-4 w-4 text-eleanor" />} title={`${name}’s Risk Read`} tone="text-eleanor" />
         <p className="mt-3 text-sm text-txt-muted">{name} will share account risk guidance as more risk events and exposure are recorded.</p>
-        <button onClick={openRubyLiveChat} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-ruby/40 bg-ruby/10 px-3 py-1.5 text-xs text-ruby"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
+        <button onClick={openEleanorLiveChat} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-eleanor/40 bg-eleanor/10 px-3 py-1.5 text-xs text-eleanor"><MessageCircle className="h-3.5 w-3.5" /> Ask {name}</button>
       </Card>
     </div>
   );

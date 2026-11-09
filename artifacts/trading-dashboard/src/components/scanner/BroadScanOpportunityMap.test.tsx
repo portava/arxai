@@ -33,7 +33,7 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 
 // Task #608. The map self-consumes the SAME selected-symbol feed verdict the
-// chart header & Ruby Chart Read use (`useSymbolTruth` at the chart timeframe).
+// chart header & Eleanor Chart Read use (`useSymbolTruth` at the chart timeframe).
 // The whole api-client module is mocked above, so we mock the consuming hooks
 // directly. Defaults are inert (no truth, default timeframe) so every existing
 // render proof behaves exactly as before; the reconciliation suite below drives
@@ -147,7 +147,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 // A `useSymbolTruth` return whose consolidated verdict is `verdict` — the exact
-// shape the chart header & Ruby Chart Read read from. Only the field the map
+// shape the chart header & Eleanor Chart Read read from. Only the field the map
 // consumes (`consolidated.scannerActionability`) needs to be present.
 function truthWithVerdict(verdict: string): Record<string, unknown> {
   return { scannerTruth: { consolidated: { scannerActionability: verdict } } };
@@ -488,7 +488,7 @@ describe("Task #605 — onScanned reports real scan-existence to the page", () =
 // ── A degraded-feed opportunity row never reads as live-confirmed / actionable ─
 //
 // The remaining Scanner honesty contradiction (after "the map suppresses No-scan
-// run yet", the RubyChartRead trust chip, and the honest empty state): a VISIBLE
+// run yet", the EleanorChartRead trust chip, and the honest empty state): a VISIBLE
 // Broad Scan opportunity row that renders with real setup structure while the
 // feed is historical-only / unconfirmed / stale / not live. Such a row may carry
 // context, but it must NEVER label the opportunity as a live feed, verified,
@@ -1045,7 +1045,7 @@ describe("BroadScanOpportunityMap — a degraded row in a MIXED group stays indi
 //     no action affordance at all, no live-ready claim.
 //
 // Why test-only: the page's post-selection inspector cards (ScannerReadGate /
-// RubyMarketReadCard / TimingIntelligenceCard) re-derive the ONE shared
+// EleanorMarketReadCard / TimingIntelligenceCard) re-derive the ONE shared
 // scanner-truth per symbol+tf — they do NOT inherit the scanner row's READY_NOW
 // category — and are locked in their own suites; SelectedMarketPanel's manual
 // BUY/SELL ticket is a separately-gated path (it already shows a feed warning and
@@ -1216,7 +1216,7 @@ describe("BroadScanOpportunityMap — a SELECTED degraded opportunity stays cont
 // The real bug: the Broad Scan Opportunity Map ran at its OWN scan timeframe and
 // computed a row's readiness purely from `row.hasLiveData` + category, so it could
 // render the SELECTED symbol (e.g. V75) as "Ready now / live data confirmed /
-// act-ready" while the SAME symbol's chart header & Ruby Chart Read — which derive
+// act-ready" while the SAME symbol's chart header & Eleanor Chart Read — which derive
 // the feed verdict from `useSymbolTruth` at the chart timeframe — said "historical
 // only / feed limited / analysis only". Two surfaces, one symbol, contradictory
 // readiness.

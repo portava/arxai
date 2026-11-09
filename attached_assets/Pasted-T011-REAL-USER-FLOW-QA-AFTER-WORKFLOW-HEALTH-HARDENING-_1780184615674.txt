@@ -13,7 +13,7 @@ Do not disturb the live MT5 path.
 Do not weaken permissions, ownership checks, kill switch, allocation checks, freeze checks, or MT5 confirmation rules.
 
 Primary goal:
-Verify the app now feels fast and stable from the user’s perspective, especially Scanner, trade modal, Ruby, and navigation.
+Verify the app now feels fast and stable from the user’s perspective, especially Scanner, trade modal, Eleanor, and navigation.
 
 Required first step:
 Run:
@@ -44,9 +44,9 @@ Test normal user flow:
 12. Plan Sell modal opens quickly.
 13. Lot input responds.
 14. Confirm button shows pending state immediately, but do not execute live trade.
-15. Ruby opens.
-16. Ruby thinking indicator appears instantly.
-17. Ruby response does not freeze the app.
+15. Eleanor opens.
+16. Eleanor thinking indicator appears instantly.
+17. Eleanor response does not freeze the app.
 18. More/Settings opens.
 19. No Paper Trading route appears.
 20. Normal user cannot access blocked admin/dev/dormant/paper URLs.
@@ -63,7 +63,7 @@ Performance targets:
 2. Page shell under 1 second.
 3. Scanner tab switch under 1 second.
 4. Trade modal open under 1 second.
-5. Ruby spinner under 100ms.
+5. Eleanor spinner under 100ms.
 6. Search input responsive immediately.
 7. No page feels frozen.
 8. No page takes around 7 seconds unless an external service is clearly identified and the UI shows loading immediately.
@@ -100,7 +100,7 @@ Final report must include:
 3. desktop preview timing
 4. Scanner timing
 5. trade modal timing
-6. Ruby spinner/response timing
+6. Eleanor spinner/response timing
 7. routes tested
 8. normal-user blocked route result
 9. admin route result

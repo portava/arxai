@@ -99,7 +99,7 @@ const CATEGORY_BY_CODE: Record<string, HumanizedReason["category"]> = {
   BOT_AGENT_NOT_ALLOWED: "SECURITY", INVESTOR_NOT_ALLOWED: "SECURITY",
   // ── One-click LIVE enable master-live access gate (meOneClick.ts) ──────
   LIVE_ONE_CLICK_REQUIRES_MASTER_LIVE_ACCESS: "SECURITY",
-  RUBY_TRADING_REQUIRES_MASTER_LIVE_ACCESS: "SECURITY",
+  ELEANOR_TRADING_REQUIRES_MASTER_LIVE_ACCESS: "SECURITY",
   MASTER_LIVE_USER_ACCESS_REQUIRED: "SECURITY",
 };
 
@@ -467,7 +467,7 @@ const REASON_MAP: Record<string, Omit<HumanizedReason, "technicalCode" | "catego
     description: "You need live-trading access before you can enable this. Ask an admin to approve live trading for your account.",
     severity: "blocked",
   },
-  RUBY_TRADING_REQUIRES_MASTER_LIVE_ACCESS: {
+  ELEANOR_TRADING_REQUIRES_MASTER_LIVE_ACCESS: {
     title: "Live trading access required",
     description: "Letting the assistant trade live needs live-trading access first. Ask an admin to approve live trading for your account.",
     severity: "blocked",

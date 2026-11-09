@@ -96,10 +96,10 @@ import edgeDiscoveryRouter from "./edgeDiscovery";
 import traderSkillRouter from "./traderSkill";
 import aiMentorRouter from "./aiMentor";
 import analyticsCommandRouter from "./analytics";
-import { meRubyQualityRouter } from "./meRubyQuality";
-import { adminRubyQualityRouter } from "./adminRubyQuality";
+import { meEleanorQualityRouter } from "./meEleanorQuality";
+import { adminEleanorQualityRouter } from "./adminEleanorQuality";
 import { adminIntelligenceRouter } from "./adminIntelligence";
-import { adminRubyExecutionRouter } from "./adminRubyExecution";
+import { adminEleanorExecutionRouter } from "./adminEleanorExecution";
 import adminAiFixAgentRouter from "./adminAiFixAgent.js";
 import tradeDecisionRouter from "./tradeDecision";
 import autoDebriefRouter from "./autoDebrief";
@@ -333,10 +333,10 @@ router.use(edgeDiscoveryRouter);
 router.use(traderSkillRouter);
 router.use(aiMentorRouter);
 router.use(analyticsCommandRouter);
-router.use(meRubyQualityRouter);
-router.use(adminRubyQualityRouter);
+router.use(meEleanorQualityRouter);
+router.use(adminEleanorQualityRouter);
 router.use(adminIntelligenceRouter);
-router.use(adminRubyExecutionRouter);
+router.use(adminEleanorExecutionRouter);
 router.use(adminAiFixAgentRouter);
 router.use(tradeDecisionRouter);
 router.use(autoDebriefRouter);
@@ -525,11 +525,11 @@ router.use(meTradingViewRouter);
 import meTradingSchoolRouter from "./meTradingSchool.js";
 router.use(meTradingSchoolRouter);
 
-// Ruby TTS — server-side text-to-speech (ElevenLabs / OpenAI)
+// Eleanor TTS — server-side text-to-speech (ElevenLabs / OpenAI)
 import meTTSRouter from "./meTTS.js";
 router.use(meTTSRouter);
 
-// Per-user Ruby Voice preferences (backend source of truth)
+// Per-user Eleanor Voice preferences (backend source of truth)
 import meVoiceSettingsRouter from "./meVoiceSettings.js";
 router.use(meVoiceSettingsRouter);
 import meAssistantSettingsRouter from "./meAssistantSettings.js";
@@ -538,9 +538,9 @@ router.use(meAssistantSettingsRouter);
 import meChangePasswordRouter from "./meChangePassword.js";
 router.use(meChangePasswordRouter);
 
-// Admin → Ruby Voice Settings (health, diagnostics, test, admin settings)
-import adminRubyVoiceRouter from "./adminRubyVoice.js";
-router.use(adminRubyVoiceRouter);
+// Admin → Eleanor Voice Settings (health, diagnostics, test, admin settings)
+import adminEleanorVoiceRouter from "./adminEleanorVoice.js";
+router.use(adminEleanorVoiceRouter);
 
 // T019 — Admin Risk/Governance read + write (owner_governance_settings)
 import adminGovernanceRouter from "./adminGovernance.js";
@@ -558,7 +558,7 @@ import adminSelfTradeAiRouter from "./adminSelfTradeAi.js";
 router.use(selfTradeAiRouter);
 router.use(adminSelfTradeAiRouter);
 
-// Ruby Market Timing Brain (Task #220) — advisory heat/tradeability reads.
+// Eleanor Market Timing Brain (Task #220) — advisory heat/tradeability reads.
 // ADVISORY ONLY — never an execution gate; never touches any live/demo path.
 import timingBrainRouter from "./timingBrain.js";
 router.use(timingBrainRouter);

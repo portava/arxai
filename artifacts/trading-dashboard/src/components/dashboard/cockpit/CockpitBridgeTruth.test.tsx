@@ -33,7 +33,7 @@ vi.mock("wouter", () => ({
   useLocation: () => ["/", () => {}],
 }));
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => h.mode }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/lib/symbol-context", () => ({ useActiveSymbol: () => ({ active: "EURUSD" }) }));
 vi.mock("@/hooks/useLiveAccountSnapshotContext", () => ({ useLiveAccountSnapshotCtx: () => ({ snapshot: null, live: null, freshness: "unavailable", connectionStatus: "unavailable", lastUpdatedMs: null, notLiveReason: null, isEstimate: false, isStale: false, isUnavailable: true, warnings: [], reload: () => {} }) }));
 vi.mock("@workspace/api-client-react", () => ({

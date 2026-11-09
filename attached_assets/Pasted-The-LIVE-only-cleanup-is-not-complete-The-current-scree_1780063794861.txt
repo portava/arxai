@@ -15,7 +15,7 @@ Observed issues from current UI:
 5. This is wrong for LIVE-only testing because the account is live and the validator is still expecting demo.
 6. Scanner page still shows “Sim Engine.”
 7. Recent scanner trades section says “Demo commands the scanner pushed to the MT5 bridge,” while the table title says “Live Shared.”
-8. Scanner trade modal shows BUY while Ruby’s explanation says the setup may favor sellers / Bias: SELL.
+8. Scanner trade modal shows BUY while Eleanor’s explanation says the setup may favor sellers / Bias: SELL.
 9. Live broker execution appears disabled in the UI even though the owner/admin approved live-only testing.
 10. The scanner page has a “Start auto” button that is unclear and dangerous in live mode unless it means auto-scan only.
 
@@ -58,9 +58,9 @@ Scanner trade modal requirements:
    - LIVE mode
    - bridge status
    - execution enabled/disabled status
-3. If Ruby’s setup bias is SELL, the default order side must not silently show BUY.
-4. Either default the order side to Ruby’s actual bias or display a clear warning:
-   “Ruby’s current setup bias is SELL, but this ticket is set to BUY.”
+3. If Eleanor’s setup bias is SELL, the default order side must not silently show BUY.
+4. Either default the order side to Eleanor’s actual bias or display a clear warning:
+   “Eleanor’s current setup bias is SELL, but this ticket is set to BUY.”
 5. The user must be able to manually override, but the mismatch must be obvious.
 6. Review button must remain blocked until required fields are valid.
 7. For BUY orders, take profit must be above entry.
@@ -116,8 +116,8 @@ After fixing, run a full test pass:
 6. Confirm EA heartbeat is shown.
 7. Confirm EXEC_ON/OFF reflects the true live EA execution input.
 8. Confirm the owner/admin account Andraie.co@gmail.com is live-enabled.
-9. Confirm Ruby does not expose backend/internal names.
-10. Confirm Ruby’s bias matches the default order side or shows a mismatch warning.
+9. Confirm Eleanor does not expose backend/internal names.
+10. Confirm Eleanor’s bias matches the default order side or shows a mismatch warning.
 11. Confirm Review is blocked when TP/SL are invalid.
 12. Confirm Review works only when live readiness and trade validation pass.
 13. Confirm order queue uses real live bridge only.

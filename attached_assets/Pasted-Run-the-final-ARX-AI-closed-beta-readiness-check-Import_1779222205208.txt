@@ -24,7 +24,7 @@ Final readiness checklist:
 
 1. TypeScript / CI cleanliness
 - Confirm the previously flagged QA script issues are fixed:
-  - qaRubyVoiceTradingGuardrails no invalid displayName insert.
+  - qaEleanorVoiceTradingGuardrails no invalid displayName insert.
   - qaScannerBridgeRouting no rootDir violation.
   - qaScannerSelectedMarket no rootDir violation.
 - Run typecheck.
@@ -98,14 +98,14 @@ Final readiness checklist:
 - Volatility synthetic markets are included.
 - User can select direct symbol/pair instead of only grouped scanner categories.
 - Selected-market detail view works.
-- Ruby explanation window appears for selected scanner market.
+- Eleanor explanation window appears for selected scanner market.
 - Scanner cards show enough useful data to support a trade decision without feeling fake.
 
-8. Ruby AI readiness
-- Ruby is the only AI assistant name shown in app.
-- Ruby chat is scoped per user.
-- Ruby remembers each user’s own chat/trading context unless cleared.
-- Ruby can explain:
+8. Eleanor AI readiness
+- Eleanor is the only AI assistant name shown in app.
+- Eleanor chat is scoped per user.
+- Eleanor remembers each user’s own chat/trading context unless cleared.
+- Eleanor can explain:
   - selected scanner markets
   - open trades
   - why a market may be buy/sell
@@ -113,16 +113,16 @@ Final readiness checklist:
   - continuation vs fakeout
   - when risk is too high
   - possible SL/TP zones
-- Ruby uses available trading tools, market history, indicators, scanner data, news/current events if connected, and user trade context.
-- Ruby cannot place, close, or modify live trades without permission and confirmation.
-- Ruby can recommend closing a trade, but action must still respect permission gates.
+- Eleanor uses available trading tools, market history, indicators, scanner data, news/current events if connected, and user trade context.
+- Eleanor cannot place, close, or modify live trades without permission and confirmation.
+- Eleanor can recommend closing a trade, but action must still respect permission gates.
 
 9. Mobile UI readiness
 - Login works on mobile.
 - Dashboard works on mobile.
 - Scanner works on mobile.
 - Trade panel works on mobile.
-- Ruby chat works on mobile.
+- Eleanor chat works on mobile.
 - Admin/operator tools work on mobile for admin users only.
 - Bottom nav is fixed to the viewport.
 - Bottom nav does not float while scrolling.
@@ -150,7 +150,7 @@ After all checks, print a final beta-readiness report:
 - Live trading permission gates: PASS/FAIL
 - Kill switches: PASS/FAIL
 - Deriv scanner/feed: PASS/FAIL
-- Ruby AI readiness: PASS/FAIL
+- Eleanor AI readiness: PASS/FAIL
 - Mobile UI: PASS/FAIL
 - Security/secrets: PASS/FAIL
 - Live command safety: PASS/FAIL

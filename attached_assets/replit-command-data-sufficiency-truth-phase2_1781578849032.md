@@ -1,6 +1,6 @@
 # COMMAND — DATA-SUFFICIENCY TRUTH · PHASE 2 (trade-ticket + backtest, block-only)
 
-Read this entire command before changing anything. Phase 1 (the shared `evaluateMarketDataSufficiency` engine, consumed by scanner/Ruby/chart) is merged and verified. Phase 2 extends the SAME verdict to two surfaces that touch the live/historical paths: the trade-ticket/entry flow and backtesting. **The verdict can ONLY block or downgrade — it can NEVER grant trade-eligibility or execution.** **Read LIVE source** — the archive predates Phase 1. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
+Read this entire command before changing anything. Phase 1 (the shared `evaluateMarketDataSufficiency` engine, consumed by scanner/Eleanor/chart) is merged and verified. Phase 2 extends the SAME verdict to two surfaces that touch the live/historical paths: the trade-ticket/entry flow and backtesting. **The verdict can ONLY block or downgrade — it can NEVER grant trade-eligibility or execution.** **Read LIVE source** — the archive predates Phase 1. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
 
 ## THE ONE PRINCIPLE (everything else follows from this)
 
@@ -26,7 +26,7 @@ In `liveCommandPipeline.ts`, for NEW-ENTRY command types only, add a sufficiency
 - The check is ADDITIVE and runs BEFORE/ALONGSIDE the existing gates — it does not replace the synthetic floor, SL, or any gate. If sufficiency passes, the existing chain runs unchanged.
 
 ### A2. Trade-ticket UI
-The trade-ticket / one-click entry UI (`meOneClick`/`instantTrade`/`meLive` surfaces and their frontend): when the verdict for the selected symbol+timeframe is not `sufficient`, the entry affordance (Buy/Sell/Build) is disabled or shows the honest reason ("Not enough closed candles" / "Live feed delayed" / "Waiting for live feed" / "Not on approved list") — using the SAME `humanReason` the scanner/Ruby show. Do NOT show an armed, clickable Buy/Sell on insufficient data. (This is UX; the backend gate in A1 is the actual enforcement — both must be present.)
+The trade-ticket / one-click entry UI (`meOneClick`/`instantTrade`/`meLive` surfaces and their frontend): when the verdict for the selected symbol+timeframe is not `sufficient`, the entry affordance (Buy/Sell/Build) is disabled or shows the honest reason ("Not enough closed candles" / "Live feed delayed" / "Waiting for live feed" / "Not on approved list") — using the SAME `humanReason` the scanner/Eleanor show. Do NOT show an armed, clickable Buy/Sell on insufficient data. (This is UX; the backend gate in A1 is the actual enforcement — both must be present.)
 
 ### A3. The naming guard holds
 `canShowTradeSetup` controls whether the SETUP is shown — it is not consulted as execution permission. Execution permission remains the result of the existing gate chain only. Add/keep the test asserting no sufficiency field is treated as trade authorization.

@@ -42,7 +42,7 @@ function makePreview(overrides: Partial<SetupPreview> = {}): SetupPreview {
     governanceOutcome: null,
     explanation: ["Trend continuation: a long idea with entry near 1.08523, stop at 1.08518, target 1.08533."],
     invalidationNote: "Close below 1.08518 invalidates this long.",
-    createdBy: "ruby",
+    createdBy: "eleanor",
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90_000).toISOString(),
     status: "preview",

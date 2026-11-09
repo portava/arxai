@@ -7,7 +7,7 @@
 //
 // INVIOLABLE: advisory only. A divergence verdict is a hint for the operator /
 // caller — it NEVER gates, blocks, or alters any execution path, the 16-gate
-// pipeline, the scanner, Ruby, the chart, or the trade modal. HONEST: when no
+// pipeline, the scanner, Eleanor, the chart, or the trade modal. HONEST: when no
 // value can be read the verdict is UNKNOWN, never a fabricated CONSISTENT.
 //
 // Pure: no IO, no DB, no HTTP.

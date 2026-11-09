@@ -3,7 +3,7 @@
 // Task #600. The shared `resolveScannerTruth` resolver (Task #391) already speaks
 // an internal vocabulary (candleStatus "live"|"delayed"|…, analysis.level
 // "full"|"limited"|…). Several scanner surfaces — the header strip, the chart
-// badge, the Ruby Chart Read panel, the opportunity / scalp cards, the trade
+// badge, the Eleanor Chart Read panel, the opportunity / scalp cards, the trade
 // ticket, and the Broad Scan summary — used to derive their OWN status words off
 // the same query and so drifted (e.g. a "Ready now" card whose own copy said
 // "wait for confirmation").
@@ -37,7 +37,7 @@ export type PublicCandleStatus =
 
 export type ChartIntelligenceStatus = "FULL" | "LIMITED" | "UNAVAILABLE";
 
-export type RubyReadStatus = "FULL_READ" | "LIMITED_READ" | "NO_READ";
+export type EleanorReadStatus = "FULL_READ" | "LIMITED_READ" | "NO_READ";
 
 export type TradingStatus =
   | "ENABLED"
@@ -87,7 +87,7 @@ export type SkippedSymbolReasonCode =
 /**
  * The consolidated public truth block. Carried on `ScannerTruth.consolidated`
  * so every surface agrees on the selected symbol/timeframe, the feed/candle/
- * Ruby/trading status, the one action verdict, the candle provenance, and the
+ * Eleanor/trading status, the one action verdict, the candle provenance, and the
  * single user-facing message + stable internal reason code.
  */
 export interface ConsolidatedTruth {
@@ -96,7 +96,7 @@ export interface ConsolidatedTruth {
   quoteStatus: PublicQuoteStatus;
   candleStatus: PublicCandleStatus;
   chartIntelligenceStatus: ChartIntelligenceStatus;
-  rubyReadStatus: RubyReadStatus;
+  eleanorReadStatus: EleanorReadStatus;
   tradingStatus: TradingStatus;
   /** The pure DATA-only action verdict (setup = UNKNOWN). Cards/header refine it. */
   scannerActionability: ScannerActionability;
@@ -160,7 +160,7 @@ export function resolveDataActionabilityCap(
  * data AND an actionable setup.
  */
 // Chart-pattern child-impact (Task #617) is applied SERVER-SIDE (it folds into
-// the scanner-truth caps + the Ruby structural read the frontend consumes), so
+// the scanner-truth caps + the Eleanor structural read the frontend consumes), so
 // the verdict this pure translator receives already reflects any pattern
 // downgrade. There is deliberately NO frontend pattern parameter here: a second,
 // independently-applied pattern fold would violate the module's single-verdict

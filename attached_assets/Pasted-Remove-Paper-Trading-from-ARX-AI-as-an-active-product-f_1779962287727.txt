@@ -10,7 +10,7 @@ ARX AI should only have two active user-facing trading modes:
 1. DEMO
 2. LIVE
 
-Paper Trading should not exist as a user-facing mode, badge, tab, route, account mode, scanner mode, Ruby mode, dashboard mode, permission mode, auth mode, allocation mode, or active database state.
+Paper Trading should not exist as a user-facing mode, badge, tab, route, account mode, scanner mode, Eleanor mode, dashboard mode, permission mode, auth mode, allocation mode, or active database state.
 
 IMPORTANT:
 Do not blindly delete code in a way that breaks existing stored data. First audit all “paper” references, classify them, then remove active product usage safely.
@@ -49,7 +49,7 @@ Remove or replace:
 - paper walkthrough copy
 - paper route links
 - paper scanner mode
-- paper Ruby wording
+- paper Eleanor wording
 - paper dashboard status
 - paper admin permission labels
 
@@ -76,7 +76,7 @@ Remove Paper from:
 - risk templates
 - scanner mode
 - trade ticket mode
-- Ruby mode
+- Eleanor mode
 - account status badges
 - allocation mode
 - onboarding/auth mode
@@ -121,19 +121,19 @@ If /paper-trading route exists:
 - redirect safely to /demo or /trade with demo mode
 - do not expose paper route to users
 
-7. RUBY CLEANUP
-Ruby should never say:
+7. ELEANOR CLEANUP
+Eleanor should never say:
 - paper trading
 - paper mode
 - paper only
 
-Ruby should say:
+Eleanor should say:
 - demo trading
 - demo mode
 - live trading
 - live shared bridge
 
-If a user is blocked from live, Ruby should say:
+If a user is blocked from live, Eleanor should say:
 “You can use demo mode until live access is approved.”
 
 8. ADMIN CLEANUP
@@ -181,7 +181,7 @@ Before stopping, verify:
 - User-facing app only shows DEMO and LIVE.
 - No Paper/Paper Only/Paper Trading labels remain in user UI.
 - Admin cannot assign Paper as a mode.
-- Ruby does not mention Paper.
+- Eleanor does not mention Paper.
 - Scanner does not show Paper.
 - Trade ticket does not show Paper.
 - Existing legacy paper values are migrated or normalized to demo.
@@ -190,6 +190,6 @@ Before stopping, verify:
 - Live shared bridge approval still works.
 - arx_live_commands count does not increase during QA.
 - No live trade is placed.
-- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+- Login, Eleanor, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix errors before stopping.

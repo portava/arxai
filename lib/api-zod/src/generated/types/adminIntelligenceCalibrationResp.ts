@@ -5,9 +5,9 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
-import type { RubyCalibrationRollup } from "./rubyCalibrationRollup";
+import type { EleanorCalibrationRollup } from "./eleanorCalibrationRollup";
 
 export interface AdminIntelligenceCalibrationResp {
   ok: boolean;
-  calibration: RubyCalibrationRollup;
+  calibration: EleanorCalibrationRollup;
 }

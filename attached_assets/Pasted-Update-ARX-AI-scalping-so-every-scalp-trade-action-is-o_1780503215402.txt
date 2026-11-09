@@ -1,7 +1,7 @@
 Update ARX AI scalping so every scalp trade action is one-click by default.
 
 Goal:
-Scalping is speed-first. Users should not have to open a full trade ticket every time they act on a scalp. When Ruby or the scanner identifies a valid scalp opportunity, the user should be able to enter immediately with one click using their saved scalp settings.
+Scalping is speed-first. Users should not have to open a full trade ticket every time they act on a scalp. When Eleanor or the scanner identifies a valid scalp opportunity, the user should be able to enter immediately with one click using their saved scalp settings.
 
 Scope:
 
@@ -46,19 +46,19 @@ For owner/admin andraie.co@gmail.com:
     lot/stake, stop loss, take profit, max duration, risk/reward.
 * Do not require the user to manually re-enter the same values every time.
 
-3. Ruby scalp actions
-    When Ruby recommends a scalp:
+3. Eleanor scalp actions
+    When Eleanor recommends a scalp:
 
-* Ruby should show a direct one-click action:
+* Eleanor should show a direct one-click action:
     “Enter Scalp Buy”
     “Enter Scalp Sell”
-* Ruby should explain the setup in one short sentence:
-    “Momentum is running upward with a clean flame; Ruby has a scalp buy ready using your saved scalp settings.”
+* Eleanor should explain the setup in one short sentence:
+    “Momentum is running upward with a clean flame; Eleanor has a scalp buy ready using your saved scalp settings.”
 * Then show the one-click action.
 * Do not bury the action under long explanations.
 
 4. Selected market panel
-    When the user selects a market and Ruby detects a scalp:
+    When the user selects a market and Eleanor detects a scalp:
 
 * Show a clear scalp card:
     symbol
@@ -160,7 +160,7 @@ Do not show:
 * user
 * symbol
 * direction
-* source: Ruby / Scanner / Selected Market / Manual Scalp
+* source: Eleanor / Scanner / Selected Market / Manual Scalp
 * scalp settings used
 * timestamp
 * status
@@ -180,7 +180,7 @@ Acceptance criteria:
 
 * Scalp trades are one-click by default.
 * Scanner scalp results have direct one-click scalp buttons.
-* Ruby scalp recommendations have direct one-click scalp buttons.
+* Eleanor scalp recommendations have direct one-click scalp buttons.
 * Selected market scalp cards have direct one-click scalp buttons.
 * Saved scalp settings are used automatically.
 * No full trade ticket is required for scalp trades.

@@ -21,7 +21,7 @@ Surfaces to inspect:
 - Live Market Chart overlays
 - News Risk page
 - Economic Calendar page
-- Ruby explanations
+- Eleanor explanations
 - Any heat/strength widgets in Cockpit or Dashboard
 
 Audit questions:
@@ -220,7 +220,7 @@ Testing:
 11. First tab loads the Global Market Heat card.
 12. If all providers are missing, map shows a clean degraded state, not fake heat.
 13. Heat scores are capped when data is delayed/stale.
-14. Scanner/Ruby can consume heat verdict but cannot let it bypass trade safety gates.
+14. Scanner/Eleanor can consume heat verdict but cannot let it bypass trade safety gates.
 
 Hard boundary:
 Do not touch live execution gates, broker dispatch, MT5 bridge execution, trade-ticket execution, or risk kill switches.

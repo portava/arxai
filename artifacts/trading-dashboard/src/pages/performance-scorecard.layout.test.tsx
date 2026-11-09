@@ -7,7 +7,7 @@ vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ user: { id: 101 } }),
 }));
 vi.mock("@/lib/assistant-name", () => ({
-  useAssistantName: () => ({ name: "Ruby" }),
+  useAssistantName: () => ({ name: "Eleanor" }),
 }));
 
 const scorecard = {

@@ -30,8 +30,8 @@ Verify:
 19. Force-review marks live actions NEEDS_REVIEW.
 20. One-click live defaults OFF.
 21. One-click cannot bypass gates.
-22. Ruby explains operator-funded live pilot safely.
-23. Ruby does not call ARX AI a broker or promise profits.
+22. Eleanor explains operator-funded live pilot safely.
+23. Eleanor does not call ARX AI a broker or promise profits.
 24. User 1 cannot see User 2 data.
 25. Non-admin cannot approve live users.
 26. Audit logs are created for approvals, revokes, allocation changes, disclosure acceptance, and blocked live attempts.

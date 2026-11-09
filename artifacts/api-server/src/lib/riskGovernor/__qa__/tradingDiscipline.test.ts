@@ -169,8 +169,8 @@ test("venue rules: a required target, a reward:risk floor and a model-confidence
   const venueRules = { source: "simulator_oms", requireTakeProfit: true, minRewardRiskRatio: 1.2, minAiConfidence: 70 };
   assert.equal(discipline(intent({ takeProfit: null }), ctx({ venueRules })).r.outcome, "BLOCK");
   assert.equal(discipline(intent({ takeProfit: 1.103 }), ctx({ venueRules })).r.outcome, "BLOCK", "R:R ≈ 0.6");
-  assert.equal(discipline(intent({ origin: "ruby", aiConfidence: 60 }), ctx({ venueRules })).r.outcome, "BLOCK");
-  assert.equal(discipline(intent({ origin: "ruby", aiConfidence: 80 }), ctx({ venueRules })).r.outcome, "PASS");
+  assert.equal(discipline(intent({ origin: "eleanor", aiConfidence: 60 }), ctx({ venueRules })).r.outcome, "BLOCK");
+  assert.equal(discipline(intent({ origin: "eleanor", aiConfidence: 80 }), ctx({ venueRules })).r.outcome, "PASS");
   assert.equal(discipline(intent({ origin: "manual" }), ctx({ venueRules })).r.outcome, "PASS", "confidence floor is for model origins");
 });
 

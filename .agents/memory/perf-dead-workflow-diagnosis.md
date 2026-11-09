@@ -13,7 +13,7 @@ blocking call (`/api/me` in `AuthGate`) then hangs until proxy/connect timeout,
 so the entire shell appears to take ~7s even though the code is fine.
 
 **Why:** the trading-dashboard frontend is already heavily optimized (code-split
-routes via wouter+React.lazy, lazy charts + Ruby assistant + admin pages,
+routes via wouter+React.lazy, lazy charts + Eleanor assistant + admin pages,
 skeleton-first render, polling paused on hidden tabs, client-side in-memory
 symbol search). There is almost nothing left to "speed up" in the frontend — a
 uniform slowdown is an infrastructure/serving symptom, not a render symptom.
@@ -37,7 +37,7 @@ builds + boots clean once restarted.
    the backend endpoints are 5-30ms (candles ~170ms incl. provider), so any
    remaining "slow" interaction is harness overhead (Playwright char-by-char
    typing inflates client-side search to ~1.8s) or a real third-party call
-   (e.g. Ruby's `/api/me/assistant/explain-signal` AI round-trip ~1.3s, which
+   (e.g. Eleanor's `/api/me/assistant/explain-signal` AI round-trip ~1.3s, which
    correctly shows an instant spinner).
 
 Do NOT "fix" the client-side symbol search with a debounce/AbortController — it

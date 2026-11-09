@@ -45,7 +45,7 @@ function dayKey(d: Date): string {
 }
 
 // The mode-aware closed-trade ledger (ClosedRow, loadClosedRows, source notes)
-// lives in lib/performanceCC/closedTradeLedger.ts so Ruby's performance tools
+// lives in lib/performanceCC/closedTradeLedger.ts so Eleanor's performance tools
 // read the same book this calendar shows.
 
 function aggregate(rows: ClosedRow[]): Record<string, DayAgg> {

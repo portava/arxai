@@ -39,8 +39,8 @@ const F = [...UNIVERSAL_FORBIDDEN];
 export const CORE_AGENTS: readonly CoreAgentDef[] = [
   // ── Lead ────────────────────────────────────────────────────────────────
   {
-    agentKey: "RUBY", name: "Ruby", role: "Lead Desk Manager",
-    department: "RUBY_HOUSEHOLD", parentAgentKey: null, mapsToCouncilAgentId: null,
+    agentKey: "ELEANOR", name: "Eleanor", role: "Lead Desk Manager",
+    department: "ELEANOR_HOUSEHOLD", parentAgentKey: null, mapsToCouncilAgentId: null,
     missionStatement: "Lead the trading desk and communicate the team's reasoning to the user in plain English. Communication authority only — no trade authority.",
     allowedTasks: ["summarize_consensus", "explain_to_user", "coordinate_agents", "request_child_agent"],
     forbiddenTasks: F,
@@ -53,7 +53,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   // ── Mapped to already-trusted council agents (start ACTIVE, advisory) ─────
   {
     agentKey: "STRUCT", name: "Market Structure AI", role: "Structure Analyst",
-    department: "MARKET_STRUCTURE", parentAgentKey: "RUBY", mapsToCouncilAgentId: "STRUCT",
+    department: "MARKET_STRUCTURE", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: "STRUCT",
     missionStatement: "Read market structure (trend, breaks of structure, key levels) and advise on directional bias.",
     allowedTasks: ["analyze_structure", "vote_direction", "flag_invalidation"],
     forbiddenTasks: F,
@@ -64,7 +64,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "RISK", name: "Risk AI", role: "Risk Governor (advisory)",
-    department: "RISK", parentAgentKey: "RUBY", mapsToCouncilAgentId: "RISK",
+    department: "RISK", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: "RISK",
     missionStatement: "Protect capital. Downgrade or block reckless advisory recommendations and flag dangerous conditions. Risk protection outranks opportunity.",
     allowedTasks: ["assess_risk", "downgrade_recommendation", "advisory_veto", "recommend_restriction"],
     forbiddenTasks: F,
@@ -75,7 +75,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "PRECISION", name: "Entry Timing AI", role: "Entry Precision Analyst",
-    department: "ENTRY", parentAgentKey: "RUBY", mapsToCouncilAgentId: "PRECISION",
+    department: "ENTRY", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: "PRECISION",
     missionStatement: "Refine entry timing and zones; advise against late or chasing entries.",
     allowedTasks: ["assess_entry_timing", "suggest_entry_zone", "flag_late_entry"],
     forbiddenTasks: F,
@@ -86,7 +86,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "EXEC", name: "Execution AI", role: "Execution Quality Analyst",
-    department: "EXECUTION", parentAgentKey: "RUBY", mapsToCouncilAgentId: "EXEC",
+    department: "EXECUTION", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: "EXEC",
     missionStatement: "Advise on execution quality: spread, slippage, broker conditions, fill feasibility. Never executes.",
     allowedTasks: ["assess_execution_quality", "flag_spread_slippage"],
     forbiddenTasks: F,
@@ -99,7 +99,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   // ── New core agents (Shadow Mode, 0% authority, no live influence) ────────
   {
     agentKey: "SCALP_AI", name: "Scalp AI", role: "Scalp Specialist",
-    department: "SCALP", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "SCALP", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Spot fast scalp momentum setups and advise on short-horizon opportunities. Advisory only.",
     allowedTasks: ["analyze_scalp_setup", "rank_scalp_opportunity"],
     forbiddenTasks: F,
@@ -110,7 +110,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "SCANNER_AI", name: "Scanner AI", role: "Opportunity Scanner",
-    department: "SCANNER", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "SCANNER", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Scan the market for quality setups and filter out noise so only high-quality ideas surface.",
     allowedTasks: ["scan_market", "filter_noise", "rank_setups"],
     forbiddenTasks: F,
@@ -121,7 +121,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "EXIT_TP_AI", name: "Exit / TP AI", role: "Exit & Target Analyst",
-    department: "EXIT", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "EXIT", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Advise on realistic take-profit, partial exits, and invalidation. Flags unrealistic targets.",
     allowedTasks: ["suggest_tp", "suggest_partial", "flag_unrealistic_target"],
     forbiddenTasks: F,
@@ -132,7 +132,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "TRADE_REVIEW_AI", name: "Trade Review AI", role: "Post-Decision Reviewer",
-    department: "REVIEW", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "REVIEW", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Grade locked predictions after outcomes resolve — decision quality, protection, calibration — so the team improves. Profit alone is never a reward.",
     allowedTasks: ["grade_prediction", "append_review", "summarize_lessons"],
     forbiddenTasks: F,
@@ -143,7 +143,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "TRAFFIC_CONTROLLER", name: "Traffic Controller", role: "Speed Governor",
-    department: "AGENT_OPERATIONS", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "AGENT_OPERATIONS", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Decide which agents run in each mode and keep the system fast. Execution always gets priority and never waits on a nonessential agent.",
     allowedTasks: ["route_agents", "enforce_latency_budget", "wake_sleeping_agent"],
     forbiddenTasks: F,
@@ -154,7 +154,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "IMMUNE_SYSTEM", name: "Immune System", role: "Ecosystem Health Monitor",
-    department: "AGENT_OPERATIONS", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "AGENT_OPERATIONS", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Detect duplicate, slow, useless, drifting, or reckless agents and recommend quarantine, merge, retire, or Learning Camp.",
     allowedTasks: ["detect_anomaly", "recommend_quarantine", "recommend_merge_retire"],
     forbiddenTasks: F,
@@ -165,7 +165,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "LEARNING_CAMP", name: "Learning Camp", role: "Retraining Coordinator",
-    department: "AGENT_OPERATIONS", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "AGENT_OPERATIONS", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Correct underperforming agents through failure review, pattern correction, and supervised return. Correction, not deletion.",
     allowedTasks: ["open_camp", "store_correction_rules", "supervise_return"],
     forbiddenTasks: F,
@@ -176,7 +176,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "AGENT_FACTORY", name: "Agent Factory", role: "Governed Creation Authority",
-    department: "AGENT_OPERATIONS", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "AGENT_OPERATIONS", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Create new agent records from approved templates when a real, repeated task gap is proven — never application source code. New agents are born in Shadow Mode at 0% authority.",
     allowedTasks: ["evaluate_creation_request", "create_agent_record", "enforce_population_limits"],
     forbiddenTasks: F,
@@ -187,7 +187,7 @@ export const CORE_AGENTS: readonly CoreAgentDef[] = [
   },
   {
     agentKey: "PROMOTION_BOARD", name: "Promotion Board", role: "Lifecycle Authority",
-    department: "AGENT_OPERATIONS", parentAgentKey: "RUBY", mapsToCouncilAgentId: null,
+    department: "AGENT_OPERATIONS", parentAgentKey: "ELEANOR", mapsToCouncilAgentId: null,
     missionStatement: "Promote, demote, warn, and restrict agents based on reviewed rolling performance. Authority is advisory weight only — never live execution.",
     allowedTasks: ["evaluate_promotion", "evaluate_demotion", "set_status"],
     forbiddenTasks: F,

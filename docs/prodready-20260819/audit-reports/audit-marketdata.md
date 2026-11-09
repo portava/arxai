@@ -85,7 +85,7 @@ Same-family issue: `mt5History.ts` ingests deep history with **no user/bridge co
 
 Chains: `synthetic: [mt5_broker, deriv]`, everything else `[mt5_broker, assistant_real]` (`marketDataRouter.ts:167-175`). When the broker slot is stale/insufficient the router **automatically** serves the next venue (`:235-238`, `:262-284`, `:407-421`). Spec §10.2 rule 6 requires: "mark a gap and return WAIT; do not synthesize prices or borrow another venue silently."
 
-- The substitution is *labeled* per result (attempts/primaryProvider) — so it is not maximally silent — but the same logical series ("V75 M1") flips venue between calls with no route-change event, and consumers who dropped the label can't tell. Scanner, brain/timing, signal intelligence, paper execution and Ruby all consume `routeCandles`/`getMarketData` output (consumer list: `api/lib/marketScanner.ts`, `brain/timing/*`, `lib/signalIntelligence/*`, `lib/paperExecution/*`, etc.).
+- The substitution is *labeled* per result (attempts/primaryProvider) — so it is not maximally silent — but the same logical series ("V75 M1") flips venue between calls with no route-change event, and consumers who dropped the label can't tell. Scanner, brain/timing, signal intelligence, paper execution and Eleanor all consume `routeCandles`/`getMarketData` output (consumer list: `api/lib/marketScanner.ts`, `brain/timing/*`, `lib/signalIntelligence/*`, `lib/paperExecution/*`, etc.).
 - There is no "decision-grade" mode that truncates the chain to the execution venue and returns WAIT.
 
 ### 3.4 `decision market data source == execution broker connection` does NOT hold at the enforcement chokepoint

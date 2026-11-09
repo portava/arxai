@@ -14,7 +14,7 @@ Core rules:
 4. Do not remove admin/operator controls.
 5. Do not create a separate admin login.
 6. Preserve role-based access.
-7. Keep Ruby visible and usable across pages.
+7. Keep Eleanor visible and usable across pages.
 8. Keep demo/live/paper trading protections intact.
 9. Keep stop loss, take profit, risk/reward, scanner, bridge, alerts, and trade logs working.
 10. Do not break mobile layout.
@@ -28,7 +28,7 @@ Dashboard:
 - Overview
 - Active Trades
 - Market Conditions
-- Ruby Insights
+- Eleanor Insights
 - Alerts
 - Account Health
 
@@ -48,7 +48,7 @@ Trade / Execution:
 - SL / TP Manager
 - Risk / Reward
 - Trade History
-- Ruby Trade Review
+- Eleanor Trade Review
 
 Risk Center:
 - Account Risk
@@ -58,7 +58,7 @@ Risk Center:
 - Drawdown Protection
 - Broker / Spread Safety
 
-Ruby AI:
+Eleanor AI:
 - Live Chat
 - Voice Mode
 - Trade Questions
@@ -91,7 +91,7 @@ Settings / Connections:
 - API Keys
 - Notifications
 - Security
-- Ruby Memory
+- Eleanor Memory
 
 Create or improve reusable UI components:
 - PageTabs
@@ -114,7 +114,7 @@ Tabs should support:
 - Keyboard/accessibility support
 
 Reduce repetitive wording:
-Search the app for repeated phrases, duplicate warning text, repeated helper text, repeated Ruby explanations, repeated alerts, repeated safety notices, and repeated page descriptions.
+Search the app for repeated phrases, duplicate warning text, repeated helper text, repeated Eleanor explanations, repeated alerts, repeated safety notices, and repeated page descriptions.
 
 Fix by:
 - Creating reusable short copy constants.
@@ -123,7 +123,7 @@ Fix by:
 - Combining duplicate alerts into one clear alert.
 - Avoiding repeated “live trading is risky” style warnings on the same screen.
 - Avoiding repeated descriptions under every card if the tab or section already explains it.
-- Making Ruby explanations concise unless the user expands them.
+- Making Eleanor explanations concise unless the user expands them.
 
 Alert cleanup:
 Audit all alerts, banners, toast messages, warning boxes, badges, and status cards.
@@ -148,12 +148,12 @@ Fix by moving them into:
 - “Advanced filters”
 - “More details”
 - “View explanation”
-- Ruby expandable explanation cards
+- Eleanor expandable explanation cards
 
 Examples:
 - Scanner filters should live in a filter drawer/menu instead of taking up the whole page.
 - Long risk explanations should collapse under “Why this matters.”
-- Ruby market explanations should show a short summary first, then expandable details.
+- Eleanor market explanations should show a short summary first, then expandable details.
 - Large backend/system status descriptions should become compact status cards.
 - Repeated trade warnings should become compact risk badges with expandable text.
 - Large settings sections should collapse into grouped cards.
@@ -189,7 +189,7 @@ Check for:
 - Unused backend endpoints
 - Duplicate API handlers
 - Old scanner logic not connected to current scanner
-- Old Ruby panels not connected to current Ruby assistant
+- Old Eleanor panels not connected to current Eleanor assistant
 - Old bridge status code not connected to the current MT5 bridge
 - Unused admin screens
 - Unused notification systems
@@ -233,7 +233,7 @@ Optimization actions not allowed unless confirmed safe by code inspection:
 - Do not delete kill switches.
 - Do not delete trade logs.
 - Do not delete risk management logic.
-- Do not delete Ruby memory/chat history logic.
+- Do not delete Eleanor memory/chat history logic.
 - Do not delete scanner logic that may still be used.
 
 Performance cleanup:
@@ -258,14 +258,14 @@ Design requirements:
 - Keep admin/system labels more technical only where necessary.
 - Keep mobile screens clean.
 - Make tabs swipe-friendly or horizontally scrollable on mobile.
-- Ensure Ruby, floating menus, help bars, and bottom navigation do not block tabs or buttons.
+- Ensure Eleanor, floating menus, help bars, and bottom navigation do not block tabs or buttons.
 
 Acceptance checks:
 - App still loads to the correct login/auth flow.
 - Regular users only see user features.
 - Admin users see admin/operator controls through role permissions.
-- Ruby still works on every page.
-- Ruby voice/chat areas still work.
+- Eleanor still works on every page.
+- Eleanor voice/chat areas still work.
 - Scanner still works.
 - Volatility market feed still works if already connected.
 - Trade placement still works.

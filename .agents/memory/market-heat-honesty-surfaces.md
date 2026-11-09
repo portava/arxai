@@ -33,8 +33,8 @@ response so a filtered view can't look like a confident all-clear.
   raw `itemCount/N` proxy was the prior bug — many calm headlines outscored one
   crash headline.
 - `newsRiskLevelOf(score)` is the SINGLE threshold→level mapper; both the heat
-  card (`newsSignalOf` → `deriveNewsRisk`) and Ruby (`rubyContext.fetchNews` /
-  `composeRubyBriefing`) must route through it so one number → one verdict.
+  card (`newsSignalOf` → `deriveNewsRisk`) and Eleanor (`eleanorContext.fetchNews` /
+  `composeEleanorBriefing`) must route through it so one number → one verdict.
 - **Why:** "12 newsletters" must never read as high risk and one "emergency rate
   decision / market crash" must never read as low. Severity is the signal.
 - **How to apply:** when surfacing news risk on a new surface, compute the level

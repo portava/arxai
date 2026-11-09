@@ -2937,7 +2937,7 @@ export type AaciDecisionActorType =
 
 export const AaciDecisionActorType = {
   user: "user",
-  ruby: "ruby",
+  eleanor: "eleanor",
   self_trade_agent: "self_trade_agent",
   admin: "admin",
   system: "system",
@@ -3038,12 +3038,12 @@ export interface AuthErrorResult {
   message: string;
 }
 
-export interface RubyQualityErrorResp {
+export interface EleanorQualityErrorResp {
   ok: boolean;
   error: string;
 }
 
-export interface MyRubyOutcome {
+export interface MyEleanorOutcome {
   outcomeId: string;
   symbol: string;
   timeframe: string;
@@ -3056,12 +3056,12 @@ export interface MyRubyOutcome {
   resolvedAt?: string | null;
 }
 
-export interface MyRubyOutcomesResp {
+export interface MyEleanorOutcomesResp {
   ok: boolean;
-  outcomes: MyRubyOutcome[];
+  outcomes: MyEleanorOutcome[];
 }
 
-export interface MyRubyReview {
+export interface MyEleanorReview {
   reviewId: string;
   outcomeId: string;
   reviewType: string;
@@ -3070,12 +3070,12 @@ export interface MyRubyReview {
   createdAt: string;
 }
 
-export interface MyRubyReviewsResp {
+export interface MyEleanorReviewsResp {
   ok: boolean;
-  reviews: MyRubyReview[];
+  reviews: MyEleanorReview[];
 }
 
-export interface RubyQualitySymbolSessionStat {
+export interface EleanorQualitySymbolSessionStat {
   key: string;
   graded: number;
   wins: number;
@@ -3083,7 +3083,7 @@ export interface RubyQualitySymbolSessionStat {
   avgPnlR?: number | null;
 }
 
-export interface RubyQualityScoreBucket {
+export interface EleanorQualityScoreBucket {
   bucket: string;
   total: number;
   wins: number;
@@ -3095,7 +3095,7 @@ export interface RubyQualityScoreBucket {
   winRate: number | null;
 }
 
-export type RubyQualityMetricsTotals = {
+export type EleanorQualityMetricsTotals = {
   tracked: number;
   resolved: number;
   /** PENDING rows only — still awaiting real evidence. */
@@ -3108,7 +3108,7 @@ export type RubyQualityMetricsTotals = {
 /**
  * Each rate is null when its denominator is empty (nothing to rate), never 0.
  */
-export type RubyQualityMetricsRates = {
+export type EleanorQualityMetricsRates = {
   /** @nullable */
   winRate: number | null;
   /** @nullable */
@@ -3119,26 +3119,26 @@ export type RubyQualityMetricsRates = {
   lateRate: number | null;
 };
 
-export type RubyQualityMetricsTiming = { [key: string]: number };
+export type EleanorQualityMetricsTiming = { [key: string]: number };
 
-export type RubyQualityMetricsAverages = {
+export type EleanorQualityMetricsAverages = {
   slippage?: number | null;
   startDrawdown?: number | null;
   mfe?: number | null;
   mae?: number | null;
 };
 
-export interface RubyQualityMetrics {
-  totals: RubyQualityMetricsTotals;
+export interface EleanorQualityMetrics {
+  totals: EleanorQualityMetricsTotals;
   /** Each rate is null when its denominator is empty (nothing to rate), never 0. */
-  rates: RubyQualityMetricsRates;
-  timing: RubyQualityMetricsTiming;
-  averages: RubyQualityMetricsAverages;
+  rates: EleanorQualityMetricsRates;
+  timing: EleanorQualityMetricsTiming;
+  averages: EleanorQualityMetricsAverages;
   /** Top half of the ranking (at most 5); never lists a symbol that is in worstSymbols. */
-  bestSymbols: RubyQualitySymbolSessionStat[];
-  worstSymbols: RubyQualitySymbolSessionStat[];
-  bestSessions: RubyQualitySymbolSessionStat[];
-  worstSessions: RubyQualitySymbolSessionStat[];
+  bestSymbols: EleanorQualitySymbolSessionStat[];
+  worstSymbols: EleanorQualitySymbolSessionStat[];
+  bestSessions: EleanorQualitySymbolSessionStat[];
+  worstSessions: EleanorQualitySymbolSessionStat[];
   newsFailures: number;
   executionFailures: number;
   /**
@@ -3150,16 +3150,16 @@ export interface RubyQualityMetrics {
   avoidedBadTrades: number;
   missedOpportunities: number;
   /** Buckets hold lo ≤ value < hi (the last also includes hi), so each row counts once. */
-  confidenceVsOutcome: RubyQualityScoreBucket[];
-  edgeVsOutcome: RubyQualityScoreBucket[];
+  confidenceVsOutcome: EleanorQualityScoreBucket[];
+  edgeVsOutcome: EleanorQualityScoreBucket[];
 }
 
-export interface AdminRubyQualityMetricsResp {
+export interface AdminEleanorQualityMetricsResp {
   ok: boolean;
-  metrics: RubyQualityMetrics;
+  metrics: EleanorQualityMetrics;
 }
 
-export interface RubyCalibrationCell {
+export interface EleanorCalibrationCell {
   timeframe: string;
   confidenceTier: string;
   tierLow: number;
@@ -3177,7 +3177,7 @@ export interface RubyCalibrationCell {
   insufficientSample: boolean;
 }
 
-export type RubyCalibrationRollupTotals = {
+export type EleanorCalibrationRollupTotals = {
   tracked: number;
   resolved: number;
   pending: number;
@@ -3185,19 +3185,19 @@ export type RubyCalibrationRollupTotals = {
   directionalGraded: number;
 };
 
-export interface RubyCalibrationRollup {
+export interface EleanorCalibrationRollup {
   minSample: number;
   tierEdges: number[];
-  totals: RubyCalibrationRollupTotals;
-  cells: RubyCalibrationCell[];
+  totals: EleanorCalibrationRollupTotals;
+  cells: EleanorCalibrationCell[];
 }
 
 export interface AdminIntelligenceCalibrationResp {
   ok: boolean;
-  calibration: RubyCalibrationRollup;
+  calibration: EleanorCalibrationRollup;
 }
 
-export type RubyMissedOpportunityWhatRubySaw = {
+export type EleanorMissedOpportunityWhatEleanorSaw = {
   direction?: string | null;
   decision?: string;
   confidence?: number;
@@ -3210,29 +3210,29 @@ export type RubyMissedOpportunityWhatRubySaw = {
   plannedTarget?: number | null;
 };
 
-export type RubyMissedOpportunityHowItMoved = {
+export type EleanorMissedOpportunityHowItMoved = {
   maxFavorableExcursion?: number | null;
   maxAdverseExcursion?: number | null;
   elapsedMs?: number | null;
   dataComplete?: boolean;
 };
 
-export interface RubyMissedOpportunity {
+export interface EleanorMissedOpportunity {
   outcomeId: string;
   symbol: string;
   timeframe: string;
   verdict: string;
-  whatRubySaw: RubyMissedOpportunityWhatRubySaw;
-  howItMoved: RubyMissedOpportunityHowItMoved;
+  whatEleanorSaw: EleanorMissedOpportunityWhatEleanorSaw;
+  howItMoved: EleanorMissedOpportunityHowItMoved;
   evidenceNote: string;
 }
 
 export interface AdminMissedOpportunitiesResp {
   ok: boolean;
-  replays: RubyMissedOpportunity[];
+  replays: EleanorMissedOpportunity[];
 }
 
-export interface RubyQualityThresholds {
+export interface EleanorQualityThresholds {
   lateEntrySeconds: number;
   minConfidence: number;
   minEdge: number;
@@ -3245,16 +3245,16 @@ export interface RubyQualityThresholds {
   evidenceExpiryMinutes: number;
 }
 
-export interface AdminRubyThresholdsResp {
+export interface AdminEleanorThresholdsResp {
   ok: boolean;
-  thresholds: RubyQualityThresholds;
-  defaults: RubyQualityThresholds;
+  thresholds: EleanorQualityThresholds;
+  defaults: EleanorQualityThresholds;
   updatedByAdminId?: number | null;
   updatedReason?: string | null;
   updatedAt?: string | null;
 }
 
-export type AdminRubyThresholdsUpdateReqThresholds = {
+export type AdminEleanorThresholdsUpdateReqThresholds = {
   lateEntrySeconds?: number;
   minConfidence?: number;
   minEdge?: number;
@@ -3267,12 +3267,12 @@ export type AdminRubyThresholdsUpdateReqThresholds = {
   evidenceExpiryMinutes?: number;
 };
 
-export interface AdminRubyThresholdsUpdateReq {
+export interface AdminEleanorThresholdsUpdateReq {
   reason: string;
-  thresholds: AdminRubyThresholdsUpdateReqThresholds;
+  thresholds: AdminEleanorThresholdsUpdateReqThresholds;
 }
 
-export type AdminRubyInvestorSummaryRespSummary = {
+export type AdminEleanorInvestorSummaryRespSummary = {
   signalsTracked: number;
   signalsGraded: number;
   winRatePct?: number | null;
@@ -3280,9 +3280,9 @@ export type AdminRubyInvestorSummaryRespSummary = {
   disclaimer: string;
 };
 
-export interface AdminRubyInvestorSummaryResp {
+export interface AdminEleanorInvestorSummaryResp {
   ok: boolean;
-  summary: AdminRubyInvestorSummaryRespSummary;
+  summary: AdminEleanorInvestorSummaryRespSummary;
 }
 
 export interface HealthStatus {
@@ -3480,7 +3480,7 @@ export interface ChartCandle {
   source: string;
   /** false for the still-forming most-recent bar */
   isComplete: boolean;
-  /** Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis / Ruby / chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.
+  /** Task #496 — true ONLY for a server-synthesized real-time tip composed from live EA ticks (isComplete=false, isFinal=false). A closed provider bar is isForming=false. Analysis / Eleanor / chart-intelligence exclude isForming bars (closed-bars-only); the tip is display telemetry, never persisted and never an execution input.
    */
   isForming: boolean;
   /** live = real market data; demo = MT5 demo bridge context; mock = simulation provider (never safe as tradable truth); dev = developer test data; unknown = unrecognized source.
@@ -4101,7 +4101,7 @@ export interface ChartGateOutput {
   chartReadScore: number;
   truthLabel: string;
   readLabel: string;
-  /** Truth ≥ 75 — required for chart-based confident reads (Ruby chart-read, Scanner chart-confirm) */
+  /** Truth ≥ 75 — required for chart-based confident reads (Eleanor chart-read, Scanner chart-confirm) */
   confidentReadAllowed: boolean;
   /** Truth ≥ 75 — required for scanner chart-confirmation flag */
   scannerConfirmAllowed: boolean;
@@ -5006,10 +5006,10 @@ export interface ChartSpeedState {
   slowBrainLastRunAt: string | null;
 }
 
-export type RubyDraftReadRequestTimeframe =
-  (typeof RubyDraftReadRequestTimeframe)[keyof typeof RubyDraftReadRequestTimeframe];
+export type EleanorDraftReadRequestTimeframe =
+  (typeof EleanorDraftReadRequestTimeframe)[keyof typeof EleanorDraftReadRequestTimeframe];
 
-export const RubyDraftReadRequestTimeframe = {
+export const EleanorDraftReadRequestTimeframe = {
   M1: "M1",
   M2: "M2",
   M3: "M3",
@@ -5033,10 +5033,10 @@ export const RubyDraftReadRequestTimeframe = {
   MN1: "MN1",
 } as const;
 
-export type RubyDraftReadRequestIntent =
-  (typeof RubyDraftReadRequestIntent)[keyof typeof RubyDraftReadRequestIntent];
+export type EleanorDraftReadRequestIntent =
+  (typeof EleanorDraftReadRequestIntent)[keyof typeof EleanorDraftReadRequestIntent];
 
-export const RubyDraftReadRequestIntent = {
+export const EleanorDraftReadRequestIntent = {
   analyze: "analyze",
   "is-this-a-buy": "is-this-a-buy",
   "is-this-a-scalp": "is-this-a-scalp",
@@ -5048,36 +5048,36 @@ export const RubyDraftReadRequestIntent = {
 } as const;
 
 /**
- * Optional draft the user is contemplating. Ruby reads it but NEVER executes it.
+ * Optional draft the user is contemplating. Eleanor reads it but NEVER executes it.
  */
-export type RubyDraftReadRequestDraft = {
+export type EleanorDraftReadRequestDraft = {
   side: "BUY" | "SELL";
   entry: number;
   sl: number;
   tp: number;
 } | null;
 
-export interface RubyDraftReadRequest {
+export interface EleanorDraftReadRequest {
   /**
    * @minLength 1
    * @maxLength 64
    */
   symbol: string;
-  timeframe?: RubyDraftReadRequestTimeframe;
+  timeframe?: EleanorDraftReadRequestTimeframe;
   /**
    * @minimum 1
    * @maximum 5000
    */
   limit?: number;
-  intent: RubyDraftReadRequestIntent;
-  /** Optional draft the user is contemplating. Ruby reads it but NEVER executes it. */
-  draft?: RubyDraftReadRequestDraft;
+  intent: EleanorDraftReadRequestIntent;
+  /** Optional draft the user is contemplating. Eleanor reads it but NEVER executes it. */
+  draft?: EleanorDraftReadRequestDraft;
 }
 
-export type RubyDraftConsensusViewStance =
-  (typeof RubyDraftConsensusViewStance)[keyof typeof RubyDraftConsensusViewStance];
+export type EleanorDraftConsensusViewStance =
+  (typeof EleanorDraftConsensusViewStance)[keyof typeof EleanorDraftConsensusViewStance];
 
-export const RubyDraftConsensusViewStance = {
+export const EleanorDraftConsensusViewStance = {
   support: "support",
   caution: "caution",
   mixed: "mixed",
@@ -5087,19 +5087,19 @@ export const RubyDraftConsensusViewStance = {
 /**
  * Advisory/shadow agent-consensus view — never gates a trade or the live path.
  */
-export interface RubyDraftConsensusView {
+export interface EleanorDraftConsensusView {
   populated: boolean;
   headline: string;
-  stance: RubyDraftConsensusViewStance;
+  stance: EleanorDraftConsensusViewStance;
   conflict: boolean;
   protective: boolean;
   cautions: string[];
 }
 
-export type RubyDraftReadIntent =
-  (typeof RubyDraftReadIntent)[keyof typeof RubyDraftReadIntent];
+export type EleanorDraftReadIntent =
+  (typeof EleanorDraftReadIntent)[keyof typeof EleanorDraftReadIntent];
 
-export const RubyDraftReadIntent = {
+export const EleanorDraftReadIntent = {
   analyze: "analyze",
   "is-this-a-buy": "is-this-a-buy",
   "is-this-a-scalp": "is-this-a-scalp",
@@ -5113,10 +5113,10 @@ export const RubyDraftReadIntent = {
 /**
  * Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution.
  */
-export type RubyDraftReadDataQuality =
-  (typeof RubyDraftReadDataQuality)[keyof typeof RubyDraftReadDataQuality];
+export type EleanorDraftReadDataQuality =
+  (typeof EleanorDraftReadDataQuality)[keyof typeof EleanorDraftReadDataQuality];
 
-export const RubyDraftReadDataQuality = {
+export const EleanorDraftReadDataQuality = {
   ok: "ok",
   insufficient: "insufficient",
 } as const;
@@ -5124,10 +5124,10 @@ export const RubyDraftReadDataQuality = {
 /**
  * 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral').
  */
-export type RubyDraftReadBias =
-  (typeof RubyDraftReadBias)[keyof typeof RubyDraftReadBias];
+export type EleanorDraftReadBias =
+  (typeof EleanorDraftReadBias)[keyof typeof EleanorDraftReadBias];
 
-export const RubyDraftReadBias = {
+export const EleanorDraftReadBias = {
   bullish: "bullish",
   bearish: "bearish",
   neutral: "neutral",
@@ -5135,21 +5135,21 @@ export const RubyDraftReadBias = {
 } as const;
 
 /**
- * Deterministic, read-only prepared Ruby read over the Chart Intelligence State. Decision support only — the chart never executes from it.
+ * Deterministic, read-only prepared Eleanor read over the Chart Intelligence State. Decision support only — the chart never executes from it.
  */
-export interface RubyDraftRead {
-  intent: RubyDraftReadIntent;
+export interface EleanorDraftRead {
+  intent: EleanorDraftReadIntent;
   symbol: string;
   displaySymbol: string;
   timeframe: string;
   /** True when the state is fresh and understanding engines are populated */
   feedUsable: boolean;
   /** Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution. */
-  dataQuality: RubyDraftReadDataQuality;
+  dataQuality: EleanorDraftReadDataQuality;
   /** True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers. */
   feedConfirmed?: boolean;
   /** 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral'). */
-  bias: RubyDraftReadBias;
+  bias: EleanorDraftReadBias;
   /** When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers. */
   asOf?: string;
   headline: string;
@@ -5159,20 +5159,20 @@ export interface RubyDraftRead {
   confidenceLabel: string;
   /** @nullable */
   confidenceScore: number | null;
-  agentConsensus: RubyDraftConsensusView;
+  agentConsensus: EleanorDraftConsensusView;
   disclaimer: string;
 }
 
-export type RubyDraftReadResponseSafetyMode =
-  (typeof RubyDraftReadResponseSafetyMode)[keyof typeof RubyDraftReadResponseSafetyMode];
+export type EleanorDraftReadResponseSafetyMode =
+  (typeof EleanorDraftReadResponseSafetyMode)[keyof typeof EleanorDraftReadResponseSafetyMode];
 
-export const RubyDraftReadResponseSafetyMode = {
+export const EleanorDraftReadResponseSafetyMode = {
   paper_only: "paper_only",
 } as const;
 
-export interface RubyDraftReadResponse {
-  draftRead: RubyDraftRead;
-  safetyMode: RubyDraftReadResponseSafetyMode;
+export interface EleanorDraftReadResponse {
+  draftRead: EleanorDraftRead;
+  safetyMode: EleanorDraftReadResponseSafetyMode;
   liveLocked: boolean;
   readOnlyMode: boolean;
   allowOrderExecution: boolean;
@@ -5265,7 +5265,7 @@ export interface ChartDecisionReceiptView {
   /** @nullable */
   riskWarning?: string | null;
   /** @nullable */
-  rubyFinalRead?: string | null;
+  eleanorFinalRead?: string | null;
   /** @nullable */
   confidenceScore?: number | null;
   /** @nullable */
@@ -5343,8 +5343,8 @@ export type ChartDecisionReceiptCreateRequestSource =
   (typeof ChartDecisionReceiptCreateRequestSource)[keyof typeof ChartDecisionReceiptCreateRequestSource];
 
 export const ChartDecisionReceiptCreateRequestSource = {
-  ruby_draft_read: "ruby_draft_read",
-  ruby_explain_signal: "ruby_explain_signal",
+  eleanor_draft_read: "eleanor_draft_read",
+  eleanor_explain_signal: "eleanor_explain_signal",
   chart_read: "chart_read",
   chart_trade_plan: "chart_trade_plan",
 } as const;
@@ -6761,7 +6761,7 @@ export type SmartChartLayerSource =
 
 export const SmartChartLayerSource = {
   signal: "signal",
-  ruby: "ruby",
+  eleanor: "eleanor",
   structure: "structure",
   execution: "execution",
   news: "news",
@@ -11913,7 +11913,7 @@ export const RawCalendarEventImpactTier = {
 
 /**
  * A raw economic-calendar event from a connected real provider (Trading
-Economics). Never fabricated — the radar/Ruby surfaces these only when
+Economics). Never fabricated — the radar/Eleanor surfaces these only when
 `connected:true` from the calendar seam. The live-calendar endpoint
 (`GET /economic-calendar/events`) returns enriched fields in addition to
 the base radar fields: country, source, forecast, previous, actual, plus
@@ -14981,10 +14981,10 @@ export interface WhatChanged {
   summary: string;
 }
 
-export type RubyMarketEdgeSignalBias =
-  (typeof RubyMarketEdgeSignalBias)[keyof typeof RubyMarketEdgeSignalBias];
+export type EleanorMarketEdgeSignalBias =
+  (typeof EleanorMarketEdgeSignalBias)[keyof typeof EleanorMarketEdgeSignalBias];
 
-export const RubyMarketEdgeSignalBias = {
+export const EleanorMarketEdgeSignalBias = {
   BULLISH: "BULLISH",
   BEARISH: "BEARISH",
   RANGING: "RANGING",
@@ -14992,19 +14992,19 @@ export const RubyMarketEdgeSignalBias = {
   UNCLEAR: "UNCLEAR",
 } as const;
 
-export type RubyMarketEdgeSignalDirection =
-  (typeof RubyMarketEdgeSignalDirection)[keyof typeof RubyMarketEdgeSignalDirection];
+export type EleanorMarketEdgeSignalDirection =
+  (typeof EleanorMarketEdgeSignalDirection)[keyof typeof EleanorMarketEdgeSignalDirection];
 
-export const RubyMarketEdgeSignalDirection = {
+export const EleanorMarketEdgeSignalDirection = {
   BUY: "BUY",
   SELL: "SELL",
   NEUTRAL: "NEUTRAL",
 } as const;
 
-export type RubyMarketEdgeSignalRegime =
-  (typeof RubyMarketEdgeSignalRegime)[keyof typeof RubyMarketEdgeSignalRegime];
+export type EleanorMarketEdgeSignalRegime =
+  (typeof EleanorMarketEdgeSignalRegime)[keyof typeof EleanorMarketEdgeSignalRegime];
 
-export const RubyMarketEdgeSignalRegime = {
+export const EleanorMarketEdgeSignalRegime = {
   TRENDING: "TRENDING",
   RANGING: "RANGING",
   VOLATILE: "VOLATILE",
@@ -15013,10 +15013,10 @@ export const RubyMarketEdgeSignalRegime = {
   UNKNOWN: "UNKNOWN",
 } as const;
 
-export type RubyMarketEdgeSignalLifecycleStage =
-  (typeof RubyMarketEdgeSignalLifecycleStage)[keyof typeof RubyMarketEdgeSignalLifecycleStage];
+export type EleanorMarketEdgeSignalLifecycleStage =
+  (typeof EleanorMarketEdgeSignalLifecycleStage)[keyof typeof EleanorMarketEdgeSignalLifecycleStage];
 
-export const RubyMarketEdgeSignalLifecycleStage = {
+export const EleanorMarketEdgeSignalLifecycleStage = {
   WATCHING: "WATCHING",
   TREND_FORMING: "TREND_FORMING",
   SETUP_FORMING: "SETUP_FORMING",
@@ -15027,10 +15027,10 @@ export const RubyMarketEdgeSignalLifecycleStage = {
   EXPIRED: "EXPIRED",
 } as const;
 
-export type RubyMarketEdgeSignalConfidenceBand =
-  (typeof RubyMarketEdgeSignalConfidenceBand)[keyof typeof RubyMarketEdgeSignalConfidenceBand];
+export type EleanorMarketEdgeSignalConfidenceBand =
+  (typeof EleanorMarketEdgeSignalConfidenceBand)[keyof typeof EleanorMarketEdgeSignalConfidenceBand];
 
-export const RubyMarketEdgeSignalConfidenceBand = {
+export const EleanorMarketEdgeSignalConfidenceBand = {
   NONE: "NONE",
   LOW: "LOW",
   MODEST: "MODEST",
@@ -15042,18 +15042,18 @@ export const RubyMarketEdgeSignalConfidenceBand = {
 /**
  * FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL.
  */
-export type RubyMarketEdgeSignalConfidenceBandBasis =
-  (typeof RubyMarketEdgeSignalConfidenceBandBasis)[keyof typeof RubyMarketEdgeSignalConfidenceBandBasis];
+export type EleanorMarketEdgeSignalConfidenceBandBasis =
+  (typeof EleanorMarketEdgeSignalConfidenceBandBasis)[keyof typeof EleanorMarketEdgeSignalConfidenceBandBasis];
 
-export const RubyMarketEdgeSignalConfidenceBandBasis = {
+export const EleanorMarketEdgeSignalConfidenceBandBasis = {
   FULL: "FULL",
   PARTIAL: "PARTIAL",
 } as const;
 
-export type RubyMarketEdgeSignalFreshness =
-  (typeof RubyMarketEdgeSignalFreshness)[keyof typeof RubyMarketEdgeSignalFreshness];
+export type EleanorMarketEdgeSignalFreshness =
+  (typeof EleanorMarketEdgeSignalFreshness)[keyof typeof EleanorMarketEdgeSignalFreshness];
 
-export const RubyMarketEdgeSignalFreshness = {
+export const EleanorMarketEdgeSignalFreshness = {
   FRESH: "FRESH",
   ACTIVE: "ACTIVE",
   AGING: "AGING",
@@ -15061,11 +15061,11 @@ export const RubyMarketEdgeSignalFreshness = {
   EXPIRED: "EXPIRED",
 } as const;
 
-export type RubyMarketEdgeSignalScannerBindingReasonCode =
-  | (typeof RubyMarketEdgeSignalScannerBindingReasonCode)[keyof typeof RubyMarketEdgeSignalScannerBindingReasonCode]
+export type EleanorMarketEdgeSignalScannerBindingReasonCode =
+  | (typeof EleanorMarketEdgeSignalScannerBindingReasonCode)[keyof typeof EleanorMarketEdgeSignalScannerBindingReasonCode]
   | null;
 
-export const RubyMarketEdgeSignalScannerBindingReasonCode = {
+export const EleanorMarketEdgeSignalScannerBindingReasonCode = {
   no_scanner_read: "no_scanner_read",
   quote_last_only: "quote_last_only",
   no_bound_quote: "no_bound_quote",
@@ -15077,16 +15077,16 @@ export const RubyMarketEdgeSignalScannerBindingReasonCode = {
 /**
  * Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers.
  */
-export type RubyMarketEdgeSignalScannerBinding = {
+export type EleanorMarketEdgeSignalScannerBinding = {
   bound: boolean;
-  reasonCode: RubyMarketEdgeSignalScannerBindingReasonCode;
+  reasonCode: EleanorMarketEdgeSignalScannerBindingReasonCode;
   reason: string | null;
 };
 
 /**
- * ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation/UX. Direction (BUY/SELL/NEUTRAL) is always kept separate from edge/quality. When data is insufficient the read collapses to an honest WATCHING/UNKNOWN/NONE state with hasSufficientData=false — never a fabricated number.
+ * ONE normalized signal object shared by Scanner, Scalp, Eleanor, and downstream explanation/UX. Direction (BUY/SELL/NEUTRAL) is always kept separate from edge/quality. When data is insufficient the read collapses to an honest WATCHING/UNKNOWN/NONE state with hasSufficientData=false — never a fabricated number.
  */
-export interface RubyMarketEdgeSignal {
+export interface EleanorMarketEdgeSignal {
   symbol: string;
   displayName: string;
   timeframe: string;
@@ -15094,10 +15094,10 @@ export interface RubyMarketEdgeSignal {
   generatedAt: string;
   dataSource: string;
   hasSufficientData: boolean;
-  bias: RubyMarketEdgeSignalBias;
-  direction: RubyMarketEdgeSignalDirection;
-  regime: RubyMarketEdgeSignalRegime;
-  lifecycleStage: RubyMarketEdgeSignalLifecycleStage;
+  bias: EleanorMarketEdgeSignalBias;
+  direction: EleanorMarketEdgeSignalDirection;
+  regime: EleanorMarketEdgeSignalRegime;
+  lifecycleStage: EleanorMarketEdgeSignalLifecycleStage;
   lifecycleReasons: string[];
   entryZone: SignalPriceZone | null;
   watchZone: SignalPriceZone | null;
@@ -15107,9 +15107,9 @@ export interface RubyMarketEdgeSignal {
   takeProfitZones: SignalPriceZone[];
   stopLoss: number | null;
   scores: SignalScores;
-  confidenceBand: RubyMarketEdgeSignalConfidenceBand;
+  confidenceBand: EleanorMarketEdgeSignalConfidenceBand;
   /** FULL when every dimension folded into scores.overall was observed; PARTIAL when any is a fixed default (scores.unmeasured). Surfaces show confidenceBand as a quality grade only on FULL. Optional for older servers; absent is treated like PARTIAL. */
-  confidenceBandBasis?: RubyMarketEdgeSignalConfidenceBandBasis;
+  confidenceBandBasis?: EleanorMarketEdgeSignalConfidenceBandBasis;
   edgeScore: number;
   earlyTrend: EarlyTrendReading;
   fakeout: FakeoutReading;
@@ -15118,26 +15118,26 @@ export interface RubyMarketEdgeSignal {
   session: SessionContext;
   reasonChain: string[];
   whatChanged: WhatChanged;
-  freshness: RubyMarketEdgeSignalFreshness;
+  freshness: EleanorMarketEdgeSignalFreshness;
   validForSeconds: number;
   expiresAt: string;
   firstSeenAt: string;
   lateReason: string | null;
   /** Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers. */
-  scannerBinding?: RubyMarketEdgeSignalScannerBinding;
+  scannerBinding?: EleanorMarketEdgeSignalScannerBinding;
   /** Closed bars the structure and regime reads ran over (the engine's actual input length), or null when the read was blind. */
   structureWindow?: number | null;
 }
 
-export type RubyMarketReadExplanationDefaultMode =
-  (typeof RubyMarketReadExplanationDefaultMode)[keyof typeof RubyMarketReadExplanationDefaultMode];
+export type EleanorMarketReadExplanationDefaultMode =
+  (typeof EleanorMarketReadExplanationDefaultMode)[keyof typeof EleanorMarketReadExplanationDefaultMode];
 
-export const RubyMarketReadExplanationDefaultMode = {
+export const EleanorMarketReadExplanationDefaultMode = {
   SIMPLE: "SIMPLE",
   ADVANCED: "ADVANCED",
 } as const;
 
-export interface RubyExplanationMode {
+export interface EleanorExplanationMode {
   whatIsHappening: string;
   why: string;
   whyThisMarket: string;
@@ -15151,7 +15151,7 @@ export interface RubyExplanationMode {
   whatToDoNext: string;
 }
 
-export interface RubyExplanationLevels {
+export interface EleanorExplanationLevels {
   entryZone: SignalPriceZone | null;
   watchZone: SignalPriceZone | null;
   lateZone: SignalPriceZone | null;
@@ -15163,10 +15163,10 @@ export interface RubyExplanationLevels {
 /**
  * What the confidence number is (optional for older servers).
  */
-export type RubyNoTradeIntelligenceBasis =
-  (typeof RubyNoTradeIntelligenceBasis)[keyof typeof RubyNoTradeIntelligenceBasis];
+export type EleanorNoTradeIntelligenceBasis =
+  (typeof EleanorNoTradeIntelligenceBasis)[keyof typeof EleanorNoTradeIntelligenceBasis];
 
-export const RubyNoTradeIntelligenceBasis = {
+export const EleanorNoTradeIntelligenceBasis = {
   RULE_TIER: "RULE_TIER",
   EDGE_DERIVED: "EDGE_DERIVED",
 } as const;
@@ -15174,11 +15174,11 @@ export const RubyNoTradeIntelligenceBasis = {
 /**
  * The no-trade rule that fired; null when the read is actionable.
  */
-export type RubyNoTradeIntelligenceRuleKey =
-  | (typeof RubyNoTradeIntelligenceRuleKey)[keyof typeof RubyNoTradeIntelligenceRuleKey]
+export type EleanorNoTradeIntelligenceRuleKey =
+  | (typeof EleanorNoTradeIntelligenceRuleKey)[keyof typeof EleanorNoTradeIntelligenceRuleKey]
   | null;
 
-export const RubyNoTradeIntelligenceRuleKey = {
+export const EleanorNoTradeIntelligenceRuleKey = {
   NO_LIVE_DATA: "NO_LIVE_DATA",
   INVALID_OR_EXPIRED: "INVALID_OR_EXPIRED",
   NO_DIRECTION: "NO_DIRECTION",
@@ -15188,25 +15188,25 @@ export const RubyNoTradeIntelligenceRuleKey = {
   NOT_AT_ENTRY: "NOT_AT_ENTRY",
 } as const;
 
-export interface RubyNoTradeIntelligence {
+export interface EleanorNoTradeIntelligence {
   isNoTrade: boolean;
   /** 0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as "% sure". Kept for back-compat. */
   confidence: number;
   /** What the confidence number is (optional for older servers). */
-  basis?: RubyNoTradeIntelligenceBasis;
+  basis?: EleanorNoTradeIntelligenceBasis;
   /** The no-trade rule that fired; null when the read is actionable. */
-  ruleKey?: RubyNoTradeIntelligenceRuleKey;
+  ruleKey?: EleanorNoTradeIntelligenceRuleKey;
   reason: string | null;
 }
 
-export interface RubyMarketReadExplanation {
+export interface EleanorMarketReadExplanation {
   headline: string;
-  defaultMode: RubyMarketReadExplanationDefaultMode;
-  simple: RubyExplanationMode;
-  advanced: RubyExplanationMode;
-  levels: RubyExplanationLevels;
+  defaultMode: EleanorMarketReadExplanationDefaultMode;
+  simple: EleanorExplanationMode;
+  advanced: EleanorExplanationMode;
+  levels: EleanorExplanationLevels;
   bestAction: string;
-  noTrade: RubyNoTradeIntelligence;
+  noTrade: EleanorNoTradeIntelligence;
   hasSufficientData: boolean;
   actionable: boolean;
   missingContext: string[];
@@ -15216,8 +15216,8 @@ export interface RubyMarketReadExplanation {
 }
 
 export interface MeMarketEdgeResp {
-  signal: RubyMarketEdgeSignal;
-  explanation?: RubyMarketReadExplanation | null;
+  signal: EleanorMarketEdgeSignal;
+  explanation?: EleanorMarketReadExplanation | null;
 }
 
 export type OpportunityMapRowDirection =
@@ -15667,7 +15667,7 @@ export const ScalpExitVerdictAction = {
 } as const;
 
 /**
- * Exit-urgency monitor. ALERT_ONLY — Ruby recommends, it never closes.
+ * Exit-urgency monitor. ALERT_ONLY — Eleanor recommends, it never closes.
  */
 export interface ScalpExitVerdict {
   urgency: ScalpExitVerdictUrgency;
@@ -15832,7 +15832,7 @@ export interface ScalpJournalEntry {
   realizedPl?: number | null;
   lastFloatingPl?: number | null;
   flameContinued?: boolean | null;
-  rubyWarnedCorrectly?: boolean | null;
+  eleanorWarnedCorrectly?: boolean | null;
   exitReason?: string | null;
   lesson?: string | null;
   openedAt?: string | null;
@@ -18924,16 +18924,16 @@ export type DeleteAdminInvestorStatementParams = {
   reason?: string;
 };
 
-export type GetMyRubyOutcomesParams = {
+export type GetMyEleanorOutcomesParams = {
   symbol?: string;
   limit?: number;
 };
 
-export type GetMyRubyReviewsParams = {
+export type GetMyEleanorReviewsParams = {
   limit?: number;
 };
 
-export type GetAdminRubyQualityMetricsParams = {
+export type GetAdminEleanorQualityMetricsParams = {
   userId?: number;
   symbol?: string;
   session?: string;
@@ -18942,7 +18942,7 @@ export type GetAdminRubyQualityMetricsParams = {
   toMs?: number;
 };
 
-export type GetAdminRubyMissedOpportunitiesParams = {
+export type GetAdminEleanorMissedOpportunitiesParams = {
   symbol?: string;
   limit?: number;
 };
@@ -19219,7 +19219,7 @@ export type ListAdminAaciDecisionsActorType =
 
 export const ListAdminAaciDecisionsActorType = {
   user: "user",
-  ruby: "ruby",
+  eleanor: "eleanor",
   self_trade_agent: "self_trade_agent",
   admin: "admin",
   system: "system",

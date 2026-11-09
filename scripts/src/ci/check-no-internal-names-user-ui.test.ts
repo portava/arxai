@@ -1,10 +1,10 @@
 // Regression suite for the no-internal-names-user-ui CI guard, focused on
-// the Task #809 assistant-name ("Ruby" → resolver) leak scan.
+// the Task #809 assistant-name ("Eleanor" → resolver) leak scan.
 //
 // Two things are proven here:
 //   1. The live repo is clean — `checkNoInternalNamesUserUi().ok` is true.
 //   2. The scan is NOT vacuous — `findAssistantNameLeaksInSource` flags a
-//      real user-facing "Ruby" and stays silent on comments, glued
+//      real user-facing "Eleanor" and stays silent on comments, glued
 //      identifiers, and deliberate name-swap lines. `stripComments`
 //      neutralizes comments while preserving line/column positions.
 //
@@ -24,22 +24,22 @@ type Case = { name: string; src: string; expected: number };
 // findAssistantNameLeaksInSource(path, src) → each case asserts the leak count.
 const leakCases: Case[] = [
   // ── Must be flagged (genuine user-facing copy) ──────────────────────────────
-  { name: 'double-quoted string literal', src: `const s = "Ask Ruby anything";`, expected: 1 },
-  { name: 'single-quoted string literal', src: `const s = 'Ruby is thinking';`, expected: 1 },
-  { name: 'template literal text', src: "const s = `Hi from Ruby`;", expected: 1 },
-  { name: "JSX text node", src: `<p>Talk to Ruby</p>`, expected: 1 },
-  { name: "two leaks on separate lines", src: `const a = "Ruby";\nconst b = "Ruby";`, expected: 2 },
+  { name: 'double-quoted string literal', src: `const s = "Ask Eleanor anything";`, expected: 1 },
+  { name: 'single-quoted string literal', src: `const s = 'Eleanor is thinking';`, expected: 1 },
+  { name: 'template literal text', src: "const s = `Hi from Eleanor`;", expected: 1 },
+  { name: "JSX text node", src: `<p>Talk to Eleanor</p>`, expected: 1 },
+  { name: "two leaks on separate lines", src: `const a = "Eleanor";\nconst b = "Eleanor";`, expected: 2 },
 
   // ── Must stay clean ─────────────────────────────────────────────────────────
-  { name: "line comment", src: `// Ruby lives here`, expected: 0 },
-  { name: "block comment", src: `/* Ruby internal note */`, expected: 0 },
-  { name: "trailing line comment after code", src: `const x = 1; // Ruby`, expected: 0 },
-  { name: "glued identifier RubyState", src: `type RubyState = { on: boolean };`, expected: 0 },
-  { name: "glued identifier allowRuby", src: `const allowRuby = true;`, expected: 0 },
-  { name: "snake event source ruby_recommendation", src: `const e = "ruby_recommendation";`, expected: 0 },
-  { name: "lowercase ruby word", src: `const s = "the ruby gem";`, expected: 0 },
-  { name: "name-swap replace line", src: `const out = template.replace(/Ruby/g, name);`, expected: 0 },
-  { name: "import specifier", src: `import { RubyState } from "./ruby.js";`, expected: 0 },
+  { name: "line comment", src: `// Eleanor lives here`, expected: 0 },
+  { name: "block comment", src: `/* Eleanor internal note */`, expected: 0 },
+  { name: "trailing line comment after code", src: `const x = 1; // Eleanor`, expected: 0 },
+  { name: "glued identifier EleanorState", src: `type EleanorState = { on: boolean };`, expected: 0 },
+  { name: "glued identifier allowEleanor", src: `const allowEleanor = true;`, expected: 0 },
+  { name: "snake event source eleanor_recommendation", src: `const e = "eleanor_recommendation";`, expected: 0 },
+  { name: "lowercase eleanor word", src: `const s = "the eleanor gem";`, expected: 0 },
+  { name: "name-swap replace line", src: `const out = template.replace(/Eleanor/g, name);`, expected: 0 },
+  { name: "import specifier", src: `import { EleanorState } from "./eleanor.js";`, expected: 0 },
 ];
 
 const results: Array<{ name: string; ok: boolean; detail?: string }> = [];
@@ -65,22 +65,22 @@ for (const c of leakCases) {
 
 // 2. stripComments preserves length and neutralizes only comments.
 {
-  const src = `const a = "Ruby"; // Ruby comment`;
+  const src = `const a = "Eleanor"; // Eleanor comment`;
   const stripped = stripComments(src);
   const lenOk = stripped.length === src.length;
   record("stripComments preserves length", lenOk, `${stripped.length} vs ${src.length}`);
-  const keepsString = stripped.includes('"Ruby"');
+  const keepsString = stripped.includes('"Eleanor"');
   record("stripComments keeps string content", keepsString);
-  const dropsComment = !/\/\/ Ruby comment/.test(stripped) && !stripped.includes("Ruby comment");
+  const dropsComment = !/\/\/ Eleanor comment/.test(stripped) && !stripped.includes("Eleanor comment");
   record("stripComments neutralizes trailing comment", dropsComment);
 }
 
 // 3. Column is reported against the (position-preserving) stripped line.
 {
-  const src = `  const s = "Ruby";`;
+  const src = `  const s = "Eleanor";`;
   const [hit] = findAssistantNameLeaksInSource("p.ts", src);
   const col = Number(hit?.split(":")[2]);
-  // "Ruby" opens after `  const s = "` → 0-based index 13 → 1-based col 14.
+  // "Eleanor" opens after `  const s = "` → 0-based index 13 → 1-based col 14.
   record("reports 1-based column", col === 14, `col=${col}`);
 }
 
@@ -106,9 +106,9 @@ for (const c of leakCases) {
   const notExcluded = [
     "artifacts/api-server/src/lib/assistant/tools.ts",
     "artifacts/api-server/src/lib/assistant/featureMap.ts",
-    "artifacts/api-server/src/lib/chart/recordRubyRead.ts",
+    "artifacts/api-server/src/lib/chart/recordEleanorRead.ts",
     // The fixed user-facing domain surface (GET /me/market-edge sentence) must
-    // stay in scope so a future "Ruby" regression there fails the guard.
+    // stay in scope so a future "Eleanor" regression there fails the guard.
     "lib/domain/src/signal-intelligence/explainMarketRead.ts",
   ];
   for (const f of notExcluded) {

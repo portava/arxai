@@ -3,12 +3,12 @@
 // Owner screenshot 2026-10-27 (V75 1m, Deriv public data): Eleanor's chart read
 // said "Higher-timeframe bias is unclear" and "Higher-timeframe bias No clear
 // edge; Mixed on 1m." Root cause: higherTimeframeOf() was keyed on "1m"/"15m"/…
-// while buildRubyChartContext passes the canonical "M1", so the lookup returned
+// while buildEleanorChartContext passes the canonical "M1", so the lookup returned
 // null, no HTF candles were ever fetched, and the "No clear edge" sentinel was
 // printed as if the higher timeframe had been read.
 //
 // Pure tests pin the mapping / staleness / narrative; the service tests drive the
-// REAL buildRubyStructuralRead (IO seams mocked) and assert the wire carries
+// REAL buildEleanorStructuralRead (IO seams mocked) and assert the wire carries
 // either a directional HTF bias labelled with its timeframe, or null ("not read").
 
 import { test, mock } from "node:test";
@@ -18,11 +18,11 @@ import { evaluateMarketDataSufficiency, requiredClosedBarsForTimeframe } from "@
 type Ctx = Record<string, unknown> | null;
 let nextCtx: Ctx = null;
 
-const realCtxModule = await import("../../data/chart/rubyChartContext.js");
-mock.module("../../data/chart/rubyChartContext.js", {
+const realCtxModule = await import("../../data/chart/eleanorChartContext.js");
+mock.module("../../data/chart/eleanorChartContext.js", {
   namedExports: {
     ...realCtxModule,
-    buildRubyChartContext: async () => {
+    buildEleanorChartContext: async () => {
       if (nextCtx == null) throw new Error("no context");
       return nextCtx;
     },
@@ -51,7 +51,7 @@ const {
   readHigherTimeframeBias,
 } = await import("../chartStructure.js");
 const { pivotPriorFromHtf } = await import("../../data/chart/marketIntelligenceService.js");
-const { buildRubyStructuralRead } = await import("../rubyStructuralReadService.js");
+const { buildEleanorStructuralRead } = await import("../eleanorStructuralReadService.js");
 
 type C = { time: string; open: number; high: number; low: number; close: number };
 
@@ -73,7 +73,7 @@ function series(n: number, stepMs: number, endMs: number, drift: number, start =
   return out;
 }
 
-test("higherTimeframeOf maps canonical codes (what buildRubyChartContext passes) and aliases to a canonical HTF", () => {
+test("higherTimeframeOf maps canonical codes (what buildEleanorChartContext passes) and aliases to a canonical HTF", () => {
   assert.equal(higherTimeframeOf("M1"), "M15");
   assert.equal(higherTimeframeOf("1m"), "M15");
   assert.equal(higherTimeframeOf("M5"), "H1");
@@ -167,7 +167,7 @@ function ctx(htfCandles: C[], htfTimeframe: string | null): Record<string, unkno
 
 test("owner state (V75 1m, no HTF bars obtained): the wire says the 15m HTF was not read", async () => {
   nextCtx = ctx([], "M15");
-  const outcome = await buildRubyStructuralRead({ symbol: "V75", timeframe: "1m" });
+  const outcome = await buildEleanorStructuralRead({ symbol: "V75", timeframe: "1m" });
   const cr = outcome.chartRead as Record<string, unknown>;
   assert.equal(cr.htfBias, null);
   assert.equal(cr.htfTimeframe, "M15");
@@ -177,7 +177,7 @@ test("owner state (V75 1m, no HTF bars obtained): the wire says the 15m HTF was 
 
 test("V75 1m with 120 trending 15m bars: the wire carries a directional 15m bias, labelled", async () => {
   nextCtx = ctx(series(120, 15 * 60_000, Date.now() - 60_000, 12), "M15");
-  const outcome = await buildRubyStructuralRead({ symbol: "V75", timeframe: "1m" });
+  const outcome = await buildEleanorStructuralRead({ symbol: "V75", timeframe: "1m" });
   const cr = outcome.chartRead as Record<string, unknown>;
   assert.equal(cr.htfBias, "Bullish");
   assert.equal(cr.htfTimeframe, "M15");
@@ -190,7 +190,7 @@ test("V75 1m with 120 trending 15m bars: the wire carries a directional 15m bias
 // came from. The wire now carries the bars the chart-structure read ran over.
 test("the read-chart wire carries the bars the chart-structure read ran over (structureWindow)", async () => {
   nextCtx = ctx([], "M15");
-  const outcome = await buildRubyStructuralRead({ symbol: "V75", timeframe: "1m" });
+  const outcome = await buildEleanorStructuralRead({ symbol: "V75", timeframe: "1m" });
   const cr = outcome.chartRead as Record<string, unknown>;
   assert.equal(cr.structureWindow, 199);
   const thin = analyzeChartStructure(series(5, 60_000, Date.now() - 60_000, 6), { htfBias: null, htfTimeframe: "M15" });

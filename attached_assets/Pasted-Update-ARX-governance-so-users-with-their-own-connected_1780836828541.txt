@@ -324,23 +324,23 @@ For shared bridge users:
 Keep existing shared bridge/admin wording.
 
 ==================================================
-RUBY BEHAVIOR
+ELEANOR BEHAVIOR
 ==================================================
 
-Ruby must understand governance mode.
+Eleanor must understand governance mode.
 
 For personal bridge:
-Ruby should say:
+Eleanor should say:
 “You’re on your own MT5 bridge, so ARX is following your personal governance settings.”
 
-Ruby should not say:
+Eleanor should not say:
 “Admin approval required”
 “Shared bridge allocation required”
 “Operator cap blocked this trade”
 
 unless user is actually on shared bridge.
 
-Ruby can still warn:
+Eleanor can still warn:
 - bridge stale
 - symbol cannot be mapped
 - duplicate command blocked
@@ -349,7 +349,7 @@ Ruby can still warn:
 - news risk
 - user’s personal rule blocked it
 
-Ruby should distinguish:
+Eleanor should distinguish:
 - “blocked by your personal rule”
 - “blocked by platform safety”
 - “blocked by shared bridge governance”
@@ -479,7 +479,7 @@ Add/update tests:
 17. Audit event still written.
 18. Shared bridge user still requires admin approval/allocation.
 19. Shared bridge restrictions still apply.
-20. Ruby uses correct governance language.
+20. Eleanor uses correct governance language.
 21. UI shows Self-governed bridge for personal bridge.
 22. UI shows Operator-governed bridge for shared bridge.
 23. Self-Trade on personal bridge uses personal governance, not shared allocation.
@@ -490,7 +490,7 @@ Run:
 - pnpm run ci:guards
 - relevant risk/governance tests
 - relevant live execution readiness tests
-- relevant Ruby copy tests
+- relevant Eleanor copy tests
 - full pnpm run ci if feasible
 
 ==================================================
@@ -506,7 +506,7 @@ Return:
 - AACI changes
 - Security Handshake changes
 - UI/settings changes
-- Ruby language changes
+- Eleanor language changes
 - Self-Trade changes
 - shared bridge restrictions preserved
 - personal bridge freedom confirmed

@@ -18,7 +18,7 @@ function makeTruth(): ScannerTruth {
     displayStatus,
     strip: {
       data: { verdict: "Live", detail: "Live, confirmed candles." },
-      ruby: { detail: "" },
+      eleanor: { detail: "" },
       trading: { verdict: "Blocked", detail: "" },
     },
     candles: {
@@ -26,7 +26,7 @@ function makeTruth(): ScannerTruth {
       count: 200, minRequired: 150, status: "CONFIRMED",
     },
     consolidated: {
-      rubyReadStatus: "NO_READ",
+      eleanorReadStatus: "NO_READ",
       scannerActionability: "WAIT_FOR_CONFIRMATION",
       userMessage: "Live data is confirmed.",
       internalReasonCode: "FEED_OK",

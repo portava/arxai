@@ -4,9 +4,9 @@
 //      MT5 bridge reconnects." while the summary said "Refresh failed (HTTP
 //      500)". The failure is the API request; the banner now says so too.
 //  (b) the strip showed the account snapshot's "Open P/L $12.34" while the
-//      Live Position Summary and the Ruby read said P/L was not reported (1
+//      Live Position Summary and the Eleanor read said P/L was not reported (1
 //      of 3 awaiting). The strip now names its source and the summary and
-//      the Ruby read state the snapshot total next to the per-position gap.
+//      the Eleanor read state the snapshot total next to the per-position gap.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 
@@ -18,7 +18,7 @@ vi.mock("@workspace/api-client-react", () => ({
 vi.mock("@/components/trading/ConfirmCloseModal", () => ({ ConfirmCloseModal: () => null }));
 vi.mock("@/components/trading/QuickTradeModal", () => ({ QuickTradeModal: () => null }));
 vi.mock("@/lib/use-chart-symbol", () => ({ useChartSymbol: () => ["EURUSD", () => {}] }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 const snap = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("@/hooks/useLiveAccountSnapshot", () => ({ useLiveAccountSnapshot: () => snap.value }));
 vi.mock("@/components/account/CanonicalBalancePanel", () => ({ CanonicalBalancePanel: () => null }));

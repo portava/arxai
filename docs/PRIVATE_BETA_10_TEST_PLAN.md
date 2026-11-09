@@ -20,7 +20,7 @@ Review new rows in `feedback` and `audit_events` (source=`admin-beta-control`).
 - Set `ARX_BETA_INVITE_REQUIRED=true`
 - Create 2 invites (ops + eng) with `accountMode = DEMO_TESTER`
 - Both pilots register via `/auth/register` with their `inviteCode`
-- Both complete: onboarding, demo ticket, Ruby chat, scanner scan, feedback
+- Both complete: onboarding, demo ticket, Eleanor chat, scanner scan, feedback
 - **Do not enable live trading during this 24-hour internal pilot.**
 - **Confirm `arx_live_commands` remains `0` before expanding.**
 - Run `pnpm --filter @workspace/scripts run test:beta-invite-gate` — expect PASS
@@ -36,12 +36,12 @@ Review new rows in `feedback` and `audit_events` (source=`admin-beta-control`).
 - Each user fires at least one demo trade
 - Snapshot: `arx_live_commands = 0`
 
-## Day 2 — Scanner + Ruby market explanation
+## Day 2 — Scanner + Eleanor market explanation
 
 - Each user runs the scanner on at least 3 symbols
-- Each user opens Ruby and asks "what is happening on EURUSD"
-- Verify Ruby never claims guaranteed profits, never claims legal approval
-- Verify Ruby never returns secrets, tokens, or other-user data
+- Each user opens Eleanor and asks "what is happening on EURUSD"
+- Verify Eleanor never claims guaranteed profits, never claims legal approval
+- Verify Eleanor never returns secrets, tokens, or other-user data
 - Collect feedback on scanner UX
 
 ## Day 3 — Trade ticket + SL/TP + chart window
@@ -52,20 +52,20 @@ Review new rows in `feedback` and `audit_events` (source=`admin-beta-control`).
 - Each user modifies a SL/TP from `/positions`
 - Verify chart position markers render correctly on desktop + mobile
 
-## Day 4 — Ruby voice + voice guardrails
+## Day 4 — Eleanor voice + voice guardrails
 
 - Each user enables voice (iOS users tap-to-start)
 - Each user issues a voice trade command
 - Verify voice prepares ticket and requires explicit Confirm tap
-- Verify mic pauses when Ruby speaks
+- Verify mic pauses when Eleanor speaks
 - Verify voice cannot bypass kill switch or one-click defaults
-- Run `pnpm --filter @workspace/scripts run test:ruby-voice-trading-guardrails`
+- Run `pnpm --filter @workspace/scripts run test:eleanor-voice-trading-guardrails`
 
 ## Day 5 — Mobile / iPhone Safari pass
 
 - Walk `docs/MOBILE_QA_CHECKLIST.md` on iPhone SE + iPhone 13 + iPad
 - Verify no input zoom on focus
-- Verify Ruby trigger does not cover modal buttons
+- Verify Eleanor trigger does not cover modal buttons
 - Verify bottom nav safe area
 - Verify admin tables scroll horizontally on phone
 
@@ -93,7 +93,7 @@ The beta is considered **successful** if all of the following hold at end of Day
 - `arx_live_commands = 0` (never increased)
 - 0 P0/P1 bugs open
 - All 10 users completed at least 1 demo trade
-- Ruby guardrails 29/29 PASS throughout
+- Eleanor guardrails 29/29 PASS throughout
 - Mobile QA checklist 33/33 PASS throughout
 - Operator reports no privacy/secret leaks
 - Audit log shows clean trail of all admin actions

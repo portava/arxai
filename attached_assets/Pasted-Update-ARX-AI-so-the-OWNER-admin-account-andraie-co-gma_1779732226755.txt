@@ -189,6 +189,6 @@ Before stopping, verify:
 - Kill switch still blocks all live execution when engaged.
 - arx_live_commands remains 0 during tests unless OWNER manually confirms a live order.
 - No live trade is placed automatically.
-- Login, Ruby voice/chat, scanner, trade modal, bridge status, live request flow, admin queue, and bottom nav still work.
+- Login, Eleanor voice/chat, scanner, trade modal, bridge status, live request flow, admin queue, and bottom nav still work.
 
 Run typecheck/build/tests and fix errors before stopping.

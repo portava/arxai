@@ -8,8 +8,8 @@ import {
 describe("shared shell navigation catalog", () => {
   it("keeps investor tools confined to investor navigation", () => {
     const role = { isAdmin: false, isApprovedTrader: true, isInvestor: true };
-    const groups = getDashboardNavigationGroups("Ruby", role);
-    const routes = getDashboardToolCatalog("Ruby", role).map(item => item.href);
+    const groups = getDashboardNavigationGroups("Eleanor", role);
+    const routes = getDashboardToolCatalog("Eleanor", role).map(item => item.href);
     expect(groups.map(group => group.label)).toEqual(["Investor"]);
     expect(routes).toEqual(expect.arrayContaining(["/investor", "/my-account", "/settings", "/help"]));
     expect(routes).not.toContain("/market-scanner");
@@ -21,16 +21,16 @@ describe("shared shell navigation catalog", () => {
     expect(shouldShowEmergencyStop(false)).toBe(true);
     expect(shouldShowEmergencyStop(true)).toBe(false);
     const role = { isAdmin: false, isApprovedTrader: false, isInvestor: false };
-    expect(getDashboardToolCatalog("Ruby", role).some(item => item.href === "/emergency")).toBe(true);
+    expect(getDashboardToolCatalog("Eleanor", role).some(item => item.href === "/emergency")).toBe(true);
   });
 
   it("preserves approved-only and admin-only role gates in All tools", () => {
-    const pending = getDashboardToolCatalog("Ruby", {
+    const pending = getDashboardToolCatalog("Eleanor", {
       isAdmin: false,
       isApprovedTrader: false,
       isInvestor: false,
     });
-    const approved = getDashboardToolCatalog("Ruby", {
+    const approved = getDashboardToolCatalog("Eleanor", {
       isAdmin: false,
       isApprovedTrader: true,
       isInvestor: false,

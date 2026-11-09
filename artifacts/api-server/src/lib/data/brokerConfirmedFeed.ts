@@ -2,7 +2,7 @@
 //
 // A single predicate every live-readiness surface can share so "is this feed
 // fresh, broker-confirmed data for the exact tradable symbol/timeframe?" is
-// answered identically by the chart, scanner, Ruby, and the live order
+// answered identically by the chart, scanner, Eleanor, and the live order
 // preflight. It COMPOSES the existing shared feed-truth core
 // (resolveSymbolFeedVerdict over routeCandles + the trailing-interval
 // thresholds in freshness.ts) — it does NOT invent a second threshold and it

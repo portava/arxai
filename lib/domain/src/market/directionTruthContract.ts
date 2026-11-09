@@ -104,7 +104,7 @@ export interface DirectionTruthVerdict {
   invalidationLevel: number | null;
   confidenceCapReason: string | null;
   scannerTruthImpact: DirectionScannerImpact;
-  rubyExplanation: string;
+  eleanorExplanation: string;
   warnings: string[];
 }
 
@@ -338,7 +338,7 @@ export function resolveDirectionTruth(
       edgeAdjustment,
       supportive,
     },
-    rubyExplanation: buildDirectionExplanation({
+    eleanorExplanation: buildDirectionExplanation({
       allowedBias,
       scalpDirection,
       conflict,

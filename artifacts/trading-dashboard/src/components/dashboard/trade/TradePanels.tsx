@@ -237,7 +237,7 @@ export function OrdersPanel({
 }) {
   return (
     <div className="space-y-4" data-testid="orders-tab">
-      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="ruby" badge={!oppsError && opps.length ? String(opps.length) : undefined}>
+      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="eleanor" badge={!oppsError && opps.length ? String(opps.length) : undefined}>
         {oppsError ? (
           <p className="py-4 text-center text-sm text-warning" role="alert" data-testid="orders-opps-error">
             Scanner results could not be loaded. Retrying every 5 seconds.
@@ -359,7 +359,7 @@ export function DecisionStreamCard({ decisions, error = false }: {
   error?: boolean;
 }) {
   return (
-    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="ruby" badge={!error && decisions.length ? String(decisions.length) : undefined}>
+    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="eleanor" badge={!error && decisions.length ? String(decisions.length) : undefined}>
       {error ? (
         <p className="py-4 text-center text-sm text-warning" role="alert" data-testid="decision-stream-error">The decision stream could not be loaded. Retrying every 5 seconds.</p>
       ) : decisions.length === 0 ? (

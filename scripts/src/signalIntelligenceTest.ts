@@ -1,4 +1,4 @@
-// Signal Intelligence Core (Ruby Market Edge) — PURE engine unit tests.
+// Signal Intelligence Core (Eleanor Market Edge) — PURE engine unit tests.
 // Verifies the honesty contract: a blind/insufficient read never fabricates a
 // level/score/direction; direction stays separate from edge/quality; late
 // detection + evidence minimum behave; and the what-changed diff is honest on a
@@ -7,7 +7,7 @@
 // Run: pnpm --filter @workspace/scripts run test:signal-intelligence
 
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   MIN_STRUCTURE_CANDLES,
   type SignalCandle,
   type SignalEngineInput,
@@ -77,7 +77,7 @@ console.log("Signal Intelligence Core test");
 
 // 1. Blind read: null candles → honest WATCHING/UNCLEAR/NEUTRAL, no fabricated
 //    geometry, zeroed scores, hasSufficientData=false.
-const blind = buildRubyMarketEdge(baseInput({ candles: null, currentPrice: null }));
+const blind = buildEleanorMarketEdge(baseInput({ candles: null, currentPrice: null }));
 check("blind: hasSufficientData=false", blind.hasSufficientData === false);
 check("blind: lifecycle is WATCHING", blind.lifecycleStage === "WATCHING");
 check("blind: bias is UNCLEAR", blind.bias === "UNCLEAR");
@@ -87,15 +87,15 @@ check("blind: overall score is 0", blind.scores.overall === 0);
 check("blind: edge score is 0", blind.edgeScore === 0);
 
 // 2. Too-few candles is still blind (boundary at MIN_STRUCTURE_CANDLES).
-const tooFew = buildRubyMarketEdge(baseInput({ candles: risingCandles(MIN_STRUCTURE_CANDLES - 1) }));
+const tooFew = buildEleanorMarketEdge(baseInput({ candles: risingCandles(MIN_STRUCTURE_CANDLES - 1) }));
 check("short window (<MIN) is blind", tooFew.hasSufficientData === false && tooFew.earlyTrend.blind === true);
-const justEnough = buildRubyMarketEdge(baseInput({ candles: risingCandles(MIN_STRUCTURE_CANDLES) }));
+const justEnough = buildEleanorMarketEdge(baseInput({ candles: risingCandles(MIN_STRUCTURE_CANDLES) }));
 check("exactly MIN candles is sufficient", justEnough.hasSufficientData === true && justEnough.earlyTrend.blind === false);
 
 // 3. Direction is kept separate from quality. A clean bullish scanner read →
 //    direction BUY, but the edge/overall are graded on their own evidence and
 //    are bounded 0–100 (never just echoing the confidence score).
-const good = buildRubyMarketEdge(baseInput({}));
+const good = buildEleanorMarketEdge(baseInput({}));
 check("good: direction is BUY", good.direction === "BUY");
 check("good: bias is a resolved (non-blind) read", good.bias !== "UNCLEAR");
 check("good: scores bounded 0–100", good.scores.overall >= 0 && good.scores.overall <= 100 && good.edgeScore >= 0 && good.edgeScore <= 100);
@@ -104,15 +104,15 @@ check("good: LIVE_FEED provenance preserved", good.dataSource === "LIVE_FEED");
 
 // 4. A strong directional bias with hostile news must NOT upgrade edge above a
 //    clear-news read — news safety drags the fold down, direction unchanged.
-const calm = buildRubyMarketEdge(baseInput({ newsRiskLevel: "none" }));
-const risky = buildRubyMarketEdge(baseInput({ newsRiskLevel: "critical" }));
+const calm = buildEleanorMarketEdge(baseInput({ newsRiskLevel: "none" }));
+const risky = buildEleanorMarketEdge(baseInput({ newsRiskLevel: "critical" }));
 check("news: direction unchanged under hostile news", risky.direction === calm.direction);
 check("news: critical news lowers news-safety score", risky.scores.newsSafety < calm.scores.newsSafety);
 check("news: critical news does not raise edge", risky.edgeScore <= calm.edgeScore);
 
 // 5. Late / do-not-chase: price extended far past the entry zone after a long
 //    run should flag late without fabricating a remaining-RR when none exists.
-const extended = buildRubyMarketEdge(baseInput({
+const extended = buildEleanorMarketEdge(baseInput({
   candles: risingCandles(40),
   currentPrice: 1.1320,
 }));
@@ -129,7 +129,7 @@ check("diff: first read has no previous", good.whatChanged.hasPrevious === false
 check("diff: first read has no changes", good.whatChanged.changes.length === 0);
 
 // 8. What-changed reports a real transition when the previous snapshot differs.
-const changed = buildRubyMarketEdge(baseInput({
+const changed = buildEleanorMarketEdge(baseInput({
   previous: {
     bias: "BEARISH",
     direction: "SELL",
@@ -146,8 +146,8 @@ check("diff: hasPrevious true with a prior snapshot", changed.whatChanged.hasPre
 check("diff: a direction flip is reported as a change", changed.whatChanged.changes.some((c) => c.field === "direction"));
 
 // 9. Determinism: identical inputs → identical signal (no Date.now() leakage).
-const a = buildRubyMarketEdge(baseInput({}));
-const b = buildRubyMarketEdge(baseInput({}));
+const a = buildEleanorMarketEdge(baseInput({}));
+const b = buildEleanorMarketEdge(baseInput({}));
 check("deterministic: same input → same generatedAt", a.generatedAt === b.generatedAt);
 check("deterministic: same input → same edge score", a.edgeScore === b.edgeScore);
 

@@ -127,7 +127,7 @@ export function feedConfidence(
 // ── Resolved-verdict cap (Task #506) ─────────────────────────────────────────
 //
 // The raw `feedConfidence` verdict is socket-level ("clean bars are arriving").
-// Some surfaces (e.g. the Scanner Ruby Chart Read panel) resolve a STRICTER
+// Some surfaces (e.g. the Scanner Eleanor Chart Read panel) resolve a STRICTER
 // verdict by folding the shared scanner truth + the server read-chart result on
 // top of the same feed. This caps the raw confidence by that resolved verdict so
 // a badge can never claim Clean/AI when the resolved verdict says otherwise:
@@ -265,7 +265,7 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
 // ── Trailing-interval gap (Task #780) ────────────────────────────────────────
 //
 // Inline, always-visible "missing intervals" fragment for the compact feed
-// chips (Scanner header chip, Ruby chat feed chip), reusing the SAME
+// chips (Scanner header chip, Eleanor chat feed chip), reusing the SAME
 // `ChartFeedStatus.trailingIntervals` the #778 feed-details popover reads — no
 // second source of truth. Returns the text to append next to the chip's state:
 //   - `undefined` (caller did not opt in / field absent) → null (render nothing)

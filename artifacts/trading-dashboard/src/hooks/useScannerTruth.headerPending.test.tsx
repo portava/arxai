@@ -11,7 +11,7 @@ import { chartCandlesQueryKey } from "@/lib/chartCandlesQuery";
 
 const header = vi.hoisted(() => ({ value: { data: undefined as { ok: boolean } | undefined, isError: false } }));
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/hooks/useSelectedMarketSnapshot", () => ({ useSelectedMarketSnapshot: () => header.value }));
 vi.mock("@/hooks/useScannerTimeframe", () => ({ useScannerTimeframe: () => ["1m"] }));
 

@@ -1,4 +1,4 @@
-// Ruby TTS Route — server-side text-to-speech.
+// Eleanor TTS Route — server-side text-to-speech.
 //
 // POST /api/me/assistant/tts
 // Body: { text: string, voice: string, provider?: "openai" | "elevenlabs" }
@@ -216,7 +216,7 @@ router.post("/me/assistant/tts", requireUser, async (req, res) => {
   }
 });
 
-// ── Default-voice helpers (imported by adminRubyVoice.ts) ───────────────────
+// ── Default-voice helpers (imported by adminEleanorVoice.ts) ───────────────────
 const DEFAULT_ELEVENLABS_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Bella
 const DEFAULT_ELEVENLABS_VOICE_NAME = "Bella";
 

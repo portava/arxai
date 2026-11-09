@@ -44,7 +44,7 @@ import {
 import { RouteLayoutPanel } from "./RouteLayoutPanel";
 import "@/components/dashboard/command-workspace.css";
 
-// Lazy-load the Ruby assistant panel (voice / realtime-WebRTC / TTS stack) so
+// Lazy-load the Eleanor assistant panel (voice / realtime-WebRTC / TTS stack) so
 // its large module graph stays OUT of every page's first-paint critical path.
 // The panel is collapsed by default; its floating trigger button appears a
 // beat after first paint once the chunk has streamed in. This is the single
@@ -66,7 +66,7 @@ export function shouldShowEmergencyStop(isInvestor: boolean) {
 }
 
 // Curated aliases / descriptions for the menu search so users can find
-// pages by intent ("demo", "ruby", "scanner") not just exact labels.
+// pages by intent ("demo", "eleanor", "scanner") not just exact labels.
 const buildSearchAliases = (name: string): Record<string, { aliases?: string[]; description?: string }> => ({
   "/": { aliases: ["home", "cockpit", "overview"], description: "Live overview of P&L, account, signals" },
   "/live-chart": { aliases: ["chart", "market", "candles", "ohlc"], description: "Live OHLC chart with overlays" },
@@ -83,15 +83,15 @@ const buildSearchAliases = (name: string): Record<string, { aliases?: string[]; 
   "/risk-settings": { aliases: ["risk settings", "risk governor", "limits"], description: "Configure risk limits and guards" },
   "/live-intent-queue": { aliases: ["queue", "intent", "execution"], description: "Live intent and execution queue" },
   "/journal": { aliases: ["journal", "notes", "diary"], description: "Your trading journal" },
-  "/scalp-journal": { aliases: ["scalp journal", "ruby journal", "scalp history", "scalp lessons", "after action review", "market lessons"], description: `${name}'s scalp journal, after-action reviews, and per-market lessons` },
+  "/scalp-journal": { aliases: ["scalp journal", "eleanor journal", "scalp history", "scalp lessons", "after action review", "market lessons"], description: `${name}'s scalp journal, after-action reviews, and per-market lessons` },
   "/trading-calendar": { aliases: ["calendar", "events"], description: "Trading day calendar" },
   "/performance-scorecard": { aliases: ["scorecard", "win loss", "performance"], description: "Win/loss report and breakdown" },
   "/analytics": { aliases: ["analytics", "stats", "account analytics"], description: "Account analytics dashboard" },
   "/ai-readiness-score": { aliases: ["readiness", "ai score"], description: "Admin: shadow-mode readiness score (not per-user)" },
-  "/ai-coach": { aliases: ["ai", "ruby", "assistant", "coach", "chat", "help me"], description: `${name} — your ARX trading assistant` },
+  "/ai-coach": { aliases: ["ai", "eleanor", "assistant", "coach", "chat", "help me"], description: `${name} — your ARX trading assistant` },
   "/market-scanner": { aliases: ["scanner", "entry sniper", "signals", "alerts"], description: "Market scanner with confidence scores (polled; each read is labelled live, delayed or stale)" },
   "/trade-grader": { aliases: ["grader", "review trade", "trade review"], description: "Grade and review your trades" },
-  "/market-heat-map": { aliases: ["heat", "heat map", "timing", "heat score", "ruby timing", "market timing", "sessions", "news heat", "broad flow", "danger windows"], description: "Market heat map: heat scores, session windows, news heat, broad flow" },
+  "/market-heat-map": { aliases: ["heat", "heat map", "timing", "heat score", "eleanor timing", "market timing", "sessions", "news heat", "broad flow", "danger windows"], description: "Market heat map: heat scores, session windows, news heat, broad flow" },
   "/market-health": { aliases: ["bias", "market bias", "health"], description: "Market regime and bias indicators" },
   "/strategy-lab": { aliases: ["strategy", "lab", "backtest builder"], description: "Build, edit, and test strategies" },
   "/settings": { aliases: ["settings", "config", "preferences"], description: "App settings and preferences" },
@@ -124,7 +124,7 @@ const buildSearchAliases = (name: string): Record<string, { aliases?: string[]; 
 const buildNavGroups = (name: string): NavGroup[] => [
   // ── NORMAL-USER NAVIGATION ──────────────────────────────────────────────
   // ARX product-scope pruning: normal users see only the focused trading
-  // command center (Cockpit · Scanner/Trade · Ruby · Risk · Account). Every
+  // command center (Cockpit · Scanner/Trade · Eleanor · Risk · Account). Every
   // other surface lives in the adminOnly groups below — still fully reachable
   // by direct URL and by OWNER/ADMIN sessions; nothing is deleted, and backend
   // route guards remain authoritative.
@@ -630,7 +630,7 @@ const COCKPIT_PANELS: CockpitShellItem[] = [
   { id: "heat", label: "Market heat", shortLabel: "Heat", icon: Thermometer, onSelect: () => focusCockpitPanel("heat") },
   { id: "intelligence", label: "Intelligence", shortLabel: "Intel", icon: ScanLine, onSelect: () => focusCockpitPanel("intelligence") },
   { id: "clock", label: "Desk clock", shortLabel: "Clock", icon: CalendarIcon, onSelect: () => focusCockpitPanel("clock") },
-  { id: "ruby", label: "AI read", shortLabel: "AI", icon: Brain, onSelect: () => focusCockpitPanel("ruby") },
+  { id: "eleanor", label: "AI read", shortLabel: "AI", icon: Brain, onSelect: () => focusCockpitPanel("eleanor") },
   { id: "risk", label: "Risk", shortLabel: "Risk", icon: Shield, onSelect: () => focusCockpitPanel("risk") },
   { id: "order", label: "Order entry", shortLabel: "Order", icon: Crosshair, onSelect: () => focusCockpitPanel("order") },
   { id: "positions", label: "Open positions", shortLabel: "Positions", icon: Briefcase, onSelect: () => focusCockpitPanel("positions") },

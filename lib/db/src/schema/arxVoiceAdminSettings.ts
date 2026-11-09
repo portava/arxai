@@ -2,7 +2,7 @@ import { pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-// Singleton (id=1) row of admin-controlled Ruby voice configuration.
+// Singleton (id=1) row of admin-controlled Eleanor voice configuration.
 // - openaiModel:        which OpenAI TTS model to use for /audio/speech.
 //                       "tts-1-hd" (legacy, no instructions support)
 //                       "gpt-4o-mini-tts" (newer, supports `instructions`)
@@ -15,7 +15,7 @@ export const arxVoiceAdminSettingsTable = pgTable("arx_voice_admin_settings", {
   id: serial("id").primaryKey(),
   openaiModel: text("openai_model").notNull().default("tts-1-hd"),
   voiceInstructions: text("voice_instructions").notNull().default(
-    "Sound calm, confident, warm, and concise. Speak like Ruby, the ARX AI trading assistant. Keep responses natural and supportive.",
+    "Sound calm, confident, warm, and concise. Speak like Eleanor, the ARX AI trading assistant. Keep responses natural and supportive.",
   ),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   updatedByUserId: integer("updated_by_user_id"),

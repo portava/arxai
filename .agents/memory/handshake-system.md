@@ -20,7 +20,7 @@ pipeline; on any error or missing data its layers return honest per-layer
 `NOT_AVAILABLE`/`SKIPPED` and aggregate to `UNKNOWN` (never mock/sim/fake), a
 definitively bad state is `FAIL`, and consistency `DIVERGENT → BLOCK` is only a
 surfaced hint, never an execution block. Nothing in it sits on a
-trading/scanner/Ruby hot path, and no producer hot path emits onto its event bus
+trading/scanner/Eleanor hot path, and no producer hot path emits onto its event bus
 yet (subscriber-side cache invalidation is wired; producer-side is reserved).
 
 **Vocabulary:** per-layer `PASS|WARN|FAIL|SKIPPED|NOT_AVAILABLE`; aggregate

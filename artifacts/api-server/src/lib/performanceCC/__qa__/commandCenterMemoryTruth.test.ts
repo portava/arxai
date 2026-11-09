@@ -1,4 +1,4 @@
-// Ruby Memory (AI Performance Command Center) — what the decision and
+// Eleanor Memory (AI Performance Command Center) — what the decision and
 // learning figures claim.
 //
 // The real buildCommandCenter and insight generator run; the database handle
@@ -126,10 +126,10 @@ test("Best/Weakest setup says its P&L sums overlap across signals", async () => 
   assert.match(String(cc.setupRankingBasis), /counts toward each/i);
 });
 
-// Analytics recomputes P&L in USD at contract size; Ruby Memory sums the
+// Analytics recomputes P&L in USD at contract size; Eleanor Memory sums the
 // booked profit_loss, which for older or unsized closes is on another scale or
 // a placeholder. The two "Net P&L" figures can differ for the same book, so
-// Ruby Memory says what its figure is.
+// Eleanor Memory says what its figure is.
 test("Net P&L names its basis: booked paper P&L (older and unsized closes disclosed), not Analytics' USD figure", async () => {
   rows.set(database.paperOrdersTable, [
     order(11, { status: "CLOSED_TP", closedAt: new Date(), exitPrice: 1.12, profitLoss: 2 }),
@@ -149,7 +149,7 @@ test("Net P&L names its basis: booked paper P&L (older and unsized closes disclo
   assert.doesNotMatch(cc.netPnlBasis, /what your demo balance moves by/);
 });
 
-// A close the paper venue could not size holds profit_loss 0. Ruby Memory
+// A close the paper venue could not size holds profit_loss 0. Eleanor Memory
 // counted it as a break-even and added its 0 to net P&L; it is a win or a
 // loss by its price move, and its amount is left out and counted.
 test("an unsized manual V75 loss (stored 0) counts as a loss, adds nothing to Net P&L, and is disclosed", async () => {

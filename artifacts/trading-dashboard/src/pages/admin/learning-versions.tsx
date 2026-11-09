@@ -286,7 +286,7 @@ export default function AdminLearningVersionsPage() {
                   <SelectItem value="confidence_calibration">Confidence Calibration</SelectItem>
                   <SelectItem value="scanner_scoring">Scanner Scoring</SelectItem>
                   <SelectItem value="dna_weights">DNA Weights</SelectItem>
-                  <SelectItem value="ruby_behavior">{name} Behavior</SelectItem>
+                  <SelectItem value="eleanor_behavior">{name} Behavior</SelectItem>
                   <SelectItem value="risk_thresholds">Risk Thresholds</SelectItem>
                 </SelectContent>
               </Select>

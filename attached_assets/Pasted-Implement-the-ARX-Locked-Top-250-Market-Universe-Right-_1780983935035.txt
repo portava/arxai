@@ -1,8 +1,8 @@
 Implement the ARX Locked Top 250 Market Universe.
 
-Right now, users should only see the approved ARX Top 250 markets. No extra symbols, random broker symbols, unsupported markets, internal test symbols, simulator-only markets, or provider leftovers should appear in user-facing market search, scanner, chart selector, Ruby symbol picker, trade ticket, market lists, or watchlists.
+Right now, users should only see the approved ARX Top 250 markets. No extra symbols, random broker symbols, unsupported markets, internal test symbols, simulator-only markets, or provider leftovers should appear in user-facing market search, scanner, chart selector, Eleanor symbol picker, trade ticket, market lists, or watchlists.
 
-Ruby must automatically understand a market when the user uses the real name, common nickname, abbreviation, broker alias, or standard symbol.
+Eleanor must automatically understand a market when the user uses the real name, common nickname, abbreviation, broker alias, or standard symbol.
 
 Any market that has no real data whatsoever must not be selectable by regular users until it becomes available.
 
@@ -24,7 +24,7 @@ A market may appear to users only if:
 3. It is not simulator-only.
 4. It is not internal/test/dev-only.
 5. It has a user-safe display name.
-6. Ruby can resolve aliases/nicknames to the correct symbol.
+6. Eleanor can resolve aliases/nicknames to the correct symbol.
 
 A market may be tradeable only if:
 1. It is in the approved Top 250 list.
@@ -94,7 +94,7 @@ type ArxMarket = {
 
   riskTier: "low" | "medium" | "high" | "extreme";
   scannerPriority: "core" | "active" | "extended" | "high_risk";
-  rubyPriority: "core" | "normal" | "low";
+  eleanorPriority: "core" | "normal" | "low";
   beginnerFriendly: boolean;
   scalpEligible: boolean;
   swingEligible: boolean;
@@ -200,10 +200,10 @@ For the user’s instruction:
 Any market that has no data whatsoever must not be selectable until it becomes available.
 
 ==================================================
-STEP 4 — RUBY SYMBOL RESOLUTION / ALIASES
+STEP 4 — ELEANOR SYMBOL RESOLUTION / ALIASES
 ==================================================
 
-Ruby must understand market names automatically.
+Eleanor must understand market names automatically.
 
 Create or update:
 
@@ -257,15 +257,15 @@ If input is ambiguous:
 
 Example:
 User says “oil”
-Ruby should ask:
+Eleanor should ask:
 “Do you mean USOIL/WTI or UKOIL/Brent?”
 
 If input is not in Top 250:
-Ruby should say:
+Eleanor should say:
 “That market is not available in ARX right now.”
 
 If input is in Top 250 but no data:
-Ruby should say:
+Eleanor should say:
 “That market is approved for ARX, but data is not available yet.”
 
 ==================================================
@@ -280,8 +280,8 @@ Apply approved Top 250 + availability filtering to:
 - Broad Scan universe
 - Focus Scan universe
 - Smart Chart selector
-- Ruby market picker
-- Ruby typed symbol resolver
+- Eleanor market picker
+- Eleanor typed symbol resolver
 - Trade ticket symbol dropdown
 - Watchlists
 - Dashboard market cards
@@ -348,7 +348,7 @@ Smart Chart can only produce analysis when:
 
 If feed is delayed/stale:
 - chart may show delayed/stale badge if real data exists
-- Ruby must give limited read only
+- Eleanor must give limited read only
 
 ==================================================
 STEP 8 — TRADE TICKET RULES
@@ -424,20 +424,20 @@ Add/update tests:
 9. Scanner does not show simulator-only rows as trade-ready.
 10. Chart selector only shows approved Top 250 markets.
 11. Trade ticket blocks no-data markets.
-12. Ruby resolves “gold” to XAUUSD.
-13. Ruby resolves “nasdaq” to US100.
-14. Ruby resolves “dow” to US30.
-15. Ruby resolves “bitcoin” to BTCUSD.
-16. Ruby resolves “v75” to Volatility 75 Index.
-17. Ruby asks clarification for ambiguous “oil.”
-18. Ruby rejects markets outside Top 250.
-19. Ruby says approved-but-no-data for approved markets without data.
+12. Eleanor resolves “gold” to XAUUSD.
+13. Eleanor resolves “nasdaq” to US100.
+14. Eleanor resolves “dow” to US30.
+15. Eleanor resolves “bitcoin” to BTCUSD.
+16. Eleanor resolves “v75” to Volatility 75 Index.
+17. Eleanor asks clarification for ambiguous “oil.”
+18. Eleanor rejects markets outside Top 250.
+19. Eleanor says approved-but-no-data for approved markets without data.
 20. Regular users do not see internal provider labels.
 21. Admin diagnostics can still see raw provider/broker symbols when allowed.
 
 Run:
 - symbol directory tests
-- Ruby resolver tests
+- Eleanor resolver tests
 - scanner tests
 - chart selector tests
 - trade ticket gating tests
@@ -454,7 +454,7 @@ Return:
 - files changed
 - Top 250 directory created/updated
 - all user-facing market surfaces updated
-- Ruby alias resolver updated
+- Eleanor alias resolver updated
 - availability gate added/updated
 - no-data selectability rule confirmed
 - scanner universe locked
@@ -465,4 +465,4 @@ Return:
 - remaining blockers
 
 Final rule:
-Users should only see the approved ARX Top 250 markets right now. Ruby should understand real names, abbreviations, nicknames, and broker aliases. Any approved market with no real data must not be selectable until data becomes available.
+Users should only see the approved ARX Top 250 markets right now. Eleanor should understand real names, abbreviations, nicknames, and broker aliases. Any approved market with no real data must not be selectable until data becomes available.

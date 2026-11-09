@@ -17,7 +17,7 @@
 // rather than fabricating one.
 
 import {
-  computeRubySignalAdvisory,
+  computeEleanorSignalAdvisory,
   toUserAdvisory,
 } from "../../agentEcosystem/advisoryInfluence.js";
 import {
@@ -87,7 +87,7 @@ export async function computeChartAgentConsensus(
       ? Math.max(70, round(clamp(100 - conf)))
       : round(clamp(100 - conf));
 
-    const advisory = await computeRubySignalAdvisory({
+    const advisory = await computeEleanorSignalAdvisory({
       baseScore: conf,
       direction: side,
       confidenceScore: conf,
@@ -106,9 +106,9 @@ export async function computeChartAgentConsensus(
     const cautions = [...userAdv.cautions];
 
     // Court governance review (advisory; never gates a trade).
-    const traffic = await runTrafficSelection("RUBY", "LOW");
+    const traffic = await runTrafficSelection("ELEANOR", "LOW");
     const review = computeSurfaceGovernance({
-      surface: "RUBY",
+      surface: "ELEANOR",
       direction: side,
       importance: "LOW",
       advisory,

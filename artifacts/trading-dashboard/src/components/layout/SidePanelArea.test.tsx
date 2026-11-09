@@ -174,8 +174,8 @@ it("keeps presets, source sanitization and pinned rails consistent", () => {
   const initial = { collapsed: [], pinned: ["risk"], railed: [], preset: "Analyze" as const };
   const analyzed = applyWorkspacePreset(initial, "Analyze");
   expect(analyzed.railed).toEqual(["order", "positions", "chart-details"]);
-  expect(sideIsRailed(analyzed, ["ruby", "risk", "order"])).toBe(false);
-  expect(applyWorkspacePreset({ ...analyzed, peek: "positions" }, "Trade").railed).toEqual(["intelligence", "ruby", "chart-details"]);
+  expect(sideIsRailed(analyzed, ["eleanor", "risk", "order"])).toBe(false);
+  expect(applyWorkspacePreset({ ...analyzed, peek: "positions" }, "Trade").railed).toEqual(["intelligence", "eleanor", "chart-details"]);
   expect(applyWorkspacePreset({ ...analyzed, peek: "positions" }, "Trade").peek).toBeUndefined();
   expect(revealPanel(railPanels(initial, ["risk", "order"], true), "order").railed).toEqual([]);
   localStorage.setItem(routePanelLayoutKey(91001, "/bad"), JSON.stringify({ collapsed: [], pinned: ["risk"], railed: ["risk", "order", "unknown"] }));

@@ -139,7 +139,7 @@ export default function LiveAiAssistPage() {
   const { effectiveIsAdmin } = useViewMode();
   // Single source of truth — the shared chart-symbol bus. Picking a
   // symbol here updates the chart, the trade ticket, scanner focus
-  // panel, ruby explanation and every other consumer in the same paint.
+  // panel, eleanor explanation and every other consumer in the same paint.
   const [chartSymbol] = useChartSymbol();
   const symbol = bareSymbol(chartSymbol).trim().toUpperCase();
   const [feed, setFeed] = useState<FeedState>({ kind: "idle" });
@@ -346,7 +346,7 @@ export default function LiveAiAssistPage() {
           onOpenChange={setLiveTicketOpen}
           defaultSymbol={card.symbol}
           defaultSide={card.direction}
-          rubyExplanationSummary={card.reasonForTrade ?? null}
+          eleanorExplanationSummary={card.reasonForTrade ?? null}
         />
       )}
     </div>

@@ -31,7 +31,7 @@ The following must agree:
 1. Dashboard Open P/L
 2. Dashboard Open Trades count
 3. Open Positions/Open Trades card
-4. Ruby trade monitor
+4. Eleanor trade monitor
 5. Shared LiveAccountSnapshot adapter output
 
 If they do not agree, show an honest discrepancy state and block the dashboard from showing false numbers.
@@ -177,29 +177,29 @@ If P/L source is unavailable:
 show “Unavailable”
 
 ====================================================
-PART 6 — FIND WHY RUBY SAYS WAITING FOR MARKET DATA
+PART 6 — FIND WHY ELEANOR SAYS WAITING FOR MARKET DATA
 
-In the screenshot, Ruby’s Market View says:
-“Ruby is waiting for market data.”
+In the screenshot, Eleanor’s Market View says:
+“Eleanor is waiting for market data.”
 
 But the top status says:
 “All systems operational” and market EURUSD is selected.
 
 Investigate whether:
 
-* Ruby is using a different market data hook than the dashboard
+* Eleanor is using a different market data hook than the dashboard
 * scanner/chart has no candles while account snapshot exists
-* selected symbol is not passed to Ruby Market View
-* Ruby Market View waits for candle data but only quote/account data exists
-* handshake blocks Ruby due to missing chart/candles
-* Ruby should show “live account data available, chart candles unavailable” instead of waiting generically
+* selected symbol is not passed to Eleanor Market View
+* Eleanor Market View waits for candle data but only quote/account data exists
+* handshake blocks Eleanor due to missing chart/candles
+* Eleanor should show “live account data available, chart candles unavailable” instead of waiting generically
 
-Fix wording so Ruby’s card is truthful:
+Fix wording so Eleanor’s card is truthful:
 
 * If account snapshot exists but candle data missing: say chart/market candles unavailable, not generic “waiting for market data.”
 * If selected symbol lacks candles: say “Waiting for fresh EURUSD chart data.”
 * If quote exists but candles missing: say “Live quote available; candle feed unavailable.”
-* If all market data missing: then “Ruby is waiting for market data.”
+* If all market data missing: then “Eleanor is waiting for market data.”
 
 ====================================================
 PART 7 — ADD DISCREPANCY WARNING FOR IMPOSSIBLE DASHBOARD VALUES
@@ -283,7 +283,7 @@ Report back with:
 8. Closed/reconciled exclusion proof.
 9. Owner/admin visibility proof.
 10. Regular user isolation proof.
-11. Ruby Market View waiting-data wording fix proof.
+11. Eleanor Market View waiting-data wording fix proof.
 12. Tests run and results.
 13. Confirmation no fake data added.
 14. Confirmation no live execution path changed.

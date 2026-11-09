@@ -5,7 +5,7 @@
 // OLD getSymbolMarketContext / getTradeMarketContext path, whose 8-section UX6
 // output collapses to "Data insufficient / no primary timeframe / key levels
 // not available" — even though readChartStructure (the SAME shared service the
-// Scanner "Ruby Chart Read" panel uses) would produce a real structural read.
+// Scanner "Eleanor Chart Read" panel uses) would produce a real structural read.
 //
 // These helpers are PURE (no DB / no network / no LLM) so chart-read routing is
 // unit-testable offline. They live in their own module — separate from the

@@ -1,7 +1,7 @@
 // Quote observation evidence — what a quote's time actually means and whether
 // the quote is still current under the shared quote budget.
 //
-// Every quote ARX hands to a reader (the /data/quote route, Ruby's market
+// Every quote ARX hands to a reader (the /data/quote route, Eleanor's market
 // tools) must say WHEN its price was observed and on WHAT basis, and must read
 // stale once it is older than the budget. A quote whose time is unknown, or
 // that carries no price, is never "fresh".

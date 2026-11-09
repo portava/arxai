@@ -204,7 +204,7 @@ router.get("/admin/user-control/users", async (req, res) => {
       toggles: adv ? {
         aiTradingEnabled: adv.aiTradingEnabled,
         aiAutoCloseEnabled: adv.aiAutoCloseEnabled,
-        rubyVoiceEnabled: adv.rubyVoiceEnabled,
+        eleanorVoiceEnabled: adv.eleanorVoiceEnabled,
         newsIntelligenceEnabled: adv.newsIntelligenceEnabled,
         historicalBacktestEnabled: adv.historicalBacktestEnabled,
         blockedSymbols: adv.blockedSymbols,
@@ -378,7 +378,7 @@ const advancedBody = z.object({
   riskTemplateId: z.number().int().positive().nullable().optional(),
   aiTradingEnabled: z.boolean().optional(),
   aiAutoCloseEnabled: z.boolean().optional(),
-  rubyVoiceEnabled: z.boolean().optional(),
+  eleanorVoiceEnabled: z.boolean().optional(),
   newsIntelligenceEnabled: z.boolean().optional(),
   historicalBacktestEnabled: z.boolean().optional(),
   blockedSymbols: z.array(z.string().max(32)).max(100).optional(),
@@ -545,7 +545,7 @@ const pushPayloadSchema = z.object({
   // Lower-risk toggles (safe under single bulk confirmation).
   aiTradingEnabled: z.boolean().optional(),
   aiAutoCloseEnabled: z.boolean().optional(),
-  rubyVoiceEnabled: z.boolean().optional(),
+  eleanorVoiceEnabled: z.boolean().optional(),
   newsIntelligenceEnabled: z.boolean().optional(),
   historicalBacktestEnabled: z.boolean().optional(),
   blockedSymbols: z.array(z.string().max(32)).max(100).optional(),
@@ -700,7 +700,7 @@ router.post("/admin/user-control/push-settings", async (req, res) => {
       };
       const allowed: Array<keyof typeof userAdvancedPermissionsTable.$inferInsert> = [
         "sharedBridgeApproved", "personalBridgeEnabled", "aiTradingEnabled",
-        "aiAutoCloseEnabled", "rubyVoiceEnabled", "newsIntelligenceEnabled",
+        "aiAutoCloseEnabled", "eleanorVoiceEnabled", "newsIntelligenceEnabled",
         "historicalBacktestEnabled", "blockedSymbols", "minRewardRiskRatio",
         "stopLossRequired", "takeProfitRequired", "adminMemo",
       ];

@@ -17,7 +17,7 @@ import {
   type DecisionCandidateInput,
 } from "@workspace/domain/self-trade";
 import {
-  buildRubyMarketEdge,
+  buildEleanorMarketEdge,
   type SignalEngineInput,
   type SignalScannerInput,
   type SignalCandle,
@@ -105,7 +105,7 @@ function signalInput(overrides: Partial<SignalEngineInput> = {}): SignalEngineIn
 }
 
 function candidate(dataSource: string, over: Partial<DecisionCandidateInput> = {}): DecisionCandidateInput {
-  const signal = buildRubyMarketEdge(signalInput({ dataSource }));
+  const signal = buildEleanorMarketEdge(signalInput({ dataSource }));
   return {
     agentId: 1,
     agentKey: "qa-agent",

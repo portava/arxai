@@ -26,7 +26,7 @@ mock.module("../../marketScanner.js", { namedExports: { ...scanner,
 } });
 const loaders = await import("../../scalp/scalpServiceInputs.js");
 mock.module("../../scalp/scalpServiceInputs.js", { namedExports: { ...loaders, loadExecutionInput: async () => null } });
-const { buildRubyMarketEdgeForUser: build } = await import("../../signalIntelligence/signalIntelligenceService.js");
+const { buildEleanorMarketEdgeForUser: build } = await import("../../signalIntelligence/signalIntelligenceService.js");
 const read = (userId = 1, skipPersist = false) => build(userId, { symbol: f.evidence.symbol, timeframe: f.evidence.timeframe }, { scalp: null, skipPersist });
 before(async () => {
   await pool.query(`CREATE TABLE signal_memory (
@@ -55,7 +55,7 @@ test("actual composite key preserves same-source expiry across reads without exp
   assert.equal((await db.select().from(signalMemoryTable)).length, 1);
 });
 
-for (const context of ["provider", "bridge", "user", "timeframe", "symbol"] as const) test(`actual persisted Ruby lifecycle cannot cross ${context}`, async () => {
+for (const context of ["provider", "bridge", "user", "timeframe", "symbol"] as const) test(`actual persisted Eleanor lifecycle cannot cross ${context}`, async () => {
   await read(); await ageMemory();
   if (context === "provider") f = marketFixture({ timeframe: "M5", source: "assistant_real:twelve_data" });
   if (context === "bridge") f = marketFixture({ timeframe: "M5", bridge: 8 });
@@ -97,7 +97,7 @@ test("future stored lifecycle timestamps cannot provide continuity", async () =>
 test("local actual PostgreSQL service completion benchmark", { skip: !process.env.ARX_TRUTH_MEMORY_BENCHMARK }, async () => {
   const baseline = process.env.ARX_TRUTH_BASELINE_SERVICE;
   assert.ok(baseline, "provide the reviewed baseline service copy with unchanged relative imports");
-  const previous = (await import(pathToFileURL(baseline).href)).buildRubyMarketEdgeForUser as typeof build;
+  const previous = (await import(pathToFileURL(baseline).href)).buildEleanorMarketEdgeForUser as typeof build;
   await read();
   const [row] = await db.select().from(signalMemoryTable);
   const { id: _id, ...data } = row!;
@@ -111,5 +111,5 @@ test("local actual PostgreSQL service completion benchmark", { skip: !process.en
     for (let i = 0; i < 500; i++) { const start = performance.now(); const promise = run(); invocation.push(performance.now() - start); await promise; completion.push(performance.now() - start); }
     results[label] = { invocationReturn: stats(invocation), completedService: stats(completion) };
   }
-  writeFileSync(process.env.ARX_TRUTH_MEMORY_BENCHMARK!, JSON.stringify({ runtime: process.version, samples: 500, warmup: 50, fixture: "Actual Ruby service + disposable PostgreSQL memory lookup; 80 actual routed bars; provider/scanner/execution I/O stand-ins; same-source prior snapshot; read-only poll", milliseconds: results, limits: "Local processing and DB only. Invocation return is not UI acknowledgement. No provider or competitor latency measured; sequential DB dependency cannot overlap provider routing." }, null, 2));
+  writeFileSync(process.env.ARX_TRUTH_MEMORY_BENCHMARK!, JSON.stringify({ runtime: process.version, samples: 500, warmup: 50, fixture: "Actual Eleanor service + disposable PostgreSQL memory lookup; 80 actual routed bars; provider/scanner/execution I/O stand-ins; same-source prior snapshot; read-only poll", milliseconds: results, limits: "Local processing and DB only. Invocation return is not UI acknowledgement. No provider or competitor latency measured; sequential DB dependency cannot overlap provider routing." }, null, 2));
 });

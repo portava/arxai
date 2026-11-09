@@ -1,7 +1,7 @@
 // Global Learning Service
 //
 // Aggregates anonymized trade outcomes from opted-in users into
-// global_signal_edges. Provides Ruby with platform-wide insights.
+// global_signal_edges. Provides Eleanor with platform-wide insights.
 //
 // PRIVACY GUARANTEES (enforced in code):
 //   - Only processes users with contributeToGlobalLearning = true
@@ -275,7 +275,7 @@ export async function runGlobalAggregation(): Promise<{
   }
 }
 
-// ── Query global insights for Ruby ───────────────────────────────────────────
+// ── Query global insights for Eleanor ───────────────────────────────────────────
 export async function getGlobalInsight(
   symbol: string,
   session: string,

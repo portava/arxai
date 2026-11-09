@@ -3,7 +3,7 @@ import { render, screen, cleanup, within } from "@testing-library/react";
 import { classifyTruthEvidence, type TruthEvidence } from "@workspace/domain/truth";
 
 // Render proof for the plain-English evidence-class ledger and its mount in the
-// Ruby Market Read card. The card's network hooks are stubbed so this stays a
+// Eleanor Market Read card. The card's network hooks are stubbed so this stays a
 // pure render test; classification itself is proven in the domain and resolver
 // suites.
 
@@ -22,7 +22,7 @@ vi.mock("@/hooks/useSymbolTruth", () => ({
 }));
 
 import { TruthEvidenceClasses } from "./TruthEvidenceClasses";
-import { RubyMarketReadCard } from "./RubyMarketReadCard";
+import { EleanorMarketReadCard } from "./EleanorMarketReadCard";
 
 const NOW = Date.parse("2026-10-27T12:00:30.000Z");
 const CLOSE = "2026-10-27T12:00:00.000Z";
@@ -102,7 +102,7 @@ describe("TruthEvidenceClasses", () => {
   });
 });
 
-describe("RubyMarketReadCard mounts the evidence classes", () => {
+describe("EleanorMarketReadCard mounts the evidence classes", () => {
   const edge = { data: undefined, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() };
 
   it("states unavailable claims even while the directional read is withheld", () => {
@@ -111,17 +111,17 @@ describe("RubyMarketReadCard mounts the evidence classes", () => {
       news: null, data: null,
       evidence: evidence({ data: { state: "UNAVAILABLE", source: null, price: null, lastCandleAt: null, lastTickAt: null }, verdict: { bias: "UNKNOWN" } }),
     });
-    render(<RubyMarketReadCard symbol="EURUSD" />);
-    const ledger = screen.getByTestId("ruby-market-read-evidence-classes");
-    expect(within(ledger).getByTestId("ruby-market-read-evidence-classes-price").dataset.evidenceClass).toBe("unavailable");
-    expect(within(ledger).getByTestId("ruby-market-read-evidence-classes-verdict").textContent).toContain("not enough confirmed data");
+    render(<EleanorMarketReadCard symbol="EURUSD" />);
+    const ledger = screen.getByTestId("eleanor-market-read-evidence-classes");
+    expect(within(ledger).getByTestId("eleanor-market-read-evidence-classes-price").dataset.evidenceClass).toBe("unavailable");
+    expect(within(ledger).getByTestId("eleanor-market-read-evidence-classes-verdict").textContent).toContain("not enough confirmed data");
   });
 
   it("renders no ledger when the snapshot carries no classification", () => {
     mockUseGetMeMarketEdge.mockReturnValue(edge);
     mockUseSymbolTruth.mockReturnValue({ news: null, data: null });
-    render(<RubyMarketReadCard symbol="EURUSD" />);
-    expect(screen.queryByTestId("ruby-market-read-evidence-classes")).toBeNull();
+    render(<EleanorMarketReadCard symbol="EURUSD" />);
+    expect(screen.queryByTestId("eleanor-market-read-evidence-classes")).toBeNull();
   });
 });
 

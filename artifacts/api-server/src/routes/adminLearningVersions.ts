@@ -8,7 +8,7 @@
 //   POST /api/admin/learning/versions/:id/rollback — rollback a live version
 //   GET  /api/admin/learning/active            — get current active live version
 //   GET  /api/admin/learning/edges             — read-only production_edges list (R7 step 6)
-//   GET  /api/me/learning/version-status       — user-facing: is Ruby using validated learning?
+//   GET  /api/me/learning/version-status       — user-facing: is Eleanor using validated learning?
 //
 // SAFETY:
 //   - liveAllowed only set when all 4 gates pass AND admin explicitly approves
@@ -205,7 +205,7 @@ router.get("/admin/learning/edges", requireUser, async (req, res) => {
 // ── POST /api/admin/learning/versions — create version record ─────────────────
 const CreateBody = z.object({
   versionName:   z.string().min(1).max(100),
-  changeType:    z.enum(["global_signal_edges", "confidence_calibration", "scanner_scoring", "dna_weights", "ruby_behavior", "risk_thresholds"]),
+  changeType:    z.enum(["global_signal_edges", "confidence_calibration", "scanner_scoring", "dna_weights", "eleanor_behavior", "risk_thresholds"]),
   changeSummary: z.string().min(1).max(1000),
   dataSources:   z.array(z.string()).optional(),
   relatedRunId:  z.string().optional(),

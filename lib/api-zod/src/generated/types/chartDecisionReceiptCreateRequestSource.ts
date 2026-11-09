@@ -10,8 +10,8 @@ export type ChartDecisionReceiptCreateRequestSource =
   (typeof ChartDecisionReceiptCreateRequestSource)[keyof typeof ChartDecisionReceiptCreateRequestSource];
 
 export const ChartDecisionReceiptCreateRequestSource = {
-  ruby_draft_read: "ruby_draft_read",
-  ruby_explain_signal: "ruby_explain_signal",
+  eleanor_draft_read: "eleanor_draft_read",
+  eleanor_explain_signal: "eleanor_explain_signal",
   chart_read: "chart_read",
   chart_trade_plan: "chart_trade_plan",
 } as const;

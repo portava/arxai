@@ -55,7 +55,7 @@ export default function HelpCenter() {
                 ? "bg-danger/15 text-danger border-danger/30"
                 : mode.isDemo
                   ? "bg-primary/15 text-primary border-primary/30"
-                  : "bg-ruby/15 text-ruby border-ruby/30"
+                  : "bg-eleanor/15 text-eleanor border-eleanor/30"
             }
             data-testid="help-mode-badge"
             title={mode.cleanUserMessage}

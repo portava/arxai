@@ -70,7 +70,7 @@ export interface GovernanceAgentPosition {
   position: GovernancePosition;
   /** Effective influence after status gating (0-1); 0 = shadow/muted = no weight. */
   weight: number;
-  /** Neutral machine reason; UI / Ruby humanize it. */
+  /** Neutral machine reason; UI / Eleanor humanize it. */
   reason: string;
 }
 
@@ -161,7 +161,7 @@ export interface GovernanceReview {
   positions: GovernanceAgentPosition[];
   challenges: GovernanceChallenge[];
   participatingAgentCount: number;
-  /** Which camp prevailed and why (neutral, humanized by the UI/Ruby). */
+  /** Which camp prevailed and why (neutral, humanized by the UI/Eleanor). */
   winningReasoning: string;
   lifecycleRecommendations: GovernanceLifecycleRecommendation[];
   traffic: TrafficSelectionSummary;

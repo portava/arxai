@@ -2,7 +2,7 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { PerfPanel } from "./admin-diagnostics";
 
-vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
 vi.mock("@/lib/perf", () => ({ setPerfTransportEnabled: vi.fn() }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });

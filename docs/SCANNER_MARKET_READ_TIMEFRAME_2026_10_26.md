@@ -1,6 +1,6 @@
 # Scanner market-read timeframe alignment
 
-The full Market Scanner route rendered RubyMarketReadCard without a timeframe. Its shared truth request then normalized the empty prop to M5, while its content gate used the selected chart timeframe. A cold symbol change on an M15 chart therefore requested both M15 and M5 candles and selected-market analysis. The market-edge request also omitted its timeframe.
+The full Market Scanner route rendered EleanorMarketReadCard without a timeframe. Its shared truth request then normalized the empty prop to M5, while its content gate used the selected chart timeframe. A cold symbol change on an M15 chart therefore requested both M15 and M5 candles and selected-market analysis. The market-edge request also omitted its timeframe.
 
 The card now resolves a missing or empty timeframe from the scanner selection and uses one canonical timeframe for its market-edge request, truth/news read, content gate, compact notice and visible context label. Explicit timeframe callers keep their requested context. Existing query keys and consumed AbortSignals cancel obsolete requests; a late response cannot populate the current selection. No TTL, provider ordering, data timestamps, freshness limits or execution permission is changed.
 

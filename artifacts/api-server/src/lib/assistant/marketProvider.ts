@@ -256,7 +256,7 @@ function twelveDataMapSymbol(sym: string): string | null {
 // provider responded. Without this, when TwelveData is rate-limited and
 // Polygon's free-tier /prev endpoint serves a DELAYED bar, the global
 // status would falsely report FRESH because a fetch "succeeded" — that
-// is the lie the user just caught (Ruby saying "feed is fresh" then
+// is the lie the user just caught (Eleanor saying "feed is fresh" then
 // "data is delayed" in the same conversation).
 const providerLiveness = {
   lastCheckedAt: null as string | null,
@@ -1248,7 +1248,7 @@ export function getMarketProvider(): MarketProvider {
 
 // When Trading Economics is configured as the economic-calendar provider, the
 // chosen quote/news provider's (usually absent) calendar is overridden so the
-// assistant + Ruby read the SAME real calendar service every other surface uses.
+// assistant + Eleanor read the SAME real calendar service every other surface uses.
 // No-key env returns the provider unchanged (back-compat honest-missing).
 function withTradingEconomicsCalendar(provider: MarketProvider): MarketProvider {
   if (!isEconomicCalendarConfigured()) return provider;
@@ -1420,7 +1420,7 @@ export function getMarketStatus() {
     staleAfterMs: QUOTE_STALE_AFTER_MS,
     freshnessState: fState,
     unavailableReason,
-    // ── Per-payload honesty (added so callers/Ruby never describe a
+    // ── Per-payload honesty (added so callers/Eleanor never describe a
     // DELAYED-only fallback as "Fresh"). `dataFreshness` reflects the
     // *quality* of the most recent successful payload, NOT whether the
     // provider responded. `dataSource` names the provider that produced it.
