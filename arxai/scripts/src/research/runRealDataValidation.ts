@@ -24,7 +24,7 @@ import type { Bar } from "@workspace/validation";
 import { loadVerifiedFixture } from "./realHistoryFixture.js";
 import { runRealDataValidation, type AssetClass, type RealDataRunResult, type RunnerInstrument } from "./realDataValidation.js";
 import { isEntrypoint } from "../ci/inProcessAppHarness.js";
-import { ValidationEvidenceStore } from "../../../artifacts/api-server/src/lib/research/validationEvidence.js";
+import { ValidationEvidenceStore, type ValidationRunLike } from "../../../artifacts/api-server/src/lib/research/validationEvidence.js";
 
 /** The dataset hash this code commits to. Changing the fixture means changing this line. */
 export const PINNED_FIXTURE_DATASET_HASH = "fa83f149997cb8f96f7adfba349a60d409f689712311d32728755549dbc6d232";
@@ -165,7 +165,7 @@ async function main() {
   if (out) writeFileSync(out, `${JSON.stringify(run, null, 1)}\n`);
   if (flag("--store")) {
     const { commit, dirty } = gitCommit();
-    const receipt = await new ValidationEvidenceStore(await dbPool()).record({ run, datasetSource, codeCommit: commit, codeDirty: dirty });
+    const receipt = await new ValidationEvidenceStore(await dbPool()).record({ run: run as unknown as ValidationRunLike, datasetSource, codeCommit: commit, codeDirty: dirty });
     console.log(`stored: ${receipt.disposition} ${receipt.manifest.id} manifest ${receipt.manifestHash} (commit ${commit}${dirty ? ", DIRTY tree" : ""})`);
   }
   if (process.env.DATABASE_URL && (flag("--store") || source === "db")) await (await dbPool()).end();
