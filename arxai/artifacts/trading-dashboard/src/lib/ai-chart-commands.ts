@@ -240,7 +240,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         source: "preview",
         confidence: conf,
         style: "dashed",
-        metadata: { badge: PREVIEW_BADGE, role: "entry", side: cmd.side },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "entry", side: cmd.side },
       });
       overlays.push({
         id: `${cmd.previewId}-sl`,
@@ -252,7 +252,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         severity: "danger",
         source: "preview",
         style: "dashed",
-        metadata: { badge: PREVIEW_BADGE, role: "sl" },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "sl" },
       });
       overlays.push({
         id: `${cmd.previewId}-tp`,
@@ -264,7 +264,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         severity: "success",
         source: "preview",
         style: "dashed",
-        metadata: { badge: PREVIEW_BADGE, role: "tp" },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "tp" },
       });
       overlays.push({
         id: `${cmd.previewId}-risk-zone`,
@@ -276,7 +276,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         label: "Risk",
         severity: "danger",
         source: "preview",
-        metadata: { badge: PREVIEW_BADGE, role: "risk-zone" },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "risk-zone" },
       });
       overlays.push({
         id: `${cmd.previewId}-reward-zone`,
@@ -288,7 +288,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         label: "Reward",
         severity: "success",
         source: "preview",
-        metadata: { badge: PREVIEW_BADGE, role: "reward-zone" },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "reward-zone" },
       });
       if (cmd.secondaryTp != null) {
         overlays.push({
@@ -301,7 +301,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
           severity: "success",
           source: "preview",
           style: "dashed",
-          metadata: { badge: PREVIEW_BADGE, role: "tp2" },
+          metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "tp2" },
         });
       }
     } else if (cmd.type === "DRAW_ZONE") {
@@ -315,7 +315,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         label: cmd.label,
         severity: cmd.severity,
         source: "preview",
-        metadata: { badge: PREVIEW_BADGE, role: "zone" },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "zone" },
       });
     } else if (cmd.type === "DRAW_MARKER") {
       overlays.push({
@@ -328,7 +328,7 @@ export function aiChartCommandsToOverlays(commands: unknown[]): ChartOverlay[] {
         severity: cmd.severity,
         source: "preview",
         marker: { side: cmd.side },
-        metadata: { badge: PREVIEW_BADGE, role: "marker" },
+        metadata: { badge: PREVIEW_BADGE, previewId: cmd.previewId, role: "marker" },
       });
     }
     // DRAW_WARNING / TEXT_NOTE / CLEAR_PREVIEW / UPDATE_PREVIEW: panel-level, no overlay.

@@ -287,7 +287,8 @@ export async function run(): Promise<CiTestResultLike> {
     source: bound.state.truthState.source ?? "none", displayMode: "ohlc",
     newestBarTime: servedNewest ? Date.parse(servedNewest.openTime) / 1000 : 1,
     barsCompared: bound.state.candleStats.barsAnalyzed, mismatchedBars: 0, droppedBars: 0,
-    priceRoundTripOk: true, timeRoundTripOk: true,
+    priceRoundTripOk: true, timeRoundTripOk: true, visibleBarsRoundTripped: bound.state.candleStats.barsAnalyzed,
+    drawings: { checked: 0, failed: 0, unplaced: 0, failedIds: [] }, projections: [],
   });
   const usableState = applyRenderEvidence(bound.state, QUOTE_BRIDGE.userId);
   const usableRead = buildEleanorDraftRead(usableState, "analyze");

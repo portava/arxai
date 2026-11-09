@@ -1,3 +1,5 @@
+import { executablePaperFixture } from "../../lib/safety/__qa__/paperModeFixture.js";
+let restorePaperMode: (() => Promise<void>) | undefined;
 // The AI-entry hold is ON by default (lib/safety/entryPolicy.ts) and blocks
 // every generated entry before the rules this suite exercises. Opt out
 // explicitly here; the hold itself is proven in safety/__qa__/aiEntryHold.test.ts
@@ -176,6 +178,7 @@ function request(method: string, path: string, cookie: string, body?: unknown): 
 }
 
 before(async () => {
+  restorePaperMode = await executablePaperFixture();
   await deleteFixtures();
   const a = await seedUser(EMAIL_A, "QA Risk A");
   const b = await seedUser(EMAIL_B, "QA Risk B");
@@ -198,6 +201,7 @@ before(async () => {
 });
 
 after(async () => {
+  await restorePaperMode?.();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await deleteFixtures();
 });
@@ -646,7 +650,7 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   assert.match(read("../../lib/tradeEngine/pipeline.ts"), /venue\.openPaperFill\(/, "the pipeline's PAPER fill delegates to the governed venue fill");
   const venue = read("../../lib/tradeEngine/paperVenue.ts");
   const fill = venue.slice(venue.indexOf("export async function openPaperFill"));
-  assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf(".insert(paperOrdersTable)"),
+  assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf("await bookPaperOrder("),
     "openPaperFill calls the governor before it books");
   assert.match(read("../../lib/riskGovernor/enforce.ts"), /const halt = f\.halt !== undefined \? f\.halt\s*: await loadTradingHalt\(/,
     "every governed order reads the stop switches unless a test supplies them");

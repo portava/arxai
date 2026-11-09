@@ -18,7 +18,8 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
-import { aiEntryPolicyReason } from "../safety/entryPolicy.js";
+import { aiEntryPolicyReason, paperEntryPolicyReason } from "../safety/entryPolicy.js";
+import { readPaperEntryPosture } from "../safety/platformSwitches.js";
 import { classifyHeartbeatAgeMs, MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS, heartbeatAllowsRiskReducingClose } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
@@ -813,7 +814,11 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     // AI-entry hold (default ON, see safety/entryPolicy.ts). Raised as a
     // trading_halt so no trader override can clear it; protective actions
     // never reach it.
-    const holdReason = aiEntryPolicyReason(intent, { generatedEntry: opts.generatedEntry });
+    const holdReason = aiEntryPolicyReason(intent, { generatedEntry: opts.generatedEntry })
+      // Paper entries also need an executable Safety Core mode/state (PR #102);
+      // the final booking rechecks it inside its transaction (paperVenue.ts).
+      ?? (intent.venue === "PAPER" && intent.action === "OPEN"
+        ? paperEntryPolicyReason(await readPaperEntryPosture()) : null);
     if (holdReason) decision = {
       ...decision, decision: "BLOCK",
       blockedBy: [...new Set([TRADING_HALT, ...decision.blockedBy])],
@@ -841,6 +846,7 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
           ? `Trader override of their own trading rules: ${override.reason} (${decision.primaryReason ?? "discipline block"})`
           : blocked ? decision.primaryReason ?? "Blocked by Risk Governor." : `Pre-trade risk passed (${intent.venue} ${intent.action} ${intent.symbol}).`,
         details: {
+          ...(opts.auditContext ?? {}),
           source: "pre_trade_risk_governor",
           intent,
           override,
@@ -869,7 +875,6 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
               ? { ...ctx.activity, lastClosedAt: ctx.activity.lastClosedAt?.toISOString() ?? null }
               : ctx.activity ?? null,
           } : null,
-          ...(opts.auditContext ?? {}),
         },
       });
       auditEventId = row?.id ?? null;

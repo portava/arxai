@@ -56,6 +56,7 @@
 //
 // Run: pnpm --filter @workspace/scripts run test:eleanor-draw-setup-route
 
+import { projectionRoles } from "../../artifacts/api-server/src/lib/data/chart/renderEvidence.js";
 import { randomBytes, createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
@@ -342,7 +343,8 @@ export async function run(): Promise<CiTestResultLike> {
         symbol: VERIFIED_SYMBOL, timeframe, source: st?.truthState?.source ?? "none",
         displayMode: "ohlc", newestBarTime: newest ? Date.parse(newest.openTime) / 1000 : 1,
         barsCompared: cleanWindow.length, mismatchedBars: 0, droppedBars: 0,
-        priceRoundTripOk: true, timeRoundTripOk: true, ...override,
+        priceRoundTripOk: true, timeRoundTripOk: true, visibleBarsRoundTripped: Math.min(80, cleanWindow.length),
+        drawings: { checked: 0, failed: 0, unplaced: 0, failedIds: [] }, projections: [], ...override,
       }),
     });
     return res.status;
@@ -421,6 +423,38 @@ export async function run(): Promise<CiTestResultLike> {
       lv != null && preview?.side === "BUY" && lv.sl < lv.entry && lv.entry < lv.tp,
       lv ? `verified: BUY geometry honest (sl=${lv.sl} < entry=${lv.entry} < tp=${lv.tp})` : "verified: BUY geometry honest (no levels)",
     );
+
+    // ── 1e. The drawn projection is checked against THIS issued payload. ────
+    // The chart reports the setup levels as its engine holds them; exactly the
+    // issued levels keep VERIFIED, a level drawn elsewhere fails the render.
+    if (lv != null) {
+      const drawnAt = (shift: number) => [...projectionRoles(lv)].map(([role, price]) => ({
+        previewId: preview.previewId, symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, role,
+        price: role === "entry" ? price + shift : price, axisRoundTripOk: true,
+      }));
+      assert((await reportRender({ projections: drawnAt(0) })) === 200, "render evidence (exact projection) accepted → 200");
+      pushBoundQuote();
+      const exactProjection = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+      assert(
+        exactProjection.json?.setupPreview?.dataFreshness?.basis === "VERIFIED",
+        `projection drawn at the issued levels → VERIFIED (got ${String(exactProjection.json?.setupPreview?.dataFreshness?.basis)})`,
+      );
+      assert((await reportRender({ projections: drawnAt(lv.entry * 1e-4) })) === 200, "render evidence (misplaced projection) accepted → 200");
+      pushBoundQuote();
+      const misplaced = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+      assert(
+        misplaced.json?.setupPreview?.dataFreshness?.basis !== "VERIFIED",
+        `projection entry drawn off its issued price → not VERIFIED (got ${String(misplaced.json?.setupPreview?.dataFreshness?.basis)})`,
+      );
+      assert((await reportRender({ projections: [{ ...drawnAt(0)[0]!, previewId: "never-issued" }] })) === 200, "render evidence (unissued projection) accepted → 200");
+      pushBoundQuote();
+      const unissued = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+      assert(
+        unissued.json?.setupPreview?.dataFreshness?.basis !== "VERIFIED",
+        `projection the server never issued → not VERIFIED (got ${String(unissued.json?.setupPreview?.dataFreshness?.basis)})`,
+      );
+      assert((await reportRender()) === 200, "render evidence (exact draw) restored → 200");
+    }
 
     // The enriched signal fields must SURFACE in the envelope — present as keys,
     // each either a correctly-typed value or honestly null (never fabricated,
