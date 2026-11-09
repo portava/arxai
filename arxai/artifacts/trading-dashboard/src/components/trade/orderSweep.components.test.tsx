@@ -158,7 +158,7 @@ describe("QuickTradePanel", () => {
 });
 
 describe("LivePendingOrders", () => {
-  it("lists working orders for the chart symbol and says cancel is in MT5", async () => {
+  it("lists working orders for the chart symbol with Cancel / Modify controls", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true, items: [
       { commandId: "a", orderTicket: "7001", symbol: "EURUSD", side: "BUY", orderType: "BUY_LIMIT", volume: 0.1, price: 1.09, stopLimitPrice: null, stopLoss: null, takeProfit: null, expiration: null, placedAt: null },
       { commandId: "b", orderTicket: "7002", symbol: "XAUUSD", side: "SELL", orderType: "SELL_STOP", volume: 0.1, price: 2300, stopLimitPrice: null, stopLoss: null, takeProfit: null, expiration: null, placedAt: null },
@@ -166,6 +166,7 @@ describe("LivePendingOrders", () => {
     render(withQc(<LivePendingOrders symbol="EURUSD" />));
     expect(await screen.findByTestId("live-pending-7001")).toBeTruthy();
     expect(screen.queryByTestId("live-pending-7002")).toBeNull();
-    expect(screen.getByTestId("live-pending-note").textContent).toMatch(/in MT5/);
+    expect(screen.getByTestId("live-pending-note").textContent).not.toMatch(/Cancel or change a live pending order in MT5/);
+    expect(screen.getByTestId("live-pending-cancel-7001")).toBeTruthy();
   });
 });

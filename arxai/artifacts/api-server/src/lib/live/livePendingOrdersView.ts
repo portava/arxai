@@ -31,6 +31,18 @@ export type LivePendingOrderView = {
   expiration: string | null;
   placedAt: string | null;
   stateBasis: "LAST_EA_RESULT";
+  /** True when ARX can cancel / modify it (LIVE_ACKNOWLEDGED with a ticket). */
+  controllable: boolean;
+  /** A cancel or modify for this order is on its way to MT5. */
+  controlInFlight: boolean;
+  /** Price / SL / TP come from the latest broker-confirmed modify from ARX. */
+  modifiedFromArx: boolean;
+};
+
+/** Per order (commandId): latest broker-confirmed modify levels, and in-flight control. */
+export type LivePendingControlState = {
+  latestModify?: ReadonlyMap<string, { price: number | null; stopLoss: number | null; takeProfit: number | null }>;
+  inFlight?: ReadonlySet<string>;
 };
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
@@ -40,6 +52,7 @@ export function selectWorkingPendingOrders(
   rows: LivePendingCommandRow[],
   positionTickets: ReadonlySet<string>,
   nowMs: number = Date.now(),
+  control: LivePendingControlState = {},
 ): LivePendingOrderView[] {
   const out: LivePendingOrderView[] = [];
   const seen = new Set<string>();
@@ -52,6 +65,7 @@ export function selectWorkingPendingOrders(
     const expEpoch = num(p["expirationEpoch"]);
     if (expEpoch != null && expEpoch * 1000 <= nowMs) continue; // expired at the broker
     seen.add(ticket);
+    const mod = control.latestModify?.get(r.commandId) ?? null;
     out.push({
       commandId: r.commandId,
       orderTicket: ticket,
@@ -59,13 +73,16 @@ export function selectWorkingPendingOrders(
       side: String(r.side).toUpperCase() === "SELL" ? "SELL" : "BUY",
       orderType: r.orderType,
       volume: Number(r.requestedVolume),
-      price: num(p["price"]) ?? num(p["entry"]),
+      price: num(mod?.price) ?? num(p["price"]) ?? num(p["entry"]),
       stopLimitPrice: num(p["stopLimitPrice"]),
-      stopLoss: r.stopLoss != null && Number(r.stopLoss) > 0 ? Number(r.stopLoss) : null,
-      takeProfit: r.takeProfit != null && Number(r.takeProfit) > 0 ? Number(r.takeProfit) : null,
+      stopLoss: num(mod?.stopLoss) ?? (r.stopLoss != null && Number(r.stopLoss) > 0 ? Number(r.stopLoss) : null),
+      takeProfit: num(mod?.takeProfit) ?? (r.takeProfit != null && Number(r.takeProfit) > 0 ? Number(r.takeProfit) : null),
       expiration: expEpoch != null ? new Date(expEpoch * 1000).toISOString() : null,
       placedAt: (r.resultRecordedAt ?? r.createdAt)?.toISOString() ?? null,
       stateBasis: "LAST_EA_RESULT",
+      controllable: r.status === "LIVE_ACKNOWLEDGED",
+      controlInFlight: control.inFlight?.has(r.commandId) ?? false,
+      modifiedFromArx: mod != null,
     });
   }
   return out;

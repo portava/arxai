@@ -19,6 +19,15 @@ export function describeWatch(w: EleanorWatchView): string {
   return `${w.kind} ${w.symbol ?? ""}`.trim();
 }
 
+/** One line for the last fakeout shift Eleanor sent (or was refused). */
+export function describeFakeoutShift(a: { at: string; toStopLoss: number | null; toTakeProfit: number | null; ok: boolean; blocked: string | null }): string {
+  const what = a.toStopLoss != null ? `stop → ${a.toStopLoss}` : a.toTakeProfit != null ? `target → ${a.toTakeProfit}` : "levels";
+  const t = Number.isFinite(Date.parse(a.at)) ? new Date(a.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  return a.ok
+    ? `Last fakeout shift: ${what}${t ? ` at ${t}` : ""} (sent; broker confirms)`
+    : `Fakeout shift refused: ${what}${a.blocked ? ` (${a.blocked})` : ""}`;
+}
+
 export function EleanorWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?: (text: string) => void; refreshKey?: number }) {
   const { name: assistantName } = useAssistantName();
   const [watches, setWatches] = useState<EleanorWatchView[] | null>(null);
@@ -102,6 +111,15 @@ export function EleanorWatchesStrip({ onMessage, refreshKey = 0 }: { onMessage?:
                   Shift SL/TP on fakeout
                   {(w.monitor.fakeoutAdjustments ?? 0) > 0 && <span data-testid={`eleanor-watch-${w.id}-fakeout-count`}>· {w.monitor.fakeoutAdjustments} shift{w.monitor.fakeoutAdjustments === 1 ? "" : "s"}</span>}
                 </label>
+              )}
+              {w.kind === "MONITOR_TRADE" && w.monitor?.lastFakeoutAdjustment && (
+                <span
+                  className={w.monitor.lastFakeoutAdjustment.ok ? "text-[11px] text-txt-muted" : "text-[11px] text-danger"}
+                  title={w.monitor.lastFakeoutAdjustment.reason}
+                  data-testid={`eleanor-watch-${w.id}-fakeout-last`}
+                >
+                  {describeFakeoutShift(w.monitor.lastFakeoutAdjustment)}
+                </span>
               )}
               {awaiting && (
                 <span className="inline-flex gap-1">

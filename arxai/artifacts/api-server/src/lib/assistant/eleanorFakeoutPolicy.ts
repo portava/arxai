@@ -5,7 +5,7 @@
 // bounded SL/TP shift, or NONE.
 //
 // What counts as a fakeout here: the latest completed bar spiked AGAINST the
-// position (a long wick on the adverse side, fakeoutRiskScore ≥ threshold) and
+// position (adverse wick ≥ FAKEOUT_SCORE_THRESHOLD % of the bar's range) and
 // CLOSED back on the position's side of its open, while the broader reversal
 // evidence is NOT standing (reversal score below the monitor's threshold). That
 // is a whipsaw through a level, not a trend change: the trader's stop sat
@@ -34,8 +34,26 @@ export const FAKEOUT_MAX_SL_WIDEN_RATIO = 0.5;
 export const FAKEOUT_WICK_BUFFER_RATIO = 0.1;
 /** A favourable spike must reach within this fraction of the entry→TP distance of the target to count. */
 export const FAKEOUT_TP_REACH_RATIO = 0.15;
+/** Refused/failed shift attempts allowed per monitor before Eleanor stops trying (no alert storm). */
+export const FAKEOUT_MAX_FAILED_ATTEMPTS = 2;
+/** The last completed bar must have closed within this many bar intervals of now. */
+export const FAKEOUT_MAX_BAR_AGE_INTERVALS = 2;
+export const FAKEOUT_BAR_INTERVAL_MS = 15 * 60_000;
 
-export interface FakeoutBar { o: number; h: number; l: number; c: number }
+/** One OHLC bar; `t` = bar open time (epoch ms) when known. */
+export interface FakeoutBar { o: number; h: number; l: number; c: number; t?: number | null }
+
+/**
+ * Share of the bar's range taken by the wick on the side AGAINST the position
+ * (the lower wick for a long, the upper wick for a short), 0-100. This is the
+ * stop-hunting spike. (The trade-intelligence "fakeoutRiskScore" measures the
+ * OTHER wick — a rejection on the profit side — so it is not used here.)
+ */
+export function adverseWickPct(side: "BUY" | "SELL", b: FakeoutBar | null): number | null {
+  if (!b || !(b.h > b.l)) return null;
+  const wick = side === "BUY" ? Math.min(b.o, b.c) - b.l : b.h - Math.max(b.o, b.c);
+  return Math.max(0, Math.min(100, (wick / (b.h - b.l)) * 100));
+}
 
 export interface FakeoutDecisionInput {
   side: "BUY" | "SELL";
@@ -45,7 +63,8 @@ export interface FakeoutDecisionInput {
   takeProfit: number | null;
   /** Latest COMPLETED bar (not the forming one). */
   lastBar: FakeoutBar | null;
-  fakeoutRiskScore: number | null;
+  /** Informational only (trade-intelligence score of the profit-side wick); the rule reads adverseWickPct(lastBar). */
+  fakeoutRiskScore?: number | null;
   reversalRiskScore: number | null;
   reversalThreshold: number;
   atOrThroughStop: boolean;
@@ -58,6 +77,12 @@ export interface FakeoutDecisionInput {
   originalStopLoss?: number | null;
   /** Digits for rounding the new level (defaults to 5). */
   digits?: number;
+  /** Open time of the bar the last shift acted on: one shift per bar. */
+  lastFakeoutBarAt?: number | null;
+  /** Refused/failed attempts so far for this monitor. */
+  failedSoFar?: number;
+  /** Bar interval (ms) for the staleness check; defaults to M15. */
+  barIntervalMs?: number;
 }
 
 export type FakeoutAction = "NONE" | "SHIFT_SL" | "SHIFT_TP";
@@ -74,12 +99,13 @@ const round = (v: number, digits: number) => Number(v.toFixed(digits));
 export function isAdverseFakeout(i: Pick<FakeoutDecisionInput, "side" | "lastBar" | "fakeoutRiskScore" | "reversalRiskScore" | "reversalThreshold">): { yes: boolean; reason: string } {
   const b = i.lastBar;
   if (!b || !(b.h > b.l)) return { yes: false, reason: "no completed bar" };
-  if (typeof i.fakeoutRiskScore !== "number" || i.fakeoutRiskScore < FAKEOUT_SCORE_THRESHOLD) return { yes: false, reason: "no long adverse wick" };
+  const wickPct = adverseWickPct(i.side, b);
+  if (wickPct == null || wickPct < FAKEOUT_SCORE_THRESHOLD) return { yes: false, reason: "no long adverse wick" };
   if (typeof i.reversalRiskScore === "number" && i.reversalRiskScore >= i.reversalThreshold) return { yes: false, reason: "reversal evidence is standing, not a fakeout" };
   // The bar must have closed back on the trade's side of its open.
   const closedBack = i.side === "BUY" ? b.c >= b.o : b.c <= b.o;
   if (!closedBack) return { yes: false, reason: "bar closed against the position" };
-  return { yes: true, reason: `fakeout wick (${Math.round(i.fakeoutRiskScore)}% of the bar) that closed back` };
+  return { yes: true, reason: `fakeout wick (${Math.round(wickPct)}% of the bar) that closed back` };
 }
 
 export function decideFakeoutAdjustment(i: FakeoutDecisionInput): FakeoutDecision {
@@ -87,10 +113,17 @@ export function decideFakeoutAdjustment(i: FakeoutDecisionInput): FakeoutDecisio
   const digits = i.digits ?? 5;
   if (i.atOrThroughStop) return none("price at or through the stop — protective close applies");
   if (i.adjustmentsSoFar >= FAKEOUT_MAX_ADJUSTMENTS) return none(`already shifted ${i.adjustmentsSoFar} times for this monitor`);
+  if ((i.failedSoFar ?? 0) >= FAKEOUT_MAX_FAILED_ATTEMPTS) return none(`${i.failedSoFar} shift attempts were refused — leaving the levels to the trader`);
   const last = i.lastAdjustAt ? Date.parse(i.lastAdjustAt) : NaN;
   if (Number.isFinite(last) && i.nowMs - last < FAKEOUT_ADJUST_COOLDOWN_MS) return none("fakeout adjustment cooldown");
   if (i.entryPrice == null || i.currentPrice == null || !i.lastBar) return none("entry, price or bar unknown");
   const b = i.lastBar;
+  if (typeof b.t === "number" && Number.isFinite(b.t)) {
+    if (i.lastFakeoutBarAt != null && b.t === i.lastFakeoutBarAt) return none("already acted on this bar");
+    const interval = i.barIntervalMs ?? FAKEOUT_BAR_INTERVAL_MS;
+    const closedAt = b.t + interval;
+    if (i.nowMs - closedAt > interval * FAKEOUT_MAX_BAR_AGE_INTERVALS) return none("the last completed bar is stale");
+  }
   const range = b.h - b.l;
   if (!(range > 0)) return none("flat bar");
   const buffer = range * FAKEOUT_WICK_BUFFER_RATIO;
