@@ -52,9 +52,9 @@ for (const fx of fixtures) {
   });
 }
 
-test("scorecard: 100% of fixtures pass, every planted error caught, zero false alarms", () => {
+test("scorecard: 100% of fixtures pass, every planted error caught, zero false alarms", (t) => {
   const s = scorecard(outcomes);
-  console.log(`# Eleanor eval scorecard\n${JSON.stringify(s, null, 2)}`);
+  t.diagnostic(`Eleanor eval scorecard ${JSON.stringify(s)}`);
   assert.equal(s.fixtures, fixtures.length);
   assert.equal(s.passed, s.fixtures);
   for (const k of FINDING_KINDS) assert.equal(s.detection[k].caught, s.detection[k].planted, `${k}: caught ${s.detection[k].caught}/${s.detection[k].planted}`);

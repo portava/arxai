@@ -19,6 +19,8 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// CLI output goes to stdout directly (the server no-console guard covers this tree).
+const out = (line: string) => process.stdout.write(`${line}\n`);
 const argv = process.argv.slice(2);
 const flag = (n: string) => argv.includes(n);
 const opt = (n: string) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
@@ -28,7 +30,7 @@ if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY && process.env.OPENAI_API_KEY) {
   process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ??= "https://api.openai.com/v1";
 }
 if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY?.trim()) {
-  console.log("eval:eleanor-live skipped: no AI_INTEGRATIONS_OPENAI_API_KEY / OPENAI_API_KEY set.");
+  out("eval:eleanor-live skipped: no AI_INTEGRATIONS_OPENAI_API_KEY / OPENAI_API_KEY set.");
   process.exit(flag("--require-key") ? 1 : 0);
 }
 // The loop imports tools.ts (db module); nothing here queries it.
@@ -84,7 +86,7 @@ for (const f of runs) {
     tools: outcome.toolCalls.map((c) => c.name), raw: outcome.rawAnswer, visible: outcome.assistantText,
     findings: check.findings.map((x) => ({ kind: x.kind, claim: x.claim.text, detail: x.detail })),
   });
-  console.log(`${check.findings.length === 0 ? "ok  " : "FLAG"} ${f.id} [${outcome.toolCalls.map((c) => c.name).join(", ")}] ${check.findings.map((x) => `${x.kind}:${x.claim.text}`).join(" ")}`);
+  out(`${check.findings.length === 0 ? "ok  " : "FLAG"} ${f.id} [${outcome.toolCalls.map((c) => c.name).join(", ")}] ${check.findings.map((x) => `${x.kind}:${x.claim.text}`).join(" ")}`);
 }
 
 const summary = {
@@ -93,6 +95,6 @@ const summary = {
   answersWithFindings: report.filter((r) => (r.findings as unknown[]).length > 0).length,
   findingsByKind: byKind,
 };
-console.log(JSON.stringify(summary, null, 2));
+out(JSON.stringify(summary, null, 2));
 if (opt("--out")) writeFileSync(opt("--out")!, JSON.stringify({ summary, report }, null, 2));
 process.exit(flag("--strict") && summary.answersWithFindings > 0 ? 1 : 0);
