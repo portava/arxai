@@ -345,7 +345,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       mergeCandleFromMT5(symbol, candle, timeframe, candleBridge);
       return;
     }
-    // TICK → latest quote (the quote store correctly keeps a single latest).
+    // TICK → latest quote (the quote store keeps a single latest per writer).
     const symbol = typeof p.symbol === "string" ? p.symbol : null;
     const bid = typeof p.bid === "number" ? p.bid : null;
     const ask = typeof p.ask === "number" ? p.ask : null;

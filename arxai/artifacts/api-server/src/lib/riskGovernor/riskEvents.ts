@@ -29,13 +29,15 @@ export async function logRiskEvent(args: {
     mt5ConnectionId: args.mt5ConnectionId ?? null,
   }).returning();
   // Phase 10F — emit notification + activity for warning/block events.
+  // "View risk events" opens /risk-events, which lists these rows; Risk
+  // Settings has no event list.
   if (args.decision !== "pass") {
     try {
       const { fireNotify } = await import("../notificationService.js");
       const sev = args.decision === "block" ? "critical" : "warning";
       const notifType = args.decision === "block" ? "risk_block" : "risk_warning";
       fireNotify(args.userId,
-        { notificationType: notifType, severity: sev, title: args.decision === "block" ? "Risk Governor blocked a trade" : "Risk warning", message: args.reason, source: "risk", entityType: "paper_trade", entityId: args.paperTradeId ?? null, actionLabel: "View risk events", actionTarget: "/risk-settings" },
+        { notificationType: notifType, severity: sev, title: args.decision === "block" ? "Risk Governor blocked a trade" : "Risk warning", message: args.reason, source: "risk", entityType: "paper_trade", entityId: args.paperTradeId ?? null, actionLabel: "View risk events", actionTarget: "/risk-events" },
         { eventType: args.decision === "block" ? "risk_trade_blocked" : "risk_check_completed", title: args.decision === "block" ? "Risk Governor blocked a trade" : "Risk warning issued", description: args.reason, source: "risk", entityType: "paper_trade", entityId: args.paperTradeId ?? null }
       );
     } catch { /* never break risk path */ }

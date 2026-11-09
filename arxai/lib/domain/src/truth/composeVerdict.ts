@@ -20,6 +20,7 @@ import type {
   ComposeVerdictInput,
   ComposedLevels,
   ComposedVerdict,
+  TruthBiasQualifier,
   LevelStalenessInput,
   LevelStalenessResult,
   TruthAlignment,
@@ -136,6 +137,9 @@ const BEST_ACTION_TEXT: Record<TruthBestAction, string> = {
   WATCH_ONLY: "Watch only — there is no clean setup right now.",
 };
 
+const EVENT_RISK_UNCHECKED_TEXT =
+  "Watch only — scheduled news risk could not be checked right now.";
+
 const MARKET_CLOSED_TEXT =
   "Wait — the market is closed; these are the last session's bars.";
 
@@ -183,6 +187,45 @@ function buildHeadline(
 }
 
 /**
+ * Agreement tally over the four component reads — the ONE rule composeVerdict
+ * uses for its stage, exported so a surface that labels the stage ("1 of 2
+ * engines bullish") counts exactly what the composer counted. A component votes
+ * only when it is present AND has a known alignment; everything else is "no
+ * read" (an absent engine is not a disagreeing engine).
+ */
+export interface AgreementSummary {
+  /** Present components with a known alignment (the voting set). */
+  voting: number;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  /** Absent components or components with an UNKNOWN alignment. */
+  noRead: number;
+}
+
+export function summarizeAgreement(
+  components: ReadonlyArray<{ present: boolean; alignment: TruthAlignment | string }>,
+): AgreementSummary {
+  let bullish = 0, bearish = 0, neutral = 0, noRead = 0;
+  for (const c of components) {
+    if (!c.present || c.alignment === "UNKNOWN") noRead++;
+    else if (c.alignment === "BULLISH") bullish++;
+    else if (c.alignment === "BEARISH") bearish++;
+    else if (c.alignment === "NEUTRAL") neutral++;
+    else noRead++;
+  }
+  return { voting: bullish + bearish + neutral, bullish, bearish, neutral, noRead };
+}
+
+/** Stage from an agreement tally — the composer's own rule. */
+export function stageFromAgreement(s: AgreementSummary): TruthStage {
+  if (s.voting === 0) return "UNKNOWN";
+  if (s.bullish > 0 && s.bearish > 0) return "CONFLICT";
+  if ((s.bullish >= 2 && s.bearish === 0) || (s.bearish >= 2 && s.bullish === 0)) return "ALIGNED";
+  return "DEVELOPING";
+}
+
+/**
  * Compose the one verdict. Pure: same inputs → same output, no clock/I/O.
  */
 export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
@@ -208,20 +251,8 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     bias = "NEUTRAL";
   }
 
-  // ── Stage from agreement structure ────────────────────────────────────────
-  let stage: TruthStage;
-  if (present.length === 0) {
-    stage = "UNKNOWN";
-  } else if (conflict) {
-    stage = "CONFLICT";
-  } else if (
-    (bullish.length >= 2 && bearish.length === 0) ||
-    (bearish.length >= 2 && bullish.length === 0)
-  ) {
-    stage = "ALIGNED";
-  } else {
-    stage = "DEVELOPING";
-  }
+  // ── Stage from agreement structure (shared rule, see summarizeAgreement) ──
+  const stage: TruthStage = stageFromAgreement(summarizeAgreement(input.components));
 
   // ── Reference direction for evidence framing ──────────────────────────────
   const refDir: "BULLISH" | "BEARISH" | null =
@@ -323,17 +354,35 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
 
   let headline = buildHeadline(bias, bestAction);
   let bestActionText = BEST_ACTION_TEXT[bestAction];
+  // Event risk that could not be checked is not "no event risk": never present
+  // an entry as clear of scheduled news when the calendar read failed.
+  if (input.eventRiskUnchecked === true && (bestAction === "BUY" || bestAction === "SELL")) {
+    headline = `The read leans ${bestAction === "BUY" ? "bullish" : "bearish"}, but scheduled news risk could not be checked.`;
+    bestAction = "WATCH_ONLY";
+    bestActionText = EVENT_RISK_UNCHECKED_TEXT;
+  }
+
   // A scheduled close is not a feed fault: say so, so this verdict agrees with
   // the chart and scanner banners that read "Market closed" for the same bars.
+  // Wording only: the action stays WAIT_FOR_DATA.
   if (bestAction === "WAIT_FOR_DATA" && input.marketClosed === true) {
     bestActionText = MARKET_CLOSED_TEXT;
     headline = bias === "BULLISH" || bias === "BEARISH"
       ? `The last session leaned ${bias === "BULLISH" ? "bullish" : "bearish"}; the market is closed now.`
       : "The market is closed — this is the last session's data.";
   }
+
+  // ── Lean qualifier (label-only; the vote is unchanged) ─────────────────────
+  // A directional bias whose every voter failed its own minimum-evidence rule
+  // is a lean, not an edge. One voter without a floor failure clears it.
+  const voters = bias === "BULLISH" ? bullish : bias === "BEARISH" ? bearish : [];
+  const biasQualifier: TruthBiasQualifier | null =
+    voters.length > 0 && voters.every((c) => c.belowEvidenceFloor === true) ? "LEAN" : null;
+
   return {
     stage,
     bias,
+    biasQualifier,
     headline,
     evidenceFor,
     evidenceAgainst,

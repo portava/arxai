@@ -9,10 +9,11 @@
 //    from another user is ever read or returned.
 //  - Additive only: this module records what already happened. It NEVER places,
 //    modifies, sizes or closes an order, and never touches trade/order/position
-//    truth tables (it only READS arx_live_positions to confirm realized P/L).
-//  - No fabrication: realized P/L is KNOWN only when matched to a broker-closed
-//    position; otherwise ESTIMATED (last floating) or UNKNOWN. We never invent a
-//    number or a margin.
+//    truth tables (it only READS arx_live_positions for each leg's last reading).
+//  - No fabrication: no broker-realised P/L is recorded, so a closed scalp's
+//    P/L is ESTIMATED (the last floating readings of every leg) or UNKNOWN.
+//    KNOWN is reserved for a broker-reported realised figure. We never invent
+//    a number or a margin.
 //  - Learning only ever TIGHTENS (qualityBias ≤ 0, minQualityDelta ≥ 0).
 
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
@@ -29,7 +30,11 @@ import {
   computeQualityBias,
   deriveResult,
   deriveReview,
+  findContinuedEntry,
   higherUrgency,
+  labelEstimatedWinShare,
+  storedLegTickets,
+  unionLegTickets,
   EMPTY_PERSONALITY_COUNTS,
   type JournalEntrySnapshot,
   type PersonalityClosedTrade,
@@ -74,21 +79,30 @@ export async function recordScalpBasketsObservation(
 ): Promise<void> {
   try {
     const now = new Date();
-    const openKeys = new Set(snapshots.map((s) => s.basketKey));
-
-    // 1) Upsert each currently-open basket.
-    for (const s of snapshots) {
-      await upsertOpenEntry(userId, accountMode, s, now);
-    }
-
-    // 2) Finalize entries that are OPEN in the DB but no longer present live.
     const dbOpen = await db.select().from(scalpJournalEntriesTable).where(and(
       eq(scalpJournalEntriesTable.userId, userId),
       eq(scalpJournalEntriesTable.accountMode, accountMode),
       eq(scalpJournalEntriesTable.status, "OPEN"),
     ));
+    const openKeys = new Set(snapshots.map((s) => s.basketKey));
+    const stillOpenIds = new Set<number>();
+
+    // 1) Upsert each currently-open basket. A basket whose oldest leg closed
+    //    has a new first-leg key but is the same scalp: it continues its OPEN
+    //    entry (matched by a shared ticket) instead of starting a new one.
+    for (const s of snapshots) {
+      const continued = findContinuedEntry(dbOpen, s);
+      if (continued) {
+        await updateOpenEntry(userId, continued, s, now);
+        stillOpenIds.add(continued.id);
+      } else {
+        await upsertOpenEntry(userId, accountMode, s, now);
+      }
+    }
+
+    // 2) Finalize entries that are OPEN in the DB but no longer present live.
     for (const row of dbOpen) {
-      if (openKeys.has(row.basketKey)) continue;
+      if (stillOpenIds.has(row.id) || openKeys.has(row.basketKey)) continue;
       await finalizeClosedEntry(userId, accountMode, row, now);
     }
   } catch {
@@ -151,13 +165,25 @@ async function upsertOpenEntry(
     return;
   }
 
-  // Update the evolving fields only — keep the at-entry snapshot frozen.
-  const prev = existing[0]!;
+  await updateOpenEntry(userId, existing[0]!, s, now);
+}
+
+async function updateOpenEntry(
+  userId: number,
+  prev: ScalpJournalEntry,
+  s: ObservationSnapshot,
+  now: Date,
+): Promise<void> {
+  // Update the evolving fields only — keep the at-entry snapshot frozen. The
+  // leg tickets and the add-on count only grow: a leg closed early is still
+  // part of this scalp, and its result is read from its ticket when the scalp
+  // closes. entryCount stays the legs open at this observation, the legs the
+  // last floating reading covers.
   const maxUrg = higherUrgency(prev.maxExitUrgency as ScalpExitUrgency, s.maxExitUrgency);
   await db.update(scalpJournalEntriesTable).set({
-    legTickets: s.legTickets,
+    legTickets: unionLegTickets(prev.legTickets, s.legTickets),
     entryCount: s.entryCount,
-    addOnCount: s.addOnCount,
+    addOnCount: Math.max(prev.addOnCount, s.addOnCount),
     averageEntry: s.averageEntry,
     breakEvenPrice: s.breakEvenPrice,
     maxExitUrgency: maxUrg,
@@ -179,37 +205,45 @@ async function finalizeClosedEntry(
   row: ScalpJournalEntry,
   now: Date,
 ): Promise<void> {
-  // Authoritative realized P/L for LIVE: sum broker-closed positions matched by
-  // ticket. DEMO has no persistent closed store → estimate from last floating.
-  let realizedPl: number | null = null;
+  // No broker-realised P/L is recorded anywhere: the closing paths only stamp
+  // closedAt on arx_live_positions, so its floatingPl is the last floating
+  // reading the bridge sent for that leg (no commission/swap, possibly
+  // minutes old). Every figure here is therefore an ESTIMATE, never KNOWN.
+  //  - LIVE: when every leg ticket has a closed ledger row with a reading,
+  //    the estimate is the sum of those last readings (it covers legs that
+  //    closed early, and is usually newer than the journal's last poll).
+  //  - Otherwise the journal's last floating reading, but only when it
+  //    covered every leg: once a leg closed while the scalp stayed open, that
+  //    reading misses it and the result is UNKNOWN.
+  const tickets = storedLegTickets(row.legTickets);
+  const legsClosedEarly = tickets.length > row.entryCount;
+  let ledgerReading: number | null = null;
   let exitPrice: number | null = null;
-  if (accountMode === "LIVE_SHARED") {
-    const tickets = Array.isArray(row.legTickets) ? (row.legTickets as unknown[]).map(String) : [];
-    if (tickets.length > 0) {
-      const closed = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          inArray(livePositionColumns.brokerTicket, tickets),
-          isNotNull(livePositionColumns.closedAt),
-        ),
-      });
-      if (closed.length > 0) {
-        let sum = 0;
-        let any = false;
-        for (const c of closed) {
-          if (c.floatingPl != null && Number.isFinite(Number(c.floatingPl))) {
-            sum += Number(c.floatingPl);
-            any = true;
-          }
-          if (c.currentPrice != null) exitPrice = Number(c.currentPrice);
-        }
-        if (any) realizedPl = sum;
-      }
+  if (accountMode === "LIVE_SHARED" && tickets.length > 0) {
+    const closed = await livePositionLedger.read({
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        inArray(livePositionColumns.brokerTicket, tickets),
+        isNotNull(livePositionColumns.closedAt),
+      ),
+    });
+    const readings = new Map<string, number>();
+    for (const c of closed) {
+      const pl = c.floatingPl != null ? Number(c.floatingPl) : NaN;
+      if (c.brokerTicket != null && Number.isFinite(pl)) readings.set(String(c.brokerTicket), pl);
+      if (c.currentPrice != null) exitPrice = Number(c.currentPrice);
+    }
+    if (tickets.every((t) => readings.has(t))) {
+      ledgerReading = tickets.reduce((sum, t) => sum + readings.get(t)!, 0);
     }
   }
 
-  const lastFloatingPl = row.lastFloatingPl != null ? Number(row.lastFloatingPl) : null;
-  const { result, plQuality } = deriveResult({ realizedPl, lastFloatingPl });
+  const storedLast = row.lastFloatingPl != null ? Number(row.lastFloatingPl) : null;
+  const lastFloatingPl = ledgerReading ?? (legsClosedEarly ? null : storedLast);
+  const { result, plQuality } = deriveResult({ realizedPl: null, lastFloatingPl });
+  // The closed scalp's own legs: every ticket it held, not only the last open ones.
+  const entryCount = Math.max(row.entryCount, tickets.length);
+  const addOnCount = Math.max(row.addOnCount, entryCount - 1);
   const flameContinued = row.flameContinued ?? false;
   const review = deriveReview({
     result,
@@ -218,7 +252,7 @@ async function finalizeClosedEntry(
     entryTimingAtEntry: row.entryTimingAtEntry,
     maxExitUrgency: row.maxExitUrgency as ScalpExitUrgency,
     flameContinued,
-    addOnCount: row.addOnCount,
+    addOnCount,
     isSynthetic: row.isSynthetic,
   });
 
@@ -227,7 +261,10 @@ async function finalizeClosedEntry(
     status: "CLOSED",
     result,
     plQuality,
-    realizedPl,
+    realizedPl: null,
+    ...(ledgerReading != null ? { lastFloatingPl: ledgerReading } : {}),
+    entryCount,
+    addOnCount,
     exitPrice: exitPrice ?? row.lastCurrentPrice,
     exitReason: review.exitReason,
     lesson: review.lesson,
@@ -419,6 +456,48 @@ export interface JournalListItem {
 }
 
 function toListItem(r: ScalpJournalEntry): JournalListItem {
+  // Rows finalized before the fix above stored the sum of the legs' last
+  // floating readings as a KNOWN realised P/L. Nothing has ever recorded a
+  // broker-realised figure, so such a row is reported as the estimate it is.
+  // The stored row is not changed.
+  if (r.plQuality === "KNOWN") {
+    const item = toListItemAsStored(r);
+    return withEstimateReview(r, {
+      ...item,
+      plQuality: "ESTIMATED",
+      lastFloatingPl: item.realizedPl ?? item.lastFloatingPl,
+      realizedPl: null,
+    });
+  }
+  return withEstimateReview(r, toListItemAsStored(r));
+}
+
+/**
+ * A closed scalp graded from an estimate gets its review text re-derived from
+ * the row's own stored inputs with the estimate wording. Rows finalized
+ * earlier stored text that states the outcome as fact ("This one worked…",
+ * "it closed at a loss") although the result came from the last floating
+ * reading before the close. The stored row is not changed; the result,
+ * warnedCorrectly and the personality fold are not touched.
+ */
+function withEstimateReview(r: ScalpJournalEntry, item: JournalListItem): JournalListItem {
+  if (item.status !== "CLOSED" || item.plQuality !== "ESTIMATED") return item;
+  const result = item.result as ScalpJournalResult;
+  if (result !== "WIN" && result !== "LOSS" && result !== "BREAKEVEN") return item;
+  const review = deriveReview({
+    result,
+    plQuality: "ESTIMATED",
+    flameStageAtEntry: r.flameStageAtEntry,
+    entryTimingAtEntry: r.entryTimingAtEntry,
+    maxExitUrgency: r.maxExitUrgency as ScalpExitUrgency,
+    flameContinued: r.flameContinued ?? false,
+    addOnCount: r.addOnCount,
+    isSynthetic: r.isSynthetic,
+  });
+  return { ...item, exitReason: review.exitReason, lesson: review.lesson };
+}
+
+function toListItemAsStored(r: ScalpJournalEntry): JournalListItem {
   return {
     id: r.id,
     accountMode: r.accountMode,
@@ -520,7 +599,9 @@ export async function getSymbolPersonalities(
     avgScoreAtEntry: p.avgScoreAtEntry != null ? Number(p.avgScoreAtEntry) : null,
     // "Cautious" = Eleanor is applying a real tightening nudge here.
     cautious: Number(p.qualityBias) < 0 || Number(p.minQualityDelta) > 0,
-    notes: p.notes,
+    // Notes stored earlier say "N% wins"; every result behind that share was
+    // graded from an estimate, so it is reported as estimated.
+    notes: labelEstimatedWinShare(p.notes),
     updatedAt: p.updatedAt ? new Date(p.updatedAt).toISOString() : null,
   }));
   return { symbols, generatedAt: new Date().toISOString() };

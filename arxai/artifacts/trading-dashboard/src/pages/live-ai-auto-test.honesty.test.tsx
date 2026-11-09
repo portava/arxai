@@ -134,4 +134,46 @@ describe("live-ai-auto-test honesty", () => {
     expect(src).not.toMatch(/Risk governor.*active/);
     expect(src).not.toMatch(/x-security-role/);
   });
+
+  it("caps card: only the caps POST /live-intent/submit checks are called server-enforced", () => {
+    // The server's tester caps (routes/liveIntent.ts) are lot size, max loss
+    // and stop-loss presence. Per-session / per-day / cooldown limits exist
+    // only in this page's state, so a reload, a second tab or a direct POST
+    // bypasses them.
+    const serverSrc = fs.readFileSync(path.join(__dirname, "../../../api-server/src/routes/liveIntent.ts"), "utf8");
+    const caps = serverSrc.match(/const TESTER_CAPS = \{([\s\S]*?)\};/)?.[1] ?? "";
+    expect(caps).toMatch(/maxLotSize/);
+    expect(caps).not.toMatch(/PerDay|PerSession|cooldown/i);
+
+    render(<LiveAiAutoTestPage />);
+    const server = screen.getByTestId("caps-server").textContent ?? "";
+    expect(server).toMatch(/server-enforced/);
+    expect(server).toMatch(/0\.01/);
+    expect(server).toMatch(/stop-loss required/);
+    expect(server).not.toMatch(/per day|per session|cooldown/i);
+    const local = screen.getByTestId("caps-browser").textContent ?? "";
+    expect(local).toMatch(/not enforced by the server/);
+    expect(local).toMatch(/cooldown/);
+    expect(local).toMatch(/per session/);
+  });
+
+  it("caps card: the $5 max loss is labelled as the declared figure, not a measured or enforced loss bound", () => {
+    // The server compares only the client-declared maxLossUsd with the cap; it
+    // never derives a loss from lot, stop-loss and price. This page always
+    // declares 5, so "$5 max loss" is not a bound on the real loss at the stop.
+    const serverSrc = fs.readFileSync(path.join(__dirname, "../../../api-server/src/routes/liveIntent.ts"), "utf8");
+    expect(serverSrc).toMatch(/body\.maxLossUsd > TESTER_CAPS\.maxLossUsdPerTrade/);
+
+    render(<LiveAiAutoTestPage />);
+    const server = screen.getByTestId("caps-server").textContent ?? "";
+    expect(server).not.toMatch(/max loss\/intent \$5/);
+    const declared = screen.getByTestId("caps-declared-loss").textContent ?? "";
+    expect(declared).toMatch(/declared max loss/);
+    expect(declared).toMatch(/real loss at the stop is not checked/);
+  });
+
+  it("MT5 connected tile says unknown when neither the result nor the permission status reported it", () => {
+    render(<LiveAiAutoTestPage />);
+    expect(screen.getByTestId("mt5-connected-state").textContent).toBe("unknown");
+  });
 });

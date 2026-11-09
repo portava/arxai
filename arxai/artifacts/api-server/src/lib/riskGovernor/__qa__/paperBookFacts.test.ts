@@ -77,12 +77,28 @@ after(async () => {
   await db.delete(usersTable).where(inArray(usersTable.id, ids));
 });
 
+// Every risk total is the lower of two full totals over the same closes
+// (round-3 s-exec): the booked total and the paper risk model total
+// (move × lots × 100). The ownerless EE win booked +7 is (1.12 − 1.1) × 0.1
+// lots × 100 = 0.2 at the model, so alone it counts 0.2. Alice's account
+// also holds her −50 loss at (1.095 − 1.1) × 0.1 × 100 = −0.05 at the model:
+// booked total −43, model total +0.15, so the account's day counts −43 (was
+// −49.8, the per-close sum, below both totals). The columns are float4, so
+// compare to within a millionth.
+const EE_WIN_RISK = (1.12 - 1.1) * 0.1 * 100;
+const ALICE_ACCOUNT_BOOKED = -50 + 7;
+const ALICE_ACCOUNT_MODEL = (1.095 - 1.1) * 0.1 * 100 + EE_WIN_RISK;
+const near = (a: number | null | undefined, b: number, msg: string) =>
+  assert.ok(a != null && Math.abs(a - b) < 1e-6, `${msg} (got ${a}, expected ${b})`);
+
 const intent = (userId: number, venue: "PAPER" | "DEMO") =>
   ({ userId, venue, origin: "manual" as const, action: "OPEN" as const, symbol: "EURUSD", side: "BUY" as const, lots: 0.01, stopLoss: 1.09 });
 
 test("no double count: the governor's PAPER P/L is paper_orders only (not the journal, not trades)", async () => {
   const ctx = await buildRiskContext(intent(u.alice, "PAPER"), { facts: { quote: null, halt: null } });
-  assert.equal(ctx.daily.realizedPnl, -50 + 7, "alice's account: her settled loss plus the ownerless EE row booked on it; journal -500 and trades -300 not added");
+  near(ctx.daily.realizedPnl, Math.min(ALICE_ACCOUNT_BOOKED, ALICE_ACCOUNT_MODEL), "alice's account: her settled loss plus the ownerless EE row booked on it, at the lower of the booked (−43) and model (+0.15) totals; journal -500 and trades -300 not added");
+  assert.ok(ctx.daily.realizedPnl! <= ALICE_ACCOUNT_BOOKED + 1e-6 && ctx.daily.realizedPnl! <= ALICE_ACCOUNT_MODEL + 1e-6, "never above either total");
+  assert.ok(ctx.daily.realizedPnl! >= Math.min(ALICE_ACCOUNT_BOOKED, ALICE_ACCOUNT_MODEL) - 1e-6, "never below both (no per-close drift)");
   assert.equal(ctx.positions.length, 1, "one open order; the voided order never counts");
   const act = await loadTradingActivity(u.alice, "PAPER");
   assert.equal(act!.source, `paper_orders:account:${acct.alice}`);
@@ -91,7 +107,7 @@ test("no double count: the governor's PAPER P/L is paper_orders only (not the jo
 
 test("read side: settled / open / realized, per scope", async () => {
   assert.equal(await sumPaperRealizedSince({ user: u.alice }, minsAgo(60)), -50);
-  assert.equal(await sumPaperRealizedSince({ owner: null, strategyId: EE }, minsAgo(60)), 7, "ownerless strategy rows only");
+  near(await sumPaperRealizedSince({ owner: null, strategyId: EE }, minsAgo(60)), EE_WIN_RISK, "ownerless strategy rows only (the +7 win at the paper risk model)");
   assert.equal((await readOpenPaperOrders({ user: u.alice })).length, 1);
   const closes = await readPaperCloses({ user: u.alice });
   assert.deepEqual(closes.map((c) => c.pnl), [-50], "CANCELLED without closed_at is not settled");

@@ -3,19 +3,109 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-type Subsys = { status: string; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
+type Subsys = { status: string; checkScope?: "REACHABILITY_ONLY" | "IN_PROCESS"; notes: string[]; metrics?: Record<string, unknown>; paperOnly?: boolean; liveTradingAllowed?: boolean };
+type LivePosture = { state: "ON" | "OFF" | "UNKNOWN"; plainEnglish: string; source?: string; checkedAt?: string };
 type Report = {
   health_check_id: string; generated_at: string;
   overallStatus: "HEALTHY"|"DEGRADED"|"UNSAFE"|"FAILED";
-  liveTradingStatus: "DISABLED"; mode: "PAPER_ONLY";
+  reachabilityOnlySubsystems?: string[];
+  liveTradingStatus: string; mode: string;
+  /** The platform live-execution switch as read for this report (absent from older servers). */
+  livePosture?: LivePosture;
   subsystemStatus: Record<string, Subsys>;
   databaseStatus: { connected: boolean; missingTables: string[]; rowCounts: Record<string, number> };
   endpointStatus: { totalChecked: number; passed: number; failed: number; degraded: number; results: Array<{ path: string; status: number|null; ok: boolean; latencyMs: number }> };
   safetyStatus: { hardBlocks: Array<{ code: string; severity: string; message: string }>; warnings: string[] };
-  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean };
-  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number };
+  secretSafetyStatus: { secretsDetectedInFrontend: number; secretsDetectedInLogs: number; redactionWorking: boolean; scanChecked?: boolean; frontendScanChecked?: boolean; logScanChecked?: boolean };
+  performanceStatus: { failedJobs: number; errorRate: number; latestNotificationCriticalCount: number | null };
   recommendedAdminActions: string[]; warnings: string[]; errors: string[];
 };
+
+/** "OK" from an HTTP probe only means the route answered — say exactly that. */
+export function subsystemBadgeLabel(v: Pick<Subsys, "status" | "checkScope">): string {
+  return v.status === "OK" && v.checkScope === "REACHABILITY_ONLY" ? "Reachable" : v.status;
+}
+
+/**
+ * The Overall card. HEALTHY only means no warning or error was found; when a
+ * subsystem's OK rests on a reachability probe alone, its service health was
+ * not checked, so the card does not say HEALTHY. Downgrade-only: derived from
+ * the subsystems' own checkScope, so it also holds for an older report.
+ */
+export function overallLabel(r: Pick<Report, "overallStatus" | "subsystemStatus">): { label: string; note: string | null } {
+  if (r.overallStatus !== "HEALTHY") return { label: r.overallStatus, note: null };
+  const all = Object.values(r.subsystemStatus ?? {});
+  const reach = Object.entries(r.subsystemStatus ?? {})
+    .filter(([, v]) => v.status === "OK" && v.checkScope === "REACHABILITY_ONLY")
+    .map(([k]) => k);
+  if (reach.length === 0) return { label: "HEALTHY", note: null };
+  return {
+    label: "No problems found",
+    note: `${reach.length} of ${all.length} subsystems (${reach.join(", ")}) were only checked for reachability; their service health was not checked.`,
+  };
+}
+
+/** Whether one half of the secret scan ran (per-half flag, or the summary flag on an older report). */
+function halfChecked(s: Report["secretSafetyStatus"], half: "frontend" | "logs"): boolean {
+  const perHalf = half === "frontend" ? s.frontendScanChecked : s.logScanChecked;
+  return typeof perHalf === "boolean" ? perHalf : s.scanChecked === true;
+}
+
+const HALF_NAME = { frontend: "frontend", logs: "log" } as const;
+
+/**
+ * A scan that did not run is "not checked", never "true". Downgrade-only.
+ * A half that ran and found secret-shaped strings is reported as found even
+ * when the other half could not run.
+ */
+export function redactionLabel(s: Report["secretSafetyStatus"]): string {
+  if (s.scanChecked !== true) {
+    const fe = halfChecked(s, "frontend");
+    const lg = halfChecked(s, "logs");
+    const found = (fe && s.secretsDetectedInFrontend > 0) || (lg && s.secretsDetectedInLogs > 0);
+    // Exactly one half ran: name the other one.
+    const unrun = fe && !lg ? HALF_NAME.logs : lg && !fe ? HALF_NAME.frontend : null;
+    if (found) return unrun ? `secret-shaped strings found (${unrun} scan not checked)` : "secret-shaped strings found";
+    return unrun ? `not checked (${unrun} scan could not run)` : "not checked (scan could not run)";
+  }
+  return s.redactionWorking ? "no secret-shaped strings found" : "secret-shaped strings found";
+}
+
+/**
+ * One half of the secret scan. Its count is a placeholder 0 when that query
+ * did not run, so it is shown only when that half was checked (per-half flag,
+ * or the summary flag on an older report).
+ */
+export function leakCountLabel(s: Report["secretSafetyStatus"], half: "frontend" | "logs"): string {
+  if (!halfChecked(s, half)) return "not checked (scan query failed)";
+  return String(half === "frontend" ? s.secretsDetectedInFrontend : s.secretsDetectedInLogs);
+}
+
+// The health report (lib/systemHealth/health.ts) covers the paper stack and
+// sets liveTradingStatus / mode to fixed constants on every path; it never
+// reads live-trading state. When the safety core is not in a paper mode,
+// probeSafety adds the warning "safetyCore.operationalMode=<mode>". Read the
+// mode from there and never repeat the constants as system truth.
+const OPERATIONAL_MODE_WARNING = /^safetyCore\.operationalMode=(.+)$/;
+function reportedOperationalMode(r: Report): string | null {
+  for (const w of r.safetyStatus?.warnings ?? []) {
+    const m = OPERATIONAL_MODE_WARNING.exec(w);
+    if (m) return m[1]!.trim();
+  }
+  return null;
+}
+
+/**
+ * The Live trading card: the platform switch as the report read it. Without
+ * livePosture (an older server) the report did not check live trading, so it
+ * says exactly that — never the report's fixed liveTradingStatus constant.
+ */
+export function livePostureBadge(lp: LivePosture | undefined): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+  if (!lp) return { label: "Not checked by this report", variant: "outline" };
+  if (lp.state === "ON") return { label: "Switched on for the platform", variant: "default" };
+  if (lp.state === "OFF") return { label: "Switched off for the platform", variant: "outline" };
+  return { label: "Unknown — switch could not be read", variant: "secondary" };
+}
 
 const tone = (s: string): "default"|"secondary"|"destructive"|"outline" => {
   if (s === "HEALTHY" || s === "OK") return "default";
@@ -33,12 +123,22 @@ export default function SystemHealthPage() {
     setLoading(true); setErr(null);
     try {
       const r = await fetch("/api/system-health/check", { method: "POST" });
-      const j = await r.json();
-      setReport(j.report ?? null);
-    } catch (e) { setErr(String(e)); } finally { setLoading(false); }
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.report) {
+        // A failed check is "could not be loaded", never an empty page.
+        setReport(null);
+        setErr(`The health check could not be loaded (HTTP ${r.status}${j?.error ? `: ${j.error}` : ""}).`);
+        return;
+      }
+      setReport(j.report);
+    } catch (e) {
+      setReport(null);
+      setErr(`The health check could not be loaded (${String(e)}).`);
+    } finally { setLoading(false); }
   };
   useEffect(() => { void run(); }, []);
 
+  const nonPaperMode = report ? reportedOperationalMode(report) : null;
   const banner = report && (report.overallStatus !== "HEALTHY" || report.safetyStatus.hardBlocks.length > 0);
 
   return (
@@ -46,7 +146,16 @@ export default function SystemHealthPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">System Health</h1>
-          <p className="text-sm text-muted-foreground">Build MM — Diagnostics, audit & admin (PAPER_ONLY, live trading DISABLED)</p>
+          <p className="text-sm text-muted-foreground" data-testid="system-health-subtitle">
+            Build MM — Diagnostics, audit & admin. The health checks cover the paper stack; the Live trading card is the platform's live-execution switch as read for this report.
+          </p>
+          {report && (
+            <p className="text-xs text-muted-foreground" data-testid="system-health-generated-at">
+              {typeof report.generated_at === "string" && report.generated_at
+                ? `Report generated ${report.generated_at.slice(0, 19).replace("T", " ")} UTC`
+                : "Report time not given by the server"}
+            </p>
+          )}
         </div>
         <Button onClick={run} disabled={loading} data-testid="btn-run-health-check">{loading ? "Running…" : "Run health check"}</Button>
       </div>
@@ -64,10 +173,32 @@ export default function SystemHealthPage() {
       {report && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent><Badge variant={tone(report.overallStatus)}>{report.overallStatus}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent><Badge variant="outline">{report.liveTradingStatus}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent><Badge>{report.mode}</Badge></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Overall</CardTitle></CardHeader><CardContent data-testid="system-health-overall">
+              {(() => {
+                const o = overallLabel(report);
+                return (
+                  <>
+                    <Badge variant={o.note ? "outline" : tone(report.overallStatus)}>{o.label}</Badge>
+                    {o.note && <div className="mt-1 text-xs text-muted-foreground">{o.note}</div>}
+                  </>
+                );
+              })()}
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Live trading</CardTitle></CardHeader><CardContent>
+              <Badge variant={livePostureBadge(report.livePosture).variant} data-testid="system-health-live-trading">{livePostureBadge(report.livePosture).label}</Badge>
+              {report.livePosture && (
+                <div className="mt-1 text-xs text-muted-foreground" data-testid="system-health-live-posture">{report.livePosture.plainEnglish}</div>
+              )}
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Mode</CardTitle></CardHeader><CardContent data-testid="system-health-mode">
+              {nonPaperMode
+                ? <Badge variant="destructive">Safety core: {nonPaperMode}</Badge>
+                : <Badge variant="outline">Report scope: paper stack</Badge>}
+              {nonPaperMode && (
+                <div className="mt-1 text-xs text-muted-foreground">The safety core is not in a paper mode; this paper-stack report does not cover it.</div>
+              )}
+            </CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-xs">Critical unread</CardTitle></CardHeader><CardContent>{report.performanceStatus.latestNotificationCriticalCount ?? "not checked"}</CardContent></Card>
           </div>
 
           <Card>
@@ -78,7 +209,7 @@ export default function SystemHealthPage() {
                   <div key={k} className="rounded border p-3" data-testid={`subsystem-${k}`}>
                     <div className="flex items-center justify-between mb-1">
                       <strong>{k}</strong>
-                      <Badge variant={tone(v.status)}>{v.status}</Badge>
+                      <Badge variant={tone(v.status)}>{subsystemBadgeLabel(v)}</Badge>
                     </div>
                     <div className="text-xs text-muted-foreground">{v.notes.join(" · ")}</div>
                   </div>
@@ -120,9 +251,9 @@ export default function SystemHealthPage() {
             <Card>
               <CardHeader><CardTitle>Secret redaction</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1">
-                <div>Frontend leaks: {report.secretSafetyStatus.secretsDetectedInFrontend}</div>
-                <div>Log leaks: {report.secretSafetyStatus.secretsDetectedInLogs}</div>
-                <div>Working: {String(report.secretSafetyStatus.redactionWorking)}</div>
+                <div data-testid="text-leaks-frontend">Frontend leaks: {leakCountLabel(report.secretSafetyStatus, "frontend")}</div>
+                <div data-testid="text-leaks-logs">Log leaks: {leakCountLabel(report.secretSafetyStatus, "logs")}</div>
+                <div data-testid="text-redaction-status">Scan: {redactionLabel(report.secretSafetyStatus)}</div>
               </CardContent>
             </Card>
           </div>

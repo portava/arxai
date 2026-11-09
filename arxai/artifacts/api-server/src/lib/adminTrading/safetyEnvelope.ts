@@ -134,15 +134,48 @@ export async function getGlobalSettings(): Promise<GlobalTradingConfig | null> {
   return getGlobalTradingConfig();
 }
 
-export async function getUserPermissions(userId: number) {
+/**
+ * The user's permission row and whether the read itself succeeded, so "no
+ * row" (a reading) is not confused with "the read failed" (no reading).
+ */
+async function readUserPermissions(userId: number): Promise<{
+  row: typeof userTradingPermissionsTable.$inferSelect | null;
+  readable: boolean;
+}> {
   try {
     const rows = await db.select().from(userTradingPermissionsTable)
       .where(eq(userTradingPermissionsTable.userId, userId)).limit(1);
-    return rows[0] ?? null;
+    return { row: rows[0] ?? null, readable: true };
   } catch (err) {
     logger.warn({ err: String(err), userId }, "user_trading_permissions read failed");
-    return null;
+    return { row: null, readable: false };
   }
+}
+
+/** The user's permission row; null when there is none or the read failed. */
+export async function getUserPermissions(userId: number) {
+  return (await readUserPermissions(userId)).row;
+}
+
+/** Banner reason when the permission row could not be read (the envelope is fail-closed). */
+const PERMISSIONS_UNREAD_REASON =
+  "Your account's trading permissions could not be read, so trading is treated as off (fail closed) until they can be.";
+
+/**
+ * Fail-closed envelopes built because this user's permissions could not be
+ * read. Kept outside the envelope so its shape (and every lock value) is
+ * unchanged; envelopeUnread() is the only reader.
+ */
+const UNREAD_ENVELOPES = new WeakSet<SafetyEnvelope>();
+
+/**
+ * True when env is not a reading of this user's settings: the fail-closed
+ * default (settings unreadable, no user) or the fail-closed envelope built
+ * because the user's trading permissions could not be read. Display only:
+ * the lock values are the same either way, and every gate stays fail closed.
+ */
+export function envelopeUnread(env: SafetyEnvelope): boolean {
+  return env === FAIL_CLOSED || UNREAD_ENVELOPES.has(env);
 }
 
 async function getUserAccountType(userId: number): Promise<AccountType> {
@@ -165,11 +198,12 @@ export async function getEnvelope(
 ): Promise<SafetyEnvelope> {
   if (!userId || userId <= 0) return FAIL_CLOSED;
 
-  const [settings, p, userOwnedAccountType] = await Promise.all([
+  const [settings, permissions, userOwnedAccountType] = await Promise.all([
     loadPlatformSettings({ ifMissing: "seed" }),
-    getUserPermissions(userId),
+    readUserPermissions(userId),
     getUserAccountType(userId),
   ]);
+  const p = permissions.row;
 
   const g = settings.config;
   const sw = settings.switches;
@@ -283,9 +317,10 @@ export async function getEnvelope(
     };
   }
 
-  // No permission row = suspended.
+  // No permission row = suspended. A failed read lands here too (same
+  // fail-closed values); its reason says the read failed, not a setting.
   if (!p || p.suspended) {
-    return {
+    const env: SafetyEnvelope = {
       ...FAIL_CLOSED,
       ...routingFieldsEarly,
       ...stopFields,
@@ -294,8 +329,12 @@ export async function getEnvelope(
       emergencyKillSwitch: false,
       accountType,
       bannerLabel: globalLiveEnabled && p?.liveApproved ? "Live Trading Pending Approval" : "Trading Off",
-      bannerReason: p?.suspensionReason ?? "Trading not enabled for this account.",
+      bannerReason: !permissions.readable
+        ? PERMISSIONS_UNREAD_REASON
+        : p?.suspensionReason ?? "Trading not enabled for this account.",
     };
+    if (!permissions.readable) UNREAD_ENVELOPES.add(env);
+    return env;
   }
 
   // Determine effective per-user mode.

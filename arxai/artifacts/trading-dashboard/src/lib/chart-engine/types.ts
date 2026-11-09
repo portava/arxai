@@ -185,6 +185,12 @@ export interface ChartEngineAdapter {
   /** One non-interactive explanatory pattern; separate from user drawings. */
   setSmartAnnotation?(annotation: SmartChartAnnotation | null): void;
   setScaleMode?(mode: ChartScaleMode): void;
+  /**
+   * Display precision for the price axis, resolved by the shell with the shared
+   * instrument rule (lib/instrumentPriceFormat). null falls back to the
+   * engine's own digit detection. Display only — never an order tick size.
+   */
+  setDisplayPricePrecision?(precision: number | null): void;
   setPriceScaleInverted?(inverted: boolean): void;
   setPriceOnlyScale?(enabled: boolean): void;
   /** Display-only, already resolved for timeframe by the caller; candle times,

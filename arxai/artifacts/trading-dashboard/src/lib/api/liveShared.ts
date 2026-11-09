@@ -69,6 +69,10 @@ export type LiveSharedAccessStatus = {
 
 export type LiveSharedCommandRow = {
   commandId: string;
+  // PLACE_LIVE_MARKET_ORDER | PLACE_LIVE_PENDING_ORDER | CLOSE_LIVE_POSITION |
+  // MODIFY_LIVE_SLTP (ARX_LIVE_COMMAND_TYPES). Projected by the server in
+  // USER_COMMAND_KEYS; optional so older payloads still type-check.
+  commandType?: string | null;
   status: string;
   symbol: string | null;
   side: string | null;
@@ -85,6 +89,9 @@ export type LiveSharedCommandRow = {
   confirmedAt: string | null;
   sentToMt5At: string | null;
   filledAt: string | null;
+  // Stamped when ARX recorded the position as closed. Projected in
+  // USER_COMMAND_KEYS; optional so older payloads still type-check.
+  closedAt?: string | null;
   brokerTicket: string | null;
   fillPrice: string | number | null;
   payload?: Record<string, unknown> | null;

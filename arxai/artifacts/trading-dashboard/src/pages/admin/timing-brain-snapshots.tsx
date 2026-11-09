@@ -45,8 +45,22 @@ function gradeVariant(grade: string): "default" | "secondary" | "destructive" | 
   return "outline";
 }
 
+// The MarketTimingRead entryPermission values (lib/api-spec): GO permits an
+// entry, the WAIT_* states hold it, NO_TRADE and STAND_DOWN refuse it. They are
+// matched exactly first — "GO" contains none of the fallback substrings and
+// would otherwise share STAND_DOWN's neutral badge.
+const ENTRY_PERMISSION_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
+  GO: "default",
+  WAIT_FOR_ENTRY: "secondary",
+  WAIT_NEWS: "secondary",
+  NO_TRADE: "destructive",
+  STAND_DOWN: "destructive",
+};
+
 function permissionVariant(p: string): "default" | "secondary" | "destructive" | "outline" {
   const v = p.toUpperCase();
+  const exact = ENTRY_PERMISSION_VARIANT[v];
+  if (exact) return exact;
   if (v.includes("ALLOW") || v.includes("GREEN") || v.includes("PERMIT")) return "default";
   if (v.includes("BLOCK") || v.includes("DENY") || v.includes("RED") || v.includes("NO")) return "destructive";
   if (v.includes("CAUTION") || v.includes("WAIT") || v.includes("AMBER")) return "secondary";

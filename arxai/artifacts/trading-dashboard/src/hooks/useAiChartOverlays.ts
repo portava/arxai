@@ -8,30 +8,12 @@ import {
 } from "@/components/scanner/scannerMapFreshness";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
-
-// A chart read describes the chart until the next candle closes: observedAt
-// (the latest CLOSED candle's close) + one interval. A gated read has nothing
-// directional to expire (null); an unknown data time or interval reads as
-// already expired (NaN), never as "still valid".
-function chartReadExpiresAtMs(read: { observedAt: string | null; gated?: boolean }, intervalMs: number): number | null {
-  if (read.gated) return null;
-  const t = read.observedAt ? Date.parse(read.observedAt) : Number.NaN;
-  if (!Number.isFinite(t) || !Number.isFinite(intervalMs) || intervalMs <= 0) return Number.NaN;
-  return t + intervalMs;
-}
-// "HH:MM UTC" data time of a read, or null when unknown.
-function chartReadAsOfLabel(read: { observedAt: string | null }): string | null {
-  const t = read.observedAt ? Date.parse(read.observedAt) : Number.NaN;
-  return Number.isFinite(t) ? `${new Date(t).toISOString().slice(11, 16)} UTC` : null;
-}
-// Interval of a normalized chart timeframe ("15m", "4h", "1d"); null when the
-// label is not a fixed-length interval (months are not).
-function candleIntervalMs(timeframe: string): number | null {
-  const m = /^(\d+)(m|h|d|w)$/.exec(timeframe);
-  if (!m) return null;
-  const unit = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[m[2] as "m" | "h" | "d" | "w"];
-  return Number(m[1]) * unit;
-}
+// A chart read describes the chart until the next candle closes (observedAt +
+// one interval): the shared Truth helpers the scanner's Eleanor read uses. A
+// gated read has nothing directional to expire (null); an unknown data time or
+// interval reads as already expired (NaN), never as "still valid".
+import { chartReadExpiresAtMs, chartReadAsOfLabel } from "@/lib/eleanorReadPanelState";
+import { candleIntervalMs } from "@workspace/domain/market";
 
 // useAiChartOverlays — ARX Native Chart Level 5 AI-overlay FOUNDATION.
 //
@@ -50,8 +32,11 @@ function candleIntervalMs(timeframe: string): number | null {
 //
 // HONESTY / SAFETY:
 //   - Never fabricates a marker: scanner overlays are built ONLY for a real
-//     BUY/SELL opportunity with finite levels, and the opportunity's honest
-//     `dataSource` (SIMULATOR / LIVE_FEED / …) is carried in metadata + label.
+//     BUY/SELL opportunity with finite levels from a scan the scanner page
+//     would still act on (≤30 s old, live + tradeable, final read TRADE_WATCH;
+//     see isDrawableScannerRow), every level names its scan timeframe, and the opportunity's honest
+//     `dataSource` (SIMULATOR / LIVE_FEED / …) is carried in metadata, and the
+//     entry label names any non-live source in plain English.
 //   - Any fetch failure renders NOTHING (no fake lines), and never throws into
 //     the chart — chart rendering and the Eleanor/scanner pages keep working.
 //   - This hook never re-runs per candle: scanner polling is on a fixed
@@ -87,6 +72,12 @@ interface ScannerOpportunityLite {
   stopLoss: number;
   takeProfit: number;
   dataSource: string;
+  /** When this row was analysed (server ISO stamp). */
+  generatedAt?: string | null;
+  /** Server feed state for this row: only "live" may be drawn as a signal. */
+  dataStatus?: string;
+  /** Server says this row is on a live feed that may be traded. */
+  tradeable?: boolean;
   finalRead?: { label?: string; headline?: string } | null;
   /** HTF Trend FVG Pullback advisory block (Task #675). Display-only. */
   fvgRead?: {
@@ -95,6 +86,10 @@ interface ScannerOpportunityLite {
     htfAligned: boolean;
     activeFvg: { high: number; low: number; midpoint: number; direction: "bullish" | "bearish"; isMitigated: boolean } | null;
     canSignal: boolean;
+    /** Timeframe the FVG zone was found on (server: always "M5"). */
+    entryTimeframe?: string;
+    /** Close time of the newest closed M5 bar the read used. */
+    asOf?: string | null;
     overlays: Array<{
       id: string;
       kind: "zone" | "line" | "marker";
@@ -118,14 +113,45 @@ export interface AiSignalSummary {
   timeframeMatchesChart: boolean;
   side: ScannerSide;
   bias: string;
-  /** 0..1 (confidenceScore / 100). */
+  /** 0..1 (confidenceScore / 100). Overlay opacity hint only; 0 when the score is missing. */
   confidence: number;
+  /**
+   * The scanner's raw 0..100 heuristic score (mean of setup quality, entry
+   * quality and inverted risk; not a win probability). Null when the scanner
+   * sent no finite score, so the panel can say so instead of showing 0.
+   */
+  confidenceScore: number | null;
   statusBadge: string;
   dataSource: string;
   entry: number;
   stopLoss: number;
   takeProfit: number;
   finalReadHeadline: string | null;
+  /**
+   * Epoch ms after which this signal is older than the scanner's 30 s limit
+   * (row or scan stamp, whichever expires first) and must stop being drawn.
+   */
+  freshUntilMs: number;
+}
+
+/**
+ * The only scanner rows the chart may draw as a BUY/SELL signal: the same rule
+ * the scanner page uses before it offers a trade (recent scan, live and
+ * tradeable row), plus a final read that is a trade watch. A NO_TRADE, AVOID
+ * or WAIT final read, a stale or simulated row, or an old scan draws nothing.
+ */
+export function isDrawableScannerRow(
+  o: Pick<ScannerOpportunityLite, "generatedAt" | "dataStatus" | "tradeable" | "finalRead">,
+  scanGeneratedAt: string | null | undefined,
+  now: number,
+): boolean {
+  if (!canUseScannerOpportunity({
+    generatedAt: o.generatedAt ?? null,
+    scanGeneratedAt: scanGeneratedAt ?? null,
+    dataStatus: o.dataStatus,
+    tradeable: o.tradeable,
+  }, now)) return false;
+  return (o.finalRead?.label ?? "") === "TRADE_WATCH";
 }
 
 export type EleanorReadStatus = "idle" | "loading" | "ok" | "insufficient" | "error";
@@ -168,7 +194,13 @@ function toSignalSummary(
   o: ScannerOpportunityLite,
   symbol: string,
   chartTimeframe: string,
+  scanGeneratedAt: string | null,
+  now: number,
 ): AiSignalSummary | null {
+  if (!isDrawableScannerRow(o, scanGeneratedAt, now)) return null;
+  const rowExpiry = nextScannerMapFreshnessChange(o.generatedAt ?? null, now);
+  const scanExpiry = nextScannerMapFreshnessChange(scanGeneratedAt, now);
+  if (rowExpiry == null || scanExpiry == null) return null;
   const action = (o.recommendedAction || "").toUpperCase();
   const side: ScannerSide | null =
     action === "BUY" ? "BUY" : action === "SELL" ? "SELL" : null;
@@ -187,13 +219,35 @@ function toSignalSummary(
     side,
     bias: o.bias || "",
     confidence: conf,
+    confidenceScore: Number.isFinite(o.confidenceScore)
+      ? Math.max(0, Math.min(100, o.confidenceScore))
+      : null,
     statusBadge: o.statusBadge || "",
     dataSource: o.dataSource || "",
     entry: o.entry,
     stopLoss: o.stopLoss,
     takeProfit: o.takeProfit,
     finalReadHeadline: o.finalRead?.headline?.trim() || null,
+    freshUntilMs: Math.min(rowExpiry, scanExpiry),
   };
+}
+
+// Plain-English copy for the scanner's data-source tag, shared by the chart's
+// signal line labels and the overlay panel's chip. It names the source the
+// scanner read WHEN IT SCANNED, not the chart's current feed, so "live" is
+// always qualified as "scanned on". Unknown tokens never leak.
+const SCANNER_DATA_SOURCE_LABELS: Record<string, string> = {
+  LIVE_FEED: "Scanned on live feed",
+  LIVE_DELAYED: "Scanned on delayed feed",
+  STALE_FEED: "Scanned on stale feed",
+  SIMULATOR: "Simulated data",
+  AWAITING_FEED: "No market data yet",
+  HISTORY_READY_AWAITING_LIVE_TICK: "History only, no live tick yet",
+};
+
+export function scannerDataSourceLabel(source: string | null | undefined): string {
+  if (!source) return "Source not reported";
+  return SCANNER_DATA_SOURCE_LABELS[source] ?? "Unrecognised source";
 }
 
 /** Build `source:"signal"` overlays from a scanner summary. */
@@ -202,7 +256,12 @@ export function buildSignalOverlays(
   symbol: string,
 ): ChartOverlay[] {
   const arrow = sig.side === "BUY" ? "▲" : "▼";
-  const tag = sig.dataSource && sig.dataSource !== "LIVE_FEED" ? ` · ${sig.dataSource}` : "";
+  // Every drawn level names the scan timeframe it came from, so an H4 level on
+  // a 1m chart is never read as this chart's own setup.
+  const tf = sig.timeframe ? ` ${sig.timeframe}` : "";
+  // A non-live (or unreported) source is named in plain English on the entry
+  // line; the raw token stays in metadata only.
+  const tag = sig.dataSource === "LIVE_FEED" ? "" : ` · ${scannerDataSourceLabel(sig.dataSource)}`;
   const meta = {
     source: "signal",
     side: sig.side,
@@ -215,7 +274,7 @@ export function buildSignalOverlays(
       type: "line",
       symbol,
       price: sig.entry,
-      label: `Scanner ${sig.side} ${arrow} Entry${tag}`,
+      label: `Scanner${tf} ${sig.side} ${arrow} Entry${tag}`,
       severity: "info",
       source: "signal",
       confidence: sig.confidence,
@@ -228,7 +287,7 @@ export function buildSignalOverlays(
       type: "line",
       symbol,
       price: sig.stopLoss,
-      label: "Scanner SL",
+      label: `Scanner${tf} SL`,
       severity: "danger",
       source: "signal",
       confidence: sig.confidence,
@@ -241,7 +300,7 @@ export function buildSignalOverlays(
       type: "line",
       symbol,
       price: sig.takeProfit,
-      label: "Scanner TP",
+      label: `Scanner${tf} TP`,
       severity: "success",
       source: "signal",
       confidence: sig.confidence,
@@ -254,7 +313,7 @@ export function buildSignalOverlays(
       type: "marker",
       symbol,
       price: sig.entry,
-      label: `Scanner ${sig.side}`,
+      label: `Scanner${tf} ${sig.side}`,
       severity: sig.side === "BUY" ? "success" : "danger",
       source: "signal",
       confidence: sig.confidence,
@@ -343,7 +402,16 @@ export function buildFvgOverlays(
     return [];
   }
   const out: ChartOverlay[] = [];
-  for (const raw of fvg.overlays) {
+  // The read is computed on M5 bars whatever chart timeframe is showing, so
+  // every drawn level says which timeframe it came from and as of when.
+  const tfLabel = typeof fvg.entryTimeframe === "string" && fvg.entryTimeframe ? fvg.entryTimeframe : "M5";
+  const asOfMs = typeof fvg.asOf === "string" ? Date.parse(fvg.asOf) : NaN;
+  const asOfLabel = Number.isFinite(asOfMs)
+    ? ` as of ${new Date(asOfMs).toISOString().slice(11, 16)} UTC`
+    : "";
+  const suffix = ` (${tfLabel} FVG read${asOfLabel})`;
+  for (const raw0 of fvg.overlays) {
+    const raw = { ...raw0, label: `${raw0.label}${suffix}` };
     const kind = raw.kind;
     if (kind === "zone") {
       if (
@@ -531,6 +599,9 @@ export function useAiChartOverlays({
         const list: ScannerOpportunityLite[] = Array.isArray(res?.opportunities)
           ? res.opportunities
           : [];
+        const scanGeneratedAt: string | null =
+          typeof res?.generatedAt === "string" ? res.generatedAt : null;
+        const now = Date.now();
         // Prefer an opportunity on the chart's own timeframe; otherwise fall
         // back to any same-symbol opportunity (its timeframe is surfaced
         // honestly so a different-timeframe read is never shown as this one).
@@ -540,7 +611,14 @@ export function useAiChartOverlays({
           symMatches.find((o) => (o.timeframe || "").toUpperCase() === tfUpper) ??
           symMatches[0] ??
           null;
-        setSignal(match ? toSignalSummary(match, normalized, timeframe) : null);
+        // Only a row the scanner itself would still act on may be drawn as a
+        // signal: same timeframe first, else another timeframe (labelled).
+        const drawable = symMatches.filter((o) => isDrawableScannerRow(o, scanGeneratedAt, now));
+        const signalRow =
+          drawable.find((o) => (o.timeframe || "").toUpperCase() === tfUpper) ??
+          drawable[0] ??
+          null;
+        setSignal(signalRow ? toSignalSummary(signalRow, normalized, timeframe, scanGeneratedAt, now) : null);
         setFvgOpp(match ? { symbol: match.symbol, fvgRead: match.fvgRead ?? null } : null);
         setScannerStatus("ok");
       } catch {
@@ -562,6 +640,16 @@ export function useAiChartOverlays({
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [normalized, timeframe, suppressed]);
+
+  // A drawn signal disappears the moment its scan passes the 30 s limit, even
+  // between polls (or while a hidden tab has polling paused).
+  useEffect(() => {
+    if (!signal) return;
+    const wait = signal.freshUntilMs - Date.now();
+    if (wait <= 0) { setSignal(null); return; }
+    const t = setTimeout(() => setSignal((cur) => (cur === signal ? null : cur)), wait);
+    return () => clearTimeout(t);
+  }, [signal]);
 
   // Monotonic request token. Bumped on every new Eleanor request AND whenever the
   // instrument changes, so a slow in-flight read can never apply its result to a

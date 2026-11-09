@@ -6,9 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CalculateTraderSkillProfile200Signals } from "./calculateTraderSkillProfile200Signals";
+import type { TraderSkillPillar } from "./traderSkillPillar";
 import type { TraderSkillProfile } from "./traderSkillProfile";
 
 export type CalculateTraderSkillProfile200 = {
   profile?: TraderSkillProfile;
   signals?: CalculateTraderSkillProfile200Signals;
+  /** Pillars with no evidence in this computation (each counted as 0 in totalScore). */
+  unmeasuredPillars?: TraderSkillPillar[];
 };

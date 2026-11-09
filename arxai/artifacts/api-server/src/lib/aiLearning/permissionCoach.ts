@@ -63,9 +63,13 @@ function pickTopBlocker(v: PermissionVerdict): { headline: string; recommendatio
         recommendation: "Investigate what triggered the kill switch before resetting it from the Emergency page.",
       };
     case "LIVE_LOCKED_USER":
+      // A stored preference: it fails the trade-plan and confirmation checks,
+      // but no live order path reads it, so it is not "live trading locked".
       return {
-        headline: "You manually locked live trading.",
-        recommendation: "Unlock from Risk Settings when you're ready.",
+        headline: "Your live mode lock preference is on.",
+        recommendation:
+          "While it is on, trade plans and Pre-Trade Confirmation requests are blocked, but live orders are not checked against it. " +
+          "Turn it off in Risk Settings when you no longer want those blocked.",
       };
     case "DAILY_LOSS_LIMIT":
       return {

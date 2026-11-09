@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, RefreshCw, ShieldCheck, Eye, History } from "lucide-react";
 import { TradeActionReviewModal, type TradeActionSummary } from "@/components/action-center/TradeActionReviewModal";
 import { humanizeReason } from "@/lib/friendlyLabels";
+import { useAssistantName } from "@/lib/assistant-name";
 
 const PENDING_STATUSES = new Set([
   "ai_suggested","user_reviewing","awaiting_confirmation","confirmed","guard_checking","queued","sent_to_mt5",
@@ -33,6 +34,27 @@ const STATUS_BADGE: Record<string, "default" | "secondary" | "outline" | "destru
   cancelled: "outline",
 };
 
+// The list endpoint returns the full server summary; these extra fields say
+// who refused a rejected action.
+type ListedAction = TradeActionSummary & {
+  guardResult?: { passed?: boolean } | null;
+  executionVenue?: string | null;
+};
+
+// Attribute a rejection to whoever actually refused it. A failed ARX
+// pre-trade guard stops the action before any broker or venue queue sees it;
+// only a refusal the broker reported back (broker message or error code) is
+// labelled "Broker". Anything else is stated without an attribution — its
+// reason text names the queue that refused it.
+function rejectionLine(a: ListedAction): string {
+  const reason = humanizeReason(a.rejectionReason);
+  if (a.guardResult?.passed === false) {
+    return `Blocked by an ARX safety check (not sent to a broker): ${reason}`;
+  }
+  if (a.brokerMessage || a.errorCode) return `Broker: ${reason}`;
+  return `Rejected: ${reason}`;
+}
+
 interface AuditEvent {
   id: number;
   eventType: string;
@@ -43,8 +65,9 @@ interface AuditEvent {
 }
 
 export default function ActionCenterPage() {
+  const { name: assistantName } = useAssistantName();
   const [tab, setTab] = useState<"pending" | "all">("pending");
-  const [actions, setActions] = useState<TradeActionSummary[]>([]);
+  const [actions, setActions] = useState<ListedAction[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<TradeActionSummary | null>(null);
@@ -93,8 +116,8 @@ export default function ActionCenterPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" /> Trade Action Center
           </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Review, confirm, and audit every AI-suggested or user-initiated trade action. ARX never executes automatically — every action requires your explicit confirmation. Decision support only — not guaranteed.
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl" data-testid="text-action-center-scope">
+            Review, confirm, and audit trade actions. Actions drafted for you here — AI suggestions and your own requests — are never sent until you confirm them. Other automation does not wait for that, and its orders are not listed on this page: autopilot sessions place simulator and paper trades on their own; Self-Trade AI agents, once an operator starts them, can open trades and move stops on or close MT5 positions; the post-fill protection check restores a missing or widened stop loss by itself; and {assistantName}'s trade watches, once you allow AI-Assisted authority, can open a trade at your chosen level or close a watched trade by themselves (at your level, straight away when the trade is invalidated or reaches your stop, or after three unanswered reversal alerts). Those orders are shown in {assistantName}'s watch list and notifications, not here. Protective Auto-Close does appear here: when its policy allows, it confirms its own close actions. Decision support only — not guaranteed.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={reload} disabled={loading} data-testid="button-refresh-actions">
@@ -145,7 +168,7 @@ export default function ActionCenterPage() {
                     )}
                     {a.status === "rejected" && a.rejectionReason && (
                       <p className="text-[11px] text-destructive mt-0.5" data-testid={`text-rejected-${a.id}`}>
-                        Broker: {humanizeReason(a.rejectionReason)}
+                        {rejectionLine(a)}
                       </p>
                     )}
                     <p className="text-[10px] text-muted-foreground/70 mt-0.5">{new Date(a.createdAt).toLocaleString()}</p>

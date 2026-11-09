@@ -10,6 +10,7 @@ import { listAudit, getAuditById, exportAudit, seedAuditDemo, auditEvent } from 
 import { getConfig } from "../lib/systemHealth/config.js";
 import { performAdminAction, listAdminActions, ALLOWED_ADMIN_ACTIONS, FORBIDDEN_ADMIN_ACTIONS, seedAdminDemo } from "../lib/systemHealth/admin.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readPlatformLivePosture } from "../lib/systemHealth/platformLivePosture.js";
 
 const router: Router = Router();
 const TAG = "Build MM — System Health, Audit, and Admin Control Center. Diagnostics + safe admin only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets.";
@@ -23,6 +24,15 @@ function envelope(body: Record<string, unknown>) {
     ...body,
   };
 }
+
+// The config registry (lib/systemHealth/config.ts) hard-locks appMode
+// "PAPER_ONLY" and liveTradingEnabled false in code; they are never read from
+// anywhere, and getConfig() output is persisted as-is in admin action
+// snapshots, so it is not changed. /status and /config say what those fields
+// are and carry the platform live-execution switch as read for the response
+// (UNKNOWN when unreadable). Describes only; no gate reads it.
+const CONFIG_LIVE_STATUS_SCOPE =
+  "config.appMode and config.liveTradingEnabled (and this response's liveTradingStatus / mode / canPlaceLiveTrade) are fixed in code for this paper-stack config registry, which cannot enable live trading. They are not whether live trading is on: livePosture is the platform's live-execution switch as read for this response, and each account's status is on its Trading Permission card.";
 
 // ─── Admin gate — same canonical per-user-cookie pattern used by
 // adminAuditCenter.ts. Reads role from the per-user authUser session populated
@@ -42,7 +52,10 @@ router.get("/system-health/status", async (_req, res) => {
   try {
     const cfg = await getConfig();
     const recent = await listHealthChecks(1);
-    res.json(envelope({ config: cfg, lastHealthCheck: recent[0] ?? null }));
+    res.json(envelope({
+      config: cfg, lastHealthCheck: recent[0] ?? null,
+      liveTradingStatusScope: CONFIG_LIVE_STATUS_SCOPE, livePosture: await readPlatformLivePosture(),
+    }));
   } catch (err) { res.status(500).json(envelope({ error: "status failed", detail: String(err).slice(0, 200) })); }
 });
 
@@ -75,7 +88,10 @@ router.get("/system-health/subsystems/:build", async (req, res) => {
 });
 
 router.get("/system-health/config", async (_req, res) => {
-  try { res.json(envelope({ config: await getConfig() })); }
+  try {
+    const config = await getConfig();
+    res.json(envelope({ config, liveTradingStatusScope: CONFIG_LIVE_STATUS_SCOPE, livePosture: await readPlatformLivePosture() }));
+  }
   catch (err) { res.status(500).json(envelope({ error: "config failed", detail: String(err).slice(0, 200) })); }
 });
 

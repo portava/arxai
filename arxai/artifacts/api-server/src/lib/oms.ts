@@ -427,6 +427,11 @@ export function pnlSummary(env?: Environment, scope?: OmsOwnerScope) {
     winRate: wins + losses > 0 ? Number(((wins / (wins + losses)) * 100).toFixed(1)) : 0,
     averageR: avgR,
     maxDrawdown: Number(dd.toFixed(2)),
+    // With no closed positions, winRate, averageR and maxDrawdown above were
+    // not measured (they read 0); closedCount lets a reader say so.
+    closedCount: closed.length,
+    // dailyPnL is the UTC calendar day (00:00 UTC onward), not the viewer's day.
+    dayBoundary: "UTC" as const,
     dataSource: "SIMULATOR" as const,
   };
 }
@@ -489,7 +494,8 @@ export function omsDashboardSummary() {
   return {
     openPositions: open.length,
     pendingOrders: listOrders({ status: "APPROVED_FOR_SIMULATION" }).length + listOrders({ status: "PENDING_MT5_CONNECTION" }).length,
-    todayPnL: Number(closedToday.reduce((a, b) => a + b.realizedPnL, 0).toFixed(2)),
+    // Booked by the day each realization happened, as pnlSummary().dailyPnL is.
+    todayPnL: Number(Array.from(positions.values()).flatMap((p) => p.realizations).filter((r) => r.at.slice(0, 10) === today).reduce((a, r) => a + r.pnl, 0).toFixed(2)),
     bestTradeToday: best ? { symbol: best.symbol, pnl: best.realizedPnL } : null,
     worstTradeToday: worst ? { symbol: worst.symbol, pnl: worst.realizedPnL } : null,
     pendingMt5Intents: Array.from(orders.values()).filter((o) => o.status === "PENDING_MT5_CONNECTION").length,

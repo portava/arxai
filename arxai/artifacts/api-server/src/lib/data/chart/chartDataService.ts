@@ -38,17 +38,35 @@ import {
   resolveDerivSymbol,
 } from "../providers/derivProvider.js";
 import { trailingIntervalGap } from "./candleNormalization.js";
+import { trailingIntervalsFromOpen } from "@workspace/domain/market";
 import { runCandleTruth, type TimeframeTruthResult } from "./candleTruthEngine.js";
 import { getSymbolProfile } from "./symbolProfile.js";
 import { getSessionProfile, type WeeklyPresenceProfile } from "./sessionProfile.js";
 import type { NormalizedChartCandle } from "./candleNormalization.js";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
-import { buildFeedStatus, type FeedQuality } from "../freshness.js";
+import { mt5BarBrokerClockOffsetMs } from "../providers/mt5Provider.js";
+import {
+  barOpenUtcMs,
+  buildFeedStatus,
+  feedTimestampsUnconfirmed,
+  newestBarLeadMs,
+  FUTURE_STAMPED_SERIES_NOTE,
+  MARKET_FROZEN_WALL_FRESH_MS,
+  PROVIDER_DELAYED_WARNING,
+  scheduledWeekendClosure,
+  type FeedQuality,
+} from "../freshness.js";
+import {
+  attachSeriesAttribution,
+  seriesAttributionFrom,
+  type ChartSeriesAttribution,
+} from "./brokerQuoteBinding.js";
 import {
   getFormingBar,
   isFormingTickSource,
   getFormingTickAgeMs,
+  getFeedFreshness,
   type FormingBarSnapshot,
 } from "./formingBarComposer.js";
 
@@ -59,8 +77,6 @@ import {
 export type ChartQuality = FeedQuality;
 
 export interface ChartFeedStatus {
-  /** Display-only history never grants live or AI authority. */
-  notLiveReason?: "stored_history" | null;
   symbol: string;
   displaySymbol: string;
   assetClass: AssetClass;
@@ -93,6 +109,19 @@ export interface ChartFeedStatus {
    * never changes the quality verdict on its own.
    */
   completenessReason: string | null;
+  /**
+   * Why the series is not live although its bars may be clean: the market is
+   * in its scheduled weekend close ("market_closed"), or the bars are
+   * stored history with no live feed behind them ("stored_history": the
+   * router's MT5 mirror with no bridge pushing them, or the display-only
+   * stored-history fallback a chart display route opts into, which never
+   * grants live or AI authority). null when neither applies, or when the bars
+   * failed their checks (quality partial / invalid / empty; stale too for the
+   * MT5 mirror) — the message then names that failure, so the series is not
+   * "history" to read. Lets consumers that bucket freshness (e.g. the symbol
+   * snapshot's DELAYED) say what the chart says instead of "delayed".
+   */
+  notLiveReason?: "market_closed" | "stored_history" | null;
 }
 
 export interface ChartCandlesResponse {
@@ -131,6 +160,8 @@ function resolveDisplaySymbol(symbol: string, assetClass: AssetClass): string {
 
 interface BuiltFeed {
   marketEvidence: TruthReadEvidence | null;
+  /** Observed router provenance of the served series (server-internal). */
+  seriesAttribution: ChartSeriesAttribution | null;
   assetClass: AssetClass;
   displaySymbol: string;
   source: string | null;
@@ -207,13 +238,11 @@ async function buildChartFeed(
   const source = result.primaryProvider;
   const providerDelayed = result.provenance?.delayed === true;
 
-  // Latency: the winning provider's measured ms, else total probe cost.
+  // Latency: the winning provider's server-side read time (ms). When nothing
+  // was served there is no read to time — the cost of failed probes is not a
+  // feed latency, so it reports unknown (null) rather than their sum.
   const okAttempt = result.attempts.find((a) => a.ok);
-  const latencyMs = okAttempt
-    ? okAttempt.ms
-    : result.attempts.length > 0
-      ? result.attempts.reduce((s, a) => s + a.ms, 0)
-      : null;
+  const latencyMs = okAttempt ? okAttempt.ms : null;
 
   // ── Phase 1: run truth engine over raw candles ─────────────────────────
   let candles: NormalizedChartCandle[];
@@ -228,6 +257,33 @@ async function buildChartFeed(
     sessionProfile = await getSessionProfile(symbol, timeframe, now);
   }
 
+  // Tick evidence for this series' source, read once and shared by the truth
+  // engine's STALE reason and the feed status below, so the two never
+  // disagree on whether the market is closed. The MT5 broker tick also backs
+  // "Last tick". A quote that observably moved in the last two minutes means
+  // the market is trading, whatever the static weekend schedule says.
+  // Stored history (display-only fallback) gets no live tick evidence, exactly
+  // as it gets no forming tip: a live tick must not be attached to stored bars.
+  const mt5TickFreshness = !storedHistory && source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker") : null;
+  const tickSource = !storedHistory && isFormingTickSource(source) ? source : null;
+  const tickFreshness = tickSource === "mt5_broker"
+    ? mt5TickFreshness
+    : tickSource
+      ? getFeedFreshness(symbol, now, tickSource)
+      : null;
+  const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
+  const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+  // Three-state evidence for the truth engine: true = a quote moved (trading),
+  // false = ticks are still arriving with a frozen quote (positive evidence of
+  // a closed market), null = nothing was checked (no tick since boot, a dead
+  // tick feed, or a source with no tick stream). Only false lets its STALE
+  // reason state a scheduled weekend close; null keeps it hedged.
+  const tradingEvidence: boolean | null = tradingObserved
+    ? true
+    : tickFreshness?.marketFrozen === true
+      ? false
+      : null;
+
   if (result.candles.length > 0) {
     const tr = runCandleTruth(result.candles, {
       symbol,
@@ -238,6 +294,7 @@ async function buildChartFeed(
       limit,
       now,
       sessionProfile,
+      tradingObserved: tradingEvidence,
     });
     candles = tr.verifiedCandles;
     truthResult = tr.truthResult;
@@ -283,13 +340,59 @@ async function buildChartFeed(
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
-  // Trailing-gap + newest provider candle precede any appended display tip.
-  // A provider forming bar can have a scheduled future closeTime; that is not
-  // the closed-bar observation carried separately in marketEvidence.
-  const trailing = trailingIntervalGap(candles, timeframe, now);
   const lastCandle = candles[candles.length - 1] ?? null;
   const lastCandleTime = lastCandle ? lastCandle.closeTime : null;
-  const lastTickTime = derivSymbolStatus?.lastTickAt ?? null;
+  // Future-stamp bound uses the newest provider bar's OPEN time, not its
+  // closeTime: a forming bar legitimately has a scheduled closeTime after now,
+  // but no bar can open before its first tick. Bounded by an absolute
+  // clock-skew allowance (ms), never by "one interval". A series the producer
+  // observed stamped ahead of its receipt time stays unconfirmed even after it
+  // stalls into a past-looking open time (sticky producer note).
+  //
+  // Broker clock (audit H7): an MT5 bar is broker-server-clock time, not UTC.
+  // With a MEASURED broker-clock offset — the bar's own time-basis evidence,
+  // else the serving bridge's offset measured from its own ticks (attributed
+  // in-memory series only) — the bound compares bar time minus that offset, so
+  // a correctly broker-stamped series is not "future". With no measured offset
+  // (unattributed writer, MT5 mirror, stored history, no tick yet) the raw bar
+  // time is compared: fail closed. Bar times themselves are not rewritten.
+  const servedMt5BridgeId = result.ok && result.provenance?.providerId === "mt5_broker" && result.provenance.subProviderId == null
+    ? result.provenance.bridgeConnectionId ?? null
+    : null;
+  const newestOpenOffsetMs = lastCandle ? mt5BarBrokerClockOffsetMs(lastCandle, servedMt5BridgeId) : null;
+  // The newest provider bar's open on the UTC clock (raw when no offset is
+  // measured) for the future-stamp lead.
+  const newestOpenRawMs = lastCandle ? Date.parse(lastCandle.openTime) : null;
+  const newestOpenUtcMs = newestOpenRawMs != null ? barOpenUtcMs(newestOpenRawMs, newestOpenOffsetMs) : null;
+  // The trailing gap and the weekend-closure test age the bar by the EARLIER
+  // of its raw and offset-corrected opens. With a measured +2h offset a
+  // stalled broker-time series is aged by its real UTC open, so its negative
+  // raw gap can no longer read "clean" once the lead check stops failing it
+  // closed. A measured offset only ever makes the bar older here: a negative
+  // "offset" can also come from a stale tick seen first (an old broker time
+  // minus the EA's current clock), and that would make a stalled series look
+  // current, so the raw stamp stands when it is the earlier one.
+  const newestOpenAgeMs = newestOpenRawMs != null && newestOpenUtcMs != null
+    ? Math.min(newestOpenRawMs, newestOpenUtcMs)
+    : null;
+  // Trailing gap of the newest provider candle, before any appended display
+  // tip. A provider forming bar can have a scheduled future closeTime; that is
+  // not the closed-bar observation carried separately in marketEvidence.
+  const trailing = newestOpenOffsetMs != null && newestOpenAgeMs != null
+    ? trailingIntervalsFromOpen(newestOpenAgeMs, timeframeMs(timeframe), now)
+    : trailingIntervalGap(candles, timeframe, now);
+  const newestOpenLeadMs = newestOpenUtcMs != null ? newestBarLeadMs(newestOpenUtcMs, now) : null;
+  const futureStampObserved = result.ok && (result.provenanceNotes ?? []).includes(FUTURE_STAMPED_SERIES_NOTE);
+  const timestampsUnconfirmed = feedTimestampsUnconfirmed({ trailingIntervals: trailing, newestOpenLeadMs, futureStampObserved });
+  // "Last tick": the Deriv WS tick for a Deriv-served series, else the MT5
+  // broker tick the server last RECEIVED for this symbol (receive time — the
+  // broker clock is not zone-verified). A quote the broker is only replaying
+  // (market frozen) is not a new tick, so it reports unknown, never "just now".
+  const lastTickTime = derivBacked
+    ? derivSymbolStatus?.lastTickAt ?? null
+    : mt5TickFreshness && !mt5TickFreshness.marketFrozen
+      ? new Date(mt5TickFreshness.lastTickWallMs).toISOString()
+      : null;
 
   // ── Forming tip (Task #496, opt-in, any live provider) ────────────────
   // Fold the live-tick forming bar onto the newest bar for the DISPLAY surface.
@@ -365,12 +468,11 @@ async function buildChartFeed(
     completenessReason: truthResult?.completenessReason ?? null,
     formingTipPresent,
     formingTickAgeMs,
+    newestOpenLeadMs,
+    futureStampObserved,
   });
   const quality = verdict.quality;
-  const historyMessage = storedHistory
-    ? storedHistoryMessage(source, displaySymbol, lastCandle?.openTime ?? null, now)
-    : null;
-  const warning = historyMessage ?? verdict.warning;
+  let warning = verdict.warning;
   const stale = verdict.stale;
   const aiUsable = !storedHistory && verdict.aiUsable;
 
@@ -378,15 +480,71 @@ async function buildChartFeed(
   // forming tip is present its tick freshness (folded into the verdict) governs
   // liveness — a frozen tip (>15s silent) reads NOT live even though a closed
   // bar still trails by only one interval.
+  //
+  // The durable market_candles mirror (tryMt5Candles step 2) is never live: it
+  // is served only when no bridge is currently pushing this series, it carries
+  // no bridge/owner attribution and its entitlement delay is unknown. Its bars
+  // are real stored broker bars (quality still describes them), but nothing
+  // backs a "live" claim.
+  const durableMirror = result.ok && result.provenance?.subProviderId === DURABLE_MIRROR_SUB_PROVIDER;
+  //
+  // Scheduled weekend closure: on coarse timeframes the newest bar of a closed
+  // market stays within one interval of the epoch-aligned "current" bar for
+  // hours (D1: all Saturday morning), so the trailing gap alone reads current.
+  // When the instrument's session is in its weekend window, the newest
+  // provider bar opened before the scheduled close, and no tick for this
+  // series' source has observably MOVED in the last two minutes (the EA keeps
+  // replaying a frozen quote on weekends), nothing shows a trading market —
+  // the series is not live. Observed trading always beats the static schedule.
+  // (`tradingObserved` is read before the truth engine runs. The engine's
+  // STALE reason is stricter: it states a weekend close only when ticks
+  // still arrive with a frozen quote, and stays hedged when no tick evidence
+  // exists — see `tradingEvidence`.)
+  const session = getSymbolProfile(symbol, assetClass).session;
+  const closure = lastCandle && !tradingObserved
+    ? scheduledWeekendClosure(session, now)
+    : null;
+  // Compared on the same clock as the trailing gap (a GMT+2 broker's last
+  // Friday H1 bar opens at 23:00 broker = 21:00 UTC, before a 22:00 close).
+  const marketClosedAtMs = closure && newestOpenAgeMs != null && newestOpenAgeMs < closure.closedAtMs
+    ? closure.closedAtMs
+    : null;
   const reachable = source != null && candles.length > 0;
-  const isLive = !storedHistory && !providerDelayed && (formingTipPresent
-    ? reachable && !verdict.stale
-    : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick));
+  // Codex stored history (display-only fallback, storedCandleHistory.ts) and
+  // a known provider delay are never live either.
+  const isLive = storedHistory || providerDelayed || timestampsUnconfirmed || durableMirror || marketClosedAtMs != null
+    ? false
+    : formingTipPresent
+      ? reachable && !verdict.stale
+      : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick);
 
-  const message = historyMessage ?? buildMessage(quality, source, displaySymbol);
+  const messageCtx: MessageContext = {
+    isLive,
+    durableMirror,
+    storedHistory,
+    newestOpenTime: lastCandle?.openTime ?? null,
+    marketClosedAtMs,
+    alwaysOpen: session.alwaysOpen,
+    trailingIntervals: verdict.trailingIntervals,
+  };
+  // Stored history whose bars passed their checks (clean / delayed / stale —
+  // stored bars are usually old) is described as history; bars that failed
+  // their checks are described as that failure, never as readable history.
+  const historyMessage = storedHistory && readableNotLiveQuality(quality)
+    ? storedHistoryMessage(source, displaySymbol, lastCandle?.openTime ?? null, now)
+    : null;
+  const message = historyMessage ?? buildMessage(quality, source, displaySymbol, messageCtx);
+  // The shared verdict's lag warning cannot see the session: never let it
+  // call a closed (or possibly closed) market a stale feed. Wording only —
+  // quality, stale and isLive are unchanged.
+  // A known provider delay stays disclosed beside that wording (the closed-
+  // market sentence alone would drop the Codex provider-delay warning).
+  const lag = lagWarning(quality, displaySymbol, messageCtx);
+  warning = historyMessage
+    ?? (lag != null && providerDelayed ? `${lag} ${PROVIDER_DELAYED_WARNING}` : lag)
+    ?? warning;
 
   const status: ChartFeedStatus = {
-    ...(storedHistory ? { notLiveReason: "stored_history" as const } : {}),
     symbol,
     displaySymbol,
     assetClass,
@@ -407,13 +565,15 @@ async function buildChartFeed(
     feedReadinessState: derivSymbolStatus?.feedReadinessState ?? null,
     message,
     completenessReason: verdict.completenessReason,
+    notLiveReason: notLiveReasonFor(quality, messageCtx),
   };
 
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
   return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
-    marketEvidence: storedHistory ? null : prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
+    marketEvidence: storedHistory ? null : prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null,
+    seriesAttribution: result.ok ? seriesAttributionFrom(result.provenance) : null };
 }
 
 function storedHistoryMessage(source: string | null, symbol: string, opened: string | null, now: number): string {
@@ -432,7 +592,9 @@ function storedHistoryMessage(source: string | null, symbol: string, opened: str
  */
 function friendlyFeedSource(source: string | null): string {
   if (!source) return "no source";
-  if (source === "mt5_broker") return "your broker's MetaTrader 5 feed";
+  // Never "your": the chart route has no viewer, and an unpinned MT5 read
+  // serves whichever bridge pushed last — possibly another user's terminal.
+  if (source === "mt5_broker") return "MetaTrader 5 broker bridge";
   if (source === "deriv" || source === "deriv_public") return "Deriv";
   if (source.startsWith("assistant_real:")) {
     const sub = source.slice("assistant_real:".length).trim();
@@ -441,18 +603,99 @@ function friendlyFeedSource(source: string | null): string {
   return source;
 }
 
+/** Router sub-provider id of the restart-surviving MT5 market_candles mirror. */
+const DURABLE_MIRROR_SUB_PROVIDER = "durable_mirror";
+
+interface MessageContext {
+  isLive: boolean;
+  durableMirror: boolean;
+  /** Display-only stored-history fallback (storedCandleHistory.ts). */
+  storedHistory?: boolean;
+  /** Newest provider bar's open time (ISO), before any display tip. */
+  newestOpenTime: string | null;
+  /** Scheduled weekend close (epoch ms) the series predates, or null. */
+  marketClosedAtMs: number | null;
+  /** The instrument trades 24/7 (it never has a session close). */
+  alwaysOpen?: boolean;
+  /** Bars the newest bar trails the current bar by, or null. */
+  trailingIntervals?: number | null;
+}
+
+/**
+ * Plain wording for a lagging series (quality stale or delayed) that does not
+ * call a closed market a stale feed:
+ *   - scheduled weekend closure the series predates → market closed;
+ *   - an instrument with session closes, outside that window → what was
+ *     observed (no new bar since …) and that the market may be closed or the
+ *     feed delayed (there is no reliable daily-session / holiday source);
+ *   - a 24/7 instrument → null (the generic stale/delayed wording is true).
+ */
+function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageContext): string | null {
+  if (quality !== "stale" && quality !== "delayed") return null;
+  if (ctx.marketClosedAtMs != null) {
+    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. Not a feed fault, and not live data.`;
+  }
+  if (quality === "stale" && ctx.alwaysOpen === false) {
+    const gap = typeof ctx.trailingIntervals === "number" && Number.isFinite(ctx.trailingIntervals) ? ctx.trailingIntervals : null;
+    if (gap == null || gap >= 2) {
+      const behind = gap == null ? "" : ` (${gap} bars behind the current bar)`;
+      return `No new ${displaySymbol} bar since one opened ${utcStamp(ctx.newestOpenTime)}${behind}. The market may be closed or the feed delayed; this is not live data.`;
+    }
+    // Bars are current but the live tick stream that forms the newest bar
+    // went silent (forming-tip path).
+    return `Live ticks for ${displaySymbol} have stopped, so the forming bar is frozen. The market may be closed or the feed delayed; this is not live data.`;
+  }
+  return null;
+}
+
+/** Qualities whose bars passed their checks and only lag (or are clean). */
+function readableNotLiveQuality(quality: ChartQuality): boolean {
+  return quality === "clean" || quality === "delayed" || quality === "stale";
+}
+
+function utcStamp(iso: string | null): string {
+  if (!iso) return "an unknown time";
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "an unknown time";
+  return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/**
+ * The not-live reason the chart's own message states, or null. Given only
+ * under the same quality conditions buildMessage uses for the closed-market /
+ * stored-candles wording: bars that failed their checks (partial, invalid,
+ * empty) are described as that failure, never as readable history.
+ */
+function notLiveReasonFor(quality: ChartQuality, ctx: MessageContext): "market_closed" | "stored_history" | null {
+  // The display-only stored-history fallback is served only when no live feed
+  // answered; its own message (history, not live) states that first.
+  if (ctx.storedHistory) return readableNotLiveQuality(quality) ? "stored_history" : null;
+  if (ctx.marketClosedAtMs != null && readableNotLiveQuality(quality)) return "market_closed";
+  if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) return "stored_history";
+  return null;
+}
+
 function buildMessage(
   quality: ChartQuality,
   source: string | null,
   displaySymbol: string,
+  ctx: MessageContext,
 ): string {
+  if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) {
+    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
+  }
+  if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
+    return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;
+  }
   switch (quality) {
     case "clean":
-      return `Live feed active for ${displaySymbol} (${friendlyFeedSource(source)}).`;
+      return ctx.isLive
+        ? `Live feed active for ${displaySymbol} (${friendlyFeedSource(source)}).`
+        : `Candles for ${displaySymbol} from ${friendlyFeedSource(source)} are complete but not confirmed live (newest bar opened ${utcStamp(ctx.newestOpenTime)}).`;
     case "delayed":
       return `Feed for ${displaySymbol} is delayed / not yet confirmed real-time.`;
     case "stale":
-      return `Feed for ${displaySymbol} is stale.`;
+      return lagWarning(quality, displaySymbol, ctx) ?? `Feed for ${displaySymbol} is stale.`;
     case "partial":
       return `Feed for ${displaySymbol} returned an incomplete candle sequence.`;
     case "invalid":
@@ -476,7 +719,9 @@ export async function getChartCandles(
   // chart-intelligence, timeframe agreement, market overview, truth audit) gets
   // closed bars only. The chart DISPLAY route passes true.
   const feed = await buildChartFeed(symbol, timeframe, limit, includeFormingTip, opts);
-  return {
+  // The series' observed identity rides along as a non-enumerable symbol
+  // property (read with chartSeriesAttribution); the JSON wire is unchanged.
+  return attachSeriesAttribution({
     symbol,
     displaySymbol: feed.displaySymbol,
     timeframe,
@@ -493,7 +738,7 @@ export async function getChartCandles(
     marketEvidence: feed.marketEvidence,
     truthResult: feed.truthResult,
     chartTruthScore: feed.chartTruthScore,
-  };
+  }, feed.seriesAttribution);
 }
 
 // feed-status probes with a small window — enough to assess liveness and

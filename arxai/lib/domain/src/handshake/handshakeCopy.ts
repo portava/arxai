@@ -133,6 +133,12 @@ export function buildHandshakeCopy(
         recommendations: ["Try again in a few moments."],
       };
 
+    case "NOT_CHECKED":
+      return {
+        userFacingMessage: "Not checked — this readiness check has nothing to evaluate here yet.",
+        recommendations: [],
+      };
+
     case "ERROR":
     default:
       return {

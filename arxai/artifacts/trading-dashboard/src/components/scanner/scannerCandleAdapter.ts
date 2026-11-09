@@ -12,7 +12,21 @@ import { chartVolumeEvidence, type CandleVolumeEvidence } from "@/lib/chart-engi
 // parsed to NaN and was filtered out, so a healthy backend still showed
 // "No live candles". `scannerCandleAdapter.test.ts` locks both shapes in.
 
-export type Candle = { volumeEvidence?: CandleVolumeEvidence; time: number; open: number; high: number; low: number; close: number };
+export type Candle = {
+  volumeEvidence?: CandleVolumeEvidence;
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  /**
+   * Server bar-completeness fact, carried through ONLY when the raw bar states
+   * it (`isComplete` / `isForming`): false for the still-forming tip. Absent on
+   * legacy shapes that never said. Display telemetry — the chart ignores it;
+   * the truth layer uses it to count CLOSED candles honestly.
+   */
+  isComplete?: boolean;
+};
 
 /**
  * Map raw candle objects (from /api/chart/candles, in either the
@@ -37,6 +51,9 @@ export function adaptChartCandles(arr: ReadonlyArray<Record<string, unknown>>): 
       low: Number(c.low ?? 0),
       close: Number(c.close ?? 0),
       ...(volumeEvidence ? {volumeEvidence} : {}),
+      ...(typeof c.isComplete === "boolean" || typeof c.isForming === "boolean"
+        ? { isComplete: !(c.isComplete === false || c.isForming === true) }
+        : {}),
     });})
     .filter((c) => Number.isFinite(c.time) && c.open > 0);
 }

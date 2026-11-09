@@ -39,7 +39,11 @@ interface CockpitSummary {
     activeWarnings: { code: string; message: string }[];
   };
   todayPerformance: { totalTrades: number; wins: number; losses: number; breakEven: number; netPnl: number; winRate: number; dayRating: string };
-  openPaperTrades: { id: number; symbol: string; direction: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string; openedAt: string; profitLoss: number }[];
+  /** profitLoss is null (profitLossStatus NOT_MEASURED) for an open order: floating P&L is not stored per order. */
+  openPaperTrades: { id: number; symbol: string; direction: string; lotSize: number; entryPrice: number; stopLoss: number; takeProfit: number; status: string; openedAt: string | null; profitLoss: number | null; profitLossStatus?: "NOT_MEASURED" }[];
+  /** UNAVAILABLE when the open orders could not be read (the list is then empty, not "no open trades"). Older servers omit it. */
+  openPaperTradesStatus?: "LOADED" | "UNAVAILABLE";
+  openPaperTradesNote?: string;
   coachSummary: { dailyFocus: string; mistakeToAvoid: string[]; setupsToWatch: string[]; setupsToAvoid: string[]; nextBestActions: string[] };
   notifications: { unreadAll: number; criticalUnread: number; criticalSamples: { id: number; type: string; priority: string; title: string; message: string; createdAt: string }[] };
   autopilot: { mode: string; liveTradingAllowed: false; allowedBySession: boolean; allowedByGovernor: boolean; sessionStatus: string; cooldowns: unknown[]; note: string };
@@ -58,11 +62,13 @@ async function postJSON<T>(path: string, body: unknown = {}, headers: Record<str
   return r.json();
 }
 
+// PASS_WITH_WARNINGS (readiness gate) and PAPER_CAUTION (Risk Governor) carry
+// soft warnings, so they wear the amber warning tone, never PASS's green.
 function StatusBadge({ status }: { status?: string }) {
   const s = (status ?? "UNKNOWN").toUpperCase();
-  const tone = s === "PASS" || s === "PASS_WITH_WARNINGS" || s === "PAPER_ALLOWED" || s === "PAPER_CAUTION" || s === "ACTIVE" || s === "OK"
+  const tone = s === "PASS" || s === "PAPER_ALLOWED" || s === "ACTIVE" || s === "OK"
     ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30"
-    : s === "PAPER_PAUSED" || s === "PAUSED" || s === "WATCH_ONLY" || s === "DEGRADED"
+    : s === "PASS_WITH_WARNINGS" || s === "PAPER_CAUTION" || s === "PAPER_PAUSED" || s === "PAUSED" || s === "WATCH_ONLY" || s === "DEGRADED"
     ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
     : s === "FAIL" || s === "BLOCKED" || s === "LOCKED" || s === "UNSAFE"
     ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30"
@@ -192,13 +198,29 @@ function ActiveSessionPanel({ s }: { s: CockpitSummary }) {
   );
 }
 
-function OpenTradesPanel({ s }: { s: CockpitSummary }) {
+const OPEN_TRADE_PNL_NOTE = "Floating P&L is not tracked per open order: the simulator adds it to the paper account's equity only. Each order's P&L is recorded when it closes.";
+
+/**
+ * P&L of one row in "Open paper trades". paper_orders.profitLoss is written
+ * only at close (its column default is 0), so an open order has no measured
+ * P&L: "—", never the stored 0. Only a closed row's recorded value is shown.
+ */
+function openTradePnl(o: CockpitSummary["openPaperTrades"][number]): number | null {
+  if (o.profitLossStatus === "NOT_MEASURED" || o.status === "OPEN") return null;
+  return typeof o.profitLoss === "number" && Number.isFinite(o.profitLoss) ? o.profitLoss : null;
+}
+
+export function OpenTradesPanel({ s }: { s: Pick<CockpitSummary, "openPaperTrades" | "openPaperTradesStatus" | "openPaperTradesNote"> }) {
   const t = s.openPaperTrades;
+  const unavailable = s.openPaperTradesStatus === "UNAVAILABLE";
+  const pnlNote = s.openPaperTradesNote ?? OPEN_TRADE_PNL_NOTE;
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FlaskConical className="h-4 w-4" />Open paper trades</CardTitle></CardHeader>
       <CardContent>
-        {t.length === 0 ? (
+        {unavailable ? (
+          <p className="text-sm text-amber-700 dark:text-amber-400" data-testid="open-paper-trades-unavailable">Open paper trades could not be loaded. This is not the same as having none.</p>
+        ) : t.length === 0 ? (
           <p className="text-sm text-muted-foreground">No open paper trades. They will appear here when paper execution opens positions.</p>
         ) : (
           <div className="overflow-x-auto -mx-2">
@@ -207,18 +229,26 @@ function OpenTradesPanel({ s }: { s: CockpitSummary }) {
                 <tr><th className="text-left px-2 py-1">Symbol</th><th className="text-left px-2 py-1">Side</th><th className="text-right px-2 py-1">Entry</th><th className="text-right px-2 py-1 hidden sm:table-cell">SL</th><th className="text-right px-2 py-1 hidden sm:table-cell">TP</th><th className="text-right px-2 py-1">P&L</th></tr>
               </thead>
               <tbody>
-                {t.map(o => (
-                  <tr key={o.id} className="border-t">
-                    <td className="px-2 py-1 font-mono">{o.symbol}</td>
-                    <td className="px-2 py-1"><Badge variant="outline" className="text-[10px]">{o.direction}</Badge></td>
-                    <td className="px-2 py-1 text-right font-mono">{o.entryPrice}</td>
-                    <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.stopLoss}</td>
-                    <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.takeProfit}</td>
-                    <td className={`px-2 py-1 text-right font-mono ${o.profitLoss > 0 ? "text-green-600" : o.profitLoss < 0 ? "text-red-600" : ""}`}>{o.profitLoss}</td>
-                  </tr>
-                ))}
+                {t.map(o => {
+                  const pnl = openTradePnl(o);
+                  return (
+                    <tr key={o.id} className="border-t">
+                      <td className="px-2 py-1 font-mono">{o.symbol}</td>
+                      <td className="px-2 py-1"><Badge variant="outline" className="text-[10px]">{o.direction}</Badge></td>
+                      <td className="px-2 py-1 text-right font-mono">{o.entryPrice}</td>
+                      <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.stopLoss}</td>
+                      <td className="px-2 py-1 text-right font-mono hidden sm:table-cell">{o.takeProfit}</td>
+                      {pnl == null ? (
+                        <td className="px-2 py-1 text-right font-mono text-muted-foreground" title={pnlNote} data-testid="open-trade-pnl">—</td>
+                      ) : (
+                        <td className={`px-2 py-1 text-right font-mono ${pnl > 0 ? "text-green-600" : pnl < 0 ? "text-red-600" : ""}`} data-testid="open-trade-pnl">{pnl}</td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+            <p className="text-[11px] text-muted-foreground px-2 pt-2" data-testid="open-trade-pnl-note">P&L shows “—” while an order is open. {pnlNote}</p>
           </div>
         )}
       </CardContent>

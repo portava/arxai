@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { useTradingMode } from "@/hooks/useTradingMode";
+import { describeLiveExecutionPosture } from "./liveExecutionPosture";
 import { Copy, Lock, Plus, RefreshCw, Send, ShieldAlert, Trash2, X } from "lucide-react";
 import { isHeartbeatAgeSecondsOnline } from "@workspace/domain/broker-health/heartbeatPolicy";
 
@@ -32,6 +34,9 @@ type Mt5Conn = {
   leverage: number | null;
   accountType: string | null;
   accountSnapshotFresh: boolean;
+  /** When balance/equity were last written (server); absent on older servers. */
+  accountSyncedAt?: string | null;
+  accountSnapshotAgeSeconds?: number | null;
   lastHeartbeatAt: string | null;
   heartbeatAgeSeconds: number | null;
   tokenLast4: string | null;
@@ -169,6 +174,8 @@ function CommandsPanel({ conn }: { conn: Mt5Conn }) {
 
 export default function MyMt5Page() {
   const { toast } = useToast();
+  // From the account-mode envelope — never a hard-coded "read-only" claim.
+  const livePosture = describeLiveExecutionPosture(useTradingMode());
   const [conns, setConns] = useState<Mt5Conn[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -261,13 +268,10 @@ export default function MyMt5Page() {
         <p className="text-muted-foreground">Personal connections and sessions. Only you can see this data.</p>
       </div>
 
-      <Alert>
+      <Alert variant={livePosture.tone === "armed" ? "destructive" : "default"} data-testid="my-mt5-live-posture">
         <Lock className="h-4 w-4" />
-        <AlertTitle>Read-only mode is active</AlertTitle>
-        <AlertDescription>
-          live_locked = true · read_only_mode = true · allow_order_execution = false. No real orders will be placed
-          even if MT5 is connected.
-        </AlertDescription>
+        <AlertTitle>{livePosture.label}</AlertTitle>
+        <AlertDescription>{livePosture.detail}</AlertDescription>
       </Alert>
 
       {/* MT5 connections */}
@@ -304,7 +308,9 @@ export default function MyMt5Page() {
                 <div><span className="text-muted-foreground">Free margin:</span> {c.freeMargin != null ? `${Number(c.freeMargin).toFixed(2)} ${c.accountCurrency ?? ""}`.trim() : "—"}</div>
                 <div><span className="text-muted-foreground">Margin used:</span> {c.margin != null ? `${Number(c.margin).toFixed(2)} ${c.accountCurrency ?? ""}`.trim() : "—"}</div>
                 <div><span className="text-muted-foreground">Margin level:</span> {c.marginLevelPercent != null ? `${c.marginLevelPercent.toFixed(1)}%` : "—"}</div>
-                <div><span className="text-muted-foreground">Snapshot:</span> {c.accountSnapshotFresh ? <span className="text-success">fresh</span> : <span className="text-warning">stale</span>}</div>
+                <div><span className="text-muted-foreground">Snapshot:</span> {c.accountSnapshotFresh
+                  ? <span className="text-success">fresh{c.accountSnapshotAgeSeconds != null ? ` (${c.accountSnapshotAgeSeconds}s old)` : ""}</span>
+                  : <span className="text-warning">{c.accountSnapshotAgeSeconds != null ? `stale (account last synced ${c.accountSnapshotAgeSeconds}s ago)` : c.accountSyncedAt === null ? "never synced" : "stale"}</span>}</div>
                 <div><span className="text-muted-foreground">Last heartbeat:</span> {c.heartbeatAgeSeconds != null ? `${c.heartbeatAgeSeconds}s ago` : "never"}</div>
                 <div><span className="text-muted-foreground">Token …{c.tokenLast4 ?? "?"}</span></div>
               </div>

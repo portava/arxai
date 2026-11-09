@@ -9,11 +9,25 @@ import {
 } from "lucide-react";
 import { CockpitCard, Pill, ActionButton, SectionLink } from "@/components/dashboard/cockpit/primitives";
 import { cn } from "@/lib/utils";
+import type { BridgeObservation } from "@/components/dashboard/cockpit/bridgeObservation";
+import type { RiskCapsStatus } from "@/lib/riskCapsStatus";
+import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
+import { scannerResultActionChip } from "@/components/scanner/scannerResultAction";
 
 /* ── 1 · Top status bar ─────────────────────────────────────────────── */
 export function TradeStatusBar({
-  modeLabel, isLive, gatesLabel, intentCount,
-}: { modeLabel: string; isLive: boolean; gatesLabel: string; intentCount: number }) {
+  modeLabel, isLive, gatesLabel, intentCount, intentError = false, intentAtLeast = false, intentScopeNote = null,
+}: {
+  modeLabel: string; isLive: boolean; gatesLabel: string;
+  /** null while the queue has not answered yet. */
+  intentCount: number | null;
+  /** The intent queue read failed: the count is unknown, never 0. */
+  intentError?: boolean;
+  /** The count covers only the queue's newest window; older intents exist. */
+  intentAtLeast?: boolean;
+  /** The queue is not shown to this user (admin-only): no count, never 0. */
+  intentScopeNote?: string | null;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
       <span className={cn("inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm font-semibold", isLive ? "text-success" : "text-primary")}>
@@ -25,7 +39,13 @@ export function TradeStatusBar({
       </span>
       <Link href="/live-intent-queue" className="ml-auto" data-testid="trade-intent-badge">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 px-3 py-1 text-sm font-semibold text-primary hover:bg-primary/10">
-          {intentCount} intents
+          {intentError
+            ? "Intents: could not be loaded"
+            : intentScopeNote
+              ? "Intents: admin only"
+              : intentCount == null
+                ? "Intents: loading…"
+                : `${intentCount}${intentAtLeast ? "+" : ""} intents`}
         </span>
       </Link>
     </div>
@@ -34,8 +54,8 @@ export function TradeStatusBar({
 
 /* ── 2 · Hero + connection card ─────────────────────────────────────── */
 export function TradeHero({
-  description, connStatus, isLive, broker, account,
-}: { description: string; connStatus: string; isLive: boolean; broker: string; account: string }) {
+  description, connStatus, isLive, bridge, routeHeading, broker, account,
+}: { description: string; connStatus: string; isLive: boolean; bridge: BridgeObservation; routeHeading: string; broker: string; account: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
       <div className="flex items-start gap-3">
@@ -52,10 +72,13 @@ export function TradeHero({
       <CockpitCard accent="blue" data-testid="trade-connection-card">
         <div className="flex items-start justify-between">
           <span className="text-sm text-txt-secondary">Connection</span>
-          <Pill tone={isLive ? "success" : connStatus === "Disconnected" ? "danger" : "info"}>{connStatus}</Pill>
+          {/* connStatus is the account route's mode; it turns green only when the
+              bridge observation is also online. */}
+          <Pill tone={connStatus === "Blocked" ? "danger" : isLive && bridge.state === "online" ? "success" : isLive ? "warning" : "info"}>{connStatus}</Pill>
         </div>
-        <div className="mt-1 text-lg font-semibold">Shared Master MT5</div>
-        <div className="mt-1 text-sm text-txt-secondary">Broker: {broker}</div>
+        <div className="mt-1 text-lg font-semibold" data-testid="trade-connection-route">{routeHeading}</div>
+        <div className="mt-1 text-sm text-txt-secondary" title={bridge.detail} data-testid="trade-connection-bridge">Bridge: {bridge.label}</div>
+        <div className="text-sm text-txt-secondary">Broker: {broker}</div>
         <div className="text-sm text-txt-secondary">Acc: {account}</div>
         <ActionButton href="/live-shared" subtle data-testid="trade-view-account">View account</ActionButton>
       </CockpitCard>
@@ -74,11 +97,16 @@ export function TradeHero({
  * `isError` are now explicit inputs and are resolved BEFORE the empty state,
  * so "No open positions" can only render on a confirmed successful read.
  */
-export function PositionsPanel({ positions, isLoading = false, isError = false, onRetry }: {
+export function PositionsPanel({ positions, isLoading = false, isError = false, onRetry, unavailableReason = null }: {
   positions: Array<{ id: string | number; symbol: string; side: string; lotSize: number; entry?: number; pnl?: number | null; stopLoss?: number | null; takeProfit?: number | null; status?: string }>;
   isLoading?: boolean;
   isError?: boolean;
   onRetry?: () => void;
+  /**
+   * Set when the read answered but could not see the positions (e.g. the
+   * master bridge is not pinned). Shown instead of "No open positions".
+   */
+  unavailableReason?: string | null;
 }) {
   return (
     <CockpitCard title="Positions" subtitle="Live MT5-confirmed positions." icon={<Layers className="h-[18px] w-[18px]" />} accent="blue" data-testid="positions-tab">
@@ -110,6 +138,18 @@ export function PositionsPanel({ positions, isLoading = false, isError = false, 
             </button>
           )}
         </div>
+      ) : unavailableReason && positions.length === 0 ? (
+        <div
+          className="flex flex-col items-center gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-5 text-center"
+          role="alert"
+          data-testid="positions-unavailable"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Positions could not be read. Do not assume you are flat.
+          </div>
+          <p className="text-xs text-warning/80">{unavailableReason}</p>
+        </div>
       ) : positions.length === 0 ? (
         <div className="py-6 text-center">
           <p className="text-sm font-medium text-foreground">No open positions</p>
@@ -128,9 +168,16 @@ export function PositionsPanel({ positions, isLoading = false, isError = false, 
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-sm font-semibold">{p.symbol}</div>
                 <div className="text-[11px] text-txt-muted">{p.lotSize} lot{p.entry ? ` · @${p.entry}` : ""}{p.stopLoss ? ` · SL ${p.stopLoss}` : ""}{p.takeProfit ? ` · TP ${p.takeProfit}` : ""}</div>
+                {/* A row the broker sync has not refreshed recently is not a
+                    current position read: say so instead of a bare dash. */}
+                {p.status === "stale" && (
+                  <div className="text-[11px] text-warning" data-testid={`position-${p.id}-stale`}>
+                    Not refreshed by the MT5 sync recently, so it may have changed or closed. Live P&amp;L not shown.
+                  </div>
+                )}
               </div>
-              <div className={cn("font-mono text-sm font-semibold", (p.pnl ?? 0) > 0 ? "text-success" : (p.pnl ?? 0) < 0 ? "text-danger" : "text-foreground")}>
-                {p.pnl == null ? "—" : (p.pnl > 0 ? "+" : "") + p.pnl.toFixed(2)}
+              <div className={cn("font-mono text-sm font-semibold", (p.pnl ?? 0) > 0 ? "text-success" : (p.pnl ?? 0) < 0 ? "text-danger" : "text-foreground")} data-testid={`position-${p.id}-pnl`}>
+                {p.status === "stale" ? "P&L stale" : p.pnl == null ? "P&L not reported" : (p.pnl > 0 ? "+" : "") + p.pnl.toFixed(2)}
               </div>
               <Link href="/live-trades" className="text-xs font-medium text-primary">Manage</Link>
             </li>
@@ -142,30 +189,82 @@ export function PositionsPanel({ positions, isLoading = false, isError = false, 
 }
 
 /* ── 4 · Orders tab (scanner opps + intent queue) ───────────────────── */
-export type Opp = { symbol: string; timeframe: string; recommendedAction: string; confidenceScore: number; opportunity: { score: number; label: string } };
+export type Opp = {
+  symbol: string; timeframe: string; recommendedAction: string; confidenceScore: number; opportunity: { score: number; label: string };
+  // Row truth from /api/market-scanner/opportunities. Optional so older
+  // callers compile; a row without them is treated as having no current read.
+  generatedAt?: string | null; scanGeneratedAt?: string | null;
+  dataStatus?: string; tradeable?: boolean; disabledReason?: string | null;
+  finalRead?: { label?: string | null } | null;
+};
+
+/**
+ * Same downgrade the Market Scanner board applies: a row's direction and score
+ * are shown only while it is a live, tradeable read from a scan at most 30 s
+ * old, and a NO_TRADE / AVOID_FOR_NOW final read replaces the raw BUY / SELL.
+ * The row's own analysis time stands in when the envelope time is not passed.
+ */
+function ordersPanelRowRead(o: Opp, now: number): { usable: true; chip: ReturnType<typeof scannerResultActionChip> } | { usable: false; reason: string } {
+  const usable = canUseScannerOpportunity(
+    { ...o, generatedAt: o.generatedAt ?? null, scanGeneratedAt: o.scanGeneratedAt ?? o.generatedAt ?? null },
+    now,
+  );
+  if (!usable) {
+    const reason = o.dataStatus === "live" && o.tradeable === true
+      ? "This read is more than 30 s old. Scan again for a current direction and score."
+      : o.disabledReason || "No live, tradeable read for this market right now.";
+    return { usable: false, reason };
+  }
+  return { usable: true, chip: scannerResultActionChip(o.recommendedAction, o.finalRead?.label) };
+}
 
 export function OrdersPanel({
-  opps, intentCount, picked, onPick,
-}: { opps: Opp[]; intentCount: number; picked: { symbol: string; timeframe: string } | null; onPick: (o: Opp) => void }) {
+  opps, intentCount, picked, onPick, oppsError = false, intentError = false, intentAtLeast = false, intentScopeNote = null,
+}: {
+  opps: Opp[];
+  /** null while the queue has not answered yet. */
+  intentCount: number | null;
+  picked: { symbol: string; timeframe: string } | null;
+  onPick: (o: Opp) => void;
+  /** The opportunities read failed: never shown as "No scan results yet". */
+  oppsError?: boolean;
+  /** The intent queue read failed: never shown as 0 / "No live intents queued". */
+  intentError?: boolean;
+  /** The count covers only the queue's newest window; older intents exist. */
+  intentAtLeast?: boolean;
+  /** The queue is not shown to this user (admin-only): no count, never 0. */
+  intentScopeNote?: string | null;
+}) {
   return (
     <div className="space-y-4" data-testid="orders-tab">
-      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="eleanor" badge={opps.length ? String(opps.length) : undefined}>
-        {opps.length === 0 ? (
+      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="eleanor" badge={!oppsError && opps.length ? String(opps.length) : undefined}>
+        {oppsError ? (
+          <p className="py-4 text-center text-sm text-warning" role="alert" data-testid="orders-opps-error">
+            Scanner results could not be loaded. Retrying every 5 seconds.
+          </p>
+        ) : opps.length === 0 ? (
           <p className="py-4 text-center text-sm text-txt-secondary">No scan results yet — start the scanner from the Market Scanner page.</p>
         ) : (
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-            {opps.map((o, i) => (
+            {opps.map((o, i) => {
+              const read = ordersPanelRowRead(o, Date.now());
+              return (
               <button key={i} onClick={() => onPick(o)}
                 className={cn("rounded-lg border p-2 text-left text-xs transition-colors hover:bg-secondary/40",
                   picked?.symbol === o.symbol && picked.timeframe === o.timeframe ? "border-primary ring-1 ring-primary" : "border-border")}
                 data-testid={`order-opp-${o.symbol}-${o.timeframe}`}>
                 <div className="flex justify-between"><span className="font-bold">{o.symbol}</span><span className="text-txt-muted">{o.timeframe}</span></div>
-                <div className="mt-1 flex items-center gap-1">
-                  <Pill tone={o.recommendedAction === "BUY" ? "success" : o.recommendedAction === "SELL" ? "danger" : "muted"}>{o.recommendedAction}</Pill>
-                  <span className="ml-auto font-bold">{o.opportunity.score}</span>
-                </div>
+                {read.usable ? (
+                  <div className="mt-1 flex items-center gap-1">
+                    <Pill tone={read.chip.withheld ? "muted" : o.recommendedAction === "BUY" ? "success" : o.recommendedAction === "SELL" ? "danger" : "muted"}>{read.chip.text}</Pill>
+                    <span className="ml-auto font-bold" data-testid={`order-opp-score-${o.symbol}-${o.timeframe}`}>{o.opportunity.score}</span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-txt-muted" data-testid={`order-opp-noread-${o.symbol}-${o.timeframe}`}>{read.reason}</div>
+                )}
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
         <SectionLink href="/market-scanner">Full Scanner</SectionLink>
@@ -173,10 +272,18 @@ export function OrdersPanel({
 
       <CockpitCard title="Live Intent Queue" icon={<ListChecks className="h-[18px] w-[18px]" />} accent="blue">
         <div className="flex items-baseline justify-between">
-          <span className="font-mono text-3xl font-bold" data-testid="orders-intent-count">{intentCount}</span>
+          <span className="font-mono text-3xl font-bold" data-testid="orders-intent-count">{intentError || intentScopeNote || intentCount == null ? "—" : `${intentCount}${intentAtLeast ? "+" : ""}`}</span>
           <ActionButton href="/live-intent-queue" subtle data-testid="orders-open-queue">Open Queue</ActionButton>
         </div>
-        {intentCount === 0 && <p className="mt-2 text-xs text-txt-muted">No live intents queued.</p>}
+        {intentError ? (
+          <p className="mt-2 text-xs text-warning" role="alert" data-testid="orders-intent-error">The live intent queue could not be loaded. Retrying every 5 seconds.</p>
+        ) : intentScopeNote ? (
+          <p className="mt-2 text-xs text-txt-muted" data-testid="orders-intent-scope">{intentScopeNote} Its intents are not counted here.</p>
+        ) : intentAtLeast && intentCount != null ? (
+          <p className="mt-2 text-xs text-txt-muted" data-testid="orders-intent-window">Only the newest {intentCount} intents were counted; older intents exist.</p>
+        ) : intentCount === 0 ? (
+          <p className="mt-2 text-xs text-txt-muted">No live intents queued.</p>
+        ) : null}
       </CockpitCard>
     </div>
   );
@@ -211,17 +318,20 @@ export function AdvancedPanel({ isAdmin }: { isAdmin: boolean }) {
 
 /* ── 6 · Risk Governor card ─────────────────────────────────────────── */
 export function RiskGovernorCard({
-  statusLabel, statusTone, riskLevel, bridge, approval, isAdmin, rawCanPlace, rawMode,
+  statusLabel, statusTone, riskCaps, bridge, approval, isAdmin, rawCanPlace, rawMode,
 }: {
   statusLabel: string; statusTone: "success" | "warning" | "danger";
-  riskLevel: string; bridge: string; approval: string;
+  /** From riskCapsStatus(): freeze state + whether caps are assigned. Never a measured risk level. */
+  riskCaps: RiskCapsStatus; bridge: string; approval: string;
   isAdmin: boolean; rawCanPlace: boolean; rawMode: string;
 }) {
   return (
     <CockpitCard title="Risk Governor" subtitle="Account risk status and controls" icon={<ShieldCheck className="h-[18px] w-[18px]" />} accent={statusTone} data-testid="risk-governor-card">
       <div className="grid grid-cols-2 gap-y-2.5 text-sm sm:grid-cols-4">
         <Stat label="Status" value={statusLabel} tone={statusTone} />
-        <Stat label="Risk level" value={riskLevel} tone="success" />
+        <div title={riskCaps.detail}>
+          <Stat label="Risk caps" value={riskCaps.label} tone={riskCaps.tone === "muted" ? undefined : riskCaps.tone} />
+        </div>
         <Stat label="Bridge" value={bridge} />
         <Stat label="Approval" value={approval} />
       </div>
@@ -243,10 +353,16 @@ export function RiskGovernorCard({
 }
 
 /* ── 7 · Decision Stream ────────────────────────────────────────────── */
-export function DecisionStreamCard({ decisions }: { decisions: Array<{ id: string; type: string; summary: string; createdAt: string }> }) {
+export function DecisionStreamCard({ decisions, error = false }: {
+  decisions: Array<{ id: string; type: string; summary: string; createdAt: string }>;
+  /** The decision stream read failed: never shown as "No decisions yet". */
+  error?: boolean;
+}) {
   return (
-    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="eleanor" badge={decisions.length ? String(decisions.length) : undefined}>
-      {decisions.length === 0 ? (
+    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="eleanor" badge={!error && decisions.length ? String(decisions.length) : undefined}>
+      {error ? (
+        <p className="py-4 text-center text-sm text-warning" role="alert" data-testid="decision-stream-error">The decision stream could not be loaded. Retrying every 5 seconds.</p>
+      ) : decisions.length === 0 ? (
         <p className="py-4 text-center text-sm text-txt-secondary">No decisions yet.</p>
       ) : (
         <ul className="max-h-64 space-y-1.5 overflow-y-auto text-xs">

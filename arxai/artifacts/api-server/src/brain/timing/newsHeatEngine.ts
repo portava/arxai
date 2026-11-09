@@ -12,6 +12,10 @@ import type { NewsOverlay, NewsPhase } from "@workspace/domain/timing-brain";
 import { analyzeNewsRisk } from "../news/newsRiskEngine.js";
 import { buildMarketImpactRadar } from "../../lib/news/marketImpactRadar.js";
 import { classifySymbol } from "../../lib/data/marketDataRouter.js";
+import { FRED_PROVIDER } from "../../lib/news/calendar/fredCalendarProvider.js";
+
+/** FRED release dates carry this midnight-UTC sentinel instead of a release time. */
+const DATE_ONLY_SENTINEL_SUFFIX = "T00:00:00.000Z";
 
 /**
  * Optional dependency injection for testing. Production callers pass nothing and
@@ -25,7 +29,14 @@ export interface NewsHeatDeps {
   buildRadarFn?: typeof buildMarketImpactRadar;
 }
 
-export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): Promise<NewsOverlay> {
+/**
+ * The news overlay plus whether a real economic-calendar provider answered.
+ * `calendarConnected` is about the PROVIDER, not about whether an event is
+ * near: a connected calendar with nothing scheduled is still news data.
+ */
+export type NewsHeatResult = NewsOverlay & { calendarConnected: boolean };
+
+export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): Promise<NewsHeatResult> {
   const classify = deps.classify ?? classifySymbol;
   const analyzeNewsRiskFn = deps.analyzeNewsRiskFn ?? analyzeNewsRisk;
   const buildRadarFn = deps.buildRadarFn ?? buildMarketImpactRadar;
@@ -42,6 +53,7 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
       surpriseScore: null,
       heatAdjustment: 0,
       blocksTrade: false,
+      calendarConnected: false,
     };
   }
 
@@ -61,17 +73,38 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
     const { radar } = await buildRadarFn(symbol);
     calendarConnected = radar.provider.connected;
 
-    if (calendarConnected && radar.events.length > 0) {
-      const topEvent = radar.events[0]!;
+    // Only an event the radar mapped to THIS symbol may set its phase/heat.
+    // The radar also lists unrelated releases (sorted after the affecting
+    // ones), so events[0] is not necessarily about this symbol.
+    const topEvent = calendarConnected
+      ? radar.events.find((e) => e.affectsSymbol === true)
+      : undefined;
+    if (topEvent) {
       radarEventName = topEvent.title;
       const secsRemaining = topEvent.countdownSeconds;
-      if (secsRemaining > 30) {
+      // The radar's state is the authority on whether the release has
+      // happened. A date-only release (FRED midnight sentinel) is held
+      // UPCOMING/IMMINENT all day while its countdown runs from midnight, so a
+      // negative countdown there does NOT mean the release is past: treat it
+      // as pre-event with no known minute count. A TIMED release keeps its
+      // real countdown: one seconds away (radar IMMINENT, countdown 0..30 s)
+      // is at the event, not "release time not confirmed".
+      const heldPreRelease = topEvent.state === "UPCOMING" || topEvent.state === "IMMINENT";
+      const dateOnlyRelease =
+        radar.provider.name === FRED_PROVIDER && topEvent.eventTimeIso.endsWith(DATE_ONLY_SENTINEL_SUFFIX);
+      const releaseTimeUnconfirmed =
+        heldPreRelease && (secsRemaining < 0 || (dateOnlyRelease && secsRemaining <= 30));
+      if (releaseTimeUnconfirmed) {
+        radarPhase = "PRE_EVENT";
+      } else if (secsRemaining > 30) {
         minutesUntil = Math.round(secsRemaining / 60);
         radarPhase = minutesUntil <= 30 ? "PRE_EVENT" : "NONE";
       } else if (secsRemaining >= -900) {
-        // Within 15 min after start → treat as AT_EVENT
+        // From 30 s before the release to 15 min after it → AT_EVENT. Before
+        // the release no time has elapsed, so minutesSince is 0 (never
+        // "1 min ago" for a release still 30 s away).
         radarPhase = "AT_EVENT" as const;
-        minutesSince = Math.round(Math.abs(secsRemaining) / 60);
+        minutesSince = Math.round(Math.max(0, -secsRemaining) / 60);
       } else {
         minutesSince = Math.round(Math.abs(secsRemaining) / 60);
         radarPhase = minutesSince <= 60 ? "POST_EVENT" : "SETTLED";
@@ -127,5 +160,6 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
     surpriseScore: null, // never fabricated — no actual result data available without a real provider
     heatAdjustment,
     blocksTrade: newsRisk.blockTrading,
+    calendarConnected,
   };
 }

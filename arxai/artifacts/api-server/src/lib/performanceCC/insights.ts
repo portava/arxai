@@ -7,8 +7,10 @@ interface InsightInputs {
   totalTrades: number;
   winRate: number;
   netPnl: number;
-  improvementScore: number;
-  blockedTrades: number;
+  /** Decisions that said to trade. */
+  tradeCalls: number;
+  /** Trade calls with no paper order; the reason is not recorded per decision. */
+  tradeCallsWithoutOrder: number;
   decisionsCreated: number;
   learningEvents: number;
 }
@@ -35,9 +37,10 @@ export function generateInsights(i: InsightInputs): { insights: string[]; nextBe
     insights.push(`Most repeated mistake tag: "${i.mostRepeatedMistake}" — focus drill on avoiding it.`);
     nextBestActions.push(`Add a checklist item to catch "${i.mostRepeatedMistake}" before next entry.`);
   }
-  if (i.blockedTrades > 0 && i.decisionsCreated > 0) {
-    const pct = Math.round((i.blockedTrades / i.decisionsCreated) * 100);
-    insights.push(`${pct}% of AI decisions were blocked by safety filters — guardrails are active.`);
+  if (i.tradeCallsWithoutOrder > 0 && i.tradeCalls > 0) {
+    // Not "blocked by safety filters": no safety-filter outcome is stored per
+    // decision, so the reason a call has no order is unknown.
+    insights.push(`${i.tradeCallsWithoutOrder} of ${i.tradeCalls} AI trade calls have no paper order. Why is not recorded per call (a safety filter, a setting, or it was never sent), so this is not a count of safety blocks.`);
   }
   if (i.winRate >= 60 && i.netPnl > 0) {
     insights.push(`Paper win rate is healthy at ${i.winRate.toFixed(1)}% with positive net P&L.`);
@@ -55,12 +58,8 @@ export function generateInsights(i: InsightInputs): { insights: string[]; nextBe
     if (ratio < 0.5) warnings.push("Some closed trades did not produce a learning event — check BB→CC handoff.");
   }
 
-  if (i.improvementScore > 5) {
-    insights.push("AI is showing signs of improvement after Build CC learning.");
-  } else if (i.improvementScore < -5) {
-    insights.push("Recent AI performance trend is declining — review learning adjustments.");
-    nextBestActions.push("Inspect recent strategy_edge changes that may have over-corrected.");
-  }
+  // No improving / declining insight: change over time is not measured
+  // (strategy edges keep only their current score, not a history).
 
   // Always-on safety reminder.
   nextBestActions.push("Keep paper-practicing until performance is consistent before discussing live trading.");

@@ -64,7 +64,10 @@ describe("original candle evidence retention", () => {
     const result = await fetchChartCandles("V75","H12",200);
     expect(result.originalResponse).toBe(original);
     expect((result.originalResponse as typeof original).candles[0]).toEqual(bar);
-    expect(result.candles).toEqual([{time:Date.parse(bar.openTime),open:100,high:110,low:90,close:105}]);
+    // The display bar carries the completeness the server STATED for it (never
+    // invented: see the legacy-OHLC case below), so a forming bar is never read
+    // as a closed one; every other evidence field stays on the original only.
+    expect(result.candles).toEqual([{time:Date.parse(bar.openTime),open:100,high:110,low:90,close:105,isComplete:true}]);
     result.candles[0]!.close=999;
     expect(bar.close).toBe(105);
     expect((result.originalResponse as typeof original).marketEvidence.userId).toBe(7);

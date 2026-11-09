@@ -31,6 +31,32 @@ import { guardianTradeActionClose } from "../positionGuardian/manage.js";
 const PAPER_ONLY_LOCK = true;
 const LIVE_LOCKED = true;
 
+// The two locks above are fixed product locks on AUTO-CLOSE, not readings of
+// the user's account: an armed LIVE_SHARED trader is not "paper-only", yet
+// decide.ts words the lock as "paper-only lock active". The decision and its
+// blockedReason code are unchanged; only the sentence journalled and returned
+// says what is actually true. Display text only — the gate is untouched.
+//
+// Likewise bridgeConnected is passed as the constant false below, so
+// decide.ts's "MT5 bridge disconnected — alert only" is not a reading of the
+// user's bridge (the MT5 Bridge page may show it online). That sentence is
+// replaced the same way; the ALERT_ONLY decision is unchanged.
+const BRIDGE_CONNECTED_INPUT = false;
+const PRODUCT_LOCK_REASON =
+  "Automatic protective close is switched off for every account in this build (a fixed product lock), so ARX only alerts or recommends here; it never closes a trade by itself. This says nothing about whether your account trades live.";
+const BRIDGE_LOCK_REASON =
+  "Alert only: automatic protective close does not use your MT5 bridge in this build (a fixed product lock). This is not a reading of your bridge; its live status is on the MT5 Bridge page.";
+
+export function describeLockedDecision(decision: DecisionOutput, bridgeConnectedInput: boolean = BRIDGE_CONNECTED_INPUT): DecisionOutput {
+  if (decision.decision === "BLOCKED" && (decision.blockedReason === "BLOCKED_BY_PAPER_LOCK" || decision.blockedReason === "LIVE_LOCKED")) {
+    return { ...decision, reason: PRODUCT_LOCK_REASON };
+  }
+  if (decision.decision === "ALERT_ONLY" && !bridgeConnectedInput && /^MT5 bridge disconnected\b/.test(decision.reason)) {
+    return { ...decision, reason: BRIDGE_LOCK_REASON };
+  }
+  return decision;
+}
+
 function parsePositionId(tradeKey: string): number | null {
   const m = /^lp_(\d+)$/.exec(tradeKey);
   if (!m) return null;
@@ -81,7 +107,7 @@ export async function evaluateTrade(userId: number, tradeKey: string, symbolHint
   // position is missing/closed. Never default to `true`.
   const tradeIsOpen = reversal.dataStatus !== "INSUFFICIENT" && (!!reversal.invalidationLevel || reversal.currentPnl != null);
 
-  const decision = decideProtectiveAction({
+  const decision = describeLockedDecision(decideProtectiveAction({
     userId,
     tradeKey,
     symbol: symbolHint ?? "",
@@ -91,10 +117,10 @@ export async function evaluateTrade(userId: number, tradeKey: string, symbolHint
     attributionClear,
     paperOnlyLock: PAPER_ONLY_LOCK,
     liveLocked: LIVE_LOCKED,
-    bridgeConnected: false, // honest: today there is no bridge connection — keeps engine to ALERT_ONLY
+    bridgeConnected: BRIDGE_CONNECTED_INPUT, // fixed product lock (not a bridge reading) — keeps engine to ALERT_ONLY
     recentDuplicateClose: recentDuplicate,
     tradeIsOpen,
-  });
+  }));
 
   let actionId: number | null = null;
   let attemptedClose = false;
@@ -117,7 +143,7 @@ export async function evaluateTrade(userId: number, tradeKey: string, symbolHint
       actionId = r.actionId;
       attemptedClose = r.attempted;
       if (r.attempted && r.confirmed && !r.confirmed.ok) {
-        logger.warn({ userId, tradeKey, actionId, err: r.error }, "[protective-close] confirm rejected (expected under paper-only lock)");
+        logger.warn({ userId, tradeKey, actionId, err: r.error }, "[protective-close] confirm rejected (expected under the auto-close product lock)");
       } else if (!r.authorized) {
         logger.warn({ userId, tradeKey, refusal: r.refusal }, "[protective-close] refused by Position Guardian");
       } else if (!r.attempted) {

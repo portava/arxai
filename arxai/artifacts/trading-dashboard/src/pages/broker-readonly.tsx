@@ -7,6 +7,7 @@ import { PageShell, SectionHeader } from "@/components/ss/PageShell";
 import { StatusPill } from "@/components/ss/StatusPill";
 import { LoadingState, EmptyState, BlockedState, ErrorState } from "@/components/ss/States";
 import { AdminDiagnosticsGate } from "@/components/admin/AdminDiagnosticsGate";
+import { safeDate } from "@/lib/safeFormat";
 
 type Snapshot = {
   connector_id: string; provider: string; mode: string; connected: boolean;
@@ -15,7 +16,44 @@ type Snapshot = {
   openPositions: { ticket: string; symbol: string; side: string; volume: number; pnl: number }[];
   latestQuotes: { symbol: string; bid: number; ask: number; spread: number; ts: string }[];
   dataQuality: { status: string; latencyMs: number; warnings: string[]; errors: string[] };
+  /** Set by placeholder providers (e.g. "DEMO_PLACEHOLDER"): nothing was read from a broker. */
+  providerState?: string;
+  safetyNote?: string;
+  generatedAt?: string;
 };
+
+function providerStateLabel(state: string | undefined): string | null {
+  if (!state) return null;
+  if (state === "DEMO_PLACEHOLDER") return "placeholder provider, no broker adapter";
+  return state.toLowerCase().replace(/_/g, " ");
+}
+
+// A snapshot with connected=false read no broker (api-server
+// lib/brokerReadOnly/service.ts: the demo provider is a placeholder and the
+// mt5/deriv adapters are stubs). Its empty arrays and latencyMs 0 are not
+// "no positions" or "0ms" — they are unknown.
+function NotReadSnapshot({ snap }: { snap: Snapshot }) {
+  const state = providerStateLabel(snap.providerState);
+  return (
+    <Card data-testid="broker-snapshot-not-read">
+      <CardContent className="pt-4 text-sm space-y-2">
+        <SectionHeader
+          title="No broker was read"
+          actions={<StatusPill status="INACTIVE" size="xs" label="NOT CONNECTED" ariaLabel="status: no broker read" />}
+        />
+        <p>
+          Provider <span className="font-mono">{snap.provider}</span>{state ? ` (${state})` : ""} returned without
+          reading a broker. Account, symbols, open positions, quotes and latency are unknown, not zero or empty.
+        </p>
+        {snap.safetyNote && <p className="text-muted-foreground">{snap.safetyNote}</p>}
+        {snap.dataQuality.warnings.length > 0 && <ul className="text-amber-600 list-disc pl-5">{snap.dataQuality.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+        {snap.dataQuality.errors.length > 0 && <ul className="text-red-600 list-disc pl-5">{snap.dataQuality.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+        <p className="text-xs text-muted-foreground">Snapshot taken {safeDate(snap.generatedAt, "datetime", "at an unreported time")}</p>
+        <p className="text-xs text-muted-foreground italic border-t pt-2">No live execution buttons. Live trading remains disabled.</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 function BrokerReadOnlyContent() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -93,12 +131,14 @@ function BrokerReadOnlyContent() {
       {!snap && !loading && (
         <EmptyState
           title="No broker snapshot loaded"
-          description="Run a demo snapshot to view masked account, symbols, positions and quotes. The broker connector is read-only — no orders are ever sent."
+          description="The demo snapshot uses a placeholder provider that reads no broker, so it returns no account, symbols, positions or quotes. It only exercises the read-only connector path. No orders are ever sent."
           action={{ label: "Run demo snapshot", onClick: runDemo }}
         />
       )}
 
-      {snap && (
+      {snap && !snap.connected && <NotReadSnapshot snap={snap} />}
+
+      {snap && snap.connected && (
         <div className="grid gap-3 md:grid-cols-2">
           <Card>
             <CardContent className="pt-4">
@@ -141,6 +181,7 @@ function BrokerReadOnlyContent() {
           <Card>
             <CardContent className="pt-4">
               <SectionHeader title="Latest quotes" />
+              {snap.latestQuotes.length === 0 && <p className="text-sm text-muted-foreground">The provider returned no quotes.</p>}
               <ul className="text-sm space-y-0.5">
                 {snap.latestQuotes.map(q => <li key={q.symbol}><span className="font-mono">{q.symbol}</span> — bid {q.bid} / ask {q.ask} <span className="text-muted-foreground">(spread {q.spread})</span></li>)}
               </ul>
@@ -151,7 +192,7 @@ function BrokerReadOnlyContent() {
             <CardContent className="pt-4 text-sm space-y-2">
               <SectionHeader
                 title="Data quality"
-                actions={<StatusPill status={snap.dataQuality.status === "GOOD" ? "ACTIVE" : "PAUSED"} size="xs" label={snap.dataQuality.status} />}
+                actions={<StatusPill status={snap.dataQuality.status === "GOOD" ? "ACTIVE" : "ACTION_REQUIRED"} size="xs" label={snap.dataQuality.status} ariaLabel={`data quality: ${snap.dataQuality.status}`} />}
               />
               <div className="text-muted-foreground">latency {snap.dataQuality.latencyMs}ms</div>
               {snap.dataQuality.warnings.length > 0 && <ul className="text-amber-600 list-disc pl-5">{snap.dataQuality.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}

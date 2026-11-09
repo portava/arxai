@@ -118,7 +118,9 @@ test("mock and developer sources refused, including uppercase and delimited vari
 test("without opt-in analysis and feed-status remain empty; cache is not consulted", async () => {
   stored.set(key("XAUUSD", "M30", "mt5_broker"), bars(2400, Date.now()));
   assert.equal((await getChartCandles("XAUUSD", "M30", 300)).candles.length, 0);
-  assert.equal((await getChartFeedStatus("XAUUSD", "M30")).notLiveReason, undefined);
+  // The feed status always carries notLiveReason (null when no not-live
+  // reason applies), so absence of stored history is an explicit null.
+  assert.equal((await getChartFeedStatus("XAUUSD", "M30")).notLiveReason, null);
   assert.equal(reads.length, 0);
 });
 test("feed status agrees with canvas, even when newest stored bar is recent", async () => {
@@ -132,7 +134,7 @@ test("feed status agrees with canvas, even when newest stored bar is recent", as
 test("nothing stored: honest empty state", async () => {
   const out = await getChartCandles("XAGUSD", "M30", 300, true, { storedHistoryFallback: true });
   assert.equal(out.candles.length, 0); assert.equal(out.feedStatus.isLive, false);
-  assert.equal(out.feedStatus.notLiveReason, undefined);
+  assert.equal(out.feedStatus.notLiveReason, null);
 });
 test("missing/read-failed store returns original empty router result unchanged", async () => {
   const prior = empty("XAUUSD") as never;
@@ -143,5 +145,5 @@ test("missing/read-failed store returns original empty router result unchanged",
 test("a live router result is never replaced by stored history", async () => {
   liveBars = bars(100, Date.now() - M30);
   const out = await getChartCandles("EURUSD", "M30", 300, false, { storedHistoryFallback: true });
-  assert.equal(out.feedStatus.notLiveReason, undefined); assert.equal(reads.length, 0);
+  assert.equal(out.feedStatus.notLiveReason, null); assert.equal(reads.length, 0);
 });

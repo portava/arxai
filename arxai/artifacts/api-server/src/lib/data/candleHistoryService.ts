@@ -39,7 +39,8 @@ import {
   getProviderRoute,
   sourceSupportsDeepCursor,
 } from "./providerRoutingMap.js";
-import { buildFeedStatus } from "./freshness.js";
+import { barOpenUtcMs, buildFeedStatus, newestBarLeadMs } from "./freshness.js";
+import { mt5BarBrokerClockOffsetMs } from "./providers/mt5Provider.js";
 import type { Candle } from "./types.js";
 import { prepareMarketRead } from "../truth/marketReadEvidence.js";
 import { normalizeChartTimeframe, timeframeMs as chartTimeframeMs } from "./chart/timeframes.js";
@@ -332,6 +333,10 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
   let providerLimitReached = false;
   let routerUserMessage: string | null = null;
   let routerOk = false;
+  // Measured broker-clock offset of the served MT5 bridge series (audit H7),
+  // for the newest bar's trailing gap and future-stamp bound only (bar times
+  // are never rewritten); null = none measured.
+  let routedBrokerClockOffsetMs: number | null = null;
 
   // Initial page (no explicit source): consult the router to learn the primary
   // provider and SEED the cache from the live newest window. We do this only
@@ -342,6 +347,13 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
     routerUserMessage = routed.userMessage || null;
     if (routed.ok && routed.primaryProvider && routed.candles.length > 0) {
       source = routed.primaryProvider;
+      // EA bars are broker-server-clock time: with the serving bridge's
+      // measured offset (bar evidence, else that bridge's ticks; in-memory
+      // attributed series only) the bound below compares on the UTC clock.
+      const p = routed.provenance;
+      if (p?.providerId === "mt5_broker" && p.subProviderId == null) {
+        routedBrokerClockOffsetMs = mt5BarBrokerClockOffsetMs(routed.candles[routed.candles.length - 1], p.bridgeConnectionId ?? null);
+      }
       cacheHit = false;
       await seedCacheFromRoute(symbol, timeframe, source, routed.candles, routed.provenance?.bridgeConnectionId ?? null);
     } else {
@@ -451,13 +463,25 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
     // Newest window with a fresh provider answer: derive live/stale from the
     // shared freshness precedence over the observed trailing-interval gap.
     const newestMs = page.newest ? new Date(page.newest).getTime() : null;
+    // The newest bar on the UTC clock: bar time minus the served bridge's
+    // measured broker-clock offset (raw when none), for the future-stamp
+    // lead. The trailing gap ages the EARLIER of the raw and corrected times
+    // (same rule as the chart feed): a stalled broker-time series cannot read
+    // "live" from a negative raw gap, and a negative "offset" read from a
+    // stale first-sight tick cannot make it look current either.
+    const newestUtcMs = newestMs == null ? null : barOpenUtcMs(newestMs, routedBrokerClockOffsetMs);
+    const newestAgeMs = newestMs == null || newestUtcMs == null ? null : Math.min(newestMs, newestUtcMs);
+    const nowMs = Date.now();
     const trailingIntervals =
-      newestMs != null ? (Date.now() - newestMs) / timeframeMs(timeframe) : null;
+      newestAgeMs != null ? (nowMs - newestAgeMs) / timeframeMs(timeframe) : null;
     const verdict = buildFeedStatus({
       routerOk: true,
       hasSource: true,
       candleCount: page.count,
       trailingIntervals,
+      // Absolute clock-skew bound on the newest bar (never "one interval");
+      // a broker-stamped bar is compared at bar time minus its measured offset.
+      newestOpenLeadMs: newestBarLeadMs(newestUtcMs, nowMs),
       syntheticAwaitingTick: false,
       routerUserMessage,
     });

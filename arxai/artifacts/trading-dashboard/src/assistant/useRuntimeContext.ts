@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useChartSymbol } from "@/lib/use-chart-symbol";
 import { collectRuntimeContext } from "./runtimeContext";
-import type { HealthSummary, BridgeDiagnosticSummary, RuntimeContext } from "./runtimeContextTypes";
+import type { HealthSummary, BridgeDiagnosticSummary, RuntimeContext, RuntimeFetchStatus } from "./runtimeContextTypes";
 
 const REFRESH_MS = 12_000;
 
@@ -19,6 +19,8 @@ export function useRuntimeContext(): RuntimeContext {
   const [chartSymbol] = useChartSymbol();
   const [health, setHealth] = useState<HealthSummary | null>(null);
   const [bridge, setBridge] = useState<BridgeDiagnosticSummary | null>(null);
+  const [healthStatus, setHealthStatus] = useState<RuntimeFetchStatus>("loading");
+  const [bridgeStatus, setBridgeStatus] = useState<RuntimeFetchStatus>("loading");
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -32,8 +34,12 @@ export function useRuntimeContext(): RuntimeContext {
         safeJson<BridgeDiagnosticSummary>("/api/mt5/diagnostic-summary"),
       ]);
       if (cancelled) return;
-      if (h) setHealth(h);
-      if (b) setBridge(b);
+      // A failed read clears the previous summary instead of letting it age
+      // silently on screen: the posture is unknown until the next good read.
+      setHealth(h);
+      setHealthStatus(h ? "loaded" : "unavailable");
+      setBridge(b);
+      setBridgeStatus(b ? "loaded" : "unavailable");
       setTick((t) => t + 1);
     };
     void refresh();
@@ -57,5 +63,7 @@ export function useRuntimeContext(): RuntimeContext {
     selectedSymbol: chartSymbol ?? null,
     bridge,
     health,
-  }), [location, chartSymbol, bridge, health, tick]);
+    bridgeStatus,
+    healthStatus,
+  }), [location, chartSymbol, bridge, health, bridgeStatus, healthStatus, tick]);
 }

@@ -10,7 +10,7 @@
 // Advisory / read-only: nothing here places, modifies, or gates a trade.
 
 import { readOpenPositions } from "../positions/openPositions.js";
-import { getUserPrimaryConnection } from "../brokerHub/connections.js";
+import { getUserConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { virtualTradingAccountsTable } from "@workspace/db/schema";
@@ -48,8 +48,9 @@ export async function buildExecutionPreviewForUser(
   const { symbol, side, orderType, entry, stopLoss, takeProfit, lots, maxSpreadPoints } =
     params;
 
-  // Broker truth (per-user) — point/volume bounds/trade mode. All-null when the
-  // EA has not reported this symbol yet; the estimator degrades honestly.
+  // Broker truth (per-user) — point/volume bounds/trade mode, plus the
+  // contract size / tick value the money is priced from. All-null when the EA
+  // has not reported this symbol yet; the estimator degrades honestly.
   const brokerSpec = await getBrokerSymbolSpec(userId, symbol);
 
   // Live quote (best-effort) → bid/ask/age for spread + fill range.
@@ -103,10 +104,23 @@ export async function buildExecutionPreviewForUser(
   } catch { /* null balance — account impact degrades honestly */ }
 
   let leverage: number | null = null;
+  // The deposit currency of the account whose EA reported this symbol's spec:
+  // MT5 tick values are quoted in it. The (user, symbol) row is overwritten by
+  // whichever connection synced last, so the currency (and the leverage the
+  // broker-figure margin uses) come from that connection — never from another
+  // of the user's accounts. A row that does not name its reporting connection,
+  // or names one that no longer exists, has no known currency: the estimator
+  // then falls back to the contract-size path or withholds money.
+  let accountCurrency: string | null = null;
   try {
-    const lev = (await getUserPrimaryConnection(userId))?.leverage;
+    const conn = brokerSpec.bridgeConnectionId != null
+      ? await getUserConnection(userId, brokerSpec.bridgeConnectionId)
+      : await getUserPrimaryConnection(userId);
+    const lev = conn?.leverage;
     if (lev != null && lev > 0) leverage = lev;
-  } catch { /* null leverage — margin omitted honestly */ }
+    const ccy = brokerSpec.bridgeConnectionId != null ? conn?.accountCurrency : null;
+    if (typeof ccy === "string" && ccy.trim()) accountCurrency = ccy.trim().toUpperCase();
+  } catch { /* null leverage / currency — margin and tick-value money omitted honestly */ }
 
   // Existing open exposure on this symbol for this user (multi-entry awareness).
   let openExposure: Parameters<typeof estimateExecutionPreview>[0]["openExposure"] = null;
@@ -141,6 +155,8 @@ export async function buildExecutionPreviewForUser(
     lots,
     spec: brokerSpec.spec,
     hasBrokerTruth: brokerSpec.hasBrokerTruth,
+    contract: brokerSpec.contract,
+    accountCurrency,
     quote: { bid, ask, quoteAgeMs },
     atrPrice,
     slippageHistory: null, // no realised-slippage history store yet — honest fallback

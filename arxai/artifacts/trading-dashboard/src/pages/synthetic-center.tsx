@@ -23,19 +23,19 @@ import { AlertTriangle, PlugZap } from "lucide-react";
 const SYNTHETIC_EXPLAINER = [
   {
     title: "What are Synthetic Indices?",
-    body: "Synthetic volatility indices are markets created by Deriv that run 24/7 and are not driven by real-world news events or economic releases.",
+    body: "Synthetic volatility indices are markets created by Deriv that run 24/7 and are not driven by real-world news events or economic releases. Their prices come from a random number generator, so past price patterns do not tell you where price goes next.",
   },
   {
     title: "Volatility 75 Index (V75)",
-    body: "Simulates 75% volatility. Large price movements with strong trending phases. Suited to experienced traders with strict risk management.",
+    body: "Set to 75% volatility, so price moves are larger than on lower-volatility indices. Suited to experienced traders with strict risk management.",
   },
   {
     title: "Volatility 25 1s Index (V25 1s)",
-    body: "Simulates 25% volatility on 1-second candles. Lower volatility and more predictable structure — commonly used for strategy development.",
+    body: "Set to 25% volatility and ticks once per second. Moves are smaller than on the 75% indices; the price path is still random.",
   },
   {
     title: "Volatility 75 1s Index (V75 1s)",
-    body: "1-second candles at the highest volatility of the three. For highly experienced traders only; size down significantly.",
+    body: "Set to 75% volatility and ticks once per second. For highly experienced traders only; size down significantly.",
   },
 ];
 
@@ -74,8 +74,10 @@ export default function SyntheticCenter() {
           <div className="text-foreground font-semibold">Synthetic analytics unavailable</div>
           <div className="text-txt-secondary text-sm max-w-md mx-auto">
             No backend synthetic-analytics provider is connected. ATR, trend, volatility state and
-            recommended lot size cannot be shown honestly, so nothing is displayed. Synthetic
-            instruments remain fully tradable on the Scanner, which uses real broker data.
+            recommended lot size cannot be shown honestly, so nothing is displayed. Synthetic prices
+            and setups are on the Scanner. Its prices come from your MT5 broker feed when your bridge is
+            connected, otherwise from Deriv's public price feed, and a row whose live feed is not current
+            is shown as not tradeable.
           </div>
         </CardContent>
       </Card>

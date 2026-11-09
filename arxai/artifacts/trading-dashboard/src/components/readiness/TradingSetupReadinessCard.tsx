@@ -77,24 +77,30 @@ export function TradingSetupReadinessCard() {
 }
 
 function ReadinessBody({ report }: { report: ReadinessReport }) {
-  const total = report.statuses.length;
-  const passed = report.statuses.filter(s => s.status === "pass" || s.status === "not_required").length;
-  const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
+  // A not-required check was not completed — it is excluded from both the
+  // numerator and the denominator and reported separately.
+  const notRequired = report.statuses.filter(s => s.status === "not_required").length;
+  const total = report.statuses.length - notRequired;
+  const passed = report.statuses.filter(s => s.status === "pass").length;
+  const percent = total > 0 ? Math.round((passed / total) * 100) : null;
   const failing = report.statuses.filter(s => s.status === "fail" || s.status === "blocked");
   const firstFail = failing[0];
 
   return (
     <div className="space-y-3">
       <div className="flex items-end gap-3">
-        <div className="text-3xl font-semibold tabular-nums">{percent}%</div>
-        <div className="text-sm text-muted-foreground pb-1">
-          {passed} of {total} checks complete
+        <div className="text-3xl font-semibold tabular-nums" data-testid="readiness-percent">
+          {percent == null ? "—" : `${percent}%`}
+        </div>
+        <div className="text-sm text-muted-foreground pb-1" data-testid="readiness-count">
+          {passed} of {total} required checks passed
+          {notRequired > 0 ? ` · ${notRequired} not required` : ""}
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-xs">
         <StatChip
-          label="Demo"
+          label="Paper"
           ok={report.ready_for_paper}
           testId="readiness-paper"
         />
@@ -136,9 +142,17 @@ function ReadinessBody({ report }: { report: ReadinessReport }) {
         </div>
       )}
 
-      <Button asChild variant="outline" size="sm" className="w-full" data-testid="button-view-full-readiness">
-        <Link href="/trading-readiness">View full readiness</Link>
+      {/* /trading-readiness is a different check (/api/readiness/evaluate:
+          mindset, news, rule contract) with its own score. It is not the full
+          version of this setup report (/api/readiness/me), so the link must
+          not present it as one. */}
+      <Button asChild variant="outline" size="sm" className="w-full" data-testid="button-open-pre-session-check">
+        <Link href="/trading-readiness">Open pre-session check</Link>
       </Button>
+      <div className="text-[11px] text-muted-foreground" data-testid="text-pre-session-check-note">
+        The pre-session check is a separate check (mindset, news, rule contract) with its own score. It does not
+        measure the setup checks above.
+      </div>
     </div>
   );
 }

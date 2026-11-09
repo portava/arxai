@@ -12,8 +12,10 @@
 // execution gate. Never weakens the 16-gate live pipeline.
 
 import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
-import type { ChartGateOutput } from "./chartGateOutput.js";
+import { truthResultOfState } from "./stateTruthResult.js";
+import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
 import { mirrorTrustSegment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
+import { isMergeSeamMeasured } from "./chartTruthScore.js";
 import type { ChartTimeframe } from "./timeframes.js";
 import { buildChartHandshake, type ChartHandshakeVerdict } from "./chartHandshake.js";
 import { getMarketData } from "../../data/dataManager.js";
@@ -22,6 +24,7 @@ import { higherTimeframeOf } from "../../assistant/chartStructure.js";
 import type { Candle } from "../../data/types.js";
 import type { MarketDataSufficiencyVerdict } from "@workspace/domain/market";
 import { evaluateSufficiencyFromChartState } from "./chartSufficiency.js";
+import { enrichStateWithUserBrokerQuote } from "./userBrokerAlignment.js";
 
 /** Canonical trust basis for this Eleanor chart read. */
 export type EleanorChartReadBasis =
@@ -68,8 +71,8 @@ export interface EleanorChartContext {
 
   /**
    * Compact human trust line, always present.
-   * e.g. "Verified M5 candles · Live feed · Mirror synced"
-   * or   "Candles syncing · Feed stale · Mirror degraded"
+   * e.g. "M5 candles: Chart Truth 87 (Healthy) · Live feed · Mirror synced"
+   * or   "M5 candles syncing · Feed stale · Mirror degraded"
    */
   trustLine: string;
 
@@ -103,6 +106,13 @@ export interface EleanorChartContext {
    * Same source as candles above.
    */
   htfCandles: Candle[];
+
+  /**
+   * The canonical timeframe `htfCandles` were fetched on, or null when this
+   * timeframe has no higher timeframe. Consumers must label any HTF-derived
+   * statement with it (and must not assume the HTF is daily).
+   */
+  htfTimeframe: ChartTimeframe | null;
 }
 
 export function buildTrustLine(
@@ -111,34 +121,43 @@ export function buildTrustLine(
   timeframe: string,
   hasForming: boolean,
   aaciOverall: ChartHandshakeVerdict,
+  opts: {
+    /** The served feed's status; "Live feed" needs a clean, confirmed-live feed. */
+    feed?: { quality?: string | null; isLive?: boolean | null } | null;
+    /** Candle-data rollup (every handshake check except renderer telemetry). */
+    aaciSourceOverall?: ChartHandshakeVerdict;
+    /**
+     * Whether the merge seam was observed (isMergeSeamMeasured). false: the
+     * mirror is "not confirmed" even when a bound broker quote is aligned.
+     */
+    mergeSeamChecked?: boolean;
+  } = {},
 ): string {
   const parts: string[] = [];
 
-  if (gate.confidentReadAllowed) {
-    parts.push(`Verified ${timeframe} candles`);
-  } else {
-    parts.push(`${timeframe} candles syncing`);
-  }
+  // "Verified" only in the score's own Verified band (see candleTrustSegment).
+  parts.push(candleTrustSegment(gate, timeframe));
 
-  if (gate.autonomousChartActionAllowed) {
-    parts.push("Live feed");
-  } else {
-    parts.push("Feed stale");
-  }
+  // Not stale is not live: a delayed or not-live feed is named as such.
+  parts.push(feedTrustSegment(gate.autonomousChartActionAllowed, opts.feed));
 
   // Mirror segment reflects the REAL broker-alignment granularity (tight/normal
   // → synced, wide → drifting, unknown → no claim, seam/alignment-failed →
   // degraded) instead of the binary tradeConfirmationAllowed gate, so the line
   // never claims "Mirror synced" while the price is drifting or unverifiable.
-  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment);
+  const mirror = mirrorTrustSegment(gate.tradeConfirmationAllowed, alignment,
+    { ...gateMirrorBlockCause(gate), seamUnchecked: opts.mergeSeamChecked === false });
   if (mirror) {
     parts.push(mirror);
   }
 
   if (aaciOverall === "PASS") {
     parts.push("AACI verified");
+  } else if (aaciOverall === "WARN" && opts.aaciSourceOverall === "PASS") {
+    // Only the renderer check is open: it cannot be measured server-side.
+    parts.push("AACI candle checks pass · chart rendering not measured");
   } else if (aaciOverall === "WARN") {
-    parts.push("AACI warning");
+    parts.push("AACI warning: some checks not confirmed");
   } else {
     parts.push("AACI unverified");
   }
@@ -168,22 +187,166 @@ export function buildTrustLine(
  */
 export function buildGatedTrustLine(
   timeframe: string,
-  feed: { available: boolean; stale: boolean; aiUsable: boolean; basis: EleanorChartReadBasis },
+  feed: {
+    available: boolean; stale: boolean; aiUsable: boolean; basis: EleanorChartReadBasis;
+    /** The served feed's quality grade; names why a non-stale feed is not usable. */
+    quality?: string | null;
+    /** The chart's own reason the series is not live (ChartFeedStatus.notLiveReason). */
+    notLiveReason?: "market_closed" | "stored_history" | null;
+  },
 ): string {
   let feedPart: string;
   if (!feed.available) {
     feedPart = "feed unavailable";
+  } else if ((feed.stale || !feed.aiUsable) && feed.notLiveReason === "market_closed") {
+    // The chart says "Market closed ... Not a feed fault": the candles are not
+    // syncing and the feed is not stale or delayed — the market is shut.
+    return `${timeframe} candles from before the weekend close · market closed · read gated`;
+  } else if ((feed.stale || !feed.aiUsable) && feed.notLiveReason === "stored_history") {
+    // The chart says "Showing stored MetaTrader 5 broker candles ... not a live feed".
+    return `${timeframe} stored candles · not live · read gated`;
   } else if (feed.stale) {
     feedPart = "feed stale";
   } else if (!feed.aiUsable) {
-    feedPart = "feed delayed";
+    feedPart = unusableFeedPart(feed.quality);
   } else {
-    // The feed itself is fresh/usable but the read is still gated for a
-    // non-feed reason (truth still syncing, or mirror/AACI handshake degraded
-    // on a PARTIAL basis). Never claim verification or liveness.
-    feedPart = feed.basis === "PARTIAL" ? "mirror syncing" : "awaiting sync";
+    // The feed itself is clean and current, so nothing is "syncing": the read
+    // is gated by another check — Chart Truth below the 75 bar (SYNCING), or
+    // a mirror / AACI handshake check that did not pass or could not be
+    // measured (PARTIAL). Any other basis was gated by the caller for its own
+    // stated reason (e.g. thin history), so no check is blamed here. Never
+    // claim verification or liveness.
+    const reason =
+      feed.basis === "SYNCING" ? " · Chart Truth below 75"
+      : feed.basis === "PARTIAL" ? " · not every chart check passed"
+      : "";
+    return `${timeframe} candles clean${reason} · read gated`;
   }
   return `${timeframe} candles syncing · ${feedPart} · read gated`;
+}
+
+/**
+ * Trust-line words for a feed that is not stale but not usable, from its own
+ * quality grade: only a "delayed" grade is a delayed feed. Candles with gaps,
+ * duplicates or out-of-order bars ("partial"), or that failed their integrity
+ * checks ("invalid"), are named as such; an unknown grade is "not confirmed".
+ */
+function unusableFeedPart(quality: string | null | undefined): string {
+  switch (quality) {
+    case "delayed": return "feed delayed";
+    case "partial": return "candle sequence incomplete";
+    case "invalid": return "candles failed integrity checks";
+    case "empty":
+    case "unavailable": return "no candles";
+    default: return "feed not confirmed";
+  }
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * Refusal reason for a feed that is not stale but not usable, naming what its
+ * own quality grade observed (never "delayed" unless the grade is delayed).
+ */
+function unusableFeedReason(state: ChartIntelligenceState): string {
+  const feed = state.truthState;
+  const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
+  switch (feed?.quality) {
+    case "delayed":
+      return "The chart feed is delayed, not live, so I won't draw a tradeable setup. I'll mark levels once it is live.";
+    case "partial": {
+      const seen = [
+        count(feed.missingCandleCount) ? `${plural(count(feed.missingCandleCount), "missing bar")}` : null,
+        count(feed.duplicateCount) ? `${plural(count(feed.duplicateCount), "duplicate bar")}` : null,
+        count(feed.outOfOrderCount) ? `${plural(count(feed.outOfOrderCount), "out-of-order bar")}` : null,
+      ].filter(Boolean);
+      return `The chart's candle sequence is incomplete${seen.length ? ` (${seen.join(", ")})` : ""}, so I won't draw a tradeable setup. I'll mark levels once the candles are complete.`;
+    }
+    case "invalid": {
+      const detail = count(feed.invalidOhlcCount)
+        ? ` (${plural(count(feed.invalidOhlcCount), "bar")} with invalid OHLC)`
+        : truthResultOfState(state)?.mockDataDetected
+          ? " (the data looks simulated, not real market data)"
+          : typeof feed.warning === "string" && /timestamps could not be confirmed/i.test(feed.warning)
+            ? " (candle timestamps could not be confirmed)"
+            : "";
+      return `The chart's candles failed their integrity checks${detail}, so I won't draw a tradeable setup.`;
+    }
+    case "empty":
+    case "unavailable":
+      return "The chart has no candles to read right now, so I won't draw a tradeable setup.";
+    default:
+      return "The chart feed has not passed its checks, so I won't draw a tradeable setup.";
+  }
+}
+
+// Candle-data handshake checks a gated read can name, in plain English.
+// EleanorReadAllowed (the truth gate) and MirrorSync (a rollup of the merge seam
+// and broker alignment) are covered by the explicit gate checks below.
+type GatedCheck =
+  | "ChartSource" | "OHLCIntegrity" | "TimeframeAccuracy" | "FeedFreshness"
+  | "HistoricalLiveMerge" | "BrokerPriceAlignment" | "SelfTradeChartAllowed";
+const GATED_CHECK_LABELS: ReadonlyArray<[GatedCheck, string]> = [
+  ["ChartSource", "the chart source check"],
+  ["OHLCIntegrity", "candle integrity"],
+  ["TimeframeAccuracy", "the timeframe history check"],
+  ["FeedFreshness", "feed freshness"],
+  ["HistoricalLiveMerge", "the seam between closed history and the live candle"],
+  ["BrokerPriceAlignment", "the broker price comparison"],
+  ["SelfTradeChartAllowed", "the automated-trading chart check"],
+];
+
+/**
+ * Plain-English reason a read is gated (basis !== "VERIFIED"), naming what was
+ * actually not confirmed — the feed (stale / delayed), the candles (truth
+ * still syncing) or the specific chart checks that have not passed. Used when
+ * the gate itself has no primaryBlockReason (e.g. every gate flag is open but
+ * the merge seam is unmeasured), so a refusal never falls back to "the chart
+ * feed isn't confirmed" when the feed is. A VERIFIED read keeps the gate's own
+ * block reason (normally null).
+ */
+export function gatedReadReason(
+  ctx: Pick<EleanorChartContext, "basis" | "blockReason" | "gateOutput" | "state"> | null,
+): string | null {
+  if (!ctx) return "The chart could not be loaded, so I won't draw a tradeable setup.";
+  if (ctx.blockReason) return ctx.blockReason;
+  if (ctx.basis === "VERIFIED") return null;
+  const { state, gateOutput: gate } = ctx;
+  // A closed market or a stored series is what the chart says it is — never a
+  // "stale" or "delayed" feed (same reason the chart message and warning use).
+  if (state.stale || !state.aiUsable) {
+    const notLive = state.truthState?.notLiveReason ?? null;
+    if (notLive === "market_closed") {
+      return "The market is in its scheduled weekend close, so there is no live data to draw a tradeable setup from. I'll mark levels once it reopens.";
+    }
+    if (notLive === "stored_history") {
+      return "The chart is showing stored broker candles with no bridge pushing them, so there is no live data to draw a tradeable setup from.";
+    }
+  }
+  if (state.stale) return "The chart feed is stale, so I won't draw a tradeable setup. I'll mark levels once it is live again.";
+  if (!state.aiUsable) return unusableFeedReason(state);
+  if (!gate.confidentReadAllowed) {
+    return `The candles have not passed their checks yet (chart truth ${Math.round(gate.chartTruthScore)} of 100), so I won't draw a tradeable setup.`;
+  }
+  const pending: string[] = [];
+  if (!gate.autonomousChartActionAllowed) pending.push("the feed is not fresh enough for a live setup");
+  if (!gate.tradeConfirmationAllowed) pending.push("the chart price has not been confirmed against your broker's quote");
+  const handshake = buildChartHandshake(gate, state.chartTruthScore);
+  for (const [key, label] of GATED_CHECK_LABELS) {
+    const verdict = handshake[key];
+    if (verdict === "FAIL") pending.push(`${label} failed`);
+    else if (verdict === "WARN") pending.push(`${label} is not confirmed`);
+  }
+  // The basis keeps the full handshake rollup, so chart rendering can be the
+  // only open check: name it instead of a bare "not every check has passed".
+  if (handshake.RenderHealth === "FAIL") {
+    pending.push("chart rendering failed its check");
+  } else if (handshake.RenderHealth === "WARN") {
+    const render = state.chartTruthScore?.subMetrics?.find((m) => m.key === "render_accuracy");
+    pending.push(render?.evidenceStatus === "measured" ? "chart rendering is not confirmed" : "chart rendering is not measured");
+  }
+  if (pending.length === 0) return "Not every chart check has passed, so I won't draw a tradeable setup.";
+  return `Not every chart check has passed: ${pending.join("; ")}. I won't draw a tradeable setup until they do.`;
 }
 
 /**
@@ -246,8 +409,20 @@ export async function buildEleanorChartContext(
   symbol: string,
   timeframe: ChartTimeframe,
   limit = 300,
+  opts: { userId?: number | null } = {},
 ): Promise<EleanorChartContext> {
-  const state = await buildChartIntelligenceState(symbol, timeframe, limit);
+  let state = await buildChartIntelligenceState(symbol, timeframe, limit);
+  // A measured broker comparison needs a quote BOUND to the served series
+  // (same provider, bridge and owner; owner == this user; observed, fresh tick
+  // time — brokerQuoteBinding.ts). Absent or unbound, the mirror stays
+  // unmeasured. Fail-open to the unenriched state.
+  if (opts.userId != null) {
+    try {
+      state = await enrichStateWithUserBrokerQuote(state, { userId: opts.userId, symbol, timeframe, limit });
+    } catch {
+      // fail-open to the unenriched state: mirror remains unmeasured
+    }
+  }
   const gate = state.gateOutput;
 
   // Compute AACI chart handshake from the Phase 3 gate — this is the same
@@ -261,8 +436,14 @@ export async function buildEleanorChartContext(
   const limitedHistory = closedBarsCount < MIN_BARS_FULL_READ && closedBarsCount > 0;
   const liveDelayed =
     state.truthState.quality === "delayed" && hasRecentDerivTickFor(state.symbol);
+  // Basis keeps the FULL handshake overall (renderer telemetry included), the
+  // stricter rule this line runs: VERIFIED needs every check, measured. The
+  // trust line names the candle-data rollup separately so it can say the
+  // candle checks passed while rendering is not measured.
   let basis = toBasis(gate, state, aaciChartHandshakeOverall);
-  const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall);
+  const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall,
+    { feed: state.truthState, aaciSourceOverall: aaciHandshake.sourceOverall,
+      mergeSeamChecked: isMergeSeamMeasured(truthResultOfState(state)) });
   let blockReason = gate.primaryBlockReason;
 
   // ── ONE DATA-SUFFICIENCY TRUTH ─────────────────────────────────────────────
@@ -306,5 +487,6 @@ export async function buildEleanorChartContext(
     state,
     candles,
     htfCandles,
+    htfTimeframe: htf,
   };
 }

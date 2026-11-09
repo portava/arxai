@@ -76,6 +76,43 @@ export function basketKeyFor(
   return `${accountMode}|${symbol.toUpperCase()}|${direction}|${firstLegOpenedAtMs ?? 0}`;
 }
 
+/** Broker tickets stored on a journal row (jsonb string[]), as strings. */
+export function storedLegTickets(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((t) => t != null && t !== "").map(String) : [];
+}
+
+/** Every leg ticket the basket has held: the stored ones plus the open ones. */
+export function unionLegTickets(stored: unknown, open: string[]): string[] {
+  const out = storedLegTickets(stored);
+  for (const t of open) if (!out.includes(t)) out.push(t);
+  return out;
+}
+
+/**
+ * The OPEN journal entry that a currently-open basket continues. The basket
+ * key carries the first leg's open time, so when the oldest leg closes and
+ * the rest stay open the key changes. That is a partial close, not a closed
+ * scalp: the entry is matched by its key, or else by a broker ticket it
+ * shares with the open legs on the same symbol and side. Null when the
+ * basket is new.
+ */
+export function findContinuedEntry<
+  R extends { basketKey: string; symbol: string; direction: string; legTickets: unknown },
+>(
+  openRows: R[],
+  snap: { basketKey: string; symbol: string; direction: string; legTickets: string[] },
+): R | null {
+  const exact = openRows.find((r) => r.basketKey === snap.basketKey);
+  if (exact) return exact;
+  if (snap.legTickets.length === 0) return null;
+  const sym = snap.symbol.toUpperCase();
+  return openRows.find((r) =>
+    r.symbol.toUpperCase() === sym &&
+    r.direction === snap.direction &&
+    storedLegTickets(r.legTickets).some((t) => snap.legTickets.includes(t)),
+  ) ?? null;
+}
+
 /** Earliest leg open time (ms) in a basket, or null when none is known. */
 export function firstLegOpenedAtMs(basket: ScalpBasket): number | null {
   let min: number | null = null;
@@ -261,10 +298,17 @@ export function gradeEntryTiming(timing: string | null): string {
 /**
  * Produce a short, honest, plain-English after-action review. No internal
  * names, no guaranteed-return wording. Best-effort even when P/L is unknown.
+ *
+ * Only a KNOWN (broker-realised) P/L states the outcome as fact. An ESTIMATED
+ * result was graded from the last floating reading before the close (no
+ * commission or swap, and the price may have moved after it), so the review
+ * says what that reading showed and that the final figure was not reported.
  */
 export function deriveReview(r: ReviewInputs): ScalpReview {
   const timingGrade = gradeEntryTiming(r.entryTimingAtEntry);
   const warnedRealWarning = isRealExitWarning(r.maxExitUrgency);
+  const estimated = r.plQuality !== "KNOWN";
+  const estimateNote = "The final figure was not reported, so the actual result may differ.";
 
   let warnedCorrectly: boolean | null = null;
   if (r.result === "LOSS") warnedCorrectly = warnedRealWarning ? true : false;
@@ -284,28 +328,44 @@ export function deriveReview(r: ReviewInputs): ScalpReview {
 
   if (r.result === "WIN") {
     const parts: string[] = [];
-    parts.push(
-      r.flameContinued
-        ? "This one worked. The move kept pushing in your favour after you got in."
-        : "This one closed in profit even though the move cooled off — you took it before it turned.",
-    );
+    if (estimated) {
+      parts.push(
+        r.flameContinued
+          ? "Going by the last P/L reading before the close, this looked like a win: the move kept pushing in your favour after you got in."
+          : "Going by the last P/L reading before the close, this looked like a win even though the move cooled off.",
+      );
+      parts.push(estimateNote);
+    } else {
+      parts.push(
+        r.flameContinued
+          ? "This one worked. The move kept pushing in your favour after you got in."
+          : "This one closed in profit even though the move cooled off — you took it before it turned.",
+      );
+    }
     let lesson: string;
     if (warnedCorrectly === false) {
-      lesson =
-        `${DEFAULT_ASSISTANT_NAME} flashed an exit warning on this winner — worth noticing when her caution would have cut a good trade short.`;
+      lesson = estimated
+        ? `${DEFAULT_ASSISTANT_NAME} flashed an exit warning on what looked like a winner — worth noticing when her caution may cut a good trade short.`
+        : `${DEFAULT_ASSISTANT_NAME} flashed an exit warning on this winner — worth noticing when her caution would have cut a good trade short.`;
     } else if (r.entryTimingAtEntry === "CLEAN") {
       lesson = "Clean entry timing did the heavy lifting here — keep waiting for that quality of entry.";
     } else if (r.addOnCount > 0) {
-      lesson = "Adding while the move was clearly working added to the result. Only add while it's still pushing.";
+      lesson = estimated
+        ? "Adding while the move was clearly working looked like it added to the result. Only add while it's still pushing."
+        : "Adding while the move was clearly working added to the result. Only add while it's still pushing.";
     } else {
-      lesson = `Entry timing was ${timingGrade}; banking it while the move was alive paid off.`;
+      lesson = estimated
+        ? `Entry timing was ${timingGrade}; banking it while the move was alive looked like it paid off.`
+        : `Entry timing was ${timingGrade}; banking it while the move was alive paid off.`;
     }
     return { exitReason: parts.join(" "), lesson, warnedCorrectly };
   }
 
   if (r.result === "BREAKEVEN") {
     return {
-      exitReason: "This scalp finished roughly flat — no real win, no real loss.",
+      exitReason: estimated
+        ? `Going by the last P/L reading before the close, this scalp finished roughly flat. ${estimateNote}`
+        : "This scalp finished roughly flat — no real win, no real loss.",
       lesson:
         r.entryTimingAtEntry === "LATE" || r.entryTimingAtEntry === "CHASING"
           ? "A late entry left little room to work. Earlier, cleaner entries give a flat trade more chance to pay."
@@ -316,7 +376,16 @@ export function deriveReview(r: ReviewInputs): ScalpReview {
 
   // LOSS
   let exitReason: string;
-  if (!r.flameContinued) {
+  if (estimated) {
+    exitReason = "Going by the last P/L reading before the close, this looked like a loss.";
+    if (!r.flameContinued) {
+      exitReason += " The burst faded soon after you entered — it didn't follow through, and the trade went against you.";
+    } else if (warnedRealWarning) {
+      exitReason += ` The move turned against you and ${DEFAULT_ASSISTANT_NAME}'s exit pressure was rising before the close.`;
+    } else {
+      exitReason += " Price had moved against the position.";
+    }
+  } else if (!r.flameContinued) {
     exitReason = "The burst faded soon after you entered — it didn't follow through, and the trade went against you.";
   } else if (warnedRealWarning) {
     exitReason = `The move turned against you and ${DEFAULT_ASSISTANT_NAME}'s exit pressure was rising before it closed in the red.`;
@@ -326,10 +395,13 @@ export function deriveReview(r: ReviewInputs): ScalpReview {
   if (r.entryTimingAtEntry === "LATE" || r.entryTimingAtEntry === "CHASING") {
     exitReason += ` Entry was ${timingGrade}, which left little cushion.`;
   }
+  if (estimated) exitReason += ` ${estimateNote}`;
 
   let lesson: string;
   if (r.addOnCount > 0) {
-    lesson = "Adding to this position made the loss bigger — only add while the move is clearly still working.";
+    lesson = estimated
+      ? "Adding to this position looked like it made the loss bigger — only add while the move is clearly still working."
+      : "Adding to this position made the loss bigger — only add while the move is clearly still working.";
   } else if (warnedCorrectly === false) {
     lesson = "There was no early exit signal here; tighter protection on the entry would have capped the damage.";
   } else if (warnedCorrectly === true) {
@@ -425,6 +497,15 @@ export interface PersonalityBias {
   notes: string | null;
 }
 
+/**
+ * Personality notes stored before results were labelled as estimates say
+ * "N% wins". Every result is graded from the last floating reading before the
+ * close, so the share is reported as estimated. The stored row is not changed.
+ */
+export function labelEstimatedWinShare(notes: string | null): string | null {
+  return notes == null ? null : notes.replace(/(\d+)% wins\b/g, "$1% estimated wins");
+}
+
 /** Minimum closed trades before learning nudges anything (honest small-sample). */
 export const PERSONALITY_MIN_SAMPLE = 3;
 const MAX_QUALITY_PENALTY = 8;
@@ -458,14 +539,17 @@ export function computeQualityBias(p: PersonalityCounts): PersonalityBias {
   const floorRaise = (reversalRate + fakeoutRate) * 6 * synthFactor;
   const minQualityDelta = clamp(floorRaise, 0, MAX_MIN_QUALITY_DELTA);
 
+  // Every closed result is graded from the last floating reading before the
+  // close (no broker-realised P/L is recorded), so the win share is an
+  // estimate and the note says so.
   const winRatePct = Math.round((p.wins / p.tradesClosed) * 100);
   let notes: string;
   if (qualityBias <= -4) {
-    notes = `${DEFAULT_ASSISTANT_NAME} is being stricter on ${p.isSynthetic ? "this synthetic index" : "this market"} — it has reversed or faded on you more often than it has paid (${winRatePct}% wins so far).`;
+    notes = `${DEFAULT_ASSISTANT_NAME} is being stricter on ${p.isSynthetic ? "this synthetic index" : "this market"} — it has reversed or faded on you more often than it has paid (${winRatePct}% estimated wins so far).`;
   } else if (qualityBias < 0) {
-    notes = `${DEFAULT_ASSISTANT_NAME} is a little more cautious here based on your history (${winRatePct}% wins so far).`;
+    notes = `${DEFAULT_ASSISTANT_NAME} is a little more cautious here based on your history (${winRatePct}% estimated wins so far).`;
   } else {
-    notes = `This market has behaved normally for you so far (${winRatePct}% wins).`;
+    notes = `This market has behaved normally for you so far (${winRatePct}% estimated wins).`;
   }
   return { qualityBias, minQualityDelta, notes };
 }

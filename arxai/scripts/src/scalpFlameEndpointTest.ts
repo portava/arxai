@@ -350,6 +350,18 @@ async function main(): Promise<void> {
   ]);
 
   // ── Inject the live feed via the genuine MT5 bridge seam ─────────────────
+  // Every quote below carries the producer's own tick time (`timestamp`), so it
+  // is pushed the way the real EA paths store such a tick: /mt5/sync-quotes
+  // with an EA timestamp records tickTimeObserved=true (a bridge-v2 TICK with
+  // brokerTimeEpochMs does once an earlier post from the same bridge bounds its
+  // EA-UTC first sight, audit H7). Since a21672d8 ("attribute MT5 quotes to their
+  // bridge and observed tick time") matchedMarketQuote binds a quote to the
+  // candle series only when its tick time was observed; the legacy 2-arg push
+  // records a receive-time stamp, which cannot prove the quote is current, so
+  // Focus got no bound price and read every flame blind. The quote goes to the
+  // same (unattributed) writer partition as the legacy 2-arg candle push, which
+  // is the writer quotePinForSeries pins the Focus quote to.
+  const OBSERVED_TICK = { tickTimeObserved: true } as const;
   // LIVE_SYMBOL: real candle window + quote → eligible for a non-blind flame.
   const candles = buildUptrendCandles();
   const lastClose = candles[candles.length - 1]!.close;
@@ -360,7 +372,7 @@ async function main(): Promise<void> {
     bid: Number((lastClose - 0.00004).toFixed(5)),
     ask: Number((lastClose + 0.00004).toFixed(5)),
     timestamp: new Date().toISOString(),
-  });
+  }, null, OBSERVED_TICK);
   // ACTIONABLE_SYMBOL: a REAL candle window shaped as a fresh momentum burst →
   // eligible for an ACTIONABLE non-blind flame (IGNITING/ACTIVE + BUY).
   const actionableCandles = buildActionableFlameCandles();
@@ -372,12 +384,14 @@ async function main(): Promise<void> {
     bid: Number((actionableLast - 0.00004).toFixed(5)),
     ask: Number((actionableLast + 0.00004).toFixed(5)),
     timestamp: new Date().toISOString(),
-  });
+  }, null, OBSERVED_TICK);
   // AWAITING_SYMBOL: a REAL but sub-threshold candle window (< MIN_FLAME_CANDLES)
   // pushed through the same mt5_broker seam. The real candle fetch returns
   // exactly these candles, so the engine's flame read MUST be honestly blind
   // (the candle window is too short to read a flame) — proving the genuine
   // data path never promotes an insufficient window to a non-blind flame.
+  // Its quote is an observed tick too, so the blind read comes from the candle
+  // window, not from an unbound quote.
   const shortCandles = candles.slice(0, MIN_FLAME_CANDLES - 1); // 4 real candles
   const awaitingLast = shortCandles[shortCandles.length - 1]!.close;
   updateCandlesFromMT5(AWAITING_SYMBOL, shortCandles);
@@ -387,7 +401,7 @@ async function main(): Promise<void> {
     bid: Number((awaitingLast - 0.00004).toFixed(5)),
     ask: Number((awaitingLast + 0.00004).toFixed(5)),
     timestamp: new Date().toISOString(),
-  });
+  }, null, OBSERVED_TICK);
 
   const postJson = async (path: string, body: unknown) => {
     const res = await fetch(`${baseUrl}${path}`, {

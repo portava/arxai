@@ -6,7 +6,8 @@
 // instead of inventing a level. The chart NEVER executes from these reads — they
 // are decision-support text only.
 
-import { decimalsFor, round } from "./chartMath.js";
+import { round } from "./chartMath.js";
+import { chartPriceText, validPriceDecimals } from "./chartPriceDecimals.js";
 import type {
   ChartEvidenceDirection,
   ChartEvidenceRead,
@@ -51,21 +52,33 @@ export interface DecisionReasoningInputs {
   levels: ChartLevelsRead;
   evidence: ChartEvidenceRead;
   setup: ChartSetupRead;
+  /**
+   * The instrument's display precision for this chart (chartPriceDecimals).
+   * Level prices are reported and printed at it. When omitted, prices are
+   * reported as the level engines produced them (already at instrument
+   * precision) — never re-rounded by magnitude.
+   */
+  priceDecimals?: number | null;
 }
 
-function fmt(price: number | null | undefined): number | null {
-  if (price == null || !Number.isFinite(price)) return null;
-  return round(price, decimalsFor(price));
-}
-
-function priceText(price: number | null): string {
-  return price != null ? `${price}` : "the level";
+function priceFormatters(priceDecimals: number | null | undefined) {
+  const decimals = validPriceDecimals(priceDecimals);
+  return {
+    fmt(price: number | null | undefined): number | null {
+      if (price == null || !Number.isFinite(price)) return null;
+      return decimals == null ? price : round(price, decimals);
+    },
+    priceText(price: number | null): string {
+      return price != null ? chartPriceText(price, decimals) : "the level";
+    },
+  };
 }
 
 export function computeDecisionReasoning(
   input: DecisionReasoningInputs,
 ): ChartDecisionReasoning {
   const { trend, levels, evidence, setup } = input;
+  const { fmt, priceText } = priceFormatters(input.priceDecimals);
 
   if (!evidence.populated || !levels.populated) {
     return {

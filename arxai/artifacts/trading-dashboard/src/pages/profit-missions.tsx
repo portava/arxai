@@ -38,6 +38,8 @@ import {
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 import { MissionPerformanceView } from "@/components/missions/MissionPerformanceView";
+import { formatInstrumentPrice, observedPriceDecimals } from "@/lib/instrumentPriceFormat";
+import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import {
   Target,
   Gauge,
@@ -858,6 +860,25 @@ function MissionJournal({ missionId }: { missionId: number }) {
 }
 
 // ── Battle Room header shell ──────────────────────────────────────────────────
+// Pace verdict for the Battle Room. math.onTrack is false whenever no time has
+// elapsed or nothing has been realised, so it is only a verdict for a mission
+// that is actually running and has recorded P/L. Every other case says what is
+// true instead of "Behind pace".
+const PACE_NOT_STARTED = new Set(["draft", "pending_approval"]);
+const PACE_PAUSED = new Set(["paused", "stopped_by_risk"]);
+const PACE_ENDED = new Set(["target_hit", "completed", "failed", "expired", "cancelled"]);
+function missionPaceLabel(mission: ProfitMission): string {
+  const m = mission.math;
+  if (!m) return "—";
+  if (m.invalid) return "Not measurable";
+  if (PACE_NOT_STARTED.has(mission.status)) return "Not started";
+  if (PACE_ENDED.has(mission.status)) return "Ended — not tracked";
+  if (PACE_PAUSED.has(mission.status)) return "Paused — not tracked";
+  if (!(m.elapsedDays > 0)) return "Too early to measure";
+  if (m.currentValue === m.startingAmount) return "No profit recorded yet";
+  return m.onTrack ? "On pace" : "Behind pace";
+}
+
 export function BattleRoomShell({ mission }: { mission: ProfitMission | null }) {
   const m = mission?.math;
   return (
@@ -913,7 +934,7 @@ export function BattleRoomShell({ mission }: { mission: ProfitMission | null }) 
           <Metric label="Current value" value={mission ? money(mission.currentValue) : "—"} />
           <Metric label="Mission class" value={mission?.feasibility?.unitAwareMissionClass ?? (m ? "—" : "—")} />
           <Metric label="Risk profile" value={mission ? mission.riskProfile : "—"} />
-          <Metric label="Pace status" value={m ? (m.onTrack ? "On pace" : "Behind pace") : "—"} />
+          <Metric label="Pace status" value={mission ? missionPaceLabel(mission) : "—"} testId="metric-pace-status" />
         </div>
       </CardContent>
     </Card>
@@ -950,9 +971,23 @@ function directionMeta(direction: MissionProposal["direction"]) {
   return { label: "No trade", cls: "text-muted-foreground", Icon: Minus };
 }
 
-function fmtPrice(n: number | null): string {
+/**
+ * Mission levels follow the one instrument display rule used on the chart and
+ * scanner: no thousands grouping, at least the symbol's own digits (5 for FX
+ * pairs, 3 for JPY pairs, else 2), and never fewer digits than the row's own
+ * levels actually carry — so 1.08500 is not shortened to 1.085 and a level that
+ * differs by one point never renders identically to its neighbour.
+ */
+export function formatMissionPrice(
+  symbol: string,
+  n: number | null | undefined,
+  rowLevels: ReadonlyArray<number | null | undefined>,
+): string {
   if (n == null || !Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 5 });
+  const bare = symbol.toUpperCase().replace(/^.*:/, "").replace(/[^A-Z]/g, "");
+  const base = candleDisplayPrecision([], bare);
+  const seen = observedPriceDecimals([n, ...rowLevels]);
+  return formatInstrumentPrice(n, Math.max(base, seen ?? 0));
 }
 
 // ── Agent Desk: the mission's specialist team (advisory roster) ───────────────
@@ -1005,8 +1040,10 @@ function MissionAgentDesk({ missionId }: { missionId: number }) {
 }
 
 // ── A single proposal row (read-only analysis artifact) ──────────────────────
-function ProposalRow({ p }: { p: MissionProposal }) {
+export function ProposalRow({ p }: { p: MissionProposal }) {
   const dir = directionMeta(p.direction);
+  const levels = [p.entryPlan.entryPrice, p.riskPlan.stopLoss, p.riskPlan.takeProfit];
+  const fmtLevel = (n: number | null | undefined) => formatMissionPrice(p.symbol, n, levels);
   const sMeta = PROPOSAL_STATUS_META[p.status] ?? {
     label: p.status,
     cls: "bg-muted text-muted-foreground",
@@ -1041,12 +1078,12 @@ function ProposalRow({ p }: { p: MissionProposal }) {
         </div>
         <div>
           <span className="text-muted-foreground">Entry</span>
-          <div>{fmtPrice(p.entryPlan.entryPrice)}</div>
+          <div>{fmtLevel(p.entryPlan.entryPrice)}</div>
         </div>
         <div>
           <span className="text-muted-foreground">Stop / Target</span>
           <div>
-            {fmtPrice(p.riskPlan.stopLoss)} / {fmtPrice(p.riskPlan.takeProfit)}
+            {fmtLevel(p.riskPlan.stopLoss)} / {fmtLevel(p.riskPlan.takeProfit)}
           </div>
         </div>
       </div>
@@ -1291,8 +1328,12 @@ function ExecutionHealthBanner({ health }: { health: MissionExecutionHealth }) {
 }
 
 // Aggregate open-exposure panel driven by the pulse (per-user).
-function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) {
+export function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) {
   const classes = Object.keys(exposure.riskByAssetClass ?? {});
+  // Risk to the stop is not known for these open positions; the money figures
+  // are only their current floating losses (a lower bound), never "$0 risk".
+  const unknown = typeof exposure.riskUnknownCount === "number" ? exposure.riskUnknownCount : 0;
+  const riskUnknown = unknown > 0 && exposure.openCount > 0;
   return (
     <div className="rounded-md border border-border p-3" data-testid="exposure-summary">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -1302,17 +1343,25 @@ function ExposureSummary({ exposure }: { exposure: MissionExposureAggregates }) 
         <Metric label="Open trades" value={String(exposure.openCount)} testId="metric-open-count" />
         <Metric
           label="Open risk"
-          value={money(exposure.totalOpenRisk)}
+          value={riskUnknown ? "Not known" : money(exposure.totalOpenRisk)}
           testId="metric-open-risk"
         />
       </div>
+      {riskUnknown && (
+        <p className="mt-2 text-[11px] text-warning" data-testid="exposure-risk-unknown">
+          Risk to the stop is not known for {unknown} of {exposure.openCount} open
+          {exposure.openCount === 1 ? " trade" : " trades"}. Current floating loss:{" "}
+          {money(exposure.totalOpenRisk)} (the least that is at risk, not the full risk).
+        </p>
+      )}
       {classes.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs text-muted-foreground" data-testid="list-exposure-classes">
           {classes.map((c) => (
             <li key={c} className="flex items-center justify-between">
               <span>{c}</span>
               <span>
-                {exposure.countByAssetClass?.[c] ?? 0} · {money(exposure.riskByAssetClass[c] ?? 0)}
+                {exposure.countByAssetClass?.[c] ?? 0} ·{" "}
+                {riskUnknown ? "risk not known" : money(exposure.riskByAssetClass[c] ?? 0)}
               </span>
             </li>
           ))}
@@ -1505,6 +1554,8 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const dir = directionMeta(draft.direction);
+  const draftLevels = [draft.entryPrice, draft.stopLoss, draft.takeProfit];
+  const fmtDraftLevel = (n: number | null | undefined) => formatMissionPrice(draft.symbol, n, draftLevels);
   const sMeta =
     DRAFT_STATUS_META[draft.effectiveStatus] ?? {
       label: draft.effectiveStatus,
@@ -1569,12 +1620,12 @@ function TradeDraftRow({ draft, missionId }: { draft: TradeDraft; missionId: num
       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
         <div>
           <span className="text-muted-foreground">Entry</span>
-          <div>{fmtPrice(draft.entryPrice ?? null)}</div>
+          <div>{fmtDraftLevel(draft.entryPrice)}</div>
         </div>
         <div>
           <span className="text-muted-foreground">Stop / Target</span>
           <div>
-            {fmtPrice(draft.stopLoss ?? null)} / {fmtPrice(draft.takeProfit ?? null)}
+            {fmtDraftLevel(draft.stopLoss)} / {fmtDraftLevel(draft.takeProfit)}
           </div>
         </div>
         <div>

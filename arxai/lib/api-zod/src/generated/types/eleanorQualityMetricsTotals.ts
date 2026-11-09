@@ -9,6 +9,9 @@
 export type EleanorQualityMetricsTotals = {
   tracked: number;
   resolved: number;
+  /** PENDING rows only — still awaiting real evidence. */
   pending: number;
+  /** UNRESOLVED rows — no longer awaiting evidence and never graded. */
+  unresolved: number;
   graded: number;
 };

@@ -21,6 +21,7 @@ import {
   type AaciDecision,
   type AaciHandshake,
   type AaciHardGateFactors,
+  type AaciHardGateResult,
   type AaciRecommendedAction,
   type AaciSharedTruthSnapshot,
   type AaciStrategyKind,
@@ -63,8 +64,10 @@ function composeHardGateFactors(
 ): AaciHardGateFactors {
   const isAgent = actorType === "self_trade_agent";
   const risk = snapshot.risk;
+  // Unread loss facts never pass the factor (fail closed, like a missing
+  // risk read); relabelUncheckedLossLimit names that failure truthfully.
   const lossLimitPass = risk
-    ? !risk.dailyLossHit && !risk.weeklyLossHit && !risk.drawdownLimitHit
+    ? !risk.lossFactsUnread && !risk.dailyLossHit && !risk.weeklyLossHit && !risk.drawdownLimitHit
     : false;
   const live = snapshot.account.mode === "live";
   const balance = snapshot.account.balance ?? 0;
@@ -104,6 +107,23 @@ function composeHardGateFactors(
   };
 }
 
+// The loss-limit factor also fails closed when the loss count or the limits
+// could not be read (or no risk read at all). No limit was shown to be
+// reached then, so that failure is reported as unchecked, never as
+// LOSS_LIMIT_REACHED ("A loss limit has been reached").
+const LOSS_LIMIT_UNCHECKED: AaciHardGateResult["failures"][number] = {
+  code: "LOSS_LIMIT_UNCHECKED",
+  userMessage: "Your loss count or loss limits could not be loaded, so no loss limit can be checked and trading is paused.",
+};
+export function relabelUncheckedLossLimit(
+  gate: AaciHardGateResult,
+  risk: AaciSharedTruthSnapshot["risk"],
+): AaciHardGateResult {
+  const reached = Boolean(risk?.dailyLossHit || risk?.weeklyLossHit || risk?.drawdownLimitHit);
+  if (reached || (risk && !risk.lossFactsUnread)) return gate;
+  return { ...gate, failures: gate.failures.map((f) => (f.code === "LOSS_LIMIT_REACHED" ? LOSS_LIMIT_UNCHECKED : f)) };
+}
+
 // Build per-system handshakes for the decision (advisory health rollup).
 function buildHandshakes(snapshot: AaciSharedTruthSnapshot): AaciHandshake[] {
   const unavailable = new Set(snapshot.unavailableSystems ?? []);
@@ -140,7 +160,7 @@ export async function buildAaciDecision(input: BuildAaciDecisionInput): Promise<
     !freshness.criticalStale,
     input.securityHandshakePass,
   );
-  const hardGate = evaluateAaciHardGate(hardGateFactors);
+  const hardGate = relabelUncheckedLossLimit(evaluateAaciHardGate(hardGateFactors), snapshot.risk);
 
   // Learned trust (L) + drift (D) sub-scores from real reconciled outcomes.
   // ADVISORY ONLY and fail-open: a missing row or any error yields the scoring

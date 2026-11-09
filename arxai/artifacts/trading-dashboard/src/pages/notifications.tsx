@@ -28,7 +28,10 @@ type Counts = {
 };
 
 type Digest = {
-  digestId: string;
+  // "USER" = the caller's own notifications only. Anything else (e.g. the
+  // persisted all-users digest) is never rendered on this page.
+  scope?: string;
+  digestId: string | null;
   rangeStart: string; rangeEnd: string;
   totalNotifications: number;
   criticalCount: number; warningCount: number;
@@ -43,6 +46,19 @@ const SEV_COLOR: Record<string, string> = {
   INFO:     "bg-primary text-foreground",
 };
 
+// One read: null when the request failed, answered non-2xx, or the body is
+// not a JSON object.
+async function readJson(url: string): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const body: unknown = await r.json();
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function NotificationsPage() {
   const mode = useTradingMode();
   const [items, setItems] = useState<Notif[]>([]);
@@ -54,6 +70,12 @@ export default function NotificationsPage() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>("");
+  // A failed read is never shown as "No notifications yet." or a 0 count.
+  // "loading" until the first list read answers; "error" when the latest
+  // list read failed (any rows kept on screen are from the last good read).
+  const [listState, setListState] = useState<"loading" | "ok" | "error">("loading");
+  const [hasListRead, setHasListRead] = useState(false);
+  const [countsError, setCountsError] = useState(false);
 
   async function refresh() {
     const params = new URLSearchParams();
@@ -62,13 +84,29 @@ export default function NotificationsPage() {
     if (filterStatus) params.set("status", filterStatus);
     params.set("limit", "100");
     const [n, c, d] = await Promise.all([
-      fetch(`/api/notifications?${params.toString()}`).then(r => r.json()),
-      fetch(`/api/notifications/counts`).then(r => r.json()),
-      fetch(`/api/notifications/digest`).then(r => r.json()),
+      readJson(`/api/notifications?${params.toString()}`),
+      readJson(`/api/notifications/counts`),
+      readJson(`/api/notifications/digest`),
     ]);
-    setItems(n.notifications ?? []);
-    setCounts(c.counts ?? null);
-    setDigest(d.digest ?? null);
+    if (n && Array.isArray(n.notifications)) {
+      setItems(n.notifications as Notif[]);
+      setListState("ok");
+      setHasListRead(true);
+    } else {
+      // Keep the last good rows (a known CRITICAL alert stays visible) and
+      // say the list is not current.
+      setListState("error");
+    }
+    const countsBody = c?.counts;
+    if (countsBody && typeof countsBody === "object") {
+      setCounts(countsBody as Counts);
+      setCountsError(false);
+    } else {
+      // Failed read or a payload without counts: unknown, never 0.
+      setCounts(null);
+      setCountsError(true);
+    }
+    setDigest(d ? ((d.digest ?? null) as Digest) : null);
   }
   useEffect(() => { void refresh(); }, [filterType, filterSev, filterStatus]);
 
@@ -133,6 +171,12 @@ export default function NotificationsPage() {
         </div>
       )}
 
+      {countsError && (
+        <div className="text-xs text-warning" data-testid="counts-load-error">
+          Notification counts could not be loaded, so totals are not shown.
+        </div>
+      )}
+
       {/* Counts panel */}
       {counts && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-sm" data-testid="counts-panel">
@@ -180,7 +224,21 @@ export default function NotificationsPage() {
 
       {/* List */}
       <div className="border rounded">
-        <div className="p-2 font-semibold bg-gray-100 dark:bg-gray-800">Notifications ({visible.length})</div>
+        <div className="p-2 font-semibold bg-gray-100 dark:bg-gray-800">
+          Notifications{listState === "ok" || hasListRead ? ` (${visible.length})` : ""}
+        </div>
+        {listState === "error" && (
+          <div className="p-3 text-sm text-warning border-b" data-testid="notifications-load-error">
+            {hasListRead
+              ? "Your notifications could not be refreshed. The list below is from the last successful read and may not be current."
+              : "Your notifications could not be loaded; this is not an empty list."}
+            <button disabled={busy} onClick={() => void refresh()}
+              className="ml-2 px-2 py-0.5 bg-gray-500 hover:bg-gray-600 text-foreground rounded text-xs" data-testid="button-retry-notifications">Retry</button>
+          </div>
+        )}
+        {listState === "loading" && !hasListRead && (
+          <div className="p-3 text-sm text-muted-foreground" data-testid="notifications-loading">Loading notifications…</div>
+        )}
         <div className="divide-y">
           {visible.map(n => (
             <div key={n.notificationId} className="p-3 flex flex-col sm:flex-row sm:items-start gap-2">
@@ -213,7 +271,7 @@ export default function NotificationsPage() {
               </div>
             </div>
           ))}
-          {visible.length === 0 && (
+          {listState === "ok" && visible.length === 0 && (
             <EmptyState
               icon={Bell}
               title="No notifications yet."
@@ -223,10 +281,10 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* Digest panel */}
-      {digest && (
+      {/* Digest panel — only the caller's own digest (scope USER). */}
+      {digest && digest.scope === "USER" && (
         <div className="border rounded p-3 space-y-1 text-sm" data-testid="digest-panel">
-          <div className="font-semibold">Latest digest: {digest.digestId}</div>
+          <div className="font-semibold">Your notifications — digest</div>
           <div className="text-xs opacity-70">{safeDate(digest.rangeStart)} → {safeDate(digest.rangeEnd)}</div>
           <div>Total: {digest.totalNotifications} • Critical: {digest.criticalCount} • Warnings: {digest.warningCount} • Trades: {digest.tradeCount} • Learning: {digest.learningCount} • Safety: {digest.safetyCount}</div>
           {digest.summary.topCritical && digest.summary.topCritical.length > 0 && (

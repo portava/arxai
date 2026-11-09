@@ -5,6 +5,8 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { MarketQuoteFreshness } from "./marketQuoteFreshness";
+import type { MarketQuoteTimeBasis } from "./marketQuoteTimeBasis";
 
 export interface MarketQuote {
   symbol: string;
@@ -16,5 +18,30 @@ export interface MarketQuote {
   last?: number | null;
   /** @nullable */
   spread?: number | null;
+  /** For a served quote, the quote's own time (see timeBasis). When no quote was available (available=false) this is only the time the check ran — it is not an observation time. */
   timestamp: string;
+  /** True only when a price (last, bid or ask) was served. */
+  available?: boolean;
+  /**
+   * Router provider that served the quote; null when none did.
+   * @nullable
+   */
+  source?: string | null;
+  /**
+   * When the price was observed (ISO); null when unknown or unavailable.
+   * @nullable
+   */
+  observedAt?: string | null;
+  /** What observedAt means. server_receive is the time ARX received the quote (the market tick may be older) and can never read fresh. */
+  timeBasis?: MarketQuoteTimeBasis;
+  /** @nullable */
+  ageMs?: number | null;
+  freshness?: MarketQuoteFreshness;
+  /** True when stale, unknown or unavailable — the price must not be shown as current. */
+  stale?: boolean;
+  staleAfterMs?: number;
+  /** When this lookup ran (ISO). */
+  checkedAt?: string;
+  /** Plain English — what was observed, from which source, as of when, or that it could not be. */
+  observationNote?: string;
 }

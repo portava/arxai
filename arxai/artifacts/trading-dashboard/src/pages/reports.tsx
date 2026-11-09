@@ -4,12 +4,13 @@
 import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAssistantName } from "@/lib/assistant-name";
 
 const REPORT_TYPES = [
   ["account_summary", "Account Summary"],
   ["trading_session_summary", "Trading Session Summary"],
-  ["paper_trades", "Demo Trades"],
-  ["performance_calendar", "Performance Calendar"],
+  ["paper_trades", "Demo Trades (My Demo Trades log)"],
+  ["performance_calendar", "Performance Calendar (My Demo Trades log)"],
   ["trade_journal", "Trade Journal"],
   ["ai_trade_reviews", "AI Trade Reviews"],
   ["risk_governor", "Risk Governor"],
@@ -33,6 +34,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export default function ReportsPage() {
+  const { name: assistantName } = useAssistantName();
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [emptyHints, setEmptyHints] = useState<string[]>([]);
   const [reportType, setReportType] = useState<string>("paper_trades");
@@ -48,11 +50,28 @@ export default function ReportsPage() {
   const [includePlaybooks, setIncP] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A failed history read is never shown as "No reports yet.": "loading"
+  // until the first read answers, "error" when the latest read failed (rows
+  // kept on screen are from the last good read).
+  const [listState, setListState] = useState<"loading" | "ok" | "error">("loading");
+  const [hasListRead, setHasListRead] = useState(false);
 
   async function refresh() {
-    const r = await api<{ reports: ReportRow[]; isEmpty: boolean; emptyHints: string[] }>("/api/me/reports");
-    setReports(r.reports ?? []);
-    setEmptyHints(r.emptyHints ?? []);
+    let body: { reports?: unknown; emptyHints?: unknown } | null = null;
+    try {
+      const r = await fetch("/api/me/reports", { credentials: "include", headers: { "Content-Type": "application/json" } });
+      if (r.ok) body = (await r.json()) as { reports?: unknown; emptyHints?: unknown } | null;
+    } catch {
+      body = null;
+    }
+    if (!body || !Array.isArray(body.reports)) {
+      setListState("error");
+      return;
+    }
+    setReports(body.reports as ReportRow[]);
+    setEmptyHints(Array.isArray(body.emptyHints) ? (body.emptyHints as string[]) : []);
+    setListState("ok");
+    setHasListRead(true);
   }
   useEffect(() => { void refresh(); }, []);
 
@@ -126,6 +145,10 @@ export default function ReportsPage() {
             </select>
           </Field>
         </div>
+        <p className="mt-2 text-[11px] text-txt-muted" data-testid="reports-range-source-note">
+          Dates are UTC days and the end day is included. Demo-trade figures in these reports come from the trades you log on My Demo Trades;
+          the Calendar page and the Memory tab in {assistantName} Command Center read the demo sandbox order ledger, so their totals can differ.
+        </p>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm text-txt-secondary">
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={includeJournal} onChange={(e) => setIncJ(e.target.checked)} />Include journal</label>
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={includeAIReviews} onChange={(e) => setIncR(e.target.checked)} />Include AI reviews</label>
@@ -142,7 +165,19 @@ export default function ReportsPage() {
       {/* History */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold">Report History</h2>
-        {reports.length === 0 ? (
+        {listState === "error" && (
+          <div className="mb-3 text-sm text-warning" data-testid="reports-load-error">
+            {hasListRead
+              ? "Your reports could not be refreshed. The list below is from the last successful read and may not be current."
+              : "Your reports could not be loaded; this is not an empty list."}
+            <button className="ml-2 text-primary hover:underline" onClick={() => void refresh()} data-testid="button-retry-reports">Retry</button>
+          </div>
+        )}
+        {!hasListRead ? (
+          listState === "loading" ? (
+            <div className="py-4 text-sm text-txt-muted" data-testid="reports-loading">Loading reports…</div>
+          ) : null
+        ) : reports.length === 0 ? (
           <div className="space-y-1 py-4 text-sm text-txt-muted" data-testid="reports-empty-state">
             {(emptyHints.length ? emptyHints : ["No reports yet.", "Your reports will appear here once generated."]).map((h) => <div key={h}>{h}</div>)}
           </div>
@@ -166,7 +201,9 @@ export default function ReportsPage() {
                         : "border-warning/40 bg-warning/10 text-warning")}>{r.status}</span>
                       {r.errorMessage ? <span className="ml-1 text-[11px] text-txt-muted">{r.errorMessage}</span> : null}
                     </td>
-                    <td className="py-2.5 pr-3 text-txt-secondary">{r.rowCount ?? 0}</td>
+                    <td className="py-2.5 pr-3 text-txt-secondary">
+                      {r.status === "completed" && r.rowCount != null ? r.rowCount : "not counted"}
+                    </td>
                     <td className="py-2.5 pr-3 text-txt-muted">{new Date(r.createdAt).toLocaleString()}</td>
                     <td className="py-2.5 text-right">
                       {r.downloadUrl && r.status === "completed" && (

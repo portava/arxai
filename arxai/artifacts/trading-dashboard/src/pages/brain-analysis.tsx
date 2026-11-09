@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DisclaimerBanner } from "@/components/compliance/DisclaimerBanner";
+import { safeDate } from "@/lib/safeFormat";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import {
   Brain,
   Search,
@@ -29,6 +31,69 @@ import {
 
 const CATEGORIES = ["all", "forex", "indices", "stocks", "synthetic"] as const;
 type Category = (typeof CATEGORIES)[number];
+
+// POST /brain/analyze answers with either a full analysis or the honest
+// refusal { available:false, reason:"INSUFFICIENT_REAL_DATA", ... } (see
+// api-server brain/marketBrain.ts). The refusal carries no scoring,
+// technical, macro, session or news details. A full analysis also names the
+// candle source and count; the generated client type predates those fields.
+type BrainOutcome = MarketBrainResult & {
+  available?: boolean;
+  reason?: string;
+  candleSource?: string;
+  candleCount?: number;
+};
+
+function isFullAnalysis(r: BrainOutcome): boolean {
+  return r.available !== false && !!r.scoring && !!r.technicalDetails;
+}
+
+// newsRiskEngine.ts: riskLevel "Low" with providerConnected:false means the
+// calendar could not be read ("cannot see"), never "clear". Only a verdict
+// from a known event set (connected calendar, or a news-immune synthetic)
+// may read as Low.
+type NewsDetails = {
+  riskLevel?: string;
+  providerConnected?: boolean;
+};
+
+function newsRiskUnknown(r: BrainOutcome): boolean {
+  const n = r.newsDetails as NewsDetails | undefined;
+  return n?.providerConnected !== true && (n?.riskLevel ?? r.newsRisk) === "Low";
+}
+
+const NEWS_UNKNOWN_NOTE =
+  "No economic calendar was read, so news risk is unknown, not clear. No news deduction was applied.";
+
+function candleSourceLabel(source: string | undefined): string {
+  if (!source) return "an unreported source";
+  if (source === "router") return "the market-data router (provider not reported)";
+  if (source === "caller") return "candles supplied with the request";
+  return source;
+}
+
+function RefusalCard({ result }: { result: BrainOutcome }) {
+  const detail = (result.blockedReason ?? "").replace(/^INSUFFICIENT_REAL_DATA:\s*/, "").trim();
+  const insufficient = result.reason === "INSUFFICIENT_REAL_DATA";
+  return (
+    <Card data-testid="brain-refusal" className="border-2 border-amber-700/50 bg-amber-950/20">
+      <CardContent className="pt-5 space-y-2 text-sm">
+        <p className="font-semibold text-amber-300 flex items-center gap-2">
+          <AlertTriangle size={16} />
+          {insufficient
+            ? `No analysis for ${result.symbol}: not enough real candles`
+            : `No analysis for ${result.symbol}: the server returned no analysis details`}
+        </p>
+        {detail && <p className="text-zinc-300">{detail.charAt(0).toUpperCase() + detail.slice(1)}.</p>}
+        <p className="text-xs text-zinc-400">
+          ARX does not analyse made-up candles, so no direction, levels, confidence or bias is shown until a
+          real feed serves enough closed bars.
+        </p>
+        <p className="text-xs text-zinc-500">Checked at {safeDate(result.timestamp, "time", "an unreported time")}</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 function DirectionBadge({ direction }: { direction: string }) {
   if (direction === "BUY")
@@ -52,7 +117,7 @@ function DirectionBadge({ direction }: { direction: string }) {
 
 function BiasChip({ bias }: { bias: string }) {
   const isBull = bias === "Bullish" || bias === "Positive" || bias === "Risk-On";
-  const isBear = bias === "Bearish" || bias === "Negative" || bias === "Risk-Off" || bias === "Not news-driven";
+  const isBear = bias === "Bearish" || bias === "Negative" || bias === "Risk-Off";
   return (
     <span className={cn("px-2 py-0.5 rounded text-xs font-semibold border", isBull && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", isBear && "bg-red-500/15 text-red-400 border-red-500/30", !isBull && !isBear && "bg-zinc-700/50 text-zinc-300 border-zinc-600/40")}>
       {bias}
@@ -87,7 +152,30 @@ function SectionCard({ title, icon: Icon, children, className }: { title: string
   );
 }
 
-function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] }) {
+// Levels carry no instrument precision here: each is printed at its
+// magnitude's precision (indices 2, JPY-style 3, FX 5), never a blanket 5.
+/**
+ * How the shown levels were set, as api-server brain/marketBrain.ts sets
+ * them: entry = the last 1-minute close; stop loss / take profit = 1.5x /
+ * 2.5x `technical.atrValue || price * 0.001`. An ATR of 0 (it is rounded to 4
+ * decimals, so a quiet minute reads 0) means the 0.1%-of-price placeholder.
+ */
+export function brainLevelsProvenance(result: {
+  direction?: string | null;
+  technicalDetails?: unknown;
+}): string {
+  if (result.direction !== "BUY" && result.direction !== "SELL") {
+    return "No entry, stop loss or take profit is given for a WAIT decision.";
+  }
+  const details = result.technicalDetails as { atrValue?: unknown } | null | undefined;
+  const atr = details?.atrValue;
+  if (typeof atr === "number" && Number.isFinite(atr) && atr > 0) {
+    return "Entry is the last 1-minute close; stop loss and take profit are 1.5× and 2.5× the 1-minute ATR.";
+  }
+  return "Entry is the last 1-minute close; no 1-minute ATR was measured, so stop loss and take profit are 1.5× and 2.5× a placeholder distance of 0.1% of price.";
+}
+
+export function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] }) {
   const d = data as any;
   return (
     <div className="space-y-3 text-sm">
@@ -113,7 +201,7 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
         <div>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Support Levels</p>
           <div className="flex flex-wrap gap-1">
-            {d.supportLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-emerald-900/30 border border-emerald-700/30 rounded text-emerald-400 text-xs font-mono">{l.toFixed(5)}</span>)}
+            {d.supportLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-emerald-900/30 border border-emerald-700/30 rounded text-emerald-400 text-xs font-mono">{formatInstrumentPrice(l, null)}</span>)}
           </div>
         </div>
       )}
@@ -121,7 +209,7 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
         <div>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Resistance Levels</p>
           <div className="flex flex-wrap gap-1">
-            {d.resistanceLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-red-900/30 border border-red-700/30 rounded text-red-400 text-xs font-mono">{l.toFixed(5)}</span>)}
+            {d.resistanceLevels.map((l: number, i: number) => <span key={i} className="px-1.5 py-0.5 bg-red-900/30 border border-red-700/30 rounded text-red-400 text-xs font-mono">{formatInstrumentPrice(l, null)}</span>)}
           </div>
         </div>
       )}
@@ -129,8 +217,32 @@ function TechnicalPanel({ data }: { data: MarketBrainResult["technicalDetails"] 
   );
 }
 
+// macroEngine.ts: with no macro/fundamentals provider the engine returns
+// type:"unavailable", providerConnected:false, macroBias "Neutral" and
+// macroScore 50 — a fixed placeholder, not a reading.
+function macroWithheld(details: unknown): boolean {
+  const d = details as { type?: string; providerConnected?: boolean } | undefined;
+  if (!d) return true;
+  if (d.type === "synthetic") return false;
+  return d.type === "unavailable" || d.providerConnected !== true;
+}
+
 function MacroPanel({ data }: { data: object }) {
   const d = data as any;
+  if (macroWithheld(d)) {
+    const note: string | undefined = typeof d?.safetyNote === "string" ? d.safetyNote : undefined;
+    return (
+      <div data-testid="brain-macro-withheld" className="text-sm space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-400">Macro Bias</span>
+          <BiasChip bias="Not available" />
+        </div>
+        <p className="text-xs text-amber-300 leading-relaxed">
+          {note ?? "No macro data provider is connected, so no macro reading was taken."}
+        </p>
+      </div>
+    );
+  }
   if (d.type === "synthetic") {
     return (
       <div className="text-sm space-y-2">
@@ -184,9 +296,10 @@ function MacroPanel({ data }: { data: object }) {
 
 function ScoringPanel({ result }: { result: MarketBrainResult }) {
   const { scoring } = result;
+  const macroIsPlaceholder = macroWithheld(result.macroDetails);
   const items = [
     { label: "Technical Contrib", value: scoring.breakdown.technicalContrib, max: 65 },
-    { label: "Macro Contrib", value: scoring.breakdown.macroContrib, max: 20 },
+    ...(macroIsPlaceholder ? [] : [{ label: "Macro Contrib", value: scoring.breakdown.macroContrib, max: 20 }]),
     { label: "Session Contrib", value: scoring.breakdown.sessionContrib, max: 10 },
     { label: "Strategy Contrib", value: scoring.breakdown.strategyContrib, max: 25 },
   ];
@@ -199,6 +312,11 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
     <div className="space-y-3 text-sm">
       <p className="text-[10px] text-zinc-500 font-mono bg-zinc-800/60 rounded px-2 py-1.5">{scoring.breakdown.formula}</p>
       <div className="space-y-2">
+        {macroIsPlaceholder && (
+          <p data-testid="brain-macro-placeholder-contrib" className="text-xs text-zinc-400">
+            Macro: +{scoring.breakdown.macroContrib} from a fixed neutral placeholder. No macro data was read.
+          </p>
+        )}
         {items.map(({ label, value, max }) => (
           <div key={label}>
             <div className="flex justify-between text-xs mb-0.5">
@@ -235,7 +353,7 @@ function ScoringPanel({ result }: { result: MarketBrainResult }) {
 export default function BrainAnalysis() {
   const [selectedCategory, setSelectedCategory] = useState<Category>("forex");
   const [selectedSymbol, setSelectedSymbol] = useState("");
-  const [result, setResult] = useState<MarketBrainResult | null>(null);
+  const [result, setResult] = useState<BrainOutcome | null>(null);
   const [enableNewsFilter, setEnableNewsFilter] = useState(true);
   const [enableSessionFilter, setEnableSessionFilter] = useState(true);
 
@@ -244,9 +362,12 @@ export default function BrainAnalysis() {
     queryFn: () => getBrainSymbols(selectedCategory !== "all" ? { category: selectedCategory } : undefined),
   });
 
-  const { mutate: analyze, isPending } = useMutation({
+  const { mutate: analyze, isPending, isError: analyzeFailed } = useMutation({
     ...getRunBrainAnalysisMutationOptions(),
-    onSuccess: setResult,
+    onSuccess: (r) => setResult(r as BrainOutcome),
+    // A failed request is not an analysis: drop any previous one so it is not
+    // read as the answer to this request.
+    onError: () => setResult(null),
   });
 
   const handleAnalyze = () => {
@@ -334,8 +455,16 @@ export default function BrainAnalysis() {
         </CardContent>
       </Card>
 
+      {analyzeFailed && !isPending && (
+        <p data-testid="brain-error" role="alert" className="text-sm text-rose-400">
+          The analysis could not be loaded. Nothing below is a current analysis.
+        </p>
+      )}
+
+      {result && !isFullAnalysis(result) && <RefusalCard result={result} />}
+
       {/* Results */}
-      {result && (
+      {result && isFullAnalysis(result) && (
         <div className="space-y-4">
           {/* Decision Bar */}
           <Card className={cn("border-2", result.direction === "BUY" ? "border-emerald-600/50 bg-emerald-950/20" : result.direction === "SELL" ? "border-red-600/50 bg-red-950/20" : "border-zinc-700/50 bg-zinc-900/40")}>
@@ -358,10 +487,17 @@ export default function BrainAnalysis() {
                     <p className="text-xl font-bold font-mono text-zinc-200">{result.direction !== "WAIT" ? `1:${result.riskReward}` : "—"}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Risk</p>
-                    <Badge variant="outline" className={cn("text-xs", result.riskApproved ? "border-emerald-600/50 text-emerald-400" : "border-red-600/50 text-red-400")}>
-                      {result.riskApproved ? "✓ Approved" : "✗ Blocked"}
+                    {/* riskApproved is only "no Brain filter fired" (confluence,
+                        chop, session, news). The route passes no account
+                        state, so neither the user's risk limits nor the Risk
+                        Governor were checked. */}
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Brain filters</p>
+                    <Badge data-testid="brain-filter-badge" variant="outline" className={cn("text-xs", result.riskApproved ? "border-zinc-600 text-zinc-300" : "border-red-600/50 text-red-400")}>
+                      {result.riskApproved ? "None fired" : "✗ Blocked"}
                     </Badge>
+                    <p data-testid="brain-risk-not-checked" className="mt-1 text-[10px] text-zinc-500">
+                      Account risk not checked
+                    </p>
                   </div>
                 </div>
               </div>
@@ -398,9 +534,9 @@ export default function BrainAnalysis() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "Technical Bias", value: result.technicalBias, icon: BarChart3 },
-              { label: "Macro Bias", value: result.macroBias, icon: Globe2 },
+              { label: "Macro Bias", value: macroWithheld(result.macroDetails) ? "Not available (no macro data)" : result.macroBias, icon: Globe2 },
               { label: "Session", value: result.session, icon: Clock },
-              { label: "News Risk", value: result.newsRisk, icon: Newspaper },
+              { label: "News Risk", value: newsRiskUnknown(result) ? "Unknown (no calendar)" : result.newsRisk, icon: Newspaper },
             ].map(({ label, value, icon: Icon }) => (
               <Card key={label} className="border-zinc-800 bg-zinc-900/60">
                 <CardContent className="pt-4 pb-3">
@@ -429,10 +565,21 @@ export default function BrainAnalysis() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400">Risk Level</span>
-                  <Badge variant="outline" className={cn("text-xs", (result.newsDetails as any)?.riskLevel === "Critical" ? "border-red-600 text-red-400" : (result.newsDetails as any)?.riskLevel === "High" ? "border-amber-600 text-amber-400" : (result.newsDetails as any)?.riskLevel === "Medium" ? "border-yellow-600 text-yellow-400" : "border-emerald-700 text-emerald-400")}>
-                    {(result.newsDetails as any)?.riskLevel}
-                  </Badge>
+                  {newsRiskUnknown(result) ? (
+                    <Badge data-testid="brain-news-level" variant="outline" className="text-xs border-zinc-600 text-zinc-300">
+                      Unknown — calendar not connected
+                    </Badge>
+                  ) : (
+                    <Badge data-testid="brain-news-level" variant="outline" className={cn("text-xs", (result.newsDetails as any)?.riskLevel === "Critical" ? "border-red-600 text-red-400" : (result.newsDetails as any)?.riskLevel === "High" ? "border-amber-600 text-amber-400" : (result.newsDetails as any)?.riskLevel === "Medium" ? "border-yellow-600 text-yellow-400" : "border-emerald-700 text-emerald-400")}>
+                      {(result.newsDetails as any)?.riskLevel}
+                    </Badge>
+                  )}
                 </div>
+                {newsRiskUnknown(result) && (
+                  <p data-testid="brain-news-unknown" className="text-xs text-amber-300 leading-relaxed">
+                    {NEWS_UNKNOWN_NOTE}
+                  </p>
+                )}
                 {(result.newsDetails as any)?.nextEvent && (
                   <p className="text-xs text-zinc-400">Next: {(result.newsDetails as any).nextEvent}</p>
                 )}
@@ -495,11 +642,15 @@ export default function BrainAnalysis() {
             </ul>
           </SectionCard>
 
-          <p className="text-center text-xs text-zinc-600">Analysis generated at {new Date(result.timestamp).toLocaleTimeString()} — data is simulated for demo mode</p>
+          <p data-testid="brain-provenance" className="text-center text-xs text-zinc-500">
+            Analysis generated at {safeDate(result.timestamp, "time", "an unreported time")} from{" "}
+            {typeof result.candleCount === "number" ? `${result.candleCount} ` : ""}1-minute candles served by{" "}
+            {candleSourceLabel(result.candleSource)}. {brainLevelsProvenance(result)}
+          </p>
         </div>
       )}
 
-      {!result && !isPending && (
+      {!result && !isPending && !analyzeFailed && (
         <div className="flex flex-col items-center justify-center py-20 text-center text-zinc-600">
           <Brain size={48} className="mb-4 opacity-30" />
           <p className="text-lg font-medium mb-1">Select a symbol and run analysis</p>

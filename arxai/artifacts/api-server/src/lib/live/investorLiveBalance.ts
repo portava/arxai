@@ -112,6 +112,15 @@ export interface InvestorLiveBalanceSnapshot {
    * final) and the accompanying warning is present.
    */
   realizedPnLPendingCount?: number;
+  /**
+   * Open positions in the live snapshot whose floating P/L is unknown
+   * (unrealizedPL null: no fresh broker P/L and no fresh quote). Their P/L is
+   * left out of `floatingPnL` (the sum of the KNOWN positions only), and so
+   * out of `liveEquity`, `freeMargin` and `availableBalance`. > 0 means those
+   * figures are INCOMPLETE. 0 when no live snapshot was read. Display only:
+   * no gate reads it.
+   */
+  floatingPnLUnknownCount?: number;
 }
 
 /**
@@ -134,6 +143,11 @@ export interface InvestorLiveBalanceWire {
   freshness: InvestorBalanceFreshness;
   /** P0-2 — > 0 means realizedPnL / liveEquity are incomplete (see warnings). */
   realizedPnLPendingCount: number;
+  /**
+   * Open trades whose floating P/L is unknown and left out of floatingPnL /
+   * liveEquity / freeMargin / availableBalance. > 0 means those are incomplete.
+   */
+  floatingPnLUnknownCount: number;
 }
 
 /** Project the full canonical snapshot down to the shared wire block. */
@@ -152,6 +166,7 @@ export function toInvestorLiveBalanceWire(
     openTradeCount: inv.openTradeCount,
     freshness: inv.freshness,
     realizedPnLPendingCount: inv.realizedPnLPendingCount ?? 0,
+    floatingPnLUnknownCount: inv.floatingPnLUnknownCount ?? 0,
   };
 }
 
@@ -237,6 +252,11 @@ export function composeInvestorBalance(
     floatingPnL = openTradeCount === 0 ? 0 : liveSnapshot.openPL;
   }
 
+  // openPL sums only the positions whose P/L is known, so a mix of known and
+  // unknown positions yields a non-null floatingPnL that leaves the unknown
+  // ones out. Count them so every surface can say the figure is incomplete.
+  const floatingPnLUnknownCount = positions.filter((p) => p.unrealizedPL == null).length;
+
   const liveEquity = round2(allocatedBalance + realizedPnL + (floatingPnL ?? 0));
   const freeMargin = round2(Math.max(0, liveEquity - marginUsed));
 
@@ -287,6 +307,7 @@ export function composeInvestorBalance(
     warnings,
     reconciliation,
     liveAccountSnapshot: liveSnapshot,
+    floatingPnLUnknownCount,
   };
 }
 

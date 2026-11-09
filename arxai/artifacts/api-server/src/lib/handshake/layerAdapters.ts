@@ -53,17 +53,91 @@ function notAvailable(detail: string): LayerReadiness {
 }
 
 // ── MARKET_DATA — provider chain health (read-only snapshot) ─────────────────
+// Only providers that serve prices count (an OpenAI or NewsAPI key is not
+// market data), and a provider's "healthy" flag is partly configuration, so
+// PASS also needs the snapshot's own symbol probes to have returned candles
+// and a quote for every probed symbol. No probe evidence is never a PASS.
+// "Some data came back" is not "the data is current" either: a quote marked
+// STALE or DELAYED still probes ok, so PASS also needs every probed asset
+// class's resolved feed (the same truth the chart shows) to be clean.
+const MARKET_DATA_CATEGORIES: ReadonlySet<string> = new Set(["broker", "synthetic", "market_data"]);
+
+type ActivityRow = {
+  assetClass?: unknown; representativeSymbol?: unknown; aiUsable?: unknown; feedQuality?: unknown;
+  lastCandleTime?: unknown; lastQuoteTime?: unknown;
+  /** The feed's own words for why it is not current (the chart's warning), or null. */
+  staleReason?: unknown;
+};
+const utcMinute = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+const parsedMs = (v: unknown): number | null => {
+  if (typeof v !== "string") return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/**
+ * Asset classes whose resolved feed is not current (anything but a clean,
+ * AI-usable feed), named with the feed's own reason when it gives one (so a
+ * scheduled market close reads "Market closed ... Not a feed fault", never a
+ * bare "stale") or else its grade, and its newest observation, plus the age
+ * of the oldest such observation. null when every class is clean.
+ */
+function feedNotCurrent(rows: ActivityRow[], now: number): { detail: string; ageMs: number | null } | null {
+  const notCurrent = rows.filter((r) => r.aiUsable !== true || r.feedQuality !== "clean");
+  if (notCurrent.length === 0) return null;
+  const newestPerClass: number[] = [];
+  const parts: string[] = [];
+  for (const r of notCurrent) {
+    const cls = typeof r.assetClass === "string" ? r.assetClass : "unknown class";
+    const sym = typeof r.representativeSymbol === "string" ? ` (${r.representativeSymbol})` : "";
+    const quality = typeof r.feedQuality === "string" && r.feedQuality !== "unknown" ? r.feedQuality : null;
+    const candleMs = parsedMs(r.lastCandleTime), quoteMs = parsedMs(r.lastQuoteTime);
+    const newest = candleMs == null ? quoteMs : quoteMs == null ? candleMs : Math.max(candleMs, quoteMs);
+    if (newest != null) newestPerClass.push(newest);
+    const seen = [
+      candleMs != null ? `last candle ${utcMinute(candleMs)}` : null,
+      quoteMs != null ? `last tick ${utcMinute(quoteMs)}` : null,
+    ].filter(Boolean).join(", ");
+    const reason = typeof r.staleReason === "string" ? r.staleReason.trim().replace(/\.+$/, "") : "";
+    parts.push(!quality
+      ? `${cls}${sym} freshness could not be checked`
+      : reason
+        ? `${cls}${sym}: ${reason}${seen ? ` (${seen})` : ""}`
+        : `${cls}${sym} ${quality}${seen ? ` (${seen})` : ""}`);
+  }
+  const ageMs = newestPerClass.length ? Math.max(0, now - Math.min(...newestPerClass)) : null;
+  return { detail: `feed not current for ${parts.join("; ")}`, ageMs };
+}
 const marketDataAdapter: LayerAdapter = async () => {
   try {
     const snap = await getProviderHealthSnapshot();
-    const { healthy, degraded, failing } = snap.summary;
-    if (healthy === 0) {
-      return notAvailable(`no healthy provider (degraded=${degraded}, failing=${failing})`);
+    const market = (Array.isArray(snap.providers) ? snap.providers : [])
+      .filter((p) => MARKET_DATA_CATEGORIES.has(p.category));
+    const healthy = market.filter((p) => p.status === "healthy").length;
+    const degraded = market.filter((p) => p.status === "degraded").length;
+    const failing = market.filter((p) => p.status === "failing").length;
+    const probes = Array.isArray(snap.symbolProbes) ? snap.symbolProbes : [];
+    const candlesOk = probes.filter((p) => p.candles?.ok === true).length;
+    const quotesOk = probes.filter((p) => p.quote?.ok === true).length;
+    const counts = `market-data providers healthy=${healthy}, degraded=${degraded}, failing=${failing}; ` +
+      `probes candles ${candlesOk}/${probes.length}, quotes ${quotesOk}/${probes.length}`;
+    if (healthy === 0) return notAvailable(`no healthy market-data provider (${counts})`);
+    if (probes.length === 0) return notAvailable(`no symbol probe results (${counts})`);
+    if (candlesOk === 0 && quotesOk === 0) return notAvailable(`no probed symbol returned candles or a quote (${counts})`);
+    const missing = probes.filter((p) => p.candles?.ok !== true || p.quote?.ok !== true).map((p) => p.symbol);
+    const activity = Array.isArray(snap.assetClassActivity) ? (snap.assetClassActivity as ActivityRow[]) : null;
+    const stale = activity && activity.length > 0 ? feedNotCurrent(activity, Date.now()) : null;
+    const freshnessUnreported = !activity || activity.length === 0;
+    if (degraded > 0 || failing > 0 || missing.length > 0 || stale || freshnessUnreported) {
+      return {
+        status: "WARN",
+        detail: counts + (missing.length ? `; no data for ${missing.join(", ")}` : "") +
+          (stale ? `; ${stale.detail}` : "") +
+          (freshnessUnreported ? "; feed freshness was not reported, so the data is not confirmed current" : ""),
+        ageMs: stale?.ageMs ?? null,
+      };
     }
-    if (degraded > 0 || failing > 0) {
-      return { status: "WARN", detail: `healthy=${healthy}, degraded=${degraded}, failing=${failing}`, ageMs: null };
-    }
-    return { status: "PASS", detail: `healthy=${healthy}`, ageMs: null };
+    return { status: "PASS", detail: counts, ageMs: null };
   } catch {
     return notAvailable("provider health read failed");
   }

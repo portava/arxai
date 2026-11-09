@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldAlert, Plus, X, Lock, Sparkles, GraduationCap, BookOpen, ListChecks, CheckCircle2, AlertTriangle, Ban } from "lucide-react";
+import { ShieldAlert, Plus, X, Sparkles, GraduationCap, BookOpen, ListChecks, CheckCircle2, AlertTriangle, Ban } from "lucide-react";
 
 type PaperTrade = {
   id: number; symbol: string; side: "buy" | "sell"; status: string; entryType: string;
@@ -32,6 +32,8 @@ type Day = {
   date: string; tradesCount: number; wins: number; losses: number;
   breakeven: number; totalPnl: number; winRate: number;
   bestTrade: number | null; worstTrade: number | null;
+  /** Closed trades that day with no recorded P/L; the server counts them as 0 (absent on older servers). */
+  pnlNotRecorded?: number;
 };
 type Review = {
   id: number; paperTradeId: number; reviewStatus: string;
@@ -108,6 +110,84 @@ function enforcedLimit(s: RiskStatus, key: string, saved: number | null | undefi
   return v ? v.effective : (saved ?? null);
 }
 
+/**
+ * The book /me/performance-calendar and /me/performance-summary read. They
+ * follow the account mode, not this page: in live trading mode they read
+ * closed live trades, and a live-shared account gets no book at all. Only
+ * paper_trades is the demo record the Trades tab lists.
+ */
+type PerformanceSource = "paper_trades" | "live_trades" | "withheld_live_shared" | "mixed" | "unknown" | "load_failed";
+function performanceSource(calendar: string | undefined, summary: string | undefined): PerformanceSource {
+  const known = (v: string | undefined): PerformanceSource =>
+    v === "paper_trades" || v === "live_trades" || v === "withheld_live_shared" ? v : "unknown";
+  const c = known(calendar);
+  const s = known(summary);
+  if (c === "unknown" || s === "unknown") return "unknown";
+  return c === s ? c : "mixed";
+}
+/**
+ * Which ledger the demo Performance tab reads, for a server that sends no
+ * sourceNote. It is not the Trading Calendar's simulated orders (paper_orders),
+ * so the two pages' figures for a date differ.
+ */
+const PAPER_TRADES_SOURCE_NOTE =
+  "From the demo trades you log by hand on this page. Simulated orders (Paper Autopilot and simulated trade tickets) are on the Trading Calendar and are not included; their P&L is computed differently, so the two pages will not match.";
+const PERFORMANCE_SOURCE_COPY: Record<Exclude<PerformanceSource, "paper_trades">, string> = {
+  live_trades: "Your account is in live trading mode, so the performance calendar reads your closed live trades, not the demo trades on the Trades tab.",
+  withheld_live_shared: "Your account is in live-shared mode, so the server does not return a demo-trade performance calendar for it. The demo trades on the Trades tab are not summarised here.",
+  mixed: "The performance calendar and summary came from different trade records, so they are not shown as demo-trade performance.",
+  unknown: "The server did not say which trades these performance figures come from, so they are not shown as demo-trade performance.",
+  load_failed: "The request for your demo-trade performance failed, so no figures are shown. Reload the page to try again.",
+};
+
+/**
+ * Demo-trade P/L is (exit − entry) × direction × lot size (server pnlFor). It
+ * has no contract size or account currency, so it is a price move times lots,
+ * not money, and it does not match the demo sandbox ledger's P/L.
+ */
+const PNL_UNIT_SHORT = "price move × lots";
+const PNL_UNIT_NOTE =
+  "Demo-trade P/L on this page is the price move × lot size. It has no contract size or account currency, so it is not a money amount, and it will not match the P/L on the demo sandbox ledger.";
+/** Rounded, signed price-move P/L; null = not recorded (never shown as 0). */
+function formatPriceMovePnl(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "not recorded";
+  const r = Number(v.toFixed(5));
+  if (r === 0) return "0";
+  return `${r > 0 ? "+" : ""}${r}`;
+}
+function pnlTone(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "text-muted-foreground";
+  return v > 0 ? "text-emerald-500" : v < 0 ? "text-red-500" : "text-muted-foreground";
+}
+/**
+ * The Insights avg win / avg loss. detectPatterns returns 0 when no closed trade
+ * won (or lost): an average over no trades, not a measured 0. The server's
+ * average covers every demo trade; the trades list here is the newest 500, so
+ * it confirms "none yet" only when it loaded and is not cut off. Otherwise a 0
+ * the list cannot explain reads "—".
+ */
+function insightsAverageText(avg: number, trades: PaperTrade[], listLoaded: boolean, kind: "win" | "loss"): string {
+  const any = trades.some((t) => t.status === "closed" && t.pnl != null && (kind === "win" ? t.pnl > 0 : t.pnl < 0));
+  if (avg !== 0 || any) return formatPriceMovePnl(avg);
+  if (listLoaded && trades.length < 500) return kind === "win" ? "No winning trades yet" : "No losing trades yet";
+  return "—";
+}
+/** How many of `trades` closed trades have no recorded P/L (server pnlNotRecorded; 0 when not sent). */
+function notRecordedOf(pnlNotRecorded: unknown, trades: number): number {
+  const n = Number(pnlNotRecorded ?? 0);
+  return Number.isFinite(n) ? Math.min(Math.max(0, trades), Math.max(0, Math.floor(n))) : 0;
+}
+/**
+ * A P/L total the server summed with unrecorded trades counted as 0: "not
+ * recorded" when none was recorded, the recorded sum marked "(partial)" when
+ * some were not, and never a profit/loss colour unless every trade was recorded.
+ */
+function pnlTotalView(total: number, trades: number, notRecorded: number): { text: string; tone: string } {
+  if (trades > 0 && notRecorded >= trades) return { text: "not recorded", tone: "text-muted-foreground" };
+  if (notRecorded > 0) return { text: `${formatPriceMovePnl(total)} (partial)`, tone: "text-muted-foreground" };
+  return { text: formatPriceMovePnl(total), tone: pnlTone(total) };
+}
+
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(`/api${path}`, {
     method, credentials: "include",
@@ -116,6 +196,32 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${method} ${path} failed`);
   return r.json();
+}
+
+/** The independent reads behind this page; one failing never blanks the others. */
+type LoadKey = "trades" | "journal" | "calendar" | "summary" | "reviews" | "insights" | "coaching" | "playbooks" | "riskStatus" | "riskEvents";
+const LOAD_LABEL: Record<LoadKey, string> = {
+  trades: "Your demo trades", journal: "Your journal", calendar: "Your performance calendar",
+  summary: "Your performance summary", reviews: "Your AI trade reviews", insights: "Your performance insights",
+  coaching: "Your coaching plan", playbooks: "Your playbooks", riskStatus: "Your risk status",
+  riskEvents: "Your risk events",
+};
+
+/** A read that failed: says so, instead of the section's empty state. */
+function LoadFailed({ k, error, extra }: { k: LoadKey; error: string; extra?: string }) {
+  return (
+    <Card data-testid={`load-error-${k}`} className="border-destructive/40">
+      <CardContent className="p-4 text-sm flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0"/>
+        <span>{LOAD_LABEL[k]} could not be loaded ({error}).{extra ? ` ${extra}` : ""}</span>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A section whose read has not answered yet: never its empty-account copy. */
+function SectionLoading({ id }: { id: string }) {
+  return <Card data-testid={`section-loading-${id}`}><CardContent className="p-6 text-sm text-muted-foreground">Loading…</CardContent></Card>;
 }
 
 function StatusBadge({ s }: { s: string }) {
@@ -132,6 +238,10 @@ export default function MyPaperTradesPage() {
   const [journal, setJournal] = useState<Journal[]>([]);
   const [days, setDays] = useState<Day[]>([]);
   const [summary, setSummary] = useState<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean } | null>(null);
+  // Which book the performance endpoints read (see PerformanceSource).
+  const [perfSource, setPerfSource] = useState<PerformanceSource>("unknown");
+  // The server's note naming that book (sourceNote), when it sends one.
+  const [perfSourceNote, setPerfSourceNote] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<number, Review>>({});
   const [insights, setInsights] = useState<Insights | null>(null);
   const [coaching, setCoaching] = useState<Coaching | null>(null);
@@ -147,6 +257,7 @@ export default function MyPaperTradesPage() {
   const [savingRisk, setSavingRisk] = useState(false);
   const [riskDraft, setRiskDraft] = useState<Partial<RiskSettings> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<Partial<Record<LoadKey, string>>>({});
   const [showNew, setShowNew] = useState(false);
   const [showJournal, setShowJournal] = useState(false);
   const [closingId, setClosingId] = useState<number | null>(null);
@@ -158,33 +269,50 @@ export default function MyPaperTradesPage() {
   // journal form
   const [j, setJ] = useState({ title: "", body: "", paperTradeId: "", mood: "", disciplineScore: "", executionScore: "", lessonLearned: "" });
 
+  // Each read stands alone: a failed one clears its own section and is shown
+  // as "could not be loaded", never as an empty account, and never blanks the
+  // sections that did load.
   async function load() {
     setLoading(true);
-    try {
-      const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
-        api<{ trades: PaperTrade[] }>("GET", "/me/paper-trades"),
-        api<{ entries: Journal[] }>("GET", "/me/trade-journal"),
-        api<{ days: Day[] }>("GET", "/me/performance-calendar"),
-        api<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean }>("GET", "/me/performance-summary"),
-        api<{ reviews: Review[] }>("GET", "/me/ai-trade-reviews"),
-        api<Insights>("GET", "/me/performance-insights"),
-        api<Coaching>("GET", "/me/coaching-plan"),
-        api<{ playbooks: Playbook[] }>("GET", "/me/playbooks"),
-        api<RiskStatus>("GET", "/me/risk/status").catch(() => null),
-        api<{ events: RiskEvent[] }>("GET", "/me/risk/events").catch(() => ({ events: [] as RiskEvent[] })),
-      ]);
-      setTrades(t.trades); setJournal(jr.entries); setDays(cal.days); setSummary(sum);
-      const rmap: Record<number, Review> = {};
-      for (const r of rv.reviews) rmap[r.paperTradeId] = r;
-      setReviews(rmap); setInsights(ins); setCoaching(co);
-      if (rst) { setRiskStatus(rst); setRiskDraft(rst.settings); }
-      setRiskEvents(rev.events);
-      setPlaybooks(pb.playbooks);
-      if (pb.playbooks[0]) setActivePbId((cur) => cur ?? pb.playbooks[0]!.id);
-    } catch (e) {
-      toast({ title: "Load failed", description: String(e), variant: "destructive" });
-    } finally { setLoading(false); }
+    const errs: Partial<Record<LoadKey, string>> = {};
+    const read = async <T,>(k: LoadKey, path: string): Promise<T | null> => {
+      try { return await api<T>("GET", path); }
+      catch (e) { errs[k] = e instanceof Error ? e.message : String(e); return null; }
+    };
+    const [t, jr, cal, sum, rv, ins, co, pb, rst, rev] = await Promise.all([
+      read<{ trades: PaperTrade[] }>("trades", "/me/paper-trades"),
+      read<{ entries: Journal[] }>("journal", "/me/trade-journal"),
+      read<{ days: Day[]; source?: string; sourceNote?: string }>("calendar", "/me/performance-calendar"),
+      read<{ totalTrades: number; totalPnl: number; wins: number; losses: number; winRate: number; isEmpty: boolean; source?: string; sourceNote?: string }>("summary", "/me/performance-summary"),
+      read<{ reviews: Review[] }>("reviews", "/me/ai-trade-reviews"),
+      read<Insights>("insights", "/me/performance-insights"),
+      read<Coaching>("coaching", "/me/coaching-plan"),
+      read<{ playbooks: Playbook[] }>("playbooks", "/me/playbooks"),
+      read<RiskStatus>("riskStatus", "/me/risk/status"),
+      read<{ events: RiskEvent[] }>("riskEvents", "/me/risk/events"),
+    ]);
+    setTrades(t?.trades ?? []); setJournal(jr?.entries ?? []); setDays(cal?.days ?? []); setSummary(sum);
+    // Demo figures need both reads to name the demo record; a failed one leaves
+    // the book unconfirmed, so the tab says it could not be loaded.
+    setPerfSource(cal && sum ? performanceSource(cal.source, sum.source) : "load_failed");
+    const note = [sum?.sourceNote, cal?.sourceNote].find((v): v is string => typeof v === "string" && v.length > 0);
+    setPerfSourceNote(note ?? null);
+    const rmap: Record<number, Review> = {};
+    for (const r of rv?.reviews ?? []) rmap[r.paperTradeId] = r;
+    setReviews(rmap); setInsights(ins); setCoaching(co);
+    setRiskStatus(rst); setRiskDraft(rst ? rst.settings : null);
+    setRiskEvents(rev?.events ?? []);
+    setPlaybooks(pb?.playbooks ?? []);
+    if (pb?.playbooks[0]) setActivePbId((cur) => cur ?? pb.playbooks[0]!.id);
+    setLoadErrors(errs);
+    setLoading(false);
+    const failed = Object.keys(errs) as LoadKey[];
+    if (failed.length) {
+      toast({ title: "Some sections could not be loaded", description: failed.map((k) => `${LOAD_LABEL[k]}: ${errs[k]}`).join(" · "), variant: "destructive" });
+    }
   }
+  /** Tab count, or nothing while loading or when the read failed (never a fake 0). */
+  const countLabel = (k: LoadKey, n: number) => (loading || loadErrors[k] ? "" : ` (${n})`);
   useEffect(() => { load(); }, []);
 
   async function createTrade() {
@@ -290,46 +418,56 @@ export default function MyPaperTradesPage() {
           <p className="text-sm text-muted-foreground">Track decisions safely. Simulated entries only — no broker orders are sent.</p>
         </div>
         <div className="flex gap-2">
-          <Badge variant="outline" className="gap-1"><Lock className="h-3 w-3"/>Read-only MT5 bridge</Badge>
           <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1"/>New demo trade</Button>
         </div>
       </div>
 
       <Alert>
         <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>Demo-only</AlertTitle>
-        <AlertDescription>Live execution is locked. Every action here is a simulated entry/close used to journal your decisions and learn — nothing is sent to a broker.</AlertDescription>
+        <AlertTitle>Simulated trades only</AlertTitle>
+        <AlertDescription>Every trade on this page is a simulated entry or close used to journal your decisions and learn — nothing here is sent to a broker. This page does not show whether live trading is open for your account.</AlertDescription>
       </Alert>
 
       <Tabs defaultValue="trades">
         <TabsList>
-          <TabsTrigger value="trades">Trades ({trades.length})</TabsTrigger>
-          <TabsTrigger value="journal">Journal ({journal.length})</TabsTrigger>
+          <TabsTrigger value="trades">Trades{countLabel("trades", trades.length)}</TabsTrigger>
+          <TabsTrigger value="journal">Journal{countLabel("journal", journal.length)}</TabsTrigger>
           <TabsTrigger value="calendar">Performance</TabsTrigger>
           <TabsTrigger value="insights"><Sparkles className="h-3 w-3 mr-1"/>Insights</TabsTrigger>
           <TabsTrigger value="coaching"><GraduationCap className="h-3 w-3 mr-1"/>Coaching</TabsTrigger>
-          <TabsTrigger value="playbooks"><BookOpen className="h-3 w-3 mr-1"/>Playbooks ({playbooks.length})</TabsTrigger>
+          <TabsTrigger value="playbooks"><BookOpen className="h-3 w-3 mr-1"/>Playbooks{countLabel("playbooks", playbooks.length)}</TabsTrigger>
           <TabsTrigger value="precheck"><ListChecks className="h-3 w-3 mr-1"/>Pre-Trade Check</TabsTrigger>
           <TabsTrigger value="risk"><ShieldAlert className="h-3 w-3 mr-1"/>Risk Governor{riskStatus?.cooldown.active ? " · cooldown" : ""}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="risk" className="space-y-3">
-          <Alert>
-            <Lock className="h-4 w-4"/>
-            <AlertTitle>Risk Governor — demo-only safety net</AlertTitle>
-            <AlertDescription>Live execution is permanently locked. These rules guard your <em>demo</em> decisions so you build discipline before any future bridge.</AlertDescription>
+          <Alert data-testid="risk-governor-scope">
+            <ShieldAlert className="h-4 w-4"/>
+            <AlertTitle>Risk Governor — your saved risk rules</AlertTitle>
+            <AlertDescription>
+              The Risk Governor checks every order against your limits before it is placed: demo trades on this page, and orders on your MT5 demo or live account.
+              Any limit an operator set for you, and the platform ceiling, apply instead where they are stricter.
+              The playbook, pre-trade check and reason-for-entry switches, and overrides, apply only to the demo trades on this page.
+              The today figures below count only the demo trades on this page, not your broker trades.
+            </AlertDescription>
           </Alert>
+          {loadErrors.riskStatus && <LoadFailed k="riskStatus" error={loadErrors.riskStatus} extra="Your saved rules cannot be shown or edited until it loads."/>}
+          {loading && !riskStatus && !loadErrors.riskStatus && <SectionLoading id="riskStatus"/>}
           {riskStatus && (
             <div className="grid gap-3 md:grid-cols-4">
-              <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Today P/L ({PNL_UNIT_SHORT})</CardDescription><CardTitle className={pnlTone(riskStatus.today.pnl)}>{formatPriceMovePnl(riskStatus.today.pnl)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Consecutive losses</CardDescription><CardTitle>{riskStatus.today.consecutiveLosses} / {enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) ?? "off"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.maxConsecutiveLosses?.reason ?? undefined}>{enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) != null ? "Enforced limit" : "Not enforced"}</CardContent></Card>
-              <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-amber-500" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.cooldownAfterLossMinutes?.reason ?? undefined}>After loss: {enforcedLimit(riskStatus, "cooldownAfterLossMinutes", riskStatus.settings.cooldownAfterLossMinutes) ?? 0}m</CardContent></Card>
-              <Card><CardHeader className="pb-1"><CardDescription>Live contract</CardDescription><CardTitle className="text-sm flex items-center gap-1"><Lock className="h-3 w-3"/>locked</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">demo_only · no broker writes</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-amber-500" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.cooldownAfterLossMinutes?.reason ?? undefined} data-testid="risk-cooldown-limit">{(() => {
+                const cd = enforcedLimit(riskStatus, "cooldownAfterLossMinutes", riskStatus.settings.cooldownAfterLossMinutes);
+                // null (or 0, which the Risk Governor treats as off) = no cooldown applies.
+                return cd != null && cd > 0 ? `After loss: ${cd}m` : "After loss: Not enforced";
+              })()}</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Applies to</CardDescription><CardTitle className="text-sm">Every order</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">Demo trades here and MT5 demo or live orders</CardContent></Card>
             </div>
           )}
           {riskDraft && (
             <Card>
-              <CardHeader><CardTitle className="text-base">Your risk rules</CardTitle><CardDescription>Conservative defaults applied. Live safety fields are read-only.</CardDescription></CardHeader>
+              <CardHeader><CardTitle className="text-base">Your risk rules</CardTitle><CardDescription>Saved for your account. An operator limit or the platform ceiling applies instead where it is stricter.</CardDescription></CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-3 text-sm">
                 {[
                   ["maxRiskPerTradePercent","Max risk per trade %"],["maxDailyLossPercent","Max daily loss %"],["minRewardRiskRatio","Min reward:risk"],
@@ -368,7 +506,7 @@ export default function MyPaperTradesPage() {
                     const u = await api<RiskSettings>("POST", "/me/risk-settings/reset-defaults");
                     setRiskDraft(u); toast({ title: "Reset to conservative defaults" });
                   }}>Reset to defaults</Button>
-                  <span className="text-xs text-muted-foreground self-center ml-auto">liveLocked, readOnlyMode, allowOrderExecution are enforced server-side and cannot be changed.</span>
+                  <span className="text-xs text-muted-foreground self-center ml-auto">Whether live trading is open for your account is set by your trading access, not by these rules.</span>
                 </div>
               </CardContent>
             </Card>
@@ -376,7 +514,9 @@ export default function MyPaperTradesPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Recent risk events</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {riskEvents.length === 0 ? <p className="text-sm text-muted-foreground">No risk events yet — your governor is quiet.</p>
+              {loadErrors.riskEvents ? <LoadFailed k="riskEvents" error={loadErrors.riskEvents}/>
+                : loading && riskEvents.length === 0 ? <SectionLoading id="riskEvents"/>
+                : riskEvents.length === 0 ? <p className="text-sm text-muted-foreground">No risk events yet — your governor is quiet.</p>
                 : riskEvents.slice(0, 25).map((e) => (
                 <div key={e.id} className="flex items-start gap-2 text-sm border-b pb-2">
                   {e.severity === "critical" ? <Ban className="h-4 w-4 text-red-500 mt-0.5"/>
@@ -398,8 +538,14 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="trades" className="space-y-3">
+          {!loading && loadErrors.reviews && <LoadFailed k="reviews" error={loadErrors.reviews} extra="Trades are shown without their reviews."/>}
+          {!loading && trades.length > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="paper-pnl-unit-note">{PNL_UNIT_NOTE}</p>
+          )}
           {loading ? (
             <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading…</CardContent></Card>
+          ) : loadErrors.trades ? (
+            <LoadFailed k="trades" error={loadErrors.trades}/>
           ) : trades.length === 0 ? (
             <Card><CardContent className="p-10 text-center space-y-2">
               <p className="text-lg font-semibold">No demo trades yet</p>
@@ -434,8 +580,8 @@ export default function MyPaperTradesPage() {
                 <div><span className="text-muted-foreground">Risk:</span> {t.riskAmount ?? "—"}</div>
                 {t.status === "closed" && (<>
                   <div><span className="text-muted-foreground">Exit:</span> {t.exitPrice}</div>
-                  <div className={t.pnl != null && t.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>
-                    <span className="text-muted-foreground">PnL:</span> {t.pnl}
+                  <div className={pnlTone(t.pnl)} data-testid={`paper-trade-pnl-${t.id}`}>
+                    <span className="text-muted-foreground">P/L ({PNL_UNIT_SHORT}):</span> {formatPriceMovePnl(t.pnl)}
                   </div>
                 </>)}
                 {t.reasonForEntry && <div className="col-span-full text-muted-foreground italic">"{t.reasonForEntry}"</div>}
@@ -465,7 +611,7 @@ export default function MyPaperTradesPage() {
 
         <TabsContent value="journal" className="space-y-3">
           <div className="flex justify-end"><Button onClick={() => setShowJournal(true)}><Plus className="h-4 w-4 mr-1"/>Add note</Button></div>
-          {journal.length === 0 ? (
+          {loadErrors.journal ? <LoadFailed k="journal" error={loadErrors.journal}/> : loading && journal.length === 0 ? <SectionLoading id="journal"/> : journal.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">No journal entries yet</p>
               Start journaling a trade to capture lessons learned.
@@ -490,16 +636,49 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-3">
+          {loadErrors.summary && <LoadFailed k="summary" error={loadErrors.summary}/>}
+          {loadErrors.calendar && <LoadFailed k="calendar" error={loadErrors.calendar}/>}
+          {loading && perfSource === "unknown" ? (
+            <Card data-testid="section-loading-calendar"><CardContent className="p-6 text-sm text-muted-foreground">Loading performance…</CardContent></Card>
+          ) : perfSource !== "paper_trades" ? (
+            <Card data-testid="performance-not-demo"><CardContent className="p-6 text-sm text-muted-foreground">
+              <p className="text-base font-semibold text-foreground mb-1">
+                {perfSource === "load_failed" ? "Performance could not be loaded" : "Demo-trade performance is not shown here"}
+              </p>
+              {PERFORMANCE_SOURCE_COPY[perfSource]}
+            </CardContent></Card>
+          ) : (<>
+          <p className="text-xs text-muted-foreground" data-testid="performance-source-note">
+            {perfSourceNote ?? PAPER_TRADES_SOURCE_NOTE}
+          </p>
           {summary && (
             <Card><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div><div className="text-muted-foreground">Trades</div><div className="text-xl font-semibold">{summary.totalTrades}</div></div>
-              <div><div className="text-muted-foreground">P/L</div><div className={`text-xl font-semibold ${summary.totalPnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>{summary.totalPnl}</div></div>
+              {(() => {
+                // The summary sends no unrecorded count; the calendar (same
+                // book, every closed day) does.
+                const notRecorded = notRecordedOf(days.reduce((n, d) => n + notRecordedOf(d.pnlNotRecorded, d.tradesCount), 0), summary.totalTrades);
+                const v = pnlTotalView(summary.totalPnl, summary.totalTrades, notRecorded);
+                return <div><div className="text-muted-foreground">P/L ({PNL_UNIT_SHORT})</div><div className={`text-xl font-semibold ${v.tone}`} data-testid="paper-summary-pnl">{v.text}</div></div>;
+              })()}
               <div><div className="text-muted-foreground">Wins</div><div className="text-xl font-semibold text-emerald-500">{summary.wins}</div></div>
               <div><div className="text-muted-foreground">Losses</div><div className="text-xl font-semibold text-red-500">{summary.losses}</div></div>
               <div><div className="text-muted-foreground">Win rate</div><div className="text-xl font-semibold">{summary.winRate}%</div></div>
             </CardContent></Card>
           )}
-          {days.length === 0 ? (
+          {(() => {
+            // The server counts a closed trade with no recorded P/L as 0 in
+            // these totals; say so rather than let it read as break-even.
+            const unrecorded = trades.filter((t) => t.status === "closed" && t.pnl == null).length;
+            return unrecorded > 0 ? (
+              <p className="text-xs text-muted-foreground" data-testid="paper-pnl-unrecorded-note">
+                {unrecorded} closed demo trade{unrecorded === 1 ? " has" : "s have"} no recorded P/L. The server counts {unrecorded === 1 ? "it" : "them"} as 0 and as break-even;
+                {" "}a P/L total that includes {unrecorded === 1 ? "it" : "them"} reads "not recorded" or "(partial)" below.
+              </p>
+            ) : null;
+          })()}
+          {/* A failed calendar read is shown above (and leaves the source unconfirmed). */}
+          {loading && days.length === 0 ? <SectionLoading id="calendar"/> : days.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">Your performance calendar will populate after your first closed trade</p>
               No fake data. Close a demo trade to see your day appear here.
@@ -507,36 +686,60 @@ export default function MyPaperTradesPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {days.map((d) => {
-                const tone = d.totalPnl > 0 ? "border-emerald-500/60 bg-emerald-500/5"
+                // A trade with no recorded P/L is summed as 0 and counted as
+                // break-even by the server: such a day is not a measured
+                // result, so it gets no win/loss colour.
+                const notRecorded = notRecordedOf(d.pnlNotRecorded, d.tradesCount);
+                const allUnrecorded = d.tradesCount > 0 && notRecorded >= d.tradesCount;
+                const v = pnlTotalView(d.totalPnl, d.tradesCount, notRecorded);
+                const tone = notRecorded > 0 ? "border-slate-500/40"
+                  : d.totalPnl > 0 ? "border-emerald-500/60 bg-emerald-500/5"
                   : d.totalPnl < 0 ? "border-red-500/60 bg-red-500/5" : "border-slate-500/40";
                 return (
-                  <Card key={d.date} className={`border ${tone}`}>
+                  <Card key={d.date} className={`border ${tone}`} data-testid={`paper-day-${d.date}`}>
                     <CardContent className="p-3">
                       <div className="text-xs text-muted-foreground">{d.date}</div>
-                      <div className={`text-lg font-semibold ${d.totalPnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>{d.totalPnl}</div>
-                      <div className="text-xs">{d.wins}W / {d.losses}L · {d.tradesCount} trades</div>
+                      <div className={`text-lg font-semibold ${v.tone}`} data-testid={`paper-day-pnl-${d.date}`}>{v.text}</div>
+                      <div className="text-xs">
+                        {allUnrecorded
+                          ? `${d.tradesCount} trade${d.tradesCount === 1 ? "" : "s"} · ${notRecorded} P/L not recorded`
+                          : `${d.wins}W / ${d.losses}L · ${d.tradesCount} trades${notRecorded > 0 ? ` · ${notRecorded} P/L not recorded` : ""}`}
+                      </div>
                     </CardContent>
                   </Card>
                 );
               })}
             </div>
           )}
+          </>)}
         </TabsContent>
 
         <TabsContent value="insights" className="space-y-3">
-          {!insights || insights.isEmpty ? (
+          {loadErrors.insights ? <LoadFailed k="insights" error={loadErrors.insights}/> : loading && !insights ? <SectionLoading id="insights"/> : !insights || insights.isEmpty ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">No AI insights yet</p>
               Close a demo trade to unlock performance insights — no fake data.
             </CardContent></Card>
           ) : (
             <>
+              {/* Computed from the same demo-trade P/L (price move × lots) as the Trades tab. */}
+              <p className="text-xs text-muted-foreground" data-testid="insights-pnl-unit-note">{PNL_UNIT_NOTE}</p>
+              {(() => {
+                // detectPatterns adds a closed trade with no recorded P/L as 0
+                // to the strategy averages, best day and expectancy; say so.
+                const n = trades.filter((t) => t.status === "closed" && t.pnl == null).length;
+                return n > 0 && !loadErrors.trades ? (
+                  <p className="text-xs text-muted-foreground" data-testid="insights-pnl-unrecorded-note">
+                    {trades.length >= 500 ? "At least " : ""}{n} closed demo trade{n === 1 ? " has" : "s have"} no recorded P/L; these figures count {n === 1 ? "it" : "them"} as 0.
+                  </p>
+                ) : null;
+              })()}
               <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4"/>Performance Insights</CardTitle><CardDescription>Across {insights.sampleSize} trades · educational only</CardDescription></CardHeader>
                 <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div><div className="text-muted-foreground">Avg win</div><div className="text-emerald-500 font-semibold">{insights.averages.avgWin}</div></div>
-                  <div><div className="text-muted-foreground">Avg loss</div><div className="text-red-500 font-semibold">{insights.averages.avgLoss}</div></div>
-                  <div><div className="text-muted-foreground">Expectancy</div><div className={`font-semibold ${insights.averages.expectancy >= 0 ? "text-emerald-500" : "text-red-500"}`}>{insights.averages.expectancy}</div></div>
-                  <div><div className="text-muted-foreground">Best day</div><div>{insights.bestDay ? `${insights.bestDay.date} (${insights.bestDay.pnl})` : "—"}</div></div>
+                  <div data-testid="insights-avg-win"><div className="text-muted-foreground">Avg win ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgWin)}`}>{insightsAverageText(insights.averages.avgWin, trades, loadErrors.trades == null, "win")}</div></div>
+                  <div data-testid="insights-avg-loss"><div className="text-muted-foreground">Avg loss ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.avgLoss)}`}>{insightsAverageText(insights.averages.avgLoss, trades, loadErrors.trades == null, "loss")}</div></div>
+                  <div data-testid="insights-expectancy"><div className="text-muted-foreground">Expectancy ({PNL_UNIT_SHORT})</div><div className={`font-semibold ${pnlTone(insights.averages.expectancy)}`}>{formatPriceMovePnl(insights.averages.expectancy)}</div></div>
+                  <div data-testid="insights-best-day"><div className="text-muted-foreground">Best day ({PNL_UNIT_SHORT})</div><div>{insights.bestDay ? `${insights.bestDay.date} (${formatPriceMovePnl(insights.bestDay.pnl)})` : "—"}</div></div>
                 </CardContent>
               </Card>
               {insights.insights.length > 0 && (
@@ -554,7 +757,7 @@ export default function MyPaperTradesPage() {
               {insights.byStrategy.length > 0 && (
                 <Card><CardHeader className="pb-2"><CardTitle className="text-base">By strategy</CardTitle></CardHeader>
                   <CardContent className="space-y-1 text-sm">{insights.byStrategy.map((s) => (
-                    <div key={s.strategy} className="flex justify-between"><span>{s.strategy}</span><span className="text-muted-foreground">{s.count} trades · {s.winRate}% win · avg {s.avgPnl}</span></div>
+                    <div key={s.strategy} className="flex justify-between" data-testid={`insights-strategy-${s.strategy}`}><span>{s.strategy}</span><span className="text-muted-foreground">{s.count} trades · {s.winRate}% win · avg {formatPriceMovePnl(s.avgPnl)} ({PNL_UNIT_SHORT})</span></div>
                   ))}</CardContent>
                 </Card>
               )}
@@ -568,7 +771,7 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="coaching" className="space-y-3">
-          {!coaching || coaching.isEmpty ? (
+          {loadErrors.coaching ? <LoadFailed k="coaching" error={loadErrors.coaching}/> : loading && !coaching ? <SectionLoading id="coaching"/> : !coaching || coaching.isEmpty ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">Your coaching plan will improve as you journal more trades</p>
               Complete and journal at least one demo trade to unlock personalized coaching.
@@ -598,7 +801,7 @@ export default function MyPaperTradesPage() {
             <h3 className="text-base font-semibold">Your trading playbooks</h3>
             <Button size="sm" onClick={generatePlaybook} disabled={generatingPb}><Sparkles className="h-3 w-3 mr-1"/>{generatingPb ? "Generating…" : "Generate from My History"}</Button>
           </div>
-          {playbooks.length === 0 ? (
+          {loadErrors.playbooks ? <LoadFailed k="playbooks" error={loadErrors.playbooks}/> : loading && playbooks.length === 0 ? <SectionLoading id="playbooks"/> : playbooks.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground space-y-1">
               <p className="text-lg font-semibold text-foreground">No playbooks yet</p>
               <p>Create your first trading playbook, or close more demo trades to let ARX AI generate better strategy rules.</p>
@@ -632,7 +835,7 @@ export default function MyPaperTradesPage() {
         </TabsContent>
 
         <TabsContent value="precheck" className="space-y-3">
-          {playbooks.length === 0 ? (
+          {loadErrors.playbooks ? <LoadFailed k="playbooks" error={loadErrors.playbooks} extra="Pre-trade checks need a playbook."/> : loading && playbooks.length === 0 ? <SectionLoading id="precheck"/> : playbooks.length === 0 ? (
             <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">
               <p className="text-lg font-semibold text-foreground mb-1">No playbooks yet</p>
               Create or generate a playbook first to run pre-trade checks.

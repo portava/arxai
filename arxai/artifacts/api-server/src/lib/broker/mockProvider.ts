@@ -46,8 +46,8 @@ export class MockBrokerProvider implements BrokerProvider {
   async symbols(): Promise<BrokerSymbol[]> {
     return [
       { symbol: "Volatility 75 Index", description: "Synthetic V75 (mock)", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-      { symbol: "Volatility 100 Index", description: "Synthetic V100 (mock)", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
-      { symbol: "Volatility 25 Index", description: "Synthetic V25 (mock)", digits: 4, pipSize: 0.0001, minLot: 0.01, maxLot: 100 },
+      { symbol: "Volatility 100 Index", description: "Synthetic V100 (mock)", digits: 2, pipSize: 0.01, minLot: 0.01, maxLot: 100 },
+      { symbol: "Volatility 25 Index", description: "Synthetic V25 (mock)", digits: 3, pipSize: 0.001, minLot: 0.01, maxLot: 100 },
     ];
   }
 

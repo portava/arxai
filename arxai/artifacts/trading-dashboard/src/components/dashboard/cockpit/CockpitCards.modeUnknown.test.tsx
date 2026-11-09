@@ -1,0 +1,221 @@
+// Cockpit cards when /api/me/account-mode could not be checked.
+//
+// useTradingMode then reports isModeUnknown=true with envelope=null,
+// isFrozen=false and canManualTrade=false. Nothing about the account was read:
+// not the pause flag, not the approval state, not the mode. The Trading
+// Permission card used to say "Not paused" and "Waiting for approval", and the
+// account snapshot footer fell through to "SIM" for a user who may be live,
+// while EnvironmentPill on the same page said "Mode unknown".
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
+
+const h = vi.hoisted(() => ({
+  mode: {} as Record<string, unknown>,
+  accountStatus: "pending",
+}));
+
+vi.mock("wouter", () => ({
+  Link: ({ children, href, ...rest }: { children: React.ReactNode; href: string; [k: string]: unknown }) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
+  useLocation: () => ["/", () => {}],
+}));
+vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => h.mode }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Eleanor" }) }));
+vi.mock("@/lib/symbol-context", () => ({ useActiveSymbol: () => ({ active: "EURUSD" }) }));
+vi.mock("@/hooks/useLiveAccountSnapshotContext", () => ({ useLiveAccountSnapshotCtx: () => ({ snapshot: null, live: null, freshness: "unavailable", connectionStatus: "unavailable", lastUpdatedMs: null, notLiveReason: null, isEstimate: false, isStale: false, isUnavailable: true, warnings: [], reload: () => {} }) }));
+vi.mock("@workspace/api-client-react", () => ({
+  useGetMeSharedAccountSummary: () => ({ data: { ok: true, accounts: [{ status: h.accountStatus, masterBrokerName: "Broker", masterAccountNumberMasked: "****12" }], allocationView: null, masterMt5: null }, isLoading: false }),
+  getGetMeSharedAccountSummaryQueryKey: () => ["/api/me/shared-account/summary"],
+}));
+
+import { TradingPermissionSummaryCard, AccountSnapshotCard } from "./CockpitCards";
+import { EnvironmentPill } from "./EnvironmentPill";
+import { describeBridgeObservation } from "./bridgeObservation";
+
+function unknownMode(over: Record<string, unknown> = {}) {
+  return {
+    isLoading: false,
+    isError: true,
+    isModeUnknown: true,
+    envelope: null,
+    isLiveShared: false,
+    isDemo: false,
+    isPaper: false,
+    isLiveArmed: false,
+    isFrozen: false,
+    isAdmin: false,
+    isAdminPreviewingUserMode: false,
+    shouldShowAdminDiagnostics: false,
+    canManualTrade: false,
+    canAutoTrade: false,
+    cleanModeLabel: "Mode unknown",
+    cleanUserMessage: "Your account mode could not be checked just now. ARX will check again.",
+    cleanBlockedReason: null,
+    shouldShowDemoPaperCopy: false,
+    ...over,
+  };
+}
+
+function rowValue(testId: string): string {
+  return screen.getByTestId(testId).querySelector("dd")!.textContent ?? "";
+}
+
+beforeEach(() => {
+  h.mode = unknownMode();
+  h.accountStatus = "pending";
+});
+afterEach(() => cleanup());
+
+describe("Trading Permission card — account-mode check failed", () => {
+  it("does not claim 'Not paused' when the pause flag was never read", () => {
+    render(<TradingPermissionSummaryCard />);
+    const pause = rowValue("permission-pause");
+    expect(pause).not.toBe("Not paused");
+    expect(pause).toBe("Could not be checked");
+  });
+
+  it("does not claim 'Waiting for approval' when the approval state was never read", () => {
+    render(<TradingPermissionSummaryCard />);
+    const status = screen.getByTestId("permission-status").textContent ?? "";
+    expect(status).not.toBe("Waiting for approval");
+    expect(status).toBe("Could not be checked");
+    const card = screen.getByTestId("cockpit-trading-permission").textContent ?? "";
+    expect(card).toContain("Your account mode could not be checked just now.");
+    expect(card).not.toContain("Your account is approved for trading.");
+  });
+
+  it("a read envelope still says 'Not paused' / 'Waiting for approval' (the state was observed)", () => {
+    h.mode = unknownMode({
+      isError: false,
+      isModeUnknown: false,
+      envelope: { userRiskCaps: { maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: null, allowedSymbols: null, requireStopLoss: false } },
+      isDemo: true,
+      cleanModeLabel: "Demo Mode",
+      cleanUserMessage: "Demo mode — practice only. No real money is at risk.",
+    });
+    render(<TradingPermissionSummaryCard />);
+    expect(rowValue("permission-pause")).toBe("Not paused");
+    expect(screen.getByTestId("permission-status").textContent).toBe("Waiting for approval");
+  });
+});
+
+describe("Account snapshot footer — account-mode check failed", () => {
+  it("does not label a possibly-live account 'SIM'; agrees with EnvironmentPill", () => {
+    render(<AccountSnapshotCard />);
+    const card = screen.getByTestId("cockpit-account-snapshot");
+    const label = screen.getByTestId("cockpit-account-mode-label").textContent ?? "";
+    expect(label).not.toBe("SIM");
+    expect(label).toBe("Mode unknown");
+    expect(card.textContent).not.toMatch(/\bSIM\b/);
+    cleanup();
+    render(<EnvironmentPill />);
+    expect(screen.getByTestId("cockpit-env-pill").textContent).toContain("Mode unknown");
+  });
+
+  it("while the mode is still loading the footer says it is checking, not 'SIM'", () => {
+    h.mode = unknownMode({ isLoading: true, isError: false, isModeUnknown: false, cleanModeLabel: "Loading…", cleanUserMessage: "" });
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("Checking mode");
+  });
+
+  it("a read PAPER / DEMO / LIVE mode keeps its label", () => {
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isPaper: true, cleanModeLabel: "Paper Mode" });
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("SIM");
+    cleanup();
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isDemo: true, cleanModeLabel: "Demo Mode" });
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("DEMO");
+  });
+});
+
+// The shared-account summary is a separate query, so it can load an 'active'
+// allocation row while /me/account-mode failed. "Active" needs the server
+// blocker to have been read (a blocker overrides it), so with no envelope the
+// pill must not say "Active".
+describe("Account snapshot Active pill — account-mode check failed", () => {
+  function pill(): string {
+    return screen.getByTestId("cockpit-account-active-pill").textContent ?? "";
+  }
+
+  it("does not show 'Active' beside 'Mode unknown' when the blocker was never read", () => {
+    h.accountStatus = "active";
+    render(<AccountSnapshotCard />);
+    expect(screen.getByTestId("cockpit-account-mode-label").textContent).toBe("Mode unknown");
+    expect(pill()).not.toBe("Active");
+    expect(pill()).toBe("Not checked");
+    expect(screen.getByTestId("cockpit-account-active-pill").getAttribute("title") ?? "").toMatch(/could not be checked/);
+  });
+
+  it("says 'Checking' while the mode is still loading", () => {
+    h.accountStatus = "active";
+    h.mode = unknownMode({ isLoading: true, isError: false, isModeUnknown: false, cleanModeLabel: "Loading…", cleanUserMessage: "" });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Checking");
+  });
+
+  it("a read envelope with no blocker and an active allocation still says 'Active'; a blocker says 'Blocked'", () => {
+    h.accountStatus = "active";
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live" });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Active");
+    cleanup();
+    h.mode = unknownMode({ isError: false, isModeUnknown: false, envelope: {}, isLiveShared: true, cleanModeLabel: "Live", cleanBlockedReason: "Live execution is paused by an operator." });
+    render(<AccountSnapshotCard />);
+    expect(pill()).toBe("Blocked");
+  });
+});
+
+// With the mode unknown the route was never read: isOnSharedMasterRoute is
+// false only because there is no envelope. The Bridge row's detail said "Your
+// account does not trade through the shared master bridge", an unobserved
+// fact (the user may be LIVE_SHARED).
+describe("Trading Permission Bridge row — account-mode check failed", () => {
+  it("says the route could not be checked, not that the account is off the shared bridge", () => {
+    render(<TradingPermissionSummaryCard />);
+    const row = screen.getByTestId("permission-bridge");
+    expect(rowValue("permission-bridge")).toBe("Not checked");
+    const title = row.getAttribute("title") ?? "";
+    expect(title).not.toMatch(/does not trade through/);
+    expect(title).toMatch(/account route could not be checked/);
+  });
+
+  it("the trade room hero uses the same route-aware observation", () => {
+    const obs = describeBridgeObservation({ onSharedRoute: null, routeCheckFailed: true, allocationView: null });
+    expect(obs.detail).not.toMatch(/does not trade through/);
+    expect(describeBridgeObservation({ onSharedRoute: null, allocationView: null })).toMatchObject({ state: "checking", label: "Checking" });
+    expect(describeBridgeObservation({ onSharedRoute: false, allocationView: null }).label).toBe("Not checked here");
+  });
+});
+
+// React Query v5 sets isLoading = isPending && isFetching. Offline at mount,
+// the account-mode query is pending with its fetch paused: isLoading false,
+// isError false, envelope null. The card keyed "Waiting for approval" and
+// "Not paused" on isModeUnknown / isLoading, so it claimed an approval state
+// and a pause state that were never read, next to a Bridge row saying
+// "Checking" and a Trade Command Room saying "Checking" (18ecf5d2).
+describe("Trading Permission card — account-mode query paused (offline), no envelope", () => {
+  beforeEach(() => {
+    h.mode = unknownMode({ isLoading: false, isError: false, isModeUnknown: false, cleanModeLabel: "Loading…", cleanUserMessage: "" });
+  });
+
+  it("says it is checking instead of 'Waiting for approval'", () => {
+    render(<TradingPermissionSummaryCard />);
+    const status = screen.getByTestId("permission-status").textContent ?? "";
+    expect(status).not.toBe("Waiting for approval");
+    expect(status).toBe("Checking");
+    const card = screen.getByTestId("cockpit-trading-permission").textContent ?? "";
+    expect(card).not.toContain("Your account is approved for trading.");
+    expect(card).toContain("Your account mode has not been read yet.");
+  });
+
+  it("the Account pause row says 'Checking', not 'Not paused'", () => {
+    render(<TradingPermissionSummaryCard />);
+    expect(rowValue("permission-pause")).not.toBe("Not paused");
+    expect(rowValue("permission-pause")).toBe("Checking");
+    // The Bridge row in the same card says the same thing.
+    expect(rowValue("permission-bridge")).toBe("Checking");
+  });
+});

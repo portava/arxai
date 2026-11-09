@@ -10,8 +10,9 @@ import { selectedAnalysisAvailable, selectedNewsDisplay } from "./selectedMarket
 // HONESTY: builders MUST preserve the upstream honesty gates. When a read is
 // downgraded / withheld (insufficient / stale / delayed / blocked) the Decision
 // becomes WAIT/conditional, the limitation is stated in Feed/Data, and no direction
-// or level is fabricated. If a news/calendar provider is missing we say
-// "news/calendar unavailable", never "low risk".
+// or level is fabricated. Event risk is stated exactly as checked: the page's
+// truth-read calendar label verbatim (lib/eventRiskCopy), "not assessed in this
+// read" when the read consulted no calendar, never "low risk" by omission.
 //
 // Pure module (no JSX) — keep it free of component exports so it stays testable and
 // Vite fast-refresh-safe.
@@ -23,8 +24,16 @@ import type {
   ScalpResult,
 } from "@workspace/api-client-react";
 import type { SetupReason } from "@/components/scanner/EleanorSetupReason";
-import type { ChartRead } from "@/lib/eleanorReadPanelState";
+import { isStructuralOnlyRead, resolveHtfRead, type ChartRead } from "@/lib/eleanorReadPanelState";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import {
+  isScalpAwaitingBrokerSpecs,
+  isScalpAwaitingFeed,
+  scalpSpreadRead,
+  scalpTimeframeWords,
+} from "@/components/scanner/scalpLabels";
+import { EVENT_RISK_NOT_ASSESSED_IN_READ } from "@/lib/eventRiskCopy";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 
 export interface EleanorReasoningEvidence {
   structure: string;
@@ -61,6 +70,20 @@ export const NEWS_UNAVAILABLE_NOTE =
   "News/calendar unavailable — event risk not assessed.";
 
 const NOT_ENOUGH = "Not enough confirmed data to call this yet.";
+
+/** Prefix for a market-read line kept for context after the read stopped being current. */
+export const STALE_READ_PREFIX = "When this read was built (not current):";
+
+/**
+ * Prefix for a market-read line kept for context on a CURRENT read whose setup
+ * is invalidated (lifecycle INVALID: price broke the setup's invalidation
+ * level). The read is not out of date, so it is never called "not current".
+ */
+export const INVALIDATED_SETUP_PREFIX = "Setup now invalidated — this read described:";
+
+/** Why a current read on a confirmed feed withholds its setup (lifecycle INVALID). */
+export const SETUP_INVALIDATED_REASON =
+  "Price broke this setup's invalidation level (as of this read), so the setup is no longer valid.";
 
 function clean(s: string | null | undefined): string {
   return (s ?? "").trim();
@@ -100,8 +123,43 @@ export interface MarketReadReasoningInput {
   level?: string | null;
   /** Human downgrade reason from the scanner-truth gate. */
   reason?: string | null;
-  /** Event-risk label from the per-symbol truth snapshot, or null when no provider. */
+  /**
+   * True when the read is withheld ONLY because its own lifetime ended (past
+   * expiresAt / expired lifecycle) while the shared scanner-truth gate is NOT
+   * downgraded — the feed is not the cause. Every row then names the expiry
+   * and none blames the feed or calls it a historical read. Ignored unless
+   * `downgraded` is true.
+   */
+  readExpired?: boolean;
+  /**
+   * Why the read withholds its content while the shared gate is NOT
+   * downgraded: "expired" (past expiresAt, STALE/EXPIRED freshness, EXPIRED
+   * lifecycle) or "invalidated" (lifecycle INVALID — price broke the setup's
+   * invalidation level on a read that is still current). Takes precedence
+   * over `readExpired`. An invalidated setup is never called expired and is
+   * never told to refresh. Ignored unless `downgraded` is true.
+   */
+  withheldCause?: "expired" | "invalidated" | null;
+  /**
+   * The event-risk sentence EXACTLY as the card's News & economic impact block
+   * prints it (lib/eventRiskCopy eventRiskLine: the server's calendar label
+   * verbatim, or the loading/unavailable wording). Appended verbatim to Risk so
+   * both rows always say the same thing. Absent → "not assessed in this read".
+   */
   newsRiskLabel?: string | null;
+  /**
+   * Why the signal's "LIVE_FEED" word can't be confirmed on this page (the
+   * market-truth snapshot is unavailable / not LIVE_CONFIRMED), or null when it
+   * is confirmed. Downgrade-only: replaces "Live feed confirmed." in Feed/Data.
+   */
+  feedUnconfirmedReason?: string | null;
+  /**
+   * The instrument's display precision the card's Levels cells use
+   * (scannerTruth.candles.pricePrecision). Levels in this block are printed
+   * with the same shared formatter, so one level reads as one string on the
+   * card; null → the shared formatter's magnitude fallback, again identical.
+   */
+  pricePrecision?: number | null;
 }
 
 const BIAS_DIR: Record<string, "BUY" | "SELL" | null> = {
@@ -116,10 +174,22 @@ export function buildReasoningFromMarketRead(
   input: MarketReadReasoningInput,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
 ): EleanorReasoningBlockData {
+  // Same formatter + precision as the card's Levels cells (instrumentPriceFormat).
+  const px = (n: number | null | undefined): string => formatInstrumentPrice(n, input.pricePrecision ?? null);
+  const pxZone = (z: SignalPriceZone | null | undefined): string =>
+    !z ? "—" : z.from === z.to ? px(z.from) : `${px(z.from)} – ${px(z.to)}`;
   const { explanation: exp, signal, downgraded } = input;
   const level = input.level ?? null;
   const reason = clean(input.reason);
-  const newsMissing = !clean(input.newsRiskLabel);
+  // Withheld on a feed the shared gate confirms, so no row may name the feed
+  // as the cause: either the read is out of date (expired), or it is current
+  // and its setup is invalidated (price broke the invalidation level).
+  const cause = downgraded
+    ? (input.withheldCause ?? (input.readExpired === true ? "expired" : null))
+    : null;
+  const expiredOnly = cause === "expired";
+  const invalidatedOnly = cause === "invalidated";
+  const eventRisk = orElse(input.newsRiskLabel, EVENT_RISK_NOT_ASSESSED_IN_READ);
 
   // The card chooses simple/advanced at render; for reasoning we read the simple
   // mode (most plain-English) and fall back to advanced if simple is empty.
@@ -132,7 +202,11 @@ export function buildReasoningFromMarketRead(
 
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    decision = "WAIT — this read has expired";
+  } else if (invalidatedOnly) {
+    decision = "NO TRADE — setup invalidated";
+  } else if (downgraded) {
     decision = "WAIT — live feed not confirmed";
   } else if (isNoTrade) {
     decision = "NO TRADE";
@@ -145,52 +219,101 @@ export function buildReasoningFromMarketRead(
   }
 
   // ── Why ───────────────────────────────────────────────────────────────────
-  const why = orElse(
-    exp.headline,
-    orElse(
-      chosen?.why,
-      downgraded
-        ? `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.`
-        : NOT_ENOUGH,
-    ),
-  );
+  // A downgraded / expired read never leads with its own directional headline
+  // ("ready — Buy bias") — Why states the hold-back and its cause instead.
+  const why = downgraded
+    ? reason
+      ? `${assistantName} is holding back a directional call: ${reason}`
+      : `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.`
+    : orElse(exp.headline, orElse(chosen?.why, NOT_ENOUGH));
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(chosen?.whatIsHappening, NOT_ENOUGH);
-  const momentum = orElse(
-    chosen?.whyNow,
-    orElse(chosen?.timingState, NOT_ENOUGH),
-  );
-  const pattern = downgraded
-    ? "Pattern read withheld until the live feed confirms."
-    : orElse(chosen?.whyThisDirection, "No confirmed chart pattern called out.");
-  const trendline = downgraded
-    ? "Trendline read withheld until the live feed confirms."
-    : "No specific trendline called out.";
+  // The direction evidence (e.g. "Higher highs / higher lows") is swing
+  // STRUCTURE, not a chart pattern — it belongs in the Structure row.
+  const directionEvidence = downgraded ? "" : clean(chosen?.whyThisDirection);
+  const structureBase = clean(chosen?.whatIsHappening);
+  // Downgraded / expired: the structure line is labelled as the read's own
+  // (no longer current) description, and its timing ("entry window is open
+  // now") is withheld — neither may read as a description of the market now.
+  const structure = structureBase
+    ? downgraded
+      ? `${invalidatedOnly ? INVALIDATED_SETUP_PREFIX : STALE_READ_PREFIX} ${structureBase}`
+      : directionEvidence
+        ? `${structureBase} ${directionEvidence}`
+        : structureBase
+    : NOT_ENOUGH;
+  const momentum = invalidatedOnly
+    ? "Timing withheld — this setup is invalidated, so its entry timing no longer applies."
+    : downgraded
+    ? "Timing withheld — this read is not current, so its entry timing no longer applies."
+    : orElse(chosen?.whyNow, orElse(chosen?.timingState, NOT_ENOUGH));
+  // The market-read engine has no chart-pattern or trendline producer, so these
+  // rows say so in every state (a "withheld until the feed confirms" variant
+  // would promise an assessment that never comes; "none called out" would imply
+  // one was made). Trendlines/patterns come from the chart read and overlay.
+  const pattern = "Chart patterns are not assessed by this read.";
+  const trendline = "Trendlines are not assessed by this read.";
 
+  const ds = String(signal.dataSource ?? "").toUpperCase();
   let supportResistance: string;
-  if (downgraded || !actionable) {
+  if (expiredOnly) {
+    supportResistance =
+      "Key support/resistance levels are withheld — this read has expired; refresh for a current read.";
+  } else if (invalidatedOnly) {
+    supportResistance =
+      "Key support/resistance levels are withheld — price broke this setup's invalidation level, so its levels no longer apply.";
+  } else if (downgraded) {
     supportResistance =
       "Key support/resistance levels are withheld until the live feed confirms.";
+  } else if (!exp.hasSufficientData || ds !== "LIVE_FEED") {
+    // The signal's own data facts say this read is not on enough confirmed live
+    // data — say that, without naming any other cause.
+    supportResistance = "Levels withheld — not enough confirmed live candles/feed for this read.";
+  } else if (!actionable) {
+    // A live, sufficient read that simply isn't actionable: the feed is NOT why
+    // levels are absent. Cite the server's own reason (or a neutral fact) plus
+    // what is still missing — and never print level numbers here (the card hides
+    // the Levels panel for a non-actionable read; stay downgrade-only).
+    const missing = (exp.missingContext ?? []).filter((m) => clean(m).length > 0);
+    supportResistance =
+      `${orElse(exp.levelsWithheldReason, "No entry/stop levels are bound to this read.")}` +
+      (missing.length ? ` Still needed: ${missing.join(", ")}.` : "");
   } else {
     const lv = exp.levels;
     const parts: string[] = [];
-    if (lv?.entryZone) parts.push(`entry ${fmtZone(lv.entryZone)}`);
-    if (lv?.stopLoss != null) parts.push(`stop ${fmtNum(lv.stopLoss)}`);
-    if (lv?.invalidation != null) parts.push(`invalidation ${fmtNum(lv.invalidation)}`);
+    if (lv?.entryZone) parts.push(`entry ${pxZone(lv.entryZone)}`);
+    if (lv?.stopLoss != null) parts.push(`stop ${px(lv.stopLoss)}`);
+    if (lv?.invalidation != null) parts.push(`invalidation ${px(lv.invalidation)}`);
     supportResistance = parts.length
       ? `Watch nearby levels — ${parts.join(", ")}. Room can be limited near these.`
       : "No clean support/resistance level marked yet — be cautious entering blind.";
   }
 
-  const ds = String(signal.dataSource ?? "").toUpperCase();
   let feedData: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    // The shared gate confirms the feed; any page-level caveat on the signal's
+    // feed word (feedUnconfirmedReason) is still stated, then the real cause.
+    const feedNote = clean(input.feedUnconfirmedReason);
+    feedData = feedNote
+      ? `${feedNote} This read has also expired — its facts are from when it was built; refresh for a current read.`
+      : "The chart's feed checks pass — the feed is not why this read is withheld. This read has expired; its facts are from when it was built. Refresh for a current read.";
+  } else if (invalidatedOnly) {
+    const feedNote = clean(input.feedUnconfirmedReason);
+    feedData = feedNote
+      ? `${feedNote} Separately, price broke this setup's invalidation level, so the setup is no longer valid.`
+      : "The chart's feed checks pass — the feed is not why this read is withheld. Price broke this setup's invalidation level, so the setup is no longer valid.";
+  } else if (downgraded) {
     const cat =
       level === "blocked" ? "blocked" : level === "limited" ? "delayed / limited" : "historical";
     feedData = `Feed not fully confirmed (${cat} read).${reason ? ` ${reason}` : ""}`;
+  } else if (ds === "LIVE_FEED" && clean(input.feedUnconfirmedReason)) {
+    feedData = clean(input.feedUnconfirmedReason);
   } else if (ds === "LIVE_FEED") {
-    feedData = "Live feed confirmed.";
+    // The server records when the live quote binds no bid/ask spread to these
+    // candles — say so beside the live-feed claim so Feed/Data and S/R agree.
+    feedData = signal.scannerBinding?.reasonCode === "quote_last_only"
+      ? "Live feed confirmed · no bid/ask quote is bound to these candles."
+      : "Live feed confirmed.";
   } else if (ds === "LIVE_DELAYED") {
     feedData = "Live feed is delayed — treat as lower confidence.";
   } else if (ds === "AWAITING_FEED") {
@@ -202,32 +325,44 @@ export function buildReasoningFromMarketRead(
   }
 
   const riskBase = orElse(chosen?.risk, "Manage risk to your plan.");
-  const evidenceRisk = newsMissing ? `${riskBase} ${NEWS_UNAVAILABLE_NOTE}` : riskBase;
+  const evidenceRisk = `${riskBase} ${eventRisk}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
-  const confirmation = downgraded
+  const confirmation = expiredOnly
+    ? "Refresh for a current read first, then re-check the setup before acting."
+    : invalidatedOnly
+    ? "Nothing to confirm — this setup is invalidated. Wait for a new setup to form before acting."
+    : downgraded
     ? "Confirm the live feed first, then re-check the setup before acting."
     : orElse(
         chosen?.whatConfirms,
         actionable && exp.levels?.entryZone
-          ? `Strengthens if price respects ${fmtZone(exp.levels.entryZone)} and follows through with momentum.`
+          ? `Strengthens if price respects ${pxZone(exp.levels.entryZone)} and follows through with momentum.`
           : NOT_ENOUGH,
       );
 
-  const invalidation = downgraded
+  const invalidation = expiredOnly
+    ? "Treat this expired read's idea as invalid until a refreshed read confirms it, or if structure breaks against it."
+    : invalidatedOnly
+    ? "Already invalidated — price broke this setup's invalidation level."
+    : downgraded
     ? "Treat the idea as invalid while the feed is unconfirmed or structure breaks against it."
     : orElse(
         chosen?.whatInvalidates,
         actionable && exp.levels?.invalidation != null
-          ? `Cancel if price reclaims and holds beyond ${fmtNum(exp.levels.invalidation)}.`
+          ? `Cancel if price reclaims and holds beyond ${px(exp.levels.invalidation)}.`
           : NOT_ENOUGH,
       );
 
   let traderTest: string;
-  if (downgraded) {
+  if (expiredOnly) {
+    traderTest = "Refresh the read and check it is current before trusting any level or direction.";
+  } else if (invalidatedOnly) {
+    traderTest = "Do not trade this setup — its invalidation level has broken. Look for a new setup on the chart.";
+  } else if (downgraded) {
     traderTest = "Check the chart's feed-status badge before trusting any level or direction.";
   } else if (actionable && exp.levels?.invalidation != null) {
-    traderTest = `Mark ${fmtNum(exp.levels.invalidation)} on the chart and watch whether the next candle breaks or rejects it. Don't chase if price stalls there.`;
+    traderTest = `Mark ${px(exp.levels.invalidation)} on the chart and watch whether the next candle breaks or rejects it. Don't chase if price stalls there.`;
   } else {
     traderTest = orElse(
       chosen?.whatToDoNext,
@@ -236,14 +371,21 @@ export function buildReasoningFromMarketRead(
   }
 
   // ── Risk Note ───────────────────────────────────────────────────────────────
+  // A withheld read's own late note ("~80% of the move already done") is not
+  // current — the card withholds its late warning too — so the withholding
+  // cause leads, exactly as in Decision.
   let riskNote: string;
-  if (isLate) {
+  if (expiredOnly) {
+    riskNote = "This read has expired — it is not a current trade call.";
+  } else if (invalidatedOnly) {
+    riskNote = "This setup is invalidated — it is not a trade call.";
+  } else if (downgraded) {
+    riskNote = "This is a conditional read on an unconfirmed feed — not a full-confidence trade.";
+  } else if (isLate) {
     riskNote = orElse(
       signal.late?.reason,
       "This move may already be late — chasing it carries extra risk.",
     );
-  } else if (downgraded) {
-    riskNote = "This is a conditional read on an unconfirmed feed — not a full-confidence trade.";
   } else if (isNoTrade) {
     riskNote = orElse(
       exp.noTrade?.reason,
@@ -354,21 +496,39 @@ export interface ScalpReasoningInput {
   result: ScalpResult;
   /** Human flame setup label (FLAME_SETUP_LABEL) the card already resolved. */
   patternLabel?: string | null;
+  /**
+   * True once the read is past its own server-declared expiresAt (or has no
+   * valid one). The decision is then not stated as current, every line built
+   * from the read is labelled "When it was read:", and the flame's score and
+   * entry trigger are withheld (as the card's flame row withholds them).
+   */
+  expired?: boolean;
 }
+
+const AT_READ = "When it was read:";
 
 export function buildReasoningFromScalp(
   input: ScalpReasoningInput,
 ): EleanorReasoningBlockData {
   const r = input.result;
-  const awaiting = r.status === "AWAITING_DATA";
+  // AWAITING_DATA splits by engine reason: a feed/data reason (or an unnamed
+  // one, fail-closed) is "awaiting live data"; NO_SPECS means the live feed
+  // passed every check and only the broker's symbol details are missing.
+  const awaiting = isScalpAwaitingFeed(r);
+  const noSpecs = isScalpAwaitingBrokerSpecs(r);
+  const tfWords = scalpTimeframeWords(r);
   const dir = r.direction === "BUY" || r.direction === "SELL" ? r.direction : null;
   const flame = r.flame && !r.flame.blind ? r.flame : null;
   const chase = clean(r.chaseWarning);
 
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
-  if (awaiting) {
+  if (input.expired) {
+    decision = "WAIT — this scalp read has expired; refresh for a current read";
+  } else if (awaiting) {
     decision = "WAIT — awaiting live data";
+  } else if (noSpecs) {
+    decision = "WAIT — broker symbol details unavailable";
   } else if (clean(r.noTradeReason)) {
     decision = "NO TRADE";
   } else if (!dir) {
@@ -382,15 +542,30 @@ export function buildReasoningFromScalp(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(r.plainEnglishReason, NOT_ENOUGH);
-  const momentum = flame
+  // An expired read's own lines describe the market when it was read: each is
+  // labelled so, and nothing from it is stated in the present tense.
+  const expired = input.expired === true;
+  const atRead = (line: string): string => (expired ? `${AT_READ} ${line}` : line);
+  const structure = clean(r.plainEnglishReason) ? atRead(clean(r.plainEnglishReason)) : NOT_ENOUGH;
+  const momentum = flame && expired
+    ? clean(flame.whyNow)
+      ? atRead(clean(flame.whyNow))
+      // The card's flame row withholds the expired read's score; so does this row.
+      : "Momentum withheld — this scalp read has expired, so its flame read is not current."
+    : flame
     ? orElse(flame.whyNow, `Flame momentum read ${flame.scalpScore}/100.`)
     : awaiting
       ? "Awaiting live candles before judging momentum."
-      : "Momentum not read on this blind scan.";
+      : noSpecs
+        ? "Momentum not read — the scalp stopped before its read because the broker's symbol details are unavailable."
+        : "Momentum not read on this blind scan.";
   const pattern = awaiting
     ? "Pattern read withheld until live candles confirm."
-    : orElse(input.patternLabel, "No specific scalp pattern called out.");
+    : noSpecs
+      ? "No scalp pattern read — the broker's symbol details are needed first."
+      : clean(input.patternLabel)
+        ? atRead(clean(input.patternLabel))
+        : "No specific scalp pattern called out.";
   const trendline = awaiting
     ? "Trendline read withheld until live candles confirm."
     : "No specific trendline called out.";
@@ -398,70 +573,101 @@ export function buildReasoningFromScalp(
   let supportResistance: string;
   if (awaiting) {
     supportResistance = "Entry, stop, and target are withheld until live candles confirm.";
+  } else if (noSpecs) {
+    supportResistance =
+      "Entry, stop, and target are withheld — the broker's symbol details (lot size, point value) are unavailable, so the scalp can't be sized.";
   } else {
     const parts: string[] = [];
     if (r.entryZone) parts.push(`entry ${fmtNum(r.entryZone.from)} – ${fmtNum(r.entryZone.to)}`);
     if (r.stopLoss != null) parts.push(`stop ${fmtNum(r.stopLoss)}`);
     if (r.takeProfit?.main != null) parts.push(`main TP ${fmtNum(r.takeProfit.main)}`);
     supportResistance = parts.length
-      ? `Plan — ${parts.join(", ")}. Watch room into nearby support/resistance.`
+      ? atRead(`Plan — ${parts.join(", ")}. Watch room into nearby support/resistance.`)
       : "No clean level marked yet — be cautious entering blind.";
   }
 
-  const feedData = awaiting
-    ? "Awaiting live feed — no confirmed candles yet, so this read is provisional."
-    : flame
-      ? "Live 1-minute candles read."
-      : "Scanner-level (blind) read — limited candle visibility on this symbol.";
+  const feedData = input.expired
+    ? "Read expired — the candles behind this read describe the market when it was read, not now."
+    : awaiting
+      ? "Awaiting live feed — no confirmed candles yet, so this read is provisional."
+      : noSpecs
+        ? `Live ${tfWords ?? "scalp-timeframe"} data passed the feed checks; no broker symbol details (lot size, point value) are synced for this account, so no scalp is built.`
+        : flame
+          ? tfWords
+            ? `Live ${tfWords} candles read.`
+            : "Live candles read."
+          : "Scanner-level (blind) read — limited candle visibility on this symbol.";
 
   const newsLabel = clean(r.newsRisk);
+  // The engine sends newsRisk "LOW" alongside these flags: that LOW was never
+  // read from a calendar, so it is reported as not checked (same as the chip,
+  // in the chip's order: a failed check first, then no calendar configured,
+  // then no calendar connected — where only a LOW band is the default).
+  const newsNotChecked = r.newsRiskUnchecked === true
+    ? "news could not be checked"
+    : r.newsRiskNotConfigured === true
+      ? "news not checked (no economic calendar configured)"
+      : r.newsRiskNotChecked === true && r.newsRisk === "LOW"
+        ? "news not checked (no economic calendar connected)"
+        : "";
+  // A reject's spread / slippage "LOW" is a placeholder unless the engine read
+  // the spread before turning the scalp down (same rule as the card's chips).
+  const spreadRead = scalpSpreadRead(r);
   const riskBits = [
-    clean(r.spreadRisk) ? `spread ${r.spreadRisk}` : "",
-    clean(r.slippageRisk) ? `slippage ${r.slippageRisk}` : "",
-    newsLabel ? `news ${newsLabel}` : "",
+    ...(spreadRead === "not_read"
+      ? ["spread and slippage not read"]
+      : spreadRead === "too_wide"
+        ? ["spread too wide", "slippage not read"]
+        : [
+            clean(r.spreadRisk) ? `spread ${r.spreadRisk}` : "",
+            clean(r.slippageRisk) ? `slippage ${r.slippageRisk}` : "",
+          ]),
+    newsNotChecked || (newsLabel ? `news ${newsLabel}` : ""),
   ].filter(Boolean);
   let evidenceRisk = riskBits.length
     ? `Risk read — ${riskBits.join(", ")}.`
     : "Manage risk to your plan.";
-  if (!newsLabel) evidenceRisk = `${evidenceRisk} ${NEWS_UNAVAILABLE_NOTE}`;
+  if (!newsLabel || newsNotChecked) evidenceRisk = `${evidenceRisk} ${NEWS_UNAVAILABLE_NOTE}`;
   const rWarn = clean(r.riskWarning);
   if (rWarn) evidenceRisk = `${evidenceRisk} ${rWarn}`;
+  if (riskBits.length || rWarn) evidenceRisk = atRead(evidenceRisk);
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
-  const confirmation = orElse(
-    flame?.entryTrigger,
-    dir
-      ? "Confirms on a clean trigger in your direction with momentum follow-through."
-      : "Wait for a clear directional trigger first.",
-  );
-  const invalidation = orElse(
-    flame?.invalidationIdea,
-    r.stopLoss != null
-      ? `Cancel if price breaks your stop ${fmtNum(r.stopLoss)}.`
-      : NOT_ENOUGH,
-  );
-  const traderTest =
-    r.stopLoss != null
+  // An expired read's entry trigger ("Enter on…") is an instruction for a
+  // market that has moved on: withheld, never restated as current.
+  const confirmation = expired
+    ? "Refresh for a current scalp read first — this expired read's entry trigger no longer applies."
+    : orElse(
+        flame?.entryTrigger,
+        dir
+          ? "Confirms on a clean trigger in your direction with momentum follow-through."
+          : "Wait for a clear directional trigger first.",
+      );
+  const invalidationLine = clean(flame?.invalidationIdea)
+    || (r.stopLoss != null ? `Cancel if price breaks your stop ${fmtNum(r.stopLoss)}.` : "");
+  const invalidation = invalidationLine ? atRead(invalidationLine) : NOT_ENOUGH;
+  const traderTest = expired
+    ? "Refresh the scalp read and check it is current before trusting its stop, entry or direction."
+    : r.stopLoss != null
       ? `Mark ${fmtNum(r.stopLoss)} (your stop) and watch whether price respects or breaks it. Don't chase if it has already run.`
       : "Mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   // ── Risk Note ───────────────────────────────────────────────────────────────
-  const riskNote = orElse(
-    r.noTradeReason,
-    orElse(
-      chase,
-      orElse(
-        flame?.decayNote,
+  const readNote = clean(r.noTradeReason) || chase || clean(flame?.decayNote);
+  const riskNote = expired
+    ? `This scalp read has expired — it is not a current trade call.${readNote ? ` ${AT_READ} ${readNote}` : ""}`
+    : orElse(
+        readNote,
         awaiting
           ? "No confirmed feed yet — wait for live candles before committing."
           : "Scalps move fast — don't chase; stick to your stop.",
-      ),
-    ),
-  );
+      );
 
   return {
     decision,
-    why: orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH)),
+    why: expired
+      ? `${AT_READ} ${orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH))}`
+      : orElse(flame?.whyNow, orElse(r.plainEnglishReason, NOT_ENOUGH)),
     evidence: { structure, momentum, pattern, trendline, supportResistance, feedData, risk: evidenceRisk },
     confirmation,
     invalidation,
@@ -486,6 +692,27 @@ export interface ChartReadReasoningInput {
   feedNotConfirmed?: boolean;
   /** Panel-resolved downgrade reason (same dimension that drove the downgrade). */
   reason?: string | null;
+  /**
+   * The read is older than its timeframe's candle budget (or its time is
+   * unknown). `asOf` is its newest closed candle ("HH:MM UTC") when known.
+   */
+  expired?: boolean;
+  asOf?: string | null;
+  /**
+   * The page's event-risk sentence from the SAME per-symbol truth read the
+   * market-read card prints (lib/eventRiskCopy eventRiskLine). The chart-read
+   * server path consults no calendar, so absent → "not assessed in this read";
+   * never a claim about the calendar provider this read did not check.
+   */
+  newsRiskLabel?: string | null;
+}
+
+function describeHtfBias(bias: string): string {
+  const b = bias.toLowerCase();
+  if (b.includes("bull")) return "leans bullish";
+  if (b.includes("bear")) return "leans bearish";
+  if (b.includes("range")) return "is range-bound";
+  return `is ${b}`;
 }
 
 function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
@@ -502,16 +729,28 @@ export function buildReasoningFromChartRead(
   const { read, symbol, timeframe } = input;
   const reason = clean(input.reason);
   const gated = read.gated === true;
-  const structuralOnly = !!input.structuralOnly;
   const feedNotConfirmed = !!input.feedNotConfirmed;
+  // Contradiction guard (owner screenshot 2026-10-27): a read whose own cautions
+  // say the exact levels are withheld, or whose transparency booleans say the
+  // live setup is withheld, can never render "Live read on …" / "Mind room into
+  // these levels." — it is a structural read even if the panel verdict missed it.
+  // Downgrade-only: it can only move the block toward the withheld wording.
+  const cautionsWithholdLevels = (read.cautions ?? []).some((c) => /levels withheld/i.test(clean(c)));
+  const structuralOnly =
+    !!input.structuralOnly ||
+    (!gated && !feedNotConfirmed && (cautionsWithholdLevels || isStructuralOnlyRead(read)));
   const withheld = gated || feedNotConfirmed || structuralOnly;
   const dir = biasDir(read.bias);
   const lowConf = /low|weak/i.test(clean(read.confidence));
 
   // ── Decision ──────────────────────────────────────────────────────────────
+  const expired = !gated && input.expired === true;
+  const asOf = clean(input.asOf);
   let decision: string;
   if (gated || feedNotConfirmed) {
     decision = "WAIT — live feed not confirmed";
+  } else if (expired) {
+    decision = "WAIT — this read has expired";
   } else if (structuralOnly) {
     decision = dir ? `Conditional ${dir} — structural read only` : "WAIT — structure only";
   } else if (!dir) {
@@ -523,27 +762,51 @@ export function buildReasoningFromChartRead(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(
-    clean(read.htfBias)
-      ? `Higher-timeframe bias ${read.htfBias}${clean(read.bias) ? `; ${read.bias} on ${timeframe}` : ""}.`
-      : read.bias,
-    NOT_ENOUGH,
-  );
-  const momentum = clean(read.confidence)
-    ? `Read confidence ${read.confidence}.`
+  // The HTF clause says only what was read: a bias named with the timeframe it
+  // came from, or "not read" — never a bias word for an HTF nobody fetched.
+  const htf = resolveHtfRead(read);
+  const htfName = htf.label ? `Higher timeframe (${htf.label})` : "Higher timeframe";
+  const htfClause = htf.bias
+    ? `${htfName} ${describeHtfBias(htf.bias)}`
+    : `${htf.label ? `Higher-timeframe (${htf.label})` : "Higher-timeframe"} bias not read`;
+  // Name the classifier and window this bias came from (server-supplied count),
+  // so "Mixed" here is not read as contradicting the scanner's swing-structure
+  // "bullish" on the same market — they are different reads over different bars.
+  const windowBars = typeof read.structureWindow === "number" && Number.isFinite(read.structureWindow) && read.structureWindow > 0
+    ? Math.round(read.structureWindow)
+    : null;
+  const chartReadSource = windowBars != null
+    ? ` (moving-average trend read over the last ${windowBars} ${timeframe} bars)`
+    : "";
+  const structure = clean(read.bias)
+    ? `${htfClause}; ${read.bias} on ${timeframe}${chartReadSource}.`
     : NOT_ENOUGH;
-  const pattern = withheld
+  // Momentum is the server's measured momentum sentence. The structure read's
+  // Low/Medium/High confidence is not a momentum fact — it is named as the
+  // structure scale it is on the Structure row (see the return below).
+  const momentum = orElse(read.momentumNote, NOT_ENOUGH);
+  // Pattern / Trendline rows say what the server's detectors reported on this
+  // read's closed-candle window (a structural read carries them too — the server
+  // already flags them context-only). Withheld only when there is no readable
+  // structure (gated / feed not confirmed). A missing key means the read did not
+  // assess it: "unavailable" — never "none named", which would claim a look.
+  const feedBlocked = gated || feedNotConfirmed;
+  // The server's own withheld-setup reason (blockedReason, surfaced by the panel
+  // resolver as `reason`) — a structural read must cite the gate that actually
+  // withheld the setup, never assume "the feed isn't confirmed".
+  const structuralWhy = reason || clean(read.blockedReason);
+  const pattern = feedBlocked
     ? "Pattern read withheld until the live feed confirms."
-    : "No specific chart pattern named.";
-  const trendline = withheld
+    : orElse(read.patternRead?.patternNote, "Pattern read unavailable for this read.");
+  const trendline = feedBlocked
     ? "Trendline read withheld until the live feed confirms."
-    : "No specific trendline named.";
+    : orElse(read.trendlineRead?.trendlineNote, "Trendline read unavailable for this read.");
 
   let supportResistance: string;
-  if (gated || feedNotConfirmed) {
+  if (feedBlocked) {
     supportResistance = "Support/resistance levels are withheld until the live feed confirms.";
   } else if (structuralOnly) {
-    supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")}. Exact entry/stop/target withheld until the feed confirms.`;
+    supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")} (structure from closed candles). Exact entry/stop/target withheld${structuralWhy ? ` — ${structuralWhy}` : "."}`;
   } else {
     supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")}. Mind room into these levels.`;
   }
@@ -552,21 +815,34 @@ export function buildReasoningFromChartRead(
   if (gated) {
     feedData = orElse(read.blockedReason, "Feed not confirmed — no directional structure available.");
   } else if (structuralOnly) {
-    feedData = `Structural read only — exact setup withheld until ${symbol} ${timeframe} confirms.${reason ? ` ${reason}` : ""}`;
+    feedData = structuralWhy
+      ? `Structural read only on ${symbol} ${timeframe} — exact entry/stop/target withheld: ${structuralWhy}`
+      : `Structural read only on ${symbol} ${timeframe} — exact entry/stop/target withheld.`;
   } else if (feedNotConfirmed) {
     feedData = `Feed not confirmed for ${symbol} ${timeframe}.${reason ? ` ${reason}` : ""}`;
   } else {
     feedData = `Live read on ${symbol} ${timeframe}.`;
   }
+  if (expired) {
+    // A one-shot read describes the chart at its newest closed candle; once that
+    // is older than the timeframe's budget it must not read as current.
+    feedData = asOf
+      ? `Read from closed candles as of ${asOf} — expired for ${timeframe}; re-read for the current chart.`
+      : `Read time unknown — treat this ${symbol} ${timeframe} read as expired and re-read for the current chart.`;
+  }
 
   const cautionLine = read.cautions?.length ? read.cautions.join("; ") : "";
   const riskBase = orElse(read.riskNote, "Manage risk to your plan.");
-  const evidenceRisk = `${cautionLine ? `${riskBase} — ${cautionLine}` : riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
+  const evidenceRisk = `${cautionLine ? `${riskBase} — ${cautionLine}` : riskBase} ${orElse(input.newsRiskLabel, EVENT_RISK_NOT_ASSESSED_IN_READ)}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   let confirmation: string;
-  if (withheld) {
+  if (expired && !feedBlocked) {
+    confirmation = "Re-read this chart first — the read above is older than the current candle window.";
+  } else if (feedBlocked) {
     confirmation = "Confirm the live feed first, then re-check the conditions before acting.";
+  } else if (structuralOnly) {
+    confirmation = "Re-read once exact entry/stop/target are published for this chart, then re-check the conditions before acting.";
   } else if (dir === "BUY") {
     confirmation = orElse(read.buyCondition, NOT_ENOUGH);
   } else if (dir === "SELL") {
@@ -575,30 +851,53 @@ export function buildReasoningFromChartRead(
     confirmation = orElse(read.buyCondition, orElse(read.sellCondition, "Wait for a clear directional break first."));
   }
 
-  const invalidation = withheld
+  const invalidation = feedBlocked
     ? "Treat the idea as invalid while the feed is unconfirmed or structure breaks against it."
-    : orElse(read.invalidation, NOT_ENOUGH);
+    : structuralOnly
+      ? "Treat the idea as unconfirmed while the exact setup is withheld, and invalid if structure breaks against it."
+      : orElse(read.invalidation, NOT_ENOUGH);
 
-  const traderTest =
-    clean(read.supportZone) || clean(read.resistanceZone)
+  const traderTest = structuralOnly && !feedBlocked
+    ? `Structure only — on the next closed candle, see whether price holds support ${orElse(read.supportZone, "—")} or resistance ${orElse(read.resistanceZone, "—")}; exact entry/stop/target are withheld, so don't size a trade from these zones.`
+    : clean(read.supportZone) || clean(read.resistanceZone)
       ? `Mark support ${orElse(read.supportZone, "—")} and resistance ${orElse(read.resistanceZone, "—")} on ${symbol}; watch which one price tests first.`
       : "Check the chart's feed-status badge, then mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   const riskNote = gated
     ? orElse(read.blockedReason, "Feed unconfirmed — treat as no-trade until it clears.")
-    : structuralOnly || feedNotConfirmed
+    : feedNotConfirmed
       ? "Structure only — wait for the feed to confirm before acting on a live setup."
+      : structuralOnly
+        ? "Structure only — exact entry/stop/target are withheld; don't act on a live setup from this read."
       : orElse(read.riskNote, "Don't force it — wait for your confirmation trigger before committing.");
 
   return {
     decision,
     why: orElse(read.why, orElse(read.headline, withheld ? `The live feed isn't confirmed, so ${assistantName} is holding back a directional call.` : NOT_ENOUGH)),
-    evidence: { structure, momentum, pattern, trendline, supportResistance, feedData, risk: evidenceRisk },
+    evidence: {
+      structure: withStructureConfidence(structure, read.confidence),
+      momentum,
+      pattern,
+      trendline,
+      supportResistance,
+      feedData,
+      risk: evidenceRisk,
+    },
     confirmation,
     invalidation,
     traderTest,
     riskNote,
   };
+}
+
+// The chart read's confidence is a three-level STRUCTURE scale (bias, timeframe
+// agreement, momentum strength) — a different instrument from the market-edge
+// card's 0–100 trade quality / edge. Name the scale wherever it is shown.
+function withStructureConfidence(structure: string, confidence: string | null | undefined): string {
+  const c = clean(confidence);
+  if (!c || structure === NOT_ENOUGH) return structure;
+  const sentence = /[.!?]$/.test(structure) ? structure : `${structure}.`;
+  return `${sentence} Structure-read confidence: ${c} (structure scale: Low / Medium / High).`;
 }
 
 // ── Opportunity Map detail (SelectedMarketPanel snapshot) ────────────────────
@@ -633,20 +932,42 @@ export interface OppMapReasoningInput {
   newsRiskLevel?: string | null;
   newsCalendarAvailable?: boolean;
   newsApplicability?: "applicable" | "not_applicable";
+  /** Whether the server says the calendar was actually checked (downgrade-only; see selectedNewsDisplay). */
+  newsCalendarChecked?: boolean;
+  /** What newsRiskLevel was measured against (release time, date-only marker, unscored). */
+  newsLevelBasis?: "release_time" | "date_only" | "unscored" | null;
+  /**
+   * The display precision the panel's Highlights box prints these levels at
+   * (resolveDisplayPricePrecision over the scanner truth's precision and the
+   * levels themselves). Levels here use the same shared formatter, so one
+   * level reads as one string in the panel.
+   */
+  pricePrecision?: number | null;
 }
 
 export function buildReasoningFromOppMap(
   input: OppMapReasoningInput,
 ): EleanorReasoningBlockData {
+  // Same formatter + precision as the panel's Highlights box (instrumentPriceFormat).
+  const px = (n: number | null | undefined): string => formatInstrumentPrice(n, input.pricePrecision ?? null);
   const exp = input.explanation;
   const bias = clean(input.bias).toUpperCase();
   const dir = bias === "BUY" || bias === "SELL" ? bias : null;
   const ds = clean(input.dataState).toUpperCase();
   const feedDegraded = ds === "STALE" || ds === "UNAVAILABLE";
-  const withheld = input.levelsWithheld === true || input.entryZone == null || feedDegraded;
+  // Levels are only stated as numbers on a confirmed live feed — the same rule
+  // the panel's Highlights box applies (selectedMarketView), so a SYNCING or
+  // unstated feed withholds them here too instead of printing them beside it.
+  const withheld = input.levelsWithheld === true || input.entryZone == null || ds !== "LIVE_CONFIRMED";
   const lowConf = /low|weak|uncertain/i.test(clean(input.confidenceLabel));
   const analysisAvailable = selectedAnalysisAvailable(input.dataState);
-  const news = selectedNewsDisplay({ riskLevel: input.newsRiskLevel, calendarAvailable: input.newsCalendarAvailable, applicability: input.newsApplicability });
+  const news = selectedNewsDisplay({
+    riskLevel: input.newsRiskLevel,
+    calendarAvailable: input.newsCalendarAvailable,
+    applicability: input.newsApplicability,
+    calendarChecked: input.newsCalendarChecked,
+    levelBasis: input.newsLevelBasis,
+  });
 
   // ── Decision ──────────────────────────────────────────────────────────────
   let decision: string;
@@ -671,7 +992,10 @@ export function buildReasoningFromOppMap(
     ? `Confidence ${orElse(input.confidenceLabel, "—")}; volatility ${orElse(input.volatilityLabel, "—")}.`
     : "Confidence unavailable; volatility unavailable.";
   const pattern = orElse(exp.whyItMatters, "No specific pattern called out.");
-  const trendline = withheld
+  // Blame the feed only when the feed is the reason (not LIVE_CONFIRMED). A
+  // confirmed snapshot with no entry zone simply has no setup yet.
+  const feedConfirmed = ds === "LIVE_CONFIRMED";
+  const trendline = withheld && !feedConfirmed
     ? "Trendline read withheld until a confirmed live feed."
     : "No specific trendline called out.";
 
@@ -679,10 +1003,12 @@ export function buildReasoningFromOppMap(
   if (withheld || !input.entryZone) {
     supportResistance = orElse(
       input.levelsWithheldReason,
-      "Entry, stop, and target are withheld until a confirmed live feed.",
+      feedConfirmed
+        ? "No entry, stop or target published yet — no actionable setup."
+        : "Entry, stop, and target are withheld until a confirmed live feed.",
     );
   } else {
-    supportResistance = `Entry ${fmtNum(input.entryZone.low)} – ${fmtNum(input.entryZone.high)}, stop ${fmtNum(input.suggestedStop)}, target ${fmtNum(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
+    supportResistance = `Entry ${px(input.entryZone.low)} – ${px(input.entryZone.high)}, stop ${px(input.suggestedStop)}, target ${px(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
   }
 
   let feedData: string;
@@ -704,27 +1030,29 @@ export function buildReasoningFromOppMap(
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = dir
     ? input.suggestedTakeProfit != null && !withheld
-      ? `Strengthens if price moves cleanly toward ${fmtNum(input.suggestedTakeProfit)}.`
+      ? `Strengthens if price moves cleanly toward ${px(input.suggestedTakeProfit)}.`
       : "Confirm the feed, then look for follow-through in your direction."
     : "Wait for a clear directional break before treating this as a setup.";
   const invalidation = orElse(
     exp.invalidation,
     input.suggestedStop != null && !withheld
-      ? `Cancel if price breaks the stop ${fmtNum(input.suggestedStop)}.`
+      ? `Cancel if price breaks the stop ${px(input.suggestedStop)}.`
       : NOT_ENOUGH,
   );
   const traderTest =
     input.suggestedStop != null && !withheld
-      ? `Mark ${fmtNum(input.suggestedStop)} on ${input.symbol} and watch whether price respects or breaks it.`
+      ? `Mark ${px(input.suggestedStop)} on ${input.symbol} and watch whether price respects or breaks it.`
       : "Mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   const riskNote = orElse(
     exp.cautions?.length ? exp.cautions.join(" ") : "",
     orElse(
       input.riskWarnings?.length ? input.riskWarnings.join(" ") : "",
-      withheld
+      withheld && !feedConfirmed
         ? "Levels are withheld on an unconfirmed feed — wait for confirmation before committing."
-        : "Don't force it — wait for your confirmation trigger before committing.",
+        : withheld
+          ? "No levels published yet — wait for a defined setup before committing."
+          : "Don't force it — wait for your confirmation trigger before committing.",
     ),
   );
 
@@ -802,7 +1130,8 @@ export function buildReasoningFromAIInsight(
     ? orElse(input.readinessTrustLine, "Read isn't live-confirmed yet.")
     : "Read presented as live-confirmed by the bot pipeline — verify the chart's feed-status badge.";
   const riskBase = orElse(input.warning, "Manage risk to your plan.");
-  const evidenceRisk = `${riskBase} ${NEWS_UNAVAILABLE_NOTE}`;
+  // The bot-review payload carries no calendar read: say exactly that.
+  const evidenceRisk = `${riskBase} ${EVENT_RISK_NOT_ASSESSED_IN_READ}`;
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   const confirmation = withheld

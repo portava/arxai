@@ -16,7 +16,10 @@
 //   - Setup guidance is state-gated: it only appears when the live state truly
 //     requires it, so solved setup steps are not repeated.
 import { getUserAllocationView } from "../live/masterBridgePool.js";
+import { getConnection } from "../brokerHub/connections.js";
+import { connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { analyzeSession } from "../../brain/sessions/sessionEngine.js";
+import { isFxWeekendClosed, FX_WEEKEND_SESSION_NAME } from "../../brain/timing/sessionKillZoneEngine.js";
 import { getSymbolTradability } from "../data/symbolTradability.js";
 import { classifySymbol } from "../data/marketDataRouter.js";
 import { isApprovedArxMarket } from "@workspace/domain/market";
@@ -84,10 +87,26 @@ export interface EleanorContext {
       openPnl: number;
       currency: string | null;
       snapshotStatus: string;
+      /**
+       * Set when the pool's balance/equity cannot be shown: the pool stores a
+       * figure the EA never reported as 0 (NOT NULL columns) and its FRESH
+       * status comes from the heartbeat alone. Plain-English reason; null or
+       * absent when the master connection's own snapshot has the figures.
+       */
+      figuresUnavailableReason?: string | null;
     } | null;
     // Every user's own ARX allocation slice.
     allocation: { allocated: number; available: number; reserved: number } | null;
+    /** Broker-verified open positions (same truth source as getMyLiveOpenTrades). */
     openPositions: number;
+    /**
+     * False when the open-positions read failed — then openPositions is 0 only
+     * because nothing could be counted, and the briefing must not say "none are
+     * open". Absent = checked (older fixtures).
+     */
+    openPositionsChecked?: boolean;
+    /** Rows that exist but the broker has not verified (never counted as open). */
+    unverifiedPositions?: number;
     /** Open floating P/L from the shared buildLiveAccountSnapshot adapter. null = not available. */
     openPL: number | null;
     /** Freshness of the open P/L figure — same bands as the frontend badge. */
@@ -233,7 +252,11 @@ async function fetchCalendar(): Promise<CalCacheVal> {
     // share ONE provider path. The market-provider chain has no TE wiring and
     // returns connected:false for every calendar call regardless of key config.
     const res = await getEconomicCalendar(""); // empty = all symbols (briefing-level)
-    if (res.connected && res.events.length > 0) {
+    // A connected calendar that lists no events WAS checked: it stays
+    // connected (next = null), never reported as "not connected".
+    if (res.connected && res.events.length === 0) {
+      val = { connected: true, next: null };
+    } else if (res.connected) {
       const now = Date.now();
       // RawCalendarEvent uses `impact` and `eventTimeIso` (not `importance`/`whenIso`).
       const upcoming = res.events
@@ -263,6 +286,58 @@ async function fetchCalendar(): Promise<CalCacheVal> {
 }
 
 /**
+ * Why the master pool's balance/equity must not be shown, or null when the
+ * master connection's own account snapshot has both figures. Reads the stored
+ * connection row only (no broker call). A failed read is "could not be
+ * checked", never a pass.
+ */
+async function masterFiguresUnavailableReason(masterConnectionId: number | null | undefined): Promise<string | null> {
+  if (masterConnectionId == null) return "the master connection is not recorded, so its account figures could not be checked";
+  let snap: ReturnType<typeof connectionAccountSnapshot>;
+  try {
+    snap = connectionAccountSnapshot(await getConnection(masterConnectionId));
+  } catch {
+    return "the master account figures could not be checked";
+  }
+  if (snap.status !== "observed") return "the EA has not reported the account's balance and equity yet";
+  const missing = [snap.balance == null ? "balance" : null, snap.equity == null ? "equity" : null].filter(Boolean);
+  if (missing.length) return `the EA has not reported the account's ${missing.join(" and ")}`;
+  return null;
+}
+
+/**
+ * The briefing's market-session line. analyzeSession() reads only the UTC hour,
+ * so on a Saturday it still names "London"; the FX week (Sun 17:00 - Fri 17:00
+ * New York, isFxWeekendClosed) decides whether forex is open. At the weekend
+ * forex is closed for every symbol: a forex/index symbol's session reads as
+ * closed, and a synthetic symbol (24/7) keeps its own liquidity but does not
+ * claim an FX session. Briefing copy only; the brain's session scoring is
+ * unchanged.
+ */
+export function eleanorSessionContext(
+  assetClass: string,
+  symbol: string,
+  now: Date,
+): NonNullable<EleanorContext["session"]> {
+  const sa = analyzeSession(assetClass, symbol);
+  if (isFxWeekendClosed(now)) {
+    const synthetic = assetClass === "synthetic";
+    return {
+      name: FX_WEEKEND_SESSION_NAME,
+      liquidity: synthetic ? sa.liquidityLevel : "Closed",
+      score: synthetic ? sa.sessionScore : 0,
+      forexOpen: false,
+    };
+  }
+  return {
+    name: sa.session,
+    liquidity: sa.liquidityLevel,
+    score: sa.sessionScore,
+    forexOpen: assetClass === "synthetic" ? true : sa.session !== "Off-hours",
+  };
+}
+
+/**
  * Gather the full Eleanor context for a user. Never throws — each source is
  * isolated so a single failure degrades to a null/empty field.
  */
@@ -286,7 +361,7 @@ export async function buildEleanorContext(
     connected: false,
     message: "Live bridge is not currently available.",
   };
-  let account: EleanorContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPL: null, snapshotFreshness: null, live: null };
+  let account: EleanorContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPositionsChecked: false, unverifiedPositions: 0, openPL: null, snapshotFreshness: null, live: null };
   try {
     const view = await getUserAllocationView(userId);
     bridge = {
@@ -306,6 +381,7 @@ export async function buildEleanorContext(
         openPnl: Number(view.pool.totalUserUnrealizedPnl ?? 0),
         currency: view.pool.accountCurrency ?? null,
         snapshotStatus: String(view.pool.snapshotStatus ?? "MISSING"),
+        figuresUnavailableReason: await masterFiguresUnavailableReason(view.pool.masterConnectionId),
       };
     }
   } catch {
@@ -322,8 +398,12 @@ export async function buildEleanorContext(
     const { getMyLiveOpenTrades } = await import("./tools.js");
     const open = await getMyLiveOpenTrades(userId);
     account.openPositions = open.count;
+    account.unverifiedPositions = open.unsyncedCount ?? 0;
+    account.openPositionsChecked = true;
   } catch {
+    // Not checked — 0 here is "could not count", never "none open".
     account.openPositions = 0;
+    account.openPositionsChecked = false;
   }
 
   // ── Open P/L via shared snapshot adapter (LIVE_SHARED users only) ────────
@@ -369,13 +449,7 @@ export async function buildEleanorContext(
   let session: EleanorContext["session"] = null;
   try {
     const assetClass = symbolUpper ? classifySymbol(symbolUpper) : "unknown";
-    const sa = analyzeSession(assetClass, symbolUpper ?? "");
-    session = {
-      name: sa.session,
-      liquidity: sa.liquidityLevel,
-      score: sa.sessionScore,
-      forexOpen: assetClass === "synthetic" ? true : sa.session !== "Off-hours",
-    };
+    session = eleanorSessionContext(assetClass, symbolUpper ?? "", now);
   } catch {
     session = null;
   }
@@ -395,14 +469,7 @@ export async function buildEleanorContext(
       try {
         const { getSymbolSnapshot } = await import("../data/marketOverview.js");
         const snap = await getSymbolSnapshot(symbolUpper);
-        marketFeed = {
-          source: snap.source,
-          quality: snap.quality,
-          freshness: snap.freshness,
-          aiUsable: snap.aiUsable,
-          isLive: snap.isLive,
-          lastPrice: snap.lastPrice,
-        };
+        marketFeed = marketFeedFromSnapshot(snap);
       } catch {
         marketFeed = null;
       }
@@ -427,8 +494,9 @@ export async function buildEleanorContext(
         hasTrades: true,
         count: s.count,
         closedCount: s.closedCount,
-        winRate: s.winRate,
-        netPnl: s.totalNetPnl,
+        // null (no closed trade with a result) is left out, never sent as 0.
+        winRate: s.winRate ?? undefined,
+        netPnl: s.totalNetPnl ?? undefined,
       };
     }
   } catch {
@@ -539,7 +607,16 @@ export function composeEleanorBriefing(ctx: EleanorContext): EleanorBriefing {
   // Headline — greets by time + live readiness.
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   let readiness: string;
-  if (ctx.bridge.connected) readiness = "You're live-connected through Shared Master MT5.";
+  // bridge.connected is the SHARED master bridge's health, not this user's
+  // posture. "You're live-connected" needs the user's own canonical balance
+  // source (same live-mode gate as the Dashboard) to read live_shared.
+  const liveSource = ctx.account.live?.source ?? null;
+  if (ctx.bridge.connected && liveSource === "live_shared") readiness = "You're live-connected through Shared Master MT5.";
+  else if (ctx.bridge.connected && (liveSource === "paper" || liveSource === "demo")) {
+    readiness = `The Shared Master MT5 bridge is healthy, but your account is on the ${liveSource} path, not live.`;
+  } else if (ctx.bridge.connected) {
+    readiness = "The Shared Master MT5 bridge is healthy, but I couldn't confirm your account is on the live path.";
+  }
   else if (ctx.bridge.availability === "RECONCILING") readiness = "Your live bridge is reconciling right now.";
   else readiness = "Your live bridge is offline at the moment.";
   const headline = `Good ${ctx.timeOfDay}. ${readiness}`;
@@ -567,10 +644,36 @@ export function composeEleanorBriefing(ctx: EleanorContext): EleanorBriefing {
     // Shared chart-truth feed line — same source/quality/freshness as the chart.
     const mf = ctx.symbol.marketFeed;
     if (mf) {
-      if (mf.aiUsable && mf.freshness === "REALTIME") {
-        lines.push(`Live data for ${ctx.symbol.symbol} is clean right now — I can read it confidently.`);
+      // Each freshness verdict gets its own sentence: UNAVAILABLE means there
+      // is nothing to read, and STALE data is not a current read.
+      const sym = ctx.symbol.symbol;
+      // A closed market or stored history is what the chart says it is —
+      // never a "delayed" or "stale" live feed.
+      if (mf.notLiveReason === "market_closed") {
+        lines.push(`${sym} is in its scheduled weekend close — no live data until the market reopens, so its chart is history, not a current read.`);
+      } else if (mf.notLiveReason === "stored_history") {
+        lines.push(`${sym} is showing stored broker candles with no bridge pushing it — not a live feed, so I'll read it as history only.`);
+      } else if (mf.aiUsable && mf.freshness === "REALTIME") {
+        lines.push(`Live data for ${sym} is clean right now — I can read it confidently.`);
+      } else if (mf.freshness === "REALTIME") {
+        lines.push(`Market data for ${sym} is arriving in real time but isn't clean enough for a confident read — I'll read it cautiously.`);
+      } else if (mf.quality === "partial") {
+        // An incomplete sequence (missing, duplicate or out-of-order bars; the
+        // chart's "incomplete candle sequence") is graded DELAYED by freshness,
+        // but it is neither a delayed feed nor readable history — on an open
+        // market, a weekend close or a stored series alike.
+        lines.push(`The candles for ${sym} have gaps (missing, duplicate or out-of-order bars), so I won't read them as a complete or current chart.`);
+      } else if (mf.freshness === "DELAYED") {
+        lines.push(`Market data for ${sym} is delayed right now — I'll read it cautiously.`);
+      } else if (mf.freshness === "STALE") {
+        lines.push(`Market data for ${sym} is stale right now — I won't treat it as a current read.`);
       } else {
-        lines.push(`Live data for ${ctx.symbol.symbol} is ${mf.freshness.toLowerCase()} right now — I'll read it cautiously.`);
+        lines.push(`Market data for ${sym} is unavailable right now, so I can't read it.`);
+      }
+      // Another bridge's series is served when the trader's own bridge is not
+      // pushing this symbol: say whose feed it is, as the chart does.
+      if (mf.feedScope === "platform_shared" && mf.notLiveReason == null) {
+        lines.push(`These ${ctx.symbol.symbol} prices come from the platform's shared MetaTrader 5 feed, not your own bridge — your broker's quotes can differ slightly.`);
       }
       // Another bridge's series is served when the trader's own bridge is not
       // pushing this symbol: say whose feed it is, as the chart does.
@@ -588,21 +691,42 @@ export function composeEleanorBriefing(ctx: EleanorContext): EleanorBriefing {
     // Open P/L — same adapter as Dashboard/Open Trades; honest freshness qualifier.
     if (ctx.account.openPL != null) {
       const fresh = ctx.account.snapshotFreshness;
+      // Only a live/fresh snapshot reads bare; anything else (including an
+      // unavailable or unknown freshness) is qualified, never shown as current.
       const freshnessNote =
         fresh === "live" || fresh === "fresh" ? "" :
         fresh === "delayed" ? " (slightly delayed)" :
-        fresh === "stale" ? " (last known — may be stale)" : "";
+        fresh === "stale" ? " (last known — may be stale)" :
+        " (last known — freshness could not be confirmed)";
       lines.push(`Open floating P/L: ${fmtMoney(ctx.account.openPL, null)}${freshnessNote}.`);
     }
+  } else if (ctx.account.openPositionsChecked === false) {
+    lines.push("I couldn't check your open positions just now, so I can't say whether any are open — check the Trades page.");
+  } else if ((ctx.account.unverifiedPositions ?? 0) > 0) {
+    const n = ctx.account.unverifiedPositions!;
+    lines.push(
+      `No broker-verified positions are open; ${n} position${n === 1 ? " is" : "s are"} waiting for broker verification and not counted.`,
+    );
   } else {
     lines.push("No positions are currently open.");
   }
   if (ctx.isPrivileged && ctx.account.mt5) {
-    lines.push(
-      `Master MT5: balance ${fmtMoney(ctx.account.mt5.balance, ctx.account.mt5.currency)}, ` +
-        `equity ${fmtMoney(ctx.account.mt5.equity, ctx.account.mt5.currency)}, ` +
-        `open P/L ${fmtMoney(ctx.account.mt5.openPnl, ctx.account.mt5.currency)}.`,
-    );
+    const m = ctx.account.mt5;
+    if (m.snapshotStatus !== "FRESH" && m.snapshotStatus !== "STALE") {
+      // MISSING (or unrecognised): the pool reports 0s for a snapshot it never
+      // received — never show those as the account's balance.
+      lines.push("Master MT5: no account snapshot has been received, so balance, equity and open P/L are not available.");
+    } else if (m.figuresUnavailableReason) {
+      // The pool reads FRESH/STALE from the heartbeat, but its 0s may be
+      // figures the EA never reported — never show those as the balance.
+      lines.push(`Master MT5: ${m.figuresUnavailableReason}, so balance, equity and open P/L are not shown.`);
+    } else {
+      lines.push(
+        `Master MT5${m.snapshotStatus === "STALE" ? " (last-known — the snapshot is stale)" : ""}: balance ${fmtMoney(m.balance, m.currency)}, ` +
+          `equity ${fmtMoney(m.equity, m.currency)}, ` +
+          `open P/L ${fmtMoney(m.openPnl, m.currency)}.`,
+      );
+    }
   } else if (ctx.account.allocation && ctx.account.allocation.allocated > 0) {
     lines.push(
       `Your ARX allocation: ${fmtMoney(ctx.account.allocation.available, null)} available of ` +
