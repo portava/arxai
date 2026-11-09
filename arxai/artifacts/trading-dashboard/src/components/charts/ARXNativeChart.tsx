@@ -1,4 +1,5 @@
 import {proposeChartSupportResistance} from "@/lib/chart-engine/chartSupportResistance";
+import { reportRenderEvidence, RENDER_EVIDENCE_REFRESH_MS } from "@/lib/chart-engine/renderEvidenceReporter";
 import {profileCandleEvidence} from "@/lib/chart-engine/chartVolumeProfile";
 import { chartAssistantPaneContext } from "@/lib/chart-engine/chartAssistantPaneContext";
 import { chartUtcClockQualified, formatSourceChartTime, SOURCE_CLOCK_NOTE } from "@/lib/chart-engine/chartClockEvidence";
@@ -61,7 +62,6 @@ import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
 import { scheduledWeekendClosureFor, nextWeekendClosureBoundaryMs } from "@/lib/scannerTruth";
 import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { capConfidence, feedConfidence } from "@/lib/feed-confidence";
-import { StoredHistoryChip } from "./StoredHistoryChip";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
@@ -1012,6 +1012,15 @@ export function ARXNativeChart({
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
   }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext, pricePrecision]);
+  // Measure what the engine drew against these source bars after it paints, and
+  // keep that evidence fresh while the chart is open (renderEvidenceReporter.ts).
+  useEffect(() => {
+    const target = { symbol: resolvedSymbol, timeframe, source: historySource };
+    const measure = () => reportRenderEvidence(adapterRef.current, target);
+    const frame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(measure) : null;
+    const refresh = setInterval(measure, RENDER_EVIDENCE_REFRESH_MS);
+    return () => { if (frame != null) cancelAnimationFrame(frame); clearInterval(refresh); };
+  }, [mergedEngineCandles, historySource, resolvedSymbol, timeframe, chartEpoch, pricePrecision]);
   useLayoutEffect(() => {
     if (!onScannerSurfaceChange) return;
     const surface = hasCandles ? adapterRef.current?.getScannerOverlaySurface?.() : null;
@@ -1507,6 +1516,12 @@ export function ARXNativeChart({
   // the scanner badge and the AI read for this market say "Unconfirmed".
   const showPoorBanner =
     showFeedStatus && hasCandles && !isSafeMode && (refreshFailed || stripConf.severity !== "clean");
+  // The banner states the SAME verdict as the strip and chip: the capped one,
+  // or a failed refresh. It never shows the raw (uncapped) feed label.
+  const bannerConf = refreshFailed
+    ? { severity: "caution" as const, statusLabel: "Refresh failed",
+        message: "The latest candle refresh failed; the bars shown are the last successful response and are not updating." }
+    : stripConf;
   const showNotAiConfirmed = showFeedStatus && hasCandles && !aiUsable && !isSafeMode;
 
 
@@ -1692,7 +1707,6 @@ export function ARXNativeChart({
                 {positionCount} open
               </Badge>
             )}
-            <StoredHistoryChip status={feedStatus} newestOpenIso={candles.at(-1)?.openTime ?? null} />
             {showFeedStatus && feedStatus && (
               <FeedConfidenceBadge
                 feedStatus={feedStatus}
@@ -1887,19 +1901,19 @@ export function ARXNativeChart({
       {showPoorBanner && (
         <div
           data-testid="arx-native-feed-banner"
-          data-severity={conf.severity}
+          data-severity={bannerConf.severity}
           className={`flex flex-wrap items-center gap-2 px-3 py-2 text-xs backdrop-blur-sm ${
-            conf.severity === "danger"
+            bannerConf.severity === "danger"
               ? "bg-red-950/70 text-red-100"
-              : conf.severity === "caution"
+              : bannerConf.severity === "caution"
                 ? "bg-amber-950/60 text-amber-100"
                 : "bg-zinc-900/70 text-zinc-100"
           }`}
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span className="font-semibold">{conf.statusLabel} feed</span>
+          <span className="font-semibold">{bannerConf.statusLabel} feed</span>
           <span className="min-w-0 flex-1 break-words text-xs opacity-90">
-            {conf.message}
+            {bannerConf.message}
           </span>
           {query.isFetching && !query.isLoading && (
             <RefreshCw className="h-3 w-3 animate-spin opacity-60" />

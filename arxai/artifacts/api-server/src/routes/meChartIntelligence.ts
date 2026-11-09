@@ -8,6 +8,9 @@ import { GetMeChartIntelligenceQueryParams } from "@workspace/api-zod";
 import { requireUser } from "../lib/auth/middleware.js";
 import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { enrichStateWithUserBrokerQuote } from "../lib/data/chart/userBrokerAlignment.js";
+import { applyRenderEvidence, recordRenderEvidence } from "../lib/data/chart/renderEvidence.js";
+import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { z } from "zod/v4";
 
 const router = Router();
 const SAFETY_ENVELOPE = {
@@ -45,6 +48,7 @@ router.get("/me/chart/intelligence", requireUser, async (req, res): Promise<void
     } catch (enrichErr) {
       req.log.warn({ enrichErr }, "broker alignment enrichment failed — using placeholder");
     }
+    state = applyRenderEvidence(state, userId);
   }
 
   // Strip adminDetail from the brokerAlignment before serializing — this field
@@ -53,6 +57,34 @@ router.get("/me/chart/intelligence", requireUser, async (req, res): Promise<void
   const safeState = { ...state, brokerAlignment: { ...safeAlignment, adminDetail: null } };
 
   res.json({ state: safeState, ...SAFETY_ENVELOPE });
+});
+
+// Renderer evidence from the user's own chart draw (renderEvidence.ts). Record
+// only; it changes no trade, gate or order. The server binds it to the series
+// it serves before it counts, so a report can never raise an unrelated read.
+const RenderEvidenceBody = z.object({
+  symbol: z.string().trim().min(1).max(32),
+  timeframe: z.string().min(1).max(8),
+  source: z.string().min(1).max(128),
+  displayMode: z.enum(["ohlc", "close", "hollow", "heikinAshi"]),
+  newestBarTime: z.number().int().positive(),
+  barsCompared: z.number().int().min(0).max(100_000),
+  mismatchedBars: z.number().int().min(0).max(100_000),
+  droppedBars: z.number().int().min(0).max(100_000),
+  priceRoundTripOk: z.boolean(),
+  timeRoundTripOk: z.boolean().nullable(),
+}).strict();
+
+router.post("/me/chart/render-evidence", requireUser, (req, res): void => {
+  const parsed = RenderEvidenceBody.safeParse(req.body);
+  const timeframe = parsed.success ? normalizeChartTimeframe(parsed.data.timeframe) : null;
+  const userId = req.authUser?.id;
+  if (!parsed.success || !timeframe || userId == null) {
+    res.status(400).json({ ok: false, error: "INVALID_RENDER_EVIDENCE" });
+    return;
+  }
+  recordRenderEvidence(userId, { ...parsed.data, timeframe });
+  res.json({ ok: true });
 });
 
 export default router;

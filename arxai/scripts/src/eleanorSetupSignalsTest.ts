@@ -113,7 +113,10 @@ function scalpResult(flameStage: string, qualityScore: number | null): ScalpResu
   );
 }
 
-// ── 3) Scanner selection: falls back to top score when no TF match ──────────
+// ── 3) Scanner selection: NO cross-timeframe fallback ──────────────────────
+// A scanner score labels only its own timeframe (11-04 truth sweep; owner
+// ruling 2026-11-09: reads must be accurate). With no candidate on the
+// requested timeframe, nothing is borrowed from another one.
 {
   const res = scannerResult([
     candidate({ timeframe: "M5", score: 60 }),
@@ -122,8 +125,8 @@ function scalpResult(flameStage: string, qualityScore: number | null): ScalpResu
   ]);
   const match = selectScannerCandidate(res, "EURUSD", "M15"); // no M15
   record(
-    "scanner selection falls back to top-ranked candidate (no TF match)",
-    match != null && match.score === 88 && match.timeframe === "H1",
+    "scanner selection never borrows another timeframe's candidate",
+    match === null,
     `picked tf=${match?.timeframe} score=${match?.score}`,
   );
 }
@@ -132,13 +135,14 @@ function scalpResult(flameStage: string, qualityScore: number | null): ScalpResu
 {
   const res = scannerResult([
     candidate({ symbol: "GBPUSD", timeframe: "M15", score: 99 }),
-    candidate({ symbol: "EURUSD", timeframe: "M5", score: 41 }),
+    candidate({ symbol: "EURUSD", timeframe: "M15", score: 41 }),
   ]);
   const sig = deriveScannerSignals(res, "EURUSD", "M15");
+  const none = deriveScannerSignals(scannerResult([candidate({ symbol: "GBPUSD", timeframe: "M15", score: 99 })]), "EURUSD", "M15");
   record(
     "scanner signals are symbol-scoped (never cross-symbol leakage)",
-    sig.scannerScore === 41 && sig.riskScore != null,
-    `scannerScore=${sig.scannerScore}`,
+    sig.scannerScore === 41 && sig.riskScore != null && none.scannerScore === null,
+    `scannerScore=${sig.scannerScore} otherSymbolOnly=${none.scannerScore}`,
   );
 }
 

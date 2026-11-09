@@ -100,6 +100,18 @@ function aggregate(subMetrics: ChartTruthSubMetric[]): ChartTruthScore {
       (primaryConcern ?? "All measured checks healthy.") };
 }
 
+/** Replace one sub-metric with new evidence and re-aggregate. Used when a
+ * per-user measurement (renderer evidence) arrives after the shared score was
+ * built; every other sub-metric is carried over unchanged. */
+export function withSubMetric(
+  score: ChartTruthScore, key: string, rawScore: number | null, detail: string,
+): ChartTruthScore {
+  const existing = score.subMetrics.find((m) => m.key === key);
+  if (!existing) return score;
+  return aggregate(score.subMetrics.map((m) =>
+    m.key === key ? sub(m.key, m.label, m.weight, rawScore, detail) : m));
+}
+
 /** True only when a closed-to-forming bar pair let the merge seam be observed. */
 export function isMergeSeamMeasured(truthResult: TimeframeTruthResult | null | undefined): boolean {
   if (!truthResult || !Number.isFinite(truthResult.candleCount) || truthResult.candleCount <= 0) return false;

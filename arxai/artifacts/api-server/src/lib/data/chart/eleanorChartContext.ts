@@ -11,6 +11,7 @@
 // SAFETY: READ-ONLY. Never places, modifies, or closes a trade. Never an
 // execution gate. Never weakens the 16-gate live pipeline.
 
+import { applyRenderEvidence } from "./renderEvidence.js";
 import { buildChartIntelligenceState, type ChartIntelligenceState } from "./chartIntelligence.js";
 import { truthResultOfState } from "./stateTruthResult.js";
 import { candleTrustSegment, feedTrustSegment, gateMirrorBlockCause, type ChartGateOutput } from "./chartGateOutput.js";
@@ -422,6 +423,11 @@ export async function buildEleanorChartContext(
     } catch {
       // fail-open to the unenriched state: mirror remains unmeasured
     }
+    // Render Accuracy is measured only by this user's own chart draw of the
+    // served series (renderEvidence.ts). Absent or unbound, it stays unmeasured
+    // and VERIFIED stays out of reach — owner ruling 2026-11-09: reads,
+    // drawings and predictions must be accurate.
+    state = applyRenderEvidence(state, opts.userId);
   }
   const gate = state.gateOutput;
 

@@ -35,6 +35,7 @@ import type {
   ChartEngineInitOptions,
   ChartStructureLine,
   ChartStructureMarker,
+  RenderFidelity,
 } from "./types";
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchangedCandlePrefix } from "./candleReconciliation";
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
@@ -102,6 +103,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // style switch so the tick and full-write paths make one comparison per point
   // for candles and bars.
   private displayMode: DisplayMode = "ohlc";
+  // Source bars handed to the latest setCandles, before and after sanitising;
+  // the difference is reported as dropped by measureRenderFidelity().
+  private lastInputBars = 0;
+  private lastSanitizedBars = 0;
   // Display-only Heikin Ashi bars, index-aligned with this.candles while the
   // style is heikinAshi (empty otherwise). Never read by studies, drawings,
   // overlays or the reader; those use this.candles.
@@ -464,6 +469,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (!series) return;
 
     let sanitized = sanitizeCandlestickData(candles.map((c) => ({ ...c, time: c.time as UTCTimestamp })));
+    this.lastInputBars = candles.length;
+    this.lastSanitizedBars = sanitized.length;
     // A closed-window poll may lag a streamed forming bar. Keep that newer tip
     // until the authoritative window reaches it; never make a candle disappear.
     if (sanitized.length && this.streamTip && this.streamTip.time > sanitized[sanitized.length - 1]!.time) {
@@ -974,6 +981,60 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   getScannerOverlaySurface() {
     return this.chart && this.series && this.container
       ? { chart: this.chart, series: this.series, container: this.container } : null;
+  }
+
+  /**
+   * Measure what the engine actually drew against the source bars it was
+   * given (renderEvidence.ts on the server consumes this). Reads back the
+   * series' own data and compares every bar's time and price fields exactly,
+   * counts source bars it dropped, and round-trips the newest bar through the
+   * price axis (and the time axis when that bar is on screen). Read-only.
+   */
+  measureRenderFidelity(): RenderFidelity | null {
+    const series = this.series, chart = this.chart;
+    if (!series || !chart || !this.candles.length) return null;
+    let drawn: readonly unknown[];
+    try { drawn = (series as unknown as { data(): readonly unknown[] }).data(); } catch { return null; }
+    const mode = this.displayMode;
+    let mismatched = 0;
+    if (mode !== "heikinAshi") {
+      for (let i = 0; i < this.candles.length; i++) {
+        const want = this.candles[i]!, got = drawn[i] as Record<string, unknown> | undefined;
+        if (!got || got["time"] !== want.time) { mismatched++; continue; }
+        const same = mode === "close"
+          ? got["value"] === want.close
+          : got["open"] === want.open && got["high"] === want.high && got["low"] === want.low && got["close"] === want.close;
+        if (!same) mismatched++;
+      }
+      mismatched += Math.max(0, drawn.length - this.candles.length);
+    }
+    const newest = this.candles[this.candles.length - 1]!;
+    const step = this.precision >= 0 ? 10 ** -this.precision : Math.abs(newest.close) * 1e-8;
+    const prices = mode === "close" ? [newest.close] : [newest.open, newest.high, newest.low, newest.close];
+    let priceRoundTripOk = true;
+    for (const price of prices) {
+      try {
+        const y = series.priceToCoordinate(price);
+        const back = y == null ? null : series.coordinateToPrice(y);
+        if (back == null || !Number.isFinite(back) || Math.abs(back - price) > step) priceRoundTripOk = false;
+      } catch { priceRoundTripOk = false; }
+    }
+    let timeRoundTripOk: boolean | null = null;
+    try {
+      const x = chart.timeScale().timeToCoordinate(newest.time as UTCTimestamp);
+      if (x != null && x >= 0 && x <= chart.timeScale().width()) {
+        timeRoundTripOk = chart.timeScale().coordinateToTime(x) === newest.time;
+      }
+    } catch { timeRoundTripOk = false; }
+    return {
+      displayMode: mode,
+      newestBarTime: newest.time,
+      barsCompared: this.candles.length,
+      mismatchedBars: mismatched,
+      droppedBars: Math.max(0, this.lastInputBars - this.lastSanitizedBars),
+      priceRoundTripOk,
+      timeRoundTripOk,
+    };
   }
 
   priceToCoordinate(price: number): number | null {

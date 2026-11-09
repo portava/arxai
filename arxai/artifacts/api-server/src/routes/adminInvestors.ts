@@ -303,6 +303,7 @@ router.get("/admin/investors/performance-batches", requireUser, async (req, res)
     .orderBy(desc(investorPerformanceBatchesTable.createdAt))
     .limit(200);
   res.json({ ok: true, batches: rows.map(batchToDto) });
+});
 
 // ── GET /admin/investors/:id ────────────────────────────────────────────────
 router.get("/admin/investors/:id", requireUser, async (req, res) => {
@@ -574,7 +575,6 @@ function batchToDto(b: typeof investorPerformanceBatchesTable.$inferSelect) {
 
 // GET /admin/investors/performance-batches is registered above GET
 // /admin/investors/:id so Express does not route it into the :id handler.
-});
 
 // ── POST /admin/investors/performance-batches/:batchId/reverse ──────────────
 // Reverse a whole bulk-performance batch in one action. NEVER hard-deletes the

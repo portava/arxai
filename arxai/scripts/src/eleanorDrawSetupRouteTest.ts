@@ -98,6 +98,7 @@ const VERIFIED_SYMBOL = "EURUSD";
 // the gated draw. A clearly non-existent ticker so no real provider can serve it.
 const GATED_SYMBOL = "ZZNOFEEDXX";
 const TIMEFRAME = "M5";
+const SIGNAL_TIMEFRAME = "M15";
 const M5_MS = 5 * 60 * 1000;
 // Comfortably above MIN_CANDLE_HISTORY_COUNT (150) for the M5 chart-truth gate.
 const CANDLE_COUNT = 220;
@@ -126,22 +127,22 @@ function assert(cond: boolean, label: string): void {
  * yielding a drawable BUY setup. Equal candle ranges, zero gaps, valid OHLC — no
  * anomalies that would degrade the truth assessment below CLEAN.
  */
-function buildCleanWindow(): Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> {
+function buildCleanWindow(intervalMs = M5_MS): Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> {
   const out: Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> = [];
   const base = 1.1000;
   const stepUp = 0.00008; // gentle per-bar drift → directional, no spike anomaly
   const body = 0.00004;
   const wick = 0.00010;
   // Align the newest bar to the current 5-minute bucket so trailingIntervals === 0.
-  const currentBucket = Math.floor(Date.now() / M5_MS) * M5_MS;
-  const start = currentBucket - (CANDLE_COUNT - 1) * M5_MS;
+  const currentBucket = Math.floor(Date.now() / intervalMs) * intervalMs;
+  const start = currentBucket - (CANDLE_COUNT - 1) * intervalMs;
   for (let i = 0; i < CANDLE_COUNT; i++) {
     const close = base + i * stepUp;
     const open = close - body;
     const high = close + wick;
     const low = open - wick;
     out.push({
-      time: new Date(start + i * M5_MS).toISOString(),
+      time: new Date(start + i * intervalMs).toISOString(),
       open: Number(open.toFixed(5)),
       high: Number(high.toFixed(5)),
       low: Number(low.toFixed(5)),
@@ -159,38 +160,6 @@ function buildCleanWindow(): Array<{ time: string; open: number; high: number; l
 // band makes it request a DOWNGRADE through the real advisory → Traffic → Court
 // flow, which flips the drawn setup's verdict tradeable → caution. Everything is
 // ADVISORY/SHADOW only — it never gates demo/live execution.
-
-/**
- * A CHOPPY M15/H1 window that the REAL live scanner (scoreLiveCandidates →
- * scoreCandles) ranks as a real LOW-score candidate: a flat body for most bars
- * then one outsized final bar (volatilityRatio > 1.8 → bias "choppy"). Combined
- * with the moderate bid/ask spread below, the scanner deterministically produces
- * scannerScore ~36 (a populated, non-null candidate) and riskScore ~77 — inside
- * the RISK agent's [70, 85) DOWNGRADE band (below the 85 rejection threshold).
- * This is a REAL populated signal derived from this fixed window — never
- * fabricated structure, and deterministic (not random).
- */
-function buildChoppyCandles(): Candle[] {
-  const out: Candle[] = [];
-  const base = 1.1000;
-  const n = 12; // >= MIN_CANDLES (10)
-  for (let i = 0; i < n; i++) {
-    const isLast = i === n - 1;
-    const open = isLast ? 1.1000 : base;
-    const close = isLast ? 1.1006 : base; // first close = last close diff → drift > 0.0005 (not "neutral")
-    const high = isLast ? 1.1009 : base + 0.00005;
-    const low = isLast ? 1.0997 : base - 0.00005; // last range 0.0012 ≫ others 0.0001 → choppy
-    out.push({
-      t: new Date(Date.now() - (n - 1 - i) * 15 * 60 * 1000).toISOString(),
-      o: Number(open.toFixed(5)),
-      h: Number(high.toFixed(5)),
-      l: Number(low.toFixed(5)),
-      c: Number(close.toFixed(5)),
-      v: 1000,
-    });
-  }
-  return out;
-}
 
 /**
  * A moderate bid/ask spread (0.0003 ≈ 27 spread-penalty points). Combined with
@@ -356,6 +325,29 @@ export async function run(): Promise<CiTestResultLike> {
   };
   const pushBoundQuote = (halfSpread?: number) => pushQuote({ tickTimeObserved: true, halfSpread });
 
+  // The dashboard's chart engine measures its own draw and reports it
+  // (renderEvidenceReporter.ts); VERIFIED requires that measurement (owner
+  // ruling 2026-11-09). Report what an exact draw of the SERVED series
+  // measures: read the served source and newest bar the way the chart does.
+  const reportRender = async (override: Partial<Record<string, unknown>> = {}, timeframe: string = TIMEFRAME) => {
+    const intel = await fetch(`${baseUrl}/api/me/chart/intelligence?symbol=${VERIFIED_SYMBOL}&timeframe=${timeframe}`, {
+      headers: { cookie },
+    }).then((r) => r.json()).catch(() => null) as any;
+    const st = intel?.state;
+    const newest = st?.currentCandle ?? st?.latestClosedCandle;
+    const res = await fetch(`${baseUrl}/api/me/chart/render-evidence`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        symbol: VERIFIED_SYMBOL, timeframe, source: st?.truthState?.source ?? "none",
+        displayMode: "ohlc", newestBarTime: newest ? Date.parse(newest.openTime) / 1000 : 1,
+        barsCompared: cleanWindow.length, mismatchedBars: 0, droppedBars: 0,
+        priceRoundTripOk: true, timeRoundTripOk: true, ...override,
+      }),
+    });
+    return res.status;
+  };
+
   const postJson = async (body: unknown) => {
     const res = await fetch(`${baseUrl}/api/me/assistant/draw-setup`, {
       method: "POST",
@@ -383,6 +375,32 @@ export async function run(): Promise<CiTestResultLike> {
     // ── 1. VERIFIED feed → the route draws a real setup ─────────────────────
     // eslint-disable-next-line no-console
     console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — verified feed + bound quote, side BUY → drawable`);
+    // ── 1a. No renderer measurement → never VERIFIED (all data gates pass). ──
+    pushBoundQuote();
+    const unrendered = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    assert(
+      unrendered.json?.setupPreview?.dataFreshness?.basis !== "VERIFIED",
+      `unrendered: no render evidence → not VERIFIED (got ${String(unrendered.json?.setupPreview?.dataFreshness?.basis)})`,
+    );
+    // ── 1b. A measured render mismatch → not VERIFIED. ─────────────────────
+    assert((await reportRender({ mismatchedBars: 1 })) === 200, "render evidence (mismatch) accepted → 200");
+    pushBoundQuote();
+    const misdrawn = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    assert(
+      misdrawn.json?.setupPreview?.dataFreshness?.basis !== "VERIFIED",
+      `misdrawn: a drawn bar differs from the source → not VERIFIED (got ${String(misdrawn.json?.setupPreview?.dataFreshness?.basis)})`,
+    );
+    // ── 1c. Evidence for another source does not count. ─────────────────────
+    assert((await reportRender({ source: "deriv" })) === 200, "render evidence (other source) accepted → 200");
+    pushBoundQuote();
+    const otherSource = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    assert(
+      otherSource.json?.setupPreview?.dataFreshness?.basis !== "VERIFIED",
+      `other-source render evidence → not VERIFIED (got ${String(otherSource.json?.setupPreview?.dataFreshness?.basis)})`,
+    );
+
+    // ── 1d. Exact draw of the served series measured → VERIFIED. ───────────
+    assert((await reportRender()) === 200, "render evidence (exact draw) accepted → 200");
     pushBoundQuote();
     const verified = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
     assert(verified.status === 200, `verified HTTP 200 (got ${verified.status})`);
@@ -468,44 +486,53 @@ export async function run(): Promise<CiTestResultLike> {
     assert(gated.json?.allowOrderExecution === false, "gated: allowOrderExecution === false");
 
     // ── 3. A LIVE SCANNER SIGNAL DEMONSTRABLY CHANGES THE DRAWN SETUP ───────
-    // Same VERIFIED chart feed, same symbol, same BUY request. The ONLY thing
-    // that differs between the control and the treatment is the live scanner
-    // signal. This proves the scanner/governance sources are not cosmetic: a
-    // populated low-score signal, fed to the REAL production agents, flips the
-    // drawn verdict from tradeable to caution (Task #389).
-
-    // Control — a provider that yields NO scanner candidate (empty candles).
-    // scannerScore / riskScore / governanceOutcome come back honestly null
-    // (no candidate → governance is never consulted) and the clean uptrend
-    // draws as tradeable.
+    // The live scanner now reads the SAME router series as the chart (source
+    // unification), ranks M15/H1 only, and its score labels ONLY its own
+    // timeframe (setupSignals.selectScannerCandidate: no cross-timeframe
+    // fallback). So this section draws on M15 from its own verified M15 series,
+    // and the scanner's input is that same series plus the broker quote.
+    // Control and treatment share the chart series, symbol and BUY request; the
+    // ONLY difference is the broker's quoted spread, which the scanner's
+    // riskScore reads (riskScore = 20 + spreadPenalty, liveScanner.ts). A wide
+    // spread puts risk in the RISK agent's [70, 85) DOWNGRADE band, and the
+    // REAL advisory → Traffic → Court flow flips the verdict to caution.
+    // The live scanner runs only while the assistant's market-data adapter is
+    // connected; this connected stub serves NO candles of its own, so every
+    // scanned bar comes from the router's MT5 series above.
     _setMarketProviderForTests(makeScannerProvider([], CHOPPY_QUOTE));
+    updateCandlesFromMT5(VERIFIED_SYMBOL, buildCleanWindow(15 * 60_000), SIGNAL_TIMEFRAME, bridge);
+    assert((await reportRender({}, SIGNAL_TIMEFRAME)) === 200, "render evidence (M15 exact draw) accepted → 200");
+
+    // Control — tight one-point spread: a populated, low-risk candidate.
     // eslint-disable-next-line no-console
-    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — control: no scanner signal`);
+    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL} ${SIGNAL_TIMEFRAME}) — control: tight spread`);
     pushBoundQuote();
-    const control = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    const control = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: SIGNAL_TIMEFRAME, side: "BUY" });
     assert(control.status === 200, `control HTTP 200 (got ${control.status})`);
     const controlPreview = control.json?.setupPreview;
     assert(!!controlPreview, "control: setupPreview present");
     assert(
       controlPreview?.dataFreshness?.basis === "VERIFIED",
-      `control: basis still VERIFIED from the chart feed (got ${String(controlPreview?.dataFreshness?.basis)})`,
+      `control: basis VERIFIED from the measured M15 chart (got ${String(controlPreview?.dataFreshness?.basis)})`,
     );
-    assert(controlPreview?.scannerScore === null, `control: scannerScore null with no scanner candidate (got ${String(controlPreview?.scannerScore)})`);
-    assert(controlPreview?.riskScore === null, `control: riskScore null with no scanner candidate (got ${String(controlPreview?.riskScore)})`);
-    assert(controlPreview?.governanceOutcome === null, `control: governanceOutcome null with no scanner candidate (got ${String(controlPreview?.governanceOutcome)})`);
+    assert(
+      typeof controlPreview?.scannerScore === "number",
+      `control: scannerScore populated from the same series (got ${String(controlPreview?.scannerScore)})`,
+    );
+    assert(
+      typeof controlPreview?.riskScore === "number" && controlPreview.riskScore < 70,
+      `control: riskScore below the downgrade band (got ${String(controlPreview?.riskScore)})`,
+    );
+    assert(controlPreview?.governanceOutcome !== "downgraded", `control: not downgraded (got ${String(controlPreview?.governanceOutcome)})`);
     assert(controlPreview?.verdict === "tradeable", `control: verdict tradeable on the clean uptrend (got ${String(controlPreview?.verdict)})`);
 
-    // Treatment — a populated CHOPPY scanner signal (a REAL low score with a
-    // riskScore in the [70, 85) band). The ACTIVE core RISK agent reads the
-    // elevated risk through the real advisory → Traffic → Court flow and
-    // requests a DOWNGRADE, flipping the team verdict to caution.
-    _setMarketProviderForTests(makeScannerProvider(buildChoppyCandles(), CHOPPY_QUOTE));
+    // Treatment — the broker quotes a 6-pip spread (still centred on the
+    // closed close, so the broker comparison stays bound): spreadPenalty ≈ 55,
+    // riskScore ≈ 75.
     // eslint-disable-next-line no-console
-    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL}) — treatment: populated low-score scanner signal`);
-    // Same bound quote, but with CHOPPY_QUOTE's moderate spread (still centred
-    // on the closed close, so the broker comparison stays tight and bound).
-    pushBoundQuote((CHOPPY_QUOTE.ask! - CHOPPY_QUOTE.bid!) / 2);
-    const treatment = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: TIMEFRAME, side: "BUY" });
+    console.log(`\nPOST draw-setup (${VERIFIED_SYMBOL} ${SIGNAL_TIMEFRAME}) — treatment: wide broker spread`);
+    pushBoundQuote(0.0003);
+    const treatment = await postJson({ symbol: VERIFIED_SYMBOL, timeframe: SIGNAL_TIMEFRAME, side: "BUY" });
     assert(treatment.status === 200, `treatment HTTP 200 (got ${treatment.status})`);
     const treatmentPreview = treatment.json?.setupPreview;
     assert(!!treatmentPreview, "treatment: setupPreview present");
@@ -513,39 +540,23 @@ export async function run(): Promise<CiTestResultLike> {
       treatmentPreview?.dataFreshness?.basis === "VERIFIED",
       `treatment: basis still VERIFIED from the chart feed (got ${String(treatmentPreview?.dataFreshness?.basis)})`,
     );
-    // The populated signal SURFACES as real, non-null numbers (not fabricated).
     assert(
       typeof treatmentPreview?.scannerScore === "number" && Number.isFinite(treatmentPreview?.scannerScore),
       `treatment: scannerScore is a populated number (got ${typeof treatmentPreview?.scannerScore} = ${String(treatmentPreview?.scannerScore)})`,
     );
     assert(
-      typeof treatmentPreview?.riskScore === "number" && Number.isFinite(treatmentPreview?.riskScore),
-      `treatment: riskScore is a populated number (got ${typeof treatmentPreview?.riskScore} = ${String(treatmentPreview?.riskScore)})`,
-    );
-    // The populated risk sits in the RISK agent's [70, 85) DOWNGRADE band
-    // (below the 85 rejection threshold) — the deterministic driver of the flip.
-    assert(
       typeof treatmentPreview?.riskScore === "number" &&
         treatmentPreview.riskScore >= 70 && treatmentPreview.riskScore < 85,
       `treatment: riskScore in the RISK DOWNGRADE band [70,85) (got ${String(treatmentPreview?.riskScore)})`,
     );
-    // Governance demonstrably acted: the team DOWNGRADED the read.
     assert(
       treatmentPreview?.governanceOutcome === "downgraded",
       `treatment: governanceOutcome "downgraded" (got ${String(treatmentPreview?.governanceOutcome)})`,
     );
     assert(treatmentPreview?.verdict === "caution", `treatment: verdict caution (got ${String(treatmentPreview?.verdict)})`);
-
-    // The crux of Task #389: the ONLY change was the live scanner signal, and it
-    // flipped the drawn verdict. A no-signal control and a populated-signal
-    // treatment cannot draw the same setup.
     assert(
       controlPreview?.verdict === "tradeable" && treatmentPreview?.verdict === "caution",
       `signal changes the setup: verdict tradeable→caution (control=${String(controlPreview?.verdict)}, treatment=${String(treatmentPreview?.verdict)})`,
-    );
-    assert(
-      controlPreview?.governanceOutcome === null && treatmentPreview?.governanceOutcome === "downgraded",
-      `signal changes governance: null→downgraded (control=${String(controlPreview?.governanceOutcome)}, treatment=${String(treatmentPreview?.governanceOutcome)})`,
     );
 
     // Restore the real provider for the side-effect tally below.

@@ -31,6 +31,13 @@ defaults:
 
 env:
   NODE_OPTIONS: --max-old-space-size=6144
+  # Production runs in UTC; timestamp-without-zone columns and bar bucketing
+  # assume it (duplicate detection broke under a non-UTC runner clock).
+  TZ: UTC
+  # Disposable signing key for the throwaway CI database only. Command
+  # integrity signatures derive from it; without one, signed-command tests
+  # cannot settle. Not a secret: it protects nothing outside this job.
+  SESSION_SECRET: ci-only-disposable-session-secret-not-used-anywhere-else
 
 jobs:
   ci:
