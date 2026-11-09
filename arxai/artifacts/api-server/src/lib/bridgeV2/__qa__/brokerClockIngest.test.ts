@@ -1,14 +1,20 @@
-// Truth audit T1 (2026-11-04): v2 TICK and CANDLE stamps arrive in the broker's
-// clock. With the bridge's offset measured (here from the tick's own broker
-// time against the envelope's GMT clock), the ingest converts them to UTC and
-// records the offset on the quote; with no measurement the raw stamp is kept.
+// Truth audit T1 (2026-11-04), convert-at-ingest (owner decision 2026-11-08):
+// v2 CANDLE stamps arrive in the broker's clock and are converted to UTC with
+// the bridge's measured offset (here measured from a tick's broker time against
+// the envelope's GMT clock); with no measurement the raw stamp is kept and
+// labelled BROKER_SERVER. A v2 TICK is stamped with the EA's own UTC clock at
+// first sight (recordMt5Tick), so its time never depends on the offset.
 // No database: drives the market-data fold directly.
 // Run: DATABASE_URL=postgres://nobody@127.0.0.1:1/none node --import tsx --test \
 //        src/lib/bridgeV2/__qa__/brokerClockIngest.test.ts
 
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { __feedMarketDataStoreForTests as fold } from "../ingest.js";
+import { __feedMarketDataStoreForTests as feed } from "../ingest.js";
+
+const fold = (messageType: string, payload: unknown, freshnessVerdict: string | null,
+  bridge: { bridgeConnectionId: number; userId: number } | null, eaCreatedAtEpochMs: number | null) =>
+  feed({ messageType, payload, freshnessVerdict, bridge, eaCreatedAtEpochMs });
 import { __resetBrokerClockOffsets, getBrokerClockOffset } from "../../brokerHub/brokerClockOffset.js";
 import { __resetMt5ProviderStore, readMt5Candles, readMt5Quote } from "../../data/providers/mt5Provider.js";
 import { __resetFormingBarStore, getFormingBar } from "../../data/chart/formingBarComposer.js";
@@ -22,7 +28,7 @@ beforeEach(() => {
   __resetFormingBarStore();
 });
 
-test("UTC+2 broker: the tick is stored at its UTC instant and the quote names the offset used", () => {
+test("UTC+2 broker: the tick is a clock sample, stamped on the EA's UTC clock; the tip buckets on UTC", () => {
   const now = Date.now();
   const gmt = now - 50; // EA's GMT clock when it sent the tick
   const brokerTick = gmt + 2 * H - 120; // the tick's broker-clock time, 120 ms before send
@@ -35,25 +41,28 @@ test("UTC+2 broker: the tick is stored at its UTC instant and the quote names th
 
   const q = readMt5Quote("EURUSD", { bridgeConnectionId: 41, now });
   assert.ok(q);
-  assert.equal(Date.parse(q.quote.timestamp), brokerTick - 2 * H, "stored as UTC");
-  assert.equal(q.tickTimeObserved, true);
-  assert.equal(q.brokerClockOffsetMs, 2 * H);
+  assert.equal(Date.parse(q.quote.timestamp), gmt, "first sight on the EA's UTC clock");
 
   // The forming tip buckets by the converted time, so it sits in the current interval.
-  const tip = getFormingBar("EURUSD", "M5", now, "mt5_broker");
+  const tip = getFormingBar("EURUSD", "M5", now, "mt5_broker", 41);
   assert.ok(tip);
   assert.equal(tip.openMs, Math.floor((brokerTick - 2 * H) / 300_000) * 300_000);
 });
 
-test("no measurement: the raw broker stamp is kept and the quote says no conversion happened", () => {
+test("no measurement: a closed bar keeps its raw broker stamp, labelled BROKER_SERVER with no offset", () => {
   const now = Date.now();
-  const brokerTick = now + 2 * H;
-  fold("TICK", { symbol: "GBPUSD", bid: 1.3, ask: 1.3001, brokerTimeEpochMs: brokerTick }, "FRESH", BRIDGE, null);
+  const gmt = now - 10;
+  // 20 minutes off the 30-minute grid: rejected as a clock sample.
+  fold("TICK", { symbol: "GBPUSD", bid: 1.3, ask: 1.3001, brokerTimeEpochMs: gmt + 2 * H + 20 * 60_000 }, "FRESH", BRIDGE, gmt);
   assert.equal(getBrokerClockOffset(41, now), null);
-  const q = readMt5Quote("GBPUSD", { bridgeConnectionId: 41, now });
-  assert.ok(q);
-  assert.equal(Date.parse(q.quote.timestamp), brokerTick, "raw stamp (consumers fail closed on the future time)");
-  assert.equal(q.brokerClockOffsetMs, null);
+  const barOpenBroker = Math.floor((now + 2 * H) / 300_000) * 300_000 - 300_000;
+  fold("CANDLE", { symbol: "GBPUSD", timeframe: "M5", openTimeEpochMs: barOpenBroker, open: 1.3, high: 1.31, low: 1.29, close: 1.3, volume: 3 }, "FRESH", BRIDGE, gmt);
+  const read = readMt5Candles("GBPUSD", "M5", 10, { bridgeConnectionId: 41, now });
+  assert.equal(read.candles.length, 1);
+  assert.equal(Date.parse(read.candles[0]!.time), barOpenBroker, "raw stamp (consumers fail closed)");
+  const ev = read.candles[0]!.timeBasisEvidence;
+  assert.equal(ev?.basis, "BROKER_SERVER");
+  assert.equal(ev?.brokerClockOffsetMs, null);
 });
 
 test("UTC-5 broker: closed bars pushed after the offset is known open at their UTC time", () => {
@@ -65,6 +74,11 @@ test("UTC-5 broker: closed bars pushed after the offset is known open at their U
   const read = readMt5Candles("XAUUSD", "M5", 10, { bridgeConnectionId: 41, now });
   assert.equal(read.candles.length, 1);
   assert.equal(Date.parse(read.candles[0]!.time), barOpenBroker + 5 * H, "bar open converted to UTC");
+  const ev = read.candles[0]!.timeBasisEvidence;
+  assert.equal(ev?.basis, "UTC");
+  assert.equal(ev?.convertedAtIngest, true);
+  assert.equal(ev?.kind, "unavailable", "a measured offset is never an original UTC record");
+  assert.equal(ev?.brokerClockOffsetMs, -5 * H);
   assert.equal(read.futureStamped, false);
 });
 

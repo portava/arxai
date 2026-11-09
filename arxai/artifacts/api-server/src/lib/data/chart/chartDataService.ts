@@ -462,7 +462,11 @@ async function buildChartFeed(
   const mt5WriterQuote = source === "mt5_broker"
     ? readMt5Quote(symbol, { writer: { bridgeConnectionId: servingBridgeId }, now })
     : null;
-  const mt5TickConverted = mt5WriterQuote != null && mt5WriterQuote.tickTimeObserved && mt5WriterQuote.brokerClockOffsetMs != null
+  // A producer time is either a broker stamp converted with a measured offset,
+  // or (v2 TICK) the EA's own UTC clock at the tick's first sight, tightly
+  // bounded by the previous post (recordMt5Tick). Both are UTC tick times.
+  const mt5TickConverted = mt5WriterQuote != null && mt5WriterQuote.tickTimeObserved
+    && (mt5WriterQuote.brokerClockOffsetMs != null || mt5WriterQuote.tick != null)
     && Number.isFinite(Date.parse(mt5WriterQuote.quote.timestamp));
   const lastTickTime = derivBacked
     ? derivSymbolStatus?.lastTickAt ?? null
@@ -723,7 +727,6 @@ interface MessageContext {
  */
 function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageContext): string | null {
   if (quality !== "stale" && quality !== "delayed") return null;
-  if (ctx.storedHistory && ctx.marketClosedAtMs == null) return storedHistoryMessage(displaySymbol, ctx);
   if (ctx.marketClosedAtMs != null) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. Not a feed fault, and not live data.`;
   }
@@ -776,9 +779,6 @@ function buildMessage(
 ): string {
   if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
-  }
-  if (ctx.storedHistory && (quality === "clean" || quality === "delayed" || quality === "stale")) {
-    return storedHistoryMessage(displaySymbol, ctx);
   }
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
     return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;

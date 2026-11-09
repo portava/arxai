@@ -49,7 +49,6 @@ import { emitLiveAccountChanged, emitConnectionAccountChanged } from "../lib/liv
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readPlatformMt5State, readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 import { readSharedMasterBridgeForUser } from "./mt5SharedBridgeStatus.js";
-import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 import { brokerStampToUtcMs, parseMqlTimeString, recordBrokerClockSample, seedBrokerClockOffsetFromConnection } from "../lib/brokerHub/brokerClockOffset.js";
 import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
