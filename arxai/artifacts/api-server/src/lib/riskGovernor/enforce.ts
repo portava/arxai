@@ -18,6 +18,7 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
+import { aiEntryPolicyReason } from "../safety/entryPolicy.js";
 import { classifyHeartbeatAgeMs, MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS, heartbeatAllowsRiskReducingClose } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
@@ -66,6 +67,7 @@ import {
   type TradingActivity,
   summarizeActivity,
   tradingDayStart,
+  TRADING_HALT,
 } from "./preTrade.js";
 
 export * from "./preTrade.js";
@@ -173,6 +175,8 @@ export interface EnforceOptions {
   auditContext?: Record<string, unknown>;
   /** PAPER only: the trader's written override of a block raised by rule 13 alone. */
   override?: { reason: string } | null;
+  /** The entry carries an AI decision id whatever its origin label (AI-entry hold). */
+  generatedEntry?: boolean;
 }
 
 export interface EnforceResult extends RiskDecision {
@@ -806,6 +810,15 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     ctx = await buildRiskContext(intent, opts);
     limits = ctx.limits;
     decision = evaluatePreTradeRisk(intent, ctx);
+    // AI-entry hold (default OFF, see safety/entryPolicy.ts). Raised as a
+    // trading_halt so no trader override can clear it; protective actions
+    // never reach it.
+    const holdReason = aiEntryPolicyReason(intent, { generatedEntry: opts.generatedEntry });
+    if (holdReason) decision = {
+      ...decision, decision: "BLOCK",
+      blockedBy: [...new Set([TRADING_HALT, ...decision.blockedBy])],
+      primaryReason: holdReason,
+    };
   } catch (e) {
     decision = contextFailure(intent, now, (e as Error).message.slice(0, 160));
   }
